@@ -93,6 +93,11 @@ Every accepted decision, with its reason and the file that carries it.
   edit hint may be absent, a cut grep line is read around instead of narrowing, a tool result that names cat or sed
   overrides the ban, a long file written in parts is the one exception to one edit call per file. bench43 measured the
   texts before these fixes.
+- bench43 (commit `9e13b55`, T01-T07, 5 runs, judge 5 votes with majority per point). Pi + prompt / my-pi:
+  gpt-6-sol medium 38.2 s q90.8 / 37.6 s q90.8; gpt-6.1-sol medium 51.4 s q96.8 / 52.1 s q96.8; gpt-6-sol low
+  26.4 s q89.6 / 24.2 s q91.4. 90% intervals of my-pi minus Pi + prompt: quality [-1.7, 2.3], [-2.2, 2.2],
+  [-0.5, 4.1]; seconds [-1.9, 0.8], [-1.2, 2.6], [-3.4, -1.1]. my-pi is equal on medium and faster on low; no file
+  written in any run. Both stands miss the same points: T01 Python usage, T06 auth blocker delay, T03 Python NG copy.
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
