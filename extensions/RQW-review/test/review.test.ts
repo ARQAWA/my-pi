@@ -140,13 +140,15 @@ async function openMain(
 	withExtension = true,
 	// Pi's default for an SDK session is "print", where the main run waits for its reviews.
 	mode: "tui" | "rpc" | "print" | "json" = "tui",
+	// Other extensions, loaded after this one.
+	extra: string[] = [],
 ): Promise<Main> {
 	const dir = join(root, `w${counter++}`);
 	await mkdir(dir, { recursive: true });
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: dir,
 		agentDir,
-		additionalExtensionPaths: withExtension ? [EXTENSION] : [],
+		additionalExtensionPaths: withExtension ? [EXTENSION, ...extra] : extra,
 		noSkills: true,
 		noPromptTemplates: true,
 		noThemes: true,
@@ -412,6 +414,8 @@ async function until(check: () => boolean, what: string, ms = 5000) {
 const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
 
 const ARGS = { level: "blind", object: "a.ts", criterion: "c" };
+// A second extension with a slow async agent_before_settle handler, held by the test through `globalThis.__slowSettle`.
+const SLOW_SETTLE = join(dirname(fileURLToPath(import.meta.url)), "slow-settle.ts");
 const callReview = () => fauxAssistantMessage(fauxToolCall("review", ARGS, { id: "r1" }), { stopReason: "toolUse" });
 const delivered = (session: AgentSession) => reviewMessages(session).map((m) => m?.content);
 const lastText = (session: AgentSession) => {
@@ -483,6 +487,48 @@ describe("delivery", () => {
 			assert.equal(requests.length, 3);
 			assert.equal(requests[2].filter((t) => t === "[review#1] CLEAN").length, 1);
 		} finally {
+			main.session.dispose();
+		}
+	});
+
+	it("two verdicts while another extension's slow agent_before_settle runs after ours get one main turn", async () => {
+		const slow = ((globalThis as { __slowSettle?: { enabled: boolean; entered: boolean; release: () => void } }).__slowSettle ??= {
+			enabled: false,
+			entered: false,
+			release: () => {},
+		});
+		slow.enabled = true;
+		slow.entered = false;
+		const gates = [gate("R1"), gate("R2")];
+		const reviews = scriptReviewer((_context, options) => {
+			const g = gates[reviews.length - 1];
+			return g.reply(options?.signal);
+		});
+		const main = await openMain(full, ARGS, true, "tui", [SLOW_SETTLE]);
+		const requests = scriptMain([
+			fauxAssistantMessage([fauxToolCall("review", ARGS, { id: "r1" }), fauxToolCall("review", ARGS, { id: "r2" })], {
+				stopReason: "toolUse",
+			}),
+			fauxAssistantMessage(fauxText("started both")),
+		]);
+		try {
+			const run = main.session.prompt("Review it");
+			await until(() => slow.entered && reviews.length === 2, "the main run in the slow handler");
+			for (const g of gates) g.release();
+			// The reviewer sessions end and the verdicts are sent while the slow handler still runs.
+			await tick(200);
+			slow.enabled = false;
+			slow.release();
+			await within(run, 5000, "the main run");
+			await until(() => requests.length === 3, "the turn for the verdicts");
+			await tick(300);
+			await main.session.waitForIdle();
+			assert.equal(requests.length, 3, "the prompt, the tool turn and one turn for both verdicts");
+			assert.deepEqual(delivered(main.session).sort(), ["[review#1] R1", "[review#2] R2"]);
+			for (const v of ["[review#1] R1", "[review#2] R2"]) assert.equal(requests[2].filter((t) => t === v).length, 1, v);
+			assert.equal(lastText(main.session), "ok");
+		} finally {
+			slow.enabled = false;
 			main.session.dispose();
 		}
 	});

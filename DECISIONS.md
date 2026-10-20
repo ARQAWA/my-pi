@@ -339,16 +339,24 @@ Every accepted decision, with its reason and the file that carries it.
   `n`, level, model, thinking and seconds for the user and logs only. Numbers count per session and go on after a
   resume. `session_shutdown` aborts every running review and delivers nothing; the 10-minute timer does not keep the
   process alive.
-- Delivery works as in the Agent section, so both extensions behave alike (review findings: in print and json mode
-  Pi disposed the session when the main run settled and the verdict never came; a follow-up waited in the agent's
-  queue, which TUI Esc and RPC `clear_queue` clear and an RPC abort or an error-ended run leaves without a turn).
+- Delivery: a verdict never waits in the agent's queue and gets exactly one main turn unless the run was aborted
+  (review findings: in print and json mode Pi disposed the session when the main run settled and the verdict never
+  came; a follow-up waited in the agent's queue, which TUI Esc and RPC `clear_queue` clear and an RPC abort or an
+  error-ended run leaves without a turn; a verdict that came in while another extension's slow `agent_before_settle`
+  handler ran after ours got no turn).
   The `session_start` context is kept. When `ctx.isIdle()`, the verdict goes with `triggerTurn: true, deliverAs:
   "followUp"` and starts a turn. When busy, it goes with `triggerTurn: false`: Pi appends it to the session at the
   end of the current turn or run, aborted or not, and the `agent_before_settle` handler returns `continue: true`
   while the verdict is not yet followed by an assistant message in the branch. Each review sends one verdict, so its
-  number `n` in `details` is the delivery number. After an abort no turn starts; the verdict stays in the session
-  and the model sees it on the next prompt, once. In print and json mode the handler first waits for running reviews
-  (each ends within the 10-minute timeout), and their verdicts continue that same run before Pi exits.
+  number `n` in `details` is the delivery number. When that handler returns without `continue`, a `settling` flag is
+  set until `turn_start` or `agent_settled`; verdicts that arrive meanwhile wait in a `late` list, and the
+  `agent_settled` handler sends them, all but the last with `triggerTurn: false` and the last with
+  `triggerTurn: !event.aborted`, so several get one turn. After an abort no turn starts; the verdict stays in the
+  session and the model sees it on the next prompt, once. In print and json mode the handler first waits for running
+  reviews (each ends within the 10-minute timeout), and their verdicts continue that same run before Pi exits.
+- Credentials: a review fails with "no credentials" only when both `ctx.modelRegistry.hasConfiguredAuth(model)` and
+  `await runtime.checkAuth(provider)` say so, as in Pi's own prompt. Reason: the auth snapshot behind
+  `hasConfiguredAuth` is filled asynchronously, so right after startup or a reload it can miss credentials that exist.
 - Proof: `extensions/RQW-review/test/review.test.ts` (real sessions, faux providers for the main and the reviewer
   models) and one real run per level: a temp copy of a fixture with `calc.py` (`add` returns `a - b` instead of the
   sum) and a correct `config.py` (`MAX_ITEMS = 50`), command
@@ -357,11 +365,14 @@ Every accepted decision, with its reason and the file that carries it.
   else and started a main turn: `blind` in 8.7 s (`EVIDENCE: "return a - b"`), `high` in 3.8 s. After the delivery
   fixes, tests for print and json mode (the run waits and continues with the verdict), a verdict arriving while the
   main agent streams (continues its run once), TUI Esc and RPC abort (the verdict is in the session once, no run
-  starts, the next prompt carries it once), and grep and find with `"null"`, `"undefined"` and blank arguments
-  through Pi's validation and inside a reviewer session. Without the `agent_before_settle` handler, the busy-time
-  delivery or `reviewerTools`, these tests fail. Live run in json mode with no `sleep`: Haiku 5.5 as the main model
-  replied `started`, the run waited, `[review#1] FINDINGS: ... EVIDENCE: "return a - b"` arrived after 5.1 s and the
-  main agent answered it in the same run (`GOT VERDICT: ... returns a - b instead of the sum`), exit 0 in 13 s.
+  starts, the next prompt carries it once), two verdicts that arrive while a slow second extension
+  (`test/slow-settle.ts`, loaded after RQW-review) holds `agent_before_settle` (one main turn for both), and grep and
+  find with `"null"`, `"undefined"` and blank arguments through Pi's validation and inside a reviewer session.
+  Without the `agent_before_settle` handler, the busy-time delivery, the `settling` flag or `reviewerTools`, these
+  tests fail. Every test passes when run alone, which needs the `checkAuth` fallback. Live run in json mode with no
+  `sleep`: Haiku 5.5 as the main model replied `started`, the run waited, `[review#1] FINDINGS: ... EVIDENCE:
+  "return a - b"` arrived after 5.1 s and the main agent answered it in the same run (`GOT VERDICT: ... returns
+  a - b instead of the sum`), exit 0 in 13 s.
 - Open: `ctx.modelRegistry.runtime` may be renamed by a Pi update, then every review fails with "the model runtime of
   the session is not reachable"; a verdict that finishes after the session ended (quit, `/new`, `/resume`, reload)
   is dropped, since `session_shutdown` aborts running reviews; in print and json mode the run waits up to 10 minutes

@@ -156,11 +156,13 @@ async function runReviewer(level: Level, brief: string, ctx: ExtensionContext, s
 	const name = `${spec.provider}/${spec.model}`;
 	const model = ctx.modelRegistry.find(spec.provider, spec.model);
 	if (!model) throw new Error(`model ${name} is not available`);
-	if (!ctx.modelRegistry.hasConfiguredAuth(model)) throw new Error(`no credentials for ${spec.provider} (model ${name})`);
 	// The session's own runtime, so providers and credentials registered by the user's extensions reach the
 	// reviewer too. ModelRegistry keeps it in a field that is private only to TypeScript.
 	const modelRuntime = (ctx.modelRegistry as unknown as { runtime?: ModelRuntime }).runtime;
 	if (!modelRuntime) throw new Error("the model runtime of the session is not reachable");
+	// As Pi's prompt: the auth snapshot is filled asynchronously, so a stale one falls back to a direct check.
+	if (!ctx.modelRegistry.hasConfiguredAuth(model) && !(await modelRuntime.checkAuth(spec.provider)))
+		throw new Error(`no credentials for ${spec.provider} (model ${name})`);
 
 	const { session } = await createAgentSession({
 		cwd: ctx.cwd,
@@ -227,7 +229,15 @@ export default function review(pi: ExtensionAPI) {
 	});
 
 	// Each review sends one verdict, so its number `n` in `details` is the delivery number.
-	function deliver(message: { customType: string; content: string; display: boolean; details: { n: number } }) {
+	type Verdict = { customType: string; content: string; display: boolean; details: { n: number } };
+	/** Set once our agent_before_settle handler has run; verdicts sent then wait for agent_settled in `late`. */
+	let settling = false;
+	const late: Verdict[] = [];
+	function deliver(message: Verdict) {
+		if (settling) {
+			late.push(message);
+			return;
+		}
 		if (main?.isIdle() !== false) {
 			pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
 			return;
@@ -260,6 +270,19 @@ export default function review(pi: ExtensionAPI) {
 	pi.on("agent_before_settle", async (_event, ctx) => {
 		if (ctx.mode === "print" || ctx.mode === "json") while (jobs.size > 0) await Promise.all(jobs);
 		if (needsTurn(ctx)) return { continue: true };
+		settling = true;
+	});
+	// Another extension's agent_before_settle handler may run after ours, so a verdict can come in after our check and
+	// before the run settles. It is sent here; Pi defers it until the settle ends and then starts its turn.
+	pi.on("turn_start", () => {
+		settling = false;
+	});
+	pi.on("agent_settled", (event) => {
+		settling = false;
+		// One turn for all of them: Pi defers each triggerTurn separately, so the earlier ones are appended at once and
+		// only the last one starts the turn.
+		const held = late.splice(0);
+		held.forEach((message, i) => pi.sendMessage(message, { triggerTurn: !event.aborted && i === held.length - 1 }));
 	});
 
 	async function job(n: number, level: Level, brief: string, ctx: ExtensionContext) {
