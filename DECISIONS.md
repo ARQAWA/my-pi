@@ -84,6 +84,10 @@ Every accepted decision, with its reason and the file that carries it.
   read a needed file whole in one call and read every file needed next in one response. Correctness 99.6 -> 100,
   whole-file reads 79% -> 84%, responses equal; the speed change is within noise. bash stays as it was: no run searched
   or read through bash, and a line asking to run tests in the same response as the edit split responses on gpt-6.1-sol.
+- grep and find descriptions refined by probes (`notes/refine/refine-search.md`; T01, T03, T06, two models, 72 runs):
+  the wave names the spellings to try, reads every file the hits already justify in one response, and the stop rule
+  asks for where each value is set, used and what the code does with it, for every implementation. find shows brace
+  alternatives. Checklist coverage 94.1% -> 95.0%, within noise; chosen by the rule completeness, then responses.
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
