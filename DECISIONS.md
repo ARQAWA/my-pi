@@ -88,6 +88,11 @@ Every accepted decision, with its reason and the file that carries it.
   the wave names the spellings to try, reads every file the hits already justify in one response, and the stop rule
   asks for where each value is set, used and what the code does with it, for every implementation. find shows brace
   alternatives. Checklist coverage 94.1% -> 95.0%, within noise; chosen by the rule completeness, then responses.
+- Second description review (`notes/review-descriptions-2.md`, 8 findings) fixed as wording only: grep respects
+  .gitignore inside a git repository only, a grep glob with "/" matches from path, find also returns directories, the
+  edit hint may be absent, a cut grep line is read around instead of narrowing, a tool result that names cat or sed
+  overrides the ban, a long file written in parts is the one exception to one edit call per file. bench43 measured the
+  texts before these fixes.
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
