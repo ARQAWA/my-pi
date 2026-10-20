@@ -1,0 +1,26 @@
+{
+  "name": "pcli",
+  "displayName": "ARQAWA PCLI",
+  "version": "0.0.1",
+  "publisher": "arqawa",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ARQAWA/my-pi.git"
+  },
+  "engines": {
+    "vscode": "^1.86.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      { "command": "pcli.newTab", "title": "New Tab", "category": "Pi CLI" }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "node fetch-pi.mjs"
+  },
+  "devDependencies": {
+    "@vscode/test-electron": "^3.1.0"
+  }
+}

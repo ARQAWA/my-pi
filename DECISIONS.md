@@ -89,3 +89,42 @@ Every accepted decision, with its reason and the file that carries it.
 - Writing a file longer than about 400 lines in parts (bench35 lost a response to the output limit) lives in the
   `write` description, as in omp-lite, each part in its own response. Removed against bench41: the working
   directory from the date line, because Pi already appends `<cwd>`.
+
+## PCLI
+
+- `pcli-vscode/` is a VS Code extension `arqawa.pcli` ("ARQAWA PCLI", win32-x64) that starts Pi like CCLI starts Codex
+  (user: «надо сделать extension, как Arkava CLI, такой же, только PCLI... учитывая все требования, все ограничения»).
+  It is outside `extensions/`, has no `RQW-` prefix and is not in `pi.extensions`: it is not a Pi extension. Carried by
+  `pcli-vscode/package.json`, `AGENTS.md`.
+- VDI constraint: everything runs inside VS Code as a subprocess of the extension host (user: «у нас нет админских прав,
+  у нас нет wsl, и нам нельзя запускать ничего такого прямо на хосте, только внутри vs code, только как extension vs
+  code, как субпроцесс extension VS code. только так»). Carried by `pcli-vscode/extension.js`.
+- Pi is pinned to 1.3.0 and bundled in the VSIX (about 43 MB), no update at runtime (user: «мы не будем автоматически
+  обновлять PCLai. Как есть 1.3 версия, так и есть.»; «1 да давай 2 да давай»). `vscode:prepublish` runs
+  `pcli-vscode/fetch-pi.mjs`: it downloads `pi-windows-x64.zip` of the release `earendil-works/pi` v1.3.0, checks the
+  hard-coded SHA256 from the release's SHA256SUMS and extracts it into `pcli-vscode/pi/` (git-ignored). A new Pi
+  version means new VERSION, URL and SHA256 there and a new VSIX.
+- Release binary, not npm: Pi from npm is a Node program and would run inside `Code.exe` with `ELECTRON_RUN_AS_NODE=1`,
+  which leaks into every bash command Pi runs and depends on the Node version of VS Code. `pi.exe` carries its own
+  runtime; the same path (Bun exe from a GitHub release) already works on the VDI in omp-vscode. Carried by
+  `pcli-vscode/fetch-pi.mjs`.
+- Launch chain: extension host -> `powershell.exe` -> Git Bash (`C:\Program Files\Git\bin\bash.exe --login -i -c`) ->
+  `pi.exe`, terminal through VS Code's own `node-pty`. The proxy comes from the `Code.exe` environment and the settings
+  `http.proxy` / `http.proxyStrictSSL` (the latter sets `NODE_TLS_REJECT_UNAUTHORIZED=0`) and is also exported in the
+  Git Bash command line, so profile scripts cannot override it; before the exports that line unsets `http_proxy`,
+  `https_proxy`, `all_proxy` and `no_proxy`, because Pi prefers the lowercase names. `~/.pi/agent` (settings, login, sessions) is shared and
+  not changed. Carried by `pcli-vscode/extension.js`.
+- The tab sets `PI_SKIP_VERSION_CHECK=1`: the version is pinned, Pi must not ask for a newer one (user: «1 да давай 2
+  да давай»). Carried by `pcli-vscode/extension.js`.
+- One command, `Pi CLI: New Tab`; login is `/login` inside Pi. my-pi itself is installed into that Pi with `INSTALL.md`
+  as before; the extension does not install it. Carried by `pcli-vscode/package.json`.
+- No Marketplace description: no `description` field in `pcli-vscode/package.json`, no README, no LICENSE (user: «При
+  публикации в маркетплейс там НЕ ДОЛЖНО БЫТЬ НИКАКОГО ОПИСАНИЯ»).
+- Proof: `.github/workflows/pcli.yml` on `windows-latest` builds the VSIX, installs it into a real VS Code and runs
+  `pcli-vscode/test/run.mjs` and `test/suite.cjs`: a local proxy `test/proxy.cjs` with a fake model, Pi answers through
+  it, in two scenarios (proxy from the environment with a hostile Git Bash profile, proxy from VS Code settings). The
+  fake model is HTTPS with a self-signed certificate: strict TLS fails, `http.proxyStrictSSL: false` works. It also
+  checks CONNECT to GitHub with proxy credentials, paths with Cyrillic, spaces and an apostrophe, and no `pi.exe`
+  left after closing tabs, `/quit` or VS Code itself. Not covered: a real model call and the corporate VDI restrictions.
+- Publishing: skill `publish-pcli` (`.agents/skills/publish-pcli/SKILL.md`), `vsce publish --target win32-x64` from
+  `pcli-vscode/` under publisher `arqawa`, `version` raised before each publish, only on a direct request.

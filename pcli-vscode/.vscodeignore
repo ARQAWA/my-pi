@@ -1,0 +1,7 @@
+node_modules/**
+test/**
+fetch-pi.mjs
+.gitignore
+*.vsix
+pi.tmp/**
+package-lock.json

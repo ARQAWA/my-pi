@@ -1,0 +1,7 @@
+{
+  "defaultProvider": "fake",
+  "defaultModel": "fake-1",
+  "defaultProjectTrust": "never",
+  "enableInstallTelemetry": false,
+  "retry": { "enabled": false }
+}
