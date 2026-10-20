@@ -69,6 +69,12 @@ Every accepted decision, with its reason and the file that carries it.
   Speed is the same. The quality gap comes from T01 (80/93/80 vs 67/80/67: the answer misses the Python twin) and one
   gpt-6.1-sol run of T02 that wrote its answer to `TRADING_LOGIC.md` (q18, 256 s); without that run gpt-6.1-sol medium
   is 57.8 s / q96.2. Open: tune the grep description against T01.
+- bench42 regraded with 5 judge votes per answer, majority per point: 92.9 / 91.0, 96.2 / 91.6, 90.5 / 89.0
+  (Pi + prompt / my-pi). The 90% bootstrap interval of the difference includes zero on every config. The T01 gap was
+  judge noise on one point; both stands miss the Python usage point equally. Judging from now on: 5 votes, majority.
+- The `TRADING_LOGIC.md` run: the model's reasoning shows it hit the answer length limit of the prompt and moved the
+  answer into a file, which the prompt allowed ("the file is the answer"). `SYSTEM.md` now says to answer a question
+  about the code in the chat and to create or change files only when the task asks for it.
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
