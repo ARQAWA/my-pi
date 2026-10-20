@@ -203,8 +203,12 @@ test("win32 rules, checked as strings on every host", () => {
   for (const s of same) assert.strictEqual(key(s), "c:/rqw-t/sub/file.txt", `spelling ${JSON.stringify(s)}`);
   assert.strictEqual(key("C:/"), "c:/");
   assert.strictEqual(key("/c"), "c:/");
-  assert.strictEqual(key("\\\\Server\\Share\\X"), "//server/share/x");
-  assert.strictEqual(key("//server/share/x"), "//server/share/x");
+  // On a real Windows host an unreachable share fails realpath; undefined then means the safe scope "all".
+  for (const unc of ["\\\\Server\\Share\\X", "//server/share/x"]) {
+    const k = key(unc);
+    if (process.platform === "win32") assert.ok(k === "//server/share/x" || k === undefined, String(k));
+    else assert.strictEqual(k, "//server/share/x");
+  }
   assert.strictEqual(key("/tmp/x"), "c:/tmp/x", "/tmp is not a drive path, it stays on the cwd drive");
   assert.strictEqual(key("D:/other"), "d:/other");
   assert.notStrictEqual(key("C:/rqw-t/a.txt"), key("C:/rqw-t/b.txt"));

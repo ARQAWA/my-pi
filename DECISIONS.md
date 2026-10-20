@@ -58,6 +58,6 @@ Every accepted decision, with its reason and the file that carries it.
 - The search wave method stays a `<search_method>` section of the prompt, since Pi's tools are stock and their
   descriptions are not ours; the `<critical>` verify line stays as in omp-lite. Both are the recommended options the
   user did not overrule.
-- Added against bench41: one speed-block line to write a file longer than about 400 lines in parts (omp-lite carried it
-  in its `write` description; bench35 lost a response to the output limit). Removed against bench41: the working
+- Writing a file longer than about 400 lines in parts (bench35 lost a response to the output limit) lives in the
+  `write` description, as in omp-lite, each part in its own response. Removed against bench41: the working
   directory from the date line, because Pi already appends `<cwd>`.

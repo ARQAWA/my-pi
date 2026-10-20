@@ -1,4 +1,4 @@
 - The shell is Git Bash. Write paths as `C:/dir/file` with forward slashes. `/tmp` and other mount paths point to different directories in bash and in the file tools; use `C:/...` paths for files both touch.
 - Before a native Windows program whose arguments start with `/`, such as `cmd /c` or `taskkill /F`, put `MSYS_NO_PATHCONV=1`, or bash rewrites those arguments into paths.
 - Native Windows programs may print in the console code page instead of UTF-8; garbled letters in their output are an encoding issue, not wrong data.
-- A command is limited to about 32,000 characters; write a long script to a file with write and run bash <file>.
+- A command is limited to about 32,000 characters; write a long script to a file with write and run `bash <file>`.

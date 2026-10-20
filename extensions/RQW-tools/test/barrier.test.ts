@@ -8,7 +8,8 @@ import type { Schedule, Scope } from "../barrier.ts";
 
 type Rec = { i: number; scope: Scope; entry: number; start: number; end: number };
 
-const SLACK_MS = 5;
+// Shared CI runners showed timer jitter up to about 7 ms; over-serialization in T1 costs a whole 30 ms op.
+const SLACK_MS = 15;
 // Real timers on purpose: the test measures start and end times of operations against the platform clock, and fake
 // timers would hide exactly the scheduling gaps the slack check looks for.
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
