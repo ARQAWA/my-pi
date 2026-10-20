@@ -70,10 +70,17 @@ export default function agent(pi: ExtensionAPI) {
 	 * a UUID: a counter would restart in every new instance (/reload, /resume, /fork, `pi -c`) and match old entries.
 	 */
 	const unanswered = new Set<string>();
+	/** Set once our agent_before_settle handler has run; results sent then wait for agent_settled in `late`. */
+	let settling = false;
+	const late: { customType: string; content: string; display: boolean; details: { delivery: string } }[] = [];
 
 	function deliver(id: number, text: string) {
 		if (closed) return;
 		const message = { customType: "agent", content: `[agent#${id}] ${text}`, display: true, details: { delivery: randomUUID() } };
+		if (settling) {
+			late.push(message);
+			return;
+		}
 		if (main?.isIdle() !== false) {
 			pi.sendMessage(message, { triggerTurn: true });
 			return;
@@ -165,8 +172,9 @@ export default function agent(pi: ExtensionAPI) {
 				}
 				if (run.quiet) return;
 				const last = session.messages.filter(isAssistant).at(-1);
-				if (last?.stopReason === "error") deliver(a.id, `error: ${last.errorMessage ?? "unknown error"}`);
-				else deliver(a.id, texts.join("\n\n") || "(no text)");
+				// The error goes after the answers the run already gave, so a failed follow-up does not hide them.
+				if (last?.stopReason === "error") texts.push(`error: ${last.errorMessage ?? "unknown error"}`);
+				deliver(a.id, texts.join("\n\n") || "(no text)");
 			} catch (error) {
 				if (!run.quiet) deliver(a.id, `error: ${error instanceof Error ? error.message : String(error)}`);
 			} finally {
@@ -291,6 +299,16 @@ export default function agent(pi: ExtensionAPI) {
 		if (ctx.mode === "print" || ctx.mode === "json")
 			for (let running = runs(); running.length > 0; running = runs()) await Promise.all(running);
 		if (needsTurn(ctx)) return { continue: true };
+		settling = true;
+	});
+	// Another extension's agent_before_settle handler may run after ours, so a result can come in after our check and
+	// before the run settles. It is sent here; Pi defers it until the settle ends and then starts its turn.
+	pi.on("turn_start", () => {
+		settling = false;
+	});
+	pi.on("agent_settled", (event) => {
+		settling = false;
+		for (const message of late.splice(0)) pi.sendMessage(message, { triggerTurn: !event.aborted });
 	});
 	const runs = () => [...agents.values()].flatMap((a) => (a.run ? [a.run.done] : []));
 

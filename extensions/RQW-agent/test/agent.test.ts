@@ -132,13 +132,13 @@ type Main = {
 	delivered: () => string[];
 };
 
-async function startMain(mode: "tui" | "rpc" | "print" = "tui", sessionManager?: SessionManager): Promise<Main> {
+async function startMain(mode: "tui" | "rpc" | "print" = "tui", sessionManager?: SessionManager, extra: string[] = []): Promise<Main> {
 	const dir = join(root, `w${counter++}`);
 	await mkdir(dir, { recursive: true });
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: dir,
 		agentDir,
-		additionalExtensionPaths: [EXTENSION],
+		additionalExtensionPaths: [EXTENSION, ...extra],
 		noSkills: true,
 		noPromptTemplates: true,
 		noThemes: true,
@@ -357,6 +357,21 @@ describe("agent tool", () => {
 		await shutdown(m);
 	});
 
+	it("a queued follow-up that fails: one message carries the first answer and the error", async () => {
+		const m = await startMain();
+		const g = gate("FIRST ANSWER");
+		sub.replies.push(g.reply, fauxAssistantMessage([fauxText("")], { stopReason: "error", errorMessage: "bad request" }));
+		await m.call({ action: "start", system: SYSTEM, task: "first", model: "sub/a" });
+		await until(() => sub.requests.length === 1, "the first request");
+		await m.call({ action: "send", id: "agent#1", task: "also" });
+		g.release();
+		await until(() => m.delivered().length === 1, "the delivery");
+		await tick();
+		assert.equal(sub.requests.length, 2);
+		assert.deepEqual(m.delivered(), ["[agent#1] FIRST ANSWER\n\nerror: bad request"]);
+		await shutdown(m);
+	});
+
 	it("session_shutdown aborts and disposes every subagent without messages", async () => {
 		const m = await startMain();
 		const g1 = gate("x");
@@ -413,6 +428,38 @@ describe("agent tool", () => {
 		assert.deepEqual(m.delivered(), ["[agent#1] SUB RESULT"]);
 		assert.equal(main.requests.length, 3);
 		assert.ok(main.requests[2].texts.includes("[agent#1] SUB RESULT"));
+		await shutdown(m);
+	});
+
+	it("a result while another extension's slow agent_before_settle runs after ours gets one main turn", async () => {
+		const slow = ((globalThis as { __slowSettle?: { enabled: boolean; entered: boolean; release: () => void } }).__slowSettle ??= {
+			enabled: false,
+			entered: false,
+			release: () => {},
+		});
+		slow.enabled = true;
+		slow.entered = false;
+		const m = await startMain("tui", undefined, [join(HERE, "slow-settle.ts")]);
+		const subGate = gate("SUB RESULT");
+		sub.replies.push(subGate.reply);
+		main.replies.push(
+			fauxAssistantMessage([fauxToolCall("agent", { action: "start", system: SYSTEM, task: "t", model: "sub/a" })], {
+				stopReason: "toolUse",
+			}),
+			fauxAssistantMessage("started, will wait"),
+		);
+		const prompt = m.session.prompt("go");
+		await until(() => slow.entered && sub.requests.length === 1, "the main run in the slow handler");
+		subGate.release();
+		await tick(100);
+		slow.enabled = false;
+		slow.release();
+		await prompt;
+		await until(() => main.requests.length === 3, "the turn for the result");
+		await tick();
+		assert.equal(main.requests.length, 3, "go, the tool turn and one turn for the result");
+		assert.ok(main.requests[2].texts.includes("[agent#1] SUB RESULT"));
+		assert.deepEqual(m.delivered(), ["[agent#1] SUB RESULT"]);
 		await shutdown(m);
 	});
 

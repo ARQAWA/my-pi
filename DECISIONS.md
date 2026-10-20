@@ -327,7 +327,9 @@ Every accepted decision, with its reason and the file that carries it.
   Pi does not have.
 - Results are async. At the end of each run the main session gets `[agent#N] <text>` through `pi.sendMessage`. The
   text is every final answer of the run, so a follow-up queued during the run does not hide the first answer (the brief
-  said "last assistant text"). A failed run sends `[agent#N] error: <reason>` after Pi's own retries. Bad calls (unknown
+  said "last assistant text"). A failed run sends `[agent#N] error: <reason>` after Pi's own retries; the error follows the answers the run
+  already gave in the same message (`[agent#1] FIRST ANSWER\n\nerror: bad request`), so a failed follow-up does not
+  hide the first answer (review C). Bad calls (unknown
   id or model, no credentials, missing `system` or `task`) fail at once as a tool error, which costs less than a later
   message. Credentials are checked as Pi's prompt checks them: the registry's auth snapshot, then
   `runtime.checkAuth(provider)`, because the snapshot fills asynchronously and alone rejected valid models.
@@ -342,6 +344,11 @@ Every accepted decision, with its reason and the file that carries it.
   answered entry of the same session, so the new result got no turn; review B). After an abort no turn starts, since
   Esc means stop; the result stays in the session and the model sees it on the next turn. Re-sending after an abort, the first
   idea, was dropped: after an RPC abort the old copy stays queued and would arrive a second time with an extra turn.
+  Pi runs every extension's `agent_before_settle` handler in a row before it settles, so a result can come in after
+  ours returned, for example while another extension's slow async handler runs after ours; held with
+  `triggerTurn: false`, it would get no turn (review C). So our handler sets a `settling` flag when it lets the run
+  stop, `turn_start` and `agent_settled` clear it, and `deliver` keeps results sent while it is set; the
+  `agent_settled` handler sends them with `triggerTurn: !event.aborted`, which Pi defers until the settle ends.
   Rare case: a result that arrives during a manual `/compact` with no run is appended without a turn and is seen on
   the next one.
 - No timeout of our own: Pi's provider timeouts and retries apply, and the main agent can interrupt.
@@ -362,14 +369,16 @@ Every accepted decision, with its reason and the file that carries it.
 - `RQW-context` patches Pi classes for the whole process, so a subagent gets the owner's universal window rule like
   every model: its window is capped at 500 000 and its compaction reserve is 10% of that window. Checked in review: a
   subagent on a 1 000 000 model sends its request with window 500 000 when RQW-context is loaded.
-- Proof: `extensions/RQW-agent/test/agent.test.ts`, 19 tests on two faux providers (exact system prompt, model,
+- Proof: `extensions/RQW-agent/test/agent.test.ts`, 21 tests on two faux providers (exact system prompt, model,
   thinking, tool subset, the five actions, follow-up while running, the main turn, shutdown, errors, call order, print
   mode; one request only after `stop`, `restart` or `session_shutdown` with a queued follow-up; a result arriving
   while the main agent streams continues its run once; after TUI Esc and after RPC abort the result is in the session
   once, no run starts, and the next prompt carries it once; in a continued session that already holds an `[agent#1]`
-  result, a new result while busy still continues the run once, in TUI and print mode). Each test passes alone. With
+  result, a new result while busy still continues the run once, in TUI and print mode; a queued follow-up that fails
+  delivers the first answer and the error in one message; a result that arrives while a second extension's slow
+  `agent_before_settle` handler, loaded after RQW-agent, runs gets one main turn). Each test passes alone. With
   an empty extension the original 13 fail; without the queue clearing, the delivery change or the `continue` the new
-  tests fail; with a per-instance delivery counter the two continued-session tests fail. Live runs
+  tests fail; with a per-instance delivery counter the two continued-session tests fail; on 6b2cfb5 the two review C tests fail. Live runs
   in a fixture repository with `pi -e <repo> --model anthropic/<model> --thinking low --mode json -p <prompt>`:
   Haiku 5.5 started a subagent with its own prompt, read a file and answered a follow-up (`[agent#1] ZED: 3`,
   `[agent#1] ZED: alpha`); Haiku 5.5 queued a follow-up, interrupted a `sleep 40`, restarted
