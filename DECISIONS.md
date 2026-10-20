@@ -327,9 +327,12 @@ Every accepted decision, with its reason and the file that carries it.
   Pi does not have.
 - Results are async. At the end of each run the main session gets `[agent#N] <text>` through `pi.sendMessage`. The
   text is every final answer of the run, so a follow-up queued during the run does not hide the first answer (the brief
-  said "last assistant text"). A failed run sends `[agent#N] error: <reason>` after Pi's own retries; the error follows the answers the run
-  already gave in the same message (`[agent#1] FIRST ANSWER\n\nerror: bad request`), so a failed follow-up does not
-  hide the first answer (review C). Bad calls (unknown
+  said "last assistant text"). The text also carries every final error of the run as `error: <reason>`, in order with
+  the answers: a failed follow-up does not hide the first answer (`[agent#1] FIRST ANSWER\n\nerror: bad request`,
+  review C), and a first task that fails for good does not vanish when Pi then runs a queued follow-up that succeeds
+  (`[agent#1] error: bad request: first task\n\nSECOND ANSWER`, review D). An error that Pi retries is not a result:
+  Pi emits `auto_retry_start` right after that failed `message_end` and only when it retries (`_prepareRetry` in Pi's
+  `agent-session.js`), so that event removes the error just collected. Bad calls (unknown
   id or model, no credentials, missing `system` or `task`) fail at once as a tool error, which costs less than a later
   message. Credentials are checked as Pi's prompt checks them: the registry's auth snapshot, then
   `runtime.checkAuth(provider)`, because the snapshot fills asynchronously and alone rejected valid models.
@@ -348,9 +351,16 @@ Every accepted decision, with its reason and the file that carries it.
   ours returned, for example while another extension's slow async handler runs after ours; held with
   `triggerTurn: false`, it would get no turn (review C). So our handler sets a `settling` flag when it lets the run
   stop, `turn_start` and `agent_settled` clear it, and `deliver` keeps results sent while it is set; the
-  `agent_settled` handler sends them with `triggerTurn: !event.aborted`, which Pi defers until the settle ends.
+  `agent_settled` handler sends them. Pi defers every `triggerTurn: true` call separately and runs one full turn for
+  each, so only the last held result goes with `triggerTurn: !event.aborted`; the earlier ones go with
+  `triggerTurn: false`, which Pi appends at once since the run is no longer active, and the one deferred turn sees all
+  of them (review D: two results gave two main turns).
   Rare case: a result that arrives during a manual `/compact` with no run is appended without a turn and is seen on
   the next one.
+- Ids `agent#N` never repeat within a session. Every extension instance (`/reload`, `/resume`, `/fork`, `pi -c`) starts
+  its counter on `session_start` above the highest `agent#N` in the session's `[agent#N]` messages and `agent` tool
+  results, so a new subagent in a continued session gets `agent#2`, not a second `agent#1` whose result would read as
+  the old task's and to which a `send agent#1` meant for the old, killed subagent would go (review D).
 - No timeout of our own: Pi's provider timeouts and retries apply, and the main agent can interrupt.
 - `send` to a running subagent queues `session.followUp`; to an idle one it starts a new run with the history.
   `interrupt` calls `session.abort()`, drops the run's queued follow-ups, sends no message and keeps the history.
@@ -369,16 +379,20 @@ Every accepted decision, with its reason and the file that carries it.
 - `RQW-context` patches Pi classes for the whole process, so a subagent gets the owner's universal window rule like
   every model: its window is capped at 500 000 and its compaction reserve is 10% of that window. Checked in review: a
   subagent on a 1 000 000 model sends its request with window 500 000 when RQW-context is loaded.
-- Proof: `extensions/RQW-agent/test/agent.test.ts`, 21 tests on two faux providers (exact system prompt, model,
+- Proof: `extensions/RQW-agent/test/agent.test.ts`, 23 tests on two faux providers (exact system prompt, model,
   thinking, tool subset, the five actions, follow-up while running, the main turn, shutdown, errors, call order, print
   mode; one request only after `stop`, `restart` or `session_shutdown` with a queued follow-up; a result arriving
   while the main agent streams continues its run once; after TUI Esc and after RPC abort the result is in the session
   once, no run starts, and the next prompt carries it once; in a continued session that already holds an `[agent#1]`
   result, a new result while busy still continues the run once, in TUI and print mode; a queued follow-up that fails
-  delivers the first answer and the error in one message; a result that arrives while a second extension's slow
-  `agent_before_settle` handler, loaded after RQW-agent, runs gets one main turn). Each test passes alone. With
+  delivers the first answer and the error in one message; a first task that fails for good with a queued follow-up that
+  succeeds delivers the error and the answer in one message; an error that Pi retries is not delivered; two results
+  that arrive while a second extension's slow `agent_before_settle` handler, loaded after RQW-agent, runs get one main
+  turn that sees both; in a continued session a new subagent gets `agent#2`). Each test passes alone. With
   an empty extension the original 13 fail; without the queue clearing, the delivery change or the `continue` the new
-  tests fail; with a per-instance delivery counter the two continued-session tests fail; on 6b2cfb5 the two review C tests fail. Live runs
+  tests fail; with a per-instance delivery counter the two continued-session tests fail; on 6b2cfb5 the two review C tests fail; on ff8781b
+  the four tests changed or added for review D fail except the retried-error one, which fails without the
+  `auto_retry_start` line. Live runs
   in a fixture repository with `pi -e <repo> --model anthropic/<model> --thinking low --mode json -p <prompt>`:
   Haiku 5.5 started a subagent with its own prompt, read a file and answered a follow-up (`[agent#1] ZED: 3`,
   `[agent#1] ZED: alpha`); Haiku 5.5 queued a follow-up, interrupted a `sleep 40`, restarted

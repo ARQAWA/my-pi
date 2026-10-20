@@ -154,10 +154,14 @@ export default function agent(pi: ExtensionAPI) {
 	function startRun(a: Agent, task: string) {
 		const session = a.session;
 		const texts: string[] = [];
+		// Every final answer and every final error of the run, in order.
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+			// Pi emits this right after the failed message_end and retries that request: its error is not the run's result.
+			if (event.type === "auto_retry_start") texts.pop();
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
 			const m = event.message;
-			if (m.stopReason === "stop" || m.stopReason === "length") {
+			if (m.stopReason === "error") texts.push(`error: ${m.errorMessage ?? "unknown error"}`);
+			else if (m.stopReason === "stop" || m.stopReason === "length") {
 				const text = textOf(m);
 				if (text) texts.push(text);
 			}
@@ -171,9 +175,6 @@ export default function agent(pi: ExtensionAPI) {
 					await session.prompt(session.clearQueue().followUp.join("\n\n"));
 				}
 				if (run.quiet) return;
-				const last = session.messages.filter(isAssistant).at(-1);
-				// The error goes after the answers the run already gave, so a failed follow-up does not hide them.
-				if (last?.stopReason === "error") texts.push(`error: ${last.errorMessage ?? "unknown error"}`);
 				deliver(a.id, texts.join("\n\n") || "(no text)");
 			} catch (error) {
 				if (!run.quiet) deliver(a.id, `error: ${error instanceof Error ? error.message : String(error)}`);
@@ -290,6 +291,16 @@ export default function agent(pi: ExtensionAPI) {
 
 	pi.on("session_start", (_event, ctx) => {
 		main = ctx;
+		// A continued session (/reload, /resume, /fork, `pi -c`) already holds agent#N ids: new ones go above them.
+		for (const e of ctx.sessionManager.getEntries()) {
+			const text =
+				e.type === "custom_message" && e.customType === "agent" && typeof e.content === "string"
+					? e.content
+					: e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "agent"
+						? e.message.content.map((c) => (c.type === "text" ? c.text : "")).join("")
+						: "";
+			for (const match of text.matchAll(/agent#(\d+)/g)) counter = Math.max(counter, Number(match[1]));
+		}
 	});
 
 	// Print and JSON modes exit when the main run settles, so there the main run waits for running subagents. A result
@@ -308,7 +319,10 @@ export default function agent(pi: ExtensionAPI) {
 	});
 	pi.on("agent_settled", (event) => {
 		settling = false;
-		for (const message of late.splice(0)) pi.sendMessage(message, { triggerTurn: !event.aborted });
+		// One turn for all of them: Pi defers each triggerTurn separately, so the earlier ones are appended at once and
+		// only the last one starts the turn.
+		const held = late.splice(0);
+		held.forEach((message, i) => pi.sendMessage(message, { triggerTurn: !event.aborted && i === held.length - 1 }));
 	});
 	const runs = () => [...agents.values()].flatMap((a) => (a.run ? [a.run.done] : []));
 

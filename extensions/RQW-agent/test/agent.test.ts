@@ -372,6 +372,38 @@ describe("agent tool", () => {
 		await shutdown(m);
 	});
 
+	it("a first task that fails for good and a queued follow-up that succeeds: one message carries the error and the answer", async () => {
+		const m = await startMain();
+		let fail = () => {};
+		const first = () =>
+			new Promise<AssistantMessage>((resolve) => {
+				fail = () => resolve(fauxAssistantMessage([fauxText("")], { stopReason: "error", errorMessage: "bad request: first task" }));
+			});
+		sub.replies.push(first, fauxAssistantMessage("SECOND ANSWER"));
+		await m.call({ action: "start", system: SYSTEM, task: "first", model: "sub/a" });
+		await until(() => sub.requests.length === 1, "the first request");
+		await m.call({ action: "send", id: "agent#1", task: "second" });
+		fail();
+		await until(() => m.delivered().length === 1, "the delivery");
+		await tick();
+		assert.equal(sub.requests.length, 2);
+		assert.deepEqual(m.delivered(), ["[agent#1] error: bad request: first task\n\nSECOND ANSWER"]);
+		await shutdown(m);
+	});
+
+	it("an error that Pi retries is not part of the message", async () => {
+		const m = await startMain();
+		sub.replies.push(
+			fauxAssistantMessage([fauxText("")], { stopReason: "error", errorMessage: "529 overloaded_error: Overloaded" }),
+			fauxAssistantMessage("OK AFTER RETRY"),
+		);
+		await m.call({ action: "start", system: SYSTEM, task: "first", model: "sub/a" });
+		await until(() => m.delivered().length === 1, "the delivery", 20000);
+		assert.equal(sub.requests.length, 2, "Pi retried the request");
+		assert.deepEqual(m.delivered(), ["[agent#1] OK AFTER RETRY"]);
+		await shutdown(m);
+	});
+
 	it("session_shutdown aborts and disposes every subagent without messages", async () => {
 		const m = await startMain();
 		const g1 = gate("x");
@@ -431,7 +463,7 @@ describe("agent tool", () => {
 		await shutdown(m);
 	});
 
-	it("a result while another extension's slow agent_before_settle runs after ours gets one main turn", async () => {
+	it("two results while another extension's slow agent_before_settle runs after ours get one main turn", async () => {
 		const slow = ((globalThis as { __slowSettle?: { enabled: boolean; entered: boolean; release: () => void } }).__slowSettle ??= {
 			enabled: false,
 			entered: false,
@@ -440,26 +472,33 @@ describe("agent tool", () => {
 		slow.enabled = true;
 		slow.entered = false;
 		const m = await startMain("tui", undefined, [join(HERE, "slow-settle.ts")]);
-		const subGate = gate("SUB RESULT");
-		sub.replies.push(subGate.reply);
+		const g1 = gate("R1");
+		const g2 = gate("R2");
+		sub.replies.push(g1.reply, g2.reply);
 		main.replies.push(
-			fauxAssistantMessage([fauxToolCall("agent", { action: "start", system: SYSTEM, task: "t", model: "sub/a" })], {
-				stopReason: "toolUse",
-			}),
-			fauxAssistantMessage("started, will wait"),
+			fauxAssistantMessage(
+				[
+					fauxToolCall("agent", { action: "start", system: SYSTEM, task: "t1", model: "sub/a" }, { id: "c1" }),
+					fauxToolCall("agent", { action: "start", system: SYSTEM, task: "t2", model: "sub/a" }, { id: "c2" }),
+				],
+				{ stopReason: "toolUse" },
+			),
+			fauxAssistantMessage("started both, will wait"),
 		);
 		const prompt = m.session.prompt("go");
-		await until(() => slow.entered && sub.requests.length === 1, "the main run in the slow handler");
-		subGate.release();
+		await until(() => slow.entered && sub.requests.length === 2, "the main run in the slow handler");
+		g1.release();
+		g2.release();
 		await tick(100);
 		slow.enabled = false;
 		slow.release();
 		await prompt;
-		await until(() => main.requests.length === 3, "the turn for the result");
-		await tick();
-		assert.equal(main.requests.length, 3, "go, the tool turn and one turn for the result");
-		assert.ok(main.requests[2].texts.includes("[agent#1] SUB RESULT"));
-		assert.deepEqual(m.delivered(), ["[agent#1] SUB RESULT"]);
+		await until(() => main.requests.length === 3, "the turn for the results");
+		await tick(300);
+		assert.equal(main.requests.length, 3, "go, the tool turn and one turn for both results");
+		assert.ok(main.requests[2].texts.includes("[agent#1] R1"));
+		assert.ok(main.requests[2].texts.includes("[agent#2] R2"));
+		assert.deepEqual(m.delivered().sort(), ["[agent#1] R1", "[agent#2] R2"]);
 		await shutdown(m);
 	});
 
@@ -559,9 +598,13 @@ describe("agent tool", () => {
 		mainGate.release();
 		await prompt;
 		await tick();
-		assert.deepEqual(m.delivered(), ["[agent#1] old result", "[agent#1] SUB RESULT"]);
+		const started = m.session.messages.flatMap((x) =>
+			x.role === "toolResult" ? [x.content.map((c) => (c.type === "text" ? c.text : "")).join("")] : [],
+		);
+		assert.equal(started.at(-1), "agent#2 started", "a new subagent gets an id the session does not hold yet");
+		assert.deepEqual(m.delivered(), ["[agent#1] old result", "[agent#2] SUB RESULT"]);
 		assert.equal(main.requests.length, 3, "go, the tool turn and one continuation for the result");
-		assert.ok(main.requests[2].texts.includes("[agent#1] SUB RESULT"));
+		assert.ok(main.requests[2].texts.includes("[agent#2] SUB RESULT"));
 		await shutdown(m);
 	});
 
@@ -582,9 +625,9 @@ describe("agent tool", () => {
 		await tick();
 		g.release();
 		await prompt;
-		assert.deepEqual(m.delivered(), ["[agent#1] old result", "[agent#1] NEW RESULT"]);
+		assert.deepEqual(m.delivered(), ["[agent#1] old result", "[agent#2] NEW RESULT"]);
 		assert.equal(main.requests.length, 3, "go, the tool turn and one continuation with the new result");
-		assert.ok(main.requests[2].texts.includes("[agent#1] NEW RESULT"));
+		assert.ok(main.requests[2].texts.includes("[agent#2] NEW RESULT"));
 		const last = m.session.messages.at(-1);
 		assert.ok(last?.role === "assistant" && last.content.some((c) => c.type === "text" && c.text === "got new"));
 		await shutdown(m);
