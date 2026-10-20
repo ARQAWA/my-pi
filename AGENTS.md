@@ -9,7 +9,9 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
   default prompt prefix and appends the workstation, critical, environment and date blocks.
 - `extensions/RQW-tools/`: extension 3, the base tools. Stock `read`, `bash`, `edit`, `write`, `grep`, `find` with our
   descriptions (`descriptions/*.md`), multi-file `edit` and `write`, and the ordered barrier. Tests: `npm test`.
-- `extensions/RQW-agent/`: extension 4, the subagents. One tool `agent` (start, send, interrupt, stop, restart) runs
+- `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
+  window W = min(contextWindow, 500000) and compacts above W - R, where R = round(W / 10). Tests: `npm test`.
+- `extensions/RQW-agent/`: extension 5, the subagents. One tool `agent` (start, send, interrupt, stop, restart) runs
   in-process Pi sessions with the whole system prompt, model, thinking and tools from the main agent; results come
   back as `[agent#N]` messages. Tests: `npm test`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
