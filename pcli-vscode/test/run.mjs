@@ -10,8 +10,9 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const vsix = path.resolve(process.argv[2] || path.join(root, 'pcli.vsix'));
 const base = path.join(process.env.RUNNER_TEMP || os.tmpdir(), 'pcli-e2e');
-const extDir = path.join(base, 'vs ext');
-const ws = path.join(base, 'ws dir', "it's");
+// Cyrillic, spaces and an apostrophe, as in a VDI user profile path
+const extDir = path.join(base, 'Пользователь vs ext');
+const ws = path.join(base, 'Проект ws dir', "it's");
 const proxyLog = path.join(root, 'proxy.log');
 const PROXY = "http://pcli:it's@127.0.0.1:18999";
 
