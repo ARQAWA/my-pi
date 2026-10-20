@@ -4,8 +4,8 @@ A Pi package (`@earendil-works/pi-coding-agent` 1.3.0) that carries the omp-lite
 Stock Pi tools stay as they are. Everything is an extension, one folder per extension under `extensions/`.
 
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
-- `extensions/settings/`: extension 1, the harness settings. Empty for now.
-- `extensions/prompt/`: extension 2, the system prompt. `SYSTEM.md` is the text; `index.ts` puts it in place of Pi's
+- `extensions/RQW-settings/`: extension 1, the harness settings. Empty for now.
+- `extensions/RQW-prompt/`: extension 2, the system prompt. `SYSTEM.md` is the text; `index.ts` puts it in place of Pi's
   default prompt prefix and appends the workstation, critical, environment and date blocks.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `notes/`: research notes, such as how the omp-lite prompt was built.

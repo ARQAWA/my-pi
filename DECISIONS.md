@@ -17,6 +17,11 @@ Every accepted decision, with its reason and the file that carries it.
 - Everything is an extension, one folder per extension under `extensions/`, listed in `package.json` under
   `pi.extensions`: first `settings`, second `prompt` (user: «в этом репозитории мы всё будем делать extension... Первый
   extension — это будут настройки, второй — промты, настройки промта»).
+- Every extension folder carries the prefix `RQW-`: `RQW-settings`, `RQW-prompt` (user: «у всех наших extension был
+  префикс типа RQW- и название»).
+- Tools work: requirements compiled in `notes/tools-requirements.md`. Tool and parameter names stay exactly as in Pi;
+  no `apply_patch`, one edit format for every model (user: «имена такие же, как в P... никакой хуйни не надо
+  навяливать из ОМП лайта»; «Нет, не надо для GPT patch делать. Пусть работает одинаково везде»).
 - `INSTALL.md` is the install prompt: the user runs it inside an already installed Pi, and that Pi installs this
   package into itself with `pi install` and asks for `/reload` (user: «чтобы можно было его везде воссоздавать,
   воссобирать с нуля, просто промтом одним через install prompt»; «install.md — это про установку именно наших обвесов
@@ -27,8 +32,8 @@ Every accepted decision, with its reason and the file that carries it.
 ## Prompt
 
 - First step is only the prompt extension (user: «пока делаем только экстеншен который заменяет промпт систменый на
-  наш»). `extensions/prompt/index.ts` sets `systemPromptOptions.customPrompt` in `before_agent_start` to
-  `extensions/prompt/SYSTEM.md` plus the workstation, `<critical>`, environment and date blocks. Not
+  наш»). `extensions/RQW-prompt/index.ts` sets `systemPromptOptions.customPrompt` in `before_agent_start` to
+  `extensions/RQW-prompt/SYSTEM.md` plus the workstation, `<critical>`, environment and date blocks. Not
   `forceSystemPrompt`: Pi still appends project context, skills and `<cwd>` and records the prompt as sections.
 - The text follows the concept in `notes/prompt-concept.md` and starts from the bench41 template, the only measured
   version on Pi (+10.2 / +6.2 / +1.9 quality points on gpt-6-sol low / gpt-6-sol medium / gpt-6.1-sol medium).

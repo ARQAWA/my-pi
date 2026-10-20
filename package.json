@@ -4,6 +4,6 @@
   "type": "module",
   "keywords": ["pi-package"],
   "pi": {
-    "extensions": ["./extensions/settings/index.ts", "./extensions/prompt/index.ts"]
+    "extensions": ["./extensions/RQW-settings/index.ts", "./extensions/RQW-prompt/index.ts"]
   }
 }
