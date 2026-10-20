@@ -183,6 +183,65 @@ Every accepted decision, with its reason and the file that carries it.
   `write` description, as in omp-lite, each part in its own response. Removed against bench41: the working
   directory from the date line, because Pi already appends `<cwd>`.
 
+## Agent
+
+- A general subagent for the main agent, the one the Scope section names as a separate task. The owner's words: «должна
+  быть опция поднимать любых рандомных саб-агентов, которые являются саб-потоком основного агента. Можно за базу взять
+  агента General Purpose из курсора и его воспроизвести»; «этот кастомный саб-агент, абстрактный саб-агент, должен
+  подниматься без системного промпта, чтобы основной агент передавал ему весь системный промпт. Полностью промптил его
+  от начала до конца»; «Чтобы он мог ему ставить задачу, прерывать, выключать, перезапускать. Он мог ему посылать
+  сообщение follow-up»; «чтобы основной агент тратил минимум токенов»; «все решения должны быть максимально простые ...
+  без оверенджинеринга»; «всё должно быть доказано». Carried by `extensions/RQW-agent/index.ts`.
+- One tool `agent` with `action` `start`, `send`, `interrupt`, `stop`, `restart` and the fields `id`, `system`, `task`,
+  `model` (`provider/id`), `thinking` (Pi's levels `off` to `max`), `tools` (a subset of `read`, `bash`, `edit`,
+  `write`, `grep`, `find`). Cost for the main agent on every request: description 584 characters, schema 636. The
+  schema passes Pi's `makeStrictJsonSchema`; `null` in an optional field counts as omitted.
+- In process, no spawn (Windows-safe): `createAgentSession` with `SessionManager.inMemory`, `SettingsManager.inMemory`,
+  and `DefaultResourceLoader` with `noExtensions`, `noSkills`, `noPromptTemplates`, `noThemes`, `noContextFiles`; cwd
+  is the main session's `ctx.cwd`. Neither RQW-prompt nor AGENTS.md reaches the subagent.
+- The system prompt is exactly `system`. Pi appends `<cwd>` and other sections to every custom prompt
+  (`buildSystemPromptSections` in Pi's `dist/core/system-prompt.js`); only a forced prompt goes out as it is. So the
+  loader carries one inline handler, `before_agent_start` returning `{ systemPrompt: system }`. This is the closest
+  thing to "no extensions": the only handler is ours and does nothing else. A test checks that the request has one
+  system message equal to `system`.
+- The model runtime is the main session's, taken from `ctx.modelRegistry.runtime`, a plain field that is private only
+  in the TypeScript types. Reason: one credential store and one OAuth refresh (risk 1 of
+  `/tmp/pi-subagent-eval/report.md`), and providers that extensions register also serve the subagent, such as the
+  `anthropic` overlay of the installed `pi-claude-auth`. If Pi renames the field, `start` fails and the tests show it.
+- Defaults follow Cursor's generalPurpose: all tools, the main model ("inherit"), no subagents of its own (Cursor
+  transcript 704ada44 in `cursor-like-harness/kb/sources/cursor-reverse-extra`). Here: the main session's model and
+  thinking level, all six tools, and no `agent` tool for the subagent.
+- Tools are the RQW-tools definitions: each subagent session runs the RQW-tools factory once more, so it gets its own
+  barrier, and passes the result as `customTools` with the `tools` allowlist. bash reads the main session's settings
+  per call, so `shellPath` (Git Bash on Windows) applies. A test writes two files through `write.files[]`, which stock
+  Pi does not have.
+- Results are async. At the end of each run the main session gets `[agent#N] <text>` through `pi.sendMessage` with
+  `triggerTurn: true, deliverAs: "followUp"`. The text is every final answer of the run, so a follow-up queued during
+  the run does not hide the first answer (the brief said "last assistant text"). A failed run sends
+  `[agent#N] error: <reason>` after Pi's own retries. Bad calls (unknown id or model, no credentials, missing `system` or
+  `task`) fail at once as a tool error, which costs less than a later message. No timeout of our own: Pi's provider
+  timeouts and retries apply, and the main agent can interrupt.
+- `send` to a running subagent queues `session.followUp`; to an idle one it starts a new run with the history.
+  `interrupt` calls `session.abort()`, drops the run's queued follow-ups, sends no message and keeps the history.
+  `stop` disposes the session and forgets the id. `restart` disposes and creates a fresh session with the same
+  `system`, model, thinking and tools or the ones given, and runs `task` if given.
+- Calls of `agent` run one at a time in call order. Pi runs the calls of one response in parallel, and a batch of
+  `start` and `send agent#1` failed without this (checked by removing it).
+- Print and JSON modes exit when the main run settles, so there an `agent_before_settle` handler waits for running
+  subagents and their messages continue the same run. In the TUI and RPC the messages start new turns.
+- `session_shutdown` aborts and disposes every subagent without messages. No cap on the count.
+- Accepted limits: a result that arrives after the main session ended is lost; a subagent may read files the main agent
+  is editing; subagents share the process with the TUI. `RQW-context` (branch `rqw-context`) patches Pi classes for the
+  whole process, so after its merge subagents also get its window rule.
+- Proof: `extensions/RQW-agent/test/agent.test.ts`, 13 tests on two faux providers (exact system prompt, model,
+  thinking, tool subset, the five actions, follow-up while running, the main turn, shutdown, errors, call order, print
+  mode). With an empty extension all 13 fail. Live runs in a fixture repository with
+  `pi -e <repo> --model anthropic/<model> --thinking low --mode json -p <prompt>`: Haiku 5.5 started a subagent with
+  its own prompt, read a file and answered a follow-up (`[agent#1] ZED: 3`, `[agent#1] ZED: alpha`); Haiku 5.5
+  queued a follow-up, interrupted a `sleep 40`, restarted (`[agent#1] W: RESTARTED`, 11 s, no `sleep` left); Opus 5.5
+  ran two subagents, one with an inherited model, and got the queued follow-up in the same message
+  (`[agent#1] W: ... first ... W: ... second`, `[agent#2] Q: The bug is in add ...`).
+
 ## PCLI
 
 - `pcli-vscode/` is a VS Code extension `arqawa.pcli` ("ARQAWA PCLI", win32-x64) that starts Pi like CCLI starts Codex
