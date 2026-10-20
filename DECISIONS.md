@@ -25,6 +25,27 @@ Every accepted decision, with its reason and the file that carries it.
   `my-omp-harness` branch `deprecated` (Haiku 5.5 and Sonnet 5.5) and in `my-codex-harness` (gpt-6-sol, gpt-6.1-sol).
 - All subagents of the work on this repository run on Opus only, at low, medium or high reasoning (user: «всех
   саб-агентов переводи на Opus low, medium или high ... Sonnets больше не используй, только Opus»).
+- Reviewers, accepted plan (user: «То, что ты предложил по ревьюерам — it's OK, я принимаю»): own extension
+  `RQW-review` on `createAgentSession`, no ready package (pi-subagents: ~98k lines, ~1.3k tokens per request, fails
+  strict schemas). One tool `review` with `level` `blind` or `high`; a fresh read-only session per pass with `read`,
+  `grep`, `find` and the shared Spotty prompt; no main prompt, extensions, skills or AGENTS.md in the reviewer;
+  `blind` on Haiku 5.5 medium, `high` on Sonnet 5.5, levels fixed by measurement; no silent model fallback; the
+  extension copies the user's messages verbatim into the brief; the verdict arrives later as a message. The two
+  reviewers keep this contract and these two models only (user: «Ревьюеры будут только на этих двух моделях»).
+  When each runs is decided by measurement (user: «Реши сам, найди самое лучшее решение»); quality is measured on a
+  rebuilt known-answer set and the prompt is tuned on it (user: «найди сам самый лучший способ замерить, и после
+  этого можешь подтюнить его промптом»).
+- A separate task: a general subagent for the main agent, like the subagents this work uses (user: «Любого рандомного
+  саб-агента ... Чтобы он мог ему ставить задачу, прерывать, выключать, перезапускать. Он мог ему посылать
+  сообщение follow-up»). It starts with no system prompt of its own: the main agent gives the whole prompt, the model
+  and the reasoning level (user: «должен подниматься без системного промпта, чтобы основной агент передавал ему весь
+  системный промпт»).
+- Autonomous work commits, pushes and merges into `main` by itself after proof and a clean review (user: «Да,
+  слияние без команды»). Model runs, tests and checks against the source are always part of the work (user:
+  «Прогоны на модели, тесты, сверка с кодом входят в работу всегда»).
+- `WORKFLOW-MANIFEST.md` lives in this repository and records how the owner works, so the agent can align with it;
+  it is not a description of the package (user: «манифест — это чисто для нас ... надо закрепить именно принципы
+  работы ... как я работаю как владелец всей системы»).
 - Open work: `RQW-context` (context window and compaction rule) and faster file writing in `RQW-tools`.
 
 ## Structure
