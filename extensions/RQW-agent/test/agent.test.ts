@@ -404,6 +404,56 @@ describe("agent tool", () => {
 		await shutdown(m);
 	});
 
+	it("an overflow error or a truncated answer that Pi compacts and retries is not part of the message", async () => {
+		// Pi retries these after compaction: `compaction_end` with `willRetry`, no `auto_retry_start`.
+		const firsts = {
+			overflow: fauxAssistantMessage([fauxText("")], { stopReason: "error", errorMessage: "prompt is too long: 213462 tokens > 200000 maximum" }),
+			length: fauxAssistantMessage("PARTIAL TRUNC", { stopReason: "length" }),
+		};
+		const big = "x ".repeat(60000); // two such tasks give compaction something to summarize
+		for (const [name, first] of Object.entries(firsts)) {
+			const m = await startMain();
+			sub.requests.length = 0;
+			sub.replies.push(fauxAssistantMessage("ONE"));
+			await m.call({ action: "start", system: SYSTEM, task: big, model: "sub/a" });
+			await until(() => m.delivered().length === 1, "first delivery");
+			sub.replies.push(fauxAssistantMessage("TWO"));
+			await m.call({ action: "send", id: "agent#1", task: big });
+			await until(() => m.delivered().length === 2, "second delivery");
+			sub.replies.push(first, fauxAssistantMessage("SUMMARY"), fauxAssistantMessage(`FINAL ${name}`));
+			await m.call({ action: "send", id: "agent#1", task: "third" });
+			await until(() => m.delivered().length === 3, "third delivery", 10000);
+			await tick();
+			assert.equal(sub.requests.length, 5, `${name}: the failed request, the summary and the retry`);
+			assert.deepEqual(m.delivered().slice(2), [`[agent#1] FINAL ${name}`], name);
+			await shutdown(m);
+		}
+	});
+
+	it("interrupt, stop and restart right after start in one batch stop the first request", async () => {
+		const ends = ["interrupt", "stop", "restart"] as const;
+		for (const end of ends) {
+			const m = await startMain();
+			sub.requests.length = 0;
+			const g = gate("SHOULD NOT RUN");
+			sub.replies.push(g.reply);
+			// Not awaited in between, as the calls of one batch.
+			const started = m.call({ action: "start", system: SYSTEM, task: "long", model: "sub/a" });
+			const ended = m.call({ action: end, id: "agent#1" });
+			assert.equal(await started, "agent#1 started");
+			const result = await Promise.race([ended, tick(1000).then(() => "still waiting")]);
+			g.release();
+			await ended;
+			const expected = { interrupt: "agent#1 interrupted", stop: "agent#1 stopped", restart: "agent#1 restarted, idle" }[end];
+			assert.equal(result, expected, `${end} returns at once`);
+			await tick(300);
+			assert.equal(sub.requests.length, 0, `${end}: no subagent request`);
+			assert.deepEqual(m.delivered(), [], `${end}: no message`);
+			sub.replies.length = 0;
+			await shutdown(m);
+		}
+	});
+
 	it("session_shutdown aborts and disposes every subagent without messages", async () => {
 		const m = await startMain();
 		const g1 = gate("x");

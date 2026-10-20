@@ -151,25 +151,37 @@ export default function agent(pi: ExtensionAPI) {
 	}
 
 	/** One run: the task plus any follow-ups queued meanwhile. Ends with one message unless it was made quiet. */
-	function startRun(a: Agent, task: string) {
+	/** Resolves once Pi has started the run (an abort or dispose then stops its request) or the run has ended. */
+	function startRun(a: Agent, task: string): Promise<void> {
+		const started = Promise.withResolvers<void>();
 		const session = a.session;
 		const texts: string[] = [];
 		// Every final answer and every final error of the run, in order.
+		let lastPushed = false; // whether texts ends with the last assistant message
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
-			// Pi emits this right after the failed message_end and retries that request: its error is not the run's result.
-			if (event.type === "auto_retry_start") texts.pop();
+			// Pi repeats the last request after these events (a retry, or overflow compaction): that attempt is not a result.
+			if (event.type === "auto_retry_start" || (event.type === "compaction_end" && event.willRetry)) {
+				if (lastPushed) texts.pop();
+				lastPushed = false;
+			}
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
 			const m = event.message;
-			if (m.stopReason === "error") texts.push(`error: ${m.errorMessage ?? "unknown error"}`);
-			else if (m.stopReason === "stop" || m.stopReason === "length") {
+			lastPushed = false;
+			if (m.stopReason === "error") {
+				texts.push(`error: ${m.errorMessage ?? "unknown error"}`);
+				lastPushed = true;
+			} else if (m.stopReason === "stop" || m.stopReason === "length") {
 				const text = textOf(m);
-				if (text) texts.push(text);
+				if (text) {
+					texts.push(text);
+					lastPushed = true;
+				}
 			}
 		});
 		const run: NonNullable<Agent["run"]> = { done: Promise.resolve(), quiet: false };
 		run.done = (async () => {
 			try {
-				await session.prompt(task);
+				await session.prompt(task, { preflightResult: () => started.resolve() });
 				// A follow-up that came in after the run decided to stop is still queued: run it now.
 				while (!run.quiet && session.getFollowUpMessages().length > 0) {
 					await session.prompt(session.clearQueue().followUp.join("\n\n"));
@@ -180,10 +192,12 @@ export default function agent(pi: ExtensionAPI) {
 				if (!run.quiet) deliver(a.id, `error: ${error instanceof Error ? error.message : String(error)}`);
 			} finally {
 				unsubscribe();
+				started.resolve();
 				if (a.run === run) a.run = undefined;
 			}
 		})();
 		a.run = run;
+		return started.promise;
 	}
 
 	function close(a: Agent) {
@@ -245,7 +259,7 @@ export default function agent(pi: ExtensionAPI) {
 				const config = await resolveConfig(params, ctx);
 				const a: Agent = { id: ++counter, config, session: await createSession(config, ctx) };
 				agents.set(a.id, a);
-				startRun(a, params.task);
+				await startRun(a, params.task);
 				return ok(`agent#${a.id} started`);
 			}
 			case "send": {
@@ -255,7 +269,7 @@ export default function agent(pi: ExtensionAPI) {
 					await a.session.followUp(params.task);
 					return ok(`agent#${a.id}: queued after the current run`);
 				}
-				startRun(a, params.task);
+				await startRun(a, params.task);
 				return ok(`agent#${a.id}: sent`);
 			}
 			case "interrupt": {
@@ -281,7 +295,7 @@ export default function agent(pi: ExtensionAPI) {
 				a.config = config;
 				a.session = await createSession(config, ctx);
 				a.run = undefined;
-				if (params.task) startRun(a, params.task);
+				if (params.task) await startRun(a, params.task);
 				return ok(`agent#${a.id} restarted${params.task ? "" : ", idle"}`);
 			}
 			default:

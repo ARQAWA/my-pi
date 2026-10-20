@@ -330,9 +330,12 @@ Every accepted decision, with its reason and the file that carries it.
   said "last assistant text"). The text also carries every final error of the run as `error: <reason>`, in order with
   the answers: a failed follow-up does not hide the first answer (`[agent#1] FIRST ANSWER\n\nerror: bad request`,
   review C), and a first task that fails for good does not vanish when Pi then runs a queued follow-up that succeeds
-  (`[agent#1] error: bad request: first task\n\nSECOND ANSWER`, review D). An error that Pi retries is not a result:
-  Pi emits `auto_retry_start` right after that failed `message_end` and only when it retries (`_prepareRetry` in Pi's
-  `agent-session.js`), so that event removes the error just collected. Bad calls (unknown
+  (`[agent#1] error: bad request: first task\n\nSECOND ANSWER`, review D). An attempt that Pi repeats is not a result. Pi
+  repeats a request on two paths and emits an event only when it does: `auto_retry_start` for a retryable error
+  (`_prepareRetry` in Pi's `agent-session.js`), and `compaction_end` with `willRetry: true` for a context overflow error
+  or a recoverable `length` stop (`_checkCompaction`, review E). Either event removes the error or partial text of the
+  last assistant message, and only when that message added one: a `length` stop with no text adds nothing, so an
+  earlier answer stays. Threshold compaction has `willRetry: false` and removes nothing. Bad calls (unknown
   id or model, no credentials, missing `system` or `task`) fail at once as a tool error, which costs less than a later
   message. Credentials are checked as Pi's prompt checks them: the registry's auth snapshot, then
   `runtime.checkAuth(provider)`, because the snapshot fills asynchronously and alone rejected valid models.
@@ -369,7 +372,11 @@ Every accepted decision, with its reason and the file that carries it.
   disposed session and bill a request after `stopped`. `restart` disposes and creates a fresh session with the same
   `system`, model, thinking and tools or the ones given, and runs `task` if given.
 - Calls of `agent` run one at a time in call order. Pi runs the calls of one response in parallel, and a batch of
-  `start` and `send agent#1` failed without this (checked by removing it).
+  `start` and `send agent#1` failed without this (checked by removing it). `start`, `send` to an idle subagent and
+  `restart` with a task return only once Pi has started the run, through the `preflightResult` callback of
+  `session.prompt` (or once the run has ended). Before that Pi's async preflight runs with no active run, so an
+  `interrupt`, `stop` or `restart` next in the same batch aborted nothing: the request still went out and `interrupt`
+  waited for the whole run (review E).
 - Print and JSON modes exit when the main run settles, so there the `agent_before_settle` handler first waits for
   running subagents; their messages continue the same run. In the TUI and RPC a result for an idle main session
   starts a new turn.
@@ -379,20 +386,22 @@ Every accepted decision, with its reason and the file that carries it.
 - `RQW-context` patches Pi classes for the whole process, so a subagent gets the owner's universal window rule like
   every model: its window is capped at 500 000 and its compaction reserve is 10% of that window. Checked in review: a
   subagent on a 1 000 000 model sends its request with window 500 000 when RQW-context is loaded.
-- Proof: `extensions/RQW-agent/test/agent.test.ts`, 23 tests on two faux providers (exact system prompt, model,
+- Proof: `extensions/RQW-agent/test/agent.test.ts`, 25 tests on two faux providers (exact system prompt, model,
   thinking, tool subset, the five actions, follow-up while running, the main turn, shutdown, errors, call order, print
   mode; one request only after `stop`, `restart` or `session_shutdown` with a queued follow-up; a result arriving
   while the main agent streams continues its run once; after TUI Esc and after RPC abort the result is in the session
   once, no run starts, and the next prompt carries it once; in a continued session that already holds an `[agent#1]`
   result, a new result while busy still continues the run once, in TUI and print mode; a queued follow-up that fails
   delivers the first answer and the error in one message; a first task that fails for good with a queued follow-up that
-  succeeds delivers the error and the answer in one message; an error that Pi retries is not delivered; two results
+  succeeds delivers the error and the answer in one message; an error that Pi retries is not delivered; neither is an
+  overflow error nor a truncated `length` answer that Pi compacts and retries; `interrupt`, `stop` and `restart` right
+  after `start` in one batch return at once and leave no subagent request; two results
   that arrive while a second extension's slow `agent_before_settle` handler, loaded after RQW-agent, runs get one main
   turn that sees both; in a continued session a new subagent gets `agent#2`). Each test passes alone. With
   an empty extension the original 13 fail; without the queue clearing, the delivery change or the `continue` the new
   tests fail; with a per-instance delivery counter the two continued-session tests fail; on 6b2cfb5 the two review C tests fail; on ff8781b
   the four tests changed or added for review D fail except the retried-error one, which fails without the
-  `auto_retry_start` line. Live runs
+  `auto_retry_start` line; on 8344d2e the two review E tests fail. Live runs
   in a fixture repository with `pi -e <repo> --model anthropic/<model> --thinking low --mode json -p <prompt>`:
   Haiku 5.5 started a subagent with its own prompt, read a file and answered a follow-up (`[agent#1] ZED: 3`,
   `[agent#1] ZED: alpha`); Haiku 5.5 queued a follow-up, interrupted a `sleep 40`, restarted
