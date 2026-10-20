@@ -126,6 +126,11 @@ Every accepted decision, with its reason and the file that carries it.
   [-1.9, 2.9], [-0.8, 1.9]. my-pi minus stock Pi: quality [8.6, 15.2], [3.2, 6.5], [15.3, 24.2]; seconds [6.3, 9.0],
   [7.3, 11.5], [9.7, 11.9]. my-pi answers better than both at the speed of Pi + prompt; stock Pi is faster because it
   stops early with incomplete answers. No run changed the repository. Edit tasks: see the edit-task entry above.
+- Faster writing (`notes/refine/refine-write2.md`, `notes/refine/refine-find.md`; WRITE, EDIT, MULTI, T01, T03, T05,
+  T06; two models): a new file the task fully specifies needs no read of its neighbours (one line in `SYSTEM.md`, one
+  in `read.md`), and the find example shows that "app" returns the directory only while "app/**" returns its files.
+  WRITE 18.4 s / 5.5 responses -> 16.0 s / 4.7; edit tasks 19.4 s -> 17.3 s; all runs correct; question checklists
+  unchanged (94.8% -> 96.3%). gpt-6.1-sol still makes a second find in 2 of 6 WRITE runs.
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
