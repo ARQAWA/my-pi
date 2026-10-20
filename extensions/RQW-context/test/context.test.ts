@@ -999,6 +999,52 @@ for (const [entry, pi] of ENTRIES) {
 			}
 		});
 
+		it("an extension re-registers the current model's provider: the session follows Pi's registry refresh", async () => {
+			let api: Parameters<ExtensionFactory>[0] | undefined;
+			const grab: ExtensionFactory = (extensionApi) => {
+				api = extensionApi;
+			};
+			// pi.registerProvider at runtime makes Pi reassign the session model from the registry
+			// (_refreshCurrentModelFromRegistry); no direct state assignment here.
+			const register = (contextWindow: number) =>
+				api!.registerProvider("ext", {
+					baseUrl: "http://localhost:1/v1",
+					api: "openai-completions",
+					apiKey: "x",
+					models: [
+						{
+							id: "huge",
+							name: "huge",
+							reasoning: false,
+							input: ["text"],
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+							contextWindow,
+							maxTokens: 65_536,
+						},
+					],
+				});
+			const { session, runtime } = await openSession(pi, { model: "w272k", factories: [grab] });
+			try {
+				register(1_000_000);
+				await session.setModel(runtime.getModel("ext", "huge")!);
+				assert.deepEqual(piValues(session), { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 });
+				const steps: [number, number][] = [
+					[300_000, 300_000],
+					[2_000_000, 500_000],
+					[500_000, 500_000],
+					[1_048_576, 500_000],
+				];
+				for (const [declared, window] of steps) {
+					register(declared);
+					assert.equal(runtime.getModel("ext", "huge")?.contextWindow, declared, "the registry keeps the declared window");
+					assert.equal(session.model?.id, "huge");
+					assert.deepEqual(piValues(session), { contextWindow: window, reserve: window / 10, threshold: window - window / 10 }, `${declared}`);
+				}
+			} finally {
+				session.dispose();
+			}
+		});
+
 		it("a model without a known window keeps Pi's values", async () => {
 			const { session } = await openSession(pi, { model: "w272k" });
 			try {

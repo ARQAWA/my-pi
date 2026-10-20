@@ -167,21 +167,26 @@ Every accepted decision, with its reason and the file that carries it.
   500k and 90% at the threshold; summary output limits are 40 000 and 25 000 for a split turn (0.8 and 0.5 x R,
   `compaction.js:512`, `727`); the output cap of a request is 500 000 - context - 4096, about 45 900 at 450 000
   context (the test sees 45 902); an answer reporting more than 500 000 input tokens counts as overflow
-  (`pi-ai/dist/utils/overflow.js:147-150`). With compaction on and a history of several turns Pi recovers: a
-  completed answer is kept and the session is compacted with reason `overflow` and no retry
+  (`pi-ai/dist/utils/overflow.js:147-150`). With compaction on and a history of several turns that a summary can
+  fit, Pi recovers: a completed answer is kept and the session is compacted with reason `overflow` and no retry
   (`agent-session.js:2410-2414`); a length stop with no output at 99% of the window is compacted and retried once
   (`2440`, `overflow.js:156-159`). Nothing about the window goes to the provider: the OpenAI-compatible body has only
   `max_completion_tokens` changed, every other field as stock Pi.
-- Known limits of the 500 000 window, no code change: the window rule is the owner's, and both follow from it.
+- Known limits of the 500 000 window, no code change: the window rule is the owner's, and all follow from it.
   1. The output cap. pi-ai clamps a request's output to `contextWindow - context - 4096` with a floor of 1 token
      (`pi-ai/dist/api/simple-options.js:5-9`), so on a 1M model it reaches 1 token at about 495 900 context tokens.
-     Pi does not recover in two cases. With `compaction.enabled: false` there is no compaction at all
+     Pi does not recover in three cases. With `compaction.enabled: false` there is no compaction at all
      (`agent-session.js:2363-2364`): measured `max_completion_tokens` at context 0 / 480 000 / 497 000 / 520 000 is
      `[128000, 15902, 1, 1]` (stock Pi `[128000, 128000, 128000, 128000]`); a provider that obeys it answers 1 token
      with stop reason `length` and no error. A history that is one oversized turn, such as a 700 000-token first
      paste, gives requests with a 1-token cap; the overflow compaction that follows also has its turn-prefix summary
      capped at 1 token and fails with "Turn prefix summarization failed: generation hit the token cap and the summary
-     is incomplete". The test pins the cap with compaction off.
+     is incomplete". A history of many text-heavy turns that estimates above about 496 000 tokens, including a
+     session resumed above the window, gets a 1-token cap on every request, and every compaction fails: the summary
+     request is capped the same way ("Summarization failed: generation hit the token cap and the summary is
+     incomplete"). Pi checks a resumed session at its first prompt (`agent-session.js:1452-1454`). A tool-heavy
+     history of the same size recovers, because summaries cut tool results to 2 000 characters
+     (`compaction/utils.js:82`). The test pins the cap with compaction off.
   2. Summaries of prose-heavy histories. A summary request is a fresh context that pi-ai sizes by characters
      (3.5 per token), so a chat history of English prose, about 4.4 chars per real token, estimates above the window
      at the threshold and the summary's output cap is 1 token: on a 1M model the compaction at 450 000 fails with
@@ -210,7 +215,10 @@ Every accepted decision, with its reason and the file that carries it.
   response is skipped only when nothing lies beyond `keepRecentTokens` to summarize. The extension leaves that
   unchanged.
 - Both wraps live as long as the process, one per class (`Symbol.for` guards): SDK sessions in the same process get
-  the rule too, and a `/reload` without the extension keeps it until restart.
+  the rule too, and a `/reload` without the extension keeps it until restart. The reverse holds too: the patch of
+  Pi's classes is installed once per process, so after an update of my-pi a `/reload` keeps the old RQW-context code;
+  Pi must be restarted for RQW-context changes to apply (`INSTALL.md` step 4). Reason for text, not code: a
+  replaceable implementation behind the guards adds machinery for a case a restart covers.
 - Out of scope: virtual models (`pi.registerVirtualModel`; Pi 1.3.0 ships none), owner's option a. A virtual model
   (`api` `pi-virtual`) is never capped and `getCompactionSettings` returns Pi's own values for it. Reason: Pi reads
   the settings of the virtual selection but checks them against the routed physical model's window

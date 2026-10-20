@@ -12,8 +12,8 @@ follows: the compaction trigger before a prompt and before each next turn, thres
 response, context usage and the footer percent (90% at the threshold), the output cap of each request
 (500 000 - context - 4096, 45 902 in the test at 450 000 context) and the summary limits (40 000 and 25 000).
 An answer with more than 500 000 input tokens counts as overflow; with compaction on and a history of several turns
-Pi recovers: a completed answer is kept and the session compacts without a retry; a length stop with no output at 99%
-of the window compacts and retries once. The known limits below are where it does not.
+that a summary can fit, Pi recovers: a completed answer is kept and the session compacts without a retry; a length
+stop with no output at 99% of the window compacts and retries once. The known limits below are where it does not.
 The provider request carries no window; only `max_completion_tokens` differs from stock Pi. Models up to 500 000
 keep their object; only the reserve changes. The registry and `/model` list keep the declared windows.
 
@@ -30,7 +30,10 @@ Known limits of the 500 000 window (no code change, the window rule is the owner
   a 1M model gets `max_completion_tokens` `[128000, 15902, 1, 1]` at context 0 / 480 000 / 497 000 / 520 000 (stock
   `128000` each); a provider that obeys it answers 1 token with no error. A history that is one oversized turn, such as
   a 700 000-token first paste, gives 1-token requests, and the overflow compaction fails too: "Turn prefix
-  summarization failed: generation hit the token cap and the summary is incomplete".
+  summarization failed: generation hit the token cap and the summary is incomplete". A history of many text-heavy
+  turns that estimates above about 496 000 tokens, including a session resumed above the window, gets a 1-token cap
+  on every request, and every compaction fails. A tool-heavy history of the same size recovers, because summaries
+  cut tool results to 2 000 characters.
 - Summaries of prose-heavy chat histories: on a 1M model the compaction at 450 000 fails with "Summarization failed:
   generation hit the token cap and the summary is incomplete", because the summary request is sized by characters
   and its output cap falls to 1. Stock Pi does the same on native 272 000 and 500 000 models.
