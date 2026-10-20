@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test \"extensions/*/test/*.test.ts\""
+    "test": "node --test \"extensions/*/test/*.test.ts\"",
+    "test:bun": "node extensions/RQW-tools/test/bun/codemode-check.mjs"
   },
   "keywords": [
     "pi-package"
