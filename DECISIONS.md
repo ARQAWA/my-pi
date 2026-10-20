@@ -11,6 +11,12 @@ Every accepted decision, with its reason and the file that carries it.
   raised stock Pi by 10.2 quality points on gpt-6-sol low, 6.2 on gpt-6-sol medium and 1.9 on gpt-6.1-sol medium;
   omp-lite beat that only on low (+3.5) and was lower and slower on both medium configs.
 - Public repository [ARQAWA/my-pi](https://github.com/ARQAWA/my-pi) (user: «он должен быть паблик»).
+- Not ported from omp-lite: subagents (`review`, `codebase_explorer`, `code_writer`, `shell_runner`, `custom`), the
+  `define-goal` skill, and loading of `eval`, `lsp`, `ast_grep` (user: «Субагенты ... мы их не реализуем. Define Goal
+  тоже пока не реализуем», «eval нахуй не нужен, lsp ... ast-grep ... выбросить всё это на помойку»; Pi has its own
+  codemode). The task list with the check before stopping is wanted later, switched on by a skill rather than always
+  on, and is not built now (user: «Давай пока без списка задач и проверки перед установкой»).
+- Open work: `RQW-context` (context window and compaction rule) and faster file writing in `RQW-tools`.
 
 ## Structure
 
