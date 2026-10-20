@@ -75,6 +75,11 @@ Every accepted decision, with its reason and the file that carries it.
 - The `TRADING_LOGIC.md` run: the model's reasoning shows it hit the answer length limit of the prompt and moved the
   answer into a file, which the prompt allowed ("the file is the answer"). `SYSTEM.md` now says to answer a question
   about the code in the chat and to create or change files only when the task asks for it.
+- edit and write descriptions refined by probes (`notes/refine/refine-editwrite.md`; EDIT, WRITE and a multi-block task,
+  gpt-6.1-sol medium and gpt-6-sol low, 3 runs per cell): the multi-file form comes first and a rename gets one edit per
+  occurrence with enough of its line. Failed edit calls 5 -> 0, multi-file edit calls 12 of 23 -> 15 of 16, all runs
+  correct in both texts. A variant that told the model bash sees the changed files again made gpt-6.1-sol issue one
+  call per response and was rejected.
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
