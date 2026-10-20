@@ -17,6 +17,7 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `notes/`: research notes, such as how the omp-lite prompt was built.
+- `WORKFLOW-MANIFEST.md`: how the owner works and what he expects of the work on my-pi; read it before any task.
 - `DECISIONS.md`: every accepted decision with its reason and the file that carries it.
 
 Try it for one run: `pi -e ~/ai-project/my-pi`. No mentions of other products in the prompt.
