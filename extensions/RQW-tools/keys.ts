@@ -26,14 +26,17 @@ function resolveLexical(p: string, cwd: string, platform: NodeJS.Platform): stri
   return P.resolve(cwd, p);
 }
 
-// realpath of the deepest ancestor that resolves, then the missing segments. When nothing up to the root resolves
-// (an unreachable share or drive), the lexical path is the key: the same spelling still gives the same key.
+// realpath of the deepest existing ancestor, then the missing segments. A missing root (an unreachable share or
+// drive) gives the lexical path, so the same spelling still gives the same key. Any other error (a symlink loop,
+// no access) propagates and the caller treats the call like bash.
 function canonical(abs: string, P: path.PlatformPath): string {
   const rest: string[] = [];
   for (let cur = abs; ; ) {
     try {
       return P.join(fs.realpathSync.native(cur), ...rest);
-    } catch {
+    } catch (e) {
+      const code = typeof e === "object" && e !== null && "code" in e ? e.code : undefined;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw e;
       const parent = P.dirname(cur);
       if (parent === cur) return abs;
       rest.unshift(P.basename(cur));
