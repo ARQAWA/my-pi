@@ -181,10 +181,12 @@ Every accepted decision, with its reason and the file that carries it.
      with stop reason `length` and no error. A history that is one oversized turn, such as a 700 000-token first
      paste, gives requests with a 1-token cap; the overflow compaction that follows also has its turn-prefix summary
      capped at 1 token and fails with "Turn prefix summarization failed: generation hit the token cap and the summary
-     is incomplete". A history of many text-heavy turns that estimates above about 496 000 tokens, including a
-     session resumed above the window, gets a 1-token cap on every request, and every compaction fails: the summary
-     request is capped the same way ("Summarization failed: generation hit the token cap and the summary is
-     incomplete"). Pi checks a resumed session at its first prompt (`agent-session.js:1452-1454`). A tool-heavy
+     is incomplete". When the part a compaction summarizes (all but the last `keepRecentTokens`) of a text-heavy
+     history estimates above about 496 000 tokens by characters, every request gets a 1-token cap and every
+     compaction fails: the summary request is capped the same way ("Summarization failed: generation hit the token
+     cap and the summary is incomplete"). A text-heavy history a little above the window still recovers, a resumed one too: Pi checks a
+     resumed session at its first prompt (`agent-session.js:1452-1454`); in review runs against a local stub the
+     dead end began between 535 000 and 541 728 tokens (summary cap 5 112 at 534 864, then 1). A tool-heavy
      history of the same size recovers, because summaries cut tool results to 2 000 characters
      (`compaction/utils.js:82`). The test pins the cap with compaction off.
   2. Summaries of prose-heavy histories. A summary request is a fresh context that pi-ai sizes by characters

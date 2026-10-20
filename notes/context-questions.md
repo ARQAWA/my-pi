@@ -30,10 +30,11 @@ Known limits of the 500 000 window (no code change, the window rule is the owner
   a 1M model gets `max_completion_tokens` `[128000, 15902, 1, 1]` at context 0 / 480 000 / 497 000 / 520 000 (stock
   `128000` each); a provider that obeys it answers 1 token with no error. A history that is one oversized turn, such as
   a 700 000-token first paste, gives 1-token requests, and the overflow compaction fails too: "Turn prefix
-  summarization failed: generation hit the token cap and the summary is incomplete". A history of many text-heavy
-  turns that estimates above about 496 000 tokens, including a session resumed above the window, gets a 1-token cap
-  on every request, and every compaction fails. A tool-heavy history of the same size recovers, because summaries
-  cut tool results to 2 000 characters.
+  summarization failed: generation hit the token cap and the summary is incomplete". When the part a compaction
+  summarizes (all but the last `keepRecentTokens`) of a text-heavy history estimates above about 496 000 tokens by
+  characters, every request gets a 1-token cap and every compaction fails. A text-heavy history a little above the
+  window still recovers, a resumed one too; in review runs the dead end began between 535 000 and 541 728 tokens. A
+  tool-heavy history of the same size recovers, because summaries cut tool results to 2 000 characters.
 - Summaries of prose-heavy chat histories: on a 1M model the compaction at 450 000 fails with "Summarization failed:
   generation hit the token cap and the summary is incomplete", because the summary request is sized by characters
   and its output cap falls to 1. Stock Pi does the same on native 272 000 and 500 000 models.
