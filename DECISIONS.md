@@ -17,6 +17,12 @@ Every accepted decision, with its reason and the file that carries it.
   `code_writer`, `shell_runner`, `custom`), the `define-goal` skill and work orders, the task list with the check
   before stopping (later switched on by a skill rather than always on), and the interface (whether the omp-lite UI can
   be rebuilt in Pi is decided later).
+- Reviewers are ported after all, as the one exception to the postponed subagents: two blind reviewers, `blind` and
+  `high`, with one shared prompt (user: «Smart не нужен ... Надо только большого и маленького reviewer ... будет Blind и
+  High»). They run in the same process through Pi's SDK `createAgentSession` (user: «Да, конечно, через SDK, через
+  createAgentSession»), read only, and are checked on a model with a known-answer set (user: «Конечно, делай
+  проверки, расходуй токены»). Their concept and models come from the history first: Spotty and Bossy in
+  `my-omp-harness` branch `deprecated` (Haiku 5.5 and Sonnet 5.5) and in `my-codex-harness` (gpt-6-sol, gpt-6.1-sol).
 - Open work: `RQW-context` (context window and compaction rule) and faster file writing in `RQW-tools`.
 
 ## Structure
