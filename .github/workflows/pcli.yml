@@ -1,0 +1,67 @@
+name: pcli
+
+on:
+  push:
+    branches: [pcli]
+    paths: ['pcli-vscode/**', '.github/workflows/pcli.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  e2e:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Facts
+        run: |
+          where bash
+          "/c/Program Files/Git/bin/bash.exe" --version
+          node --version
+          echo "HOME=$HOME USERPROFILE=$USERPROFILE"
+
+      - name: Build VSIX
+        working-directory: pcli-vscode
+        run: |
+          npm install --no-audit --no-fund
+          node fetch-pi.mjs
+          (yes || true) | npx --yes @vscode/vsce@latest package --target win32-x64 --skip-license --no-dependencies -o pcli.vsix
+          ls -l pcli.vsix
+          unzip -l pcli.vsix | grep -i 'pi\.exe'
+          manifest=$(unzip -p pcli.vsix extension.vsixmanifest)
+          echo "$manifest" | grep -i '<Description'
+          echo "$manifest" | grep -Eq '<Description[^>]*></Description>'
+          echo "PASS empty <Description> in extension.vsixmanifest"
+
+      - name: E2E in real VS Code
+        working-directory: pcli-vscode
+        run: |
+          node test/proxy.cjs proxy.log > proxy.out 2>&1 &
+          for i in $(seq 30); do grep -q ready proxy.out && break; sleep 1; done
+          grep ready proxy.out
+          node test/run.mjs pcli.vsix
+
+      - name: Proxy log
+        if: always()
+        working-directory: pcli-vscode
+        run: cat proxy.log || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pcli-e2e
+          path: |
+            pcli-vscode/pcli.vsix
+            pcli-vscode/proxy.log
+            ${{ runner.temp }}/pcli-e2e/agent-*/**/*.jsonl
