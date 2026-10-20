@@ -53,6 +53,36 @@ jobs:
           pwd
           npm test
 
+  # Pi's release binaries (pi.exe of PCLI included) run on Bun, not Node. Bun drops the async context in a worker's
+  # message callback, so the codemode routing must hold there too: Pi's own CLI under Bun, faux model, one script.
+  bun-codemode:
+    name: bun-codemode (${{ matrix.os }}, bun ${{ matrix.bun }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        # 1.3.14 is the runtime inside the Pi 1.3.0 release binaries
+        bun: ["1.3.14", "1.4.3"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun }}
+
+      - run: bun --version
+
+      - run: npm ci
+
+      - name: Codemode script under Bun (write then read, 60 s limit)
+        run: npm run test:bun
+
   windows-portable-git:
     name: windows-portable-git (node 22.19.0)
     runs-on: windows-latest

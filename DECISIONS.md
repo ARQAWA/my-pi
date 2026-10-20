@@ -46,6 +46,8 @@ Every accepted decision, with its reason and the file that carries it.
 - `WORKFLOW-MANIFEST.md` lives in this repository and records how the owner works, so the agent can align with it;
   it is not a description of the package (user: «манифест — это чисто для нас ... надо закрепить именно принципы
   работы ... как я работаю как владелец всей системы»).
+- `WORKFLOW-MANIFEST.md` is accepted with all nine sections, built from a keep/cut table of the
+  old codex and omp manifests (user: «Да, давай оставим все пункты. Да, этот манифест мы оставим»).
 - Open work: `RQW-context` (context window and compaction rule) and faster file writing in `RQW-tools`.
 
 ## Structure
@@ -292,6 +294,38 @@ Every accepted decision, with its reason and the file that carries it.
 - Writing a file longer than about 400 lines in parts (bench35 lost a response to the output limit) lives in the
   `write` description, as in omp-lite, each part in its own response. Removed against bench41: the working
   directory from the date line, because Pi already appends `<cwd>`.
+
+## Settings
+
+- `codemode` and `tool_search`, Pi's built-in tools, are active by default (owner: «Давай включим CodeMode и Tool
+  Search»). `extensions/RQW-settings/index.ts` adds them to the active tools at `session_start` under the same rule as
+  `grep` and `find`: no tool flag in argv and no `defaultTools` setting, shared through
+  `extensions/RQW-tools/selection.ts`. A tool is added only if it is registered, so `-builtin:codemode` gives no error.
+  Any user selection (`--tools`, `--exclude-tools`, `--no-tools`, `--no-builtin-tools`, `defaultTools`) leaves the stock
+  set. Mode `on` (Pi's default) is kept: Pi appends a "Codemode: `tools.<name>(args)` resolves to ..." line to the
+  descriptions of our six tools in each request. Texts, source lines and the barrier check: `notes/settings-codemode.md`.
+- `codemode` is a call of the RQW-tools barrier with scope "all", like `bash`; the tool calls of its own script are
+  ordered by a barrier of that call. RQW-tools replaces Pi's built-in `codemode` at `session_start` with the same
+  definition and a grouped `execute` (`extensions/RQW-tools/nested.ts`, `codemode.ts`), so `-builtin:codemode` still
+  means no `codemode`. Reason: `[codemode(write f), read f]` let the read run first.
+- A script's tool call finds the barrier of its script by its tool call id: Pi gives it `<codemode id>/<n>`, and the
+  group registers its barrier under the codemode call's id. A nested id with no registered ancestor goes to the outer
+  barrier, or runs at once when an ancestor has a live entry there, so it never waits for itself. Reason: the first
+  version carried the barrier in `AsyncLocalStorage`, and Bun, which runs the Pi release binaries (`pi.exe` of PCLI
+  included), drops that context in a worker's `message` callback; every script that called a tool hung (review A).
+  Proven on Node 22 and 26 (`npm test`) and on Bun 1.3.14 (the Pi 1.3.0 binary) and 1.4.3:
+  `extensions/RQW-tools/test/bun/codemode-check.mjs` runs Pi's CLI under Bun with a faux model; CI job `bun-codemode`.
+  Known limit of stock Pi 1.3.0 on Bun, `pi.exe` included: a codemode call that starts right after other scripts,
+  such as the third in one message, can fail with "Codemode worker limit reached" (2 workers, a slot freed only on
+  the worker's late `exit` event); Node does not do this; the take-over does not change it. Details:
+  `notes/settings-codemode.md`, Limits.
+- Measured with codemode on (bench45, T01-T07, 5 runs, the bench44 judge; `~/stock-bench/bench45.csv`): gpt-6.1-sol
+  medium quality 99.5 -> 97.4 (90% interval -3.7 to -0.5), seconds 51.1 -> 50.4, calls 40.9 -> 35.7; codemode called
+  32 times in 19 of 35 runs, `tool_search` never; most of the loss is one T06 point. gpt-6-sol low never calls
+  codemode: 91.9 -> 93.7, within noise. Edit, write and multi-file probes pass on both. Kept on by the owner's
+  request; the cost is recorded here.
+- On `/reload` the `session_start` handlers of RQW-settings and RQW-tools leave the active set alone: Pi keeps the tools
+  the user switched off, and the handlers had added them again.
 
 ## Review
 
