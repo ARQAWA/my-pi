@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "keywords": ["pi-package"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
   "pi": {
     "extensions": ["./extensions/RQW-settings/index.ts", "./extensions/RQW-prompt/index.ts"]
   }
