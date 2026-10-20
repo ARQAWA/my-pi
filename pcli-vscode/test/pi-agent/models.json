@@ -1,7 +1,7 @@
 {
   "providers": {
     "fake": {
-      "baseUrl": "http://llm.pcli.test/v1",
+      "baseUrl": "https://llm.pcli.test/v1",
       "api": "openai-completions",
       "apiKey": "fake-key",
       "models": [

@@ -86,22 +86,41 @@ async function main() {
   await sleep(20000);
   console.log('processes after pi 1 start:\n' + show(ours(piExe)));
   await type(t1, 'say hi');
-  await until('session with PCLI_MODEL_OK', () => sessions().includes('PCLI_MODEL_OK'), 180000);
-  pass('model answer in session: ' + JSON.stringify(grab(sessions(), 'PCLI_MODEL_OK', 40)));
+  const newLog = () => fs.readFileSync(LOG, 'utf8').slice(logStart).split(/\r?\n/);
+  const hasLine = (want) => {
+    if (!newLog().includes(want)) throw new Error('proxy log lacks line: ' + want + '\n--- new log ---\n' + newLog().join('\n'));
+    pass('proxy log line: ' + want);
+  };
+  // The fake model is HTTPS with a self-signed cert: only http.proxyStrictSSL=false (scenario B) may reach it
+  if (S === 'A') {
+    await until('session with the failed model turn', () => sessions().includes('"stopReason":"error"'), 120000);
+    if (sessions().includes('PCLI_MODEL_OK')) throw new Error('strict TLS but the model answered');
+    pass('strict TLS: no PCLI_MODEL_OK, model turn failed: ' + JSON.stringify(grab(sessions(), '"errorMessage"', 200)));
+    hasLine(`CONNECT llm.pcli.test:443 auth=pcli:it's`);
+    if (newLog().some((l) => l.startsWith('TLS POST'))) throw new Error('strict TLS but a request went through the fake TLS');
+    pass('strict TLS: no TLS POST in proxy log');
+  } else {
+    await until('session with PCLI_MODEL_OK', () => sessions().includes('PCLI_MODEL_OK'), 180000);
+    pass('model answer in session: ' + JSON.stringify(grab(sessions(), 'PCLI_MODEL_OK', 40)));
+    hasLine(`CONNECT llm.pcli.test:443 auth=pcli:it's`);
+    hasLine('TLS POST /v1/chat/completions');
+  }
 
-  const want = `HTTP POST http://llm.pcli.test/v1/chat/completions auth=pcli:it's`;
-  const log = fs.readFileSync(LOG, 'utf8').slice(logStart);
-  if (!log.split(/\r?\n/).includes(want)) throw new Error('proxy log lacks line: ' + want + '\n--- new log ---\n' + log);
-  pass('proxy log line: ' + want);
+  // Interactive Pi downloads fd and rg from GitHub through the proxy on first start
+  await until('fd.exe and rg.exe in agent bin', () => ['fd.exe', 'rg.exe'].every((f) => fs.existsSync(path.join(AGENT, 'bin', f))), 120000);
+  const gh = newLog().find((l) => l.startsWith(`CONNECT github.com:443 auth=pcli:it's`));
+  if (!gh) throw new Error('no CONNECT github.com:443 with creds\n--- new log ---\n' + newLog().join('\n'));
+  pass(`proxy log line: ${gh}; ${path.join(AGENT, 'bin')} has fd.exe and rg.exe`);
 
-  await type(t1, '!echo PCLI_BASH_$((6*7)) "$HTTPS_PROXY" "$NODE_TLS_REJECT_UNAUTHORIZED" "$PI_SKIP_VERSION_CHECK" "$PWD"');
+  await type(t1, '!echo PCLI_BASH_$((6*7)) "$HTTPS_PROXY" "[$https_proxy]" "$PCLI_HOSTILE" "$NODE_TLS_REJECT_UNAUTHORIZED" "$PI_SKIP_VERSION_CHECK" "$PWD"');
   await until('session with PCLI_BASH_42', () => sessions().includes('PCLI_BASH_42'), 60000);
-  const line = `PCLI_BASH_42 ${PROXY} ${S === 'B' ? '0' : ''} 1 `;
+  // [] = lowercase https_proxy of the hostile profile is unset; 1 = the profile was sourced
+  const line = `PCLI_BASH_42 ${PROXY} [] 1 ${S === 'B' ? '0' : ''} 1 `;
   const got = grab(sessions(), 'PCLI_BASH_42', 200);
   console.log('bash output in session: ' + JSON.stringify(got));
   if (!got.startsWith(line)) throw new Error('bash output does not start with ' + JSON.stringify(line));
   if (!got.slice(line.length).match(/^[^"\\]*ws dir\/it's/)) throw new Error("PWD is not the workspace ws dir/it's");
-  pass(`bash env: proxy=${PROXY} tls=${S === 'B' ? '0' : '(unset)'} PI_SKIP_VERSION_CHECK=1, PWD ends with ws dir/it's`);
+  pass(`bash env: proxy=${PROXY} https_proxy=(unset) hostile profile sourced, tls=${S === 'B' ? '0' : '(unset)'} PI_SKIP_VERSION_CHECK=1, PWD ends with ws dir/it's`);
 
   const t2 = await tab('pi 2');
   await until('2 pi.exe alive', () => piCount(piExe) >= 2, 60000);
@@ -132,6 +151,12 @@ async function main() {
     t3.dispose();
     if (rest.length) throw new Error('left after /quit:\n' + show(rest));
     pass('/quit: pi.exe and its shells exited');
+
+    // Left running on purpose: run.mjs checks that no pi.exe survives VS Code exit
+    await tab('pi 4');
+    await until('pi.exe alive in pi 4', () => piCount(piExe) === 1, 60000);
+    await sleep(5000);
+    console.log('leaving pi 4 open:\n' + show(ours(piExe)));
   }
 }
 

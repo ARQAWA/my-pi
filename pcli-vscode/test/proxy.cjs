@@ -1,13 +1,15 @@
 'use strict';
 // Forward proxy with a built-in fake OpenAI-compatible LLM for host llm.pcli.test.
-// Usage: node proxy.cjs <logfile>
+// CONNECT llm.pcli.test:443 is answered locally over TLS with a self-signed cert.
+// Usage: node proxy.cjs <logfile> <cert.pem> <key.pem>
 const http = require('http');
+const https = require('https');
 const net = require('net');
 const fs = require('fs');
 
-const logFile = process.argv[2];
-if (!logFile) {
-  console.error('usage: node proxy.cjs <logfile>');
+const [logFile, certFile, keyFile] = process.argv.slice(2);
+if (!logFile || !certFile || !keyFile) {
+  console.error('usage: node proxy.cjs <logfile> <cert.pem> <key.pem>');
   process.exit(2);
 }
 const PORT = 18999;
@@ -69,24 +71,32 @@ function handleModels(res) {
   res.end(out);
 }
 
+function handleFake(req, res, pathname) {
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', () => {
+    const body = Buffer.concat(chunks).toString('utf8');
+    if (pathname.endsWith('/chat/completions')) return handleChat(req, res, body);
+    if (pathname.endsWith('/models')) return handleModels(res);
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: 'not found' } }));
+  });
+}
+
+// Not listening: CONNECT sockets for the fake host are emitted into it as 'connection'
+const fakeTls = https.createServer({ cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) }, (req, res) => {
+  log(`TLS ${req.method} ${req.url}`);
+  handleFake(req, res, new URL(req.url, 'https://' + FAKE_HOST).pathname);
+});
+fakeTls.on('tlsClientError', (e) => log('TLS error ' + e.message));
+
 const server = http.createServer((req, res) => {
   log(`HTTP ${req.method} ${req.url} auth=${authOf(req)}`);
   let url;
   try { url = new URL(req.url); } catch (e) {
     res.writeHead(400); res.end('absolute URI required'); return;
   }
-  if (url.hostname === FAKE_HOST) {
-    const chunks = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      const body = Buffer.concat(chunks).toString('utf8');
-      if (url.pathname.endsWith('/chat/completions')) return handleChat(req, res, body);
-      if (url.pathname.endsWith('/models')) return handleModels(res);
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: { message: 'not found' } }));
-    });
-    return;
-  }
+  if (url.hostname === FAKE_HOST) return handleFake(req, res, url.pathname);
   // Plain forward of any other absolute-URI request.
   const headers = { ...req.headers };
   delete headers['proxy-authorization'];
@@ -113,6 +123,13 @@ server.on('connect', (req, clientSocket, head) => {
   const idx = req.url.lastIndexOf(':');
   const host = req.url.slice(0, idx).replace(/^\[|\]$/g, '');
   const port = Number(req.url.slice(idx + 1)) || 443;
+  if (host === FAKE_HOST) {
+    clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+    clientSocket.on('error', () => {});
+    if (head && head.length) clientSocket.unshift(head);
+    fakeTls.emit('connection', clientSocket);
+    return;
+  }
   const upstream = net.connect(port, host, () => {
     clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
     if (head && head.length) upstream.write(head);

@@ -38,10 +38,11 @@ code('--version');
 code('--extensions-dir=' + extDir, '--install-extension', vsix, '--force');
 code('--extensions-dir=' + extDir, '--list-extensions', '--show-versions');
 
-// Simulates the VDI Git Bash profile with a dead proxy: our export in the bash line must win
+// Simulates the VDI Git Bash profile with a dead proxy, also lowercase (Pi prefers lowercase): our bash line must win
 const profile = path.join(os.homedir(), '.bash_profile');
 const backup = fs.existsSync(profile) ? fs.readFileSync(profile) : null;
-fs.writeFileSync(profile, 'export HTTPS_PROXY=http://127.0.0.1:9\nexport HTTP_PROXY=http://127.0.0.1:9\n');
+fs.writeFileSync(profile, 'export HTTPS_PROXY=http://127.0.0.1:9\nexport HTTP_PROXY=http://127.0.0.1:9\n' +
+  "export http_proxy=http://127.0.0.1:1 https_proxy=http://127.0.0.1:1 no_proxy='*'\nexport PCLI_HOSTILE=1\n");
 console.log('wrote dead-proxy', profile);
 
 async function scenario(name) {
@@ -61,6 +62,11 @@ async function scenario(name) {
       extensionTestsEnv: env,
       launchArgs: [ws, '--extensions-dir=' + extDir, '--user-data-dir=' + path.join(dir, 'user'), '--disable-workspace-trust'],
     });
+    // Scenario A returns with a pi tab still open: nothing may survive VS Code exit
+    await new Promise((r) => setTimeout(r, 10000));
+    const tl = spawnSync('tasklist', ['/FI', 'IMAGENAME eq pi.exe'], { encoding: 'utf8' }).stdout.trim();
+    if (/pi\.exe/i.test(tl)) throw new Error('ORPHANED pi.exe 10 s after VS Code exited:\n' + tl);
+    console.log(`PASS [${name}] 10 s after VS Code exited, tasklist: ${tl}`);
     console.log(`===== scenario ${name}: OK =====`);
     return true;
   } catch (err) {

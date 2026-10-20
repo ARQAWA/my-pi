@@ -47,10 +47,18 @@ jobs:
       - name: E2E in real VS Code
         working-directory: pcli-vscode
         run: |
-          node test/proxy.cjs proxy.log > proxy.out 2>&1 &
+          # Self-signed cert for the fake HTTPS model llm.pcli.test (MSYS must not rewrite /CN=...)
+          MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 -nodes -subj /CN=llm.pcli.test \
+            -addext subjectAltName=DNS:llm.pcli.test -keyout llm.key -out llm.crt -days 2
+          node test/proxy.cjs proxy.log llm.crt llm.key > proxy.out 2>&1 &
           for i in $(seq 30); do grep -q ready proxy.out && break; sleep 1; done
           grep ready proxy.out
           node test/run.mjs pcli.vsix
+
+      - name: Proxy out
+        if: always()
+        working-directory: pcli-vscode
+        run: cat proxy.out || true
 
       - name: Proxy log
         if: always()

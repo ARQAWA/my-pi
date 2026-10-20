@@ -80,7 +80,8 @@ function makePty(nodePty) {
 
   function start(dims) {
     const env = childEnv();
-    const inner = proxyExports(env) + bashQuote(piExe.replace(/\\/g, '/'));
+    // Pi предпочитает строчные http_proxy/https_proxy: убрать те, что мог задать профиль Git Bash
+    const inner = 'unset http_proxy https_proxy all_proxy no_proxy; ' + proxyExports(env) + bashQuote(piExe.replace(/\\/g, '/'));
     const command = "& '" + GIT_BASH + "' --login -i -c " + psQuote(inner);
     const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir();
     let p;
