@@ -159,6 +159,8 @@ export default function agent(pi: ExtensionAPI) {
 		// Every final answer and every final error of the run, in order.
 		let lastPushed = false; // whether texts ends with the last assistant message
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+			// Pi's run is active from here, so abort() also cancels a pre-run compaction: no need to wait for its summary.
+			if (event.type === "compaction_start") started.resolve();
 			// Pi repeats the last request after these events (a retry, or overflow compaction): that attempt is not a result.
 			if (event.type === "auto_retry_start" || (event.type === "compaction_end" && event.willRetry)) {
 				if (lastPushed) texts.pop();
@@ -204,7 +206,9 @@ export default function agent(pi: ExtensionAPI) {
 		if (a.run) a.run.quiet = true;
 		// dispose() aborts without Pi's abort flag, so Pi would run a queued follow-up on the disposed session.
 		a.session.clearQueue();
-		a.session.dispose();
+		// abort() first, so Pi's run sees its abort flag (a pre-run compaction then sends no request), then dispose().
+		const session = a.session;
+		void session.abort().finally(() => session.dispose());
 	}
 
 	function find(id: string | undefined): Agent {

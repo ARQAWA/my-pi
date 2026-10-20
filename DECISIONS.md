@@ -377,6 +377,11 @@ Every accepted decision, with its reason and the file that carries it.
   `session.prompt` (or once the run has ended). Before that Pi's async preflight runs with no active run, so an
   `interrupt`, `stop` or `restart` next in the same batch aborted nothing: the request still went out and `interrupt`
   waited for the whole run (review E).
+- `start`, `send` and `restart` also return at Pi's `compaction_start`: Pi's run is active from there, and a pre-run
+  compaction of a large history (for example after an interrupt) would otherwise hold the main agent, an `interrupt`
+  behind it and Esc for a whole summary request. Closing a session (`stop`, `restart`, `session_shutdown`) calls
+  `abort()` and disposes only after it: `dispose()` alone sets no abort flag, so Pi went on from an aborted pre-run
+  compaction to a request from the disposed session (review F).
 - Print and JSON modes exit when the main run settles, so there the `agent_before_settle` handler first waits for
   running subagents; their messages continue the same run. In the TUI and RPC a result for an idle main session
   starts a new turn.
@@ -386,7 +391,7 @@ Every accepted decision, with its reason and the file that carries it.
 - `RQW-context` patches Pi classes for the whole process, so a subagent gets the owner's universal window rule like
   every model: its window is capped at 500 000 and its compaction reserve is 10% of that window. Checked in review: a
   subagent on a 1 000 000 model sends its request with window 500 000 when RQW-context is loaded.
-- Proof: `extensions/RQW-agent/test/agent.test.ts`, 25 tests on two faux providers (exact system prompt, model,
+- Proof: `extensions/RQW-agent/test/agent.test.ts`, 32 tests on two faux providers (exact system prompt, model,
   thinking, tool subset, the five actions, follow-up while running, the main turn, shutdown, errors, call order, print
   mode; one request only after `stop`, `restart` or `session_shutdown` with a queued follow-up; a result arriving
   while the main agent streams continues its run once; after TUI Esc and after RPC abort the result is in the session
@@ -397,11 +402,11 @@ Every accepted decision, with its reason and the file that carries it.
   overflow error nor a truncated `length` answer that Pi compacts and retries; `interrupt`, `stop` and `restart` right
   after `start` in one batch return at once and leave no subagent request; two results
   that arrive while a second extension's slow `agent_before_settle` handler, loaded after RQW-agent, runs get one main
-  turn that sees both; in a continued session a new subagent gets `agent#2`). Each test passes alone. With
+  turn that sees both; in a continued session a new subagent gets `agent#2`; after an interrupt above the threshold `send` returns within 100 ms and `interrupt`, `stop`, `restart` or `session_shutdown` right after it send no summary request, and `stop`, `restart` or `session_shutdown` during that summary abort it and send nothing more). Each test passes alone. With
   an empty extension the original 13 fail; without the queue clearing, the delivery change or the `continue` the new
   tests fail; with a per-instance delivery counter the two continued-session tests fail; on 6b2cfb5 the two review C tests fail; on ff8781b
   the four tests changed or added for review D fail except the retried-error one, which fails without the
-  `auto_retry_start` line; on 8344d2e the two review E tests fail. Live runs
+  `auto_retry_start` line; on 8344d2e the two review E tests fail. On 0789ab1 the seven review F tests fail; with only the `compaction_start` line six of them fail. Live runs
   in a fixture repository with `pi -e <repo> --model anthropic/<model> --thinking low --mode json -p <prompt>`:
   Haiku 5.5 started a subagent with its own prompt, read a file and answered a follow-up (`[agent#1] ZED: 3`,
   `[agent#1] ZED: alpha`); Haiku 5.5 queued a follow-up, interrupted a `sleep 40`, restarted

@@ -570,6 +570,55 @@ describe("agent tool", () => {
 		await shutdown(m);
 	});
 
+	/** A subagent interrupted with a history above its compaction threshold; its summary reply is held for 3 s. */
+	async function largeInterrupted() {
+		const m = await startMain();
+		sub.replies.push(fauxAssistantMessage("one"));
+		await m.call({ action: "start", system: SYSTEM, task: "small", model: "sub/a" });
+		await until(() => m.delivered().length === 1, "first delivery");
+		sub.replies.push(gate("never").reply);
+		await m.call({ action: "send", id: "agent#1", task: "x".repeat(500_000) });
+		await until(() => sub.requests.length === 2, "the large request");
+		await m.call({ action: "interrupt", id: "agent#1" });
+		const summary = gate("SUMMARY");
+		sub.replies.push(summary.reply, fauxAssistantMessage("LEAKED"));
+		const timer = setTimeout(() => summary.release(), 3000);
+		return { m, summary, done: () => clearTimeout(timer) };
+	}
+
+	for (const end of ["interrupt", "stop", "restart", "shutdown"] as const) {
+		it(`send above the threshold returns before the pre-run compaction; ${end} right after it sends no request`, async () => {
+			const { m, summary, done } = await largeInterrupted();
+			const t0 = Date.now();
+			assert.equal(await m.call({ action: "send", id: "agent#1", task: "next" }), "agent#1: sent");
+			assert.ok(Date.now() - t0 < 100, `send took ${Date.now() - t0} ms`);
+			if (end === "shutdown") await m.session.extensionRunner.emit({ type: "session_shutdown", reason: "new" });
+			else await m.call({ action: end, id: "agent#1" });
+			assert.ok(Date.now() - t0 < 200, `${end} took ${Date.now() - t0} ms`);
+			await tick(500);
+			assert.equal(sub.requests.length, 2, "no summary request and no request for the task");
+			assert.equal(summary.wasAborted(), false);
+			assert.deepEqual(m.delivered(), ["[agent#1] one"]);
+			done();
+			await shutdown(m);
+		});
+	}
+
+	for (const end of ["stop", "restart", "shutdown"] as const) {
+		it(`${end} during the pre-run compaction of a send aborts the summary and sends no further request`, async () => {
+			const { m, summary, done } = await largeInterrupted();
+			await m.call({ action: "send", id: "agent#1", task: "next" });
+			await until(() => sub.requests.length === 3, "the summary request");
+			if (end === "shutdown") await m.session.extensionRunner.emit({ type: "session_shutdown", reason: "new" });
+			else await m.call({ action: end, id: "agent#1" });
+			await tick(500);
+			assert.equal(summary.wasAborted(), true);
+			assert.equal(sub.requests.length, 3, "no request from the closed session");
+			done();
+			await shutdown(m);
+		});
+	}
+
 	it("calls in one batch run in order: start, then send to the new id", async () => {
 		const m = await startMain();
 		const g = gate("one");
