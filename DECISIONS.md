@@ -57,6 +57,18 @@ Every accepted decision, with its reason and the file that carries it.
   Reason, measured on gpt-6.1-sol medium, T01: with those lines the model made one call per response in 8 of 8 runs
   (14-18 responses); without them it batched in 9 of 9 runs (3-5 responses). The barrier works without the model
   knowing it.
+- bench42 (commit `0a2028e`, T01-T07, 3 runs, same completion judge and checklists as bench41; rows in
+  `notes/bench42.csv`). Pi with the bench41 prompt vs my-pi:
+
+  | Config | Pi + prompt | my-pi |
+  |---|---|---|
+  | gpt-6-sol medium | 47.4 s / q91.9 | 47.0 s / q89.0 |
+  | gpt-6.1-sol medium | 64.6 s / q99.0 | 67.2 s / q92.5 |
+  | gpt-6-sol low | 28.4 s / q90.5 | 27.4 s / q89.6 |
+
+  Speed is the same. The quality gap comes from T01 (80/93/80 vs 67/80/67: the answer misses the Python twin) and one
+  gpt-6.1-sol run of T02 that wrote its answer to `TRADING_LOGIC.md` (q18, 256 s); without that run gpt-6.1-sol medium
+  is 57.8 s / q96.2. Open: tune the grep description against T01.
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
