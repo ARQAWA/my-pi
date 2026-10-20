@@ -35,11 +35,36 @@ export const MESSAGE_TYPE = "review";
 
 export const REVIEWER = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "REVIEWER.md"), "utf8").trimEnd();
 
-const DESCRIPTION =
-	"Blind review of finished work by a separate read-only model; the user's own messages are passed to it verbatim. " +
-	"Use it when the user asks for a review or a checked result. The call returns at once; the verdict arrives later " +
-	"as a message starting with `[review#N]`: CLEAN or numbered findings. Keep working meanwhile. Fix every admitted " +
-	"finding; reject one only with a reason backed by a verbatim quote.";
+export const DESCRIPTION =
+	"Blind review by a separate read-only model that works with you as one team for the user's agreement: it checks " +
+	"that everything agreed is done and nothing unagreed is added, and it gets the user's own messages verbatim. Use " +
+	"it when the user asks for a review or a checked result. The call returns at once; the verdict arrives later as a " +
+	"message starting with `[review#N]`, together with what to do next. Keep working meanwhile.";
+
+/** What the main agent does next, appended to each verdict by its kind; the pair rules live here, not in the prompt. */
+export const NEXT = {
+	clean: "The check passed; run no further pass for confidence.",
+	findings:
+		"Your teammate's findings. Find each quote by searching for it. A finding whose two quotes stand verbatim in their " +
+		"sources is admitted: fix it exactly to its REQUIRED OUTCOME and no further; do not reject it, argue with it or " +
+		"put it to the user. Reject a finding only when a quote is not verbatim, or a NOT AGREED element is covered by a " +
+		"verbatim quote of the agreement, and give that reason with the quote. Fix all admitted findings in one batch, " +
+		"then call `review` again with the same level, object and criterion and every rejection so far in `rejected`, " +
+		"until CLEAN.",
+	failed:
+		"The check has not passed, and no self-check replaces it. Call `review` again once on the unchanged object; if it " +
+		"fails again, tell the user and wait.",
+} as const;
+
+/** The delivered message: `[review#N]` first, the verdict verbatim, then the next step for its kind. */
+export function verdictMessage(n: number, verdict: string, failed: boolean): string {
+	const kind = failed ? "failed" : /^CLEAN\b/.test(verdict) ? "clean" : "findings";
+	return `[review#${n}] ${verdict}\n\n${NEXT[kind]}`;
+}
+
+/** The tool result of a call. */
+export const startedText = (n: number) =>
+	`review#${n} started. Keep working, but leave the reviewed files unchanged until its verdict.`;
 
 const parameters = Type.Object({
 	level: StringEnum(["blind", "high"] as const, { description: "blind by default; high when the user asks for it." }),
@@ -293,6 +318,7 @@ export default function review(pi: ExtensionAPI) {
 		// A running review never keeps the process alive.
 		timer.unref?.();
 		let verdict: string;
+		let failed = false;
 		try {
 			verdict = await runReviewer(level, brief, ctx, controller.signal);
 		} catch (error) {
@@ -303,6 +329,7 @@ export default function review(pi: ExtensionAPI) {
 						? error.message
 						: String(error);
 			verdict = `Review failed: ${reason}`;
+			failed = true;
 		} finally {
 			clearTimeout(timer);
 			running.delete(controller);
@@ -312,7 +339,7 @@ export default function review(pi: ExtensionAPI) {
 		try {
 			deliver({
 				customType: MESSAGE_TYPE,
-				content: `[review#${n}] ${verdict}`,
+				content: verdictMessage(n, verdict, failed),
 				display: true,
 				// For the user and the logs only; details do not reach the model.
 				details: {
@@ -341,7 +368,7 @@ export default function review(pi: ExtensionAPI) {
 			jobs.add(pending);
 			void pending.finally(() => jobs.delete(pending));
 			return {
-				content: [{ type: "text", text: `review#${n} started` }],
+				content: [{ type: "text", text: startedText(n) }],
 				details: { n, level: p.level },
 			};
 		},

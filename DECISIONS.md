@@ -339,7 +339,35 @@ Every accepted decision, with its reason and the file that carries it.
   missing credentials, a failed request or no verdict in 10 minutes give `[review#N] Review failed: <reason>`.
 - Parameters: `level`, `object` (paths, the diff as a file path, the stage), `criterion`, optional `agreement`
   (accepted proposals and decisions that are not in the user's own messages) and `rejected`. The description has
-  five sentences, 402 characters. Empty strings count as not given, since strict mode fills every field.
+  four sentences, 426 characters (test limit 500). Empty strings count as not given, since strict mode fills every
+  field.
+- The main agent and the reviewer work as a pair, one team for the user's agreement (owner, 2026-10-09: «чтобы они
+  действовали в одной команде ... либо принимает правку, либо её отклоняет и пишет, почему»; 2026-10-20: «он с ним
+  действует в унисон, в паре ... их синергия должна идти в рамках плагина. Это не должно размазываться»). The reviewer
+  side is `REVIEWER.md` ("on Main's team"). The main side lives in three carriers of `index.ts`, each paid only where
+  it is needed:
+  - `DESCRIPTION` (every request while the plugin is on): who the reviewer is, "works with you as one team for the
+    user's agreement", and how to call it; the handling rules left it.
+  - the tool result, `startedText`: `review#N started. Keep working, but leave the reviewed files unchanged until its
+    verdict.`
+  - the verdict wrapper, `verdictMessage`: `[review#N]` first, the verdict verbatim, then one paragraph of `NEXT` by
+    kind. `clean` (the verdict starts with `CLEAN`): passed, no further pass for confidence. `findings` (any other
+    reviewer text): find each quote by searching; a finding with both quotes verbatim is admitted and fixed exactly to
+    its REQUIRED OUTCOME and no further, never rejected, argued with or put to the user; reject only when a quote is not
+    verbatim or a NOT AGREED element is covered by a verbatim agreement quote, giving that quote; fix all admitted in
+    one batch, then call `review` again with the same level, object and criterion and every rejection so far, until
+    CLEAN. `failed` (the catch branch, not parsed text): the check has not passed and no self-check replaces it; retry
+    once on the unchanged object, then tell the user and wait.
+  Not `promptSnippet` or `promptGuidelines`: RQW-prompt sets `systemPromptOptions.customPrompt`, and Pi builds the
+  section where they go only without a custom prompt, so they would never reach the model while RQW-prompt is on.
+  Not `SYSTEM.md`: turning RQW-review off must remove the pair completely, and with the rules in the plugin it does.
+  Source: `/tmp/review-pair.md` section 3.
+- Reviewer-side tuning candidates, not edits (`REVIEWER.md` changes only through the measurement bench):
+  1. REQUIRED OUTCOME names the one end state the agreement requires, never a choice between fixes or a question to
+     the user (the 2026-10-09 loops came partly from such choices).
+  2. Describe the real brief tags: `<user_messages>` (every user message of the branch in order, summaries labeled as
+     not the user's words), `<agreement>`, `<object>`, `<criterion>` and, from the second pass, `<rejected_earlier>`;
+     requirements come from the messages this object answers.
 - The diff goes in as a file path, not as a command: the reviewer only reads files and cannot run one.
 - The extension builds the brief itself (`buildBrief`): the user's messages of the current branch, verbatim, numbered
   and in order, with compaction and branch summaries labeled as not the user's words, then `agreement`, `object`,
@@ -368,8 +396,8 @@ Every accepted decision, with its reason and the file that carries it.
   answer as the last message instead of a `yield` call, worded as in master `agents/review.md`. The verdict format
   stays: `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED
   OUTCOME), and an optional `UNCHECKED:` section.
-- Async: the call returns `review#N started` at once. The verdict, the reviewer's last assistant text, arrives as
-  `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>", display: true }, ...)`; `details` carry
+- Async: the call returns `review#N started. ...` at once. The verdict, the reviewer's last assistant text, arrives as
+  `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>\n\n<next step>", display: true }, ...)`; `details` carry
   `n`, level, model, thinking and seconds for the user and logs only. Numbers count per session and go on after a
   resume. `session_shutdown` aborts every running review and delivers nothing; the 10-minute timer does not keep the
   process alive.

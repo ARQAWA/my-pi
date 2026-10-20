@@ -32,7 +32,12 @@ import {
 	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { buildBrief, reviewerTools } from "../index.ts";
+import { buildBrief, DESCRIPTION, NEXT, reviewerTools, startedText } from "../index.ts";
+
+/** The delivered message of review `n` for a verdict of each kind: the verdict verbatim, then the next step. */
+const clean = (n = 1) => `[review#${n}] CLEAN\n\n${NEXT.clean}`;
+const found = (verdict: string, n = 1) => `[review#${n}] ${verdict}\n\n${NEXT.findings}`;
+const failedWith = (reason: string) => `[review#1] Review failed: ${reason}\n\n${NEXT.failed}`;
 
 const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
 const REVIEWER = readFileSync(join(dirname(EXTENSION), "REVIEWER.md"), "utf8").trimEnd();
@@ -219,6 +224,8 @@ describe("review tool", () => {
 			assert.ok(review, "the main model sees a review tool");
 			assert.ok(review.description.length <= 500, `description is ${review.description.length} characters`);
 			assert.match(review.description, /\[review#N\]/);
+			assert.equal(review.description, DESCRIPTION);
+			assert.ok(review.description.includes("works with you as one team for the user's agreement"), "the teammate sentence");
 			const strict = makeStrictJsonSchema(structuredClone(review.parameters) as never);
 			assert.deepEqual(Object.keys((strict as { properties: object }).properties).sort(), [
 				"agreement",
@@ -266,17 +273,19 @@ describe("review tool", () => {
 			assert.ok(r.text.includes(`<criterion>\n${args.criterion}\n</criterion>`));
 			assert.ok(r.text.includes(`<rejected_earlier>\n${args.rejected}\n</rejected_earlier>`));
 
-			assert.equal(turn, "[review#1] CLEAN", "the verdict started a main turn");
+			assert.equal(turn, clean(), "the verdict started a main turn");
 			const delivered = reviewMessages(main.session);
 			assert.equal(delivered.length, 1);
-			assert.equal(delivered[0]?.content, "[review#1] CLEAN");
+			assert.equal(delivered[0]?.content, clean());
+			assert.ok(clean().endsWith("\n\nThe check passed; run no further pass for confidence."), "the CLEAN paragraph");
 			assert.equal(delivered[0]?.display, true);
 			assert.deepEqual(
 				{ ...(delivered[0]?.details as Record<string, unknown>), seconds: 0 },
 				{ n: 1, level: "blind", model: "anthropic/claude-haiku-5-5", thinking: "medium", seconds: 0 },
 			);
 			const result = main.session.messages.find((m) => m.role === "toolResult" && m.toolName === "review");
-			assert.equal(result?.role === "toolResult" ? textOf(result.content) : "", "review#1 started");
+			assert.equal(result?.role === "toolResult" ? textOf(result.content) : "", startedText(1));
+			assert.equal(startedText(1), "review#1 started. Keep working, but leave the reviewed files unchanged until its verdict.");
 		} finally {
 			main.session.dispose();
 		}
@@ -294,18 +303,26 @@ describe("review tool", () => {
 			assert.equal(requests[0].model, "claude-sonnet-5-5");
 			assert.equal(requests[0].reasoning, "low");
 			assert.ok(!requests[0].text.includes("<agreement>") && !requests[0].text.includes("<rejected_earlier>"));
-			assert.equal(turn, `[review#1] ${findings}`);
+			assert.equal(turn, found(findings));
+			for (const rule of [
+				"Find each quote by searching for it.",
+				"fix it exactly to its REQUIRED OUTCOME and no further; do not reject it, argue with it or put it to the user.",
+				"Reject a finding only when a quote is not verbatim",
+				"Fix all admitted findings in one batch",
+				"every rejection so far in `rejected`, until CLEAN.",
+			])
+				assert.ok(turn.endsWith(NEXT.findings) && NEXT.findings.includes(rule), rule);
 		} finally {
 			main.session.dispose();
 		}
 	});
 
 	const failures: [string, () => ModelRuntime, string][] = [
-		["a missing reviewer model", () => otherModels, "[review#1] Review failed: model anthropic/claude-haiku-5-5 is not available"],
+		["a missing reviewer model", () => otherModels, failedWith("model anthropic/claude-haiku-5-5 is not available")],
 		[
 			"missing credentials",
 			() => mainOnly,
-			"[review#1] Review failed: no credentials for anthropic (model anthropic/claude-haiku-5-5)",
+			failedWith("no credentials for anthropic (model anthropic/claude-haiku-5-5)"),
 		],
 	];
 	for (const [what, runtime, expected] of failures) {
@@ -317,6 +334,10 @@ describe("review tool", () => {
 				const turn = await within(main.verdictTurn, 5000, "verdict turn");
 				await main.session.waitForIdle();
 				assert.equal(turn, expected);
+				assert.ok(
+					turn.endsWith("\n\nThe check has not passed, and no self-check replaces it. Call `review` again once on the unchanged object; if it fails again, tell the user and wait."),
+					"the failure paragraph",
+				);
 				assert.equal(requests.length, 0);
 			} finally {
 				main.session.dispose();
@@ -331,7 +352,8 @@ describe("review tool", () => {
 			await main.session.prompt(SECOND);
 			const turn = await within(main.verdictTurn, 5000, "verdict turn");
 			await main.session.waitForIdle();
-			assert.match(turn, /^\[review#1\] Review failed: .*bad schema/);
+			assert.match(turn, /^\[review#1\] Review failed: .*bad schema\n\n/);
+			assert.ok(turn.endsWith(`\n\n${NEXT.failed}`), "a failed request gets the failure paragraph, not the findings one");
 		} finally {
 			main.session.dispose();
 		}
@@ -440,9 +462,9 @@ describe("delivery", () => {
 				assert.equal(settled, false, "the main run waits for the review");
 				reviewer.release();
 				await within(run, 5000, "the main run");
-				assert.deepEqual(delivered(main.session), ["[review#1] CLEAN"]);
+				assert.deepEqual(delivered(main.session), [clean()]);
 				assert.equal(requests.length, 3, "one more request, in the same run");
-				assert.equal(requests[2].filter((t) => t === "[review#1] CLEAN").length, 1);
+				assert.equal(requests[2].filter((t) => t === clean()).length, 1);
 				assert.equal(lastText(main.session), "done");
 			} finally {
 				main.session.dispose();
@@ -466,14 +488,14 @@ describe("delivery", () => {
 	/** After an abort: the verdict is in the session once, no run starts for it, the next prompt carries it once. */
 	async function checkKeptAfterAbort(main: Main, requests: string[][]) {
 		await tick(200);
-		assert.deepEqual(delivered(main.session), ["[review#1] CLEAN"], "the verdict is in the session");
+		assert.deepEqual(delivered(main.session), [clean()], "the verdict is in the session");
 		assert.equal(requests.length, 2, "no run starts after the abort");
 		assert.equal(main.session.agent.hasQueuedMessages(), false, "nothing left in the queue");
 		await main.session.prompt("next");
 		await tick();
 		assert.equal(requests.length, 3, "one request for the next prompt");
-		assert.equal(requests[2].filter((t) => t === "[review#1] CLEAN").length, 1, "the model sees it once");
-		assert.deepEqual(delivered(main.session), ["[review#1] CLEAN"]);
+		assert.equal(requests[2].filter((t) => t === clean()).length, 1, "the model sees it once");
+		assert.deepEqual(delivered(main.session), [clean()]);
 	}
 
 	it("a verdict that arrives while the main agent streams continues its run once", async () => {
@@ -483,9 +505,9 @@ describe("delivery", () => {
 			mainGate.release();
 			await within(run, 5000, "the main run");
 			await tick();
-			assert.deepEqual(delivered(main.session), ["[review#1] CLEAN"]);
+			assert.deepEqual(delivered(main.session), [clean()]);
 			assert.equal(requests.length, 3);
-			assert.equal(requests[2].filter((t) => t === "[review#1] CLEAN").length, 1);
+			assert.equal(requests[2].filter((t) => t === clean()).length, 1);
 		} finally {
 			main.session.dispose();
 		}
@@ -524,8 +546,8 @@ describe("delivery", () => {
 			await tick(300);
 			await main.session.waitForIdle();
 			assert.equal(requests.length, 3, "the prompt, the tool turn and one turn for both verdicts");
-			assert.deepEqual(delivered(main.session).sort(), ["[review#1] R1", "[review#2] R2"]);
-			for (const v of ["[review#1] R1", "[review#2] R2"]) assert.equal(requests[2].filter((t) => t === v).length, 1, v);
+			assert.deepEqual(delivered(main.session).sort(), [found("R1", 1), found("R2", 2)]);
+			for (const v of [found("R1", 1), found("R2", 2)]) assert.equal(requests[2].filter((t) => t === v).length, 1, v);
 			assert.equal(lastText(main.session), "ok");
 		} finally {
 			slow.enabled = false;
@@ -596,7 +618,7 @@ describe("reviewer grep and find", () => {
 		try {
 			await writeFile(join(main.dir, "a.ts"), "const foo = 1;\n");
 			await main.session.prompt(SECOND);
-			assert.equal(await within(main.verdictTurn, 5000, "verdict turn"), `[review#1] ${FILE}`);
+			assert.equal(await within(main.verdictTurn, 5000, "verdict turn"), found(FILE));
 			await main.session.waitForIdle();
 		} finally {
 			main.session.dispose();
