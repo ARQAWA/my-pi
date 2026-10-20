@@ -5,7 +5,11 @@ import assert from "node:assert";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { pathKey, scopeOf } from "../keys.ts";
+
+// Values of the wrong type on purpose, to see that the key function refuses them.
+const wrong = (v: unknown) => v as string;
 
 const platform = process.platform;
 const folds = platform === "darwin" || platform === "win32"; // case-insensitive file systems by default
@@ -146,26 +150,27 @@ test("~ expands to the home directory", () => {
 
 test("file:// URLs name the file they point to", () => {
   const abs = path.join(root, "sub", "file.txt");
-  assert.strictEqual(k(new URL(`file://${abs.startsWith("/") ? "" : "/"}${abs.replaceAll("\\", "/")}`).href), k("sub/file.txt"));
+  assert.strictEqual(k(pathToFileURL(abs).href), k("sub/file.txt"));
 });
 
 test("platform-specific real-path behaviour on windows", { skip: platform !== "win32" }, () => {
   const drive = root[0];
-  const rest = root.slice(2).replaceAll("\\", "/");
-  const expected = k("sub/file.txt");
+  const tail = root.slice(3).replaceAll("\\", "/"); // after "C:\\"
   allEqual(
     [
-      `${drive}:/${rest.slice(1)}/sub/file.txt`,
-      `${drive.toLowerCase()}:\\${rest.slice(1).replaceAll("/", "\\")}\\SUB\\File.txt`,
-      `/${drive.toLowerCase()}/${rest.slice(1)}/sub/file.txt`,
-      `/cygdrive/${drive.toLowerCase()}/${rest.slice(1)}/sub/file.txt`,
-      `${drive}:/${rest.slice(1)}/sub/file.txt.`,
-      `${drive}:/${rest.slice(1)}/sub/file.txt `,
+      `${drive}:/${tail}/sub/file.txt`,
+      `${drive.toLowerCase()}:\\${tail.replaceAll("/", "\\")}\\SUB\\File.txt`,
+      `/${drive.toLowerCase()}/${tail}/sub/file.txt`,
+      `/cygdrive/${drive.toLowerCase()}/${tail}/sub/file.txt`,
+      `${drive}:/${tail}/sub/file.txt.`,
+      `${drive}:/${tail}/sub/file.txt `,
     ],
-    expected,
+    k("sub/file.txt"),
   );
   // 8.3 short names of an existing parent expand to the long name (the runner's TEMP has RUNNER~1).
-  assert.strictEqual(pathKey(path.join(os.tmpdir(), "rqw-x"), root), pathKey(path.join(fs.realpathSync.native(os.tmpdir()), "rqw-x"), root));
+  const short = path.join(os.tmpdir(), "rqw-x");
+  const long = path.join(fs.realpathSync.native(os.tmpdir()), "rqw-x");
+  assert.strictEqual(pathKey(short, root), pathKey(long, root));
 });
 
 // ---------------------------------------------------------------- string rules of other platforms
@@ -173,7 +178,6 @@ test("platform-specific real-path behaviour on windows", { skip: platform !== "w
 test("win32 rules, checked as strings on every host", () => {
   const cwd = "C:\\rqw-t";
   const key = (p: string) => pathKey(p, cwd, "win32");
-  allEqual; // (helper is for the real file system; the win32 table below uses its own comparison)
   const same = [
     "C:/rqw-t/Sub/File.txt",
     "c:\\RQW-T\\sub\\file.txt",
@@ -232,11 +236,11 @@ test("linux keeps case, normalization form and trailing dots", () => {
 // ---------------------------------------------------------------- failure returns undefined
 
 test("failures give undefined and never throw", () => {
-  assert.strictEqual(pathKey(undefined as any, root), undefined);
-  assert.strictEqual(pathKey(null as any, root), undefined);
-  assert.strictEqual(pathKey(5 as any, root), undefined);
-  assert.strictEqual(pathKey({} as any, root), undefined);
-  assert.strictEqual(pathKey("a", undefined as any), undefined);
+  assert.strictEqual(pathKey(wrong(undefined), root), undefined);
+  assert.strictEqual(pathKey(wrong(null), root), undefined);
+  assert.strictEqual(pathKey(wrong(5), root), undefined);
+  assert.strictEqual(pathKey(wrong({}), root), undefined);
+  assert.strictEqual(pathKey("a", wrong(undefined)), undefined);
   assert.strictEqual(pathKey("a\0b", root), undefined, "NUL byte in the path");
   assert.strictEqual(pathKey("file://not-a-local-host/x", root, "linux"), undefined, "invalid file URL");
 });
@@ -309,7 +313,7 @@ test("scopeOf bash and unknown tools take everything, bad input never throws", (
     assert.deepStrictEqual(scopeOf(tool, undefined, root), ALL, `${tool} with undefined args`);
     assert.deepStrictEqual(scopeOf(tool, null, root), ALL, `${tool} with null args`);
   }
-  assert.deepStrictEqual(scopeOf("read", { path: "sub/file.txt" }, undefined as any), ALL);
+  assert.deepStrictEqual(scopeOf("read", { path: "sub/file.txt" }, wrong(undefined)), ALL);
 });
 
 test("scopeOf returns a fresh object each time", () => {

@@ -26,15 +26,16 @@ function resolveLexical(p: string, cwd: string, platform: NodeJS.Platform): stri
   return P.resolve(cwd, p);
 }
 
-// realpath of the deepest existing ancestor, then the missing segments. Any other error propagates.
+// realpath of the deepest ancestor that resolves, then the missing segments. When nothing up to the root resolves
+// (an unreachable share or drive), the lexical path is the key: the same spelling still gives the same key.
 function canonical(abs: string, P: path.PlatformPath): string {
   const rest: string[] = [];
   for (let cur = abs; ; ) {
     try {
       return P.join(fs.realpathSync.native(cur), ...rest);
-    } catch (e: any) {
+    } catch {
       const parent = P.dirname(cur);
-      if ((e?.code !== "ENOENT" && e?.code !== "ENOTDIR") || parent === cur) throw e;
+      if (parent === cur) return abs;
       rest.unshift(P.basename(cur));
       cur = parent;
     }
@@ -58,8 +59,15 @@ export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = proc
   }
 }
 
-export function scopeOf(tool: string, args: any, cwd: string): Scope {
+type Fields = Record<string, unknown>;
+const isFields = (v: unknown): v is Fields => typeof v === "object" && v !== null;
+
+// `args` comes from the model and is not trusted: any odd shape means the scope "all".
+export function scopeOf(tool: string, args: unknown, cwd: string): Scope {
+  const all: Scope = { kind: "all", keys: [] };
   try {
+    if (!isFields(args)) return all;
+    const pathOf = (v: unknown): unknown => (isFields(v) ? v.path : undefined);
     let kind: "read" | "mutate";
     let paths: unknown[];
     switch (tool) {
@@ -74,22 +82,21 @@ export function scopeOf(tool: string, args: any, cwd: string): Scope {
         break;
       case "write":
         kind = "mutate";
-        paths = Array.isArray(args.files) ? args.files.map((f: any) => f?.path) : [args.path];
+        paths = Array.isArray(args.files) ? args.files.map(pathOf) : [args.path];
         break;
       case "edit":
         kind = "mutate";
         // Entry paths are optional (they default to the top-level path), so absent ones are not keys.
-        paths = [args.path, ...(Array.isArray(args.edits) ? args.edits.map((e: any) => e?.path) : [])].filter(
-          (x) => x != null,
-        );
+        paths = [args.path, ...(Array.isArray(args.edits) ? args.edits.map(pathOf) : [])].filter((x) => x != null);
         break;
       default:
-        return { kind: "all", keys: [] };
+        return all;
     }
+    // pathKey checks the type itself and answers undefined for anything that is not a string.
     const keys = paths.map((x) => pathKey(x as string, cwd));
-    if (keys.length === 0 || keys.includes(undefined)) return { kind: "all", keys: [] };
+    if (keys.length === 0 || keys.includes(undefined)) return all;
     return { kind, keys: keys as string[] };
   } catch {
-    return { kind: "all", keys: [] };
+    return all;
   }
 }
