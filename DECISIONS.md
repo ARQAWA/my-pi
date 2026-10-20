@@ -92,7 +92,8 @@ Every accepted decision, with its reason and the file that carries it.
 - Launch chain: extension host -> `powershell.exe` -> Git Bash (`C:\Program Files\Git\bin\bash.exe --login -i -c`) ->
   `pi.exe`, terminal through VS Code's own `node-pty`. The proxy comes from the `Code.exe` environment and the settings
   `http.proxy` / `http.proxyStrictSSL` (the latter sets `NODE_TLS_REJECT_UNAUTHORIZED=0`) and is also exported in the
-  Git Bash command line, so profile scripts cannot override it. `~/.pi/agent` (settings, login, sessions) is shared and
+  Git Bash command line, so profile scripts cannot override it; before the exports that line unsets `http_proxy`,
+  `https_proxy`, `all_proxy` and `no_proxy`, because Pi prefers the lowercase names. `~/.pi/agent` (settings, login, sessions) is shared and
   not changed. Carried by `pcli-vscode/extension.js`.
 - The tab sets `PI_SKIP_VERSION_CHECK=1`: the version is pinned, Pi must not ask for a newer one (user: «1 да давай 2
   да давай»). Carried by `pcli-vscode/extension.js`.
@@ -102,7 +103,9 @@ Every accepted decision, with its reason and the file that carries it.
   публикации в маркетплейс там НЕ ДОЛЖНО БЫТЬ НИКАКОГО ОПИСАНИЯ»).
 - Proof: `.github/workflows/pcli.yml` on `windows-latest` builds the VSIX, installs it into a real VS Code and runs
   `pcli-vscode/test/run.mjs` and `test/suite.cjs`: a local proxy `test/proxy.cjs` with a fake model, Pi answers through
-  it, in two scenarios (proxy from the environment with a hostile Git Bash profile, proxy from VS Code settings). Not
-  covered: a real model call and the corporate VDI restrictions.
+  it, in two scenarios (proxy from the environment with a hostile Git Bash profile, proxy from VS Code settings). The
+  fake model is HTTPS with a self-signed certificate: strict TLS fails, `http.proxyStrictSSL: false` works. It also
+  checks CONNECT to GitHub with proxy credentials, paths with Cyrillic, spaces and an apostrophe, and no `pi.exe`
+  left after closing tabs, `/quit` or VS Code itself. Not covered: a real model call and the corporate VDI restrictions.
 - Publishing: skill `publish-pcli` (`.agents/skills/publish-pcli/SKILL.md`), `vsce publish --target win32-x64` from
   `pcli-vscode/` under publisher `arqawa`, `version` raised before each publish, only on a direct request.
