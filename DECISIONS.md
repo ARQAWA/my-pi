@@ -46,6 +46,8 @@ Every accepted decision, with its reason and the file that carries it.
 - `WORKFLOW-MANIFEST.md` lives in this repository and records how the owner works, so the agent can align with it;
   it is not a description of the package (user: «манифест — это чисто для нас ... надо закрепить именно принципы
   работы ... как я работаю как владелец всей системы»).
+- `WORKFLOW-MANIFEST.md` is accepted with all nine sections, built from the keep/cut table
+  `/tmp/manifest-candidates-v2.md` (user: «Да, давай оставим все пункты. Да, этот манифест мы оставим»).
 - Open work: `RQW-context` (context window and compaction rule) and faster file writing in `RQW-tools`.
 
 ## Structure
