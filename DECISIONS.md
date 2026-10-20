@@ -125,6 +125,67 @@ Every accepted decision, with its reason and the file that carries it.
 - Proof: `npm test` (`node --test`, no model) and `.github/workflows/tests.yml` on macOS, Linux and Windows, plus a job
   reproducing PowerShell, portable Git Bash without admin, then Node.
 
+## Context
+
+- `extensions/RQW-context/index.ts` applies the owner's rule to every model: W = min(model.contextWindow, 500000) is
+  the context window Pi uses, R = `Math.round(W / 10)` (a .5 rounds up), and Pi compacts above W - R. 272 000 ->
+  window 272 000, compaction above 244 800; 500 000 and 1 000 000 -> window 500 000, compaction above 450 000.
+  Built-in, models.json and extension models alike, at start (`--model`), on resume, after `/model` and model cycling.
+  No per-model list.
+- The window above 500 000 is lowered for the session, not only the trigger. Owner, on the open question: option b,
+  «овераить его, если оно выше 500 тыс. токенов на 500 тыс. токенов», with compaction at W - R and R = 10% of W.
+  Reason: with the trigger alone the footer showed 45% at compaction and Pi still treated a 1M model as 1M everywhere
+  else; the rule says the window itself becomes 500 000.
+- Mechanism, window: Pi reads every limit from the session model, `agent.state.model` (`agent-session.js:1037`
+  `get model() { return this.agent.state.model; }`): the pre-prompt and next-turn trigger (`420-422`), threshold and
+  overflow checks after a response (`2376`, `2407`, `2477`), no auto-retry on overflow (`3013`), context usage and the
+  footer percent (`3472-3499`, `footer.js:134`), the model of every request (`456`, `agent-loop.js:132`), whose
+  output cap pi-ai derives from it (`pi-ai/dist/api/simple-options.js:5-9`: contextWindow - context - 4096), and the
+  summary requests (`_getSummarizationRequestAuth(this.model)`). `state.model` is a plain property
+  (`pi-agent-core/dist/agent.js:40`), so the extension replaces it on each session's state with an accessor that
+  stores `{ ...model, contextWindow: 500000 }` for a model above 500 000 and the same object otherwise, one stable copy
+  per declared model. It is installed from `AgentSession.prototype._buildRuntime`, which Pi runs in the session
+  constructor right after `this.agent = config.agent` (`agent-session.js:177`, `210`) and again on `/reload`
+  (`2988`), so every assignment Pi makes later (`setModel` `1985`, cycling `2037`, `2064`, registry refresh `2711`)
+  goes through it. Reason for an internal hook: the extension API has no way to change the session model's window.
+  `pi.setModel` takes a model but appends a `model_change` entry, reapplies the thinking level and is not called at
+  start, resume or registry refresh; `pi.registerProvider` with `models` "replaces all existing models for this
+  provider" (`extensions/types.d.ts:1442`); models.json `modelOverrides` needs an entry per model; the `model_select`
+  event is a notification. Extensions get Pi's own `AgentSession` class (jiti alias in the library, virtual modules
+  in the bundle); the tests run both. The hook throws at load if `_buildRuntime` is missing (another Pi version).
+- Mechanism, reserve: Pi compacts when `contextTokens > model.contextWindow - reserveTokens` (`compaction.js:176`) and
+  reads reserveTokens from `SettingsManager.getCompactionSettings(model)` at every check. The extension wraps that
+  method on Pi's class and returns contextWindow - (W - R), which is R itself once the window is W: a computed
+  `compaction.modelOverrides` reserve for every model, the way Pi's docs tune the trigger per model
+  (`docs/compaction.md:457`). `pi.getSettings()` returns a copy and has no setter.
+- Consequences for a model above 500 000, all as for a 500 000 model: footer and `getContextUsage()` show the window
+  500k and 90% at the threshold; summary output limits are 40 000 and 25 000 for a split turn (0.8 and 0.5 x R,
+  `compaction.js:512`, `727`); the output cap of a request is 500 000 - context - 4096, about 45 900 at 450 000
+  context (the test sees 45 902); an answer reporting more than 500 000 input tokens counts as overflow
+  (`pi-ai/dist/utils/overflow.js:147-150`). Pi then recovers, it does not fail: a completed answer is kept and the
+  session is compacted with reason `overflow` and no retry (`agent-session.js:2410-2414`); a length stop with no output
+  at 99% of the window is compacted and retried once (`2440`, `overflow.js:156-159`). Nothing about the window goes to
+  the provider: the OpenAI-compatible body has only `max_completion_tokens` changed, every other field as stock Pi.
+- Models up to 500 000 keep their own object; only the reserve changes. The model registry is not touched: `/model`
+  and `--list-models` show the declared window, the session and the footer show 500k. The `model_select` event carries
+  the model object passed to `setModel`, so its `contextWindow` is the declared one; `ctx.model` is the capped one.
+- The user's settings win: `compaction.reserveTokens` applies to all models and
+  `compaction.modelOverrides["provider/id"].reserveTokens` to that model, against the capped window (1M with a
+  reserve of 30 000 compacts above 470 000). `compaction.enabled: false` still turns off threshold and overflow
+  compaction. A models.json `contextWindow` (a model entry or `modelOverrides`) is the model's declared window: up to
+  500 000 Pi uses it as written, also to lower a 1M model; above 500 000 it is capped like any other source, because
+  Pi's composed model does not say where its window came from. A model without a positive contextWindow keeps Pi's
+  values; Pi skips its window checks for it.
+- Both wraps live as long as the process, one per class (`Symbol.for` guards): SDK sessions in the same process get
+  the rule too, and a `/reload` without the extension keeps it until restart.
+- Out of scope: virtual models (`pi.registerVirtualModel`; Pi 1.3.0 ships none), owner's option a. A virtual model
+  (`api` `pi-virtual`) is never capped; Pi takes its limits from the routed physical model (`agent-session.js:312`,
+  `422`), so under it the window is the routed model's declared one and the trigger is not W - R.
+- Proof: `extensions/RQW-context/test/context.test.ts` runs real sessions of the library and the bundle with a
+  scripted provider that reports exact usage and a local OpenAI-compatible endpoint: Pi's own `session.model`,
+  `getContextUsage()`, `compaction_start` at W - R + 1 and not at W - R (also after a switch and a resume), overflow
+  recovery above 500 000, and the request body against stock Pi.
+
 ## Prompt
 
 - First step is only the prompt extension (user: «пока делаем только экстеншен который заменяет промпт систменый на
