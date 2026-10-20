@@ -23,6 +23,8 @@ Every accepted decision, with its reason and the file that carries it.
   createAgentSession»), read only, and are checked on a model with a known-answer set (user: «Конечно, делай
   проверки, расходуй токены»). Their concept and models come from the history first: Spotty and Bossy in
   `my-omp-harness` branch `deprecated` (Haiku 5.5 and Sonnet 5.5) and in `my-codex-harness` (gpt-6-sol, gpt-6.1-sol).
+- All subagents of the work on this repository run on Opus only, at low, medium or high reasoning (user: «всех
+  саб-агентов переводи на Opus low, medium или high ... Sonnets больше не используй, только Opus»).
 - Open work: `RQW-context` (context window and compaction rule) and faster file writing in `RQW-tools`.
 
 ## Structure
