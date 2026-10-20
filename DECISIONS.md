@@ -325,32 +325,53 @@ Every accepted decision, with its reason and the file that carries it.
   barrier, and passes the result as `customTools` with the `tools` allowlist. bash reads the main session's settings
   per call, so `shellPath` (Git Bash on Windows) applies. A test writes two files through `write.files[]`, which stock
   Pi does not have.
-- Results are async. At the end of each run the main session gets `[agent#N] <text>` through `pi.sendMessage` with
-  `triggerTurn: true, deliverAs: "followUp"`. The text is every final answer of the run, so a follow-up queued during
-  the run does not hide the first answer (the brief said "last assistant text"). A failed run sends
-  `[agent#N] error: <reason>` after Pi's own retries. Bad calls (unknown id or model, no credentials, missing `system` or
-  `task`) fail at once as a tool error, which costs less than a later message. No timeout of our own: Pi's provider
-  timeouts and retries apply, and the main agent can interrupt.
+- Results are async. At the end of each run the main session gets `[agent#N] <text>` through `pi.sendMessage`. The
+  text is every final answer of the run, so a follow-up queued during the run does not hide the first answer (the brief
+  said "last assistant text"). A failed run sends `[agent#N] error: <reason>` after Pi's own retries. Bad calls (unknown
+  id or model, no credentials, missing `system` or `task`) fail at once as a tool error, which costs less than a later
+  message. Credentials are checked as Pi's prompt checks them: the registry's auth snapshot, then
+  `runtime.checkAuth(provider)`, because the snapshot fills asynchronously and alone rejected valid models.
+- Delivery never loses a result to an abort of the main agent (review finding: a follow-up waits in the main agent's
+  queue, which TUI Esc clears through `clearQueue()` and RPC `abort` leaves without a turn). When the main session is
+  idle (`ctx.isIdle()`), the message goes with `triggerTurn: true` and starts a turn. When it is busy, it goes with
+  `triggerTurn: false`: Pi holds it outside the queue and appends it to the session at the end of the current turn or
+  run, aborted or not (`sendCustomMessage`, `_flushPendingCustomMessages` in Pi's `agent-session.js`), and the
+  `agent_before_settle` handler returns `continue: true` while such a result is not yet followed by an assistant
+  message in the branch (tracked by a delivery number in `details`). After an abort no turn starts, since Esc means
+  stop; the result stays in the session and the model sees it on the next turn. Re-sending after an abort, the first
+  idea, was dropped: after an RPC abort the old copy stays queued and would arrive a second time with an extra turn.
+  Rare case: a result that arrives during a manual `/compact` with no run is appended without a turn and is seen on
+  the next one.
+- No timeout of our own: Pi's provider timeouts and retries apply, and the main agent can interrupt.
 - `send` to a running subagent queues `session.followUp`; to an idle one it starts a new run with the history.
   `interrupt` calls `session.abort()`, drops the run's queued follow-ups, sends no message and keeps the history.
-  `stop` disposes the session and forgets the id. `restart` disposes and creates a fresh session with the same
+  `stop` disposes the session and forgets the id. Closing a session (`stop`, `restart`, `session_shutdown`) clears its
+  queue before `dispose()`: `dispose()` aborts without Pi's abort flag, so Pi would run a queued follow-up on the
+  disposed session and bill a request after `stopped`. `restart` disposes and creates a fresh session with the same
   `system`, model, thinking and tools or the ones given, and runs `task` if given.
 - Calls of `agent` run one at a time in call order. Pi runs the calls of one response in parallel, and a batch of
   `start` and `send agent#1` failed without this (checked by removing it).
-- Print and JSON modes exit when the main run settles, so there an `agent_before_settle` handler waits for running
-  subagents and their messages continue the same run. In the TUI and RPC the messages start new turns.
+- Print and JSON modes exit when the main run settles, so there the `agent_before_settle` handler first waits for
+  running subagents; their messages continue the same run. In the TUI and RPC a result for an idle main session
+  starts a new turn.
 - `session_shutdown` aborts and disposes every subagent without messages. No cap on the count.
 - Accepted limits: a result that arrives after the main session ended is lost; a subagent may read files the main agent
-  is editing; subagents share the process with the TUI. `RQW-context` (branch `rqw-context`) patches Pi classes for the
-  whole process, so after its merge subagents also get its window rule.
-- Proof: `extensions/RQW-agent/test/agent.test.ts`, 13 tests on two faux providers (exact system prompt, model,
+  is editing; subagents share the process with the TUI.
+- `RQW-context` patches Pi classes for the whole process, so a subagent gets the owner's universal window rule like
+  every model: its window is capped at 500 000 and its compaction reserve is 10% of that window. Checked in review: a
+  subagent on a 1 000 000 model sends its request with window 500 000 when RQW-context is loaded.
+- Proof: `extensions/RQW-agent/test/agent.test.ts`, 17 tests on two faux providers (exact system prompt, model,
   thinking, tool subset, the five actions, follow-up while running, the main turn, shutdown, errors, call order, print
-  mode). With an empty extension all 13 fail. Live runs in a fixture repository with
-  `pi -e <repo> --model anthropic/<model> --thinking low --mode json -p <prompt>`: Haiku 5.5 started a subagent with
-  its own prompt, read a file and answered a follow-up (`[agent#1] ZED: 3`, `[agent#1] ZED: alpha`); Haiku 5.5
-  queued a follow-up, interrupted a `sleep 40`, restarted (`[agent#1] W: RESTARTED`, 11 s, no `sleep` left); Opus 5.5
-  ran two subagents, one with an inherited model, and got the queued follow-up in the same message
-  (`[agent#1] W: ... first ... W: ... second`, `[agent#2] Q: The bug is in add ...`).
+  mode; one request only after `stop`, `restart` or `session_shutdown` with a queued follow-up; a result arriving
+  while the main agent streams continues its run once; after TUI Esc and after RPC abort the result is in the session
+  once, no run starts, and the next prompt carries it once). Each test passes alone. With an empty extension the
+  original 13 fail; without the queue clearing, the delivery change or the `continue` the new tests fail. Live runs
+  in a fixture repository with `pi -e <repo> --model anthropic/<model> --thinking low --mode json -p <prompt>`:
+  Haiku 5.5 started a subagent with its own prompt, read a file and answered a follow-up (`[agent#1] ZED: 3`,
+  `[agent#1] ZED: alpha`); Haiku 5.5 queued a follow-up, interrupted a `sleep 40`, restarted
+  (`[agent#1] W: RESTARTED`, 11 s, no `sleep` left); Opus 5.5 ran two subagents, one with an inherited model, and got
+  the queued follow-up in the same message (`[agent#1] W: ... first ... W: ... second`,
+  `[agent#2] Q: The bug is in add ...`).
 
 ## PCLI
 

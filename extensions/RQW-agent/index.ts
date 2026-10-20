@@ -1,4 +1,4 @@
-// Extension 4: one tool `agent` that runs subagents as in-process Pi sessions. The main agent writes the whole system
+// Extension 5: one tool `agent` that runs subagents as in-process Pi sessions. The main agent writes the whole system
 // prompt and picks model, thinking and tools; the subagent's answer comes back later as a message `[agent#N] ...`.
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -56,17 +56,44 @@ const textOf = (message: AssistantMessage): string =>
 
 const isAssistant = (m: { role: string }): m is AssistantMessage => m.role === "assistant";
 
+// The main session's runtime (a plain field of ModelRegistry): same credentials, OAuth refresh and providers.
+const runtimeOf = (ctx: ExtensionContext) => (ctx.modelRegistry as unknown as { runtime: ModelRuntime }).runtime;
+
 export default function agent(pi: ExtensionAPI) {
 	const agents = new Map<number, Agent>();
 	let counter = 0;
 	let closed = false;
+	let main: ExtensionContext | undefined;
+	let deliveries = 0;
+	/** Results sent while the main session was busy, by delivery number, until the main model answers after them. */
+	const unanswered = new Set<number>();
 
 	function deliver(id: number, text: string) {
 		if (closed) return;
-		pi.sendMessage(
-			{ customType: "agent", content: `[agent#${id}] ${text}`, display: true },
-			{ triggerTurn: true, deliverAs: "followUp" },
-		);
+		const message = { customType: "agent", content: `[agent#${id}] ${text}`, display: true, details: { delivery: ++deliveries } };
+		if (main?.isIdle() !== false) {
+			pi.sendMessage(message, { triggerTurn: true });
+			return;
+		}
+		// Busy: Pi appends a message without triggerTurn to the session at the end of the current turn, so Esc and abort
+		// cannot drop it (a follow-up would wait in the agent's queue, which Esc clears). agent_before_settle adds the turn.
+		unanswered.add(deliveries);
+		pi.sendMessage(message, { triggerTurn: false });
+	}
+
+	/** Whether a result sent while busy still waits for a main turn; drops the ones the model already saw. */
+	function needsTurn(ctx: ExtensionContext): boolean {
+		const entries = ctx.sessionManager.getEntries();
+		const branch = ctx.sessionManager.getBranch();
+		const lastAnswer = branch.findLastIndex((e) => e.type === "message" && e.message.role === "assistant");
+		const isResult = (n: number) => (e: (typeof entries)[number]) =>
+			e.type === "custom_message" && e.customType === "agent" && (e.details as { delivery?: number } | undefined)?.delivery === n;
+		for (const n of unanswered) {
+			if (!entries.some(isResult(n))) continue; // still held by Pi until the turn ends
+			const at = branch.findIndex(isResult(n));
+			if (at < 0 || at < lastAnswer) unanswered.delete(n); // on another branch, or answered
+		}
+		return unanswered.size > 0;
 	}
 
 	/** The subagent's tools: RQW-tools definitions from a fresh instance, so it has its own barrier. */
@@ -95,11 +122,9 @@ export default function agent(pi: ExtensionAPI) {
 			extensionFactories: [(sub: ExtensionAPI) => sub.on("before_agent_start", () => ({ systemPrompt: config.system }))],
 		});
 		await resourceLoader.reload();
-		// The main session's runtime (a plain field of ModelRegistry): same credentials, OAuth refresh and providers.
-		const { runtime } = ctx.modelRegistry as unknown as { runtime: ModelRuntime };
 		const { session } = await createAgentSession({
 			cwd: ctx.cwd,
-			modelRuntime: runtime,
+			modelRuntime: runtimeOf(ctx),
 			model: config.model,
 			thinkingLevel: config.thinking,
 			tools: config.tools,
@@ -151,6 +176,8 @@ export default function agent(pi: ExtensionAPI) {
 
 	function close(a: Agent) {
 		if (a.run) a.run.quiet = true;
+		// dispose() aborts without Pi's abort flag, so Pi would run a queued follow-up on the disposed session.
+		a.session.clearQueue();
 		a.session.dispose();
 	}
 
@@ -161,7 +188,7 @@ export default function agent(pi: ExtensionAPI) {
 		throw new Error(`Unknown agent id: ${id ?? "(none)"}. Known: ${known}`);
 	}
 
-	function resolveConfig(params: Params, ctx: ExtensionContext, base?: Config): Config {
+	async function resolveConfig(params: Params, ctx: ExtensionContext, base?: Config): Promise<Config> {
 		const system = params.system ?? base?.system;
 		if (!system) throw new Error("system is required");
 		let model: Model<Api> | undefined = base?.model ?? ctx.model;
@@ -171,7 +198,9 @@ export default function agent(pi: ExtensionAPI) {
 			if (!model) throw new Error(`Unknown model: ${params.model}. Use provider/id from the model registry.`);
 		}
 		if (!model) throw new Error("No model: give model as provider/id");
-		if (!ctx.modelRegistry.hasConfiguredAuth(model)) throw new Error(`No credentials for provider ${model.provider}`);
+		// As Pi's prompt: the auth snapshot fills asynchronously, so a miss there is checked against the store.
+		if (!ctx.modelRegistry.hasConfiguredAuth(model) && !(await runtimeOf(ctx).checkAuth(model.provider)))
+			throw new Error(`No credentials for provider ${model.provider}`);
 		const tools = params.tools ?? base?.tools ?? [...TOOLS];
 		const thinking = params.thinking ?? base?.thinking ?? pi.getThinkingLevel();
 		return { system, model, thinking, tools };
@@ -201,7 +230,7 @@ export default function agent(pi: ExtensionAPI) {
 		switch (params.action) {
 			case "start": {
 				if (!params.task) throw new Error("task is required");
-				const config = resolveConfig(params, ctx);
+				const config = await resolveConfig(params, ctx);
 				const a: Agent = { id: ++counter, config, session: await createSession(config, ctx) };
 				agents.set(a.id, a);
 				startRun(a, params.task);
@@ -235,7 +264,7 @@ export default function agent(pi: ExtensionAPI) {
 			}
 			case "restart": {
 				const a = find(params.id);
-				const config = resolveConfig(params, ctx, a.config);
+				const config = await resolveConfig(params, ctx, a.config);
 				close(a);
 				a.config = config;
 				a.session = await createSession(config, ctx);
@@ -248,11 +277,17 @@ export default function agent(pi: ExtensionAPI) {
 		}
 	}
 
-	// Print and JSON modes exit when the main run settles, so there the main run waits for running subagents; their
-	// messages are queued as follow-ups and continue it. Interactive and RPC sessions get the messages as new turns.
+	pi.on("session_start", (_event, ctx) => {
+		main = ctx;
+	});
+
+	// Print and JSON modes exit when the main run settles, so there the main run waits for running subagents. A result
+	// sent during the run continues it here; an idle main session gets a result as a new turn. After an abort the
+	// result stays in the session without a turn, and the model sees it on the next one.
 	pi.on("agent_before_settle", async (_event, ctx) => {
-		if (ctx.mode !== "print" && ctx.mode !== "json") return;
-		for (let running = runs(); running.length > 0; running = runs()) await Promise.all(running);
+		if (ctx.mode === "print" || ctx.mode === "json")
+			for (let running = runs(); running.length > 0; running = runs()) await Promise.all(running);
+		if (needsTurn(ctx)) return { continue: true };
 	});
 	const runs = () => [...agents.values()].flatMap((a) => (a.run ? [a.run.done] : []));
 

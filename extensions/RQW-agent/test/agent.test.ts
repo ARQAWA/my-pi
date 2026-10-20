@@ -132,7 +132,7 @@ type Main = {
 	delivered: () => string[];
 };
 
-async function startMain(mode: "tui" | "print" = "tui"): Promise<Main> {
+async function startMain(mode: "tui" | "rpc" | "print" = "tui"): Promise<Main> {
 	const dir = join(root, `w${counter++}`);
 	await mkdir(dir, { recursive: true });
 	const resourceLoader = new DefaultResourceLoader({
@@ -299,6 +299,30 @@ describe("agent tool", () => {
 		await shutdown(m);
 	});
 
+	it("stop, restart and session_shutdown with a queued follow-up: the old session sends no more requests", async () => {
+		const ends: Record<string, (m: Main) => Promise<unknown>> = {
+			stop: (m) => m.call({ action: "stop", id: "agent#1" }),
+			restart: (m) => m.call({ action: "restart", id: "agent#1" }),
+			session_shutdown: (m) => m.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }),
+		};
+		for (const [name, end] of Object.entries(ends)) {
+			const m = await startMain();
+			sub.requests.length = 0;
+			const g = gate("late");
+			sub.replies.push(g.reply, fauxAssistantMessage("AFTER END"));
+			await m.call({ action: "start", system: SYSTEM, task: "long", model: "sub/a" });
+			await until(() => sub.requests.length === 1, "the request");
+			await m.call({ action: "send", id: "agent#1", task: "queued follow-up" });
+			await end(m);
+			await until(() => g.wasAborted(), "the abort");
+			await tick(300);
+			assert.equal(sub.requests.length, 1, `${name}: one subagent request`);
+			assert.deepEqual(m.delivered(), [], `${name}: no message`);
+			sub.replies.length = 0;
+			await shutdown(m);
+		}
+	});
+
 	it("restart: a fresh session with the same settings, or the new ones given", async () => {
 		const m = await startMain();
 		const g = gate("old");
@@ -346,6 +370,68 @@ describe("agent tool", () => {
 		await tick();
 		assert.deepEqual(m.delivered(), []);
 		m.session.dispose();
+	});
+
+	/** The main agent starts a subagent, then streams a reply held by `mainGate` while the subagent answers. */
+	async function resultWhileMainBusy(mode: "tui" | "rpc") {
+		const m = await startMain(mode);
+		const mainGate = gate("main busy");
+		const subGate = gate("SUB RESULT");
+		sub.replies.push(subGate.reply);
+		main.replies.push(
+			fauxAssistantMessage([fauxToolCall("agent", { action: "start", system: SYSTEM, task: "t", model: "sub/a" })], {
+				stopReason: "toolUse",
+			}),
+			mainGate.reply,
+		);
+		const prompt = m.session.prompt("go");
+		await until(() => main.requests.length === 2 && sub.requests.length === 1, "main busy, subagent running");
+		subGate.release();
+		await tick(100);
+		return { m, mainGate, prompt };
+	}
+
+	/** After an abort: the result is in the session once, no run started for it, and the next prompt carries it once. */
+	async function checkKeptAfterAbort(m: Main) {
+		await tick(200);
+		assert.deepEqual(m.delivered(), ["[agent#1] SUB RESULT"], "the result is in the session");
+		assert.equal(main.requests.length, 2, "no run starts after the abort");
+		assert.equal(m.session.agent.hasQueuedMessages(), false, "nothing left in the queue");
+		await m.session.prompt("next");
+		await tick();
+		assert.equal(main.requests.length, 3, "one request for the next prompt");
+		assert.equal(main.requests[2].texts.filter((t) => t === "[agent#1] SUB RESULT").length, 1, "the model sees it once");
+		assert.deepEqual(m.delivered(), ["[agent#1] SUB RESULT"]);
+	}
+
+	it("a result that arrives while the main agent streams continues its run once", async () => {
+		const { m, mainGate, prompt } = await resultWhileMainBusy("tui");
+		assert.deepEqual(m.delivered(), [], "held until the turn ends");
+		mainGate.release();
+		await prompt;
+		await tick();
+		assert.deepEqual(m.delivered(), ["[agent#1] SUB RESULT"]);
+		assert.equal(main.requests.length, 3);
+		assert.ok(main.requests[2].texts.includes("[agent#1] SUB RESULT"));
+		await shutdown(m);
+	});
+
+	it("TUI Esc while a result waits: the result is kept, no run starts, the next prompt carries it", async () => {
+		const { m, prompt } = await resultWhileMainBusy("tui");
+		// What Esc does: restoreQueuedMessagesToEditor({ abort: true }) clears the queue, then aborts.
+		m.session.clearQueue();
+		await m.session.abort();
+		await prompt;
+		await checkKeptAfterAbort(m);
+		await shutdown(m);
+	});
+
+	it("RPC abort while a result waits: the result is kept, no run starts, the next prompt carries it", async () => {
+		const { m, prompt } = await resultWhileMainBusy("rpc");
+		await m.session.abort(); // RPC "abort"
+		await prompt;
+		await checkKeptAfterAbort(m);
+		await shutdown(m);
 	});
 
 	it("calls in one batch run in order: start, then send to the new id", async () => {
