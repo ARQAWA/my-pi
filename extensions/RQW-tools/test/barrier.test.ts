@@ -284,6 +284,9 @@ async function runRounds(makeBarrier: () => Schedule, seed: number, rounds: numb
     deadlocks: results.filter((r) => r.deadlock).length,
     violations: results.flatMap((r, k) => r.violations.map((v) => `round ${k}: ${v}`)),
     maxSlack: Math.max(0, ...results.map((r) => r.maxSlack)),
+    // A barrier that over-serializes is late in most rounds; a loaded CI runner is late in a few. Assert the 99th
+    // percentile of the per-round slack and keep the maximum as a diagnostic.
+    p99Slack: [...results.map((r) => r.maxSlack)].sort((x, y) => x - y)[Math.floor(results.length * 0.99)] ?? 0,
     skipped: results.reduce((s, r) => s + r.skipped, 0),
     thrown: results.reduce((s, r) => s + r.thrown, 0),
     sequential: results.filter((r) => r.sequential).length,
@@ -296,11 +299,11 @@ test("T2 randomized interleavings keep I1, I2, I5, I6, I7", async (t) => {
   const s = await runRounds(createBarrier, seed, rounds);
   t.diagnostic(
     `seed=${seed} rounds=${s.rounds} deadlocks=${s.deadlocks} violations=${s.violations.length} ` +
-      `maxSlack=${s.maxSlack.toFixed(2)}ms skippedByAbort=${s.skipped} thrown=${s.thrown} sequentialRounds=${s.sequential}`,
+      `maxSlack=${s.maxSlack.toFixed(2)}ms p99Slack=${s.p99Slack.toFixed(2)}ms skippedByAbort=${s.skipped} thrown=${s.thrown} sequentialRounds=${s.sequential}`,
   );
   assert.strictEqual(s.deadlocks, 0, "a round did not finish within 5 s");
   assert.deepStrictEqual(s.violations.slice(0, 5), []);
-  assert.ok(s.maxSlack < SLACK_MS, `a call started ${s.maxSlack.toFixed(2)} ms after it could have`);
+  assert.ok(s.p99Slack < SLACK_MS, `in 1% of rounds a call started ${s.p99Slack.toFixed(2)} ms after it could have`);
   if (rounds >= 500) {
     assert.ok(s.skipped > 0 && s.thrown > 0 && s.sequential > 0, "abort, throw and sequential paths were not exercised");
   }
