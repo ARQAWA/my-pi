@@ -9,6 +9,9 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
   default prompt prefix and appends the workstation, critical, environment and date blocks.
 - `extensions/RQW-tools/`: extension 3, the base tools. Stock `read`, `bash`, `edit`, `write`, `grep`, `find` with our
   descriptions (`descriptions/*.md`), multi-file `edit` and `write`, and the ordered barrier. Tests: `npm test`.
+- `extensions/RQW-review/`: extension 4, the `review` tool with levels `blind` and `high`. Each call runs a fresh
+  read-only reviewer session in the same process (`createAgentSession`, stock `read`, `grep`, `find`) with
+  `REVIEWER.md` as its prompt; the verdict comes back later as a `[review#N]` message. Tests: `npm test`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.3.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.

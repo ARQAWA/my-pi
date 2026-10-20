@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test \"extensions/RQW-tools/test/*.test.ts\""
+    "test": "node --test \"extensions/*/test/*.test.ts\""
   },
   "keywords": [
     "pi-package"
@@ -16,7 +16,8 @@
     "extensions": [
       "./extensions/RQW-settings/index.ts",
       "./extensions/RQW-prompt/index.ts",
-      "./extensions/RQW-tools/index.ts"
+      "./extensions/RQW-tools/index.ts",
+      "./extensions/RQW-review/index.ts"
     ]
   },
   "devDependencies": {
