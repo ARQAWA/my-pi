@@ -129,8 +129,10 @@ Every accepted decision, with its reason and the file that carries it.
 - Faster writing (`notes/refine/refine-write2.md`, `notes/refine/refine-find.md`; WRITE, EDIT, MULTI, T01, T03, T05,
   T06; two models): a new file the task fully specifies needs no read of its neighbours (one line in `SYSTEM.md`, one
   in `read.md`), and the find example shows that "app" returns the directory only while "app/**" returns its files.
-  WRITE 18.4 s / 5.5 responses -> 16.0 s / 4.7; edit tasks 19.4 s -> 17.3 s; all runs correct; question checklists
-  unchanged (94.8% -> 96.3%). gpt-6.1-sol still makes a second find in 2 of 6 WRITE runs.
+  Measured in two steps: the read lines against main (WRITE 18.4 s / 5.5 responses -> 16.0 s / 4.7, T01 and T05
+  checklists equal), then the find example against that (edit tasks 19.4 s -> 17.3 s, question checklists 94.8% ->
+  96.3%, not lower). All runs correct. gpt-6.1-sol still makes a second find in 2 of 6 WRITE runs. A review then made
+  the find, read and prompt wording exact (full-path matching, imported code, long files in parts) without new runs.
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.

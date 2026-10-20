@@ -115,7 +115,7 @@ Every answer covers every point: T01 the Rust value in `config.toml` and its use
 ## Chosen: v3
 
 Correctness ties everywhere, v3 has the fewest responses (4.78 over 18 runs vs 5.17 base) and is the only variant that
-dropped the reads on WRITE for both models; WRITE 18.4 s / 5.50 -> 16.0 s / 4.67. The regression check shows no loss
+cut WRITE responses on both models (gpt-6-sol still read neighbours in 2 of 3 runs); WRITE 18.4 s / 5.50 -> 16.0 s / 4.67. The regression check shows no loss
 of coverage on T01 and T05. Left in `extensions/RQW-prompt/SYSTEM.md` and `extensions/RQW-tools/descriptions/read.md`;
 `write.md` and `edit.md` unchanged.
 

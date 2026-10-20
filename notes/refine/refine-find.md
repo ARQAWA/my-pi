@@ -1,10 +1,10 @@
 # Refining the find description by probes (2026-10-21)
 
 Stand: this copy (`/tmp/refine-find`, branch rqw-write export). Probe: `/tmp/probe/probe3.sh`, runner
-`/tmp/probe/f3run.sh <variant> <tasks...>` (copies `notes/refine-find-texts/find.<variant>.md` into
+`/tmp/probe/f3run.sh <variant> <tasks...>` (copies `notes/refine/refine-find-texts/find.<variant>.md` into
 `extensions/RQW-tools/descriptions/find.md`, 3 runs per model, 4 at once). Models gpt-6.1-sol medium, gpt-6-sol low.
 Raw runs: `/tmp/probe/out/f3-<variant>-<task>-<model>-<n>.json(l)`; `v1b` is a second set of runs of the same text
-as `v1`, pooled with it below. Per-point scores: `notes/refine-find-texts/scores.json`.
+as `v1`, pooled with it below. Per-point scores: `notes/refine/refine-find-texts/scores.json`.
 
 Checklist coverage: the full final answer (from the jsonl, not the 3000-character cut in the json) graded against
 `~/stock-bench/bench41/checklists.py` by a model twice; a point counts when both passes say yes. The 3 disagreements
