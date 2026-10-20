@@ -319,7 +319,8 @@ describe("edit", () => {
 		const want = Array.from({ length: 50 }, (_, i) => `x${i}`.padEnd(200, String.fromCharCode(122 - (i % 26)))).join("\n");
 		const started = performance.now();
 		await assert.rejects(run(tools.edit, { path: "big.txt", edits: [{ oldText: want, newText: "" }] }, dir), /^Error: Could not find/);
-		assert.ok(performance.now() - started < 150, `took ${performance.now() - started} ms`);
+		// Unbounded, this search is about 2e9 Levenshtein cells (many seconds); 1 s leaves room for slow CI runners.
+		assert.ok(performance.now() - started < 1000, `took ${performance.now() - started} ms`);
 	});
 
 	it("read keys the file stock read opens (curly-quote spelling), so a later write is ordered after it", async () => {

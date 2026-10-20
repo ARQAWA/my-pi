@@ -23,6 +23,29 @@ Every accepted decision, with its reason and the file that carries it.
   createAgentSession»), read only, and are checked on a model with a known-answer set (user: «Конечно, делай
   проверки, расходуй токены»). Their concept and models come from the history first: Spotty and Bossy in
   `my-omp-harness` branch `deprecated` (Haiku 5.5 and Sonnet 5.5) and in `my-codex-harness` (gpt-6-sol, gpt-6.1-sol).
+- All subagents of the work on this repository run on Opus only, at low, medium or high reasoning (user: «всех
+  саб-агентов переводи на Opus low, medium или high ... Sonnets больше не используй, только Opus»).
+- Reviewers, accepted plan (user: «То, что ты предложил по ревьюерам — it's OK, я принимаю»): own extension
+  `RQW-review` on `createAgentSession`, no ready package (pi-subagents: ~98k lines, ~1.3k tokens per request, fails
+  strict schemas). One tool `review` with `level` `blind` or `high`; a fresh read-only session per pass with `read`,
+  `grep`, `find` and the shared Spotty prompt; no main prompt, extensions, skills or AGENTS.md in the reviewer;
+  `blind` on Haiku 5.5 medium, `high` on Sonnet 5.5, levels fixed by measurement; no silent model fallback; the
+  extension copies the user's messages verbatim into the brief; the verdict arrives later as a message. The two
+  reviewers keep this contract and these two models only (user: «Ревьюеры будут только на этих двух моделях»).
+  When each runs is decided by measurement (user: «Реши сам, найди самое лучшее решение»); quality is measured on a
+  rebuilt known-answer set and the prompt is tuned on it (user: «найди сам самый лучший способ замерить, и после
+  этого можешь подтюнить его промптом»).
+- A separate task: a general subagent for the main agent, like the subagents this work uses (user: «Любого рандомного
+  саб-агента ... Чтобы он мог ему ставить задачу, прерывать, выключать, перезапускать. Он мог ему посылать
+  сообщение follow-up»). It starts with no system prompt of its own: the main agent gives the whole prompt, the model
+  and the reasoning level (user: «должен подниматься без системного промпта, чтобы основной агент передавал ему весь
+  системный промпт»).
+- Autonomous work commits, pushes and merges into `main` by itself after proof and a clean review (user: «Да,
+  слияние без команды»). Model runs, tests and checks against the source are always part of the work (user:
+  «Прогоны на модели, тесты, сверка с кодом входят в работу всегда»).
+- `WORKFLOW-MANIFEST.md` lives in this repository and records how the owner works, so the agent can align with it;
+  it is not a description of the package (user: «манифест — это чисто для нас ... надо закрепить именно принципы
+  работы ... как я работаю как владелец всей системы»).
 - Open work: `RQW-context` (context window and compaction rule) and faster file writing in `RQW-tools`.
 
 ## Structure
@@ -145,6 +168,116 @@ Every accepted decision, with its reason and the file that carries it.
 - Proof: `npm test` (`node --test`, no model) and `.github/workflows/tests.yml` on macOS, Linux and Windows, plus a job
   reproducing PowerShell, portable Git Bash without admin, then Node.
 
+## Context
+
+- `extensions/RQW-context/index.ts` applies the owner's rule to every model: W = min(model.contextWindow, 500000) is
+  the context window Pi uses, R = `Math.round(W / 10)` (a .5 rounds up), and Pi compacts above W - R. 272 000 ->
+  window 272 000, compaction above 244 800; 500 000 and 1 000 000 -> window 500 000, compaction above 450 000.
+  Built-in, models.json and extension models alike, at start (`--model`), on resume, after `/model` and model cycling.
+  No per-model list.
+- The window above 500 000 is lowered for the session, not only the trigger. Owner, on the open question: option b,
+  «овераить его, если оно выше 500 тыс. токенов на 500 тыс. токенов», with compaction at W - R and R = 10% of W.
+  Reason: with the trigger alone the footer showed 45% at compaction and Pi still treated a 1M model as 1M everywhere
+  else; the rule says the window itself becomes 500 000.
+- Mechanism, window: Pi reads every limit from the session model, `agent.state.model` (`agent-session.js:1037`
+  `get model() { return this.agent.state.model; }`): the pre-prompt and next-turn trigger (`420-422`), threshold and
+  overflow checks after a response (`2376`, `2407`, `2477`), no auto-retry on overflow (`3013`), context usage and the
+  footer percent (`3472-3499`, `footer.js:134`), the model of every request (`456`, `agent-loop.js:132`), whose
+  output cap pi-ai derives from it (`pi-ai/dist/api/simple-options.js:5-9`: contextWindow - context - 4096), and the
+  summary requests (`_getSummarizationRequestAuth(this.model)`). `state.model` is a plain property
+  (`pi-agent-core/dist/agent.js:40`), so the extension replaces it on each session's state with an accessor that
+  stores `{ ...model, contextWindow: 500000 }` for a model above 500 000 and the same object otherwise, one stable copy
+  per declared model. It is installed from `AgentSession.prototype._buildRuntime`, which Pi runs in the session
+  constructor right after `this.agent = config.agent` (`agent-session.js:177`, `210`) and again on `/reload`
+  (`2988`), so every assignment Pi makes later (`setModel` `1985`, cycling `2037`, `2064`, registry refresh `2711`)
+  goes through it. Reason for an internal hook: the extension API has no way to change the session model's window.
+  `pi.setModel` takes a model but appends a `model_change` entry, reapplies the thinking level and is not called at
+  start, resume or registry refresh; `pi.registerProvider` with `models` "replaces all existing models for this
+  provider" (`extensions/types.d.ts:1442`); models.json `modelOverrides` needs an entry per model; the `model_select`
+  event is a notification. Extensions get Pi's own `AgentSession` class (jiti alias in the library, virtual modules
+  in the bundle); the tests run both.
+- Load check: before patching anything the extension checks that both internals it patches exist,
+  `AgentSession.prototype._buildRuntime` and `SettingsManager.prototype.getCompactionSettings`. If either is missing
+  (another Pi version), it throws one load error naming the missing method and patches nothing. Reason: Pi turns the
+  throw into a load error and keeps running (`core/extensions/loader.js:524-537`), so a half-installed patch would run
+  a rule the user is told is off; now the rule is either whole or absent.
+- Mechanism, reserve: Pi compacts when `contextTokens > model.contextWindow - reserveTokens` (`compaction.js:176`) and
+  reads reserveTokens from `SettingsManager.getCompactionSettings(model)` at every check. The extension wraps that
+  method on Pi's class and returns contextWindow - (W - R), which is R itself once the window is W: a computed
+  `compaction.modelOverrides` reserve for every model, the way Pi's docs tune the trigger per model
+  (`docs/compaction.md:457`). `pi.getSettings()` returns a copy and has no setter.
+- Consequences for a model above 500 000, all as for a 500 000 model: footer and `getContextUsage()` show the window
+  500k and 90% at the threshold; summary output limits are 40 000 and 25 000 for a split turn (0.8 and 0.5 x R,
+  `compaction.js:512`, `727`); the output cap of a request is 500 000 - context - 4096, about 45 900 at 450 000
+  context (the test sees 45 902); an answer reporting more than 500 000 input tokens counts as overflow
+  (`pi-ai/dist/utils/overflow.js:147-150`). With compaction on and a history of several turns that a summary can
+  fit, Pi recovers: a completed answer is kept and the session is compacted with reason `overflow` and no retry
+  (`agent-session.js:2410-2414`); a length stop with no output at 99% of the window is compacted and retried once
+  (`2440`, `overflow.js:156-159`). Nothing about the window goes to the provider: the OpenAI-compatible body has only
+  `max_completion_tokens` changed, every other field as stock Pi.
+- Known limits of the 500 000 window, no code change: the window rule is the owner's, and all follow from it.
+  1. The output cap. pi-ai clamps a request's output to `contextWindow - context - 4096` with a floor of 1 token
+     (`pi-ai/dist/api/simple-options.js:5-9`), so on a 1M model it reaches 1 token at about 495 900 context tokens.
+     Pi does not recover in three cases. With `compaction.enabled: false` there is no compaction at all
+     (`agent-session.js:2363-2364`): measured `max_completion_tokens` at context 0 / 480 000 / 497 000 / 520 000 is
+     `[128000, 15902, 1, 1]` (stock Pi `[128000, 128000, 128000, 128000]`); a provider that obeys it answers 1 token
+     with stop reason `length` and no error. A history that is one oversized turn, such as a 700 000-token first
+     paste, gives requests with a 1-token cap; the overflow compaction that follows also has its turn-prefix summary
+     capped at 1 token and fails with "Turn prefix summarization failed: generation hit the token cap and the summary
+     is incomplete". When the part a compaction summarizes (all but the last `keepRecentTokens`) of a text-heavy
+     history estimates above about 496 000 tokens by characters, every request gets a 1-token cap and every
+     compaction fails: the summary request is capped the same way ("Summarization failed: generation hit the token
+     cap and the summary is incomplete"). A text-heavy history a little above the window still recovers, a resumed
+     one too: Pi checks a resumed session at its first prompt (`agent-session.js:1452-1454`); in review runs against
+     a local stub the dead end began between 535 000 and 541 728 tokens (summary cap 5 112 at 534 864, 1 at
+     541 728). A tool-heavy history of the same size recovers, because summaries cut tool results to 2 000 characters
+     (`compaction/utils.js:82`). The test pins the cap with compaction off.
+  2. Summaries of prose-heavy histories. A summary request is a fresh context that pi-ai sizes by characters
+     (3.5 per token), so a chat history of English prose, about 4.4 chars per real token, estimates above the window
+     at the threshold and the summary's output cap is 1 token: on a 1M model the compaction at 450 000 fails with
+     "Summarization failed: generation hit the token cap and the summary is incomplete", then up to two failed
+     summary requests per prompt. Stock Pi does the same on a native 272 000 or 500 000 model; it is new for 1M models
+     only because stock Pi would not compact them before 983 616. Tool results are cut to 2 000 chars before the
+     estimate (`compaction/utils.js:82`), so tool-heavy coding sessions do not reach it.
+- Models up to 500 000 keep their own object; only the reserve changes. The model registry is not touched: `/model`
+  and `--list-models` show the declared window, the session and the footer show 500k. So one model shows two windows
+  through events and RPC: `model_select.model` is the object passed to `setModel` and RPC `set_model` returns the
+  registry object (`rpc-mode.js:371-372`), both with the declared window; the session state (`ctx.model`,
+  `model_select.previousModel`, RPC `get_state` and `get_session_stats`) has the capped one. There is no fix without
+  a Pi API.
+- A reserve the user set still wins, measured against the capped window W: `compaction.reserveTokens` for all models
+  and `compaction.modelOverrides["provider/id"].reserveTokens` for that model, Pi's own precedence (1M with a reserve
+  of 30 000 compacts above 470 000). A user reserve of W or more would leave a threshold of 0 or below, so Pi would
+  compact before every request; then the rule's R applies instead (1M with 600 000 compacts above 450 000). Pi's docs
+  example (`docs/compaction.md:444-457`), `"some-provider/big-model": { "reserveTokens": 400000 }`, "triggers
+  compaction above 600K tokens" for a 1M model; with the extension the window is 500 000, so it compacts above
+  100 000. `compaction.enabled: false` still turns off threshold and overflow compaction. A models.json
+  `contextWindow` (a model entry or `modelOverrides`) is the model's declared window: up to 500 000 Pi uses it as
+  written, also to lower a 1M model; above 500 000 it is capped like any other source, because Pi's composed model
+  does not say where its window came from. A model without a positive contextWindow keeps Pi's values, as stock: for
+  a window of 0 or undefined Pi itself compacts after every response, because its post-response check is
+  `tokens > 0 - reserve` (`agent-session.js:2376`, `2477`; only the pre-request check has a `<= 0` guard, `421`); a
+  response is skipped only when nothing lies beyond `keepRecentTokens` to summarize. The extension leaves that
+  unchanged.
+- Both wraps live as long as the process, one per class (`Symbol.for` guards): SDK sessions in the same process get
+  the rule too, and a `/reload` without the extension keeps it until restart. The reverse holds too: the patch of
+  Pi's classes is installed once per process, so after an update of my-pi a `/reload` keeps the old RQW-context code;
+  Pi must be restarted for RQW-context changes to apply (`INSTALL.md` step 4). Reason for text, not code: a
+  replaceable implementation behind the guards adds machinery for a case a restart covers.
+- Out of scope: virtual models (`pi.registerVirtualModel`; Pi 1.3.0 ships none), owner's option a. A virtual model
+  (`api` `pi-virtual`) is never capped and `getCompactionSettings` returns Pi's own values for it. Reason: Pi reads
+  the settings of the virtual selection but checks them against the routed physical model's window
+  (`agent-session.js:420-422`, `481`, `2363`, `2376`); a reserve from the virtual model's declared window made Pi
+  compact before every prompt (1M virtual routed to 272k: reserve 550 000, threshold below 0). Under a virtual model
+  the behaviour is stock Pi's: the routed model's declared window and Pi's reserve.
+- Proof: `extensions/RQW-context/test/context.test.ts` runs real sessions of the library and the bundle with a
+  scripted provider that reports exact usage and a local OpenAI-compatible endpoint: Pi's own `session.model`,
+  `getContextUsage()`, `compaction_start` at W - R + 1 and not at W - R (also after a switch, `/reload`, resume, fork
+  and `/new` through `AgentSessionRuntime`, and in the pre-request check `_exceedsCompactionThreshold` between tool
+  turns), user reserves in memory and in a file-backed `settings.json`, overflow recovery above 500 000, the output cap
+  with compaction off, a virtual model as stock, load order, a load without either internal, and the request body
+  against stock Pi.
+
 ## Prompt
 
 - First step is only the prompt extension (user: «пока делаем только экстеншен который заменяет промпт систменый на
@@ -173,6 +306,11 @@ Every accepted decision, with its reason and the file that carries it.
   ordered by a barrier of that call, carried by `AsyncLocalStorage`. RQW-tools replaces Pi's built-in `codemode` at
   `session_start` with the same definition and a grouped `execute` (`extensions/RQW-tools/nested.ts`, `codemode.ts`), so
   `-builtin:codemode` still means no `codemode`. Reason: `[codemode(write f), read f]` let the read run first.
+- Measured with codemode on (bench45, T01-T07, 5 runs, the bench44 judge; `~/stock-bench/bench45.csv`): gpt-6.1-sol
+  medium quality 99.5 -> 97.4 (90% interval -3.7 to -0.5), seconds 51.1 -> 50.4, calls 40.9 -> 35.7; codemode called
+  32 times in 19 of 35 runs, `tool_search` never; most of the loss is one T06 point. gpt-6-sol low never calls
+  codemode: 91.9 -> 93.7, within noise. Edit, write and multi-file probes pass on both. Kept on by the owner's
+  request; the cost is recorded here.
 - On `/reload` the `session_start` handlers of RQW-settings and RQW-tools leave the active set alone: Pi keeps the tools
   the user switched off, and the handlers had added them again.
 
