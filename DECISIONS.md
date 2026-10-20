@@ -313,6 +313,10 @@ Every accepted decision, with its reason and the file that carries it.
   included), drops that context in a worker's `message` callback; every script that called a tool hung (review A).
   Proven on Node 22 and 26 (`npm test`) and on Bun 1.3.14 (the Pi 1.3.0 binary) and 1.4.3:
   `extensions/RQW-tools/test/bun/codemode-check.mjs` runs Pi's CLI under Bun with a faux model; CI job `bun-codemode`.
+  Known limit of stock Pi 1.3.0 on Bun, `pi.exe` included: a codemode call that starts right after other scripts,
+  such as the third in one message, can fail with "Codemode worker limit reached" (2 workers, a slot freed only on
+  the worker's late `exit` event); Node does not do this; the take-over does not change it. Details:
+  `notes/settings-codemode.md`, Limits.
 - Measured with codemode on (bench45, T01-T07, 5 runs, the bench44 judge; `~/stock-bench/bench45.csv`): gpt-6.1-sol
   medium quality 99.5 -> 97.4 (90% interval -3.7 to -0.5), seconds 51.1 -> 50.4, calls 40.9 -> 35.7; codemode called
   32 times in 19 of 35 runs, `tool_search` never; most of the loss is one T06 point. gpt-6-sol low never calls

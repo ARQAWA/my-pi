@@ -220,6 +220,11 @@ tests the barrier without Pi (order, scope all, no wait for the group's entry, s
 ### Limits
 
 - Two `codemode` calls in one message run one after the other (`all` against `all`), like two `bash` calls.
+- Stock Pi 1.3.0 on Bun, `pi.exe` included, allows 2 codemode workers (`extensions/codemode/execute.js:23`
+  `MAX_CONCURRENT_CODEMODE_WORKERS = 2`) and frees a slot only on the worker's `exit` event
+  (`pi-codemode/dist/runtime/host.js:36-37`), which Bun sends late. A codemode call that starts right after other
+  scripts, such as the third in one message, can fail at once with "Codemode worker limit reached (2 workers are still
+  running or shutting down)". Node does not do this. It is the same with the take-over switched off (review B).
 - The routing relies on Pi's nested id format `<parent id>/<n>` (`core/nested-tool-calls.js:106`). A Pi update that
   changes it sends script calls to the outer barrier, where they wait for their codemode call: the Bun check and the
   settings tests then fail on their watchdogs. A model call id that has a `/` and starts with the id of a running
