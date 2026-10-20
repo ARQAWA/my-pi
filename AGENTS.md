@@ -6,7 +6,7 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
 - `extensions/settings/`: extension 1, the harness settings. Empty for now.
 - `extensions/prompt/`: extension 2, the system prompt and its settings. Empty for now; built first.
-- `INSTALL.md`: the install prompt. An agent given only this file rebuilds the working Pi from scratch.
+- `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `notes/`: research notes, such as how the omp-lite prompt was built.
 - `DECISIONS.md`: every accepted decision with its reason and the file that carries it.
 

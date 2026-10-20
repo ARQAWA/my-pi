@@ -17,7 +17,9 @@ Every accepted decision, with its reason and the file that carries it.
 - Everything is an extension, one folder per extension under `extensions/`, listed in `package.json` under
   `pi.extensions`: first `settings`, second `prompt` (user: «в этом репозитории мы всё будем делать extension... Первый
   extension — это будут настройки, второй — промты, настройки промта»).
-- `INSTALL.md` is the install prompt: one prompt to an agent rebuilds the working Pi anywhere from scratch (user: «чтобы
-  можно было его везде воссоздавать, воссобирать с нуля, просто промтом одним через install prompt»).
+- `INSTALL.md` is the install prompt: the user runs it inside an already installed Pi, and that Pi installs this
+  package into itself with `pi install` and asks for `/reload` (user: «чтобы можно было его везде воссоздавать,
+  воссобирать с нуля, просто промтом одним через install prompt»; «install.md — это про установку именно наших обвесов
+  на уже установленный Pi. Я внутри Pi запускаю этот промпт»).
 - The start is empty: both extensions are no-ops. The prompt is built first, everything else after it (user: «Старт
   должен быть пустой... сначала надо сделать промпт пиздатый, а потом всё остальное будем делать»).

@@ -1,11 +1,10 @@
-# Install my-pi
+# Install my-pi into this Pi
 
-Give this file to a coding agent on a new machine: it rebuilds the working Pi from scratch.
+You are running inside Pi. Install the my-pi package into this Pi installation, then report the result in one short message.
 
-1. Install Node.js 22.19 or newer if `node --version` is older or missing.
-2. Install Pi: `npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.3.0`. Check with `pi --version`.
-3. Install this package: `pi install git:github.com/ARQAWA/my-pi`. It is written to `~/.pi/agent/settings.json` under `packages`.
-4. Check: `pi list` shows `git:github.com/ARQAWA/my-pi`.
-5. Log in to a provider inside Pi with `/login` if `~/.pi/agent/auth.json` has none.
+1. Run `pi list`. If it already shows `git:github.com/ARQAWA/my-pi`, run `pi update git:github.com/ARQAWA/my-pi` and skip step 2.
+2. Run `pi install git:github.com/ARQAWA/my-pi`. It writes the package to `~/.pi/agent/settings.json` under `packages`.
+3. Run `pi list` again and check that it shows `git:github.com/ARQAWA/my-pi`.
+4. Tell the user to run `/reload` in this session, or to restart Pi, so the package's extensions load.
 
-Update later with `pi update --extensions`.
+Change nothing else: no other packages, settings or files.
