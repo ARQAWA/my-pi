@@ -17,6 +17,12 @@ Every accepted decision, with its reason and the file that carries it.
   `code_writer`, `shell_runner`, `custom`), the `define-goal` skill and work orders, the task list with the check
   before stopping (later switched on by a skill rather than always on), and the interface (whether the omp-lite UI can
   be rebuilt in Pi is decided later).
+- Reviewers are ported after all, as the one exception to the postponed subagents: two blind reviewers, `blind` and
+  `high`, with one shared prompt (user: «Smart не нужен ... Надо только большого и маленького reviewer ... будет Blind и
+  High»). They run in the same process through Pi's SDK `createAgentSession` (user: «Да, конечно, через SDK, через
+  createAgentSession»), read only, and are checked on a model with a known-answer set (user: «Конечно, делай
+  проверки, расходуй токены»). Their concept and models come from the history first: Spotty and Bossy in
+  `my-omp-harness` branch `deprecated` (Haiku 5.5 and Sonnet 5.5) and in `my-codex-harness` (gpt-6-sol, gpt-6.1-sol).
 - Open work: `RQW-context` (context window and compaction rule) and faster file writing in `RQW-tools`.
 
 ## Structure
@@ -126,6 +132,13 @@ Every accepted decision, with its reason and the file that carries it.
   [-1.9, 2.9], [-0.8, 1.9]. my-pi minus stock Pi: quality [8.6, 15.2], [3.2, 6.5], [15.3, 24.2]; seconds [6.3, 9.0],
   [7.3, 11.5], [9.7, 11.9]. my-pi answers better than both at the speed of Pi + prompt; stock Pi is faster because it
   stops early with incomplete answers. No run changed the repository. Edit tasks: see the edit-task entry above.
+- Faster writing (`notes/refine/refine-write2.md`, `notes/refine/refine-find.md`; WRITE, EDIT, MULTI, T01, T03, T05,
+  T06; two models): a new file the task fully specifies needs no read of its neighbours (one line in `SYSTEM.md`, one
+  in `read.md`), and the find example shows that "app" returns the directory only while "app/**" returns its files.
+  Measured in two steps: the read lines against main (WRITE 18.4 s / 5.5 responses -> 16.0 s / 4.7, T01 and T05
+  checklists equal), then the find example against that (edit tasks 19.4 s -> 17.3 s, question checklists 94.8% ->
+  96.3%, not lower). All runs correct. gpt-6.1-sol still makes a second find in 2 of 6 WRITE runs. A review then made
+  the find, read and prompt wording exact (full-path matching, imported code, long files in parts) without new runs.
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
