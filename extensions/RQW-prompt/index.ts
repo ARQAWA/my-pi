@@ -11,14 +11,18 @@ const SYSTEM = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "SYSTE
 const ENV_PROGRAMS = ["git", "node", "bun", "npm", "pnpm", "python3", "python", "cargo", "rustc", "go", "java", "docker", "gh", "rg", "fd", "jq", "make", "cmake"];
 
 function onPath(name: string): boolean {
+	// Windows finds programs by PATHEXT suffixes such as .exe; Unix by the bare name.
+	const suffixes = process.platform === "win32" ? ["", ...(process.env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";")] : [""];
 	return (process.env.PATH ?? "").split(delimiter).some(dir => {
 		if (!dir) return false;
-		try {
-			accessSync(join(dir, name), constants.X_OK);
-			return true;
-		} catch {
-			return false;
-		}
+		return suffixes.some(ext => {
+			try {
+				accessSync(join(dir, name + ext.toLowerCase()), constants.F_OK);
+				return true;
+			} catch {
+				return false;
+			}
+		});
 	});
 }
 
