@@ -53,6 +53,10 @@ Every accepted decision, with its reason and the file that carries it.
 - The read key mirrors stock `resolveReadPath` (NFD, curly quote and AM/PM variants), so a read and a write of the same
   file spelled differently still meet in the barrier.
 - The `ls` and other stock tools beyond the six are not wrapped and stay outside the barrier; they are off by default.
+- The descriptions do not explain the barrier order (bash waits for earlier calls, a read waits for an earlier write).
+  Reason, measured on gpt-6.1-sol medium, T01: with those lines the model made one call per response in 8 of 8 runs
+  (14-18 responses); without them it batched in 9 of 9 runs (3-5 responses). The barrier works without the model
+  knowing it.
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
