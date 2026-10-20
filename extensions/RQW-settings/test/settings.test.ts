@@ -454,7 +454,7 @@ describe("settings: codemode is one call of the barrier, with scope all like bas
 		assert.match(result(r, "c1"), /NEW-K/);
 	});
 
-	it("the context of the codemode call reaches a tool through Pi's sandbox: a nested call sees the barrier of its script", async () => {
+	it("the id Pi gives a script's call leads to its script through Pi's sandbox: a nested call sees the barrier of its script", async () => {
 		// The probe tool and the take-over come from a test extension with a nested barrier of its own.
 		const r = await run({
 				paths: [SETTINGS, PROBE],

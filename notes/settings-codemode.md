@@ -117,19 +117,22 @@ milliseconds to start its worker, reached `write`. The model order said codemode
 
 ### Mechanism (`extensions/RQW-tools/nested.ts`, `extensions/RQW-tools/codemode.ts`)
 
-1. `createNestedBarrier()` holds the outer barrier and an `AsyncLocalStorage<Schedule>`. `schedule(scope, run)` uses
-   `store.getStore() ?? outer`; every `execute` of our six tools calls it.
-2. `group(run)` registers one `all` entry in the outer barrier. When it starts, it creates a new barrier and runs
-   `store.run(newBarrier, run)`. When `run` ends it waits for every call still live in that new barrier (a script that
-   does not await a nested call), so later outer calls wait for those too. A call that has not started when the script
-   ends is cancelled: the sandbox aborts the signal of every pending call (`pi-codemode/runtime/execution.js:346`,
-   `pending.controller.abort()`), and our wrappers check the signal after waiting and return "Operation aborted"
-   without side effects.
+1. `createNestedBarrier()` holds the outer barrier and a map from the tool call id of a running group to the barrier
+   of its calls. `schedule(id, scope, run)` gets the tool call id Pi passes to `execute`; every `execute` of our six
+   tools calls it. A call whose id has a `/` walks up its id (`c0/1/1` -> `c0/1` -> `c0`) and uses the barrier of the
+   first registered group. With none, it uses the outer barrier, unless one of those ancestor ids has a live entry
+   there: then it runs at once, because waiting there could mean waiting for its own ancestor.
+2. `group(id, run)` registers a new barrier under `id` at once, before it waits, then registers one `all` entry where
+   `schedule(id, ...)` puts it (the outer barrier for a model call). When `run` ends it waits for every call still live
+   in its own barrier (a script that does not await a nested call), so later outer calls wait for those too. Then the
+   registration is removed. A call that has not started when the script ends is cancelled: the sandbox aborts the
+   signal of every pending call (`pi-codemode/runtime/execution.js:347`, `pending.controller.abort()`), and our
+   wrappers check the signal after waiting and return "Operation aborted" without side effects.
 3. `takeOverBuiltinCodemode(pi, nested)` runs in the `session_start` handler of RQW-tools, for every reason. When the
    registered `codemode` has `sourceInfo.source === "builtin"`, it calls Pi's own factory `createCodemodeExtension()`
    (exported by the package; the built-in extension is the same call with no options, `extensions/codemode/index.js:32`)
    with a copy of `pi` whose `registerTool` only captures the definition, and registers `{ ...definition, execute }` where
-   `execute` is `(...args) => nested.group(() => definition.execute(...args))`. Description, parameters, `exposure`,
+   `execute` is `(id, ...rest) => nested.group(id, () => definition.execute(id, ...rest))`. Description, parameters, `exposure`,
    `prepareLoadout`, `reachesTools`, `constrainedSampling`, `defaultActive: false` and the renderers are the built-in's
    own objects. Test: "the definition equals the built-in one except for the closures that differ per load" compares
    the registered definition and the description the model reads, with and without RQW-tools.
@@ -155,42 +158,52 @@ milliseconds to start its worker, reached `write`. The model order said codemode
   calls, and `analysis-races.md` section 1 rules out registering a barrier entry from an event handler (a later handler
   may block the call and leave an entry that never ends).
 
-### Why the context reaches our `execute` (proof from the source)
+### Why the id reaches our `execute` (proof from the source)
 
 The script runs in a worker thread, and a script call comes back as a message of that worker. The chain from the
-`execute` of `codemode` to the `execute` of our tool:
+`execute` of `codemode` to the `execute` of our tool carries the id as an argument at every step:
 
-1. `extensions/codemode/tool.js:270`: `execute: async (...) => (await loadCodemodeExecutor()).executeCodemode(...)`.
-   Our `execute` calls it inside `store.run`, and a promise continuation keeps the store.
-2. `extensions/codemode/execute.js:460`: `result = await sandbox.execute(code, { signal, store });` creates the sandbox
-   of this call inside that context.
-3. `pi-codemode/runtime/host.js:9`: "Each execution gets its own worker thread and QuickJS VM." and `:30`:
-   `worker = new Worker(options.workerUrl ?? defaultWorkerUrl(), { workerData });`. The worker is created per call
-   (no pool), so it is created inside the group's context. A message of an object created in a context runs its
-   callback in that context (async resource of the `Worker`); `:38`: `worker.on("message", (message) => {...
-   events.message(message); });`.
-4. `pi-codemode/runtime/execution.js:269`: `void this.handleCall(message);` and `:319`:
-   `const value = await tool.execute(args, { signal: pending.controller.signal });`: the host handles the call
-   directly in the message callback.
-5. `extensions/codemode/execute.js:421`: `const outcome = await ctx.executeTool(tool.name, args, { signal: callSignal });`
-   -> `core/extensions/runner.js:719` `return runner.executeToolFn(toolCallId, name, args, ...)` ->
-   `core/agent-session.js:2816` `executeTool: (callerId, name, args, options) => this._executeNestedToolCall(...)` ->
-   `core/nested-tool-calls.js:136` `outcome = await this.host.runToolCall(...)` -> `core/agent-session.js:401`
-   `return runToolCall(toolCall, { tools: this._getCallableTools(), ... })` -> our wrapped `execute`
-   (`core/tools/tool-definition-wrapper.js:12`). Only `await` and synchronous calls, nothing queued from another context.
+1. `extensions/codemode/tool.js:270`: `execute: async (toolCallId, params, ...) => (await loadCodemodeExecutor())
+   .executeCodemode(toolCallId, params, ...)`; `extensions/codemode/execute.js:383` `executeCodemode(toolCallId, ...)`.
+   Our wrapper registers the group under this same `toolCallId`.
+2. `extensions/codemode/execute.js:421`: `const outcome = await ctx.executeTool(tool.name, args, { signal: callSignal });`.
+   `ctx` is the tool context of the codemode call: `core/extensions/wrapper.js:13`
+   `runner.createToolContext(toolCallId, signal)`, and its `executeTool` passes that id on
+   (`core/extensions/runner.js:696`, `:719` `return runner.executeToolFn(toolCallId, name, args, ...)`).
+3. `core/agent-session.js:2816` `executeTool: (callerId, name, args, options) => this._executeNestedToolCall(...)` ->
+   `:388` `_executeNestedToolCall(parentToolCallId, ...)` -> `core/nested-tool-calls.js:98` `execute(callerId, ...)`.
+   `:95`: "The nested call gets the id `<callerId>/<n>`."; `:106`: ``id: `${callerId}/${scope.nextId++}` ``.
+4. `core/nested-tool-calls.js:136` `outcome = await this.host.runToolCall(toolCall, ...)` -> `core/agent-session.js:401`
+   `return runToolCall(toolCall, ...)` -> `core/tools/tool-definition-wrapper.js:12`
+   `definition.execute(toolCallId, params, ..., ctx ?? ctxFactory?.(toolCallId, signal))`: our `execute` gets `c0/1`.
+   A nested call that itself calls `ctx.executeTool` (the `relay` test tool) gets a context for `c0/1`, so its call is
+   `c0/1/1`.
 
-Tests that prove it, both on Node 26 and Node 22:
+The first version carried the group's barrier in `AsyncLocalStorage` instead. Node keeps that context in the
+`message` callback of a worker created inside it; Bun does not (review A: `worker.on(message) store = undefined` on
+Bun 1.4.3). Pi's release binaries run on Bun (`config.js:424` `isBunBinary ? "bun-binary"`), the Windows `pi.exe` of
+PCLI included. There every script call went to the outer barrier, waited for its own codemode call, and hung: the
+real 1.3.0 binary printed `tool_execution_start c0 codemode`, `tool_execution_start c0/1 write`, then nothing.
 
-- `extensions/RQW-tools/test/nested.test.ts`, "the context follows the messages of a message channel and of a worker
-  thread created inside the group": a `Worker` created inside `group()` posts a message; the `message` callback sees the
-  group's barrier, and a `schedule` call from it goes into that barrier.
-- `extensions/RQW-settings/test/settings.test.ts`, "the context of the codemode call reaches a tool through Pi's
-  sandbox": a test extension (`test/fixtures/probe.ts`) takes over `codemode` with the production function and registers
-  a `probe` tool that reports `nested.current()`. Results: a model call of `probe` -> `no-group`; one script calling
-  `probe` directly, through a tool that runs `ctx.executeTool` (a nested call of a nested call), and in `Promise.all`
-  -> `group-1,group-1,group-1,group-1`; a second script -> `group-2`.
-- Making `schedule` ignore the store by hand (nested calls then go to the outer barrier and wait for the group's own
-  entry) fails every codemode test with "no result after 5 s (deadlock?)": a lost context cannot pass unnoticed.
+Tests that prove the routing, on Node 22.19 and Node 26, and on Bun 1.3.14 (the runtime inside the Pi 1.3.0 binaries)
+and Bun 1.4.3:
+
+- `extensions/RQW-tools/test/bun/codemode-check.mjs` (`npm run test:bun`, CI job `bun-codemode` on Ubuntu and
+  Windows, both Bun versions): runs Pi's own CLI under Bun (`dist/bun/cli.js`, the entry of the release binary) with
+  this package and a faux model (`test/bun/faux-codemode.ts`). The script is
+  `await tools.write({ path: "f.txt", content: "NEW\n" }); return await tools.read({ path: "f.txt" });`. It passes
+  when the turn ends within 60 s, `c0/2 read` returns `NEW`, and f.txt is `NEW`. On the AsyncLocalStorage version
+  (feefe18) it fails on both Bun versions: `FAIL after 20.0 s: no end after 20 s (hang)`, f.txt still `old`. The same
+  package also passes on the Pi 1.3.0 darwin-arm64 release binary.
+- `extensions/RQW-tools/test/nested.test.ts`: the barrier without Pi, by ids: a call of a call (`c0/1/1`) finds the
+  group `c0`, a group inside a group, removal when the group ends, a call from a worker's `message` callback lands in
+  the group's barrier, and a nested id with no group either runs at once (an ancestor is live in the outer barrier) or
+  is ordered in the outer barrier (an ancestor that is not ours).
+- `extensions/RQW-settings/test/settings.test.ts`, "the id Pi gives a script's call leads to its script through Pi's
+  sandbox": a test extension (`test/fixtures/probe.ts`) takes over `codemode` with the production function and
+  registers a `probe` tool that reports `nested.groupOf(id)`. Results: a model call of `probe` -> `no-group`; one
+  script calling `probe` directly, through a tool that runs `ctx.executeTool` (a nested call of a nested call), and in
+  `Promise.all` -> `group-1,group-1,group-1,group-1`; a second script -> `group-2`.
 
 ### Tests of the semantics
 
@@ -201,11 +214,16 @@ bash": `[codemode(write f), read f]` (10 of 10), `[write f 500 KB, codemode(scri
 `Promise.all` with a bash before and a read after, and nested calls of nested calls without deadlock. Every run has a
 5 s watchdog that aborts the session. With the take-over switched off, six of them fail; the older describe "the
 RQW-tools barrier holds for calls made from a codemode script" stays green. `extensions/RQW-tools/test/nested.test.ts`
-tests the barrier without Pi (order, scope all, no wait for the group's entry, still-running calls, `current()`).
+tests the barrier without Pi (order, scope all, no wait for the group's entry, still-running calls, routing by id,
+`groupOf()`).
 
 ### Limits
 
 - Two `codemode` calls in one message run one after the other (`all` against `all`), like two `bash` calls.
+- The routing relies on Pi's nested id format `<parent id>/<n>` (`core/nested-tool-calls.js:106`). A Pi update that
+  changes it sends script calls to the outer barrier, where they wait for their codemode call: the Bun check and the
+  settings tests then fail on their watchdogs. A model call id that has a `/` and starts with the id of a running
+  codemode call would be ordered with the calls of that script instead of after it; it would not hang.
 - A script that does not await a nested call keeps its group open until that call ends (see 2 above).
 - Calls of one script are registered in the order the script made them, as long as the awaits between the script's
   call and our `execute` take the same time (`emit` of `tool_execution_start`, `tool_call` handlers). A `tool_call`

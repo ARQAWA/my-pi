@@ -303,9 +303,16 @@ Every accepted decision, with its reason and the file that carries it.
   set. Mode `on` (Pi's default) is kept: Pi appends a "Codemode: `tools.<name>(args)` resolves to ..." line to the
   descriptions of our six tools in each request. Texts, source lines and the barrier check: `notes/settings-codemode.md`.
 - `codemode` is a call of the RQW-tools barrier with scope "all", like `bash`; the tool calls of its own script are
-  ordered by a barrier of that call, carried by `AsyncLocalStorage`. RQW-tools replaces Pi's built-in `codemode` at
-  `session_start` with the same definition and a grouped `execute` (`extensions/RQW-tools/nested.ts`, `codemode.ts`), so
-  `-builtin:codemode` still means no `codemode`. Reason: `[codemode(write f), read f]` let the read run first.
+  ordered by a barrier of that call. RQW-tools replaces Pi's built-in `codemode` at `session_start` with the same
+  definition and a grouped `execute` (`extensions/RQW-tools/nested.ts`, `codemode.ts`), so `-builtin:codemode` still
+  means no `codemode`. Reason: `[codemode(write f), read f]` let the read run first.
+- A script's tool call finds the barrier of its script by its tool call id: Pi gives it `<codemode id>/<n>`, and the
+  group registers its barrier under the codemode call's id. A nested id with no registered ancestor goes to the outer
+  barrier, or runs at once when an ancestor has a live entry there, so it never waits for itself. Reason: the first
+  version carried the barrier in `AsyncLocalStorage`, and Bun, which runs the Pi release binaries (`pi.exe` of PCLI
+  included), drops that context in a worker's `message` callback; every script that called a tool hung (review A).
+  Proven on Node 22 and 26 (`npm test`) and on Bun 1.3.14 (the Pi 1.3.0 binary) and 1.4.3:
+  `extensions/RQW-tools/test/bun/codemode-check.mjs` runs Pi's CLI under Bun with a faux model; CI job `bun-codemode`.
 - Measured with codemode on (bench45, T01-T07, 5 runs, the bench44 judge; `~/stock-bench/bench45.csv`): gpt-6.1-sol
   medium quality 99.5 -> 97.4 (90% interval -3.7 to -0.5), seconds 51.1 -> 50.4, calls 40.9 -> 35.7; codemode called
   32 times in 19 of 35 runs, `tool_search` never; most of the loss is one T06 point. gpt-6-sol low never calls

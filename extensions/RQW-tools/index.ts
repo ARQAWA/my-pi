@@ -34,10 +34,9 @@ function withDescription(schema: any, property: string, text: string): any {
 
 export default function (pi: ExtensionAPI) {
 	// One barrier per extension instance; every execute registers its scope synchronously before any await. The tool
-	// calls of a `codemode` script use the barrier of that script (nested.ts), the `codemode` call itself is one call
-	// with scope "all" in the outer one.
+	// calls of a `codemode` script use the barrier of that script, found by the tool call id (nested.ts); the
+	// `codemode` call itself is one call with scope "all" in the outer one.
 	const nested = createNestedBarrier();
-	const schedule = nested.schedule;
 	const cwd = process.cwd();
 
 	type Run = (id: string, params: any, signal: any, onUpdate: any, ctx: any) => Promise<any>;
@@ -47,7 +46,7 @@ export default function (pi: ExtensionAPI) {
 			...stock,
 			...overrides,
 			execute(id: string, params: any, signal: any, onUpdate: any, ctx: any) {
-				return schedule(scopeOf(name, params, ctx?.cwd || process.cwd()), async () => {
+				return nested.schedule(id, scopeOf(name, params, ctx?.cwd || process.cwd()), async () => {
 					if (signal?.aborted) throw new Error("Operation aborted");
 					return run(id, params, signal, onUpdate, ctx);
 				});

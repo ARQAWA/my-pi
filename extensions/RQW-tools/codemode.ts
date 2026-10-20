@@ -2,11 +2,14 @@
 import { createCodemodeExtension, type ExtensionAPI, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { NestedBarrier } from "./nested.ts";
 
-/** The same definition with `execute` registered as one group of the barrier. Everything else is kept as it is. */
+/**
+ * The same definition with `execute` registered as one group of the barrier, under its tool call id: the calls of
+ * the script get ids `<id>/<n>` from Pi and find the group by that prefix. Everything else is kept as it is.
+ */
 export function groupCodemode(definition: ToolDefinition<any, any, any>, nested: NestedBarrier): ToolDefinition<any, any, any> {
   return {
     ...definition,
-    execute: (id, params, signal, onUpdate, ctx) => nested.group(() => definition.execute(id, params, signal, onUpdate, ctx)),
+    execute: (id, params, signal, onUpdate, ctx) => nested.group(id, () => definition.execute(id, params, signal, onUpdate, ctx)),
   };
 }
 
