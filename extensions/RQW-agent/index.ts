@@ -1,5 +1,6 @@
 // Extension 5: one tool `agent` that runs subagents as in-process Pi sessions. The main agent writes the whole system
 // prompt and picks model, thinking and tools; the subagent's answer comes back later as a message `[agent#N] ...`.
+import { randomUUID } from "node:crypto";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, ExtensionAPI, ExtensionContext, ModelRuntime, ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -64,20 +65,22 @@ export default function agent(pi: ExtensionAPI) {
 	let counter = 0;
 	let closed = false;
 	let main: ExtensionContext | undefined;
-	let deliveries = 0;
-	/** Results sent while the main session was busy, by delivery number, until the main model answers after them. */
-	const unanswered = new Set<number>();
+	/**
+	 * Results sent while the main session was busy, by delivery id, until the main model answers after them. The id is
+	 * a UUID: a counter would restart in every new instance (/reload, /resume, /fork, `pi -c`) and match old entries.
+	 */
+	const unanswered = new Set<string>();
 
 	function deliver(id: number, text: string) {
 		if (closed) return;
-		const message = { customType: "agent", content: `[agent#${id}] ${text}`, display: true, details: { delivery: ++deliveries } };
+		const message = { customType: "agent", content: `[agent#${id}] ${text}`, display: true, details: { delivery: randomUUID() } };
 		if (main?.isIdle() !== false) {
 			pi.sendMessage(message, { triggerTurn: true });
 			return;
 		}
 		// Busy: Pi appends a message without triggerTurn to the session at the end of the current turn, so Esc and abort
 		// cannot drop it (a follow-up would wait in the agent's queue, which Esc clears). agent_before_settle adds the turn.
-		unanswered.add(deliveries);
+		unanswered.add(message.details.delivery);
 		pi.sendMessage(message, { triggerTurn: false });
 	}
 
@@ -86,8 +89,8 @@ export default function agent(pi: ExtensionAPI) {
 		const entries = ctx.sessionManager.getEntries();
 		const branch = ctx.sessionManager.getBranch();
 		const lastAnswer = branch.findLastIndex((e) => e.type === "message" && e.message.role === "assistant");
-		const isResult = (n: number) => (e: (typeof entries)[number]) =>
-			e.type === "custom_message" && e.customType === "agent" && (e.details as { delivery?: number } | undefined)?.delivery === n;
+		const isResult = (n: string) => (e: (typeof entries)[number]) =>
+			e.type === "custom_message" && e.customType === "agent" && (e.details as { delivery?: unknown } | undefined)?.delivery === n;
 		for (const n of unanswered) {
 			if (!entries.some(isResult(n))) continue; // still held by Pi until the turn ends
 			const at = branch.findIndex(isResult(n));

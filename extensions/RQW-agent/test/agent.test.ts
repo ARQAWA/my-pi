@@ -132,7 +132,7 @@ type Main = {
 	delivered: () => string[];
 };
 
-async function startMain(mode: "tui" | "rpc" | "print" = "tui"): Promise<Main> {
+async function startMain(mode: "tui" | "rpc" | "print" = "tui", sessionManager?: SessionManager): Promise<Main> {
 	const dir = join(root, `w${counter++}`);
 	await mkdir(dir, { recursive: true });
 	const resourceLoader = new DefaultResourceLoader({
@@ -153,7 +153,7 @@ async function startMain(mode: "tui" | "rpc" | "print" = "tui"): Promise<Main> {
 		thinkingLevel: "low",
 		modelRuntime,
 		resourceLoader,
-		sessionManager: SessionManager.inMemory(dir),
+		sessionManager: sessionManager ?? SessionManager.inMemory(dir),
 		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
 	});
 	await session.bindExtensions({ mode });
@@ -373,8 +373,8 @@ describe("agent tool", () => {
 	});
 
 	/** The main agent starts a subagent, then streams a reply held by `mainGate` while the subagent answers. */
-	async function resultWhileMainBusy(mode: "tui" | "rpc") {
-		const m = await startMain(mode);
+	async function resultWhileMainBusy(mode: "tui" | "rpc", sessionManager?: SessionManager) {
+		const m = await startMain(mode, sessionManager);
 		const mainGate = gate("main busy");
 		const subGate = gate("SUB RESULT");
 		sub.replies.push(subGate.reply);
@@ -483,6 +483,63 @@ describe("agent tool", () => {
 		assert.ok(main.requests[2].texts.includes("[agent#1] sub result"));
 		const last = m.session.messages.at(-1);
 		assert.ok(last?.role === "assistant" && last.content.some((c) => c.type === "text" && c.text === "got it"));
+		await shutdown(m);
+	});
+	/**
+	 * A session that already holds an answered `[agent#1]` result from an earlier extension instance, as after
+	 * /reload, /resume, /fork or `pi -c`. The request logs are cleared afterwards.
+	 */
+	async function continuedSession(mode: "tui" | "print"): Promise<SessionManager> {
+		const dir = join(root, `c${counter++}`);
+		await mkdir(dir, { recursive: true });
+		const sessionManager = SessionManager.inMemory(dir);
+		const m = await startMain(mode, sessionManager);
+		sub.replies.push(fauxAssistantMessage("old result"));
+		main.replies.push(fauxAssistantMessage("got old"));
+		await m.call({ action: "start", system: SYSTEM, task: "old", model: "sub/a" });
+		await until(() => main.requests.length === 1 && m.session.isIdle, "the main turn for the old result");
+		await tick();
+		assert.deepEqual(m.delivered(), ["[agent#1] old result"]);
+		await shutdown(m);
+		main.requests.length = 0;
+		sub.requests.length = 0;
+		return sessionManager;
+	}
+
+	it("continued session with an earlier [agent#1] result: a result while busy still continues the run once", async () => {
+		const sessionManager = await continuedSession("tui");
+		const { m, mainGate, prompt } = await resultWhileMainBusy("tui", sessionManager);
+		mainGate.release();
+		await prompt;
+		await tick();
+		assert.deepEqual(m.delivered(), ["[agent#1] old result", "[agent#1] SUB RESULT"]);
+		assert.equal(main.requests.length, 3, "go, the tool turn and one continuation for the result");
+		assert.ok(main.requests[2].texts.includes("[agent#1] SUB RESULT"));
+		await shutdown(m);
+	});
+
+	it("print mode, continued session with an earlier [agent#1] result: the run continues with the new result", async () => {
+		const sessionManager = await continuedSession("print");
+		const m = await startMain("print", sessionManager);
+		const g = gate("NEW RESULT");
+		sub.replies.push(g.reply);
+		main.replies.push(
+			fauxAssistantMessage([fauxToolCall("agent", { action: "start", system: SYSTEM, task: "t", model: "sub/a" })], {
+				stopReason: "toolUse",
+			}),
+			fauxAssistantMessage("started it"),
+			fauxAssistantMessage("got new"),
+		);
+		const prompt = m.session.prompt("go");
+		await until(() => sub.requests.length === 1, "the subagent request");
+		await tick();
+		g.release();
+		await prompt;
+		assert.deepEqual(m.delivered(), ["[agent#1] old result", "[agent#1] NEW RESULT"]);
+		assert.equal(main.requests.length, 3, "go, the tool turn and one continuation with the new result");
+		assert.ok(main.requests[2].texts.includes("[agent#1] NEW RESULT"));
+		const last = m.session.messages.at(-1);
+		assert.ok(last?.role === "assistant" && last.content.some((c) => c.type === "text" && c.text === "got new"));
 		await shutdown(m);
 	});
 });
