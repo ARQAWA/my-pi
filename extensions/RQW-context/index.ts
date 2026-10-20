@@ -10,7 +10,10 @@
 //
 // The reserve: Pi triggers at `contextTokens > model.contextWindow - reserveTokens` and reads reserveTokens from
 // `SettingsManager.getCompactionSettings(model)` at every check (`pi.getSettings()` returns a copy, no setter), so
-// that method is wrapped to return `contextWindow - (W - R)`, which is R once the window is W.
+// that method is wrapped to return `contextWindow - (W - R)`, which is R once the window is W. A reserve the user set
+// counts against W, unless it is W or more (no positive threshold left), then R applies. Virtual models keep Pi's own
+// values: Pi checks their threshold against the routed physical model's window.
+// Both internals are checked before either is patched, so a failed load changes nothing.
 // Design and proof: DECISIONS.md section Context.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AgentSession, SettingsManager } from "@earendil-works/pi-coding-agent";
@@ -27,9 +30,14 @@ export function contextRule(contextWindow: number): { window: number; reserve: n
 	return { window, reserve, threshold: window - reserve };
 }
 
-/** The reserveTokens that makes Pi's `contextWindow - reserveTokens` equal W - R; R itself for a window up to W. */
-export function reserveFor(contextWindow: number): number {
-	return contextWindow - contextRule(contextWindow).threshold;
+/**
+ * The reserveTokens that makes Pi's `contextWindow - reserveTokens` equal the threshold: W - userReserve for a reserve
+ * the user set below W, else W - R. For the session model, whose window is already W, that is the reserve itself.
+ */
+export function reserveFor(contextWindow: number, userReserve?: number): number {
+	const { window, threshold } = contextRule(contextWindow);
+	const target = userReserve !== undefined && userReserve < window ? window - userReserve : threshold;
+	return contextWindow - target;
 }
 
 // One copy per original model object, so repeated assignments of the same model give the same object.
@@ -76,6 +84,8 @@ function contextWindowOf(model: CompactionModel): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+const isVirtual = (model: NonNullable<CompactionModel>) => "api" in model && model.api === VIRTUAL_MODEL_API;
+
 /** True when the user set reserveTokens: per model in `compaction.modelOverrides`, or for all models. */
 function userSetReserve(manager: SettingsManager, model: NonNullable<CompactionModel>): boolean {
 	const compaction = manager.getSettings().compaction;
@@ -91,27 +101,23 @@ type BuildRuntime = (this: SessionInternals, ...args: unknown[]) => unknown;
 // `_buildRuntime` is private in Pi's types; `agent` is set before the constructor calls it.
 type SessionInternals = { agent: { state: AgentState }; _buildRuntime?: BuildRuntime; [WRAPPED_SESSION]?: BuildRuntime };
 
-function wrapCompactionSettings(): void {
-	const proto: SettingsPrototype = SettingsManager.prototype;
+function wrapCompactionSettings(proto: SettingsPrototype): void {
 	if (proto[WRAPPED_SETTINGS]) return;
 	const original = proto.getCompactionSettings;
 	proto.getCompactionSettings = function getCompactionSettings(this: SettingsManager, model?: CompactionModel) {
 		const settings = original.call(this, model);
 		const contextWindow = contextWindowOf(model);
-		// No model or no known window: Pi's own values; Pi skips its window checks for such models.
-		if (!model || contextWindow === undefined || userSetReserve(this, model)) return settings;
-		return { ...settings, reserveTokens: reserveFor(contextWindow) };
+		// No model, no known window, or a virtual model: Pi's own values, as stock Pi.
+		if (!model || contextWindow === undefined || isVirtual(model)) return settings;
+		const userReserve = userSetReserve(this, model) ? settings.reserveTokens : undefined;
+		return { ...settings, reserveTokens: reserveFor(contextWindow, userReserve) };
 	};
 	proto[WRAPPED_SETTINGS] = original;
 }
 
-function wrapSessionModel(): void {
-	const proto = AgentSession.prototype as unknown as SessionInternals;
+function wrapSessionModel(proto: SessionInternals): void {
 	if (proto[WRAPPED_SESSION]) return;
-	const original = proto._buildRuntime;
-	if (typeof original !== "function") {
-		throw new Error("RQW-context: AgentSession._buildRuntime not found; the 500 000 window cap is built for Pi 1.3.0");
-	}
+	const original = proto._buildRuntime as BuildRuntime;
 	proto._buildRuntime = function _buildRuntime(this: SessionInternals, ...args: unknown[]) {
 		capStateModel(this.agent.state);
 		return original.apply(this, args);
@@ -120,6 +126,17 @@ function wrapSessionModel(): void {
 }
 
 export default function context(_pi: ExtensionAPI) {
-	wrapCompactionSettings();
-	wrapSessionModel();
+	const settings: SettingsPrototype = SettingsManager.prototype;
+	const session = AgentSession.prototype as unknown as SessionInternals;
+	const missing = [
+		typeof session._buildRuntime !== "function" && "AgentSession._buildRuntime",
+		typeof settings.getCompactionSettings !== "function" && "SettingsManager.getCompactionSettings",
+	].filter(Boolean);
+	if (missing.length > 0) {
+		throw new Error(
+			`RQW-context: ${missing.join(" and ")} not found; the 500 000 window rule is built for Pi 1.3.0, nothing is changed`,
+		);
+	}
+	wrapCompactionSettings(settings);
+	wrapSessionModel(session);
 }

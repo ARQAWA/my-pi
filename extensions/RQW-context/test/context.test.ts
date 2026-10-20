@@ -20,8 +20,14 @@ import {
 	type Model,
 } from "@earendil-works/pi-ai";
 import * as library from "@earendil-works/pi-coding-agent";
-import type { AgentSession, AgentSessionEvent, ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import { capModel, contextRule } from "../index.ts";
+import type {
+	AgentSession,
+	AgentSessionEvent,
+	CreateAgentSessionRuntimeFactory,
+	ExtensionFactory,
+} from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import context, { capModel, contextRule } from "../index.ts";
 
 type Pi = typeof library;
 const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
@@ -40,8 +46,8 @@ const MODELS = [
 	{ id: "w1m", contextWindow: 1_000_000 },
 ];
 
-/** One scripted answer: context tokens as `usage.input`, and how the response ended. */
-type Reply = number | { input: number; output?: number; stopReason?: "stop" | "length" };
+/** One scripted answer: context tokens as `usage.input`, how the response ended, or a call of the named tool. */
+type Reply = number | { input: number; output?: number; stopReason?: "stop" | "length"; toolCall?: string };
 
 /** A provider whose next chat answer reports exactly the next scripted usage; every request is recorded. */
 function scriptedProvider() {
@@ -49,11 +55,14 @@ function scriptedProvider() {
 	const reply = (model: Model<string>, _context: unknown, options?: { maxTokens?: number }): AssistantMessageEventStream => {
 		const stream = createAssistantMessageEventStream();
 		const entry = state.next.shift() ?? 0;
-		const { input, output = 0, stopReason = "stop" } = typeof entry === "number" ? { input: entry } : entry;
+		const { input, output = 0, toolCall, ...rest } = typeof entry === "number" ? { input: entry } : entry;
+		const stopReason = toolCall ? "toolUse" : (rest.stopReason ?? "stop");
 		state.requests.push({ maxTokens: options?.maxTokens, contextWindow: model.contextWindow, tokens: input });
 		const message: AssistantMessage = {
 			role: "assistant",
-			content: [{ type: "text", text: input === 0 ? "summary" : "ok" }],
+			content: toolCall
+				? [{ type: "toolCall", id: `call-${state.requests.length}`, name: toolCall, arguments: {} }]
+				: [{ type: "text", text: input === 0 ? "summary" : "ok" }],
 			api: model.api,
 			provider: model.provider,
 			model: model.id,
@@ -158,26 +167,43 @@ type Open = {
 	modelsJson?: string;
 };
 
-/** A real session of `pi`, with our extension loaded from its file the way Pi loads a package extension. */
-async function openSession(pi: Pi, open: Open = {}): Promise<{ session: AgentSession; runtime: library.ModelRuntime }> {
-	const dir = open.sessionDir ? dirname(open.sessionDir) : await freshDir();
+/** A model runtime with the scripted provider and, optionally, a models.json. */
+async function modelRuntime(pi: Pi, modelsJson?: string): Promise<library.ModelRuntime> {
 	const runtime = await pi.ModelRuntime.create({
 		authPath: join(agentDir, "auth.json"),
-		modelsPath: open.modelsJson ?? null,
+		modelsPath: modelsJson ?? null,
 		refreshOnCreate: false,
 	});
 	runtime.registerNativeProvider(scripted.provider);
 	// A resume restores the recorded model only for a provider with configured auth; that check reads this snapshot.
 	await runtime.refresh({ allowNetwork: false });
+	return runtime;
+}
+
+const NO_RESOURCES = { noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true };
+
+/** Loads only our extension, the way Pi loads a package extension; returns the load errors. */
+async function extensionLoadErrors(pi: Pi): Promise<string[]> {
+	const loader = new pi.DefaultResourceLoader({
+		cwd: await freshDir(),
+		agentDir,
+		additionalExtensionPaths: [EXTENSION],
+		...NO_RESOURCES,
+	});
+	await loader.reload();
+	return loader.getExtensions().errors.map((e) => e.error);
+}
+
+/** A real session of `pi`, with our extension loaded from its file the way Pi loads a package extension. */
+async function openSession(pi: Pi, open: Open = {}): Promise<{ session: AgentSession; runtime: library.ModelRuntime }> {
+	const dir = open.sessionDir ? dirname(open.sessionDir) : await freshDir();
+	const runtime = await modelRuntime(pi, open.modelsJson);
 	const resourceLoader = new pi.DefaultResourceLoader({
 		cwd: dir,
 		agentDir,
 		additionalExtensionPaths: open.withExtension === false ? [] : [EXTENSION],
 		extensionFactories: open.factories,
-		noSkills: true,
-		noPromptTemplates: true,
-		noThemes: true,
-		noContextFiles: true,
+		...NO_RESOURCES,
 	});
 	await resourceLoader.reload();
 	assert.deepEqual(resourceLoader.getExtensions().errors, [], "extension load errors");
@@ -306,6 +332,70 @@ function windowTraces(value: unknown, path = "$"): string[] {
 	]);
 }
 
+/**
+ * A 1M endpoint model with compaction disabled; the answers report 480 000, 497 000 and 520 000 context tokens.
+ * Returns the output cap of each of the four requests.
+ */
+async function capsWithCompactionOff(pi: Pi, withExtension: boolean) {
+	const modelsJson = await endpointModelsJson();
+	const settings = { compaction: { enabled: false } };
+	const { session } = await openSession(pi, { model: "big", provider: "local", modelsJson, withExtension, settings });
+	try {
+		endpoint.state.bodies = [];
+		endpoint.state.next = [480_000, 497_000, 520_000, 1];
+		for (let turn = 0; turn < 4; turn++) assert.deepEqual((await promptOnce(session, `turn ${turn}`)).starts, []);
+		return endpoint.state.bodies.map(outputCap);
+	} finally {
+		session.dispose();
+	}
+}
+
+/**
+ * A virtual model declaring `virtualWindow`, routed to the physical `physical`; three prompts whose answers report
+ * 5 000 tokens. Returns the reserve Pi reads for the selection, the compactions per prompt and the provider requests.
+ */
+async function virtualRun(pi: Pi, withExtension: boolean, virtualWindow: number, physical: string) {
+	const { session, runtime } = await openSession(pi, { model: physical, withExtension });
+	try {
+		const routed = runtime.getModel("rqw", physical)!;
+		runtime.registerVirtualModel({
+			provider: "virt",
+			id: "router",
+			name: "router",
+			contextWindow: virtualWindow,
+			route: () => ({ model: routed, thinkingLevel: "off" }),
+		} as Parameters<library.ModelRuntime["registerVirtualModel"]>[0]);
+		await runtime.refresh({ allowNetwork: false });
+		await session.setModel(runtime.getModel("virt", "router")!);
+		assert.equal(session.model?.api, "pi-virtual");
+		const reserve = session.settingsManager.getCompactionSettings(session.model).reserveTokens;
+		scripted.state.requests = [];
+		const compactions: number[] = [];
+		for (const text of ["hello", "again", "and again"]) {
+			scripted.state.next = [5_000];
+			compactions.push((await promptOnce(session, text)).starts.length);
+		}
+		return { window: session.model?.contextWindow, reserve, compactions, requests: scripted.state.requests.length };
+	} finally {
+		session.dispose();
+	}
+}
+
+/** Removes `name` from `proto` for the duration of `run`, as on a Pi version without that internal. */
+async function withoutMethod(proto: object, name: string, run: () => Promise<void>) {
+	const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+	assert.ok(descriptor, `${name} exists on the prototype`);
+	delete (proto as Record<string, unknown>)[name];
+	try {
+		await run();
+	} finally {
+		Object.defineProperty(proto, name, descriptor);
+	}
+}
+
+const WRAPPED_SETTINGS = Symbol.for("rqw-context/getCompactionSettings");
+const WRAPPED_SESSION = Symbol.for("rqw-context/_buildRuntime");
+
 // Bodies from stock Pi, captured before the extension wraps Pi's classes; compared with the extension's below.
 const stockBodies = new Map<string, Record<string, unknown>[]>();
 
@@ -336,6 +426,47 @@ describe("stock Pi without the extension (runs first, before the classes are wra
 			const bodies = await endpointBodies(pi, false);
 			assert.deepEqual(bodies.map(outputCap), [MAX_TOKENS, MAX_TOKENS]);
 			stockBodies.set(entry, bodies);
+		});
+
+		it(`${entry}: compaction off, a 1M model up to 520 000 context: every request asks for maxTokens`, async () => {
+			assert.deepEqual(await capsWithCompactionOff(pi, false), [MAX_TOKENS, MAX_TOKENS, MAX_TOKENS, MAX_TOKENS]);
+		});
+
+		it(`${entry}: a virtual model declaring 1 000 000, routed to 272 000: reserve 16 384, no compaction`, async () => {
+			assert.deepEqual(await virtualRun(pi, false, 1_000_000, "w272k"), {
+				window: 1_000_000,
+				reserve: 16_384,
+				compactions: [0, 0, 0],
+				requests: 3,
+			});
+		});
+
+		// These load the extension into a Pi without one of its two internals: the load fails and nothing is patched,
+		// so the classes stay stock for the rest of this describe.
+		it(`${entry}: without AgentSession._buildRuntime the load fails and SettingsManager stays unpatched`, async () => {
+			const settingsProto = pi.SettingsManager.prototype;
+			const original = settingsProto.getCompactionSettings;
+			await withoutMethod(pi.AgentSession.prototype, "_buildRuntime", async () => {
+				const errors = await extensionLoadErrors(pi);
+				assert.equal(errors.length, 1);
+				assert.match(errors[0], /RQW-context: AgentSession\._buildRuntime not found; .* nothing is changed/);
+			});
+			assert.equal(settingsProto.getCompactionSettings, original);
+			assert.equal((settingsProto as unknown as Record<symbol, unknown>)[WRAPPED_SETTINGS], undefined);
+			const model = { provider: "x", id: "y", contextWindow: 1_000_000 } as Model<string>;
+			assert.equal(pi.SettingsManager.inMemory({}).getCompactionSettings(model).reserveTokens, 16_384);
+		});
+
+		it(`${entry}: without SettingsManager.getCompactionSettings the load fails and AgentSession stays unpatched`, async () => {
+			const sessionProto = pi.AgentSession.prototype as unknown as Record<string | symbol, unknown>;
+			const original = sessionProto._buildRuntime;
+			await withoutMethod(pi.SettingsManager.prototype, "getCompactionSettings", async () => {
+				const errors = await extensionLoadErrors(pi);
+				assert.equal(errors.length, 1);
+				assert.match(errors[0], /RQW-context: SettingsManager\.getCompactionSettings not found/);
+			});
+			assert.equal(sessionProto._buildRuntime, original);
+			assert.equal(sessionProto[WRAPPED_SESSION], undefined);
 		});
 	}
 });
@@ -415,6 +546,19 @@ for (const [entry, pi] of ENTRIES) {
 				assert.deepEqual(rest, stockRest, "every other field as stock Pi sends it");
 			}
 		});
+
+		it("compaction off: the output cap falls to 1 token near 500 000 (a known limit of the rule, not recovered)", async (t) => {
+			// Requests at context 0, 480 000, 497 000 and 520 000: 500 000 - context - 4096 - the new message, floor 1.
+			const caps = await capsWithCompactionOff(pi, true);
+			t.diagnostic(`max_completion_tokens with compaction off: ${JSON.stringify(caps)}`);
+			assert.deepEqual(caps, [MAX_TOKENS, 15_902, 1, 1]);
+		});
+
+		it("a virtual model keeps Pi's own values: no cap, reserve 16 384, no compaction, as stock", async () => {
+			const stock = { reserve: 16_384, compactions: [0, 0, 0], requests: 3 };
+			assert.deepEqual(await virtualRun(pi, true, 1_000_000, "w272k"), { window: 1_000_000, ...stock });
+			assert.deepEqual(await virtualRun(pi, true, 2_000_000, "w1m"), { window: 2_000_000, ...stock });
+		});
 	});
 
 	describe(`${entry}: the trigger is exactly W - R`, () => {
@@ -479,6 +623,150 @@ for (const [entry, pi] of ENTRIES) {
 				assert.deepEqual(await answerWith(session, 450_001), ["threshold"]);
 			} finally {
 				session.dispose();
+			}
+		});
+
+		it("the pre-request check _exceedsCompactionThreshold flips at 450 000 / 450 001 on a 1M model", async () => {
+			type Internals = { _exceedsCompactionThreshold(model: unknown, projection: unknown): boolean };
+			for (const [usage, exceeds] of [
+				[449_999, false],
+				[450_000, true],
+			] as const) {
+				const { session } = await openSession(pi, { model: "w1m" });
+				try {
+					assert.deepEqual(await answerWith(session, usage), []);
+					// Pi's estimate: the last usage plus ceil(chars / 4) of each later message; 4 chars are 1 token.
+					session.sessionManager.appendMessage({ role: "user", content: [{ type: "text", text: "abcd" }], timestamp: 0 });
+					const projection = session.sessionManager.buildSessionProjection();
+					const check = (session as unknown as Internals)._exceedsCompactionThreshold(session.model, projection);
+					assert.equal(check, exceeds, `estimate ${usage + 1}`);
+				} finally {
+					session.dispose();
+				}
+			}
+		});
+
+		it("between turns of one prompt, a tool result that crosses 450 000 compacts before the next request", async () => {
+			// A tool whose result is 4 chars, 1 estimated token.
+			const factory: ExtensionFactory = (api) => {
+				api.registerTool({
+					name: "probe",
+					label: "probe",
+					description: "returns four characters",
+					parameters: Type.Object({}),
+					execute: async () => ({ content: [{ type: "text", text: "abcd" }], details: {} }),
+				});
+			};
+			// The answer after the tool reports 1 000 tokens; with a compaction first, the summary requests take the
+			// scripted queue and every later request reports 0 (no usage, so Pi estimates the small compacted context).
+			for (const [usage, starts, later] of [
+				[449_999, [], [1_000]],
+				[450_000, ["threshold"], []],
+			] as const) {
+				const { session } = await openSession(pi, { model: "w1m", factories: [factory] });
+				try {
+					scripted.state.requests = [];
+					scripted.state.next = [{ input: usage, toolCall: "probe" }, ...later];
+					// Requests sent when each compaction starts: 1 means after the tool call, before the next request.
+					const sentAtStart: number[] = [];
+					const unsubscribe = session.subscribe((event) => {
+						if (event.type === "compaction_start") sentAtStart.push(scripted.state.requests.length);
+					});
+					const events = await promptOnce(session, "call the tool");
+					unsubscribe();
+					assert.deepEqual(events.starts, starts, `tool call at ${usage}`);
+					assert.deepEqual(sentAtStart, starts.length ? [1] : []);
+					const last = session.messages.at(-1) as AssistantMessage;
+					assert.equal(last.role, "assistant");
+					assert.equal(last.stopReason, "stop");
+				} finally {
+					session.dispose();
+				}
+			}
+		});
+
+		it("/reload: the factory runs again, each class is wrapped once, the window and the trigger stay", async () => {
+			let runs = 0;
+			const { session } = await openSession(pi, { model: "w1m", factories: [() => void runs++] });
+			try {
+				const settingsProto = pi.SettingsManager.prototype as unknown as Record<string | symbol, unknown>;
+				const sessionProto = pi.AgentSession.prototype as unknown as Record<string | symbol, unknown>;
+				const before = [settingsProto.getCompactionSettings, sessionProto._buildRuntime];
+				const runsBefore = runs;
+				await session.reload();
+				await session.reload();
+				assert.equal(runs, runsBefore + 2, "the extension factories run on each reload");
+				assert.deepEqual([settingsProto.getCompactionSettings, sessionProto._buildRuntime], before);
+				// The saved originals are Pi's own methods, not an earlier wrap.
+				assert.equal((settingsProto[WRAPPED_SETTINGS] as Record<symbol, unknown>)[WRAPPED_SETTINGS], undefined);
+				assert.equal((sessionProto[WRAPPED_SESSION] as Record<symbol, unknown>)[WRAPPED_SESSION], undefined);
+				assert.ok(Object.getOwnPropertyDescriptor(session.agent.state, "model")?.set, "the accessor stays");
+				assert.deepEqual(piValues(session), { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 });
+				assert.deepEqual(await answerWith(session, 450_000), []);
+				assert.deepEqual(await answerWith(session, 450_001), ["threshold"]);
+			} finally {
+				session.dispose();
+			}
+		});
+
+		it("/resume, /fork and /new through AgentSessionRuntime, the path the CLI takes", async () => {
+			const cwd = await freshDir();
+			const models = await modelRuntime(pi);
+			const settingsManager = pi.SettingsManager.inMemory({ retry: { enabled: false }, compaction: { keepRecentTokens: 0 } });
+			const createRuntime: CreateAgentSessionRuntimeFactory = async (options) => {
+				const services = await pi.createAgentSessionServices({
+					cwd: options.cwd,
+					agentDir: options.agentDir,
+					modelRuntime: models,
+					settingsManager,
+					resourceLoaderOptions: { additionalExtensionPaths: [EXTENSION], ...NO_RESOURCES },
+				});
+				const created = await pi.createAgentSessionFromServices({
+					services,
+					sessionManager: options.sessionManager,
+					sessionStartEvent: options.sessionStartEvent,
+					model: options.sessionManager.getEntries().length === 0 ? models.getModel("rqw", "w1m") : undefined,
+				});
+				return { ...created, services, diagnostics: services.diagnostics };
+			};
+			const sessionManager = pi.SessionManager.create(cwd, join(cwd, "sessions"));
+			const runtime = await pi.createAgentSessionRuntime(createRuntime, { cwd, agentDir, sessionManager });
+			const capped = { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 };
+			const current = async () => {
+				await runtime.session.bindExtensions({});
+				return runtime.session;
+			};
+			try {
+				let session = await current();
+				assert.deepEqual(piValues(session), capped);
+				assert.deepEqual(await answerWith(session, 1_000), []);
+				const file = session.sessionFile!;
+
+				await runtime.switchSession(file);
+				session = await current();
+				assert.equal(session.model?.id, "w1m");
+				assert.deepEqual(piValues(session), capped, "resume");
+				assert.deepEqual(await answerWith(session, 450_000), []);
+				assert.deepEqual(await answerWith(session, 450_001), ["threshold"]);
+
+				const firstUser = session.sessionManager
+					.getEntries()
+					.find((e) => e.type === "message" && e.message.role === "user");
+				await runtime.fork(firstUser!.id, { position: "at" });
+				session = await current();
+				assert.equal(session.model?.id, "w1m");
+				assert.deepEqual(piValues(session), capped, "fork");
+				assert.deepEqual(await answerWith(session, 450_001), ["threshold"]);
+
+				await runtime.newSession();
+				session = await current();
+				assert.deepEqual(piValues(session), capped, "new");
+				await session.setModel(models.getModel("rqw", "w272k")!);
+				assert.deepEqual(piValues(session), { contextWindow: 272_000, reserve: 27_200, threshold: 244_800 });
+				await session.setModel(models.getModel("rqw", "w1m")!);
+				assert.deepEqual(piValues(session), capped);
+			} finally {
+				await runtime.dispose();
 			}
 		});
 	});
@@ -568,6 +856,78 @@ for (const [entry, pi] of ENTRIES) {
 			assert.equal((await assertFlipsAt(pi, "w500k", 450_000, { settings })).session.reserve, 50_000);
 		});
 
+		it("a user reserve of W or more would leave no threshold: the rule's R applies", async () => {
+			const settings = { compaction: { reserveTokens: 600_000 } };
+			assert.deepEqual((await assertFlipsAt(pi, "w1m", 450_000, { settings })).session, {
+				contextWindow: 500_000,
+				reserve: 50_000,
+				threshold: 450_000,
+			});
+			const exactlyW = { compaction: { modelOverrides: { "rqw/w272k": { reserveTokens: 272_000 } } } };
+			assert.equal((await assertFlipsAt(pi, "w272k", 244_800, { settings: exactlyW })).session.reserve, 27_200);
+			// The same through getCompactionSettings for the declared 1M object: 1 000 000 - 450 000.
+			const { session, runtime } = await openSession(pi, { model: "w1m", settings });
+			try {
+				const declared = runtime.getModel("rqw", "w1m")!;
+				assert.equal(session.settingsManager.getCompactionSettings(declared).reserveTokens, 550_000);
+			} finally {
+				session.dispose();
+			}
+		});
+
+		it("Pi's docs example, a 1M model with a per-model reserve of 400 000: above 100 000, the window is 500 000", async () => {
+			// docs/compaction.md: "triggers compaction above 600K tokens" for the declared 1M window; with the window
+			// capped at 500 000 the same reserve leaves 100 000.
+			const settings = { compaction: { modelOverrides: { "rqw/w1m": { reserveTokens: 400_000 } } } };
+			assert.deepEqual((await assertFlipsAt(pi, "w1m", 100_000, { settings })).session, {
+				contextWindow: 500_000,
+				reserve: 400_000,
+				threshold: 100_000,
+			});
+		});
+
+		it("file-backed settings.json, the CLI path: the rule unless the user set a reserve below W", async () => {
+			const variants: [string, object, number][] = [
+				["no compaction key", {}, 450_000],
+				["compaction.enabled only", { compaction: { enabled: true } }, 450_000],
+				["keepRecentTokens only", { compaction: { keepRecentTokens: 30_000 } }, 450_000],
+				["per-model keepRecentTokens only", { compaction: { modelOverrides: { "rqw/w1m": { keepRecentTokens: 1_000 } } } }, 450_000],
+				["reserveTokens 30 000", { compaction: { reserveTokens: 30_000 } }, 470_000],
+				["per-model reserveTokens 60 000", { compaction: { modelOverrides: { "rqw/w1m": { reserveTokens: 60_000 } } } }, 440_000],
+				["per-model reserveTokens 400 000", { compaction: { modelOverrides: { "rqw/w1m": { reserveTokens: 400_000 } } } }, 100_000],
+				["reserveTokens 600 000", { compaction: { reserveTokens: 600_000 } }, 450_000],
+			];
+			const runtime = await modelRuntime(pi);
+			for (const [label, settings, threshold] of variants) {
+				const cwd = await freshDir();
+				const ownAgentDir = join(cwd, "agent");
+				await mkdir(ownAgentDir);
+				await writeFile(join(ownAgentDir, "settings.json"), JSON.stringify(settings));
+				const resourceLoader = new pi.DefaultResourceLoader({
+					cwd,
+					agentDir: ownAgentDir,
+					additionalExtensionPaths: [EXTENSION],
+					...NO_RESOURCES,
+				});
+				await resourceLoader.reload();
+				const { session } = await pi.createAgentSession({
+					cwd,
+					agentDir: ownAgentDir,
+					model: runtime.getModel("rqw", "w1m")!,
+					modelRuntime: runtime,
+					resourceLoader,
+					sessionManager: pi.SessionManager.inMemory(cwd),
+					settingsManager: pi.SettingsManager.create(cwd, ownAgentDir),
+				});
+				try {
+					assert.equal(piValues(session).contextWindow, 500_000, label);
+					assert.equal(piValues(session).threshold, threshold, label);
+				} finally {
+					session.dispose();
+				}
+			}
+		});
+
 		it("a per-model keepRecentTokens override keeps the rule's reserve", async () => {
 			const settings = { compaction: { modelOverrides: { "rqw/w500k": { keepRecentTokens: 0 } } } };
 			assert.equal((await assertFlipsAt(pi, "w500k", 450_000, { settings })).session.reserve, 50_000);
@@ -653,6 +1013,30 @@ for (const [entry, pi] of ENTRIES) {
 		});
 	});
 }
+
+describe("library: load order against an extension that calls pi.setModel(1M) at session_start", () => {
+	for (const order of ["RQW-context first", "RQW-context last"]) {
+		it(order, async () => {
+			const seen: { atStart?: number; afterSetModel?: number } = {};
+			const setter: ExtensionFactory = (api) => {
+				api.on("session_start", async (_event, ctx) => {
+					seen.atStart = ctx.model?.contextWindow;
+					assert.ok(await api.setModel(ctx.modelRegistry.find("rqw", "w1m")!));
+					seen.afterSetModel = ctx.model?.contextWindow;
+				});
+			};
+			const factories = order === "RQW-context first" ? [context, setter] : [setter, context];
+			const { session } = await openSession(library, { model: "w272k", withExtension: false, factories });
+			try {
+				assert.deepEqual(seen, { atStart: 272_000, afterSetModel: 500_000 });
+				assert.deepEqual(piValues(session), { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 });
+				assert.deepEqual(await answerWith(session, 450_001), ["threshold"]);
+			} finally {
+				session.dispose();
+			}
+		});
+	}
+});
 
 describe("the rule and the cap as functions", () => {
 	it("R = Math.round(W / 10): a .5 rounds up", () => {

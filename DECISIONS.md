@@ -152,7 +152,12 @@ Every accepted decision, with its reason and the file that carries it.
   start, resume or registry refresh; `pi.registerProvider` with `models` "replaces all existing models for this
   provider" (`extensions/types.d.ts:1442`); models.json `modelOverrides` needs an entry per model; the `model_select`
   event is a notification. Extensions get Pi's own `AgentSession` class (jiti alias in the library, virtual modules
-  in the bundle); the tests run both. The hook throws at load if `_buildRuntime` is missing (another Pi version).
+  in the bundle); the tests run both.
+- Load check: before patching anything the extension checks that both internals it patches exist,
+  `AgentSession.prototype._buildRuntime` and `SettingsManager.prototype.getCompactionSettings`. If either is missing
+  (another Pi version), it throws one load error naming the missing method and patches nothing. Reason: Pi turns the
+  throw into a load error and keeps running (`core/extensions/loader.js:524-537`), so a half-installed patch would run
+  a rule the user is told is off; now the rule is either whole or absent.
 - Mechanism, reserve: Pi compacts when `contextTokens > model.contextWindow - reserveTokens` (`compaction.js:176`) and
   reads reserveTokens from `SettingsManager.getCompactionSettings(model)` at every check. The extension wraps that
   method on Pi's class and returns contextWindow - (W - R), which is R itself once the window is W: a computed
@@ -162,29 +167,63 @@ Every accepted decision, with its reason and the file that carries it.
   500k and 90% at the threshold; summary output limits are 40 000 and 25 000 for a split turn (0.8 and 0.5 x R,
   `compaction.js:512`, `727`); the output cap of a request is 500 000 - context - 4096, about 45 900 at 450 000
   context (the test sees 45 902); an answer reporting more than 500 000 input tokens counts as overflow
-  (`pi-ai/dist/utils/overflow.js:147-150`). Pi then recovers, it does not fail: a completed answer is kept and the
-  session is compacted with reason `overflow` and no retry (`agent-session.js:2410-2414`); a length stop with no output
-  at 99% of the window is compacted and retried once (`2440`, `overflow.js:156-159`). Nothing about the window goes to
-  the provider: the OpenAI-compatible body has only `max_completion_tokens` changed, every other field as stock Pi.
+  (`pi-ai/dist/utils/overflow.js:147-150`). With compaction on and a history of several turns Pi recovers: a
+  completed answer is kept and the session is compacted with reason `overflow` and no retry
+  (`agent-session.js:2410-2414`); a length stop with no output at 99% of the window is compacted and retried once
+  (`2440`, `overflow.js:156-159`). Nothing about the window goes to the provider: the OpenAI-compatible body has only
+  `max_completion_tokens` changed, every other field as stock Pi.
+- Known limits of the 500 000 window, no code change: the window rule is the owner's, and both follow from it.
+  1. The output cap. pi-ai clamps a request's output to `contextWindow - context - 4096` with a floor of 1 token
+     (`pi-ai/dist/api/simple-options.js:5-9`), so on a 1M model it reaches 1 token at about 495 900 context tokens.
+     Pi does not recover in two cases. With `compaction.enabled: false` there is no compaction at all
+     (`agent-session.js:2363-2364`): measured `max_completion_tokens` at context 0 / 480 000 / 497 000 / 520 000 is
+     `[128000, 15902, 1, 1]` (stock Pi `[128000, 128000, 128000, 128000]`); a provider that obeys it answers 1 token
+     with stop reason `length` and no error. A history that is one oversized turn, such as a 700 000-token first
+     paste, gives requests with a 1-token cap; the overflow compaction that follows also has its turn-prefix summary
+     capped at 1 token and fails with "Turn prefix summarization failed: generation hit the token cap and the summary
+     is incomplete". The test pins the cap with compaction off.
+  2. Summaries of prose-heavy histories. A summary request is a fresh context that pi-ai sizes by characters
+     (3.5 per token), so a chat history of English prose, about 4.4 chars per real token, estimates above the window
+     at the threshold and the summary's output cap is 1 token: on a 1M model the compaction at 450 000 fails with
+     "Summarization failed: generation hit the token cap and the summary is incomplete", then up to two failed
+     summary requests per prompt. Stock Pi does the same on a native 272 000 or 500 000 model; it is new for 1M models
+     only because stock Pi would not compact them before 983 616. Tool results are cut to 2 000 chars before the
+     estimate (`compaction/utils.js:82`), so tool-heavy coding sessions do not reach it.
 - Models up to 500 000 keep their own object; only the reserve changes. The model registry is not touched: `/model`
-  and `--list-models` show the declared window, the session and the footer show 500k. The `model_select` event carries
-  the model object passed to `setModel`, so its `contextWindow` is the declared one; `ctx.model` is the capped one.
-- The user's settings win: `compaction.reserveTokens` applies to all models and
-  `compaction.modelOverrides["provider/id"].reserveTokens` to that model, against the capped window (1M with a
-  reserve of 30 000 compacts above 470 000). `compaction.enabled: false` still turns off threshold and overflow
-  compaction. A models.json `contextWindow` (a model entry or `modelOverrides`) is the model's declared window: up to
-  500 000 Pi uses it as written, also to lower a 1M model; above 500 000 it is capped like any other source, because
-  Pi's composed model does not say where its window came from. A model without a positive contextWindow keeps Pi's
-  values; Pi skips its window checks for it.
+  and `--list-models` show the declared window, the session and the footer show 500k. So one model shows two windows
+  through events and RPC: `model_select.model` is the object passed to `setModel` and RPC `set_model` returns the
+  registry object (`rpc-mode.js:371-372`), both with the declared window; the session state (`ctx.model`,
+  `model_select.previousModel`, RPC `get_state` and `get_session_stats`) has the capped one. There is no fix without
+  a Pi API.
+- A reserve the user set still wins, measured against the capped window W: `compaction.reserveTokens` for all models
+  and `compaction.modelOverrides["provider/id"].reserveTokens` for that model, Pi's own precedence (1M with a reserve
+  of 30 000 compacts above 470 000). A user reserve of W or more would leave a threshold of 0 or below, so Pi would
+  compact before every request; then the rule's R applies instead (1M with 600 000 compacts above 450 000). Pi's docs
+  example (`docs/compaction.md:444-457`), `"some-provider/big-model": { "reserveTokens": 400000 }`, "triggers
+  compaction above 600K tokens" for a 1M model; with the extension the window is 500 000, so it compacts above
+  100 000. `compaction.enabled: false` still turns off threshold and overflow compaction. A models.json
+  `contextWindow` (a model entry or `modelOverrides`) is the model's declared window: up to 500 000 Pi uses it as
+  written, also to lower a 1M model; above 500 000 it is capped like any other source, because Pi's composed model
+  does not say where its window came from. A model without a positive contextWindow keeps Pi's values, as stock: for
+  a window of 0 or undefined Pi itself compacts after every response, because its post-response check is
+  `tokens > 0 - reserve` (`agent-session.js:2376`, `2477`; only the pre-request check has a `<= 0` guard, `421`); a
+  response is skipped only when nothing lies beyond `keepRecentTokens` to summarize. The extension leaves that
+  unchanged.
 - Both wraps live as long as the process, one per class (`Symbol.for` guards): SDK sessions in the same process get
   the rule too, and a `/reload` without the extension keeps it until restart.
 - Out of scope: virtual models (`pi.registerVirtualModel`; Pi 1.3.0 ships none), owner's option a. A virtual model
-  (`api` `pi-virtual`) is never capped; Pi takes its limits from the routed physical model (`agent-session.js:312`,
-  `422`), so under it the window is the routed model's declared one and the trigger is not W - R.
+  (`api` `pi-virtual`) is never capped and `getCompactionSettings` returns Pi's own values for it. Reason: Pi reads
+  the settings of the virtual selection but checks them against the routed physical model's window
+  (`agent-session.js:420-422`, `481`, `2363`, `2376`); a reserve from the virtual model's declared window made Pi
+  compact before every prompt (1M virtual routed to 272k: reserve 550 000, threshold below 0). Under a virtual model
+  the behaviour is stock Pi's: the routed model's declared window and Pi's reserve.
 - Proof: `extensions/RQW-context/test/context.test.ts` runs real sessions of the library and the bundle with a
   scripted provider that reports exact usage and a local OpenAI-compatible endpoint: Pi's own `session.model`,
-  `getContextUsage()`, `compaction_start` at W - R + 1 and not at W - R (also after a switch and a resume), overflow
-  recovery above 500 000, and the request body against stock Pi.
+  `getContextUsage()`, `compaction_start` at W - R + 1 and not at W - R (also after a switch, `/reload`, resume, fork
+  and `/new` through `AgentSessionRuntime`, and in the pre-request check `_exceedsCompactionThreshold` between tool
+  turns), user reserves in memory and in a file-backed `settings.json`, overflow recovery above 500 000, the output cap
+  with compaction off, a virtual model as stock, load order, a load without either internal, and the request body
+  against stock Pi.
 
 ## Prompt
 
