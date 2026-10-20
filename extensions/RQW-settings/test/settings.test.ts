@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Type } from "typebox";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import {
@@ -563,7 +563,7 @@ describe("settings: the session_start handler acts on every reason but reload", 
 		const argv = process.argv;
 		process.argv = argv.slice(0, 2); // no tool flag
 		try {
-			const factory = (await import(SETTINGS)).default;
+			const factory = (await import(pathToFileURL(SETTINGS).href)).default;
 			for (const reason of REASONS) {
 				const { pi, set, fire } = fakePi(["read"], ["codemode", "tool_search"]);
 				factory(pi);
