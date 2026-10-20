@@ -50,19 +50,22 @@ export function resolvePath(p: string, cwd: string): string {
   return resolveLexical(p, cwd, process.platform);
 }
 
-/** The file stock `read` opens: the resolved path, or the first existing macOS spelling variant (as `resolveReadPath`). */
-export function readPathFor(p: string, cwd: string): string {
+/**
+ * Every spelling stock `resolveReadPath` may open, whatever exists now: the resolved path, the AM/PM variant (narrow
+ * no-break space), NFD, curly quote, NFD + curly quote. Stock picks one when the read runs, so the scope covers all.
+ */
+export function readSpellings(p: string, cwd: string): string[] {
   const resolved = resolvePath(p, cwd);
-  if (fs.existsSync(resolved)) return resolved;
-  const amPm = resolved.replace(/ (AM|PM)\./gi, "\u202F$1.");
-  if (amPm !== resolved && fs.existsSync(amPm)) return amPm;
   const nfd = resolved.normalize("NFD");
-  if (nfd !== resolved && fs.existsSync(nfd)) return nfd;
-  const curly = resolved.replace(/'/g, "\u2019");
-  if (curly !== resolved && fs.existsSync(curly)) return curly;
-  const nfdCurly = nfd.replace(/'/g, "\u2019");
-  if (nfdCurly !== resolved && fs.existsSync(nfdCurly)) return nfdCurly;
-  return resolved;
+  return [
+    ...new Set([
+      resolved,
+      resolved.replace(/ (AM|PM)\./gi, "\u202F$1."),
+      nfd,
+      resolved.replace(/'/g, "\u2019"),
+      nfd.replace(/'/g, "\u2019"),
+    ]),
+  ];
 }
 
 export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = process.platform): string | undefined {
@@ -96,7 +99,7 @@ export function scopeOf(tool: string, args: unknown, cwd: string): Scope {
     switch (tool) {
       case "read":
         kind = "read";
-        paths = [typeof args.path === "string" ? readPathFor(args.path, cwd) : args.path];
+        paths = typeof args.path === "string" ? readSpellings(args.path, cwd) : [args.path];
         break;
       case "grep":
       case "find":
@@ -120,7 +123,7 @@ export function scopeOf(tool: string, args: unknown, cwd: string): Scope {
     // pathKey checks the type itself and answers undefined for anything that is not a string.
     const keys = paths.map((x) => pathKey(x as string, cwd));
     if (keys.length === 0 || keys.includes(undefined)) return all;
-    return { kind, keys: keys as string[] };
+    return { kind, keys: [...new Set(keys as string[])] };
   } catch {
     return all;
   }

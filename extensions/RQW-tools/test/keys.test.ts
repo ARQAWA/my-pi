@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { pathKey, readPathFor, resolvePath, scopeOf } from "../keys.ts";
+import { pathKey, readSpellings, resolvePath, scopeOf } from "../keys.ts";
 
 // Values of the wrong type on purpose, to see that the key function refuses them.
 const wrong = (v: unknown) => v as string;
@@ -326,19 +326,26 @@ test("scopeOf returns a fresh object each time", () => {
   assert.deepStrictEqual(scopeOf("bash", {}, root), ALL);
 });
 
-test("readPathFor follows the stock read fallbacks: curly quote, NFD, then the typed path", () => {
-  const curly = "Capture d\u2019\u00e9cran.txt";
-  write(curly);
-  assert.strictEqual(readPathFor("Capture d'\u00e9cran.txt", root), path.join(root, curly));
-  assert.deepStrictEqual(scopeOf("read", { path: "Capture d'\u00e9cran.txt" }, root).keys, scopeOf("write", { path: curly, content: "" }, root).keys);
-  assert.strictEqual(readPathFor("missing'.txt", root), path.join(root, "missing'.txt"));
-  assert.strictEqual(readPathFor("sub/file.txt", root), path.join(root, "sub", "file.txt"));
+test("read scope covers every spelling stock read may open, whatever exists now", () => {
+  const spellings = readSpellings("Capture d'\u00e9cran 1.30 PM.png", root).map((x) => path.relative(root, x));
+  assert.deepStrictEqual(spellings, [
+    "Capture d'\u00e9cran 1.30 PM.png",
+    "Capture d'\u00e9cran 1.30\u202FPM.png",
+    "Capture d'e\u0301cran 1.30 PM.png",
+    "Capture d\u2019\u00e9cran 1.30 PM.png",
+    "Capture d\u2019e\u0301cran 1.30 PM.png",
+  ]);
+  assert.deepStrictEqual(readSpellings("plain.txt", root), [path.join(root, "plain.txt")]);
+  const keys = scopeOf("read", { path: "it's.txt" }, root).keys;
+  for (const name of ["it's.txt", "it\u2019s.txt"]) {
+    assert.ok(keys.includes(scopeOf("write", { path: name, content: "" }, root).keys[0]), name);
+  }
+  assert.strictEqual(new Set(keys).size, keys.length, "keys are deduplicated");
+  assert.deepStrictEqual(scopeOf("read", { path: "sub/file.txt" }, root).keys, [k("sub/file.txt")]);
   assert.strictEqual(resolvePath("sub/../ReadMe.md", root), path.join(root, "ReadMe.md"));
   const nfd = "nfd-caf\u0065\u0301.txt";
-  write(nfd);
-  assert.strictEqual(readPathFor("nfd-caf\u00e9.txt", root).normalize("NFD"), path.join(root, nfd).normalize("NFD"));
   if (!folds) {
-    assert.deepStrictEqual(scopeOf("read", { path: "nfd-caf\u00e9.txt" }, root).keys, scopeOf("write", { path: nfd, content: "" }, root).keys);
+    assert.ok(scopeOf("read", { path: "nfd-caf\u00e9.txt" }, root).keys.includes(scopeOf("write", { path: nfd, content: "" }, root).keys[0]));
   }
 });
 

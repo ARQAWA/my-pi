@@ -11,11 +11,13 @@ import {
 	createWriteToolDefinition,
 	createBashToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { executeEdit } from "../edit.ts";
 import factory from "../index.ts";
+import { executeWrite } from "../write.ts";
 
 type Fake = { tools: Record<string, any>; handlers: Record<string, any>; active: string[]; setCalls: string[][] };
 
-function load(active: string[] = []): Fake {
+function load(active: string[] = [], settings: Record<string, unknown> | "throws" = {}): Fake {
 	const fake: Fake = { tools: {}, handlers: {}, active, setCalls: [] };
 	(factory as any)({
 		registerTool: (def: any) => {
@@ -25,6 +27,10 @@ function load(active: string[] = []): Fake {
 			fake.handlers[event] = handler;
 		},
 		getActiveTools: () => fake.active,
+		getSettings: () => {
+			if (settings === "throws") throw new Error("no settings");
+			return settings;
+		},
 		setActiveTools: (names: string[]) => {
 			fake.setCalls.push(names);
 		},
@@ -83,33 +89,35 @@ describe("registration", () => {
 		assert.equal(tools.find.parameters.properties.limit.description.startsWith("Maximum number of results (default: no cap"), true);
 	});
 
-	it("read, bash, edit and write are not default-active; grep and find are", () => {
+	it("all six tools are not default-active", () => {
 		const { tools } = load();
-		for (const name of ["read", "bash", "edit", "write"]) assert.equal(tools[name].defaultActive, false, name);
-		for (const name of ["grep", "find"]) assert.notEqual(tools[name].defaultActive, false, name);
+		for (const name of ["read", "bash", "edit", "write", "grep", "find"]) assert.equal(tools[name].defaultActive, false, name);
 	});
 
-	it("session_start re-adds missing grep and find on resume and fork only, and not after an explicit tool flag", () => {
-		for (const reason of ["resume", "fork"]) {
+	it("session_start adds grep and find on every reason, only when the user made no tool selection", () => {
+		for (const reason of ["startup", "new", "reload", "resume", "fork"]) {
 			const fake = load(["read", "bash", "edit", "write"]);
 			fake.handlers.session_start({ reason }, {});
 			assert.deepEqual(fake.setCalls, [["read", "bash", "edit", "write", "grep", "find"]], reason);
 		}
-		for (const reason of ["startup", "new", "reload"]) {
-			const fake = load(["read", "bash", "edit", "write"]);
-			fake.handlers.session_start({ reason }, {});
-			assert.deepEqual(fake.setCalls, [], reason);
-		}
 		const full = load(["read", "grep", "find"]);
 		full.handlers.session_start({ reason: "resume" }, {});
 		assert.deepEqual(full.setCalls, []);
+		const withSetting = load(["read", "bash"], { defaultTools: ["read", "bash"] });
+		withSetting.handlers.session_start({ reason: "startup" }, {});
+		assert.deepEqual(withSetting.setCalls, [], "defaultTools set");
+		const noSettings = load(["read"], "throws");
+		noSettings.handlers.session_start({ reason: "startup" }, {});
+		assert.deepEqual(noSettings.setCalls, [], "no settings: stock set stays");
 		const argv = process.argv;
 		try {
-			for (const flag of ["--tools", "--exclude-tools", "--no-tools"]) {
-				process.argv = [...argv, flag, "read"];
-				const fake = load(["read"]);
-				fake.handlers.session_start({ reason: "resume" }, {});
-				assert.deepEqual(fake.setCalls, [], flag);
+			for (const flag of ["--tools", "-t", "--exclude-tools", "-xt", "--no-tools", "-nt", "--no-builtin-tools", "-nbt"]) {
+				for (const args of [[flag, "read"], [`${flag}=read`]]) {
+					process.argv = [...argv, ...args];
+					const fake = load(["read"]);
+					fake.handlers.session_start({ reason: "startup" }, {});
+					assert.deepEqual(fake.setCalls, [], args.join(" "));
+				}
 			}
 		} finally {
 			process.argv = argv;
@@ -291,7 +299,7 @@ describe("edit", () => {
 		const want = Array.from({ length: 50 }, (_, i) => `x${i}`.padEnd(200, String.fromCharCode(122 - (i % 26)))).join("\n");
 		const started = performance.now();
 		await assert.rejects(run(tools.edit, { path: "big.txt", edits: [{ oldText: want, newText: "" }] }, dir), /^Error: Could not find/);
-		assert.ok(performance.now() - started < 500, `took ${performance.now() - started} ms`);
+		assert.ok(performance.now() - started < 150, `took ${performance.now() - started} ms`);
 	});
 
 	it("read keys the file stock read opens (curly-quote spelling), so a later write is ordered after it", async () => {
@@ -490,5 +498,41 @@ describe("grep and find limits", () => {
 		assert.doesNotMatch(all, /limit reached/);
 		const some = text(await run(tools.grep, { pattern: "hit", limit: 5 }, dir));
 		assert.match(some, /5 matches limit reached/);
+	});
+});
+
+describe("groups of one multi-file call run in parallel", () => {
+	// A stock execute that records when it starts and ends, and takes 50 ms.
+	function slowStock() {
+		const log: { path: string; type: "start" | "end"; at: number }[] = [];
+		const execute = async (_id: string, params: any) => {
+			log.push({ path: params.path, type: "start", at: performance.now() });
+			await new Promise((r) => setTimeout(r, 50));
+			log.push({ path: params.path, type: "end", at: performance.now() });
+			return { content: [{ type: "text", text: "ok" }] };
+		};
+		return { log, execute };
+	}
+	const overlap = (log: { type: string; at: number }[], n: number) => {
+		const starts = log.filter((e) => e.type === "start");
+		const firstEnd = Math.min(...log.filter((e) => e.type === "end").map((e) => e.at));
+		assert.equal(starts.length, n);
+		assert.ok(starts.every((e) => e.at < firstEnd), "every start comes before the first end");
+	};
+
+	it("executeWrite starts all three files before the first ends", async () => {
+		const { log, execute } = slowStock();
+		const files = ["a", "b", "c"].map((n) => ({ path: `${n}.txt`, content: n }));
+		const result = await executeWrite(execute, "id", { files }, undefined, undefined, {}, "/tmp");
+		assert.equal(text(result), "Written: a.txt\nWritten: b.txt\nWritten: c.txt");
+		overlap(log, 3);
+	});
+
+	it("executeEdit starts all three files before the first ends", async () => {
+		const { log, execute } = slowStock();
+		const edits = ["a", "b", "c"].map((n) => ({ path: `${n}.txt`, oldText: "o", newText: "n" }));
+		const result = await executeEdit(execute, "id", { edits }, undefined, undefined, {}, "/tmp");
+		assert.match(text(result), /Edited: a\.txt[^]*Edited: b\.txt[^]*Edited: c\.txt/);
+		overlap(log, 3);
 	});
 });

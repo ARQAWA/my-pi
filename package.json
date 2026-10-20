@@ -22,8 +22,5 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.3.0",
     "typebox": "1.3.27"
-  },
-  "scripts": {
-    "test": "node --test \"extensions/RQW-tools/test/*.test.ts\""
   }
 }

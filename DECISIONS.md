@@ -53,6 +53,9 @@ Every accepted decision, with its reason and the file that carries it.
 - The read key mirrors stock `resolveReadPath` (NFD, curly quote and AM/PM variants), so a read and a write of the same
   file spelled differently still meet in the barrier.
 - The `ls` and other stock tools beyond the six are not wrapped and stay outside the barrier; they are off by default.
+- Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
+  or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
+  transcript and in the tool results.
 - Proof: `npm test` (`node --test`, no model) and `.github/workflows/tests.yml` on macOS, Linux and Windows, plus a job
   reproducing PowerShell, portable Git Bash without admin, then Node.
 

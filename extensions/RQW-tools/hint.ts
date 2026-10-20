@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const MIN_SCORE = 0.5;
 const MAX_COMPARISONS = 50_000; // window count x oldText lines
-const MAX_CELLS = 20_000_000; // Levenshtein inner-loop cells over the whole search: bounds CPU time
+const MAX_CELLS = 5_000_000; // Levenshtein inner-loop cells over the whole search: bounds CPU time
 const MAX_LINE = 200;
 const MAX_SHOWN = 30;
 

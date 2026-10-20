@@ -75,6 +75,7 @@ async function runBatch(
 	opts: {
 		setup?: (dir: string) => Promise<void>;
 		during?: (session: AgentSession) => void;
+		settingsManager?: (dir: string) => SettingsManager;
 	} = {},
 ): Promise<Run> {
 	const dir = await freshDir();
@@ -123,9 +124,12 @@ async function runBatch(
 		modelRuntime,
 		resourceLoader,
 		sessionManager: SessionManager.inMemory(dir),
-		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
+		settingsManager:
+			opts.settingsManager?.(dir) ?? SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
 	});
 	try {
+		// session_start is emitted when extensions are bound.
+		await session.bindExtensions({});
 		run.activeTools = session.getActiveToolNames();
 		session.subscribe((event: AgentSessionEvent) => {
 			if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
@@ -161,18 +165,32 @@ const byId = (run: Run, i: number) => {
 
 const exists = (p: string) => stat(p).then(() => true, () => false);
 
-/** Active tool names of a real session with our extension, for the given tool options and settings. */
+const STOCK_ARGV: Record<string, string[]> = {
+	// The SDK takes the selection as options; the CLI turns the same selection into these flags. The extension
+	// can only see the flags, so a test that passes an option also puts its CLI spelling into argv.
+	tools: ["--tools"],
+	excludeTools: ["--exclude-tools"],
+	noTools: ["--no-builtin-tools"],
+};
+
+/** Active tool names of a real session, with or without our extension, for the given tool options and settings. */
 async function activeToolsFor(
-	options: { tools?: string[]; excludeTools?: string[] },
+	options: { tools?: string[]; excludeTools?: string[]; noTools?: "builtin" | "all" },
 	settings: Record<string, unknown> = {},
+	withExtension = true,
 ): Promise<string[]> {
 	const dir = await freshDir();
 	process.chdir(dir);
+	const argv = process.argv;
+	const flags = Object.entries(options).flatMap(([key, value]) =>
+		key === "noTools" ? STOCK_ARGV.noTools : [...STOCK_ARGV[key], (value as string[]).join(",")],
+	);
+	process.argv = [...argv, ...flags];
 	try {
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: dir,
 			agentDir,
-			additionalExtensionPaths: [EXTENSION],
+			additionalExtensionPaths: withExtension ? [EXTENSION] : [],
 			noSkills: true,
 			noPromptTemplates: true,
 			noThemes: true,
@@ -191,11 +209,14 @@ async function activeToolsFor(
 			...options,
 		});
 		try {
+			// session_start is emitted when extensions are bound.
+			await session.bindExtensions({});
 			return session.getActiveToolNames().slice().sort();
 		} finally {
 			session.dispose();
 		}
 	} finally {
+		process.argv = argv;
 		process.chdir(ORIGINAL_CWD);
 	}
 }
@@ -205,14 +226,62 @@ describe("pipeline: tool selection of the user", () => {
 		assert.deepEqual(await activeToolsFor({}), ["bash", "edit", "find", "grep", "read", "write"]);
 	});
 
-	it("excludeTools and a tools list without edit turn edit off", async () => {
-		assert.deepEqual(await activeToolsFor({ excludeTools: ["edit"] }), ["bash", "find", "grep", "read", "write"]);
-		assert.deepEqual(await activeToolsFor({ tools: ["-edit"] }), ["bash", "find", "grep", "read", "write"]);
-		assert.deepEqual(await activeToolsFor({ tools: ["read", "bash"] }), ["bash", "read"]);
+	const rows: [string, Parameters<typeof activeToolsFor>[0], Record<string, unknown>][] = [
+		["tools -grep", { tools: ["-grep"] }, {}],
+		["tools +grep,-find", { tools: ["+grep", "-find"] }, {}],
+		["tools -edit", { tools: ["-edit"] }, {}],
+		["tools read,bash", { tools: ["read", "bash"] }, {}],
+		["excludeTools edit", { excludeTools: ["edit"] }, {}],
+		["excludeTools grep", { excludeTools: ["grep"] }, {}],
+		["defaultTools read,bash", {}, { defaultTools: ["read", "bash"] }],
+		["defaultTools -grep", {}, { defaultTools: ["-grep"] }],
+		["defaultTools read,grep,find", {}, { defaultTools: ["read", "grep", "find"] }],
+		["noTools builtin", { noTools: "builtin" }, {}],
+	];
+	for (const [name, options, settings] of rows) {
+		it(`${name}: the active set equals stock Pi without our extension`, async () => {
+			const stock = await activeToolsFor(options, settings, false);
+			assert.deepEqual(await activeToolsFor(options, settings), stock);
+		});
+	}
+
+	it("explicit rows are exactly the stock sets", async () => {
+		assert.deepEqual(await activeToolsFor({ tools: ["-grep"] }), ["bash", "edit", "read", "write"]);
+		assert.deepEqual(await activeToolsFor({}, { defaultTools: ["read", "bash"] }), ["bash", "read"]);
+		assert.deepEqual(await activeToolsFor({ noTools: "builtin" }), []);
+		assert.deepEqual(await activeToolsFor({ excludeTools: ["grep"] }), ["bash", "edit", "read", "write"]);
+	});
+});
+
+describe("pipeline: settings of the session reach read and bash", () => {
+	const PROJECT_SETTINGS = JSON.stringify({ shellCommandPrefix: "echo INJECTED" });
+	const setup = async (dir: string) => {
+		await mkdir(join(dir, ".pi"), { recursive: true });
+		await writeFile(join(dir, ".pi", "settings.json"), PROJECT_SETTINGS);
+	};
+
+	it("a shellCommandPrefix of an untrusted project is ignored", async () => {
+		const run = await runBatch([["bash", { command: "echo hello" }]], {
+			setup,
+			settingsManager: (dir) => SettingsManager.create(dir, agentDir, { projectTrusted: false }),
+		});
+		assert.equal(byId(run, 0).text.trim(), "hello");
+		assert.doesNotMatch(byId(run, 0).text, /INJECTED/);
 	});
 
-	it("a read-only defaultTools setting stays read-only", async () => {
-		assert.deepEqual(await activeToolsFor({}, { defaultTools: ["read", "grep", "find"] }), ["find", "grep", "read"]);
+	it("a shellCommandPrefix of a trusted project applies", async () => {
+		const run = await runBatch([["bash", { command: "echo hello" }]], {
+			setup,
+			settingsManager: (dir) => SettingsManager.create(dir, agentDir, { projectTrusted: true }),
+		});
+		assert.equal(byId(run, 0).text.trim(), "INJECTED\nhello");
+	});
+
+	it("an SDK settings manager decides, not files read at load time", async () => {
+		const run = await runBatch([["bash", { command: "echo hello" }]], {
+			settingsManager: () => SettingsManager.inMemory({ shellCommandPrefix: "echo FROM-SDK", compaction: { enabled: false } }),
+		});
+		assert.equal(byId(run, 0).text.trim(), "FROM-SDK\nhello");
 	});
 });
 
@@ -423,5 +492,41 @@ describe("pipeline: real agent loop, real tools, no model", () => {
 		assert.equal(await exists(join(run.dir, "later.txt")), false, "later write must not run");
 		assert.equal(await readFile(join(run.dir, "e.txt"), "utf-8"), "a\n", "later edit must not run");
 		assert.equal(run.finished, true);
+	});
+
+	it("S11 [write it\u2019s.txt, read it's.txt] -> the read opens the file the write created, 10 of 10", async () => {
+		for (let i = 0; i < 10; i++) {
+			const run = await runBatch([
+				["write", { path: "it\u2019s.txt", content: "NEW\n" }],
+				["read", { path: "it's.txt" }],
+			]);
+			assert.equal(byId(run, 1).isError, false, `run ${i}: ${byId(run, 1).text}`);
+			assert.match(byId(run, 1).text, /NEW/, `run ${i}`);
+		}
+	});
+
+	it("S12 [write a, write b, edit c, edit d] on different files -> all four start before the first ends", async () => {
+		const big = "x".repeat(4_000_000);
+		const run = await runBatch(
+			[
+				["write", { path: "a.txt", content: big }],
+				["write", { path: "b.txt", content: big }],
+				["edit", { path: "c.txt", edits: [{ oldText: "one", newText: "ONE" }] }],
+				["edit", { path: "d.txt", edits: [{ oldText: "two", newText: "TWO" }] }],
+			],
+			{
+				setup: async (d) => {
+					await writeFile(join(d, "c.txt"), "one\n");
+					await writeFile(join(d, "d.txt"), "two\n");
+				},
+			},
+		);
+		for (let i = 0; i < 4; i++) assert.equal(byId(run, i).isError, false, byId(run, i).text);
+		const starts = run.events.filter((e) => e.type === "tool_execution_start");
+		const firstEnd = Math.min(...run.events.filter((e) => e.type === "tool_execution_end").map((e) => e.at));
+		assert.equal(starts.length, 4);
+		assert.ok(starts.every((e) => e.at < firstEnd), "every start comes before the first end");
+		assert.equal(await readFile(join(run.dir, "c.txt"), "utf-8"), "ONE\n");
+		assert.equal(await readFile(join(run.dir, "d.txt"), "utf-8"), "TWO\n");
 	});
 });
