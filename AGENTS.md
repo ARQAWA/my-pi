@@ -1,12 +1,12 @@
 # my-pi
 
 A Pi package (`@earendil-works/pi-coding-agent` 1.3.0) that carries the omp-lite behaviour into stock Pi step by step.
-Stock Pi tools stay as they are; each step adds one layer and is measured before the next.
+Stock Pi tools stay as they are. Everything is an extension, one folder per extension under `extensions/`.
 
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
-- `prompt/SYSTEM.md`: the system prompt. `extensions/prompt.ts` puts it in place of Pi's default prompt prefix
-  (`customPrompt`) and appends the workstation, critical, environment and date blocks. Pi keeps its own project
-  context, skills and cwd sections after it.
+- `extensions/settings/`: extension 1, the harness settings. Empty for now.
+- `extensions/prompt/`: extension 2, the system prompt and its settings. Empty for now; built first.
+- `INSTALL.md`: the install prompt. An agent given only this file rebuilds the working Pi from scratch.
 - `notes/`: research notes, such as how the omp-lite prompt was built.
 - `DECISIONS.md`: every accepted decision with its reason and the file that carries it.
 
