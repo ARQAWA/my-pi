@@ -1,4 +1,4 @@
-// Extension 4: the `review` tool. Each call starts a fresh read-only reviewer session in this process on the model of
+// Extension 5: the `review` tool. Each call starts a fresh read-only reviewer session in this process on the model of
 // its level, with REVIEWER.md as the prompt and a brief built from the user's own messages; the call returns at once
 // and the verdict comes back later as a `[review#N]` message that starts a turn.
 import { readFileSync } from "node:fs";
