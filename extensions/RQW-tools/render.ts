@@ -34,7 +34,7 @@ function writeFiles(args: any): { path: string; count: number }[] {
 /** Stock-shaped args for a call with one file only. */
 function normalizeEdit(args: any): any {
 	const files = editFiles(args);
-	return files.length === 1 && !str(args?.path) ? { ...args, path: files[0].path } : args;
+	return files.length === 1 ? { ...args, path: files[0].path } : args;
 }
 
 function normalizeWrite(args: any): any {

@@ -161,6 +161,61 @@ const byId = (run: Run, i: number) => {
 
 const exists = (p: string) => stat(p).then(() => true, () => false);
 
+/** Active tool names of a real session with our extension, for the given tool options and settings. */
+async function activeToolsFor(
+	options: { tools?: string[]; excludeTools?: string[] },
+	settings: Record<string, unknown> = {},
+): Promise<string[]> {
+	const dir = await freshDir();
+	process.chdir(dir);
+	try {
+		const resourceLoader = new DefaultResourceLoader({
+			cwd: dir,
+			agentDir,
+			additionalExtensionPaths: [EXTENSION],
+			noSkills: true,
+			noPromptTemplates: true,
+			noThemes: true,
+			noContextFiles: true,
+		});
+		await resourceLoader.reload();
+		const { session } = await createAgentSession({
+			cwd: dir,
+			agentDir,
+			model: faux.getModel(),
+			thinkingLevel: "off",
+			modelRuntime,
+			resourceLoader,
+			sessionManager: SessionManager.inMemory(dir),
+			settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, ...settings }),
+			...options,
+		});
+		try {
+			return session.getActiveToolNames().slice().sort();
+		} finally {
+			session.dispose();
+		}
+	} finally {
+		process.chdir(ORIGINAL_CWD);
+	}
+}
+
+describe("pipeline: tool selection of the user", () => {
+	it("defaults give read, bash, edit, write, grep, find", async () => {
+		assert.deepEqual(await activeToolsFor({}), ["bash", "edit", "find", "grep", "read", "write"]);
+	});
+
+	it("excludeTools and a tools list without edit turn edit off", async () => {
+		assert.deepEqual(await activeToolsFor({ excludeTools: ["edit"] }), ["bash", "find", "grep", "read", "write"]);
+		assert.deepEqual(await activeToolsFor({ tools: ["-edit"] }), ["bash", "find", "grep", "read", "write"]);
+		assert.deepEqual(await activeToolsFor({ tools: ["read", "bash"] }), ["bash", "read"]);
+	});
+
+	it("a read-only defaultTools setting stays read-only", async () => {
+		assert.deepEqual(await activeToolsFor({}, { defaultTools: ["read", "grep", "find"] }), ["find", "grep", "read"]);
+	});
+});
+
 describe("pipeline: real agent loop, real tools, no model", () => {
 	it("S1 [write f, read f] -> read sees the new content", async () => {
 		const run = await runBatch(

@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { pathKey, scopeOf } from "../keys.ts";
+import { pathKey, readPathFor, resolvePath, scopeOf } from "../keys.ts";
 
 // Values of the wrong type on purpose, to see that the key function refuses them.
 const wrong = (v: unknown) => v as string;
@@ -324,4 +324,31 @@ test("scopeOf returns a fresh object each time", () => {
   const first = scopeOf("bash", {}, root);
   first.keys.push("/mutated");
   assert.deepStrictEqual(scopeOf("bash", {}, root), ALL);
+});
+
+test("readPathFor follows the stock read fallbacks: curly quote, NFD, then the typed path", () => {
+  const curly = "Capture d\u2019\u00e9cran.txt";
+  write(curly);
+  assert.strictEqual(readPathFor("Capture d'\u00e9cran.txt", root), path.join(root, curly));
+  assert.deepStrictEqual(scopeOf("read", { path: "Capture d'\u00e9cran.txt" }, root).keys, scopeOf("write", { path: curly, content: "" }, root).keys);
+  assert.strictEqual(readPathFor("missing'.txt", root), path.join(root, "missing'.txt"));
+  assert.strictEqual(readPathFor("sub/file.txt", root), path.join(root, "sub", "file.txt"));
+  assert.strictEqual(resolvePath("sub/../ReadMe.md", root), path.join(root, "ReadMe.md"));
+  const nfd = "nfd-caf\u0065\u0301.txt";
+  write(nfd);
+  assert.strictEqual(readPathFor("nfd-caf\u00e9.txt", root).normalize("NFD"), path.join(root, nfd).normalize("NFD"));
+  if (!folds) {
+    assert.deepStrictEqual(scopeOf("read", { path: "nfd-caf\u00e9.txt" }, root).keys, scopeOf("write", { path: nfd, content: "" }, root).keys);
+  }
+});
+
+test("scopeOf ignores strict-mode empty values", () => {
+  const a = k("sub/a.txt");
+  const files = [{ path: "sub/a.txt", content: "1" }];
+  assert.deepStrictEqual(scopeOf("write", { path: "", content: "", files }, root), { kind: "mutate", keys: [a] });
+  assert.deepStrictEqual(scopeOf("write", { path: "sub/a.txt", content: "x", files: [] }, root), { kind: "mutate", keys: [a] });
+  assert.deepStrictEqual(scopeOf("write", { path: "", content: "" }, root), ALL);
+  const hunk = { oldText: "o", newText: "n" };
+  assert.deepStrictEqual(scopeOf("edit", { path: "sub/a.txt", edits: [{ path: "", ...hunk }] }, root), { kind: "mutate", keys: [a] });
+  assert.deepStrictEqual(scopeOf("edit", { path: "", edits: [{ path: "sub/a.txt", ...hunk }] }, root), { kind: "mutate", keys: [a] });
 });

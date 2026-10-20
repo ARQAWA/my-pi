@@ -32,15 +32,32 @@ function keyOf(path: string, cwd: string): string {
 
 const FORM_ERROR = "Give path and content, or files, not both";
 
+/** Models send `files` as a JSON string or as one object; turn both into an array (like stock edit does for `edits`). */
+export function prepareWriteArguments(input: any): any {
+	if (!input || typeof input !== "object") return input;
+	let files = input.files;
+	if (typeof files === "string") {
+		try {
+			files = JSON.parse(files);
+		} catch {
+			return input;
+		}
+	}
+	if (files && typeof files === "object" && !Array.isArray(files)) files = [files];
+	return files === input.files ? input : { ...input, files };
+}
+
+const isInside = (outer: string, inner: string) => inner.startsWith(outer.endsWith("/") ? outer : outer + "/");
+
 export async function executeWrite(stockExecute: any, id: string, params: any, signal: any, onUpdate: any, ctx: any, cwd: string) {
 	const base = ctx?.cwd || cwd;
-	const hasFiles = params?.files != null;
-	const hasSingle = params?.path != null || params?.content != null;
+	// Strict mode fills every key, so empty values mean "form not used".
+	const hasFiles = Array.isArray(params?.files) && params.files.length > 0;
+	const hasSingle = typeof params?.path === "string" && params.path !== "";
 	if (hasFiles === hasSingle) throw new Error(FORM_ERROR);
 
 	let files: { path: string; content: string }[];
 	if (hasFiles) {
-		if (!Array.isArray(params.files) || params.files.length === 0) throw new Error("files is empty: " + FORM_ERROR);
 		files = params.files;
 		files.forEach((f, i) => {
 			if (!f || typeof f.path !== "string" || f.path === "" || typeof f.content !== "string") {
@@ -52,11 +69,13 @@ export async function executeWrite(stockExecute: any, id: string, params: any, s
 		files = [{ path: params.path, content: params.content }];
 	}
 
-	const seen = new Set<string>();
-	for (const file of files) {
-		const key = keyOf(file.path, base);
-		if (seen.has(key)) throw new Error(`files lists ${file.path} twice`);
-		seen.add(key);
+	const keys = files.map((file) => keyOf(file.path, base));
+	for (let i = 0; i < files.length; i++) {
+		for (let j = i + 1; j < files.length; j++) {
+			if (keys[i] === keys[j]) throw new Error(`files lists ${files[j].path} twice`);
+			if (isInside(keys[i], keys[j])) throw new Error(`files lists ${files[i].path} and ${files[j].path}, one inside the other`);
+			if (isInside(keys[j], keys[i])) throw new Error(`files lists ${files[j].path} and ${files[i].path}, one inside the other`);
+		}
 	}
 
 	const runFile = (file: { path: string; content: string }) =>

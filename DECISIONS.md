@@ -44,6 +44,15 @@ Every accepted decision, with its reason and the file that carries it.
   Pi's default 100 grep matches cuts the broad first search wave; omp-lite's 51 200-character budget equals 50KB for
   ASCII. read and bash keep the stock 2000 lines / 50KB, as measured in bench41.
 - The search wave method moved from `SYSTEM.md` into the grep description; `<search_method>` keeps one line.
+- read, bash, edit and write are registered with `defaultActive: false`: they replace the built-ins of the same name, so
+  Pi's defaults and the user's `--tools` / `defaultTools` still decide which are on. grep and find are activated by
+  registration; on resume or fork they are re-added unless the user passed `--tools`, `--exclude-tools` or `--no-tools`.
+  Reason: the code review showed that activating on registration overrode an explicit `--tools -edit`.
+- read and bash are built with the user's settings (`shellPath`, `shellCommandPrefix`, `images.autoResize`), as stock
+  Pi builds them. Reason: without `shellPath` a Windows setup with Git outside Program Files finds no bash.
+- The read key mirrors stock `resolveReadPath` (NFD, curly quote and AM/PM variants), so a read and a write of the same
+  file spelled differently still meet in the barrier.
+- The `ls` and other stock tools beyond the six are not wrapped and stay outside the barrier; they are off by default.
 - Proof: `npm test` (`node --test`, no model) and `.github/workflows/tests.yml` on macOS, Linux and Windows, plus a job
   reproducing PowerShell, portable Git Bash without admin, then Node.
 

@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { Type } from "typebox";
 import { nearestMatchHint } from "./hint.ts";
-import { pathKey } from "./keys.ts";
+import { pathKey, resolvePath } from "./keys.ts";
 import { withRetry } from "./retry.ts";
 
 // Multi-file edit over the stock edit definition (design decision 4).
@@ -34,7 +34,8 @@ export function prepareEditArguments(stockPrepare: ((input: any) => any) | undef
 	return args;
 }
 
-type Group = { path: string; abs: string; edits: { oldText: string; newText: string }[] };
+// `indices` holds the position of each edit in the model's call, so errors can cite the model's own numbers.
+type Group = { path: string; abs: string; edits: { oldText: string; newText: string }[]; indices: number[] };
 
 function keyOf(path: string, cwd: string): string {
 	try {
@@ -54,19 +55,22 @@ function groupEdits(params: any, cwd: string): Group[] {
 		const key = keyOf(path, cwd);
 		let group = groups.get(key);
 		if (!group) {
-			group = { path, abs: resolve(cwd, path), edits: [] };
+			group = { path, abs: resolvePath(path, cwd), edits: [], indices: [] };
 			groups.set(key, group);
 		}
 		group.edits.push({ oldText: entry.oldText, newText: entry.newText });
+		group.indices.push(i);
 	});
 	return [...groups.values()];
 }
 
 /** Error message plus, for "Could not find", the nearest matching lines. Never throws. */
 async function withHint(error: any, group: Group): Promise<string> {
-	const message = String(error?.message ?? error);
-	if (!message.startsWith("Could not find")) return message;
-	const index = Number(/^Could not find edits\[(\d+)\]/.exec(message)?.[1] ?? 0);
+	const raw = String(error?.message ?? error);
+	// Stock numbers entries inside the group; the model knows them by their place in the call.
+	const message = raw.replace(/edits\[(\d+)\]/g, (m, n) => (group.indices[Number(n)] === undefined ? m : `edits[${group.indices[Number(n)]}]`));
+	if (!raw.startsWith("Could not find")) return message;
+	const index = Number(/^Could not find edits\[(\d+)\]/.exec(raw)?.[1] ?? 0);
 	const oldText = group.edits[index]?.oldText;
 	if (typeof oldText !== "string") return message;
 	const hint = await nearestMatchHint(group.abs, oldText);

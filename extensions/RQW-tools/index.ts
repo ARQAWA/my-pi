@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
+	getAgentDir,
+	SettingsManager,
 	createBashToolDefinition,
 	createEditToolDefinition,
 	createFindToolDefinition,
@@ -12,7 +14,7 @@ import { createBarrier } from "./barrier.ts";
 import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { scopeOf } from "./keys.ts";
 import { editRenderers, writeRenderers } from "./render.ts";
-import { createWriteSchema, executeWrite } from "./write.ts";
+import { createWriteSchema, executeWrite, prepareWriteArguments } from "./write.ts";
 
 const NO_LIMIT = 100000;
 
@@ -52,18 +54,32 @@ export default function (pi: ExtensionAPI) {
 	const withDefaultLimit = (stock: any): Run => (id, params, signal, onUpdate, ctx) =>
 		stock.execute(id, { ...params, limit: params?.limit ?? NO_LIMIT }, signal, onUpdate, ctx);
 
-	const read: any = createReadToolDefinition(cwd);
-	register("read", read, { description: description("read") }, stockRun(read));
+	// Same options stock Pi builds read and bash with (agent-session.js _buildRuntime).
+	let settings: SettingsManager | undefined;
+	try {
+		settings = SettingsManager.create(cwd, getAgentDir());
+	} catch {}
 
-	const bash: any = createBashToolDefinition(cwd);
+	// read, bash, edit and write replace the built-ins of the same name, so Pi's own default and the user's
+	// `--tools` / `defaultTools` decide whether they are on; grep and find keep default activation.
+	const notDefault = { defaultActive: false };
+
+	const read: any = createReadToolDefinition(cwd, settings ? { autoResizeImages: settings.getImageAutoResize() } : undefined);
+	register("read", read, { ...notDefault, description: description("read") }, stockRun(read));
+
+	const bash: any = createBashToolDefinition(
+		cwd,
+		settings ? { commandPrefix: settings.getShellCommandPrefix(), shellPath: settings.getShellPath() } : undefined,
+	);
 	const bashText = description("bash") + (process.platform === "win32" ? "\n" + description("bash.win32") : "");
-	register("bash", bash, { description: bashText }, stockRun(bash));
+	register("bash", bash, { ...notDefault, description: bashText }, stockRun(bash));
 
 	const edit: any = createEditToolDefinition(cwd);
 	register(
 		"edit",
 		edit,
 		{
+			...notDefault,
 			description: description("edit"),
 			parameters: createEditSchema(edit.parameters),
 			prepareArguments: (input: any) => prepareEditArguments(edit.prepareArguments, input),
@@ -77,8 +93,10 @@ export default function (pi: ExtensionAPI) {
 		"write",
 		write,
 		{
+			...notDefault,
 			description: description("write"),
 			parameters: createWriteSchema(write.parameters),
+			prepareArguments: prepareWriteArguments,
 			...writeRenderers(write),
 		},
 		(id, params, signal, onUpdate, ctx) => executeWrite(write.execute, id, params, signal, onUpdate, ctx, cwd),
@@ -115,7 +133,11 @@ export default function (pi: ExtensionAPI) {
 	);
 
 	// A resumed session may lack grep and find; they are registered, but the active set comes from the transcript.
-	pi.on("session_start", () => {
+	// An explicit tool choice on the command line wins.
+	const TOOL_FLAGS = ["--tools", "--exclude-tools", "--no-tools"];
+	pi.on("session_start", (event: any) => {
+		if (event?.reason !== "resume" && event?.reason !== "fork") return;
+		if (process.argv.some((a) => TOOL_FLAGS.some((f) => a === f || a.startsWith(f + "=")))) return;
 		const active = pi.getActiveTools();
 		const missing = ["grep", "find"].filter((name) => !active.includes(name));
 		if (missing.length > 0) pi.setActiveTools([...active, ...missing]);

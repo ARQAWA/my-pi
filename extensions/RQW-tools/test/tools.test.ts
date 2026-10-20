@@ -83,13 +83,51 @@ describe("registration", () => {
 		assert.equal(tools.find.parameters.properties.limit.description.startsWith("Maximum number of results (default: no cap"), true);
 	});
 
-	it("session_start adds missing grep and find to the active tools", () => {
-		const fake = load(["read", "bash", "edit", "write"]);
-		fake.handlers.session_start({}, {});
-		assert.deepEqual(fake.setCalls, [["read", "bash", "edit", "write", "grep", "find"]]);
+	it("read, bash, edit and write are not default-active; grep and find are", () => {
+		const { tools } = load();
+		for (const name of ["read", "bash", "edit", "write"]) assert.equal(tools[name].defaultActive, false, name);
+		for (const name of ["grep", "find"]) assert.notEqual(tools[name].defaultActive, false, name);
+	});
+
+	it("session_start re-adds missing grep and find on resume and fork only, and not after an explicit tool flag", () => {
+		for (const reason of ["resume", "fork"]) {
+			const fake = load(["read", "bash", "edit", "write"]);
+			fake.handlers.session_start({ reason }, {});
+			assert.deepEqual(fake.setCalls, [["read", "bash", "edit", "write", "grep", "find"]], reason);
+		}
+		for (const reason of ["startup", "new", "reload"]) {
+			const fake = load(["read", "bash", "edit", "write"]);
+			fake.handlers.session_start({ reason }, {});
+			assert.deepEqual(fake.setCalls, [], reason);
+		}
 		const full = load(["read", "grep", "find"]);
-		full.handlers.session_start({}, {});
+		full.handlers.session_start({ reason: "resume" }, {});
 		assert.deepEqual(full.setCalls, []);
+		const argv = process.argv;
+		try {
+			for (const flag of ["--tools", "--exclude-tools", "--no-tools"]) {
+				process.argv = [...argv, flag, "read"];
+				const fake = load(["read"]);
+				fake.handlers.session_start({ reason: "resume" }, {});
+				assert.deepEqual(fake.setCalls, [], flag);
+			}
+		} finally {
+			process.argv = argv;
+		}
+	});
+
+	it("write prepareArguments parses a JSON-string files and wraps a single object", () => {
+		const { tools } = load();
+		const entry = { path: "a.txt", content: "x" };
+		const parsed = tools.write.prepareArguments({ files: JSON.stringify([entry, { path: "b.txt", content: "y" }]) });
+		assert.deepEqual(parsed.files, [entry, { path: "b.txt", content: "y" }]);
+		assert.deepEqual(tools.write.prepareArguments({ files: JSON.stringify(entry) }).files, [entry]);
+		assert.deepEqual(tools.write.prepareArguments({ files: entry }).files, [entry]);
+		const broken = { files: "not json" };
+		assert.equal(tools.write.prepareArguments(broken).files, "not json");
+		const normal = { files: [entry] };
+		assert.equal(tools.write.prepareArguments(normal), normal);
+		assert.equal(tools.write.prepareArguments(undefined), undefined);
 	});
 
 	it("prepareArguments keeps a per-entry path", () => {
@@ -206,6 +244,70 @@ describe("edit", () => {
 		assert.match(text(result), /Failed: b\.txt: Could not find[^\n]*\nNearest match at lines 1-1:\n1\|hello world/);
 	});
 
+	it("failure messages of a multi-file call cite the model's own entry indices", async () => {
+		const { tools } = load();
+		const dir = await freshDir();
+		await writeFile(join(dir, "a.txt"), "one\n");
+		await writeFile(join(dir, "b.txt"), "alpha\ngamma\n");
+		const result = await run(
+			tools.edit,
+			{
+				edits: [
+					{ path: "a.txt", oldText: "one", newText: "1" },
+					{ path: "b.txt", oldText: "alpha", newText: "A" },
+					{ path: "b.txt", oldText: "gamma  zzz", newText: "G" },
+				],
+			},
+			dir,
+		);
+		assert.equal(result.isError, true);
+		const failed = text(result).split("\n").find((l) => l.startsWith("Failed: b.txt"))!;
+		assert.match(failed, /Could not find edits\[2\] in b\.txt/);
+		assert.doesNotMatch(failed, /edits\[1\]/);
+		assert.match(text(result), /Nearest match at lines 2-2:\n2\|gamma/);
+	});
+
+	it("the hint reads the file a ~ path names", async () => {
+		const { tools } = load();
+		const dir = await freshDir();
+		const name = `rqw-hint-${process.pid}.txt`;
+		const home = (await import("node:os")).homedir();
+		await writeFile(join(home, name), "hello world\nsecond line\n");
+		try {
+			await assert.rejects(
+				run(tools.edit, { path: `~/${name}`, edits: [{ oldText: "hello  wurld", newText: "z" }] }, dir),
+				/Nearest match at lines 1-1:\n1\|hello world/,
+			);
+		} finally {
+			await rm(join(home, name), { force: true });
+		}
+	});
+
+	it("the hint search is bounded in CPU time on a large long-line file", async () => {
+		const { tools } = load();
+		const dir = await freshDir();
+		const line = (i: number) => `${i}:`.padEnd(200, String.fromCharCode(97 + (i % 26)));
+		await writeFile(join(dir, "big.txt"), Array.from({ length: 1000 }, (_, i) => line(i)).join("\n"));
+		const want = Array.from({ length: 50 }, (_, i) => `x${i}`.padEnd(200, String.fromCharCode(122 - (i % 26)))).join("\n");
+		const started = performance.now();
+		await assert.rejects(run(tools.edit, { path: "big.txt", edits: [{ oldText: want, newText: "" }] }, dir), /^Error: Could not find/);
+		assert.ok(performance.now() - started < 500, `took ${performance.now() - started} ms`);
+	});
+
+	it("read keys the file stock read opens (curly-quote spelling), so a later write is ordered after it", async () => {
+		const { tools } = load();
+		const dir = await freshDir();
+		const real = "Capture d\u2019\u00e9cran.txt";
+		for (let i = 0; i < 10; i++) {
+			await writeFile(join(dir, real), "OLD\n");
+			const [read] = await Promise.all([
+				run(tools.read, { path: "Capture d'\u00e9cran.txt" }, dir),
+				run(tools.write, { path: real, content: "NEW\n" }, dir),
+			]);
+			assert.match(text(read), /^OLD/, `run ${i}`);
+		}
+	});
+
 	it("single-file results equal the stock results", async () => {
 		const { tools } = load();
 		const [ours, theirs] = [await freshDir(), await freshDir()];
@@ -267,12 +369,41 @@ describe("write", () => {
 		await assert.rejects(run(tools.write, { path: "a.txt", content: "x", files: [{ path: "b.txt", content: "y" }] }, dir), message);
 		await assert.rejects(run(tools.write, { path: "a.txt" }, dir), message);
 		await assert.rejects(run(tools.write, {}, dir), message);
-		await assert.rejects(run(tools.write, { files: [] }, dir), /files is empty/);
+		await assert.rejects(run(tools.write, { files: [] }, dir), message);
+		await assert.rejects(run(tools.write, { path: "", content: "", files: [] }, dir), message);
 		await assert.rejects(readFile(join(dir, "a.txt")), /ENOENT/);
 		await assert.rejects(readFile(join(dir, "b.txt")), /ENOENT/);
 		// empty content is a valid file
 		await run(tools.write, { path: "empty.txt", content: "" }, dir);
 		assert.equal(await readFile(join(dir, "empty.txt"), "utf-8"), "");
+	});
+
+	it("strict-mode empty values mean the form is not used", async () => {
+		const { tools } = load();
+		const dir = await freshDir();
+		await run(tools.write, { path: "", content: "", files: [{ path: "a.txt", content: "A" }, { path: "b.txt", content: "B" }] }, dir);
+		assert.equal(await readFile(join(dir, "a.txt"), "utf-8"), "A");
+		assert.equal(await readFile(join(dir, "b.txt"), "utf-8"), "B");
+		await run(tools.write, { path: "c.txt", content: "C", files: [] }, dir);
+		assert.equal(await readFile(join(dir, "c.txt"), "utf-8"), "C");
+	});
+
+	it("rejects a file and a path below it in one call, writing nothing", async () => {
+		const { tools } = load();
+		const dir = await freshDir();
+		await assert.rejects(
+			run(tools.write, { files: [{ path: "a", content: "file" }, { path: "a/b", content: "nested" }] }, dir),
+			/files lists a and a\/b, one inside the other/,
+		);
+		await assert.rejects(
+			run(tools.write, { files: [{ path: "d/e", content: "x" }, { path: "d", content: "y" }] }, dir),
+			/files lists d and d\/e, one inside the other/,
+		);
+		await assert.rejects(readFile(join(dir, "a")), /ENOENT/);
+		await assert.rejects(readFile(join(dir, "d", "e")), /ENOENT/);
+		// a name prefix is not an ancestor
+		await run(tools.write, { files: [{ path: "ab", content: "1" }, { path: "a/b", content: "2" }] }, dir);
+		assert.equal(await readFile(join(dir, "ab"), "utf-8"), "1");
 	});
 
 	it("one failing file does not stop the others", async () => {

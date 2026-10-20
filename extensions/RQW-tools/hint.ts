@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const MIN_SCORE = 0.5;
 const MAX_COMPARISONS = 50_000; // window count x oldText lines
+const MAX_CELLS = 20_000_000; // Levenshtein inner-loop cells over the whole search: bounds CPU time
 const MAX_LINE = 200;
 const MAX_SHOWN = 30;
 
@@ -11,10 +12,13 @@ function collapse(line: string): string {
 	return line.replace(/\s+/g, " ").trim().slice(0, MAX_LINE);
 }
 
+let cells = 0;
+
 function levenshtein(a: string, b: string): number {
 	if (a === b) return 0;
 	if (a.length === 0) return b.length;
 	if (b.length === 0) return a.length;
+	cells += a.length * b.length;
 	let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
 	for (let i = 1; i <= a.length; i++) {
 		const cur = [i];
@@ -47,9 +51,13 @@ export async function nearestMatchHint(absolutePath: string, oldText: string): P
 		const norm = lines.map(collapse);
 		let best = -1;
 		let bestStart = 0;
+		cells = 0;
 		for (let start = 0; start < windows; start++) {
 			let sum = 0;
-			for (let k = 0; k < size; k++) sum += similarity(norm[start + k], wantNorm[k]);
+			for (let k = 0; k < size; k++) {
+				sum += similarity(norm[start + k], wantNorm[k]);
+				if (cells > MAX_CELLS) return undefined;
+			}
 			const score = sum / size;
 			if (score > best) {
 				best = score;
