@@ -3,7 +3,7 @@
 // (`anthropic/claude-haiku-5-5`, `anthropic/claude-sonnet-5-5`), and record every request they get.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -20,16 +20,19 @@ import {
 	type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { makeStrictJsonSchema } from "@earendil-works/pi-ai/api/constrained-sampling";
+import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import {
 	type AgentSession,
 	createAgentSession,
+	createGrepToolDefinition,
 	DefaultResourceLoader,
 	ModelRuntime,
 	type SessionEntry,
 	SessionManager,
 	SettingsManager,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { buildBrief } from "../index.ts";
+import { buildBrief, reviewerTools } from "../index.ts";
 
 const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
 const REVIEWER = readFileSync(join(dirname(EXTENSION), "REVIEWER.md"), "utf8").trimEnd();
@@ -131,7 +134,13 @@ type Main = {
  * A main session with the extension. Its model answers each prompt in `prompts` with text, except the last one, which
  * it answers with one call of `review` with `args`; a later request that carries a `[review#` message ends with "done".
  */
-async function openMain(runtime: ModelRuntime, args: Record<string, unknown>, withExtension = true): Promise<Main> {
+async function openMain(
+	runtime: ModelRuntime,
+	args: Record<string, unknown>,
+	withExtension = true,
+	// Pi's default for an SDK session is "print", where the main run waits for its reviews.
+	mode: "tui" | "rpc" | "print" | "json" = "tui",
+): Promise<Main> {
 	const dir = join(root, `w${counter++}`);
 	await mkdir(dir, { recursive: true });
 	const resourceLoader = new DefaultResourceLoader({
@@ -155,7 +164,7 @@ async function openMain(runtime: ModelRuntime, args: Record<string, unknown>, wi
 		sessionManager: SessionManager.inMemory(dir),
 		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
 	});
-	await session.bindExtensions({});
+	await session.bindExtensions({ mode });
 
 	const main: Main = { session, dir, tools: [], verdictTurn: Promise.resolve("") };
 	const verdict = Promise.withResolvers<string>();
@@ -358,6 +367,191 @@ describe("review tool", () => {
 		try {
 			await main.session.prompt("hello");
 			assert.equal(main.tools.find((t) => t.name === "review"), undefined);
+		} finally {
+			main.session.dispose();
+		}
+	});
+});
+
+type Reply = AssistantMessage | ((signal?: AbortSignal) => Promise<AssistantMessage>);
+
+/** The main model takes `replies` in order, then answers "ok"; returns the texts of every request, one list each. */
+function scriptMain(replies: Reply[]): string[][] {
+	const requests: string[][] = [];
+	const step = (context: TranscriptContext, options: SimpleStreamOptions | undefined) => {
+		requests.push(context.messages.filter((m) => m.role !== "system").map((m) => textOf("content" in m ? m.content : "")));
+		const reply = replies.shift();
+		if (!reply) return fauxAssistantMessage(fauxText("ok"));
+		return typeof reply === "function" ? reply(options?.signal) : reply;
+	};
+	mainFaux.setResponses(Array.from({ length: 20 }, () => step));
+	return requests;
+}
+
+/** A reply that waits until `release()` or an abort. */
+function gate(text: string) {
+	let release = () => {};
+	const reply = (signal?: AbortSignal) => {
+		const { promise, resolve } = Promise.withResolvers<AssistantMessage>();
+		release = () => resolve(fauxAssistantMessage(fauxText(text)));
+		signal?.addEventListener("abort", () => resolve(fauxAssistantMessage(fauxText(text))));
+		return promise;
+	};
+	return { reply, release: () => release() };
+}
+
+// Reviews and deliveries run inside Pi with no promise exposed to the test, so the test polls for their visible
+// result; `tick` gives a message that must not come a chance to arrive before the check.
+async function until(check: () => boolean, what: string, ms = 5000) {
+	const end = Date.now() + ms;
+	while (!check()) {
+		if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+		await new Promise((r) => setTimeout(r, 5));
+	}
+}
+const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
+
+const ARGS = { level: "blind", object: "a.ts", criterion: "c" };
+const callReview = () => fauxAssistantMessage(fauxToolCall("review", ARGS, { id: "r1" }), { stopReason: "toolUse" });
+const delivered = (session: AgentSession) => reviewMessages(session).map((m) => m?.content);
+const lastText = (session: AgentSession) => {
+	const last = session.messages.at(-1);
+	return last?.role === "assistant" ? textOf(last.content) : `(${last?.role})`;
+};
+
+describe("delivery", () => {
+	for (const mode of ["print", "json"] as const) {
+		it(`${mode} mode: the main run waits for a running review and its verdict continues that run`, async () => {
+			const reviewer = gate("CLEAN");
+			const reviews = scriptReviewer((_context, options) => reviewer.reply(options?.signal));
+			const main = await openMain(full, ARGS, true, mode);
+			const requests = scriptMain([callReview(), fauxAssistantMessage(fauxText("started")), fauxAssistantMessage(fauxText("done"))]);
+			try {
+				let settled = false;
+				const run = main.session.prompt("Review it").then(() => {
+					settled = true;
+				});
+				await until(() => reviews.length === 1 && requests.length === 2, "the review request");
+				await tick();
+				assert.equal(settled, false, "the main run waits for the review");
+				reviewer.release();
+				await within(run, 5000, "the main run");
+				assert.deepEqual(delivered(main.session), ["[review#1] CLEAN"]);
+				assert.equal(requests.length, 3, "one more request, in the same run");
+				assert.equal(requests[2].filter((t) => t === "[review#1] CLEAN").length, 1);
+				assert.equal(lastText(main.session), "done");
+			} finally {
+				main.session.dispose();
+			}
+		});
+	}
+
+	/** The main agent calls review, then streams a reply held by `mainGate` while the verdict arrives. */
+	async function verdictWhileBusy(mode: "tui" | "rpc") {
+		const reviews = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+		const main = await openMain(full, ARGS, true, mode);
+		const mainGate = gate("main busy");
+		const requests = scriptMain([callReview(), mainGate.reply]);
+		const run = main.session.prompt("Review it");
+		await until(() => reviews.length === 1 && requests.length === 2, "main busy, review answered");
+		// The reviewer session ends and the verdict is sent within a few event-loop turns.
+		await tick(200);
+		return { main, mainGate, requests, run };
+	}
+
+	/** After an abort: the verdict is in the session once, no run starts for it, the next prompt carries it once. */
+	async function checkKeptAfterAbort(main: Main, requests: string[][]) {
+		await tick(200);
+		assert.deepEqual(delivered(main.session), ["[review#1] CLEAN"], "the verdict is in the session");
+		assert.equal(requests.length, 2, "no run starts after the abort");
+		assert.equal(main.session.agent.hasQueuedMessages(), false, "nothing left in the queue");
+		await main.session.prompt("next");
+		await tick();
+		assert.equal(requests.length, 3, "one request for the next prompt");
+		assert.equal(requests[2].filter((t) => t === "[review#1] CLEAN").length, 1, "the model sees it once");
+		assert.deepEqual(delivered(main.session), ["[review#1] CLEAN"]);
+	}
+
+	it("a verdict that arrives while the main agent streams continues its run once", async () => {
+		const { main, mainGate, requests, run } = await verdictWhileBusy("tui");
+		try {
+			assert.deepEqual(delivered(main.session), [], "held until the turn ends");
+			mainGate.release();
+			await within(run, 5000, "the main run");
+			await tick();
+			assert.deepEqual(delivered(main.session), ["[review#1] CLEAN"]);
+			assert.equal(requests.length, 3);
+			assert.equal(requests[2].filter((t) => t === "[review#1] CLEAN").length, 1);
+		} finally {
+			main.session.dispose();
+		}
+	});
+
+	it("TUI Esc while a verdict waits: the verdict is kept, no run starts, the next prompt carries it", async () => {
+		const { main, requests, run } = await verdictWhileBusy("tui");
+		try {
+			// What Esc does: restoreQueuedMessagesToEditor({ abort: true }) clears the queue, then aborts.
+			main.session.clearQueue();
+			await main.session.abort();
+			await within(run, 5000, "the main run");
+			await checkKeptAfterAbort(main, requests);
+		} finally {
+			main.session.dispose();
+		}
+	});
+
+	it("RPC abort while a verdict waits: the verdict is kept, no run starts, the next prompt carries it", async () => {
+		const { main, requests, run } = await verdictWhileBusy("rpc");
+		try {
+			await main.session.abort(); // RPC "abort"
+			await within(run, 5000, "the main run");
+			await checkKeptAfterAbort(main, requests);
+		} finally {
+			main.session.dispose();
+		}
+	});
+});
+
+describe("reviewer grep and find", () => {
+	const FILE = "a.ts:1: const foo = 1;";
+
+	/** Arguments through the definition's prepareArguments and Pi's validation, then the stock execute. */
+	async function run(definition: ToolDefinition, args: Record<string, unknown>, cwd: string): Promise<string> {
+		const prepared = definition.prepareArguments ? definition.prepareArguments(args) : args;
+		const valid = validateToolArguments(definition as never, { type: "toolCall", id: "t", name: definition.name, arguments: prepared as never });
+		const result = await definition.execute("t", valid as never, undefined, undefined, { cwd } as never);
+		return textOf(result.content);
+	}
+
+	it('optional arguments "null", "undefined" and blank count as not given', async () => {
+		const dir = join(root, `g${counter++}`);
+		await mkdir(dir, { recursive: true });
+		await writeFile(join(dir, "a.ts"), "const foo = 1;\n");
+		const stockGrep = createGrepToolDefinition(dir) as unknown as ToolDefinition;
+		assert.equal(await run(stockGrep, { pattern: "foo", glob: "null" }, dir), "No matches found", "the stock grep fails silently");
+		const [grep, find] = reviewerTools(dir);
+		assert.deepEqual([grep.name, find.name], ["grep", "find"]);
+		for (const empty of ["null", "undefined", "", "  "]) {
+			assert.equal(await run(grep, { pattern: "foo", glob: empty }, dir), FILE, `grep glob ${JSON.stringify(empty)}`);
+			assert.equal(await run(grep, { pattern: "foo", path: empty }, dir), FILE, `grep path ${JSON.stringify(empty)}`);
+			assert.equal(await run(find, { pattern: "*.ts", path: empty, limit: empty }, dir), "a.ts", `find ${JSON.stringify(empty)}`);
+		}
+		assert.equal(await run(grep, { pattern: "foo", glob: "*.ts" }, dir), FILE, "a real glob still applies");
+		assert.equal(await run(grep, { pattern: "foo", glob: "*.py" }, dir), "No matches found");
+	});
+
+	it('the reviewer session gets them: grep with glob "null" finds the match', async () => {
+		scriptReviewer((context) => {
+			const last = context.messages.at(-1);
+			if (last?.role === "toolResult") return fauxAssistantMessage(fauxText(textOf(last.content)));
+			return fauxAssistantMessage(fauxToolCall("grep", { pattern: "foo", glob: "null" }, { id: "g1" }), { stopReason: "toolUse" });
+		});
+		const main = await openMain(full, ARGS);
+		try {
+			await writeFile(join(main.dir, "a.ts"), "const foo = 1;\n");
+			await main.session.prompt(SECOND);
+			assert.equal(await within(main.verdictTurn, 5000, "verdict turn"), `[review#1] ${FILE}`);
+			await main.session.waitForIdle();
 		} finally {
 			main.session.dispose();
 		}

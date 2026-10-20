@@ -1,6 +1,6 @@
 // Extension 5: the `review` tool. Each call starts a fresh read-only reviewer session in this process on the model of
 // its level, with REVIEWER.md as the prompt and a brief built from the user's own messages; the call returns at once
-// and the verdict comes back later as a `[review#N]` message that starts a turn.
+// and the verdict comes back later as a `[review#N]` message that the main model answers.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,8 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import {
 	createAgentSession,
 	createExtensionRuntime,
+	createFindToolDefinition,
+	createGrepToolDefinition,
 	type ExtensionAPI,
 	type ExtensionContext,
 	type ModelRuntime,
@@ -15,6 +17,7 @@ import {
 	type SessionEntry,
 	SessionManager,
 	SettingsManager,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -25,7 +28,7 @@ export const LEVELS = {
 } as const;
 export type Level = keyof typeof LEVELS;
 
-/** Stock Pi tools of the reviewer: read only. */
+/** Stock Pi tools of the reviewer: read only. grep and find go in through `reviewerTools`. */
 export const REVIEWER_TOOLS = ["read", "grep", "find"];
 export const TIMEOUT_MS = 10 * 60 * 1000;
 export const MESSAGE_TYPE = "review";
@@ -115,6 +118,35 @@ export function buildBrief(entries: readonly SessionEntry[], params: Params): st
 	return sections.join("\n\n");
 }
 
+const EMPTY = new Set(["", "null", "undefined"]);
+
+/**
+ * Optional arguments sent as the string "null", "undefined" or blank count as not given. Stock grep would pass
+ * `--glob null` to rg and answer "No matches found", a silent false negative for the reviewer.
+ */
+export function dropEmptyOptional(input: unknown, required: readonly string[]): unknown {
+	if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+	const entries = Object.entries(input);
+	const kept = entries.filter(([key, value]) => required.includes(key) || typeof value !== "string" || !EMPTY.has(value.trim()));
+	return kept.length === entries.length ? input : Object.fromEntries(kept);
+}
+
+/** Stock grep and find with `dropEmptyOptional` before Pi validates the arguments; execute stays stock. */
+export function reviewerTools(cwd: string): ToolDefinition[] {
+	return [createGrepToolDefinition(cwd), createFindToolDefinition(cwd)].map((stock) => {
+		const definition = stock as unknown as ToolDefinition;
+		const required: string[] = (definition.parameters as { required?: string[] }).required ?? [];
+		const prepare = definition.prepareArguments;
+		return {
+			...definition,
+			prepareArguments: (input: unknown) => {
+				const args = dropEmptyOptional(input, required);
+				return prepare ? prepare(args) : args;
+			},
+		} as ToolDefinition;
+	});
+}
+
 const SHUTDOWN = "shutdown";
 const TIMEOUT = "timeout";
 
@@ -137,6 +169,7 @@ async function runReviewer(level: Level, brief: string, ctx: ExtensionContext, s
 		modelRuntime,
 		resourceLoader: reviewerResources(),
 		tools: [...REVIEWER_TOOLS],
+		customTools: reviewerTools(ctx.cwd),
 		sessionManager: SessionManager.inMemory(ctx.cwd),
 		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
 	});
@@ -177,14 +210,56 @@ function lastNumber(entries: readonly SessionEntry[]): number {
 
 export default function review(pi: ExtensionAPI) {
 	let counter = 0;
+	let main: ExtensionContext | undefined;
 	const running = new Set<AbortController>();
+	/** Every job until its verdict is sent; print and JSON modes wait for them. */
+	const jobs = new Set<Promise<void>>();
+	/** Verdicts sent while the main session was busy, by review number, until the main model answers after them. */
+	const unanswered = new Set<number>();
 
 	pi.on("session_start", (_event, ctx) => {
+		main = ctx;
 		counter = lastNumber(ctx.sessionManager.getEntries());
 	});
 	pi.on("session_shutdown", () => {
 		for (const job of running) job.abort(SHUTDOWN);
 		running.clear();
+	});
+
+	// Each review sends one verdict, so its number `n` in `details` is the delivery number.
+	function deliver(message: { customType: string; content: string; display: boolean; details: { n: number } }) {
+		if (main?.isIdle() !== false) {
+			pi.sendMessage(message, { triggerTurn: true, deliverAs: "followUp" });
+			return;
+		}
+		// Busy: Pi appends a message without triggerTurn to the session at the end of the current turn or run, aborted
+		// or not, so Esc and abort cannot drop it (a follow-up waits in the agent's queue, which Esc clears).
+		// agent_before_settle adds the turn.
+		unanswered.add(message.details.n);
+		pi.sendMessage(message, { triggerTurn: false });
+	}
+
+	/** Whether a verdict sent while busy still waits for a main turn; drops the ones the model already saw. */
+	function needsTurn(ctx: ExtensionContext): boolean {
+		const entries = ctx.sessionManager.getEntries();
+		const branch = ctx.sessionManager.getBranch();
+		const lastAnswer = branch.findLastIndex((e) => e.type === "message" && e.message.role === "assistant");
+		const isVerdict = (n: number) => (e: SessionEntry) =>
+			e.type === "custom_message" && e.customType === MESSAGE_TYPE && (e.details as { n?: number } | undefined)?.n === n;
+		for (const n of unanswered) {
+			if (!entries.some(isVerdict(n))) continue; // still held by Pi until the turn ends
+			const at = branch.findIndex(isVerdict(n));
+			if (at < 0 || at < lastAnswer) unanswered.delete(n); // on another branch, or answered
+		}
+		return unanswered.size > 0;
+	}
+
+	// Print and JSON modes exit when the main run settles, so there the main run waits for running reviews. A verdict
+	// sent during the run continues it here; an idle main session gets a verdict as a new turn. After an abort the
+	// verdict stays in the session without a turn, and the model sees it on the next one.
+	pi.on("agent_before_settle", async (_event, ctx) => {
+		if (ctx.mode === "print" || ctx.mode === "json") while (jobs.size > 0) await Promise.all(jobs);
+		if (needsTurn(ctx)) return { continue: true };
 	});
 
 	async function job(n: number, level: Level, brief: string, ctx: ExtensionContext) {
@@ -212,22 +287,19 @@ export default function review(pi: ExtensionAPI) {
 		// The session that asked is gone; nobody is left to read the verdict.
 		if (controller.signal.reason === SHUTDOWN) return;
 		try {
-			pi.sendMessage(
-				{
-					customType: MESSAGE_TYPE,
-					content: `[review#${n}] ${verdict}`,
-					display: true,
-					// For the user and the logs only; details do not reach the model.
-					details: {
-						n,
-						level,
-						model: `${LEVELS[level].provider}/${LEVELS[level].model}`,
-						thinking: LEVELS[level].thinking,
-						seconds: Math.round((Date.now() - startedAt) / 100) / 10,
-					},
+			deliver({
+				customType: MESSAGE_TYPE,
+				content: `[review#${n}] ${verdict}`,
+				display: true,
+				// For the user and the logs only; details do not reach the model.
+				details: {
+					n,
+					level,
+					model: `${LEVELS[level].provider}/${LEVELS[level].model}`,
+					thinking: LEVELS[level].thinking,
+					seconds: Math.round((Date.now() - startedAt) / 100) / 10,
 				},
-				{ triggerTurn: true, deliverAs: "followUp" },
-			);
+			});
 		} catch {
 			// The session ended between the verdict and its delivery.
 		}
@@ -242,7 +314,9 @@ export default function review(pi: ExtensionAPI) {
 			const p = params as Params;
 			const n = ++counter;
 			const brief = buildBrief(ctx.sessionManager.getBranch(), p);
-			void job(n, p.level, brief, ctx);
+			const pending = job(n, p.level, brief, ctx);
+			jobs.add(pending);
+			void pending.finally(() => jobs.delete(pending));
 			return {
 				content: [{ type: "text", text: `review#${n} started` }],
 				details: { n, level: p.level },

@@ -305,7 +305,7 @@ Every accepted decision, with its reason and the file that carries it.
   missing credentials, a failed request or no verdict in 10 minutes give `[review#N] Review failed: <reason>`.
 - Parameters: `level`, `object` (paths, the diff as a file path, the stage), `criterion`, optional `agreement`
   (accepted proposals and decisions that are not in the user's own messages) and `rejected`. The description has
-  four sentences, under 500 characters. Empty strings count as not given, since strict mode fills every field.
+  five sentences, 402 characters. Empty strings count as not given, since strict mode fills every field.
 - The diff goes in as a file path, not as a command: the reviewer only reads files and cannot run one.
 - The extension builds the brief itself (`buildBrief`): the user's messages of the current branch, verbatim, numbered
   and in order, with compaction and branch summaries labeled as not the user's words, then `agreement`, `object`,
@@ -321,6 +321,11 @@ Every accepted decision, with its reason and the file that carries it.
   read-only calls, so an own barrier adds nothing; the RQW definitions are built inside the RQW-tools factory and
   are not exported. The execute code is the same stock code, so the output matches. Cost: stock caps of 100 grep
   matches and 1000 find results, each with a note on how to get more.
+- grep and find go to the reviewer as `customTools` (`reviewerTools`): the stock definitions with a
+  `prepareArguments` that drops optional arguments equal to the string `"null"`, `"undefined"` or blank
+  (`dropEmptyOptional`) before Pi validates them; execute stays stock. Reason (review finding): stock grep passed
+  `--glob null` to rg and answered "No matches found", so a reviewer could confirm a removed name was gone everywhere.
+  RQW-tools has no such normalizer to reuse; a real JSON `null` Pi already strips.
 - The reviewer uses the session's own model runtime, `ctx.modelRegistry.runtime`, private to TypeScript only.
   Reason: providers and logins that the user's extensions register reach the reviewer (here `pi-claude-auth`
   registers the `anthropic` provider), and no second runtime refreshes the same OAuth login.
@@ -330,19 +335,39 @@ Every accepted decision, with its reason and the file that carries it.
   stays: `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED
   OUTCOME), and an optional `UNCHECKED:` section.
 - Async: the call returns `review#N started` at once. The verdict, the reviewer's last assistant text, arrives as
-  `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>", display: true }, { triggerTurn: true,
-  deliverAs: "followUp" })`; `details` carry level, model, thinking and seconds for the user and logs only. Numbers
-  count per session and go on after a resume. `session_shutdown` aborts every running review and delivers nothing;
-  the 10-minute timer does not keep the process alive.
+  `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>", display: true }, ...)`; `details` carry
+  `n`, level, model, thinking and seconds for the user and logs only. Numbers count per session and go on after a
+  resume. `session_shutdown` aborts every running review and delivers nothing; the 10-minute timer does not keep the
+  process alive.
+- Delivery works as in the Agent section, so both extensions behave alike (review findings: in print and json mode
+  Pi disposed the session when the main run settled and the verdict never came; a follow-up waited in the agent's
+  queue, which TUI Esc and RPC `clear_queue` clear and an RPC abort or an error-ended run leaves without a turn).
+  The `session_start` context is kept. When `ctx.isIdle()`, the verdict goes with `triggerTurn: true, deliverAs:
+  "followUp"` and starts a turn. When busy, it goes with `triggerTurn: false`: Pi appends it to the session at the
+  end of the current turn or run, aborted or not, and the `agent_before_settle` handler returns `continue: true`
+  while the verdict is not yet followed by an assistant message in the branch. Each review sends one verdict, so its
+  number `n` in `details` is the delivery number. After an abort no turn starts; the verdict stays in the session
+  and the model sees it on the next prompt, once. In print and json mode the handler first waits for running reviews
+  (each ends within the 10-minute timeout), and their verdicts continue that same run before Pi exits.
 - Proof: `extensions/RQW-review/test/review.test.ts` (real sessions, faux providers for the main and the reviewer
   models) and one real run per level: a temp copy of a fixture with `calc.py` (`add` returns `a - b` instead of the
   sum) and a correct `config.py` (`MAX_ITEMS = 50`), command
   `pi -e /tmp/my-pi-review --mode json --model anthropic/claude-opus-5-5 --thinking low -p "<prompt>"`, the prompt
   quoting the request and asking to call `review` and then `sleep 150`. Both verdicts named the defect and nothing
-  else and started a main turn: `blind` in 8.7 s (`EVIDENCE: "return a - b"`), `high` in 3.8 s.
+  else and started a main turn: `blind` in 8.7 s (`EVIDENCE: "return a - b"`), `high` in 3.8 s. After the delivery
+  fixes, tests for print and json mode (the run waits and continues with the verdict), a verdict arriving while the
+  main agent streams (continues its run once), TUI Esc and RPC abort (the verdict is in the session once, no run
+  starts, the next prompt carries it once), and grep and find with `"null"`, `"undefined"` and blank arguments
+  through Pi's validation and inside a reviewer session. Without the `agent_before_settle` handler, the busy-time
+  delivery or `reviewerTools`, these tests fail. Live run in json mode with no `sleep`: Haiku 5.5 as the main model
+  replied `started`, the run waited, `[review#1] FINDINGS: ... EVIDENCE: "return a - b"` arrived after 5.1 s and the
+  main agent answered it in the same run (`GOT VERDICT: ... returns a - b instead of the sum`), exit 0 in 13 s.
 - Open: `ctx.modelRegistry.runtime` may be renamed by a Pi update, then every review fails with "the model runtime of
-  the session is not reachable"; a verdict queued when the session ends is lost; the reviewer may read a file the
-  main agent is still editing; in one smoke run Haiku wrote a MISMATCH of more than 20 words.
+  the session is not reachable"; a verdict that finishes after the session ended (quit, `/new`, `/resume`, reload)
+  is dropped, since `session_shutdown` aborts running reviews; in print and json mode the run waits up to 10 minutes
+  for a slow review; a verdict that arrives during a manual `/compact` with no run is appended without a turn and is
+  seen on the next one; the reviewer may read a file the main agent is still editing; the main agent's own RQW-tools
+  grep still passes a string `"null"` glob to rg; in one smoke run Haiku wrote a MISMATCH of more than 20 words.
 
 ## PCLI
 
