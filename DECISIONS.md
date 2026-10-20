@@ -80,6 +80,10 @@ Every accepted decision, with its reason and the file that carries it.
   occurrence with enough of its line. Failed edit calls 5 -> 0, multi-file edit calls 12 of 23 -> 15 of 16, all runs
   correct in both texts. A variant that told the model bash sees the changed files again made gpt-6.1-sol issue one
   call per response and was rejected.
+- read description refined by probes (`notes/refine/refine-readbash.md`; T02, T05, EDIT, WRITE, two models, 96 runs):
+  read a needed file whole in one call and read every file needed next in one response. Correctness 99.6 -> 100,
+  whole-file reads 79% -> 84%, responses equal; the speed change is within noise. bash stays as it was: no run searched
+  or read through bash, and a line asking to run tests in the same response as the edit split responses on gpt-6.1-sol.
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
