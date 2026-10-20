@@ -10,10 +10,12 @@ import {
 	createReadToolDefinition,
 	createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { createBarrier } from "./barrier.ts";
+import { takeOverBuiltinCodemode } from "./codemode.ts";
 import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { scopeOf } from "./keys.ts";
+import { createNestedBarrier } from "./nested.ts";
 import { editRenderers, writeRenderers } from "./render.ts";
+import { noToolSelection } from "./selection.ts";
 import { createWriteSchema, executeWrite, prepareWriteArguments } from "./write.ts";
 
 const NO_LIMIT = 100000;
@@ -31,8 +33,11 @@ function withDescription(schema: any, property: string, text: string): any {
 }
 
 export default function (pi: ExtensionAPI) {
-	// One barrier per extension instance; every execute registers its scope synchronously before any await.
-	const schedule = createBarrier();
+	// One barrier per extension instance; every execute registers its scope synchronously before any await. The tool
+	// calls of a `codemode` script use the barrier of that script (nested.ts), the `codemode` call itself is one call
+	// with scope "all" in the outer one.
+	const nested = createNestedBarrier();
+	const schedule = nested.schedule;
 	const cwd = process.cwd();
 
 	type Run = (id: string, params: any, signal: any, onUpdate: any, ctx: any) => Promise<any>;
@@ -149,16 +154,17 @@ export default function (pi: ExtensionAPI) {
 		withDefaultLimit(find),
 	);
 
-	// grep and find are on only when the user made no tool selection: no tool flag in argv (any spelling) and no
-	// `defaultTools` setting. Any selection leaves the active set exactly as stock Pi built it.
-	// The extension API exposes no `tools` / `noTools` / `excludeTools` session options, so argv is the signal.
-	const TOOL_FLAGS = ["--tools", "-t", "--exclude-tools", "-xt", "--no-tools", "-nt", "--no-builtin-tools", "-nbt"];
-	pi.on("session_start", () => {
-		if (process.argv.some((a) => TOOL_FLAGS.some((f) => a === f || a.startsWith(f + "=")))) return;
-		const settings = sessionSettings();
-		if (!settings || settings.defaultTools !== undefined) return;
-		const active = pi.getActiveTools();
-		const missing = ["grep", "find"].filter((name) => !active.includes(name));
-		if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
+	// grep and find are on only when the user made no tool selection (see `noToolSelection`). Any selection leaves
+	// the active set exactly as stock Pi built it. On `reload` Pi keeps the tools the user switched off during the
+	// session, so the handler leaves the active set alone then.
+	// Pi's built-in `codemode`, when it is loaded, is replaced by the same definition as a call of the barrier. That
+	// runs for every reason, `reload` included: a reload builds a fresh registry with the built-in again.
+	pi.on("session_start", (event) => {
+		if (event.reason !== "reload" && noToolSelection(pi)) {
+			const active = pi.getActiveTools();
+			const missing = ["grep", "find"].filter((name) => !active.includes(name));
+			if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
+		}
+		takeOverBuiltinCodemode(pi, nested);
 	});
 }

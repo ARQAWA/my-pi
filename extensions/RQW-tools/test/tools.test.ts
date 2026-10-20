@@ -17,7 +17,7 @@ import { executeWrite } from "../write.ts";
 
 type Fake = { tools: Record<string, any>; handlers: Record<string, any>; active: string[]; setCalls: string[][] };
 
-function load(active: string[] = [], settings: Record<string, unknown> | "throws" = {}): Fake {
+function load(active: string[] = [], settings: Record<string, unknown> | "throws" = {}, registered: string[] = []): Fake {
 	const fake: Fake = { tools: {}, handlers: {}, active, setCalls: [] };
 	(factory as any)({
 		registerTool: (def: any) => {
@@ -27,6 +27,8 @@ function load(active: string[] = [], settings: Record<string, unknown> | "throws
 			fake.handlers[event] = handler;
 		},
 		getActiveTools: () => fake.active,
+		// what the session knows: only the built-in tools named in `registered` (a built-in `codemode`, for one)
+		getAllTools: () => registered.map((name) => ({ name, sourceInfo: { source: "builtin", path: `builtin:${name}` } })),
 		getSettings: () => {
 			if (settings === "throws") throw new Error("no settings");
 			return settings;
@@ -94,12 +96,16 @@ describe("registration", () => {
 		for (const name of ["read", "bash", "edit", "write", "grep", "find"]) assert.equal(tools[name].defaultActive, false, name);
 	});
 
-	it("session_start adds grep and find on every reason, only when the user made no tool selection", () => {
-		for (const reason of ["startup", "new", "reload", "resume", "fork"]) {
+	it("session_start adds grep and find on every reason but reload, only when the user made no tool selection", () => {
+		for (const reason of ["startup", "new", "resume", "fork"]) {
 			const fake = load(["read", "bash", "edit", "write"]);
 			fake.handlers.session_start({ reason }, {});
 			assert.deepEqual(fake.setCalls, [["read", "bash", "edit", "write", "grep", "find"]], reason);
 		}
+		// Pi keeps the active set through a reload, tools the user switched off included
+		const reloaded = load(["read", "bash", "edit", "write"]);
+		reloaded.handlers.session_start({ reason: "reload" }, {});
+		assert.deepEqual(reloaded.setCalls, [], "reload");
 		const full = load(["read", "grep", "find"]);
 		full.handlers.session_start({ reason: "resume" }, {});
 		assert.deepEqual(full.setCalls, []);
@@ -121,6 +127,20 @@ describe("registration", () => {
 			}
 		} finally {
 			process.argv = argv;
+		}
+	});
+
+	it("session_start replaces a registered built-in codemode on every reason, reload included, and nothing else", () => {
+		for (const reason of ["startup", "new", "resume", "fork", "reload"]) {
+			const fake = load(["read"], {}, ["codemode"]);
+			fake.handlers.session_start({ reason }, {});
+			assert.equal(typeof fake.tools.codemode?.execute, "function", reason);
+			assert.equal(fake.tools.codemode.name, "codemode");
+		}
+		for (const registered of [[], ["tool_search"]]) {
+			const fake = load(["read"], {}, registered);
+			fake.handlers.session_start({ reason: "startup" }, {});
+			assert.equal(fake.tools.codemode, undefined, `registered: ${registered.join(",") || "nothing"}`);
 		}
 	});
 

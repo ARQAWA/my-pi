@@ -147,6 +147,22 @@ Every accepted decision, with its reason and the file that carries it.
   `write` description, as in omp-lite, each part in its own response. Removed against bench41: the working
   directory from the date line, because Pi already appends `<cwd>`.
 
+## Settings
+
+- `codemode` and `tool_search`, Pi's built-in tools, are active by default (owner: «Давай включим CodeMode и Tool
+  Search»). `extensions/RQW-settings/index.ts` adds them to the active tools at `session_start` under the same rule as
+  `grep` and `find`: no tool flag in argv and no `defaultTools` setting, shared through
+  `extensions/RQW-tools/selection.ts`. A tool is added only if it is registered, so `-builtin:codemode` gives no error.
+  Any user selection (`--tools`, `--exclude-tools`, `--no-tools`, `--no-builtin-tools`, `defaultTools`) leaves the stock
+  set. Mode `on` (Pi's default) is kept: Pi appends a "Codemode: `tools.<name>(args)` resolves to ..." line to the
+  descriptions of our six tools in each request. Texts, source lines and the barrier check: `notes/settings-codemode.md`.
+- `codemode` is a call of the RQW-tools barrier with scope "all", like `bash`; the tool calls of its own script are
+  ordered by a barrier of that call, carried by `AsyncLocalStorage`. RQW-tools replaces Pi's built-in `codemode` at
+  `session_start` with the same definition and a grouped `execute` (`extensions/RQW-tools/nested.ts`, `codemode.ts`), so
+  `-builtin:codemode` still means no `codemode`. Reason: `[codemode(write f), read f]` let the read run first.
+- On `/reload` the `session_start` handlers of RQW-settings and RQW-tools leave the active set alone: Pi keeps the tools
+  the user switched off, and the handlers had added them again.
+
 ## PCLI
 
 - `pcli-vscode/` is a VS Code extension `arqawa.pcli` ("ARQAWA PCLI", win32-x64) that starts Pi like CCLI starts Codex
