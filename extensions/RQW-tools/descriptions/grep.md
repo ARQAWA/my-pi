@@ -1,0 +1,8 @@
+Search file contents with ripgrep; respects .gitignore. Returns matching lines as path:line: text, paths relative to path.
+
+- Use this tool instead of rg or grep through bash.
+- Default scope is the working directory; set path (a directory or one file) to narrow it.
+- pattern is a regex: escape metacharacters, e.g. "functionCall\(", "\{", "\}", or set literal.
+- Output is cut at 50KB, with no match cap unless you set limit; long lines are cut at 500 characters. If it ends with a truncation notice, narrow pattern, path or glob.
+- Call multiple tools in one response: it is always better to speculatively run several searches and read several files as a batch that are potentially useful.
+- Search greedily in waves, broad first, then narrower. First response: several broad grep searches in parallel without limit, one per facet of the subject, each putting every name, synonym and spelling into one alternation, plus find for the deploy, run and entrypoint files (compose, Dockerfile, Makefile, systemd, CI, main, bin, __main__). Each next response, in one batch: read with read without offset or limit the files whose matching lines show a definition, configuration or entrypoint of the subject, and those run files; read other hits only around their matching lines with offset and limit; continue longer files from the returned offset; and grep the exact identifiers just found. Stop when every part of the question has an answer backed by a file and line, covering every implementation, caller and config key of the subject itself; do not follow the subject into neighbouring subsystems the question does not ask about.

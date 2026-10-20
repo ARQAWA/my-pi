@@ -1,0 +1,86 @@
+name: tests
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        node: ["22.19.0", "24"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Facts
+        run: |
+          node --version
+          git --version
+          command -v bash rg fd || true
+
+      - name: Facts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          where.exe bash.exe
+          ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole('Administrators')
+
+      - run: npm ci
+
+      - run: npm test
+
+      - name: Tests in a path with spaces and Cyrillic
+        run: |
+          DIR="$RUNNER_TEMP/проба с пробелом"
+          mkdir -p "$DIR"
+          cp -R "$GITHUB_WORKSPACE" "$DIR/my-pi"
+          cd "$DIR/my-pi"
+          pwd
+          npm test
+
+  windows-portable-git:
+    name: windows-portable-git (node 22.19.0)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+
+      - run: npm ci
+
+      - name: Install PortableGit (per-user, no admin)
+        shell: pwsh
+        run: |
+          $rel = Invoke-RestMethod https://api.github.com/repos/git-for-windows/git/releases/latest -Headers @{ Authorization = "Bearer ${{ github.token }}" }
+          $asset = $rel.assets | Where-Object name -like 'PortableGit-*-64-bit.7z.exe' | Select-Object -First 1
+          Invoke-WebRequest $asset.browser_download_url -OutFile "$env:RUNNER_TEMP\pg.exe"
+          Start-Process "$env:RUNNER_TEMP\pg.exe" -ArgumentList '-y', "-o`"$env:LOCALAPPDATA\Programs\Git`"" -Wait
+          & "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe" --version
+
+      - name: Tests (pwsh -> portable bash -> node, Program Files Git hidden)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\nowhere" | Out-Null
+          $env:ProgramFiles = "$env:RUNNER_TEMP\nowhere"
+          ${env:ProgramFiles(x86)} = "$env:RUNNER_TEMP\nowhere"
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notlike '*\Program Files\Git*' }) -join ';'
+          $bash = "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe"
+          & $bash -lc 'command -v bash git node; cd "$GITHUB_WORKSPACE" && npm test'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

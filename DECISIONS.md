@@ -29,6 +29,24 @@ Every accepted decision, with its reason and the file that carries it.
 - The start was empty: both extensions were no-ops. The prompt is built first, everything else after it (user: «Старт
   должен быть пустой... сначала надо сделать промпт пиздатый, а потом всё остальное будем делать»).
 
+## Tools
+
+- `extensions/RQW-tools/` replaces `read`, `bash`, `edit`, `write` and turns on `grep` and `find` by registering them.
+  Each tool spreads the stock definition and keeps its `execute`; only descriptions and the multi-file wrappers change.
+  Design and reasons: `notes/tools-design.md`; evidence: `notes/analysis-*.md`.
+- Ordered conflict barrier: a call waits only for earlier calls of the same response it conflicts with; bash conflicts
+  with every call, read never with read, otherwise equal path key or ancestor. Reason: stock Pi measured 20 of 20 races
+  for read/write, bash/read and case-variant writes (`notes/analysis-races.md` section 2). bash is serialized against
+  bash because its footprint is unknown.
+- In-place writes stay; on Windows `EBUSY`/`EPERM`/`EACCES` are retried for about 1.5 s. Temp file plus rename was
+  rejected: rename fails on Windows when another process holds the file.
+- Limits: grep and find get no match cap by default (`limit` 100000 when unset); the stock 50KB output cap stays. Reason:
+  Pi's default 100 grep matches cuts the broad first search wave; omp-lite's 51 200-character budget equals 50KB for
+  ASCII. read and bash keep the stock 2000 lines / 50KB, as measured in bench41.
+- The search wave method moved from `SYSTEM.md` into the grep description; `<search_method>` keeps one line.
+- Proof: `npm test` (`node --test`, no model) and `.github/workflows/tests.yml` on macOS, Linux and Windows, plus a job
+  reproducing PowerShell, portable Git Bash without admin, then Node.
+
 ## Prompt
 
 - First step is only the prompt extension (user: «пока делаем только экстеншен который заменяет промпт систменый на

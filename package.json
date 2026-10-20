@@ -2,6 +2,9 @@
   "name": "my-pi",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "node --test \"extensions/RQW-tools/test/*.test.ts\""
+  },
   "keywords": [
     "pi-package"
   ],
@@ -12,11 +15,15 @@
   "pi": {
     "extensions": [
       "./extensions/RQW-settings/index.ts",
-      "./extensions/RQW-prompt/index.ts"
+      "./extensions/RQW-prompt/index.ts",
+      "./extensions/RQW-tools/index.ts"
     ]
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.3.0",
     "typebox": "1.3.27"
+  },
+  "scripts": {
+    "test": "node --test \"extensions/RQW-tools/test/*.test.ts\""
   }
 }

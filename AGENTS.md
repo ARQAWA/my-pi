@@ -7,6 +7,8 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
 - `extensions/RQW-settings/`: extension 1, the harness settings. Empty for now.
 - `extensions/RQW-prompt/`: extension 2, the system prompt. `SYSTEM.md` is the text; `index.ts` puts it in place of Pi's
   default prompt prefix and appends the workstation, critical, environment and date blocks.
+- `extensions/RQW-tools/`: extension 3, the base tools. Stock `read`, `bash`, `edit`, `write`, `grep`, `find` with our
+  descriptions (`descriptions/*.md`), multi-file `edit` and `write`, and the ordered barrier. Tests: `npm test`.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `notes/`: research notes, such as how the omp-lite prompt was built.
 - `DECISIONS.md`: every accepted decision with its reason and the file that carries it.
