@@ -71,7 +71,7 @@ export function readSpellings(p: string, cwd: string): string[] {
 
 // Locale-independent casing closure, not an exact APFS/Windows collation table. In particular, lowercase alone
 // splits Sigma/final sigma; one upper/lower pass still splits capital sharp S from sharp S. The closure may merge
-// distinct Unicode names (e.g. dotless I and "i"): it orders those paths but is not an existing-file identity.
+// distinct Unicode names (e.g. dotless I and "i"): it orders those paths but is not a filesystem identity.
 function foldCase(value: string): string {
   for (;;) {
     const next = value.toUpperCase().toLowerCase();
@@ -80,66 +80,50 @@ function foldCase(value: string): string {
   }
 }
 
-// APFS case sensitivity is per volume. Probe an existing ASCII-cased component on that same device, without
-// creating files or caching stats across calls. With no usable component, retain the conservative folding policy.
-// Windows keeps conservative folding even in case-sensitive directories: Node exposes no directory case flag.
-function darwinFoldsCase(existing: string | undefined): boolean {
-  if (!existing) return true;
-  const device = fs.statSync(existing).dev;
+// Ordering is conservative even in case-sensitive namespaces. Its case policy cannot change when a pending
+// write creates the first cased component. Filesystem stats are never cached across calls.
+function spellingKey(value: string, platform: NodeJS.Platform): string {
+  if (platform === "win32") value = value.replaceAll("\\", "/").split("/").map((c) => c.replace(/[. ]+$/, "")).join("/");
+  if (platform === "darwin") value = value.normalize("NFC");
+  if (platform === "darwin" || platform === "win32") value = foldCase(value);
+  return platform === "darwin" ? value.normalize("NFC") : value;
+}
+
+type Identity = { key: string; base?: string; existing?: string; missing?: string };
+
+function nativeIdentity(abs: string): Identity {
+  const { key, existing } = canonical(abs, path);
+  if (!existing) return { key };
+  const components: string[] = [];
   for (let cur = existing; ; cur = path.dirname(cur)) {
-    const parent = path.dirname(cur);
-    if (parent === cur || fs.statSync(parent).dev !== device) return true;
-    const name = path.basename(cur);
-    const variant = name.replace(/[a-zA-Z]/, (c) => c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase());
-    if (variant === name) continue;
-    try {
-      const a = fs.statSync(cur);
-      const b = fs.statSync(path.join(parent, variant));
-      return a.dev === b.dev && a.ino === b.ino;
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
-      throw e;
-    }
+    const stat = fs.statSync(cur, { bigint: true });
+    if (stat.ino === 0n) throw new Error("Filesystem has no usable file identity");
+    components.unshift(`${stat.dev}:${stat.ino}`);
+    if (path.dirname(cur) === cur) break;
   }
+  const base = "/" + components.join("/");
+  const missing = path.relative(existing, key);
+  // Missing spellings are not Unicode case identities. Edit only groups existing aliases; batch write below
+  // asks the native namespace when different missing spellings might alias.
+  const suffix = process.platform === "win32" ? missing.replaceAll("\\", "/") : missing;
+  return { key: missing ? base + "/missing:" + suffix : base, base, existing, missing };
 }
 
 // `abs` is already a filesystem spelling, including read fallbacks. Never apply user space/@/URL rules here.
 function resolvedKey(abs: string, platform: NodeJS.Platform, identity = false): string | undefined {
   try {
-    const native = platform === process.platform;
+    if (identity && platform === process.platform) return nativeIdentity(abs).key;
     const P = platform === "win32" ? path.win32 : path.posix;
-    const { key, existing } = native ? canonical(abs, P) : { key: abs, existing: undefined };
-    const folds = platform === "win32" || (platform === "darwin" && (!native || darwinFoldsCase(existing)));
-    const spellingKey = (value: string): string => {
-      if (platform === "win32") value = value.replaceAll("\\", "/").split("/").map((c) => c.replace(/[. ]+$/, "")).join("/");
-      if (platform === "darwin") value = value.normalize("NFC");
-      if (folds) value = foldCase(value);
-      return platform === "darwin" ? value.normalize("NFC") : value;
-    };
-    if (!identity || !existing) return spellingKey(key);
-
-    // edit/write use pathKey for grouping, not just ordering. A conservative Unicode collision must never group
-    // two distinct existing files and apply one's edits to the other. Native identities form a path-shaped key,
-    // retaining ancestor checks. A marked missing suffix cannot collide with any existing identity component.
-    const components: string[] = [];
-    for (let cur = existing; ; cur = P.dirname(cur)) {
-      const stat = fs.statSync(cur, { bigint: true });
-      // A filesystem without usable file IDs must use the wrappers' existing lexical fallback, not merge files.
-      if (stat.ino === 0n) return undefined;
-      components.unshift(`${stat.dev}:${stat.ino}`);
-      if (P.dirname(cur) === cur) break;
-    }
-    const base = "/" + components.join("/");
-    const missing = P.relative(existing, key);
-    return missing ? base + "/missing:" + spellingKey(missing) : base;
+    const key = platform === process.platform ? canonical(abs, P).key : abs;
+    return spellingKey(key, platform);
   } catch {
     return undefined;
   }
 }
 
-// Opaque grouping key for edit/write. Native existing components use filesystem identities; missing components
-// use conservative spelling keys. It need not stay equal after creation. `identity = false` exposes the barrier
-// spelling key for platform-rule tests; production scopes pass already-resolved spellings directly.
+// Opaque grouping key for edit. Existing components use filesystem identities; missing suffixes keep their exact
+// spelling. It need not stay equal after creation. `identity = false` exposes the conservative ordering key;
+// production scopes pass already-resolved spellings directly.
 export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = process.platform, identity = true): string | undefined {
   try {
     if (typeof p !== "string" || typeof cwd !== "string") return undefined;
@@ -147,6 +131,80 @@ export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = proc
   } catch {
     return undefined;
   }
+}
+
+const inside = (a: string, b: string) => b.startsWith(a.endsWith("/") ? a : a + "/");
+const related = (a: string, b: string) => a === b || inside(a, b) || inside(b, a);
+
+/** Batch-local validation identities. Only ambiguous, colliding missing spellings need native namespace probes. */
+export function writePathKeys(paths: string[], cwd: string, signal?: AbortSignal): string[] {
+  const checkAbort = () => { if (signal?.aborted) throw new Error("Operation aborted"); };
+  const entries = paths.map((p): Identity => {
+    try { return nativeIdentity(resolvePath(p, cwd)); }
+    catch { return { key: path.resolve(cwd, p) }; }
+  });
+  const keys = entries.map((e) => e.key);
+  const edges: [number, number][] = [];
+  const probe = new Set<number>();
+  for (let i = 0; i < entries.length; i++) {
+    const a = entries[i];
+    for (let j = i + 1; j < entries.length; j++) {
+      const b = entries[j];
+      if (!a.base || !b.base) {
+        // No native identity means no safe probe parent. Do not turn an ambiguous fallback into permission
+        // to overwrite the same target twice; independent paths keep the wrappers usual per-file failures.
+        const order = (n: number) => resolvedKey(resolvePath(paths[n], cwd), process.platform)
+          ?? spellingKey(path.resolve(cwd, paths[n]), process.platform);
+        if (related(order(i), order(j)) && !related(a.key, b.key)) {
+          throw new Error("Cannot validate ambiguous filesystem targets without a native parent identity");
+        }
+        continue;
+      }
+      if (!a.missing || !b.missing || a.base !== b.base) continue;
+      if (!related(spellingKey(a.missing, process.platform), spellingKey(b.missing, process.platform))) continue;
+      edges.push([i, j]);
+      if (!related(a.key, b.key)) { probe.add(i); probe.add(j); }
+    }
+  }
+  // Keep an entire collision component in one namespace, including literal duplicates and ancestors of a probe.
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [i, j] of edges) {
+      if (probe.has(i) === probe.has(j)) continue;
+      probe.add(i); probe.add(j); changed = true;
+    }
+  }
+  const parents = new Map<string, number[]>();
+  for (const i of probe) {
+    const base = entries[i].base!;
+    const group = parents.get(base) ?? [];
+    group.push(i);
+    parents.set(base, group);
+  }
+  for (const group of parents.values()) {
+    checkAbort();
+    // A private child of the same deepest existing parent inherits its native namespace policy. User targets
+    // are never created. Directory components let stat answer both equivalence and ancestor relationships.
+    const temp = fs.mkdtempSync(path.join(entries[group[0]].existing!, ".rqw-paths-"));
+    try {
+      for (const i of group) {
+        let cur = temp;
+        const components: string[] = [];
+        for (const part of entries[i].missing!.split(path.sep)) {
+          checkAbort();
+          cur = path.join(cur, part);
+          fs.mkdirSync(cur, { recursive: true });
+          const stat = fs.statSync(cur, { bigint: true });
+          if (stat.ino === 0n) throw new Error("Filesystem has no usable file identity");
+          components.push(`${stat.dev}:${stat.ino}`);
+        }
+        keys[i] = entries[i].base + "/probe:" + components.join("/");
+      }
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  }
+  return keys;
 }
 
 type Fields = Record<string, unknown>;

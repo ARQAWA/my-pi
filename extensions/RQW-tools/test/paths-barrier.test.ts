@@ -66,7 +66,7 @@ test("native FS-equivalent new Sigma/final-sigma writes share a key and cannot o
     return t.skip("native filesystem distinguishes Sigma and final sigma");
   }
   await rm(join(dir, "\u03a3-probe"));
-  assert.equal(pathKey("\u03a3.txt", dir), pathKey("\u03c2.txt", dir), "both files are still absent");
+  assert.equal(scopeOf("write", { path: "\u03a3.txt" }, dir).keys[0], scopeOf("write", { path: "\u03c2.txt" }, dir).keys[0], "both files are still absent");
   const h = harness(dir, "first");
   const first = h.run("write", "first", { path: "\u03a3.txt", content: "FIRST\n" });
   const second = h.run("write", "second", { path: "\u03c2.txt", content: "SECOND\n" });

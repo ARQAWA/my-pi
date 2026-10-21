@@ -42,7 +42,7 @@ const hasLoop = link("loop2", "loop1") && link("loop1", "loop2");
 
 // What the key of an existing path must look like on this platform.
 const fold = (s: string) => {
-  if (platform === "darwin") return folds ? s.normalize("NFC").toLowerCase() : s.normalize("NFC");
+  if (platform === "darwin") return s.normalize("NFC").toLowerCase();
   if (platform === "win32") return s.replaceAll("\\", "/").toLowerCase();
   return s;
 };
@@ -124,7 +124,7 @@ test("symlinked file gives the key of its target", (t) => {
   assert.strictEqual(pathKey("flink", root), pathKey("real/target.txt", root));
 });
 
-test("case variants: native Darwin sensitivity, conservative Windows folding, distinct Linux paths", () => {
+test("case variants: conservative Darwin/Windows ordering, distinct Linux paths", () => {
   const variants: [string, string][] = [
     ["ReadMe.md", "README.MD"], // existing
     ["ReadMe.md", "readme.md"],
@@ -133,7 +133,7 @@ test("case variants: native Darwin sensitivity, conservative Windows folding, di
     ["sub/file.txt", "SUB/File.TXT"], // existing
   ];
   for (const [a, b] of variants) {
-    if (folds) assert.strictEqual(k(a), k(b), `${a} vs ${b}`);
+    if (platform === "darwin" || folds) assert.strictEqual(k(a), k(b), `${a} vs ${b}`);
     else assert.notStrictEqual(k(a), k(b), `${a} vs ${b}`);
   }
 });
@@ -373,7 +373,7 @@ test("Darwin and Windows conservative Unicode casing closes Sigma and sharp-S va
   for (const host of ["darwin", "win32"] as const) {
     const cwd = host === "win32" ? "C:\\rqw-unicode" : "/rqw-unicode";
     for (const names of [["\u03a3.txt", "\u03c3.txt", "\u03c2.txt"], ["\u1e9e.txt", "\u00df.txt", "ss.txt"], ["\u017f.txt", "S.txt", "s.txt"], ["\u039f\u03a3.txt", "\u03bf\u03c3.txt", "\u03bf\u03c2.txt"]]) {
-      const keys = names.map((name) => pathKey(name, cwd, host));
+      const keys = names.map((name) => pathKey(name, cwd, host, false));
       assert.ok(keys.every((key) => key !== undefined && key === keys[0]), JSON.stringify({ host, names, keys }));
     }
     assert.notStrictEqual(pathKey("alpha.txt", cwd, host), pathKey("beta.txt", cwd, host));
@@ -386,22 +386,25 @@ test("Linux string keys retain distinct Unicode case spellings", () => {
   }
 });
 
-test("Darwin case-sensitive volume probe keeps absent case-only names distinct without a stat cache", { skip: platform !== "darwin" }, (t) => {
-  const nativeStat = fs.statSync;
-  const realRoot = fs.realpathSync.native(root);
-  const variant = path.join(path.dirname(realRoot), path.basename(realRoot).replace(/[a-zA-Z]/, (c) => c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
-  let sensitive = true;
-  t.mock.method(fs, "statSync", (p: fs.PathLike, options?: fs.StatOptions) => {
-    if (String(p) === variant && sensitive) {
-      throw Object.assign(new Error("case-sensitive lookup"), { code: "ENOENT" });
-    }
-    return nativeStat(p, options);
+test("Darwin ordering policy stays stable when the first cased component is created on a numeric volume", { skip: platform !== "darwin" }, (t) => {
+  let created = false;
+  const missing = () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); };
+  t.mock.method(fs.realpathSync, "native", (p: fs.PathLike) => {
+    const name = String(p);
+    if (name === "/123/456/New.txt" && !created) return missing();
+    if (name === "/123/456/new.txt") return missing();
+    return name;
   });
-  assert.notStrictEqual(k("NeverCreated.txt"), k("nevercreated.txt"));
-  assert.notStrictEqual(k("\u03a3-new.txt"), k("\u03c2-new.txt"));
-  sensitive = false;
-  // On the native case-insensitive volume the same directory is now probed again, not served from a cache.
-  if (folds) assert.strictEqual(k("NeverCreated.txt"), k("nevercreated.txt"));
+  t.mock.method(fs, "statSync", (p: fs.PathLike) => {
+    if (String(p) === "/123/456/new.txt") return missing();
+    return { dev: String(p) === "/" ? 0 : 1, ino: 123 };
+  });
+  const before = scopeOf("write", { path: "New.txt" }, "/123/456");
+  assert.deepStrictEqual(before, { kind: "mutate", keys: ["/123/456/new.txt"] });
+  created = true;
+  assert.deepStrictEqual(scopeOf("write", { path: "New.txt" }, "/123/456"), before);
+  assert.deepStrictEqual(scopeOf("read", { path: "New.txt" }, "/123/456").keys, before.keys);
+  assert.deepStrictEqual(scopeOf("grep", { path: "New.txt" }, "/123/456").keys, before.keys);
 });
 
 
