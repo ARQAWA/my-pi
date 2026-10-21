@@ -45,6 +45,10 @@ the accepted decisions and their reasons. New owner instructions take precedence
 
 ## Worker models
 
+Spread worker and reviewer subagents evenly between Anthropic models (Opus 5.5, Sonnet 5.5) and GPT-6.1-Sol
+so both subscriptions' limits are spent evenly. Balance over the run, not per single call; still choose model
+and reasoning by task within the allowed table below.
+
 Choose model and reasoning for the work, not all workers at maximum reasoning:
 
 | Model | Allowed reasoning |

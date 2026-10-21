@@ -20,6 +20,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   GPT-6.1-Sol low/medium/high. The main agent selects by task; difficult tasks use Opus low/medium or GPT-6.1-Sol
   high. This is development routing only, not a product model configuration or permission to add other GPT models.
   Product review `LEVELS` remain Haiku 5.5 medium / Sonnet 5.5 low.
+- Owner: «Смотри, надо скорректировать так, чтобы ты как координатор поровну поднимал модели из Anthropic и GPT, чтобы не было перевеса в другим, дисбаланса. Поднимай саб-агенты и те, и те, чтобы лимит расходовался равномерно. И зафиксирую это в процесс.nd файле, эту информацию на будущее»
+  Reason: even use of both subscriptions' limits. Carried by [PROCESS.md, Worker models](PROCESS.md#worker-models).
 - The old paused Claude benchmark/tuning campaigns remain paused until explicitly resumed; saved results stay.
   That campaign pause does not forbid Claude workers, independent review or other authorized Claude+GPT work.
 - The owner accepted a `PROCESS.md` link in `AGENTS.md` with mandatory lazy reading at every task and context
