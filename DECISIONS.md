@@ -1031,8 +1031,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   resolver, including a cap/rule installed independently by RQW-context. It never changes that policy. Unknown
   post-compaction usage is `?/limit`. Reason: zero would claim a known empty context.
 - Conditional omp data without a stock Pi API is not invented: modes, collaboration, streaming/recording, running
-  agent/job counts and PR metadata. The tokens/second slot uses a local streaming estimate, corrected by billed
-  output at message end, not omp's private smoothed meter. Limits, source citations and test samples live only in
+  agent/job counts and PR metadata. Limits, source citations and test samples live only in
   `notes/statusbar-omp.md`. Colors are stock Pi semantic colors, without tuning.
 - Branch and counts use the extension's own repository discovery and asynchronous git refresh, not Pi's cached
   `getGitBranch()`. Engineering choice for the status-bar request C:3113/C:3133: discover the repository and refresh
@@ -1074,6 +1073,22 @@ Current accepted development policy (request summaries unless quoted); detailed 
   foreign editor in place there is no ID. Reason: the owner's layout and copyable ID without ever degrading Pi's
   status. Carrier: `extensions/RQW-statusbar/editor.ts` `renderTopBorder`, `render.ts` `sessionTopBorder`,
   `index.ts`; contract and proof: `notes/statusbar-omp.md`.
+- Tokens per second are the provider's exact output tokens over Pi's own response time, not a live estimate. The
+  owner saw `cmp 0 · 44000.0 tok/s` (44 tokens over 1 ms of handler time). Owner: «Смотри, токены в секунду какую-то хуйню показывают.
+  Надо как-то привести, чтобы токены в секунду очень хорошо и качественно работали. [...] И по-хорошему, надо
+  сделать так, чтобы токены в секунду были залайнены на те показатели, которые отдаёт провайдер, Anthropic либо
+  Codex Legacy.» Of his two options he chose: «a) Делим точное число выходных токенов от провайдера на время ответа.
+  Время Pi сам меряет точными часами от начала запроса. Ответы короче полсекунды не учитываем. Значение обновляется
+  после каждого ответа.» and «Значение обновляется после каждого ответа и держится до следующего.» Rule:
+  `usage.output * 1000 / durationMs` per completed assistant message of the main session; `durationMs` is the
+  monotonic time Pi's stream measures from the request start. A message with missing or non-positive `output` or
+  `durationMs`, `durationMs` under 500 ms, or `stopReason` `aborted` or `error` is skipped (the output count of an
+  interrupted response can be incomplete; engineering choice); no chars/4 fallback and no live value while streaming;
+  the last qualified value is held until the next, nothing is shown before the first, and session start, tree change
+  and toggle reset it. Engineering choices: `usage.output` already includes reasoning tokens, so `usage.reasoning`
+  is not added. Reason: neither Anthropic nor Codex returns a tokens-per-second field, so the exact billed count over Pi's own clock is the closest provider-aligned
+  number. Carrier: `extensions/RQW-statusbar/{render,index}.ts` `RateMeter`; contract and proof:
+  `notes/statusbar-omp.md`.
 
 ## Anthropic package integration
 

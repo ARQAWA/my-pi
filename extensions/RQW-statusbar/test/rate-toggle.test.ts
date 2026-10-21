@@ -8,12 +8,10 @@ import { createAssistantMessageEventStream, type AssistantMessage, type Assistan
 import type { Component } from "@earendil-works/pi-tui";
 import * as pi from "@earendil-works/pi-coding-agent";
 
-for (const resumeDuringStream of [false, true]) {
-	it(`real SDK stream cancels a toggled-off rate, on ${resumeDuringStream ? "during" : "after"} the stream`, async (t) => {
+{
+	it("real SDK stream: tok/s is output tokens over Pi's response duration, held and reset", async () => {
 		const cwd = mkdtempSync(join(tmpdir(), "rqw-status-rate-"));
 		const agentDir = join(cwd, "agent"); mkdirSync(agentDir);
-		let now = 10000;
-		t.mock.method(Date, "now", () => now);
 		let component: (Component & { dispose?(): void }) | undefined;
 		let session: pi.AgentSession | undefined;
 		let ready = Promise.withResolvers<AssistantMessageEventStream>();
@@ -51,67 +49,56 @@ for (const resumeDuringStream of [false, true]) {
 			} as pi.ExtensionUIContext });
 			const toggle = (value: string) => session!.extensionRunner.getCommand("statusbar")!.handler(value,
 				session!.extensionRunner.createCommandContext());
-			async function begin() {
+			// One faux response ending with these provider numbers; `durationMs` is Pi's own field of the final message
+			// (the stream fills it from its monotonic clock only when absent and the message timestamp is not older).
+			async function turn(usage: { output: number }, durationMs: number | undefined, stopReason: "stop" | "aborted" | "error" = "stop") {
 				const pending = session!.prompt("local faux stream only");
 				const stream = await ready.promise;
 				ready = Promise.withResolvers<AssistantMessageEventStream>();
-				const content = { type: "text" as const, text: "" };
 				const message: AssistantMessage = { role: "assistant", api: model.api, provider: model.provider, model: model.id,
-					content: [content], usage: { input: 10, output: 100, cacheRead: 0, cacheWrite: 0,
-						totalTokens: 110, cost: { ...cost, total: 0 } }, stopReason: "stop", timestamp: now };
-				const started = Promise.withResolvers<void>();
-				const unsubscribe = session!.subscribe(event => {
-					if (event.type === "message_start" && event.message.role === "assistant") started.resolve();
-				});
+					content: [{ type: "text", text: "ok" }], usage: { input: 10, output: usage.output, cacheRead: 0, cacheWrite: 0,
+						totalTokens: 10 + usage.output, cost: { ...cost, total: 0 } }, stopReason,
+					timestamp: durationMs === undefined ? 0 : Date.now(), ...(durationMs === undefined ? {} : { durationMs }) };
 				stream.push({ type: "start", partial: message });
-				stream.push({ type: "text_start", contentIndex: 0, partial: message });
-				try { await started.promise; } finally { unsubscribe(); }
-				return {
-					async delta() {
-						const delivered = Promise.withResolvers<void>();
-						const unsubscribe = session!.subscribe(event => {
-							if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") delivered.resolve();
-						});
-						now += 1000;
-						const delta = "x".repeat(40);
-						content.text += delta;
-						stream.push({ type: "text_delta", contentIndex: 0, delta, partial: message });
-						try { await delivered.promise; } finally { unsubscribe(); }
-					},
-					async end() {
-						stream.push({ type: "text_end", contentIndex: 0, content: content.text, partial: message });
-						stream.push({ type: "done", reason: "stop", message: message });
-						stream.end();
-						await pending;
-						assert.equal(session!.isIdle, true);
-					},
-				};
+				stream.push(stopReason === "stop" ? { type: "done", reason: "stop", message }
+					: { type: "error", reason: stopReason, error: message });
+				stream.end();
+				await pending;
+				assert.equal(session!.isIdle, true);
 			}
-			const first = await begin();
-			await first.delta();
-			assert.match(row(), /10\.0 tok\/s/);
-			await first.end();
-			assert.match(row(), /100\.0 tok\/s/);
-			now += 20000;
-			assert.match(row(), /100\.0 tok\/s/, "completed rate is held between ordinary messages");
-			const interrupted = await begin();
-			await interrupted.delta();
-			assert.match(row(), /10\.0 tok\/s/);
+			assert.doesNotMatch(row(), /tok\/s/, "nothing before the first qualified response");
+			await turn({ output: 44 }, 1);
+			assert.doesNotMatch(row(), /tok\/s/, "44 tokens in 1 ms is not 44000 tok/s: too short to measure");
+			await turn({ output: 100 }, 499);
+			assert.doesNotMatch(row(), /tok\/s/, "just under the minimum is skipped");
+			await turn({ output: 0 }, 5000);
+			assert.doesNotMatch(row(), /tok\/s/, "no output tokens is skipped");
+			await turn({ output: 100 }, undefined);
+			assert.doesNotMatch(row(), /tok\/s/, "a message without durationMs is skipped, with no chars/4 fallback");
+			await turn({ output: 100 }, 2000);
+			assert.match(row(), /50\.0 tok\/s/, "output tokens over the duration");
+			await turn({ output: 77 }, 400);
+			await turn({ output: 100 }, undefined);
+			assert.match(row(), /50\.0 tok\/s/, "unqualified responses hold the last value");
+			await turn({ output: 5 }, 3000, "aborted");
+			await turn({ output: 5 }, 3000, "error");
+			assert.match(row(), /50\.0 tok\/s/, "an interrupted or failed response with output and a qualifying duration keeps the value");
+			await turn({ output: 300 }, 500);
+			assert.match(row(), /600\.0 tok\/s/, "exactly the minimum qualifies and replaces the value");
+			await session.extensionRunner.emit({ type: "session_tree" } as never);
+			assert.doesNotMatch(row(), /tok\/s/, "a tree change resets the value");
+			await turn({ output: 100 }, 2000);
+			assert.match(row(), /50\.0 tok\/s/);
+			await session.extensionRunner.emit({ type: "session_start" } as never);
+			assert.doesNotMatch(row(), /tok\/s/, "a session start resets the value");
+			await turn({ output: 100 }, 4000);
+			assert.match(row(), /25\.0 tok\/s/);
 			await toggle("off");
 			assert.equal(component, undefined);
-			if (resumeDuringStream) await toggle("on");
-			await interrupted.delta();
-			if (resumeDuringStream) assert.doesNotMatch(row(), /tok\/s/, "tail deltas must not restart a cancelled measurement");
-			await interrupted.end();
-			if (!resumeDuringStream) await toggle("on");
-			assert.doesNotMatch(row(), /tok\/s/);
-			now += 20000;
-			assert.doesNotMatch(row(), /tok\/s/, "no decaying unfinished rate after re-enabling");
-			const next = await begin();
-			await next.delta();
-			await next.end();
-			assert.match(row(), /100\.0 tok\/s/, "a new full measurement restores provider output rate");
-			now += 20000;
+			await turn({ output: 100 }, 1000);
+			await toggle("on");
+			assert.doesNotMatch(row(), /tok\/s/, "a toggle resets the value and a response ended while off is not recorded");
+			await turn({ output: 100 }, 1000);
 			assert.match(row(), /100\.0 tok\/s/);
 		} finally {
 			component?.dispose?.(); session?.dispose(); rmSync(cwd, { recursive: true, force: true });

@@ -133,10 +133,16 @@ already set by another extension is not replaced.
 - Pi, not omp, owns the context window and compaction policy. For example, with RQW-context and no explicit reserve,
   a capped 1M model has a 500k window and a 450k denominator. Without it stock Pi's reserve applies, not omp's 15%.
 - Pi reports `tokens: null` after compaction. Show `?/limit`, not omp's misleading `0% 0k/limit` for that case.
-- Pi exposes no native `tokenRate` or tokenizer through this footer API. `RateMeter` estimates live deltas at four
-  characters/token and then uses the provider's output tokens divided by that message's elapsed streaming time.
-  It holds the latest measured rate between messages, resets on session/tree changes, and does not reconstruct a
-  rate from persisted history. This is explicitly **not omp's smoothed rate algorithm**.
+- Pi exposes no native `tokenRate` or tokenizer through this footer API, and neither Anthropic nor Codex returns a
+  tokens-per-second field. `RateMeter` shows, for each completed assistant message of the main session,
+  `usage.output * 1000 / durationMs`: the provider's exact output token count (it already includes reasoning tokens,
+  so `usage.reasoning` is not added again) over `AssistantMessage.durationMs`, which Pi measures with a monotonic
+  clock from the start of the request (pi-ai `AssistantMessageEventStream`). A message with a missing or
+  non-positive `output` or `durationMs`, or with `durationMs` under 500 ms, or whose `stopReason` is `aborted` or `error`, is skipped (an interrupted
+  response can carry an incomplete output count); there is no character-based
+  estimate and no live value while a message streams. The last qualified value is held until the next qualified
+  one, nothing is shown before the first, and it resets on session start, tree change and toggle. It does not
+  reconstruct a rate from persisted history. This is explicitly **not omp's smoothed rate algorithm**.
 - Stock Pi has no matching Plan/Goal/Prewalk/Vibe/Loop state, collaboration, live stream/recording, running-agent/job
   counters or PR metadata in this API. Their conditional omp badges are not fabricated. No `gh` call, network lookup,
   cross-extension private import or new subsystem is added to synthesize them. Pi extension statuses occupy the
@@ -152,7 +158,7 @@ loading rows and other widgets stay unchanged.
 
 `extensions/RQW-statusbar/test/render.snap.json` is the fixed plain-text rendering at widths 80, 48, 24, 8, 1 and 0.
 `render.test.ts` compares it deterministically and checks every width 0..160, wide/combining Unicode, ANSI metadata,
-no-model/unknown context, overflow, thinking labels, Windows and UNC paths, porcelain records and rate arithmetic.
+no-model/unknown context, overflow, thinking labels, Windows and UNC paths, porcelain records and the rate rules above.
 It also checks the editor border at every width 0..160 with and without hidden lines: exact width, the hint first,
 then the context row. `editor.test.ts` renders the real `ContextEditor` above the two footer rows and compares
 `editor.snap.json` (widths 80, 48, 24, with and without hidden lines below or above, idle and with a working
@@ -168,7 +174,9 @@ hint; the top border ends with the live session ID, follows a new session ID and
 off restores Pi's editor; a foreign editor is kept across on/off, has no ID and moves the row back into the footer. It also tests
 real temporary git repositories/worktrees, missing git and malformed metadata. A real Pi `FooterDataProvider`
 regression starts outside git, runs `git init -b new-branch` in the same cwd, switches branch, replaces and removes
-the repository, and checks tool/agent refresh, polling and shutdown cleanup without changing Pi's stale cache. These tests join existing `npm test`
+the repository, and checks tool/agent refresh, polling and shutdown cleanup without changing Pi's stale cache. `rate-toggle.test.ts` runs real SDK streams through the loaded extension: 44 tokens in 1 ms gives no value, a
+499 ms response is skipped, exactly 500 ms qualifies, an aborted or errored response keeps the previous value, a missing `durationMs` is skipped, the value is held between
+turns and reset by tree change, session start and toggle. These tests join existing `npm test`
 and the existing macOS/Linux/Windows CI matrix without adding a new dependency.
 
 Real PTY smoke: `python3 extensions/RQW-statusbar/test/tui-smoke.py [node]` runs the actual CLI in an isolated agent

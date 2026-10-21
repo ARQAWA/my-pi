@@ -304,45 +304,31 @@ export function parsePorcelain(out: string): GitCounts {
 
 // ---- Tokens per second.
 
+/** Responses shorter than this are not measured: their timing noise dominates the rate. */
+export const MIN_RATE_MS = 500;
+
 /**
- * The rate of the latest assistant message: while it streams, an estimate from the streamed characters (4 per token);
- * when it ends, the provider's output tokens over the message's streaming time.
+ * The rate of the latest qualified assistant response: the provider's output tokens (`usage.output`, which already
+ * includes reasoning tokens) over Pi's monotonic `durationMs` of that response. A response without both numbers,
+ * shorter than `MIN_RATE_MS`, or ended by an abort or an error (its output count may be incomplete), is skipped. The value is held until the next qualified response and until `reset`.
  */
 export class RateMeter {
-	private startedAt: number | undefined;
-	private chars = 0;
 	private last: number | undefined;
 
-	start(now: number): void {
-		this.startedAt = now;
-		this.chars = 0;
-	}
-
-	push(text: string, now: number): void {
-		if (this.startedAt === undefined) this.start(now);
-		this.chars += text.length;
-	}
-
-	end(outputTokens: number | undefined, now: number): void {
-		if (this.startedAt === undefined) return;
-		const seconds = (now - this.startedAt) / 1000;
-		const tokens = outputTokens !== undefined && Number.isFinite(outputTokens) && outputTokens > 0 ? outputTokens : this.chars / 4;
-		if (seconds > 0 && tokens > 0) this.last = tokens / seconds;
-		this.startedAt = undefined;
-		this.chars = 0;
+	record(message: { usage?: { output?: number }; durationMs?: number; stopReason?: string }): void {
+		if (message.stopReason === "aborted" || message.stopReason === "error") return;
+		const tokens = message.usage?.output;
+		const ms = message.durationMs;
+		if (typeof tokens !== "number" || typeof ms !== "number") return;
+		if (!Number.isFinite(tokens) || !Number.isFinite(ms) || tokens <= 0 || ms < MIN_RATE_MS) return;
+		this.last = (tokens * 1000) / ms;
 	}
 
 	reset(): void {
-		this.startedAt = undefined;
-		this.chars = 0;
 		this.last = undefined;
 	}
 
-	value(now: number): number | undefined {
-		if (this.startedAt !== undefined && this.chars > 0) {
-			const seconds = (now - this.startedAt) / 1000;
-			if (seconds >= 0.5) return this.chars / 4 / seconds;
-		}
+	value(): number | undefined {
 		return this.last;
 	}
 }

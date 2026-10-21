@@ -131,14 +131,29 @@ it("porcelain counts staged, unstaged, conflicts, untracked and two-record renam
 	assert.deepEqual(parsePorcelain(""), { staged: 0, unstaged: 0, untracked: 0 });
 });
 
-it("rate uses streamed estimates, then provider output, and resets without NaN", () => {
+it("rate is provider output over Pi's duration, skips unqualified samples, holds and resets", () => {
 	const rate = new RateMeter();
-	assert.equal(rate.value(0), undefined);
-	rate.start(0); rate.push("x".repeat(400), 1000);
-	assert.equal(rate.value(1000), 100);
-	rate.end(300, 2000);
-	assert.equal(rate.value(10000), 150);
-	rate.start(10000); rate.push("x".repeat(80), 11000); rate.end(NaN, 11000);
-	assert.equal(rate.value(11000), 20);
-	rate.reset(); assert.equal(rate.value(12000), undefined);
+	assert.equal(rate.value(), undefined);
+	rate.record({ usage: { output: 44 }, durationMs: 1 });
+	assert.equal(rate.value(), undefined, "44 tokens in 1 ms is skipped, not 44000");
+	rate.record({ usage: { output: 100 }, durationMs: 499 });
+	assert.equal(rate.value(), undefined);
+	for (const bad of [{ usage: { output: 100 } }, { durationMs: 1000 }, { usage: { output: 0 }, durationMs: 1000 },
+		{ usage: { output: NaN }, durationMs: 1000 }, { usage: { output: 100 }, durationMs: NaN },
+		{ usage: { output: 100 }, durationMs: 0 }, { usage: { output: 100 }, durationMs: Infinity },
+		{ usage: { output: -5 }, durationMs: 1000 }]) {
+		rate.record(bad as never);
+		assert.equal(rate.value(), undefined);
+	}
+	rate.record({ usage: { output: 300 }, durationMs: 2000 });
+	assert.equal(rate.value(), 150);
+	rate.record({ usage: { output: 100 }, durationMs: 100 });
+	assert.equal(rate.value(), 150, "an unqualified sample holds the last value");
+	for (const stopReason of ["aborted", "error"]) {
+		rate.record({ usage: { output: 5 }, durationMs: 3000, stopReason });
+		assert.equal(rate.value(), 150, `a ${stopReason} message keeps the previous value`);
+	}
+	rate.record({ usage: { output: 100 }, durationMs: 500, stopReason: "toolUse" });
+	assert.equal(rate.value(), 200, "exactly 500 ms qualifies");
+	rate.reset(); assert.equal(rate.value(), undefined);
 });
