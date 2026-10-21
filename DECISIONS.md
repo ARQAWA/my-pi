@@ -27,6 +27,10 @@ Every accepted decision, with its reason and the file that carries it.
   chosen for its job, neither to save nor to waste limits (user: «модели теперь такие остаются: Sonnet High, Sonnet
   Extra High, Opus Low, Opus Medium. Только такие саб-агенты, используем максимально их интеллектуально по
   назначению. Не в целях экономии, но и в целях не излишней растраты»). This replaces the Opus-only rule.
+- Model probes and benches other than the reviewers' run on Sonnet medium or Sonnet high, Haiku high or xhigh, or the
+  ChatGPT models, not on Opus (user: «Все тесты, которые ты делаешь на cloud-моделях, делай на моделях Sonnet Medium
+  либо Sonnet High, не Opus ... если это не касается ревьюеров ... А ещё можно добавить хайку high или хайку extra
+  high»). bench46 had already run Opus medium; its Sonnet xhigh config was replaced by Sonnet medium.
 - Reviewers, accepted plan (user: «То, что ты предложил по ревьюерам — it's OK, я принимаю»): own extension
   `RQW-review` on `createAgentSession`, no ready package (pi-subagents: ~98k lines, ~1.3k tokens per request, fails
   strict schemas). One tool `review` with `level` `blind` or `high`; a fresh read-only session per pass with `read`,
