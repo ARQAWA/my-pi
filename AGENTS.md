@@ -36,6 +36,7 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `notes/`: research notes, such as how the omp-lite prompt was built.
 - `WORKFLOW-MANIFEST.md`: how the owner works and what he expects of the work on my-pi; read it before any task.
+- `PROCESS.md`: the working loop of a task, from discussion to merge, and the lessons of the first build session.
 - `DECISIONS.md`: every accepted decision with its reason and the file that carries it.
 
 Try it for one run: `pi -e ~/ai-project/my-pi`. No mentions of other products in the prompt.
