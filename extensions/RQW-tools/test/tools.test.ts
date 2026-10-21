@@ -12,14 +12,26 @@ import {
 	createBashToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { executeEdit } from "../edit.ts";
-import factory from "../index.ts";
+import factory, { createTools } from "../index.ts";
 import { executeWrite } from "../write.ts";
 
-type Fake = { tools: Record<string, any>; handlers: Record<string, any>; active: string[]; setCalls: string[][] };
+type Fake = {
+	tools: Record<string, any>;
+	handlers: Record<string, any>;
+	channels: Record<string, (data: unknown) => void>;
+	active: string[];
+	setCalls: string[][];
+};
 
 function load(active: string[] = [], settings: Record<string, unknown> | "throws" = {}): Fake {
-	const fake: Fake = { tools: {}, handlers: {}, active, setCalls: [] };
+	const fake: Fake = { tools: {}, handlers: {}, channels: {}, active, setCalls: [] };
 	(factory as any)({
+		events: {
+			on: (channel: string, handler: (data: unknown) => void) => {
+				fake.channels[channel] = handler;
+				return () => {};
+			},
+		},
 		registerTool: (def: any) => {
 			fake.tools[def.name] = def;
 		},
@@ -122,6 +134,19 @@ describe("registration", () => {
 		} finally {
 			process.argv = argv;
 		}
+	});
+
+	it("offers createTools on rqw-tools:subagent-tools; each call gives six fresh definitions", () => {
+		const fake = load();
+		let offered: unknown;
+		fake.channels["rqw-tools:subagent-tools"]({ offer: (f: unknown) => (offered = f) });
+		assert.equal(offered, createTools);
+		const one = createTools(process.cwd(), () => ({}));
+		const two = createTools(process.cwd(), () => ({}));
+		assert.deepEqual(one.map((d) => d.name).sort(), ["bash", "edit", "find", "grep", "read", "write"]);
+		for (const d of one) assert.notEqual(d, two.find((e) => e.name === d.name), d.name);
+		assert.deepEqual(Object.keys((one.find((d) => d.name === "write") as any).parameters.properties).sort(), ["content", "files", "path"]);
+		assert.doesNotThrow(() => fake.channels["rqw-tools:subagent-tools"](undefined), "a request without offer is ignored");
 	});
 
 	it("write prepareArguments parses a JSON-string files and wraps a single object", () => {

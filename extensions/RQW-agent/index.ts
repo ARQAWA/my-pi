@@ -13,7 +13,6 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
-import rqwTools from "../RQW-tools/index.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
 const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -54,6 +53,13 @@ const textOf = (message: AssistantMessage): string =>
 		.flatMap((c) => (c.type === "text" ? [c.text] : []))
 		.join("\n")
 		.trim();
+
+/**
+ * Channel on `pi.events` where RQW-tools, when it is loaded, offers its tools for subagents: a request
+ * `{ offer(factory) }` gets a factory of fresh definitions with a barrier of their own. Nothing here imports RQW-tools.
+ */
+const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
+type ToolsFactory = (cwd: string, settings: () => unknown) => ToolDefinition[];
 
 const isAssistant = (m: { role: string }): m is AssistantMessage => m.role === "assistant";
 
@@ -106,17 +112,27 @@ export default function agent(pi: ExtensionAPI) {
 		return unanswered.size > 0;
 	}
 
-	/** The subagent's tools: RQW-tools definitions from a fresh instance, so it has its own barrier. */
-	function toolDefinitions(names: string[]): ToolDefinition[] {
-		const definitions: ToolDefinition[] = [];
-		// RQW-tools only calls these three members while loading; bash reads the main session's settings per call.
-		const host = { registerTool: (d: ToolDefinition) => definitions.push(d), on() {}, getSettings: () => pi.getSettings() };
-		rqwTools(host as unknown as ExtensionAPI);
-		return definitions.filter((d) => names.includes(d.name));
+	/** RQW-tools definitions for one subagent session when RQW-tools is loaded; none (Pi's stock tools) otherwise. */
+	function offeredTools(cwd: string, names: string[]): ToolDefinition[] {
+		let factory = undefined as ToolsFactory | undefined;
+		// Pi's event bus calls every handler synchronously inside emit, so an offer is in place when emit returns.
+		pi.events.emit(SUBAGENT_TOOLS, {
+			offer: (f: ToolsFactory) => {
+				factory = f;
+			},
+		});
+		return factory ? factory(cwd, () => pi.getSettings()).filter((d) => names.includes(d.name)) : [];
 	}
 
 	async function createSession(config: Config, ctx: ExtensionContext): Promise<AgentSession> {
-		const settingsManager = SettingsManager.inMemory();
+		// Stock read and bash are built from these three settings; the main session's values keep its shell, such as
+		// Git Bash on Windows. RQW-tools definitions read the main session's settings per call instead.
+		const own = pi.getSettings();
+		const settingsManager = SettingsManager.inMemory({
+			shellPath: own.shellPath,
+			shellCommandPrefix: own.shellCommandPrefix,
+			images: { autoResize: own.images?.autoResize },
+		});
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: ctx.cwd,
 			agentDir: getAgentDir(),
@@ -138,7 +154,7 @@ export default function agent(pi: ExtensionAPI) {
 			model: config.model,
 			thinkingLevel: config.thinking,
 			tools: config.tools,
-			customTools: toolDefinitions(config.tools),
+			customTools: offeredTools(ctx.cwd, config.tools),
 			resourceLoader,
 			sessionManager: SessionManager.inMemory(ctx.cwd),
 			settingsManager,

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	createBashToolDefinition,
 	createEditToolDefinition,
@@ -30,15 +30,54 @@ function withDescription(schema: any, property: string, text: string): any {
 	};
 }
 
+/** The settings a getter returns, or undefined when there are none or the read fails (stock defaults then). */
+function safely(settings: () => any): any {
+	try {
+		return settings();
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Channel on `pi.events` where RQW-agent, when it is loaded, asks for these tools for each subagent session. The
+ * request is `{ offer(factory) }`; the answer is `createTools` itself. Nothing in RQW-tools depends on RQW-agent.
+ */
+const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
+
 export default function (pi: ExtensionAPI) {
-	// One barrier per extension instance; every execute registers its scope synchronously before any await.
+	for (const tool of createTools(process.cwd(), () => pi.getSettings())) pi.registerTool(tool);
+
+	// Pi calls the handler synchronously inside `emit`, and drops it when this instance goes stale (reload, dispose).
+	pi.events.on(SUBAGENT_TOOLS, (request) => (request as { offer?: (factory: typeof createTools) => void })?.offer?.(createTools));
+
+	// grep and find are on only when the user made no tool selection: no tool flag in argv (any spelling) and no
+	// `defaultTools` setting. Any selection leaves the active set exactly as stock Pi built it.
+	// The extension API exposes no `tools` / `noTools` / `excludeTools` session options, so argv is the signal.
+	const TOOL_FLAGS = ["--tools", "-t", "--exclude-tools", "-xt", "--no-tools", "-nt", "--no-builtin-tools", "-nbt"];
+	pi.on("session_start", () => {
+		if (process.argv.some((a) => TOOL_FLAGS.some((f) => a === f || a.startsWith(f + "=")))) return;
+		const settings = safely(() => pi.getSettings());
+		if (!settings || settings.defaultTools !== undefined) return;
+		const active = pi.getActiveTools();
+		const missing = ["grep", "find"].filter((name) => !active.includes(name));
+		if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
+	});
+}
+
+/**
+ * The six tools with one barrier of their own: one call for the main session, one per subagent session. `settings`
+ * returns the effective settings of the session whose tools these are.
+ */
+export function createTools(cwd: string, settings: () => any): ToolDefinition[] {
+	// One barrier per call; every execute registers its scope synchronously before any await.
 	const schedule = createBarrier();
-	const cwd = process.cwd();
+	const tools: ToolDefinition[] = [];
 
 	type Run = (id: string, params: any, signal: any, onUpdate: any, ctx: any) => Promise<any>;
 
 	function register(name: string, stock: any, overrides: Record<string, unknown>, run: Run) {
-		pi.registerTool({
+		tools.push({
 			...stock,
 			...overrides,
 			execute(id: string, params: any, signal: any, onUpdate: any, ctx: any) {
@@ -55,13 +94,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Effective settings of the running session (trust decision applied), read per call like stock `_buildRuntime`
 	// does for its own read and bash. No settings, or a failing read, means stock defaults.
-	const sessionSettings = (): any => {
-		try {
-			return pi.getSettings();
-		} catch {
-			return undefined;
-		}
-	};
+	const sessionSettings = (): any => safely(settings);
 	const expandTilde = (p: string) => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 
 	// All six tools are off by default for Pi's own activation. The user's `--tools` / `defaultTools` decide what is
@@ -149,16 +182,5 @@ export default function (pi: ExtensionAPI) {
 		withDefaultLimit(find),
 	);
 
-	// grep and find are on only when the user made no tool selection: no tool flag in argv (any spelling) and no
-	// `defaultTools` setting. Any selection leaves the active set exactly as stock Pi built it.
-	// The extension API exposes no `tools` / `noTools` / `excludeTools` session options, so argv is the signal.
-	const TOOL_FLAGS = ["--tools", "-t", "--exclude-tools", "-xt", "--no-tools", "-nt", "--no-builtin-tools", "-nbt"];
-	pi.on("session_start", () => {
-		if (process.argv.some((a) => TOOL_FLAGS.some((f) => a === f || a.startsWith(f + "=")))) return;
-		const settings = sessionSettings();
-		if (!settings || settings.defaultTools !== undefined) return;
-		const active = pi.getActiveTools();
-		const missing = ["grep", "find"].filter((name) => !active.includes(name));
-		if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
-	});
+	return tools;
 }

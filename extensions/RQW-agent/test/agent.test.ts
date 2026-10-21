@@ -2,7 +2,8 @@
 // providers from pi-ai answer for the main agent and for the subagents. Each subagent request is recorded with the
 // model, the reasoning level, the system messages and the declared tools Pi sent.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
+import { copyFile, mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, beforeEach, describe, it } from "node:test";
@@ -26,10 +27,14 @@ import {
 	SessionManager,
 	SettingsManager,
 	type ToolDefinition,
+	createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EXTENSION = join(HERE, "..", "index.ts");
+// Loaded next to RQW-agent only by the tests that need it, as a path: RQW-agent must work without this folder.
+const RQW_TOOLS = join(HERE, "..", "..", "RQW-tools", "index.ts");
+const NO_RQW_TOOLS = existsSync(RQW_TOOLS) ? false : "the RQW-tools folder is absent";
 // The package's exports map hides this module, so it is imported by file URL next to the package entry.
 const { makeStrictJsonSchema } = await import(
 	new URL("./api/constrained-sampling.js", import.meta.resolve("@earendil-works/pi-ai")).href
@@ -37,22 +42,30 @@ const { makeStrictJsonSchema } = await import(
 
 const SYSTEM = "You are a test subagent.\nAnswer in one word.";
 
-/** One request a provider got. */
-type Request = { model: string; reasoning?: string; system: string[]; tools: string[]; texts: string[] };
+/** One request a provider got; `declared` holds each tool's description and parameter names. */
+type Request = {
+	model: string;
+	reasoning?: string;
+	system: string[];
+	tools: string[];
+	declared: Record<string, { description: string; parameters: string[] }>;
+	texts: string[];
+};
 
 function record(context: TranscriptContext, options: SimpleStreamOptions | undefined, model: { id: string }): Request {
-	const tools = new Map<string, true>();
+	const tools = new Map<string, { description: string; parameters: string[] }>();
 	const system: string[] = [];
 	const texts: string[] = [];
 	for (const m of context.messages) {
 		if (m.role === "system") {
 			system.push(getSystemMessageText(m));
-			for (const t of m.toolsAdded ?? []) tools.set(t.name, true);
+			for (const t of m.toolsAdded ?? [])
+				tools.set(t.name, { description: t.description, parameters: Object.keys((t.parameters as { properties?: object }).properties ?? {}).sort() });
 			for (const t of m.toolsRemoved ?? []) tools.delete(t.name);
 		} else if (typeof m.content === "string") texts.push(m.content);
 		else for (const c of m.content) if (c.type === "text") texts.push(c.text);
 	}
-	return { model: model.id, reasoning: options?.reasoning, system, tools: [...tools.keys()], texts };
+	return { model: model.id, reasoning: options?.reasoning, system, tools: [...tools.keys()], declared: Object.fromEntries(tools), texts };
 }
 
 type Reply = AssistantMessage | ((signal?: AbortSignal) => Promise<AssistantMessage>);
@@ -127,18 +140,24 @@ beforeEach(() => {
 type Main = {
 	dir: string;
 	session: AgentSession;
+	ctx: ExtensionContext;
 	call: (params: Record<string, unknown>) => Promise<string>;
 	/** Texts of the `agent` messages the main session got. */
 	delivered: () => string[];
 };
 
-async function startMain(mode: "tui" | "rpc" | "print" = "tui", sessionManager?: SessionManager, extra: string[] = []): Promise<Main> {
+async function startMain(
+	mode: "tui" | "rpc" | "print" = "tui",
+	sessionManager?: SessionManager,
+	extra: string[] = [],
+	extension = EXTENSION,
+): Promise<Main> {
 	const dir = join(root, `w${counter++}`);
 	await mkdir(dir, { recursive: true });
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: dir,
 		agentDir,
-		additionalExtensionPaths: [EXTENSION, ...extra],
+		additionalExtensionPaths: [extension, ...extra],
 		noSkills: true,
 		noPromptTemplates: true,
 		noThemes: true,
@@ -168,7 +187,7 @@ async function startMain(mode: "tui" | "rpc" | "print" = "tui", sessionManager?:
 		session.messages.flatMap((m) =>
 			m.role === "custom" && m.customType === "agent" && typeof m.content === "string" ? [m.content] : [],
 		);
-	return { dir, session, call, delivered };
+	return { dir, session, ctx, call, delivered };
 }
 
 async function shutdown(m: Main) {
@@ -207,7 +226,7 @@ describe("agent tool", () => {
 		await shutdown(m);
 	});
 
-	it("defaults: the main model and thinking level, all six RQW-tools, no agent tool", async () => {
+	it("defaults: the main model and thinking level, all six tools, no agent tool", async () => {
 		const m = await startMain();
 		await m.call({ action: "start", system: SYSTEM, task: "hi" });
 		await until(() => m.delivered().length === 1, "the delivery");
@@ -219,8 +238,48 @@ describe("agent tool", () => {
 		await shutdown(m);
 	});
 
-	it("the subagent's tools run in the main cwd and are the RQW-tools definitions", async () => {
+	it("loads and works from a folder with no other extension, importing nothing from one", async () => {
+		const source = await readFile(EXTENSION, "utf8");
+		assert.deepEqual(source.match(/(?:from\s+|import\s*\()["']\.\.\/[^"']*["']/g) ?? [], [], "no import from ../");
+		const alone = join(root, "alone");
+		await mkdir(join(alone, "extensions", "RQW-agent"), { recursive: true });
+		await copyFile(EXTENSION, join(alone, "extensions", "RQW-agent", "index.ts"));
+		await symlink(realpathSync(join(HERE, "..", "..", "..", "node_modules")), join(alone, "node_modules"), "junction");
+		const m = await startMain("tui", undefined, [], join(alone, "extensions", "RQW-agent", "index.ts"));
+		sub.replies.push(fauxAssistantMessage("alone"));
+		await m.call({ action: "start", system: SYSTEM, task: "hi", model: "sub/a" });
+		await until(() => m.delivered().length === 1, "the delivery");
+		assert.equal(m.delivered()[0], "[agent#1] alone");
+		await shutdown(m);
+	});
+
+	it("without RQW-tools the subagent has Pi's stock tools, run in the main cwd", async () => {
 		const m = await startMain();
+		sub.replies.push(
+			fauxAssistantMessage([fauxToolCall("write", { path: "a.txt", content: "A" })], { stopReason: "toolUse" }),
+			fauxAssistantMessage("written"),
+		);
+		await m.call({ action: "start", system: SYSTEM, task: "write", model: "sub/a" });
+		await until(() => m.delivered().length === 1, "the delivery");
+		assert.equal(m.delivered()[0], "[agent#1] written");
+		assert.equal(await readFile(join(m.dir, "a.txt"), "utf8"), "A");
+		const stock = createWriteToolDefinition(m.dir);
+		assert.deepEqual(sub.requests[0].declared.write, {
+			description: stock.description,
+			parameters: Object.keys(stock.parameters.properties).sort(),
+		});
+		assert.ok(!sub.requests[0].declared.write.parameters.includes("files"));
+		await shutdown(m);
+	});
+
+	it("with RQW-tools loaded the subagent gets its tools: write.files[] in the main cwd, a barrier apart from the main one", { skip: NO_RQW_TOOLS }, async () => {
+		const m = await startMain("tui", undefined, [RQW_TOOLS]);
+		// The main session's RQW-tools bash has scope "all": its barrier holds every later call of that instance.
+		const bash = m.session.getToolDefinition("bash") as ToolDefinition;
+		let bashDone = false;
+		const held = bash.execute("b", { command: "sleep 2" } as never, undefined, undefined, m.ctx).finally(() => {
+			bashDone = true;
+		});
 		sub.replies.push(
 			fauxAssistantMessage([fauxToolCall("write", { files: [{ path: "a.txt", content: "A" }, { path: "b.txt", content: "B" }] })], {
 				stopReason: "toolUse",
@@ -228,10 +287,13 @@ describe("agent tool", () => {
 			fauxAssistantMessage("written"),
 		);
 		await m.call({ action: "start", system: SYSTEM, task: "write", model: "sub/a" });
-		await until(() => m.delivered().length === 1, "the delivery");
+		await until(() => m.delivered().length === 1, "the delivery", 1500);
+		assert.equal(bashDone, false, "the subagent did not wait for the main session's bash");
 		assert.equal(m.delivered()[0], "[agent#1] written");
 		assert.equal(await readFile(join(m.dir, "a.txt"), "utf8"), "A");
 		assert.equal(await readFile(join(m.dir, "b.txt"), "utf8"), "B");
+		assert.deepEqual(sub.requests[0].declared.write.parameters, ["content", "files", "path"]);
+		await held;
 		await shutdown(m);
 	});
 

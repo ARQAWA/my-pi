@@ -86,6 +86,10 @@ Every accepted decision, with its reason and the file that carries it.
   Reason: the code review showed that activating on registration overrode an explicit `--tools -edit`.
 - read and bash are built with the user's settings (`shellPath`, `shellCommandPrefix`, `images.autoResize`), as stock
   Pi builds them. Reason: without `shellPath` a Windows setup with Git outside Program Files finds no bash.
+- `createTools(cwd, settings)` in `index.ts` builds the six definitions with one barrier of their own; the factory
+  registers one set for the session and answers a request on `pi.events` channel `rqw-tools:subagent-tools` with
+  `createTools` itself (section Agent). Nothing in RQW-tools depends on RQW-agent. A test in `test/tools.test.ts`
+  checks the answer and that each call gives fresh definitions.
 - The read key mirrors stock `resolveReadPath` (NFD, curly quote and AM/PM variants), so a read and a write of the same
   file spelled differently still meet in the barrier.
 - The `ls` and other stock tools beyond the six are not wrapped and stay outside the barrier; they are off by default.
@@ -321,10 +325,28 @@ Every accepted decision, with its reason and the file that carries it.
 - Defaults follow Cursor's generalPurpose: all tools, the main model ("inherit"), no subagents of its own (Cursor
   transcript 704ada44 in `cursor-like-harness/kb/sources/cursor-reverse-extra`). Here: the main session's model and
   thinking level, all six tools, and no `agent` tool for the subagent.
-- Tools are the RQW-tools definitions: each subagent session runs the RQW-tools factory once more, so it gets its own
-  barrier, and passes the result as `customTools` with the `tools` allowlist. bash reads the main session's settings
-  per call, so `shellPath` (Git Bash on Windows) applies. A test writes two files through `write.files[]`, which stock
-  Pi does not have.
+- No imports across extension folders: `extensions/RQW-agent/` loads and works with every other RQW-* switched off or
+  absent, and switching RQW-tools off switches it off for subagents too (owner: «Когда мы делаем эти отдельные модули,
+  они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать и выключать, как feature флаги»;
+  review G: the earlier `import rqwTools from "../RQW-tools/index.ts"` failed to load without that folder and gave
+  subagents RQW-tools with RQW-tools off).
+- Subagent tools follow the RQW-tools switch through a loose, optional handshake on Pi's shared event bus `pi.events`
+  (`docs/extensions.md` line 87: "Communicate with another extension | `pi.events`"; `events: EventBus` in
+  `dist/core/extensions/types.d.ts` line 1406; one bus per resource loader for all its extensions,
+  `dist/core/resource-loader.js` lines 248 and 511). At every `start` and `restart` RQW-agent emits
+  `rqw-tools:subagent-tools` with `{ offer(factory) }`. RQW-tools, when loaded, answers with `createTools`, a
+  `(cwd, settings) => ToolDefinition[]` that builds the six tools with a barrier of their own; RQW-agent calls it with
+  the main `ctx.cwd` and the main session's `pi.getSettings`, and passes the result as `customTools` with the `tools`
+  allowlist. The answer is there when `emit` returns: the bus is a Node `EventEmitter`, and its wrapper calls the
+  handler before its first `await` (`dist/core/event-bus.js` lines 4-18). Pi drops the handler of a stale instance on
+  reload and dispose (`invalidate` in `dist/core/extensions/loader.js` lines 141-150, called from
+  `dist/core/agent-session.js` lines 1007 and 2973). With no answer `customTools` is empty and Pi builds its stock
+  tools. Reason: stock tools lose the barrier and multi-file `edit`/`write`, so with RQW-tools on the subagents keep
+  them, and with it off they must not. RQW-tools works the same without RQW-agent.
+- The subagent's `SettingsManager.inMemory` carries the main session's `shellPath`, `shellCommandPrefix` and
+  `images.autoResize`, the three settings Pi builds stock read and bash from (`_buildRuntime` in
+  `dist/core/agent-session.js` lines 2935-2946), so Git Bash on Windows applies to stock bash too. RQW-tools
+  definitions read the main session's settings per call instead.
 - Results are async. At the end of each run the main session gets `[agent#N] <text>` through `pi.sendMessage`. The
   text is every final answer of the run, so a follow-up queued during the run does not hide the first answer (the brief
   said "last assistant text"). The text also carries every final error of the run as `error: <reason>`, in order with
@@ -391,7 +413,10 @@ Every accepted decision, with its reason and the file that carries it.
 - `RQW-context` patches Pi classes for the whole process, so a subagent gets the owner's universal window rule like
   every model: its window is capped at 500 000 and its compaction reserve is 10% of that window. Checked in review: a
   subagent on a 1 000 000 model sends its request with window 500 000 when RQW-context is loaded.
-- Proof: `extensions/RQW-agent/test/agent.test.ts`, 32 tests on two faux providers (exact system prompt, model,
+- Proof: `extensions/RQW-agent/test/agent.test.ts`, 34 tests on two faux providers (a copy of `index.ts` alone in a
+  folder with no other extension loads and delivers, and the source has no `../` import; without RQW-tools the
+  subagent's `write` is the stock one, no `files`; with RQW-tools loaded it takes `files` and runs while a `sleep 2`
+  of the main session's RQW-tools bash still holds the main barrier; exact system prompt, model,
   thinking, tool subset, the five actions, follow-up while running, the main turn, shutdown, errors, call order, print
   mode; one request only after `stop`, `restart` or `session_shutdown` with a queued follow-up; a result arriving
   while the main agent streams continues its run once; after TUI Esc and after RPC abort the result is in the session
@@ -406,7 +431,10 @@ Every accepted decision, with its reason and the file that carries it.
   an empty extension the original 13 fail; without the queue clearing, the delivery change or the `continue` the new
   tests fail; with a per-instance delivery counter the two continued-session tests fail; on 6b2cfb5 the two review C tests fail; on ff8781b
   the four tests changed or added for review D fail except the retried-error one, which fails without the
-  `auto_retry_start` line; on 8344d2e the two review E tests fail. On 0789ab1 the seven review F tests fail; with only the `compaction_start` line six of them fail. Live runs
+  `auto_retry_start` line; on 8344d2e the two review E tests fail. On 0789ab1 the seven review F tests fail; with only the `compaction_start` line six of them fail. On
+  40574b5 the folder and stock-tools tests fail; with no offer from RQW-tools the RQW-tools test fails, and so it does
+  when RQW-tools offers its main definitions with the main barrier. With the RQW-tools folder removed, 33 pass and
+  the RQW-tools test is skipped. Live runs
   in a fixture repository with `pi -e <repo> --model anthropic/<model> --thinking low --mode json -p <prompt>`:
   Haiku 5.5 started a subagent with its own prompt, read a file and answered a follow-up (`[agent#1] ZED: 3`,
   `[agent#1] ZED: alpha`); Haiku 5.5 queued a follow-up, interrupted a `sleep 40`, restarted
