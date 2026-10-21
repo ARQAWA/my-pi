@@ -149,6 +149,13 @@ Current accepted development policy (request summaries unless quoted); detailed 
   with every call, read never with read, otherwise equal path key or ancestor. Reason: stock Pi measured 20 of 20 races
   for read/write, bash/read and case-variant writes (`notes/analysis-races.md` section 2). bash is serialized against
   bash because its footprint is unknown.
+- Owner: «Отдельной задачей разобрать, почему тест кодмода на Windows иногда не укладывается в 5 секунд, и исправить причину».
+  Reason: the 500 KB codemode ordering test spent its watchdog budget streaming about 31,000 tiny faux-provider
+  deltas before tools could execute, not waiting in the barrier. Its faux provider now uses fixed larger chunks;
+  a deterministic delta-count assertion prevents that overhead returning. The 5 s deadlock watchdog, payload,
+  ten repetitions and ordering assertions stay unchanged; no runtime barrier or codemode change is needed.
+  Carrier: `extensions/RQW-tools/test/codemode.test.ts`; analysis and proof:
+  [notes/settings-codemode.md, Test watchdog](notes/settings-codemode.md#test-watchdog).
 - In-place writes stay; on Windows `EBUSY`/`EPERM`/`EACCES` are retried for about 1.5 s. Temp file plus rename was
   rejected: rename fails on Windows when another process holds the file.
 - Limits: grep and find get no match cap by default (`limit` 100000 when unset); the stock 50KB output cap stays. Reason:

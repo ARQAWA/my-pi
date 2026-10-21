@@ -218,6 +218,24 @@ RQW-tools barrier holds for calls made from a codemode script" stays green. `ext
 tests the barrier without Pi (order, scope all, no wait for the group's entry, still-running calls, routing by id,
 `groupOf()`).
 
+### Test watchdog
+
+The ordering tests guard the entire `session.prompt()`, including the faux assistant's streaming before tools start.
+Pi 1.3.0's `pi-ai/dist/providers/faux.js` defaults to random chunks of 3-5 tokens (12-20 characters), queues a
+microtask for each, and emits a `toolcall_delta` for each piece of the JSON arguments. The 500 KB write therefore
+produces about 31,000 stream events unrelated to the barrier. `pi-agent-core/dist/agent-loop.js` forwards each as
+an awaited `message_update`; tools cannot execute until the assistant message ends. A loaded Windows runner can
+exhaust the test's deadline in this setup, before either the write or codemode enters the barrier.
+
+The test-only fix and unchanged deadlock protection are recorded in [DECISIONS.md, Tools](../DECISIONS.md#tools).
+The 500 KB case also asserts the exact stream-event count, so accidentally restoring tiny faux chunks fails
+deterministically rather than depending on runner speed. There is no change to real model streaming or product code.
+
+Measured before/after: Windows under CPU pressure had 2/10 deadline misses before and 0/10 after
+([run](https://github.com/ARQAWA/my-pi/actions/runs/39656398851)). A Windows full-file loop passed all ten
+iterations per variant, each including ten repetitions of the 500 KB case: 100 samples per variant, no misses
+([loop run](https://github.com/ARQAWA/my-pi/actions/runs/39655943709)).
+
 ### Limits
 
 - Two `codemode` calls in one message run one after the other (`all` against `all`), like two `bash` calls.

@@ -33,7 +33,10 @@ const live = new Set<AgentSession>();
 let root: string;
 let agentDir: string;
 let counter = 0;
-const faux = fauxProvider();
+// These tests exercise tool ordering, not token-by-token model streaming. Pi's faux default (3-5 tokens per
+// chunk) makes the 500 KB argument emit about 31,000 deltas before any tool starts, exhausting the watchdog on
+// loaded Windows runners. Fixed 64 KiB chunks keep real streaming but bound that unrelated work to nine deltas.
+const faux = fauxProvider({ tokenSize: { min: 16384, max: 16384 } });
 let modelRuntime: ModelRuntime;
 
 before(async () => {
@@ -89,6 +92,7 @@ type Run = {
 	/** Active tools right after the session started. */
 	started: string[];
 	declared: Map<string, string>;
+	toolCallDeltas: number;
 	outcomes: { id: string; name: string; text: string; isError: boolean }[];
 	errors: string[];
 	/** The registered `codemode`: where it comes from, and its definition (without functions that differ per load). */
@@ -105,7 +109,7 @@ async function run(o: Options = {}): Promise<Run> {
 	const argv = process.argv;
 	// The SDK takes the selection as an option, the CLI as a flag; the extensions see only argv, so both are set.
 	process.argv = [...argv, "--tools", tools.join(",")];
-	const out: Run = { dir, active: [], started: [], declared: new Map(), outcomes: [], errors: [] };
+	const out: Run = { dir, active: [], started: [], declared: new Map(), toolCallDeltas: 0, outcomes: [], errors: [] };
 	const settingsFile = join(agentDir, "settings.json");
 	if (o.userSettings) await writeFile(settingsFile, JSON.stringify(o.userSettings));
 	try {
@@ -165,6 +169,7 @@ async function run(o: Options = {}): Promise<Run> {
 			}
 			if (o.calls) {
 				session.subscribe((event) => {
+					if (event.type === "message_update" && event.assistantMessageEvent.type === "toolcall_delta") out.toolCallDeltas++;
 					if (event.type === "tool_execution_end") {
 						out.outcomes.push({
 							id: event.toolCallId,
@@ -305,6 +310,7 @@ describe("codemode: the codemode call is one call of the barrier, with scope all
 					],
 				});
 			assert.match(result(r, "c1"), /^\s*500000$/m, `run ${i}`);
+			assert.equal(r.toolCallDeltas, 9, "500 KB streamed in eight chunks plus one script chunk, not thousands of tiny deltas");
 		}
 	});
 
