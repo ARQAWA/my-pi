@@ -791,6 +791,23 @@ Every accepted decision, with its reason and the file that carries it.
   local compiler or typecheck script. No unrelated tests or timeouts were changed. Windows/Linux remain covered by
   the existing CI matrix but were not run locally, and no terminal
   capture or corporate VDI test was performed.
+- CI auth fixture fix, owner: "Preserve meaningful noOpusauth fallback test and no real requests";
+  "use deterministic fixture config if issue default-model selection before registration".
+  `extensions/RQW-models/test/models.test.ts` seeds `models.json` with
+  `providers.openai-codex.apiKey: faux-only` before spawning Pi. This is fixture auth, not `--model` or a production
+  fallback change. Pi 1.3.0 native-provider registration starts asynchronous availability refreshes, while
+  `findInitialModel` reads the synchronous snapshot. In a clean home with no configured auth, initial selection can
+  be empty; the agent retains `unknown/unknown` even when Codex becomes available by `session_start`. Without Opus,
+  RQW correctly preserves that initial selection, and Pi reports no API key. A clean-home CLI probe reproduced it.
+  A gated faux auth resolver reproduced both snapshot timings: without config the early selection was absent and
+  the settled selection was Codex; with config both were `openai-codex/gpt-6.1-sol`, without Anthropic auth.
+  No evidence calls for changing RQW production auth selection. The CLI regression now asserts the exact fallback
+  model and preserves a saved `gpt-5.6-luna` outside the picker without explicit model flags, changing its saved
+  high effort to medium. The explicit excluded-model test, offline mode and fetch prohibition remain intact.
+  Proof on macOS: all 26 model tests pass on Node 22.19.0, 24.21.0 and 26.7.0; the full suite passes on
+  Node 22.19.0 and 26.7.0 with 387 passed and the existing Windows-only test skipped. Twenty clean-home CLI
+  probes with the seeded config passed. No live requests, nested agents, CI rerun, push or merge.
+
 ## Status bar
 
 - Independent `extensions/RQW-statusbar/`, registered in `package.json` under `pi.extensions`. Owner: "independent
