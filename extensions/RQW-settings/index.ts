@@ -1,6 +1,6 @@
 // Extension 1: settings of the harness. For now it turns on Pi's built-in `codemode` and `tool_search` tools.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { noToolSelection } from "../RQW-tools/selection.ts";
+import { noToolSelection } from "./selection.ts";
 
 const DEFAULT_ON = ["codemode", "tool_search"];
 

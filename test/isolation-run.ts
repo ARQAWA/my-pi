@@ -1,0 +1,99 @@
+// Child process of isolation.test.ts: one Pi session of the package with one extension switched off the way a user does
+// it, a `packages` settings entry with `-extensions/<name>/index.ts`. Prints one JSON line.
+// argv[2]: JSON { root, off?: string, reloadOff?: string }  (reloadOff: start with everything on, then switch it off and /reload)
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import {
+	createAgentSession,
+	createCodemodeExtension,
+	createToolSearchExtension,
+	DefaultResourceLoader,
+	ModelRuntime,
+	SessionManager,
+	SettingsManager,
+} from "@earendil-works/pi-coding-agent";
+
+const { root: PKG, off, reloadOff } = JSON.parse(process.argv[2]) as { root: string; off?: string; reloadOff?: string };
+const entry = (name?: string) => (name ? { source: PKG, extensions: [`-extensions/${name}/index.ts`] } : PKG);
+const folder = (p = "") => /[\\/]extensions[\\/]([^\\/]+)[\\/]/.exec(p)?.[1] ?? p;
+
+const tmp = mkdtempSync(join(tmpdir(), "rqw-isolation-"));
+const agentDir = join(tmp, "agent");
+const cwd = join(tmp, "work");
+mkdirSync(agentDir, { recursive: true });
+mkdirSync(cwd, { recursive: true });
+writeFileSync(join(cwd, "f.txt"), "hello\n");
+const settingsFile = join(agentDir, "settings.json");
+writeFileSync(settingsFile, JSON.stringify({ packages: [entry(off)] }));
+process.chdir(cwd);
+
+// A 1M model, so the session window shows whether RQW-context acts.
+const faux = fauxProvider({ api: "faux-iso", provider: "iso", models: [{ id: "big", contextWindow: 1_000_000, maxTokens: 1000 }] });
+faux.setResponses([
+	fauxAssistantMessage([fauxToolCall("read", { path: "f.txt" }, { id: "c0" })], { stopReason: "toolUse" }),
+	fauxAssistantMessage("done"),
+]);
+const modelRuntime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
+modelRuntime.registerNativeProvider(faux.provider);
+
+const errors: string[] = [];
+const resourceLoader = new DefaultResourceLoader({
+	cwd,
+	agentDir,
+	// The CLI loads these two as built-ins; the SDK takes them as factories.
+	extensionFactories: [
+		{ name: "codemode", factory: createCodemodeExtension(), replaceable: true, builtin: true as const },
+		{ name: "tool-search", factory: createToolSearchExtension(), replaceable: true, builtin: true as const },
+	],
+	noSkills: true,
+	noPromptTemplates: true,
+	noThemes: true,
+	noContextFiles: true,
+});
+await resourceLoader.reload();
+const { session } = await createAgentSession({
+	cwd,
+	agentDir,
+	model: faux.getModel("big"),
+	thinkingLevel: "off",
+	modelRuntime,
+	resourceLoader,
+	sessionManager: SessionManager.inMemory(cwd),
+	settingsManager: SettingsManager.inMemory({ retry: { enabled: false } }),
+});
+await session.bindExtensions({ mode: "rpc", onError: (e) => errors.push(`${e.event}: ${e.error}`) });
+if (reloadOff) {
+	writeFileSync(settingsFile, JSON.stringify({ packages: [entry(reloadOff)] }));
+	await session.reload();
+}
+errors.push(...resourceLoader.getExtensions().errors.map((e) => `load ${folder(e.path)}: ${e.error}`));
+
+const turn: string[] = [];
+session.subscribe((ev) => {
+	if (ev.type === "tool_execution_end") turn.push(`${ev.toolName}:${ev.isError ? "error" : "ok"}`);
+});
+await session.prompt("go");
+const last = session.messages.at(-1) as { role?: string; stopReason?: string } | undefined;
+
+const out = {
+	loaded: resourceLoader.getExtensions().extensions.map((e) => folder(e.path)).filter((n) => n.startsWith("RQW-")),
+	errors,
+	// Every registered tool with the extension folder that registered it and its description.
+	tools: session.getAllTools().map((t) => ({
+		name: t.name,
+		by: t.sourceInfo.source === "builtin" ? "builtin" : folder(t.sourceInfo.path),
+		description: t.description,
+	})),
+	turn,
+	finished: last?.role === "assistant" && last.stopReason === "stop",
+	// What a fresh SettingsManager and the session model say for a 1M model: Pi's own values unless RQW-context is on.
+	reserveFor1M: SettingsManager.inMemory().getCompactionSettings({ provider: "x", id: "y", contextWindow: 1_000_000 } as never).reserveTokens,
+	sessionWindow: session.model?.contextWindow,
+};
+await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+session.dispose();
+rmSync(tmp, { recursive: true, force: true });
+console.log(JSON.stringify(out));
+process.exit(0);

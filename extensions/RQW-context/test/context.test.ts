@@ -709,6 +709,56 @@ for (const [entry, pi] of ENTRIES) {
 			}
 		});
 
+		it("switched off in settings and /reload: the window and the reserve are stock Pi's again; on again, the rule", async () => {
+			// The user's switch: the extension is listed in settings.json and dropped from it, then /reload.
+			const cwd = await freshDir();
+			const ownAgentDir = join(cwd, "agent");
+			await mkdir(ownAgentDir);
+			const settingsFile = join(ownAgentDir, "settings.json");
+			const listed = (on: boolean) => writeFile(settingsFile, JSON.stringify({ extensions: on ? [EXTENSION] : [] }));
+			await listed(true);
+			const runtime = await modelRuntime(pi);
+			const resourceLoader = new pi.DefaultResourceLoader({ cwd, agentDir: ownAgentDir, ...NO_RESOURCES });
+			await resourceLoader.reload();
+			const loaded = () => resourceLoader.getExtensions().extensions.map((e) => e.path);
+			assert.deepEqual(loaded(), [EXTENSION]);
+			const { session } = await pi.createAgentSession({
+				cwd,
+				agentDir: ownAgentDir,
+				model: runtime.getModel("rqw", "w1m")!,
+				thinkingLevel: "off",
+				modelRuntime: runtime,
+				resourceLoader,
+				sessionManager: pi.SessionManager.inMemory(cwd),
+				settingsManager: pi.SettingsManager.inMemory({ retry: { enabled: false }, compaction: { keepRecentTokens: 0 } }),
+			});
+			await session.bindExtensions({});
+			const declared = { provider: "x", id: "y", contextWindow: 1_000_000 } as Model<string>;
+			const freshReserve = () => pi.SettingsManager.inMemory({}).getCompactionSettings(declared).reserveTokens;
+			try {
+				assert.deepEqual(piValues(session), { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 });
+				assert.equal(freshReserve(), 550_000);
+
+				await listed(false);
+				await session.reload();
+				assert.deepEqual(loaded(), []);
+				assert.deepEqual(piValues(session), { contextWindow: 1_000_000, reserve: 16_384, threshold: 983_616 });
+				assert.equal(freshReserve(), 16_384, "a fresh SettingsManager gives Pi's reserve");
+				assert.equal(session.getContextUsage()?.contextWindow, 1_000_000);
+				assert.deepEqual(await answerWith(session, 450_001), [], "no compaction above 450 000");
+
+				await listed(true);
+				await session.reload();
+				assert.deepEqual(loaded(), [EXTENSION]);
+				assert.deepEqual(piValues(session), { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 });
+				assert.equal(freshReserve(), 550_000);
+				// The 450 001 tokens of the last answer are above the threshold again: Pi compacts before the next request.
+				assert.deepEqual(await answerWith(session, 1_000), ["threshold"]);
+			} finally {
+				session.dispose();
+			}
+		});
+
 		it("/resume, /fork and /new through AgentSessionRuntime, the path the CLI takes", async () => {
 			const cwd = await freshDir();
 			const models = await modelRuntime(pi);

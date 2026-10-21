@@ -15,6 +15,8 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.3.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.
+- Every `RQW-*` extension is self-contained and can be switched off alone (no import outside its folder, its tests load
+  only it); `test/isolation.test.ts` proves it, `INSTALL.md` shows the switch, `DECISIONS.md` section Isolation.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `notes/`: research notes, such as how the omp-lite prompt was built.
 - `WORKFLOW-MANIFEST.md`: how the owner works and what he expects of the work on my-pi; read it before any task.
