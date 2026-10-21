@@ -1,55 +1,120 @@
 # Development process
 
-How one task on my-pi runs, from the owner's request to the merge. The principles live in `WORKFLOW-MANIFEST.md`;
-this file is the working loop that carries them out, compiled from the first build session (20-21 October 2026,
-`C:` source named in `DECISIONS.md`) and the mistakes made in it. Where the two disagree, the manifest wins.
-Model choices live in `DECISIONS.md`, section Work policy.
+This is the working procedure for agents developing my-pi. Read it before every task and restore it after
+compaction or a context handoff. `WORKFLOW-MANIFEST.md` is the owner's personal record of his working principles
+and aspirations, not a procedural gate. This file carries the agreed execution rules; `DECISIONS.md` carries
+the accepted decisions and their reasons. New owner instructions take precedence over older agreements.
 
-## The loop
+## Research and agreement
 
-1. **Discuss.** While the owner thinks aloud or plans, answer briefly and change nothing: no files, commits, pushes
-   or branches. A question such as "is this adequate?" is not a go, and neither is "давай" alone while he asks to discuss or
-   plan ("Давай обсудим"); the go is an explicit command to act, such as "делай" or "запускай".
-2. **Compile the agreement.** Before a large task starts, list every requirement the owner stated across the whole
-   conversation, with his words. Ask once, in one message, only what changes the result; decide the rest and record it.
-3. **Plan.** A short plan in the owner's terms: what gets built, what runs in parallel, what proves it. Keep every
-   stage the owner named (for example drafts, refinement by probes, review, per-tool probes); never shrink it silently.
-4. **Execute.** One branch per task. The main agent coordinates: it splits
-   the work into self-contained subagent tasks and runs as many at once as the work allows (10-15 is normal).
-5. **Prove.** The proof fits the claim:
-   - mechanics: deterministic `npm test` without a model;
-   - configuration behavior: citations of Pi's docs and source; no token-burning probes when the owner says "docs only";
-   - prompt and description changes: model runs on the allowed models; my-pi must beat both Pi + our prompt and stock Pi;
-   - CI green on Windows, macOS and Linux, including portable Git Bash and Bun;
-   - each `RQW-*` extension still switches off alone.
-6. **Review.** A blind independent check of every completed substage, and one independent review of the whole work
-   against the agreement. Fix the findings that are real defects
-   backed by quotes; taste is not a finding. Corner cases are proven as the manifest requires; on top of that the
-   owner's rule of 21 October limits findings to obvious real errors: «Не надо делать микроправки всяких хуёвин, которые возможно
-   никогда не всплывут ... Надо править именно очевидные жирные ошибки, а не вылизывать до предела». A fresh reviewer checks again (for large work
-   split into parts, only the parts the fixes touched). Stop at CLEAN.
-7. **Ship.** Commit, push, merge into `main`, wait for green CI. A docs-only change (root `*.md`, `notes/`, `.agents/`)
-   starts no CI, so there is nothing to wait for. `DECISIONS.md` and the
-   docs change in the same merge.
-8. **Report once.** The result, what the owner should try himself with exact commands, and what stays paused.
+1. While the owner discusses or plans, change nothing. A proposal or question is not permission to implement it.
+2. Research the request and relevant source code first, using independent subagents in parallel where useful.
+   Compile all requirements across the conversation and accepted proposals, retaining the owner's exact words.
+   Keep agreed work intact: do not lose, silently drop, reinterpret or invent requirements.
+3. Bring all material ambiguities, conflicts and missing outcome decisions to the owner in one question batch.
+   Do not decide for the customer without permission. Delegated technical choices, including worker model selection,
+   remain the agent's responsibility within the agreed outcome; they are not permission to widen or shrink it.
+4. The owner's answers or approval start the agreed work without another go question. If nothing is open and the
+   owner has explicitly requested execution, start. Keep the minimal necessary agreed scope, not a smaller scope.
 
-## Lessons from the first session
+## Isolated parallel execution
 
-- Never act on a question or during a discussion. The tools extension was pushed without a go and had to be removed.
-- "Rollback" means history as if nothing happened (reset to the earlier commit and force-push), not a revert commit;
-  only on the owner's request.
-- Work only in this repository. Other repositories, such as my-omp-harness, are read-only: a commit there was a mistake.
-- Pi's names stay as they are; nothing is renamed after omp-lite. The owner sometimes says "OMP" meaning Pi.
-- No status messages while working: no "waiting for agents", no lists of unfinished work, no repeated updates.
-  Every answer, a status answer included, is at most three paragraphs of at most three lines each, and the work goes on.
-- Answer exactly what was asked. "What did I forget to port?" means items from the old harness, not a checklist of
-  your own.
-- Explain every artifact in the chat in plain words: what it is, how it was built and why.
-- Scope is what was ordered. No forks; if a fork seems needed, stop and discuss.
-  Assemble all work already done; add nothing new.
-- A task is done only when every part of it is done; a sub-part left behind (faster writes in RQW-tools) is a failure.
-- After a compaction, a model switch or a long break, rebuild the agreement from the owner's messages and `DECISIONS.md`
-  before continuing.
-- A budget change pauses only what the owner paused (Claude measurements); everything else continues on the
-  allowed models. Stop superseded subagents at once.
-- Review loops end at CLEAN on real defects. Six review rounds on rare races cost hours the owner did not want.
+- Start each change task from up-to-date `main` in its own branch and git worktree:
+  `git worktree add -b <task> ../my-pi-worktrees/<task> main`. Make all task edits there, never in the main checkout.
+- Main coordinates the whole task and remains responsible for delivery. Give each worker a self-contained brief:
+  agreement, files and worktree, ownership, dependencies, expected result and sufficient proof. Include the relevant
+  process rules in its system prompt or brief; do not assume a child inherits this file.
+- Run independent research, implementation, probes and checks in parallel. Use 20-30 workers when there are that
+  many useful independent blocks, not to fill a quota. Minimize sequential work and avoid concurrent writes to the
+  same files. Stop superseded workers. Main may edit directly; no mandatory code-writer or shell-runner roles.
+- Finish the whole agreed task autonomously: implement, inspect, make the needed probes and measurements, fix
+  obvious defects and relevant corner cases. Do not polish extremely unlikely scenarios or expand the task.
+- Commit completed stages promptly to the task branch, staging exact task paths. Stage commits require no review
+  or test gate; they do not replace final verification or authorize a merge.
+- Work only in my-pi. Other repositories are read-only sources. Keep the user's changes, credentials and settings.
+  No forks of Pi. If a fork seems necessary, discuss it before acting. Use Node.js for project tooling and Git Bash
+  on Windows, not PowerShell or cmd for runtime tooling. Existing CI bootstrap and host setup are separate.
+- Temporary task files belong in the OS temporary directory. Do not put transcripts, credentials, archive copies,
+  historical cleanup notes or execution ledgers in the repository. History belongs in Git.
+
+## Worker models
+
+Choose model and reasoning for the work, not all workers at maximum reasoning:
+
+| Model | Allowed reasoning |
+| --- | --- |
+| Sonnet 5.5 | high, xhigh |
+| Opus 5.5 | low, medium |
+| GPT-6.1-Sol | low, medium, high |
+
+GPT-6.1 low suits ordinary work; medium suits more difficult work. Opus low/medium and GPT-6.1 high are available
+for complex tasks as appropriate. Use the listed Sonnet levels where they fit. These are development workers,
+not changes to the fixed product models in `RQW-review`. A pause of a named benchmark campaign pauses that
+campaign only; it does not pause unrelated work or prohibit the currently authorized worker models.
+
+## Sufficient proof, without idle reruns
+
+- Choose checks for the changed behavior and claim. Inspect documentation and Pi sources where needed.
+  Use deterministic tests for mechanics and actual model probes when the claim concerns model behavior.
+  Do not burn tokens on live compaction when the owner requests documentation-only proof.
+- Run existing relevant checks once, in the background where possible. Repeat after a relevant fix or a changed
+  tested input, not merely for confidence, staging, a commit ID or a squash merge. Reuse valid evidence while the
+  tested code, configuration and document contracts remain unchanged.
+- Mac tests run locally, not on GitHub. Windows tests run on GitHub in the background while independent work goes
+  on, including relevant Node, Bun and PortableGit coverage. Linux is out of scope.
+- Use a focused test command for a focused change; use `npm test` locally when the affected surface requires the
+  full suite. Run `npm run test:bun` when Bun/codemode behavior is affected. Test extension isolation when affected.
+- Root documentation, notes and development instructions alone do not justify application tests or model runs.
+  A workflow change does require validating its triggers and affected Windows jobs. Manually dispatch CI when
+  branch evidence does not cover the current merge result. Do not claim a queued or incomplete run passed.
+- Fix failures caused by the task, including assertions for deliberately changed behavior. Report unrelated failures
+  without repairing them or falsely counting a failing required check as clean. If they block delivery, ask the owner.
+- For prompt/tool behavior performance claims, compare against the relevant baseline. The product goal remains
+  my-pi better than stock Pi and Pi plus our prompt; do not launch a full benchmark for every unrelated edit.
+
+## Independent review
+
+- Review is proportional. Mechanical point corrections with no new decision need no review. Small work, at most
+  five requirements and five changed files, uses `review` level `blind`; larger work uses `high`. An answer or report
+  without changes needs no review. Explicit owner requirements for a review take precedence.
+- Main first inspects and fixes its own work. The final independent result review checks agreed completeness,
+  consistency, documentation and absence of unagreed additions. Give the reviewer the agreement verbatim, object,
+  diff and sources, criterion and earlier rejected findings with reasons. Each pass returns all real findings at once.
+- When code changes, run a separate read-only code reviewer in parallel with result review. Read
+  `.agents/reviewers/code.md` and pass it as the complete `system` to an `agent` worker, choosing its model and
+  reasoning from the table above. Its task brief includes the changed files, diff, callers, relevant tests and evidence.
+  This role checks bugs, regressions and meaningful code quality, not a second requirements ritual. Do not spawn
+  a code reviewer for prose-only changes. Workflow logic is executable configuration and needs code review too.
+- Admit real evidenced defects, not taste or unlikely hypotheticals. Check findings rather than accepting them
+  just because a quote exists. Fix admitted findings in one batch; explain rejected ones with evidence. Recheck
+  affected parts and checks, not untouched parts. Reuse valid CLEAN results. Stop when the required reviews are
+  clean; do not invent either a one-pass cap that leaves known bugs or endless fresh passes for confidence.
+- A finished substage handed over separately gets its own blind independent check. Internal draft/stage commits
+  are not handovers and do not create an automatic review gate. Reuse its valid coverage in final review.
+
+## Delivery
+
+1. Update the affected documentation with the code. Record accepted decisions in `DECISIONS.md` with the owner's
+   quote, reason and carrier; keep each rule in one place and link to it elsewhere. Current docs describe current
+   facts, not a history ledger. Remove obsolete current instructions, retain deferred work as deferred.
+2. Push the task branch to start affected Windows CI early; continue independent work while it runs. Before merging,
+   require sufficient proof and the required clean reviews for the actual final tree. A changed base invalidates
+   only evidence whose checked inputs or dependent behavior changed.
+3. Squash merge into `main`: one task, one commit. Never merge the task's stage commits into main as a merge commit.
+   Push main autonomously. The workflow reuses task-branch proof rather than automatically retesting the same tree
+   after squash; dispatch it explicitly if the merge changes checked inputs.
+4. Update the locally installed Pi when a runtime/package change requires it, preserving auth and other settings;
+   restart when process-wide patches require it. Documentation-only work needs no package update or restart.
+5. After successful delivery, remove this task's worktree and branch. Do not clean up other tasks' worktrees.
+   Publishing a release or Marketplace version requires the owner's direct request.
+6. Report the result once, with necessary checks, any real limitation and manual commands only when useful.
+
+## Communication and continuity
+
+Always answer in Russian, with the main point first. At most three paragraphs of at most two lines each unless
+content genuinely requires expansion. No repeated waiting messages or lists of unfinished work. During execution,
+ask only about a real blocker needing the owner; answer direct questions and requested status, then continue.
+Reports and questions do not stop independent background workers or checks.
+
+After compaction, a model switch or a handoff, reload this procedure and recover the actual agreement and evidence
+from their sources before continuing. Do not substitute an unaccepted agent plan for the owner's words.

@@ -1,39 +1,43 @@
-# Workflow Manifest
+# Манифест моей работы
 
-This file records how the owner works and what he expects of the agent's work on my-pi. The agent rereads it and aligns with it; where the work disagrees with it, the work changes, not this file. It changes only by the owner's direct edit, his direct request, or his explicit approval of a proposed change. It describes the work, not the package: the layout lives in `AGENTS.md`, the decisions in `DECISIONS.md`.
+Это моя личная запись на всю жизнь о том, как я работаю: мои принципы, стремления и память. Это не требования к агенту и не условие допуска изменений в репозиторий. Я хочу, чтобы в будущем агенты работали так же, но сейчас это не мой приоритет.
 
-## How the owner works
+Этот манифест меняется только моей собственной явной правкой, по моему прямому запросу на изменение или с моего явного одобрения предложенной правки.
 
-The owner is an experienced engineer. He works fast, simply and in iterations: he takes the shortest path to the result, gathers the information the decision needs, picks the best solution his expertise, the documentation and the source code support, hands the result over, runs it, looks at it and decides the next iteration. The agent works the same way, and my-pi is built this way, step by step: a correct, proven result sooner is worth more than a perfect one later.
+## Как я работаю
 
-## Quality bar
+Я опытный инженер. Я работаю быстро, просто и итерациями, выбирая кратчайший путь к результату. Собираю информацию, необходимую для решения, выбираю лучшее решение на основе своего опыта, документации и исходного кода, передаю результат, запускаю его, смотрю и определяю следующую итерацию. Правильный, проверенный результат раньше для меня ценнее идеального результата позже.
 
-What is handed over is excellent, fully proven and in line with this manifest. Solutions are as simple, light and blunt as possible, without over-engineering, and still fast and efficient. They are universal and work automatically, always. Everything agreed is done in full, and nothing beyond it is added; quality words such as "perfect" or "robust" never widen the work.
+## Качество и объём работы
 
-## Agreement and questions
+Я стремлюсь к отличным, доказанно работающим, универсальным и автоматическим результатам. Решения — максимально простые, лёгкие, прямолинейные и эффективные, без избыточного усложнения.
 
-The agreement is the owner's own words across the whole conversation, his answers and the proposals he accepted, fixed in text that can be quoted. While the owner discusses or plans, nothing is changed until he gives the go. Before the work starts, the agent compiles every requirement he has stated, finds the contested points and asks, in one message, only about what his words leave open: wording by which a reviewer could not check the result, and a choice that changes what he gets. Choices he leaves to the agent are made by it: the best and most efficient solution, settled by measurement where it can be measured, and recorded. Everything else goes into the work at once.
+Я делаю минимум необходимого, чтобы полностью выполнить всё согласованное: ничего согласованного не теряю и не убираю, ничего несогласованного не придумываю и не добавляю. Качество не служит оправданием для расширения объёма работы.
 
-## Autonomy and execution
+## Договорённости и неоднозначность
 
-From the go, the task runs autonomously to the final proven result; the owner hears nothing before it unless a blocker only he can remove appears. Speed is wall-clock time to a correct result, and everything independent runs in parallel. The main agent is the coordinator: it chooses how to execute the task, keeps its own context lean, hands the work to as many parallel subagents as the task needs, each with a self-contained task that returns its result, and remains responsible for scope and result. Engineering work uses GPT-6.1-Sol at low, medium or high reasoning; small changes may use GPT-6-Luna, and GPT-6-Sol may be chosen when its reasoning level fits the task. RQW Review finishes on GPT-6.1-Sol low and GPT-6-Sol low. Claude model benchmarks and tuning are paused until the owner explicitly resumes them. Work happens only in this repository; other repositories are read-only sources.
+Для меня договорённость складывается из слов заказчика или владельца за весь разговор, его ответов и принятых им предложений. Я опираюсь на текст, который можно процитировать. Обсуждение и планирование сами по себе не дают разрешения что-либо менять.
 
-## Proof
+Противоречивые или неясные требования я разрешаю с заказчиком или владельцем. Я не решаю за заказчика без его разрешения, что ему нужно. Делегированный мне выбор реализации я делаю сам, но он не заменяет требований заказчика. В пределах этих полномочий я выбираю лучшее и наиболее эффективное решение, опираясь на измерения там, где они позволяют сделать выбор.
 
-Everything is proven, corner cases included. Tests, checks against Pi's documentation and source code, and model runs are always part of the work, chosen to fit the claim. The proof covers Windows, the owner's platform, as well as macOS and Linux.
+## Самостоятельность и ответственность
 
-## Review
+Получив разрешение на задачу, я самостоятельно довожу её до передачи доказанно работающего результата. Ответственность за объём работы и результат остаётся у исполнителя, в том числе при делегировании. Независимую работу я веду параллельно. Скорость для меня — время до правильного результата.
 
-Every change passes an independent review before it is merged; an answer or report without changes needs none. The agent picks the reviewer's strength for the work; which strength fits which work is settled by measurement. The reviewer is an independent subagent doing code review: it checks that what was agreed is delivered and nothing extra is piled on, and does not try to prove the work perfect. Minor inaccuracies without effect and matters of taste are not findings. Each pass covers the whole work and returns every problem it sees at once; the main agent checks the quotes of the findings, fixes the admitted ones in one iteration, and a fresh reviewer checks the whole work again, until it returns CLEAN. Large work is split into parts for parallel reviewers; after fixes, only the parts they touch are checked again. Every finding and every rejection rests on verbatim quotes of the agreement and of the work; a finding backed by quotes must be fixed, a finding without them is rejected, and every later pass gets the earlier rejections with their reasons, so settled points are not raised again.
+## Доказательства
 
-## Git
+Мои доказательства соответствуют моим утверждениям. Я проверяю очевидные сбои и существенные граничные случаи, а не добиваюсь совершенства и не перебираю крайне маловероятные случаи. Я выбираю тесты, сверку с документацией и исходным кодом или реальные запуски в зависимости от того, что именно нужно доказать.
 
-Each task runs on its own branch. When the result is proven and the review is CLEAN, the agent commits, pushes and merges the branch into `main` by itself, then reports once. Publishing outside the repository, such as a release or a Marketplace version, happens only on the owner's direct request.
+## Независимая проверка
 
-## Decisions and documentation
+Я ценю независимую проверку полноты, согласованности и корректности кода: всё согласованное выполнено, ничего несогласованного не добавлено, реализация корректна в согласованных пределах. Проверка не расширяет задачу и не ищет совершенства. Замечания опираются на доказательства, а не на вкусы; мелкие неточности без последствий не считаю замечаниями.
 
-Every rule and every decision lives in one place. Every decision goes into `DECISIONS.md` with the owner's quote, its reason and the file that carries it, so a later change knows what it replaces. Code and documentation must not drift apart: a change updates its documentation in the same merge. Whatever is abolished is removed wherever it still stands; whatever is postponed stays recorded as postponed. History stays in Git: no archive copies and no removal notes.
+## Решения и память
 
-## Communication
+Я поддерживаю документацию и решения актуальными и согласованными с работой. У каждого правила и решения — один источник. Я сохраняю согласованное основание и причину решения, чтобы понимать, что заменяет следующее решение. Отменённые правила убираю везде, где они ещё остались; отложенную работу сохраняю как отложенную.
 
-The agent answers the owner briefly, in his language, with the main point first: a few short paragraphs at most, no wall of text.
+Историю я храню в Git, а не в архивных копиях или заметках об удалении. В этом манифесте я сохраняю то, как работаю; рабочие процедуры относятся к PROCESS.
+
+## Общение
+
+Я отвечаю кратко и на русском языке, начиная с главного: не больше трёх абзацев, максимум по две строки в каждом. Расширяю ответ, когда этого требует содержание.

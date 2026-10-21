@@ -10,16 +10,36 @@ The source remains outside this repository; no transcript or credentials are cop
 
 ## Work policy
 
-- Engineering work continues on GPT-6.1-Sol at low, medium or high reasoning; small changes may use GPT-6-Luna, and GPT-6-Sol may be selected when its reasoning level fits the task (user: «Всё остальное продолжай делать моделями GPT-6-1-sol low, medium, high ... мелочь ... GPT-6-Luna ... можешь ... GPT-6-sol ... reasoning ... выбери сам»).
-- RQW Review finishing work uses GPT-6.1-Sol low and GPT-6-Sol low (user: «RKV Review заканчивает на моделях GPT-6-1-Sol-Low и GPT-6-Low. Вот на таких моделях»). This does not change the product reviewer pins Haiku 5.5 medium and Sonnet 5.5 recorded below.
-- Claude model benchmarks and tuning are paused until the owner explicitly resumes them; saved results stay in place (user: «задачи ... замеры на Sonnet ... на Cloud ... на паузе ... дам команду»).
-- Carried by `WORKFLOW-MANIFEST.md`; no prompt, model configuration, code or tests change.
-- The development loop and the lessons of the first build session are written down in `PROCESS.md`, beside the
-  manifest, which still wins (user: «А workflow разработки должен сам себе где-то сохранить, можно прямо в этом же
-  репозитории. Мы его зафиксируем на будущее, чтобы ты в нём работал дальше.»).
-- CI runs only when something the tests load changes: `.github/workflows/tests.yml` ignores pushes that touch only
-  root `*.md`, `notes/**` and `.agents/**` (user: «Тесты надо запускать, только если что-то реально поменялось.»).
-  No test reads those files. Manual runs stay available through `workflow_dispatch`.
+Current accepted development policy (request summaries unless quoted); detailed task rituals belong in
+[PROCESS.md](PROCESS.md), not a history ledger here.
+
+- Development workers, including subagents, are authorized to use Sonnet high/xhigh, Opus low/medium and
+  GPT-6.1-Sol low/medium/high. The main agent selects by task; difficult tasks use Opus low/medium or GPT-6.1-Sol
+  high. This is development routing only, not a product model configuration or permission to add other GPT models.
+  Product review `LEVELS` remain Haiku 5.5 medium / Sonnet 5.5 low.
+- The old paused Claude benchmark/tuning campaigns remain paused until explicitly resumed; saved results stay.
+  That campaign pause does not forbid Claude workers, independent review or other authorized Claude+GPT work.
+- The owner accepted a `PROCESS.md` link in `AGENTS.md` with mandatory lazy reading at every task and context
+  restoration. Procedural rules belong in `PROCESS.md`. `WORKFLOW-MANIFEST.md` is the owner's personal lifelong
+  record and aspiration, not workflow commands, a gate or an overriding procedure: «Манифест того, как я делаю
+  свою личную работу.»
+- Research in parallel first, then ask about all real ambiguity. The owner's answers start autonomous execution;
+  do not invent agreement or decide for the customer: «Если чего-то согласовано не было, додумывать это нельзя
+  ни в коем случае никогда.»; «Я сам лично не принимаю решения за заказчика, потому что я не имею на это permission.»
+- Work on a task's own branch and worktree at `../my-pi-worktrees/<task>`. Stage exact paths and make task-branch
+  commits without an extra gate; finish with a squash into `main` and branch/worktree cleanup. History belongs
+  in Git (owner: «История хранится в гиде.»), not a duplicate documentation ledger. See `PROCESS.md` for delivery details.
+- Use 20–30 independent subagents when useful, not as an artificial quota. Preserve the user's changes and secrets;
+  do not fix unrelated failures. Temporary files belong in OS temporary storage. No forks.
+- Run relevant checks once and reuse evidence while inputs are unchanged. Check locally on Mac and on Windows
+  through GitHub in the background; no Linux requirement. Docs-only work needs no tests. A different task-branch
+  commit versus the final squash alone is not a reason to rerun. Windows Node tooling runs through Git Bash,
+  not PowerShell/cmd runtime; existing CI `pwsh` bootstrap is allowed infrastructure.
+- Finish with an independent completeness-and-consistency check. For code changes, run a separate bug/quality
+  reviewer in parallel via the existing agent custom system `.agents/reviewers/code.md`. This requires no new
+  extension or product tool changes. Update installed Pi only for relevant runtime changes, never for docs-only work.
+- Keep replies short unless expansion is needed: «Он отвечает не больше трех абзацев по максимум две строки
+  в абзаце. Если это не требует расширения, конечно».
 
 ## Scope
 
@@ -40,11 +60,8 @@ The source remains outside this repository; no transcript or credentials are cop
   (later switched on by a skill rather than always on). The extension-provided `agent` and `review` tools are
   implemented separately; see [Agent](#agent) and [Review](#review) below. `RQW-models` and `RQW-statusbar` also port UI;
   see [Models](#models) and [Statusbar](#statusbar).
-- Active engineering workers, including subagents, use GPT-6.1-Sol low, medium or high; small checks may use GPT-6-Luna, and GPT-6-Sol is also available at a task-appropriate reasoning level. RQW Review finishes on GPT-6.1-Sol low and GPT-6-Sol low. This supersedes the earlier active Sonnet/Opus worker rule (user: «Всё остальное продолжай делать моделями GPT-6-1-sol low, medium, high»; «RKV Review заканчивает на моделях GPT-6-1-Sol-Low и GPT-6-Low»).
-- Claude model probes, benchmarks and tuning are dormant until the owner explicitly resumes them; do not start or continue those runs before then (user: «замеры на Sonnet ... на паузе»; «дам команду, когда их продолжать»). Existing results remain. This pause does not change product reviewer model pins such as Haiku 5.5 and Sonnet 5.5 below.
-- Non-Claude model probes, including the four SYSTEM.md edits, may run on GPT-6 and GPT-6.1 now.
-  Claude probes remain paused until an explicit resume command (user: «Замеры правок System LMD можно тоже
-  проводить на модели GPT-6»). Earlier Sonnet/Haiku probe choices apply only after that command.
+- Development worker authorization and the old paused benchmark campaigns are governed by [Work policy](#work-policy),
+  independently of the product reviewer pins below.
 - Reviewers, accepted plan (user: «То, что ты предложил по ревьюерам — it's OK, я принимаю»): own extension
   `RQW-review` on `createAgentSession`, no ready package (pi-subagents: ~98k lines, ~1.3k tokens per request, fails
   strict schemas). One tool `review` with `level` `blind` or `high`; a fresh read-only session per pass with `read`,
@@ -60,14 +77,10 @@ The source remains outside this repository; no transcript or credentials are cop
   сообщение follow-up»). It starts with no system prompt of its own: the main agent gives the whole prompt, the model
   and the reasoning level (user: «должен подниматься без системного промпта, чтобы основной агент передавал ему весь
   системный промпт»).
-- Autonomous work commits, pushes and merges into `main` by itself after proof and a clean review (user: «Да,
-  слияние без команды»). Model runs, tests and checks against the source are always part of the work (user:
-  «Прогоны на модели, тесты, сверка с кодом входят в работу всегда»).
-- `WORKFLOW-MANIFEST.md` lives in this repository and records how the owner works, so the agent can align with it;
-  it is not a description of the package (user: «манифест — это чисто для нас ... надо закрепить именно принципы
-  работы ... как я работаю как владелец всей системы»).
-- `WORKFLOW-MANIFEST.md` is accepted with all nine sections, built from a keep/cut table of the
-  old codex and omp manifests (user: «Да, давай оставим все пункты. Да, этот манифест мы оставим»).
+- Autonomous execution, task-branch commits, final squash delivery and relevant verification follow
+  [Work policy](#work-policy) and `PROCESS.md`; tests and model runs are not unconditional gates.
+- `WORKFLOW-MANIFEST.md` records the owner's personal working principles and lifelong aspiration, not package
+  behavior or procedural commands. The accepted manifesto content does not override the process; see [Work policy](#work-policy).
 - Providers: `/login` and the model list show only two providers, openai-codex and our own Anthropic subscription
   adapter `RQW-anthropic` (Claude Code login, as in omp, with self-healing); every other provider is hidden (user:
   «Это именно отключить. Когда мы заходим в логин, там должны быть только кодекс, авторизация и авторизация через
@@ -204,8 +217,9 @@ The source remains outside this repository; no transcript or credentials are cop
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
-- Proof: `npm test` (`node --test`, no model) and `.github/workflows/tests.yml` on macOS, Linux and Windows, plus a job
-  reproducing PowerShell, portable Git Bash without admin, then Node.
+- Historical proof: `npm test` (`node --test`, no model) and `.github/workflows/tests.yml` on macOS, Linux and Windows, plus a job
+  reproducing PowerShell, portable Git Bash without admin, then Node. Current verification policy is in [Work policy](#work-policy);
+  this historical coverage is not a Linux requirement or PowerShell runtime authorization.
 
 ## Context
 
@@ -832,11 +846,11 @@ The source remains outside this repository; no transcript or credentials are cop
   refreshes after a conflict and SDK changes are not required by this migration. Carried by `INSTALL.md` and
   `extensions/RQW-anthropic/`; adapter details live in its README.
 - Proof boundary: tests use fake credentials, mock fetch, file-backed lock fixtures and both Pi library/CLI-bundle
-  entrypoints. These tests do not prove live subscription acceptance or billing. The owner's Claude benchmark/tuning
+  entrypoints. These tests do not prove live subscription acceptance or billing. The owner's old Claude benchmark/tuning campaign
   pause (C:3244) remains: «Те задачи, где ты должен делать замеры на Sonnet моделях, на Cloud моделях, пока на паузе
   стоят»; «Я тебе дам команду, когда их продолжать». Offline fixture coverage in `notes/anthropic-adapter.md` is
   not a current verification report or proof of actual Windows/Linux execution; independent review remains required
-  by the workflow manifest.
+  by `PROCESS.md` and [Work policy](#work-policy), not by a manifesto gate.
 
 - Engineering follow-up to four independent review findings under the adapter request C:3133: either fully handle
   the canonical auth-token path or reject OAuth-header auth before external transport. The adapter
@@ -988,5 +1002,5 @@ The source remains outside this repository; no transcript or credentials are cop
   covered in `test/anthropic-models.test.ts`. Semantic test changes for independent review and
   offline proof boundaries: `notes/anthropic-integration.md`.
 - Integration proof uses offline fixtures only; it does not establish live auth, subscription acceptance or billing.
-  The owner's Claude pause C:3244 remains in force. Historical local results and their boundaries are recorded in
+  The owner's old Claude campaign pause C:3244 remains in force, not a ban on Claude workers. Historical local results and their boundaries are recorded in
   `notes/anthropic-integration.md`, not a standing prohibition on independent review or normal branch delivery.

@@ -3,6 +3,10 @@
 A Pi package (`@earendil-works/pi-coding-agent` 1.3.0) that carries the omp-lite behaviour into stock Pi step by step.
 Stock Pi tools stay as they are. Everything is an extension, one folder per extension under `extensions/`.
 
+Before every task, read and follow [PROCESS.md](PROCESS.md). Restore it after compaction or a handoff before
+continuing. This is mandatory lazy loading, not optional background reading. Give subagents the relevant process
+rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
+
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
 - `extensions/RQW-settings/`: extension 1, the harness settings. Turns on Pi's built-in `codemode` and `tool_search` by
   default (same rule as `grep` and `find` in RQW-tools). Details: `notes/settings-codemode.md`. Tests: `npm test`.
@@ -35,8 +39,9 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
   only it); `test/isolation.test.ts` proves it, `INSTALL.md` shows the switch, `DECISIONS.md` section Isolation.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `notes/`: research notes, such as how the omp-lite prompt was built.
-- `WORKFLOW-MANIFEST.md`: how the owner works and what he expects of the work on my-pi; read it before any task.
-- `PROCESS.md`: the working loop of a task, from discussion to merge, and the lessons of the first build session.
+- `WORKFLOW-MANIFEST.md`: the owner's personal working principles and aspirations, written in Russian for him.
+- `PROCESS.md`: the mandatory development procedure, from research and questions to autonomous squash delivery.
+- `.agents/reviewers/code.md`: the separate read-only bug and code-quality reviewer prompt, used through `agent`.
 - `DECISIONS.md`: every accepted decision with its reason and the file that carries it.
 
 Try it for one run: `pi -e ~/ai-project/my-pi`. No mentions of other products in the prompt.
