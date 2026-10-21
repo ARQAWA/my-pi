@@ -4,16 +4,16 @@
 //
 // The window: Pi reads every limit from the session model `agent.state.model` (compaction trigger, overflow check,
 // context usage, the output cap of a request, summaries). The extension API cannot change that object, so each
-// session's agent state gets a `model` accessor that stores a copy with contextWindow 500 000 for a model above it.
-// It is installed from `AgentSession._buildRuntime`, which Pi runs in the session constructor and on `/reload`.
-// A model up to 500 000 is stored as the same object.
+// session's agent state gets a `model` accessor that exposes a copy with contextWindow 500 000 for a model above it.
+// It is installed from `AgentSession._buildRuntime` at construction and reload, and lazily from the public `model`
+// getter for sessions created before the first owner. The stored model is always the declared original.
 //
 // The reserve: Pi triggers at `contextTokens > model.contextWindow - reserveTokens` and reads reserveTokens from
 // `SettingsManager.getCompactionSettings(model)` at every check (`pi.getSettings()` returns a copy, no setter), so
 // that method is wrapped to return `contextWindow - (W - R)`, which is R once the window is W. A reserve the user set
 // counts against W, unless it is W or more (no positive threshold left), then R applies. Virtual models keep Pi's own
 // values: Pi checks their threshold against the routed physical model's window.
-// Both internals are checked before either is patched, so a failed load changes nothing.
+// The hooks are checked before any is patched, so a failed load changes nothing.
 // The patches stay in Pi's classes for the life of the process, but act only while a loaded RQW-context owns them:
 // each factory adds its own owner token and session_shutdown removes it; no live owners means stock Pi.
 // Design and proof: DECISIONS.md section Context.
@@ -42,11 +42,22 @@ export function reserveFor(contextWindow: number, userReserve?: number): number 
 	return contextWindow - target;
 }
 
-// One copy per original model object, so repeated assignments of the same model give the same object.
-const cappedCopies = new WeakMap<object, object>();
+// Weak mappings survive extension reloads without retaining models or sessions. Remember the original even when
+// a caller passes a capped copy back through setModel, including a copy from another extension module instance.
+const MODELS = Symbol.for("rqw-context/models");
+const modelCache = globalThis as { [MODELS]?: { copies: WeakMap<object, object>; originals: WeakMap<object, object> } };
+const { copies: cappedCopies, originals } = (modelCache[MODELS] ??= {
+	copies: new WeakMap(),
+	originals: new WeakMap(),
+});
+
+function declaredModel<T>(model: T): T {
+	return model && typeof model === "object" ? (originals.get(model) as T | undefined) ?? model : model;
+}
 
 /** The model as the session uses it: the same object up to 500 000, a copy with contextWindow 500 000 above. */
 export function capModel<T>(model: T): T {
+	model = declaredModel(model);
 	if (!model || typeof model !== "object") return model;
 	const { api, contextWindow } = model as { api?: unknown; contextWindow?: unknown };
 	if (api === VIRTUAL_MODEL_API || typeof contextWindow !== "number" || !(contextWindow > MAX_WINDOW)) return model;
@@ -54,6 +65,7 @@ export function capModel<T>(model: T): T {
 	if (!copy) {
 		copy = { ...model, contextWindow: MAX_WINDOW };
 		cappedCopies.set(model, copy);
+		originals.set(copy, model);
 	}
 	return copy as T;
 }
@@ -69,13 +81,13 @@ const cappedStates = new WeakSet<AgentState>();
 /** This agent state reads every model, now and later, through `capModel` while an owner is alive. */
 function capStateModel(state: AgentState): void {
 	if (cappedStates.has(state)) return;
-	let model = state.model;
+	let model = declaredModel(state.model);
 	Object.defineProperty(state, "model", {
 		configurable: true,
 		enumerable: true,
 		get: () => (owned() ? capModel(model) : model),
 		set: (next: unknown) => {
-			model = next;
+			model = declaredModel(next);
 		},
 	});
 	cappedStates.add(state);
@@ -101,13 +113,20 @@ function userSetReserve(manager: SettingsManager, model: NonNullable<CompactionM
 }
 
 // One wrap per class for the life of the process; a /reload runs the factory again and finds it in place. Without an
-// owner both wraps pass Pi's own values through.
+// owner the wraps pass Pi's own values through.
 const WRAPPED_SETTINGS = Symbol.for("rqw-context/getCompactionSettings");
 const WRAPPED_SESSION = Symbol.for("rqw-context/_buildRuntime");
+const WRAPPED_MODEL = Symbol.for("rqw-context/model");
 type SettingsPrototype = SettingsManager & { [WRAPPED_SETTINGS]?: GetCompactionSettings };
 type BuildRuntime = (this: SessionInternals, ...args: unknown[]) => unknown;
+type GetModel = (this: SessionInternals) => unknown;
 // `_buildRuntime` is private in Pi's types; `agent` is set before the constructor calls it.
-type SessionInternals = { agent: { state: AgentState }; _buildRuntime?: BuildRuntime; [WRAPPED_SESSION]?: BuildRuntime };
+type SessionInternals = {
+	agent: { state: AgentState };
+	_buildRuntime?: BuildRuntime;
+	[WRAPPED_SESSION]?: BuildRuntime;
+	[WRAPPED_MODEL]?: GetModel;
+};
 
 function wrapCompactionSettings(proto: SettingsPrototype): void {
 	if (proto[WRAPPED_SETTINGS]) return;
@@ -123,6 +142,19 @@ function wrapCompactionSettings(proto: SettingsPrototype): void {
 	proto[WRAPPED_SETTINGS] = original;
 }
 
+function wrapModelGetter(proto: SessionInternals, descriptor: PropertyDescriptor): void {
+	if (proto[WRAPPED_MODEL]) return;
+	const original = descriptor.get as GetModel;
+	Object.defineProperty(proto, "model", {
+		...descriptor,
+		get(this: SessionInternals) {
+			if (owned()) capStateModel(this.agent.state);
+			return original.call(this);
+		},
+	});
+	proto[WRAPPED_MODEL] = original;
+}
+
 function wrapSessionModel(proto: SessionInternals): void {
 	if (proto[WRAPPED_SESSION]) return;
 	const original = proto._buildRuntime as BuildRuntime;
@@ -136,8 +168,10 @@ function wrapSessionModel(proto: SessionInternals): void {
 export default function context(pi: ExtensionAPI) {
 	const settings: SettingsPrototype = SettingsManager.prototype;
 	const session = AgentSession.prototype as unknown as SessionInternals;
+	const modelDescriptor = Object.getOwnPropertyDescriptor(session, "model");
 	const missing = [
 		typeof session._buildRuntime !== "function" && "AgentSession._buildRuntime",
+		(typeof modelDescriptor?.get !== "function" || !modelDescriptor.configurable) && "AgentSession.model getter",
 		typeof settings.getCompactionSettings !== "function" && "SettingsManager.getCompactionSettings",
 	].filter(Boolean);
 	if (missing.length > 0) {
@@ -146,6 +180,7 @@ export default function context(pi: ExtensionAPI) {
 		);
 	}
 	wrapCompactionSettings(settings);
+	wrapModelGetter(session, modelDescriptor!);
 	wrapSessionModel(session);
 	// Pi emits session_shutdown before loading the next runtime (reload, new, resume, fork). Removing only this
 	// factory's token leaves concurrent sessions and newer runtimes in control of their own ownership.
