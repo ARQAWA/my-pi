@@ -25,6 +25,9 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
   `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
   Public Pi API only; disable it separately in `pi config`. Tests: `extensions/RQW-models/test/`, `npm test`.
+- `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery.
+  Only `anthropic` and `openai-codex` remain visible, credentials stay. Toggle, migration and limits:
+  `extensions/RQW-anthropic/README.md`; research: `notes/anthropic-adapter.md`. Tests use fake credentials: `npm test`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.3.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.

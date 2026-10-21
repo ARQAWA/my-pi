@@ -33,7 +33,7 @@ function run(o: { off?: string; reloadOff?: string }): Run {
 	const line = r.stdout.split("\n").find((l) => l.startsWith("{"));
 	assert.ok(line, `child produced no result: ${r.stderr.slice(-2000)}`);
 	const result: Run = JSON.parse(line);
-	assert.equal(result.selectedModel, "iso/big", "explicit faux model survives startup and reload");
+	assert.equal(result.selectedModel, "openai-codex/big", "explicit faux model survives startup and reload");
 	assert.ok(result.availableOpus.some((id) => id.startsWith("openrouter/")), "poisoned inherited auth makes real OpenRouter Opus available");
 	assert.deepEqual(result.networkAttempts, [], "no transport was attempted");
 	return result;

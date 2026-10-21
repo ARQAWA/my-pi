@@ -27,7 +27,7 @@ if (probeNetwork) {
 }
 // An SDK model alone is not explicit CLI intent. Startup otherwise selects authenticated Opus;
 // a previous Bun check actually attempted OpenRouter and received a 404.
-process.argv.push("--model", "iso/big");
+process.argv.push("--model", "openai-codex/big");
 const entry = (name?: string) => (name ? { source: PKG, extensions: [`-extensions/${name}/index.ts`] } : PKG);
 const folder = (p = "") => /[\\/]extensions[\\/]([^\\/]+)[\\/]/.exec(p)?.[1] ?? p;
 
@@ -41,16 +41,22 @@ writeFileSync(join(cwd, "f.txt"), "hello\n");
 const settingsFile = join(agentDir, "settings.json");
 writeFileSync(settingsFile, JSON.stringify({ packages: [entry(off)] }));
 process.chdir(cwd);
+process.env.PI_CODING_AGENT_DIR = agentDir;
+for (const key of Object.keys(process.env)) if (/(?:_API_KEY|_TOKEN|_SECRET)$/.test(key)) delete process.env[key];
+process.env.ANTHROPIC_API_KEY = "isolation-not-a-real-key";
+process.env.OPENROUTER_API_KEY = "isolation-not-a-real-key";
 
 // A 1M model, so the session window shows whether RQW-context acts.
-const faux = fauxProvider({ api: "faux-iso", provider: "iso", models: [{ id: "big", contextWindow: 1_000_000, maxTokens: 1000 }] });
+const faux = fauxProvider({ api: "faux-iso", provider: "openai-codex", models: [{ id: "big", contextWindow: 1_000_000, maxTokens: 1000 }] });
 faux.setResponses([
 	fauxAssistantMessage([fauxToolCall("read", { path: "f.txt" }, { id: "c0" })], { stopReason: "toolUse" }),
 	fauxAssistantMessage("done"),
 ]);
 const modelRuntime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
+faux.provider.auth.apiKey = { name: "Fake isolation key", resolve: async () => ({ auth: { apiKey: "fake-isolation-key" } }) };
 modelRuntime.registerNativeProvider(faux.provider);
-// Registration queues an async catalog refresh; settle it before inspecting availability.
+await modelRuntime.setRuntimeApiKey("openai-codex", "fake-isolation-key");
+// Inspect the unfiltered catalog before RQW-anthropic hides OpenRouter.
 await modelRuntime.refresh({ allowNetwork: false });
 const availableOpus = (await modelRuntime.getAvailable()).filter((model) => /claude-opus-5[.-]5/.test(model.id))
 	.map((model) => `${model.provider}/${model.id}`);

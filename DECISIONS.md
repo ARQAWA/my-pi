@@ -95,7 +95,8 @@ Every accepted decision, with its reason and the file that carries it.
 - Limits: grep and find get no match cap by default (`limit` 100000 when unset); the stock 50KB output cap stays. Reason:
   Pi's default 100 grep matches cuts the broad first search wave; omp-lite's 51 200-character budget equals 50KB for
   ASCII. read and bash keep the stock 2000 lines / 50KB, as measured in bench41.
-- The search wave method moved from `SYSTEM.md` into the grep description; `<search_method>` keeps one line.
+- The search wave method lives in the grep description; RQW-tools supplies the one-line `<search_method>` section
+  through its own `before_agent_start` hook when read, grep and find are declared.
 - read, bash, edit and write are registered with `defaultActive: false`: they replace the built-ins of the same name, so
   Pi's defaults and the user's `--tools` / `defaultTools` still decide which are on. grep and find are activated by
   registration; on resume or fork they are re-added unless the user passed `--tools`, `--exclude-tools` or `--no-tools`.
@@ -323,14 +324,36 @@ Every accepted decision, with its reason and the file that carries it.
   `forceSystemPrompt`: Pi still appends project context, skills and `<cwd>` and records the prompt as sections.
 - The text follows the concept in `notes/prompt-concept.md` and starts from the bench41 template, the only measured
   version on Pi (+10.2 / +6.2 / +1.9 quality points on gpt-6-sol low / gpt-6-sol medium / gpt-6.1-sol medium).
-- The search wave method stays a `<search_method>` section of the prompt, since Pi's tools are stock and their
-  descriptions are not ours; the `<critical>` verify line stays as in omp-lite. Both are the recommended options the
-  user did not overrule.
+- Tool-specific search and execution instructions belong to RQW-tools, not `SYSTEM.md`; see Prompt/tools isolation
+  below. The `<critical>` verify line stays as in omp-lite.
 - Writing a file longer than about 400 lines in parts (bench35 lost a response to the output limit) lives in the
   `write` description, as in omp-lite, each part in its own response. Removed against bench41: the working
   directory from the date line, because Pi already appends `<cwd>`.
 
 - The four optional `SYSTEM.md` edits at `f6e9327` are not adopted as a package; main keeps its prompt unchanged. The owner wanted the minimum changes without breaking the prompt, and explicitly permitted GPT measurement (user: «Замеры правок System LMD можно тоже проводить на модели GPT-6»). On GPT-6 low, wall time improved by about 6.9%; on GPT-6.1 medium, quality changed by -2.29 percentage points (90% CI [-5.81, +1.24]). This does not prove a general regression, but does not establish safe noninferiority for the common prompt. Measurement-based rejection completes this task, rather than pausing it. Evidence and candidate history: `notes/bench46-gpt.md`, `notes/bench46-gpt.csv`, commits `80bec267` and `f6e9327`; the deployed carrier remains `extensions/RQW-prompt/SYSTEM.md` on main.
+
+### Prompt/tools isolation
+
+- Owner: «Когда мы делаем эти отдельные модули, они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать и выключать, как feature флаги».
+  Task: "Scope ONLY removing RQW-tools-specific runtime assumptions from RQW-prompt and putting them inside RQW-tools,
+  so each works with other off." Four manifesto edits stay on `prompt-manifest`, not here.
+- `extensions/RQW-prompt/SYSTEM.md` no longer names grep/find or assumes our shell barrier or partial writes.
+  `extensions/RQW-tools/index.ts` uses native `before_agent_start` mutations of `systemPromptOptions.sections`, with
+  no import or handshake with RQW-prompt. `search_method` needs declared read, grep and find;
+  `rqw_tools_execution` needs declared bash. Both check `selectedTools` minus `hiddenTools`, so explicit selections
+  do not acquire instructions for unavailable tools. Stock or custom prompt works in either extension order.
+- Source proof, Pi 1.3.0: `dist/core/extensions/runner.js`, `emitBeforeAgentStart`, shares one normalized options
+  object across handlers; `dist/core/system-prompt.js`, `buildSystemPromptSections`, uses `customPrompt` as preamble
+  and still appends `sections` after cwd. `promptGuidelines` and tool guidelines are built only without customPrompt,
+  so they cannot carry these instructions. `forceSystemPrompt` deliberately bypasses sections; no override is added.
+- The two partial-write reminders were redundant: `extensions/RQW-tools/descriptions/write.md` already says
+  "write a file over about 400 lines in parts, each part in its own response: the first with write, then each next
+  with edit" and specifies the edit tail. That unchanged description remains the single owner. The shell barrier
+  sentence is not in the descriptions, so deleting it alone would lose effective content; it moves to a section.
+- Exact runtime text diff and risks: `notes/prompt-tools-isolation.md`. Proof: `test/prompt-tools-isolation.test.ts`,
+  real package filtering, sessions and prompt/tool patch replay on a faux provider, both orders, standalone extensions,
+  explicit tool selections, active-tool changes and disabling either extension through reload. `npm test` includes
+  package tests. No live model runs in this task; GPT measurements of the changed text follow separately.
 
 ## Settings
 
@@ -403,13 +426,18 @@ Every accepted decision, with its reason and the file that carries it.
   (`docs/settings.md:163`, `package-manager.js:736-744`). After `/reload` Pi keeps the active tool set
   (`agent-session.js:2981-2990`, `docs/settings.md:58`), so with RQW-tools or RQW-settings switched off, `grep`/`find`
   or `codemode`/`tool_search` stay active, now the stock ones, until `/new` or a restart.
-- Pending, a separate measured change: `extensions/RQW-prompt/SYSTEM.md` still describes RQW-tools. `<search_method>`
-  (`SYSTEM.md:23-25`) tells the model to search with `grep` and `find` and to follow the grep description, and two
-  sentences state the barrier and the write-in-parts rule (`SYSTEM.md:14`, `:17`). With RQW-tools off, stock Pi does
-  not activate `grep` and `find`, so the prompt names tools the model lacks. These lines move into RQW-tools (its
-  `before_agent_start` adds the section only when `grep` and `find` are active) together with a re-measure, because
-  the prompt text is benchmarked (sections Tools and Prompt). The check "the system prompt names no tool the model
-  does not get" joins `test/isolation.test.ts` with that change, not before.
+- Prompt/tools isolation is complete (section Prompt/tools isolation): `SYSTEM.md` no longer describes RQW-tools;
+  RQW-tools supplies conditional search and execution sections. The package-level
+  `test/prompt-tools-isolation.test.ts` checks tool availability and reload independently of extension-local tests.
+  Owner: «Когда мы делаем эти отдельные модули, они должны быть полностью изолированы, самодостаточны, чтобы мы могли
+  включать и выключать, как feature флаги.» We accept Pi's native sections to meet that requirement, despite the
+  measured change on fixed GPT-6.1-sol medium questions: +0.56 assistant steps, +1.85 s and -3.33 checklist points;
+  GPT-6-sol low gained 6.67 checklist points. All 36 edit acceptance checks passed. The medium losses concern Rust
+  field-declaration citations rather than wrong values; the variant gained the T06 auth blocker delay. This is not
+  behavioral neutrality. Pi puts these sections after cwd, changing instruction position and removing two redundant
+  partial-write reminders; preserving their former positions would require extra coupling. Evidence and limits:
+  `notes/prompt-isolation-gpt.md`, 72 raw rows in `notes/prompt-isolation-gpt.csv`. The four optional manifesto edits
+  remain unadopted and separate (`notes/bench46-gpt.md`).
 
 ## Agent
 
@@ -558,6 +586,19 @@ Every accepted decision, with its reason and the file that carries it.
 
 ## Review
 
+- Prompt adaptation is now tuned on GPT with the measured v3, carried byte-for-byte in
+  `extensions/RQW-review/REVIEWER.md` (owner: flexible reviewer conditions; team synergy only in the plugin;
+  finish the prompt on GPT). The criterion governs scope, including custom requirements outside the agreement and
+  exclusions; REQUIREMENT may quote the criterion with its source. Main and reviewer remain a pair through the
+  plugin's `DESCRIPTION` and `NEXT` in `index.ts`, not `SYSTEM.md`. The reviewer checks independently, quotes exact
+  file content and does not turn general test requests into invented coverage requirements. Reason: the measured
+  candidate improves scope/flexibility and quote/format handling with zero audited false findings on the final GPT
+  comparison; this is not a claim of universal recall improvement. Paired GPT-6.1 recall 87/90 -> 87/90, GPT-6
+  87/90 -> 86/90; GPT-6 false findings after audit 6 -> 0, final 0 on both; mean seconds 7.9 -> 9.2 and
+  10.8 -> 12.3. Only 12 cases x 3 runs per model, four GPT-held-out cases, no new Claude probes; details and limits
+  in `notes/reviewer-prompt-gpt.md`. The tool contract, read-only tools, verdict handling and product pins
+  Haiku 5.5 medium / Sonnet 5.5 low stay unchanged.
+
 - `extensions/RQW-review/` is the accepted reviewers plan (user: «То, что ты предложил по ревьюерам — it's OK, я
   принимаю»): one tool `review` with `level` `blind` or `high` (user: «Smart не нужен ... будет Blind и High»), held
   to the existing contract and nothing more (user: «эти три саб-агента должны быть забиты за тем контрактом, который
@@ -593,12 +634,8 @@ Every accepted decision, with its reason and the file that carries it.
   section where they go only without a custom prompt, so they would never reach the model while RQW-prompt is on.
   Not `SYSTEM.md`: turning RQW-review off must remove the pair completely, and with the rules in the plugin it does.
   Source: `/tmp/review-pair.md` section 3.
-- Reviewer-side tuning candidates, not edits (`REVIEWER.md` changes only through the measurement bench):
-  1. REQUIRED OUTCOME names the one end state the agreement requires, never a choice between fixes or a question to
-     the user (the 2026-10-09 loops came partly from such choices).
-  2. Describe the real brief tags: `<user_messages>` (every user message of the branch in order, summaries labeled as
-     not the user's words), `<agreement>`, `<object>`, `<criterion>` and, from the second pass, `<rejected_earlier>`;
-     requirements come from the messages this object answers.
+- Reviewer-side tuning is complete on GPT: REQUIRED OUTCOME states one concrete end state; the measured prompt
+  treats `<criterion>` as the scope alongside the real brief tags. Evidence and limits: `notes/reviewer-prompt-gpt.md`.
 - The diff goes in as a file path, not as a command: the reviewer only reads files and cannot run one.
 - The extension builds the brief itself (`buildBrief`): the user's messages of the current branch, verbatim, numbered
   and in order, with compaction and branch summaries labeled as not the user's words, then `agreement`, `object`,
@@ -622,11 +659,10 @@ Every accepted decision, with its reason and the file that carries it.
 - The reviewer uses the session's own model runtime, `ctx.modelRegistry.runtime`, private to TypeScript only.
   Reason: providers and logins that the user's extensions register reach the reviewer (here `pi-claude-auth`
   registers the `anthropic` provider), and no second runtime refreshes the same OAuth login.
-- `REVIEWER.md` is the Spotty body from `my-omp-harness` `deprecated:agents/spotty.md` with two changes for Pi: the
-  `read` note (Pi's read prints no line numbers; the bracketed continuation note is not file content) and the final
-  answer as the last message instead of a `yield` call, worded as in master `agents/review.md`. The verdict format
-  stays: `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED
-  OUTCOME), and an optional `UNCHECKED:` section.
+- `REVIEWER.md` now carries the measured v3 adaptation of the Spotty body. Pi's read has no line numbers; initial
+  reads omit numeric windows and truncated files resume at the reported offset. The final answer is the last message,
+  not `yield`. The verdict format stays `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT,
+  MISMATCH, EVIDENCE, REQUIRED OUTCOME), and an optional `UNCHECKED:` section.
 - Async: the call returns `review#N started. ...` at once. The verdict, the reviewer's last assistant text, arrives as
   `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>\n\n<next step>", display: true }, ...)`; `details` carry
   `n`, level, model, thinking and seconds for the user and logs only. Numbers count per session and go on after a
@@ -711,6 +747,52 @@ Every accepted decision, with its reason and the file that carries it.
   left after closing tabs, `/quit` or VS Code itself. Not covered: a real model call and the corporate VDI restrictions.
 - Publishing: skill `publish-pcli` (`.agents/skills/publish-pcli/SKILL.md`), `vsce publish --target win32-x64` from
   `pcli-vscode/` under publisher `arqawa`, `version` raised before each publish, only on a direct request.
+
+## Anthropic subscription adapter
+
+- Extension `extensions/RQW-anthropic/`, listed in `package.json`, owns transport, OAuth recovery and visibility.
+  Owner, current branch brief: "Completely isolated self-contained toggleable extension RQW-anthropic; disabling
+  restores Pi defaults". Disable and reload unregisters only its overlay and restores in-memory hooks. No
+  node_modules edits or credential deletion. Toggle and migration: `extensions/RQW-anthropic/README.md`.
+- Owner: "same Claude Code OAuth behavior as omp", "self-healing (refresh/retry recoverable auth failures, no silent
+  broken state)", "/login support". The overlay preserves Pi's catalog/parser, delegates Pi's PKCE browser/copy-code
+  login and uses omp's refresh endpoint/headers, CLI billing block, original system role and exact-body XXH64 checksum.
+  The installed pi-claude-auth's SDK relocation and normalized checksum contradict the reference and are not used.
+  MIT attribution: `THIRD-PARTY-NOTICES.md`. No installed fork code is copied. Pi's delegated login endpoint/callback
+  and parser remain Pi's, not a complete omp port. Subscription acceptance/billing, account rotation and all omp SDK
+  headers are not claimed. Evidence and risks: `notes/anthropic-adapter.md`.
+- Owner: "only our Anthropic and openai-codex visible in login AND model picker, no other providers", "Preserve saved
+  credentials; hide providers, never delete keys". Public unregisterProvider restores builtins instead of hiding them.
+  `visibility.ts` wraps ModelRuntime provider/model listing and AgentSession.scopedModels with a checked,
+  reference-counted reversible shim, only in runtimes with this overlay. It does not erase previously selected models
+  or disable explicit SDK lookups. Disabling restores defaults without restoring stale credential snapshots.
+- `auth.ts` refreshes under Pi's runtime credential-store lock, rechecks the rejected bearer, reuses a concurrent
+  update and persists rotation before replay. One HTTP 401 replay, at most two transient refresh attempts and one
+  explicit newer-version replay; no auth retry for 403/quota, no replay after streaming. Caller abort cancels waiting
+  and inference but not persistence of an already-rotating token. Permanent errors surface /login guidance without
+  upstream token-response bodies. Subscription inference uses the official HTTPS origin only and rejects redirects.
+  No bootstrap identity or startup version probe. `PI_AI_CLAUDE_CODE_VERSION` can pin the CLI version.
+- Owner: "Existing adapter might co-load; avoid duplicate Anthropic registrations during installation, document
+  migration without modifying owner's local config automatically". INSTALL stops at an enabled competing adapter;
+  runtime guards reject conflicting registrations in either order. The owner disables the competing extension
+  manually, keeps its package/credentials and restarts. No automatic local migration.
+- Branch-specific proof/delivery overrides the usual workflow. Owner: "No live model calls, no Anthropic OAuth
+  refresh/login/network probes using real account, no nested agents; mock fetch/local auth fixtures for tests";
+  "Commit on branch, do not push/merge". Tests use fake credentials, mock fetch, file-backed lock fixtures and both
+  Pi library/CLI-bundle entrypoints. No independent subagent review or live billing proof is performed on this branch.
+  Actual Windows/Linux execution remains for CI.
+
+- Follow-up review fixes, owner: "Fix all four concrete independent review findings"; "either fully handle
+  canonical auth-token path or explicitly reject OAuth-header path before any external transport". The adapter
+  rejects subscription Authorization headers before delegation and keeps ordinary API-key gateway behavior
+  (`transport.ts`). Runtime conflicts survive swallowed SDK errors and block startup, lists and requests
+  (`visibility.ts`, `lifecycle.ts`), with manual disable-and-restart migration and no settings edits.
+  Owner: "Idempotent cleanup before invalidation for SDK dispose". Pi 1.3.0 exposes no native SDK shutdown
+  event, so an isolated reversible dispose wrapper releases only this extension, before runner invalidation.
+  Owner: "Track sent version per request, one bounded replay if effective newer version meets rejection even
+  if already adopted". Each request records its sent version, including under concurrency; a pinned
+  `PI_AI_CLAUDE_CODE_VERSION` still forbids adaptation (`wire.ts`, `transport.ts`). License, privacy and
+  delegated Pi parser/login design remain unchanged.
 
 ## Models
 
@@ -834,3 +916,16 @@ Every accepted decision, with its reason and the file that carries it.
   "Commit on branch, no push/merge". Proof uses deterministic snapshots, no-request Pi library/bundle sessions,
   local git fixtures and a PTY smoke run where available. No independent agent review or model run is authorized
   for this task. Windows paths are exercised locally; native Windows execution remains the existing CI job.
+
+## Anthropic package integration
+
+- Owner: "Merge main INTO branch", "Add anthropic#9, preserve8others and all docs";
+  "package tests must use authenticated fake openai-codex/anthropic";
+  "do not weaken isolation predicates/turnsuccess". The manifest keeps the eight main extensions
+  followed by RQW-anthropic. Package fixtures use fake authenticated allowed providers, not a visibility
+  bypass. The dynamic isolation assertions are unchanged. Source order, unauthenticated startup,
+  Opus medium with mock secrets, full-package login visibility and adapter-off stock fallback are
+  covered in `test/anthropic-models.test.ts`. Semantic test changes for independent review and
+  offline proof boundaries: `notes/anthropic-integration.md`.
+- Owner: "No live auth/network or model calls,nestedagents", "commit branch no push/mainmerge".
+  Integration uses only offline tests, commits on `rqw-anthropic`, and leaves main and remotes unchanged.
