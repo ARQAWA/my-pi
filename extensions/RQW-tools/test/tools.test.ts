@@ -12,6 +12,8 @@ import {
 	createWriteToolDefinition,
 	createBashToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { streamSimple as streamAnthropic } from "@earendil-works/pi-ai/api/anthropic-messages";
+import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 import { executeEdit } from "../edit.ts";
 import factory, { createTools } from "../index.ts";
 import { executeWrite } from "../write.ts";
@@ -119,6 +121,43 @@ describe("registration", () => {
 	it("all six tools are not default-active", () => {
 		const { tools } = load();
 		for (const name of ["read", "bash", "edit", "write", "grep", "find"]) assert.equal(tools[name].defaultActive, false, name);
+	});
+
+	it("edit is not a strict (constrained-sampling) tool; read, bash and write keep the stock setting", async () => {
+		const { tools } = load();
+		const cwd = process.cwd();
+		assert.ok(createEditToolDefinition(cwd).constrainedSampling, "stock edit asks for strict sampling");
+		assert.equal(tools.edit.constrainedSampling, undefined);
+		assert.deepEqual(tools.read.constrainedSampling, createReadToolDefinition(cwd).constrainedSampling);
+		assert.deepEqual(tools.bash.constrainedSampling, createBashToolDefinition(cwd).constrainedSampling);
+		assert.deepEqual(tools.write.constrainedSampling, createWriteToolDefinition(cwd).constrainedSampling);
+
+		// The Anthropic request for a strict-capable model: edit goes without `strict`, write keeps it.
+		const model: any = Object.values(ANTHROPIC_MODELS as any).find((m: any) => m.id === "claude-opus-5-5");
+		assert.equal(model.compat.supportsStrictTools, true);
+		// The fields Pi's wrapToolDefinition passes to the provider.
+		const toolsAdded = ["edit", "write"].map((name) => {
+			const { description, parameters, constrainedSampling } = tools[name];
+			return { name, description, parameters, constrainedSampling };
+		});
+		let payload: any;
+		const stream = streamAnthropic(model, {
+			messages: [
+				{ role: "system", content: "s", toolsAdded, timestamp: 0 },
+				{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 0 },
+			],
+		} as any, {
+			apiKey: "sk-ant-api03-test",
+			maxRetries: 0,
+			onPayload: (params: any) => { payload = params; },
+			fetch: async () => new Response(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "stop" } }),
+				{ status: 400, headers: { "content-type": "application/json" } }),
+		} as any);
+		for await (const _ of stream) { /* drain to the stub's error */ }
+		const sent = Object.fromEntries(payload.tools.map((t: any) => [t.name, t]));
+		assert.equal(sent.edit.strict, undefined);
+		assert.deepEqual(sent.edit.input_schema.required, ["edits"], "edit keeps its own optional fields");
+		assert.equal(sent.write.strict, true);
 	});
 
 	it("session_start adds grep and find on every reason but reload, only when the user made no tool selection", () => {

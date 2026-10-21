@@ -21,7 +21,8 @@ extensions/RQW-tools/
 1. Every tool wraps the stock definition from `@earendil-works/pi-coding-agent` (`create<X>ToolDefinition(cwd)`):
    same name, same parameters (plus the two multi-file fields below), stock `execute` does the work, stock
    `prepareArguments`, `renderShell`, `constrainedSampling` kept by spreading the stock definition. Only
-   `description` / parameter descriptions and the wrappers change.
+   `description` / parameter descriptions and the wrappers change; edit drops `constrainedSampling`
+   (`DECISIONS.md`, section Tools).
 2. Barrier: OCB exactly as in `analysis-races.md` section 5. Scope registered synchronously at the top of `execute()`.
    `read` -> read [key]; `grep`/`find` -> read [key(path ?? ".")]; `edit`/`write` -> mutate [keys of all files];
    `bash` -> all. bash conflicts with everything, including bash (D1). read never conflicts with read. Otherwise

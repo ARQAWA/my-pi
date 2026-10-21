@@ -118,8 +118,25 @@ Current accepted development policy (request summaries unless quoted); detailed 
 ## Tools
 
 - `extensions/RQW-tools/` replaces `read`, `bash`, `edit`, `write` and turns on `grep` and `find` by registering them.
-  Each tool spreads the stock definition and keeps its `execute`; only descriptions and the multi-file wrappers change.
-  Design and reasons: `notes/tools-design.md`; evidence: `notes/analysis-*.md`.
+  Each tool spreads the stock definition and keeps its `execute`; only descriptions and the multi-file wrappers change,
+  and edit drops strict sampling (next entry). Design and reasons: `notes/tools-design.md`; evidence:
+  `notes/analysis-*.md`.
+- edit is sent without strict tool sampling: our edit sets `constrainedSampling` to undefined, so Pi does not send it
+  as an Anthropic `strict` tool (constrained decoding); read, bash and write keep the stock `strict: "prefer"`. Owner:
+  «01a15f4f-7b7e-70e6-b1e2-bb238ce75359 Также в этой сессии поработал агент, и там дохуя ошибок записи. Он делает
+  параллельные эдиты: проредактировал и потом снова делает через время параллельные эдиты. И там целая вереница
+  эдитов красная, с ошибками. Он потом перепосчитал файлы и снова отредактировал. Надо разобраться, этот баг
+  пофиксить.» Reason: in that session (claude-opus-5-5) all 15 failed edit calls carried garbled arguments, not
+  stale text: a replay of the files from Git plus every successful edit matched each successful oldText exactly once.
+  Each failed oldText broke where Cyrillic text began (literal `\u0430`-style escapes, a lone `"` or `\b`, an added
+  newline, newText `x`). All were single calls; both parallel batches succeeded, so neither the barrier nor
+  multi-file grouping was involved. Pi 1.3.0 marks stock edit `strict: "prefer"` and Opus 5.5 `supportsStrictTools`.
+  Probe replaying the session before four failing turns, 4 runs each: edit as sent (strict) 0 of 12 Cyrillic edit
+  calls usable; the stock-shaped edit schema with strict garbled 5 of 9 calls; edit without strict matched 40 of 41
+  blocks (the miss: a space for a line break). gpt-6.1-sol matched all 27 blocks with and without strict. A strict
+  write of a 14 000-character file with 5 500 Cyrillic letters came through intact 4 of 4, so write keeps strict.
+  Carried by `extensions/RQW-tools/index.ts`; test in `extensions/RQW-tools/test/tools.test.ts` (the Anthropic
+  request has no `strict` on edit and keeps it on write).
 - Ordered conflict barrier: a call waits only for earlier calls of the same response it conflicts with; bash conflicts
   with every call, read never with read, otherwise equal path key or ancestor. Reason: stock Pi measured 20 of 20 races
   for read/write, bash/read and case-variant writes (`notes/analysis-races.md` section 2). bash is serialized against

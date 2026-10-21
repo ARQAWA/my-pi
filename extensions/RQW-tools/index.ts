@@ -149,6 +149,9 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 		edit,
 		{
 			...notDefault,
+			// No strict (constrained) tool sampling for edit: on Anthropic it corrupts non-ASCII oldText/newText
+			// (DECISIONS.md, Tools: edit without strict sampling).
+			constrainedSampling: undefined,
 			description: description("edit"),
 			parameters: createEditSchema(edit.parameters),
 			prepareArguments: (input: any) => prepareEditArguments(edit.prepareArguments, input),
