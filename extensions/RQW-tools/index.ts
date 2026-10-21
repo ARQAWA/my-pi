@@ -54,6 +54,19 @@ export default function (pi: ExtensionAPI) {
 	const nested = createNestedBarrier();
 	for (const tool of createTools(process.cwd(), () => pi.getSettings(), nested)) pi.registerTool(tool);
 
+	// Custom sections survive customPrompt; tool promptGuidelines do not. Each turn starts from Pi's base
+	// options, so disabling this extension removes the sections on the next turn, including after reload.
+	pi.on("before_agent_start", (event) => {
+		const options = event.systemPromptOptions;
+		const visible = (name: string) => options.selectedTools.includes(name) && !options.hiddenTools.includes(name);
+		if (["grep", "find", "read"].every(visible)) {
+			options.sections.search_method = "- Search with the grep and find tools and read files with read, following the method in the grep description.";
+		}
+		if (visible("bash")) {
+			options.sections.rqw_tools_execution = "- A shell command waits for the calls before it and holds the calls after it.";
+		}
+	});
+
 	// Pi calls the handler synchronously inside `emit`, and drops it when this instance goes stale (reload, dispose).
 	// The offer is `createTools` itself: a subagent calls it and gets six fresh tools with a barrier of their own.
 	pi.events.on(SUBAGENT_TOOLS, (request) => (request as { offer?: (factory: typeof createTools) => void })?.offer?.(createTools));
