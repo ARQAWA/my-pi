@@ -30,7 +30,7 @@ export function gate(text = "CHILD") {
 	};
 }
 let serial = 0;
-export async function fixture(mode: "tui" | "rpc" | "print" | "json" = "tui", authHold?: Promise<void>, before: string[] = []) {
+export async function fixture(mode: "tui" | "rpc" | "print" | "json" = "tui", authHold?: Promise<void>, before: string[] = [], after: string[] = []) {
 	const root = await mkdtemp(join(tmpdir(), "rqw-agent-audit-"));
 	const agentDir = join(root, "home");
 	await mkdir(agentDir);
@@ -54,7 +54,7 @@ export async function fixture(mode: "tui" | "rpc" | "print" | "json" = "tui", au
 	}
 	const mainReplies = frames(main, requests.main), subReplies = frames(sub, requests.sub);
 	const loader = new DefaultResourceLoader({ cwd: root, agentDir,
-		additionalExtensionPaths: [...before, join(import.meta.dirname, "../index.ts")],
+		additionalExtensionPaths: [...before, join(import.meta.dirname, "../index.ts"), ...after],
 		noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
 	await loader.reload();
 	assert.deepEqual(loader.getExtensions().errors, []);

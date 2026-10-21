@@ -23,7 +23,9 @@ export default function (pi: ExtensionAPI) {
 			return answer(`CLI_CHILD_${n}`);
 		}
 		mainCount++;
+		if (scenario === "abort-window") process.stderr.write(`AUDIT_MAIN_REQUEST:${mainCount}\n`);
 		if (mainCount === 1) {
+			if (scenario === "abort-window") return answer([fauxToolCall("agent", child("ONE")), fauxToolCall("agent", child("TWO"))], { stopReason: "toolUse" });
 			const tool = scenario === "nested"
 				? fauxToolCall("codemode", { code: `return [await tools.agent(${JSON.stringify(child("NESTED_ONE"))}), await tools.agent(${JSON.stringify(child("NESTED_TWO"))})];` }, { id: "nested" })
 				: fauxToolCall("agent", child("LONG"));
@@ -34,7 +36,7 @@ export default function (pi: ExtensionAPI) {
 			assert.ok(body.includes("agent#1 started") && body.includes("agent#2 started"));
 			return answer("CLI_NESTED_IDS_OK");
 		}
-		if (mainCount === 2 && scenario === "abort-rpc") {
+		if (mainCount === 2 && (scenario === "abort-rpc" || scenario === "abort-window")) {
 			process.stderr.write("AUDIT_MAIN_BUSY\n");
 			options?.signal?.addEventListener("abort", () => busy.resolve(), { once: true });
 			await busy.promise;
@@ -50,12 +52,17 @@ export default function (pi: ExtensionAPI) {
 		if (scenario === "normal") release.resolve();
 		if (scenario === "abort-print") setImmediate(() => ctx.abort());
 	});
-	pi.on("agent_settled", event => {
+	pi.on("agent_settled", async event => {
+		if (scenario === "abort-window" && event.aborted) {
+			release.resolve();
+			// Let both faux children finish while this earlier public hook holds SDK settlement.
+			for (let n = 0; n < 100; n++) await new Promise<void>(resolve => setImmediate(resolve));
+		}
 		if (scenario === "abort-rpc" && event.aborted) release.resolve();
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
 		const ids = ctx.sessionManager.getEntries().flatMap(e => e.type === "custom" && e.customType === "agent" ? [(e.data as { id: number }).id] : []);
-		assert.deepEqual(ids, scenario === "nested" ? [1, 2] : [1]);
+		assert.deepEqual(ids, scenario === "nested" || scenario === "abort-window" ? [1, 2] : [1]);
 		if (scenario === "nested") {
 			const outer = ctx.sessionManager.getEntries().filter(e => e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "agent");
 			assert.equal(outer.length, 0, "nested calls have no outer agent result");

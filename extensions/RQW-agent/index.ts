@@ -404,6 +404,8 @@ export default function agent(pi: ExtensionAPI) {
 	});
 	// agent_end still has the native run's live abort signal. before_settle no longer does.
 	pi.on("agent_end", async (_event, ctx) => {
+		// isIdle becomes true before earlier agent_settled hooks finish, including after an abort.
+		settling = true;
 		if (ctx.mode !== "print" && ctx.mode !== "json") return;
 		const signal = ctx.signal;
 		if (!signal) return;
@@ -416,6 +418,11 @@ export default function agent(pi: ExtensionAPI) {
 		}
 	});
 	pi.on("agent_before_settle", (_event, ctx) => {
+		// Results held since agent_end must reach this boundary before it decides to continue.
+		for (const message of late.splice(0)) {
+			unanswered.add(message.details.delivery);
+			pi.sendMessage(message, { triggerTurn: false });
+		}
 		if (!mainAborted && needsTurn(ctx)) return { continue: true };
 		settling = true;
 	});

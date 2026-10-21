@@ -51,7 +51,7 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 	let abortSent = false;
 	child.stderr.on("data", data => {
 		stderr += data;
-		if (scenario === "abort-rpc" && !abortSent && stderr.includes("AUDIT_MAIN_BUSY")) {
+		if ((scenario === "abort-rpc" || scenario === "abort-window") && !abortSent && stderr.includes("AUDIT_MAIN_BUSY")) {
 			abortSent = true;
 			send({ type: "abort", id: "abort" });
 		}
@@ -71,15 +71,17 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 	try {
 		if (mode === "rpc") {
 			send({ type: "prompt", id: "go", message: "GO" });
-			if (scenario === "abort-rpc") {
+			if (scenario === "abort-rpc" || scenario === "abort-window") {
 				const response = await event(e => e.type === "response" && e.id === "abort");
 				assert.equal(response.success, true);
 				await event(custom);
+				if (scenario === "abort-window") await event(e => custom(e) && String(e.message.content).startsWith("[agent#2]"));
 				send({ type: "get_state", id: "state" });
 				const state = await event(e => e.type === "response" && e.id === "state");
 				assert.equal(state.data.isStreaming, false);
 				assert.equal(state.data.pendingMessageCount, 0);
 				assert.equal(events.some(final), false, "late child cannot wake an aborted main");
+				if (scenario === "abort-window") assert.equal((stderr.match(/AUDIT_MAIN_REQUEST:/g) ?? []).length, 2, "no deferred requests escaped the abort window");
 				send({ type: "prompt", id: "next", message: "NEXT" });
 			}
 			await event(final);
@@ -103,7 +105,7 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 			assert.ok(stdout.includes("CLI_FINAL_GOT_CHILD"));
 			if (mode === "text") assert.equal(stdout.trim(), "CLI_FINAL_GOT_CHILD");
 			else {
-				assert.deepEqual(events.filter(custom).map(e => e.message.content), ["[agent#1] CLI_CHILD_1"]);
+				assert.deepEqual(events.filter(custom).map(e => e.message.content), scenario === "abort-window" ? ["[agent#1] CLI_CHILD_1", "[agent#2] CLI_CHILD_2"] : ["[agent#1] CLI_CHILD_1"]);
 				assert.equal(events.filter(final).length, 1);
 			}
 		}
@@ -122,3 +124,5 @@ for (const mode of ["text", "json"] as const) {
 	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: codemode nested ids are persisted`, { timeout: 30000 }, () => cli(mode, "nested"));
 }
 test(`real ${BUN ? "Bun" : "Node"} CLI rpc: late-after-abort stays idle until next prompt`, { timeout: 30000 }, () => cli("rpc", "abort-rpc"));
+
+test(`real ${BUN ? "Bun" : "Node"} CLI rpc: two results in earlier aborted agent_settled never auto-wake`, { timeout: 30000 }, () => cli("rpc", "abort-window"));
