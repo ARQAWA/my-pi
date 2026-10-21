@@ -12,7 +12,7 @@ import { pathKey, readSpellings, resolvePath, scopeOf } from "../keys.ts";
 const wrong = (v: unknown) => v as string;
 
 const platform = process.platform;
-const folds = platform === "darwin" || platform === "win32"; // case-insensitive file systems by default
+let folds = platform === "win32"; // Windows keys conservatively fold even in case-sensitive directories
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "rqw-keys-"));
 after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -33,6 +33,7 @@ const link = (target: string, name: string, type?: "dir" | "file" | "junction") 
 
 write("sub/file.txt");
 write("ReadMe.md");
+if (platform === "darwin") folds = fs.existsSync(path.join(root, "README.MD"));
 write("real/target.txt");
 write("caf\u00e9.txt"); // NFC spelling on disk
 const hasDirLink = link(path.join(root, "real"), "link", platform === "win32" ? "junction" : "dir");
@@ -41,19 +42,24 @@ const hasLoop = link("loop2", "loop1") && link("loop1", "loop2");
 
 // What the key of an existing path must look like on this platform.
 const fold = (s: string) => {
-  if (platform === "darwin") return s.normalize("NFC").toLowerCase();
+  if (platform === "darwin") return folds ? s.normalize("NFC").toLowerCase() : s.normalize("NFC");
   if (platform === "win32") return s.replaceAll("\\", "/").toLowerCase();
   return s;
 };
 const real = (rel: string) => fs.realpathSync.native(path.join(root, rel));
 
 const k = (p: string): string => {
-  const key = pathKey(p, root);
+  const key = pathKey(p, root, platform, false);
   assert.notStrictEqual(key, undefined, `no key for ${JSON.stringify(p)}`);
   return key as string;
 };
 const allEqual = (spellings: string[], expected: string) => {
-  for (const s of spellings) assert.strictEqual(k(s), expected, `spelling ${JSON.stringify(s)}`);
+  const grouped = pathKey(spellings[0], root);
+  assert.notStrictEqual(grouped, undefined);
+  for (const s of spellings) {
+    assert.strictEqual(k(s), expected, `spelling ${JSON.stringify(s)}`);
+    assert.strictEqual(pathKey(s, root), grouped, `group identity ${JSON.stringify(s)}`);
+  }
 };
 
 // ---------------------------------------------------------------- real file system
@@ -106,6 +112,7 @@ test("a file used as a directory keeps the file key as its ancestor", () => {
 test("symlinked directory with a missing file below gives the key of the target directory", (t) => {
   if (!hasDirLink) return t.skip("cannot create a directory link here");
   assert.strictEqual(k("link/new.txt"), k("real/new.txt"));
+  assert.strictEqual(pathKey("link/new.txt", root), pathKey("real/new.txt", root));
   assert.strictEqual(k("link"), k("real"));
   assert.strictEqual(k("link/target.txt"), k("real/target.txt"));
   assert.strictEqual(k("link/deeper/new.txt"), k("real/deeper/new.txt"));
@@ -114,9 +121,10 @@ test("symlinked directory with a missing file below gives the key of the target 
 test("symlinked file gives the key of its target", (t) => {
   if (!hasFileLink) return t.skip("cannot create a file link here");
   assert.strictEqual(k("flink"), k("real/target.txt"));
+  assert.strictEqual(pathKey("flink", root), pathKey("real/target.txt", root));
 });
 
-test("case variants: one key on darwin and win32, kept apart on linux", () => {
+test("case variants: native Darwin sensitivity, conservative Windows folding, distinct Linux paths", () => {
   const variants: [string, string][] = [
     ["ReadMe.md", "README.MD"], // existing
     ["ReadMe.md", "readme.md"],
@@ -177,7 +185,7 @@ test("platform-specific real-path behaviour on windows", { skip: platform !== "w
 
 test("win32 rules, checked as strings on every host", () => {
   const cwd = "C:\\rqw-t";
-  const key = (p: string) => pathKey(p, cwd, "win32");
+  const key = (p: string) => pathKey(p, cwd, "win32", false);
   const same = [
     "C:/rqw-t/Sub/File.txt",
     "c:\\RQW-T\\sub\\file.txt",
@@ -218,7 +226,7 @@ test("win32 rules, checked as strings on every host", () => {
 
 test("darwin rules, checked as strings on every host", () => {
   const cwd = "/rqw-t";
-  const key = (p: string) => pathKey(p, cwd, "darwin");
+  const key = (p: string) => pathKey(p, cwd, "darwin", false);
   assert.strictEqual(key("/rqw-t/Caf\u00e9.TXT"), "/rqw-t/caf\u00e9.txt");
   assert.strictEqual(key("Cafe\u0301.txt"), "/rqw-t/caf\u00e9.txt");
   assert.strictEqual(key("./A/../B.md"), "/rqw-t/b.md");
@@ -228,7 +236,7 @@ test("darwin rules, checked as strings on every host", () => {
 
 test("linux keeps case, normalization form and trailing dots", () => {
   const cwd = "/rqw-t";
-  const key = (p: string) => pathKey(p, cwd, "linux");
+  const key = (p: string) => pathKey(p, cwd, "linux", false);
   assert.strictEqual(key("A.txt"), "/rqw-t/A.txt");
   assert.notStrictEqual(key("A.txt"), key("a.txt"));
   assert.notStrictEqual(key("caf\u00e9"), key("cafe\u0301"));
@@ -358,4 +366,68 @@ test("scopeOf ignores strict-mode empty values", () => {
   const hunk = { oldText: "o", newText: "n" };
   assert.deepStrictEqual(scopeOf("edit", { path: "sub/a.txt", edits: [{ path: "", ...hunk }] }, root), { kind: "mutate", keys: [a] });
   assert.deepStrictEqual(scopeOf("edit", { path: "", edits: [{ path: "sub/a.txt", ...hunk }] }, root), { kind: "mutate", keys: [a] });
+});
+
+// Conservative Unicode case keys are not a claim that JS casing is the filesystem's exact collation table.
+test("Darwin and Windows conservative Unicode casing closes Sigma and sharp-S variants", () => {
+  for (const host of ["darwin", "win32"] as const) {
+    const cwd = host === "win32" ? "C:\\rqw-unicode" : "/rqw-unicode";
+    for (const names of [["\u03a3.txt", "\u03c3.txt", "\u03c2.txt"], ["\u1e9e.txt", "\u00df.txt", "ss.txt"], ["\u017f.txt", "S.txt", "s.txt"], ["\u039f\u03a3.txt", "\u03bf\u03c3.txt", "\u03bf\u03c2.txt"]]) {
+      const keys = names.map((name) => pathKey(name, cwd, host));
+      assert.ok(keys.every((key) => key !== undefined && key === keys[0]), JSON.stringify({ host, names, keys }));
+    }
+    assert.notStrictEqual(pathKey("alpha.txt", cwd, host), pathKey("beta.txt", cwd, host));
+  }
+});
+
+test("Linux string keys retain distinct Unicode case spellings", () => {
+  for (const [a, b] of [["\u03a3.txt", "\u03c2.txt"], ["\u1e9e.txt", "\u00df.txt"], ["\u00df.txt", "ss.txt"]]) {
+    assert.notStrictEqual(pathKey(a, "/rqw-unicode", "linux"), pathKey(b, "/rqw-unicode", "linux"));
+  }
+});
+
+test("Darwin case-sensitive volume probe keeps absent case-only names distinct without a stat cache", { skip: platform !== "darwin" }, (t) => {
+  const nativeStat = fs.statSync;
+  const realRoot = fs.realpathSync.native(root);
+  const variant = path.join(path.dirname(realRoot), path.basename(realRoot).replace(/[a-zA-Z]/, (c) => c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+  let sensitive = true;
+  t.mock.method(fs, "statSync", (p: fs.PathLike, options?: fs.StatOptions) => {
+    if (String(p) === variant && sensitive) {
+      throw Object.assign(new Error("case-sensitive lookup"), { code: "ENOENT" });
+    }
+    return nativeStat(p, options);
+  });
+  assert.notStrictEqual(k("NeverCreated.txt"), k("nevercreated.txt"));
+  assert.notStrictEqual(k("\u03a3-new.txt"), k("\u03c2-new.txt"));
+  sensitive = false;
+  // On the native case-insensitive volume the same directory is now probed again, not served from a cache.
+  if (folds) assert.strictEqual(k("NeverCreated.txt"), k("nevercreated.txt"));
+});
+
+
+test("native grouping keys retain ancestors and cannot merge distinct Unicode files", () => {
+  write("identity/\u00df.txt");
+  write("identity/ss.txt");
+  const a = fs.statSync(path.join(root, "identity/\u00df.txt"));
+  const b = fs.statSync(path.join(root, "identity/ss.txt"));
+  if (a.dev !== b.dev || a.ino !== b.ino) {
+    assert.notStrictEqual(pathKey("identity/\u00df.txt", root), pathKey("identity/ss.txt", root));
+  }
+  const dir = pathKey("identity", root);
+  for (const file of ["identity/\u00df.txt", "identity/ss.txt", "identity/missing/a.txt"]) {
+    assert.ok(pathKey(file, root)?.startsWith(dir + "/"), file);
+  }
+  assert.ok(pathKey("identity/missing/a.txt", root)?.startsWith(pathKey("identity/missing", root) + "/"));
+  assert.notStrictEqual(pathKey("identity/not-yet-created.txt", root), pathKey("identity/ss.txt", root));
+});
+
+
+test("an unavailable native file identity never creates a shared grouping key", (t) => {
+  const nativeStat = fs.statSync;
+  t.mock.method(fs, "statSync", (p: fs.PathLike, options?: fs.StatOptions) => {
+    const value = nativeStat(p, options);
+    return options?.bigint ? { ...value, ino: 0n } : value;
+  });
+  assert.strictEqual(pathKey("sub/file.txt", root), undefined);
+  assert.strictEqual(scopeOf("write", { path: "sub/file.txt", content: "x" }, root).kind, "mutate");
 });

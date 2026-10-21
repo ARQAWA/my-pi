@@ -101,7 +101,9 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 			...stock,
 			...overrides,
 			execute(id: string, params: any, signal: any, onUpdate: any, ctx: any) {
-				return nested.schedule(id, scopeOf(name, params, ctx?.cwd || process.cwd()), async () => {
+				// Resolve after earlier all calls: bash may have changed a symlink target while this call waited.
+				const scope = { kind: "all" as const, keys: [], resolve: () => scopeOf(name, params, ctx?.cwd || process.cwd()) };
+				return nested.schedule(id, scope, async () => {
 					if (signal?.aborted) throw new Error("Operation aborted");
 					return run(id, params, signal, onUpdate, ctx);
 				});

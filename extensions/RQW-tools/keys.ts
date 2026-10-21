@@ -29,16 +29,17 @@ function resolveLexical(p: string, cwd: string, platform: NodeJS.Platform): stri
 // realpath of the deepest existing ancestor, then the missing segments. A missing root (an unreachable share or
 // drive) gives the lexical path, so the same spelling still gives the same key. Any other error (a symlink loop,
 // no access) propagates and the caller treats the call like bash.
-function canonical(abs: string, P: path.PlatformPath): string {
+function canonical(abs: string, P: path.PlatformPath): { key: string; existing?: string } {
   const rest: string[] = [];
   for (let cur = abs; ; ) {
     try {
-      return P.join(fs.realpathSync.native(cur), ...rest);
+      const existing = fs.realpathSync.native(cur);
+      return { key: P.join(existing, ...rest), existing };
     } catch (e) {
       const code = typeof e === "object" && e !== null && "code" in e ? e.code : undefined;
       if (code !== "ENOENT" && code !== "ENOTDIR") throw e;
       const parent = P.dirname(cur);
-      if (parent === cur) return abs;
+      if (parent === cur) return { key: abs };
       rest.unshift(P.basename(cur));
       cur = parent;
     }
@@ -68,18 +69,81 @@ export function readSpellings(p: string, cwd: string): string[] {
   ];
 }
 
-export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = process.platform): string | undefined {
+// Locale-independent casing closure, not an exact APFS/Windows collation table. In particular, lowercase alone
+// splits Sigma/final sigma; one upper/lower pass still splits capital sharp S from sharp S. The closure may merge
+// distinct Unicode names (e.g. dotless I and "i"): it orders those paths but is not an existing-file identity.
+function foldCase(value: string): string {
+  for (;;) {
+    const next = value.toUpperCase().toLowerCase();
+    if (next === value) return value;
+    value = next;
+  }
+}
+
+// APFS case sensitivity is per volume. Probe an existing ASCII-cased component on that same device, without
+// creating files or caching stats across calls. With no usable component, retain the conservative folding policy.
+// Windows keeps conservative folding even in case-sensitive directories: Node exposes no directory case flag.
+function darwinFoldsCase(existing: string | undefined): boolean {
+  if (!existing) return true;
+  const device = fs.statSync(existing).dev;
+  for (let cur = existing; ; cur = path.dirname(cur)) {
+    const parent = path.dirname(cur);
+    if (parent === cur || fs.statSync(parent).dev !== device) return true;
+    const name = path.basename(cur);
+    const variant = name.replace(/[a-zA-Z]/, (c) => c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase());
+    if (variant === name) continue;
+    try {
+      const a = fs.statSync(cur);
+      const b = fs.statSync(path.join(parent, variant));
+      return a.dev === b.dev && a.ino === b.ino;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw e;
+    }
+  }
+}
+
+// `abs` is already a filesystem spelling, including read fallbacks. Never apply user space/@/URL rules here.
+function resolvedKey(abs: string, platform: NodeJS.Platform, identity = false): string | undefined {
+  try {
+    const native = platform === process.platform;
+    const P = platform === "win32" ? path.win32 : path.posix;
+    const { key, existing } = native ? canonical(abs, P) : { key: abs, existing: undefined };
+    const folds = platform === "win32" || (platform === "darwin" && (!native || darwinFoldsCase(existing)));
+    const spellingKey = (value: string): string => {
+      if (platform === "win32") value = value.replaceAll("\\", "/").split("/").map((c) => c.replace(/[. ]+$/, "")).join("/");
+      if (platform === "darwin") value = value.normalize("NFC");
+      if (folds) value = foldCase(value);
+      return platform === "darwin" ? value.normalize("NFC") : value;
+    };
+    if (!identity || !existing) return spellingKey(key);
+
+    // edit/write use pathKey for grouping, not just ordering. A conservative Unicode collision must never group
+    // two distinct existing files and apply one's edits to the other. Native identities form a path-shaped key,
+    // retaining ancestor checks. A marked missing suffix cannot collide with any existing identity component.
+    const components: string[] = [];
+    for (let cur = existing; ; cur = P.dirname(cur)) {
+      const stat = fs.statSync(cur, { bigint: true });
+      // A filesystem without usable file IDs must use the wrappers' existing lexical fallback, not merge files.
+      if (stat.ino === 0n) return undefined;
+      components.unshift(`${stat.dev}:${stat.ino}`);
+      if (P.dirname(cur) === cur) break;
+    }
+    const base = "/" + components.join("/");
+    const missing = P.relative(existing, key);
+    return missing ? base + "/missing:" + spellingKey(missing) : base;
+  } catch {
+    return undefined;
+  }
+}
+
+// Opaque grouping key for edit/write. Native existing components use filesystem identities; missing components
+// use conservative spelling keys. It need not stay equal after creation. `identity = false` exposes the barrier
+// spelling key for platform-rule tests; production scopes pass already-resolved spellings directly.
+export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = process.platform, identity = true): string | undefined {
   try {
     if (typeof p !== "string" || typeof cwd !== "string") return undefined;
-    let k = resolveLexical(p, cwd, platform);
-    // A foreign platform name (tests of the string rules) cannot ask the real file system.
-    if (platform === process.platform) k = canonical(k, platform === "win32" ? path.win32 : path.posix);
-    if (platform === "win32") {
-      k = k.replaceAll("\\", "/").split("/").map((c) => c.replace(/[. ]+$/, "")).join("/").toLowerCase();
-    } else if (platform === "darwin") {
-      k = k.normalize("NFC").toLowerCase();
-    }
-    return k;
+    return resolvedKey(resolveLexical(p, cwd, platform), platform, identity);
   } catch {
     return undefined;
   }
@@ -120,8 +184,9 @@ export function scopeOf(tool: string, args: unknown, cwd: string): Scope {
     }
     // Empty-string paths (strict-mode filler) name no file; with none left the scope is "all".
     if (kind === "mutate") paths = paths.filter((x) => x !== "");
-    // pathKey checks the type itself and answers undefined for anything that is not a string.
-    const keys = paths.map((x) => pathKey(x as string, cwd));
+    // Read spellings have already passed user normalization. Their fallback spaces are real filesystem names.
+    const keys = paths.map((x) => typeof x !== "string" ? undefined
+      : resolvedKey(tool === "read" ? x : resolvePath(x, cwd), process.platform));
     if (keys.length === 0 || keys.includes(undefined)) return all;
     return { kind, keys: [...new Set(keys as string[])] };
   } catch {
