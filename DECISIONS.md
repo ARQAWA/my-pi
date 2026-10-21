@@ -825,8 +825,9 @@ The source remains outside this repository; no transcript or credentials are cop
 - Proof boundary: tests use fake credentials, mock fetch, file-backed lock fixtures and both Pi library/CLI-bundle
   entrypoints. These tests do not prove live subscription acceptance or billing. The owner's Claude benchmark/tuning
   pause (C:3244) remains: «Те задачи, где ты должен делать замеры на Sonnet моделях, на Cloud моделях, пока на паузе
-  стоят»; «Я тебе дам команду, когда их продолжать». The local adapter implementation report records no independent
-  subagent review and no actual Windows/Linux execution; those are proof limits, not standing workflow exceptions.
+  стоят»; «Я тебе дам команду, когда их продолжать». Offline fixture coverage in `notes/anthropic-adapter.md` is
+  not a current verification report or proof of actual Windows/Linux execution; independent review remains required
+  by the workflow manifest.
 
 - Engineering follow-up to four independent review findings under the adapter request C:3133: either fully handle
   the canonical auth-token path or reject OAuth-header auth before external transport. The adapter

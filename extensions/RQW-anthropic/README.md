@@ -8,18 +8,17 @@ explicit SDK lookups and previously selected hidden models are not erased or sil
 
 ## Before enabling
 
-Do not co-load `pi-claude-auth` or another extension registering Anthropic. Use `pi list` and `pi config` to inspect
-both personal and project scope and any explicit `-e` arguments. Disable the other adapter in `pi config`, or keep
-its package installed with `"extensions": []` in its package entry. Then enable this extension and restart Pi.
-Do not delete auth.json or any provider keys. Your existing `anthropic` OAuth credential is reused; no re-login is
-needed unless the saved grant is invalid. One Anthropic adapter is supported. A conflicting registration is
-rejected with a clear disable-the-old-adapter error in either load order. Pi reports registration errors through
-its native diagnostics; it may continue session binding. There is no runtime quarantine, early fatal barrier or
-replacement of a future `refresh()` call. Mixed-adapter operation is unsupported. Disable the old adapter first
-and restart Pi; this extension does not manage a competing adapter's lifecycle.
+Follow the [installation prompt](../../INSTALL.md): it replaces the known old adapter with official
+`pi remove git:github.com/edxeth/pi-claude-auth` in its installed scope, adding `--local` for a project install,
+then installs or updates `git:github.com/ARQAWA/my-pi`. It preserves `auth.json` and unrelated packages/settings.
+The saved `anthropic` OAuth credential is reused unless the grant is invalid. Migration belongs to the installation
+prompt; the extension itself does not edit package settings, remove packages or perform login automatically.
 
-Nothing here automatically edits your settings, removes a package or performs login. The installation prompt stops
-for a conflict instead of changing the other package for you.
+Run only one Anthropic adapter. Inspect personal/project scope and explicit `-e` arguments with `pi list` and
+`pi config`; omit old adapter arguments on the next launch. An unknown competing adapter must be disabled before
+installation continues. A conflicting registration produces Pi's native diagnostic in either load order; Pi may
+continue session binding. This is not runtime quarantine, an early fatal barrier or replacement of a future
+`refresh()` call. Mixed-adapter operation is unsupported. Restart Pi after replacement.
 
 ## Disable and restore stock Pi
 
