@@ -11,8 +11,9 @@ Every accepted decision, with its reason and the file that carries it.
 
 ## Scope
 
-- my-pi is built on stock Pi 1.3.0 with its own tools (`read`, `bash`, `edit`, `write`); the interface and the omp-lite
-  tools are dropped (user: «Давай полностью отбросим все UI припоны и оставим только чистую механику и промпты»,
+- my-pi is built on stock Pi 1.3.0 with stock tools and its own extensions. Only `RQW-models` and `RQW-statusbar`
+  ported UI, as described in [Models](#models) and [Statusbar](#statusbar); other omp-lite UI and tools are not
+  carried over (user: «Давай полностью отбросим все UI припоны и оставим только чистую механику и промпты»,
   «Так же мы можем отбросить тулинг»).
 - Reason: bench41 (`~/Documents/ChatGPT/my-omp-harness/bench/bench41.csv`, T01-T07, 3 runs): the omp-lite prompt alone
   raised stock Pi by 10.2 quality points on gpt-6-sol low, 6.2 on gpt-6-sol medium and 1.9 on gpt-6.1-sol medium;
@@ -21,10 +22,10 @@ Every accepted decision, with its reason and the file that carries it.
 - Dropped for good: loading of `eval`, `lsp`, `ast_grep` (user: «eval нахуй не нужен, lsp ... ast-grep ... выбросить
   всё это на помойку»; Pi has its own codemode).
 - Postponed, not dropped (user: «мы их не упраздняем, а откладываем»): `codebase_explorer`, `code_writer`,
-  `shell_runner`, `custom`; the `define-goal` skill and work orders; the task list with the check before stopping
-  (later switched on by a skill rather than always on); and the interface (whether the omp-lite UI can be rebuilt in Pi
-  is decided later). The built-in `agent` and `review` tools are implemented separately; see [Agent](#agent) and
-  [Review](#review) below.
+  `shell_runner`, `custom`; the `define-goal` skill and work orders; and the task list with the check before stopping
+  (later switched on by a skill rather than always on). The extension-provided `agent` and `review` tools are
+  implemented separately; see [Agent](#agent) and [Review](#review) below. `RQW-models` and `RQW-statusbar` also port UI;
+  see [Models](#models) and [Statusbar](#statusbar).
 - Active engineering workers, including subagents, use GPT-6.1-Sol low, medium or high; small checks may use GPT-6-Luna, and GPT-6-Sol is also available at a task-appropriate reasoning level. RQW Review finishes on GPT-6.1-Sol low and GPT-6-Sol low. This supersedes the earlier active Sonnet/Opus worker rule (user: «Всё остальное продолжай делать моделями GPT-6-1-sol low, medium, high»; «RKV Review заканчивает на моделях GPT-6-1-Sol-Low и GPT-6-Low»).
 - Claude model probes, benchmarks and tuning are dormant until the owner explicitly resumes them; do not start or continue those runs before then (user: «замеры на Sonnet ... на паузе»; «дам команду, когда их продолжать»). Existing results remain. This pause does not change product reviewer model pins such as Haiku 5.5 and Sonnet 5.5 below.
 - Non-Claude model probes, including the four SYSTEM.md edits, may run on GPT-6 and GPT-6.1 now.
