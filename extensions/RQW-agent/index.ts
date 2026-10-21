@@ -119,7 +119,8 @@ export default function agent(pi: ExtensionAPI) {
 			late.push(message);
 			return;
 		}
-		if (mainAborted) {
+		// A previous abort pauses idle delivery only; a new busy run may still be in an earlier start hook.
+		if (mainAborted && main?.isIdle() !== false) {
 			pi.sendMessage(message, { triggerTurn: false });
 			return;
 		}
@@ -424,7 +425,7 @@ export default function agent(pi: ExtensionAPI) {
 		mainAborted = event.aborted;
 		settling = false;
 		const held = late.splice(0);
-		held.forEach((message, i) => pi.sendMessage(message, { triggerTurn: !mainAborted && i === held.length - 1 }));
+		held.forEach((message, i) => pi.sendMessage(message, { triggerTurn: !event.aborted && i === held.length - 1 }));
 	});
 	const runs = () => [...agents.values()].flatMap((a) => (a.run ? [a.run.done] : []));
 	pi.on("session_shutdown", () => {
