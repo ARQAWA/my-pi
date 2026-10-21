@@ -1,4 +1,4 @@
-// Git facts the bar needs beyond Pi's branch: whether the cwd is a linked worktree, and the file counts.
+// Git facts owned by the bar: repository discovery, branch and file counts.
 import { execFile } from "node:child_process";
 import { readFileSync, type Stats, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
@@ -54,4 +54,16 @@ export function gitCounts(root: string): Promise<GitCounts | undefined> {
 		(error, stdout) => done(error ? undefined : parsePorcelain(stdout)),
 	);
 	return promise;
+}
+
+/** Live branch, including unborn branches; detached HEAD matches Pi's footer label. */
+export function gitBranch(root: string): Promise<string | null> {
+	return new Promise((done) => {
+		execFile(
+			"git",
+			["--no-optional-locks", "symbolic-ref", "--quiet", "--short", "HEAD"],
+			{ cwd: root, timeout: 5000, windowsHide: true },
+			(error, stdout) => done(error ? (error.code === 1 ? "detached" : null) : stdout.trim() || null),
+		);
+	});
 }

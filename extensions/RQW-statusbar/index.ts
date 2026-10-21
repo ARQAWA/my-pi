@@ -3,7 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
-import { findRepo, gitCounts, type RepoInfo } from "./git.ts";
+import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
 import { type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar } from "./render.ts";
 
 const GIT_POLL_MS = 10_000;
@@ -51,6 +51,7 @@ export default function statusbar(pi: ExtensionAPI) {
 			let cwd: string | undefined;
 			let repo: RepoInfo | undefined;
 			let counts: GitCounts | undefined;
+			let branch: string | null = null;
 			let busy = false;
 			let again = false;
 			let cacheKey: unknown[] = [];
@@ -69,11 +70,14 @@ export default function statusbar(pi: ExtensionAPI) {
 						again = false;
 						const targetCwd = ctx.cwd;
 						const target = findRepo(targetCwd);
-						const next = target ? await gitCounts(target.root) : undefined;
+						const [nextCounts, nextBranch] = target
+							? await Promise.all([gitCounts(target.root), gitBranch(target.root)])
+							: [undefined, null] as const;
 						if (!disposed && ctx.cwd === targetCwd) {
 							cwd = targetCwd;
 							repo = target;
-							counts = next;
+							counts = nextCounts;
+							branch = nextBranch;
 						}
 					} while (again && !disposed);
 				} finally { busy = false; }
@@ -102,6 +106,7 @@ export default function statusbar(pi: ExtensionAPI) {
 						cwd = ctx.cwd;
 						repo = findRepo(cwd);
 						counts = undefined;
+						branch = null;
 						void refreshGit();
 					}
 					const model = ctx.model;
@@ -116,7 +121,6 @@ export default function statusbar(pi: ExtensionAPI) {
 						};
 						cacheKey = key;
 					}
-					const branch = footer.getGitBranch();
 					return renderBar({
 						model,
 						thinkingLevel: pi.getThinkingLevel(),

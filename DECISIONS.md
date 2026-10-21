@@ -383,6 +383,11 @@ Every accepted decision, with its reason and the file that carries it.
   agent/job counts and PR metadata. The tokens/second slot uses a local streaming estimate, corrected by billed
   output at message end, not omp's private smoothed meter. Limits, source citations and test samples live only in
   `notes/statusbar-omp.md`. Colors are stock Pi semantic colors, without tuning.
+- Branch and counts use the extension's own repository discovery and asynchronous git refresh, not Pi's cached
+  `getGitBranch()`. Owner: "Use extension's own repo discovery/async git refresh to update branch reliably
+  (including replacing repo and branch checkout), not just counts". Reason: Pi caches absent metadata when a session
+  starts outside git and does not rediscover it after init in the same cwd. Carried by `extensions/RQW-statusbar/{git,index}.ts`;
+  real-provider regression and evidence: `notes/statusbar-omp.md`.
 - Task-specific execution: owner requires "no Anthropic or other live model requests, no nested agents" and
   "Commit on branch, no push/merge". Proof uses deterministic snapshots, no-request Pi library/bundle sessions,
   local git fixtures and a PTY smoke run where available. No independent agent review or model run is authorized

@@ -9,13 +9,15 @@ import type { Component } from "@earendil-works/pi-tui";
 import * as library from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext, ExtensionMode, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import statusbar, { contextLimit } from "../index.ts";
-import { findRepo, gitCounts } from "../git.ts";
+import { findRepo, gitBranch, gitCounts } from "../git.ts";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 // The exports map hides the bundle; exercise this runtime loading boundary by resolved file URL.
 const bundle: typeof library = await import(new URL("./bundle/index.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 
-function uiHarness() {
+const { FooterDataProvider } = await import(new URL("./core/footer-data-provider.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
+
+function uiHarness(footer?: InstanceType<typeof FooterDataProvider>) {
 	let component: (Component & { dispose?(): void }) | undefined;
 	let calls = 0, renders = 0, subscriptions = 0;
 	const statuses = new Map<string, string>();
@@ -25,7 +27,7 @@ function uiHarness() {
 			component?.dispose?.();
 			component = factory?.({ requestRender: () => renders++ } as never,
 				{ fg: (_role: string, text: string) => text } as never,
-				{ getGitBranch: () => null, getExtensionStatuses: () => statuses,
+				footer ?? { getGitBranch: () => null, getExtensionStatuses: () => statuses,
 					onBranchChange: () => { subscriptions++; return () => { subscriptions--; }; },
 					getAvailableProviderCount: () => 0 });
 		},
@@ -94,6 +96,56 @@ for (const [label, pi, capped] of [["library", library, false], ["bundle", bundl
 	});
 }
 
+it("refreshes branches after git init, checkout and repo replacement despite Pi's cached absence", async (t) => {
+	t.mock.timers.enable({ apis: ["setInterval"] });
+	const cwd = mkdtempSync(join(tmpdir(), "rqw-status-branch-"));
+	const footer = new FooterDataProvider(cwd);
+	const h = uiHarness(footer);
+	const handlers = new Map<string, Function>();
+	const git = (...args: string[]) => execFileSync("git", args, { cwd, stdio: "ignore" });
+	const ctx = { mode: "tui", cwd, ui: h.ui, model: undefined,
+		sessionManager: { getSessionId: () => "id", getLeafId: () => null, getEntryCount: () => 0, getEntries: () => [] },
+		getContextUsage: () => undefined };
+	statusbar({ on: (event: string, fn: Function) => handlers.set(event, fn), registerCommand() {},
+		getSettings: () => ({}), getThinkingLevel: () => "off" } as unknown as ExtensionAPI);
+	async function refresh(action: () => void) {
+		const previous = h.renders;
+		action();
+		for (let i = 0; h.renders === previous && i < 500; i++) {
+			await new Promise(resolve => setTimeout(resolve, 10));
+		}
+		assert.ok(h.renders > previous, "async git refresh requested render");
+	}
+	try {
+		assert.equal(footer.getGitBranch(), null, "real Pi provider caches absent repo");
+		handlers.get("session_start")!({}, ctx);
+		assert.doesNotMatch(h.render()![2], /new-branch/);
+		git("init", "-b", "new-branch");
+		writeFileSync(join(cwd, "new-file"), "x");
+		await refresh(() => handlers.get("tool_execution_end")!({}, ctx));
+		assert.match(h.render()![2], /new-branch.*\?1/);
+		git("checkout", "-b", "switched-branch");
+		await refresh(() => handlers.get("agent_end")!({}, ctx));
+		assert.match(h.render()![2], /switched-branch.*\?1/);
+		assert.doesNotMatch(h.render()![2], /new-branch/);
+		rmSync(join(cwd, ".git"), { recursive: true, force: true });
+		git("init", "-b", "replacement-branch");
+		await refresh(() => t.mock.timers.tick(10_000));
+		assert.match(h.render()![2], /replacement-branch.*\?1/);
+		assert.doesNotMatch(h.render()![2], /switched-branch/);
+		rmSync(join(cwd, ".git"), { recursive: true, force: true });
+		await refresh(() => t.mock.timers.tick(10_000));
+		assert.doesNotMatch(h.render()![2], /replacement-branch|\?1/);
+		assert.equal(footer.getGitBranch(), null, "Pi's stale cache was not mutated");
+		handlers.get("session_shutdown")!({}, ctx);
+		const renders = h.renders;
+		t.mock.timers.tick(20_000);
+		assert.equal(h.renders, renders, "shutdown clears polling");
+	} finally {
+		h.dispose(); footer.dispose(); rmSync(cwd, { recursive: true, force: true });
+	}
+});
+
 it("Pi reserves, model overrides and disabled compaction are read without changing settings", () => {
 	const model = { provider: "p", id: "m", contextWindow: 500000 } as ExtensionContext["model"];
 	const ctx = { model };
@@ -132,9 +184,14 @@ it("git handles ordinary repos, missing git/metadata, linked worktrees, and file
 	try {
 		assert.equal(findRepo(cwd), undefined);
 		assert.equal(await gitCounts(cwd), undefined);
+		assert.equal(await gitBranch(cwd), null);
 		git("init", "-b", "main"); git("config", "user.email", "test@example.invalid"); git("config", "user.name", "Test");
 		writeFileSync(join(cwd, "one"), "one"); git("add", "."); git("commit", "-m", "init");
 		assert.deepEqual(findRepo(cwd), { root: cwd });
+		assert.equal(await gitBranch(cwd), "main");
+		git("checkout", "--detach");
+		assert.equal(await gitBranch(cwd), "detached");
+		git("checkout", "main");
 		writeFileSync(join(cwd, "one"), "changed"); writeFileSync(join(cwd, "new"), "new");
 		assert.deepEqual(await gitCounts(cwd), { staged: 0, unstaged: 1, untracked: 1 });
 		git("add", "one");
@@ -142,10 +199,15 @@ it("git handles ordinary repos, missing git/metadata, linked worktrees, and file
 		git("worktree", "add", "-b", "topic", join(cwd, "linked"));
 		assert.deepEqual(findRepo(join(cwd, "linked")), { root: join(cwd, "linked"),
 			worktree: { project: cwd.split(/[\\/]/).at(-1), name: "linked" } });
+		assert.equal(await gitBranch(join(cwd, "linked")), "topic");
 		const noGit = join(cwd, "broken"); mkdirSync(noGit); writeFileSync(join(noGit, ".git"), "gitdir: missing\n");
 		assert.deepEqual(findRepo(noGit), { root: noGit, worktree: undefined });
 		const original = process.env.PATH;
-		try { process.env.PATH = ""; assert.equal(await gitCounts(cwd), undefined); }
+		try {
+			process.env.PATH = "";
+			assert.equal(await gitCounts(cwd), undefined);
+			assert.equal(await gitBranch(cwd), null);
+		}
 		finally { process.env.PATH = original; }
 	} finally { rmSync(cwd, { recursive: true, force: true }); }
 });

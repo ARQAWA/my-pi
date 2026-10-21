@@ -60,7 +60,10 @@ forms; Windows root comparison ignores case, with directory boundaries. Git uses
 
 Pi is pinned at 1.3.0. The implementation uses `ctx.mode === "tui"` and the supported
 `ctx.ui.setFooter(factory)` API. `setFooter(undefined)` restores Pi's built-in footer. The factory receives the
-TUI, theme and `ReadonlyFooterDataProvider`: branch, extension statuses and a branch-change subscription.
+TUI, theme and `ReadonlyFooterDataProvider`: extension statuses and a branch-change subscription.
+The bar discovers repositories itself and refreshes branch and counts with asynchronous git calls, never with
+synchronous git calls during render. It does not read Pi's cached branch: that cache can retain an absent repository
+after `git init` in the same cwd. Every refresh rediscovers metadata, including repository replacement and checkout.
 The component owns and disposes its subscription and 10-second git poll, including replacement, toggle and shutdown.
 In-flight git results cannot update a disposed footer. Tools and agent completion trigger a refresh too.
 No settings, session, git or filesystem queries are made by this extension in print, JSON or RPC mode.
@@ -117,7 +120,9 @@ Other extensions that replace the footer share Pi's single footer slot; last set
 no-model/unknown context, overflow, thinking labels, Windows and UNC paths, porcelain records and rate arithmetic.
 `statusbar.test.ts` loads the extension in real Pi library and CLI-bundle sessions without sending any prompt,
 checks live state changes, compaction count, thresholds, status ordering, toggle and non-TUI guards. It also tests
-real temporary git repositories/worktrees, missing git and malformed metadata. These tests join existing `npm test`
+real temporary git repositories/worktrees, missing git and malformed metadata. A real Pi `FooterDataProvider`
+regression starts outside git, runs `git init -b new-branch` in the same cwd, switches branch, replaces and removes
+the repository, and checks tool/agent refresh, polling and shutdown cleanup without changing Pi's stale cache. These tests join existing `npm test`
 and the existing macOS/Linux/Windows CI matrix without adding a new dependency.
 
 Real PTY smoke: `python3 extensions/RQW-statusbar/test/tui-smoke.py` runs the actual CLI in an isolated agent
@@ -158,10 +163,12 @@ Width 24:
 
 ### Local results
 
-- Node 26.7.0: `npm test -- --test-reporter=dot`, 254 tests, 253 passed, 0 failed, 1 skipped.
-- Node 22.19.0: `node --test --test-reporter=spec "extensions/*/test/*.test.ts"`,
-  254 tests, 253 passed, 0 failed, 1 skipped. The skipped test is the pre-existing native Windows real-path test.
-- After the final live-thinking assertion, the focused statusbar suite passed all 15 tests on both Node versions.
+- Node 26.7.0: `npm test -- --test-reporter=dot`, 255 tests, 254 passed, 0 failed, 1 skipped.
+- Node 22.19.0: `npm test -- --test-reporter=dot` with Node 22 first on `PATH`,
+  255 tests, 254 passed, 0 failed, 1 skipped. The skipped test is the pre-existing native Windows real-path test.
+- The real-provider regression fails on the old code: counts appear after init but `new-branch` is absent.
+  With the fix, init, checkout, repository replacement/removal and polling cleanup all pass.
+  The original review repro now prints `new-branch ?1`, matching `actual branch: new-branch` on both Node versions.
 - Real CLI PTY smoke passed on Node 22.19.0 and Node 26.7.0: no available model, off/on, narrow resize, clean exit.
   Startup waits for the footer rather than assuming a fixed startup time; a cached fd binary is copied into the
   temporary agent directory when available to avoid a redundant startup download.
