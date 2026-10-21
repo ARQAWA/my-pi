@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { Type } from "typebox";
 import { nearestMatchHint } from "./hint.ts";
-import { pathKey, resolvePath } from "./keys.ts";
+import { editPathKey, resolvePath } from "./keys.ts";
 import { withRetry } from "./retry.ts";
 
 // Multi-file edit over the stock edit definition (design decision 4).
@@ -39,7 +39,7 @@ type Group = { path: string; abs: string; edits: { oldText: string; newText: str
 
 function keyOf(path: string, cwd: string): string {
 	try {
-		const key = pathKey(path, cwd);
+		const key = editPathKey(path, cwd);
 		if (key !== undefined) return key;
 	} catch {}
 	return resolve(cwd, path);

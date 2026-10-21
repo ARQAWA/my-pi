@@ -1,7 +1,6 @@
 import { Type } from "typebox";
-import { pathKey } from "./keys.ts";
+import { writePathKeys } from "./keys.ts";
 import { withRetry } from "./retry.ts";
-import { resolve } from "node:path";
 
 // Multi-file write over the stock write definition (design decision 5).
 
@@ -20,14 +19,6 @@ export function createWriteSchema(stockParameters: any) {
 			),
 		),
 	});
-}
-
-function keyOf(path: string, cwd: string): string {
-	try {
-		const key = pathKey(path, cwd);
-		if (key !== undefined) return key;
-	} catch {}
-	return resolve(cwd, path);
 }
 
 const FORM_ERROR = "Give path and content, or files, not both";
@@ -69,12 +60,13 @@ export async function executeWrite(stockExecute: any, id: string, params: any, s
 		files = [{ path: params.path, content: params.content }];
 	}
 
-	const keys = files.map((file) => keyOf(file.path, base));
+	const keys = writePathKeys(files.map((file) => file.path), base, signal);
 	for (let i = 0; i < files.length; i++) {
 		for (let j = i + 1; j < files.length; j++) {
-			if (keys[i] === keys[j]) throw new Error(`files lists ${files[j].path} twice`);
-			if (isInside(keys[i], keys[j])) throw new Error(`files lists ${files[i].path} and ${files[j].path}, one inside the other`);
-			if (isInside(keys[j], keys[i])) throw new Error(`files lists ${files[j].path} and ${files[i].path}, one inside the other`);
+			const a = keys[i], b = keys[j];
+			if (a.key === b.key || (a.leaf !== undefined && a.leaf === b.leaf)) throw new Error(`files lists ${files[j].path} twice`);
+			if (isInside(a.key, b.key)) throw new Error(`files lists ${files[i].path} and ${files[j].path}, one inside the other`);
+			if (isInside(b.key, a.key)) throw new Error(`files lists ${files[j].path} and ${files[i].path}, one inside the other`);
 		}
 	}
 

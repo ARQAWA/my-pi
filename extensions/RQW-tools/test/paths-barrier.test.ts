@@ -1,6 +1,6 @@
 // Real filesystem regressions for the path/barrier audit. Gates expose overlap without large writes or sleeps.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -48,6 +48,41 @@ function harness(dir: string, heldId: string) {
   return { nested, events, hold, started, run };
 }
 
+async function equivalent(a: string, b: string): Promise<boolean> {
+  try {
+    const [x, y] = await Promise.all([stat(a), stat(b)]);
+    return x.dev === y.dev && x.ino === y.ino;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+test("native FS-equivalent new Sigma/final-sigma writes share a key and cannot overlap", { timeout: 10000 }, async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "rqw-sigma-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await writeFile(join(dir, "\u03a3-probe"), "probe");
+  if (!await equivalent(join(dir, "\u03a3-probe"), join(dir, "\u03c2-probe"))) {
+    return t.skip("native filesystem distinguishes Sigma and final sigma");
+  }
+  await rm(join(dir, "\u03a3-probe"));
+  assert.equal(scopeOf("write", { path: "\u03a3.txt" }, dir).keys[0], scopeOf("write", { path: "\u03c2.txt" }, dir).keys[0], "both files are still absent");
+  const h = harness(dir, "first");
+  const first = h.run("write", "first", { path: "\u03a3.txt", content: "FIRST\n" });
+  const second = h.run("write", "second", { path: "\u03c2.txt", content: "SECOND\n" });
+  try {
+    await h.started.open;
+    await tick();
+    assert.deepEqual(h.events, ["first:start"], "second cannot start while the new-file write is held");
+  } finally {
+    h.hold.release();
+    await Promise.all([first, second]);
+  }
+  assert.deepEqual(h.events, ["first:start", "first:end", "second:start", "second:end"]);
+  assert.equal(await readFile(join(dir, "\u03a3.txt"), "utf8"), "SECOND\n");
+  assert.equal(await readFile(join(dir, "\u03c2.txt"), "utf8"), "SECOND\n");
+});
+
 test("AM/PM U+202F fallback read precedes a write through an existing file alias", { timeout: 10000 }, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "rqw-ampm-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -81,8 +116,8 @@ test("AM/PM U+202F fallback read precedes a write through an existing file alias
   assert.equal(await readFile(join(dir, actual), "utf8"), "NEW\n");
 });
 
-test("same-batch bash retarget resolves later paths after all, directly and inside codemode", { timeout: 10000 }, async (t) => {
-  for (const grouped of [false, true]) {
+for (const grouped of [false, true]) {
+  test(`same-batch bash retarget resolves later write/read paths after all${grouped ? " inside codemode group" : ""}`, { timeout: 10000 }, async (t) => {
     const dir = await mkdtemp(join(tmpdir(), "rqw-retarget-"));
     t.after(() => rm(dir, { recursive: true, force: true }));
     await mkdir(join(dir, "old"));
@@ -123,5 +158,39 @@ test("same-batch bash retarget resolves later paths after all, directly and insi
     if (outside) assert.equal(text(await outside), "NEW\n");
     assert.equal(await readFile(join(dir, "next/f.txt"), "utf8"), "NEW\n");
     assert.equal(await readFile(join(dir, "old/f.txt"), "utf8"), "OLD TARGET\n");
+  });
+}
+
+
+test("conservative barrier Unicode collisions never merge distinct multi-file edit/write targets", { timeout: 10000 }, async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "rqw-unicode-groups-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  let names: [string, string] | undefined;
+  for (const [i, pair] of [["\u00df", "ss"], ["\u0131", "i"], ["\u1c90", "\u10d0"]].entries()) {
+    const a = `${i}-${pair[0]}.txt`;
+    const b = `${i}-${pair[1]}.txt`;
+    await writeFile(join(dir, a), "UNICODE OLD\n");
+    await writeFile(join(dir, b), "OTHER OLD\n");
+    if (await equivalent(join(dir, a), join(dir, b))) continue;
+    const scopes = [a, b].map((name) => scopeOf("write", { path: name, content: "" }, dir));
+    if (process.platform !== "linux" && scopes[0].keys[0] !== scopes[1].keys[0]) continue;
+    names = [a, b];
+    break;
   }
+  if (!names) return t.skip("no distinct probed names share the native conservative conflict route");
+  const [a, b] = names;
+  assert.notEqual(pathKey(a, dir), pathKey(b, dir), "grouping needs identity, not a conservative conflict key");
+  const h = harness(dir, "unused");
+  await h.run("edit", "edit", { edits: [
+    { path: a, oldText: "UNICODE OLD", newText: "UNICODE NEW" },
+    { path: b, oldText: "OTHER OLD", newText: "OTHER NEW" },
+  ] });
+  assert.equal(await readFile(join(dir, a), "utf8"), "UNICODE NEW\n");
+  assert.equal(await readFile(join(dir, b), "utf8"), "OTHER NEW\n");
+  await h.run("write", "write", { files: [
+    { path: a, content: "UNICODE FINAL\n" },
+    { path: b, content: "OTHER FINAL\n" },
+  ] });
+  assert.equal(await readFile(join(dir, a), "utf8"), "UNICODE FINAL\n");
+  assert.equal(await readFile(join(dir, b), "utf8"), "OTHER FINAL\n");
 });
