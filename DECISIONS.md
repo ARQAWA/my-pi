@@ -11,8 +11,9 @@ Every accepted decision, with its reason and the file that carries it.
 
 ## Scope
 
-- my-pi is built on stock Pi 1.3.0 with its own tools (`read`, `bash`, `edit`, `write`); the interface and the omp-lite
-  tools are dropped (user: «Давай полностью отбросим все UI припоны и оставим только чистую механику и промпты»,
+- my-pi is built on stock Pi 1.3.0 with stock tools and its own extensions. Only `RQW-models` and `RQW-statusbar`
+  ported UI, as described in [Models](#models) and [Statusbar](#statusbar); other omp-lite UI and tools are not
+  carried over (user: «Давай полностью отбросим все UI припоны и оставим только чистую механику и промпты»,
   «Так же мы можем отбросить тулинг»).
 - Reason: bench41 (`~/Documents/ChatGPT/my-omp-harness/bench/bench41.csv`, T01-T07, 3 runs): the omp-lite prompt alone
   raised stock Pi by 10.2 quality points on gpt-6-sol low, 6.2 on gpt-6-sol medium and 1.9 on gpt-6.1-sol medium;
@@ -20,16 +21,11 @@ Every accepted decision, with its reason and the file that carries it.
 - Public repository [ARQAWA/my-pi](https://github.com/ARQAWA/my-pi) (user: «он должен быть паблик»).
 - Dropped for good: loading of `eval`, `lsp`, `ast_grep` (user: «eval нахуй не нужен, lsp ... ast-grep ... выбросить
   всё это на помойку»; Pi has its own codemode).
-- Postponed, not dropped (user: «мы их не упраздняем, а откладываем»): subagents (`review`, `codebase_explorer`,
-  `code_writer`, `shell_runner`, `custom`), the `define-goal` skill and work orders, the task list with the check
-  before stopping (later switched on by a skill rather than always on), and the interface (whether the omp-lite UI can
-  be rebuilt in Pi is decided later).
-- Reviewers are ported after all, as the one exception to the postponed subagents: two blind reviewers, `blind` and
-  `high`, with one shared prompt (user: «Smart не нужен ... Надо только большого и маленького reviewer ... будет Blind и
-  High»). They run in the same process through Pi's SDK `createAgentSession` (user: «Да, конечно, через SDK, через
-  createAgentSession»), read only, and are checked on a model with a known-answer set (user: «Конечно, делай
-  проверки, расходуй токены»). Their concept and models come from the history first: Spotty and Bossy in
-  `my-omp-harness` branch `deprecated` (Haiku 5.5 and Sonnet 5.5) and in `my-codex-harness` (gpt-6-sol, gpt-6.1-sol).
+- Postponed, not dropped (user: «мы их не упраздняем, а откладываем»): `codebase_explorer`, `code_writer`,
+  `shell_runner`, `custom`; the `define-goal` skill and work orders; and the task list with the check before stopping
+  (later switched on by a skill rather than always on). The extension-provided `agent` and `review` tools are
+  implemented separately; see [Agent](#agent) and [Review](#review) below. `RQW-models` and `RQW-statusbar` also port UI;
+  see [Models](#models) and [Statusbar](#statusbar).
 - Active engineering workers, including subagents, use GPT-6.1-Sol low, medium or high; small checks may use GPT-6-Luna, and GPT-6-Sol is also available at a task-appropriate reasoning level. RQW Review finishes on GPT-6.1-Sol low and GPT-6-Sol low. This supersedes the earlier active Sonnet/Opus worker rule (user: «Всё остальное продолжай делать моделями GPT-6-1-sol low, medium, high»; «RKV Review заканчивает на моделях GPT-6-1-Sol-Low и GPT-6-Low»).
 - Claude model probes, benchmarks and tuning are dormant until the owner explicitly resumes them; do not start or continue those runs before then (user: «замеры на Sonnet ... на паузе»; «дам команду, когда их продолжать»). Existing results remain. This pause does not change product reviewer model pins such as Haiku 5.5 and Sonnet 5.5 below.
 - Non-Claude model probes, including the four SYSTEM.md edits, may run on GPT-6 and GPT-6.1 now.
@@ -62,7 +58,6 @@ Every accepted decision, with its reason and the file that carries it.
   adapter `RQW-anthropic` (Claude Code login, as in omp, with self-healing); every other provider is hidden (user:
   «Это именно отключить. Когда мы заходим в логин, там должны быть только кодекс, авторизация и авторизация через
   Anthropic, которую ты сейчас делаешь. И всё»).
-- Open work: `RQW-context` (context window and compaction rule) and faster file writing in `RQW-tools`.
 
 ## Structure
 
@@ -75,9 +70,10 @@ Every accepted decision, with its reason and the file that carries it.
   no `apply_patch`, one edit format for every model (user: «имена такие же, как в P... никакой хуйни не надо
   навяливать из ОМП лайта»; «Нет, не надо для GPT patch делать. Пусть работает одинаково везде»).
 - `INSTALL.md` is the install prompt: the user runs it inside an already installed Pi, and that Pi installs this
-  package into itself with `pi install` and asks for `/reload` (user: «чтобы можно было его везде воссоздавать,
+  package into itself with `pi install`; after install it requests `/reload` or restart, and after `pi update` it
+  requires a restart so process-wide patches use updated code (user: «чтобы можно было его везде воссоздавать,
   воссобирать с нуля, просто промтом одним через install prompt»; «install.md — это про установку именно наших обвесов
-  на уже установленный Pi. Я внутри Pi запускаю этот промпт»).
+  на уже установленный Pi. Я внутри Pi запускаю этот промпт»). See `INSTALL.md`, step 4.
 - The start was empty: both extensions were no-ops. The prompt is built first, everything else after it (user: «Старт
   должен быть пустой... сначала надо сделать промпт пиздатый, а потом всё остальное будем делать»).
 
