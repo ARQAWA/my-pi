@@ -1,7 +1,7 @@
 // Extension 2: replaces Pi's default prompt prefix (preamble, tool list, rules, docs) with SYSTEM.md and appends the
 // workstation, critical, environment and date blocks. Pi still appends project context, skills and <cwd> after it.
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { accessSync, constants, readFileSync } from "node:fs";
+import type { ExtensionAPI, NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
+import { accessSync, constants, readFileSync, statSync } from "node:fs";
 import { arch, homedir, release } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +17,9 @@ function onPath(name: string): boolean {
 		if (!dir) return false;
 		return suffixes.some(ext => {
 			try {
-				accessSync(join(dir, name + ext.toLowerCase()), constants.F_OK);
+				const path = join(dir, name + ext.toLowerCase());
+				if (!statSync(path).isFile()) return false;
+				if (process.platform !== "win32") accessSync(path, constants.X_OK);
 				return true;
 			} catch {
 				return false;
@@ -26,14 +28,15 @@ function onPath(name: string): boolean {
 	});
 }
 
-// Computed once per process: PATH and home do not change during a session.
-const ENVIRONMENT = (() => {
+function environment(options: NormalizedBuildSystemPromptOptions): string {
 	const found = ENV_PROGRAMS.filter(onPath);
 	const home = homedir().replace(/\\/g, "/");
-	return `Environment: shell: the bash tool runs bash; paths: absolute like ${home}/... with forward slashes; programs on PATH: ${found.length ? found.join(", ") : "none found"}.`;
-})();
+	const shell = options.selectedTools.includes("bash") && !options.hiddenTools.includes("bash")
+		? "shell: the bash tool runs bash; " : "";
+	return `Environment: ${shell}paths: absolute like ${home}/... with forward slashes; programs on PATH: ${found.length ? found.join(", ") : "none found"}.`;
+}
 
-function tail(model: string): string {
+function tail(model: string, options: NormalizedBuildSystemPromptOptions): string {
 	return [
 		"<project-context>",
 		"<workstation>",
@@ -49,15 +52,29 @@ function tail(model: string): string {
 		"- Before yielding, MUST verify significant behavioral changes: run the specific test, command, or scenario covering the change.",
 		"</critical>",
 		"",
-		ENVIRONMENT,
+		environment(options),
 		// The working directory comes from Pi's own <cwd> section.
-		`Today: ${new Date().toISOString().slice(0, 10)}. Do not repeat this information in your reply.`,
+		`Today (UTC): ${new Date().toISOString().slice(0, 10)}. Do not repeat this information in your reply.`,
 	].join("\n");
 }
 
 export default function prompt(pi: ExtensionAPI) {
+	let prepared: { options: NormalizedBuildSystemPromptOptions; value: string } | undefined;
 	pi.on("before_agent_start", (event, ctx) => {
+		prepared = undefined;
+		const options = event.systemPromptOptions;
+		// Pi creates fresh run options from the loader, not from our previous prefix.
+		if (options.customPrompt !== undefined || options.forceSystemPrompt !== undefined) return;
 		const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "unknown";
-		event.systemPromptOptions.customPrompt = `${SYSTEM}\n\n${tail(model)}`;
+		const value = `${SYSTEM}\n\n${tail(model, options)}`;
+		options.customPrompt = value;
+		prepared = { options, value };
 	});
+	pi.on("model_select", (event) => {
+		// A later before_agent_start handler can select the model or take over the prefix.
+		if (!prepared || prepared.options.forceSystemPrompt !== undefined || prepared.options.customPrompt !== prepared.value) return;
+		prepared.value = `${SYSTEM}\n\n${tail(`${event.model.provider}/${event.model.id}`, prepared.options)}`;
+		prepared.options.customPrompt = prepared.value;
+	});
+	pi.on("agent_start", () => { prepared = undefined; });
 }
