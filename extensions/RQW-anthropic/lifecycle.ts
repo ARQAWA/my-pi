@@ -1,4 +1,5 @@
 import { AgentSession, type ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { bindSessionCache } from "./cache.ts";
 
 export const SESSION_BIND = "rqw-anthropic:session-bind";
 const PATCH = Symbol.for("rqw-anthropic/lifecycle");
@@ -6,6 +7,7 @@ type Cleanup = () => void;
 type Lease = { streamSimple: unknown; restore?: Cleanup };
 type PatchState = {
 	count: number;
+	cacheBindings: Map<AgentSession, Cleanup>;
 	callbacks: WeakMap<object, Set<Cleanup>>;
 	leases: WeakMap<ModelRuntime, Map<Cleanup, Lease>>;
 	originals: [string, PropertyDescriptor][];
@@ -28,15 +30,20 @@ export function installLifecycle(cleanup: Cleanup, Session = AgentSession): Life
 		if (originals.some(([, descriptor]) => typeof descriptor?.value !== "function" || !descriptor.configurable)) {
 			throw new Error("RQW-anthropic: incompatible Pi lifecycle; requires Pi 1.3.0. Nothing was patched.");
 		}
-		state = { count: 0, callbacks: new WeakMap(), leases: new WeakMap(), originals: originals as PatchState["originals"] };
+		state = { count: 0, cacheBindings: new Map(), callbacks: new WeakMap(), leases: new WeakMap(), originals: originals as PatchState["originals"] };
 		const installed = state;
 		for (const [name, descriptor] of installed.originals) {
 			const original = descriptor.value;
 			const wrapped = name === "dispose" ? function(this: AgentSession) {
 				try {
 					for (const release of [...(installed.callbacks.get(this) ?? [])]) release();
-				} finally { original.call(this); }
+				} finally {
+					installed.cacheBindings.get(this)?.();
+					installed.cacheBindings.delete(this);
+					original.call(this);
+				}
 			} : function(this: AgentSession, ...args: unknown[]) {
+				if (!installed.cacheBindings.has(this)) installed.cacheBindings.set(this, bindSessionCache(this));
 				// SDK callers may omit session_start. Bind the exact session before native registration.
 				const ctx = this.extensionRunner.createContext();
 				for (const extension of this.resourceLoader.getExtensions().extensions) {
@@ -98,6 +105,8 @@ export function installLifecycle(cleanup: Cleanup, Session = AgentSession): Life
 			} finally {
 				bindings.clear();
 				if (--installed.count === 0) {
+					for (const restore of installed.cacheBindings.values()) restore();
+					installed.cacheBindings.clear();
 					for (const [name, descriptor] of installed.originals) Object.defineProperty(Session.prototype, name, descriptor);
 					delete owner[PATCH];
 				}

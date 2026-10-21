@@ -814,6 +814,17 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 ## Anthropic subscription adapter
 
+- Owner request (session 2026-10-21, lines 275, 281): «Почему ты не юзаешь какой-то часовой cash?»;
+  «Это надо будет пофиксить тоже». OAuth subscription requests default to 1-hour prompt caching; explicit request
+  retention and user-set `PI_CACHE_RETENTION` win. Engineering choice: request-local options before the SDK warmer
+  starts, not a process-wide env write, because the latter also changes OpenAI retention. `cache.ts` resolves Pi
+  auth before the SDK stream and supplies `long` for OAuth only; `lifecycle.ts` binds/restores this wrapper for
+  owning and shared-runtime child sessions, and `transport.ts` covers direct provider calls. API keys, unrelated
+  runtimes/providers and owner notice/warming settings stay unchanged. Reason: the provider alone runs too late
+  to set the warmer's TTL. Lifecycle cleanup restores stock behavior when the last adapter is disabled.
+  TTL, timing, pricing and Pi's prospective warmer-cost limitation have one reference:
+  `extensions/RQW-anthropic/README.md`, Prompt cache. Deterministic proof: its `test/cache.test.ts`.
+
 - Extension `extensions/RQW-anthropic/`, listed in `package.json`, owns transport, OAuth recovery and visibility.
   Owner requirement (C:3046): «они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать
   и выключать, как feature флаги». Engineering implementation: disable and reload unregisters only its overlay

@@ -43,6 +43,39 @@ successfully rotated refresh tokens, stay.
 The local `~/.pi/agent/rqw-anthropic-install-id` is a non-secret random installation id, created with mode 0600.
 It is not a token or an imported Claude Code identity and is inert when the extension is disabled.
 
+## Prompt cache
+
+OAuth subscription requests default to the 1-hour Anthropic prompt cache. Explicit `cacheRetention` options
+(`none`, `short`, `long`) and user-set scoped/process `PI_CACHE_RETENTION` remain untouched, including empty values.
+Pi interprets only env `long` as long retention; other env values retain its short default. Use the request option
+`cacheRetention: "none"`, not env `none`, to disable caching. Ordinary API-key requests keep stock defaults.
+
+`cache.ts` wraps the session's stream function before Pi's SDK starts CacheWarmer, resolving auth through Pi and
+passing a request-local `cacheRetention: "long"` only for OAuth. Native provider preparation still resolves its own
+credentials; no resolved key is forwarded. `transport.ts` supplies the same default for direct SDK/provider calls.
+Generic and reviewer sessions sharing the active runtime get the rule even without loading their own adapter.
+Unrelated runtimes/providers are unchanged. No process env, `showCacheMissNotices` or `cacheWarming` setting is edited.
+Disabling the last adapter owner restores the stream functions; surviving owners keep their runtime's rule.
+
+For Opus 5.5 the catalog TTLs are 300/3600 seconds. Pi schedules at 90% of TTL: 54 minutes, not 4m30s. Its unchanged
+one-hour streaming safety horizon allows at most one such warm; the 30-minute idle horizon prevents idle warming
+with this TTL. Warming still depends on the user's warming mode, replay safety and Pi's economic decision.
+
+Catalog USD estimates per million Opus 5.5 tokens: input 4, output 20, cache read 0.20, short cache write 5.
+Anthropic's 1-hour write costs 2x input (8), versus 1.25x (5) for five minutes, but can avoid repeated writes.
+Pi's parser records `cacheWrite1h`, and `calculateCost` charges those tokens at 2x input, so reported long-write
+usage is not incorrectly priced at the short rate. Limitation: Pi's warmer's prospective miss-cost estimate still
+uses the catalog's short-write rate, not 2x, and can underestimate the benefit of warming; this adapter does not
+patch that calculation. These are catalog cost estimates, not proof of subscription billing or live cache hits.
+
+The process-wide env alternative is deliberately not used: Pi's `openai-responses` maps `long` to 24h retention
+or (for explicit-mode models) 30m, subject to model compatibility and ChatGPT-sign-in field suppression.
+`openai-codex-responses` does not read that env for retention; only explicit option `none` removes its session
+cache key. Neither provider is changed by this adapter's request-local Anthropic default.
+
+Proof: `test/cache.test.ts` uses fake OAuth, real Pi SDK/library and CLI-bundle sessions, captured payloads and fake
+timers. It covers 1h TTL, no warm at 4m30s, shared-runtime children, explicit preferences, API keys and disable/reload.
+
 ## Recovery and security
 
 - Pi proactively refreshes expiring OAuth credentials under its store lock. This extension supplies a refresh

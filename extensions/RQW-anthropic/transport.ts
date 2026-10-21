@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { CredentialStore, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { AuthRecoveryError, LOGIN_HELP, recoverCredential } from "./auth.ts";
 import { assertAnthropicAuthBoundary } from "./auth-boundary.ts";
+import { subscriptionCacheOptions } from "./cache.ts";
 import { AUTH_ORIGIN, protectPartialStream, STREAM_CONTRACT, type AuthOrigin } from "./retry.ts";
 import { billingBody, versionState, type VersionState } from "./wire.ts";
 import { OVERLAY } from "./visibility.ts";
@@ -89,7 +90,7 @@ export function createOverlay(
 				} }, { status: error.status, headers: { "x-should-retry": "false" } });
 			}
 		};
-		return protectPartialStream(delegate(model, context, { ...options, maxRetries: 0, fetch }));
+		return protectPartialStream(delegate(model, context, { ...subscriptionCacheOptions(options), maxRetries: 0, fetch }));
 	};
 	Object.assign(handler, { [OVERLAY]: true });
 	return { api: "anthropic-messages", streamSimple: handler };
