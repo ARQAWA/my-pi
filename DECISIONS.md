@@ -54,6 +54,10 @@ Every accepted decision, with its reason and the file that carries it.
   работы ... как я работаю как владелец всей системы»).
 - `WORKFLOW-MANIFEST.md` is accepted with all nine sections, built from a keep/cut table of the
   old codex and omp manifests (user: «Да, давай оставим все пункты. Да, этот манифест мы оставим»).
+- Providers: `/login` and the model list show only two providers, openai-codex and our own Anthropic subscription
+  adapter `RQW-anthropic` (Claude Code login, as in omp, with self-healing); every other provider is hidden (user:
+  «Это именно отключить. Когда мы заходим в логин, там должны быть только кодекс, авторизация и авторизация через
+  Anthropic, которую ты сейчас делаешь. И всё»).
 - Open work: `RQW-context` (context window and compaction rule) and faster file writing in `RQW-tools`.
 
 ## Structure
