@@ -35,7 +35,8 @@ beyond the incoming main merge.
   uses a temporary Pi directory, strips inherited API-key/token/secret environment variables and
   rejects network. This also prevents an inherited OpenRouter key from making the independent
   model picker select a real proxy Opus when the adapter is off.
-- `test/isolation.test.ts` is unchanged from main. All dynamic nine-extension checks remain,
+- `test/isolation.test.ts` keeps every check; its faux model has the listed ID `gpt-6.1-sol`, because
+  RQW-models refuses requests for unlisted models. All dynamic nine-extension checks remain,
   including exact loaded extension and tool-description comparisons, `read:ok`, successful final
   assistant stop, and reload equivalence of tools, compaction reserve and session window.
   No success predicate is weakened or converted into a skip.
@@ -47,8 +48,10 @@ beyond the incoming main merge.
   `openai-codex`. Anthropic has multiple auth methods, so provider IDs are compared as a set,
   as in the existing adapter tests, not as a count of login methods.
   With fake auth the new session selects Opus medium; without auth it retains the initial Codex
-  model at medium and offers no authenticated Opus. Removing only the adapter and reloading must
-  restore stock visibility including OpenRouter, remove the overlay, and retain model/reasoning.
+  model at medium and offers no authenticated Opus. RQW-models empties the stock snapshot while the
+  adapter's filter keeps working underneath. Removing only RQW-models restores the adapter-filtered
+  stock snapshot; then removing only the adapter restores stock visibility including OpenRouter,
+  removes the overlay, and retains model/reasoning.
   The RQW picker remains registered as `/rqw-models`, its existing name on main; no new command
   alias is introduced. Mock credentials and network rejection are scoped to each temporary case.
 

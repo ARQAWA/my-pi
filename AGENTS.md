@@ -29,7 +29,8 @@ rules in their briefs. The owner's personal manifesto is a separate memory docum
   footer when off. Elements, evidence and limits:
   `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
-  Public Pi API only; disable it separately in `pi config`. Tests: `extensions/RQW-models/test/`, `npm test`.
+  Only its six listed models can be selected or requested; Pi's stock model lists are empty (rule and limits:
+  `DECISIONS.md` section Models). Disable it separately in `pi config`. Tests: `extensions/RQW-models/test/`, `npm test`.
 - `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery.
   Only `anthropic` and `openai-codex` remain visible, credentials stay. Toggle, migration and limits:
   `extensions/RQW-anthropic/README.md`; research: `notes/anthropic-adapter.md`. Tests use fake credentials: `npm test`.

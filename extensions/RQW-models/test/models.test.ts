@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, it } from "node:test";
 import { fauxAssistantMessage, fauxProvider, getSupportedThinkingLevels, type Model, type FauxProviderHandle } from "@earendil-works/pi-ai";
-import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext, type SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext, type ExtensionFactory, type ExtensionUIContext, type SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { matchesKey, setKittyProtocolActive, type KeyId } from "@earendil-works/pi-tui";
 import extension, { FAMILIES, familyOf, levelsFor, pickerModels } from "../index.ts";
@@ -32,12 +32,14 @@ type Shortcut = Parameters<ExtensionAPI["registerShortcut"]>[1];
 type Command = Parameters<ExtensionAPI["registerCommand"]>[1];
 type StartHandler = (event: SessionStartEvent, ctx: ExtensionContext) => void | Promise<void>;
 
-function harness(models = SIX, initial = SIX[0], initialLevel: ThinkingLevel = "medium", flags: string[] = []) {
+function harness(initialModels = SIX, initial = SIX[0], initialLevel: ThinkingLevel = "medium", flags: string[] = []) {
+	let models = initialModels;
 	const shortcuts = new Map<KeyId, Shortcut>();
 	const commands = new Map<string, Command>();
 	const events = new Map<string, StartHandler>();
 	const selected: string[] = [];
 	const warnings: string[] = [];
+	const incompatible: string[] = [];
 	let current = initial;
 	let thinking = initialLevel;
 	let branch: { type: string }[] = [];
@@ -48,7 +50,8 @@ function harness(models = SIX, initial = SIX[0], initialLevel: ThinkingLevel = "
 	const context = {
 		get model() { return current; }, get hasUI() { return hasUI; },
 		modelRegistry: { getAvailable: () => models }, sessionManager: { getBranch: () => branch },
-		ui: { notify: (text: string) => warnings.push(text), select: async (_title: string, labels: string[]) => { offered = labels; return choice; } },
+		// The test double has no AgentSession behind it, so the stock-picker masks report incompatibility.
+		ui: { notify: (text: string) => (text.startsWith("RQW-models cannot restrict") ? incompatible : warnings).push(text), select: async (_title: string, labels: string[]) => { offered = labels; return choice; } },
 	};
 	// Test double implements only the context and API surface used by this extension.
 	const ctx = context as unknown as ExtensionCommandContext;
@@ -69,7 +72,8 @@ function harness(models = SIX, initial = SIX[0], initialLevel: ThinkingLevel = "
 	// Pi supplies a lazy event context before it enables snapshot-based TUI shortcuts.
 	void events.get("session_start")!({ type: "session_start", reason: "reload" }, ctx);
 	return {
-		shortcuts, commands, selected, warnings,
+		shortcuts, commands, selected, warnings, incompatible,
+		set models(value: Model<string>[]) { models = value; },
 		get current() { return current; }, get thinking() { return thinking; }, get offered() { return offered; },
 		set branch(value: { type: string }[]) { branch = value; }, set choice(value: string | undefined) { choice = value; },
 		set hasUI(value: boolean) { hasUI = value; }, set allowSet(value: boolean) { allowSet = value; },
@@ -119,14 +123,16 @@ describe("shortcuts and picker", () => {
 		await h.press("alt+-"); assert.equal(h.selected.length, 5);
 		for (const expected of SIX.slice(0, -1).toReversed()) { await h.press("alt+="); assert.equal(h.current, expected); }
 		await h.press("alt+="); assert.equal(h.selected.length, 10);
+		// An unlisted model survives startup only while no listed model is authenticated, e.g. before /login.
 		const outside = model("other");
-		const forward = harness(SIX, outside); await forward.press("alt+="); assert.equal(forward.current, SIX[0]);
-		const backward = harness(SIX, outside); await backward.press("alt+-"); assert.equal(backward.current, SIX.at(-1));
+		const later = async (models: Model<string>[]) => { const h = harness([], outside); await h.start("reload"); h.models = models; return h; };
+		const forward = await later(SIX); await forward.press("alt+="); assert.equal(forward.current, SIX[0]);
+		const backward = await later(SIX); await backward.press("alt+-"); assert.equal(backward.current, SIX.at(-1));
 		const sparseModels = [SIX[1], SIX[3], SIX[4]];
-		const sparsePlus = harness(sparseModels, outside);
+		const sparsePlus = await later(sparseModels);
 		await sparsePlus.press("alt+="); assert.equal(sparsePlus.current, SIX[1]);
 		await sparsePlus.press("alt+="); assert.equal(sparsePlus.selected.length, 1);
-		const sparseMinus = harness(sparseModels, outside);
+		const sparseMinus = await later(sparseModels);
 		await sparseMinus.press("alt+-"); assert.equal(sparseMinus.current, SIX[4]);
 		await sparseMinus.press("alt+-"); assert.equal(sparseMinus.selected.length, 1);
 	});
@@ -242,9 +248,10 @@ before(async () => {
 	runtime = await ModelRuntime.create({ authPath: join(root, "auth.json"), modelsPath: null, refreshOnCreate: false });
 	for (const m of SIX) catalogue.set(m.id, runtime.getModel(m.provider, m.id)!);
 	anthropic = fauxProvider({ provider: "anthropic", models: SIX.filter((m) => m.provider === "anthropic") });
-	codex = fauxProvider({ provider: "openai-codex", models: SIX.filter((m) => m.provider === "openai-codex") });
+	// GPT 5.6 Luna is a real catalog model outside the RQW list.
+	codex = fauxProvider({ provider: "openai-codex", models: [...SIX.filter((m) => m.provider === "openai-codex"), model("gpt-5.6-luna", "openai-codex")] });
 	for (const faux of [anthropic, codex]) {
-		for (const m of faux.models) m.thinkingLevelMap = catalogue.get(m.id)!.thinkingLevelMap;
+		for (const m of faux.models) m.thinkingLevelMap = catalogue.get(m.id)?.thinkingLevelMap ?? m.thinkingLevelMap;
 		faux.provider.auth.apiKey = { name: "Faux test", resolve: async () => ({ auth: { apiKey: "faux-test-key" } }) };
 		runtime.registerNativeProvider(faux.provider);
 		await runtime.setRuntimeApiKey(faux.provider.id, "faux-test-key");
@@ -255,14 +262,20 @@ before(async () => {
 });
 after(async () => { await rm(root, { recursive: true, force: true }); });
 
-async function realSession(options: { enabled?: boolean; manager?: SessionManager; reason?: SessionStartEvent["reason"]; model?: Model<string>; flags?: string[]; thinking?: ThinkingLevel } = {}) {
+type SessionOptions = {
+	enabled?: boolean; manager?: SessionManager; reason?: SessionStartEvent["reason"]; model?: Model<string>; flags?: string[]; thinking?: ThinkingLevel;
+	modelRuntime?: ModelRuntime; scopedModels?: { model: Model<string> }[]; factories?: ExtensionFactory[]; ui?: Partial<ExtensionUIContext>; loaded?: (loader: DefaultResourceLoader) => void;
+};
+async function realSession(options: SessionOptions = {}) {
 	process.argv = [...ORIGINAL_ARGV.slice(0, 2), ...(options.flags ?? [])];
 	const settings = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, cacheWarming: "off" });
-	const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, settingsManager: settings, additionalExtensionPaths: options.enabled === false ? [] : [EXTENSION], noSkills: true, noContextFiles: true, noThemes: true, noPromptTemplates: true });
+	const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, settingsManager: settings, additionalExtensionPaths: options.enabled === false ? [] : [EXTENSION], extensionFactories: options.factories, noSkills: true, noContextFiles: true, noThemes: true, noPromptTemplates: true });
 	await loader.reload(); assert.deepEqual(loader.getExtensions().errors, []);
-	const { session } = await createAgentSession({ cwd: root, agentDir: root, modelRuntime: runtime, resourceLoader: loader, settingsManager: settings, sessionManager: options.manager ?? SessionManager.inMemory(root), model: options.manager ? undefined : options.model ?? codex.getModel("gpt-6-sol"), thinkingLevel: options.manager ? undefined : options.thinking ?? "high", sessionStartEvent: { type: "session_start", reason: options.reason ?? "startup" }, noTools: "all" });
+	options.loaded?.(loader);
+	const { session } = await createAgentSession({ cwd: root, agentDir: root, modelRuntime: options.modelRuntime ?? runtime, resourceLoader: loader, settingsManager: settings, sessionManager: options.manager ?? SessionManager.inMemory(root), model: options.model ?? (options.manager ? undefined : codex.getModel("gpt-6-sol")), thinkingLevel: options.thinking ?? (options.manager ? undefined : "high"), scopedModels: options.scopedModels, sessionStartEvent: { type: "session_start", reason: options.reason ?? "startup" }, noTools: "all" });
 	const errors: string[] = [];
-	await session.bindExtensions({ onError: (error) => errors.push(error.error) }); assert.deepEqual(errors, []);
+	// Only the dialog and notification methods used by RQW-models are needed.
+	await session.bindExtensions({ uiContext: options.ui as ExtensionUIContext | undefined, onError: (error) => errors.push(error.error) }); assert.deepEqual(errors, []);
 	return session;
 }
 async function press(session: AgentSession, key: KeyId) {
@@ -334,17 +347,196 @@ describe("real Pi SDK and faux providers only", () => {
 	});
 });
 
+describe("only RQW-listed models: stock selection closed, requests refused", () => {
+	const luna = () => codex.getModel("gpt-5.6-luna")!;
+	const stockAvailable = () => ModelRuntime.prototype.getAvailableSnapshot.call(runtime).length;
+	const ui = (notes: string[], pick?: (labels: string[]) => string | undefined): Partial<ExtensionUIContext> => ({
+		notify: (text: string) => { notes.push(text); }, select: async (_title: string, labels: string[]) => pick?.(labels),
+	});
+	it("empties the stock snapshot and scoped list; Ctrl+P cannot switch; /rqw-models and Option keys still work", async () => {
+		let offered: string[] = [];
+		const notes: string[] = [];
+		const scoped = [{ model: luna() }, { model: codex.getModel("gpt-6-sol")! }];
+		const session = await realSession({ scopedModels: scoped, ui: ui(notes, (labels) => { offered = labels; return labels[2]; }) });
+		try {
+			assert.ok(stockAvailable() > 6);
+			assert.deepEqual(runtime.getAvailableSnapshot(), []);
+			assert.deepEqual(session.scopedModels, []);
+			assert.deepEqual(session.extensionRunner.createContext().modelRegistry.getAvailable(), []);
+			assert.equal(session.model?.id, "claude-opus-5-5");
+			assert.equal(await session.cycleModel("forward"), undefined);
+			assert.equal(await session.cycleModel("backward"), undefined);
+			assert.equal(session.model?.id, "claude-opus-5-5");
+			await press(session, "alt+-"); assert.equal(session.model?.id, "claude-sonnet-5-5");
+			await session.extensionRunner.getCommand("rqw-models")!.handler("", session.extensionRunner.createCommandContext());
+			assert.deepEqual(offered, SIX.map((m) => `${m.provider}/${m.id}`));
+			assert.equal(session.model?.id, "gpt-6.1-sol");
+			assert.deepEqual(notes, []);
+		} finally { session.dispose(); }
+		// SDK dispose without session_shutdown releases every mask on the shared runtime and the session.
+		assert.ok(runtime.getAvailableSnapshot().length > 6);
+		assert.equal(Object.getOwnPropertySymbols(runtime).some((key) => key.description?.startsWith("rqw-models")), false);
+		for (const key of ["scopedModels", "setModel", "dispose"]) assert.equal(Object.hasOwn(session, key), false, key);
+		assert.deepEqual(session.scopedModels, scoped);
+	});
+	it("refuses an extension or stock setModel outside the list before any mutation, with a warning", async () => {
+		let api!: ExtensionAPI;
+		const selects: string[] = [];
+		const notes: string[] = [];
+		const probe: ExtensionFactory = (pi) => { api = pi; pi.on("model_select", (event) => { selects.push(event.model.id); }); };
+		const session = await realSession({ factories: [probe], ui: ui(notes) });
+		try {
+			const entries = session.sessionManager.getBranch().length;
+			selects.length = 0;
+			const refusal = /openai-codex\/gpt-5\.6-luna is not in the RQW models list\. Allowed: claude-opus-5-5, claude-sonnet-5-5, gpt-6\.1-sol, gpt-6-sol, gpt-6-luna, claude-haiku-5-5\./;
+			await assert.rejects(api.setModel(luna()), refusal);
+			await assert.rejects(session.setModel(luna(), { persist: true }), refusal);
+			assert.equal(session.model?.id, "claude-opus-5-5"); assert.equal(session.thinkingLevel, "medium");
+			assert.equal(session.sessionManager.getBranch().length, entries);
+			assert.deepEqual(selects, []);
+			assert.equal(session.settingsManager.getDefaultModel(), undefined);
+			assert.equal(notes.length, 2); assert.match(notes[0], refusal);
+			// Any provider variant of a listed family remains selectable.
+			assert.equal(await api.setModel(codex.getModel("gpt-6-luna")!), true);
+			assert.equal(session.model?.id, "gpt-6-luna"); assert.deepEqual(selects, ["gpt-6-luna"]);
+		} finally { session.dispose(); }
+	});
+	it("replaces a restored or resumed session model outside the list with Opus medium and a warning", async () => {
+		for (const reason of ["startup", "resume"] as const) {
+			const manager = SessionManager.inMemory(root);
+			const old = await realSession({ enabled: false, manager, model: luna(), thinking: "high", reason: "new" });
+			try { codex.setResponses([fauxAssistantMessage("old history")]); await old.prompt("history"); assert.equal(old.model?.id, "gpt-5.6-luna"); }
+			finally { old.dispose(); }
+			const notes: string[] = [];
+			const restored = await realSession({ manager, reason, ui: ui(notes) });
+			try {
+				assert.equal(restored.model?.id, "claude-opus-5-5"); assert.equal(restored.thinkingLevel, "medium");
+				assert.deepEqual(notes, ["openai-codex/gpt-5.6-luna is not in the RQW models list. Allowed: claude-opus-5-5, claude-sonnet-5-5, gpt-6.1-sol, gpt-6-sol, gpt-6-luna, claude-haiku-5-5. Switched to anthropic/claude-opus-5-5 (medium)."]);
+			} finally { restored.dispose(); }
+		}
+	});
+	it("refuses a subagent-style session on the shared runtime with a clear error naming the allowed models", async () => {
+		const main = await realSession();
+		const settings = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, cacheWarming: "off" });
+		const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, settingsManager: settings, noExtensions: true, noSkills: true, noContextFiles: true, noThemes: true, noPromptTemplates: true });
+		await loader.reload();
+		const child = async (m: Model<string>) => (await createAgentSession({ cwd: root, agentDir: root, modelRuntime: runtime, resourceLoader: loader, settingsManager: settings, sessionManager: SessionManager.inMemory(root), model: m, thinkingLevel: "low", noTools: "all" })).session;
+		const sub = await child(luna());
+		try {
+			codex.setResponses([fauxAssistantMessage("must not be requested")]);
+			await sub.prompt("hello");
+			const last = sub.messages.at(-1) as { role: string; stopReason?: string; errorMessage?: string };
+			assert.equal(last.role, "assistant"); assert.equal(last.stopReason, "error");
+			assert.equal(last.errorMessage, "RQW-models refused the request: openai-codex/gpt-5.6-luna is not in the RQW models list. Allowed: claude-opus-5-5, claude-sonnet-5-5, gpt-6.1-sol, gpt-6-sol, gpt-6-luna, claude-haiku-5-5.");
+			assert.equal(codex.getPendingResponseCount(), 1);
+			const listed = await child(codex.getModel("gpt-6-sol")!);
+			try { await listed.prompt("hello"); assert.equal(listed.getLastAssistantText(), "must not be requested"); }
+			finally { listed.dispose(); }
+		} finally { main.dispose(); }
+		// Without an owning RQW-models session the runtime is stock again.
+		try { codex.setResponses([fauxAssistantMessage("stock again")]); await sub.prompt("again"); assert.equal(sub.getLastAssistantText(), "stock again"); }
+		finally { sub.dispose(); }
+	});
+	it("offers only Pi's credential-aware availability: a provider filterModels that drops a family", async () => {
+		const register = () => runtime.registerNativeProvider(codex.provider);
+		// A developer's real provider keys (for example OpenRouter) would supply another gpt-6-sol variant.
+		const savedEnv = { ...process.env };
+		for (const key of Object.keys(process.env)) if (/(?:_API_KEY|_TOKEN|_SECRET)$/.test(key)) delete process.env[key];
+		codex.provider.filterModels = (models) => models.filter((m) => m.id !== "gpt-6-sol");
+		register(); await runtime.getAvailable();
+		let offered: string[] = [];
+		const session = await realSession({ ui: ui([], (labels) => { offered = labels; return undefined; }) });
+		try {
+			assert.ok(runtime.hasConfiguredAuth("openai-codex"));
+			await session.extensionRunner.getCommand("rqw-models")!.handler("", session.extensionRunner.createCommandContext());
+			assert.deepEqual(offered, SIX.filter((m) => m.id !== "gpt-6-sol").map((m) => `${m.provider}/${m.id}`));
+			for (const id of ["claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6-luna"]) { await press(session, "alt+-"); assert.equal(session.model?.id, id); }
+		} finally {
+			session.dispose();
+			delete codex.provider.filterModels;
+			Object.assign(process.env, savedEnv);
+			register(); await runtime.getAvailable();
+		}
+	});
+	it("startup waits for a pending availability pass before choosing Opus medium", async () => {
+		const own = await ModelRuntime.create({ authPath: join(root, "auth-pending.json"), modelsPath: null, refreshOnCreate: false });
+		let opened = false;
+		let open!: () => void;
+		const gate = new Promise<void>((resolve) => { open = () => { opened = true; resolve(); }; });
+		const opus = fauxProvider({ provider: "anthropic", models: [model("claude-opus-5-5")] });
+		const other = fauxProvider({ provider: "openai-codex", models: [model("gpt-5.6-luna", "openai-codex")] });
+		for (const faux of [opus, other]) {
+			// Auth only from a resolver: Pi marks nothing provisionally and waits for its availability pass.
+			faux.provider.auth.apiKey = { name: "Gated faux", resolve: async () => { await gate; return { auth: { apiKey: "faux-test-key" } }; } };
+			own.registerNativeProvider(faux.provider);
+		}
+		assert.equal(own.hasConfiguredAuth("anthropic"), false);
+		const notes: string[] = [];
+		const session = await realSession({ modelRuntime: own, model: other.getModel("gpt-5.6-luna"), ui: ui(notes), loaded: () => { assert.equal(opened, false); setTimeout(open, 150); } });
+		try {
+			assert.equal(opened, true);
+			assert.equal(session.model?.id, "claude-opus-5-5"); assert.equal(session.thinkingLevel, "medium");
+			assert.deepEqual(notes, []);
+		} finally { session.dispose(); }
+	});
+	it("keeps an unlisted model with a warning when no listed model is authenticated, and refuses its requests", async () => {
+		const savedEnv = { ...process.env };
+		for (const key of Object.keys(process.env)) if (/(?:_API_KEY|_TOKEN|_SECRET)$/.test(key)) delete process.env[key];
+		const own = await ModelRuntime.create({ authPath: join(root, "auth-unlisted.json"), modelsPath: null, refreshOnCreate: false });
+		const only = fauxProvider({ provider: "openai-codex", models: [model("gpt-5.6-luna", "openai-codex")] });
+		only.provider.auth.apiKey = { name: "Faux test", resolve: async () => ({ auth: { apiKey: "faux-test-key" } }) };
+		own.registerNativeProvider(only.provider);
+		await own.getAvailable();
+		const notes: string[] = [];
+		const session = await realSession({ modelRuntime: own, model: only.getModel("gpt-5.6-luna"), ui: ui(notes) });
+		try {
+			assert.equal(session.model?.id, "gpt-5.6-luna");
+			assert.deepEqual(notes, ["openai-codex/gpt-5.6-luna is not in the RQW models list. Allowed: claude-opus-5-5, claude-sonnet-5-5, gpt-6.1-sol, gpt-6-sol, gpt-6-luna, claude-haiku-5-5. No listed model is authenticated; its requests are refused."]);
+			only.setResponses([fauxAssistantMessage("must not be requested")]);
+			await session.prompt("hello");
+			assert.match((session.messages.at(-1) as { errorMessage?: string }).errorMessage ?? "", /^RQW-models refused the request: openai-codex\/gpt-5\.6-luna is not in the RQW models list/);
+			assert.equal(only.getPendingResponseCount(), 1);
+		} finally {
+			session.dispose();
+			for (const key of Object.keys(process.env)) if (!(key in savedEnv)) delete process.env[key];
+			Object.assign(process.env, savedEnv);
+		}
+	});
+	it("switching RQW-models off with /reload restores stock selection", async () => {
+		let enabled = true;
+		const scoped = [{ model: luna() }, { model: codex.getModel("gpt-6-sol")! }];
+		const session = await realSession({ scopedModels: scoped, loaded: (loader) => {
+			const reload = loader.reload.bind(loader);
+			loader.reload = async () => { if (enabled) await reload(); else loader.getExtensions().extensions.length = 0; };
+		} });
+		try {
+			assert.deepEqual(runtime.getAvailableSnapshot(), []);
+			enabled = false;
+			await session.reload();
+			assert.ok(runtime.getAvailableSnapshot().length > 6);
+			assert.deepEqual(session.scopedModels, scoped);
+			assert.equal(session.model?.id, "claude-opus-5-5");
+			assert.equal((await session.cycleModel("forward"))?.model.id, "gpt-6-sol");
+			await session.setModel(codex.getModel("gpt-6-luna")!); assert.equal(session.model?.id, "gpt-6-luna");
+			await session.setModel(luna()); assert.equal(session.model?.id, "gpt-5.6-luna");
+		} finally { session.dispose(); }
+	});
+});
+
 const exec = promisify(execFile);
 const CLI = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")).replace(/dist[\\/]index\.js$/, "dist/cli.js");
+// The installed `pi` command runs Pi's CLI bundle, which has its own module graph.
+const BUNDLE = CLI.replace(/cli\.js$/, join("bundle", "cli.js"));
 const FAUX = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "faux.ts");
 let cliCounter = 0;
-async function cli(flags: string[], noAnthropic = false, settings?: Record<string, unknown>) {
+let cliStderr = "";
+async function cli(flags: string[], noAnthropic = false, settings?: Record<string, unknown>, entry = CLI) {
 	const dir = join(root, `cli-${cliCounter++}`);
 	await mkdir(dir);
 	// Seed auth before native-provider registration starts its asynchronous snapshot refreshes.
 	await writeFile(join(dir, "models.json"), JSON.stringify({ providers: { "openai-codex": { apiKey: "faux-only" } } }));
 	if (settings) await writeFile(join(dir, "settings.json"), JSON.stringify(settings));
-	const child = exec(process.execPath, [CLI, "--extension", FAUX, "--extension", EXTENSION,
+	const child = exec(process.execPath, [entry, "--extension", FAUX, "--extension", EXTENSION,
 		"--no-tools", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-mcp", "--no-session", "--print", ...flags, "faux probe"], {
 		cwd: dir, timeout: 20000,
 		env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR,
@@ -353,6 +545,7 @@ async function cli(flags: string[], noAnthropic = false, settings?: Record<strin
 	});
 	child.child.stdin?.end();
 	const { stdout, stderr } = await child;
+	cliStderr = stderr;
 	assert.doesNotMatch(stderr, /Failed to load|Extension error/);
 	return JSON.parse(stdout.trim());
 }
@@ -374,12 +567,28 @@ describe("real Pi CLI, no network and faux transport", () => {
 	it("keeps Pi settings effort for an explicit model without a suffix", async () => {
 		assert.deepEqual(await cli(["--model", "openai-codex/gpt-6-sol"], false, { defaultThinkingLevel: "low" }), { provider: "openai-codex", model: "gpt-6-sol", thinking: "low" });
 	});
-	it("does not select Opus without auth and preserves explicit model outside the picker", async () => {
-		assert.deepEqual(await cli(["--model", "openai-codex/gpt-5.6-luna", "--thinking", "minimal"], true), { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "minimal" });
-		const result = await cli([], true);
-		assert.deepEqual(result, { provider: "openai-codex", model: "gpt-6.1-sol", thinking: "medium" });
-		// A saved default is not an explicit CLI choice: keep it without Opus, but apply medium.
+	it("does not select Opus without auth and keeps Pi's listed initial model", async () => {
+		assert.deepEqual(await cli([], true), { provider: "openai-codex", model: "gpt-6.1-sol", thinking: "medium" });
+		assert.equal(cliStderr, "");
+	});
+	it("replaces a CLI --model or saved default outside the list with the default and a warning", async () => {
+		const warning = /Warning: openai-codex\/gpt-5\.6-luna is not in the RQW models list\. Allowed: claude-opus-5-5, .*claude-haiku-5-5\. Switched to anthropic\/claude-opus-5-5 \(medium\)/;
+		assert.deepEqual(await cli(["--model", "openai-codex/gpt-5.6-luna"]), { provider: "anthropic", model: "claude-opus-5-5", thinking: "medium" });
+		assert.match(cliStderr, warning);
+		assert.deepEqual(await cli([], false, { defaultProvider: "openai-codex", defaultModel: "gpt-5.6-luna", defaultThinkingLevel: "high" }),
+			{ provider: "anthropic", model: "claude-opus-5-5", thinking: "medium" });
+		// A fresh startup always selects Opus first, so this saved default never becomes current.
+		assert.equal(cliStderr, "");
+		// Without Opus auth the strongest authenticated listed model replaces it; explicit --thinking still applies.
+		assert.deepEqual(await cli(["--model", "openai-codex/gpt-5.6-luna", "--thinking", "minimal"], true), { provider: "openai-codex", model: "gpt-6.1-sol", thinking: "minimal" });
+		assert.match(cliStderr, /gpt-5\.6-luna is not in the RQW models list.*Switched to openai-codex\/gpt-6\.1-sol \(minimal\)/);
 		assert.deepEqual(await cli([], true, { defaultProvider: "openai-codex", defaultModel: "gpt-5.6-luna", defaultThinkingLevel: "high" }),
-			{ provider: "openai-codex", model: "gpt-5.6-luna", thinking: "medium" });
+			{ provider: "openai-codex", model: "gpt-6.1-sol", thinking: "medium" });
+		assert.match(cliStderr, /gpt-5\.6-luna is not in the RQW models list.*Switched to openai-codex\/gpt-6\.1-sol \(medium\)/);
+		assert.deepEqual(await cli(["--models", "openai-codex/gpt-5.6-luna:high"]), { provider: "anthropic", model: "claude-opus-5-5", thinking: "medium" });
+		// The bundle lends its own AgentSession to the extension too: no incompatibility warning.
+		assert.deepEqual(await cli(["--model", "openai-codex/gpt-5.6-luna"], false, undefined, BUNDLE), { provider: "anthropic", model: "claude-opus-5-5", thinking: "medium" });
+		assert.match(cliStderr, warning);
+		assert.doesNotMatch(cliStderr, /cannot restrict/);
 	});
 });

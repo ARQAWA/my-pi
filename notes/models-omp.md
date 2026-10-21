@@ -51,7 +51,8 @@ Paths are relative to the installed `@earendil-works/pi-coding-agent` package.
 - `dist/main.js`, `buildSessionOptions`: Pi resolves CLI model patterns and scoped
   thinking suffixes, including the selected saved default within a scope, before
   extensions start. RQW-models leaves that resolved model and effort unchanged for
-  explicit `--model` or `--models`, rather than parsing suffixes again.
+  explicit `--model` or `--models` of a listed model, rather than parsing suffixes again;
+  an unlisted result is replaced at `session_start`.
 - `dist/index.d.ts` and `dist/cli/args.js`, exported `parseArgs`: used only to
   recognize CLI selection/continuation and to reapply `--thinking` after the
   extension selects Opus. Pi's parser, not a second CLI grammar, decides these flags.
@@ -66,5 +67,33 @@ Paths are relative to the installed `@earendil-works/pi-coding-agent` package.
   source of RQW-models' custom family lists; Pi support only constrains them.
   Current per-model lists and shortcut direction are in
   [DECISIONS.md, Models](../DECISIONS.md#models).
+
+## Pi 1.3.0 mechanisms behind the listed-models rule
+
+The rule is in [DECISIONS.md, Models](../DECISIONS.md#models). Paths as above.
+
+- `dist/core/model-runtime.js`, `getAvailableSnapshot`: the source of the stock lists.
+  Readers: `modes/interactive/components/model-selector.js` `loadModelsFromSnapshot`
+  (`/model`, Ctrl+L); `interactive-mode.js` model autocomplete, `findExactModelMatch`
+  (`/model provider/id`), `showModelsSelector` (`/scoped-models`), the `/settings`
+  default-model choices and `completeProviderAuthentication` (post-login selection);
+  `modes/rpc/rpc-mode.js` `set_model`, `get_available_models`; `core/model-registry.js`
+  `getAvailable` for extensions.
+- `dist/core/agent-session.js`: `scopedModels` getter (read by the picker, autocomplete and
+  `/scoped-models`); `cycleModel` intersects the private scope with the snapshot, else uses
+  the snapshot, and returns `undefined` with fewer than two, which `interactive-mode.js`
+  `cycleModel` reports as "Only one model available". `setModel` checks only auth before it
+  mutates the model, appends a `model_change` entry, may persist the default and emits the
+  non-cancellable `model_select`; `_bindExtensionCore` routes `pi.setModel` through it.
+  `dispose` runs without `session_shutdown` for SDK hosts.
+- `dist/core/extensions/runner.js`, `createContext`: `ctx.getContextUsage()` calls the
+  session's `getContextUsage()` method synchronously; no context property exposes the session.
+- `dist/core/model-runtime.js`, `stream`, `streamSimple`, `streamDeferred`, `classify`,
+  `generateImages`: each calls `this.prepareRequest(model, options)` first. `core/sdk.js`
+  routes agent turns through `modelRuntime.streamSimple`; compaction and branch summaries
+  (`core/compaction/compaction.js`, through the agent's stream function) and
+  `core/cache-warmer.js` use the session's request model.
+- `dist/core/sdk.js` session restore and `core/model-resolver.js` `findInitialModel` run
+  before extensions bind, so a restored or default model is checked at `session_start`.
 
 No live model requests are needed for the snapshot-context or faux CLI regressions.

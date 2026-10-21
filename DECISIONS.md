@@ -906,10 +906,15 @@ Current accepted development policy (request summaries unless quoted); detailed 
   будет Model Picker»; «То есть чисто модели Opus, Sonnet, GPT-6.1, GPT-6, Luna-6, Haiku».
   `extensions/RQW-models/index.ts` is independent,
   imports only Pi, and is listed separately in `package.json` under `pi.extensions`. Disable its resource in Pi's
-  `pi config`, then `/reload`; it installs no process-wide hooks and writes no settings. It registers no tool.
+  `pi config`, then `/reload`; it writes no settings and registers no tool. Its only hooks are the instance-level
+  masks of the listed-models rule below, removed when it is switched off.
 - Model order in `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`,
-  `claude-haiku-5-5`. `pickerModels` uses `ctx.modelRegistry.getAvailable()`, so absent models and providers without
-  configured auth are skipped, without resolving credentials or making requests itself. `familyOf` matches the same
+  `claude-haiku-5-5`. `pickerModels` takes Pi's own credential-aware availability, including provider
+  `filterModels` (for example GitHub Copilot's per-account list): the runtime's unmasked
+  `getAvailableSnapshot` through its prototype while the listed-models masks (below) are set, otherwise
+  `ctx.modelRegistry.getAvailable()`. Absent models, models a provider filters out and providers without
+  configured auth are skipped. The picker and the shortcuts resolve no credentials and make no requests; only the
+  startup choice waits for Pi's availability pass (below). `familyOf` matches the same
   generation across provider paths, Claude dotted versions, dated aliases and Bedrock IDs. No old Claude generation,
   GPT 5.6, fast variant or invented model is substituted.
 - Engineering decisions for the model request C:3113, elaborated in the coordinator implementation brief C:3274:
@@ -937,20 +942,65 @@ Current accepted development policy (request summaries unless quoted); detailed 
   shortcut sequences instead of Option's special characters; no extension code change is needed.
   Carrier: the existing Alt bindings in `extensions/RQW-models/index.ts`; terminal setup is in
   [INSTALL.md](INSTALL.md#macos-option-shortcuts).
-- Conservative UI choice: `/rqw-models` is the extension's authenticated six-model picker via `ctx.ui.select`.
-  Stock `/model`, Ctrl+L, Ctrl+P, Shift+Tab, `/scoped-models`, CLI/RPC selection and provider definitions stay intact.
-  Pi reserves those built-in shortcuts and disambiguates commands conflicting with built-ins; replacing its whole
-  UI would need internal hooks. The six-model and off exclusions apply to this extension's picker and shortcuts,
-  not a global prohibition on explicit stock Pi choices. In print/JSON mode the picker has no dialog and does nothing;
-  RPC can supply the standard select dialog. Disabling the extension restores stock behavior on `/reload`.
+- `/rqw-models` is the extension's authenticated six-model picker via `ctx.ui.select`. Pi reserves its built-in model
+  shortcuts and disambiguates commands conflicting with built-ins, so RQW-models does not replace them; it empties
+  them (next item). Shift+Tab (thinking cycle) and provider definitions stay stock. In print/JSON mode the picker
+  has no dialog and does nothing; RPC can supply the standard select dialog.
+- Owner rule: «Смотри, про выбор модели, где через стрелочки вверх, вниз, через плюс-минус мы
+  меняем модели, меняем effort. Там меняются только модели из нашего списка. И вообще другие модели выбрать нельзя,
+  только модели в этом списке. Дефолтный Model Picker работать не должен. Там должен быть пустой список моделей.»
+  For the CLI flag `pi --model ...`, a model restored with an old session and a model given to the `agent` tool for
+  a subagent, the owner answered «Да, делай» to «a) Закрыть и эти пути. Модель вне списка не выбирается нигде, Pi
+  покажет предупреждение.» This supersedes the earlier choice that stock `/model`, Ctrl+L, Ctrl+P, `/scoped-models`
+  and CLI/RPC selection stay intact. Reason: only the six listed models may be selected or used anywhere.
+  Carrier: `extensions/RQW-models/index.ts`. Listed means any provider variant matched by `familyOf`; nothing else.
+  - Stock lists are empty. Pi 1.3.0 gives extensions no session handle, so on every `session_start` RQW-models
+    borrows the owning `AgentSession` in one synchronous `ctx.getContextUsage()` call, with
+    `AgentSession.prototype.getContextUsage` swapped and restored in the same call. It then sets own-property masks
+    on that session and its `ModelRuntime`: `getAvailableSnapshot()` and `session.scopedModels` return `[]`. So the
+    `/model` picker, `/model provider/id`, its autocomplete, Ctrl+L, Ctrl+P, `/scoped-models`, the `/settings`
+    default-model choices, RPC `get_available_models`/`set_model`/`cycle_model` and Pi's post-login auto-selection
+    find no model; `ctx.modelRegistry.getAvailable()` is empty for every extension.
+  - Selection outside the list is refused before mutation: the owning session's `setModel` (stock UI, RPC and
+    `pi.setModel` of any extension) rejects with `<provider>/<id> is not in the RQW models list. Allowed: <six IDs>.`
+    and a warning notification; model, session entries, settings and `model_select` stay unchanged.
+  - On every `session_start` a current model outside the list (CLI `--model`/`--models`, a saved default without
+    authenticated Opus, a restored or resumed session, or RQW-models enabled by `/reload`) is replaced by the
+    default: authenticated Opus, else the strongest authenticated listed model, at medium or the startup/`/new`
+    `--thinking`, with a warning (a notification, or stderr without UI). Engineering choice, derived from «вообще другие
+    модели выбрать нельзя» and accepted by the coordinator: the strongest listed model when Opus has no auth,
+    since keeping Pi's unlisted model would break the rule. A fresh startup selects
+    Opus first, so an unlisted saved default never becomes current and needs no warning. With no authenticated
+    listed model the model stays and the warning says its requests are refused. Before this choice and the Opus
+    default, `session_start` awaits Pi's own async `getAvailable()` (not masked): a provider registered just
+    before, for example by an extension at bind time, whose auth comes only from a resolver is not marked
+    configured until Pi's background availability pass finishes (`dist/core/model-runtime.js`
+    `registerNativeProvider`, `markProvisionallyConfigured`), so the synchronous snapshot can still be empty.
+    The wait is limited to 15 s, like Pi's model selector; on a timeout or error the snapshot is used.
+    Without a choice to make, nothing waits.
+  - Requests: the owning runtime's `prepareRequest` refuses every chat request for an unlisted model with
+    `RQW-models refused the request: <the same text>`. This covers in-process sessions on that runtime: an `agent`
+    subagent given such a `model` ends its first turn with this error; RQW-review's Haiku and Sonnet are listed.
+    Checked: Pi's own requests use the session's model (compaction, branch and bug-report summaries, cache warmer,
+    retries; a virtual model is checked as the physical model it routes to), so nothing needs an exemption.
+    Image and classifier models (codemode `models.generateImages`/`models.classify`) are not chat models and pass.
+  - Each mask calls Pi's current prototype method, so the prototype patches of RQW-anthropic and RQW-context keep
+    working underneath and are never captured or restored by RQW-models. Masks are reference-counted per instance
+    and removed on `session_shutdown` (`/reload`, `/new`, quit) or `session.dispose()`; switching RQW-models off and
+    `/reload` restores stock behavior. Each of RQW-models and RQW-anthropic works with the other on or off.
+  - Limits: Ctrl+P changes nothing but Pi still shows "Only one model available"; Pi prints it for an empty cycle
+    result and has no hook, and a fake result would print a false "Switched to". `/scoped-models` lists no model,
+    only saved patterns that match nothing, as unavailable rows. After `/login` from no model Pi suggests `/model`;
+    `/rqw-models` or Option/Alt+= select a model. If Pi's internals change and the session cannot be borrowed,
+    RQW-models warns and the stock lists stay. Pi mechanisms: [notes/models-omp.md](notes/models-omp.md).
 - Owner request (C:3113): «И базовая модель всегда при запуске — это Opus-Medium. Это от провайдера не зависит».
   CLI precedence and preservation of resumed sessions are engineering choices, not direct owner quotations
   (assistant C:3123; coordinator implementation brief C:3274). Without explicit CLI model selection, `session_start` selects available Opus and `medium` on a fresh
   startup or `/new`. With no authenticated Opus
-  it keeps Pi's initial model rather than silently choosing another family. A startup with existing conversation
-  history or continuation/session flags, and events `resume`, `fork` and `reload`, keep the current model/thinking.
-  Explicit CLI `--model` and `--models` preserve Pi's resolved model and thinking selection, including model suffixes,
-  mixed scoped suffixes, `--thinking` precedence and settings effort when no suffix is given. No scoped suffix is
+  it keeps Pi's initial model if listed rather than silently choosing another family. A startup with existing
+  conversation history or continuation/session flags, and events `resume`, `fork` and `reload`, keep a listed current
+  model/thinking. Explicit CLI `--model` and `--models` of listed models preserve Pi's resolved model and thinking
+  selection, including model suffixes, mixed scoped suffixes, `--thinking` precedence and settings effort when no suffix is given. No scoped suffix is
   parsed again by the extension. Pi's exported `parseArgs` recognizes explicit selections and continuation flags.
   Without an explicit model selection, the extension selects available Opus and applies `--thinking` through Pi's
   native clamping, including off/minimal; when `--thinking` is absent it applies medium when supported. CLI overrides apply to `/new` too,
@@ -968,9 +1018,10 @@ Current accepted development policy (request summaries unless quoted); detailed 
   The harness's ORDER contains no minimal; off is removed by request. These lists apply to matched families,
   including aliases and proxy providers. A non-reasoning model has no choices. On an extension model switch the
   previous effort is retained if allowed, otherwise the nearest lower allowed level or the lowest. Explicit
-  off/minimal moves to the lowest allowed level on the next extension-driven family selection. Explicit CLI and
-  stock Pi selections retain their native precedence above. Engineering choice: unlisted models keep Pi-supported
-  levels minus off and minimal, matching the harness ORDER without inventing a family list.
+  off/minimal moves to the lowest allowed level on the next extension-driven family selection. Explicit CLI
+  selections of listed models retain their native precedence above. Engineering choice: an unlisted model, current
+  only while no listed model is authenticated, keeps Pi-supported levels minus off and minimal, matching the harness
+  ORDER without inventing a family list.
   Source evidence and exact OMP capability provenance: [notes/models-omp.md](notes/models-omp.md).
 - Engineering P2 follow-up for the model request C:3113: obtain the live current model when an action executes via
   the public event context; prefer Pi's resolved settings over a manual CLI parser; preserve the selected CLI effort
@@ -989,7 +1040,13 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `models.js` and built-in model data, and pi-tui's `keys.js`.
 - Proof: `extensions/RQW-models/test/models.test.ts`, faux only, runs standalone loading and disabling, real SDK
   sessions, model/thinking changes, history restore and reload, no persisted defaults, actual CLI flag handling,
-  missing Anthropic auth and explicit excluded-model selection. The key test feeds realistic ESC-prefix, Kitty
+  missing Anthropic auth and the listed-models rule: empty stock snapshot and scoped list with `/rqw-models` and
+  the Alt keys working, a stock cycle that does not switch, refusal before mutation, CLI `--model`/`--models` and
+  saved defaults outside the list (also through Pi's CLI bundle, which the installed `pi` runs), restored and
+  resumed sessions, no authenticated listed model, a provider `filterModels` dropping a family, a pending
+  availability pass at startup, a subagent-style session on the shared runtime,
+  release on dispose and stock behavior after `/reload` without it. `test/anthropic-models.test.ts` switches
+  RQW-models and RQW-anthropic off in turn. Package and isolation fixtures use the listed ID `gpt-6.1-sol`. The key test feeds realistic ESC-prefix, Kitty
   physical/alternate-symbol CSI-u and xterm modifyOtherKeys bytes into Pi's `matchesKey`, with first-match dispatch.
   This is parser testing, not manual terminal testing. The local implementation report records no live Claude
   requests and no independent agent review. The P2 implementation report records passing model tests on macOS, Node 22.19.0 and 26.7.0. Regression coverage
@@ -1009,9 +1066,9 @@ Current accepted development policy (request summaries unless quoted); detailed 
   RQW correctly preserves that initial selection, and Pi reports no API key. A clean-home CLI probe reproduced it.
   A gated faux auth resolver reproduced both snapshot timings: without config the early selection was absent and
   the settled selection was Codex; with config both were `openai-codex/gpt-6.1-sol`, without Anthropic auth.
-  No evidence calls for changing RQW production auth selection. The CLI regression now asserts the exact fallback
-  model and preserves a saved `gpt-5.6-luna` outside the picker without explicit model flags, changing its saved
-  high effort to medium. The explicit excluded-model test, offline mode and fetch prohibition remain intact.
+  No evidence calls for changing RQW production auth selection. The CLI regression asserts the exact fallback
+  model; a saved or explicit `gpt-5.6-luna` outside the list is replaced as the listed-models rule above requires.
+  Offline mode and the fetch prohibition remain intact.
   The fixture-fix report records passing model tests on macOS, Node 22.19.0, 24.21.0 and 26.7.0; the full suite passes on
   Node 22.19.0 and 26.7.0 with 387 passed and the existing Windows-only test skipped. Twenty clean-home CLI
   probes with the seeded config passed. The local fixture-fix report records no live requests or CI rerun.
@@ -1097,8 +1154,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Underlying owner requests: adapter C:3133, provider visibility C:3171, independent modules C:3046. The manifest keeps the eight main extensions
   followed by RQW-anthropic. Package fixtures use fake authenticated allowed providers, not a visibility
   bypass. The dynamic isolation assertions are unchanged. Source order, unauthenticated startup,
-  Opus medium with mock secrets, full-package login visibility and adapter-off stock fallback are
-  covered in `test/anthropic-models.test.ts`. Semantic test changes for independent review and
+  Opus medium with mock secrets, full-package login visibility and the stock fallback with the adapter or
+  RQW-models switched off are covered in `test/anthropic-models.test.ts`. Semantic test changes for independent review and
   offline proof boundaries: `notes/anthropic-integration.md`.
 - Integration proof uses offline fixtures only; it does not establish live auth, subscription acceptance or billing.
   The owner's old Claude campaign pause C:3244 remains in force, not a ban on Claude workers. Historical local results and their boundaries are recorded in

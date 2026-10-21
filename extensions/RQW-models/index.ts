@@ -1,5 +1,5 @@
 import { getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
-import { parseArgs, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { AgentSession, parseArgs, type ExtensionAPI, type ExtensionContext, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 export const FAMILIES = [
 	"claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "claude-haiku-5-5",
@@ -49,6 +49,96 @@ function nearestLevel(model: ChatModel, current: Level): Level | undefined {
 	return levels.filter((level) => ORDER.indexOf(level) <= ORDER.indexOf(current)).at(-1) ?? levels[0];
 }
 
+/** Any provider variant of the six families may be selected or requested; nothing else. */
+export const isListed = (model: { id: string } | undefined) => !!model && familyOf(model as ChatModel) >= 0;
+const name = (model: { provider: string; id: string }) => `${model.provider}/${model.id}`;
+export const notListed = (model: { provider: string; id: string }) =>
+	`${name(model)} is not in the RQW models list. Allowed: ${FAMILIES.join(", ")}.`;
+
+// Instance-level masks: own properties shadow Pi's prototype (and any other extension's prototype
+// patches, which keep running underneath) and are deleted when the last owner releases them.
+type Mask = { count: number; restore: () => void; cleanups: Set<() => void>; warn?: (text: string) => void };
+const SESSION_MASK = Symbol.for("rqw-models/session-mask");
+const RUNTIME_MASK = Symbol.for("rqw-models/runtime-mask");
+type Masked = { [key: symbol]: Mask | undefined };
+
+function override(target: object, props: Record<string, PropertyDescriptor>): () => void {
+	const saved = Object.keys(props).map((key) => [key, Object.getOwnPropertyDescriptor(target, key)] as const);
+	for (const [key, descriptor] of Object.entries(props)) Object.defineProperty(target, key, { configurable: true, ...descriptor });
+	return () => {
+		for (const [key, descriptor] of saved) {
+			if (descriptor) Object.defineProperty(target, key, descriptor);
+			else Reflect.deleteProperty(target, key);
+		}
+	};
+}
+
+function lease(target: object, key: symbol, install: (mask: Mask) => () => void): [Mask, () => void] {
+	const holder = target as Masked;
+	let mask = holder[key];
+	if (!mask) {
+		const created: Mask = { count: 0, restore: () => {}, cleanups: new Set() };
+		created.restore = install(created);
+		Object.defineProperty(target, key, { value: created, configurable: true });
+		mask = created;
+	}
+	mask.count++;
+	const owned = mask;
+	let released = false;
+	return [owned, () => {
+		if (released) return;
+		released = true;
+		if (--owned.count) return;
+		Reflect.deleteProperty(target, key);
+		owned.restore();
+	}];
+}
+
+/** Pi 1.3.0 gives extensions no session handle; borrow it for one synchronous call. */
+function sessionOf(ctx: ExtensionContext): AgentSession | undefined {
+	const prototype = AgentSession.prototype;
+	const descriptor = Object.getOwnPropertyDescriptor(prototype, "getContextUsage");
+	if (typeof descriptor?.value !== "function" || !descriptor.configurable) return undefined;
+	let captured: unknown;
+	Object.defineProperty(prototype, "getContextUsage", { ...descriptor, value(this: unknown) { captured = this; return undefined; } });
+	try { ctx.getContextUsage(); } catch { captured = undefined; } finally { Object.defineProperty(prototype, "getContextUsage", descriptor); }
+	const session = captured as AgentSession | undefined;
+	return session && session.sessionManager === ctx.sessionManager && session.modelRuntime ? session : undefined;
+}
+
+function maskRuntime(runtime: ModelRuntime) {
+	const prototype = () => Object.getPrototypeOf(runtime) as ModelRuntime;
+	return lease(runtime, RUNTIME_MASK, () => override(runtime, {
+		// Stock /model, Ctrl+L, Ctrl+P, autocomplete, /scoped-models, /settings and RPC read this snapshot.
+		getAvailableSnapshot: { value: () => [], writable: true },
+		// Every request on this runtime, including in-process subagents and reviewers, passes here.
+		prepareRequest: { writable: true, value: async function(this: ModelRuntime, ...args: Parameters<ModelRuntime["prepareRequest"]>) {
+			const [model] = args;
+			if ((model.type ?? "chat") === "chat" && !isListed(model)) throw new Error(`RQW-models refused the request: ${notListed(model)}`);
+			return prototype().prepareRequest.apply(this, args);
+		} },
+	}));
+}
+
+function maskSession(session: AgentSession) {
+	const prototype = () => Object.getPrototypeOf(session) as AgentSession;
+	return lease(session, SESSION_MASK, (mask) => override(session, {
+		scopedModels: { get: () => [] },
+		setModel: { writable: true, value: async function(this: AgentSession, ...args: Parameters<AgentSession["setModel"]>) {
+			if (!isListed(args[0])) {
+				mask.warn?.(notListed(args[0]));
+				throw new Error(notListed(args[0]));
+			}
+			return prototype().setModel.apply(this, args);
+		} },
+		// SDK hosts may dispose without session_shutdown.
+		dispose: { writable: true, value: function(this: AgentSession) {
+			for (const cleanup of [...mask.cleanups]) cleanup();
+			return prototype().dispose.call(this);
+		} },
+	}));
+}
+
 export default function modelsExtension(pi: ExtensionAPI) {
 	// Event contexts have live getters; the TUI shortcut dispatcher passes snapshots.
 	let liveContext: ExtensionContext;
@@ -59,7 +149,46 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		pending = result.catch(() => {});
 		return result;
 	};
-	const available = (ctx: ExtensionContext) => pickerModels(ctx.modelRegistry.getAvailable());
+	// The masked snapshot is Pi's credential-aware availability (provider filterModels included); read it
+	// through the prototype, so other extensions' prototype filters still apply. Unbound: Pi's own list.
+	const available = (ctx: ExtensionContext) => {
+		const runtime = bound?.session.modelRuntime;
+		return pickerModels(runtime
+			? (Object.getPrototypeOf(runtime) as ModelRuntime).getAvailableSnapshot.call(runtime)
+			: ctx.modelRegistry.getAvailable());
+	};
+	// session_start can run while an availability pass started by a provider registration is pending;
+	// await a fresh pass (Pi's own async getAvailable, which RQW-models does not mask) before choosing, for at
+	// most 15 s like Pi's model selector; on a timeout or error the snapshot is used.
+	const settled = async (ctx: ExtensionContext) => {
+		const runtime = bound?.session.modelRuntime;
+		if (!runtime) return available(ctx);
+		try { return pickerModels(await runtime.getAvailable(undefined, { signal: AbortSignal.timeout(15_000) })); } catch { return available(ctx); }
+	};
+	const warn = (ctx: ExtensionContext, text: string, fallback = false) => {
+		try {
+			if (ctx.hasUI) ctx.ui.notify(text, "warning");
+			else if (fallback) process.stderr.write(`Warning: ${text}\n`);
+		} catch {}
+	};
+	let bound: { session: AgentSession; release: () => void } | undefined;
+	const unbind = () => { bound?.release(); bound = undefined; };
+	const bind = (ctx: ExtensionContext) => {
+		const session = sessionOf(ctx);
+		if (!session) {
+			unbind();
+			warn(ctx, "RQW-models cannot restrict Pi's own model selection: incompatible Pi internals (requires Pi 1.3.0)", true);
+			return;
+		}
+		if (bound?.session === session) return;
+		unbind();
+		const [sessionMask, releaseSession] = maskSession(session);
+		const [, releaseRuntime] = maskRuntime(session.modelRuntime);
+		const release = () => { sessionMask.cleanups.delete(release); releaseRuntime(); releaseSession(); };
+		sessionMask.cleanups.add(release);
+		sessionMask.warn = (text) => warn(ctx, text);
+		bound = { session, release };
+	};
 	const select = async (ctx: ExtensionContext, model: ChatModel, level = pi.getThinkingLevel()) => {
 		if (!(await pi.setModel(model))) {
 			if (ctx.hasUI) ctx.ui.notify(`No authentication for ${model.provider}/${model.id}`, "warning");
@@ -114,23 +243,44 @@ export default function modelsExtension(pi: ExtensionAPI) {
 			if (model) await enqueue(() => select(ctx, model));
 		},
 	});
-	pi.on("session_start", async (event, ctx) => {
-		liveContext = ctx;
-		if (event.reason !== "startup" && event.reason !== "new") return;
-		const args = parseArgs(process.argv.slice(2));
-		if (event.reason === "startup") {
-			if (args.continue || args.resume || args.session) return;
-			if (ctx.sessionManager.getBranch().some((entry) => entry.type === "message" || entry.type === "compaction" || entry.type === "branch_summary")) return;
-		}
-		// Pi has already resolved model patterns, scoped suffixes and thinking precedence.
-		if (args.model !== undefined || args.models !== undefined) return;
-		const opus = available(ctx).find((model) => familyOf(model) === 0);
-		if (opus && !(await pi.setModel(opus))) return;
-		if (args.thinking) pi.setThinkingLevel(args.thinking);
+	const applyThinking = (thinking: Level | undefined) => {
+		if (thinking) pi.setThinkingLevel(thinking);
 		else {
 			const currentModel = liveContext.model;
 			const next = currentModel && nearestLevel(currentModel, "medium");
 			if (next) pi.setThinkingLevel(next);
 		}
+	};
+	const startDefault = async (reason: string, ctx: ExtensionContext, args: ReturnType<typeof parseArgs>, models: () => Promise<ChatModel[]>) => {
+		if (reason !== "startup" && reason !== "new") return;
+		if (reason === "startup") {
+			if (args.continue || args.resume || args.session) return;
+			if (ctx.sessionManager.getBranch().some((entry) => entry.type === "message" || entry.type === "compaction" || entry.type === "branch_summary")) return;
+		}
+		// Pi has already resolved model patterns, scoped suffixes and thinking precedence.
+		if (args.model !== undefined || args.models !== undefined) return;
+		const opus = (await models()).find((model) => familyOf(model) === 0);
+		if (opus && !(await pi.setModel(opus))) return;
+		applyThinking(args.thinking);
+	};
+	pi.on("session_start", async (event, ctx) => {
+		liveContext = ctx;
+		bind(ctx);
+		const args = parseArgs(process.argv.slice(2));
+		// Only an actual choice waits for the availability pass.
+		let pass: Promise<ChatModel[]> | undefined;
+		const models = () => pass ??= settled(ctx);
+		await startDefault(event.reason, ctx, args, models);
+		// CLI --model/--models, a saved default or a restored session may name a model outside the list.
+		const current = liveContext.model;
+		if (!current || isListed(current)) return;
+		const fallback = (await models())[0];
+		if (!fallback || !(await pi.setModel(fallback))) {
+			warn(ctx, `${notListed(current)} No listed model is authenticated; its requests are refused.`, true);
+			return;
+		}
+		applyThinking(event.reason === "startup" || event.reason === "new" ? args.thinking : undefined);
+		warn(ctx, `${notListed(current)} Switched to ${name(fallback)} (${pi.getThinkingLevel()}).`, true);
 	});
+	pi.on("session_shutdown", () => unbind());
 }

@@ -38,7 +38,8 @@ const PACKAGE_ON = [...DEFAULT_ON, "agent", "review"].sort();
 let root: string;
 let agentDir: string;
 let counter = 0;
-const faux = fauxProvider({ provider: "openai-codex" });
+// A listed RQW-models ID: RQW-models refuses requests for any other model.
+const faux = fauxProvider({ provider: "openai-codex", models: [{ id: "gpt-6.1-sol" }] });
 const ORIGINAL_AGENT_DIR = process.env.PI_CODING_AGENT_DIR;
 const ORIGINAL_FETCH = globalThis.fetch;
 let modelRuntime: ModelRuntime;

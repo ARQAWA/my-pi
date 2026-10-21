@@ -61,10 +61,24 @@ for (const order of [[MODELS, ADAPTER], [ADAPTER, MODELS], PACKAGE]) {
 					assert.ok(session.extensionRunner.getRegisteredCommands().some(command => command.name === "rqw-models"));
 					assert.equal(session.model?.id, authenticated ? "claude-opus-5-5" : "gpt-6-sol");
 					assert.equal(session.thinkingLevel, "medium");
-					const available = runtime.getAvailableSnapshot();
+					// RQW-models masks the stock picker inputs on this runtime and session instance; the adapter's
+					// prototype filter keeps working underneath, as Pi's own snapshot method shows.
+					const stockAvailable = () => ModelRuntime.prototype.getAvailableSnapshot.call(runtime);
+					assert.deepEqual(runtime.getAvailableSnapshot(), []);
+					assert.deepEqual(session.scopedModels, []);
+					const available = stockAvailable();
 					assert.ok(available.every(model => ["anthropic", "openai-codex"].includes(model.provider)));
 					assert.equal(available.some(model => model.id === "claude-opus-5-5"), authenticated);
-					// Disable just the adapter: the independent model picker stays and stock provider visibility returns.
+					// Disable just RQW-models: the adapter alone keeps filtering the now unmasked stock picker.
+					await writeFile(settingsFile, JSON.stringify({ ...config, extensions: [ADAPTER] }));
+					await session.reload();
+					assert.deepEqual(errors, []);
+					assert.deepEqual(loader.getExtensions().errors, []);
+					assert.ok(!session.extensionRunner.getRegisteredCommands().some(command => command.name === "rqw-models"));
+					assert.deepEqual(runtime.getAvailableSnapshot().map(model => model.id), available.map(model => model.id));
+					assert.deepEqual(runtime.getProviders().map(provider => provider.id).sort(), ["anthropic", "openai-codex"]);
+					assert.deepEqual(login(), ["anthropic", "openai-codex"]);
+					// Then RQW-models alone: it masks again and stock provider visibility returns.
 					await writeFile(settingsFile, JSON.stringify({ ...config, extensions: [MODELS] }));
 					await session.reload();
 					assert.deepEqual(errors, []);
@@ -72,6 +86,8 @@ for (const order of [[MODELS, ADAPTER], [ADAPTER, MODELS], PACKAGE]) {
 					assert.ok(runtime.getProviders().length > 2);
 					assert.ok(login().includes("openrouter"));
 					assert.equal(runtime.getRegisteredProviderConfig("anthropic"), undefined);
+					assert.deepEqual(runtime.getAvailableSnapshot(), []);
+					assert.equal(stockAvailable().some(model => model.provider === "openrouter"), authenticated);
 					assert.equal(session.model?.id, authenticated ? "claude-opus-5-5" : "gpt-6-sol");
 					assert.equal(session.thinkingLevel, "medium");
 					assert.equal(requests, 0);

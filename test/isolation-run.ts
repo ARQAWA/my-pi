@@ -27,7 +27,7 @@ if (probeNetwork) {
 }
 // An SDK model alone is not explicit CLI intent. Startup otherwise selects authenticated Opus;
 // a previous Bun check actually attempted OpenRouter and received a 404.
-process.argv.push("--model", "openai-codex/big");
+process.argv.push("--model", "openai-codex/gpt-6.1-sol");
 const entry = (name?: string) => (name ? { source: PKG, extensions: [`-extensions/${name}/index.ts`] } : PKG);
 const folder = (p = "") => /[\\/]extensions[\\/]([^\\/]+)[\\/]/.exec(p)?.[1] ?? p;
 
@@ -46,8 +46,9 @@ for (const key of Object.keys(process.env)) if (/(?:_API_KEY|_TOKEN|_SECRET)$/.t
 process.env.ANTHROPIC_API_KEY = "isolation-not-a-real-key";
 process.env.OPENROUTER_API_KEY = "isolation-not-a-real-key";
 
-// A 1M model, so the session window shows whether RQW-context acts.
-const faux = fauxProvider({ api: "faux-iso", provider: "openai-codex", models: [{ id: "big", contextWindow: 1_000_000, maxTokens: 1000 }] });
+// A 1M model, so the session window shows whether RQW-context acts. A listed RQW-models ID, since
+// RQW-models refuses requests for any other model.
+const faux = fauxProvider({ api: "faux-iso", provider: "openai-codex", models: [{ id: "gpt-6.1-sol", contextWindow: 1_000_000, maxTokens: 1000 }] });
 faux.setResponses([
 	fauxAssistantMessage([fauxToolCall("read", { path: "f.txt" }, { id: "c0" })], { stopReason: "toolUse" }),
 	fauxAssistantMessage("done"),
@@ -79,7 +80,7 @@ await resourceLoader.reload();
 const { session } = await createAgentSession({
 	cwd,
 	agentDir,
-	model: faux.getModel("big"),
+	model: faux.getModel("gpt-6.1-sol"),
 	thinkingLevel: "off",
 	modelRuntime,
 	resourceLoader,
