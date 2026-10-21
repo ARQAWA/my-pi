@@ -885,7 +885,6 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 - Owner request (C:3113): «Надо, чтобы они работали как в нашем OMP»; «Один мод будет статус бара, а второй мод
   будет Model Picker»; «То есть чисто модели Opus, Sonnet, GPT-6.1, GPT-6, Luna-6, Haiku».
-  Excluding `off` and `minimal` is the assistant's interpretation in C:3123, not the owner's exact wording.
   `extensions/RQW-models/index.ts` is independent,
   imports only Pi, and is listed separately in `package.json` under `pi.extensions`. Disable its resource in Pi's
   `pi config`, then `/reload`; it installs no process-wide hooks and writes no settings. It registers no tool.
@@ -910,7 +909,9 @@ Current accepted development policy (request summaries unless quoted); detailed 
   event context, not the TUI shortcut snapshot; this includes reasoning queued behind a model switch. The event
   context is refreshed even on resume and reload. Both model and reasoning movement stop at either end, as omp does,
   rather than wrap.
-  From outside the list, forward enters at the first available model and backward at the last.
+  `Alt+=` increases model strength (toward Opus); `Alt+-` decreases it (toward Haiku).
+  Engineering entry rule: from outside the list, plus enters at the strongest available model and minus at the
+  weakest, so entry follows the stated strength direction. The picker stays strongest first.
 - macOS Option uses the same shortcuts as Alt when the terminal sends it as Meta / an Esc prefix.
   Owner: «Я вроде как в задаче ставил, что должно работать и на Alt, и на Option» (line 49 of
   `2026-10-21T12-13-54-289Z_01a15e61-dcf1-7476-b1d6-42f03584b9e6.jsonl`). Reason: the terminal must send
@@ -920,7 +921,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Conservative UI choice: `/rqw-models` is the extension's authenticated six-model picker via `ctx.ui.select`.
   Stock `/model`, Ctrl+L, Ctrl+P, Shift+Tab, `/scoped-models`, CLI/RPC selection and provider definitions stay intact.
   Pi reserves those built-in shortcuts and disambiguates commands conflicting with built-ins; replacing its whole
-  UI would need internal hooks. The six-model/off/minimal exclusions apply to this extension's picker and shortcuts,
+  UI would need internal hooks. The six-model and off exclusions apply to this extension's picker and shortcuts,
   not a global prohibition on explicit stock Pi choices. In print/JSON mode the picker has no dialog and does nothing;
   RPC can supply the standard select dialog. Disabling the extension restores stock behavior on `/reload`.
 - Owner request (C:3113): «И базовая модель всегда при запуске — это Opus-Medium. Это от провайдера не зависит».
@@ -937,13 +938,21 @@ Current accepted development policy (request summaries unless quoted); detailed 
   matching Pi's own new-session initialization. No defaults are persisted. An SDK host must pass reason `resume` for
   an empty restored session with no conversation history, since public session metadata cannot distinguish that
   session from a fresh one after Pi inserts initial model/thinking entries.
-- Engineering decision under the model request C:3113: Pi's model support determines available thinking levels;
-  do not invent unsupported xhigh. `levelsFor` uses
-  Pi's exported `getSupportedThinkingLevels(model)` and removes off/minimal only. No copied omp effort caps or
-  provider-payload rewrites. With Pi 1.3.0's canonical six models it currently offers low, medium, high, xhigh, max;
-  a model or override without xhigh/max mappings offers neither. A non-reasoning model has no choices. On an
-  extension model switch the previous effort is retained if supported, otherwise the nearest lower supported level
-  or the lowest. Explicit off/minimal moves to the lowest allowed level on the next extension-driven selection.
+- Owner correction: «Теперь смотри насчет переключателя модели, пикера модели. Ты как сделал? Ты сделал, что я нажимаю Option + плюс/минус, и у тебя изменение effort идет правильно. Ты на плюс увеличиваешь effort, на минус уменьшаешь. А выбор модели у тебя идет неправильно. Ты на плюс ухудшаешь модель, а на минус улучшаешь модель. В самом конце у тебя стоит самая сильная модель, а в самом верху самая слабая. Список должен наоборот идти, в том же порядке, только наоборот. Еще смотри, effort у моделей должны быть такие же, как у пикера в MyPy, только без no reasoning моделей.»
+  Reason: model plus/minus must agree with effort plus/minus in strength. Carrier:
+  `extensions/RQW-models/index.ts`; the strength and entry rules are above.
+- Owner clarification: «Нет, ты не понял: уровни effort будут не те, что в стоковом выборе Pi, а те, что в нашем MyOMPHarness были. Там они были перенастроены кастомно. Допустим, у Opus были low, medium, high, у Sonnet были low, medium, high, extra high. Такие же должны быть, только без no reasoning.»
+  Reason: preserve the harness's custom effort choices, not stock Pi's wider list. Carrier:
+  `extensions/RQW-models/index.ts`, explicit `FAMILY_LEVELS` intersected with Pi's
+  `getSupportedThinkingLevels(model)`, so no unsupported level is offered. Opus: low, medium, high;
+  Sonnet: low, medium, high, xhigh; GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna and Haiku: low, medium, high, xhigh, max.
+  The harness's ORDER contains no minimal; off is removed by request. These lists apply to matched families,
+  including aliases and proxy providers. A non-reasoning model has no choices. On an extension model switch the
+  previous effort is retained if allowed, otherwise the nearest lower allowed level or the lowest. Explicit
+  off/minimal moves to the lowest allowed level on the next extension-driven family selection. Explicit CLI and
+  stock Pi selections retain their native precedence above. Engineering choice: unlisted models keep Pi-supported
+  levels minus off and minimal, matching the harness ORDER without inventing a family list.
+  Source evidence and exact OMP capability provenance: [notes/models-omp.md](notes/models-omp.md).
 - Engineering P2 follow-up for the model request C:3113: obtain the live current model when an action executes via
   the public event context; prefer Pi's resolved settings over a manual CLI parser; preserve the selected CLI effort
   and resumed model. These are implementation choices, not additional owner requirements. Reason: queued TUI snapshots retain the previous model and an extension
@@ -952,8 +961,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Research sources and Pi mechanisms: `notes/models-omp.md`. Read-only: `~/Documents/ChatGPT/my-omp-harness`
   master/lite use `extensions/ui/model-arrows.js` and
   `reasoning-arrows.js`; deprecated uses the same files directly under `extensions/`. All use Shift+arrows and
-  stop at the ends. Master contains GPT 5.6 and hard-coded Opus high/Sonnet xhigh caps plus Anthropic off payload
-  rewrites; those are intentionally not ported. Its `settings/config.yml` keeps the two providers and seven model
+  stop at the ends. Master's Opus high/Sonnet xhigh caps are carried by the family effort lists above; GPT 5.6
+  and Anthropic off payload rewrites are not ported. Its `settings/config.yml` keeps the two providers and seven model
   entries. The installed `~/.omp/agent/config.yml` loads that repository but still lists more enabled models and a
   Sonnet high default; `~/.omp/agent/keybindings.yml` disables stock model cycling. Latest owner choices above win.
   Checked against Pi 1.3.0 `docs/extensions.md`, `docs/sdk.md`, `docs/keybindings.md`, `core/extensions/types.d.ts`,
@@ -964,7 +973,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   missing Anthropic auth and explicit excluded-model selection. The key test feeds realistic ESC-prefix, Kitty
   physical/alternate-symbol CSI-u and xterm modifyOtherKeys bytes into Pi's `matchesKey`, with first-match dispatch.
   This is parser testing, not manual terminal testing. The local implementation report records no live Claude
-  requests and no independent agent review. Local proof for the P2 fixes is on macOS, Node 22.19.0 and 26.7.0, with 26 model tests on each. Regression coverage
+  requests and no independent agent review. The P2 implementation report records passing model tests on macOS, Node 22.19.0 and 26.7.0. Regression coverage
   includes rapid snapshot contexts, reasoning queued behind a switch, real CLI mixed scoped suffixes and a saved
   default selecting the second scoped model. The complete repository suite passes on both with
   `--test-concurrency=1`, versions run sequentially. Strict TypeScript checking was not rerun: this worktree has no
@@ -984,7 +993,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   No evidence calls for changing RQW production auth selection. The CLI regression now asserts the exact fallback
   model and preserves a saved `gpt-5.6-luna` outside the picker without explicit model flags, changing its saved
   high effort to medium. The explicit excluded-model test, offline mode and fetch prohibition remain intact.
-  Proof on macOS: all 26 model tests pass on Node 22.19.0, 24.21.0 and 26.7.0; the full suite passes on
+  The fixture-fix report records passing model tests on macOS, Node 22.19.0, 24.21.0 and 26.7.0; the full suite passes on
   Node 22.19.0 and 26.7.0 with 387 passed and the existing Windows-only test skipped. Twenty clean-home CLI
   probes with the seeded config passed. The local fixture-fix report records no live requests or CI rerun.
 

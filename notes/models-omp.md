@@ -18,9 +18,23 @@ Repository: `~/Documents/ChatGPT/my-omp-harness`, checked-out `master` at
 - `settings/config.yml`, `enabledModels` and `disabledProviders`: the seven model
   entries above, with providers other than Anthropic and openai-codex disabled.
 
-These files were reread for the P2 fixes. RQW-models keeps the owner's later
-six-model list and Alt shortcuts from `DECISIONS.md`, not GPT 5.6, off, the hard-coded
-caps, provider restrictions or Anthropic payload rewrites from these sources.
+- `settings/models.yml`: the six canonical model overrides change contextWindow
+  only, not thinking efforts. All six are explicitly enabled in config.yml; GPT 5.6
+  is an additional seventh model, not a substitute for a missing GPT 6 entry.
+- `reasoning-arrows.js`, `levelsFor`: intersects ORDER and CAPS with each model's
+  `thinking.efforts`. The inherited OMP model definitions in the read-only
+  `~/Documents/ChatGPT/oh-my-pi/packages/catalog/src/models.json` contain
+  `[low, medium, high, xhigh, max]` for each of the six canonical IDs under
+  anthropic/openai-codex. Applying the two caps yields the family lists recorded
+  in [DECISIONS.md, Models](../DECISIONS.md#models). No family is missing or needs
+  a GPT 5.6 inference. OMP's cached Anthropic definitions in
+  `~/.omp/agent/models.db` agree (queried read-only); there is no cached
+  openai-codex row, so its evidence is the bundled catalog, not live discovery.
+
+RQW-models keeps the owner's six-model list, Alt shortcuts and custom effort lists
+from `DECISIONS.md`, not GPT 5.6, off, provider restrictions or Anthropic payload
+rewrites. Its explicit per-family lists are intersected with Pi support at runtime;
+there is no runtime import from the harness or its catalog.
 
 ## Pi 1.3.0 mechanisms used by the fixes
 
@@ -43,5 +57,14 @@ Paths are relative to the installed `@earendil-works/pi-coding-agent` package.
   extension selects Opus. Pi's parser, not a second CLI grammar, decides these flags.
 - `dist/core/sdk.js`: Pi resolves model-specific and global settings effort and
   clamps it to model capabilities. Explicit model selection keeps that result too.
+- `dist/modes/interactive/interactive-mode.js`, `showThinkingSelector`: supplies
+  `session.getAvailableThinkingLevels()` to `ThinkingSelectorComponent`.
+  `dist/core/agent-session.js`, `getAvailableThinkingLevels`: delegates to pi-ai's
+  `getSupportedThinkingLevels(model)`. The component in
+  `dist/modes/interactive/components/thinking-selector.js` displays those levels
+  unchanged (`off` is described as "No reasoning"). This stock picker is not the
+  source of RQW-models' custom family lists; Pi support only constrains them.
+  Current per-model lists and shortcut direction are in
+  [DECISIONS.md, Models](../DECISIONS.md#models).
 
 No live model requests are needed for the snapshot-context or faux CLI regressions.

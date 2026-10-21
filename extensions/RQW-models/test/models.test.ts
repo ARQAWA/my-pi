@@ -19,6 +19,14 @@ const model = (id: string, provider = "anthropic", map: Record<string, string | 
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 8000, thinkingLevelMap: map,
 });
 const SIX = FAMILIES.map((id) => model(id, id.startsWith("gpt") ? "openai-codex" : "anthropic"));
+const EXPECTED_LEVELS = [
+	["low", "medium", "high"],
+	["low", "medium", "high", "xhigh"],
+	["low", "medium", "high", "xhigh", "max"],
+	["low", "medium", "high", "xhigh", "max"],
+	["low", "medium", "high", "xhigh", "max"],
+	["low", "medium", "high", "xhigh", "max"],
+];
 
 type Shortcut = Parameters<ExtensionAPI["registerShortcut"]>[1];
 type Command = Parameters<ExtensionAPI["registerCommand"]>[1];
@@ -86,50 +94,71 @@ describe("RQW model families and Pi thinking capabilities", () => {
 		assert.deepEqual(pickerModels([alias, SIX[0]]), [SIX[0]]);
 		assert.deepEqual(pickerModels([alias]), [alias]);
 	});
-	it("uses Pi support, omits off/minimal, never manufactures xhigh or max", () => {
+	it("uses explicit OMP family lists, including aliases, intersected with Pi support", () => {
+		for (const [index, m] of SIX.entries()) {
+			assert.deepEqual(levelsFor(m), EXPECTED_LEVELS[index], m.id);
+			assert.deepEqual(levelsFor({ ...m, id: `proxy/${m.id}`, provider: "proxy" }), EXPECTED_LEVELS[index]);
+		}
+		assert.deepEqual(levelsFor(model("claude-sonnet-5-5", "anthropic", { low: null, xhigh: null, max: "max" })), ["medium", "high"]);
+		assert.deepEqual(levelsFor(model("gpt-6-sol", "openai-codex", {})), ["low", "medium", "high"]);
+		assert.deepEqual(levelsFor(model("claude-opus-5-5", "anthropic", { low: null, medium: null, high: null })), []);
+		// Unlisted models retain Pi-supported effort choices, without off or minimal.
 		assert.deepEqual(levelsFor(model("test", "proxy", {})), ["low", "medium", "high"]);
 		assert.deepEqual(levelsFor(model("test", "proxy", { low: null, xhigh: null, max: "max" })), ["medium", "high", "max"]);
+		assert.deepEqual(levelsFor(model("test", "proxy", { minimal: null })), ["low", "medium", "high"]);
 		assert.deepEqual(levelsFor({ ...SIX[0], reasoning: false }), []);
 		assert.deepEqual(levelsFor(undefined), []);
 	});
 });
 
 describe("shortcuts and picker", () => {
-	it("steps in both directions, clamps at ends like omp, enters from outside", async () => {
+	it("plus strengthens, minus weakens, clamps both ends and enters at the matching strength end", async () => {
 		const h = harness();
-		await h.press("alt+-"); assert.equal(h.selected.length, 0);
-		for (const expected of SIX.slice(1)) { await h.press("alt+="); assert.equal(h.current, expected); }
-		await h.press("alt+="); assert.equal(h.selected.length, 5);
-		await h.press("alt+-"); assert.equal(h.current, SIX[4]);
+		await h.press("alt+="); assert.equal(h.selected.length, 0);
+		for (const expected of SIX.slice(1)) { await h.press("alt+-"); assert.equal(h.current, expected); }
+		await h.press("alt+-"); assert.equal(h.selected.length, 5);
+		for (const expected of SIX.slice(0, -1).toReversed()) { await h.press("alt+="); assert.equal(h.current, expected); }
+		await h.press("alt+="); assert.equal(h.selected.length, 10);
 		const outside = model("other");
 		const forward = harness(SIX, outside); await forward.press("alt+="); assert.equal(forward.current, SIX[0]);
 		const backward = harness(SIX, outside); await backward.press("alt+-"); assert.equal(backward.current, SIX.at(-1));
+		const sparseModels = [SIX[1], SIX[3], SIX[4]];
+		const sparsePlus = harness(sparseModels, outside);
+		await sparsePlus.press("alt+="); assert.equal(sparsePlus.current, SIX[1]);
+		await sparsePlus.press("alt+="); assert.equal(sparsePlus.selected.length, 1);
+		const sparseMinus = harness(sparseModels, outside);
+		await sparseMinus.press("alt+-"); assert.equal(sparseMinus.current, SIX[4]);
+		await sparseMinus.press("alt+-"); assert.equal(sparseMinus.selected.length, 1);
 	});
 	it("recognizes the current family even when resume used another provider variant", async () => {
 		const proxySonnet = model("anthropic/claude-sonnet-5.5", "proxy");
 		const h = harness(SIX, proxySonnet);
-		await h.press("alt+="); assert.equal(h.current, SIX[2]);
+		await h.press("alt+="); assert.equal(h.current, SIX[0]);
 	});
 	it("serializes quick model presses and preserves the pre-switch thinking level", async () => {
 		const h = harness(SIX, SIX[0], "high");
-		await Promise.all([h.press("alt+="), h.press("alt+="), h.press("alt+=")]);
+		await Promise.all([h.press("alt+-"), h.press("alt+-"), h.press("alt+-")]);
 		assert.equal(h.current, SIX[3]); assert.equal(h.thinking, "high");
 		assert.deepEqual(h.selected, SIX.slice(1, 4).map((m) => `${m.provider}/${m.id}`));
 	});
 	it("queued reasoning reads the new model capabilities, not the keypress snapshot", async () => {
 		const limitedOpus = model("claude-opus-5-5", "anthropic", {});
 		const h = harness([limitedOpus, SIX[1]], limitedOpus, "high");
-		await Promise.all([h.press("alt+="), h.press("alt+shift+=")]);
+		await Promise.all([h.press("alt+-"), h.press("alt+shift+=")]);
 		assert.equal(h.current, SIX[1]); assert.equal(h.thinking, "xhigh");
 	});
 	it("switching lowers unsupported effort to nearest lower level, or lowest, not Pi's upward clamp", async () => {
 		const limited = model("claude-sonnet-5-5", "anthropic", {});
 		const h = harness([SIX[0], limited], SIX[0], "max");
-		await h.press("alt+="); assert.equal(h.thinking, "high");
-		const off = harness(SIX, SIX[0], "off"); await off.press("alt+="); assert.equal(off.thinking, "low");
+		await h.press("alt+-"); assert.equal(h.thinking, "high");
+		const off = harness(SIX, SIX[0], "off"); await off.press("alt+-"); assert.equal(off.thinking, "low");
+		const minimal = harness(SIX, SIX[1], "minimal"); await minimal.press("alt+="); assert.equal(minimal.thinking, "low");
+		const capped = harness(SIX, SIX[2], "max");
+		await capped.press("alt+="); assert.equal(capped.thinking, "xhigh");
+		await capped.press("alt+="); assert.equal(capped.thinking, "high");
 	});
 	it("cycles only supported reasoning, clamps both ends and handles off/minimal", async () => {
-		const h = harness(SIX, SIX[0], "off");
+		const h = harness(SIX, SIX[2], "off");
 		for (const expected of ["low", "medium", "high", "xhigh", "max", "max"]) { await h.press("alt+shift+="); assert.equal(h.thinking, expected); }
 		for (const expected of ["xhigh", "high", "medium", "low", "low"]) { await h.press("alt+shift+-"); assert.equal(h.thinking, expected); }
 		const minimal = harness(SIX, SIX[0], "minimal"); await minimal.press("alt+_"); assert.equal(minimal.thinking, "low");
@@ -137,8 +166,8 @@ describe("shortcuts and picker", () => {
 	});
 	it("no models, auth lost and cancelled/headless pickers are harmless", async () => {
 		const empty = harness([]); await empty.press("alt+="); await empty.pick(); assert.equal(empty.selected.length, 0); assert.equal(empty.warnings.length, 1);
-		const lost = harness(); lost.allowSet = false; await lost.press("alt+="); assert.equal(lost.current, SIX[0]); assert.equal(lost.thinking, "medium"); assert.equal(lost.warnings.length, 1);
-		const h = harness(); await h.pick(); assert.equal(h.offered.length, 6); assert.equal(h.selected.length, 0);
+		const lost = harness(); lost.allowSet = false; await lost.press("alt+-"); assert.equal(lost.current, SIX[0]); assert.equal(lost.thinking, "medium"); assert.equal(lost.warnings.length, 1);
+		const h = harness(); await h.pick(); assert.deepEqual(h.offered, SIX.map((m) => `${m.provider}/${m.id}`)); assert.equal(h.selected.length, 0);
 		h.choice = "openai-codex/gpt-6-sol"; await h.pick(); assert.equal(h.current, SIX[3]);
 		h.hasUI = false; await h.pick(); assert.equal(h.selected.length, 1);
 	});
@@ -162,7 +191,7 @@ describe("real terminal byte sequences through Pi's key matcher", () => {
 			const actual = [...h.shortcuts.keys()].find((candidate) => matchesKey(bytes, candidate));
 			assert.equal(actual, key, JSON.stringify(bytes));
 			await h.press(actual!);
-			assert.equal(h.selected.length, key === "alt+=" ? 1 : 0);
+			assert.equal(h.selected.length, key === "alt+-" ? 1 : 0);
 			if (key !== "alt+=" && key !== "alt+-") assert.equal(h.thinking, key.includes("_") || key.endsWith("+-") ? "low" : "high");
 		}
 		setKittyProtocolActive(false);
@@ -248,17 +277,34 @@ describe("real Pi SDK and faux providers only", () => {
 		const session = await realSession();
 		try {
 			assert.equal(session.model?.id, "claude-opus-5-5"); assert.equal(session.thinkingLevel, "medium");
-			for (const m of SIX) assert.deepEqual(levelsFor(catalogue.get(m.id)), getSupportedThinkingLevels(catalogue.get(m.id)!).filter((level) => level !== "off" && level !== "minimal"));
+			for (const [index, m] of SIX.entries()) {
+				assert.deepEqual(levelsFor(catalogue.get(m.id)), EXPECTED_LEVELS[index], m.id);
+				assert.ok(levelsFor(catalogue.get(m.id)).every((level) => getSupportedThinkingLevels(catalogue.get(m.id)!).includes(level)));
+			}
 			anthropic.setResponses([fauxAssistantMessage("faux only")]); await session.prompt("hello"); assert.equal(session.getLastAssistantText(), "faux only");
-			await press(session, "alt+="); assert.equal(session.model?.id, "claude-sonnet-5-5"); assert.equal(session.thinkingLevel, "medium");
+			await press(session, "alt+-"); assert.equal(session.model?.id, "claude-sonnet-5-5"); assert.equal(session.thinkingLevel, "medium");
 			await press(session, "alt+shift+="); assert.equal(session.thinkingLevel, "high");
 			const saved = session.settingsManager.getSettings(); assert.equal(saved.defaultModel, undefined); assert.equal(saved.defaultThinkingLevel, undefined);
 		} finally { session.dispose(); }
 	});
-	it("rapid snapshot-context presses advance Opus to Sonnet to GPT6.1 to GPT6", async () => {
+	it("real effort shortcuts obey each OMP list and clamp at both ends", async () => {
+		for (const [index, m] of SIX.entries()) {
+			const session = await realSession({ model: (m.provider === "anthropic" ? anthropic : codex).getModel(m.id), flags: ["--model", m.id], thinking: "low" });
+			try {
+				const expected = EXPECTED_LEVELS[index];
+				for (const level of [...expected.slice(1), expected.at(-1)]) {
+					await press(session, "alt+shift+="); assert.equal(session.thinkingLevel, level, m.id);
+				}
+				for (const level of [...expected.slice(0, -1).toReversed(), "low"]) {
+					await press(session, "alt+shift+-"); assert.equal(session.thinkingLevel, level, m.id);
+				}
+			} finally { session.dispose(); }
+		}
+	});
+	it("rapid minus snapshot-context presses weaken Opus to Sonnet to GPT6.1 to GPT6", async () => {
 		const session = await realSession();
 		try {
-			await Promise.all([press(session, "alt+="), press(session, "alt+="), press(session, "alt+=")]);
+			await Promise.all([press(session, "alt+-"), press(session, "alt+-"), press(session, "alt+-")]);
 			const changes = session.sessionManager.getBranch().filter((entry) => entry.type === "model_change");
 			assert.deepEqual(changes.slice(-3).map((entry) => entry.modelId), FAMILIES.slice(1, 4));
 			assert.equal(session.model?.id, "gpt-6-sol"); assert.equal(session.thinkingLevel, "medium");
@@ -278,7 +324,7 @@ describe("real Pi SDK and faux providers only", () => {
 		const manager = SessionManager.inMemory(root);
 		const session = await realSession({ manager, reason: "new" });
 		try {
-			await press(session, "alt+="); await press(session, "alt+="); await press(session, "alt+shift+=");
+			await press(session, "alt+-"); await press(session, "alt+-"); await press(session, "alt+shift+=");
 			codex.setResponses([fauxAssistantMessage("saved")]); await session.prompt("save history");
 			await session.reload(); assert.equal(session.model?.id, "gpt-6.1-sol"); assert.equal(session.thinkingLevel, "high");
 		} finally { session.dispose(); }

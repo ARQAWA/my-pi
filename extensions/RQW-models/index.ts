@@ -7,6 +7,15 @@ export const FAMILIES = [
 const ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type Level = typeof ORDER[number];
 type ChatModel = Model<string>;
+// OMP reasoning-arrows ORDER/CAPS intersected with its canonical model efforts.
+const FAMILY_LEVELS: Record<typeof FAMILIES[number], readonly Level[]> = {
+	"claude-opus-5-5": ["low", "medium", "high"],
+	"claude-sonnet-5-5": ["low", "medium", "high", "xhigh"],
+	"gpt-6.1-sol": ["low", "medium", "high", "xhigh", "max"],
+	"gpt-6-sol": ["low", "medium", "high", "xhigh", "max"],
+	"gpt-6-luna": ["low", "medium", "high", "xhigh", "max"],
+	"claude-haiku-5-5": ["low", "medium", "high", "xhigh", "max"],
+};
 
 /** Match the same generation, including proxy paths, dated aliases and Bedrock IDs. */
 export function familyOf(model: ChatModel): number {
@@ -16,7 +25,12 @@ export function familyOf(model: ChatModel): number {
 }
 
 export function levelsFor(model: ChatModel | undefined): Level[] {
-	return model ? getSupportedThinkingLevels(model).filter((level): level is Level => level !== "off" && level !== "minimal") : [];
+	if (!model) return [];
+	const supported = getSupportedThinkingLevels(model);
+	const family = FAMILIES[familyOf(model)];
+	return family
+		? FAMILY_LEVELS[family].filter((level) => supported.includes(level))
+		: supported.filter((level): level is Level => level !== "off" && level !== "minimal");
 }
 
 export function pickerModels(models: ChatModel[]): ChatModel[] {
@@ -59,7 +73,8 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		const currentModel = liveContext.model;
 		const currentFamily = currentModel ? familyOf(currentModel) : -1;
 		const index = models.findIndex((model) => familyOf(model) === currentFamily);
-		const next = index < 0 ? (direction > 0 ? 0 : models.length - 1) : Math.max(0, Math.min(models.length - 1, index + direction));
+		// Display order is strongest first; positive direction increases strength.
+		const next = index < 0 ? (direction > 0 ? 0 : models.length - 1) : Math.max(0, Math.min(models.length - 1, index - direction));
 		if (next === index || !models[next]) return;
 		await select(ctx, models[next]);
 	});
@@ -73,7 +88,7 @@ export default function modelsExtension(pi: ExtensionAPI) {
 	});
 	for (const [key, direction] of [["alt+=", 1], ["alt+-", -1]] as const) {
 		pi.registerShortcut(key, {
-			description: direction > 0 ? "RQW: next model" : "RQW: previous model",
+			description: direction > 0 ? "RQW: stronger model" : "RQW: weaker model",
 			handler: (ctx) => cycleModel(ctx, direction),
 		});
 	}
