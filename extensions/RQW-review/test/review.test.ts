@@ -8,7 +8,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
 	type AssistantMessage,
 	fauxAssistantMessage,
@@ -41,7 +41,8 @@ const found = (verdict: string, n = 1) => `[review#${n}] ${verdict}\n\n${NEXT.fi
 const failedWith = (reason: string) => `[review#1] Review failed: ${reason}\n\n${NEXT.failed}`;
 
 const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
-const REVIEWER = readFileSync(join(dirname(EXTENSION), "REVIEWER.md"), "utf8").trimEnd();
+const REVIEWER_SOURCE = readFileSync(join(dirname(EXTENSION), "REVIEWER.md"), "utf8").replace(/\r\n/g, "\n");
+const REVIEWER = REVIEWER_SOURCE.trimEnd();
 
 type Factory = (context: TranscriptContext, options: SimpleStreamOptions | undefined) => AssistantMessage | Promise<AssistantMessage>;
 type Request = { model: string; reasoning?: string; system: string; tools: string[]; text: string };
@@ -216,8 +217,24 @@ const FIRST = "Rename `foo` to `bar` in a.ts.\n  Keep «quotes», <tags> and tra
 const SECOND = "Review it, please: blind.";
 
 describe("measured reviewer prompt contract", () => {
+	it("loads a CRLF checkout through the production loader as canonical LF", async () => {
+		const dir = await mkdtemp(join(dirname(EXTENSION), ".crlf-test-"));
+		try {
+			await writeFile(join(dir, "index.ts"), readFileSync(EXTENSION, "utf8"));
+			const crlf = REVIEWER_SOURCE.replace(/\n/g, "\r\n");
+			assert.equal(createHash("sha256").update(crlf).digest("hex"),
+				"894a2e229dd7a718c932d50276506b82842fa224f21c9489c945da8d47a915bf");
+			await writeFile(join(dir, "REVIEWER.md"), crlf);
+			const loaded = await import(pathToFileURL(join(dir, "index.ts")).href);
+			assert.equal(loaded.REVIEWER, REVIEWER);
+			assert.ok(!loaded.REVIEWER.includes("\r"));
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("loads the exact GPT v3 candidate and keeps criterion-only checks in scope", () => {
-		assert.equal(createHash("sha256").update(readFileSync(join(dirname(EXTENSION), "REVIEWER.md"))).digest("hex"),
+		assert.equal(createHash("sha256").update(REVIEWER_SOURCE).digest("hex"),
 			"a9cc1a3fac50fe32b6911e5bb8bf152caecad9947e2d36d162696eed5db3117a");
 		assert.ok(REVIEWER.includes("Review independently: Main's verdict is not evidence."));
 		assert.ok(REVIEWER.includes("including custom criteria beyond the agreement"));
