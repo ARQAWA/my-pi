@@ -38,7 +38,7 @@ function canonical(abs: string, P: path.PlatformPath): { key: string; existing?:
       return { key: P.join(existing, ...rest), existing, dangling };
     } catch (e) {
       const code = typeof e === "object" && e !== null && "code" in e ? e.code : undefined;
-      if (code !== "ENOENT") throw e;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw e;
       let link = false;
       try { link = fs.lstatSync(cur).isSymbolicLink(); }
       catch (error) {
@@ -154,7 +154,9 @@ export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = proc
 /** Equality only: hardlinks in different parents share a leaf, not a path-shaped ancestor key. */
 export function editPathKey(p: string, cwd: string): string | undefined {
   try {
-    const identity = nativeIdentity(resolvePath(p, cwd));
+    const abs = resolvePath(p, cwd);
+    fs.statSync(abs);
+    const identity = nativeIdentity(abs);
     return identity.leaf ?? identity.key;
   } catch { return undefined; }
 }
