@@ -98,6 +98,10 @@ Every accepted decision, with its reason and the file that carries it.
   Reason: the code review showed that activating on registration overrode an explicit `--tools -edit`.
 - read and bash are built with the user's settings (`shellPath`, `shellCommandPrefix`, `images.autoResize`), as stock
   Pi builds them. Reason: without `shellPath` a Windows setup with Git outside Program Files finds no bash.
+- `createTools(cwd, settings)` in `index.ts` builds the six definitions with one barrier of their own; the factory
+  registers one set for the session and answers a request on `pi.events` channel `rqw-tools:subagent-tools` with
+  `createTools` itself (section Agent). Nothing in RQW-tools depends on RQW-agent. A test in `test/tools.test.ts`
+  checks the answer and that each call gives fresh definitions.
 - The read key mirrors stock `resolveReadPath` (NFD, curly quote and AM/PM variants), so a read and a write of the same
   file spelled differently still meet in the barrier.
 - The `ls` and other stock tools beyond the six are not wrapped and stay outside the barrier; they are off by default.
@@ -336,6 +340,151 @@ Every accepted decision, with its reason and the file that carries it.
   request; the cost is recorded here.
 - On `/reload` the `session_start` handlers of RQW-settings and RQW-tools leave the active set alone: Pi keeps the tools
   the user switched off, and the handlers had added them again.
+
+## Agent
+
+- A general subagent for the main agent, the one the Scope section names as a separate task. The owner's words: «должна
+  быть опция поднимать любых рандомных саб-агентов, которые являются саб-потоком основного агента. Можно за базу взять
+  агента General Purpose из курсора и его воспроизвести»; «этот кастомный саб-агент, абстрактный саб-агент, должен
+  подниматься без системного промпта, чтобы основной агент передавал ему весь системный промпт. Полностью промптил его
+  от начала до конца»; «Чтобы он мог ему ставить задачу, прерывать, выключать, перезапускать. Он мог ему посылать
+  сообщение follow-up»; «чтобы основной агент тратил минимум токенов»; «все решения должны быть максимально простые ...
+  без оверенджинеринга»; «всё должно быть доказано». Carried by `extensions/RQW-agent/index.ts`.
+- One tool `agent` with `action` `start`, `send`, `interrupt`, `stop`, `restart` and the fields `id`, `system`, `task`,
+  `model` (`provider/id`), `thinking` (Pi's levels `off` to `max`), `tools` (a subset of `read`, `bash`, `edit`,
+  `write`, `grep`, `find`). Cost for the main agent on every request: description 584 characters, schema 636. The
+  schema passes Pi's `makeStrictJsonSchema`; `null` in an optional field counts as omitted.
+- In process, no spawn (Windows-safe): `createAgentSession` with `SessionManager.inMemory`, `SettingsManager.inMemory`,
+  and `DefaultResourceLoader` with `noExtensions`, `noSkills`, `noPromptTemplates`, `noThemes`, `noContextFiles`; cwd
+  is the main session's `ctx.cwd`. Neither RQW-prompt nor AGENTS.md reaches the subagent.
+- The system prompt is exactly `system`. Pi appends `<cwd>` and other sections to every custom prompt
+  (`buildSystemPromptSections` in Pi's `dist/core/system-prompt.js`); only a forced prompt goes out as it is. So the
+  loader carries one inline handler, `before_agent_start` returning `{ systemPrompt: system }`. This is the closest
+  thing to "no extensions": the only handler is ours and does nothing else. A test checks that the request has one
+  system message equal to `system`.
+- The model runtime is the main session's, taken from `ctx.modelRegistry.runtime`, a plain field that is private only
+  in the TypeScript types. Reason: one credential store and one OAuth refresh (risk 1 of
+  `/tmp/pi-subagent-eval/report.md`), and providers that extensions register also serve the subagent, such as the
+  `anthropic` overlay of the installed `pi-claude-auth`. If Pi renames the field, `start` fails and the tests show it.
+- Defaults follow Cursor's generalPurpose: all tools, the main model ("inherit"), no subagents of its own (Cursor
+  transcript 704ada44 in `cursor-like-harness/kb/sources/cursor-reverse-extra`). Here: the main session's model and
+  thinking level, all six tools, and no `agent` tool for the subagent.
+- No imports across extension folders: `extensions/RQW-agent/` loads and works with every other RQW-* switched off or
+  absent, and switching RQW-tools off switches it off for subagents too (owner: «Когда мы делаем эти отдельные модули,
+  они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать и выключать, как feature флаги»;
+  review G: the earlier `import rqwTools from "../RQW-tools/index.ts"` failed to load without that folder and gave
+  subagents RQW-tools with RQW-tools off).
+- Subagent tools follow the RQW-tools switch through a loose, optional handshake on Pi's shared event bus `pi.events`
+  (`docs/extensions.md` line 87: "Communicate with another extension | `pi.events`"; `events: EventBus` in
+  `dist/core/extensions/types.d.ts` line 1406; one bus per resource loader for all its extensions,
+  `dist/core/resource-loader.js` lines 248 and 511). At every `start` and `restart` RQW-agent emits
+  `rqw-tools:subagent-tools` with `{ offer(factory) }`. RQW-tools, when loaded, answers with `createTools`, a
+  `(cwd, settings) => ToolDefinition[]` that builds the six tools with a barrier of their own; RQW-agent calls it with
+  the main `ctx.cwd` and the main session's `pi.getSettings`, and passes the result as `customTools` with the `tools`
+  allowlist. The answer is there when `emit` returns: the bus is a Node `EventEmitter`, and its wrapper calls the
+  handler before its first `await` (`dist/core/event-bus.js` lines 4-18). Pi drops the handler of a stale instance on
+  reload and dispose (`invalidate` in `dist/core/extensions/loader.js` lines 141-150, called from
+  `dist/core/agent-session.js` lines 1007 and 2973). With no answer `customTools` is empty and Pi builds its stock
+  tools. Reason: stock tools lose the barrier and multi-file `edit`/`write`, so with RQW-tools on the subagents keep
+  them, and with it off they must not. RQW-tools works the same without RQW-agent.
+- The subagent's `SettingsManager.inMemory` carries the main session's `shellPath`, `shellCommandPrefix` and
+  `images.autoResize`, the three settings Pi builds stock read and bash from (`_buildRuntime` in
+  `dist/core/agent-session.js` lines 2935-2946), so Git Bash on Windows applies to stock bash too. RQW-tools
+  definitions read the main session's settings per call instead.
+- Results are async. At the end of each run the main session gets `[agent#N] <text>` through `pi.sendMessage`. The
+  text is every final answer of the run, so a follow-up queued during the run does not hide the first answer (the brief
+  said "last assistant text"). The text also carries every final error of the run as `error: <reason>`, in order with
+  the answers: a failed follow-up does not hide the first answer (`[agent#1] FIRST ANSWER\n\nerror: bad request`,
+  review C), and a first task that fails for good does not vanish when Pi then runs a queued follow-up that succeeds
+  (`[agent#1] error: bad request: first task\n\nSECOND ANSWER`, review D). An attempt that Pi repeats is not a result. Pi
+  repeats a request on two paths and emits an event only when it does: `auto_retry_start` for a retryable error
+  (`_prepareRetry` in Pi's `agent-session.js`), and `compaction_end` with `willRetry: true` for a context overflow error
+  or a recoverable `length` stop (`_checkCompaction`, review E). Either event removes the error or partial text of the
+  last assistant message, and only when that message added one: a `length` stop with no text adds nothing, so an
+  earlier answer stays. Threshold compaction has `willRetry: false` and removes nothing. Bad calls (unknown
+  id or model, no credentials, missing `system` or `task`) fail at once as a tool error, which costs less than a later
+  message. Credentials are checked as Pi's prompt checks them: the registry's auth snapshot, then
+  `runtime.checkAuth(provider)`, because the snapshot fills asynchronously and alone rejected valid models.
+- Delivery never loses a result to an abort of the main agent (review finding: a follow-up waits in the main agent's
+  queue, which TUI Esc clears through `clearQueue()` and RPC `abort` leaves without a turn). When the main session is
+  idle (`ctx.isIdle()`), the message goes with `triggerTurn: true` and starts a turn. When it is busy, it goes with
+  `triggerTurn: false`: Pi holds it outside the queue and appends it to the session at the end of the current turn or
+  run, aborted or not (`sendCustomMessage`, `_flushPendingCustomMessages` in Pi's `agent-session.js`), and the
+  `agent_before_settle` handler returns `continue: true` while such a result is not yet followed by an assistant
+  message in the branch (tracked by a delivery id in `details`, a `randomUUID()` that no other extension instance or
+  process repeats: a counter restarted at 1 after `/reload`, `/resume`, `/fork` or `pi -c` and matched an old,
+  answered entry of the same session, so the new result got no turn; review B). After an abort no turn starts, since
+  Esc means stop; the result stays in the session and the model sees it on the next turn. Re-sending after an abort, the first
+  idea, was dropped: after an RPC abort the old copy stays queued and would arrive a second time with an extra turn.
+  Pi runs every extension's `agent_before_settle` handler in a row before it settles, so a result can come in after
+  ours returned, for example while another extension's slow async handler runs after ours; held with
+  `triggerTurn: false`, it would get no turn (review C). So our handler sets a `settling` flag when it lets the run
+  stop, `turn_start` and `agent_settled` clear it, and `deliver` keeps results sent while it is set; the
+  `agent_settled` handler sends them. Pi defers every `triggerTurn: true` call separately and runs one full turn for
+  each, so only the last held result goes with `triggerTurn: !event.aborted`; the earlier ones go with
+  `triggerTurn: false`, which Pi appends at once since the run is no longer active, and the one deferred turn sees all
+  of them (review D: two results gave two main turns).
+  Rare case: a result that arrives during a manual `/compact` with no run is appended without a turn and is seen on
+  the next one.
+- Ids `agent#N` never repeat within a session. Every extension instance (`/reload`, `/resume`, `/fork`, `pi -c`) starts
+  its counter on `session_start` above the highest `agent#N` in the session's `[agent#N]` messages and `agent` tool
+  results, so a new subagent in a continued session gets `agent#2`, not a second `agent#1` whose result would read as
+  the old task's and to which a `send agent#1` meant for the old, killed subagent would go (review D).
+- No timeout of our own: Pi's provider timeouts and retries apply, and the main agent can interrupt.
+- `send` to a running subagent queues `session.followUp`; to an idle one it starts a new run with the history.
+  `interrupt` calls `session.abort()`, drops the run's queued follow-ups, sends no message and keeps the history.
+  `stop` disposes the session and forgets the id. Closing a session (`stop`, `restart`, `session_shutdown`) clears its
+  queue before `dispose()`: `dispose()` aborts without Pi's abort flag, so Pi would run a queued follow-up on the
+  disposed session and bill a request after `stopped`. `restart` disposes and creates a fresh session with the same
+  `system`, model, thinking and tools or the ones given, and runs `task` if given.
+- Calls of `agent` run one at a time in call order. Pi runs the calls of one response in parallel, and a batch of
+  `start` and `send agent#1` failed without this (checked by removing it). `start`, `send` to an idle subagent and
+  `restart` with a task return only once Pi has started the run, through the `preflightResult` callback of
+  `session.prompt` (or once the run has ended). Before that Pi's async preflight runs with no active run, so an
+  `interrupt`, `stop` or `restart` next in the same batch aborted nothing: the request still went out and `interrupt`
+  waited for the whole run (review E).
+- `start`, `send` and `restart` also return at Pi's `compaction_start`: Pi's run is active from there, and a pre-run
+  compaction of a large history (for example after an interrupt) would otherwise hold the main agent, an `interrupt`
+  behind it and Esc for a whole summary request. Closing a session (`stop`, `restart`, `session_shutdown`) calls
+  `abort()` and disposes only after it: `dispose()` alone sets no abort flag, so Pi went on from an aborted pre-run
+  compaction to a request from the disposed session (review F).
+- Print and JSON modes exit when the main run settles, so there the `agent_before_settle` handler first waits for
+  running subagents; their messages continue the same run. In the TUI and RPC a result for an idle main session
+  starts a new turn.
+- `session_shutdown` aborts and disposes every subagent without messages. No cap on the count.
+- Accepted limits: a result that arrives after the main session ended is lost; a subagent may read files the main agent
+  is editing; subagents share the process with the TUI.
+- `RQW-context` patches Pi classes for the whole process, so a subagent gets the owner's universal window rule like
+  every model: its window is capped at 500 000 and its compaction reserve is 10% of that window. Checked in review: a
+  subagent on a 1 000 000 model sends its request with window 500 000 when RQW-context is loaded.
+- Proof: `extensions/RQW-agent/test/agent.test.ts`, 34 tests on two faux providers (a copy of `index.ts` alone in a
+  folder with no other extension loads and delivers, and the source has no `../` import; without RQW-tools the
+  subagent's `write` is the stock one, no `files`; with RQW-tools loaded it takes `files` and runs while a `sleep 2`
+  of the main session's RQW-tools bash still holds the main barrier; exact system prompt, model,
+  thinking, tool subset, the five actions, follow-up while running, the main turn, shutdown, errors, call order, print
+  mode; one request only after `stop`, `restart` or `session_shutdown` with a queued follow-up; a result arriving
+  while the main agent streams continues its run once; after TUI Esc and after RPC abort the result is in the session
+  once, no run starts, and the next prompt carries it once; in a continued session that already holds an `[agent#1]`
+  result, a new result while busy still continues the run once, in TUI and print mode; a queued follow-up that fails
+  delivers the first answer and the error in one message; a first task that fails for good with a queued follow-up that
+  succeeds delivers the error and the answer in one message; an error that Pi retries is not delivered; neither is an
+  overflow error nor a truncated `length` answer that Pi compacts and retries; `interrupt`, `stop` and `restart` right
+  after `start` in one batch return at once and leave no subagent request; two results
+  that arrive while a second extension's slow `agent_before_settle` handler, loaded after RQW-agent, runs get one main
+  turn that sees both; in a continued session a new subagent gets `agent#2`; after an interrupt above the threshold `send` returns within 100 ms and `interrupt`, `stop`, `restart` or `session_shutdown` right after it send no summary request, and `stop`, `restart` or `session_shutdown` during that summary abort it and send nothing more). Each test passes alone. With
+  an empty extension the original 13 fail; without the queue clearing, the delivery change or the `continue` the new
+  tests fail; with a per-instance delivery counter the two continued-session tests fail; on 6b2cfb5 the two review C tests fail; on ff8781b
+  the four tests changed or added for review D fail except the retried-error one, which fails without the
+  `auto_retry_start` line; on 8344d2e the two review E tests fail. On 0789ab1 the seven review F tests fail; with only the `compaction_start` line six of them fail. On
+  40574b5 the folder and stock-tools tests fail; with no offer from RQW-tools the RQW-tools test fails, and so it does
+  when RQW-tools offers its main definitions with the main barrier. With the RQW-tools folder removed, 33 pass and
+  the RQW-tools test is skipped. Live runs
+  in a fixture repository with `pi -e <repo> --model anthropic/<model> --thinking low --mode json -p <prompt>`:
+  Haiku 5.5 started a subagent with its own prompt, read a file and answered a follow-up (`[agent#1] ZED: 3`,
+  `[agent#1] ZED: alpha`); Haiku 5.5 queued a follow-up, interrupted a `sleep 40`, restarted
+  (`[agent#1] W: RESTARTED`, 11 s, no `sleep` left); Opus 5.5 ran two subagents, one with an inherited model, and got
+  the queued follow-up in the same message (`[agent#1] W: ... first ... W: ... second`,
+  `[agent#2] Q: The bug is in add ...`).
 
 ## PCLI
 
