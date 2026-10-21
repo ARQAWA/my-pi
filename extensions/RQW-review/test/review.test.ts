@@ -2,12 +2,14 @@
 // loads a package extension; two faux providers stand in for the main model and for the reviewer models
 // (`anthropic/claude-haiku-5-5`, `anthropic/claude-sonnet-5-5`), and record every request they get.
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, describe, it } from "node:test";
+import { setImmediate as nextLoop } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
 	type AssistantMessage,
@@ -23,7 +25,7 @@ import {
 import { makeStrictJsonSchema } from "@earendil-works/pi-ai/api/constrained-sampling";
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import {
-	type AgentSession,
+	AgentSession,
 	createAgentSession,
 	createGrepToolDefinition,
 	DefaultResourceLoader,
@@ -717,4 +719,416 @@ describe("brief", () => {
 			].join("\n"),
 		);
 	});
+});
+
+import reviewExtension, { TIMEOUT_MS } from "../index.ts";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+
+describe("runtime regressions and controls", () => {
+	it("a length-truncated CLEAN fails instead of passing", async () => {
+		scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN"), { stopReason: "length" }));
+		const main = await openMain(full, ARGS, true, "print");
+		try {
+			await main.session.prompt(SECOND);
+			assert.deepEqual(delivered(main.session), [failedWith("the reviewer did not complete normally (length)")]);
+		} finally { main.session.dispose(); }
+	});
+
+	for (const mode of ["tui", "rpc"] as const) {
+		it(`${mode} verdict finishing after abort stays saved until the next user run`, async () => {
+			const reviewer = gate("CLEAN");
+			const reviews = scriptReviewer((_c, o) => reviewer.reply(o?.signal));
+			const main = await openMain(full, ARGS, true, mode);
+			const busy = gate("main busy");
+			const requests = scriptMain([callReview(), busy.reply]);
+			try {
+				const run = main.session.prompt(SECOND);
+				await until(() => reviews.length === 1 && requests.length === 2, "both requests");
+				if (mode === "tui") main.session.clearQueue();
+				await main.session.abort();
+				await run;
+				assert.equal(requests.length, 2);
+				reviewer.release();
+				await until(() => delivered(main.session).length === 1, "saved verdict after abort");
+				await nextLoop();
+				assert.equal(requests.length, 2, "no turn starts without new user input");
+				assert.deepEqual(delivered(main.session), [clean()]);
+				assert.equal(main.session.agent.hasQueuedMessages(), false);
+				await main.session.prompt("next");
+				assert.equal(requests.length, 3);
+				assert.equal(requests[2].filter(t => t === clean()).length, 1);
+				assert.deepEqual(delivered(main.session), [clean()]);
+			} finally { main.session.dispose(); }
+		});
+	}
+
+	for (const mode of ["print", "json"] as const) {
+		it(`${mode} abort interrupts agent_end waiting without stopping or losing the reviewer`, async () => {
+			const reviewer = gate("CLEAN");
+			const reviews = scriptReviewer((_c, o) => reviewer.reply(o?.signal));
+			const main = await openMain(full, ARGS, true, mode);
+			const requests = scriptMain([callReview(), fauxAssistantMessage(fauxText("started"))]);
+			try {
+				const run = main.session.prompt(SECOND);
+				await until(() => reviews.length === 1 && requests.length === 2, "reviewer and final main response");
+				await nextLoop();
+				let stopped = false;
+				const abort = main.session.abort().then(() => { stopped = true; });
+				await within(Promise.all([run, abort]), 1000, "abort without releasing reviewer");
+				assert.equal(stopped, true);
+				assert.equal(requests.length, 2);
+				assert.deepEqual(delivered(main.session), []);
+				reviewer.release();
+				await until(() => delivered(main.session).length === 1, "late verdict");
+				await nextLoop();
+				assert.deepEqual(delivered(main.session), [clean()]);
+				assert.equal(requests.length, 2, "no continuation after abort");
+				await main.session.prompt("next");
+				assert.equal(requests.length, 3);
+				assert.equal(requests[2].filter(t => t === clean()).length, 1);
+			} finally { main.session.dispose(); }
+		});
+	}
+
+	it("deadline bounds an auth check that ignores its signal and blocks late session creation", async (t) => {
+		type Handler = (event: never, ctx: never) => unknown;
+		const handlers = new Map<string, Handler>();
+		let definition: ToolDefinition | undefined;
+		const messages: { content: unknown }[] = [];
+		const entries: unknown[] = [];
+		const pi = {
+			on: (n: string, h: Handler) => handlers.set(n, h),
+			registerTool: (d: ToolDefinition) => { definition = d; },
+			sendMessage: (m: { content: unknown }) => messages.push(m),
+			appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
+		} as unknown as ExtensionAPI;
+		reviewExtension(pi);
+		const auth = Promise.withResolvers<unknown>();
+		let authSignal: AbortSignal | undefined;
+		let sessionStage = false;
+		const ctx = { mode: "print", isIdle: () => false, signal: new AbortController().signal,
+			sessionManager: { getEntries: () => entries, getBranch: () => [] },
+			modelRegistry: { find: () => reviewerFaux.getModel("claude-haiku-5-5"), hasConfiguredAuth: () => false,
+				runtime: { checkAuth: (_provider: string, options: { signal: AbortSignal }) => {
+					authSignal = options.signal;
+					return auth.promise;
+				} } },
+			get cwd() { sessionStage = true; return root; },
+		} as unknown as ExtensionContext;
+		handlers.get("session_start")!({} as never, ctx as never);
+		t.mock.timers.enable({ apis: ["setTimeout"] });
+		await definition!.execute("deadline", ARGS as never, undefined, undefined, ctx as never);
+		assert.deepEqual(entries, [{ type: "custom", customType: "review", data: { n: 1 } }], "ID persisted before auth completes");
+		const boundary = Promise.resolve(handlers.get("agent_end")!({} as never, ctx as never));
+		t.mock.timers.tick(TIMEOUT_MS);
+		t.mock.timers.reset();
+		await within(boundary, 1000, "deadline despite pending auth");
+		assert.equal(authSignal?.aborted, true);
+		assert.equal(messages.length, 1);
+		assert.match(String(messages[0].content), /Review failed: no verdict within 10 minutes/);
+		assert.equal(sessionStage, false);
+		auth.resolve({});
+		await nextLoop();
+		assert.equal(sessionStage, false, "late auth cannot create a child");
+		assert.equal(messages.length, 1);
+	});
+
+	it("arbitrary malformed output receives actionable findings instructions", () => {
+		for (const v of ["UNCHECKED:\n- a.ts unreadable", "I could not finish", "FINDINGS:"]) {
+			assert.ok(verdictMessage(1, v, false).endsWith(NEXT.findings));
+		}
+	});
+
+	it("every call starts with no reviewer history", async () => {
+		const requests = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+		const main = await openMain(full, ARGS, true, "print");
+		scriptMain([fauxAssistantMessage([fauxToolCall("review", ARGS, { id: "r1" }), fauxToolCall("review", { ...ARGS, level: "high" }, { id: "r2" })], { stopReason: "toolUse" })]);
+		try {
+			await main.session.prompt(SECOND);
+			assert.equal(requests.length, 2);
+			assert.deepEqual(requests.map(r => r.model).sort(), ["claude-haiku-5-5", "claude-sonnet-5-5"]);
+			assert.ok(requests.every(r => !r.text.includes("[review#")));
+			assert.equal(delivered(main.session).length, 2);
+		} finally { main.session.dispose(); }
+	});
+});
+
+describe("nested caller and scope transport", () => {
+	it("reload preserves an issued nested review id even without a verdict", async () => {
+		const reviewer = gate("CLEAN");
+		const reviews = scriptReviewer((_c, o) => reviewer.reply(o?.signal));
+		const relay = join(dirname(fileURLToPath(import.meta.url)), "relay.ts");
+		const main = await openMain(full, ARGS, true, "tui", [relay]);
+		const requests = scriptMain([fauxAssistantMessage(fauxToolCall("relay", ARGS, { id: "outer" }), { stopReason: "toolUse" })]);
+		try {
+			await main.session.prompt(SECOND);
+			await until(() => reviews.length === 1 && requests.length === 2, "nested review running");
+			const outer = main.session.messages.find(m => m.role === "toolResult" && m.toolName === "relay");
+			assert.ok(outer?.role === "toolResult");
+			assert.equal(textOf(outer.content), startedText(1));
+			assert.equal(main.session.messages.filter(m => m.role === "toolResult" && m.toolName === "review").length, 0);
+			assert.ok(main.session.sessionManager.getEntries().some(e => e.type === "custom" && e.customType === "review" && (e.data as { n: number }).n === 1));
+			await main.session.reload();
+			scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+			scriptMain([callReview()]);
+			await main.session.prompt(SECOND);
+			await until(() => delivered(main.session).length === 1, "new review verdict");
+			await main.session.waitForIdle();
+			const next = main.session.messages.find(m => m.role === "toolResult" && m.toolName === "review");
+			assert.ok(next?.role === "toolResult");
+			assert.equal(textOf(next.content), startedText(2));
+			assert.deepEqual(delivered(main.session), [clean(2)]);
+		} finally { main.session.dispose(); }
+	});
+
+	it("custom scopes, exclusions, rejections, and exact text survive the real API", async () => {
+		const request = "Review only completeness.\n  Preserve trailing spaces  \n<criterion>literal tag</criterion>";
+		const args = { ...ARGS, criterion: "Require custom safety checks outside the agreement; exclude formatting.", agreement: "Accepted proposal: use only stock tools.", rejected: "Earlier finding rejected: exact user quote says keep legacy mode." };
+		const reviews = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+		const main = await openMain(full, args, true, "print");
+		try {
+			await main.session.prompt(request);
+			assert.equal(reviews.length, 1);
+			assert.ok(reviews[0].text.includes(`<message n="1">\n${request}\n</message>`));
+			for (const [tag, value] of [["criterion", args.criterion], ["agreement", args.agreement], ["rejected_earlier", args.rejected]]) {
+				assert.ok(reviews[0].text.includes(`<${tag}>\n${value}\n</${tag}>`));
+			}
+		} finally { main.session.dispose(); }
+	});
+});
+
+
+describe("cancellation stage boundaries", () => {
+	for (const finish of ["resolve", "reject", "shutdown"] as const) {
+		it(`native prompt auth preflight: ${finish} after cancellation cannot request a model`, async (t) => {
+			const reviews = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+			const main = await openMain(full, ARGS, true, "print");
+			const mainResponding = Promise.withResolvers<void>();
+			const requests = scriptMain([callReview(), async () => {
+				mainResponding.resolve();
+				return fauxAssistantMessage(fauxText("started"));
+			}]);
+			const auth = await full.checkAuth("anthropic");
+			assert.ok(auth);
+			const preflight = Promise.withResolvers<typeof auth>();
+			const entered = Promise.withResolvers<void>();
+			const hasAuth = full.hasConfiguredAuth.bind(full);
+			const check = full.checkAuth.bind(full);
+			let calls = 0;
+			let reviewSignal: AbortSignal | undefined;
+			t.mock.method(full, "hasConfiguredAuth", (provider: string) => provider === "anthropic" ? false : hasAuth(provider));
+			t.mock.method(full, "checkAuth", (provider: string, options?: { signal?: AbortSignal }) => {
+				if (provider !== "anthropic") return check(provider, options);
+				if (++calls === 1) {
+					reviewSignal = options?.signal;
+					return Promise.resolve(auth);
+				}
+				assert.equal(options?.signal, undefined, "native Pi 1.3 prompt preflight has no abort signal");
+				entered.resolve();
+				return preflight.promise;
+			});
+			try {
+				t.mock.timers.enable({ apis: ["setTimeout"] });
+				const run = main.session.prompt(SECOND);
+				await entered.promise;
+				await mainResponding.promise;
+				if (finish === "shutdown") {
+					await main.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+				} else t.mock.timers.tick(TIMEOUT_MS);
+				t.mock.timers.reset();
+				await within(run, 1000, "main finishes while prompt preflight remains pending");
+				assert.equal(reviewSignal?.aborted, true);
+				assert.equal(getEventListeners(reviewSignal!, "abort").length, 0, "review listeners removed");
+				assert.equal(reviews.length, 0);
+				assert.equal(delivered(main.session).length, finish === "shutdown" ? 0 : 1);
+				if (finish !== "shutdown") assert.equal(delivered(main.session)[0], failedWith("no verdict within 10 minutes"));
+				if (finish === "reject") preflight.reject(new Error("late auth rejection"));
+				else preflight.resolve(auth);
+				await nextLoop();
+				assert.equal(reviews.length, 0, "abandoned preflight never reaches the provider");
+				assert.equal(requests.length, finish === "shutdown" ? 2 : 3);
+				assert.equal(delivered(main.session).length, finish === "shutdown" ? 0 : 1);
+			} finally {
+				t.mock.timers.reset();
+				preflight.resolve(auth);
+				main.session.dispose();
+			}
+		});
+	}
+
+	it("deadline bounds a provider ignoring abort and observes its late rejection", async (t) => {
+		const response = Promise.withResolvers<AssistantMessage>();
+		const started = Promise.withResolvers<void>();
+		let signal: AbortSignal | undefined;
+		scriptReviewer((_c, options) => {
+			signal = options?.signal;
+			started.resolve();
+			return response.promise;
+		});
+		const main = await openMain(full, ARGS, true, "print");
+		try {
+			t.mock.timers.enable({ apis: ["setTimeout"] });
+			const run = main.session.prompt(SECOND);
+			await started.promise;
+			t.mock.timers.tick(TIMEOUT_MS);
+			t.mock.timers.reset();
+			await within(run, 1000, "deadline despite ignoring provider");
+			assert.equal(signal?.aborted, true);
+			assert.deepEqual(delivered(main.session), [failedWith("no verdict within 10 minutes")]);
+			response.reject(new Error("late provider rejection"));
+			await nextLoop();
+			assert.equal(delivered(main.session).length, 1);
+		} finally {
+			t.mock.timers.reset();
+			response.resolve(fauxAssistantMessage(fauxText("CLEAN")));
+			main.session.dispose();
+		}
+	});
+
+	for (const mode of ["print", "json", "tui", "rpc"] as const) {
+		it(`${mode}: two reviews completing after abort are saved once and next run re-enables delivery`, async () => {
+			const gates = [gate("R1"), gate("R2")];
+			const reviews = scriptReviewer((_c, options) => gates[reviews.length - 1].reply(options?.signal));
+			const main = await openMain(full, ARGS, true, mode);
+			const busy = gate("busy");
+			const requests = scriptMain([
+				fauxAssistantMessage([fauxToolCall("review", ARGS, { id: "r1" }), fauxToolCall("review", ARGS, { id: "r2" })], { stopReason: "toolUse" }),
+				busy.reply,
+			]);
+			try {
+				const run = main.session.prompt(SECOND);
+				await until(() => reviews.length === 2 && requests.length === 2, "both reviews and busy main");
+				await within(main.session.abort(), 1000, "abort without reviews");
+				await run;
+				for (const g of gates) g.release();
+				await until(() => delivered(main.session).length === 2, "both saved verdicts");
+				await nextLoop();
+				assert.equal(requests.length, 2);
+				assert.equal(main.session.agent.hasQueuedMessages(), false);
+				assert.deepEqual(delivered(main.session).sort(), [found("R1", 1), found("R2", 2)]);
+				await main.session.prompt("next");
+				assert.equal(requests.length, 3);
+				for (const v of delivered(main.session)) assert.equal(requests[2].filter(t => t === v).length, 1);
+				// A new run has cleared the abort latch: an idle verdict starts its normal turn again.
+				scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+				scriptMain([callReview()]);
+				await main.session.prompt(SECOND);
+				await until(() => delivered(main.session).length === 3, "post-resume review");
+				await main.session.waitForIdle();
+				assert.equal(delivered(main.session)[2], clean(3));
+				assert.equal(lastText(main.session), "ok");
+			} finally { main.session.dispose(); }
+		});
+	}
+});
+
+describe("persisted review numbers", () => {
+	for (const source of ["custom", "tool", "verdict"] as const) {
+		it(`recovers ${source} history without scanning arbitrary tool text or exposing custom entries to Main`, async () => {
+			const handlers = new Map<string, (event: never, ctx: never) => unknown>();
+			let definition: ToolDefinition | undefined;
+			const base = { id: "x", parentId: null, timestamp: "" };
+			const history = source === "custom"
+				? { ...base, type: "custom", customType: "review", data: { n: 7 } }
+				: source === "tool"
+					? { ...base, type: "message", message: { role: "toolResult", toolName: "review", content: startedText(7) } }
+					: { ...base, type: "custom_message", customType: "review", content: clean(7) };
+			const entries = [history,
+				{ ...base, type: "message", message: { role: "toolResult", toolName: "relay", content: startedText(999) } },
+				...[-1, 1.5, "999", undefined].map(n => ({ ...base, type: "custom", customType: "review", data: { n } })),
+			] as unknown as SessionEntry[];
+			const persisted: unknown[] = [];
+			reviewExtension({
+				on: (n: string, h: (event: never, ctx: never) => unknown) => handlers.set(n, h),
+				registerTool: (d: ToolDefinition) => { definition = d; },
+				appendEntry: (customType: string, data: unknown) => persisted.push({ customType, data }),
+				sendMessage: () => {},
+			} as unknown as ExtensionAPI);
+			const ctx = { cwd: root, isIdle: () => true, sessionManager: { getEntries: () => entries, getBranch: () => [] },
+				modelRegistry: { find: () => undefined } } as unknown as ExtensionContext;
+			handlers.get("session_start")!({} as never, ctx as never);
+			const result = await definition!.execute("r", ARGS as never, undefined, undefined, ctx);
+			assert.equal(textOf(result.content), startedText(8));
+			assert.deepEqual(persisted, [{ customType: "review", data: { n: 8 } }]);
+			await nextLoop();
+		});
+	}
+});
+
+
+describe("native creation and wait cleanup", () => {
+	it("disposes a session created across the deadline without prompting it", async (t) => {
+		const handlers = new Map<string, (event: never, ctx: never) => unknown>();
+		let definition: ToolDefinition | undefined;
+		const messages: { content: unknown }[] = [];
+		const reviews = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+		const dispose = AgentSession.prototype.dispose;
+		let disposed = 0;
+		t.mock.method(AgentSession.prototype, "dispose", function (this: AgentSession) {
+			disposed++;
+			return dispose.call(this);
+		});
+		reviewExtension({
+			on: (n: string, h: (event: never, ctx: never) => unknown) => handlers.set(n, h),
+			registerTool: (d: ToolDefinition) => { definition = d; },
+			appendEntry: () => {},
+			sendMessage: (m: { content: unknown }) => messages.push(m),
+		} as unknown as ExtensionAPI);
+		let scheduled = false;
+		const ctx = { mode: "print", signal: new AbortController().signal, isIdle: () => false,
+			sessionManager: { getEntries: () => [], getBranch: () => [] },
+			modelRegistry: { find: () => reviewerFaux.getModel("claude-haiku-5-5"), hasConfiguredAuth: () => true, runtime: full },
+			get cwd() {
+				if (!scheduled) {
+					scheduled = true;
+					queueMicrotask(() => t.mock.timers.tick(TIMEOUT_MS));
+				}
+				return root;
+			},
+		} as unknown as ExtensionContext;
+		handlers.get("session_start")!({} as never, ctx as never);
+		try {
+			t.mock.timers.enable({ apis: ["setTimeout"] });
+			await definition!.execute("create", ARGS as never, undefined, undefined, ctx);
+			await handlers.get("agent_end")!({} as never, ctx as never);
+			t.mock.timers.reset();
+			await nextLoop();
+			assert.equal(disposed, 1);
+			assert.equal(reviews.length, 0);
+			assert.equal(messages.length, 1);
+			assert.equal(messages[0].content, failedWith("no verdict within 10 minutes"));
+		} finally { t.mock.timers.reset(); }
+	});
+
+	for (const abort of [false, true]) {
+		it(`native agent_end signal removes its wait listener after ${abort ? "abort" : "normal delivery"}`, async () => {
+			const observed: { active?: AbortSignal; end?: AbortSignal; boundary?: AbortSignal } = {};
+			(globalThis as any).__reviewLifecycle = observed;
+			const reviewer = gate("CLEAN");
+			const reviews = scriptReviewer((_c, options) => reviewer.reply(options?.signal));
+			const lifecycle = join(dirname(fileURLToPath(import.meta.url)), "lifecycle.ts");
+			const main = await openMain(full, ARGS, true, "print", [lifecycle]);
+			const requests = scriptMain([callReview(), fauxAssistantMessage(fauxText("started"))]);
+			try {
+				const run = main.session.prompt(SECOND);
+				await until(() => reviews.length === 1 && requests.length === 2 && !!observed.active && getEventListeners(observed.active, "abort").length > 0, "native wait listener");
+				assert.equal(observed.active?.aborted, false);
+				if (abort) await within(main.session.abort(), 1000, "abort native wait");
+				else reviewer.release();
+				await within(run, 1000, "settlement");
+				assert.equal(observed.end, observed.active);
+				assert.equal(observed.end?.aborted, abort);
+				assert.equal(getEventListeners(observed.end!, "abort").length, 0);
+				assert.equal(observed.boundary, undefined, "before_settle has no active native signal");
+				if (abort) {
+					reviewer.release();
+					await until(() => delivered(main.session).length === 1, "saved late verdict");
+				}
+			} finally {
+				reviewer.release();
+				main.session.dispose();
+				delete (globalThis as any).__reviewLifecycle;
+			}
+		});
+	}
 });

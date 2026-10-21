@@ -605,7 +605,7 @@ Every accepted decision, with its reason and the file that carries it.
   missing credentials, a failed request or no verdict in 10 minutes give `[review#N] Review failed: <reason>`.
 - Parameters: `level`, `object` (paths, the diff as a file path, the stage), `criterion`, optional `agreement`
   (accepted proposals and decisions that are not in the user's own messages) and `rejected`. The description has
-  four sentences, 426 characters (test limit 500). Empty strings count as not given, since strict mode fills every
+  four sentences, 440 characters (test limit 500). Empty strings count as not given, since strict mode fills every
   field.
 - The main agent and the reviewer work as a pair, one team for the user's agreement (owner, 2026-10-09: «чтобы они
   действовали в одной команде ... либо принимает правку, либо её отклоняет и пишет, почему»; 2026-10-20: «он с ним
@@ -617,7 +617,8 @@ Every accepted decision, with its reason and the file that carries it.
   - the tool result, `startedText`: `review#N started. Keep working, but leave the reviewed files unchanged until its
     verdict.`
   - the verdict wrapper, `verdictMessage`: `[review#N]` first, the verdict verbatim, then one paragraph of `NEXT` by
-    kind. `clean` (the trimmed verdict is exactly `CLEAN`): passed, no further pass for confidence.
+    kind. `clean` (the trimmed verdict is exactly `CLEAN` after a normal `stop`): passed, no further pass for confidence.
+    A `length`, `error`, `aborted` or other non-normal final stop is a failed review, never a pass.
     `incomplete` (a trimmed verdict begins with `CLEAN` but includes extra nonblank text): resolve UNCHECKED or retry
     malformed output, never claim passed or treat it as findings needing field access. `findings` (other reviewer
     text): find each quote by searching; a finding with both quotes verbatim is admitted and fixed exactly to
@@ -662,26 +663,44 @@ Every accepted decision, with its reason and the file that carries it.
 - Async: the call returns `review#N started. ...` at once. The verdict, the reviewer's last assistant text, arrives as
   `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>\n\n<next step>", display: true }, ...)`; `details` carry
   `n`, level, model, thinking and seconds for the user and logs only. Numbers count per session and go on after a
-  resume. `session_shutdown` aborts every running review and delivers nothing; the 10-minute timer does not keep the
-  process alive.
+  resume. Every issued number is immediately persisted with `pi.appendEntry("review", { n })`, a custom entry,
+  not an LLM message, before any asynchronous work. Recovery also accepts old direct review tool results and verdicts,
+  but does not scan arbitrary tool text. This covers nested `ctx.executeTool` callers without a direct tool result.
+  If an SDK reload emits no `session_start`, the first execution restores the context and counter from history.
+  `session_shutdown` aborts every running review and delivers nothing; the 10-minute timer does not keep the process alive.
 - Delivery: a verdict never waits in the agent's queue and gets exactly one main turn unless the run was aborted
   (review findings: in print and json mode Pi disposed the session when the main run settled and the verdict never
   came; a follow-up waited in the agent's queue, which TUI Esc and RPC `clear_queue` clear and an RPC abort or an
   error-ended run leaves without a turn; a verdict that came in while another extension's slow `agent_before_settle`
   handler ran after ours got no turn).
   The `session_start` context is kept. When `ctx.isIdle()`, the verdict goes with `triggerTurn: true, deliverAs:
-  "followUp"` and starts a turn. When busy, it goes with `triggerTurn: false`: Pi appends it to the session at the
+  "followUp"` and starts a turn, unless the last main run was aborted. When busy, it goes with `triggerTurn: false`:
+  Pi appends it to the session at the
   end of the current turn or run, aborted or not, and the `agent_before_settle` handler returns `continue: true`
   while the verdict is not yet followed by an assistant message in the branch. Each review sends one verdict, so its
   number `n` in `details` is the delivery number. When that handler returns without `continue`, a `settling` flag is
   set until `turn_start` or `agent_settled`; verdicts that arrive meanwhile wait in a `late` list, and the
   `agent_settled` handler sends them, all but the last with `triggerTurn: false` and the last with
-  `triggerTurn: !event.aborted`, so several get one turn. After an abort no turn starts; the verdict stays in the
-  session and the model sees it on the next prompt, once. In print and json mode the handler first waits for running
-  reviews (each ends within the 10-minute timeout), and their verdicts continue that same run before Pi exits.
+  `triggerTurn: !event.aborted`, so several get one turn. `mainAborted` latches `agent_settled.aborted` until a new
+  `agent_start`: even a verdict finishing after Esc or RPC abort is saved once without starting Main, and the next
+  prompt carries it once. In print and json mode `agent_end` waits for jobs using its active `ctx.signal`; abort
+  interrupts only that wait, not the independent reviewer. `agent_before_settle` only decides continuation and marks
+  settlement; Pi 1.3.0 has no active `ctx.signal` there. Normal verdicts still continue the same run before Pi exits.
 - Credentials: a review fails with "no credentials" only when both `ctx.modelRegistry.hasConfiguredAuth(model)` and
-  `await runtime.checkAuth(provider)` say so, as in Pi's own prompt. Reason: the auth snapshot behind
+  `await runtime.checkAuth(provider, { signal })` say so, as in Pi's own prompt. Reason: the auth snapshot behind
   `hasConfiguredAuth` is filled asynchronously, so right after startup or a reload it can miss credentials that exist.
+- Cancellation bounds the whole review job, including auth, session creation and prompt preflight (owner: "deadline boundsWHOLEjobinclcheckAuth/create/promptpreflight").
+  `untilAborted` races each asynchronous stage, observes late rejection and removes its abort listener. Auth receives
+  the signal, late-created sessions are disposed without prompting, and prompt cancellation aborts and disposes its
+  session without awaiting an uncooperative provider. Pi 1.3.0's own prompt auth await has no signal; the reviewer's
+  public `agent.streamFunction` checks the job signal before calling the SDK stream function, so even a preflight
+  resuming after disposal cannot make a model request. The underlying unabortable promise may remain pending until
+  its implementation settles; it cannot hold the job, deliver a second verdict or escape the request guard.
+- Runtime regression evidence: `extensions/RQW-review/test/review.test.ts` converts all five audit reproductions to
+  required outcomes, including post-abort delivery in all four modes, multiple verdicts, nested reload and legacy IDs,
+  ignored auth/provider cancellation and native prompt-preflight resolve/reject after timeout or shutdown. `test/cli.test.ts` runs real CLI
+  print/json subprocesses on Node by default and on Bun with `PI_REVIEW_TEST_RUNTIME=bun`; both use `test/cli-faux.ts` and the self-contained `test/offline.mjs` network tripwire; no live
+  model or credentials are used. These deterministic tests establish runtime behavior, not model review quality.
 - Proof: `extensions/RQW-review/test/review.test.ts` (real sessions, faux providers for the main and the reviewer
   models) and one real run per level: a temp copy of a fixture with `calc.py` (`add` returns `a - b` instead of the
   sum) and a correct `config.py` (`MAX_ITEMS = 50`), command
