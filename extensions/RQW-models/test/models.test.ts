@@ -469,21 +469,45 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 		let opened = false;
 		let open!: () => void;
 		const gate = new Promise<void>((resolve) => { open = () => { opened = true; resolve(); }; });
+		const laterGate = Promise.withResolvers<void>();
+		const laterSignal = new AbortController().signal;
+		const getAvailable = own.getAvailable.bind(own);
+		let laterPass: Promise<Model<string>[]> | undefined;
+		let laterFinished = false;
 		const opus = fauxProvider({ provider: "anthropic", models: [model("claude-opus-5-5")] });
 		const other = fauxProvider({ provider: "openai-codex", models: [model("gpt-5.6-luna", "openai-codex")] });
 		for (const faux of [opus, other]) {
 			// Auth only from a resolver: Pi marks nothing provisionally and waits for its availability pass.
-			faux.provider.auth.apiKey = { name: "Gated faux", resolve: async () => { await gate; return { auth: { apiKey: "faux-test-key" } }; } };
+			faux.provider.auth.apiKey = { name: "Gated faux", resolve: async ({ signal }) => {
+				await (signal === laterSignal ? laterGate.promise : gate);
+				return { auth: { apiKey: "faux-test-key" } };
+			} };
+			// A later background refresh supersedes the startup's whole-runtime pass. Pi discards
+			// that older pass's results and returns its still-empty shared snapshot instead.
+			faux.provider.filterModels = (models) => {
+				if (!laterPass) laterPass = getAvailable(undefined, { signal: laterSignal }).then((result) => { laterFinished = true; return result; });
+				return models;
+			};
 			own.registerNativeProvider(faux.provider);
 		}
 		assert.equal(own.hasConfiguredAuth("anthropic"), false);
 		const notes: string[] = [];
-		const session = await realSession({ modelRuntime: own, model: other.getModel("gpt-5.6-luna"), ui: ui(notes), loaded: () => { assert.equal(opened, false); setTimeout(open, 150); } });
+		const session = await realSession({ modelRuntime: own, model: other.getModel("gpt-5.6-luna"), ui: ui(notes), loaded: () => {
+			assert.equal(opened, false);
+			// Release auth only after startup actually requests availability, not after a wall-clock delay.
+			own.getAvailable = (...args) => { const result = getAvailable(...args); open(); return result; };
+		} });
 		try {
 			assert.equal(opened, true);
+			assert.ok(laterPass);
+			assert.equal(laterFinished, false);
 			assert.equal(session.model?.id, "claude-opus-5-5"); assert.equal(session.thinkingLevel, "medium");
 			assert.deepEqual(notes, []);
-		} finally { session.dispose(); }
+		} finally {
+			session.dispose();
+			laterGate.resolve();
+			await laterPass;
+		}
 	});
 	it("keeps an unlisted model with a warning when no listed model is authenticated, and refuses its requests", async () => {
 		const savedEnv = { ...process.env };

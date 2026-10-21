@@ -158,12 +158,16 @@ export default function modelsExtension(pi: ExtensionAPI) {
 			: ctx.modelRegistry.getAvailable());
 	};
 	// session_start can run while an availability pass started by a provider registration is pending;
-	// await a fresh pass (Pi's own async getAvailable, which RQW-models does not mask) before choosing, for at
-	// most 15 s like Pi's model selector; on a timeout or error the snapshot is used.
+	// query each provider directly: a whole-runtime getAvailable pass can be superseded by a background
+	// refresh and return the old shared snapshot. Provider-scoped reads return their own auth/filter results.
+	// At most 15 s like Pi's model selector; on a timeout or error the snapshot is used.
 	const settled = async (ctx: ExtensionContext) => {
 		const runtime = bound?.session.modelRuntime;
 		if (!runtime) return available(ctx);
-		try { return pickerModels(await runtime.getAvailable(undefined, { signal: AbortSignal.timeout(15_000) })); } catch { return available(ctx); }
+		try {
+			const signal = AbortSignal.timeout(15_000);
+			return pickerModels((await Promise.all(runtime.getProviders().map((provider) => runtime.getAvailable(provider.id, { signal })))).flat());
+		} catch { return available(ctx); }
 	};
 	const warn = (ctx: ExtensionContext, text: string, fallback = false) => {
 		try {
@@ -251,6 +255,13 @@ export default function modelsExtension(pi: ExtensionAPI) {
 			if (next) pi.setThinkingLevel(next);
 		}
 	};
+	// pi.setModel first checks the same possibly stale configured-auth snapshot. The owning session's
+	// setModel checks real auth asynchronously, retains the list guard and emits the normal selection event.
+	const setStartupModel = async (model: ChatModel) => {
+		if (!bound) return pi.setModel(model);
+		await bound.session.setModel(model);
+		return true;
+	};
 	const startDefault = async (reason: string, ctx: ExtensionContext, args: ReturnType<typeof parseArgs>, models: () => Promise<ChatModel[]>) => {
 		if (reason !== "startup" && reason !== "new") return;
 		if (reason === "startup") {
@@ -260,7 +271,7 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		// Pi has already resolved model patterns, scoped suffixes and thinking precedence.
 		if (args.model !== undefined || args.models !== undefined) return;
 		const opus = (await models()).find((model) => familyOf(model) === 0);
-		if (opus && !(await pi.setModel(opus))) return;
+		if (opus && !(await setStartupModel(opus))) return;
 		applyThinking(args.thinking);
 	};
 	pi.on("session_start", async (event, ctx) => {
@@ -275,7 +286,7 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		const current = liveContext.model;
 		if (!current || isListed(current)) return;
 		const fallback = (await models())[0];
-		if (!fallback || !(await pi.setModel(fallback))) {
+		if (!fallback || !(await setStartupModel(fallback))) {
 			warn(ctx, `${notListed(current)} No listed model is authenticated; its requests are refused.`, true);
 			return;
 		}

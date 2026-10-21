@@ -119,6 +119,12 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 ## Tools
 
+- Engineering follow-up under the owner's flaky-test precedent: «Теперь по нестабильному тесту 1А»;
+  1a: «Отдельной задачей разобрать, почему тест кодмода на Windows иногда не укладывается в 5 секунд, и исправить причину.»
+  The stock-versus-wrapper shell-path test compares every result field except `structuredContent.wall_time_seconds`,
+  whose independent process timings need not match; both timings must still be nonnegative numbers.
+  Reason: a rounded elapsed time is not shell-path behavior. Carrier: `extensions/RQW-tools/test/behavior.test.ts`.
+
 - `extensions/RQW-tools/` replaces `read`, `bash`, `edit`, `write` and turns on `grep` and `find` by registering them.
   Each tool spreads the stock definition and keeps its `execute`; only descriptions and the multi-file wrappers change,
   and edit drops strict sampling (next entry). Design and reasons: `notes/tools-design.md`; evidence:
@@ -956,6 +962,14 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 ## Models
 
+- Engineering follow-up under the owner's flaky-test precedent: «Теперь по нестабильному тесту 1А»;
+  1a: «Отдельной задачей разобрать, почему тест кодмода на Windows иногда не укладывается в 5 секунд, и исправить причину.»
+  Startup reads provider-scoped availability and uses the owning session's async-auth `setModel`.
+  Reason: Pi can discard a whole-runtime availability pass superseded by a background refresh and return an old
+  snapshot; `pi.setModel` also checks that snapshot's configured-auth state before checking real auth.
+  Carrier: `extensions/RQW-models/index.ts`; its `test/models.test.ts` gates a superseding pass deterministically,
+  keeping real auth checks, provider filters, list guards and normal model-selection events intact.
+
 - Owner request (C:3113): «Надо, чтобы они работали как в нашем OMP»; «Один мод будет статус бара, а второй мод
   будет Model Picker»; «То есть чисто модели Opus, Sonnet, GPT-6.1, GPT-6, Luna-6, Haiku».
   `extensions/RQW-models/index.ts` is independent,
@@ -1028,11 +1042,10 @@ Current accepted development policy (request summaries unless quoted); detailed 
     since keeping Pi's unlisted model would break the rule. A fresh startup selects
     Opus first, so an unlisted saved default never becomes current and needs no warning. With no authenticated
     listed model the model stays and the warning says its requests are refused. Before this choice and the Opus
-    default, `session_start` awaits Pi's own async `getAvailable()` (not masked): a provider registered just
-    before, for example by an extension at bind time, whose auth comes only from a resolver is not marked
-    configured until Pi's background availability pass finishes (`dist/core/model-runtime.js`
-    `registerNativeProvider`, `markProvisionallyConfigured`), so the synchronous snapshot can still be empty.
-    The wait is limited to 15 s, like Pi's model selector; on a timeout or error the snapshot is used.
+    default, `session_start` awaits Pi's own provider-scoped async `getAvailable(provider.id)` (not masked),
+    in parallel for the visible providers: resolver-only auth may not yet appear in the synchronous snapshot
+    (`dist/core/model-runtime.js` `registerNativeProvider`, `markProvisionallyConfigured`).
+    The wait shares one 15 s deadline, like Pi's model selector; on a timeout or error the snapshot is used.
     Without a choice to make, nothing waits.
   - Requests: the owning runtime's `prepareRequest` refuses every chat request for an unlisted model with
     `RQW-models refused the request: <the same text>`. This covers in-process sessions on that runtime: an `agent`

@@ -84,8 +84,14 @@ The rule is in [DECISIONS.md, Models](../DECISIONS.md#models). Paths as above.
   the snapshot, and returns `undefined` with fewer than two, which `interactive-mode.js`
   `cycleModel` reports as "Only one model available". `setModel` checks only auth before it
   mutates the model, appends a `model_change` entry, may persist the default and emits the
-  non-cancellable `model_select`; `_bindExtensionCore` routes `pi.setModel` through it.
+  non-cancellable `model_select`; `_bindExtensionCore` routes `pi.setModel` through it,
+  but first rejects providers absent from the configured-auth snapshot. Startup selection
+  therefore uses the owning session directly; the current rule is in DECISIONS.md, Models.
   `dispose` runs without `session_shutdown` for SDK hosts.
+- `dist/core/model-runtime.js`, `runAvailabilityRefresh` and `getAvailable`: a superseded
+  whole-runtime pass discards its own result, then returns the shared snapshot even when
+  the newer pass is still pending. Provider-scoped `getAvailable(providerId)` returns its
+  own credential-aware result, including `filterModels`, without that snapshot race.
 - `dist/core/extensions/runner.js`, `createContext`: `ctx.getContextUsage()` calls the
   session's `getContextUsage()` method synchronously; no context property exposes the session.
 - `dist/core/model-runtime.js`, `stream`, `streamSimple`, `streamDeferred`, `classify`,

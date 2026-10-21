@@ -32,7 +32,15 @@ describe("bash uses stock SettingsManager shellPath normalization", () => {
 			});
 			const params = { command: "printf OK", timeout: 3 };
 			const expected = await stock.execute("id", params, undefined, undefined, context(cwd));
-			assert.deepEqual(await bash.execute("id", params, undefined, undefined, context(cwd)), expected);
+			const actual = await bash.execute("id", params, undefined, undefined, context(cwd));
+			// Separate processes have independent elapsed times; every other result field must match stock.
+			const withoutTiming = (result: typeof expected) => {
+				const { wall_time_seconds, ...structuredContent } = result.structuredContent!;
+				assert.equal(typeof wall_time_seconds, "number");
+				assert.ok(wall_time_seconds >= 0);
+				return { ...result, structuredContent };
+			};
+			assert.deepEqual(withoutTiming(actual), withoutTiming(expected));
 			assert.equal(expected.content[0].type === "text" && expected.content[0].text, "PREFIXOK");
 		}
 	});
