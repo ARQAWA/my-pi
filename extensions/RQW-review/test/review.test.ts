@@ -824,6 +824,7 @@ describe("runtime regressions and controls", () => {
 		t.mock.timers.tick(TIMEOUT_MS);
 		t.mock.timers.reset();
 		await within(boundary, 1000, "deadline despite pending auth");
+		handlers.get("agent_before_settle")!({} as never, ctx as never);
 		assert.equal(authSignal?.aborted, true);
 		assert.equal(messages.length, 1);
 		assert.match(String(messages[0].content), /Review failed: no verdict within 10 minutes/);
@@ -1116,7 +1117,9 @@ describe("persisted review numbers", () => {
 					: { ...base, type: "custom_message", customType: "review", content: clean(7) };
 			const entries = [history,
 				{ ...base, type: "message", message: { role: "toolResult", toolName: "relay", content: startedText(999) } },
-				...[-1, 1.5, "999", undefined].map(n => ({ ...base, type: "custom", customType: "review", data: { n } })),
+				...[-1, 0, 1.5, "999", undefined, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1].map(n => ({ ...base, type: "custom", customType: "review", data: { n } })),
+				...["quoted review#999", "[review#0] CLEAN", "[review#9007199254740992] CLEAN", `[review#${"9".repeat(400)}] CLEAN`, "[review#5] quotes review#999"].map(content => ({ ...base, type: "custom_message", customType: "review", content })),
+				...["Error validating review: args review#999", "review#999 startedOops", "review#0 started.", "review#9007199254740992 started."].map(text => ({ ...base, type: "message", message: { role: "toolResult", toolName: "review", content: [{ type: "text", text }] } })),
 			] as unknown as SessionEntry[];
 			const persisted: unknown[] = [];
 			reviewExtension({
@@ -1172,6 +1175,7 @@ describe("native creation and wait cleanup", () => {
 			t.mock.timers.enable({ apis: ["setTimeout"] });
 			await definition!.execute("create", ARGS as never, undefined, undefined, ctx);
 			await handlers.get("agent_end")!({} as never, ctx as never);
+			handlers.get("agent_before_settle")!({} as never, ctx as never);
 			t.mock.timers.reset();
 			await nextLoop();
 			assert.equal(disposed, 1);
@@ -1210,6 +1214,145 @@ describe("native creation and wait cleanup", () => {
 				main.session.dispose();
 				delete (globalThis as any).__reviewLifecycle;
 			}
+		});
+	}
+});
+
+describe("settlement phase delivery", () => {
+	for (const mode of ["tui", "rpc", "print", "json"] as const) {
+		for (const stage of ["end", "before", "after", "settled", "end-idle", "before-idle", "mixed"] as const) {
+			for (const aborted of stage === "mixed" ? [false] : stage === "end-idle" ? [true] : [true, false]) {
+				it(`${mode}: two verdicts at ${stage}, ${aborted ? "abort never wakes" : "normal batch continues"}`, async () => {
+					const hold = { enabled: true, entered: false, side: stage === "after" ? "after" : "before",
+						event: stage.startsWith("end") ? "agent_end" : stage === "settled" ? "agent_settled" : "agent_before_settle", release: () => {} };
+					(globalThis as any).__reviewPhase = hold;
+					const here = dirname(fileURLToPath(import.meta.url));
+					const main = await openMain(full, ARGS, true, mode, [join(here, "phase-after.ts")], [join(here, "phase-before.ts")]);
+					const gates = [gate("R1"), gate("R2"), gate("R3")];
+					const reviews = scriptReviewer((_c, options) => gates[reviews.length - 1].reply(options?.signal));
+					const busy = gate("BUSY");
+					const streamAbort = stage === "settled" && aborted;
+					const requests = scriptMain(streamAbort || stage === "mixed" ? [busy.reply] : []);
+					const call = () => main.session.getToolDefinition("review")!.execute("phase", ARGS as never, undefined, undefined, main.session.extensionRunner.createContext());
+					let run: Promise<void> | undefined, abort: Promise<void> | undefined;
+					try {
+						if (streamAbort) { await call(); await call(); }
+						else if (stage === "mixed") await call();
+						run = main.session.prompt("GO");
+						if (streamAbort) {
+							await until(() => requests.length === 1, "held main stream");
+							if (mode === "tui") main.session.clearQueue();
+							abort = main.session.abort();
+						}
+						if (stage === "mixed") {
+							await until(() => requests.length === 1 && reviews.length === 1, "first verdict during main stream");
+							gates[0].release();
+							await tick();
+							busy.release();
+						}
+						await until(() => hold.entered, "earlier lifecycle hook");
+						assert.equal(main.session.isIdle, stage === "settled", "SDK flips idle before settled handlers");
+						if (!streamAbort) {
+							if (stage !== "mixed") await call();
+							await call();
+							if (aborted) abort = main.session.abort();
+						}
+						if (stage.endsWith("-idle")) {
+							const release = hold.release;
+							hold.entered = false; hold.event = "agent_settled"; hold.enabled = true;
+							release();
+							await until(() => hold.entered, "earlier settled after late abort");
+							assert.equal(main.session.isIdle, true);
+						}
+						await until(() => reviews.length === 2, "both reviewer streams");
+						gates[0].release(); gates[1].release();
+						await tick();
+						assert.equal(requests.length, 1, "no main request escapes held lifecycle");
+						hold.release();
+						await within(Promise.all([run, abort]), 5000, "settle both results");
+						await until(() => delivered(main.session).length === 2, "both verdicts persisted");
+						await main.session.waitForIdle();
+						await tick();
+						const results = [found("R1", 1), found("R2", 2)];
+						assert.deepEqual(delivered(main.session).sort(), results);
+						assert.equal(requests.length, aborted ? 1 : 2, "abort stays stopped; normal settlement gets one batch turn");
+						assert.equal(main.session.agent.hasQueuedMessages(), false);
+						if (aborted) await main.session.prompt("USER_RESUMES");
+						for (const result of results) assert.equal(requests.at(-1)!.filter(text => text === result).length, 1);
+						await call();
+						await until(() => reviews.length === 3, "ordinary idle review");
+						gates[2].release();
+						await until(() => requests.length === 3, "ordinary idle wakeup");
+						await main.session.waitForIdle();
+						assert.equal(requests[2].filter(text => text === found("R3", 3)).length, 1);
+					} finally {
+						hold.enabled = false; hold.release();
+						for (const g of gates) g.release();
+						busy.release();
+						await main.session.abort();
+						await Promise.all([run, abort]);
+						main.session.dispose();
+						delete (globalThis as any).__reviewPhase;
+					}
+				});
+			}
+		}
+	}
+});
+
+describe("review number safety", () => {
+	it("native invalid-argument errors quoting huge ids cannot poison reload rounds", async () => {
+		const huge = "9".repeat(400);
+		const invalid = { ...ARGS, object: { quoted: `review#${huge}` } };
+		const reviews = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+		const main = await openMain(full, ARGS, true, "print");
+		scriptMain([fauxAssistantMessage(fauxToolCall("review", invalid, { id: "bad" }), { stopReason: "toolUse" })]);
+		try {
+			await main.session.prompt("INVALID_ARGS");
+			const error = main.session.messages.find(m => m.role === "toolResult" && m.toolName === "review");
+			assert.ok(error?.role === "toolResult" && error.isError);
+			assert.ok(textOf(error.content).includes(`review#${huge}`), "native validation quotes the actual invalid arguments");
+			assert.equal(reviews.length, 0);
+			for (const n of [1, 2]) {
+				await main.session.reload();
+				scriptMain([callReview()]);
+				await main.session.prompt("VALID_ARGS");
+				const result = main.session.messages.findLast(m => m.role === "toolResult" && m.toolName === "review");
+				assert.ok(result?.role === "toolResult" && !result.isError);
+				assert.equal(textOf(result.content), startedText(n));
+				assert.equal(delivered(main.session).at(-1), clean(n));
+			}
+			assert.equal(reviews.length, 2);
+			const ids = main.session.sessionManager.getEntries().flatMap(e => e.type === "custom" && e.customType === "review" ? [(e.data as { n: number }).n] : []);
+			assert.deepEqual(ids, [1, 2]);
+		} finally { main.session.dispose(); }
+	});
+
+	for (const source of ["custom", "tool", "verdict"] as const) {
+		it(`caps exhausted ${source} ids without allocating or starting work`, async () => {
+			let definition: ToolDefinition | undefined;
+			const handlers = new Map<string, (event: never, ctx: never) => unknown>();
+			const persisted: unknown[] = [];
+			const max = Number.MAX_SAFE_INTEGER;
+			const entries = [source === "custom" ? { type: "custom", customType: "review", data: { n: max - 1 } }
+				: source === "tool" ? { type: "message", message: { role: "toolResult", toolName: "review", content: startedText(max - 1) } }
+				: { type: "custom_message", customType: "review", content: clean(max - 1) }] as unknown as SessionEntry[];
+			reviewExtension({
+				on: (n: string, h: (event: never, ctx: never) => unknown) => handlers.set(n, h),
+				registerTool: (d: ToolDefinition) => { definition = d; },
+				appendEntry: (_type: string, data: unknown) => persisted.push(data), sendMessage: () => {},
+			} as unknown as ExtensionAPI);
+			let lookups = 0;
+			const ctx = { cwd: root, isIdle: () => true, sessionManager: { getEntries: () => entries, getBranch: () => [] },
+				modelRegistry: { find: () => { lookups++; return undefined; } } } as unknown as ExtensionContext;
+			handlers.get("session_start")!({} as never, ctx as never);
+			const result = await definition!.execute("last", ARGS as never, undefined, undefined, ctx);
+			assert.equal(textOf(result.content), startedText(max));
+			assert.deepEqual(persisted, [{ n: max }]);
+			await assert.rejects(() => definition!.execute("exhausted", ARGS as never, undefined, undefined, ctx), /Review id space exhausted/);
+			assert.equal(lookups, 1, "exhaustion starts no job");
+			assert.deepEqual(persisted, [{ n: max }]);
+			await nextLoop();
 		});
 	}
 });

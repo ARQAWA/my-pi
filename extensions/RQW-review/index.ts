@@ -261,21 +261,21 @@ async function runReviewer(level: Level, brief: string, ctx: ExtensionContext, s
 	}
 }
 
-/** The highest review number already used in this session, so a resumed session goes on counting. */
+/** Highest owned review id, including legacy outer prefixes, never a verdict or error body. */
 function lastNumber(entries: readonly SessionEntry[]): number {
 	let max = 0;
+	const take = (n: unknown) => {
+		if (typeof n === "number" && Number.isSafeInteger(n) && n > 0) max = Math.max(max, n);
+	};
 	for (const entry of entries) {
-		if (entry.type === "custom" && entry.customType === MESSAGE_TYPE) {
-			const n = (entry.data as { n?: number } | undefined)?.n;
-			if (typeof n === "number" && Number.isSafeInteger(n) && n > 0) max = Math.max(max, n);
-		}
-		let text = "";
-		if (entry.type === "custom_message" && entry.customType === MESSAGE_TYPE) text = textOf(entry.content);
-		else if (entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "review") {
-			text = textOf(entry.message.content);
-		}
-		const m = /review#(\d+)/.exec(text);
-		if (m) max = Math.max(max, Number(m[1]));
+		if (entry.type === "custom" && entry.customType === MESSAGE_TYPE)
+			take((entry.data as { n?: unknown } | undefined)?.n);
+		let match: RegExpExecArray | null = null;
+		if (entry.type === "custom_message" && entry.customType === MESSAGE_TYPE)
+			match = /^\[review#(\d+)\](?:\s|$)/.exec(textOf(entry.content));
+		else if (entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "review")
+			match = /^review#(\d+) started\.(?:\s|$)/.exec(textOf(entry.message.content));
+		if (match) take(Number(match[1]));
 	}
 	return max;
 }
@@ -301,7 +301,7 @@ export default function review(pi: ExtensionAPI) {
 
 	// Each review sends one verdict, so its number `n` in `details` is the delivery number.
 	type Verdict = { customType: string; content: string; display: boolean; details: { n: number } };
-	/** Set once our agent_before_settle handler has run; verdicts sent then wait for agent_settled in `late`. */
+	/** Held from agent_end until turn_start or our authoritative agent_settled handler. */
 	let settling = false;
 	const late: Verdict[] = [];
 	function deliver(message: Verdict) {
@@ -345,6 +345,8 @@ export default function review(pi: ExtensionAPI) {
 	// verdict stays in the session without a turn, and the model sees it on the next one.
 	pi.on("agent_end", async (_event, ctx) => {
 		// Unlike before_settle, agent_end still has the native run's active abort signal.
+		// isIdle becomes true before earlier agent_settled hooks finish, including after an abort.
+		settling = true;
 		if (ctx.mode !== "print" && ctx.mode !== "json") return;
 		const signal = ctx.signal;
 		if (!signal) return;
@@ -357,6 +359,11 @@ export default function review(pi: ExtensionAPI) {
 		}
 	});
 	pi.on("agent_before_settle", (_event, ctx) => {
+		// Flush the early phase before deciding to continue, or held verdicts could miss this run.
+		for (const message of late.splice(0)) {
+			unanswered.add(message.details.n);
+			pi.sendMessage(message, { triggerTurn: false });
+		}
 		if (!mainAborted && needsTurn(ctx)) return { continue: true };
 		settling = true;
 	});
@@ -434,6 +441,7 @@ export default function review(pi: ExtensionAPI) {
 				counter = lastNumber(ctx.sessionManager.getEntries());
 			}
 			const p = params as Params;
+			if (counter >= Number.MAX_SAFE_INTEGER) throw new Error("Review id space exhausted");
 			const n = ++counter;
 			pi.appendEntry(MESSAGE_TYPE, { n });
 			const brief = buildBrief(ctx.sessionManager.getBranch(), p);
