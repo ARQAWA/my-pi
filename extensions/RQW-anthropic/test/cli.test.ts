@@ -3,12 +3,20 @@ import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { it } from "node:test";
 import { entries } from "./pi-entrypoints.ts";
 
 const own = fileURLToPath(new URL("../index.ts", import.meta.url));
 const cli = fileURLToPath(new URL("./bundle/cli.js", import.meta.resolve("@earendil-works/pi-coding-agent")));
+
+it("passes a file URL to Node ESM preload, including paths with spaces", () => {
+	const path = join(tmpdir(), "offline guard.mjs");
+	const specifier = pathToFileURL(path).href;
+	assert.equal(new URL(specifier).protocol, "file:");
+	assert.ok(specifier.includes("offline%20guard.mjs"));
+	assert.equal(fileURLToPath(specifier), path);
+});
 
 it("actual CLI refuses conflicting adapters before --list-models and RPC in both load orders", {
 	skip: entries.some(([label]) => label === "CLI bundle") ? false : "stock CLI bundle cannot import on Bun 1.3.14",
@@ -33,7 +41,7 @@ it("actual CLI refuses conflicting adapters before --list-models and RPC in both
 		for (const key of Object.keys(env)) if (/(API_KEY|AUTH_TOKEN|OAUTH_TOKEN)$/.test(key)) delete env[key];
 		async function run(paths: string[], mode: string[]) {
 			return new Promise<{ code: number | null; out: string; err: string }>((resolve, reject) => {
-				const child = spawn(process.execPath, ["--import", guard, cli, "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session",
+				const child = spawn(process.execPath, ["--import", pathToFileURL(guard).href, cli, "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-session",
 					...paths.flatMap(path => ["-e", path]), ...mode], { cwd: root, env, stdio: ["pipe", "pipe", "pipe"] });
 				let out = "", err = "";
 				// Real child-process watchdog only; success waits on close, never on elapsed time.
