@@ -20,9 +20,16 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
 - `extensions/RQW-review/`: extension 6, the `review` tool with levels `blind` and `high`. Each call runs a fresh
   read-only reviewer session in the same process (`createAgentSession`, stock `read`, `grep`, `find`) with
   `REVIEWER.md` as its prompt; the verdict comes back later as a `[review#N]` message. Tests: `npm test`.
+- `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout. On by default;
+  `/statusbar [on|off]` toggles it and restores the stock footer when off. Elements, evidence and limits:
+  `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
+- `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
+  Public Pi API only; disable it separately in `pi config`. Tests: `extensions/RQW-models/test/`, `npm test`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.3.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.
+- Every `RQW-*` extension is self-contained and can be switched off alone (no import outside its folder, its tests load
+  only it); `test/isolation.test.ts` proves it, `INSTALL.md` shows the switch, `DECISIONS.md` section Isolation.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `notes/`: research notes, such as how the omp-lite prompt was built.
 - `WORKFLOW-MANIFEST.md`: how the owner works and what he expects of the work on my-pi; read it before any task.

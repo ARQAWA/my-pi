@@ -3,8 +3,8 @@
 // gives a call of a `codemode` script leads to the barrier of that script through Pi's real sandbox (worker thread,
 // host callback, nested call).
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { takeOverBuiltinCodemode } from "../../../RQW-tools/codemode.ts";
-import { createNestedBarrier } from "../../../RQW-tools/nested.ts";
+import { takeOverBuiltinCodemode } from "../../codemode.ts";
+import { createNestedBarrier } from "../../nested.ts";
 
 export default function (pi: ExtensionAPI) {
 	const nested = createNestedBarrier();

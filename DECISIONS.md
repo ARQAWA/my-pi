@@ -105,7 +105,8 @@ Every accepted decision, with its reason and the file that carries it.
   Pi builds them. Reason: without `shellPath` a Windows setup with Git outside Program Files finds no bash.
 - `createTools(cwd, settings)` in `index.ts` builds the six definitions with one barrier of their own; the factory
   registers one set for the session and answers a request on `pi.events` channel `rqw-tools:subagent-tools` with
-  `createTools` itself (section Agent). Nothing in RQW-tools depends on RQW-agent. A test in `test/tools.test.ts`
+  `createTools` itself (section Agent). Nothing in RQW-tools depends on RQW-agent. A test in
+  `extensions/RQW-tools/test/tools.test.ts`
   checks the answer and that each call gives fresh definitions.
 - The read key mirrors stock `resolveReadPath` (NFD, curly quote and AM/PM variants), so a read and a write of the same
   file spelled differently still meet in the barrier.
@@ -280,11 +281,23 @@ Every accepted decision, with its reason and the file that carries it.
   `tokens > 0 - reserve` (`agent-session.js:2376`, `2477`; only the pre-request check has a `<= 0` guard, `421`); a
   response is skipped only when nothing lies beyond `keepRecentTokens` to summarize. The extension leaves that
   unchanged.
-- Both wraps live as long as the process, one per class (`Symbol.for` guards): SDK sessions in the same process get
-  the rule too, and a `/reload` without the extension keeps it until restart. The reverse holds too: the patch of
-  Pi's classes is installed once per process, so after an update of my-pi a `/reload` keeps the old RQW-context code;
-  Pi must be restarted for RQW-context changes to apply (`INSTALL.md` step 4). Reason for text, not code: a
-  replaceable implementation behind the guards adds machinery for a case a restart covers.
+- Both wraps live as long as the process, one per class (`Symbol.for` guards), and act only while a loaded
+  RQW-context owns them: each factory adds a fresh token to the process-global `Set` under
+  `Symbol.for("rqw-context/owner")` on `globalThis`; its `session_shutdown` handler removes only that token.
+  The wraps act while the set is nonempty. Without an owner `getCompactionSettings` returns Pi's
+  own values, `_buildRuntime` installs no accessor, and an accessor already installed returns the model as stored.
+  Pi emits `session_shutdown` before it loads the next runtime's extensions: `/reload` (`agent-session.js:2972`,
+  then `_resourceLoader.reload()` at `2981`), `/new`, `/resume` and `/fork` (`agent-session-runtime.js:102-113`,
+  `teardownCurrent` before `createRuntime`). After the last owner switches RQW-context off and reloads, or emits
+  `session_shutdown`, the window and reserve are stock Pi's again (section Isolation). Concurrent owners survive
+  either shutdown order and reloads of other sessions; an old runtime removes only its own token, not a newer one.
+  SDK `dispose()` alone disconnects listeners and does not emit `session_shutdown`; callers must emit the lifecycle
+  event, as Pi does. While any owner remains, SDK sessions in the same process get the rule too, including sessions
+  that excluded the extension. Owner: "Replace owner slot with process-global Set of live owner tokens". Reason:
+  one slot let shutdown or reload of a newer SDK session disable an older, still-active owner.
+  The patch code itself is installed once per process, so after an update of my-pi a `/reload` keeps the old RQW-context code; Pi must be restarted for RQW-context changes to apply
+  (`INSTALL.md` step 4). Reason for text, not code: a replaceable implementation behind the guards adds machinery for
+  a case a restart covers.
 - Out of scope: virtual models (`pi.registerVirtualModel`; Pi 1.3.0 ships none), owner's option a. A virtual model
   (`api` `pi-virtual`) is never capped and `getCompactionSettings` returns Pi's own values for it. Reason: Pi reads
   the settings of the virtual selection but checks them against the routed physical model's window
@@ -296,8 +309,12 @@ Every accepted decision, with its reason and the file that carries it.
   `getContextUsage()`, `compaction_start` at W - R + 1 and not at W - R (also after a switch, `/reload`, resume, fork
   and `/new` through `AgentSessionRuntime`, and in the pre-request check `_exceedsCompactionThreshold` between tool
   turns), user reserves in memory and in a file-backed `settings.json`, overflow recovery above 500 000, the output cap
-  with compaction off, a virtual model as stock, load order, a load without either internal, and the request body
-  against stock Pi.
+  with compaction off, a virtual model as stock, load order, a load without either internal, the request body
+  against stock Pi, and the switch: listed in `settings.json`, dropped, `/reload` gives window 1 000 000 and reserve
+  16 384, listed again and `/reload` gives the rule back. `test/isolation.test.ts` checks the same through the
+  `packages` filter. Concurrent SDK tests in `context.test.ts` run for library and bundle: A/B shutdown in both
+  orders, package-filter reload excluding B while A remains, reload A, and stock values after the last owner leaves.
+  Tests emit `session_shutdown` before SDK `dispose()` so their owner tokens do not leak between cases.
 
 ## Prompt
 
@@ -340,8 +357,9 @@ Every accepted decision, with its reason and the file that carries it.
 
 - `codemode` and `tool_search`, Pi's built-in tools, are active by default (owner: «Давай включим CodeMode и Tool
   Search»). `extensions/RQW-settings/index.ts` adds them to the active tools at `session_start` under the same rule as
-  `grep` and `find`: no tool flag in argv and no `defaultTools` setting, shared through
-  `extensions/RQW-tools/selection.ts`. A tool is added only if it is registered, so `-builtin:codemode` gives no error.
+  `grep` and `find`: no tool flag in argv and no `defaultTools` setting. It is the same rule with one copy in each
+  extension, `extensions/RQW-settings/selection.ts` and `extensions/RQW-tools/selection.ts`, so neither imports the
+  other (section Isolation). A tool is added only if it is registered, so `-builtin:codemode` gives no error.
   Any user selection (`--tools`, `--exclude-tools`, `--no-tools`, `--no-builtin-tools`, `defaultTools`) leaves the stock
   set. Mode `on` (Pi's default) is kept: Pi appends a "Codemode: `tools.<name>(args)` resolves to ..." line to the
   descriptions of our six tools in each request. Texts, source lines and the barrier check: `notes/settings-codemode.md`.
@@ -367,6 +385,50 @@ Every accepted decision, with its reason and the file that carries it.
   request; the cost is recorded here.
 - On `/reload` the `session_start` handlers of RQW-settings and RQW-tools leave the active set alone: Pi keeps the tools
   the user switched off, and the handlers had added them again.
+
+## Isolation
+
+- Every `RQW-*` extension is self-contained and can be switched on and off alone, like a feature flag (owner:
+  «Когда мы делаем эти отдельные модули, они должны быть полностью изолированы, самодостаточны, чтобы мы могли
+  включать и выключать, как feature флаги.»). Rules: no file of an extension, tests included, imports a file outside
+  its own folder; a helper two extensions need is copied (`selection.ts`, 19 lines); an extension's tests load only
+  that extension; tests of several extensions together live in `test/` at the package root (`test/package.test.ts`);
+  no extension leaves active behaviour after it is switched off. RQW-context deliberately has process-wide scope:
+  stock behaviour returns only when the last live owner in that process leaves (section Context); switching it off
+  in B does not disable it in an active A.
+- Proof: `test/isolation.test.ts` (in `npm test`). The list comes from `package.json` `pi.extensions`, so a new
+  extension is covered without a change to the test. Static part: every relative import of every file under
+  `extensions/<E>/` resolves inside it. Runtime part, one child process per variant (`test/isolation-run.ts`, real
+  `DefaultResourceLoader` and `AgentSession`, a faux 1M model, Pi's `codemode` and `tool_search` as built-in
+  factories): for each extension E switched off through the `packages` filter, no load or bind errors and the loaded
+  set is all but E; every other extension registers the same tools with the same descriptions as with everything
+  on; a model turn with a `read` call completes; switching E off with `/reload` gives the same loaded set, registered
+  tools, compaction reserve for a 1M model and session window as a fresh start without it. Before this change it
+  failed on the `RQW-settings` import of `../RQW-tools/selection.ts` and on the RQW-context reload trace (550 000
+  against 16 384).
+- The switch is the object form of the `packages` entry in settings (`INSTALL.md`, "Switch one extension off"):
+  `{ "source": "<the same source string>", "extensions": ["-extensions/RQW-<name>/index.ts"] }`. Pi turns an object
+  entry into a filter for every source type (`dist/core/package-manager.js:1000-1009` `resolvePackageSources`;
+  `collectPackageResources` `:1848-1863` calls `applyPackageFilter` `:1903-1918`, which runs `applyPatterns`
+  `:548-591`: includes, `!` excludes, `+` force-includes, `-` force-excludes). An exact `-` pattern is compared with
+  the path relative to the package root after a leading `./` is stripped (`normalizeExactPattern` `:496-499`,
+  `matchesAnyExactPattern` `:500-519`), so it must name the file: `-extensions/RQW-<name>` (the folder) excludes
+  nothing. Docs: `docs/packages.md:94-121`. A git package is identified by its URL without the ref
+  (`docs/packages.md:127`), so the `source` stays `git:github.com/ARQAWA/my-pi`. It takes effect after `/reload`
+  (`dist/core/agent-session.js:2969-2990` re-reads settings and reloads the resources) or a restart.
+- Limits of the switch, all Pi's own. `pi -e <dir>` ignores the filter: `-e` sources are resolved without one
+  (`package-manager.js:746-757` `resolveExtensionSources`) and merged with the settings paths
+  (`dist/core/resource-loader.js:370-372`, `:409`); for one run without an extension pass the wanted `index.ts` files
+  with `-e`, plus `-ne` if the installed copy must not load too (`docs/cli.md:194-197`). Pi's built-in extensions are
+  not package resources: they are switched off with `-builtin:<name>` in the top-level `extensions` setting
+  (`docs/settings.md:163`, `package-manager.js:736-744`). After `/reload` Pi keeps the active tool set
+  (`agent-session.js:2981-2990`, `docs/settings.md:58`), so with RQW-tools or RQW-settings switched off, `grep`/`find`
+  or `codemode`/`tool_search` stay active, now the stock ones, until `/new` or a restart.
+- Prompt/tools isolation is implemented in this branch (section Prompt/tools isolation): `SYSTEM.md` no longer
+  describes RQW-tools; RQW-tools supplies conditional search and execution sections. The package-level
+  `test/prompt-tools-isolation.test.ts` checks tool availability and reload independently of the extension-local
+  isolation tests. The separate GPT behavioral benchmark uses frozen commits and decides whether this branch can
+  enter production; its results are not part of this merge.
 
 ## Agent
 
@@ -484,10 +546,9 @@ Every accepted decision, with its reason and the file that carries it.
 - `RQW-context` patches Pi classes for the whole process, so a subagent gets the owner's universal window rule like
   every model: its window is capped at 500 000 and its compaction reserve is 10% of that window. Checked in review: a
   subagent on a 1 000 000 model sends its request with window 500 000 when RQW-context is loaded.
-- Proof: `extensions/RQW-agent/test/agent.test.ts`, 34 tests on two faux providers (a copy of `index.ts` alone in a
+- Proof: `extensions/RQW-agent/test/agent.test.ts`, 33 tests on two faux providers (a copy of `index.ts` alone in a
   folder with no other extension loads and delivers, and the source has no `../` import; without RQW-tools the
-  subagent's `write` is the stock one, no `files`; with RQW-tools loaded it takes `files` and runs while a `sleep 2`
-  of the main session's RQW-tools bash still holds the main barrier; exact system prompt, model,
+  subagent's `write` is the stock one, no `files`; exact system prompt, model,
   thinking, tool subset, the five actions, follow-up while running, the main turn, shutdown, errors, call order, print
   mode; one request only after `stop`, `restart` or `session_shutdown` with a queued follow-up; a result arriving
   while the main agent streams continues its run once; after TUI Esc and after RPC abort the result is in the session
@@ -504,8 +565,9 @@ Every accepted decision, with its reason and the file that carries it.
   the four tests changed or added for review D fail except the retried-error one, which fails without the
   `auto_retry_start` line; on 8344d2e the two review E tests fail. On 0789ab1 the seven review F tests fail; with only the `compaction_start` line six of them fail. On
   40574b5 the folder and stock-tools tests fail; with no offer from RQW-tools the RQW-tools test fails, and so it does
-  when RQW-tools offers its main definitions with the main barrier. With the RQW-tools folder removed, 33 pass and
-  the RQW-tools test is skipped. Live runs
+  when RQW-tools offers its main definitions with the main barrier. The mandatory package integration in `test/agent-tools.test.ts` checks `write.files[]` and a
+  separate subagent barrier while the main barrier is held; after filtering RQW-tools out and reloading,
+  new subagents get stock write. It has no missing-folder skip; extension-local tests load only RQW-agent. Live runs
   in a fixture repository with `pi -e <repo> --model anthropic/<model> --thinking low --mode json -p <prompt>`:
   Haiku 5.5 started a subagent with its own prompt, read a file and answered a follow-up (`[agent#1] ZED: 3`,
   `[agent#1] ZED: alpha`); Haiku 5.5 queued a follow-up, interrupted a `sleep 40`, restarted
@@ -668,3 +730,109 @@ Every accepted decision, with its reason and the file that carries it.
   left after closing tabs, `/quit` or VS Code itself. Not covered: a real model call and the corporate VDI restrictions.
 - Publishing: skill `publish-pcli` (`.agents/skills/publish-pcli/SKILL.md`), `vsce publish --target win32-x64` from
   `pcli-vscode/` under publisher `arqawa`, `version` raised before each publish, only on a direct request.
+
+## Models
+
+- Owner: "independent toggleable model-picker extension matching omp"; "Opus, Sonnet, gpt-6.1-sol, gpt-6-sol,
+  gpt-6-luna, Haiku only; exclude GPT5.6, off and minimal reasoning". `extensions/RQW-models/index.ts` is independent,
+  imports only Pi, and is listed separately in `package.json` under `pi.extensions`. Disable its resource in Pi's
+  `pi config`, then `/reload`; it installs no process-wide hooks and writes no settings. It registers no tool.
+- Model order in `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`,
+  `claude-haiku-5-5`. `pickerModels` uses `ctx.modelRegistry.getAvailable()`, so absent models and providers without
+  configured auth are skipped, without resolving credentials or making requests itself. `familyOf` matches the same
+  generation across provider paths, Claude dotted versions, dated aliases and Bedrock IDs. No old Claude generation,
+  GPT 5.6, fast variant or invented model is substituted.
+- Owner: "Match supported model ids across providers, skip absent auth; providers remain Anthropic and openai-codex
+  (provider restriction implementation separate)". The preferred providers are `anthropic` for Claude and
+  `openai-codex` for GPT. Conservative choice: one available variant per family, preferring that provider and its
+  exact canonical ID, then stable provider/ID order. This keeps six entries, not duplicates of each model. A proxy
+  variant can be selected only when the preferred provider/ID is unavailable. This extension does not disable any
+  provider. A provider-wide restriction remains a separate task.
+- Owner: "Latest selected shortcuts: Alt+=/Alt+- cycle models; Alt+Shift+=/Alt+Shift+- cycle supported reasoning
+  levels". `registerShortcut` binds those physical keys. `alt++` and `alt+_` also handle the shifted symbols sent by
+  legacy terminals. `alt+shift++` and `alt+shift+_` handle CSI-u reporting the produced symbol while retaining Shift.
+  The first match handles a press once, as in Pi's interactive editor. Shortcut actions are serialized so fast
+  repeated presses do not race. Each queued action reads the live `model` getter of the latest `session_start`
+  event context, not the TUI shortcut snapshot; this includes reasoning queued behind a model switch. The event
+  context is refreshed even on resume and reload. Both model and reasoning movement stop at either end, as omp does,
+  rather than wrap.
+  From outside the list, forward enters at the first available model and backward at the last.
+- Conservative UI choice: `/rqw-models` is the extension's authenticated six-model picker via `ctx.ui.select`.
+  Stock `/model`, Ctrl+L, Ctrl+P, Shift+Tab, `/scoped-models`, CLI/RPC selection and provider definitions stay intact.
+  Pi reserves those built-in shortcuts and disambiguates commands conflicting with built-ins; replacing its whole
+  UI would need internal hooks. The six-model/off/minimal exclusions apply to this extension's picker and shortcuts,
+  not a global prohibition on explicit stock Pi choices. In print/JSON mode the picker has no dialog and does nothing;
+  RPC can supply the standard select dialog. Disabling the extension restores stock behavior on `/reload`.
+- Owner: "Main initial model Opus medium; respect explicit CLI --model/--thinking; resumed sessions retain current
+  model". Without explicit CLI model selection, `session_start` selects available Opus and `medium` on a fresh
+  startup or `/new`. With no authenticated Opus
+  it keeps Pi's initial model rather than silently choosing another family. A startup with existing conversation
+  history or continuation/session flags, and events `resume`, `fork` and `reload`, keep the current model/thinking.
+  Explicit CLI `--model` and `--models` preserve Pi's resolved model and thinking selection, including model suffixes,
+  mixed scoped suffixes, `--thinking` precedence and settings effort when no suffix is given. No scoped suffix is
+  parsed again by the extension. Pi's exported `parseArgs` recognizes explicit selections and continuation flags.
+  Without an explicit model selection, the extension selects available Opus and applies `--thinking` through Pi's
+  native clamping, including off/minimal; when `--thinking` is absent it applies medium when supported. CLI overrides apply to `/new` too,
+  matching Pi's own new-session initialization. No defaults are persisted. An SDK host must pass reason `resume` for
+  an empty restored session with no conversation history, since public session metadata cannot distinguish that
+  session from a fresh one after Pi inserts initial model/thinking entries.
+- Owner: "Pi model support determines available thinking levels, don't fake unsupported xhigh". `levelsFor` uses
+  Pi's exported `getSupportedThinkingLevels(model)` and removes off/minimal only. No copied omp effort caps or
+  provider-payload rewrites. With Pi 1.3.0's canonical six models it currently offers low, medium, high, xhigh, max;
+  a model or override without xhigh/max mappings offers neither. A non-reasoning model has no choices. On an
+  extension model switch the previous effort is retained if supported, otherwise the nearest lower supported level
+  or the lowest. Explicit off/minimal moves to the lowest allowed level on the next extension-driven selection.
+- P2 follow-up, owner: "obtain live current model when action executes via public live context/session mechanism";
+  "Prefer Pi resolved settings state over fragile manual CLI parser"; "Preserve default Opusmedium only when no
+  explicit selection, resumed unchanged". Reason: queued TUI snapshots retain the previous model and an extension
+  override loses Pi's selected scoped effort. The fixes use the public event context and retain Pi's resolved
+  explicit selection in `extensions/RQW-models/index.ts`.
+- Research sources and Pi mechanisms: `notes/models-omp.md`. Read-only: `~/Documents/ChatGPT/my-omp-harness`
+  master/lite use `extensions/ui/model-arrows.js` and
+  `reasoning-arrows.js`; deprecated uses the same files directly under `extensions/`. All use Shift+arrows and
+  stop at the ends. Master contains GPT 5.6 and hard-coded Opus high/Sonnet xhigh caps plus Anthropic off payload
+  rewrites; those are intentionally not ported. Its `settings/config.yml` keeps the two providers and seven model
+  entries. The installed `~/.omp/agent/config.yml` loads that repository but still lists more enabled models and a
+  Sonnet high default; `~/.omp/agent/keybindings.yml` disables stock model cycling. Latest owner choices above win.
+  Checked against Pi 1.3.0 `docs/extensions.md`, `docs/sdk.md`, `docs/keybindings.md`, `core/extensions/types.d.ts`,
+  `core/extensions/runner.js`, `core/model-registry.js`, `core/sdk.js`, `core/agent-session.js`, `main.js`, pi-ai's
+  `models.js` and built-in model data, and pi-tui's `keys.js`.
+- Proof: `extensions/RQW-models/test/models.test.ts`, faux only, runs standalone loading and disabling, real SDK
+  sessions, model/thinking changes, history restore and reload, no persisted defaults, actual CLI flag handling,
+  missing Anthropic auth and explicit excluded-model selection. The key test feeds realistic ESC-prefix, Kitty
+  physical/alternate-symbol CSI-u and xterm modifyOtherKeys bytes into Pi's `matchesKey`, with first-match dispatch.
+  This is parser testing, not manual terminal testing. No live Claude requests, nested agents, push or merge in this
+  task, as explicitly requested. No independent agent review was run because nested agents are prohibited. Local
+  proof for the P2 fixes is on macOS, Node 22.19.0 and 26.7.0, with 26 model tests on each. Regression coverage
+  includes rapid snapshot contexts, reasoning queued behind a switch, real CLI mixed scoped suffixes and a saved
+  default selecting the second scoped model. The complete repository suite passes on both with
+  `--test-concurrency=1`, versions run sequentially. Strict TypeScript checking was not rerun: this worktree has no
+  local compiler or typecheck script. No unrelated tests or timeouts were changed. Windows/Linux remain covered by
+  the existing CI matrix but were not run locally, and no terminal
+  capture or corporate VDI test was performed.
+## Status bar
+
+- Independent `extensions/RQW-statusbar/`, registered in `package.json` under `pi.extensions`. Owner: "independent
+  toggleable status bar matching his omp elements and placement ONLY; colors explicitly don't matter" and
+  "No coupling to RQW-models or other extension folder imports". The existing predecessor renderer and git helpers
+  are retained and completed. Evidence and exact row contract: `notes/statusbar-omp.md`; do not copy other omp UI.
+- Enabled by default; `/statusbar [on|off]` toggles in the TUI, with the bare command inverting the choice. Off restores
+  the stock footer and disposes polling/subscriptions. The choice is local to the loaded extension, not persisted.
+  Reason: Pi already owns package extension enablement; no parallel settings file is needed. Print, JSON and RPC do
+  no footer work. Model and thinking are read live from Pi, regardless of the source of a change.
+- Context tokens/window come from Pi; the bar measures the effective compaction threshold from Pi's own reserve
+  resolver, including a cap/rule installed independently by RQW-context. It never changes that policy. Unknown
+  post-compaction usage is `?/limit`. Reason: zero would claim a known empty context.
+- Conditional omp data without a stock Pi API is not invented: modes, collaboration, streaming/recording, running
+  agent/job counts and PR metadata. The tokens/second slot uses a local streaming estimate, corrected by billed
+  output at message end, not omp's private smoothed meter. Limits, source citations and test samples live only in
+  `notes/statusbar-omp.md`. Colors are stock Pi semantic colors, without tuning.
+- Branch and counts use the extension's own repository discovery and asynchronous git refresh, not Pi's cached
+  `getGitBranch()`. Owner: "Use extension's own repo discovery/async git refresh to update branch reliably
+  (including replacing repo and branch checkout), not just counts". Reason: Pi caches absent metadata when a session
+  starts outside git and does not rediscover it after init in the same cwd. Carried by `extensions/RQW-statusbar/{git,index}.ts`;
+  real-provider regression and evidence: `notes/statusbar-omp.md`.
+- Task-specific execution: owner requires "no Anthropic or other live model requests, no nested agents" and
+  "Commit on branch, no push/merge". Proof uses deterministic snapshots, no-request Pi library/bundle sessions,
+  local git fixtures and a PTY smoke run where available. No independent agent review or model run is authorized
+  for this task. Windows paths are exercised locally; native Windows execution remains the existing CI job.
