@@ -177,8 +177,22 @@ export function reviewerTools(cwd: string): ToolDefinition[] {
 const SHUTDOWN = "shutdown";
 const TIMEOUT = "timeout";
 
+/** Stop waiting even when an SDK preflight ignores cancellation; observe its eventual rejection too. */
+async function untilAborted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+	const aborted = Promise.withResolvers<never>();
+	const stop = () => aborted.reject(new Error("aborted"));
+	signal.addEventListener("abort", stop, { once: true });
+	if (signal.aborted) stop();
+	try {
+		return await Promise.race([pending, aborted.promise]);
+	} finally {
+		signal.removeEventListener("abort", stop);
+	}
+}
+
 /** One reviewer session from start to its last assistant text. Throws with the reason when there is no verdict. */
 async function runReviewer(level: Level, brief: string, ctx: ExtensionContext, signal: AbortSignal): Promise<string> {
+	signal.throwIfAborted();
 	const spec = LEVELS[level];
 	const name = `${spec.provider}/${spec.model}`;
 	const model = ctx.modelRegistry.find(spec.provider, spec.model);
@@ -188,10 +202,11 @@ async function runReviewer(level: Level, brief: string, ctx: ExtensionContext, s
 	const modelRuntime = (ctx.modelRegistry as unknown as { runtime?: ModelRuntime }).runtime;
 	if (!modelRuntime) throw new Error("the model runtime of the session is not reachable");
 	// As Pi's prompt: the auth snapshot is filled asynchronously, so a stale one falls back to a direct check.
-	if (!ctx.modelRegistry.hasConfiguredAuth(model) && !(await modelRuntime.checkAuth(spec.provider)))
+	if (!ctx.modelRegistry.hasConfiguredAuth(model) && !(await untilAborted(modelRuntime.checkAuth(spec.provider, { signal }), signal)))
 		throw new Error(`no credentials for ${spec.provider} (model ${name})`);
 
-	const { session } = await createAgentSession({
+	signal.throwIfAborted();
+	const creating = createAgentSession({
 		cwd: ctx.cwd,
 		model,
 		thinkingLevel: spec.thinking,
@@ -201,18 +216,42 @@ async function runReviewer(level: Level, brief: string, ctx: ExtensionContext, s
 		customTools: reviewerTools(ctx.cwd),
 		sessionManager: SessionManager.inMemory(ctx.cwd),
 		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+	}).then((created) => {
+		// createAgentSession has no signal: dispose a session that materializes after cancellation.
+		if (signal.aborted) {
+			created.session.dispose();
+			signal.throwIfAborted();
+		}
+		return created;
 	});
-	const stop = () => void session.abort();
+	let created: Awaited<typeof creating>;
+	try {
+		created = await untilAborted(creating, signal);
+	} catch (error) {
+		void creating.then(({ session }) => session.dispose()).catch(() => {});
+		throw error;
+	}
+	const { session } = created;
+	// Pi 1.3 prompt() awaits auth before an active run exists, so abort() alone cannot stop that preflight.
+	// This public request hook stays guarded even if the abandoned prompt resumes after dispose().
+	const stream = session.agent.streamFunction;
+	session.agent.streamFunction = (model, context, options) => {
+		signal.throwIfAborted();
+		return stream(model, context, options);
+	};
+	const stop = () => { void session.abort().catch(() => {}); };
 	try {
 		signal.addEventListener("abort", stop, { once: true });
 		if (signal.aborted) throw new Error("aborted");
-		await session.prompt(brief);
+		await untilAborted(session.prompt(brief), signal);
 		if (signal.aborted) throw new Error("aborted");
 		const last = [...session.messages].reverse().find((m) => m.role === "assistant");
 		if (last?.role === "assistant" && last.stopReason === "error") {
 			throw new Error(last.errorMessage || "the model request failed");
 		}
-		if (last?.role === "assistant" && last.stopReason === "aborted") throw new Error("aborted");
+		if (last?.role !== "assistant" || last.stopReason !== "stop") {
+			throw new Error(`the reviewer did not complete normally (${last?.stopReason ?? "no assistant response"})`);
+		}
 		const text = session.getLastAssistantText()?.trim();
 		if (!text) throw new Error("the reviewer gave no verdict");
 		return text;
@@ -226,6 +265,10 @@ async function runReviewer(level: Level, brief: string, ctx: ExtensionContext, s
 function lastNumber(entries: readonly SessionEntry[]): number {
 	let max = 0;
 	for (const entry of entries) {
+		if (entry.type === "custom" && entry.customType === MESSAGE_TYPE) {
+			const n = (entry.data as { n?: number } | undefined)?.n;
+			if (typeof n === "number" && Number.isSafeInteger(n) && n > 0) max = Math.max(max, n);
+		}
 		let text = "";
 		if (entry.type === "custom_message" && entry.customType === MESSAGE_TYPE) text = textOf(entry.content);
 		else if (entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "review") {
@@ -240,6 +283,7 @@ function lastNumber(entries: readonly SessionEntry[]): number {
 export default function review(pi: ExtensionAPI) {
 	let counter = 0;
 	let main: ExtensionContext | undefined;
+	let mainAborted = false;
 	const running = new Set<AbortController>();
 	/** Every job until its verdict is sent; print and JSON modes wait for them. */
 	const jobs = new Set<Promise<void>>();
@@ -263,6 +307,11 @@ export default function review(pi: ExtensionAPI) {
 	function deliver(message: Verdict) {
 		if (settling) {
 			late.push(message);
+			return;
+		}
+		// A previous abort pauses idle delivery only; a new busy run may still be in an earlier start hook.
+		if (mainAborted && main?.isIdle() !== false) {
+			pi.sendMessage(message, { triggerTurn: false });
 			return;
 		}
 		if (main?.isIdle() !== false) {
@@ -294,17 +343,33 @@ export default function review(pi: ExtensionAPI) {
 	// Print and JSON modes exit when the main run settles, so there the main run waits for running reviews. A verdict
 	// sent during the run continues it here; an idle main session gets a verdict as a new turn. After an abort the
 	// verdict stays in the session without a turn, and the model sees it on the next one.
-	pi.on("agent_before_settle", async (_event, ctx) => {
-		if (ctx.mode === "print" || ctx.mode === "json") while (jobs.size > 0) await Promise.all(jobs);
-		if (needsTurn(ctx)) return { continue: true };
+	pi.on("agent_end", async (_event, ctx) => {
+		// Unlike before_settle, agent_end still has the native run's active abort signal.
+		if (ctx.mode !== "print" && ctx.mode !== "json") return;
+		const signal = ctx.signal;
+		if (!signal) return;
+		try {
+			while (jobs.size > 0) await untilAborted(Promise.all(jobs), signal);
+		} catch (error) {
+			if (!signal.aborted) throw error;
+		} finally {
+			if (signal.aborted) mainAborted = true;
+		}
+	});
+	pi.on("agent_before_settle", (_event, ctx) => {
+		if (!mainAborted && needsTurn(ctx)) return { continue: true };
 		settling = true;
 	});
 	// Another extension's agent_before_settle handler may run after ours, so a verdict can come in after our check and
 	// before the run settles. It is sent here; Pi defers it until the settle ends and then starts its turn.
+	pi.on("agent_start", () => {
+		mainAborted = false;
+	});
 	pi.on("turn_start", () => {
 		settling = false;
 	});
 	pi.on("agent_settled", (event) => {
+		mainAborted = event.aborted;
 		settling = false;
 		// One turn for all of them: Pi defers each triggerTurn separately, so the earlier ones are appended at once and
 		// only the last one starts the turn.
@@ -363,8 +428,14 @@ export default function review(pi: ExtensionAPI) {
 		description: DESCRIPTION,
 		parameters,
 		async execute(_id, params, _signal, _onUpdate, ctx) {
+			// SDK reload can rebuild an unbound runner without emitting session_start.
+			if (!main) {
+				main = ctx;
+				counter = lastNumber(ctx.sessionManager.getEntries());
+			}
 			const p = params as Params;
 			const n = ++counter;
+			pi.appendEntry(MESSAGE_TYPE, { n });
 			const brief = buildBrief(ctx.sessionManager.getBranch(), p);
 			const pending = job(n, p.level, brief, ctx);
 			jobs.add(pending);
