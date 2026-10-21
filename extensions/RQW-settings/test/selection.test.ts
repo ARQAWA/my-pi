@@ -13,7 +13,9 @@ const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts"
 const HOOK = Symbol.for("rqw/tool-selection-intent/1.3.0");
 const FOUR = ["bash", "edit", "read", "write"];
 const ADDED = ["codemode", "tool_search"];
-const intentMap = (Session: { prototype: object }): WeakMap<object, boolean> => (Session.prototype as any)[HOOK].intents;
+type IntentBinding = { session: WeakRef<object>; selected: boolean };
+const intentMap = (Session: { prototype: object }): WeakMap<object, IntentBinding> =>
+	(Session.prototype as { [HOOK]: { intents: WeakMap<object, IntentBinding> } })[HOOK].intents;
 
 class NativeShape {
 	sessionManager = {};
@@ -24,7 +26,7 @@ class NativeShape {
 	bindExtensions(...args: unknown[]) { return args; }
 }
 
-describe("selection hook: checked native fields and descriptor leases", () => {
+describe("selection hook: checked native metadata and weak registrations", () => {
 	it("rejects unsupported versions and descriptors without changing the method", () => {
 		const before = Object.getOwnPropertyDescriptor(NativeShape.prototype, "bindExtensions");
 		assert.throws(() => installSelectionIntent(NativeShape, "1.4.0"), /requires Pi 1.3.0/);
@@ -42,7 +44,7 @@ describe("selection hook: checked native fields and descriptor leases", () => {
 		}
 	});
 
-	it("captures before the native method, distinguishes no-op intent, and never recaptures a manager", () => {
+	it("captures before the native method, distinguishes no-op intent, and never recaptures the same session", () => {
 		class Session extends NativeShape {
 			bindExtensions(...args: unknown[]) {
 				assert.equal(intentMap(Session).has(this.sessionManager), true, "capture precedes native bind");
@@ -61,16 +63,38 @@ describe("selection hook: checked native fields and descriptor leases", () => {
 				const session = Object.assign(new Session(), fields);
 				const arg = {};
 				assert.deepEqual(session.bindExtensions(arg), [arg]);
-				assert.equal(intentMap(Session).get(session.sessionManager), expected);
+				assert.equal(intentMap(Session).get(session.sessionManager)?.selected, expected);
 				session._usesDefaultTools = !session._usesDefaultTools;
 				session._defaultToolModifiers = ["+read"];
 				session.bindExtensions();
-				assert.equal(intentMap(Session).get(session.sessionManager), expected, "first bind is immutable");
+				assert.equal(intentMap(Session).get(session.sessionManager)?.selected, expected, "first bind is immutable");
 			}
 		} finally { release(); }
 	});
 
-	it("rejects missing, accessor, and malformed fields before calling native bind", () => {
+	it("rebinds a reused manager to each session without overwriting either session's original intent", () => {
+		class Session extends NativeShape { bindExtensions() { return []; } }
+		const release = installSelectionIntent(Session);
+		try {
+			const original = new Session();
+			const explicit = Object.assign(new Session(), { sessionManager: original.sessionManager, _usesDefaultTools: false });
+			original.bindExtensions();
+			const intents = intentMap(Session);
+			assert.equal(intents.get(original.sessionManager)?.session.deref(), original);
+			original._usesDefaultTools = false;
+			explicit.bindExtensions();
+			assert.equal(intents.get(original.sessionManager)?.session.deref(), explicit);
+			assert.equal(intents.get(original.sessionManager)?.selected, true);
+			explicit._usesDefaultTools = true;
+			original.bindExtensions();
+			assert.equal(intents.get(original.sessionManager)?.session.deref(), original);
+			assert.equal(intents.get(original.sessionManager)?.selected, false);
+			explicit.bindExtensions();
+			assert.equal(intents.get(original.sessionManager)?.selected, true);
+		} finally { release(); }
+	});
+
+	it("never changes native bind for malformed metadata and leaves no intent for defaults", () => {
 		let calls = 0;
 		class Session extends NativeShape { bindExtensions() { calls++; return []; } }
 		const release = installSelectionIntent(Session);
@@ -82,15 +106,17 @@ describe("selection hook: checked native fields and descriptor leases", () => {
 			] as const) {
 				const session = new Session();
 				Object.defineProperty(session, field, { value, configurable: true });
-				assert.throws(() => session.bindExtensions(), new RegExp(field));
+				session.bindExtensions();
+				assert.equal(intentMap(Session).has(session.sessionManager), false);
 			}
 			for (const descriptor of [undefined, { get: () => true, configurable: true }]) {
 				const session = new Session();
 				delete (session as any)._usesDefaultTools;
 				if (descriptor) Object.defineProperty(session, "_usesDefaultTools", descriptor);
-				assert.throws(() => session.bindExtensions(), /_usesDefaultTools/);
+				session.bindExtensions();
+				assert.equal(intentMap(Session).has(session.sessionManager), false);
 			}
-			assert.equal(calls, 0);
+			assert.equal(calls, 8);
 		} finally { release(); }
 	});
 
@@ -113,7 +139,7 @@ describe("selection hook: checked native fields and descriptor leases", () => {
 		try {
 			session.bindExtensions();
 			assert.equal(intentMap(NativeShape), intents);
-			assert.equal(intents.get(session.sessionManager), false, "reload never reclassifies initial defaults");
+			assert.equal(intents.get(session.sessionManager)?.selected, false, "reload never reclassifies initial defaults");
 		} finally { third(); }
 		assert.deepEqual(Object.getOwnPropertyDescriptor(NativeShape.prototype, "bindExtensions"), descriptor);
 	});
@@ -134,9 +160,25 @@ describe("selection hook: checked native fields and descriptor leases", () => {
 		try {
 			const session = new Session();
 			session.bindExtensions();
-			assert.equal(intentMap(Session).get(session.sessionManager), false);
+			assert.equal(intentMap(Session).get(session.sessionManager)?.selected, false);
 		} finally { again(); }
 		assert.deepEqual(Object.getOwnPropertyDescriptor(Session.prototype, "bindExtensions"), descriptor);
+	});
+
+	it("failed metadata capture removes a stale manager binding without touching native fields", () => {
+		class Session extends NativeShape { bindExtensions() { return []; } }
+		const release = installSelectionIntent(Session);
+		try {
+			const first = new Session();
+			first.bindExtensions();
+			const next = new Session();
+			next.sessionManager = first.sessionManager;
+			Object.defineProperty(next, "_usesDefaultTools", { value: undefined });
+			const fields = Object.getOwnPropertyDescriptors(next);
+			assert.deepEqual(next.bindExtensions(), []);
+			assert.deepEqual(Object.getOwnPropertyDescriptors(next), fields);
+			assert.equal(intentMap(Session).has(first.sessionManager), false);
+		} finally { release(); }
 	});
 
 	it("does not silently apply defaults without a captured sessionManager", () => {
@@ -209,7 +251,7 @@ for (const [name, sdk] of [["library", library], ["bundle", bundle]] as const) {
 					const ours = await open(options);
 					try {
 						assert.deepEqual(ours.names(), stock.names());
-						assert.equal(intentMap(sdk.AgentSession).get(ours.session.sessionManager), true);
+						assert.equal(intentMap(sdk.AgentSession).get(ours.session.sessionManager)?.selected, true);
 						assert.deepEqual(process.argv, argv);
 					} finally { await ours.close(); }
 				} finally { await stock.close(); }
@@ -262,8 +304,32 @@ for (const [name, sdk] of [["library", library], ["bundle", bundle]] as const) {
 					await lifecycle.fork(entryId, { position: "at" });
 					assert.equal(lifecycle.session.sessionManager, manager, "native in-memory fork reuses the manager");
 					assert.deepEqual(lifecycle.session.getActiveToolNames().sort(), expected);
-					assert.equal(intentMap(sdk.AgentSession).get(manager), Object.keys(options).length > 0);
+					assert.equal(intentMap(sdk.AgentSession).get(manager)?.selected, Object.keys(options).length > 0);
 				} finally { await lifecycle.dispose(); }
+				assert.deepEqual(Object.getOwnPropertyDescriptor(sdk.AgentSession.prototype, "bindExtensions"), descriptor);
+			}
+		});
+
+		it("a new session on the same manager captures fresh intent after shutdown and dispose", async () => {
+			for (const [firstOptions, nextOptions] of [
+				[{}, { noTools: "builtin" }], [{ excludeTools: [] }, {}],
+				[{ noTools: "builtin" }, {}], [{}, { excludeTools: [] }],
+			] satisfies [Options, Options][]) {
+				const descriptor = Object.getOwnPropertyDescriptor(sdk.AgentSession.prototype, "bindExtensions");
+				const first = await open(firstOptions);
+				const manager = first.session.sessionManager;
+				await first.close();
+				assert.deepEqual(Object.getOwnPropertyDescriptor(sdk.AgentSession.prototype, "bindExtensions"), descriptor);
+				const next = await open(nextOptions, true, {}, "resume", manager);
+				try {
+					const expected = nextOptions.noTools ? [] : nextOptions.excludeTools ? FOUR : [...FOUR, ...ADDED].sort();
+					assert.deepEqual(next.names(), expected);
+					const binding = intentMap(sdk.AgentSession).get(manager)!;
+					assert.equal(binding.session.deref(), next.session);
+					assert.equal(binding.selected, nextOptions.noTools !== undefined || nextOptions.excludeTools !== undefined);
+					await next.session.reload();
+					assert.deepEqual(next.names(), expected);
+				} finally { await next.close(); }
 				assert.deepEqual(Object.getOwnPropertyDescriptor(sdk.AgentSession.prototype, "bindExtensions"), descriptor);
 			}
 		});
@@ -279,7 +345,7 @@ for (const [name, sdk] of [["library", library], ["bundle", bundle]] as const) {
 				await ours.session.reload();
 				assert.deepEqual(ours.names(), FOUR);
 				assert.equal(intentMap(sdk.AgentSession), intents);
-				assert.equal(intents.get(manager), false);
+				assert.equal(intents.get(manager)?.selected, false);
 				ours.paths.splice(0);
 				await ours.session.reload();
 				assert.deepEqual(ours.names(), FOUR);

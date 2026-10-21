@@ -3,10 +3,12 @@ import { AgentSession, VERSION, type ExtensionAPI } from "@earendil-works/pi-cod
 const TOOL_FLAGS = ["--tools", "-t", "--exclude-tools", "-xt", "--no-tools", "-nt", "--no-builtin-tools", "-nbt"];
 const HOOK = Symbol.for("rqw/tool-selection-intent/1.3.0");
 type SessionClass = { prototype: object };
+type IntentBinding = { session: WeakRef<object>; selected: boolean };
 type HookState = {
-	count: number;
-	intents: WeakMap<object, boolean>;
-	descriptors: WeakMap<(...args: any[]) => any, PropertyDescriptor>;
+	registrations: Set<WeakRef<object>>;
+	sessions: WeakMap<object, boolean>;
+	intents: WeakMap<object, IntentBinding>;
+	descriptors: WeakMap<(...args: unknown[]) => unknown, PropertyDescriptor>;
 };
 type HookOwner = { [HOOK]?: HookState };
 
@@ -21,10 +23,15 @@ function dataField(session: object, name: string): unknown {
 }
 
 /** SDK 1.3.0 retains intent, not just the resulting active set, in these constructor fields. */
-function capture(session: object, intents: WeakMap<object, boolean>): void {
+function capture(session: object, state: HookState): void {
 	const manager = dataField(session, "sessionManager");
 	if (!manager || typeof manager !== "object") unsupported("invalid sessionManager");
-	if (intents.has(manager)) return;
+	const previous = state.sessions.get(session);
+	if (previous !== undefined) {
+		state.intents.set(manager, { session: new WeakRef(session), selected: previous });
+		return;
+	}
+	state.intents.delete(manager);
 	const usesDefault = dataField(session, "_usesDefaultTools");
 	const modifiers = dataField(session, "_defaultToolModifiers");
 	const excluded = dataField(session, "_excludedTools");
@@ -35,11 +42,43 @@ function capture(session: object, intents: WeakMap<object, boolean>): void {
 	}
 	if (excluded !== undefined && typeof excluded !== "function") unsupported("invalid _excludedTools");
 	if (allowed !== undefined && typeof allowed !== "function") unsupported("invalid _allowedTools");
-	// An empty excludeTools still creates a matcher. Empty tools and noTools disable usesDefaultTools.
-	intents.set(manager, !usesDefault || modifiers.length > 0 || excluded !== undefined || allowed !== undefined);
+	// A manager can be reused by a new session; only the same session keeps its original intent on reload.
+	const selected = !usesDefault || modifiers.length > 0 || excluded !== undefined || allowed !== undefined;
+	state.sessions.set(session, selected);
+	state.intents.set(manager, { session: new WeakRef(session), selected });
 }
 
-/** Each isolated extension leases the same hook; session keys remain weak across the /reload lease gap. */
+// SDK factory rejection has no lifecycle event; orphan registrations disappear after collection and this sweep.
+function hasRegistrations(state: HookState): boolean {
+	for (const reference of state.registrations) {
+		if (!reference.deref()) state.registrations.delete(reference);
+	}
+	return state.registrations.size > 0;
+}
+
+function restoreIfIdle(owner: HookOwner, state: HookState): boolean {
+	if (hasRegistrations(state)) return false;
+	const current = Object.getOwnPropertyDescriptor(owner, "bindExtensions");
+	const original = current && state.descriptors.get(current.value);
+	// Never remove a foreign hook installed later; our dormant wrapper remains a stock passthrough.
+	if (original) Object.defineProperty(owner, "bindExtensions", original);
+	return true;
+}
+
+// Keep tokens outside the wrapper's closure scope so the prototype cannot retain them strongly.
+function register(owner: HookOwner, state: HookState): () => void {
+	const token = { released: false };
+	const reference = new WeakRef(token);
+	state.registrations.add(reference);
+	return () => {
+		if (token.released) return;
+		token.released = true;
+		state.registrations.delete(reference);
+		restoreIfIdle(owner, state);
+	};
+}
+
+/** Capture-only registrations are weak: a failed SDK factory has no shutdown event or strong lease to leak. */
 export function installSelectionIntent(Session: SessionClass = AgentSession, version = VERSION): () => void {
 	if (version !== "1.3.0") unsupported(`unsupported version ${version}`);
 	const owner = Session.prototype as HookOwner;
@@ -49,40 +88,35 @@ export function installSelectionIntent(Session: SessionClass = AgentSession, ver
 	}
 	let state = Object.getOwnPropertyDescriptor(owner, HOOK)?.value as HookState | undefined;
 	if (!state) {
-		state = { count: 0, intents: new WeakMap(), descriptors: new WeakMap() };
+		state = { registrations: new Set(), sessions: new WeakMap(), intents: new WeakMap(), descriptors: new WeakMap() };
 		Object.defineProperty(owner, HOOK, { value: state });
 	}
-	if (state.count === 0) {
+	if (!hasRegistrations(state)) {
 		const installed = state;
-		// Another lifecycle hook can restore our dormant wrapper after its own shutdown. Unwrap that lease.
+		// Another lifecycle hook may have restored our dormant wrapper after its own shutdown.
 		const originalDescriptor = state.descriptors.get(descriptor.value) ?? descriptor;
 		const original = originalDescriptor.value;
-		const wrapped = function bindExtensions(this: object, ...args: any[]) {
-			if (installed.count > 0) capture(this, installed.intents);
+		const wrapped = function bindExtensions(this: object, ...args: unknown[]) {
+			if (!restoreIfIdle(owner, installed)) {
+				try { capture(this, installed); }
+				catch {
+					// Metadata capture must not change native behavior, including when these modules are off.
+					// A participating session rejects missing intent in noToolSelection before applying defaults.
+				}
+			}
 			return original.apply(this, args);
 		};
 		state.descriptors.set(wrapped, originalDescriptor);
 		Object.defineProperty(owner, "bindExtensions", { ...originalDescriptor, value: wrapped });
 	}
-	state.count++;
-	const installed = state;
-	let released = false;
-	return () => {
-		if (released) return;
-		released = true;
-		if (--installed.count !== 0) return;
-		const current = Object.getOwnPropertyDescriptor(owner, "bindExtensions");
-		const original = current && installed.descriptors.get(current.value);
-		// Never remove a foreign hook installed later. Its reference to ours becomes a stock passthrough.
-		if (original) Object.defineProperty(owner, "bindExtensions", original);
-	};
+	return register(owner, state);
 }
 
 /** CLI flags and defaultTools remain selections in addition to the captured SDK intent. */
 export function noToolSelection(pi: ExtensionAPI, manager: object): boolean {
-	const intents = (AgentSession.prototype as HookOwner)[HOOK]?.intents;
-	if (!manager || !intents?.has(manager)) unsupported("session intent was not captured before session_start");
-	if (intents.get(manager)) return false;
+	const binding = manager && (AgentSession.prototype as HookOwner)[HOOK]?.intents.get(manager);
+	if (!binding?.session.deref()) unsupported("session intent was not captured before session_start");
+	if (binding.selected) return false;
 	if (process.argv.some((arg) => TOOL_FLAGS.some((flag) => arg === flag || arg.startsWith(flag + "=")))) return false;
 	try {
 		const settings = pi.getSettings();
