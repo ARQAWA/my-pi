@@ -1,0 +1,69 @@
+# RQW-session
+
+Independent session commands for Pi 1.3.0. No tool, UI replacement, other-extension import or Pi patch.
+
+- `/copy-session`: copy the current ID and notify `Session ID copied: <id>`. Stock `/copy` still copies the last
+  assistant message. Clipboard failures produce an error notification, not success.
+- `/remove`: ask `Delete this session permanently?` in one Pi selection dialog: `1. No` first (selected by
+  default), then `2. Yes`. Enter on the default, Escape or cancellation deletes nothing. Down then Enter chooses
+  Yes. After Yes, switch to a fresh empty session using Pi's `/new` runtime path, then permanently unlink the old
+  JSONL and its unshared referenced artifact files (no trash). Cancelling the session switch deletes nothing.
+  Without dialog-capable UI it refuses; RPC may select via its UI bridge. An empty/in-memory session simply becomes
+  a new empty session. No custom keyboard handling is installed.
+
+## Cleanup contract
+
+The current JSONL must be inside Pi's agent directory (`PI_CODING_AGENT_DIR`, normally `~/.pi/agent`). A custom
+`--session` file outside it is refused. Once the old runtime has shut down, cleanup reads its final on-disk JSONL,
+including entries written at shutdown. Session names, labels, branches, usage and embedded images are in that file.
+Pi discovers recent sessions from JSONL timestamps/mtimes; there is no last-session pointer or name-index sidecar.
+
+Only Pi-generated artifact basenames are eligible: `pi-bash`, `pi-powershell`, `pi-output`, `pi-codemode`, or
+`pi-mcp`, followed by `-`, exactly 16 hex digits and an extension; clipboard files use `pi-clipboard-<UUIDv4>` plus
+an extension. References may occur in any JSONL string, but a `fullOutputPath` key grants no extra permission:
+credentials, settings and arbitrary temp files are not artifacts. Cleanup never removes directories or other session
+JSONLs. Before switching sessions it scans all JSONLs recursively below the agent's `sessions` directory and the
+current session's directory; artifacts referenced by another session are retained. User-created forks and other
+sessions remain unchanged, including shared artifact files.
+
+Only regular artifact files lexically and physically inside the OS temp directory are eligible. The agent directory
+is used to validate/discover session JSONLs, not as an additional artifact root. Traversal components and symlink
+leaves are rejected; resolving a parent symlink cannot escape the temp root. A symlink in session discovery or an
+unreadable JSONL refuses removal before switching and names the offending file. Malformed JSONL lines, including
+truncated tails, do not block removal: raw line text is scanned conservatively with JSON escapes decoded so shared
+references on Windows remain protected. Reads are streamed asynchronously; each string/line is normalized once,
+with one combined reference search and canonical-path sets rather than rescanning transcripts per artifact/alias.
+Long scans periodically yield to the event loop. File read handles close before deletion, including on Windows.
+The outgoing JSONL is reread after shutdown to include final output references. If cleanup fails after switching,
+the new session remains active and the error identifies the old session file. Cleanup is not atomic: an error
+partway through may leave some artifacts deleted and the old JSONL present.
+
+**Limit:** Pi 1.3.0 names temp artifacts randomly, without session ownership metadata. Unreferenced temp files,
+including spills from RQW-agent's in-memory subagents and RQW-review's in-memory reviewers, cannot safely be
+attributed and are left for OS temp cleanup. Their in-memory sessions are cancelled/disposed by their own native
+shutdown handlers; RQW-session adds no tracking or cross-extension dependency. RQW-anthropic's installation ID,
+credentials, settings and other shared configuration are not session artifacts. User exports and remote/provider
+copies are not erased. This is local permanent deletion, not forensic secure erasure.
+
+## Clipboard on Windows / VDI
+
+Uses Pi's exported `copyToClipboard`, exactly as `/copy` and `app.message.copy` do. On Windows Pi tries its native
+clipboard, then `clip`. On a Windows VDI in a VS Code terminal without SSH markers this is the path used; clipboard
+redirection to the user's local machine depends on the VDI environment. Pi additionally emits OSC 52 for SSH/Mosh
+or `PI_CLIPBOARD_OSC52=1`. VS Code alone does not enable OSC 52; set that environment variable in the launching
+environment if the terminal/client requires and supports OSC 52. The extension does not change owner settings.
+
+## Switch off and proof
+
+Follow [INSTALL.md](../../INSTALL.md#switch-one-extension-off) with
+`-extensions/RQW-session/index.ts`, then `/reload` or restart. Both commands disappear without changing other
+extensions. Package isolation discovers this extension from `package.json`; its static and runtime checks are in
+`test/isolation.test.ts`. Extension-local deterministic tests load only RQW-session and use OS-temp agent directories,
+a stub clipboard, real Pi runtime replacement and no live models. Run:
+
+```sh
+node --test extensions/RQW-session/test/session.test.ts
+npm test
+```
+
+Decision and research: [DECISIONS.md](../../DECISIONS.md#session-commands).

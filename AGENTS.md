@@ -35,6 +35,8 @@ rules in their briefs. The owner's personal manifesto is a separate memory docum
   `extensions/RQW-anthropic/README.md`; research: `notes/anthropic-adapter.md`. Tests use fake credentials: `npm test`.
 - `extensions/RQW-scroll/`: extension 10, Escape in the fullscreen view returns a scrolled-up transcript to the latest
   message; elsewhere Escape stays stock. Contract and limits: `DECISIONS.md` section Scroll. Tests: `npm test`.
+- `extensions/RQW-session/`: extension 11, independent `/copy-session` and confirmed permanent `/remove` commands.
+  Cleanup boundaries and limitations: `extensions/RQW-session/README.md`. Tests: `npm test`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.3.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.

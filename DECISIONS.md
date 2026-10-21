@@ -1128,3 +1128,52 @@ Current accepted development policy (request summaries unless quoted); detailed 
   mode, the extension not loaded and after `session_shutdown` give stock Escape. A local PTY probe of the real CLI in
   fullscreen with `doubleEscapeAction: fork` confirmed the InteractiveMode wiring: scrolled up, a quick Escape pair
   jumped down without the fork notice; the next pair at the bottom showed it.
+
+## Session commands
+
+- Owner: «И по-хорошему надо какую-нибудь команду вбить, типа COPY SESSION ID. И надо ещё добавить команду remove сессии, как в кодексе, чтобы можно было написать /remove и удалить полностью эту сессию со всей историей, со всей хуйнёй, которая с ней связана.
+Как будто нахуй ее и не было»
+  Carrier: `extensions/RQW-session/{index,artifacts}.ts`, listed independently in `package.json`.
+  Reason: make session IDs usable without selecting terminal text and provide explicit permanent local deletion.
+  `/copy-session` avoids Pi's built-in `/copy` collision and calls Pi's exported clipboard implementation unchanged;
+  `/remove` uses one `ctx.ui.select`, refuses without UI, and uses `ctx.newSession({withSession})` before deletion
+  so old writers and shutdown hooks finish and notifications use a fresh context. Detailed cleanup and clipboard
+  contract: `extensions/RQW-session/README.md`; no statusbar change in this extension.
+- Owner: «Просто надо сделать /copy session команду, чтобы я мог её просто скопировать в буфер обмена и всё.»
+  Carrier: `extensions/RQW-session/index.ts`; coordinator-specified slash spelling: `/copy-session`.
+  Reason: expose one direct session-copy command while leaving stock `/copy` intact.
+- Owner: «После remove сессия удаляется, но совсем, полностью без корзины, и сразу открывается новая пустая сессия, как ты предложил. Потом подтверждение удалению один раз. Просто на экране поднять визуально, как в кодексе открыть диалог с вопросом «да/нет?». Циферка один по дефолту — нет, по не дефолту — да. То есть циферка один — нет, циферка два — да. И мне, чтобы удалить, надо нажать стрелочку вниз и Enter. Это если у тебя есть SDK для того, чтобы такие диалоги открывать.»
+  Carrier: `extensions/RQW-session/index.ts`, Pi's public `ctx.ui.select`; exact dialog contract is in the extension
+  README. Reason: default to refusal, require an affirmative selection, and use native keyboard behavior rather than
+  custom key handling. Pi 1.3.0's `ExtensionSelectorComponent` starts at index 0; deterministic tests feed Enter,
+  Escape and Down then Enter through that real component and the command handler.
+- Coordinator-approved scope, not a verbatim owner quotation: delete the current JSONL plus referenced artifact files
+  not referenced by other sessions, preserving user forks and shared artifacts. Artifact deletion is restricted to
+  Pi-generated basenames inside OS temp, never arbitrary `fullOutputPath` values. The agent directory is only a session
+  validation/discovery root, not an additional artifact root. No symlink escape, directories or unrelated files;
+  JSONL outside the agent directory is refused. No ownership tracking or edits to RQW-agent/RQW-review. Pi's randomly named unreferenced temp files,
+  including in-memory subagent/reviewer spills, are not attributable and remain for OS temp cleanup. This is an explicit
+  limitation, not a claim of complete erasure of every byte Pi ever produced. Reason: no safe session ownership map
+  exists for those files; wildcard temp deletion would destroy unrelated session data. Mechanism and limits live in the
+  extension README. `test/isolation.test.ts` includes the extension automatically through the manifest.
+- Accepted code-review fixes: `extensions/RQW-session/artifacts.ts` preflights other sessions before replacement,
+  so read/discovery errors leave the current session active and identify the offending file. Malformed JSONL lines
+  are tolerated like Pi; their raw text is scanned conservatively with JSON escapes decoded to protect shared paths.
+  Each string/line is normalized once in a streamed asynchronous scan with one combined path search; canonical
+  identity sets replace the artifact-by-alias transcript rescans. The final outgoing JSONL is read after shutdown.
+  Reason: avoid credential/unrelated-file deletion, support interrupted session tails and keep long scans responsive.
+  Generated-name rules, precise cleanup boundary and failure behavior live in `extensions/RQW-session/README.md`.
+- Pi 1.3.0 research: `dist/utils/output-files.js` creates random-named OS-temp outputs with no session ID;
+  `dist/core/session-manager.js` stores names/labels/history in JSONL and discovers recent files by mtime;
+  `dist/modes/interactive/components/session-selector.js` tries `trash` then unlink, which does not meet permanent-delete
+  semantics. RQW-agent and RQW-review create in-memory child sessions; RQW-statusbar has no per-session persistence;
+  RQW-anthropic's install ID is global, not deletable session data. Pi's `dist/utils/clipboard.js` uses native/clip on
+  Windows and emits OSC 52 for remote markers or `PI_CLIPBOARD_OSC52=1`, not simply because VS Code is present.
+- Codex comparison, read-only `codex-harness` `upstream/main`,
+  `codex-rs/thread-store/src/local/delete_thread.rs`: hard deletion stops writers, removes active/archived plain and
+  compressed rollouts, materialized history, name-index entries and state rows, and invokes host-data cleanup.
+  It refuses external fork-history references. Pi has no equivalent database or reference-index sidecars; this extension
+  preserves Pi's independent fork JSONLs and shared referenced files instead. These are different storage models.
+- Deterministic proof: `extensions/RQW-session/test/session.test.ts` uses temp agent directories and a stub clipboard,
+  confirms refusal paths, artifact/fork preservation and path safety, and replaces a real Pi runtime before deleting
+  its old JSONL. This proves mechanics, not live VDI clipboard redirection, forensic erasure or remote-provider deletion.
