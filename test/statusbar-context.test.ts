@@ -14,23 +14,42 @@ const bundle: typeof library = await import(new URL("./bundle/index.js", import.
 
 const { FooterDataProvider } = await import(new URL("./core/footer-data-provider.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 
+type EditorFactory = Parameters<ExtensionUIContext["setEditorComponent"]>[0];
+const plainTheme = { fg: (_role: string, text: string) => text };
+
+/** Pi's extension UI slots in miniature: footer and editor factories, as interactive mode calls them. */
 function uiHarness(footer?: InstanceType<typeof FooterDataProvider>) {
 	let component: (Component & { dispose?(): void }) | undefined;
+	let editorFactory: EditorFactory;
+	let editor: ReturnType<NonNullable<EditorFactory>> | undefined;
 	let calls = 0, renders = 0, subscriptions = 0;
 	const statuses = new Map<string, string>();
+	const tui = { requestRender: () => renders++, terminal: { rows: 40 } } as never;
 	const ui = {
 		setFooter(factory: Parameters<ExtensionUIContext["setFooter"]>[0]) {
 			calls++;
 			component?.dispose?.();
-			component = factory?.({ requestRender: () => renders++ } as never,
-				{ fg: (_role: string, text: string) => text } as never,
+			component = factory?.(tui, plainTheme as never,
 				footer ?? { getGitBranch: () => null, getExtensionStatuses: () => statuses,
 					onBranchChange: () => { subscriptions++; return () => { subscriptions--; }; },
 					getAvailableProviderCount: () => 0 });
 		},
+		setEditorComponent(factory: EditorFactory) {
+			calls++;
+			const text = editor?.getText() ?? "";
+			editorFactory = factory;
+			editor = factory?.(tui, { borderColor: (text: string) => text, selectList: {} } as never,
+				{ matches: () => false } as never);
+			editor?.setText(text);
+		},
+		getEditorComponent: () => editorFactory,
 		notify() {},
-	} as ExtensionUIContext;
+		theme: plainTheme,
+	} as unknown as ExtensionUIContext;
 	return { ui, statuses, render: (width = 80) => component?.render(width),
+		/** The editor's bottom border, undefined for Pi's stock editor. */
+		border: (width = 80) => editor?.render(width).at(-1),
+		get editor() { return editor; },
 		get calls() { return calls; }, get renders() { return renders; }, get subscriptions() { return subscriptions; },
 		dispose: () => component?.dispose?.() };
 }
@@ -55,20 +74,20 @@ for (const [label, pi] of [["library", library], ["bundle", bundle]] as const) {
 				settingsManager: pi.SettingsManager.inMemory({ compaction: {} }) }));
 			await session.bindExtensions({ uiContext: h.ui, mode: "tui" });
 			assert.equal(session.model?.contextWindow, 500000);
-			assert.match(h.render()![1], /Fixture no/);
-			assert.match(h.render()![0], /\/450k$/);
+			assert.match(h.render()![0], /Fixture no/);
+			assert.match(h.border()!, /\/450k$/);
 			// Direct state replacement is deliberately not a model_select event: external sources must also work.
 			session.agent.state.model = { ...model, id: "other", name: "Other", contextWindow: 272000 } as never;
 			session.setThinkingLevel("high");
-			assert.match(h.render()![1], /Other hi/);
+			assert.match(h.render()![0], /Other hi/);
 			session.agent.state.thinkingLevel = "low";
-			assert.match(h.render()![1], /Other lo/);
-			assert.ok(h.render()![0].endsWith("/244.8k"));
+			assert.match(h.render()![0], /Other lo/);
+			assert.ok(h.border()!.endsWith("/244.8k"));
 			session.sessionManager.appendCompaction("fixture summary", "unused", 10000);
-			assert.match(h.render()![1], /cmp 1/);
-			assert.ok(h.render()![0].endsWith("?/244.8k"));
+			assert.match(h.render()![0], /cmp 1/);
+			assert.ok(h.border()!.endsWith("?/244.8k"));
 			h.statuses.set("z", "last"); h.statuses.set("a", "first\nsecond");
-			assert.match(h.render()![1], /first second · last/);
+			assert.match(h.render()![0], /first second · last/);
 			const command = session.extensionRunner.getCommand("statusbar")!;
 			await command.handler("off", session.extensionRunner.createCommandContext());
 			assert.equal(h.render(), undefined); assert.equal(h.subscriptions, 0);

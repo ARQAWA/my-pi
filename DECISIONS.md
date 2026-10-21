@@ -991,7 +991,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   engineering isolation mechanism, not a literal owner quotation. The existing predecessor renderer and git helpers
   are retained and completed. Evidence and exact row contract: `notes/statusbar-omp.md`; do not copy other omp UI.
 - Enabled by default; `/statusbar [on|off]` toggles in the TUI, with the bare command inverting the choice. Off restores
-  the stock footer and disposes polling/subscriptions. The choice is local to the loaded extension, not persisted.
+  the stock editor and footer and disposes polling/subscriptions. The choice is local to the loaded extension, not persisted.
   Reason: Pi already owns package extension enablement; no parallel settings file is needed. Print, JSON and RPC do
   no footer work. Model and thinking are read live from Pi, regardless of the source of a change.
 - Context tokens/window come from Pi; the bar measures the effective compaction threshold from Pi's own reserve
@@ -1010,6 +1010,18 @@ Current accepted development policy (request summaries unless quoted); detailed 
   smoke run where available. The local implementation report records no independent agent review or live model run.
   Windows paths are exercised locally; native Windows execution remains the existing CI job. These are proof
   boundaries, not exceptions to the workflow's independent-review requirement.
+- The context bar is the bottom border of the input editor, not a separate footer row; the footer keeps the model
+  and place rows. Owner: «Я бы хотел, чтобы бар контекстного окна был вместо нижней чёрточки»
+  (line 136 of `2026-10-21T12-13-54-289Z_01a15e61-dcf1-7476-b1d6-42f03584b9e6.jsonl`). Mechanism: Pi's public
+  `ctx.ui.setEditorComponent` with a `CustomEditor` subclass that overrides only `renderBottomBorder`; Pi itself
+  carries over text, border color, padding and app keys. Engineering choices: the editor's down-arrow `N more` hint for
+  hidden input lines comes first and the bar takes the rest of the width (only the hint when too narrow); the
+  working status stays embedded in the top border as in Pi's default editor; the bar keeps its own colors.
+  When another extension's editor is already installed it is kept and the bar stays the first footer row; if one
+  replaces ours later, the footer shows the row again. Off restores Pi's editor only when ours is installed.
+  Reason: the owner's layout without taking the editor slot from another extension; no Pi patch. Outside the TUI
+  nothing is installed. Carrier: `extensions/RQW-statusbar/{editor,index}.ts`, `render.ts` `editorBorder`;
+  contract and proof: `notes/statusbar-omp.md`.
 
 ## Anthropic package integration
 

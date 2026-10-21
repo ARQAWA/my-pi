@@ -1,8 +1,9 @@
-// Interactive-only footer. All displayed session values are read through Pi's live context getters.
+// Interactive-only footer and editor bottom border. All displayed session values are read through Pi's live context getters.
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
+import { type BorderSource, ContextEditor } from "./editor.ts";
 import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
 import { type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar } from "./render.ts";
 
@@ -43,10 +44,36 @@ export default function statusbar(pi: ExtensionAPI) {
 	let refresh: (() => void) | undefined;
 	let dispose: (() => void) | undefined;
 	const rate = new RateMeter();
+	// The context row is drawn as the bottom border of this extension's editor. One factory per extension instance
+	// identifies our editor in `getEditorComponent()`; its border reads the current install's source.
+	let border: BorderSource | undefined;
+	const editorFactory: NonNullable<Parameters<ExtensionUIContext["setEditorComponent"]>[0]> =
+		(tui, theme, keybindings) => new ContextEditor(tui, theme, keybindings, () => border);
 
 	function install(ctx: ExtensionContext): void {
 		dispose?.();
+		border = undefined;
 		if (ctx.mode !== "tui" || !enabled) return;
+		let cacheKey: unknown[] = [];
+		let cached: Pick<BarState, "context" | "compactions"> = { compactions: 0 };
+		const contextState = (): Pick<BarState, "context" | "compactions"> => {
+			const model = ctx.model;
+			const manager = ctx.sessionManager;
+			const key = [manager, manager.getSessionId(), manager.getLeafId(), manager.getEntryCount(),
+				model, model?.contextWindow, JSON.stringify(pi.getSettings().compaction)];
+			if (key.length !== cacheKey.length || key.some((value, i) => value !== cacheKey[i])) {
+				const usage = ctx.getContextUsage();
+				cached = {
+					compactions: manager.getEntries().filter((entry) => entry.type === "compaction").length,
+					context: usage ? { tokens: usage.tokens, limit: contextLimit(pi, ctx, usage.contextWindow) } : undefined,
+				};
+				cacheKey = key;
+			}
+			return cached;
+		};
+		border = { context: () => contextState().context, paint: () => themePaint(ctx.ui.theme) };
+		// Another extension's editor is kept; the context row then stays in the footer.
+		if (ctx.ui.getEditorComponent() === undefined) ctx.ui.setEditorComponent(editorFactory);
 		ctx.ui.setFooter((tui, theme, footer) => {
 			let disposed = false;
 			let cwd: string | undefined;
@@ -55,8 +82,6 @@ export default function statusbar(pi: ExtensionAPI) {
 			let branch: string | null = null;
 			let busy = false;
 			let again = false;
-			let cacheKey: unknown[] = [];
-			let cached: Pick<BarState, "context" | "compactions"> = { compactions: 0 };
 			const roots = scratchRoots();
 			const paint = themePaint(theme);
 			active = true;
@@ -112,28 +137,17 @@ export default function statusbar(pi: ExtensionAPI) {
 						branch = null;
 						void refreshGit();
 					}
-					const model = ctx.model;
-					const manager = ctx.sessionManager;
-					const key = [manager, manager.getSessionId(), manager.getLeafId(), manager.getEntryCount(),
-						model, model?.contextWindow, JSON.stringify(pi.getSettings().compaction)];
-					if (key.length !== cacheKey.length || key.some((value, i) => value !== cacheKey[i])) {
-						const usage = ctx.getContextUsage();
-						cached = {
-							compactions: manager.getEntries().filter((entry) => entry.type === "compaction").length,
-							context: usage ? { tokens: usage.tokens, limit: contextLimit(pi, ctx, usage.contextWindow) } : undefined,
-						};
-						cacheKey = key;
-					}
-					return renderBar({
-						model,
+					const rows = renderBar({
+						model: ctx.model,
 						thinkingLevel: pi.getThinkingLevel(),
-						...cached,
+						...contextState(),
 						rate: rate.value(Date.now()),
 						place: placeOf({ cwd: ctx.cwd, home: homedir(), scratchRoots: roots, worktree: repo?.worktree, branch }),
 						git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts },
 						statuses: [...footer.getExtensionStatuses().entries()]
 							.sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text),
 					}, width, paint);
+					return ctx.ui.getEditorComponent() === editorFactory ? rows.slice(1) : rows;
 				},
 				invalidate() {},
 				dispose: cleanup,
@@ -152,7 +166,12 @@ export default function statusbar(pi: ExtensionAPI) {
 			}
 			enabled = value ? value === "on" : !enabled;
 			if (enabled) install(ctx);
-			else { dispose?.(); ctx.ui.setFooter(undefined); }
+			else {
+				dispose?.();
+				border = undefined;
+				ctx.ui.setFooter(undefined);
+				if (ctx.ui.getEditorComponent() === editorFactory) ctx.ui.setEditorComponent(undefined);
+			}
 		},
 	});
 
@@ -160,7 +179,7 @@ export default function statusbar(pi: ExtensionAPI) {
 		rate.reset();
 		install(ctx);
 	});
-	pi.on("session_shutdown", () => dispose?.());
+	pi.on("session_shutdown", () => { dispose?.(); border = undefined; });
 	pi.on("session_tree", () => { rate.reset(); redraw?.(); });
 	pi.on("model_select", () => redraw?.());
 	pi.on("thinking_level_select", () => redraw?.());

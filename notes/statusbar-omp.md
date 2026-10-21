@@ -43,8 +43,11 @@ Read on 2026-10-21; no source repository or agent configuration was modified.
 
 ## Implemented rows, in order
 
-1. Directly under Pi's editor: a full-width context bar, then the rounded percent and `tokens/threshold`.
-   Filled cells are `━`, empty cells `─`; no usage/window means a plain empty rule.
+1. As the bottom border of Pi's editor: a full-width context bar, then the rounded percent and `tokens/threshold`.
+   Filled cells are `━`, empty cells `─`; no usage/window means a plain empty rule. With input lines hidden below,
+   the editor's own `↓ N more` hint (in the editor's border color) comes first and the bar takes the remaining
+   width; when the hint alone fills the width, only the hint is shown, cut with `…`.
+   When another extension's editor is in place, this row is the first footer row instead (see Pi APIs).
 2. Left: nerd model glyph, model display name, thinking abbreviation, then extension statuses joined by ` · `.
    Thinking: `off -> no`, `minimal -> min`, `low -> lo`, `medium -> md`, `high -> hi`, `xhigh -> xh`, `max -> mx`.
    Right: `cmp N`, then ` · ` and nerd throughput glyph plus `R.R tok/s` once measured.
@@ -59,7 +62,21 @@ forms; Windows root comparison ignores case, with directory boundaries. Git uses
 ## Pi APIs and independence
 
 Pi is pinned at 1.3.0. The implementation uses `ctx.mode === "tui"` and the supported
-`ctx.ui.setFooter(factory)` API. `setFooter(undefined)` restores Pi's built-in footer. The factory receives the
+`ctx.ui.setFooter(factory)` and `ctx.ui.setEditorComponent(factory)` APIs. `setFooter(undefined)` restores Pi's
+built-in footer, `setEditorComponent(undefined)` its default editor.
+
+The editor (`editor.ts`) extends Pi's exported `CustomEditor`, as `docs/tui.md` recommends for replacing the main
+editor, and overrides only `renderBottomBorder(width, hiddenLineCount)` (stock: `pi-tui`
+`dist/components/editor.js:389-392`). It keeps `embedWorkingStatus: true`, as Pi's default editor, so the working
+status stays in the top border. When Pi installs it (`dist/modes/interactive/interactive-mode.js:2243-2307`), Pi
+carries over the text, callbacks, border color, padding, autocomplete and app key handlers; thinking/bash border
+colors keep applying to the top border and the hint. The bar itself keeps its own colors.
+One editor factory per extension instance identifies ours through `ctx.ui.getEditorComponent()`:
+at install the extension sets it only when no editor factory is installed, so another extension's editor is kept;
+the footer shows the context row whenever the installed factory is not ours (also when another extension replaces
+ours later). Off removes the editor only if it is ours. On session replacement and reload Pi resets extension UI
+(`resetExtensionUI`) and `session_start` installs again; the border falls back to Pi's stock border once the bar's
+session has shut down. The factory receives the
 TUI, theme and `ReadonlyFooterDataProvider`: extension statuses and a branch-change subscription.
 The bar discovers repositories itself and refreshes branch and counts with asynchronous git calls, never with
 synchronous git calls during render. It does not read Pi's cached branch: that cache can retain an absent repository
@@ -90,10 +107,12 @@ References in installed Pi: `docs/tui.md` (component width, theme, disposal), `d
 ## Toggle
 
 Enabled by default when this package extension is loaded. `/statusbar` toggles;
-`/statusbar on` and `/statusbar off` are explicit. Off restores the stock Pi footer and releases background work.
+`/statusbar on` and `/statusbar off` are explicit. Off restores Pi's stock editor and footer and releases background
+work.
 The choice survives session changes in the same loaded extension, but is intentionally not persisted to disk:
 restart or `/reload` starts enabled again. Removing this extension from `pi.extensions` disables it independently.
-Other extensions that replace the footer share Pi's single footer slot; last setter wins.
+Other extensions that replace the footer or the editor share Pi's single slots; last setter wins, and an editor
+already set by another extension is not replaced.
 
 ## Genuine deviations and unavailable elements
 
@@ -109,7 +128,8 @@ Other extensions that replace the footer share Pi's single footer slot; last set
   cross-extension private import or new subsystem is added to synthesize them. Pi extension statuses occupy the
   corresponding status slot, sorted by key as in stock Pi. PR `#N` and file hyperlinks are not implemented.
 - omp's title/UUID/Worked row, current action, blocker and to-do panel live **above** its editor in `showTitle`,
-  not in its bottom status bar. They are not copied. The Pi editor, loading rows and other widgets stay unchanged.
+  not in its bottom status bar. They are not copied. Apart from its bottom border, the Pi editor stays stock;
+loading rows and other widgets stay unchanged.
 - Theme colors and compaction color animation are intentionally not copied. Nerd icons require the same kind of
   Nerd Font as the owner's `symbolPreset: nerd` setup.
 
@@ -118,59 +138,79 @@ Other extensions that replace the footer share Pi's single footer slot; last set
 `extensions/RQW-statusbar/test/render.snap.json` is the fixed plain-text rendering at widths 80, 48, 24, 8, 1 and 0.
 `render.test.ts` compares it deterministically and checks every width 0..160, wide/combining Unicode, ANSI metadata,
 no-model/unknown context, overflow, thinking labels, Windows and UNC paths, porcelain records and rate arithmetic.
+It also checks the editor border at every width 0..160 with and without hidden lines: exact width, the hint first,
+then the context row. `editor.test.ts` renders the real `ContextEditor` above the two footer rows and compares
+`editor.snap.json` (widths 80, 48, 24, with and without hidden lines); without a source it draws Pi's stock borders.
 `statusbar.test.ts` loads the extension in real Pi library and CLI-bundle sessions without sending any prompt,
-checks live state changes, compaction count, thresholds, status ordering, toggle and non-TUI guards. It also tests
+checks live state changes, compaction count, thresholds, status ordering, toggle and non-TUI guards. With the
+editor installed the footer has two rows and the editor's last row is the context row, including the hidden-lines
+hint; off restores Pi's editor; a foreign editor is kept across on/off and moves the row back into the footer. It also tests
 real temporary git repositories/worktrees, missing git and malformed metadata. A real Pi `FooterDataProvider`
 regression starts outside git, runs `git init -b new-branch` in the same cwd, switches branch, replaces and removes
 the repository, and checks tool/agent refresh, polling and shutdown cleanup without changing Pi's stale cache. These tests join existing `npm test`
 and the existing macOS/Linux/Windows CI matrix without adding a new dependency.
 
-Real PTY smoke: `python3 extensions/RQW-statusbar/test/tui-smoke.py` runs the actual CLI in an isolated agent
-directory with no credentials and sends only slash commands. It observed Pi's no-available-model sentinel `unknown`,
-`cmp 0`, restored the stock footer with off, re-enabled the custom footer, resized 80 -> 24 and exited cleanly.
-This is not a live model run. An absent model is separately rendered as `no-model` in deterministic tests.
+Real PTY smoke: `python3 extensions/RQW-statusbar/test/tui-smoke.py [node]` runs the actual CLI in an isolated agent
+directory with no credentials, a local `models.json` model (200k window, never called) and `PI_OFFLINE=1`, and sends
+only slash commands and editor keys. A small terminal emulator in the script replays the output. It checks that
+the bar row (`0% 0k/183.6k`) is the editor's bottom border directly above the two footer rows, that off shows Pi's
+stock editor borders and footer without the bar, that on restores the layout, that 15 input lines with the cursor
+on the first show `↓ 6 more` followed by the bar, then resizes 80 -> 24 and exits cleanly. This is not a live model
+run. An absent model is rendered as `no-model` in deterministic tests.
 
 ### Sample renders
 
-These are exact plain snapshots; Nerd Font glyph display depends on the reader's font.
-
+Exact plain snapshots from `editor.snap.json`: Pi's editor (top border, input, the bar as bottom border), then the
+footer. Nerd Font glyph display depends on the reader's font.
 
 Width 80:
 
 ```text
+────────────────────────────────────────────────────────────────────────────────
+hello
 ━━──────────────────────────────────────────────────────────────── 3% 13.1k/450k
   Sonnet 5.5 hi                                             cmp 2 · 52.4 tok/s
   my-pi/statusbar                                       rqw-statusbar *1 +2 ?3
 ```
 
-
-Width 48:
-
-```text
-━───────────────────────────────── 3% 13.1k/450k
-  Sonnet 5.5 hi             cmp 2 · 52.4 tok/s
-  my-pi/statusbar       rqw-statusbar *1 +2 ?3
-```
-
-
 Width 24:
 
 ```text
+────────────────────────
+hello
 ────────── 3% 13.1k/450k
   … cmp 2 · 52.4 tok/s
  rqw-statusbar *1 +2 ?3
 ```
 
+Width 80, 20 input lines, cursor on the first (8 hidden below):
+
+```text
+────────────────────────────────────────────────────────────────────────────────
+line 0
+line 1
+line 2
+line 3
+line 4
+line 5
+line 6
+line 7
+line 8
+line 9
+line 10
+line 11
+↓ 8 more ━━─────────────────────────────────────────────────────── 3% 13.1k/450k
+  Sonnet 5.5 hi                                             cmp 2 · 52.4 tok/s
+  my-pi/statusbar                                       rqw-statusbar *1 +2 ?3
+```
+
 ### Local results
 
-- Node 26.7.0: `npm test -- --test-reporter=dot`, 255 tests, 254 passed, 0 failed, 1 skipped.
-- Node 22.19.0: `npm test -- --test-reporter=dot` with Node 22 first on `PATH`,
-  255 tests, 254 passed, 0 failed, 1 skipped. The skipped test is the pre-existing native Windows real-path test.
-- The real-provider regression fails on the old code: counts appear after init but `new-branch` is absent.
-  With the fix, init, checkout, repository replacement/removal and polling cleanup all pass.
-  The original review repro now prints `new-branch ?1`, matching `actual branch: new-branch` on both Node versions.
-- Real CLI PTY smoke passed on Node 22.19.0 and Node 26.7.0: no available model, off/on, narrow resize, clean exit.
-  Startup waits for the footer rather than assuming a fixed startup time; a cached fd binary is copied into the
-  temporary agent directory when available to avoid a redundant startup download.
-- No Anthropic or other live model request, nested agent, push or merge was used. Native Windows execution was not
-  available locally; Windows path cases ran on macOS and the committed tests are included in the existing Windows CI.
+- macOS, Node 26.7.0: `npm test -- --test-reporter=dot`, 1071 tests, 1063 passed, 0 failed, 8 skipped (all eight are
+  Windows-only tests outside this extension).
+- The focused statusbar files (`extensions/RQW-statusbar/test/*.test.ts`, `test/statusbar-context.test.ts`,
+  `test/statusbar-isolation.test.ts`) pass; the isolation test reruns all of this extension's tests from a copy
+  holding only its folder.
+- Real CLI PTY smoke passed on Node 26.7.0: bar as the editor's bottom border, off/on, `↓ 6 more` with the bar,
+  narrow resize, clean exit.
+- No live model request was made. Native Windows runs in the existing GitHub `tests` workflow.

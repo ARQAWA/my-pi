@@ -31,7 +31,9 @@ for (const resumeDuringStream of [false, true]) {
 						return stream;
 					} });
 			}] });
-		const row = () => component!.render(100)[1];
+		let editor: Parameters<pi.ExtensionUIContext["setEditorComponent"]>[0];
+		// With this extension's editor installed the footer is the model row, then the place row.
+		const row = () => component!.render(100)[0];
 		try {
 			await loader.reload();
 			assert.deepEqual(loader.getExtensions().errors, []);
@@ -45,6 +47,7 @@ for (const resumeDuringStream of [false, true]) {
 					component = factory?.({ requestRender() {} } as never, { fg: (_role: string, text: string) => text } as never,
 						{ getExtensionStatuses: () => new Map(), onBranchChange: () => () => {} } as never);
 				}, notify() {},
+				setEditorComponent(factory) { editor = factory; }, getEditorComponent: () => editor,
 			} as pi.ExtensionUIContext });
 			const toggle = (value: string) => session!.extensionRunner.getCommand("statusbar")!.handler(value,
 				session!.extensionRunner.createCommandContext());

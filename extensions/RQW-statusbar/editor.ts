@@ -1,0 +1,26 @@
+// Pi's editor with the context row as its bottom border. Everything else is stock `CustomEditor`.
+import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
+import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
+import { type BarState, editorBorder, type Paint } from "./render.ts";
+
+/** What the border shows; undefined while the bar is off or its session is gone, then the stock border is drawn. */
+export interface BorderSource {
+	context(): BarState["context"];
+	paint(): Paint;
+}
+
+export class ContextEditor extends CustomEditor {
+	private readonly source: () => BorderSource | undefined;
+
+	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, source: () => BorderSource | undefined) {
+		// Pi's default editor embeds the working status in its top border; keep that.
+		super(tui, theme, keybindings, { embedWorkingStatus: true });
+		this.source = source;
+	}
+
+	protected override renderBottomBorder(width: number, hiddenLineCount: number): string {
+		const source = this.source();
+		if (!source) return super.renderBottomBorder(width, hiddenLineCount);
+		return editorBorder(source.context(), hiddenLineCount, width, source.paint(), this.borderColor);
+	}
+}

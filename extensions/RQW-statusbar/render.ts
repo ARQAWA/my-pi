@@ -5,6 +5,8 @@
 //    <model> Sonnet 5.5 hi                       cmp 0 · 52.4 tok/s
 //    <tree> my-pi/my-pi-statusbar                 <branch> rqw-statusbar *1 +1 ?1
 //
+// The context row is normally the editor's bottom border (`editorBorder`), the other two rows the footer.
+//
 // Evidence: notes/statusbar-omp.md. Colors intentionally use stock Pi semantic roles, without tuning.
 import { stripVTControlCharacters } from "node:util";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
@@ -127,6 +129,20 @@ export function contextRow(context: BarState["context"], width: number, paint: P
 		(barWidth - filled > 0 ? paint("barEmpty", "─".repeat(barWidth - filled)) : "") +
 		paint("label", label);
 	return fit(line, width);
+}
+
+/**
+ * The context row as the editor's bottom border. With input lines hidden below, the editor's own `↓ N more` hint
+ * (in `hint` color) comes first and the context row takes the rest; a width too narrow for both keeps the hint.
+ */
+export function editorBorder(context: BarState["context"], hiddenLineCount: number, width: number,
+	paint: Paint = plain, hint: (text: string) => string = (text) => text): string {
+	if (width <= 0) return "";
+	if (!(hiddenLineCount > 0)) return contextRow(context, width, paint);
+	const text = `↓ ${hiddenLineCount} more `;
+	const rest = width - visibleWidth(text);
+	if (rest <= 0) return fit(hint(text), width);
+	return hint(text) + contextRow(context, rest, paint);
 }
 
 /** Row 2: model and thinking level on the left (then other extensions' statuses), `cmp N · R tok/s` on the right. */

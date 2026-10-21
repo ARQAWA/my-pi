@@ -24,8 +24,9 @@ rules in their briefs. The owner's personal manifesto is a separate memory docum
 - `extensions/RQW-review/`: extension 6, the `review` tool with levels `blind` and `high`. Each call runs a fresh
   read-only reviewer session in the same process (`createAgentSession`, stock `read`, `grep`, `find`) with
   `REVIEWER.md` as its prompt; the verdict comes back later as a `[review#N]` message. Tests: `npm test`.
-- `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout. On by default;
-  `/statusbar [on|off]` toggles it and restores the stock footer when off. Elements, evidence and limits:
+- `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout, with the context bar as
+  the input editor's bottom border. On by default; `/statusbar [on|off]` toggles it and restores the stock editor and
+  footer when off. Elements, evidence and limits:
   `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
   Public Pi API only; disable it separately in `pi config`. Tests: `extensions/RQW-models/test/`, `npm test`.

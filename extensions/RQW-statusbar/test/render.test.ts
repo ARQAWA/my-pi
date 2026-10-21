@@ -3,7 +3,7 @@ import { stripVTControlCharacters } from "node:util";
 import { readFileSync } from "node:fs";
 import { it } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { type BarState, contextRow, formatK, gitText, ICON, leftRight, modelName, parsePorcelain,
+import { type BarState, contextRow, editorBorder, formatK, gitText, ICON, leftRight, modelName, parsePorcelain,
 	placeOf, RateMeter, renderBar, singleLine, thinkingLabel, within } from "../render.ts";
 
 export const sample: BarState = {
@@ -43,6 +43,27 @@ it("context is relative to Pi's threshold; overflow clamps the bar, not the toke
 	assert.equal(contextRow({ tokens: 1, limit: 0 }, 5), "─────");
 	assert.equal(formatK(13100), "13.1k");
 	assert.equal(formatK(1000000), "1M");
+});
+
+it("the editor border is the context row, with the hidden-lines hint first at every width", () => {
+	const styled = (_role: string, text: string) => `\x1b[31m${text}\x1b[39m`;
+	const hint = (text: string) => `\x1b[2m${text}\x1b[22m`;
+	for (const context of [sample.context, undefined, { tokens: null, limit: 450000 }]) {
+		for (let width = 0; width <= 160; width++) {
+			assert.equal(editorBorder(context, 0, width, styled, hint), contextRow(context, width, styled));
+			for (const hidden of [1, 8, 12345]) {
+				const border = editorBorder(context, hidden, width, styled, hint);
+				const plainText = stripVTControlCharacters(border);
+				assert.equal(visibleWidth(border), width, `${width}/${hidden}: ${JSON.stringify(border)}`);
+				if (width >= 2) assert.ok(plainText.startsWith("\u2193"), `${width}/${hidden}: ${plainText}`);
+				const text = `\u2193 ${hidden} more `;
+				if (width > text.length) assert.equal(plainText, text + stripVTControlCharacters(contextRow(context, width - text.length)));
+			}
+		}
+	}
+	assert.equal(editorBorder(sample.context, 8, 40), "\u2193 8 more \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 3% 13.1k/450k");
+	assert.equal(stripVTControlCharacters(editorBorder(sample.context, 8, 6)), "\u2193 8 m\u2026");
+	assert.equal(editorBorder(sample.context, 8, 0), "");
 });
 
 it("model labels, missing metadata and reasoning levels match the owner's symbols", () => {
