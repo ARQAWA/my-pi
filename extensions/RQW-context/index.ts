@@ -14,6 +14,8 @@
 // counts against W, unless it is W or more (no positive threshold left), then R applies. Virtual models keep Pi's own
 // values: Pi checks their threshold against the routed physical model's window.
 // Both internals are checked before either is patched, so a failed load changes nothing.
+// The patches stay in Pi's classes for the life of the process, but act only while a loaded RQW-context owns them:
+// each factory adds its own owner token and session_shutdown removes it; no live owners means stock Pi.
 // Design and proof: DECISIONS.md section Context.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AgentSession, SettingsManager } from "@earendil-works/pi-coding-agent";
@@ -56,19 +58,24 @@ export function capModel<T>(model: T): T {
 	return copy as T;
 }
 
+// Live owners of the process-wide patches: one token per factory run, shared across module reloads.
+const OWNER = Symbol.for("rqw-context/owner");
+const owners = globalThis as { [OWNER]?: Set<object> };
+const owned = () => (owners[OWNER]?.size ?? 0) > 0;
+
 type AgentState = { model: unknown };
 const cappedStates = new WeakSet<AgentState>();
 
-/** Every model assigned to this agent state, now and later, is stored through `capModel`. */
+/** This agent state reads every model, now and later, through `capModel` while an owner is alive. */
 function capStateModel(state: AgentState): void {
 	if (cappedStates.has(state)) return;
-	let model = capModel(state.model);
+	let model = state.model;
 	Object.defineProperty(state, "model", {
 		configurable: true,
 		enumerable: true,
-		get: () => model,
+		get: () => (owned() ? capModel(model) : model),
 		set: (next: unknown) => {
-			model = capModel(next);
+			model = next;
 		},
 	});
 	cappedStates.add(state);
@@ -93,7 +100,8 @@ function userSetReserve(manager: SettingsManager, model: NonNullable<CompactionM
 	return compaction?.modelOverrides?.[`${model.provider}/${model.id}`]?.reserveTokens !== undefined;
 }
 
-// One wrap per class for the life of the process; a /reload runs the factory again and finds it in place.
+// One wrap per class for the life of the process; a /reload runs the factory again and finds it in place. Without an
+// owner both wraps pass Pi's own values through.
 const WRAPPED_SETTINGS = Symbol.for("rqw-context/getCompactionSettings");
 const WRAPPED_SESSION = Symbol.for("rqw-context/_buildRuntime");
 type SettingsPrototype = SettingsManager & { [WRAPPED_SETTINGS]?: GetCompactionSettings };
@@ -107,8 +115,8 @@ function wrapCompactionSettings(proto: SettingsPrototype): void {
 	proto.getCompactionSettings = function getCompactionSettings(this: SettingsManager, model?: CompactionModel) {
 		const settings = original.call(this, model);
 		const contextWindow = contextWindowOf(model);
-		// No model, no known window, or a virtual model: Pi's own values, as stock Pi.
-		if (!model || contextWindow === undefined || isVirtual(model)) return settings;
+		// No owner, no model, no known window, or a virtual model: Pi's own values, as stock Pi.
+		if (!owned() || !model || contextWindow === undefined || isVirtual(model)) return settings;
 		const userReserve = userSetReserve(this, model) ? settings.reserveTokens : undefined;
 		return { ...settings, reserveTokens: reserveFor(contextWindow, userReserve) };
 	};
@@ -119,13 +127,13 @@ function wrapSessionModel(proto: SessionInternals): void {
 	if (proto[WRAPPED_SESSION]) return;
 	const original = proto._buildRuntime as BuildRuntime;
 	proto._buildRuntime = function _buildRuntime(this: SessionInternals, ...args: unknown[]) {
-		capStateModel(this.agent.state);
+		if (owned()) capStateModel(this.agent.state);
 		return original.apply(this, args);
 	};
 	proto[WRAPPED_SESSION] = original;
 }
 
-export default function context(_pi: ExtensionAPI) {
+export default function context(pi: ExtensionAPI) {
 	const settings: SettingsPrototype = SettingsManager.prototype;
 	const session = AgentSession.prototype as unknown as SessionInternals;
 	const missing = [
@@ -139,4 +147,11 @@ export default function context(_pi: ExtensionAPI) {
 	}
 	wrapCompactionSettings(settings);
 	wrapSessionModel(session);
+	// Pi emits session_shutdown before loading the next runtime (reload, new, resume, fork). Removing only this
+	// factory's token leaves concurrent sessions and newer runtimes in control of their own ownership.
+	const token = {};
+	(owners[OWNER] ??= new Set()).add(token);
+	pi.on("session_shutdown", () => {
+		owners[OWNER]?.delete(token);
+	});
 }

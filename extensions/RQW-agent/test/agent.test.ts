@@ -2,7 +2,7 @@
 // providers from pi-ai answer for the main agent and for the subagents. Each subagent request is recorded with the
 // model, the reasoning level, the system messages and the declared tools Pi sent.
 import assert from "node:assert/strict";
-import { existsSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -32,9 +32,6 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EXTENSION = join(HERE, "..", "index.ts");
-// Loaded next to RQW-agent only by the tests that need it, as a path: RQW-agent must work without this folder.
-const RQW_TOOLS = join(HERE, "..", "..", "RQW-tools", "index.ts");
-const NO_RQW_TOOLS = existsSync(RQW_TOOLS) ? false : "the RQW-tools folder is absent";
 // The package's exports map hides this module, so it is imported by file URL next to the package entry.
 const { makeStrictJsonSchema } = await import(
 	new URL("./api/constrained-sampling.js", import.meta.resolve("@earendil-works/pi-ai")).href
@@ -269,31 +266,6 @@ describe("agent tool", () => {
 			parameters: Object.keys(stock.parameters.properties).sort(),
 		});
 		assert.ok(!sub.requests[0].declared.write.parameters.includes("files"));
-		await shutdown(m);
-	});
-
-	it("with RQW-tools loaded the subagent gets its tools: write.files[] in the main cwd, a barrier apart from the main one", { skip: NO_RQW_TOOLS }, async () => {
-		const m = await startMain("tui", undefined, [RQW_TOOLS]);
-		// The main session's RQW-tools bash has scope "all": its barrier holds every later call of that instance.
-		const bash = m.session.getToolDefinition("bash") as ToolDefinition;
-		let bashDone = false;
-		const held = bash.execute("b", { command: "sleep 2" } as never, undefined, undefined, m.ctx).finally(() => {
-			bashDone = true;
-		});
-		sub.replies.push(
-			fauxAssistantMessage([fauxToolCall("write", { files: [{ path: "a.txt", content: "A" }, { path: "b.txt", content: "B" }] })], {
-				stopReason: "toolUse",
-			}),
-			fauxAssistantMessage("written"),
-		);
-		await m.call({ action: "start", system: SYSTEM, task: "write", model: "sub/a" });
-		await until(() => m.delivered().length === 1, "the delivery", 1500);
-		assert.equal(bashDone, false, "the subagent did not wait for the main session's bash");
-		assert.equal(m.delivered()[0], "[agent#1] written");
-		assert.equal(await readFile(join(m.dir, "a.txt"), "utf8"), "A");
-		assert.equal(await readFile(join(m.dir, "b.txt"), "utf8"), "B");
-		assert.deepEqual(sub.requests[0].declared.write.parameters, ["content", "files", "path"]);
-		await held;
 		await shutdown(m);
 	});
 

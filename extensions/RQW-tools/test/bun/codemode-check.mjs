@@ -1,4 +1,4 @@
-// Runs Pi's own CLI under Bun, the runtime of the Pi release binaries (`pi.exe` included), with this package and a
+// Runs Pi's own CLI under Bun, the runtime of the Pi release binaries (`pi.exe` included), with RQW-tools and a
 // faux model loaded. The model sends one `codemode` call whose script writes f.txt and then reads it. The check
 // passes when the turn ends within the time limit, the script's read sees its write, and f.txt has the new content.
 // A nested call that misses its script's barrier waits for the codemode call itself and hangs: the check fails.
@@ -14,6 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "../../../..");
 const cli = join(repo, "node_modules/@earendil-works/pi-coding-agent/dist/bun/cli.js");
 const driver = join(here, "faux-codemode.ts");
+const tools = resolve(here, "../../index.ts");
 const limit = Number(process.env.PI_CHECK_TIMEOUT_MS ?? 60000);
 
 const root = mkdtempSync(join(tmpdir(), "pi-bun-check-"));
@@ -23,7 +24,7 @@ mkdirSync(work);
 mkdirSync(agent);
 writeFileSync(join(work, "f.txt"), "old\n");
 
-const args = [cli, "-e", repo, "-e", driver, "--provider", "faux", "--model", "faux-1", "--mode", "json", "go"];
+const args = [cli, "--no-extensions", "-e", "builtin:codemode", "-e", tools, "-e", driver, "--tools", "+codemode", "--provider", "faux", "--model", "faux-1", "--mode", "json", "go"];
 const child = spawn("bun", args, { cwd: work, env: { ...process.env, PI_CODING_AGENT_DIR: agent }, stdio: ["ignore", "pipe", "pipe"] });
 let stdout = "";
 let stderr = "";
