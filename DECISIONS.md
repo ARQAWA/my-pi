@@ -14,6 +14,9 @@ The source remains outside this repository; no transcript or credentials are cop
 - RQW Review finishing work uses GPT-6.1-Sol low and GPT-6-Sol low (user: «RKV Review заканчивает на моделях GPT-6-1-Sol-Low и GPT-6-Low. Вот на таких моделях»). This does not change the product reviewer pins Haiku 5.5 medium and Sonnet 5.5 recorded below.
 - Claude model benchmarks and tuning are paused until the owner explicitly resumes them; saved results stay in place (user: «задачи ... замеры на Sonnet ... на Cloud ... на паузе ... дам команду»).
 - Carried by `WORKFLOW-MANIFEST.md`; no prompt, model configuration, code or tests change.
+- The development loop and the lessons of the first build session are written down in `PROCESS.md`, beside the
+  manifest, which still wins (user: «А workflow разработки должен сам себе где-то сохранить, можно прямо в этом же
+  репозитории. Мы его зафиксируем на будущее, чтобы ты в нём работал дальше.»).
 
 ## Scope
 
