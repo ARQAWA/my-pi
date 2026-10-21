@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { pathKey, readSpellings, resolvePath, scopeOf } from "../keys.ts";
+import { editPathKey, pathKey, readSpellings, resolvePath, scopeOf, writePathKeys } from "../keys.ts";
 
 // Values of the wrong type on purpose, to see that the key function refuses them.
 const wrong = (v: unknown) => v as string;
@@ -172,6 +172,7 @@ test("platform-specific real-path behaviour on windows", { skip: platform !== "w
       `/cygdrive/${drive.toLowerCase()}/${tail}/sub/file.txt`,
       `${drive}:/${tail}/sub/file.txt.`,
       `${drive}:/${tail}/sub/file.txt `,
+      `${drive}:/${tail}/sub./file.txt. . `,
     ],
     k("sub/file.txt"),
   );
@@ -179,6 +180,37 @@ test("platform-specific real-path behaviour on windows", { skip: platform !== "w
   const short = path.join(os.tmpdir(), "rqw-x");
   const long = path.join(fs.realpathSync.native(os.tmpdir()), "rqw-x");
   assert.strictEqual(pathKey(short, root), pathKey(long, root));
+});
+
+test("Windows ordinary aliases share native edit/write identities without rewriting stock paths", { skip: platform !== "win32" }, () => {
+  const aliases = ["sub/file.txt", "sub/file.txt.", "sub/file.txt ", "sub./file.txt. . "];
+  const identity = fs.statSync(path.join(root, aliases[0]), { bigint: true });
+  const edit = editPathKey(aliases[0], root);
+  assert.notStrictEqual(edit, undefined);
+  const keys = writePathKeys(aliases, root);
+  for (const [i, alias] of aliases.entries()) {
+    const native = fs.statSync(path.join(root, alias), { bigint: true });
+    assert.strictEqual(native.dev, identity.dev, alias);
+    assert.strictEqual(native.ino, identity.ino, alias);
+    assert.strictEqual(editPathKey(alias, root), edit, alias);
+    assert.strictEqual(keys[i].key, keys[0].key, alias);
+    assert.strictEqual(keys[i].leaf, keys[0].leaf, alias);
+    assert.strictEqual(resolvePath(alias, root), path.resolve(root, alias), "stock spelling stays intact");
+  }
+  assert.strictEqual(pathKey("sub./future.txt. ", root), pathKey("sub/future.txt", root));
+  assert.strictEqual(pathKey("sub./future. /child.txt. ", root), pathKey("sub/future/child.txt", root));
+});
+
+test("Windows extended namespace keeps literal trailing dots in native identities", { skip: platform !== "win32" }, () => {
+  const plain = path.toNamespacedPath(path.join(root, "sub/file.txt"));
+  const literal = plain + ".";
+  fs.writeFileSync(literal, "literal");
+  const a = fs.statSync(plain, { bigint: true }), b = fs.statSync(literal, { bigint: true });
+  assert.notStrictEqual(a.ino, b.ino, "extended spelling creates a distinct native file");
+  assert.notStrictEqual(pathKey(plain, root), pathKey(literal, root));
+  assert.notStrictEqual(editPathKey(plain, root), editPathKey(literal, root));
+  assert.strictEqual(pathKey("sub/file.txt.", root), pathKey("sub/file.txt", root));
+  fs.unlinkSync(literal);
 });
 
 // ---------------------------------------------------------------- string rules of other platforms
