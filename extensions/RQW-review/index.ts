@@ -309,7 +309,8 @@ export default function review(pi: ExtensionAPI) {
 			late.push(message);
 			return;
 		}
-		if (mainAborted) {
+		// A previous abort pauses idle delivery only; a new busy run may still be in an earlier start hook.
+		if (mainAborted && main?.isIdle() !== false) {
 			pi.sendMessage(message, { triggerTurn: false });
 			return;
 		}

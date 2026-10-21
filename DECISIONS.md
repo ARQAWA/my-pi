@@ -682,8 +682,11 @@ Every accepted decision, with its reason and the file that carries it.
   set until `turn_start` or `agent_settled`; verdicts that arrive meanwhile wait in a `late` list, and the
   `agent_settled` handler sends them, all but the last with `triggerTurn: false` and the last with
   `triggerTurn: !event.aborted`, so several get one turn. `mainAborted` latches `agent_settled.aborted` until a new
-  `agent_start`: even a verdict finishing after Esc or RPC abort is saved once without starting Main, and the next
-  prompt carries it once. In print and json mode `agent_end` waits for jobs using its active `ctx.signal`; abort
+  `agent_start`, but suppresses delivery turns only while `ctx.isIdle()` is true. A new busy run uses the ordinary
+  unanswered-verdict path even while an earlier extension holds `agent_start` or `before_agent_start`, before our
+  latch reset. If that current run is aborted, native `agent_settled.aborted` still prevents an automatic extra turn.
+  A verdict finishing after Esc or RPC abort while idle is saved once without starting Main, and the next prompt
+  carries it once. In print and json mode `agent_end` waits for jobs using its active `ctx.signal`; abort
   interrupts only that wait, not the independent reviewer. `agent_before_settle` only decides continuation and marks
   settlement; Pi 1.3.0 has no active `ctx.signal` there. Normal verdicts still continue the same run before Pi exits.
 - Credentials: a review fails with "no credentials" only when both `ctx.modelRegistry.hasConfiguredAuth(model)` and

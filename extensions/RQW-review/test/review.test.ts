@@ -151,13 +151,14 @@ async function openMain(
 	mode: "tui" | "rpc" | "print" | "json" = "tui",
 	// Other extensions, loaded after this one.
 	extra: string[] = [],
+	before: string[] = [],
 ): Promise<Main> {
 	const dir = join(root, `w${counter++}`);
 	await mkdir(dir, { recursive: true });
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: dir,
 		agentDir,
-		additionalExtensionPaths: withExtension ? [EXTENSION, ...extra] : extra,
+		additionalExtensionPaths: withExtension ? [...before, EXTENSION, ...extra] : [...before, ...extra],
 		noSkills: true,
 		noPromptTemplates: true,
 		noThemes: true,
@@ -1019,6 +1020,86 @@ describe("cancellation stage boundaries", () => {
 				assert.equal(lastText(main.session), "ok");
 			} finally { main.session.dispose(); }
 		});
+	}
+});
+
+describe("delivery during an earlier agent_start handler", () => {
+	for (const mode of ["tui", "rpc", "print", "json"] as const) {
+		for (const abortNew of [false, true]) {
+			it(`${mode}: late verdicts during a new ${abortNew ? "aborted" : "non-aborted"} run held before review's agent_start`, async (t) => {
+				const slow = { enabled: false, entered: false, release: () => {} };
+				const shared = globalThis as typeof globalThis & { __reviewSlowStart?: typeof slow };
+				shared.__reviewSlowStart = slow;
+				const gates = [gate("R1"), gate("R2")];
+				const reviews = scriptReviewer((_c, options) => gates[reviews.length - 1].reply(options?.signal));
+				const fixture = join(dirname(fileURLToPath(import.meta.url)), "slow-start.ts");
+				const main = await openMain(full, ARGS, true, mode, [], [fixture]);
+				const busy = gate("busy");
+				const requests = scriptMain([
+					fauxAssistantMessage([fauxToolCall("review", ARGS, { id: "r1" }), fauxToolCall("review", ARGS, { id: "r2" })], { stopReason: "toolUse" }),
+					busy.reply,
+					fauxAssistantMessage(fauxText("new prompt answer")),
+					fauxAssistantMessage(fauxText("both verdicts answered")),
+				]);
+				const sent: { content: unknown; triggerTurn?: boolean }[] = [];
+				const send = main.session.sendCustomMessage;
+				t.mock.method(main.session, "sendCustomMessage", function (this: AgentSession, ...args: Parameters<typeof send>) {
+					if (args[0].customType === "review") sent.push({ content: args[0].content, triggerTurn: args[1]?.triggerTurn });
+					return send.apply(this, args);
+				});
+				const settled: boolean[] = [];
+				const unsubscribe = main.session.subscribe(event => {
+					if (event.type === "agent_settled") settled.push(event.aborted);
+				});
+				let next: Promise<void> | undefined;
+				try {
+					const run = main.session.prompt(SECOND);
+					await until(() => reviews.length === 2 && requests.length === 2, "both held reviews and busy main");
+					if (mode === "tui") main.session.clearQueue();
+					await within(main.session.abort(), 1000, "initial abort without finishing reviews");
+					await run;
+					assert.deepEqual(settled, [true]);
+
+					slow.enabled = true;
+					next = main.session.prompt("new user prompt");
+					await until(() => slow.entered, "earlier agent_start handler");
+					assert.equal(main.session.isIdle, false, "new run is already busy before review's agent_start");
+					const abort = abortNew ? main.session.abort() : undefined;
+					for (const g of gates) g.release();
+					await until(() => sent.length === 2, "both verdicts sent while agent_start is held");
+					assert.deepEqual(sent.map(m => m.triggerTurn), [false, false]);
+					assert.deepEqual(delivered(main.session), [], "Pi holds both messages until the turn or run ends");
+					assert.equal(requests.length, 2, "no request escapes the held hook");
+					assert.equal(main.session.agent.hasQueuedMessages(), false);
+					slow.enabled = false;
+					slow.release();
+					await within(Promise.all([next, abort]), 5000, "new run settles");
+					await nextLoop();
+					assert.deepEqual(settled, [true, abortNew], "native agent_settled reports the current run's abort");
+					assert.deepEqual(delivered(main.session).sort(), [found("R1", 1), found("R2", 2)]);
+					assert.equal(main.session.agent.hasQueuedMessages(), false);
+					if (abortNew) {
+						assert.equal(requests.length, 2, "current abort saves both verdicts without any automatic request");
+						await main.session.prompt("resume after current abort");
+						assert.equal(requests.length, 3, "only the user resumes the session");
+					} else {
+						assert.equal(requests.length, 4, "one new-prompt request and exactly one answering continuation");
+						for (const v of delivered(main.session)) assert.equal(requests[2].filter(text => text === v).length, 0);
+						assert.equal(lastText(main.session), "both verdicts answered");
+					}
+					for (const v of delivered(main.session)) assert.equal(requests.at(-1)!.filter(text => text === v).length, 1);
+				} finally {
+					slow.enabled = false;
+					slow.release();
+					for (const g of gates) g.release();
+					await main.session.abort();
+					await next;
+					unsubscribe();
+					main.session.dispose();
+					delete shared.__reviewSlowStart;
+				}
+			});
+		}
 	}
 });
 
