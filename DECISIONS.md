@@ -895,6 +895,12 @@ Current accepted development policy (request summaries unless quoted); detailed 
   context is refreshed even on resume and reload. Both model and reasoning movement stop at either end, as omp does,
   rather than wrap.
   From outside the list, forward enters at the first available model and backward at the last.
+- macOS Option uses the same shortcuts as Alt when the terminal sends it as Meta / an Esc prefix.
+  Owner: «Я вроде как в задаче ставил, что должно работать и на Alt, и на Option» (line 49 of
+  `2026-10-21T12-13-54-289Z_01a15e61-dcf1-7476-b1d6-42f03584b9e6.jsonl`). Reason: the terminal must send
+  shortcut sequences instead of Option's special characters; no extension code change is needed.
+  Carrier: the existing Alt bindings in `extensions/RQW-models/index.ts`; terminal setup is in
+  [INSTALL.md](INSTALL.md#macos-option-shortcuts).
 - Conservative UI choice: `/rqw-models` is the extension's authenticated six-model picker via `ctx.ui.select`.
   Stock `/model`, Ctrl+L, Ctrl+P, Shift+Tab, `/scoped-models`, CLI/RPC selection and provider definitions stay intact.
   Pi reserves those built-in shortcuts and disambiguates commands conflicting with built-ins; replacing its whole

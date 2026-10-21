@@ -22,6 +22,16 @@ You are running inside Pi. Install the my-pi package into this Pi installation, 
 Apart from the authorized old adapter replacement above and installing or updating my-pi, change nothing else:
 no unrelated packages, settings, credentials or files.
 
+## macOS Option shortcuts
+
+For the user, not part of the install. For Option model/reasoning shortcuts, configure the active terminal profile:
+
+- iTerm2: Settings > Profiles > select the profile > Keys; set both Left Option Key and Right Option Key to
+  `Esc+` (Esc-prefix mode).
+- Terminal.app: Terminal > Settings > Profiles > select the profile > Keyboard; enable "Use Option as Meta key".
+
+This is terminal configuration, not a Pi keybinding change. See the [Models decision](DECISIONS.md#models).
+
 ## Switch one extension off
 
 For the user, not part of the install. Every `RQW-*` extension can be switched off alone. In
