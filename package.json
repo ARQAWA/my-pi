@@ -23,7 +23,8 @@
       "./extensions/RQW-review/index.ts",
       "./extensions/RQW-statusbar/index.ts",
       "./extensions/RQW-models/index.ts",
-      "./extensions/RQW-anthropic/index.ts"
+      "./extensions/RQW-anthropic/index.ts",
+      "./extensions/RQW-scroll/index.ts"
     ]
   },
   "devDependencies": {

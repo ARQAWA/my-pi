@@ -49,7 +49,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - my-pi is an extension layer around stock Pi 1.3.0, not a fork (user: «Мы делаем просто обвес вокруг оригинального Pi.»;
   «Нет, никаких форков.»). Reason: keep Pi's own behavior and add only the agreed extensions. Carried by
   `package.json` and `extensions/`. Only `RQW-models` and `RQW-statusbar` ported UI, as described in [Models](#models)
-  and [Statusbar](#statusbar); other omp-lite UI and tools are not
+  and [Statusbar](#statusbar); `RQW-scroll` adds one owner-requested key behavior, [Scroll](#scroll); other
+  omp-lite UI and tools are not
   carried over (user: «Давай полностью отбросим все UI припоны и оставим только чистую механику и промпты»,
   «Так же мы можем отбросить тулинг»).
 - Reason: bench41 (`~/Documents/ChatGPT/my-omp-harness/bench/bench41.csv`, T01-T07, 3 runs): the omp-lite prompt alone
@@ -1040,3 +1041,43 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Integration proof uses offline fixtures only; it does not establish live auth, subscription acceptance or billing.
   The owner's old Claude campaign pause C:3244 remains in force, not a ban on Claude workers. Historical local results and their boundaries are recorded in
   `notes/anthropic-integration.md`, not a standing prohibition on independent review or normal branch delivery.
+
+## Scroll
+
+- Escape in Pi's fullscreen (alt-screen) view returns a scrolled-up transcript to the latest message, as in Codex.
+  Owner (`2026-10-21T12-13-54-289Z_01a15e61-dcf1-7476-b1d6-42f03584b9e6.jsonl` line 53): «Да, я также бы хотел
+  перенастроить хоткеи, чтобы когда я скролю, jump to last message было на Escape»; line 77: «Хотя бы должен быть
+  какой-то адекватный хоткей, который будет перехватываться всеми браузерами нормально. И чтобы он не конфликтовал с
+  другими хоткеями.» In `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` the question batch
+  (line 78) offered 1a: Escape jumps down only when scrolled up, at the bottom Escape stays as before, Ctrl+End stays,
+  an open transcript search takes the first Escape. The owner chose it (line 100): «Сделай Escape просто, что когда я
+  открыл вверх, я Escape нажимаю, как в кодексе. В кодексе ты когда scroll вверх делаешь, нажимаешь Escape, и он тебя
+  возвращает в самый низ чата. Так же сделай». Package behavior for every my-pi user (2a, not the personal
+  `keybindings.json`) is the batch's stated default for an unanswered question, and option 1a requires it.
+- Carrier: `extensions/RQW-scroll/index.ts`, its own extension, listed in `package.json` `pi.extensions`; switched off
+  alone like every `RQW-*` extension ([INSTALL.md](INSTALL.md#switch-one-extension-off), [Isolation](#isolation)).
+  Reason for a new folder: the behavior belongs to no existing extension, and `RQW-statusbar` is being changed by
+  separate work.
+- Mechanism (engineering choice). Binding `escape` to Pi's `tui.altScreen.bottom` is rejected: Pi's viewport consumes
+  that key even at the bottom, so Escape would no longer interrupt. Instead the extension adds a terminal input
+  listener (`ctx.ui.onTerminalInput`). Pi runs the alt-screen viewport listener first, so its own keys (search close,
+  Ctrl+End, paging) keep priority; the extension listener sees Escape before the focused component. It consumes a
+  press only when all hold: the renderer is `fullscreen`; the transcript does not follow its end (`isFollowingOutput`
+  false, exactly when Pi shows "Jump to latest message"); the focused component is Pi's main editor (a
+  `CustomEditor`, detected by its `actionHandlers` map the way Pi does) without an open autocomplete list. It then calls
+  the renderer's `scrollToBottom()`. Otherwise Escape is untouched: at the bottom it interrupts, double-Escape and every
+  other stock meaning stay; selectors in the editor slot, dialogs, focused overlays and the autocomplete list keep
+  their own Escape; inline mode and print, JSON and RPC modes are unchanged. The TUI is reached through the public
+  widget factory (a `belowEditor` widget that renders no line), which receives Pi's proxy to the current renderer, so
+  a switch between inline and fullscreen is followed. Key releases are not consumed.
+- Limits: Pi's indicator label still names only the keys of `tui.altScreen.bottom` ("Jump to latest message" with
+  Ctrl+End); changing it would need a Pi patch or the rejected binding. A custom editor that does not extend
+  `CustomEditor` gets stock Escape. With search open, the first Escape closes search and the second jumps down.
+- Proof: `extensions/RQW-scroll/test/scroll.test.ts` (in `npm test`), with Pi's real renderers and proxy
+  (`createInteractiveTui`, `createInteractiveTuiReference`), chat viewport, `CustomEditor`,
+  `ExtensionSelectorComponent`, overlay and transcript search, the extension loaded by Pi's resource loader and keys fed
+  through the terminal input callback: scrolled up, Escape jumps and is consumed, the next Escape interrupts; at the
+  bottom Escape interrupts; Ctrl+End still jumps; selector, overlay, autocomplete and search keep their Escape; inline
+  mode, the extension not loaded and after `session_shutdown` give stock Escape. A local PTY probe of the real CLI in
+  fullscreen with `doubleEscapeAction: fork` confirmed the InteractiveMode wiring: scrolled up, a quick Escape pair
+  jumped down without the fork notice; the next pair at the bottom showed it.
