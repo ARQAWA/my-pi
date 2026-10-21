@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { StringEnum } from "@earendil-works/pi-ai";
-import type { AgentSessionEvent, ExtensionAPI, ExtensionContext, ModelRuntime, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentSessionEvent, ExtensionAPI, ExtensionContext, ModelRuntime, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	type AgentSession,
 	createAgentSession,
@@ -40,19 +40,54 @@ const PARAMETERS = Type.Object({
 type Params = Static<typeof PARAMETERS>;
 
 type Config = { system: string; model: Model<Api>; thinking: Thinking; tools: string[] };
-type Agent = {
+type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal } };
+type Agent = Child & {
 	id: number;
 	config: Config;
-	session: AgentSession;
-	/** The current run, undefined while idle. `quiet` (interrupt, stop, restart, shutdown) ends it without a message. */
-	run?: { done: Promise<void>; quiet: boolean };
+	/** The current run, undefined while idle. `quiet` ends it without a message. */
+	run?: { done: Promise<void>; quiet: boolean; controller: AbortController };
 };
+
+/** SDK auth and creation can ignore cancellation. Observe late failures without waiting for them. */
+async function untilAborted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+	const aborted = Promise.withResolvers<never>();
+	const stop = () => aborted.reject(signal.reason ?? new Error("aborted"));
+	signal.addEventListener("abort", stop, { once: true });
+	if (signal.aborted) stop();
+	try {
+		const value = await Promise.race([pending, aborted.promise]);
+		signal.throwIfAborted();
+		return value;
+	} finally {
+		signal.removeEventListener("abort", stop);
+	}
+}
 
 const textOf = (message: AssistantMessage): string =>
 	message.content
 		.flatMap((c) => (c.type === "text" ? [c.text] : []))
 		.join("\n")
 		.trim();
+
+/** Highest owned id, including old histories without allocation metadata. Never scan a result's body. */
+function lastNumber(entries: readonly SessionEntry[]): number {
+	let max = 0;
+	const take = (n: unknown) => {
+		if (typeof n === "number" && Number.isSafeInteger(n) && n > 0) max = Math.max(max, n);
+	};
+	for (const e of entries) {
+		if (e.type === "custom" && e.customType === "agent") take((e.data as { id?: unknown } | undefined)?.id);
+		let match: RegExpExecArray | null = null;
+		if (e.type === "custom_message" && e.customType === "agent" && typeof e.content === "string")
+			match = /^\[agent#(\d+)\](?:\s|$)/.exec(e.content);
+		else if (e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "agent") {
+			const text = e.message.content.map((c) => c.type === "text" ? c.text : "").join("");
+			match = /^agent#(\d+)(?: started| restarted| stopped| interrupted| is idle|: sent|: queued after the current run)(?:$|[\s,])/.exec(text);
+		}
+		if (match) take(Number(match[1]));
+	}
+	return max;
+}
 
 /**
  * Channel on `pi.events` where RQW-tools, when it is loaded, offers its tools for subagents: a request
@@ -68,31 +103,32 @@ const runtimeOf = (ctx: ExtensionContext) => (ctx.modelRegistry as unknown as { 
 
 export default function agent(pi: ExtensionAPI) {
 	const agents = new Map<number, Agent>();
+	const lifetime = new AbortController();
 	let counter = 0;
-	let closed = false;
 	let main: ExtensionContext | undefined;
-	/**
-	 * Results sent while the main session was busy, by delivery id, until the main model answers after them. The id is
-	 * a UUID: a counter would restart in every new instance (/reload, /resume, /fork, `pi -c`) and match old entries.
-	 */
+	let mainAborted = false;
+	/** UUIDs survive reload/resume without matching an earlier delivery. */
 	const unanswered = new Set<string>();
-	/** Set once our agent_before_settle handler has run; results sent then wait for agent_settled in `late`. */
 	let settling = false;
 	const late: { customType: string; content: string; display: boolean; details: { delivery: string } }[] = [];
 
 	function deliver(id: number, text: string) {
-		if (closed) return;
+		if (lifetime.signal.aborted) return;
 		const message = { customType: "agent", content: `[agent#${id}] ${text}`, display: true, details: { delivery: randomUUID() } };
 		if (settling) {
 			late.push(message);
+			return;
+		}
+		// A previous abort pauses idle delivery only; a new busy run may still be in an earlier start hook.
+		if (mainAborted && main?.isIdle() !== false) {
+			pi.sendMessage(message, { triggerTurn: false });
 			return;
 		}
 		if (main?.isIdle() !== false) {
 			pi.sendMessage(message, { triggerTurn: true });
 			return;
 		}
-		// Busy: Pi appends a message without triggerTurn to the session at the end of the current turn, so Esc and abort
-		// cannot drop it (a follow-up would wait in the agent's queue, which Esc clears). agent_before_settle adds the turn.
+		// Busy: keep the result outside Pi's follow-up queue, which Esc clears.
 		unanswered.add(message.details.delivery);
 		pi.sendMessage(message, { triggerTurn: false });
 	}
@@ -124,90 +160,101 @@ export default function agent(pi: ExtensionAPI) {
 		return factory ? factory(cwd, () => pi.getSettings()).filter((d) => names.includes(d.name)) : [];
 	}
 
-	async function createSession(config: Config, ctx: ExtensionContext): Promise<AgentSession> {
-		// Stock read and bash are built from these three settings; the main session's values keep its shell, such as
-		// Git Bash on Windows. RQW-tools definitions read the main session's settings per call instead.
+	async function createSession(config: Config, ctx: ExtensionContext, signal: AbortSignal): Promise<Child> {
+		signal.throwIfAborted();
+		const controller = new AbortController();
+		const guard: Child["guard"] = {};
+		const check = () => { controller.signal.throwIfAborted(); guard.signal?.throwIfAborted(); };
 		const own = pi.getSettings();
+		// Keep the main session's shell, including Git Bash on Windows, and read image settings.
 		const settingsManager = SettingsManager.inMemory({
 			shellPath: own.shellPath,
 			shellCommandPrefix: own.shellCommandPrefix,
 			images: { autoResize: own.images?.autoResize },
 		});
 		const resourceLoader = new DefaultResourceLoader({
-			cwd: ctx.cwd,
-			agentDir: getAgentDir(),
-			settingsManager,
-			noExtensions: true,
-			noSkills: true,
-			noPromptTemplates: true,
-			noThemes: true,
-			noContextFiles: true,
+			cwd: ctx.cwd, agentDir: getAgentDir(), settingsManager,
+			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 			systemPromptOverride: () => config.system,
 			appendSystemPromptOverride: () => [],
-			// Pi always appends sections such as <cwd> to a custom prompt; only a forced prompt is sent as is.
-			extensionFactories: [(sub: ExtensionAPI) => sub.on("before_agent_start", () => ({ systemPrompt: config.system }))],
+			// Only a forced prompt avoids Pi's appended sections, such as <cwd>.
+			extensionFactories: [(sub: ExtensionAPI) => sub.on("before_agent_start", () => {
+				check();
+				return { systemPrompt: config.system };
+			})],
 		});
-		await resourceLoader.reload();
-		const { session } = await createAgentSession({
-			cwd: ctx.cwd,
-			modelRuntime: runtimeOf(ctx),
-			model: config.model,
-			thinkingLevel: config.thinking,
-			tools: config.tools,
-			customTools: offeredTools(ctx.cwd, config.tools),
-			resourceLoader,
-			sessionManager: SessionManager.inMemory(ctx.cwd),
-			settingsManager,
+		await untilAborted(resourceLoader.reload(), signal);
+		const customTools = offeredTools(ctx.cwd, config.tools);
+		signal.throwIfAborted();
+		const creating = createAgentSession({
+			cwd: ctx.cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
+			tools: config.tools, customTools, resourceLoader,
+			sessionManager: SessionManager.inMemory(ctx.cwd), settingsManager,
+		}).then(({ session }) => {
+			if (signal.aborted) { session.dispose(); signal.throwIfAborted(); }
+			// prompt() may finish auth after abort()/dispose(). Never let an abandoned preflight reach inference.
+			const stream = session.agent.streamFunction;
+			session.agent.streamFunction = (model, context, options) => { check(); return stream(model, context, options); };
+			return { session, controller, guard };
 		});
-		if (closed) {
-			session.dispose();
-			throw new Error("The main session is shutting down");
+		try {
+			return await untilAborted(creating, signal);
+		} catch (error) {
+			controller.abort();
+			void creating.then(({ session }) => session.dispose()).catch(() => {});
+			throw error;
 		}
-		return session;
 	}
 
-	/** One run: the task plus any follow-ups queued meanwhile. Ends with one message unless it was made quiet. */
-	/** Resolves once Pi has started the run (an abort or dispose then stops its request) or the run has ended. */
-	function startRun(a: Agent, task: string): Promise<void> {
+	/** Wait only for an active SDK run, not its answer. Caller cancellation ends only an unaccepted run. */
+	async function startRun(a: Agent, task: string, signal: AbortSignal): Promise<void> {
+		signal.throwIfAborted();
 		const started = Promise.withResolvers<void>();
 		const session = a.session;
 		const texts: string[] = [];
-		// Every final answer and every final error of the run, in order.
-		let lastPushed = false; // whether texts ends with the last assistant message
+		let lastPushed = 0;
+		const run: NonNullable<Agent["run"]> = { done: Promise.resolve(), quiet: false, controller: new AbortController() };
+		a.guard.signal = AbortSignal.any([run.controller.signal, signal]);
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
-			// Pi's run is active from here, so abort() also cancels a pre-run compaction: no need to wait for its summary.
-			if (event.type === "compaction_start") started.resolve();
-			// Pi repeats the last request after these events (a retry, or overflow compaction): that attempt is not a result.
+			if (event.type === "compaction_start") {
+				// A late prompt preflight may enter compaction after cancellation; stop its summary too.
+				if (a.guard.signal?.aborted || a.controller.signal.aborted) void session.abort().catch(() => {});
+				started.resolve();
+			}
 			if (event.type === "auto_retry_start" || (event.type === "compaction_end" && event.willRetry)) {
-				if (lastPushed) texts.pop();
-				lastPushed = false;
+				if (lastPushed) texts.splice(texts.length - lastPushed, lastPushed);
+				lastPushed = 0;
+			}
+			if (event.type === "compaction_end" && !event.willRetry && event.errorMessage) {
+				texts.push(`error: ${event.errorMessage}`);
+				lastPushed = 0;
 			}
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
 			const m = event.message;
-			lastPushed = false;
+			lastPushed = 0;
 			if (m.stopReason === "error") {
 				texts.push(`error: ${m.errorMessage ?? "unknown error"}`);
-				lastPushed = true;
+				lastPushed = 1;
 			} else if (m.stopReason === "stop" || m.stopReason === "length") {
 				const text = textOf(m);
-				if (text) {
-					texts.push(text);
-					lastPushed = true;
+				if (text) { texts.push(text); lastPushed++; }
+				if (m.stopReason === "length") {
+					texts.push("error: Response was truncated: the model reached its output token limit.");
+					lastPushed++;
 				}
 			}
 		});
-		const run: NonNullable<Agent["run"]> = { done: Promise.resolve(), quiet: false };
 		run.done = (async () => {
 			try {
 				await session.prompt(task, { preflightResult: () => started.resolve() });
-				// A follow-up that came in after the run decided to stop is still queued: run it now.
-				while (!run.quiet && session.getFollowUpMessages().length > 0) {
+				while (!run.quiet && !a.guard.signal?.aborted && session.getFollowUpMessages().length > 0)
 					await session.prompt(session.clearQueue().followUp.join("\n\n"));
-				}
-				if (run.quiet) return;
-				deliver(a.id, texts.join("\n\n") || "(no text)");
+				if (!run.quiet && !a.guard.signal?.aborted) deliver(a.id, texts.join("\n\n") || "(no text)");
 			} catch (error) {
-				if (!run.quiet) deliver(a.id, `error: ${error instanceof Error ? error.message : String(error)}`);
+				if (!run.quiet && !a.guard.signal?.aborted) {
+					texts.push(`error: ${error instanceof Error ? error.message : String(error)}`);
+					deliver(a.id, texts.join("\n\n"));
+				}
 			} finally {
 				unsubscribe();
 				started.resolve();
@@ -215,16 +262,23 @@ export default function agent(pi: ExtensionAPI) {
 			}
 		})();
 		a.run = run;
-		return started.promise;
+		try {
+			await untilAborted(started.promise, signal);
+		} catch (error) {
+			run.quiet = true;
+			run.controller.abort();
+			session.clearQueue();
+			void session.abort().catch(() => {});
+			throw error;
+		}
 	}
 
 	function close(a: Agent) {
-		if (a.run) a.run.quiet = true;
-		// dispose() aborts without Pi's abort flag, so Pi would run a queued follow-up on the disposed session.
+		if (a.run) { a.run.quiet = true; a.run.controller.abort(); }
+		a.controller.abort();
 		a.session.clearQueue();
-		// abort() first, so Pi's run sees its abort flag (a pre-run compaction then sends no request), then dispose().
-		const session = a.session;
-		void session.abort().finally(() => session.dispose());
+		// abort first: dispose alone does not set Pi's abort flag for queued follow-ups or compaction.
+		void a.session.abort().catch(() => {}).finally(() => a.session.dispose());
 	}
 
 	function find(id: string | undefined): Agent {
@@ -234,7 +288,8 @@ export default function agent(pi: ExtensionAPI) {
 		throw new Error(`Unknown agent id: ${id ?? "(none)"}. Known: ${known}`);
 	}
 
-	async function resolveConfig(params: Params, ctx: ExtensionContext, base?: Config): Promise<Config> {
+	async function resolveConfig(params: Params, ctx: ExtensionContext, signal: AbortSignal, base?: Config): Promise<Config> {
+		signal.throwIfAborted();
 		const system = params.system ?? base?.system;
 		if (!system) throw new Error("system is required");
 		let model: Model<Api> | undefined = base?.model ?? ctx.model;
@@ -244,52 +299,65 @@ export default function agent(pi: ExtensionAPI) {
 			if (!model) throw new Error(`Unknown model: ${params.model}. Use provider/id from the model registry.`);
 		}
 		if (!model) throw new Error("No model: give model as provider/id");
-		// As Pi's prompt: the auth snapshot fills asynchronously, so a miss there is checked against the store.
-		if (!ctx.modelRegistry.hasConfiguredAuth(model) && !(await runtimeOf(ctx).checkAuth(model.provider)))
+		if (!ctx.modelRegistry.hasConfiguredAuth(model) && !(await untilAborted(runtimeOf(ctx).checkAuth(model.provider, { signal }), signal)))
 			throw new Error(`No credentials for provider ${model.provider}`);
+		signal.throwIfAborted();
 		const tools = params.tools ?? base?.tools ?? [...TOOLS];
 		const thinking = params.thinking ?? base?.thinking ?? pi.getThinkingLevel();
 		return { system, model, thinking, tools };
 	}
 
 	const ok = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
-
-	// Calls of this tool run one at a time in call order, so a batch such as interrupt + restart cannot interleave.
 	let queue: Promise<unknown> = Promise.resolve();
-	function inOrder<T>(work: () => Promise<T>): Promise<T> {
-		const next = queue.then(work);
-		queue = next.catch(() => {});
-		return next;
-	}
-
 	pi.registerTool({
 		name: "agent",
 		label: "Agent",
 		description: DESCRIPTION,
 		parameters: PARAMETERS,
-		execute: (_toolCallId, raw, _signal, _onUpdate, ctx) => inOrder(() => act(raw, ctx)),
+		execute: (_toolCallId, raw, callerSignal, _onUpdate, ctx) => {
+			// Capture ctx.signal now: its getter can point at another run when the internal queue drains.
+			const signal = AbortSignal.any([lifetime.signal, callerSignal, ctx.signal].filter((s): s is AbortSignal => !!s));
+			if (!main) { main = ctx; counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries())); }
+			const next = queue.then(() => { signal.throwIfAborted(); return act(raw, ctx, signal); });
+			queue = next.catch(() => {});
+			return untilAborted(next, signal);
+		},
 	});
 
-	async function act(raw: Params, ctx: ExtensionContext) {
+	async function act(raw: Params, ctx: ExtensionContext, signal: AbortSignal) {
 		// Strict-mode providers send null for omitted optional fields.
 		const params = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== null)) as Params;
+		signal.throwIfAborted();
 		switch (params.action) {
 			case "start": {
 				if (!params.task) throw new Error("task is required");
-				const config = await resolveConfig(params, ctx);
-				const a: Agent = { id: ++counter, config, session: await createSession(config, ctx) };
-				agents.set(a.id, a);
-				await startRun(a, params.task);
-				return ok(`agent#${a.id} started`);
+				const config = await resolveConfig(params, ctx, signal);
+				signal.throwIfAborted();
+				if (counter >= Number.MAX_SAFE_INTEGER) throw new Error("Agent id space exhausted");
+				const id = ++counter;
+				pi.appendEntry("agent", { id });
+				const child = await createSession(config, ctx, signal);
+				const a: Agent = { id, config, ...child };
+				try {
+					signal.throwIfAborted();
+					await startRun(a, params.task, signal);
+					signal.throwIfAborted();
+					a.guard.signal = a.run?.controller.signal;
+					agents.set(id, a);
+				} catch (error) { close(a); throw error; }
+				return ok(`agent#${id} started`);
 			}
 			case "send": {
 				const a = find(params.id);
 				if (!params.task) throw new Error("task is required");
+				if (a.run?.quiet) await untilAborted(a.run.done, signal);
 				if (a.run) {
-					await a.session.followUp(params.task);
+					await untilAborted(a.session.followUp(params.task), signal);
 					return ok(`agent#${a.id}: queued after the current run`);
 				}
-				await startRun(a, params.task);
+				await startRun(a, params.task, signal);
+				signal.throwIfAborted();
+				a.guard.signal = a.run?.controller.signal;
 				return ok(`agent#${a.id}: sent`);
 			}
 			case "interrupt": {
@@ -297,9 +365,10 @@ export default function agent(pi: ExtensionAPI) {
 				const run = a.run;
 				if (!run) return ok(`agent#${a.id} is idle`);
 				run.quiet = true;
-				await a.session.abort();
-				await run.done;
-				a.session.clearQueue(); // follow-ups of the interrupted run go too
+				run.controller.abort();
+				a.session.clearQueue();
+				await untilAborted(a.session.abort(), signal);
+				await untilAborted(run.done, signal);
 				return ok(`agent#${a.id} interrupted`);
 			}
 			case "stop": {
@@ -309,59 +378,65 @@ export default function agent(pi: ExtensionAPI) {
 				return ok(`agent#${a.id} stopped`);
 			}
 			case "restart": {
-				const a = find(params.id);
-				const config = await resolveConfig(params, ctx, a.config);
-				close(a);
-				a.config = config;
-				a.session = await createSession(config, ctx);
-				a.run = undefined;
-				if (params.task) await startRun(a, params.task);
+				const old = find(params.id);
+				const config = await resolveConfig(params, ctx, signal, old.config);
+				signal.throwIfAborted();
+				agents.delete(old.id);
+				close(old);
+				const child = await createSession(config, ctx, signal);
+				const a: Agent = { id: old.id, config, ...child };
+				try {
+					signal.throwIfAborted();
+					if (params.task) await startRun(a, params.task, signal);
+					signal.throwIfAborted();
+					a.guard.signal = a.run?.controller.signal;
+					agents.set(a.id, a);
+				} catch (error) { close(a); throw error; }
 				return ok(`agent#${a.id} restarted${params.task ? "" : ", idle"}`);
 			}
-			default:
-				throw new Error(`Unknown action: ${params.action}`);
+			default: throw new Error(`Unknown action: ${params.action}`);
 		}
 	}
 
 	pi.on("session_start", (_event, ctx) => {
 		main = ctx;
-		// A continued session (/reload, /resume, /fork, `pi -c`) already holds agent#N ids: new ones go above them.
-		for (const e of ctx.sessionManager.getEntries()) {
-			const text =
-				e.type === "custom_message" && e.customType === "agent" && typeof e.content === "string"
-					? e.content
-					: e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "agent"
-						? e.message.content.map((c) => (c.type === "text" ? c.text : "")).join("")
-						: "";
-			for (const match of text.matchAll(/agent#(\d+)/g)) counter = Math.max(counter, Number(match[1]));
+		counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries()));
+	});
+	// agent_end still has the native run's live abort signal. before_settle no longer does.
+	pi.on("agent_end", async (_event, ctx) => {
+		// isIdle becomes true before earlier agent_settled hooks finish, including after an abort.
+		settling = true;
+		if (ctx.mode !== "print" && ctx.mode !== "json") return;
+		const signal = ctx.signal;
+		if (!signal) return;
+		try {
+			for (let running = runs(); running.length > 0; running = runs()) await untilAborted(Promise.all(running), signal);
+		} catch (error) {
+			if (!signal.aborted) throw error;
+		} finally {
+			if (signal.aborted) mainAborted = true;
 		}
 	});
-
-	// Print and JSON modes exit when the main run settles, so there the main run waits for running subagents. A result
-	// sent during the run continues it here; an idle main session gets a result as a new turn. After an abort the
-	// result stays in the session without a turn, and the model sees it on the next one.
-	pi.on("agent_before_settle", async (_event, ctx) => {
-		if (ctx.mode === "print" || ctx.mode === "json")
-			for (let running = runs(); running.length > 0; running = runs()) await Promise.all(running);
-		if (needsTurn(ctx)) return { continue: true };
+	pi.on("agent_before_settle", (_event, ctx) => {
+		// Results held since agent_end must reach this boundary before it decides to continue.
+		for (const message of late.splice(0)) {
+			unanswered.add(message.details.delivery);
+			pi.sendMessage(message, { triggerTurn: false });
+		}
+		if (!mainAborted && needsTurn(ctx)) return { continue: true };
 		settling = true;
 	});
-	// Another extension's agent_before_settle handler may run after ours, so a result can come in after our check and
-	// before the run settles. It is sent here; Pi defers it until the settle ends and then starts its turn.
-	pi.on("turn_start", () => {
-		settling = false;
-	});
+	pi.on("agent_start", () => { mainAborted = false; });
+	pi.on("turn_start", () => { settling = false; });
 	pi.on("agent_settled", (event) => {
+		mainAborted = event.aborted;
 		settling = false;
-		// One turn for all of them: Pi defers each triggerTurn separately, so the earlier ones are appended at once and
-		// only the last one starts the turn.
 		const held = late.splice(0);
 		held.forEach((message, i) => pi.sendMessage(message, { triggerTurn: !event.aborted && i === held.length - 1 }));
 	});
 	const runs = () => [...agents.values()].flatMap((a) => (a.run ? [a.run.done] : []));
-
 	pi.on("session_shutdown", () => {
-		closed = true;
+		lifetime.abort(new Error("The main session is shutting down"));
 		for (const a of agents.values()) close(a);
 		agents.clear();
 	});
