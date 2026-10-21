@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 const BUN = process.env.RQW_AGENT_BUN === "1";
@@ -22,7 +23,7 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 	Object.assign(env, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home,
 		PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", RQW_AGENT_SCENARIO: scenario });
 	const executable = BUN ? "bun" : process.execPath;
-	const args = [BUN ? "--preload" : "--import", PRELOAD,
+	const args = [BUN ? "--preload" : "--import", BUN ? PRELOAD : pathToFileURL(PRELOAD).href,
 		join(ROOT, `node_modules/@earendil-works/pi-coding-agent/dist/${BUN ? "bun" : "bundle"}/cli.js`),
 		"--no-extensions", "-e", PROVIDER, "-e", EXTENSION,
 		...(scenario === "nested" ? ["-e", "builtin:codemode"] : []),
