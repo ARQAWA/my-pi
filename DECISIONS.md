@@ -13,6 +13,9 @@ The source remains outside this repository; no transcript or credentials are cop
 Current accepted development policy (request summaries unless quoted); detailed task rituals belong in
 [PROCESS.md](PROCESS.md), not a history ledger here.
 
+- Main is the coordinator, not an independent implementer: «Да, он как техлид/тимлид, координатор, но не исполнитель самостоятельный.»
+  Reason: keep orchestration and acceptance with Main and actual execution with worker subagents. The procedure
+  is carried by [PROCESS.md](PROCESS.md).
 - Development workers, including subagents, are authorized to use Sonnet high/xhigh, Opus low/medium and
   GPT-6.1-Sol low/medium/high. The main agent selects by task; difficult tasks use Opus low/medium or GPT-6.1-Sol
   high. This is development routing only, not a product model configuration or permission to add other GPT models.

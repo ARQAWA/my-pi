@@ -8,8 +8,8 @@ the accepted decisions and their reasons. New owner instructions take precedence
 ## Research and agreement
 
 1. While the owner discusses or plans, change nothing. A proposal or question is not permission to implement it.
-2. Research the request and relevant source code first, using independent subagents in parallel where useful.
-   Compile all requirements across the conversation and accepted proposals, retaining the owner's exact words.
+2. Delegate initial research of the request and relevant source code to worker subagents, in parallel where useful.
+   Main compiles all requirements across the conversation and accepted proposals, retaining the owner's exact words.
    Keep agreed work intact: do not lose, silently drop, reinterpret or invent requirements.
 3. Bring all material ambiguities, conflicts and missing outcome decisions to the owner in one question batch.
    Do not decide for the customer without permission. Delegated technical choices, including worker model selection,
@@ -21,14 +21,20 @@ the accepted decisions and their reasons. New owner instructions take precedence
 
 - Start each change task from up-to-date `main` in its own branch and git worktree:
   `git worktree add -b <task> ../my-pi-worktrees/<task> main`. Make all task edits there, never in the main checkout.
-- Main coordinates the whole task and remains responsible for delivery. Give each worker a self-contained brief:
-  agreement, files and worktree, ownership, dependencies, expected result and sufficient proof. Include the relevant
-  process rules in its system prompt or brief; do not assume a child inherits this file.
+- Main is the coordinator, not an independent implementer: it owns requirement compilation, owner questions,
+  task decomposition, worker model selection, scheduling, acceptance and integration of results, review organization,
+  delivery/git and reports. Main may read sources and results to coordinate and accept work, but must delegate actual
+  research, implementation (including documentation/config edits), probes/measurements, test runs and fixes to worker
+  subagents, regardless of task size. The existing generic `agent` tool suffices; no fixed named worker roles are needed.
+  Give each worker a self-contained brief: agreement, files and worktree, ownership, dependencies, expected result
+  and sufficient proof. Include the relevant process rules in its system prompt or brief; do not assume a child
+  inherits this file.
 - Run independent research, implementation, probes and checks in parallel. Use 20-30 workers when there are that
   many useful independent blocks, not to fill a quota. Minimize sequential work and avoid concurrent writes to the
-  same files. Stop superseded workers. Main may edit directly; no mandatory code-writer or shell-runner roles.
-- Finish the whole agreed task autonomously: implement, inspect, make the needed probes and measurements, fix
-  obvious defects and relevant corner cases. Do not polish extremely unlikely scenarios or expand the task.
+  same files. Stop superseded workers.
+- Main drives the whole agreed task to completion autonomously through workers: they implement, inspect, make the
+  needed probes and measurements, and fix obvious defects and relevant corner cases. Do not polish extremely
+  unlikely scenarios or expand the task.
 - Commit completed stages promptly to the task branch, staging exact task paths. Stage commits require no review
   or test gate; they do not replace final verification or authorize a merge.
 - Work only in my-pi. Other repositories are read-only sources. Keep the user's changes, credentials and settings.
@@ -54,7 +60,8 @@ campaign only; it does not pause unrelated work or prohibit the currently author
 
 ## Sufficient proof, without idle reruns
 
-- Choose checks for the changed behavior and claim. Inspect documentation and Pi sources where needed.
+- Main ensures workers choose and perform checks for the changed behavior and claim under the rules below.
+  Workers inspect documentation and Pi sources where needed.
   Use deterministic tests for mechanics and actual model probes when the claim concerns model behavior.
   Do not burn tokens on live compaction when the owner requests documentation-only proof.
 - Run existing relevant checks once, in the background where possible. Repeat after a relevant fix or a changed
@@ -77,7 +84,8 @@ campaign only; it does not pause unrelated work or prohibit the currently author
 - Review is proportional. Mechanical point corrections with no new decision need no review. Small work, at most
   five requirements and five changed files, uses `review` level `blind`; larger work uses `high`. An answer or report
   without changes needs no review. Explicit owner requirements for a review take precedence.
-- Main first inspects and fixes its own work. The final independent result review checks agreed completeness,
+- Workers first self-check their work and fix defects before independent review. Main checks their evidence and
+  acceptance against the agreement, routing needed fixes to workers. The final independent result review checks agreed completeness,
   consistency, documentation and absence of unagreed additions. Give the reviewer the agreement verbatim, object,
   diff and sources, criterion and earlier rejected findings with reasons. Each pass returns all real findings at once.
 - When code changes, run a separate read-only code reviewer in parallel with result review. Read
@@ -86,8 +94,9 @@ campaign only; it does not pause unrelated work or prohibit the currently author
   This role checks bugs, regressions and meaningful code quality, not a second requirements ritual. Do not spawn
   a code reviewer for prose-only changes. Workflow logic is executable configuration and needs code review too.
 - Admit real evidenced defects, not taste or unlikely hypotheticals. Check findings rather than accepting them
-  just because a quote exists. Fix admitted findings in one batch; explain rejected ones with evidence. Recheck
-  affected parts and checks, not untouched parts. Reuse valid CLEAN results. Stop when the required reviews are
+  just because a quote exists. Main validates real findings and routes admitted fixes to workers in one batch;
+  explain rejected findings with evidence. Workers recheck affected parts and checks, not untouched parts.
+  Reuse valid CLEAN results. Stop when the required reviews are
   clean; do not invent either a one-pass cap that leaves known bugs or endless fresh passes for confidence.
 - A finished substage handed over separately gets its own blind independent check. Internal draft/stage commits
   are not handovers and do not create an automatic review gate. Reuse its valid coverage in final review.
