@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	createBashToolDefinition,
 	createEditToolDefinition,
@@ -32,17 +32,59 @@ function withDescription(schema: any, property: string, text: string): any {
 	};
 }
 
+/** The settings a getter returns, or undefined when there are none or the read fails (stock defaults then). */
+function safely(settings: () => any): any {
+	try {
+		return settings();
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Channel on `pi.events` where RQW-agent, when it is loaded, asks for these tools for each subagent session. The
+ * request is `{ offer(factory) }`; the answer is `createTools` itself. Nothing in RQW-tools depends on RQW-agent.
+ */
+const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
+
 export default function (pi: ExtensionAPI) {
 	// One barrier per extension instance; every execute registers its scope synchronously before any await. The tool
 	// calls of a `codemode` script use the barrier of that script, found by the tool call id (nested.ts); the
 	// `codemode` call itself is one call with scope "all" in the outer one.
 	const nested = createNestedBarrier();
-	const cwd = process.cwd();
+	for (const tool of createTools(process.cwd(), () => pi.getSettings(), nested)) pi.registerTool(tool);
+
+	// Pi calls the handler synchronously inside `emit`, and drops it when this instance goes stale (reload, dispose).
+	// The offer is `createTools` itself: a subagent calls it and gets six fresh tools with a barrier of their own.
+	pi.events.on(SUBAGENT_TOOLS, (request) => (request as { offer?: (factory: typeof createTools) => void })?.offer?.(createTools));
+
+	// grep and find are on only when the user made no tool selection (see `noToolSelection`). Any selection leaves
+	// the active set exactly as stock Pi built it. On `reload` Pi keeps the tools the user switched off during the
+	// session, so the handler leaves the active set alone then.
+	// Pi's built-in `codemode`, when it is loaded, is replaced by the same definition as a call of the barrier. That
+	// runs for every reason, `reload` included: a reload builds a fresh registry with the built-in again.
+	pi.on("session_start", (event) => {
+		if (event.reason !== "reload" && noToolSelection(pi)) {
+			const active = pi.getActiveTools();
+			const missing = ["grep", "find"].filter((name) => !active.includes(name));
+			if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
+		}
+		takeOverBuiltinCodemode(pi, nested);
+	});
+}
+
+/**
+ * The six tools with one barrier: the main session passes its own `nested` barrier (also used for `codemode`); a
+ * subagent session gets a fresh one. `codemode` is not one of the six. `settings` returns the effective settings of
+ * the session whose tools these are.
+ */
+export function createTools(cwd: string, settings: () => any, nested = createNestedBarrier()): ToolDefinition[] {
+	const tools: ToolDefinition[] = [];
 
 	type Run = (id: string, params: any, signal: any, onUpdate: any, ctx: any) => Promise<any>;
 
 	function register(name: string, stock: any, overrides: Record<string, unknown>, run: Run) {
-		pi.registerTool({
+		tools.push({
 			...stock,
 			...overrides,
 			execute(id: string, params: any, signal: any, onUpdate: any, ctx: any) {
@@ -59,13 +101,7 @@ export default function (pi: ExtensionAPI) {
 
 	// Effective settings of the running session (trust decision applied), read per call like stock `_buildRuntime`
 	// does for its own read and bash. No settings, or a failing read, means stock defaults.
-	const sessionSettings = (): any => {
-		try {
-			return pi.getSettings();
-		} catch {
-			return undefined;
-		}
-	};
+	const sessionSettings = (): any => safely(settings);
 	const expandTilde = (p: string) => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 
 	// All six tools are off by default for Pi's own activation. The user's `--tools` / `defaultTools` decide what is
@@ -153,17 +189,5 @@ export default function (pi: ExtensionAPI) {
 		withDefaultLimit(find),
 	);
 
-	// grep and find are on only when the user made no tool selection (see `noToolSelection`). Any selection leaves
-	// the active set exactly as stock Pi built it. On `reload` Pi keeps the tools the user switched off during the
-	// session, so the handler leaves the active set alone then.
-	// Pi's built-in `codemode`, when it is loaded, is replaced by the same definition as a call of the barrier. That
-	// runs for every reason, `reload` included: a reload builds a fresh registry with the built-in again.
-	pi.on("session_start", (event) => {
-		if (event.reason !== "reload" && noToolSelection(pi)) {
-			const active = pi.getActiveTools();
-			const missing = ["grep", "find"].filter((name) => !active.includes(name));
-			if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
-		}
-		takeOverBuiltinCodemode(pi, nested);
-	});
+	return tools;
 }

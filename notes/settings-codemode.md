@@ -93,7 +93,7 @@ The six notes plus the two new descriptions add about 2200 characters (about 550
 RQW-settings loads first, so its `session_start` handler runs first: `codemode` and `tool_search` come before `grep`
 and `find` in the declared tool list (`read, bash, edit, write, codemode, tool_search, grep, find`). Both handlers read
 `pi.getActiveTools()` at call time and call `pi.setActiveTools` with the union, so neither drops what the other added;
-`extensions/RQW-settings/test/settings.test.ts` checks three load orders.
+`test/package.test.ts` checks three load orders.
 
 ## Calls from a script and the barrier
 
@@ -146,7 +146,8 @@ milliseconds to start its worker, reached `write`. The model order said codemode
   a warning on every start: "so built-in extension `codemode` was not loaded" (`core/resource-loader.js:94`).
 - Registering at `session_start` has no such problem: with `-builtin:codemode`, or with the tool excluded, no
   `codemode` is registered, so nothing is taken over and there is no `codemode` at all. Tests: "`-builtin:codemode`
-  leaves no codemode at all" (with all three extensions, and with RQW-tools alone).
+  leaves no codemode at all" (with the whole package in `test/package.test.ts`, with RQW-settings alone in
+  `settings.test.ts`, and with RQW-tools alone in `extensions/RQW-tools/test/codemode.test.ts`).
 - The registry takes the first registration per name: "Get all registered tools from all extensions (first
   registration per name wins)" (`core/extensions/runner.js:410`), in extension load order. Pi loads built-ins last:
   "Built-in extensions load after file and package extensions, whichever scope enables them."
@@ -199,7 +200,7 @@ and Bun 1.4.3:
   group `c0`, a group inside a group, removal when the group ends, a call from a worker's `message` callback lands in
   the group's barrier, and a nested id with no group either runs at once (an ancestor is live in the outer barrier) or
   is ordered in the outer barrier (an ancestor that is not ours).
-- `extensions/RQW-settings/test/settings.test.ts`, "the id Pi gives a script's call leads to its script through Pi's
+- `extensions/RQW-tools/test/codemode.test.ts`, "the id Pi gives a script's call leads to its script through Pi's
   sandbox": a test extension (`test/fixtures/probe.ts`) takes over `codemode` with the production function and
   registers a `probe` tool that reports `nested.groupOf(id)`. Results: a model call of `probe` -> `no-group`; one
   script calling `probe` directly, through a tool that runs `ctx.executeTool` (a nested call of a nested call), and in
@@ -207,8 +208,8 @@ and Bun 1.4.3:
 
 ### Tests of the semantics
 
-`extensions/RQW-settings/test/settings.test.ts`, describe "codemode is one call of the barrier, with scope all like
-bash": `[codemode(write f), read f]` (10 of 10), `[write f 500 KB, codemode(script: bash wc -c f)]` (10 of 10),
+`extensions/RQW-tools/test/codemode.test.ts`, describe "the codemode call is one call of the barrier, with scope all
+like bash": `[codemode(write f), read f]` (10 of 10), `[write f 500 KB, codemode(script: bash wc -c f)]` (10 of 10),
 `[bash sleep 0.3 && echo > g, codemode(read g)]`, `[codemode(bash sleep 0.3 && echo > g), read g]`,
 `[codemode(write f), codemode(read f)]`, `[codemode(read f), write f]` (the script still sees the old content), a nested
 `Promise.all` with a bash before and a read after, and nested calls of nested calls without deadlock. Every run has a
@@ -227,7 +228,7 @@ tests the barrier without Pi (order, scope all, no wait for the group's entry, s
   running or shutting down)". Node does not do this. It is the same with the take-over switched off (review B).
 - The routing relies on Pi's nested id format `<parent id>/<n>` (`core/nested-tool-calls.js:106`). A Pi update that
   changes it sends script calls to the outer barrier, where they wait for their codemode call: the Bun check and the
-  settings tests then fail on their watchdogs. A model call id that has a `/` and starts with the id of a running
+  codemode tests of RQW-tools then fail on their watchdogs. A model call id that has a `/` and starts with the id of a running
   codemode call would be ordered with the calls of that script instead of after it; it would not hang.
 - A script that does not await a nested call keeps its group open until that call ends (see 2 above).
 - Calls of one script are registered in the order the script made them, as long as the awaits between the script's
@@ -246,5 +247,5 @@ through a reload, and the `session_start` handlers of RQW-settings (`codemode`, 
 `find`) used to override it, because the event arrives with `reason: "reload"`. Both handlers now return on `reload` and
 keep the behaviour for `startup`, `new`, `resume` and `fork`. The `codemode` take-over is not an active-set change and
 runs on every reason: a reload builds a fresh registry with the built-in again. Tests: describe "/reload keeps the
-choice of the user" (real `session.reload()`), and the handler tests for all five reasons in `settings.test.ts` and
-`tools.test.ts`.
+choice of the user" in `settings.test.ts` and the `/reload` case of `test/package.test.ts` (real
+`session.reload()`), and the handler tests for all five reasons in `settings.test.ts` and `tools.test.ts`.
