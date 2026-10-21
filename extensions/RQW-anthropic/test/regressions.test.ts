@@ -158,7 +158,7 @@ for (const [label, entry] of entries) describe(`regressions with real Pi: ${labe
 			assert.match(result.errorMessage!, /OAuth Authorization headers.*unsupported/);
 		} finally { session.dispose(); }
 	});
-	it("persists swallowed co-load conflicts per runtime and stops session start, lists and requests in both orders", async () => {
+	it("unsupported co-load keeps native session diagnostics without poisoning another runtime", async () => {
 		const independent = await setup();
 		try {
 			for (const paths of [[extensionPath, competitorPath], [competitorPath, extensionPath]]) {
@@ -169,19 +169,13 @@ for (const [label, entry] of entries) describe(`regressions with real Pi: ${labe
 					assert.ok(session.extensionRunner.getRegisteredCommands().some(command => command.name === "claude-refusal-rewind"));
 					let competingStart = 0;
 					competing.handlers.set("session_start", [() => { competingStart++; }]);
-					await assert.rejects(session.bindExtensions({}), /another Anthropic extension.*keep auth.json/);
-					assert.equal(competingStart, 0, "mixed session handlers must not start");
-					const own = extensionsResult.extensions.find(extension => extension.path === extensionPath)!;
-					for (const handler of own.handlers.get("session_start")!) {
-						assert.throws(() => handler({ type: "session_start", reason: "startup" }, session.extensionRunner.createContext()), /another Anthropic extension/);
-					}
-					for (const list of [() => runtime.getProviders(), () => runtime.getModels(), () => runtime.getAvailableSnapshot(), () => runtime.getAvailable(), () => session.scopedModels]) {
-						assert.throws(list, /another Anthropic extension/);
-					}
-					let calls = 0;
-					const result = await runtime.completeSimple(session.model!, context, { fetch: async () => { calls++; throw new Error("must not send"); } });
-					assert.match(result.errorMessage!, /another Anthropic extension/);
-					assert.equal(calls, 0);
+					const errors: string[] = [];
+					session.extensionRunner.onError(error => errors.push(error.error));
+					await session.bindExtensions({});
+					assert.equal(competingStart, 1, "native Pi does not quarantine competing handlers");
+					assert.deepEqual(errors, paths[0] === extensionPath ? [] : ["RQW-anthropic: subscription authentication failed. Retry the turn; if it persists, use /login anthropic. Saved credentials were not removed. Adapter registration is unavailable."]);
+					assert.ok(runtime.getProviders().length >= 2);
+					assert.ok(runtime.getModels().length > 0);
 					assert.equal(independent.runtime.getProviders().length, 2);
 				} finally { session.dispose(); }
 			}
@@ -189,7 +183,7 @@ for (const [label, entry] of entries) describe(`regressions with real Pi: ${labe
 	});
 	it("SDK dispose cleans both session orders, reload and repeated shutdown without leaking any descriptor or overlay", async () => {
 		const runtimeNames = ["getProviders", "getModels", "getAvailableSnapshot", "getAvailable", "prepareRequest", "registerProvider", "registerNativeProvider"];
-		const sessionNames = ["scopedModels", "dispose", "bindExtensions"];
+		const sessionNames = ["scopedModels", "dispose", "bindExtensions", "_bindExtensionCore"];
 		const snapshot = () => [
 			...runtimeNames.map(name => Object.getOwnPropertyDescriptor(entry.ModelRuntime.prototype, name)),
 			...sessionNames.map(name => Object.getOwnPropertyDescriptor(entry.AgentSession.prototype, name)),

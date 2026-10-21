@@ -5,14 +5,11 @@ import { assertAnthropicAuthBoundary } from "./auth-boundary.ts";
 export const OVERLAY = Symbol.for("rqw-anthropic/overlay");
 export const BIND_STORE = Symbol.for("rqw-anthropic/bind-store");
 const PATCH = Symbol.for("rqw-anthropic/visibility");
-const CONFLICTED = Symbol.for("rqw-anthropic/conflict");
-const VISIBLE_PROVIDERS: Record<string, true> = { anthropic: true, "openai-codex": true };
-const ALLOWED = new Set(Object.keys(VISIBLE_PROVIDERS));
+const ALLOWED = new Set(["anthropic", "openai-codex"]);
 const CONFLICT = "RQW-anthropic: another Anthropic extension is enabled. Disable pi-claude-auth or the other Anthropic adapter in personal/project settings and explicit -e arguments, keep auth.json, then restart Pi.";
-type Registration = { streamSimple?: { [OVERLAY]?: boolean; [BIND_STORE]?: (store: CredentialStore, runtime: ModelRuntime) => void } };
+type Registration = { streamSimple?: { [OVERLAY]?: boolean; [BIND_STORE]?: (store: CredentialStore, runtime: ModelRuntime) => (restore: () => void) => void } };
 type RuntimeView = {
 	credentials?: CredentialStore;
-	[CONFLICTED]?: boolean;
 	getRegisteredProviderConfig(id: string): Registration | undefined;
 	getRegisteredNativeProvider(id: string): unknown;
 };
@@ -20,17 +17,8 @@ type Hook = (this: RuntimeView, ...args: unknown[]) => unknown;
 type Original = [object, string, PropertyDescriptor];
 type PatchState = { count: number; originals: Original[] };
 
-export function assertNoConflict(runtime: object): void {
-	if ((runtime as RuntimeView)[CONFLICTED]) throw new Error(CONFLICT);
-}
-
-export function clearConflict(runtime: object): void {
-	delete (runtime as RuntimeView)[CONFLICTED];
-}
-
 // Pi 1.3.0 exposes the classes but no visibility policy. Never patch stores or credential contents.
 export function installVisibility(Runtime = ModelRuntime, Session = AgentSession): () => void {
-	// Symbol state belongs to Pi's class, so separate extension loader instances share the same owner.
 	const owner = Runtime as unknown as { [PATCH]?: PatchState };
 	let state = owner[PATCH];
 	if (!state) {
@@ -46,17 +34,18 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 		const originals: Original[] = methods.map((name, i) => [runtime, name, descriptors[i]!]);
 		const enabled = (instance: RuntimeView) => instance.getRegisteredProviderConfig("anthropic")?.streamSimple?.[OVERLAY] === true;
 		for (const [target, name, descriptor] of originals) {
-			// These private method shapes were checked above; wrappers pass arguments and receiver unchanged.
 			const original = descriptor.value as Hook;
 			let wrapped: Hook;
 			if (name === "registerProvider" || name === "registerNativeProvider") {
 				wrapped = function(idOrProvider, config) {
 					const id = typeof idOrProvider === "string" ? idOrProvider :
 						idOrProvider && typeof idOrProvider === "object" && "id" in idOrProvider ? idOrProvider.id : undefined;
+					let registered: ((restore: () => void) => void) | undefined;
 					if (id === "anthropic") {
 						const previous = this.getRegisteredProviderConfig(id) ?? this.getRegisteredNativeProvider(id);
 						const own = config && typeof config === "object" && "streamSimple" in config &&
 							(config.streamSimple as Registration["streamSimple"])?.[OVERLAY] === true;
+						if (previous && (enabled(this) || own) && !(enabled(this) && own)) throw new Error(CONFLICT);
 						if (own) {
 							const bind = (config as Registration).streamSimple?.[BIND_STORE];
 							if (bind) {
@@ -64,21 +53,16 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 								if (!store || typeof store.read !== "function" || typeof store.modify !== "function") {
 									throw new Error("RQW-anthropic: Pi 1.3.0 runtime credential bridge is unavailable; adapter not registered");
 								}
-								// Bind even a rejected owner so SDK dispose can release its hooks.
-								bind(store, this as unknown as ModelRuntime);
+								registered = bind(store, this as unknown as ModelRuntime);
 							}
 						}
-						if (previous && (enabled(this) || own) && !(enabled(this) && own)) {
-							this[CONFLICTED] = true;
-							throw new Error(CONFLICT);
-						}
-						assertNoConflict(this);
 					}
-					return original.call(this, idOrProvider, config);
+					const result = original.call(this, idOrProvider, config);
+					registered?.(() => { original.call(this, idOrProvider, config); });
+					return result;
 				};
 			} else if (name === "prepareRequest") {
 				wrapped = async function(...args) {
-					assertNoConflict(this);
 					const prepared = await original.apply(this, args) as {
 						model: Parameters<typeof assertAnthropicAuthBoundary>[0];
 						options: Parameters<typeof assertAnthropicAuthBoundary>[1];
@@ -88,10 +72,8 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 				};
 			} else {
 				wrapped = function(...args) {
-					assertNoConflict(this);
 					const result = original.apply(this, args);
 					if (!enabled(this)) return result;
-					// Each checked accessor returns providers/models or a promise of that list.
 					const filter = (items: readonly { provider?: string; id: string }[]) => items.filter(item => ALLOWED.has(item.provider ?? item.id));
 					return result instanceof Promise ? result.then(filter) : filter(result as Parameters<typeof filter>[0]);
 				};
@@ -100,7 +82,6 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 		}
 		const scopedGetter = scoped.get;
 		Object.defineProperty(session, "scopedModels", { ...scoped, get(this: AgentSession) {
-			assertNoConflict(this.modelRuntime);
 			const result: AgentSession["scopedModels"] = scopedGetter.call(this);
 			return enabled(this.modelRuntime as unknown as RuntimeView) ? result.filter(entry => ALLOWED.has(entry.model.provider)) : result;
 		} });

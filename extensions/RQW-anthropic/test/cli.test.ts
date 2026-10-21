@@ -18,7 +18,7 @@ it("passes a file URL to Node ESM preload, including paths with spaces", () => {
 	assert.equal(fileURLToPath(specifier), path);
 });
 
-it("actual CLI refuses conflicting adapters before --list-models and RPC in both load orders", {
+it("actual CLI keeps native metadata and RPC handling of unsupported adapter conflicts", {
 	skip: entries.some(([label]) => label === "CLI bundle") ? false : "stock CLI bundle cannot import on Bun 1.3.14",
 	timeout: 120_000,
 }, async () => {
@@ -56,9 +56,14 @@ it("actual CLI refuses conflicting adapters before --list-models and RPC in both
 		for (const paths of [[own, competitor], [competitor, own]]) {
 			for (const mode of [["--list-models"], ["--mode", "rpc"]]) {
 				const result = await run(paths, mode);
-				assert.equal(result.code, 1, JSON.stringify({ paths, mode, ...result }));
-				assert.match(result.out + result.err, /another Anthropic extension.*keep auth.json/);
-				assert.ok(!/^provider\s+model/m.test(result.out), "no misleading model table after a conflict");
+				if (mode[0] === "--list-models") {
+					// Stock Pi lists metadata before reporting runtime registration diagnostics.
+					assert.equal(result.code, 0, JSON.stringify({ paths, mode, ...result }));
+					assert.match(result.out, /^provider\s+model/m);
+				} else {
+					assert.equal(result.code, 1, JSON.stringify({ paths, mode, ...result }));
+					assert.match(result.out + result.err, /another Anthropic extension.*keep auth.json/);
+				}
 			}
 		}
 		const healthy = await run([own], ["--list-models"]);

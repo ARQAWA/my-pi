@@ -5,9 +5,10 @@ import type { CredentialStore, OAuthCredential } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { getAgentDir, VERSION, type ExtensionAPI, type ModelRuntime, type ProviderConfig } from "@earendil-works/pi-coding-agent";
 import { LOGIN_HELP, refreshCredential, validateCredential } from "./auth.ts";
-import { installLifecycle } from "./lifecycle.ts";
+import { installLifecycle, SESSION_BIND, type Lifecycle } from "./lifecycle.ts";
+import { installRecoveryHooks } from "./retry.ts";
 import { createOverlay } from "./transport.ts";
-import { assertNoConflict, clearConflict, installVisibility, BIND_STORE } from "./visibility.ts";
+import { installVisibility, BIND_STORE } from "./visibility.ts";
 import { versionState } from "./wire.ts";
 
 export default function anthropic(pi: ExtensionAPI) {
@@ -28,26 +29,30 @@ export default function anthropic(pi: ExtensionAPI) {
 	let cleaned = false;
 	const overlay = createOverlay(base, () => store, deviceId, version);
 	const release = installVisibility();
-	let lifecycle: ReturnType<typeof installLifecycle> | undefined;
+	let releaseRecovery: (() => void) | undefined;
+	let lifecycle: Lifecycle | undefined;
 	function cleanup() {
 		if (cleaned) return;
 		cleaned = true;
-		try {
-			if (runtime?.getRegisteredProviderConfig("anthropic")?.streamSimple === overlay.streamSimple) runtime.unregisterProvider("anthropic");
-		} finally {
-			if (runtime) clearConflict(runtime);
-			lifecycle?.release();
+		try { lifecycle?.release(); }
+		finally {
+			releaseRecovery?.();
 			release();
 			store = undefined;
 			runtime = undefined;
 		}
 	}
 	try {
-		lifecycle = installLifecycle();
+		releaseRecovery = installRecoveryHooks();
+		lifecycle = installLifecycle(cleanup);
+		// Pi 1.3.0's native handler map carries this private exact-session binder.
+		pi.on(SESSION_BIND as "session_start", (event, ctx) => {
+			if (!cleaned) lifecycle!.bindSession(ctx.sessionManager, (event as unknown as { session: object }).session);
+		});
 		Object.assign(overlay.streamSimple, { [BIND_STORE]: (credentials: CredentialStore, boundRuntime: ModelRuntime) => {
 			store = credentials;
 			runtime = boundRuntime;
-			lifecycle!.bind(boundRuntime, cleanup);
+			return lifecycle!.bind(boundRuntime, overlay.streamSimple);
 		} });
 		pi.registerProvider("anthropic", {
 			...overlay,
@@ -79,8 +84,7 @@ export default function anthropic(pi: ExtensionAPI) {
 			},
 		} as ProviderConfig);
 		pi.on("session_start", (_event, ctx) => {
-			if (runtime) assertNoConflict(runtime);
-			if (!store || ctx.modelRegistry.getRegisteredProviderConfig("anthropic")?.streamSimple !== overlay.streamSimple) {
+			if (!store || !runtime || !lifecycle!.isActive(ctx.sessionManager, runtime)) {
 				cleanup();
 				throw new Error(`${LOGIN_HELP} Adapter registration is unavailable.`);
 			}
