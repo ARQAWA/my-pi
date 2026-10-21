@@ -748,6 +748,52 @@ Every accepted decision, with its reason and the file that carries it.
 - Publishing: skill `publish-pcli` (`.agents/skills/publish-pcli/SKILL.md`), `vsce publish --target win32-x64` from
   `pcli-vscode/` under publisher `arqawa`, `version` raised before each publish, only on a direct request.
 
+## Anthropic subscription adapter
+
+- Extension `extensions/RQW-anthropic/`, listed in `package.json`, owns transport, OAuth recovery and visibility.
+  Owner, current branch brief: "Completely isolated self-contained toggleable extension RQW-anthropic; disabling
+  restores Pi defaults". Disable and reload unregisters only its overlay and restores in-memory hooks. No
+  node_modules edits or credential deletion. Toggle and migration: `extensions/RQW-anthropic/README.md`.
+- Owner: "same Claude Code OAuth behavior as omp", "self-healing (refresh/retry recoverable auth failures, no silent
+  broken state)", "/login support". The overlay preserves Pi's catalog/parser, delegates Pi's PKCE browser/copy-code
+  login and uses omp's refresh endpoint/headers, CLI billing block, original system role and exact-body XXH64 checksum.
+  The installed pi-claude-auth's SDK relocation and normalized checksum contradict the reference and are not used.
+  MIT attribution: `THIRD-PARTY-NOTICES.md`. No installed fork code is copied. Pi's delegated login endpoint/callback
+  and parser remain Pi's, not a complete omp port. Subscription acceptance/billing, account rotation and all omp SDK
+  headers are not claimed. Evidence and risks: `notes/anthropic-adapter.md`.
+- Owner: "only our Anthropic and openai-codex visible in login AND model picker, no other providers", "Preserve saved
+  credentials; hide providers, never delete keys". Public unregisterProvider restores builtins instead of hiding them.
+  `visibility.ts` wraps ModelRuntime provider/model listing and AgentSession.scopedModels with a checked,
+  reference-counted reversible shim, only in runtimes with this overlay. It does not erase previously selected models
+  or disable explicit SDK lookups. Disabling restores defaults without restoring stale credential snapshots.
+- `auth.ts` refreshes under Pi's runtime credential-store lock, rechecks the rejected bearer, reuses a concurrent
+  update and persists rotation before replay. One HTTP 401 replay, at most two transient refresh attempts and one
+  explicit newer-version replay; no auth retry for 403/quota, no replay after streaming. Caller abort cancels waiting
+  and inference but not persistence of an already-rotating token. Permanent errors surface /login guidance without
+  upstream token-response bodies. Subscription inference uses the official HTTPS origin only and rejects redirects.
+  No bootstrap identity or startup version probe. `PI_AI_CLAUDE_CODE_VERSION` can pin the CLI version.
+- Owner: "Existing adapter might co-load; avoid duplicate Anthropic registrations during installation, document
+  migration without modifying owner's local config automatically". INSTALL stops at an enabled competing adapter;
+  runtime guards reject conflicting registrations in either order. The owner disables the competing extension
+  manually, keeps its package/credentials and restarts. No automatic local migration.
+- Branch-specific proof/delivery overrides the usual workflow. Owner: "No live model calls, no Anthropic OAuth
+  refresh/login/network probes using real account, no nested agents; mock fetch/local auth fixtures for tests";
+  "Commit on branch, do not push/merge". Tests use fake credentials, mock fetch, file-backed lock fixtures and both
+  Pi library/CLI-bundle entrypoints. No independent subagent review or live billing proof is performed on this branch.
+  Actual Windows/Linux execution remains for CI.
+
+- Follow-up review fixes, owner: "Fix all four concrete independent review findings"; "either fully handle
+  canonical auth-token path or explicitly reject OAuth-header path before any external transport". The adapter
+  rejects subscription Authorization headers before delegation and keeps ordinary API-key gateway behavior
+  (`transport.ts`). Runtime conflicts survive swallowed SDK errors and block startup, lists and requests
+  (`visibility.ts`, `lifecycle.ts`), with manual disable-and-restart migration and no settings edits.
+  Owner: "Idempotent cleanup before invalidation for SDK dispose". Pi 1.3.0 exposes no native SDK shutdown
+  event, so an isolated reversible dispose wrapper releases only this extension, before runner invalidation.
+  Owner: "Track sent version per request, one bounded replay if effective newer version meets rejection even
+  if already adopted". Each request records its sent version, including under concurrency; a pinned
+  `PI_AI_CLAUDE_CODE_VERSION` still forbids adaptation (`wire.ts`, `transport.ts`). License, privacy and
+  delegated Pi parser/login design remain unchanged.
+
 ## Models
 
 - Owner: "independent toggleable model-picker extension matching omp"; "Opus, Sonnet, gpt-6.1-sol, gpt-6-sol,
@@ -870,3 +916,16 @@ Every accepted decision, with its reason and the file that carries it.
   "Commit on branch, no push/merge". Proof uses deterministic snapshots, no-request Pi library/bundle sessions,
   local git fixtures and a PTY smoke run where available. No independent agent review or model run is authorized
   for this task. Windows paths are exercised locally; native Windows execution remains the existing CI job.
+
+## Anthropic package integration
+
+- Owner: "Merge main INTO branch", "Add anthropic#9, preserve8others and all docs";
+  "package tests must use authenticated fake openai-codex/anthropic";
+  "do not weaken isolation predicates/turnsuccess". The manifest keeps the eight main extensions
+  followed by RQW-anthropic. Package fixtures use fake authenticated allowed providers, not a visibility
+  bypass. The dynamic isolation assertions are unchanged. Source order, unauthenticated startup,
+  Opus medium with mock secrets, full-package login visibility and adapter-off stock fallback are
+  covered in `test/anthropic-models.test.ts`. Semantic test changes for independent review and
+  offline proof boundaries: `notes/anthropic-integration.md`.
+- Owner: "No live auth/network or model calls,nestedagents", "commit branch no push/mainmerge".
+  Integration uses only offline tests, commits on `rqw-anthropic`, and leaves main and remotes unchanged.

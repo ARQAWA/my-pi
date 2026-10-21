@@ -38,7 +38,9 @@ const PACKAGE_ON = [...DEFAULT_ON, "agent", "review"].sort();
 let root: string;
 let agentDir: string;
 let counter = 0;
-const faux = fauxProvider();
+const faux = fauxProvider({ provider: "openai-codex" });
+const ORIGINAL_AGENT_DIR = process.env.PI_CODING_AGENT_DIR;
+const ORIGINAL_FETCH = globalThis.fetch;
 let modelRuntime: ModelRuntime;
 
 before(async () => {
@@ -46,11 +48,19 @@ before(async () => {
 	agentDir = join(root, "agent");
 	await mkdir(agentDir, { recursive: true });
 	modelRuntime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	globalThis.fetch = async () => { throw new Error("Unexpected network request in package test"); };
+	faux.provider.auth.apiKey = { name: "Fake package key", resolve: async () => ({ auth: { apiKey: "fake-package-key" } }) };
 	modelRuntime.registerNativeProvider(faux.provider);
+	await modelRuntime.setRuntimeApiKey("openai-codex", "fake-package-key");
+	await modelRuntime.getAvailable();
 });
 
 after(async () => {
 	process.chdir(ORIGINAL_CWD);
+	globalThis.fetch = ORIGINAL_FETCH;
+	if (ORIGINAL_AGENT_DIR === undefined) delete process.env.PI_CODING_AGENT_DIR;
+	else process.env.PI_CODING_AGENT_DIR = ORIGINAL_AGENT_DIR;
 	await rm(root, { recursive: true, force: true });
 });
 
@@ -117,7 +127,11 @@ async function run(o: Options = {}): Promise<Run> {
 			await o.drive?.(session);
 			out.active = session.getActiveToolNames().slice().sort();
 			out.codemode = session.getAllTools().some((tool) => tool.name === "codemode");
-			if (o.prompt) await session.prompt("go");
+			if (o.prompt) {
+				assert.equal(session.model?.provider, faux.provider.id);
+				assert.equal(session.model?.id, faux.getModel().id);
+				await session.prompt("go");
+			}
 		} finally {
 			await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 			session.dispose();

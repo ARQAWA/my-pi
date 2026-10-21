@@ -29,15 +29,21 @@ writeFileSync(join(cwd, "f.txt"), "hello\n");
 const settingsFile = join(agentDir, "settings.json");
 writeFileSync(settingsFile, JSON.stringify({ packages: [entry(off)] }));
 process.chdir(cwd);
+process.env.PI_CODING_AGENT_DIR = agentDir;
+for (const key of Object.keys(process.env)) if (/(?:_API_KEY|_TOKEN|_SECRET)$/.test(key)) delete process.env[key];
+globalThis.fetch = async () => { throw new Error("Unexpected network request in isolation test"); };
 
 // A 1M model, so the session window shows whether RQW-context acts.
-const faux = fauxProvider({ api: "faux-iso", provider: "iso", models: [{ id: "big", contextWindow: 1_000_000, maxTokens: 1000 }] });
+const faux = fauxProvider({ api: "faux-iso", provider: "openai-codex", models: [{ id: "big", contextWindow: 1_000_000, maxTokens: 1000 }] });
 faux.setResponses([
 	fauxAssistantMessage([fauxToolCall("read", { path: "f.txt" }, { id: "c0" })], { stopReason: "toolUse" }),
 	fauxAssistantMessage("done"),
 ]);
 const modelRuntime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
+faux.provider.auth.apiKey = { name: "Fake isolation key", resolve: async () => ({ auth: { apiKey: "fake-isolation-key" } }) };
 modelRuntime.registerNativeProvider(faux.provider);
+await modelRuntime.setRuntimeApiKey("openai-codex", "fake-isolation-key");
+await modelRuntime.getAvailable();
 
 const errors: string[] = [];
 const resourceLoader = new DefaultResourceLoader({
