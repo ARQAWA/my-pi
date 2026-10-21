@@ -32,10 +32,9 @@ Every accepted decision, with its reason and the file that carries it.
   `my-omp-harness` branch `deprecated` (Haiku 5.5 and Sonnet 5.5) and in `my-codex-harness` (gpt-6-sol, gpt-6.1-sol).
 - Active engineering workers, including subagents, use GPT-6.1-Sol low, medium or high; small checks may use GPT-6-Luna, and GPT-6-Sol is also available at a task-appropriate reasoning level. RQW Review finishes on GPT-6.1-Sol low and GPT-6-Sol low. This supersedes the earlier active Sonnet/Opus worker rule (user: «Всё остальное продолжай делать моделями GPT-6-1-sol low, medium, high»; «RKV Review заканчивает на моделях GPT-6-1-Sol-Low и GPT-6-Low»).
 - Claude model probes, benchmarks and tuning are dormant until the owner explicitly resumes them; do not start or continue those runs before then (user: «замеры на Sonnet ... на паузе»; «дам команду, когда их продолжать»). Existing results remain. This pause does not change product reviewer model pins such as Haiku 5.5 and Sonnet 5.5 below.
-- Model probes and benches other than the reviewers' run on Sonnet medium or Sonnet high, Haiku high or xhigh, or the
-  ChatGPT models, not on Opus (user: «Все тесты, которые ты делаешь на cloud-моделях, делай на моделях Sonnet Medium
-  либо Sonnet High, не Opus ... если это не касается ревьюеров ... А ещё можно добавить хайку high или хайку extra
-  high»). bench46 had already run Opus medium; its Sonnet xhigh config was replaced by Sonnet medium.
+- Non-Claude model probes, including the four SYSTEM.md edits, may run on GPT-6 and GPT-6.1 now.
+  Claude probes remain paused until an explicit resume command (user: «Замеры правок System LMD можно тоже
+  проводить на модели GPT-6»). Earlier Sonnet/Haiku probe choices apply only after that command.
 - Reviewers, accepted plan (user: «То, что ты предложил по ревьюерам — it's OK, я принимаю»): own extension
   `RQW-review` on `createAgentSession`, no ready package (pi-subagents: ~98k lines, ~1.3k tokens per request, fails
   strict schemas). One tool `review` with `level` `blind` or `high`; a fresh read-only session per pass with `read`,
