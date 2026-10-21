@@ -924,16 +924,18 @@ Current accepted development policy (request summaries unless quoted); detailed 
   exact canonical ID, then stable provider/ID order. This keeps six entries, not duplicates of each model. A proxy
   variant can be selected only when the preferred provider/ID is unavailable. This extension does not disable any
   provider. A provider-wide restriction remains a separate task.
-- Owner request (C:3113): «мы модель меняем на Option плюс-минус либо Alt плюс-минус. А reasoning меняем на
-  Alt+Shift плюс-минус». The assistant resolved the ambiguous following wording into physical `Alt+=`/`Alt+-`
-  for models and `Alt+Shift+=`/`Alt+Shift+-` for reasoning in C:3123. `registerShortcut` binds those physical keys. `alt++` and `alt+_` also handle the shifted symbols sent by
-  legacy terminals. `alt+shift++` and `alt+shift+_` handle CSI-u reporting the produced symbol while retaining Shift.
+- Owner request: «Смотри, что нужно поправить. У нас сейчас хоткеи Alt+Shift или Option+Shift, плюс-минус — это изменение reasoning, а модель меняется просто на Option плюс-минус. Короче, надо поменять их местами, чтобы reasoning менялся на просто Option плюс-минус, а чтобы модель менялась на Option+Shift плюс-минус. Вот так надо сделать.»
+  Reason: put reasoning on the unshifted shortcuts and model selection on the shifted shortcuts.
+  Carrier: `extensions/RQW-models/index.ts`. `registerShortcut` binds physical `Alt+=`/`Alt+-`
+  for reasoning (plus raises effort, minus lowers it) and `Alt+Shift+=`/`Alt+Shift+-` for models.
+  `alt++` and `alt+_` also change models for shifted symbols sent by legacy terminals.
+  `alt+shift++` and `alt+shift+_` change models for CSI-u reporting the produced symbol while retaining Shift.
   The first match handles a press once, as in Pi's interactive editor. Shortcut actions are serialized so fast
   repeated presses do not race. Each queued action reads the live `model` getter of the latest `session_start`
   event context, not the TUI shortcut snapshot; this includes reasoning queued behind a model switch. The event
   context is refreshed even on resume and reload. Both model and reasoning movement stop at either end, as omp does,
   rather than wrap.
-  `Alt+=` increases model strength (toward Opus); `Alt+-` decreases it (toward Haiku).
+  `Alt+Shift+=` increases model strength (toward Opus); `Alt+Shift+-` decreases it (toward Haiku).
   Engineering entry rule: from outside the list, plus enters at the strongest available model and minus at the
   weakest, so entry follows the stated strength direction. The picker stays strongest first.
 - macOS Option uses the same shortcuts as Alt when the terminal sends it as Meta / an Esc prefix.
@@ -991,7 +993,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   - Limits: Ctrl+P changes nothing but Pi still shows "Only one model available"; Pi prints it for an empty cycle
     result and has no hook, and a fake result would print a false "Switched to". `/scoped-models` lists no model,
     only saved patterns that match nothing, as unavailable rows. After `/login` from no model Pi suggests `/model`;
-    `/rqw-models` or Option/Alt+= select a model. If Pi's internals change and the session cannot be borrowed,
+    `/rqw-models` or Option/Alt+Shift+= select a model. If Pi's internals change and the session cannot be borrowed,
     RQW-models warns and the stock lists stay. Pi mechanisms: [notes/models-omp.md](notes/models-omp.md).
 - Owner request (C:3113): «И базовая модель всегда при запуске — это Opus-Medium. Это от провайдера не зависит».
   CLI precedence and preservation of resumed sessions are engineering choices, not direct owner quotations

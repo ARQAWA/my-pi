@@ -217,15 +217,15 @@ export default function modelsExtension(pi: ExtensionAPI) {
 	});
 	for (const [key, direction] of [["alt+=", 1], ["alt+-", -1]] as const) {
 		pi.registerShortcut(key, {
-			description: direction > 0 ? "RQW: stronger model" : "RQW: weaker model",
-			handler: (ctx) => cycleModel(ctx, direction),
+			description: direction > 0 ? "RQW: increase reasoning" : "RQW: decrease reasoning",
+			handler: () => cycleThinking(direction),
 		});
 	}
 	// Legacy terminals send ESC + '+'/'_', without a separate Shift modifier.
 	for (const [key, direction] of [["alt+shift+=", 1], ["alt+shift+-", -1], ["alt++", 1], ["alt+_", -1], ["alt+shift++", 1], ["alt+shift+_", -1]] as const) {
 		pi.registerShortcut(key, {
-			description: direction > 0 ? "RQW: increase reasoning" : "RQW: decrease reasoning",
-			handler: () => cycleThinking(direction),
+			description: direction > 0 ? "RQW: stronger model" : "RQW: weaker model",
+			handler: (ctx) => cycleModel(ctx, direction),
 		});
 	}
 	pi.registerCommand("rqw-models", {
