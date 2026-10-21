@@ -19,6 +19,7 @@ const { root: PKG, off, reloadOff } = JSON.parse(process.argv[2]) as { root: str
 const entry = (name?: string) => (name ? { source: PKG, extensions: [`-extensions/${name}/index.ts`] } : PKG);
 const folder = (p = "") => /[\\/]extensions[\\/]([^\\/]+)[\\/]/.exec(p)?.[1] ?? p;
 
+const originalCwd = process.cwd();
 const tmp = mkdtempSync(join(tmpdir(), "rqw-isolation-"));
 const agentDir = join(tmp, "agent");
 const cwd = join(tmp, "work");
@@ -63,37 +64,45 @@ const { session } = await createAgentSession({
 	sessionManager: SessionManager.inMemory(cwd),
 	settingsManager: SettingsManager.inMemory({ retry: { enabled: false } }),
 });
-await session.bindExtensions({ mode: "rpc", onError: (e) => errors.push(`${e.event}: ${e.error}`) });
-if (reloadOff) {
-	writeFileSync(settingsFile, JSON.stringify({ packages: [entry(reloadOff)] }));
-	await session.reload();
+let out: unknown;
+try {
+	await session.bindExtensions({ mode: "rpc", onError: (e) => errors.push(`${e.event}: ${e.error}`) });
+	if (reloadOff) {
+		writeFileSync(settingsFile, JSON.stringify({ packages: [entry(reloadOff)] }));
+		await session.reload();
+	}
+	errors.push(...resourceLoader.getExtensions().errors.map((e) => `load ${folder(e.path)}: ${e.error}`));
+
+	const turn: string[] = [];
+	session.subscribe((ev) => {
+		if (ev.type === "tool_execution_end") turn.push(`${ev.toolName}:${ev.isError ? "error" : "ok"}`);
+	});
+	await session.prompt("go");
+	const last = session.messages.at(-1) as { role?: string; stopReason?: string } | undefined;
+
+	out = {
+		loaded: resourceLoader.getExtensions().extensions.map((e) => folder(e.path)).filter((n) => n.startsWith("RQW-")),
+		errors,
+		// Every registered tool with the extension folder that registered it and its description.
+		tools: session.getAllTools().map((t) => ({
+			name: t.name,
+			by: t.sourceInfo.source === "builtin" ? "builtin" : folder(t.sourceInfo.path),
+			description: t.description,
+		})),
+		turn,
+		finished: last?.role === "assistant" && last.stopReason === "stop",
+		// What a fresh SettingsManager and the session model say for a 1M model: Pi's own values unless RQW-context is on.
+		reserveFor1M: SettingsManager.inMemory().getCompactionSettings({ provider: "x", id: "y", contextWindow: 1_000_000 } as never).reserveTokens,
+		sessionWindow: session.model?.contextWindow,
+	};
+} finally {
+	try {
+		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+	} finally {
+		session.dispose();
+		process.chdir(originalCwd);
+		rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+	}
 }
-errors.push(...resourceLoader.getExtensions().errors.map((e) => `load ${folder(e.path)}: ${e.error}`));
-
-const turn: string[] = [];
-session.subscribe((ev) => {
-	if (ev.type === "tool_execution_end") turn.push(`${ev.toolName}:${ev.isError ? "error" : "ok"}`);
-});
-await session.prompt("go");
-const last = session.messages.at(-1) as { role?: string; stopReason?: string } | undefined;
-
-const out = {
-	loaded: resourceLoader.getExtensions().extensions.map((e) => folder(e.path)).filter((n) => n.startsWith("RQW-")),
-	errors,
-	// Every registered tool with the extension folder that registered it and its description.
-	tools: session.getAllTools().map((t) => ({
-		name: t.name,
-		by: t.sourceInfo.source === "builtin" ? "builtin" : folder(t.sourceInfo.path),
-		description: t.description,
-	})),
-	turn,
-	finished: last?.role === "assistant" && last.stopReason === "stop",
-	// What a fresh SettingsManager and the session model say for a 1M model: Pi's own values unless RQW-context is on.
-	reserveFor1M: SettingsManager.inMemory().getCompactionSettings({ provider: "x", id: "y", contextWindow: 1_000_000 } as never).reserveTokens,
-	sessionWindow: session.model?.contextWindow,
-};
-await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
-session.dispose();
-rmSync(tmp, { recursive: true, force: true });
 console.log(JSON.stringify(out));
 process.exit(0);
