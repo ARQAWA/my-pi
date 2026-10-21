@@ -97,20 +97,26 @@ export async function executeEdit(stockExecute: any, id: string, params: any, si
 		}
 	}
 
+	const alreadyAborted = signal?.aborted === true;
 	const settled = await Promise.allSettled(groups.map(runGroup));
 	const ok: string[] = [];
 	const failed: string[] = [];
-	const files: { path: string; ok: boolean; error?: string }[] = [];
+	const files: { path: string; ok: boolean; error?: string; outcome?: "possibly_changed"; details?: unknown }[] = [];
 	for (let i = 0; i < groups.length; i++) {
 		const group = groups[i];
 		const result = settled[i];
 		if (result.status === "fulfilled") {
 			ok.push(`Edited: ${group.path} (${group.edits.length} block(s))`);
-			files.push({ path: group.path, ok: true });
+			files.push({ path: group.path, ok: true, ...(result.value.details !== undefined ? { details: result.value.details } : {}) });
 		} else {
 			const message = await withHint(result.reason, group);
-			failed.push(`Failed: ${group.path}: ${message}`);
-			files.push({ path: group.path, ok: false, error: message });
+			// A stock execute can reject for cancellation after writeFile has committed.
+			// Inspect this rejection, not the shared signal: another file may have failed before any write.
+			const cancelled = !alreadyAborted && (result.reason?.name === "AbortError" || String(result.reason?.message ?? result.reason) === "Operation aborted");
+			failed.push(cancelled
+				? `Possibly changed: ${group.path}: ${message}. Read this file before retrying.`
+				: `Failed: ${group.path}: ${message}`);
+			files.push({ path: group.path, ok: false, error: message, ...(cancelled ? { outcome: "possibly_changed" as const } : {}) });
 		}
 	}
 	return {

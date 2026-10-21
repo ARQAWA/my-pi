@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
+	SettingsManager,
 	createBashToolDefinition,
 	createEditToolDefinition,
 	createFindToolDefinition,
@@ -15,7 +14,7 @@ import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { scopeOf } from "./keys.ts";
 import { createNestedBarrier } from "./nested.ts";
 import { editRenderers, writeRenderers } from "./render.ts";
-import { noToolSelection } from "./selection.ts";
+import { installSelectionIntent, noToolSelection } from "./selection.ts";
 import { createWriteSchema, executeWrite, prepareWriteArguments } from "./write.ts";
 
 const NO_LIMIT = 100000;
@@ -48,6 +47,7 @@ function safely(settings: () => any): any {
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
 
 export default function (pi: ExtensionAPI) {
+	pi.on("session_shutdown", installSelectionIntent());
 	// One barrier per extension instance; every execute registers its scope synchronously before any await. The tool
 	// calls of a `codemode` script use the barrier of that script, found by the tool call id (nested.ts); the
 	// `codemode` call itself is one call with scope "all" in the outer one.
@@ -76,8 +76,8 @@ export default function (pi: ExtensionAPI) {
 	// session, so the handler leaves the active set alone then.
 	// Pi's built-in `codemode`, when it is loaded, is replaced by the same definition as a call of the barrier. That
 	// runs for every reason, `reload` included: a reload builds a fresh registry with the built-in again.
-	pi.on("session_start", (event) => {
-		if (event.reason !== "reload" && noToolSelection(pi)) {
+	pi.on("session_start", (event, ctx) => {
+		if (event.reason !== "reload" && noToolSelection(pi, ctx.sessionManager)) {
 			const active = pi.getActiveTools();
 			const missing = ["grep", "find"].filter((name) => !active.includes(name));
 			if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
@@ -115,7 +115,6 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 	// Effective settings of the running session (trust decision applied), read per call like stock `_buildRuntime`
 	// does for its own read and bash. No settings, or a failing read, means stock defaults.
 	const sessionSettings = (): any => safely(settings);
-	const expandTilde = (p: string) => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 
 	// All six tools are off by default for Pi's own activation. The user's `--tools` / `defaultTools` decide what is
 	// on; the session_start handler below adds grep and find only for the default selection.
@@ -136,7 +135,7 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 	register("bash", bash, { ...notDefault, description: bashText }, (id, params, signal, onUpdate, ctx) => {
 		const s = sessionSettings();
 		const options = s
-			? { commandPrefix: s.shellCommandPrefix, shellPath: s.shellPath ? expandTilde(s.shellPath) : s.shellPath }
+			? { commandPrefix: s.shellCommandPrefix, shellPath: SettingsManager.inMemory({ shellPath: s.shellPath }).getShellPath() }
 			: undefined;
 		const def: any = createBashToolDefinition(ctx?.cwd || process.cwd(), options);
 		return def.execute(id, params, signal, onUpdate, ctx);

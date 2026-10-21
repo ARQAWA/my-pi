@@ -3,15 +3,17 @@
 // as built-ins; here they come as inline factories, which register them the same way). RQW-settings together with the
 // other extensions of the package: test/package.test.ts.
 import assert from "node:assert/strict";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { after, before, describe, it } from "node:test";
+import { after, afterEach, before, describe, it } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import {
-	type AgentSession,
+	AgentSession,
 	createAgentSession,
+	createWriteToolDefinition,
 	createCodemodeExtension,
 	createToolSearchExtension,
 	DefaultResourceLoader,
@@ -26,6 +28,9 @@ const ORIGINAL_CWD = process.cwd();
 // Pi's default active tools, and what RQW-settings adds to them.
 const STOCK_FOUR = ["bash", "edit", "read", "write"];
 const DEFAULT_ON = [...STOCK_FOUR, "codemode", "tool_search"].sort();
+
+const shutdowns: (() => void)[] = [];
+afterEach(() => { for (const release of shutdowns.splice(0).reverse()) release(); });
 
 const live = new Set<AgentSession>();
 let root: string;
@@ -68,6 +73,10 @@ function guard<T>(promise: Promise<T>): Promise<T> {
 }
 
 type Options = {
+	/** Only CLI-specific tests supply flags. SDK options never change argv implicitly. */
+	argv?: string[];
+	/** Characterizes native registration, without either defaults hook. */
+	nativeDefault?: boolean;
 	paths?: string[];
 	builtins?: ("codemode" | "tool_search")[];
 	tools?: string[];
@@ -87,20 +96,16 @@ type Run = {
 	active: string[];
 	/** Active tools right after the session started. */
 	started: string[];
+	/** Public selection state before the session_start defaults hook. */
+	selected: string[];
+	available: string[];
+	settings: unknown;
 	declared: Map<string, string>;
 	outcomes: { id: string; name: string; text: string; isError: boolean }[];
 	errors: string[];
 	/** The registered `codemode`: where it comes from, and its definition (without functions that differ per load). */
 	codemode?: { path: string; source: string; definition: Record<string, unknown> };
 };
-
-// The SDK takes the selection as options; the CLI turns the same selection into flags. The extensions can only see
-// the flags, so a test that passes an option also puts its CLI spelling into argv.
-const flagsOf = (o: Options) => [
-	...(o.tools ? ["--tools", o.tools.join(",")] : []),
-	...(o.excludeTools ? ["--exclude-tools", o.excludeTools.join(",")] : []),
-	...(o.noTools ? ["--no-builtin-tools"] : []),
-];
 
 /** One session; with `calls` it also runs one assistant message holding all of them, then a final text. */
 async function run(o: Options = {}): Promise<Run> {
@@ -109,8 +114,8 @@ async function run(o: Options = {}): Promise<Run> {
 	await o.setup?.(dir);
 	process.chdir(dir); // RQW-tools takes process.cwd() when its factory runs
 	const argv = process.argv;
-	process.argv = [...argv, ...flagsOf(o)];
-	const out: Run = { dir, active: [], started: [], declared: new Map(), outcomes: [], errors: [] };
+	if (o.argv) process.argv = [...argv, ...o.argv];
+	const out: Run = { dir, active: [], started: [], selected: [], available: [], settings: undefined, declared: new Map(), outcomes: [], errors: [] };
 	const settingsFile = join(agentDir, "settings.json");
 	if (o.userSettings) await writeFile(settingsFile, JSON.stringify(o.userSettings));
 	try {
@@ -134,6 +139,10 @@ async function run(o: Options = {}): Promise<Run> {
 			agentDir,
 			additionalExtensionPaths: o.paths ?? [SETTINGS],
 			extensionFactories: [
+				...(o.nativeDefault ? [{
+					name: "native-default-probe",
+					factory: (pi: ExtensionAPI) => pi.registerTool({ ...createWriteToolDefinition(dir), name: "probe", defaultActive: true }),
+				}] : []),
 				...(builtins.includes("codemode")
 					? [{ name: "codemode", factory: createCodemodeExtension(), replaceable: true, builtin: true as const }]
 					: []),
@@ -163,6 +172,9 @@ async function run(o: Options = {}): Promise<Run> {
 		});
 		try {
 			live.add(session);
+			out.selected = session.getActiveToolNames().slice().sort();
+			out.available = session.getAllTools().map((tool) => tool.name).sort();
+			out.settings = session.settingsManager.getSettings();
 			// session_start is emitted here; a handler that throws shows up in `errors`
 			await session.bindExtensions({ onError: (e) => out.errors.push(`${e.event}: ${e.error}`) });
 			out.started = session.getActiveToolNames().slice().sort();
@@ -189,6 +201,7 @@ async function run(o: Options = {}): Promise<Run> {
 			}
 		} finally {
 			live.delete(session);
+			await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 			session.dispose();
 		}
 	} finally {
@@ -230,18 +243,18 @@ describe("settings: codemode and tool_search are on by default", () => {
 	});
 });
 
-describe("settings: any tool selection of the user leaves the stock active set", () => {
+describe("settings: CLI flags and defaultTools leave the stock active set", () => {
 	const rows: [string, Options][] = [
-		["tools -codemode", { tools: ["-codemode"] }],
-		["tools -grep", { tools: ["-grep"] }],
-		["tools +codemode", { tools: ["+codemode"] }],
-		["tools read,bash", { tools: ["read", "bash"] }],
-		["excludeTools codemode", { excludeTools: ["codemode"] }],
-		["excludeTools edit", { excludeTools: ["edit"] }],
+		["tools -codemode", { tools: ["-codemode"], argv: ["--tools", "-codemode"] }],
+		["tools -grep", { tools: ["-grep"], argv: ["--tools", "-grep"] }],
+		["tools +codemode", { tools: ["+codemode"], argv: ["--tools", "+codemode"] }],
+		["tools read,bash", { tools: ["read", "bash"], argv: ["--tools", "read,bash"] }],
+		["excludeTools codemode", { excludeTools: ["codemode"], argv: ["--exclude-tools", "codemode"] }],
+		["excludeTools edit", { excludeTools: ["edit"], argv: ["--exclude-tools", "edit"] }],
 		["defaultTools read,bash", { settings: { defaultTools: ["read", "bash"] } }],
 		["defaultTools +codemode", { settings: { defaultTools: ["+codemode"] } }],
 		["defaultTools -codemode", { settings: { defaultTools: ["-codemode"] } }],
-		["noTools builtin", { noTools: "builtin" }],
+		["noTools builtin", { noTools: "builtin", argv: ["--no-builtin-tools"] }],
 	];
 	for (const [name, options] of rows) {
 		it(`${name}: the active set equals stock Pi without RQW-settings`, async () => {
@@ -251,11 +264,57 @@ describe("settings: any tool selection of the user leaves the stock active set",
 	}
 
 	it("explicit rows are exactly the expected sets", async () => {
-		assert.deepEqual((await run({ tools: ["-codemode"] })).active, ["bash", "edit", "read", "write"]);
+		assert.deepEqual((await run({ tools: ["-codemode"], argv: ["--tools", "-codemode"] })).active, ["bash", "edit", "read", "write"]);
 		assert.deepEqual((await run({ settings: { defaultTools: ["read", "bash"] } })).active, ["bash", "read"]);
-		assert.deepEqual((await run({ noTools: "builtin" })).active, []);
-		assert.deepEqual((await run({ tools: ["+codemode"] })).active, ["bash", "codemode", "edit", "read", "write"]);
-		assert.deepEqual((await run({ excludeTools: ["codemode"] })).active, ["bash", "edit", "read", "write"]);
+		assert.deepEqual((await run({ noTools: "builtin", argv: ["--no-builtin-tools"] })).active, []);
+		assert.deepEqual((await run({ tools: ["+codemode"], argv: ["--tools", "+codemode"] })).active, ["bash", "codemode", "edit", "read", "write"]);
+		assert.deepEqual((await run({ excludeTools: ["codemode"], argv: ["--exclude-tools", "codemode"] })).active, ["bash", "edit", "read", "write"]);
+	});
+});
+
+describe("settings: real SDK selection, without synthetic CLI flags", () => {
+	for (const options of [{ tools: ["read", "bash"] }, { excludeTools: ["codemode", "tool_search"] }, { noTools: "all" as const }]) {
+		it(`SDK registry filtering remains stock: ${JSON.stringify(options)}`, async () => {
+			const argv = [...process.argv];
+			assert.deepEqual((await run(options)).active, (await run({ ...options, paths: [] })).active);
+			assert.deepEqual(process.argv, argv);
+		});
+	}
+
+	for (const options of [
+		{ tools: ["-codemode"] }, { tools: ["-grep"] }, { tools: ["+codemode"] },
+		{ excludeTools: ["edit"] }, { noTools: "builtin" as const },
+	]) {
+		it(`SDK selection must suppress defaults: ${JSON.stringify(options)}`, async () => {
+			const argv = [...process.argv];
+			const stock = await run({ ...options, paths: [] });
+			const extended = await run(options);
+			assert.deepEqual(process.argv, argv);
+			assert.deepEqual(extended.active, stock.active);
+		});
+	}
+
+	it("no-op SDK modifiers and empty exclusions expose the same public selection state as no options", async () => {
+		const baseline = await run();
+		for (const options of [{ tools: ["-codemode", "-grep"] }, { excludeTools: [] }]) {
+			const selected = await run(options);
+			assert.deepEqual(selected.selected, baseline.selected);
+			assert.deepEqual(selected.available, baseline.available);
+			assert.deepEqual(selected.settings, baseline.settings);
+		}
+	});
+
+	it("native defaultActive registration happens after modifiers and noTools builtin, not in the SDK default selection", async () => {
+		for (const options of [{}, { tools: ["-probe"] }, { noTools: "builtin" as const }]) {
+			const native = await run({ ...options, paths: [], nativeDefault: true });
+			assert.ok(native.selected.includes("probe"), "native registration re-enables probe before session_start");
+			assert.deepEqual(native.active, native.selected);
+		}
+		const reloaded = await run({ paths: [], nativeDefault: true, drive: async (session) => {
+			session.setActiveToolsByName(session.getActiveToolNames().filter((name) => name !== "probe"));
+			await session.reload();
+		} });
+		assert.ok(reloaded.active.includes("probe"), "native defaultActive also overrides a user's reload choice");
 	});
 });
 
@@ -293,13 +352,25 @@ describe("settings: the session_start handler acts on every reason but reload", 
 		const handlers = new Map<string, (event: unknown) => unknown>();
 		const set: string[][] = [];
 		const pi: any = {
-			on: (event: string, handler: (event: unknown) => unknown) => handlers.set(event, handler),
+			on: (event: string, handler: (event: unknown) => unknown) => {
+				handlers.set(event, handler);
+				if (event === "session_shutdown") shutdowns.push(handler as () => void);
+			},
 			getActiveTools: () => active,
 			getAllTools: () => registered.map((name) => ({ name })),
 			getSettings: () => ({}),
 			setActiveTools: (names: string[]) => set.push(names),
 		};
-		return { pi, set, fire: (reason: string) => handlers.get("session_start")!({ type: "session_start", reason }) };
+		const manager = {};
+		return { pi, set, fire: async (reason: string) => {
+			await AgentSession.prototype.bindExtensions.call({
+				sessionManager: manager,
+				_usesDefaultTools: true, _defaultToolModifiers: [], _excludedTools: undefined, _allowedTools: undefined,
+				_applyExtensionBindings() {}, _extensionRunner: { async emit() {}, reportUnhandledMcpServers() {} },
+				_sessionStartEvent: { reason }, async extendResourcesFromExtensions() {},
+			} as any, {});
+			return (handlers.get("session_start") as any)({ type: "session_start", reason }, { sessionManager: manager });
+		} };
 	}
 
 	it("RQW-settings adds codemode and tool_search on startup, new, resume and fork, and nothing on reload", async () => {
