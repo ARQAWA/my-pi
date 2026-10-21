@@ -5,7 +5,7 @@ export default function fauxModels(pi: ExtensionAPI) {
 	globalThis.fetch = async () => { throw new Error("Network is forbidden in RQW-models faux CLI tests"); };
 	for (const [provider, ids] of [
 		["anthropic", ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]],
-		["openai-codex", ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-luna"]],
+		["openai-codex", ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-luna", "gpt-6-luna", "gpt-5.3-codex-spark"]],
 	] as const) {
 		const faux = fauxProvider({ provider, models: ids.map((id) => ({ id, reasoning: true })) });
 		for (const model of faux.models) model.thinkingLevelMap = { xhigh: "xhigh", max: "max" };

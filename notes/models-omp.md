@@ -31,9 +31,9 @@ Repository: `~/Documents/ChatGPT/my-omp-harness`, checked-out `master` at
   `~/.omp/agent/models.db` agree (queried read-only); there is no cached
   openai-codex row, so its evidence is the bundled catalog, not live discovery.
 
-RQW-models keeps the owner's six-model list, Alt shortcuts and custom effort lists
-from `DECISIONS.md`, not GPT 5.6, off, provider restrictions or Anthropic payload
-rewrites. Its explicit per-family lists are intersected with Pi support at runtime;
+RQW-models keeps the owner's current family order, temporary GPT 5.6 Luna addition,
+Alt shortcuts and custom effort lists from [DECISIONS.md, Models](../DECISIONS.md#models),
+not off, provider restrictions or Anthropic payload rewrites. Its explicit per-family lists are intersected with Pi support at runtime;
 there is no runtime import from the harness or its catalog.
 
 ## Pi 1.3.0 mechanisms used by the fixes

@@ -2,7 +2,7 @@ import { getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
 import { AgentSession, parseArgs, type ExtensionAPI, type ExtensionContext, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 export const FAMILIES = [
-	"claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "claude-haiku-5-5",
+	"claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna",
 ] as const;
 const ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type Level = typeof ORDER[number];
@@ -13,8 +13,9 @@ const FAMILY_LEVELS: Record<typeof FAMILIES[number], readonly Level[]> = {
 	"claude-sonnet-5-5": ["low", "medium", "high", "xhigh"],
 	"gpt-6.1-sol": ["low", "medium", "high", "xhigh", "max"],
 	"gpt-6-sol": ["low", "medium", "high", "xhigh", "max"],
-	"gpt-6-luna": ["low", "medium", "high", "xhigh", "max"],
 	"claude-haiku-5-5": ["low", "medium", "high", "xhigh", "max"],
+	"gpt-5.6-luna": ["low", "medium", "high", "xhigh", "max"],
+	"gpt-6-luna": ["low", "medium", "high", "xhigh", "max"],
 };
 
 /** Match the same generation, including proxy paths, dated aliases and Bedrock IDs. */
@@ -37,7 +38,7 @@ export function pickerModels(models: ChatModel[]): ChatModel[] {
 	const sorted = models.filter((model) => familyOf(model) >= 0).sort((a, b) => {
 		const family = familyOf(a) - familyOf(b);
 		if (family) return family;
-		const preferred = familyOf(a) === 0 || familyOf(a) === 1 || familyOf(a) === 5 ? "anthropic" : "openai-codex";
+		const preferred = familyOf(a) === 0 || familyOf(a) === 1 || familyOf(a) === 4 ? "anthropic" : "openai-codex";
 		const rank = (model: ChatModel) => Number(model.provider !== preferred) * 2 + Number(model.id !== FAMILIES[familyOf(model)]);
 		return rank(a) - rank(b) || `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`, "en");
 	});
@@ -49,7 +50,7 @@ function nearestLevel(model: ChatModel, current: Level): Level | undefined {
 	return levels.filter((level) => ORDER.indexOf(level) <= ORDER.indexOf(current)).at(-1) ?? levels[0];
 }
 
-/** Any provider variant of the six families may be selected or requested; nothing else. */
+/** Any provider variant of the listed families may be selected or requested; nothing else. */
 export const isListed = (model: { id: string } | undefined) => !!model && familyOf(model as ChatModel) >= 0;
 const name = (model: { provider: string; id: string }) => `${model.provider}/${model.id}`;
 export const notListed = (model: { provider: string; id: string }) =>

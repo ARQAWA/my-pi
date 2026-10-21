@@ -33,7 +33,7 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   footer when off. Elements, evidence and limits:
   `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
-  Only its six listed models can be selected or requested; Pi's stock model lists are empty (rule and limits:
+  Only its listed models can be selected or requested; Pi's stock model lists are empty (rule and limits:
   `DECISIONS.md` section Models). Disable it separately in `pi config`. Tests: `extensions/RQW-models/test/`, `npm test`.
 - `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery.
   Only `anthropic` and `openai-codex` remain visible, credentials stay. Toggle, migration and limits:

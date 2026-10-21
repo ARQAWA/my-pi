@@ -25,7 +25,8 @@ no unrelated packages, settings, credentials or files.
 ## macOS Option shortcuts
 
 For the user, not part of the install. Option plus/minus changes reasoning; Option+Shift plus/minus changes
-models, following the [Models shortcut contract](DECISIONS.md#models). Configure the active terminal profile:
+models, following the [Models shortcut contract and current family order](DECISIONS.md#models), including the
+measurement-only GPT 5.6 Luna addition. Configure the active terminal profile:
 
 - iTerm2: Settings > Profiles > select the profile > Keys; set both Left Option Key and Right Option Key to
   `Esc+` (Esc-prefix mode).

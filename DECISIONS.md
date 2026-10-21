@@ -1068,20 +1068,25 @@ Current accepted development policy (request summaries unless quoted); detailed 
   imports only Pi, and is listed separately in `package.json` under `pi.extensions`. Disable its resource in Pi's
   `pi config`, then `/reload`; it writes no settings and registers no tool. Its only hooks are the instance-level
   masks of the listed-models rule below, removed when it is switched off.
-- Model order in `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`,
-  `claude-haiku-5-5`. `pickerModels` takes Pi's own credential-aware availability, including provider
+- Owner: «Надо подобрать сопостовимую модель на gpt, попробоуй 5.6 luna и более сильные модели типа medium ризонинг 6 и 6.1 sol, на время замеров добавь 5.6 luna в список моделей наших сразу после хайку и вообще хайку надо поставить над всеми в слабых моделях ь.е. порядок должен быть типа haiku 5.5, luna 5.6, luna 6 так как luna 6 слабее 5.6 луны и потом будем думать»
+  Reason: put Haiku above both Luna models and temporarily include GPT 5.6 Luna for the measurements; the
+  decision on keeping that addition is pending. Carrier: `extensions/RQW-models/index.ts` (`FAMILIES` and
+  `FAMILY_LEVELS`). Pi's catalog has `openai-codex/gpt-5.6-luna`; its low, medium, high, xhigh and max efforts
+  are selectable, still intersected with Pi support. This list change does not itself run the measurements.
+- Model order in `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`, `gpt-6.1-sol`, `gpt-6-sol`,
+  `claude-haiku-5-5`, `gpt-5.6-luna`, `gpt-6-luna`. `pickerModels` takes Pi's own credential-aware availability, including provider
   `filterModels` (for example GitHub Copilot's per-account list): the runtime's unmasked
   `getAvailableSnapshot` through its prototype while the listed-models masks (below) are set, otherwise
   `ctx.modelRegistry.getAvailable()`. Absent models, models a provider filters out and providers without
   configured auth are skipped. The picker and the shortcuts resolve no credentials and make no requests; only the
   startup choice waits for Pi's availability pass (below). `familyOf` matches the same
   generation across provider paths, Claude dotted versions, dated aliases and Bedrock IDs. No old Claude generation,
-  GPT 5.6, fast variant or invented model is substituted.
+  unlisted GPT generation, fast variant or invented model is substituted.
 - Engineering decisions for the model request C:3113, elaborated in the coordinator implementation brief C:3274:
   match supported IDs across providers and skip absent auth. Provider visibility is the separate owner request
   C:3171. The preferred providers are `anthropic` for Claude and
   `openai-codex` for GPT. Conservative choice: one available variant per family, preferring that provider and its
-  exact canonical ID, then stable provider/ID order. This keeps six entries, not duplicates of each model. A proxy
+  exact canonical ID, then stable provider/ID order. This keeps one entry per family, not duplicates of each model. A proxy
   variant can be selected only when the preferred provider/ID is unavailable. This extension does not disable any
   provider. A provider-wide restriction remains a separate task.
 - Owner request: «Смотри, что нужно поправить. У нас сейчас хоткеи Alt+Shift или Option+Shift, плюс-минус — это изменение reasoning, а модель меняется просто на Option плюс-минус. Короче, надо поменять их местами, чтобы reasoning менялся на просто Option плюс-минус, а чтобы модель менялась на Option+Shift плюс-минус. Вот так надо сделать.»
@@ -1095,7 +1100,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   event context, not the TUI shortcut snapshot; this includes reasoning queued behind a model switch. The event
   context is refreshed even on resume and reload. Both model and reasoning movement stop at either end, as omp does,
   rather than wrap.
-  `Alt+Shift+=` increases model strength (toward Opus); `Alt+Shift+-` decreases it (toward Haiku).
+  `Alt+Shift+=` increases model strength (toward Opus); `Alt+Shift+-` decreases it (toward the weakest listed family).
   Engineering entry rule: from outside the list, plus enters at the strongest available model and minus at the
   weakest, so entry follows the stated strength direction. The picker stays strongest first.
 - macOS Option uses the same shortcuts as Alt when the terminal sends it as Meta / an Esc prefix.
@@ -1104,7 +1109,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   shortcut sequences instead of Option's special characters; no extension code change is needed.
   Carrier: the existing Alt bindings in `extensions/RQW-models/index.ts`; terminal setup is in
   [INSTALL.md](INSTALL.md#macos-option-shortcuts).
-- `/rqw-models` is the extension's authenticated six-model picker via `ctx.ui.select`. Pi reserves its built-in model
+- `/rqw-models` is the extension's authenticated listed-model picker via `ctx.ui.select`. Pi reserves its built-in model
   shortcuts and disambiguates commands conflicting with built-ins, so RQW-models does not replace them; it empties
   them (next item). Shift+Tab (thinking cycle) and provider definitions stay stock. In print/JSON mode the picker
   has no dialog and does nothing; RPC can supply the standard select dialog.
@@ -1114,7 +1119,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   For the CLI flag `pi --model ...`, a model restored with an old session and a model given to the `agent` tool for
   a subagent, the owner answered «Да, делай» to «a) Закрыть и эти пути. Модель вне списка не выбирается нигде, Pi
   покажет предупреждение.» This supersedes the earlier choice that stock `/model`, Ctrl+L, Ctrl+P, `/scoped-models`
-  and CLI/RPC selection stay intact. Reason: only the six listed models may be selected or used anywhere.
+  and CLI/RPC selection stay intact. Reason: only the listed models may be selected or used anywhere.
   Carrier: `extensions/RQW-models/index.ts`. Listed means any provider variant matched by `familyOf`; nothing else.
   - Stock lists are empty. Pi 1.3.0 gives extensions no session handle, so on every `session_start` RQW-models
     borrows the owning `AgentSession` in one synchronous `ctx.getContextUsage()` call, with
@@ -1124,7 +1129,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
     default-model choices, RPC `get_available_models`/`set_model`/`cycle_model` and Pi's post-login auto-selection
     find no model; `ctx.modelRegistry.getAvailable()` is empty for every extension.
   - Selection outside the list is refused before mutation: the owning session's `setModel` (stock UI, RPC and
-    `pi.setModel` of any extension) rejects with `<provider>/<id> is not in the RQW models list. Allowed: <six IDs>.`
+    `pi.setModel` of any extension) rejects with `<provider>/<id> is not in the RQW models list. Allowed: <listed IDs>.`
     and a warning notification; model, session entries, settings and `model_select` stay unchanged.
   - On every `session_start` a current model outside the list (CLI `--model`/`--models`, a saved default without
     authenticated Opus, a restored or resumed session, or RQW-models enabled by `/reload`) is replaced by the
@@ -1175,7 +1180,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Reason: preserve the harness's custom effort choices, not stock Pi's wider list. Carrier:
   `extensions/RQW-models/index.ts`, explicit `FAMILY_LEVELS` intersected with Pi's
   `getSupportedThinkingLevels(model)`, so no unsupported level is offered. Opus: low, medium, high;
-  Sonnet: low, medium, high, xhigh; GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna and Haiku: low, medium, high, xhigh, max.
+  Sonnet: low, medium, high, xhigh; GPT-6.1 Sol, GPT-6 Sol, both listed Luna models and Haiku:
+  low, medium, high, xhigh, max (GPT 5.6 Luna is the temporary catalog-based addition above).
   The harness's ORDER contains no minimal; off is removed by request. These lists apply to matched families,
   including aliases and proxy providers. A non-reasoning model has no choices. On an extension model switch the
   previous effort is retained if allowed, otherwise the nearest lower allowed level or the lowest. Explicit
@@ -1228,7 +1234,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   A gated faux auth resolver reproduced both snapshot timings: without config the early selection was absent and
   the settled selection was Codex; with config both were `openai-codex/gpt-6.1-sol`, without Anthropic auth.
   No evidence calls for changing RQW production auth selection. The CLI regression asserts the exact fallback
-  model; a saved or explicit `gpt-5.6-luna` outside the list is replaced as the listed-models rule above requires.
+  model; a saved or explicit unlisted model is replaced as the listed-models rule above requires.
   Offline mode and the fetch prohibition remain intact.
   The fixture-fix report records passing model tests on macOS, Node 22.19.0, 24.21.0 and 26.7.0; the full suite passes on
   Node 22.19.0 and 26.7.0 with 387 passed and the existing Windows-only test skipped. Twenty clean-home CLI
