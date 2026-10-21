@@ -68,10 +68,11 @@ export function readSpellings(p: string, cwd: string): string[] {
   ];
 }
 
-export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = process.platform): string | undefined {
+export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = process.platform, alreadyResolved = false): string | undefined {
   try {
     if (typeof p !== "string" || typeof cwd !== "string") return undefined;
-    let k = resolveLexical(p, cwd, platform);
+    // readSpellings already resolved these paths; folding spaces again would erase the AM/PM fallback.
+    let k = alreadyResolved ? p : resolveLexical(p, cwd, platform);
     // A foreign platform name (tests of the string rules) cannot ask the real file system.
     if (platform === process.platform) k = canonical(k, platform === "win32" ? path.win32 : path.posix);
     if (platform === "win32") {
@@ -121,7 +122,7 @@ export function scopeOf(tool: string, args: unknown, cwd: string): Scope {
     // Empty-string paths (strict-mode filler) name no file; with none left the scope is "all".
     if (kind === "mutate") paths = paths.filter((x) => x !== "");
     // pathKey checks the type itself and answers undefined for anything that is not a string.
-    const keys = paths.map((x) => pathKey(x as string, cwd));
+    const keys = paths.map((x) => pathKey(x as string, cwd, process.platform, tool === "read"));
     if (keys.length === 0 || keys.includes(undefined)) return all;
     return { kind, keys: [...new Set(keys as string[])] };
   } catch {
