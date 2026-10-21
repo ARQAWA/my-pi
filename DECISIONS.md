@@ -645,3 +645,30 @@ Every accepted decision, with its reason and the file that carries it.
   left after closing tabs, `/quit` or VS Code itself. Not covered: a real model call and the corporate VDI restrictions.
 - Publishing: skill `publish-pcli` (`.agents/skills/publish-pcli/SKILL.md`), `vsce publish --target win32-x64` from
   `pcli-vscode/` under publisher `arqawa`, `version` raised before each publish, only on a direct request.
+
+## Status bar
+
+- Independent `extensions/RQW-statusbar/`, registered in `package.json` under `pi.extensions`. Owner: "independent
+  toggleable status bar matching his omp elements and placement ONLY; colors explicitly don't matter" and
+  "No coupling to RQW-models or other extension folder imports". The existing predecessor renderer and git helpers
+  are retained and completed. Evidence and exact row contract: `notes/statusbar-omp.md`; do not copy other omp UI.
+- Enabled by default; `/statusbar [on|off]` toggles in the TUI, with the bare command inverting the choice. Off restores
+  the stock footer and disposes polling/subscriptions. The choice is local to the loaded extension, not persisted.
+  Reason: Pi already owns package extension enablement; no parallel settings file is needed. Print, JSON and RPC do
+  no footer work. Model and thinking are read live from Pi, regardless of the source of a change.
+- Context tokens/window come from Pi; the bar measures the effective compaction threshold from Pi's own reserve
+  resolver, including a cap/rule installed independently by RQW-context. It never changes that policy. Unknown
+  post-compaction usage is `?/limit`. Reason: zero would claim a known empty context.
+- Conditional omp data without a stock Pi API is not invented: modes, collaboration, streaming/recording, running
+  agent/job counts and PR metadata. The tokens/second slot uses a local streaming estimate, corrected by billed
+  output at message end, not omp's private smoothed meter. Limits, source citations and test samples live only in
+  `notes/statusbar-omp.md`. Colors are stock Pi semantic colors, without tuning.
+- Branch and counts use the extension's own repository discovery and asynchronous git refresh, not Pi's cached
+  `getGitBranch()`. Owner: "Use extension's own repo discovery/async git refresh to update branch reliably
+  (including replacing repo and branch checkout), not just counts". Reason: Pi caches absent metadata when a session
+  starts outside git and does not rediscover it after init in the same cwd. Carried by `extensions/RQW-statusbar/{git,index}.ts`;
+  real-provider regression and evidence: `notes/statusbar-omp.md`.
+- Task-specific execution: owner requires "no Anthropic or other live model requests, no nested agents" and
+  "Commit on branch, no push/merge". Proof uses deterministic snapshots, no-request Pi library/bundle sessions,
+  local git fixtures and a PTY smoke run where available. No independent agent review or model run is authorized
+  for this task. Windows paths are exercised locally; native Windows execution remains the existing CI job.
