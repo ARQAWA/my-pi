@@ -152,23 +152,63 @@ for (const invalid of [false, true]) {
 }
 
 for (const invalid of [false, true]) {
-  test(`Windows trailing-dot/space aliases share original-file edit validation${invalid ? " before any write" : ""}`, { skip: process.platform !== "win32" }, async (t) => {
+  test(`Windows case aliases share original-file edit validation${invalid ? " before any write" : ""}`, { skip: process.platform !== "win32" }, async (t) => {
     const dir = fresh(t);
     const target = path.join(dir, "right/file.txt");
+    const alias = "right/FILE.TXT";
     fs.writeFileSync(target, "alpha beta\n");
-    const stock = createEditToolDefinition(dir);
+    const a = fs.statSync(target), b = fs.statSync(path.join(dir, alias));
+    assert.equal(a.dev, b.dev); assert.equal(a.ino, b.ino);
+    assert.equal(editPathKey(alias, dir), editPathKey("right/file.txt", dir));
+    let reads = 0, writes = 0;
+    const stock = createEditToolDefinition(dir, { operations: {
+      access: (p) => fsp.access(p),
+      readFile: async (p) => { reads++; return fsp.readFile(p); },
+      writeFile: async (p, content) => { writes++; await fsp.writeFile(p, content); },
+    } });
     const run = () => executeEdit(stock.execute, "e", { edits: [
       { path: "right/file.txt", oldText: "alpha", newText: "ALPHA" },
-      { path: "right/file.txt. ", oldText: invalid ? "absent" : "beta", newText: "BETA" },
+      { path: alias, oldText: invalid ? "absent" : "beta", newText: "BETA" },
     ] }, undefined, undefined, { cwd: dir }, dir);
     if (invalid) await assert.rejects(run(), /edits\[1\]/);
     else await run();
+    assert.equal(reads, 1);
+    assert.equal(writes, invalid ? 0 : 1);
     assert.equal(fs.readFileSync(target, "utf8"), invalid ? "alpha beta\n" : "ALPHA BETA\n");
     let calls = 0;
     await assert.rejects(executeWrite(async () => { calls++; return { content: [] }; }, "w", { files: [
-      { path: "right/file.txt", content: "one" }, { path: "right/file.txt. ", content: "two" },
+      { path: "right/file.txt", content: "one" }, { path: alias, content: "two" },
     ] }, undefined, undefined, { cwd: dir }, dir), /twice/);
     assert.equal(calls, 0);
+  });
+}
+
+for (const suffix of [".", " "]) {
+  test(`Windows trailing ${JSON.stringify(suffix)} edit matches stock native outcome`, { skip: process.platform !== "win32" }, async (t) => {
+    const dir = fresh(t);
+    const target = path.join(dir, "right/file.txt"), alias = "right/file.txt" + suffix;
+    fs.writeFileSync(target, "alpha beta\n");
+    const stock = createEditToolDefinition(dir);
+    let nativeError: unknown;
+    try { await stock.execute("oracle", { path: alias, edits: [{ oldText: "beta", newText: "BETA" }] }); }
+    catch (error) { nativeError = error; }
+    fs.writeFileSync(target, "alpha beta\n");
+    const result = await executeEdit(stock.execute, "e", { edits: [
+      { path: "right/file.txt", oldText: "alpha", newText: "ALPHA" },
+      { path: alias, oldText: "beta", newText: "BETA" },
+    ] }, undefined, undefined, { cwd: dir }, dir);
+    if (!nativeError) {
+      assert.equal(editPathKey(alias, dir), editPathKey("right/file.txt", dir));
+      assert.equal(fs.readFileSync(target, "utf8"), "ALPHA BETA\n");
+      assert.notEqual(result.isError, true);
+    } else {
+      assert.equal(editPathKey(alias, dir), undefined);
+      assert.notEqual(pathKey(alias, dir), pathKey("right/file.txt", dir));
+      assert.equal(fs.readFileSync(target, "utf8"), "ALPHA beta\n");
+      assert.equal(result.isError, true);
+      assert.deepEqual(result.details.files.map((file: any) => [file.path, file.ok]), [["right/file.txt", true], [alias, false]]);
+      assert.ok(result.details.files[1].error.includes((nativeError as Error).message));
+    }
   });
 }
 

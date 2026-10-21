@@ -170,9 +170,7 @@ test("platform-specific real-path behaviour on windows", { skip: platform !== "w
       `${drive.toLowerCase()}:\\${tail.replaceAll("/", "\\")}\\SUB\\File.txt`,
       `/${drive.toLowerCase()}/${tail}/sub/file.txt`,
       `/cygdrive/${drive.toLowerCase()}/${tail}/sub/file.txt`,
-      `${drive}:/${tail}/sub/file.txt.`,
-      `${drive}:/${tail}/sub/file.txt `,
-      `${drive}:/${tail}/sub./file.txt. . `,
+      `/mnt/${drive.toLowerCase()}/${tail}/sub/file.txt`,
     ],
     k("sub/file.txt"),
   );
@@ -183,7 +181,7 @@ test("platform-specific real-path behaviour on windows", { skip: platform !== "w
 });
 
 test("Windows ordinary aliases share native edit/write identities without rewriting stock paths", { skip: platform !== "win32" }, () => {
-  const aliases = ["sub/file.txt", "sub/file.txt.", "sub/file.txt ", "sub./file.txt. . "];
+  const aliases = ["sub/file.txt", "SUB/FILE.TXT", "sub\\file.txt"];
   const identity = fs.statSync(path.join(root, aliases[0]), { bigint: true });
   const edit = editPathKey(aliases[0], root);
   assert.notStrictEqual(edit, undefined);
@@ -197,20 +195,60 @@ test("Windows ordinary aliases share native edit/write identities without rewrit
     assert.strictEqual(keys[i].leaf, keys[0].leaf, alias);
     assert.strictEqual(resolvePath(alias, root), path.resolve(root, alias), "stock spelling stays intact");
   }
-  assert.strictEqual(pathKey("sub./future.txt. ", root), pathKey("sub/future.txt", root));
-  assert.strictEqual(pathKey("sub./future. /child.txt. ", root), pathKey("sub/future/child.txt", root));
 });
 
-test("Windows extended namespace keeps literal trailing dots in native identities", { skip: platform !== "win32" }, () => {
-  const plain = path.toNamespacedPath(path.join(root, "sub/file.txt"));
-  const literal = plain + ".";
+test("Windows trailing-dot/space identities follow native stat, not conservative ordering", { skip: platform !== "win32" }, () => {
+  const plain = "sub/file.txt";
+  const identity = fs.statSync(path.join(root, plain), { bigint: true });
+  for (const alias of ["sub/file.txt.", "sub/file.txt ", "sub./file.txt. . "]) {
+    let native: fs.BigIntStats | undefined;
+    try { native = fs.statSync(path.join(root, alias), { bigint: true }); }
+    catch (error) { assert.match((error as NodeJS.ErrnoException).code ?? "", /^(ENOENT|ENOTDIR)$/); }
+    const same = native?.dev === identity.dev && native?.ino === identity.ino;
+    assert.strictEqual(pathKey(alias, root) === pathKey(plain, root), same, alias);
+    const keys = writePathKeys([plain, alias], root);
+    assert.strictEqual(keys[0].key === keys[1].key, same, alias);
+    if (native) {
+      assert.notStrictEqual(editPathKey(alias, root), undefined, alias);
+      assert.strictEqual(editPathKey(alias, root) === editPathKey(plain, root), same, alias);
+      assert.strictEqual(keys[0].leaf === keys[1].leaf, same, alias);
+    } else {
+      assert.strictEqual(editPathKey(alias, root), undefined, alias);
+      assert.strictEqual(keys[1].leaf, undefined, alias);
+    }
+    assert.strictEqual(k(alias), k(plain), "ordering remains conservative");
+    assert.strictEqual(resolvePath(alias, root), path.resolve(root, alias), "stock spelling stays intact");
+  }
+});
+
+test("Windows extended-created literal trailing dots follow ordinary native identity", { skip: platform !== "win32" }, () => {
+  const plain = path.join(root, "sub/file.txt");
+  const ordinary = plain + ".";
+  const literal = path.toNamespacedPath(ordinary);
   fs.writeFileSync(literal, "literal");
-  const a = fs.statSync(plain, { bigint: true }), b = fs.statSync(literal, { bigint: true });
-  assert.notStrictEqual(a.ino, b.ino, "extended spelling creates a distinct native file");
-  assert.notStrictEqual(pathKey(plain, root), pathKey(literal, root));
-  assert.notStrictEqual(editPathKey(plain, root), editPathKey(literal, root));
-  assert.strictEqual(pathKey("sub/file.txt.", root), pathKey("sub/file.txt", root));
-  fs.unlinkSync(literal);
+  try {
+    const a = fs.statSync(plain, { bigint: true }), b = fs.statSync(literal, { bigint: true });
+    assert.notStrictEqual(a.ino, b.ino, "extended spelling creates a distinct native file");
+    let native: fs.BigIntStats | undefined;
+    try { native = fs.statSync(ordinary, { bigint: true }); }
+    catch (error) { assert.strictEqual((error as NodeJS.ErrnoException).code, "ENOENT"); }
+    assert.notStrictEqual(pathKey(plain, root), undefined);
+    assert.notStrictEqual(pathKey(ordinary, root), pathKey(plain, root));
+    assert.notStrictEqual(editPathKey(ordinary, root), editPathKey(plain, root));
+    const keys = writePathKeys([plain, ordinary], root);
+    assert.notStrictEqual(keys[0].key, keys[1].key);
+    if (native) {
+      assert.strictEqual(native.dev, b.dev);
+      assert.strictEqual(native.ino, b.ino, "Node opens the literal file through the ordinary spelling");
+      assert.notStrictEqual(pathKey(ordinary, root), undefined);
+      assert.notStrictEqual(editPathKey(ordinary, root), undefined);
+      assert.notStrictEqual(keys[1].leaf, undefined);
+      assert.notStrictEqual(keys[0].leaf, keys[1].leaf);
+    } else {
+      assert.strictEqual(editPathKey(ordinary, root), undefined);
+      assert.strictEqual(keys[1].leaf, undefined);
+    }
+  } finally { fs.unlinkSync(literal); }
 });
 
 // ---------------------------------------------------------------- string rules of other platforms

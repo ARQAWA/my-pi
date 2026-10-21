@@ -33,13 +33,6 @@ function canonical(abs: string, P: path.PlatformPath): { key: string; existing?:
   const links = new Set<string>();
   let dangling = false;
   for (let cur = abs; ; ) {
-    // Ordinary Win32 I/O trims these aliases even when realpath metadata does not.
-    // Keep extended/device namespaces and native dot segments intact; stock arguments never change.
-    if (process.platform === "win32" && !/^[/\\]{2}[?.][/\\]/.test(cur)) {
-      const root = P.parse(cur).root;
-      cur = root + cur.slice(root.length).split(/[/\\]/).map((part) =>
-        part === "." || part === ".." ? part : part.replace(/[. ]+$/, "")).join(P.sep);
-    }
     try {
       let existing = fs.realpathSync.native(cur);
       // realpath may drop the extended prefix; retain literal-name semantics for subsequent stats.
