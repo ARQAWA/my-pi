@@ -23,8 +23,10 @@ Every accepted decision, with its reason and the file that carries it.
   createAgentSession»), read only, and are checked on a model with a known-answer set (user: «Конечно, делай
   проверки, расходуй токены»). Their concept and models come from the history first: Spotty and Bossy in
   `my-omp-harness` branch `deprecated` (Haiku 5.5 and Sonnet 5.5) and in `my-codex-harness` (gpt-6-sol, gpt-6.1-sol).
-- All subagents of the work on this repository run on Opus only, at low, medium or high reasoning (user: «всех
-  саб-агентов переводи на Opus low, medium или high ... Sonnets больше не используй, только Opus»).
+- Subagents of the work on this repository run on Sonnet high, Sonnet xhigh, Opus low or Opus medium only, each
+  chosen for its job, neither to save nor to waste limits (user: «модели теперь такие остаются: Sonnet High, Sonnet
+  Extra High, Opus Low, Opus Medium. Только такие саб-агенты, используем максимально их интеллектуально по
+  назначению. Не в целях экономии, но и в целях не излишней растраты»). This replaces the Opus-only rule.
 - Reviewers, accepted plan (user: «То, что ты предложил по ревьюерам — it's OK, я принимаю»): own extension
   `RQW-review` on `createAgentSession`, no ready package (pi-subagents: ~98k lines, ~1.3k tokens per request, fails
   strict schemas). One tool `review` with `level` `blind` or `high`; a fresh read-only session per pass with `read`,
