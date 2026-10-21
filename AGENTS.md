@@ -23,6 +23,8 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
 - `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout. On by default;
   `/statusbar [on|off]` toggles it and restores the stock footer when off. Elements, evidence and limits:
   `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
+- `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
+  Public Pi API only; disable it separately in `pi config`. Tests: `extensions/RQW-models/test/`, `npm test`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.3.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.

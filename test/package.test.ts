@@ -29,6 +29,7 @@ const SETTINGS = join(ROOT, "extensions", "RQW-settings", "index.ts");
 const PROMPT = join(ROOT, "extensions", "RQW-prompt", "index.ts");
 const TOOLS = join(ROOT, "extensions", "RQW-tools", "index.ts");
 const ORIGINAL_CWD = process.cwd();
+const ORIGINAL_ARGV = process.argv;
 
 const OUR_SIX = ["bash", "edit", "find", "grep", "read", "write"];
 const DEFAULT_ON = [...OUR_SIX, "codemode", "tool_search"].sort();
@@ -69,6 +70,8 @@ async function run(o: Options = {}): Promise<Run> {
 	const dir = join(root, `w${counter++}`);
 	await mkdir(dir, { recursive: true });
 	process.chdir(dir); // RQW-tools takes process.cwd() when its factory runs
+	// Keep this faux-model package probe independent of any locally authenticated Opus.
+	process.argv = [...ORIGINAL_ARGV, "--model", `${faux.provider.id}/${faux.getModel().id}`];
 	const settingsFile = join(agentDir, "settings.json");
 	if (o.userSettings) await writeFile(settingsFile, JSON.stringify(o.userSettings));
 	const out: Run = { started: [], active: [], declared: new Map(), errors: [], codemode: false };
@@ -121,6 +124,7 @@ async function run(o: Options = {}): Promise<Run> {
 		}
 	} finally {
 		process.chdir(ORIGINAL_CWD);
+		process.argv = ORIGINAL_ARGV;
 		if (o.userSettings) await rm(settingsFile, { force: true });
 	}
 	return out;

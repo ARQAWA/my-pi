@@ -21,7 +21,8 @@
       "./extensions/RQW-context/index.ts",
       "./extensions/RQW-agent/index.ts",
       "./extensions/RQW-review/index.ts",
-      "./extensions/RQW-statusbar/index.ts"
+      "./extensions/RQW-statusbar/index.ts",
+      "./extensions/RQW-models/index.ts"
     ]
   },
   "devDependencies": {
