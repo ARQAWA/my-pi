@@ -1,0 +1,75 @@
+# RQW-anthropic
+
+Subscription transport for stock Pi 1.3.0. `/login anthropic` still uses Pi's browser or copy-code login.
+The builtin model catalog and Pi's message/tool parser stay intact. Plain API-key requests pass through unchanged.
+Only `anthropic` and `openai-codex` are listed in login and model pickers while the adapter is active.
+Credentials for every other provider remain saved. This is a visibility policy, not a credential access sandbox:
+explicit SDK lookups and previously selected hidden models are not erased or silently switched.
+
+## Before enabling
+
+Do not co-load `pi-claude-auth` or another extension registering Anthropic. Use `pi list` and `pi config` to inspect
+both personal and project scope and any explicit `-e` arguments. Disable the other adapter in `pi config`, or keep
+its package installed with `"extensions": []` in its package entry. Then enable this extension and restart Pi.
+Do not delete auth.json or any provider keys. Your existing `anthropic` OAuth credential is reused; no re-login is
+needed unless the saved grant is invalid. RQW-anthropic rejects conflicting registrations with an explicit error
+in either load order. If it cannot register, its visibility policy is not applied to that runtime.
+
+Nothing here automatically edits your settings, removes a package or performs login. The installation prompt stops
+for a conflict instead of changing the other package for you.
+
+## Disable and restore stock Pi
+
+Use `pi config` to disable only `extensions/RQW-anthropic/index.ts` in my-pi, then `/reload` or restart Pi.
+Equivalent personal package declaration:
+
+```json
+{
+  "source": "git:github.com/ARQAWA/my-pi",
+  "extensions": ["**", "!extensions/RQW-anthropic/index.ts"]
+}
+```
+
+Pi package filters narrow the package's manifest; they do not enable undeclared files. Keep any other filters you
+already have. Disable duplicates in both project and personal scope. A reload unregisters this Anthropic overlay
+and restores the original visibility methods. Credentials, including successfully rotated refresh tokens, stay.
+The local `~/.pi/agent/rqw-anthropic-install-id` is a non-secret random installation id, created with mode 0600.
+It is not a token or an imported Claude Code identity and is inert when the extension is disabled.
+
+## Recovery and security
+
+- Pi proactively refreshes expiring OAuth credentials under its store lock. This extension supplies a refresh
+  handler using `https://api.anthropic.com/v1/oauth/token`, with at most two attempts for transient transport,
+  HTTP 429 or 5xx failures and a 15-second total budget in Pi's refresh path.
+- An inference HTTP 401 gets one forced refresh/reuse of a newer saved bearer and one replay. The authoritative
+  comparison and update run under the same store lock, including across Pi processes. Abort returns promptly;
+  a refresh that already started finishes and persists its rotated token instead of losing it.
+- An explicit `claude_code_version_too_old` HTTP 400 may adopt the newer required version and replay once.
+  The default is `2.1.280`, as in the inspected omp source. `PI_AI_CLAUDE_CODE_VERSION=major.minor.patch` pins it
+  and disables version adoption. No version-discovery network calls happen at startup.
+- HTTP 403 and quota errors do not trigger an auth-refresh loop. Permanent authentication errors tell you to retry
+  or use `/login anthropic`. Saved credentials are not silently deleted or replaced with an environment API key.
+- No retry after stream bytes have been delivered. No automatic fallback to another model, account or billing mode.
+- Subscription requests are restricted to `https://api.anthropic.com`; redirects are rejected. Custom Anthropic
+  gateways with OAuth are deliberately unsupported. API-key requests retain Pi's normal gateway support.
+- Auth failures do not print upstream token-response bodies. There are no credential logs or debug dumps.
+
+## What is and is not equivalent to omp
+
+The CLI billing block, original Claude Code identity, retained system role, first-user fingerprint and exact-body
+XXH64 checksum follow the inspected omp implementation. This is NOT the installed adapter's SDK entrypoint,
+system-to-user relocation or normalized-body checksum. Pi still handles tool conversion, parsing and feature betas.
+The installation/session metadata uses our own stable device id, not a fabricated account uuid.
+
+Pi's own PKCE browser/copy-code flow is delegated unchanged, including its platform.claude.com exchange endpoint
+and callback port. Only refresh uses omp's api.anthropic.com endpoint/headers. Multi-account rotation, bootstrap
+account lookup, all omp SDK fingerprint headers and advanced streaming features are not ported. Real Anthropic
+acceptance and subscription billing have not been verified by offline tests and cannot be promised by this adapter.
+
+Provider hiding needs a version-guarded, reversible in-memory shim of Pi's exported classes because the public
+extension API cannot remove builtin login methods. No node_modules file is patched. The policy is limited to
+runtimes with this marked overlay. It is reference-counted and removed on shutdown/reload, so unrelated SDK
+runtimes and disabling the extension retain stock Pi behavior.
+
+Research, mechanisms and risks: `notes/anthropic-adapter.md`. Attribution: `THIRD-PARTY-NOTICES.md`.
+Tests: `npm test`, using fake credentials and mock fetch only. No live OAuth or model calls.

@@ -12,6 +12,9 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
   descriptions (`descriptions/*.md`), multi-file `edit` and `write`, and the ordered barrier (Pi's `codemode` is one call of it). Tests: `npm test`.
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
   window W = min(contextWindow, 500000) and compacts above W - R, where R = round(W / 10). Tests: `npm test`.
+- `extensions/RQW-anthropic/`: extension 5, Anthropic subscription transport with OAuth recovery.
+  Only `anthropic` and `openai-codex` remain visible, credentials stay. Toggle, migration and limits:
+  `extensions/RQW-anthropic/README.md`; research: `notes/anthropic-adapter.md`. Tests use fake credentials: `npm test`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.3.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.

@@ -18,7 +18,8 @@
       "./extensions/RQW-settings/index.ts",
       "./extensions/RQW-prompt/index.ts",
       "./extensions/RQW-tools/index.ts",
-      "./extensions/RQW-context/index.ts"
+      "./extensions/RQW-context/index.ts",
+      "./extensions/RQW-anthropic/index.ts"
     ]
   },
   "devDependencies": {

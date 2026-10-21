@@ -365,3 +365,37 @@ Every accepted decision, with its reason and the file that carries it.
   left after closing tabs, `/quit` or VS Code itself. Not covered: a real model call and the corporate VDI restrictions.
 - Publishing: skill `publish-pcli` (`.agents/skills/publish-pcli/SKILL.md`), `vsce publish --target win32-x64` from
   `pcli-vscode/` under publisher `arqawa`, `version` raised before each publish, only on a direct request.
+
+## Anthropic subscription adapter
+
+- Extension `extensions/RQW-anthropic/`, listed in `package.json`, owns transport, OAuth recovery and visibility.
+  Owner, current branch brief: "Completely isolated self-contained toggleable extension RQW-anthropic; disabling
+  restores Pi defaults". Disable and reload unregisters only its overlay and restores in-memory hooks. No
+  node_modules edits or credential deletion. Toggle and migration: `extensions/RQW-anthropic/README.md`.
+- Owner: "same Claude Code OAuth behavior as omp", "self-healing (refresh/retry recoverable auth failures, no silent
+  broken state)", "/login support". The overlay preserves Pi's catalog/parser, delegates Pi's PKCE browser/copy-code
+  login and uses omp's refresh endpoint/headers, CLI billing block, original system role and exact-body XXH64 checksum.
+  The installed pi-claude-auth's SDK relocation and normalized checksum contradict the reference and are not used.
+  MIT attribution: `THIRD-PARTY-NOTICES.md`. No installed fork code is copied. Pi's delegated login endpoint/callback
+  and parser remain Pi's, not a complete omp port. Subscription acceptance/billing, account rotation and all omp SDK
+  headers are not claimed. Evidence and risks: `notes/anthropic-adapter.md`.
+- Owner: "only our Anthropic and openai-codex visible in login AND model picker, no other providers", "Preserve saved
+  credentials; hide providers, never delete keys". Public unregisterProvider restores builtins instead of hiding them.
+  `visibility.ts` wraps ModelRuntime provider/model listing and AgentSession.scopedModels with a checked,
+  reference-counted reversible shim, only in runtimes with this overlay. It does not erase previously selected models
+  or disable explicit SDK lookups. Disabling restores defaults without restoring stale credential snapshots.
+- `auth.ts` refreshes under Pi's runtime credential-store lock, rechecks the rejected bearer, reuses a concurrent
+  update and persists rotation before replay. One HTTP 401 replay, at most two transient refresh attempts and one
+  explicit newer-version replay; no auth retry for 403/quota, no replay after streaming. Caller abort cancels waiting
+  and inference but not persistence of an already-rotating token. Permanent errors surface /login guidance without
+  upstream token-response bodies. Subscription inference uses the official HTTPS origin only and rejects redirects.
+  No bootstrap identity or startup version probe. `PI_AI_CLAUDE_CODE_VERSION` can pin the CLI version.
+- Owner: "Existing adapter might co-load; avoid duplicate Anthropic registrations during installation, document
+  migration without modifying owner's local config automatically". INSTALL stops at an enabled competing adapter;
+  runtime guards reject conflicting registrations in either order. The owner disables the competing extension
+  manually, keeps its package/credentials and restarts. No automatic local migration.
+- Branch-specific proof/delivery overrides the usual workflow. Owner: "No live model calls, no Anthropic OAuth
+  refresh/login/network probes using real account, no nested agents; mock fetch/local auth fixtures for tests";
+  "Commit on branch, do not push/merge". Tests use fake credentials, mock fetch, file-backed lock fixtures and both
+  Pi library/CLI-bundle entrypoints. No independent subagent review or live billing proof is performed on this branch.
+  Actual Windows/Linux execution remains for CI.
