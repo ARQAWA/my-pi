@@ -109,5 +109,3 @@ export function billingBody(raw: string, version: string, sessionId: string, dev
 	body.system[0].text = body.system[0].text.replace("cch=00000", `cch=${digest}`);
 	return JSON.stringify(body);
 }
-
-export const isOAuth = (key?: string) => key?.startsWith("sk-ant-oat") === true;

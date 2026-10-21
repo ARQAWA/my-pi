@@ -1,11 +1,13 @@
 import type { CredentialStore } from "@earendil-works/pi-ai";
 import { AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { assertAnthropicAuthBoundary } from "./auth-boundary.ts";
 
 export const OVERLAY = Symbol.for("rqw-anthropic/overlay");
 export const BIND_STORE = Symbol.for("rqw-anthropic/bind-store");
 const PATCH = Symbol.for("rqw-anthropic/visibility");
 const CONFLICTED = Symbol.for("rqw-anthropic/conflict");
-const ALLOWED: Record<string, true | undefined> = { anthropic: true, "openai-codex": true };
+const VISIBLE_PROVIDERS: Record<string, true> = { anthropic: true, "openai-codex": true };
+const ALLOWED = new Set(Object.keys(VISIBLE_PROVIDERS));
 const CONFLICT = "RQW-anthropic: another Anthropic extension is enabled. Disable pi-claude-auth or the other Anthropic adapter in personal/project settings and explicit -e arguments, keep auth.json, then restart Pi.";
 type Registration = { streamSimple?: { [OVERLAY]?: boolean; [BIND_STORE]?: (store: CredentialStore, runtime: ModelRuntime) => void } };
 type RuntimeView = {
@@ -77,7 +79,12 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 			} else if (name === "prepareRequest") {
 				wrapped = async function(...args) {
 					assertNoConflict(this);
-					return original.apply(this, args);
+					const prepared = await original.apply(this, args) as {
+						model: Parameters<typeof assertAnthropicAuthBoundary>[0];
+						options: Parameters<typeof assertAnthropicAuthBoundary>[1];
+					};
+					if (enabled(this)) assertAnthropicAuthBoundary(prepared.model, prepared.options, process.env.ANTHROPIC_CUSTOM_HEADERS);
+					return prepared;
 				};
 			} else {
 				wrapped = function(...args) {
@@ -85,7 +92,7 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 					const result = original.apply(this, args);
 					if (!enabled(this)) return result;
 					// Each checked accessor returns providers/models or a promise of that list.
-					const filter = (items: readonly { provider?: string; id: string }[]) => items.filter(item => ALLOWED[item.provider ?? item.id]);
+					const filter = (items: readonly { provider?: string; id: string }[]) => items.filter(item => ALLOWED.has(item.provider ?? item.id));
 					return result instanceof Promise ? result.then(filter) : filter(result as Parameters<typeof filter>[0]);
 				};
 			}
@@ -95,7 +102,7 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 		Object.defineProperty(session, "scopedModels", { ...scoped, get(this: AgentSession) {
 			assertNoConflict(this.modelRuntime);
 			const result: AgentSession["scopedModels"] = scopedGetter.call(this);
-			return enabled(this.modelRuntime as unknown as RuntimeView) ? result.filter(entry => ALLOWED[entry.model.provider]) : result;
+			return enabled(this.modelRuntime as unknown as RuntimeView) ? result.filter(entry => ALLOWED.has(entry.model.provider)) : result;
 		} });
 		state = { count: 0, originals: [...originals, [session, "scopedModels", scoped]] };
 		owner[PATCH] = state;

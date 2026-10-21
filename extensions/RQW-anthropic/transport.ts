@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { CredentialStore, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { LOGIN_HELP, recoverCredential } from "./auth.ts";
-import { billingBody, isOAuth, versionState, type VersionState } from "./wire.ts";
+import { billingBody, versionState } from "./wire.ts";
+import type { VersionState } from "./wire.ts";
+import { assertAnthropicAuthBoundary } from "./auth-boundary.ts";
 import { OVERLAY } from "./visibility.ts";
 
 /** Retries HTTP rejections only, before any stream bytes can escape to the agent. */
@@ -67,16 +69,7 @@ export function createOverlay(
 		// The Pi composer sends both stream contracts here. Keep explicit API-shaped thinking options.
 		const apiShaped = options && ["thinkingEnabled", "effort", "thinkingBudgetTokens"].some(key => key in options);
 		const delegate = apiShaped ? base.stream.bind(base) : base.streamSimple.bind(base);
-		// Pi resolves ANTHROPIC_AUTH_TOKEN and configured auth into headers, not apiKey.
-		for (const source of [model.headers, options?.headers]) {
-			for (const [name, value] of Object.entries(source ?? {})) {
-				if (name.toLowerCase() === "authorization" && typeof value === "string" &&
-					isOAuth(/^Bearer\s+(\S+)$/i.exec(value.trim())?.[1])) {
-					throw new Error("RQW-anthropic: OAuth Authorization headers, including ANTHROPIC_AUTH_TOKEN, are unsupported. Use /login anthropic or ANTHROPIC_OAUTH_TOKEN; request not sent.");
-				}
-			}
-		}
-		if (!isOAuth(options?.apiKey)) return delegate(model, context, options);
+		if (!assertAnthropicAuthBoundary(model, options, process.env.ANTHROPIC_CUSTOM_HEADERS)) return delegate(model, context, options);
 		const transport = options?.fetch ?? globalThis.fetch;
 		return delegate(model, context, { ...options, maxRetries: 0,
 			fetch: subscriptionFetch(transport, getStore(), version, options?.sessionId ?? randomUUID(), deviceId, options?.signal) });
