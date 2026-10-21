@@ -1,11 +1,13 @@
-// Child process of isolation.test.ts: one Pi session of the package with one extension switched off the way a user does
-// it, a `packages` settings entry with `-extensions/<name>/index.ts`. Prints one JSON line.
-// argv[2]: JSON { root, off?: string, reloadOff?: string }  (reloadOff: start with everything on, then switch it off and /reload)
+// Child process of isolation.test.ts: one Pi session with one extension switched off via package settings.
+// argv[2]: JSON { root, off?, reloadOff?, probeNetwork? }. Prints one JSON line.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
-import {
+import { networkAttempts } from "./no-network.mjs";
+
+// Test loading boundary: static Pi imports could initialize providers before the network guard.
+const { fauxAssistantMessage, fauxProvider, fauxToolCall } = await import("@earendil-works/pi-ai");
+const {
 	createAgentSession,
 	createCodemodeExtension,
 	createToolSearchExtension,
@@ -13,9 +15,19 @@ import {
 	ModelRuntime,
 	SessionManager,
 	SettingsManager,
-} from "@earendil-works/pi-coding-agent";
+} = await import("@earendil-works/pi-coding-agent");
 
-const { root: PKG, off, reloadOff } = JSON.parse(process.argv[2]) as { root: string; off?: string; reloadOff?: string };
+const { root: PKG, off, reloadOff, probeNetwork } = JSON.parse(process.argv[2]) as {
+	root: string; off?: string; reloadOff?: string; probeNetwork?: boolean;
+};
+if (probeNetwork) {
+	// The reserved domain must never reach DNS or a transport, even if the caller catches the error.
+	try { await fetch("https://isolation.invalid/"); } catch {}
+	process.exit(0);
+}
+// An SDK model alone is not explicit CLI intent. Startup otherwise selects authenticated Opus;
+// a previous Bun check actually attempted OpenRouter and received a 404.
+process.argv.push("--model", "iso/big");
 const entry = (name?: string) => (name ? { source: PKG, extensions: [`-extensions/${name}/index.ts`] } : PKG);
 const folder = (p = "") => /[\\/]extensions[\\/]([^\\/]+)[\\/]/.exec(p)?.[1] ?? p;
 
@@ -38,6 +50,10 @@ faux.setResponses([
 ]);
 const modelRuntime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
 modelRuntime.registerNativeProvider(faux.provider);
+// Registration queues an async catalog refresh; settle it before inspecting availability.
+await modelRuntime.refresh({ allowNetwork: false });
+const availableOpus = (await modelRuntime.getAvailable()).filter((model) => /claude-opus-5[.-]5/.test(model.id))
+	.map((model) => `${model.provider}/${model.id}`);
 
 const errors: string[] = [];
 const resourceLoader = new DefaultResourceLoader({
@@ -90,6 +106,9 @@ try {
 			description: t.description,
 		})),
 		turn,
+		selectedModel: `${session.model?.provider}/${session.model?.id}`,
+		availableOpus,
+		networkAttempts,
 		finished: last?.role === "assistant" && last.stopReason === "stop",
 		// What a fresh SettingsManager and the session model say for a 1M model: Pi's own values unless RQW-context is on.
 		reserveFor1M: SettingsManager.inMemory().getCompactionSettings({ provider: "x", id: "y", contextWindow: 1_000_000 } as never).reserveTokens,

@@ -16,14 +16,27 @@ const NAMES: string[] = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf
 	(p: string) => /extensions\/([^/]+)\//.exec(p)![1],
 );
 
+// Deliberately inherit apparently configured providers, not real keys. No owner configuration is changed.
+const POISON = { ANTHROPIC_API_KEY: "isolation-not-a-real-key", OPENROUTER_API_KEY: "isolation-not-a-real-key" };
 type Tool = { name: string; by: string; description: string };
-type Run = { loaded: string[]; errors: string[]; tools: Tool[]; turn: string[]; finished: boolean; reserveFor1M: number; sessionWindow: number };
+type Run = {
+	loaded: string[]; errors: string[]; tools: Tool[]; turn: string[]; finished: boolean;
+	reserveFor1M: number; sessionWindow: number; selectedModel: string; availableOpus: string[]; networkAttempts: string[];
+};
 
 function run(o: { off?: string; reloadOff?: string }): Run {
-	const r = spawnSync(process.execPath, [RUN, JSON.stringify({ root: ROOT, ...o })], { encoding: "utf8", timeout: 120_000 });
+	const r = spawnSync(process.execPath, [RUN, JSON.stringify({ root: ROOT, ...o })], {
+		encoding: "utf8", timeout: 120_000, env: { ...process.env, ...POISON },
+	});
+	assert.ifError(r.error);
+	assert.equal(r.status, 0, `child failed (${r.signal}): ${r.stderr.slice(-2000)}`);
 	const line = r.stdout.split("\n").find((l) => l.startsWith("{"));
-	assert.ok(line, `child failed: ${r.stderr.slice(-2000)}`);
-	return JSON.parse(line);
+	assert.ok(line, `child produced no result: ${r.stderr.slice(-2000)}`);
+	const result: Run = JSON.parse(line);
+	assert.equal(result.selectedModel, "iso/big", "explicit faux model survives startup and reload");
+	assert.ok(result.availableOpus.some((id) => id.startsWith("openrouter/")), "poisoned inherited auth makes real OpenRouter Opus available");
+	assert.deepEqual(result.networkAttempts, [], "no transport was attempted");
+	return result;
 }
 
 function files(dir: string): string[] {
@@ -31,6 +44,16 @@ function files(dir: string): string[] {
 		d.isDirectory() ? (d.name === "node_modules" ? [] : files(join(dir, d.name))) : /\.(m?[jt]s)$/.test(d.name) ? [join(dir, d.name)] : [],
 	);
 }
+
+it("isolation: a swallowed external fetch is blocked and still fails the helper", () => {
+	const r = spawnSync(process.execPath, [RUN, JSON.stringify({ root: ROOT, probeNetwork: true })], {
+		encoding: "utf8", timeout: 120_000, env: { ...process.env, ...POISON },
+	});
+	assert.ifError(r.error);
+	assert.equal(r.status, 1);
+	assert.match(r.stderr, /Isolation network blocked: fetch/);
+	assert.equal(r.stdout, "");
+});
 
 describe("isolation: no extension reaches into another extension's folder", () => {
 	for (const name of NAMES) {
