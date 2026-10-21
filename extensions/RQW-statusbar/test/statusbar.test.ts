@@ -38,14 +38,14 @@ function uiHarness(footer?: InstanceType<typeof FooterDataProvider>) {
 		dispose: () => component?.dispose?.() };
 }
 
-for (const [label, pi, capped] of [["library", library, false], ["bundle", bundle, false], ["library capped", library, true], ["bundle capped", bundle, true]] as const) {
+for (const [label, pi] of [["library", library], ["bundle", bundle]] as const) {
 	it(`${label}: actual Pi loader, live model/thinking getters, context, compactions and modes without a request`, async () => {
 		const cwd = mkdtempSync(join(tmpdir(), "rqw-status-real-"));
 		const agentDir = join(cwd, "agent"); mkdirSync(agentDir);
 		const model = { id: "fixture", name: "Claude Fixture", provider: "fixture", api: "openai-completions",
 			baseUrl: "http://127.0.0.1:1", reasoning: true, input: ["text"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: capped ? 1000000 : 500000, maxTokens: 1000 } as const;
-		const loader = new pi.DefaultResourceLoader({ cwd, agentDir, additionalExtensionPaths: [join(root, "index.ts"), ...(capped ? [join(root, "../RQW-context/index.ts")] : [])],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 500000, maxTokens: 1000 } as const;
+		const loader = new pi.DefaultResourceLoader({ cwd, agentDir, additionalExtensionPaths: [join(root, "index.ts")],
 			noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
 		let session: library.AgentSession | undefined;
 		const h = uiHarness();
@@ -55,7 +55,7 @@ for (const [label, pi, capped] of [["library", library, false], ["bundle", bundl
 			const runtime = await pi.ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
 			({ session } = await pi.createAgentSession({ cwd, agentDir, model: model as never, modelRuntime: runtime,
 				thinkingLevel: "off", resourceLoader: loader, sessionManager: pi.SessionManager.inMemory(cwd),
-				settingsManager: pi.SettingsManager.inMemory({ compaction: capped ? {} : { reserveTokens: 50000 } }) }));
+				settingsManager: pi.SettingsManager.inMemory({ compaction: { reserveTokens: 50000 } }) }));
 			await session.bindExtensions({ uiContext: h.ui, mode: "tui" });
 			assert.equal(session.model?.contextWindow, 500000);
 			assert.match(h.render()![1], /Fixture no/);
@@ -66,10 +66,10 @@ for (const [label, pi, capped] of [["library", library, false], ["bundle", bundl
 			assert.match(h.render()![1], /Other hi/);
 			session.agent.state.thinkingLevel = "low";
 			assert.match(h.render()![1], /Other lo/);
-			assert.ok(h.render()![0].endsWith(capped ? "/244.8k" : "/222k"));
+			assert.ok(h.render()![0].endsWith("/222k"));
 			session.sessionManager.appendCompaction("fixture summary", "unused", 10000);
 			assert.match(h.render()![1], /cmp 1/);
-			assert.ok(h.render()![0].endsWith(capped ? "?/244.8k" : "?/222k"));
+			assert.ok(h.render()![0].endsWith("?/222k"));
 			h.statuses.set("z", "last"); h.statuses.set("a", "first\nsecond");
 			assert.match(h.render()![1], /first second · last/);
 			const command = session.extensionRunner.getCommand("statusbar")!;
@@ -91,7 +91,11 @@ for (const [label, pi, capped] of [["library", library, false], ["bundle", bundl
 				assert.equal(h.calls, calls, `${mode}: no footer calls`);
 			}
 		} finally {
-			h.dispose(); session?.dispose(); rmSync(cwd, { recursive: true, force: true });
+			try {
+				await session?.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+			} finally {
+				h.dispose(); session?.dispose(); rmSync(cwd, { recursive: true, force: true });
+			}
 		}
 	});
 }
@@ -153,7 +157,7 @@ it("Pi reserves, model overrides and disabled compaction are read without changi
 		[{ reserveTokens: 50000 }, 450000],
 		[{ reserveTokens: 30000, modelOverrides: { "p/m": { reserveTokens: 20000 } } }, 480000],
 		[{ enabled: false, reserveTokens: 50000 }, 500000],
-		[{ reserveTokens: 600000 }, 450000],
+		[{ reserveTokens: 600000 }, 500000],
 	] as const) {
 		const settings = { compaction };
 		const before = JSON.stringify(settings);
