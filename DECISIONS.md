@@ -2,6 +2,13 @@
 
 Every accepted decision, with its reason and the file that carries it.
 
+## Work policy
+
+- Engineering work continues on GPT-6.1-Sol at low, medium or high reasoning; small changes may use GPT-6-Luna, and GPT-6-Sol may be selected when its reasoning level fits the task (user: «Всё остальное продолжай делать моделями GPT-6-1-sol low, medium, high ... мелочь ... GPT-6-Luna ... можешь ... GPT-6-sol ... reasoning ... выбери сам»).
+- RQW Review finishing work uses GPT-6.1-Sol low and GPT-6-Sol low (user: «RKV Review заканчивает на моделях GPT-6-1-Sol-Low и GPT-6-Low. Вот на таких моделях»). This does not change the product reviewer pins Haiku 5.5 medium and Sonnet 5.5 recorded below.
+- Claude model benchmarks and tuning are paused until the owner explicitly resumes them; saved results stay in place (user: «задачи ... замеры на Sonnet ... на Cloud ... на паузе ... дам команду»).
+- Carried by `WORKFLOW-MANIFEST.md`; no prompt, model configuration, code or tests change.
+
 ## Scope
 
 - my-pi is built on stock Pi 1.3.0 with its own tools (`read`, `bash`, `edit`, `write`); the interface and the omp-lite
