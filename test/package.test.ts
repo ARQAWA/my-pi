@@ -32,6 +32,7 @@ const ORIGINAL_CWD = process.cwd();
 
 const OUR_SIX = ["bash", "edit", "find", "grep", "read", "write"];
 const DEFAULT_ON = [...OUR_SIX, "codemode", "tool_search"].sort();
+const PACKAGE_ON = [...DEFAULT_ON, "agent"].sort();
 
 let root: string;
 let agentDir: string;
@@ -115,6 +116,7 @@ async function run(o: Options = {}): Promise<Run> {
 			out.codemode = session.getAllTools().some((tool) => tool.name === "codemode");
 			if (o.prompt) await session.prompt("go");
 		} finally {
+			await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 			session.dispose();
 		}
 	} finally {
@@ -125,9 +127,9 @@ async function run(o: Options = {}): Promise<Run> {
 }
 
 describe("package: RQW-settings and RQW-tools on one active tool set", () => {
-	it("the whole package gives our six tools plus codemode and tool_search", async () => {
+	it("the whole package gives our six tools plus agent, codemode and tool_search", async () => {
 		const r = await run();
-		assert.deepEqual(r.active, DEFAULT_ON);
+		assert.deepEqual(r.active, PACKAGE_ON);
 		assert.deepEqual(r.errors, []);
 	});
 
@@ -139,7 +141,7 @@ describe("package: RQW-settings and RQW-tools on one active tool set", () => {
 
 	it("the model request declares both tools and every one of our six ends with the codemode note", async () => {
 		const r = await run({ prompt: true });
-		assert.deepEqual([...r.declared.keys()].sort(), DEFAULT_ON);
+		assert.deepEqual([...r.declared.keys()].sort(), PACKAGE_ON);
 		for (const name of OUR_SIX) {
 			assert.match(r.declared.get(name)!, new RegExp(`\\n\\nCodemode: \`tools\\.${name}\\(args\\)\` resolves to `), name);
 		}
@@ -150,7 +152,7 @@ describe("package: RQW-settings and RQW-tools on one active tool set", () => {
 	it("`-builtin:codemode` leaves no codemode at all", async () => {
 		const r = await run({ userSettings: { extensions: ["-builtin:codemode"] } });
 		assert.equal(r.codemode, false, "no codemode tool is registered");
-		assert.deepEqual(r.active, [...OUR_SIX, "tool_search"].sort());
+		assert.deepEqual(r.active, [...OUR_SIX, "agent", "tool_search"].sort());
 		assert.deepEqual(r.errors, []);
 	});
 
@@ -162,8 +164,8 @@ describe("package: RQW-settings and RQW-tools on one active tool set", () => {
 				await session.reload();
 			},
 		});
-		assert.deepEqual(r.started, DEFAULT_ON);
-		assert.deepEqual(r.active, ["bash", "edit", "read", "write"]);
+		assert.deepEqual(r.started, PACKAGE_ON);
+		assert.deepEqual(r.active, ["agent", "bash", "edit", "read", "write"]);
 		assert.deepEqual(r.errors, []);
 	});
 });
