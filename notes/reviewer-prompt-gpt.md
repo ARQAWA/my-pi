@@ -2,6 +2,8 @@
 
 Carrier: `extensions/RQW-review/REVIEWER.md`, copied byte-for-byte from `~/stock-bench/review-bench/prompts/gpt-final.md` (SHA256 `a9cc1a3fac50fe32b6911e5bb8bf152caecad9947e2d36d162696eed5db3117a`). Baseline was the production prompt (SHA256 `4ff692b9440a0ae85098200c379a55bd3530885777ea719fa62a9a6886308227`). Source report: `/tmp/reviewer-prompt-gpt-report.md`; raw and scored results: `~/stock-bench/review-bench/gpt/`. These are read-only sources, not bundled with the product.
 
+The candidate SHA256 covers the full UTF-8 source with canonical LF line endings, including its final newline. The production loader converts CRLF to LF before trimming the prompt end, so existing Windows checkouts use the same measured content. The exact hash check normalizes only CRLF and does not trim the source.
+
 ## Criterion coverage
 
 | Criterion or situation | Final reviewer rule | Boundary |

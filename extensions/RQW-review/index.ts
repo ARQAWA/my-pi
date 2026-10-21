@@ -33,7 +33,7 @@ export const REVIEWER_TOOLS = ["read", "grep", "find"];
 export const TIMEOUT_MS = 10 * 60 * 1000;
 export const MESSAGE_TYPE = "review";
 
-export const REVIEWER = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "REVIEWER.md"), "utf8").trimEnd();
+export const REVIEWER = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "REVIEWER.md"), "utf8").replace(/\r\n/g, "\n").trimEnd();
 
 export const DESCRIPTION =
 	"Blind review by a separate read-only model that works with you as one team for the user's agreement: " +
