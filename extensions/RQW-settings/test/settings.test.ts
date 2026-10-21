@@ -7,11 +7,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { after, before, describe, it } from "node:test";
+import { after, afterEach, before, describe, it } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import {
-	type AgentSession,
+	AgentSession,
 	createAgentSession,
 	createWriteToolDefinition,
 	createCodemodeExtension,
@@ -28,6 +28,9 @@ const ORIGINAL_CWD = process.cwd();
 // Pi's default active tools, and what RQW-settings adds to them.
 const STOCK_FOUR = ["bash", "edit", "read", "write"];
 const DEFAULT_ON = [...STOCK_FOUR, "codemode", "tool_search"].sort();
+
+const shutdowns: (() => void)[] = [];
+afterEach(() => { for (const release of shutdowns.splice(0).reverse()) release(); });
 
 const live = new Set<AgentSession>();
 let root: string;
@@ -198,6 +201,7 @@ async function run(o: Options = {}): Promise<Run> {
 			}
 		} finally {
 			live.delete(session);
+			await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 			session.dispose();
 		}
 	} finally {
@@ -281,14 +285,13 @@ describe("settings: real SDK selection, without synthetic CLI flags", () => {
 		{ tools: ["-codemode"] }, { tools: ["-grep"] }, { tools: ["+codemode"] },
 		{ excludeTools: ["edit"] }, { noTools: "builtin" as const },
 	]) {
-		it(`SDK selection must suppress defaults: ${JSON.stringify(options)}`,
-			{ todo: "Pi 1.3.0 exposes no explicit SDK selection to ExtensionAPI; requires upstream selection API" }, async () => {
-				const argv = [...process.argv];
-				const stock = await run({ ...options, paths: [] });
-				const extended = await run(options);
-				assert.deepEqual(process.argv, argv);
-				assert.deepEqual(extended.active, stock.active);
-			});
+		it(`SDK selection must suppress defaults: ${JSON.stringify(options)}`, async () => {
+			const argv = [...process.argv];
+			const stock = await run({ ...options, paths: [] });
+			const extended = await run(options);
+			assert.deepEqual(process.argv, argv);
+			assert.deepEqual(extended.active, stock.active);
+		});
 	}
 
 	it("no-op SDK modifiers and empty exclusions expose the same public selection state as no options", async () => {
@@ -349,13 +352,25 @@ describe("settings: the session_start handler acts on every reason but reload", 
 		const handlers = new Map<string, (event: unknown) => unknown>();
 		const set: string[][] = [];
 		const pi: any = {
-			on: (event: string, handler: (event: unknown) => unknown) => handlers.set(event, handler),
+			on: (event: string, handler: (event: unknown) => unknown) => {
+				handlers.set(event, handler);
+				if (event === "session_shutdown") shutdowns.push(handler as () => void);
+			},
 			getActiveTools: () => active,
 			getAllTools: () => registered.map((name) => ({ name })),
 			getSettings: () => ({}),
 			setActiveTools: (names: string[]) => set.push(names),
 		};
-		return { pi, set, fire: (reason: string) => handlers.get("session_start")!({ type: "session_start", reason }) };
+		const manager = {};
+		return { pi, set, fire: async (reason: string) => {
+			await AgentSession.prototype.bindExtensions.call({
+				sessionManager: manager,
+				_usesDefaultTools: true, _defaultToolModifiers: [], _excludedTools: undefined, _allowedTools: undefined,
+				_applyExtensionBindings() {}, _extensionRunner: { async emit() {}, reportUnhandledMcpServers() {} },
+				_sessionStartEvent: { reason }, async extendResourcesFromExtensions() {},
+			} as any, {});
+			return (handlers.get("session_start") as any)({ type: "session_start", reason }, { sessionManager: manager });
+		} };
 	}
 
 	it("RQW-settings adds codemode and tool_search on startup, new, resume and fork, and nothing on reload", async () => {

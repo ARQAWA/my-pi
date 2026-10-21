@@ -14,7 +14,7 @@ import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { scopeOf } from "./keys.ts";
 import { createNestedBarrier } from "./nested.ts";
 import { editRenderers, writeRenderers } from "./render.ts";
-import { noToolSelection } from "./selection.ts";
+import { installSelectionIntent, noToolSelection } from "./selection.ts";
 import { createWriteSchema, executeWrite, prepareWriteArguments } from "./write.ts";
 
 const NO_LIMIT = 100000;
@@ -47,6 +47,7 @@ function safely(settings: () => any): any {
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
 
 export default function (pi: ExtensionAPI) {
+	pi.on("session_shutdown", installSelectionIntent());
 	// One barrier per extension instance; every execute registers its scope synchronously before any await. The tool
 	// calls of a `codemode` script use the barrier of that script, found by the tool call id (nested.ts); the
 	// `codemode` call itself is one call with scope "all" in the outer one.
@@ -75,8 +76,8 @@ export default function (pi: ExtensionAPI) {
 	// session, so the handler leaves the active set alone then.
 	// Pi's built-in `codemode`, when it is loaded, is replaced by the same definition as a call of the barrier. That
 	// runs for every reason, `reload` included: a reload builds a fresh registry with the built-in again.
-	pi.on("session_start", (event) => {
-		if (event.reason !== "reload" && noToolSelection(pi)) {
+	pi.on("session_start", (event, ctx) => {
+		if (event.reason !== "reload" && noToolSelection(pi, ctx.sessionManager)) {
 			const active = pi.getActiveTools();
 			const missing = ["grep", "find"].filter((name) => !active.includes(name));
 			if (missing.length > 0) pi.setActiveTools([...active, ...missing]);

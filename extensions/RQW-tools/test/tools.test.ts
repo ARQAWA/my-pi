@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, before, describe, it } from "node:test";
+import { after, afterEach, before, describe, it } from "node:test";
 import {
+	AgentSession,
 	createEditToolDefinition,
 	createFindToolDefinition,
 	createGrepToolDefinition,
@@ -21,10 +22,14 @@ type Fake = {
 	channels: Record<string, (data: unknown) => void>;
 	active: string[];
 	setCalls: string[][];
+	ctx: { sessionManager: object };
 };
 
+const shutdowns: (() => void)[] = [];
+afterEach(() => { for (const release of shutdowns.splice(0).reverse()) release(); });
+
 function load(active: string[] = [], settings: Record<string, unknown> | "throws" = {}, registered: string[] = []): Fake {
-	const fake: Fake = { tools: {}, handlers: {}, channels: {}, active, setCalls: [] };
+	const fake: Fake = { tools: {}, handlers: {}, channels: {}, active, setCalls: [], ctx: { sessionManager: {} } };
 	(factory as any)({
 		events: {
 			on: (channel: string, handler: (data: unknown) => void) => {
@@ -49,6 +54,14 @@ function load(active: string[] = [], settings: Record<string, unknown> | "throws
 			fake.setCalls.push(names);
 		},
 	});
+	shutdowns.push(fake.handlers.session_shutdown);
+	// Minimal native bind target: the wrapper must capture intent before the mocked session_start.
+	void AgentSession.prototype.bindExtensions.call({
+		sessionManager: fake.ctx.sessionManager,
+		_usesDefaultTools: true, _defaultToolModifiers: [], _excludedTools: undefined, _allowedTools: undefined,
+		_applyExtensionBindings() {}, _extensionRunner: { async emit() {}, reportUnhandledMcpServers() {} },
+		_sessionStartEvent: { reason: "startup" }, async extendResourcesFromExtensions() {},
+	} as any, {});
 	return fake;
 }
 
@@ -111,21 +124,21 @@ describe("registration", () => {
 	it("session_start adds grep and find on every reason but reload, only when the user made no tool selection", () => {
 		for (const reason of ["startup", "new", "resume", "fork"]) {
 			const fake = load(["read", "bash", "edit", "write"]);
-			fake.handlers.session_start({ reason }, {});
+			fake.handlers.session_start({ reason }, fake.ctx);
 			assert.deepEqual(fake.setCalls, [["read", "bash", "edit", "write", "grep", "find"]], reason);
 		}
 		// Pi keeps the active set through a reload, tools the user switched off included
 		const reloaded = load(["read", "bash", "edit", "write"]);
-		reloaded.handlers.session_start({ reason: "reload" }, {});
+		reloaded.handlers.session_start({ reason: "reload" }, reloaded.ctx);
 		assert.deepEqual(reloaded.setCalls, [], "reload");
 		const full = load(["read", "grep", "find"]);
-		full.handlers.session_start({ reason: "resume" }, {});
+		full.handlers.session_start({ reason: "resume" }, full.ctx);
 		assert.deepEqual(full.setCalls, []);
 		const withSetting = load(["read", "bash"], { defaultTools: ["read", "bash"] });
-		withSetting.handlers.session_start({ reason: "startup" }, {});
+		withSetting.handlers.session_start({ reason: "startup" }, withSetting.ctx);
 		assert.deepEqual(withSetting.setCalls, [], "defaultTools set");
 		const noSettings = load(["read"], "throws");
-		noSettings.handlers.session_start({ reason: "startup" }, {});
+		noSettings.handlers.session_start({ reason: "startup" }, noSettings.ctx);
 		assert.deepEqual(noSettings.setCalls, [], "no settings: stock set stays");
 		const argv = process.argv;
 		try {
@@ -133,7 +146,7 @@ describe("registration", () => {
 				for (const args of [[flag, "read"], [`${flag}=read`]]) {
 					process.argv = [...argv, ...args];
 					const fake = load(["read"]);
-					fake.handlers.session_start({ reason: "startup" }, {});
+					fake.handlers.session_start({ reason: "startup" }, fake.ctx);
 					assert.deepEqual(fake.setCalls, [], args.join(" "));
 				}
 			}
@@ -158,13 +171,13 @@ describe("registration", () => {
 	it("session_start replaces a registered built-in codemode on every reason, reload included, and nothing else", () => {
 		for (const reason of ["startup", "new", "resume", "fork", "reload"]) {
 			const fake = load(["read"], {}, ["codemode"]);
-			fake.handlers.session_start({ reason }, {});
+			fake.handlers.session_start({ reason }, fake.ctx);
 			assert.equal(typeof fake.tools.codemode?.execute, "function", reason);
 			assert.equal(fake.tools.codemode.name, "codemode");
 		}
 		for (const registered of [[], ["tool_search"]]) {
 			const fake = load(["read"], {}, registered);
-			fake.handlers.session_start({ reason: "startup" }, {});
+			fake.handlers.session_start({ reason: "startup" }, fake.ctx);
 			assert.equal(fake.tools.codemode, undefined, `registered: ${registered.join(",") || "nothing"}`);
 		}
 	});

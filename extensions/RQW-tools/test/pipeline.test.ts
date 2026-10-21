@@ -151,6 +151,7 @@ async function runBatch(
 		await session.prompt("go");
 		run.finished = true;
 	} finally {
+		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 		session.dispose();
 		process.chdir(ORIGINAL_CWD);
 	}
@@ -203,6 +204,7 @@ async function activeToolsFor(
 			await session.bindExtensions({});
 			return session.getActiveToolNames().slice().sort();
 		} finally {
+			await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 			session.dispose();
 		}
 	} finally {
@@ -255,14 +257,13 @@ describe("pipeline: real SDK selection, without synthetic CLI flags", () => {
 		{ tools: ["-grep"] }, { tools: ["+grep", "-find"] }, { tools: ["-edit"] },
 		{ excludeTools: ["edit"] }, { noTools: "builtin" as const },
 	]) {
-		it(`SDK selection must suppress grep/find defaults: ${JSON.stringify(options)}`,
-			{ todo: "Pi 1.3.0 exposes no explicit SDK selection to ExtensionAPI; requires upstream selection API" }, async () => {
-				const argv = [...process.argv];
-				const stock = await activeToolsFor(options, {}, false);
-				const extended = await activeToolsFor(options);
-				assert.deepEqual(process.argv, argv);
-				assert.deepEqual(extended, stock);
-			});
+		it(`SDK selection must suppress grep/find defaults: ${JSON.stringify(options)}`, async () => {
+			const argv = [...process.argv];
+			const stock = await activeToolsFor(options, {}, false);
+			const extended = await activeToolsFor(options);
+			assert.deepEqual(process.argv, argv);
+			assert.deepEqual(extended, stock);
+		});
 	}
 });
 
