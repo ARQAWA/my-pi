@@ -231,6 +231,44 @@ async function openSession(pi: Pi, open: Open = {}): Promise<{ session: AgentSes
 	return { session, runtime };
 }
 
+/** SDK dispose only disconnects listeners; emit the lifecycle event before disposing, as Pi does. */
+async function shutdown(session: AgentSession): Promise<void> {
+	try {
+		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+	} finally {
+		session.dispose();
+	}
+}
+
+/** A settings-backed package owner, independently switchable without changing another SDK session. */
+async function openOwner(pi: Pi) {
+	const cwd = await freshDir();
+	const ownAgentDir = join(cwd, "agent");
+	await mkdir(ownAgentDir);
+	const settingsFile = join(ownAgentDir, "settings.json");
+	const select = (on: boolean) => writeFile(settingsFile, JSON.stringify({ packages: [{
+		source: join(dirname(EXTENSION), "..", ".."),
+		extensions: on ? ["extensions/RQW-context/index.ts"] : [],
+	}] }));
+	await select(true);
+	const runtime = await modelRuntime(pi);
+	const resourceLoader = new pi.DefaultResourceLoader({ cwd, agentDir: ownAgentDir, ...NO_RESOURCES });
+	await resourceLoader.reload();
+	assert.deepEqual(resourceLoader.getExtensions().errors, []);
+	const { session } = await pi.createAgentSession({
+		cwd,
+		agentDir: ownAgentDir,
+		model: runtime.getModel("rqw", "w1m")!,
+		thinkingLevel: "off",
+		modelRuntime: runtime,
+		resourceLoader,
+		sessionManager: pi.SessionManager.inMemory(cwd),
+		settingsManager: pi.SettingsManager.inMemory({ retry: { enabled: false } }),
+	});
+	await session.bindExtensions({});
+	return { session, select, loaded: () => resourceLoader.getExtensions().extensions.map((e) => e.path) };
+}
+
 type CompactionEvents = { starts: string[]; ends: Extract<AgentSessionEvent, { type: "compaction_end" }>[] };
 
 /** One prompt; returns the compactions Pi started and ended during it. */
@@ -274,7 +312,7 @@ async function assertFlipsAt(pi: Pi, model: string, threshold: number, open: Ope
 			assert.equal(piValues(session).threshold, threshold, "Pi's contextWindow - reserveTokens");
 			assert.deepEqual(await answerWith(session, threshold), [], `no compaction at ${threshold}`);
 		} finally {
-			session.dispose();
+			await shutdown(session);
 		}
 	}
 	const { session } = await openSession(pi, { ...open, model });
@@ -286,7 +324,7 @@ async function assertFlipsAt(pi: Pi, model: string, threshold: number, open: Ope
 		const summaryLimits = requests.slice(1).map((r) => r.maxTokens);
 		return { summaryLimits, windows: requests.map((r) => r.contextWindow), session: piValues(session) };
 	} finally {
-		session.dispose();
+		await shutdown(session);
 	}
 }
 
@@ -316,7 +354,7 @@ async function endpointBodies(pi: Pi, withExtension: boolean) {
 		assert.equal(endpoint.state.bodies.length, 2);
 		return endpoint.state.bodies;
 	} finally {
-		session.dispose();
+		await shutdown(session);
 	}
 }
 
@@ -346,7 +384,7 @@ async function capsWithCompactionOff(pi: Pi, withExtension: boolean) {
 		for (let turn = 0; turn < 4; turn++) assert.deepEqual((await promptOnce(session, `turn ${turn}`)).starts, []);
 		return endpoint.state.bodies.map(outputCap);
 	} finally {
-		session.dispose();
+		await shutdown(session);
 	}
 }
 
@@ -377,7 +415,7 @@ async function virtualRun(pi: Pi, withExtension: boolean, virtualWindow: number,
 		}
 		return { window: session.model?.contextWindow, reserve, compactions, requests: scripted.state.requests.length };
 	} finally {
-		session.dispose();
+		await shutdown(session);
 	}
 }
 
@@ -407,7 +445,7 @@ describe("stock Pi without the extension (runs first, before the classes are wra
 				assert.deepEqual(piValues(session), { contextWindow: 272_000, reserve: 16_384, threshold: 255_616 });
 				assert.deepEqual(await answerWith(session, 244_801), []);
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -418,7 +456,7 @@ describe("stock Pi without the extension (runs first, before the classes are wra
 				assert.deepEqual(await answerWith(session, 500_001), []);
 				assert.equal(session.getContextUsage()?.contextWindow, 1_000_000);
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -472,6 +510,67 @@ describe("stock Pi without the extension (runs first, before the classes are wra
 });
 
 for (const [entry, pi] of ENTRIES) {
+	describe(`${entry}: concurrent SDK context owners`, () => {
+		const capped = { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 };
+		const stock = { contextWindow: 1_000_000, reserve: 16_384, threshold: 983_616 };
+		for (const order of ["A then B", "B then A"]) {
+			it(`shutdown ${order}: the remaining owner keeps the rule; the last restores stock`, async () => {
+				const a = await openOwner(pi);
+				const b = await openOwner(pi);
+				const observer = await openSession(pi, { model: "w1m", withExtension: false });
+				try {
+					assert.deepEqual(piValues(a.session), capped);
+					assert.deepEqual(piValues(b.session), capped);
+					assert.deepEqual(piValues(observer.session), capped, "the rule is deliberately process-wide");
+					const [first, last] = order === "A then B" ? [a, b] : [b, a];
+					await shutdown(first.session);
+					assert.deepEqual(piValues(last.session), capped);
+					assert.deepEqual(piValues(observer.session), capped);
+					await shutdown(last.session);
+					assert.deepEqual(piValues(observer.session), stock);
+					const fresh = await openSession(pi, { model: "w1m", withExtension: false });
+					try {
+						assert.deepEqual(piValues(fresh.session), stock, "new sessions also use stock after the last owner");
+					} finally {
+						await shutdown(fresh.session);
+					}
+				} finally {
+					await shutdown(a.session);
+					await shutdown(b.session);
+					await shutdown(observer.session);
+				}
+			});
+		}
+
+		it("reload excluding B preserves A; reload A renews its owner; removing A restores stock", async () => {
+			const a = await openOwner(pi);
+			const b = await openOwner(pi);
+			try {
+				await b.select(false);
+				await b.session.reload();
+				assert.deepEqual(b.loaded(), []);
+				assert.deepEqual(piValues(a.session), capped, "B must not disable A");
+				assert.deepEqual(piValues(b.session), capped, "B still shares the process-wide rule");
+				await a.session.reload();
+				await a.session.reload();
+				assert.deepEqual(a.loaded(), [EXTENSION]);
+				assert.deepEqual(piValues(a.session), capped, "A remains an owner after reload");
+				await shutdown(b.session);
+				assert.deepEqual(piValues(a.session), capped, "B shutdown cannot remove the renewed A owner");
+				await a.select(false);
+				await a.session.reload();
+				assert.deepEqual(a.loaded(), []);
+				assert.deepEqual(piValues(a.session), stock, "no stale tokens from earlier A runtimes");
+				assert.deepEqual(piValues(b.session), stock);
+				const declared = { provider: "x", id: "y", contextWindow: 1_000_000 } as Model<string>;
+				assert.equal(pi.SettingsManager.inMemory({}).getCompactionSettings(declared).reserveTokens, 16_384);
+			} finally {
+				await shutdown(a.session);
+				await shutdown(b.session);
+			}
+		});
+	});
+
 	describe(`${entry}: the window Pi uses is min(contextWindow, 500 000)`, () => {
 		it("1 000 000: the session model, context usage and the provider see 500 000; the registry keeps 1 000 000", async () => {
 			const { session, runtime } = await openSession(pi, { model: "w1m" });
@@ -485,7 +584,7 @@ for (const [entry, pi] of ENTRIES) {
 				// The footer shows percent and window from getContextUsage: 90% of 500k at the threshold.
 				assert.deepEqual(session.getContextUsage(), { tokens: 450_000, contextWindow: 500_000, percent: 90 });
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -495,7 +594,7 @@ for (const [entry, pi] of ENTRIES) {
 				try {
 					assert.equal(session.model, runtime.getModel("rqw", id));
 				} finally {
-					session.dispose();
+					await shutdown(session);
 				}
 			}
 			const { session } = await openSession(pi, { model: "w272k" });
@@ -503,7 +602,7 @@ for (const [entry, pi] of ENTRIES) {
 				assert.deepEqual(await answerWith(session, 244_800), []);
 				assert.deepEqual(session.getContextUsage(), { tokens: 244_800, contextWindow: 272_000, percent: 90 });
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -524,7 +623,7 @@ for (const [entry, pi] of ENTRIES) {
 				// The same declared model gives the same copy, so the reassignment changes nothing.
 				assert.equal(session.model, cycled);
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -602,7 +701,7 @@ for (const [entry, pi] of ENTRIES) {
 				await session.setModel(runtime.getModel("rqw", "w272k")!);
 				assert.deepEqual(piValues(session), { contextWindow: 272_000, reserve: 27_200, threshold: 244_800 });
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -612,7 +711,7 @@ for (const [entry, pi] of ENTRIES) {
 			try {
 				assert.deepEqual(await answerWith(first.session, 1_000), []);
 			} finally {
-				first.session.dispose();
+				await shutdown(first.session);
 			}
 			const { session } = await openSession(pi, { sessionDir, resume: true });
 			try {
@@ -622,7 +721,7 @@ for (const [entry, pi] of ENTRIES) {
 				assert.deepEqual(await answerWith(session, 450_000), []);
 				assert.deepEqual(await answerWith(session, 450_001), ["threshold"]);
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -641,7 +740,7 @@ for (const [entry, pi] of ENTRIES) {
 					const check = (session as unknown as Internals)._exceedsCompactionThreshold(session.model, projection);
 					assert.equal(check, exceeds, `estimate ${usage + 1}`);
 				} finally {
-					session.dispose();
+					await shutdown(session);
 				}
 			}
 		});
@@ -680,7 +779,7 @@ for (const [entry, pi] of ENTRIES) {
 					assert.equal(last.role, "assistant");
 					assert.equal(last.stopReason, "stop");
 				} finally {
-					session.dispose();
+					await shutdown(session);
 				}
 			}
 		});
@@ -705,7 +804,57 @@ for (const [entry, pi] of ENTRIES) {
 				assert.deepEqual(await answerWith(session, 450_000), []);
 				assert.deepEqual(await answerWith(session, 450_001), ["threshold"]);
 			} finally {
-				session.dispose();
+				await shutdown(session);
+			}
+		});
+
+		it("switched off in settings and /reload: the window and the reserve are stock Pi's again; on again, the rule", async () => {
+			// The user's switch: the extension is listed in settings.json and dropped from it, then /reload.
+			const cwd = await freshDir();
+			const ownAgentDir = join(cwd, "agent");
+			await mkdir(ownAgentDir);
+			const settingsFile = join(ownAgentDir, "settings.json");
+			const listed = (on: boolean) => writeFile(settingsFile, JSON.stringify({ extensions: on ? [EXTENSION] : [] }));
+			await listed(true);
+			const runtime = await modelRuntime(pi);
+			const resourceLoader = new pi.DefaultResourceLoader({ cwd, agentDir: ownAgentDir, ...NO_RESOURCES });
+			await resourceLoader.reload();
+			const loaded = () => resourceLoader.getExtensions().extensions.map((e) => e.path);
+			assert.deepEqual(loaded(), [EXTENSION]);
+			const { session } = await pi.createAgentSession({
+				cwd,
+				agentDir: ownAgentDir,
+				model: runtime.getModel("rqw", "w1m")!,
+				thinkingLevel: "off",
+				modelRuntime: runtime,
+				resourceLoader,
+				sessionManager: pi.SessionManager.inMemory(cwd),
+				settingsManager: pi.SettingsManager.inMemory({ retry: { enabled: false }, compaction: { keepRecentTokens: 0 } }),
+			});
+			await session.bindExtensions({});
+			const declared = { provider: "x", id: "y", contextWindow: 1_000_000 } as Model<string>;
+			const freshReserve = () => pi.SettingsManager.inMemory({}).getCompactionSettings(declared).reserveTokens;
+			try {
+				assert.deepEqual(piValues(session), { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 });
+				assert.equal(freshReserve(), 550_000);
+
+				await listed(false);
+				await session.reload();
+				assert.deepEqual(loaded(), []);
+				assert.deepEqual(piValues(session), { contextWindow: 1_000_000, reserve: 16_384, threshold: 983_616 });
+				assert.equal(freshReserve(), 16_384, "a fresh SettingsManager gives Pi's reserve");
+				assert.equal(session.getContextUsage()?.contextWindow, 1_000_000);
+				assert.deepEqual(await answerWith(session, 450_001), [], "no compaction above 450 000");
+
+				await listed(true);
+				await session.reload();
+				assert.deepEqual(loaded(), [EXTENSION]);
+				assert.deepEqual(piValues(session), { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 });
+				assert.equal(freshReserve(), 550_000);
+				// The 450 001 tokens of the last answer are above the threshold again: Pi compacts before the next request.
+				assert.deepEqual(await answerWith(session, 1_000), ["threshold"]);
+			} finally {
+				await shutdown(session);
 			}
 		});
 
@@ -794,7 +943,7 @@ for (const [entry, pi] of ENTRIES) {
 				// The session goes on.
 				assert.deepEqual(await answerWith(session, 2_000), []);
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -814,7 +963,7 @@ for (const [entry, pi] of ENTRIES) {
 				assert.equal(last.stopReason, "stop");
 				assert.equal(last.usage.input, 3_000);
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 	});
@@ -826,13 +975,13 @@ for (const [entry, pi] of ENTRIES) {
 				assert.deepEqual(await answerWith(session, 244_801), []);
 				assert.deepEqual(await answerWith(session, 271_000), []);
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 			const big = await openSession(pi, { model: "w1m", settings: { compaction: { enabled: false } } });
 			try {
 				assert.deepEqual(await answerWith(big.session, 500_001), []);
 			} finally {
-				big.session.dispose();
+				await shutdown(big.session);
 			}
 		});
 
@@ -871,7 +1020,7 @@ for (const [entry, pi] of ENTRIES) {
 				const declared = runtime.getModel("rqw", "w1m")!;
 				assert.equal(session.settingsManager.getCompactionSettings(declared).reserveTokens, 550_000);
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -919,11 +1068,12 @@ for (const [entry, pi] of ENTRIES) {
 					sessionManager: pi.SessionManager.inMemory(cwd),
 					settingsManager: pi.SettingsManager.create(cwd, ownAgentDir),
 				});
+				await session.bindExtensions({});
 				try {
 					assert.equal(piValues(session).contextWindow, 500_000, label);
 					assert.equal(piValues(session).threshold, threshold, label);
 				} finally {
-					session.dispose();
+					await shutdown(session);
 				}
 			}
 		});
@@ -966,7 +1116,7 @@ for (const [entry, pi] of ENTRIES) {
 					assert.deepEqual(piValues(session), values, `${provider}/${id}`);
 				}
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -995,7 +1145,7 @@ for (const [entry, pi] of ENTRIES) {
 				assert.deepEqual(piValues(session), { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 });
 				assert.equal(session.model?.maxTokens, 65_536);
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -1041,7 +1191,7 @@ for (const [entry, pi] of ENTRIES) {
 					assert.deepEqual(piValues(session), { contextWindow: window, reserve: window / 10, threshold: window - window / 10 }, `${declared}`);
 				}
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 
@@ -1054,7 +1204,7 @@ for (const [entry, pi] of ENTRIES) {
 				assert.equal(manager.getCompactionSettings({ provider: "x", id: "y" }).reserveTokens, 16_384);
 				assert.equal(manager.getCompactionSettings().reserveTokens, 16_384);
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 	});
@@ -1078,7 +1228,7 @@ describe("library: load order against an extension that calls pi.setModel(1M) at
 				assert.deepEqual(piValues(session), { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 });
 				assert.deepEqual(await answerWith(session, 450_001), ["threshold"]);
 			} finally {
-				session.dispose();
+				await shutdown(session);
 			}
 		});
 	}

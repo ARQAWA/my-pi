@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test \"extensions/*/test/*.test.ts\"",
+    "test": "node --test \"extensions/*/test/*.test.ts\" \"test/*.test.ts\"",
     "test:bun": "node extensions/RQW-tools/test/bun/codemode-check.mjs"
   },
   "keywords": [
@@ -19,6 +19,10 @@
       "./extensions/RQW-prompt/index.ts",
       "./extensions/RQW-tools/index.ts",
       "./extensions/RQW-context/index.ts",
+      "./extensions/RQW-agent/index.ts",
+      "./extensions/RQW-review/index.ts",
+      "./extensions/RQW-statusbar/index.ts",
+      "./extensions/RQW-models/index.ts",
       "./extensions/RQW-anthropic/index.ts"
     ]
   },

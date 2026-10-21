@@ -17,3 +17,31 @@ You are running inside Pi. Install the my-pi package into this Pi installation, 
    `/reload` keeps its old code.
 
 Change nothing else: no other packages, settings or files.
+
+## Switch one extension off
+
+For the user, not part of the install. Every `RQW-*` extension can be switched off alone. In
+`~/.pi/agent/settings.json`, replace the string entry of the package with its object form and list one `-` line per
+extension to switch off. The `source` stays exactly as it was; the pattern must name the file `index.ts`, a folder
+excludes nothing.
+
+```json
+{
+  "packages": [
+    {
+      "source": "git:github.com/ARQAWA/my-pi",
+      "extensions": ["-extensions/RQW-context/index.ts"]
+    }
+  ]
+}
+```
+
+- It takes effect after `/reload` or a restart. To switch the extension on again, delete its line.
+- After `/reload` Pi keeps the active tool set, so tools of a switched-off extension stay active, now Pi's own,
+  until `/new` or a restart.
+- `pi -e <dir>` ignores this filter and loads every extension. For one run without an extension pass the wanted
+  files instead: `pi -e <dir>/extensions/RQW-settings/index.ts -e <dir>/extensions/RQW-prompt/index.ts`. Add `-ne`
+  when the installed package must not load as well; it also drops Pi's built-ins, add them back with
+  `-e builtin:codemode -e builtin:tool-search`.
+- Pi's built-in extensions are not part of the package. Switch one off with the top-level `extensions` setting:
+  `"extensions": ["-builtin:codemode"]` (names: `codemode`, `tool-search`, `mcp`, `llama.cpp`).
