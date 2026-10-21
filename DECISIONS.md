@@ -68,10 +68,11 @@ The source remains outside this repository; no transcript or credentials are cop
   Anthropic, которую ты сейчас делаешь. И всё»).
 
 - Lean engineering scope (user: «Не надо делать микроправки всяких хуёвин, которые возможно никогда не всплывут, и у них редкость возникновения очень высокая, вероятность, что они возникнут, крайне мала. Надо править именно очевидные жирные ошибки, а не вылизывать до предела.»).
-  Reason: fix obvious major failures, not speculative rare cases. The coordinator defers rare virtual-model routing
-  and a native filesystem alias engine from this iteration; these were not previously accepted owner requirements.
-  This is not a specific owner quotation about virtual models or filesystem aliases. Current carriers:
-  `extensions/RQW-context/index.ts`, `extensions/RQW-tools/`, and `notes/context-questions.md`.
+  Reason: fix obvious major failures, not speculative rare cases. The completed native physical routing and
+  filesystem identity fixes are retained together, as the owner clarified: «ты всю уже выполненную работу собираешь
+  вместе. Просто ты дополнительной работы не делаешь и всё.» Current carriers: `extensions/RQW-context/index.ts`,
+  `extensions/RQW-tools/`, and `notes/context-questions.md`. Native identities, hardlink equality, dangling targets
+  and private namespace probes are implemented; this does not promise every rare filesystem or long-path case.
 
 ## Structure
 
@@ -202,46 +203,39 @@ The source remains outside this repository; no transcript or credentials are cop
 
 ## Context
 
-- `extensions/RQW-context/index.ts` applies the owner's rule to direct physical models: W = min(model.contextWindow, 500000) is
+- `extensions/RQW-context/index.ts` applies the owner's rule to physical models after native routing: W = min(physical.contextWindow, 500000) is
   the context window Pi uses, R = `Math.round(W / 10)` (a .5 rounds up), and Pi compacts above W - R. 272 000 ->
   window 272 000, compaction above 244 800; 500 000 and 1 000 000 -> window 500 000, compaction above 450 000.
   Built-in, models.json and extension models alike, at start (`--model`), on resume, after `/model` and model cycling.
   No per-model list.
-- The window above 500 000 is lowered for the session, not only the trigger. Owner rule (C:2015): «если контекстное
-  окно больше 500 тыс. токенов, то пусть оно будет 500 тыс. токенов. Резерв — 10% от края».
-  The coordinator chose option b on the implementation question and reported that choice in C:2138.
-  Reason: with the trigger alone the footer showed 45% at compaction and Pi still treated a 1M model as 1M everywhere
-  else; the rule says the window itself becomes 500 000.
-- Mechanism, window: Pi reads every limit from the session model, `agent.state.model` (`agent-session.js:1037`
-  `get model() { return this.agent.state.model; }`): the pre-prompt and next-turn trigger (`420-422`), threshold and
-  overflow checks after a response (`2376`, `2407`, `2477`), no auto-retry on overflow (`3013`), context usage and the
-  footer percent (`3472-3499`, `footer.js:134`), the model of every request (`456`, `agent-loop.js:132`), whose
-  output cap pi-ai derives from it (`pi-ai/dist/api/simple-options.js:5-9`: contextWindow - context - 4096), and the
-  summary requests (`_getSummarizationRequestAuth(this.model)`). `state.model` is a plain property
-  (`pi-agent-core/dist/agent.js:40`), so the extension replaces it on each session's state with an accessor that
-  stores `{ ...model, contextWindow: 500000 }` for a physical model above 500 000 and the same object otherwise, one
-  stable copy per declared model, retaining the declared original on reassignment. `wrapAgentState` hooks the actual
-  native Agent's `state` getter and `createLoopConfig`, covering state replacement and direct native requests without
-  a preceding session getter read. `wrapModelGetter` also covers session reads. These hooks are installed from
-  `AgentSession.prototype._buildRuntime`, which Pi runs in the session
-  constructor right after `this.agent = config.agent` (`agent-session.js:177`, `210`) and again on `/reload`
-  (`2988`), so every assignment Pi makes later (`setModel` `1985`, cycling `2037`, `2064`, registry refresh `2711`)
-  goes through it. Reason for an internal hook: the extension API has no way to change the session model's window.
-  `pi.setModel` takes a model but appends a `model_change` entry, reapplies the thinking level and is not called at
-  start, resume or registry refresh; `pi.registerProvider` with `models` "replaces all existing models for this
-  provider" (`extensions/types.d.ts:1442`); models.json `modelOverrides` needs an entry per model; the `model_select`
-  event is a notification. Extensions get Pi's own `AgentSession` class (jiti alias in the library, virtual modules
-  in the bundle); the tests run both.
-- Load check: before installing the session/settings hooks, the extension checks
-  `AgentSession.prototype._buildRuntime`, the configurable `AgentSession.model` getter and
-  `SettingsManager.prototype.getCompactionSettings`. A missing hook gives a load error before those patches.
-  `wrapAgentState` checks the native Agent's `state`, `createLoopConfig` and `_state` shape together before wrapping
-  that class at runtime. Reason: these internal hooks are specific to Pi 1.3.0; incompatible shapes must be reported.
-- Mechanism, reserve: Pi compacts when `contextTokens > model.contextWindow - reserveTokens` (`compaction.js:176`) and
-  reads reserveTokens from `SettingsManager.getCompactionSettings(model)` at every check. The extension wraps that
-  method on Pi's class and returns contextWindow - (W - R), which is R itself once the window is W: a computed
-  `compaction.modelOverrides` reserve for every model, the way Pi's docs tune the trigger per model
-  (`docs/compaction.md:457`). `pi.getSettings()` returns a copy and has no setter.
+- The physical window above 500 000 is lowered, not only the trigger. Owner, C:2015:
+  «если контекстное окно больше 500 тыс. токенов, то пусть оно будет 500 тыс. токенов. Резерв — 10% от края.»
+  C:2047 requires a universal automatic solution. The physical rule includes targets selected by native routing.
+- Mechanism, window: `agent.state.model` exposes the existing stable capped copy for a physical selection.
+  `AgentSession._buildRuntime` hooks the actual native Agent's `state` getter and `createLoopConfig` so old and new
+  SDK sessions, public state reads and native loop configuration apply the rule without a prior `session.model`
+  read. Stored models unwrap through shared WeakMaps, including `setModel(current)` and retained copies after reload.
+  For native virtual routing, `ModelRuntime.getPhysicalModel` caps the result of the native canonical lookup. This
+  covers request dispatch, response/usage/overflow lookups and direct SDK routes without changing the catalog.
+  Virtual selection identity and its declared or unknown window stay native. Extensions get the correct classes
+  through Pi's library alias or CLI bundle virtual modules; tests exercise both.
+- Load check: before patching static hooks or acquiring ownership, the extension checks the writable/configurable
+  methods `_buildRuntime`, `getCompactionSettings`, `getPhysicalModel`, `_exceedsCompactionThreshold`,
+  `_checkCompaction`, `_runAutoCompaction`, `compact`, `_runDefaultCompaction`, `_getSummarizationRequestAuth`,
+  `_modelForMessage` and `_limitsModel`, the configurable `model` getter and extensible prototypes. The new routed
+  boundaries also check native method arities. Unsupported shapes produce one load error and no static changes.
+  Runtime Agent.state/createLoopConfig guards remain checked together before installation.
+- Mechanism, reserve: Pi compacts at `contextTokens > model.contextWindow - reserveTokens`. The existing
+  `SettingsManager.getCompactionSettings` wrapper preserves native validation and explicit settings by the original
+  selection key. For virtual selection, a session/request-local AsyncLocalStorage frame supplies the physical window
+  for THIS pre-request target or the physical model of the response being checked, never a global last-model value.
+  The actual Agent.prepareRequest callback is scoped lazily through the Agent hooks, including old observer sessions.
+  Automatic preparation inherits the triggering physical model; manual preparation uses the latest successful
+  response after native abort settles. Without a known physical window, native settings remain unchanged.
+  Native default summarization keeps the interception hook's preparation intact and uses a copy. Its existing
+  direct summary route is resolved once after interception; the copied preparation reserve binds once to that
+  target's W. History and split-turn summaries share that R and native maxTokens/output limits. A cancelled/custom
+  compaction does not route a default summary. No router, registry mutation, dependency or public setting is added.
 - Consequences for a model above 500 000, all as for a 500 000 model: footer and `getContextUsage()` show the window
   500k and 90% at the threshold; summary output limits are 40 000 and 25 000 for a split turn (0.8 and 0.5 x R,
   `compaction.js:512`, `727`); the output cap of a request is 500 000 - context - 4096, about 45 900 at 450 000
@@ -275,7 +269,7 @@ The source remains outside this repository; no transcript or credentials are cop
      summary requests per prompt. Stock Pi does the same on a native 272 000 or 500 000 model; it is new for 1M models
      only because stock Pi would not compact them before 983 616. Tool results are cut to 2 000 chars before the
      estimate (`compaction/utils.js:82`), so tool-heavy coding sessions do not reach it.
-- Models up to 500 000 keep their own object; only the reserve changes. The model registry is not touched: `/model`
+- Physical models up to 500 000 keep their own object; only the reserve changes. The model registry is not touched: `/model`
   and `--list-models` show the declared window, the session and the footer show 500k. So one model shows two windows
   through events and RPC: `model_select.model` is the object passed to `setModel` and RPC `set_model` returns the
   registry object (`rpc-mode.js:371-372`), both with the declared window; the session state (`ctx.model`,
@@ -295,7 +289,7 @@ The source remains outside this repository; no transcript or credentials are cop
   `tokens > 0 - reserve` (`agent-session.js:2376`, `2477`; only the pre-request check has a `<= 0` guard, `421`); a
   response is skipped only when nothing lies beyond `keepRecentTokens` to summarize. The extension leaves that
   unchanged.
-- Both wraps live as long as the process, one per class (`Symbol.for` guards), and act only while a loaded
+- The hooks live as long as the process, one per class (`Symbol.for` guards), and act only while a loaded
   RQW-context owns them: each factory adds a fresh token to the process-global `Set` under
   `Symbol.for("rqw-context/owner")` on `globalThis`; its `session_shutdown` handler removes only that token.
   The wraps act while the set is nonempty. Without an owner `getCompactionSettings` returns Pi's
@@ -314,23 +308,32 @@ The source remains outside this repository; no transcript or credentials are cop
   The patch code itself is installed once per process, so after an update of my-pi a `/reload` keeps the old RQW-context code; Pi must be restarted for RQW-context changes to apply
   (`INSTALL.md` step 4). Reason for text, not code: a replaceable implementation behind the guards adds machinery for
   a case a restart covers.
-- Native virtual-model routing is deferred by the coordinator under the lean scope above, not by specific owner
-  approval of a virtual-model exception. Current implementation: `capModel` leaves `api: pi-virtual` unchanged and
-  `getCompactionSettings` returns Pi's own settings for it. Pi delegates limits to the routed physical model;
-  this iteration leaves that native route stock rather than adding a routed-window hook. Direct physical-model
-  state and native request paths are capped as described above. Carried by `extensions/RQW-context/index.ts`;
-  implementation boundary: `notes/context-questions.md`.
+- Native virtual selection retains its callback, identity, state, thinking and declared or unknown window.
+  `ModelRuntime.getPhysicalModel` caps the physical target after native canonicalization. Session/request-local
+  context supplies its W/R for the current operation, including physical selection changes while routing waits.
+  Automatic preparation uses its trigger target; manual preparation uses the latest successful response after
+  native abort. Default summarization keeps interception preparation intact and routes once using the captured
+  selection. Its copy binds R to the summary target, retaining the original explicit reserve intent from preparation
+  through `reserveIntents`, without rereading live settings after interception or an awaited route. Both summaries
+  share that R, bounded by native maxTokens/output limits. No extra route, router or SDK fork is added.
+  The prior routed-physical bypass was a bug, not an owner-approved exception. Last-owner shutdown restores stock
+  physical lookup identity and settings. Implementation: `extensions/RQW-context/index.ts`;
+  details: `notes/context-questions.md`.
 - Proof: `extensions/RQW-context/test/context.test.ts` runs real sessions of the library and the bundle with a
   scripted provider that reports exact usage and a local OpenAI-compatible endpoint: Pi's own `session.model`,
   `getContextUsage()`, `compaction_start` at W - R + 1 and not at W - R (also after a switch, `/reload`, resume, fork
   and `/new` through `AgentSessionRuntime`, and in the pre-request check `_exceedsCompactionThreshold` between tool
   turns), user reserves in memory and in a file-backed `settings.json`, overflow recovery above 500 000, the output cap
-  with compaction off, a virtual model as stock, load order, a load without either internal, the request body
+  with compaction off, native virtual selection with capped physical requests, load order, a load without either internal, the request body
   against stock Pi, and the switch: listed in `settings.json`, dropped, `/reload` gives window 1 000 000 and reserve
   16 384, listed again and `/reload` gives the rule back. `test/isolation.test.ts` checks the same through the
   `packages` filter. Concurrent SDK tests in `context.test.ts` run for library and bundle: A/B shutdown in both
   orders, package-filter reload excluding B while A remains, reload A, and stock values after the last owner leaves.
   Tests emit `session_shutdown` before SDK `dispose()` so their owner tokens do not leak between cases.
+  `extensions/RQW-context/test/routing.test.ts` also covers native routed physical targets in library and CLI
+  bundle, operation-local thresholds, captured selection and original reserve intent despite later settings changes,
+  independently routed summary budgets, concurrent sessions and last-owner restoration. These are synthetic-provider
+  tests, not cloud or interactive-terminal proof.
 
 ## Prompt
 

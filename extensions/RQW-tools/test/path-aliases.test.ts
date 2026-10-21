@@ -151,6 +151,21 @@ for (const invalid of [false, true]) {
   });
 }
 
+test("237 F1 invalid native file/. symlink stays separate from the valid edit target", async (t) => {
+  const dir = fresh(t);
+  fs.writeFileSync(path.join(dir, "real.txt"), "alpha beta\n");
+  fs.symlinkSync("real.txt/.", path.join(dir, "bad"), "file");
+  const stock = createEditToolDefinition(dir);
+  const result = await executeEdit(stock.execute, "e", { edits: [
+    { path: "real.txt", oldText: "alpha", newText: "ALPHA" },
+    { path: "bad", oldText: "beta", newText: "BETA" },
+  ] }, undefined, undefined, { cwd: dir }, dir);
+  assert.equal(fs.readFileSync(path.join(dir, "real.txt"), "utf8"), "ALPHA beta\n");
+  assert.equal(result.isError, true);
+  assert.deepEqual(result.details.files.map((file: any) => [file.path, file.ok]), [["real.txt", true], ["bad", false]]);
+  assert.match(result.details.files[1].error, /ENOTDIR/);
+});
+
 test("dangling chains resolve relative to each link parent, preserving directory suffixes and native target spelling", async (t) => {
   const dir = fresh(t);
   fs.symlinkSync("../right/chain", path.join(dir, "left/link"), "dir");

@@ -38,7 +38,7 @@ function canonical(abs: string, P: path.PlatformPath): { key: string; existing?:
       return { key: P.join(existing, ...rest), existing, dangling };
     } catch (e) {
       const code = typeof e === "object" && e !== null && "code" in e ? e.code : undefined;
-      if (code !== "ENOENT" && code !== "ENOTDIR") throw e;
+      if (code !== "ENOENT") throw e;
       let link = false;
       try { link = fs.lstatSync(cur).isSymbolicLink(); }
       catch (error) {

@@ -1,36 +1,33 @@
-# RQW-context: questions, answered
+# RQW-context: physical limits and native routing
 
-For direct physical models: W = min(contextWindow, 500000) is the window Pi uses, R = Math.round(W / 10),
-Pi compacts above W - R.
-The coordinator answered both implementation questions as delegated technical choices, reported in C:2138,
-not as direct owner approvals. Owner requirements and implementation evidence are in `DECISIONS.md`, section Context.
-`C:<line>` uses the raw session reference defined in that document.
+The owner's universal automatic rule is W = min(physical.contextWindow, 500000), R = Math.round(W / 10),
+compaction strictly above W - R. C:2015 sets the window and 10% reserve, C:2047 requires universal automatic use.
+These are physical limits whether the model is selected directly or chosen by native virtual routing.
 
-## 1. What else "treated as 500 000" covers — coordinator choice: b
+## Selection and dispatch
 
-Owner rule (C:2015): «если контекстное окно больше 500 тыс. токенов, то пусть оно будет 500 тыс. токенов.
-Резерв — 10% от края». The coordinator chose to apply that window everywhere Pi reads it (C:2138),
-with compaction at W - R and R = 10% of W.
+A virtual selection retains its identity, route callback/state/thinking and native declared or unknown window.
+An unknown wrapper stays unknown; its 0 is not assigned a cap or a reserve. Its declared window remains a native
+hint before a response. It is not the physical limit of all routes. After native canonicalization,
+ModelRuntime.getPhysicalModel exposes the stable capped physical copy; the registry keeps declared windows.
 
-Built: for a direct physical model above 500 000 the session model gets contextWindow 500 000.
-`capModel` preserves the declared original; `wrapAgentState` covers the native Agent state getter, replacement states
-and `createLoopConfig`, so direct native requests are capped without first reading the session model.
-`wrapModelGetter` also covers session reads. Every place Pi reads that physical window follows: the compaction
-trigger before a prompt and before each next turn, threshold and overflow checks after a
-response, context usage and the footer percent (90% at the threshold), the output cap of each request
-(500 000 - context - 4096, 45 902 in the test at 450 000 context) and the summary limits (40 000 and 25 000).
-An answer with more than 500 000 input tokens counts as overflow; with compaction on and a history of several turns
-that a summary can fit, Pi recovers: a completed answer is kept and the session compacts without a retry; a length
-stop with no output at 99% of the window compacts and retries once. The known limits below are where it does not.
-The provider request carries no window; only `max_completion_tokens` differs from stock Pi. Models up to 500 000
-keep their object; only the reserve changes. The registry and `/model` list keep the declared windows.
+Session/request-local context supplies the reserve for the actual pre-request target or checked response.
+Automatic preparation uses the triggering physical model. Manual preparation uses the latest successful physical
+response after native abort settles. The interception hook sees that preparation. Default native summarization
+keeps it intact and uses a copy whose reserve binds once to the summary's own direct-route physical target when
+that route is known. Both summary requests share that reserve. No extra route is made for limits, and cancelled
+or custom compaction does not route a default summary. Explicit selection settings and disabled compaction keep
+native priority. Parallel sessions sharing one runtime do not share a last-physical-model slot.
 
-The options as they were asked:
+The old routed-physical bypass was a bug in applying the existing rule, not a new feature. The virtual exception
+was an assistant technical choice in C:2138, not an owner answer. No Owner option a/b attribution applies.
 
-- a) Trigger only, the window stays as declared. The footer shows 45% at compaction on a 1M model; requests unchanged.
-- b) Also lower the window to 500 000. The footer shows 90% at compaction and the summary limit is 40 000, but the
-  output of a request near 450 000 context is capped at about 45 900 tokens, an input above 500 000 is handled as
-  overflow, and Pi has no API for it. — chosen
+For W=272000 the reserve is 27200 and the threshold 244800; for a physical 1M model W=500000, reserve 50000,
+threshold 450000. Default summary output ceilings are floor(0.8 R) and floor(0.5 R), additionally bounded by the
+chosen physical model's maxTokens and the native context/output budget. Usage reports the capped physical window.
+A completed input above W is overflow under native recovery policy. Providers receive no window field in the
+OpenAI-compatible request; the output cap changes. Known recovery limits remain below.
+
 
 Known limits of the 500 000 window (no code change, the window rule is the owner's; details in `DECISIONS.md`):
 
@@ -50,14 +47,15 @@ Known limits of the 500 000 window (no code change, the window rule is the owner
   400 000, compacts above 100 000 instead of 600 000. A reserve of W or more would leave no threshold; the rule's R
   applies then.
 
-## 2. Virtual models: deferred native routing
+## Implementation and proof
 
-The coordinator leaves native virtual-model routing outside this iteration under the owner's lean-scope rule in
-`DECISIONS.md`, section Scope. This is not a specific owner quotation approving a virtual-model exception, nor a
-previously accepted owner requirement to build a routing hook. The earlier choice reported in assistant message
-C:2138 was a delegated technical choice, not owner approval.
+Implementation: `extensions/RQW-context/index.ts`. Existing Agent state/accessor and WeakMap round-trip fixes remain.
+Operation-local physical limits apply even if selection changes while native routing waits. Default summarization
+uses the captured selection and the original explicit reserve intent stored with preparation in `reserveIntents`.
+It does not reread live settings after interception or an awaited route. A reserve below the actual W is retained;
+a reserve at or above W falls back to R, even if an earlier physical window had already substituted its own R.
 
-Current implementation: `capModel` does not cap `api: pi-virtual`, and `getCompactionSettings` leaves its settings
-stock. Pi delegates limits to the routed physical model (`pi.registerVirtualModel`; Pi 1.3.0 ships none). That native
-virtual route keeps Pi's declared routed window and reserve; the direct physical-model cap described above does
-not add a virtual-routing hook. A deeper routed-window implementation is deferred, not included in this iteration.
+Tests: `context.test.ts`, `audit.test.ts`, `state.test.ts` and `routing.test.ts` in `extensions/RQW-context/test/`.
+Library and actual CLI bundle use synthetic providers and local HTTP. No cloud or interactive-terminal proof is
+claimed. Unsupported private SDK boundaries fail at load; implementation updates require restarting Pi.
+Last-owner removal restores stock physical lookup identity and settings.
