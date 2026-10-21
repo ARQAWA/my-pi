@@ -8,14 +8,9 @@ import type { Schedule, Scope } from "../barrier.ts";
 
 type Rec = { i: number; scope: Scope; entry: number; start: number; end: number };
 
-// Shared CI runners showed timer jitter up to about 7 ms; over-serialization in T1 costs a whole 30 ms op.
-const SLACK_MS = 15;
-// Windows runners showed T1 waits up to 24 ms over the bound; T1 uses 80 ms ops, so over-serialization (a whole op)
-// still fails a 40 ms slack.
 const T1_DUR_MS = 80;
-const T1_SLACK_MS = 40;
-// Real timers on purpose: the test measures start and end times of operations against the platform clock, and fake
-// timers would hide exactly the scheduling gaps the slack check looks for.
+// Real timers exercise ordering, abort and rejection interleavings. Elapsed slack is diagnostic only;
+// gate-driven checks below verify eligibility without asserting how long the host takes to run JS.
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const now = () => performance.now();
 
@@ -122,13 +117,11 @@ for (const c of table) {
     const recs = await runBatch(createBarrier(), c.ops, T1_DUR_MS);
     for (const [j, deps] of c.deps.entries()) {
       const r = recs[j];
-      let bound = r.entry;
       for (const i of deps) {
         assert.ok(r.start >= recs[i].end, `op${j} started at ${r.start} before op${i} ended at ${recs[i].end}`);
-        bound = Math.max(bound, recs[i].end);
       }
-      assert.ok(r.start - bound < T1_SLACK_MS, `op${j} waited ${(r.start - bound).toFixed(2)} ms longer than needed`);
     }
+    await checkEligible(createBarrier(), c.ops);
   });
 }
 
@@ -169,12 +162,7 @@ test("T1 a failed call releases the calls behind it (I7)", async () => {
 test("T1 a settled call leaves the live set: a later call does not wait", async () => {
   const schedule = createBarrier();
   await runBatch(schedule, [B, M("/r/a")], 20);
-  const t = now();
-  let started = NaN;
-  await schedule(M("/r/a"), async () => {
-    started = now();
-  });
-  assert.ok(started - t < SLACK_MS, `later call waited ${(started - t).toFixed(2)} ms`);
+  await checkEligible(schedule, [M("/r/a")]);
 });
 
 // ---------------------------------------------------------------- T2: randomized
@@ -288,8 +276,7 @@ async function runRounds(makeBarrier: () => Schedule, seed: number, rounds: numb
     deadlocks: results.filter((r) => r.deadlock).length,
     violations: results.flatMap((r, k) => r.violations.map((v) => `round ${k}: ${v}`)),
     maxSlack: Math.max(0, ...results.map((r) => r.maxSlack)),
-    // A barrier that over-serializes is late in most rounds; a loaded CI runner is late in a few. Assert the 99th
-    // percentile of the per-round slack and keep the maximum as a diagnostic.
+    // Wall-clock slack includes host descheduling and GC; it is diagnostic, not an I2 oracle.
     p99Slack: [...results.map((r) => r.maxSlack)].sort((x, y) => x - y)[Math.floor(results.length * 0.99)] ?? 0,
     skipped: results.reduce((s, r) => s + r.skipped, 0),
     thrown: results.reduce((s, r) => s + r.thrown, 0),
@@ -307,11 +294,49 @@ test("T2 randomized interleavings keep I1, I2, I5, I6, I7", async (t) => {
   );
   assert.strictEqual(s.deadlocks, 0, "a round did not finish within 5 s");
   assert.deepStrictEqual(s.violations.slice(0, 5), []);
-  assert.ok(s.p99Slack < SLACK_MS, `in 1% of rounds a call started ${s.p99Slack.toFixed(2)} ms after it could have`);
+  // I2 is checked with held operations below, independently of elapsed host time.
+  for (const spec of genRounds(seed, rounds)) {
+    await checkEligible(createBarrier(), spec.ops.map((o) => o.scope), spec.ops.map((o) => o.throws));
+  }
   if (rounds >= 500) {
     assert.ok(s.skipped > 0 && s.thrown > 0 && s.sequential > 0, "abort, throw and sequential paths were not exercised");
   }
 });
+
+// I2 oracle: after promise reactions drain, exactly the operations with no unfinished earlier conflict must
+// have started. Each operation is held by a gate, so a false dependency cannot hide behind timer jitter.
+const drain = () => new Promise<void>((resolve) => setImmediate(resolve));
+async function checkEligible(schedule: Schedule, scopes: Scope[], rejects: boolean[] = []): Promise<void> {
+  const gates = scopes.map(() => Promise.withResolvers<void>());
+  const started = new Set<number>();
+  const finished = new Set<number>();
+  const calls = scopes.map((scope, i) => schedule(scope, async () => {
+    started.add(i);
+    await gates[i].promise;
+  }));
+  // Attach rejection handlers before releasing any gate, including when another operation is still held.
+  const settled = calls.map((call) => Promise.allSettled([call]));
+  try {
+    while (finished.size < scopes.length) {
+      await drain();
+      const expected = scopes.flatMap((scope, i) =>
+        scopes.some((earlier, j) => j < i && !finished.has(j) && oracle(earlier, scope)) ? [] : [i]);
+      assert.deepStrictEqual([...started].sort((a, b) => a - b), expected, "I2: exactly the eligible calls start while unrelated work stays held");
+      // Complete the latest eligible operation first to expose dependencies on unrelated earlier operations.
+      const next = expected.filter((i) => !finished.has(i)).at(-1);
+      assert.notStrictEqual(next, undefined, "I2: no eligible operation (deadlock)");
+      if (rejects[next!]) gates[next!].reject(new Error("gate rejection"));
+      else gates[next!].resolve();
+      const [result] = await settled[next!];
+      assert.strictEqual(result.status, rejects[next!] ? "rejected" : "fulfilled");
+      if (result.status === "rejected") assert.match(result.reason?.message ?? "", /gate rejection/);
+      finished.add(next!);
+    }
+  } finally {
+    for (const gate of gates) gate.resolve();
+    await Promise.allSettled(calls);
+  }
+}
 
 // ---------------------------------------------------------------- T3: the checker catches a broken barrier
 
@@ -328,6 +353,14 @@ function createBrokenBarrier(): Schedule {
   };
 }
 
+test("T2 eligibility oracle rejects missing and unnecessary dependencies", async () => {
+  await assert.rejects(checkEligible(createBrokenBarrier(), [M("/r/a"), R("/r/a")]), /I2:/);
+  const serial = createBarrier();
+  const overSerialized: Schedule = (_scope, run) => serial(B, run);
+  await assert.rejects(checkEligible(overSerialized, [M("/r/a"), M("/r/b")]), /I2:/);
+  await checkEligible(createBarrier(), [M("/r/a"), M("/r/b"), R("/r/b")], [false, true, false]);
+});
+
 test("T3 a barrier that ignores dependencies makes the checker report violations", async (t) => {
   const broken = await runRounds(createBrokenBarrier, 3, 40);
   const good = await runRounds(createBarrier, 3, 40);
@@ -339,7 +372,7 @@ test("T3 a barrier that ignores dependencies makes the checker report violations
 
 // ---------------------------------------------------------------- T4: nested orchestration
 
-test("T4 orchestrators outside the barrier, with Promise.all and sequential awaits, complete", async () => {
+test("T4 orchestrators outside the barrier, with Promise.all and sequential awaits, complete", async (t) => {
   const schedule = createBarrier();
   const t0 = now();
   const recs: Rec[] = [];
@@ -368,5 +401,5 @@ test("T4 orchestrators outside the barrier, with Promise.all and sequential awai
   assert.strictEqual(recs.length, 24);
   const checked = checkOrder(recs);
   assert.deepStrictEqual(checked.violations, []);
-  assert.ok(checked.maxSlack < SLACK_MS, `slack ${checked.maxSlack.toFixed(2)} ms`);
+  t.diagnostic(`maxSlack=${checked.maxSlack.toFixed(2)}ms`);
 });

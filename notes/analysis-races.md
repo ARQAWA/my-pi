@@ -231,16 +231,20 @@ run in response order; a `bash` call waits for all calls before it and holds all
 Layer 1, barrier unit tests (fake ops = timers):
 - T1 (I1/I2) table of fixed batches with expected start relations: `[M a, R a]`, `[R a, M a]`, `[M a, M b]` (parallel),
   `[R a, R a]` (parallel), `[M a, B]`, `[B, R x]`, `[B, B]`, `[R dir, M dir/f]`, `[M a, M a/b]`, `[M a, B, R b]` (R b
-  waits for B, B waits for M a).
+  waits for B, B waits for M a). Gate-driven eligibility checks cover each fixed batch and reuse after settled calls;
+  real-timer batches assert ordering, not elapsed slack.
 - T2 randomized interleavings (I1, I2, I5, I6, I7): seeded LCG; per round 2-10 ops, kinds read/read/mutate/mutate/
   bash/tree-read, keys from a pool with ancestors, multi-key mutates, random durations 0-15 ms, 10% throws, 20% rounds
   with abort at a random time, 15% rounds driven sequentially; 5 s deadlock guard per round; check I1 for every
-  conflicting pair and I2 slack < 2 ms. Prototype result: 500 rounds with the final overlap rule (seeds 3, 99) and 900 rounds with an
-  earlier grep/find-only ancestor rule (seeds 1, 42, 7): 0 failures, max slack 1.01 ms.
-- T3 mutation check of the checker: disabling dependency collection must make T2 fail (prototype: 385 violations in
-  40 rounds). Keeps the randomized test honest.
+  conflicting pair. Elapsed I2 slack is diagnostic only: host pauses are not barrier dependencies. For each generated
+  batch, an additional gate-driven run checks the exact eligible set after promise reactions drain, then completes
+  the latest eligible call first while unrelated calls remain held. Seeded throws also reject gates; settled calls
+  release successors whether fulfilled or rejected. This detects both missing and unnecessary waits
+  without an elapsed-time threshold. The decision and rationale live in [DECISIONS.md, Tools](../DECISIONS.md#tools).
+- T3 mutation check of the checker: disabling dependency collection must produce ordering violations. T2's eligibility
+  oracle is also checked against both ignored dependencies and forced serialization of independent calls.
 - T4 nested calls: an orchestrator outside the barrier calls our tools via `Promise.all` and sequential `await`s;
-  completes within the guard.
+  completes within the guard, checks ordering, and reports elapsed slack only as a diagnostic.
 
 Layer 2, key function (I3), real filesystem in a temp dir, run on macOS, Linux and Windows CI:
 - relative/absolute/`./`/`../`/trailing separator; symlinked file; symlinked directory with a missing file below;

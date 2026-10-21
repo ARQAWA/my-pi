@@ -162,6 +162,17 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 - Engineering follow-up under the owner's flaky-test precedent: «Теперь по нестабильному тесту 1А»;
   1a: «Отдельной задачей разобрать, почему тест кодмода на Windows иногда не укладывается в 5 секунд, и исправить причину.»
+  Fixed and randomized barrier batches check maximal concurrency with held operations and an independent conflict
+  oracle: after promise reactions drain, exactly the calls without unfinished earlier conflicts must have started.
+  Seeded gate rejections check prompt release after failure as well as success; mutation checks reject both ignored
+  dependencies and needless serialization. Real-timer batches and nested scripts retain ordering, abort, rejection
+  and deadlock checks; no test asserts an elapsed slack cutoff. Reason: elapsed start latency includes
+  host descheduling and garbage collection, which a percentile cutoff cannot distinguish from false dependencies.
+  No runtime barrier change is needed. Carrier: `extensions/RQW-tools/test/barrier.test.ts`; test design:
+  [notes/analysis-races.md, Test plan](notes/analysis-races.md#7-test-plan-synthetic-no-model-node---test-under-extensionsrqw-toolstest).
+
+- Engineering follow-up under the owner's flaky-test precedent: «Теперь по нестабильному тесту 1А»;
+  1a: «Отдельной задачей разобрать, почему тест кодмода на Windows иногда не укладывается в 5 секунд, и исправить причину.»
   The stock-versus-wrapper shell-path test compares every result field except `structuredContent.wall_time_seconds`,
   whose independent process timings need not match; both timings must still be nonnegative numbers.
   Reason: a rounded elapsed time is not shell-path behavior. Carrier: `extensions/RQW-tools/test/behavior.test.ts`.
