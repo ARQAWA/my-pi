@@ -48,10 +48,16 @@ Current accepted development policy (request summaries unless quoted); detailed 
   agent session of this repo); the product prompt `extensions/RQW-prompt/SYSTEM.md` is unchanged.
 - Preserve the user's changes and secrets; do not fix unrelated failures. Temporary files belong in OS temporary
   storage. No forks.
-- Run relevant checks once and reuse evidence while inputs are unchanged. Check locally on Mac and on Windows
-  through GitHub in the background; no Linux requirement. Docs-only work needs no tests. A different task-branch
-  commit versus the final squash alone is not a reason to rerun. Windows Node tooling runs through Git Bash,
-  not PowerShell/cmd runtime; existing CI `pwsh` bootstrap is allowed infrastructure.
+- Owner: «Сделай так, чтобы у тебя были логи числа прогонов на Mac. Это что за хуйня? Такого не должно быть. Ты запускаешь тесты или что? Ты не можешь проверить это? Это что за хуйня? Почему так, блядь? Если ты делаешь какие-то тесты, пробы, нагрузки тяжёлые, именно процессорные, то их лучше прогонять в CI/CD, чтобы наш MacBook Air не охуевал. Не лучше, а надо их прогонять в CI/CD.»
+  Clarification: «Нет нихуя не надо это была корректировка именно процесса на будущеее и того что что бы у тебя сохранялись логи».
+  Reason: keep CPU-heavy verification off the owner's MacBook Air and preserve auditable logs for reported
+  numbers. This is a future work policy, not a request for a measurement campaign. Carriers:
+  [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns) (execution and saved logs),
+  [PROCESS.md, Delivery](PROCESS.md#delivery) and `.github/workflows/tests.yml` (Mac CI proof).
+- Run relevant checks once and reuse evidence while inputs are unchanged; execution location and saved evidence
+  follow [PROCESS.md](PROCESS.md#sufficient-proof-without-idle-reruns). No Linux requirement. Docs-only work needs
+  no tests. A different task-branch commit versus the final squash alone is not a reason to rerun. Windows Node
+  tooling runs through Git Bash, not PowerShell/cmd runtime; existing CI `pwsh` bootstrap is allowed infrastructure.
 - Finish with an independent completeness-and-consistency check. For code changes, run a separate bug/quality
   reviewer in parallel via the existing agent custom system `.agents/reviewers/code.md`. This requires no new
   extension or product tool changes. Update installed Pi only for relevant runtime changes, never for docs-only work.

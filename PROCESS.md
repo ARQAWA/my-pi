@@ -74,10 +74,12 @@ campaign only; it does not pause unrelated work or prohibit the currently author
 - Run existing relevant checks once, in the background where possible. Repeat after a relevant fix or a changed
   tested input, not merely for confidence, staging, a commit ID or a squash merge. Reuse valid evidence while the
   tested code, configuration and document contracts remain unchanged.
-- Mac tests run locally, not on GitHub. Windows tests run on GitHub in the background while independent work goes
-  on, including relevant Node, Bun and PortableGit coverage. Linux is out of scope.
-- Use a focused test command for a focused change; use `npm test` locally when the affected surface requires the
-  full suite. Run `npm run test:bun` when Bun/codemode behavior is affected. Test extension isolation when affected.
+- CPU-heavy work (full suites, repeat loops, pressure runs and load probes) runs in GitHub Actions, never on the
+  owner's MacBook Air. Locally run only the focused test files of the change. Windows checks run in CI too,
+  including relevant Node, Bun and PortableGit coverage. Linux is out of scope.
+- Run `npm run test:bun` in CI when Bun/codemode behavior is affected. Test extension isolation when affected.
+- Workers save their check and probe logs. Every number in a report or documentation must point to a CI run URL
+  or a named saved log file; never report counts from memory. Save local logs in OS temporary storage.
 - Test exactly what gets merged. If `main` moved since the branch was created, the worker rebases the branch onto
   current `main`; Mac tests and Windows CI must pass on that final head commit, whose squash has the same tree.
   If the push started no `tests.yml` run (path filter), dispatch it: `gh workflow run tests.yml --ref <branch>`.
@@ -119,8 +121,9 @@ campaign only; it does not pause unrelated work or prohibit the currently author
 1. Update the affected documentation with the code. Record accepted decisions in `DECISIONS.md` with the owner's
    quote, reason and carrier; keep each rule in one place and link to it elsewhere. Current docs describe current
    facts, not a history ledger. Remove obsolete current instructions, retain deferred work as deferred.
-2. Push the task branch to start affected Windows CI early; continue independent work while it runs. Before merging,
-   require sufficient proof and the required clean reviews for the final head commit on current `main`
+2. Push the task branch to start affected CI early; continue independent work while it runs. Before merging,
+   require sufficient proof and the required clean reviews for the final head commit on current `main`.
+   The "Mac tests" requirement is met by the `macos-latest` test jobs in `tests.yml` on that exact head
    (see [Sufficient proof](#sufficient-proof-without-idle-reruns) and [Independent review](#independent-review)).
 3. Before every squash merge, Main writes the planned squash message and runs, from the clean main checkout,
    `npm run deliver-check -- <branch> <message-file>` (`scripts/deliver-check.mjs`; it fails in any checkout
