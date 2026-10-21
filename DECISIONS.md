@@ -845,6 +845,10 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `visibility.ts` wraps ModelRuntime provider/model listing and AgentSession.scopedModels with a checked,
   reference-counted reversible shim, only in runtimes with this overlay. It does not erase previously selected models
   or disable explicit SDK lookups. Disabling restores defaults without restoring stale credential snapshots.
+- Owner clarification: «Смотри, в нашем Pi должен быть старый OpenAI кодекс и всё, блядь. Legacy, который через девайс. А новый OpenAI нахуй не нужен, блядь. Я не знаю, что там за глупость новый OpenAI. У нас должен быть вход именно такой же, как сейчас это работает в текущем OpenAI кодексе, и всё, больше никак.»
+  Keep only `anthropic` and legacy `openai-codex` visible. Pi 1.3.0's `openai` ("Sign in with ChatGPT" and
+  `OPENAI_API_KEY`) stays hidden: the owner wants the existing legacy device login, not the new OpenAI provider.
+  Carrier: `extensions/RQW-anthropic/visibility.ts`, `ALLOWED`.
 - `auth.ts` refreshes under Pi's runtime credential-store lock, rechecks the rejected bearer, reuses a concurrent
   update and persists rotation before replay. One HTTP 401 replay, at most two transient refresh attempts and one
   explicit newer-version replay; no auth retry for 403/quota, no replay after streaming. Caller abort cancels waiting
