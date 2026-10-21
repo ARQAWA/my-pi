@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,12 +58,14 @@ function harness(models = SIX, initial = SIX[0], initialLevel: ThinkingLevel = "
 	};
 	process.argv = [...ORIGINAL_ARGV.slice(0, 2), ...flags];
 	extension(pi as unknown as ExtensionAPI);
+	// Pi supplies a lazy event context before it enables snapshot-based TUI shortcuts.
+	void events.get("session_start")!({ type: "session_start", reason: "reload" }, ctx);
 	return {
 		shortcuts, commands, selected, warnings,
 		get current() { return current; }, get thinking() { return thinking; }, get offered() { return offered; },
 		set branch(value: { type: string }[]) { branch = value; }, set choice(value: string | undefined) { choice = value; },
 		set hasUI(value: boolean) { hasUI = value; }, set allowSet(value: boolean) { allowSet = value; },
-		press: (key: KeyId) => shortcuts.get(key)!.handler(ctx),
+		press: (key: KeyId) => shortcuts.get(key)!.handler({ ...context } as unknown as ExtensionContext),
 		start: (reason: SessionStartEvent["reason"] = "startup") => events.get("session_start")!({ type: "session_start", reason }, ctx),
 		pick: () => commands.get("rqw-models")!.handler("", ctx),
 	};
@@ -112,6 +114,13 @@ describe("shortcuts and picker", () => {
 		const h = harness(SIX, SIX[0], "high");
 		await Promise.all([h.press("alt+="), h.press("alt+="), h.press("alt+=")]);
 		assert.equal(h.current, SIX[3]); assert.equal(h.thinking, "high");
+		assert.deepEqual(h.selected, SIX.slice(1, 4).map((m) => `${m.provider}/${m.id}`));
+	});
+	it("queued reasoning reads the new model capabilities, not the keypress snapshot", async () => {
+		const limitedOpus = model("claude-opus-5-5", "anthropic", {});
+		const h = harness([limitedOpus, SIX[1]], limitedOpus, "high");
+		await Promise.all([h.press("alt+="), h.press("alt+shift+=")]);
+		assert.equal(h.current, SIX[1]); assert.equal(h.thinking, "xhigh");
 	});
 	it("switching lowers unsupported effort to nearest lower level, or lowest, not Pi's upward clamp", async () => {
 		const limited = model("claude-sonnet-5-5", "anthropic", {});
@@ -167,8 +176,9 @@ describe("initial selection and explicit choices", () => {
 	});
 	it("respects --model, --thinking, model suffix and explicit off/minimal", async () => {
 		for (const [flags, expectedModel, level] of [
-			[["--model", "gpt-6-sol"], SIX[3], "medium"],
-			[["--model=gpt-6-sol:high"], SIX[3], "high"],
+			[["--model", "gpt-6-sol"], SIX[3], "high"],
+			[["--model", "gpt-6-sol:high"], SIX[3], "high"],
+			[["--models", "gpt-6-sol:high,gpt-6-luna:low"], SIX[3], "high"],
 			[["--model", "gpt-6-sol", "--thinking", "off"], SIX[3], "off"],
 			[["--thinking", "minimal"], SIX[0], "minimal"],
 			[["--thinking", "low", "--thinking", "high"], SIX[0], "high"],
@@ -184,7 +194,7 @@ describe("initial selection and explicit choices", () => {
 	});
 	it("does not reset resume, fork, reload, CLI continuation or a startup with history", async () => {
 		for (const reason of ["resume", "fork", "reload"] as const) { const h = harness(SIX, SIX[4], "max"); await h.start(reason); assert.equal(h.current, SIX[4]); assert.equal(h.thinking, "max"); }
-		for (const flags of [["-c"], ["--continue"], ["--resume"], ["-r"], ["--session", "file"], ["--session=file"]]) { const h = harness(SIX, SIX[4], "max", flags); await h.start(); assert.equal(h.selected.length, 0); assert.equal(h.thinking, "max"); }
+		for (const flags of [["-c"], ["--continue"], ["--resume"], ["-r"], ["--session", "file"]]) { const h = harness(SIX, SIX[4], "max", flags); await h.start(); assert.equal(h.selected.length, 0); assert.equal(h.thinking, "max"); }
 		const h = harness(SIX, SIX[3], "high"); h.branch = [{ type: "message" }]; await h.start(); assert.equal(h.selected.length, 0); assert.equal(h.thinking, "high");
 	});
 	it("no Opus leaves Pi's model, while authenticated proxy Opus is usable", async () => {
@@ -230,7 +240,7 @@ async function press(session: AgentSession, key: KeyId) {
 	const runner = session.extensionRunner;
 	const shortcuts = runner.getShortcuts({});
 	assert.ok(shortcuts.has(key));
-	await shortcuts.get(key)!.handler(runner.createContext());
+	await shortcuts.get(key)!.handler({ ...runner.createContext() });
 }
 
 describe("real Pi SDK and faux providers only", () => {
@@ -243,6 +253,15 @@ describe("real Pi SDK and faux providers only", () => {
 			await press(session, "alt+="); assert.equal(session.model?.id, "claude-sonnet-5-5"); assert.equal(session.thinkingLevel, "medium");
 			await press(session, "alt+shift+="); assert.equal(session.thinkingLevel, "high");
 			const saved = session.settingsManager.getSettings(); assert.equal(saved.defaultModel, undefined); assert.equal(saved.defaultThinkingLevel, undefined);
+		} finally { session.dispose(); }
+	});
+	it("rapid snapshot-context presses advance Opus to Sonnet to GPT6.1 to GPT6", async () => {
+		const session = await realSession();
+		try {
+			await Promise.all([press(session, "alt+="), press(session, "alt+="), press(session, "alt+=")]);
+			const changes = session.sessionManager.getBranch().filter((entry) => entry.type === "model_change");
+			assert.deepEqual(changes.slice(-3).map((entry) => entry.modelId), FAMILIES.slice(1, 4));
+			assert.equal(session.model?.id, "gpt-6-sol"); assert.equal(session.thinkingLevel, "medium");
 		} finally { session.dispose(); }
 	});
 	it("disabled extension adds no shortcut or default override", async () => {
@@ -273,9 +292,10 @@ const exec = promisify(execFile);
 const CLI = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")).replace(/dist[\\/]index\.js$/, "dist/cli.js");
 const FAUX = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "faux.ts");
 let cliCounter = 0;
-async function cli(flags: string[], noAnthropic = false) {
+async function cli(flags: string[], noAnthropic = false, settings?: Record<string, unknown>) {
 	const dir = join(root, `cli-${cliCounter++}`);
 	await mkdir(dir);
+	if (settings) await writeFile(join(dir, "settings.json"), JSON.stringify(settings));
 	const child = exec(process.execPath, [CLI, "--extension", FAUX, "--extension", EXTENSION,
 		"--no-tools", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-mcp", "--no-session", "--print", ...flags, "faux probe"], {
 		cwd: dir, timeout: 20000,
@@ -295,6 +315,16 @@ describe("real Pi CLI, no network and faux transport", () => {
 	it("respects real --model/--thinking and model thinking suffix", async () => {
 		assert.deepEqual(await cli(["--model", "openai-codex/gpt-6-sol", "--thinking", "off"]), { provider: "openai-codex", model: "gpt-6-sol", thinking: "off" });
 		assert.deepEqual(await cli(["--model", "openai-codex/gpt-6-luna:high"]), { provider: "openai-codex", model: "gpt-6-luna", thinking: "high" });
+	});
+	it("preserves Pi-resolved --models efforts and mixed scoped suffixes", async () => {
+		assert.deepEqual(await cli(["--models", "openai-codex/gpt-6-sol:high"]), { provider: "openai-codex", model: "gpt-6-sol", thinking: "high" });
+		const mixed = ["--models", "openai-codex/gpt-6-luna:low,openai-codex/gpt-6-sol:high"];
+		assert.deepEqual(await cli(mixed), { provider: "openai-codex", model: "gpt-6-luna", thinking: "low" });
+		assert.deepEqual(await cli(mixed, false, { defaultProvider: "openai-codex", defaultModel: "gpt-6-sol" }), { provider: "openai-codex", model: "gpt-6-sol", thinking: "high" });
+		assert.deepEqual(await cli([...mixed, "--thinking", "off"]), { provider: "openai-codex", model: "gpt-6-luna", thinking: "off" });
+	});
+	it("keeps Pi settings effort for an explicit model without a suffix", async () => {
+		assert.deepEqual(await cli(["--model", "openai-codex/gpt-6-sol"], false, { defaultThinkingLevel: "low" }), { provider: "openai-codex", model: "gpt-6-sol", thinking: "low" });
 	});
 	it("does not select Opus without auth and preserves explicit model outside the picker", async () => {
 		assert.deepEqual(await cli(["--model", "openai-codex/gpt-5.6-luna", "--thinking", "minimal"], true), { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "minimal" });

@@ -387,7 +387,10 @@ Every accepted decision, with its reason and the file that carries it.
   levels". `registerShortcut` binds those physical keys. `alt++` and `alt+_` also handle the shifted symbols sent by
   legacy terminals. `alt+shift++` and `alt+shift+_` handle CSI-u reporting the produced symbol while retaining Shift.
   The first match handles a press once, as in Pi's interactive editor. Shortcut actions are serialized so fast
-  repeated presses do not race. Both model and reasoning movement stop at either end, as omp does, rather than wrap.
+  repeated presses do not race. Each queued action reads the live `model` getter of the latest `session_start`
+  event context, not the TUI shortcut snapshot; this includes reasoning queued behind a model switch. The event
+  context is refreshed even on resume and reload. Both model and reasoning movement stop at either end, as omp does,
+  rather than wrap.
   From outside the list, forward enters at the first available model and backward at the last.
 - Conservative UI choice: `/rqw-models` is the extension's authenticated six-model picker via `ctx.ui.select`.
   Stock `/model`, Ctrl+L, Ctrl+P, Shift+Tab, `/scoped-models`, CLI/RPC selection and provider definitions stay intact.
@@ -396,12 +399,15 @@ Every accepted decision, with its reason and the file that carries it.
   not a global prohibition on explicit stock Pi choices. In print/JSON mode the picker has no dialog and does nothing;
   RPC can supply the standard select dialog. Disabling the extension restores stock behavior on `/reload`.
 - Owner: "Main initial model Opus medium; respect explicit CLI --model/--thinking; resumed sessions retain current
-  model". `session_start` selects available Opus and `medium` on a fresh startup or `/new`. With no authenticated Opus
+  model". Without explicit CLI model selection, `session_start` selects available Opus and `medium` on a fresh
+  startup or `/new`. With no authenticated Opus
   it keeps Pi's initial model rather than silently choosing another family. A startup with existing conversation
   history or continuation/session flags, and events `resume`, `fork` and `reload`, keep the current model/thinking.
-  Explicit CLI `--model` and `--models` preserve Pi's model selection; `--thinking` or a `--model ...:level` suffix
-  applies the requested thinking level to the final model through Pi's native clamping, including explicit off/minimal.
-  Without explicit thinking, medium applies to the chosen model when supported. CLI overrides apply to `/new` too,
+  Explicit CLI `--model` and `--models` preserve Pi's resolved model and thinking selection, including model suffixes,
+  mixed scoped suffixes, `--thinking` precedence and settings effort when no suffix is given. No scoped suffix is
+  parsed again by the extension. Pi's exported `parseArgs` recognizes explicit selections and continuation flags.
+  Without an explicit model selection, the extension selects available Opus and applies `--thinking` through Pi's
+  native clamping, including off/minimal; when `--thinking` is absent it applies medium when supported. CLI overrides apply to `/new` too,
   matching Pi's own new-session initialization. No defaults are persisted. An SDK host must pass reason `resume` for
   an empty restored session with no conversation history, since public session metadata cannot distinguish that
   session from a fresh one after Pi inserts initial model/thinking entries.
@@ -411,7 +417,13 @@ Every accepted decision, with its reason and the file that carries it.
   a model or override without xhigh/max mappings offers neither. A non-reasoning model has no choices. On an
   extension model switch the previous effort is retained if supported, otherwise the nearest lower supported level
   or the lowest. Explicit off/minimal moves to the lowest allowed level on the next extension-driven selection.
-- Research, read-only: `~/Documents/ChatGPT/my-omp-harness` master/lite use `extensions/ui/model-arrows.js` and
+- P2 follow-up, owner: "obtain live current model when action executes via public live context/session mechanism";
+  "Prefer Pi resolved settings state over fragile manual CLI parser"; "Preserve default Opusmedium only when no
+  explicit selection, resumed unchanged". Reason: queued TUI snapshots retain the previous model and an extension
+  override loses Pi's selected scoped effort. The fixes use the public event context and retain Pi's resolved
+  explicit selection in `extensions/RQW-models/index.ts`.
+- Research sources and Pi mechanisms: `notes/models-omp.md`. Read-only: `~/Documents/ChatGPT/my-omp-harness`
+  master/lite use `extensions/ui/model-arrows.js` and
   `reasoning-arrows.js`; deprecated uses the same files directly under `extensions/`. All use Shift+arrows and
   stop at the ends. Master contains GPT 5.6 and hard-coded Opus high/Sonnet xhigh caps plus Anthropic off payload
   rewrites; those are intentionally not ported. Its `settings/config.yml` keeps the two providers and seven model
@@ -426,8 +438,10 @@ Every accepted decision, with its reason and the file that carries it.
   physical/alternate-symbol CSI-u and xterm modifyOtherKeys bytes into Pi's `matchesKey`, with first-match dispatch.
   This is parser testing, not manual terminal testing. No live Claude requests, nested agents, push or merge in this
   task, as explicitly requested. No independent agent review was run because nested agents are prohibited. Local
-  proof is on macOS, Node 22.23.3 and 26.7.0, with 22 model tests on each and strict TypeScript checking;
-  The complete repository suite also passes on both with `--test-concurrency=1`. Simultaneous full-version runs
-  hit existing codemode 5-second watchdogs and a barrier timing assertion under load; no unrelated tests or timeouts
-  were changed. Windows/Linux remain covered by the existing CI matrix but were not run locally, and no terminal
+  proof for the P2 fixes is on macOS, Node 22.19.0 and 26.7.0, with 26 model tests on each. Regression coverage
+  includes rapid snapshot contexts, reasoning queued behind a switch, real CLI mixed scoped suffixes and a saved
+  default selecting the second scoped model. The complete repository suite passes on both with
+  `--test-concurrency=1`, versions run sequentially. Strict TypeScript checking was not rerun: this worktree has no
+  local compiler or typecheck script. No unrelated tests or timeouts were changed. Windows/Linux remain covered by
+  the existing CI matrix but were not run locally, and no terminal
   capture or corporate VDI test was performed.
