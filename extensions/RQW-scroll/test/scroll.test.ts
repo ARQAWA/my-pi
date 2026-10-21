@@ -3,12 +3,13 @@
 // onTerminalInput and setWidget the way InteractiveMode does (addExtensionTerminalInputListener,
 // setExtensionWidget with the proxy). Keys enter through the terminal's input callback, as typed bytes would.
 import assert from "node:assert/strict";
+import { stripVTControlCharacters } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { Container, setKeybindings, Text, type Component, type Terminal } from "@earendil-works/pi-tui";
+import { Container, getKeybindings, setKeybindings, Text, type Component, type Terminal } from "@earendil-works/pi-tui";
 import * as pi from "@earendil-works/pi-coding-agent";
 
 const PI = import.meta.resolve("@earendil-works/pi-coding-agent");
@@ -119,7 +120,40 @@ async function setup(o: { mode: "fullscreen" | "regular"; extension?: boolean })
 	};
 }
 
+const hint = (t: Awaited<ReturnType<typeof setup>>) =>
+	(t.renderer.getScreenLines() as string[]).map(stripVTControlCharacters).find((line) => line.includes("Jump to latest message"))?.match(/\u2193 Jump to latest message[^\u2502]*?\s{2}/)?.[0].trim();
+
 describe("RQW-scroll: Escape in the fullscreen view", () => {
+	it("renders Esc in the real fullscreen hint without binding Escape; shutdown restores stock", async () => {
+		const original = getKeybindings();
+		const t = await setup({ mode: "fullscreen" });
+		try {
+			assert.equal(hint(t), undefined, "no hint at the bottom");
+			t.scrollUp();
+			assert.equal(hint(t), "\u2193 Jump to latest message \u00b7 Esc/Ctrl+End");
+			assert.equal(getKeybindings().matches(ESC, "tui.altScreen.bottom"), false);
+			assert.deepEqual(keybindings.getKeys("tui.altScreen.bottom"), ["ctrl+end"], "original manager unchanged");
+			assert.equal(getKeybindings().matches(CTRL_END, "tui.altScreen.bottom"), true);
+			await t.shutdown();
+			t.renderer.renderNow();
+			assert.equal(getKeybindings(), original);
+			assert.equal(hint(t), "\u2193 Jump to latest message \u00b7 Ctrl+End");
+		} finally { await t.close(); }
+	});
+
+	it("the hint preserves configured bottom keys and other registry operations", async () => {
+		const t = await setup({ mode: "fullscreen" });
+		try {
+			getKeybindings().setUserBindings({ "tui.altScreen.bottom": ["ctrl+j", "ctrl+end"] });
+			t.scrollUp();
+			assert.equal(hint(t), "\u2193 Jump to latest message \u00b7 Esc/Ctrl+J/Ctrl+End");
+			assert.deepEqual(getKeybindings().getUserBindings(), { "tui.altScreen.bottom": ["ctrl+j", "ctrl+end"] });
+			assert.equal(getKeybindings().matches("\x0a", "tui.altScreen.bottom"), true);
+		} finally {
+			getKeybindings().setUserBindings({});
+			await t.close();
+		}
+	});
 	it("scrolled up: Escape jumps to the latest message and is consumed; the next Escape interrupts", async () => {
 		const t = await setup({ mode: "fullscreen" });
 		try {
@@ -249,6 +283,7 @@ describe("RQW-scroll: elsewhere Escape is stock", () => {
 		try {
 			assert.deepEqual([...t.widgets.keys()], []);
 			t.scrollUp();
+			assert.equal(hint(t), "\u2193 Jump to latest message \u00b7 Ctrl+End");
 			const before = t.view();
 			t.press(ESC);
 			assert.equal(t.interrupts, 1);

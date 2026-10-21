@@ -1189,15 +1189,25 @@ Current accepted development policy (request summaries unless quoted); detailed 
   their own Escape; inline mode and print, JSON and RPC modes are unchanged. The TUI is reached through the public
   widget factory (a `belowEditor` widget that renders no line), which receives Pi's proxy to the current renderer, so
   a switch between inline and fullscreen is followed. Key releases are not consumed.
-- Limits: Pi's indicator label still names only the keys of `tui.altScreen.bottom` ("Jump to latest message" with
-  Ctrl+End); changing it would need a Pi patch or the rejected binding. A custom editor that does not extend
-  `CustomEditor` gets stock Escape. With search open, the first Escape closes search and the second jumps down.
+- The fullscreen hint includes `Esc` alongside the configured bottom keys (by default `Esc/Ctrl+End`) when Escape
+  can jump. Owner: «Нашел баг: не Escape мы возвращаемся уже, а в надписи написано старый hotkey.» Reason: the hint
+  must advertise the extension's Escape behavior, not just Pi's stock shortcut. Engineering choice and carrier:
+  `extensions/RQW-scroll/index.ts` replaces the public `getKeybindings`/`setKeybindings` registry with a display
+  facade. Only `getKeys("tui.altScreen.bottom")` is decorated, and only while Escape can jump; matching and all
+  configuration operations delegate to the unchanged manager. Pi formats those keys itself; no renderer patch,
+  fork, private hint-field write or Escape binding is needed. Shutdown deactivates the facade and restores the
+  prior registry if it still owns the slot; another registry replacement is not overwritten.
+- Limits: a custom editor that does not extend `CustomEditor` gets stock Escape. With search open, the first Escape
+  closes search and the second jumps down. Pi's keybinding registry is process-global; the display facade follows
+  its owning interactive renderer, as does Pi's own registry.
 - Proof: `extensions/RQW-scroll/test/scroll.test.ts` (in `npm test`), with Pi's real renderers and proxy
   (`createInteractiveTui`, `createInteractiveTuiReference`), chat viewport, `CustomEditor`,
   `ExtensionSelectorComponent`, overlay and transcript search, the extension loaded by Pi's resource loader and keys fed
   through the terminal input callback: scrolled up, Escape jumps and is consumed, the next Escape interrupts; at the
   bottom Escape interrupts; Ctrl+End still jumps; selector, overlay, autocomplete and search keep their Escape; inline
-  mode, the extension not loaded and after `session_shutdown` give stock Escape. A local PTY probe of the real CLI in
+  mode, the extension not loaded and after `session_shutdown` give stock Escape. Real fullscreen screen lines
+  prove the hint includes `Esc`, retains configured bottom keys, and is stock without the extension and after
+  shutdown; direct registry assertions prove Escape is not bound and the original manager is unchanged. A local PTY probe of the real CLI in
   fullscreen with `doubleEscapeAction: fork` confirmed the InteractiveMode wiring: scrolled up, a quick Escape pair
   jumped down without the fork notice; the next pair at the bottom showed it.
 
