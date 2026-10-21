@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { it } from "node:test";
 import { Type } from "typebox";
 import { faux, once, start } from "./fixture.ts";
@@ -20,7 +20,8 @@ it("native AGENTS, skills, addenda, cwd, sections and tool declarations survive 
 			for (const text of ["You are a coding agent in pi", "PROJECT_CONTEXT_SENTINEL", "GLOBAL_CONTEXT_SENTINEL", "SKILL_DESCRIPTION_SENTINEL", "APPEND_A_SENTINEL", "APPEND_B_SENTINEL", "CUSTOM_SECTION_SENTINEL", "<cwd>"]) once(got.prompt, text);
 			assert.doesNotMatch(got.prompt, /SKILL_BODY_NOT_AUTOLOADED|<search_method>|<rqw_tools_execution>/);
 			assert.deepEqual(got.tools.sort(), ["bash", "edit", "read", "write"]);
-			assert.equal(got.sections?.cwd, `<cwd>\n${run.cwd}\n</cwd>`);
+			assert.match(got.sections!.cwd!, /^<cwd>\n[^\n]+\n<\/cwd>$/);
+			assert.equal(resolve(got.sections!.cwd!.slice("<cwd>\n".length, -"\n</cwd>".length)), resolve(run.cwd));
 			assert.match(got.prompt, /- Model: prompt-regression-faux\/one/);
 		}
 		assert.equal(new Set(seen).size, 3, "SDK must prepare distinct run options, not carry our customPrompt forward");

@@ -17,7 +17,7 @@ for (const mode of ["text", "json"]) {
 				const agentDir = join(cwd, "agent"); await mkdir(agentDir);
 				await writeFile(join(agentDir, "models.json"), JSON.stringify({ providers: { "openai-codex": { apiKey: "faux-only" } } }));
 				await writeFile(join(cwd, "AGENTS.md"), "CLI_CONTEXT_SENTINEL");
-				const args = ["--import", join(import.meta.dirname, "guard.mjs"),
+				const args = ["--import", new URL("./guard.mjs", import.meta.url).href,
 					join(ROOT, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
 					"-ne", "-e", join(import.meta.dirname, "cli-faux.ts"), "-e", PROMPT,
 					"--model", "openai-codex/gpt-6.1-sol", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-mcp", "--no-session",

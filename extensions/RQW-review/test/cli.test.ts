@@ -5,12 +5,14 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "../../..");
 const runtime = process.env.PI_REVIEW_TEST_RUNTIME ?? process.execPath;
 const bun = runtime === "bun";
+const offline = join(here, "offline.mjs");
+const preload = bun ? offline : pathToFileURL(offline).href;
 
 describe(`${bun ? "Bun" : "Node"} CLI review delivery`, () => {
 	for (const mode of ["print", "json"] as const) {
@@ -19,7 +21,7 @@ describe(`${bun ? "Bun" : "Node"} CLI review delivery`, () => {
 			const agent = join(dir, "agent");
 			await mkdir(agent);
 			const cli = join(repo, `node_modules/@earendil-works/pi-coding-agent/dist/${bun ? "bun/" : ""}cli.js`);
-			const child = spawn(runtime, [bun ? "--preload" : "--import", join(here, "offline.mjs"), cli,
+			const child = spawn(runtime, [bun ? "--preload" : "--import", preload, cli,
 				"--no-extensions", "-e", join(here, "../index.ts"), "-e", join(here, "cli-faux.ts"),
 				"--provider", "review-cli", "--model", "main", "--mode", mode === "print" ? "text" : mode, "-p", "Review fixture"], {
 				cwd: dir, env: { ...process.env, PI_CODING_AGENT_DIR: agent, PI_OFFLINE: "1" }, stdio: ["ignore", "pipe", "pipe"],
@@ -57,7 +59,7 @@ it(`${bun ? "Bun" : "Node"} CLI RPC: two verdicts in earlier aborted agent_settl
 	const env: Record<string, string> = {};
 	for (const key of ["PATH", "TMPDIR", "SystemRoot", "WINDIR"]) if (process.env[key]) env[key] = process.env[key]!;
 	Object.assign(env, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1" });
-	const child = spawn(runtime, [bun ? "--preload" : "--import", join(here, "offline.mjs"),
+	const child = spawn(runtime, [bun ? "--preload" : "--import", preload,
 		join(repo, `node_modules/@earendil-works/pi-coding-agent/dist/${bun ? "bun/" : ""}cli.js`),
 		"--no-extensions", "-e", join(here, "settle-cli-faux.ts"), "-e", join(here, "../index.ts"),
 		"--no-skills", "--no-prompt-templates", "--no-context-files", "--no-themes", "--no-mcp", "--no-session",
