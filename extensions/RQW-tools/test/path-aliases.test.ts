@@ -151,19 +151,54 @@ for (const invalid of [false, true]) {
   });
 }
 
-test("237 F1 invalid native file/. symlink stays separate from the valid edit target", async (t) => {
+for (const invalid of [false, true]) {
+  test(`Windows trailing-dot/space aliases share original-file edit validation${invalid ? " before any write" : ""}`, { skip: process.platform !== "win32" }, async (t) => {
+    const dir = fresh(t);
+    const target = path.join(dir, "right/file.txt");
+    fs.writeFileSync(target, "alpha beta\n");
+    const stock = createEditToolDefinition(dir);
+    const run = () => executeEdit(stock.execute, "e", { edits: [
+      { path: "right/file.txt", oldText: "alpha", newText: "ALPHA" },
+      { path: "right/file.txt. ", oldText: invalid ? "absent" : "beta", newText: "BETA" },
+    ] }, undefined, undefined, { cwd: dir }, dir);
+    if (invalid) await assert.rejects(run(), /edits\[1\]/);
+    else await run();
+    assert.equal(fs.readFileSync(target, "utf8"), invalid ? "alpha beta\n" : "ALPHA BETA\n");
+    let calls = 0;
+    await assert.rejects(executeWrite(async () => { calls++; return { content: [] }; }, "w", { files: [
+      { path: "right/file.txt", content: "one" }, { path: "right/file.txt. ", content: "two" },
+    ] }, undefined, undefined, { cwd: dir }, dir), /twice/);
+    assert.equal(calls, 0);
+  });
+}
+
+test("237 F1 native file/. symlink matches stock edit success or ENOTDIR", async (t) => {
   const dir = fresh(t);
   fs.writeFileSync(path.join(dir, "real.txt"), "alpha beta\n");
   fs.symlinkSync("real.txt/.", path.join(dir, "bad"), "file");
   const stock = createEditToolDefinition(dir);
+  let nativeError: unknown;
+  try {
+    await stock.execute("oracle", { path: "bad", edits: [{ oldText: "beta", newText: "BETA" }] });
+  } catch (error) { nativeError = error; }
+  if (!nativeError) assert.equal(fs.readFileSync(path.join(dir, "real.txt"), "utf8"), "alpha BETA\n");
+  if (process.platform !== "win32") assert.match(String(nativeError), /ENOTDIR/);
+  fs.writeFileSync(path.join(dir, "real.txt"), "alpha beta\n");
   const result = await executeEdit(stock.execute, "e", { edits: [
     { path: "real.txt", oldText: "alpha", newText: "ALPHA" },
     { path: "bad", oldText: "beta", newText: "BETA" },
   ] }, undefined, undefined, { cwd: dir }, dir);
+  if (!nativeError) {
+    assert.equal(editPathKey("bad", dir), editPathKey("real.txt", dir));
+    assert.equal(fs.readFileSync(path.join(dir, "real.txt"), "utf8"), "ALPHA BETA\n");
+    assert.notEqual(result.isError, true);
+    return;
+  }
+  assert.equal(editPathKey("bad", dir), undefined);
   assert.equal(fs.readFileSync(path.join(dir, "real.txt"), "utf8"), "ALPHA beta\n");
   assert.equal(result.isError, true);
   assert.deepEqual(result.details.files.map((file: any) => [file.path, file.ok]), [["real.txt", true], ["bad", false]]);
-  assert.match(result.details.files[1].error, /ENOTDIR/);
+  assert.ok(result.details.files[1].error.includes((nativeError as Error).message));
 });
 
 test("dangling chains resolve relative to each link parent, preserving directory suffixes and native target spelling", async (t) => {
@@ -186,7 +221,17 @@ test("dangling chains resolve relative to each link parent, preserving directory
   fs.mkdirSync(path.join(dir, "right/actual/sub"));
   fs.symlinkSync("actual/sub", path.join(dir, "right/pivot"), "dir");
   fs.symlinkSync("../right/pivot/../new.txt", path.join(dir, "left/dotdot"), "file");
-  await assert.rejects(write(["left/dotdot", "right/actual/new.txt"]), /twice/);
+  // Windows may normalize the target when creating the link. Ask stock where it actually writes.
+  await createWriteToolDefinition(dir).execute("oracle", { path: "left/dotdot", content: "oracle" });
+  const nativeTarget = fs.realpathSync.native(path.join(dir, "left/dotdot"));
+  if (process.platform !== "win32") {
+    assert.equal(nativeTarget, fs.realpathSync.native(path.join(dir, "right/actual/new.txt")));
+  }
+  fs.unlinkSync(nativeTarget);
+  const before = [...called];
+  await assert.rejects(write(["left/dotdot", nativeTarget]), /twice/);
+  assert.deepEqual(called, before, "native aliases are rejected before any stock call");
+  assert.equal(fs.existsSync(nativeTarget), false);
 });
 
 test("symlink cycles retain ordinary stock errors instead of becoming unsupported paths", async (t) => {
