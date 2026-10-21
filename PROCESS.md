@@ -28,7 +28,8 @@ Model choices live in `DECISIONS.md`, section Work policy.
    owner's rule of 21 October limits findings to obvious real errors: «Не надо делать микроправки всяких хуёвин, которые возможно
    никогда не всплывут ... Надо править именно очевидные жирные ошибки, а не вылизывать до предела». A fresh reviewer checks again (for large work
    split into parts, only the parts the fixes touched). Stop at CLEAN.
-7. **Ship.** Commit, push, merge into `main`, wait for green CI. `DECISIONS.md` and the
+7. **Ship.** Commit, push, merge into `main`, wait for green CI. A docs-only change (root `*.md`, `notes/`, `.agents/`)
+   starts no CI, so there is nothing to wait for. `DECISIONS.md` and the
    docs change in the same merge.
 8. **Report once.** The result, what the owner should try himself with exact commands, and what stays paused.
 
