@@ -558,6 +558,19 @@ Every accepted decision, with its reason and the file that carries it.
 
 ## Review
 
+- Prompt adaptation is now tuned on GPT with the measured v3, carried byte-for-byte in
+  `extensions/RQW-review/REVIEWER.md` (owner: flexible reviewer conditions; team synergy only in the plugin;
+  finish the prompt on GPT). The criterion governs scope, including custom requirements outside the agreement and
+  exclusions; REQUIREMENT may quote the criterion with its source. Main and reviewer remain a pair through the
+  plugin's `DESCRIPTION` and `NEXT` in `index.ts`, not `SYSTEM.md`. The reviewer checks independently, quotes exact
+  file content and does not turn general test requests into invented coverage requirements. Reason: the measured
+  candidate improves scope/flexibility and quote/format handling with zero audited false findings on the final GPT
+  comparison; this is not a claim of universal recall improvement. Paired GPT-6.1 recall 87/90 -> 87/90, GPT-6
+  87/90 -> 86/90; GPT-6 false findings after audit 6 -> 0, final 0 on both; mean seconds 7.9 -> 9.2 and
+  10.8 -> 12.3. Only 12 cases x 3 runs per model, four GPT-held-out cases, no new Claude probes; details and limits
+  in `notes/reviewer-prompt-gpt.md`. The tool contract, read-only tools, verdict handling and product pins
+  Haiku 5.5 medium / Sonnet 5.5 low stay unchanged.
+
 - `extensions/RQW-review/` is the accepted reviewers plan (user: «То, что ты предложил по ревьюерам — it's OK, я
   принимаю»): one tool `review` with `level` `blind` or `high` (user: «Smart не нужен ... будет Blind и High»), held
   to the existing contract and nothing more (user: «эти три саб-агента должны быть забиты за тем контрактом, который
@@ -593,12 +606,8 @@ Every accepted decision, with its reason and the file that carries it.
   section where they go only without a custom prompt, so they would never reach the model while RQW-prompt is on.
   Not `SYSTEM.md`: turning RQW-review off must remove the pair completely, and with the rules in the plugin it does.
   Source: `/tmp/review-pair.md` section 3.
-- Reviewer-side tuning candidates, not edits (`REVIEWER.md` changes only through the measurement bench):
-  1. REQUIRED OUTCOME names the one end state the agreement requires, never a choice between fixes or a question to
-     the user (the 2026-10-09 loops came partly from such choices).
-  2. Describe the real brief tags: `<user_messages>` (every user message of the branch in order, summaries labeled as
-     not the user's words), `<agreement>`, `<object>`, `<criterion>` and, from the second pass, `<rejected_earlier>`;
-     requirements come from the messages this object answers.
+- Reviewer-side tuning is complete on GPT: REQUIRED OUTCOME states one concrete end state; the measured prompt
+  treats `<criterion>` as the scope alongside the real brief tags. Evidence and limits: `notes/reviewer-prompt-gpt.md`.
 - The diff goes in as a file path, not as a command: the reviewer only reads files and cannot run one.
 - The extension builds the brief itself (`buildBrief`): the user's messages of the current branch, verbatim, numbered
   and in order, with compaction and branch summaries labeled as not the user's words, then `agreement`, `object`,
@@ -622,11 +631,10 @@ Every accepted decision, with its reason and the file that carries it.
 - The reviewer uses the session's own model runtime, `ctx.modelRegistry.runtime`, private to TypeScript only.
   Reason: providers and logins that the user's extensions register reach the reviewer (here `pi-claude-auth`
   registers the `anthropic` provider), and no second runtime refreshes the same OAuth login.
-- `REVIEWER.md` is the Spotty body from `my-omp-harness` `deprecated:agents/spotty.md` with two changes for Pi: the
-  `read` note (Pi's read prints no line numbers; the bracketed continuation note is not file content) and the final
-  answer as the last message instead of a `yield` call, worded as in master `agents/review.md`. The verdict format
-  stays: `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED
-  OUTCOME), and an optional `UNCHECKED:` section.
+- `REVIEWER.md` now carries the measured v3 adaptation of the Spotty body. Pi's read has no line numbers; initial
+  reads omit numeric windows and truncated files resume at the reported offset. The final answer is the last message,
+  not `yield`. The verdict format stays `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT,
+  MISMATCH, EVIDENCE, REQUIRED OUTCOME), and an optional `UNCHECKED:` section.
 - Async: the call returns `review#N started. ...` at once. The verdict, the reviewer's last assistant text, arrives as
   `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>\n\n<next step>", display: true }, ...)`; `details` carry
   `n`, level, model, thinking and seconds for the user and logs only. Numbers count per session and go on after a
