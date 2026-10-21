@@ -17,6 +17,9 @@ The source remains outside this repository; no transcript or credentials are cop
 - The development loop and the lessons of the first build session are written down in `PROCESS.md`, beside the
   manifest, which still wins (user: «А workflow разработки должен сам себе где-то сохранить, можно прямо в этом же
   репозитории. Мы его зафиксируем на будущее, чтобы ты в нём работал дальше.»).
+- CI runs only when something the tests load changes: `.github/workflows/tests.yml` ignores pushes that touch only
+  root `*.md`, `notes/**` and `.agents/**` (user: «Тесты надо запускать, только если что-то реально поменялось.»).
+  No test reads those files. Manual runs stay available through `workflow_dispatch`.
 
 ## Scope
 

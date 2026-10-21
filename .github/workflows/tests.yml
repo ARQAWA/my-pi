@@ -2,6 +2,8 @@ name: tests
 
 on:
   push:
+    # Docs-only pushes run no tests: root *.md, notes/ and .agents/ carry no code the tests load.
+    paths-ignore: ['*.md', 'notes/**', '.agents/**']
   workflow_dispatch:
 
 permissions:
