@@ -10,10 +10,12 @@ import {
 	createReadToolDefinition,
 	createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { createBarrier } from "./barrier.ts";
+import { takeOverBuiltinCodemode } from "./codemode.ts";
 import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { scopeOf } from "./keys.ts";
+import { createNestedBarrier } from "./nested.ts";
 import { editRenderers, writeRenderers } from "./render.ts";
+import { noToolSelection } from "./selection.ts";
 import { createWriteSchema, executeWrite, prepareWriteArguments } from "./write.ts";
 
 const NO_LIMIT = 100000;
@@ -46,32 +48,37 @@ function safely(settings: () => any): any {
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
 
 export default function (pi: ExtensionAPI) {
-	for (const tool of createTools(process.cwd(), () => pi.getSettings())) pi.registerTool(tool);
+	// One barrier per extension instance; every execute registers its scope synchronously before any await. The tool
+	// calls of a `codemode` script use the barrier of that script, found by the tool call id (nested.ts); the
+	// `codemode` call itself is one call with scope "all" in the outer one.
+	const nested = createNestedBarrier();
+	for (const tool of createTools(process.cwd(), () => pi.getSettings(), nested)) pi.registerTool(tool);
 
 	// Pi calls the handler synchronously inside `emit`, and drops it when this instance goes stale (reload, dispose).
+	// The offer is `createTools` itself: a subagent calls it and gets six fresh tools with a barrier of their own.
 	pi.events.on(SUBAGENT_TOOLS, (request) => (request as { offer?: (factory: typeof createTools) => void })?.offer?.(createTools));
 
-	// grep and find are on only when the user made no tool selection: no tool flag in argv (any spelling) and no
-	// `defaultTools` setting. Any selection leaves the active set exactly as stock Pi built it.
-	// The extension API exposes no `tools` / `noTools` / `excludeTools` session options, so argv is the signal.
-	const TOOL_FLAGS = ["--tools", "-t", "--exclude-tools", "-xt", "--no-tools", "-nt", "--no-builtin-tools", "-nbt"];
-	pi.on("session_start", () => {
-		if (process.argv.some((a) => TOOL_FLAGS.some((f) => a === f || a.startsWith(f + "=")))) return;
-		const settings = safely(() => pi.getSettings());
-		if (!settings || settings.defaultTools !== undefined) return;
-		const active = pi.getActiveTools();
-		const missing = ["grep", "find"].filter((name) => !active.includes(name));
-		if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
+	// grep and find are on only when the user made no tool selection (see `noToolSelection`). Any selection leaves
+	// the active set exactly as stock Pi built it. On `reload` Pi keeps the tools the user switched off during the
+	// session, so the handler leaves the active set alone then.
+	// Pi's built-in `codemode`, when it is loaded, is replaced by the same definition as a call of the barrier. That
+	// runs for every reason, `reload` included: a reload builds a fresh registry with the built-in again.
+	pi.on("session_start", (event) => {
+		if (event.reason !== "reload" && noToolSelection(pi)) {
+			const active = pi.getActiveTools();
+			const missing = ["grep", "find"].filter((name) => !active.includes(name));
+			if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
+		}
+		takeOverBuiltinCodemode(pi, nested);
 	});
 }
 
 /**
- * The six tools with one barrier of their own: one call for the main session, one per subagent session. `settings`
- * returns the effective settings of the session whose tools these are.
+ * The six tools with one barrier: the main session passes its own `nested` barrier (also used for `codemode`); a
+ * subagent session gets a fresh one. `codemode` is not one of the six. `settings` returns the effective settings of
+ * the session whose tools these are.
  */
-export function createTools(cwd: string, settings: () => any): ToolDefinition[] {
-	// One barrier per call; every execute registers its scope synchronously before any await.
-	const schedule = createBarrier();
+export function createTools(cwd: string, settings: () => any, nested = createNestedBarrier()): ToolDefinition[] {
 	const tools: ToolDefinition[] = [];
 
 	type Run = (id: string, params: any, signal: any, onUpdate: any, ctx: any) => Promise<any>;
@@ -81,7 +88,7 @@ export function createTools(cwd: string, settings: () => any): ToolDefinition[] 
 			...stock,
 			...overrides,
 			execute(id: string, params: any, signal: any, onUpdate: any, ctx: any) {
-				return schedule(scopeOf(name, params, ctx?.cwd || process.cwd()), async () => {
+				return nested.schedule(id, scopeOf(name, params, ctx?.cwd || process.cwd()), async () => {
 					if (signal?.aborted) throw new Error("Operation aborted");
 					return run(id, params, signal, onUpdate, ctx);
 				});

@@ -10,6 +10,10 @@ type Rec = { i: number; scope: Scope; entry: number; start: number; end: number 
 
 // Shared CI runners showed timer jitter up to about 7 ms; over-serialization in T1 costs a whole 30 ms op.
 const SLACK_MS = 15;
+// Windows runners showed T1 waits up to 24 ms over the bound; T1 uses 80 ms ops, so over-serialization (a whole op)
+// still fails a 40 ms slack.
+const T1_DUR_MS = 80;
+const T1_SLACK_MS = 40;
 // Real timers on purpose: the test measures start and end times of operations against the platform clock, and fake
 // timers would hide exactly the scheduling gaps the slack check looks for.
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -115,7 +119,7 @@ for (const c of table) {
         assert.strictEqual(c.deps[j].includes(i), oracle(c.ops[i], c.ops[j]), `table: pair ${i},${j}`);
       }
     }
-    const recs = await runBatch(createBarrier(), c.ops);
+    const recs = await runBatch(createBarrier(), c.ops, T1_DUR_MS);
     for (const [j, deps] of c.deps.entries()) {
       const r = recs[j];
       let bound = r.entry;
@@ -123,7 +127,7 @@ for (const c of table) {
         assert.ok(r.start >= recs[i].end, `op${j} started at ${r.start} before op${i} ended at ${recs[i].end}`);
         bound = Math.max(bound, recs[i].end);
       }
-      assert.ok(r.start - bound < SLACK_MS, `op${j} waited ${(r.start - bound).toFixed(2)} ms longer than needed`);
+      assert.ok(r.start - bound < T1_SLACK_MS, `op${j} waited ${(r.start - bound).toFixed(2)} ms longer than needed`);
     }
   });
 }
