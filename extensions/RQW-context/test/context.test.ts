@@ -413,7 +413,8 @@ async function virtualRun(pi: Pi, withExtension: boolean, virtualWindow: number,
 			scripted.state.next = [5_000];
 			compactions.push((await promptOnce(session, text)).starts.length);
 		}
-		return { window: session.model?.contextWindow, reserve, compactions, requests: scripted.state.requests.length };
+		return { window: session.model?.contextWindow, reserve, compactions, requests: scripted.state.requests.length,
+			windows: scripted.state.requests.map((request) => request.contextWindow) };
 	} finally {
 		await shutdown(session);
 	}
@@ -476,6 +477,7 @@ describe("stock Pi without the extension (runs first, before the classes are wra
 				reserve: 16_384,
 				compactions: [0, 0, 0],
 				requests: 3,
+				windows: [272_000, 272_000, 272_000],
 			});
 		});
 
@@ -653,10 +655,14 @@ for (const [entry, pi] of ENTRIES) {
 			assert.deepEqual(caps, [MAX_TOKENS, 15_902, 1, 1]);
 		});
 
-		it("a virtual model keeps Pi's own values: no cap, reserve 16 384, no compaction, as stock", async () => {
-			const stock = { reserve: 16_384, compactions: [0, 0, 0], requests: 3 };
-			assert.deepEqual(await virtualRun(pi, true, 1_000_000, "w272k"), { window: 1_000_000, ...stock });
-			assert.deepEqual(await virtualRun(pi, true, 2_000_000, "w1m"), { window: 2_000_000, ...stock });
+		it("a virtual selection keeps its hint; native routed requests use the capped physical window", async () => {
+			const selectionOnly = { reserve: 16_384, compactions: [0, 0, 0], requests: 3 };
+			assert.deepEqual(await virtualRun(pi, true, 1_000_000, "w272k"), {
+				window: 1_000_000, ...selectionOnly, windows: [272_000, 272_000, 272_000],
+			});
+			assert.deepEqual(await virtualRun(pi, true, 2_000_000, "w1m"), {
+				window: 2_000_000, ...selectionOnly, windows: [500_000, 500_000, 500_000],
+			});
 		});
 	});
 
