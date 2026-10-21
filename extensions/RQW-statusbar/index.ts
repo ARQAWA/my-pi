@@ -1,4 +1,4 @@
-// Interactive-only footer and editor bottom border. All displayed session values are read through Pi's live context getters.
+// Interactive-only footer and editor borders (session ID on top, context bar at the bottom). All displayed session values are read through Pi's live context getters.
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
@@ -71,7 +71,9 @@ export default function statusbar(pi: ExtensionAPI) {
 			}
 			return cached;
 		};
-		border = { context: () => contextState().context, paint: () => themePaint(ctx.ui.theme) };
+		// The ID is read on every render; /new, resume, fork and /reload also reinstall through session_start.
+		border = { context: () => contextState().context, sessionId: () => ctx.sessionManager.getSessionId(),
+			paint: () => themePaint(ctx.ui.theme) };
 		// Another extension's editor is kept; the context row then stays in the footer.
 		if (ctx.ui.getEditorComponent() === undefined) ctx.ui.setEditorComponent(editorFactory);
 		ctx.ui.setFooter((tui, theme, footer) => {

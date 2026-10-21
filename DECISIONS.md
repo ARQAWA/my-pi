@@ -1027,6 +1027,25 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Reason: the owner's layout without taking the editor slot from another extension; no Pi patch. Outside the TUI
   nothing is installed. Carrier: `extensions/RQW-statusbar/{editor,index}.ts`, `render.ts` `editorBorder`;
   contract and proof: `notes/statusbar-omp.md`.
+- The full session ID ends the editor's top border, where Pi's working status runs on the left:
+  `── <working…> ─────── <session-id> ──`, idle only rule cells before it. Owner: «Также надо знаешь, что сделать?
+  Надо добавить в status bar наш. Надо добавить status bar id сессий куда-нибудь, блядь. Можно добавить его в верхнюю
+  часть там, где working крутится, хуйня. С левой стороны сделать также вставку id сессий с пробелами: идёт чёрточка,
+  потом id, потом снова чёрточка. Прямо по левому краю. Сейчас напишу пример.
+  -- тут воркинг крутится ------ а тут ID --
+  Я бы так сделал, чтобы это было симметрично по левому краю именно, и чтобы между чёрточками и ID был какой-то
+  пробел, хотя бы по одному, чтобы можно было нормально вырезать и вставить, скопировать и вставить.»
+  He confirmed the side: «По визуальному он должен стоять справа. Я ошибся: не с левого края, а с правого края.
+  Слева working, справа ID сессии. Он прижат должен быть к правому краю, а ID к левому краю прижат. Если места нету,
+  то он и не отображается, его просто не видно.» So the working status stays at the left where Pi draws it and the
+  ID sits at the right end, mirroring Pi's `── ` frame as ` <id> ──`; without room it is not shown at all.
+  Engineering choices: the ID is Pi's `sessionManager.getSessionId()`, read on every render; exactly one
+  plain space on each side and one uninterrupted muted-colored run, so a terminal selection copies it whole; when Pi's
+  own top border (status, retry/compaction status, the up-arrow `N more` hint) would lose text or its trailing rule
+  at the reduced width, the ID is dropped whole instead of cut and Pi's border is unchanged. With the bar off or a
+  foreign editor in place there is no ID. Reason: the owner's layout and copyable ID without ever degrading Pi's
+  status. Carrier: `extensions/RQW-statusbar/editor.ts` `renderTopBorder`, `render.ts` `sessionTopBorder`,
+  `index.ts`; contract and proof: `notes/statusbar-omp.md`.
 
 ## Anthropic package integration
 

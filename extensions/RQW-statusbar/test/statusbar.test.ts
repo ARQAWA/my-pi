@@ -52,6 +52,8 @@ function uiHarness(footer?: InstanceType<typeof FooterDataProvider>) {
 	return { ui, statuses, render: (width = 80) => component?.render(width),
 		/** The editor's bottom border, undefined for Pi's stock editor. */
 		border: (width = 80) => editor?.render(width).at(-1),
+		/** The editor's top border. */
+		top: (width = 80) => editor?.render(width)[0],
 		get editor() { return editor; },
 		get calls() { return calls; }, get renders() { return renders; }, get subscriptions() { return subscriptions; },
 		dispose: () => component?.dispose?.() };
@@ -82,6 +84,14 @@ for (const [label, pi] of [["library", library], ["bundle", bundle]] as const) {
 			assert.equal(h.render()!.length, 2, "the context row is the editor's bottom border, not a footer row");
 			assert.equal(visibleWidth(h.border()!), 80);
 			assert.ok(h.editor instanceof pi.CustomEditor, "Pi's CustomEditor keeps app keybindings");
+			// The full session ID ends the top border and follows the live session manager.
+			const firstId = session.sessionManager.getSessionId();
+			assert.match(firstId, /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+			assert.equal(h.top(), `${"\u2500".repeat(40)} ${firstId} \u2500\u2500`);
+			assert.equal(h.top(41), "\u2500".repeat(41), "too narrow: the ID is dropped, not cut");
+			session.sessionManager.newSession();
+			assert.notEqual(session.sessionManager.getSessionId(), firstId);
+			assert.equal(h.top(), `${"\u2500".repeat(40)} ${session.sessionManager.getSessionId()} \u2500\u2500`);
 			assert.equal((h.editor as unknown as { embedWorkingStatus: boolean }).embedWorkingStatus, true,
 				"the working status stays in the top border, as in Pi's default editor");
 			// Twenty input lines in a 40-row terminal show 12; with the cursor on the first, 8 are hidden below.
@@ -129,6 +139,7 @@ for (const [label, pi] of [["library", library], ["bundle", bundle]] as const) {
 			assert.equal(h.render()!.length, 3);
 			assert.ok(h.render()![0].endsWith("?/222k"));
 			assert.equal(h.border(), "\u2500".repeat(80));
+			assert.equal(h.top(), "\u2500".repeat(80), "a foreign editor shows no session ID");
 			// A foreign editor present at install time is kept, and off does not remove it.
 			await command.handler("off", session.extensionRunner.createCommandContext());
 			assert.equal(h.ui.getEditorComponent(), foreign);

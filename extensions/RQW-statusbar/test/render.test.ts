@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { it } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { type BarState, contextRow, editorBorder, formatK, gitText, ICON, leftRight, modelName, parsePorcelain,
-	placeOf, RateMeter, renderBar, singleLine, thinkingLabel, within } from "../render.ts";
+	placeOf, RateMeter, renderBar, sessionTopBorder, singleLine, thinkingLabel, within } from "../render.ts";
 
 export const sample: BarState = {
 	model: { id: "sonnet", name: "Claude Sonnet 5.5", reasoning: true }, thinkingLevel: "high",
@@ -64,6 +64,33 @@ it("the editor border is the context row, with the hidden-lines hint first at ev
 	assert.equal(editorBorder(sample.context, 8, 40), "\u2193 8 more \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 3% 13.1k/450k");
 	assert.equal(stripVTControlCharacters(editorBorder(sample.context, 8, 6)), "\u2193 8 m\u2026");
 	assert.equal(editorBorder(sample.context, 8, 0), "");
+});
+
+it("the session ID ends the top border whole, framed by single spaces, or is dropped", () => {
+	const rule = (width: number) => "\u2500".repeat(Math.max(0, width));
+	const id = "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b";
+	const border = (text: string) => `\x1b[2m${text}\x1b[22m`;
+	const styled = (_role: string, text: string) => `\x1b[31m${text}\x1b[39m`;
+	for (let width = 0; width <= 160; width++) {
+		const line = sessionTopBorder(width, id, rule, border, styled);
+		assert.equal(visibleWidth(line), width, `${width}`);
+		// The ID needs its 36 cells, a space on each side, two rule cells after it and at least two before it.
+		if (width >= 42) {
+			assert.equal(stripVTControlCharacters(line), `${rule(width - 40)} ${id} \u2500\u2500`);
+			assert.ok(line.includes(`\x1b[31m${id}\x1b[39m`), "the ID is one uninterrupted run of text");
+		} else assert.equal(line, rule(width));
+	}
+	// No ID, an empty one or one that would not copy as a single word: Pi's border as it is.
+	for (const bad of [undefined, "", " \n ", "two words", "a\x1b[31mb\nc"]) assert.equal(sessionTopBorder(80, bad, rule), rule(80));
+	// Terminal controls never reach the border.
+	assert.equal(sessionTopBorder(10, "ab\x07c\x1b[39m", rule), `${rule(3)} abc \u2500\u2500`);
+	// A stock border whose text changes at the reduced width (a status cut, a hint lost) keeps the full width.
+	const status = (width: number) => width >= 30 ? `\u2500\u2500 Working long status \u2500${rule(width - 24)}` : rule(width);
+	assert.equal(sessionTopBorder(60, id, status), status(60));
+	assert.equal(stripVTControlCharacters(sessionTopBorder(80, id, status)), `${status(40)} ${id} \u2500\u2500`);
+	// A stock border without two rule cells before the ID keeps the full width.
+	const tight = (width: number) => `\u2500\u2500 ${"x".repeat(Math.max(0, width - 3))}`;
+	assert.equal(sessionTopBorder(80, id, tight), tight(80));
 });
 
 it("model labels, missing metadata and reasoning levels match the owner's symbols", () => {

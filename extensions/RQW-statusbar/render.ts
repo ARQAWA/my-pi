@@ -145,6 +145,29 @@ export function editorBorder(context: BarState["context"], hiddenLineCount: numb
 	return hint(text) + contextRow(context, rest, paint);
 }
 
+/** The text of a border row without its rules: what must survive when the border gives room to the session ID. */
+const borderText = (line: string) => stripVTControlCharacters(line).replace(/─/g, " ").replace(/ +/g, " ").trim();
+
+/**
+ * The editor's top border with the session ID at its right end: `── <working…> ──── <session-id> ──`.
+ * `stock(width)` is Pi's own top border (the embedded working status and the up-arrow `N more` hint); it is drawn at
+ * the reduced width and must keep exactly the same text and end in at least two rule cells, otherwise the ID is
+ * dropped and Pi's border at the full width is returned. The ID is never cut and has one plain space on each side.
+ */
+export function sessionTopBorder(width: number, sessionId: string | undefined, stock: (width: number) => string,
+	border: (text: string) => string = (text) => text, paint: Paint = plain): string {
+	const full = stock(width);
+	const id = singleLine(sessionId ?? "");
+	if (!id || id.includes(" ")) return full;
+	const rest = width - visibleWidth(id) - 4;
+	if (rest < 2) return full;
+	const left = stock(rest);
+	if (visibleWidth(left) !== rest || !stripVTControlCharacters(left).endsWith("──") || borderText(left) !== borderText(full)) {
+		return full;
+	}
+	return left + border(" ") + paint("label", id) + border(" ──");
+}
+
 /** Row 2: model and thinking level on the left (then other extensions' statuses), `cmp N · R tok/s` on the right. */
 export function modelRow(state: BarState, width: number, paint: Paint = plain): string {
 	const level = thinkingLabel(state.model, state.thinkingLevel);

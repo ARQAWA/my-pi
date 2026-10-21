@@ -54,6 +54,18 @@ Read on 2026-10-21; no source repository or agent configuration was modified.
 3. Left: nerd folder, scratch or worktree glyph and working place. Right: nerd branch glyph and branch,
    then `*unstaged +staged ?untracked`, omitting zero counts.
 
+Above the input, the editor's top border ends with the full session ID (`ctx.sessionManager.getSessionId()`,
+a UUIDv7 in Pi 1.3.0, also with `--no-session`), framed by rule cells with one plain space on each side:
+`── <working…> ─────── <session-id> ──`; idle, the left part is only rule cells. The left part is Pi's own top
+border (`CustomEditor.renderTopBorder`: the embedded working, retry or compaction status and the up-arrow
+`N more` hint) drawn at the width minus the 40 cells of ` <id> ──`. The ID is shown only when that narrower stock
+border keeps exactly its full-width text and still ends in at least two rule cells; otherwise the ID is dropped
+whole and Pi's border is drawn at the full width, so the ID is never cut and Pi's status never gives way to it.
+For the 36-character ID this means at least 42 columns idle and 58 with `⠋ Working...`. The ID is one uninterrupted
+run of text in the `muted` color between border-colored spaces and rules, so a terminal selection copies it as a
+single word. It is read on every render; `/new`, resume, fork and `/reload` also reinstall through `session_start`.
+With the bar off or another extension's editor in place there is no ID: Pi's top border is unchanged.
+
 Both columns retain their edge. When they overlap, the left column yields first, just like omp's `rowLeftRight`.
 Every row is fitted with Pi TUI's ANSI-aware `visibleWidth` and `truncateToWidth`. Width zero is supported.
 Metadata cannot inject new terminal rows or terminal control sequences. Paths accept POSIX, Windows drive and UNC
@@ -67,7 +79,9 @@ built-in footer, `setEditorComponent(undefined)` its default editor.
 
 The editor (`editor.ts`) extends Pi's exported `CustomEditor`, as `docs/tui.md` recommends for replacing the main
 editor, and overrides only `renderBottomBorder(width, hiddenLineCount)` (stock: `pi-tui`
-`dist/components/editor.js:389-392`). It keeps `embedWorkingStatus: true`, as Pi's default editor, so the working
+`dist/components/editor.js:389-392`) and `renderTopBorder(width, hiddenLineCount)`, which calls Pi's own
+(`dist/modes/interactive/components/custom-editor.js:24-56`, falling back to `pi-tui` `editor.js:385-388`) and
+only appends the session ID. It keeps `embedWorkingStatus: true`, as Pi's default editor, so the working
 status stays in the top border. When Pi installs it (`dist/modes/interactive/interactive-mode.js:2243-2307`), Pi
 carries over the text, callbacks, border color, padding, autocomplete and app key handlers; thinking/bash border
 colors keep applying to the top border and the hint. The bar itself keeps its own colors.
@@ -128,7 +142,8 @@ already set by another extension is not replaced.
   cross-extension private import or new subsystem is added to synthesize them. Pi extension statuses occupy the
   corresponding status slot, sorted by key as in stock Pi. PR `#N` and file hyperlinks are not implemented.
 - omp's title/UUID/Worked row, current action, blocker and to-do panel live **above** its editor in `showTitle`,
-  not in its bottom status bar. They are not copied. Apart from its bottom border, the Pi editor stays stock;
+  not in its bottom status bar. They are not copied; the session ID in the top border is the owner's own request
+  (DECISIONS.md, Status bar). Apart from its borders, the Pi editor stays stock;
 loading rows and other widgets stay unchanged.
 - Theme colors and compaction color animation are intentionally not copied. Nerd icons require the same kind of
   Nerd Font as the owner's `symbolPreset: nerd` setup.
@@ -140,11 +155,17 @@ loading rows and other widgets stay unchanged.
 no-model/unknown context, overflow, thinking labels, Windows and UNC paths, porcelain records and rate arithmetic.
 It also checks the editor border at every width 0..160 with and without hidden lines: exact width, the hint first,
 then the context row. `editor.test.ts` renders the real `ContextEditor` above the two footer rows and compares
-`editor.snap.json` (widths 80, 48, 24, with and without hidden lines); without a source it draws Pi's stock borders.
+`editor.snap.json` (widths 80, 48, 24, with and without hidden lines below or above, idle and with a working
+status); without a source it draws Pi's stock borders. It also checks every width 1..160 idle, working, with a
+70-character status, with hidden lines above and with both: the top border is exactly the width, and it is
+either Pi's own border at the reduced width followed by ` <id> ──` or, below the computed threshold, Pi's border
+unchanged. `render.test.ts` checks the ID rule on its own (styling, terminal controls, an ID with spaces, a status
+that would change at the reduced width).
 `statusbar.test.ts` loads the extension in real Pi library and CLI-bundle sessions without sending any prompt,
 checks live state changes, compaction count, thresholds, status ordering, toggle and non-TUI guards. With the
 editor installed the footer has two rows and the editor's last row is the context row, including the hidden-lines
-hint; off restores Pi's editor; a foreign editor is kept across on/off and moves the row back into the footer. It also tests
+hint; the top border ends with the live session ID, follows a new session ID and drops it at 41 columns;
+off restores Pi's editor; a foreign editor is kept across on/off, has no ID and moves the row back into the footer. It also tests
 real temporary git repositories/worktrees, missing git and malformed metadata. A real Pi `FooterDataProvider`
 regression starts outside git, runs `git init -b new-branch` in the same cwd, switches branch, replaces and removes
 the repository, and checks tool/agent refresh, polling and shutdown cleanup without changing Pi's stale cache. These tests join existing `npm test`
@@ -155,7 +176,8 @@ directory with no credentials, a local `models.json` model (200k window, never c
 only slash commands and editor keys. A small terminal emulator in the script replays the output. It checks that
 the bar row (`0% 0k/183.6k`) is the editor's bottom border directly above the two footer rows, that off shows Pi's
 stock editor borders and footer without the bar, that on restores the layout, that 15 input lines with the cursor
-on the first show `↓ 6 more` followed by the bar, then resizes 80 -> 24 and exits cleanly. This is not a live model
+on the first show `↓ 6 more` followed by the bar, that the top border ends with one stable UUIDv7 session ID,
+then resizes 80 -> 24, where the top border is a plain rule without the ID, and exits cleanly. This is not a live model
 run. An absent model is rendered as `no-model` in deterministic tests.
 
 ### Sample renders
@@ -166,14 +188,24 @@ footer. Nerd Font glyph display depends on the reader's font.
 Width 80:
 
 ```text
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────────── 019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b ──
 hello
 ━━──────────────────────────────────────────────────────────────── 3% 13.1k/450k
   Sonnet 5.5 hi                                             cmp 2 · 52.4 tok/s
   my-pi/statusbar                                       rqw-statusbar *1 +2 ?3
 ```
 
-Width 24:
+Width 80, working:
+
+```text
+── ⠋ Working... ──────────────────────── 019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b ──
+hello
+━━──────────────────────────────────────────────────────────────── 3% 13.1k/450k
+  Sonnet 5.5 hi                                             cmp 2 · 52.4 tok/s
+  my-pi/statusbar                                       rqw-statusbar *1 +2 ?3
+```
+
+Width 24 (no room for the ID):
 
 ```text
 ────────────────────────
@@ -186,7 +218,7 @@ hello
 Width 80, 20 input lines, cursor on the first (8 hidden below):
 
 ```text
-────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────────── 019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b ──
 line 0
 line 1
 line 2
@@ -206,11 +238,11 @@ line 11
 
 ### Local results
 
-- macOS, Node 26.7.0: `npm test -- --test-reporter=dot`, 1071 tests, 1063 passed, 0 failed, 8 skipped (all eight are
+- macOS, Node 26.7.0: `npm test -- --test-reporter=dot`, 1078 tests, 1070 passed, 0 failed, 8 skipped (all eight are
   Windows-only tests outside this extension).
 - The focused statusbar files (`extensions/RQW-statusbar/test/*.test.ts`, `test/statusbar-context.test.ts`,
   `test/statusbar-isolation.test.ts`) pass; the isolation test reruns all of this extension's tests from a copy
   holding only its folder.
-- Real CLI PTY smoke passed on Node 26.7.0: bar as the editor's bottom border, off/on, `↓ 6 more` with the bar,
-  narrow resize, clean exit.
+- Real CLI PTY smoke passed on Node 26.7.0: bar as the editor's bottom border, session ID in the top border,
+  off/on, `↓ 6 more` with the bar, narrow resize without the ID, clean exit.
 - No live model request was made. Native Windows runs in the existing GitHub `tests` workflow.

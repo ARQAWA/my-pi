@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import pty
+import re
 import select
 import shutil
 import signal
@@ -177,6 +178,9 @@ with tempfile.TemporaryDirectory(prefix="rqw-status-pty-") as tmp:
                     os.write(master, b"\x1b[?1;2c")
 
     label = "0% 0k/183.6k"  # 200k window minus Pi's default 16384-token reserve
+    # The editor's top border ends with the session ID (a UUIDv7 even with --no-session) between rule cells.
+    top_with_id = re.compile("^\u2500{2,} ([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}) \u2500\u2500$")
+    session_ids = set()
 
     def show():
         return "\n".join(screen.lines())
@@ -193,8 +197,10 @@ with tempfile.TemporaryDirectory(prefix="rqw-status-pty-") as tmp:
         assert "smoke-model" in lines[bar + 1] and "cmp 0" in lines[bar + 1], show()
         assert lines[bar + 2].strip() and not any(c in lines[bar + 2] for c in "\u2500\u2501"), show()
         assert bar + 3 == len(lines) or not lines[bar + 3].strip(), show()
-        tops = [i for i in range(bar) if lines[i] and set(lines[i]) <= {"\u2500"} and len(lines[i]) == screen.cols]
+        tops = [i for i in range(bar) if len(lines[i]) == screen.cols and top_with_id.match(lines[i])]
         assert tops, show()
+        session_ids.add(top_with_id.match(lines[tops[-1]]).group(1))
+        assert len(session_ids) == 1, session_ids
         return bar
 
     try:
@@ -227,12 +233,18 @@ with tempfile.TemporaryDirectory(prefix="rqw-status-pty-") as tmp:
         screen.resize(32, 24)
         os.kill(proc.pid, signal.SIGWINCH)
         drain(0.5)
+        # 24 columns cannot hold the 36-character ID: it is dropped, never cut, and the top border is a plain rule.
+        narrow = screen.lines()
+        bar = [i for i, line in enumerate(narrow) if line.startswith("\u2500") and "/183.6k" in line]
+        assert bar and narrow[bar[-1] - 2] == "\u2500" * 24, show()
+        assert not any(next(iter(session_ids))[:8] in line for line in narrow), show()
         os.write(master, b"/quit\r")
         drain(1)
         proc.wait(timeout=5)
         assert proc.returncode == 0, proc.returncode
         print("PTY PASS: real Pi CLI, context bar as the editor's bottom border above a two-row footer, stock editor and "
-              "footer when off, back on, '\u2193 6 more' hint with the bar, resize 80 -> 24, clean exit; no prompt sent")
+              "footer when off, back on, '\u2193 6 more' hint with the bar, session ID at the end of the top border, "
+              "resize 80 -> 24 drops the ID, clean exit; no prompt sent")
     finally:
         if proc.poll() is None:
             proc.kill()
