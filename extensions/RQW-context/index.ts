@@ -86,6 +86,7 @@ type SessionInternals = {
 type LimitScope = {
 	agent: NativeAgent;
 	session?: SessionInternals;
+	selectedModel?: CompactionModel;
 	physical?: CompactionModel;
 	preparation?: Preparation;
 };
@@ -189,7 +190,7 @@ function wrapCompactionSettings(proto: SettingsPrototype): void {
 		if (!owned() || !model) return settings;
 		const scope = physicalScope.getStore();
 		const limits = isVirtual(model)
-			? scope?.session?.settingsManager === this && scope.session.model === model ? scope.physical : undefined
+			? scope?.session?.settingsManager === this && scope.selectedModel === model ? scope.physical : undefined
 			: model;
 		const contextWindow = contextWindowOf(limits);
 		if (contextWindow === undefined || (limits && isVirtual(limits))) return settings;
@@ -234,7 +235,7 @@ type NativeMethod = (this: SessionInternals, ...args: any[]) => any;
 type RoutingPrototype = SessionInternals & Record<string | symbol, any>;
 
 function withPhysical(session: SessionInternals, physical: CompactionModel, run: () => unknown) {
-	return physicalScope.run({ agent: session.agent, session, physical }, run);
+	return physicalScope.run({ agent: session.agent, session, selectedModel: session.model, physical }, run);
 }
 
 function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<symbol, any>): void {
@@ -255,7 +256,7 @@ function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<sym
 		const physical = capModel(model);
 		const request = physicalScope.getStore();
 		// This synchronous check binds only this prepareRequest, not the shared ModelRuntime or virtual entry.
-		if (request?.agent === this.agent) { request.session = this; request.physical = physical; }
+		if (request?.agent === this.agent) { request.session = this; request.selectedModel = this.model; request.physical = physical; }
 		return withPhysical(this, physical, () => original.call(this, physical, projection));
 	});
 	wrap("_checkCompaction", (original) => function (message, ...args) {
@@ -268,7 +269,8 @@ function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<sym
 			if (name === "compact") {
 				const session = this;
 				// Native compact aborts the current run before reading settings. Read its response limits then, not now.
-				return physicalScope.run({ agent: this.agent, session, get physical() { return session._limitsModel(); } },
+				return physicalScope.run({ agent: this.agent, session,
+					get selectedModel() { return session.model; }, get physical() { return session._limitsModel(); } },
 					() => original.apply(this, args));
 			}
 			const scope = physicalScope.getStore();
@@ -276,18 +278,20 @@ function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<sym
 			return withPhysical(this, physical, () => original.apply(this, args));
 		});
 	}
-	wrap("_runDefaultCompaction", (original) => function (preparation: Preparation, ...args) {
-		if (!owned()) return original.call(this, preparation, ...args);
+	wrap("_runDefaultCompaction", (original) => function (preparation: Preparation, model, ...args) {
+		if (!owned()) return original.call(this, preparation, model, ...args);
 		// Keep the interception hook's preparation intact. Only the native default summary rebinds its reserve.
 		const summaryPreparation = { ...preparation, settings: { ...preparation.settings } };
-		return physicalScope.run({ agent: this.agent, session: this, preparation: summaryPreparation },
-			() => original.call(this, summaryPreparation, ...args));
+		// Pi captured this selection before interception; hooks and pending routing may change the live selection.
+		return physicalScope.run({ agent: this.agent, session: this, selectedModel: model, preparation: summaryPreparation },
+			() => original.call(this, summaryPreparation, model, ...args));
 	});
 	wrap("_getSummarizationRequestAuth", (original) => async function (model, signal) {
-		const request = await original.call(this, model, signal);
 		const scope = physicalScope.getStore();
-		if (owned() && scope?.session === this && scope.preparation && model && isVirtual(model)) {
-			const settings = withPhysical(this, request.model, () => this.settingsManager.getCompactionSettings(model)) as CompactionSettings;
+		const request = await original.call(this, model, signal);
+		if (owned() && scope?.session === this && scope.selectedModel === model && scope.preparation && model && isVirtual(model)) {
+			const settings = physicalScope.run({ ...scope, physical: request.model },
+				() => this.settingsManager.getCompactionSettings(model));
 			scope.preparation.settings.reserveTokens = settings.reserveTokens;
 		}
 		return request;

@@ -25,7 +25,8 @@ type Request = { id: string; window: number; supplied?: number; maxTokens: numbe
 type RouteRequest = Parameters<Parameters<library.ModelRuntime["registerVirtualModel"]>[0]["route"]>[0];
 type Script = {
 	tag: string; next: Reply[]; requests: Request[]; routes: RouteRequest[];
-	target: string; summaryTarget?: string; routeGate?: () => Promise<void>;
+	target: string; summaryTarget?: string; routeGate?: (request: RouteRequest) => Promise<void>;
+	beforeCompact?: (settings: { reserveTokens: number }) => Promise<void>;
 };
 type Host = { runtime: library.ModelRuntime; scripts: Script[] };
 
@@ -81,8 +82,9 @@ async function open(pi: typeof library, options: Open = {}) {
 	const loader = new pi.DefaultResourceLoader({ cwd: dir, agentDir: dir, ...NO_RESOURCES,
 		additionalExtensionPaths: options.owner === false ? [] : [EXTENSION],
 		extensionFactories: [(api) => {
-			api.on("session_before_compact", (event) => {
+			api.on("session_before_compact", async (event) => {
 				preparations.push(event.preparation.settings.reserveTokens);
+				await script.beforeCompact?.(event.preparation.settings);
 				if (options.intercept === "cancel") return { cancel: true };
 				if (options.intercept === "custom") return { compaction: {
 					summary: "extension summary", firstKeptEntryId: event.preparation.firstKeptEntryId,
@@ -95,8 +97,8 @@ async function open(pi: typeof library, options: Open = {}) {
 			async route(request) {
 				const current = scripts.find((s) => JSON.stringify(request.messages).includes(s.tag)) ?? script;
 				current.routes.push(request);
-				await current.routeGate?.();
 				const id = request.reason === "direct" ? current.summaryTarget ?? current.target : current.target;
+				await current.routeGate?.(request);
 				// Native resolveModel must canonicalize this misleading copy before the physical cap is applied.
 				return { model: { ...runtime.getModel("routing-test", id)!, contextWindow: 17 },
 					thinkingLevel: "high", state: { count: ((request.state as { count: number } | undefined)?.count ?? 0) + 1 } };
@@ -256,6 +258,68 @@ for (const [entry, pi] of ENTRIES) {
 				assert.equal(f.script.routes.at(-1)?.reason, "direct");
 			} finally { await f.close(); }
 		});
+
+		for (const mode of ["manual", "automatic"] as const) for (const timing of ["pending direct route", "before compact hook"] as const) {
+			it(`${mode} summary freezes its selection across a model switch in ${timing}`, async () => {
+				const f = await open(pi);
+				const other = await open(pi, { host: f.shared, owner: false, target: "small" });
+				const entered = Promise.withResolvers<RouteRequest>();
+				const release = Promise.withResolvers<void>();
+				let operation: Promise<unknown> | undefined;
+				let hookSettings: { reserveTokens: number } | undefined;
+				try {
+					await f.prompt(1_000); await f.prompt(2_000);
+					assert.equal(f.session.routedModel?.model.id, "big");
+					assert.deepEqual(f.script.routes.map((q) => q.model), [f.selection, f.selection]);
+					f.script.summaryTarget = "small";
+					f.script.requests = [];
+					const switchSelection = async () => {
+						await f.session.setModel(f.runtime.getModel("routing-test", "big")!);
+						assert.equal(f.session.agent.state.model.contextWindow, 500_000);
+						// Other requests on the shared runtime must not supply this summary's reserve.
+						await other.prompt(1_000);
+						other.script.target = "big";
+						const unrelated = await f.runtime.resolveModel(other.selection,
+							[{ role: "user", content: other.script.tag, timestamp: 0 }], { reason: "direct" });
+						assert.equal(unrelated.model.contextWindow, 500_000);
+					};
+					f.script.beforeCompact = async (settings) => {
+						hookSettings = settings;
+						if (timing === "before compact hook") await switchSelection();
+					};
+					if (timing === "pending direct route") f.script.routeGate = async (request) => {
+						if (request.reason !== "direct") return;
+						entered.resolve(request); await release.promise;
+					};
+					operation = mode === "manual" ? f.session.compact() : f.prompt(450_001);
+					if (timing === "pending direct route") {
+						assert.equal((await entered.promise).model, f.selection);
+						await switchSelection();
+						// Changing routing policy does not replace the target already chosen by this operation.
+						f.script.summaryTarget = "big";
+						release.resolve();
+					}
+					await operation;
+					const summaries = f.script.requests.slice(mode === "manual" ? 0 : 1);
+					assert.deepEqual(summaries.map((q) => q.supplied), [21_760, 13_600]);
+					assert.deepEqual(summaries.map((q) => q.maxTokens), [21_760, 13_600]);
+					assert.deepEqual(summaries.map((q) => [q.id, q.window]), [["small", 272_000], ["small", 272_000]]);
+					assert.deepEqual(f.preparations, [50_000]);
+					assert.equal(hookSettings?.reserveTokens, 50_000, "interception preparation is not rewritten");
+					const direct = f.script.routes.filter((q) => q.reason === "direct");
+					assert.equal(direct.length, 1); assert.equal(direct[0].model, f.selection);
+					assert.equal(f.session.model?.id, "big", "the native selection switch stands");
+					assert.equal(f.session.agent.state.model.contextWindow, 500_000);
+					assert.ok(f.session.getContextUsage()!.contextWindow <= 500_000);
+					assert.ok(f.script.requests.every((q) => q.window <= 500_000));
+					assert.ok(f.ends[0].result); assert.equal(f.ends[0].errorMessage, undefined);
+				} finally {
+					release.resolve();
+					await operation?.catch(() => {});
+					await other.close(); await f.close();
+				}
+			});
+		}
 
 		it("native buildBaseOptions output cap and usage with automatic compaction disabled", async () => {
 			const f = await open(pi, { settings: { compaction: { enabled: false, keepRecentTokens: 0 } } });
