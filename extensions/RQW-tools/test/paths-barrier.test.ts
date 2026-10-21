@@ -1,6 +1,6 @@
 // Real filesystem regressions for the path/barrier audit. Gates expose overlap without large writes or sleeps.
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -118,27 +118,24 @@ test("AM/PM U+202F fallback read precedes a write through an existing file alias
 
 for (const grouped of [false, true]) {
   test(`same-batch bash retarget resolves later write/read paths after all${grouped ? " inside codemode group" : ""}`, { timeout: 10000 }, async (t) => {
-    const dir = await mkdtemp(join(tmpdir(), "rqw-retarget-"));
-    t.after(() => rm(dir, { recursive: true, force: true }));
+    const root = await mkdtemp(join(tmpdir(), "rqw-retarget-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const dir = await realpath(root);
     await mkdir(join(dir, "old"));
     await mkdir(join(dir, "next"));
     await writeFile(join(dir, "old/f.txt"), "OLD TARGET\n");
     await writeFile(join(dir, "next/f.txt"), "BEFORE\n");
     const linkType = process.platform === "win32" ? "junction" : "dir";
-    try {
-      await symlink(join(dir, "old"), join(dir, "link"), linkType);
-    } catch (error) {
-      if (["EPERM", "EACCES", "ENOTSUP"].includes((error as NodeJS.ErrnoException).code ?? "")) {
-        return t.skip("cannot create a directory link here");
-      }
-      throw error;
-    }
+    await symlink(join(dir, "old"), join(dir, "link"), linkType);
     assert.notEqual(pathKey("link/f.txt", dir), pathKey("next/f.txt", dir), "old scopes would not conflict");
     const prefix = grouped ? "c0/" : "";
     const h = harness(dir, `${prefix}write`);
-    const script = `const fs = require('node:fs'); fs.unlinkSync('link'); fs.symlinkSync(${JSON.stringify(join(dir, "next"))}, 'link', '${linkType}');`;
+    // Keep native drive paths out of Bash's inline-script/MSYS argument conversion.
+    const script = join(dir, "retarget.cjs");
+    await writeFile(script, `const fs = require('node:fs'); fs.unlinkSync('link'); fs.symlinkSync(fs.realpathSync('next'), 'link', '${linkType}');`);
+    const shellPath = (path: string) => quote(process.platform === "win32" ? path.replaceAll("\\", "/") : path);
     const batch = () => Promise.all([
-      h.run("bash", `${prefix}bash`, { command: `${quote(process.execPath)} -e ${quote(script)}`, timeout: 5 }),
+      h.run("bash", `${prefix}bash`, { command: `${shellPath(process.execPath)} ${shellPath(script)}`, timeout: 5 }),
       h.run("write", `${prefix}write`, { path: "link/f.txt", content: "NEW\n" }),
       h.run("read", `${prefix}read`, { path: "next/f.txt" }),
     ]);
@@ -154,6 +151,7 @@ for (const grouped of [false, true]) {
       h.hold.release();
       await Promise.all([done, outside]);
     }
+    assert.notEqual((await done)[0].isError, true, text((await done)[0]));
     assert.equal(text((await done)[2]), "NEW\n");
     if (outside) assert.equal(text(await outside), "NEW\n");
     assert.equal(await readFile(join(dir, "next/f.txt"), "utf8"), "NEW\n");
