@@ -127,7 +127,11 @@ async function run(o: Options = {}): Promise<Run> {
 			await o.drive?.(session);
 			out.active = session.getActiveToolNames().slice().sort();
 			out.codemode = session.getAllTools().some((tool) => tool.name === "codemode");
-			if (o.prompt) await session.prompt("go");
+			if (o.prompt) {
+				assert.equal(session.model?.provider, faux.provider.id);
+				assert.equal(session.model?.id, faux.getModel().id);
+				await session.prompt("go");
+			}
 		} finally {
 			await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 			session.dispose();

@@ -36,8 +36,8 @@ export const MESSAGE_TYPE = "review";
 export const REVIEWER = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "REVIEWER.md"), "utf8").trimEnd();
 
 export const DESCRIPTION =
-	"Blind review by a separate read-only model that works with you as one team for the user's agreement: it checks " +
-	"that everything agreed is done and nothing unagreed is added, and it gets the user's own messages verbatim. Use " +
+	"Blind review by a separate read-only model that works with you as one team for the user's agreement: " +
+	"it checks the requested criterion, including checks beyond the agreement and exclusions, and gets the user's own messages verbatim. Use " +
 	"it when the user asks for a review or a checked result. The call returns at once; the verdict arrives later as a " +
 	"message starting with `[review#N]`, together with what to do next. Keep working meanwhile.";
 

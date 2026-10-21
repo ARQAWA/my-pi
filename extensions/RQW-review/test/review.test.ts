@@ -2,6 +2,7 @@
 // loads a package extension; two faux providers stand in for the main model and for the reviewer models
 // (`anthropic/claude-haiku-5-5`, `anthropic/claude-sonnet-5-5`), and record every request they get.
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -214,6 +215,28 @@ const reviewMessages = (session: AgentSession) =>
 const FIRST = "Rename `foo` to `bar` in a.ts.\n  Keep «quotes», <tags> and trailing spaces  \nexactly.";
 const SECOND = "Review it, please: blind.";
 
+describe("measured reviewer prompt contract", () => {
+	it("loads the exact GPT v3 candidate and keeps criterion-only checks in scope", () => {
+		assert.equal(createHash("sha256").update(readFileSync(join(dirname(EXTENSION), "REVIEWER.md"))).digest("hex"),
+			"a9cc1a3fac50fe32b6911e5bb8bf152caecad9947e2d36d162696eed5db3117a");
+		assert.ok(REVIEWER.includes("Review independently: Main's verdict is not evidence."));
+		assert.ok(REVIEWER.includes("including custom criteria beyond the agreement"));
+		assert.ok(REVIEWER.includes("do not report what it excludes or leaves to another pass"));
+		assert.ok(REVIEWER.includes("the agreement or criterion with its source"));
+		assert.ok(REVIEWER.includes("REQUIREMENT: <verbatim quote of the agreement or criterion with its source"));
+		assert.ok(DESCRIPTION.includes("criterion, including checks beyond the agreement and exclusions"));
+		assert.ok(DESCRIPTION.length <= 500);
+	});
+	it("preserves stock read constraints and the exact clean verdict contract", () => {
+		assert.ok(REVIEWER.includes("Omit offset and limit on initial reads"));
+		assert.ok(REVIEWER.includes("`read` returns the file text without line numbers"));
+		assert.ok(REVIEWER.includes("Never give or work out line numbers"));
+		assert.ok(REVIEWER.includes("Reply with the result of the review as your last message"));
+		assert.ok(REVIEWER.includes("With no findings, return exactly `CLEAN`"));
+		assert.ok(!REVIEWER.includes("yield"));
+	});
+});
+
 describe("verdict classification", () => {
 	it("passes only exact CLEAN after trimming surrounding whitespace", () => {
 		for (const verdict of ["CLEAN", " \nCLEAN\t "]) {
@@ -290,6 +313,7 @@ describe("review tool", () => {
 			assert.ok(r.text.includes(`<agreement>\n${args.agreement}\n</agreement>`));
 			assert.ok(r.text.includes(`<object>\n${args.object}\n</object>`));
 			assert.ok(r.text.includes(`<criterion>\n${args.criterion}\n</criterion>`));
+			assert.ok(!r.system.includes("RQW-prompt/SYSTEM.md"), "no main prompt reference");
 			assert.ok(r.text.includes(`<rejected_earlier>\n${args.rejected}\n</rejected_earlier>`));
 
 			assert.equal(turn, clean(), "the verdict started a main turn");
@@ -322,6 +346,7 @@ describe("review tool", () => {
 			assert.equal(requests[0].model, "claude-sonnet-5-5");
 			assert.equal(requests[0].reasoning, "low");
 			assert.ok(!requests[0].text.includes("<agreement>") && !requests[0].text.includes("<rejected_earlier>"));
+			assert.ok(requests[0].text.includes("<criterion>\nc\n</criterion>"), "criterion survives without agreement");
 			assert.equal(turn, found(findings));
 			for (const rule of [
 				"Find each quote by searching for it.",
