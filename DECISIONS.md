@@ -50,9 +50,9 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 - my-pi is an extension layer around stock Pi 1.3.0, not a fork (user: «Мы делаем просто обвес вокруг оригинального Pi.»;
   «Нет, никаких форков.»). Reason: keep Pi's own behavior and add only the agreed extensions. Carried by
-  `package.json` and `extensions/`. Only `RQW-models` and `RQW-statusbar` ported UI, as described in [Models](#models)
-  and [Statusbar](#statusbar); `RQW-scroll` adds one owner-requested key behavior, [Scroll](#scroll); other
-  omp-lite UI and tools are not
+  `package.json` and `extensions/`. Only `RQW-models`, `RQW-statusbar` and `RQW-send-now` ported UI, as described in
+  [Models](#models), [Statusbar](#statusbar) and [Send now](#send-now); `RQW-scroll` adds one owner-requested key
+  behavior, [Scroll](#scroll); other omp-lite UI and tools are not
   carried over (user: «Давай полностью отбросим все UI припоны и оставим только чистую механику и промпты»,
   «Так же мы можем отбросить тулинг»).
 - Reason: bench41 (`~/Documents/ChatGPT/my-omp-harness/bench/bench41.csv`, T01-T07, 3 runs): the omp-lite prompt alone
@@ -64,8 +64,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Postponed, not dropped (user: «мы их не упраздняем, а откладываем»): `codebase_explorer`, `code_writer`,
   `shell_runner`, `custom`; the `define-goal` skill and work orders; and the task list with the check before stopping
   (later switched on by a skill rather than always on). The extension-provided `agent` and `review` tools are
-  implemented separately; see [Agent](#agent) and [Review](#review) below. `RQW-models` and `RQW-statusbar` also port UI;
-  see [Models](#models) and [Statusbar](#statusbar).
+  implemented separately; see [Agent](#agent) and [Review](#review) below. `RQW-models`, `RQW-statusbar` and
+  `RQW-send-now` also port UI; see [Models](#models), [Statusbar](#statusbar) and [Send now](#send-now).
 - Development worker authorization and the old paused benchmark campaigns are governed by [Work policy](#work-policy),
   independently of the product reviewer pins below.
 - Reviewers, accepted plan (user: «То, что ты предложил по ревьюерам — it's OK, я принимаю»): own extension
@@ -1177,3 +1177,37 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Deterministic proof: `extensions/RQW-session/test/session.test.ts` uses temp agent directories and a stub clipboard,
   confirms refusal paths, artifact/fork preservation and path safety, and replaces a real Pi runtime before deleting
   its old JSONL. This proves mechanics, not live VDI clipboard redirection, forensic erasure or remote-provider deletion.
+
+## Send now
+
+- Enter force-sends queued steering, as in oh-my-pi. Owner: «А ещё надо, чтобы у нас работала, как в OMP, Oh My Pie,
+  отправка: я пишу сообщение, оно стоит в очереди на стекинг, и чтобы я мог через Enter его насильно отправить. Я не
+  разобрался, как в Pi это сделать.»; «Мне надо, чтобы в Py я мог нажать Enter и сообщение ушло, чтобы не нажимать
+  ебучие Escape, Enter. Это какой-то рак мозга, мне кажется. Надо проверить, можем мы сделать это или нет. Если
+  можем, надо сделать». Agreed behavior (coordinator brief, not a literal quote): while the agent works, Enter with
+  text queues steering as stock Pi does; Enter on an empty editor while steering is queued interrupts the turn and
+  sends the queue at once; with nothing queued empty Enter does nothing; no other key changes.
+  Reason: stock Pi 1.3.0 needs Escape (which moves the queue back into the editor and aborts) and then Enter.
+  Carrier: independent `extensions/RQW-send-now/index.ts`, listed in `package.json` `pi.extensions`, switchable off
+  alone ([Isolation](#isolation)). Behavior, mechanism and limits: `extensions/RQW-send-now/README.md`.
+- Engineering choices within that outcome: public Pi API only (`ctx.ui.onTerminalInput`, `ctx.abort`, editor
+  text, `pi.sendUserMessage`), no custom editor, since RQW-statusbar owns `setEditorComponent`. The key is Pi's
+  configured `tui.input.submit`. Only Pi's input editor (`CustomEditor` or a subclass) with focus triggers it, so
+  dialogs, selectors and overlays keep their Enter. Steering is told apart from follow-ups by counting `input`
+  events, because Pi exposes only "anything queued"; inputs still on their way to Pi's queue (until the next
+  event-loop turn) and a run's own starting prompt are accounted for, and anything left in Pi's queue after the
+  abort is sent, or restored to the editor if the session ends first; a follow-up-only queue is left to Pi, as
+  oh-my-pi does not resume one after an interrupt. Unsent text returns to the editor when no model is selected or
+  the session ends before the interrupted run settles. Counting stays because the public extension context reports
+  only whether anything is queued, not the steering and follow-up queues themselves.
+- Closer oh-my-pi parity, taken because it is small and public: Pi's pi-ai drops an aborted reply from the next
+  request, oh-my-pi keeps it. For the reply a force-send interrupts, a `context_with_system` handler replays its
+  text as a finished reply; a session custom entry `rqw-send-now` keeps that across resume and `/reload`. Thinking
+  and unfinished tool calls of that reply are dropped. No completed tool results are at stake: Pi runs tools only
+  after a reply completes, and an abort during tool execution keeps the reply and its results.
+- Limits (details in the README): several queued messages, follow-ups queued with them included, go as one
+  message joined by blank lines; Pi's queue restore is text only, so images an extension attached to steering and
+  custom messages in Pi's agent queue are dropped as with Escape; a steering input swallowed by another
+  extension's `input` handler can leave the count stale until the queue empties. Proof: Pi's real `InteractiveMode`
+  on a scripted terminal with a faux streaming model, `extensions/RQW-send-now/test/send-now.test.ts`, in `npm test`
+  and the Windows CI matrix.

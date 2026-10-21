@@ -37,6 +37,9 @@ rules in their briefs. The owner's personal manifesto is a separate memory docum
   message; elsewhere Escape stays stock. Contract and limits: `DECISIONS.md` section Scroll. Tests: `npm test`.
 - `extensions/RQW-session/`: extension 11, independent `/copy-session` and confirmed permanent `/remove` commands.
   Cleanup boundaries and limitations: `extensions/RQW-session/README.md`. Tests: `npm test`.
+- `extensions/RQW-send-now/`: extension 12, Enter on an empty editor while steering is queued interrupts the turn and
+  sends the queue at once, as in oh-my-pi. Public Pi API only, no custom editor. Behavior and limits:
+  `extensions/RQW-send-now/README.md`. Tests drive Pi's real interactive mode: `npm test`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.3.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.
