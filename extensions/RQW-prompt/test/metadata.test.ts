@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "node:test";
 import type { ExtensionAPI, NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
-import { buildSystemPrompt, buildSystemPromptSections, normalizeBuildSystemPromptOptions } from "../../../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js";
 import prompt from "../index.ts";
+
+const { buildSystemPrompt, buildSystemPromptSections, normalizeBuildSystemPromptOptions } =
+	await import(new URL("./core/system-prompt.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 
 type Handler = (event: any, context: any) => void;
 function hooks() {
