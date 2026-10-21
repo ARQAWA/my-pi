@@ -351,8 +351,10 @@ Every accepted decision, with its reason and the file that carries it.
   - the tool result, `startedText`: `review#N started. Keep working, but leave the reviewed files unchanged until its
     verdict.`
   - the verdict wrapper, `verdictMessage`: `[review#N]` first, the verdict verbatim, then one paragraph of `NEXT` by
-    kind. `clean` (the verdict starts with `CLEAN`): passed, no further pass for confidence. `findings` (any other
-    reviewer text): find each quote by searching; a finding with both quotes verbatim is admitted and fixed exactly to
+    kind. `clean` (the trimmed verdict is exactly `CLEAN`): passed, no further pass for confidence.
+    `incomplete` (a trimmed verdict begins with `CLEAN` but includes extra nonblank text): resolve UNCHECKED or retry
+    malformed output, never claim passed or treat it as findings needing field access. `findings` (other reviewer
+    text): find each quote by searching; a finding with both quotes verbatim is admitted and fixed exactly to
     its REQUIRED OUTCOME and no further, never rejected, argued with or put to the user; reject only when a quote is not
     verbatim or a NOT AGREED element is covered by a verbatim agreement quote, giving that quote; fix all admitted in
     one batch, then call `review` again with the same level, object and criterion and every rejection so far, until

@@ -51,6 +51,8 @@ export const NEXT = {
 		"verbatim quote of the agreement, and give that reason with the quote. Fix all admitted findings in one batch, " +
 		"then call `review` again with the same level, object and criterion and every rejection so far in `rejected`, " +
 		"until CLEAN.",
+	incomplete:
+		"The check is incomplete. Resolve UNCHECKED sources or retry malformed output; never claim the check passed.",
 	failed:
 		"The check has not passed, and no self-check replaces it. Call `review` again once on the unchanged object; if it " +
 		"fails again, tell the user and wait.",
@@ -58,7 +60,7 @@ export const NEXT = {
 
 /** The delivered message: `[review#N]` first, the verdict verbatim, then the next step for its kind. */
 export function verdictMessage(n: number, verdict: string, failed: boolean): string {
-	const kind = failed ? "failed" : /^CLEAN\b/.test(verdict) ? "clean" : "findings";
+	const kind = failed ? "failed" : verdict.trim() === "CLEAN" ? "clean" : verdict.trim().startsWith("CLEAN") ? "incomplete" : "findings";
 	return `[review#${n}] ${verdict}\n\n${NEXT[kind]}`;
 }
 

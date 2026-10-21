@@ -32,7 +32,7 @@ import {
 	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { buildBrief, DESCRIPTION, NEXT, reviewerTools, startedText } from "../index.ts";
+import { buildBrief, DESCRIPTION, NEXT, reviewerTools, startedText, verdictMessage } from "../index.ts";
 
 /** The delivered message of review `n` for a verdict of each kind: the verdict verbatim, then the next step. */
 const clean = (n = 1) => `[review#${n}] CLEAN\n\n${NEXT.clean}`;
@@ -213,6 +213,25 @@ const reviewMessages = (session: AgentSession) =>
 
 const FIRST = "Rename `foo` to `bar` in a.ts.\n  Keep «quotes», <tags> and trailing spaces  \nexactly.";
 const SECOND = "Review it, please: blind.";
+
+describe("verdict classification", () => {
+	it("passes only exact CLEAN after trimming surrounding whitespace", () => {
+		for (const verdict of ["CLEAN", " \nCLEAN\t "]) {
+			assert.equal(verdictMessage(1, verdict, false), `[review#1] ${verdict}\n\n${NEXT.clean}`);
+		}
+	});
+	it("treats CLEAN with UNCHECKED or FINDINGS as incomplete, preserving the verdict", () => {
+		for (const verdict of ["CLEAN\nUNCHECKED:\n- source.ts could not read", "CLEAN\nFINDINGS:\nFINDING 1", "CLEAN extra text"]) {
+			assert.equal(verdictMessage(2, verdict, false), `[review#2] ${verdict}\n\n${NEXT.incomplete}`);
+			assert.ok(!verdictMessage(2, verdict, false).includes(NEXT.findings));
+		}
+	});
+	it("keeps ordinary findings and provider failures on their own paths", () => {
+		const findings = "FINDINGS:\nFINDING 1\nREQUIREMENT: x";
+		assert.equal(verdictMessage(3, findings, false), `[review#3] ${findings}\n\n${NEXT.findings}`);
+		assert.equal(verdictMessage(4, "Review failed: provider error", true), `[review#4] Review failed: provider error\n\n${NEXT.failed}`);
+	});
+});
 
 describe("review tool", () => {
 	it("is registered with a short description and a strict-mode schema", async () => {
