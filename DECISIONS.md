@@ -424,11 +424,18 @@ Every accepted decision, with its reason and the file that carries it.
   (`docs/settings.md:163`, `package-manager.js:736-744`). After `/reload` Pi keeps the active tool set
   (`agent-session.js:2981-2990`, `docs/settings.md:58`), so with RQW-tools or RQW-settings switched off, `grep`/`find`
   or `codemode`/`tool_search` stay active, now the stock ones, until `/new` or a restart.
-- Prompt/tools isolation is implemented in this branch (section Prompt/tools isolation): `SYSTEM.md` no longer
-  describes RQW-tools; RQW-tools supplies conditional search and execution sections. The package-level
-  `test/prompt-tools-isolation.test.ts` checks tool availability and reload independently of the extension-local
-  isolation tests. The separate GPT behavioral benchmark uses frozen commits and decides whether this branch can
-  enter production; its results are not part of this merge.
+- Prompt/tools isolation is complete (section Prompt/tools isolation): `SYSTEM.md` no longer describes RQW-tools;
+  RQW-tools supplies conditional search and execution sections. The package-level
+  `test/prompt-tools-isolation.test.ts` checks tool availability and reload independently of extension-local tests.
+  Owner: «Когда мы делаем эти отдельные модули, они должны быть полностью изолированы, самодостаточны, чтобы мы могли
+  включать и выключать, как feature флаги.» We accept Pi's native sections to meet that requirement, despite the
+  measured change on fixed GPT-6.1-sol medium questions: +0.56 assistant steps, +1.85 s and -3.33 checklist points;
+  GPT-6-sol low gained 6.67 checklist points. All 36 edit acceptance checks passed. The medium losses concern Rust
+  field-declaration citations rather than wrong values; the variant gained the T06 auth blocker delay. This is not
+  behavioral neutrality. Pi puts these sections after cwd, changing instruction position and removing two redundant
+  partial-write reminders; preserving their former positions would require extra coupling. Evidence and limits:
+  `notes/prompt-isolation-gpt.md`, 72 raw rows in `notes/prompt-isolation-gpt.csv`. The four optional manifesto edits
+  remain unadopted and separate (`notes/bench46-gpt.md`).
 
 ## Agent
 
