@@ -330,6 +330,8 @@ Every accepted decision, with its reason and the file that carries it.
   `write` description, as in omp-lite, each part in its own response. Removed against bench41: the working
   directory from the date line, because Pi already appends `<cwd>`.
 
+- The four optional `SYSTEM.md` edits at `f6e9327` are not adopted as a package; main keeps its prompt unchanged. The owner wanted the minimum changes without breaking the prompt, and explicitly permitted GPT measurement (user: «Замеры правок System LMD можно тоже проводить на модели GPT-6»). On GPT-6 low, wall time improved by about 6.9%; on GPT-6.1 medium, quality changed by -2.29 percentage points (90% CI [-5.81, +1.24]). This does not prove a general regression, but does not establish safe noninferiority for the common prompt. Measurement-based rejection completes this task, rather than pausing it. Evidence and candidate history: `notes/bench46-gpt.md`, `notes/bench46-gpt.csv`, commits `80bec267` and `f6e9327`; the deployed carrier remains `extensions/RQW-prompt/SYSTEM.md` on main.
+
 ### Prompt/tools isolation
 
 - Owner: «Когда мы делаем эти отдельные модули, они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать и выключать, как feature флаги».
@@ -817,6 +819,23 @@ Every accepted decision, with its reason and the file that carries it.
   local compiler or typecheck script. No unrelated tests or timeouts were changed. Windows/Linux remain covered by
   the existing CI matrix but were not run locally, and no terminal
   capture or corporate VDI test was performed.
+- CI auth fixture fix, owner: "Preserve meaningful noOpusauth fallback test and no real requests";
+  "use deterministic fixture config if issue default-model selection before registration".
+  `extensions/RQW-models/test/models.test.ts` seeds `models.json` with
+  `providers.openai-codex.apiKey: faux-only` before spawning Pi. This is fixture auth, not `--model` or a production
+  fallback change. Pi 1.3.0 native-provider registration starts asynchronous availability refreshes, while
+  `findInitialModel` reads the synchronous snapshot. In a clean home with no configured auth, initial selection can
+  be empty; the agent retains `unknown/unknown` even when Codex becomes available by `session_start`. Without Opus,
+  RQW correctly preserves that initial selection, and Pi reports no API key. A clean-home CLI probe reproduced it.
+  A gated faux auth resolver reproduced both snapshot timings: without config the early selection was absent and
+  the settled selection was Codex; with config both were `openai-codex/gpt-6.1-sol`, without Anthropic auth.
+  No evidence calls for changing RQW production auth selection. The CLI regression now asserts the exact fallback
+  model and preserves a saved `gpt-5.6-luna` outside the picker without explicit model flags, changing its saved
+  high effort to medium. The explicit excluded-model test, offline mode and fetch prohibition remain intact.
+  Proof on macOS: all 26 model tests pass on Node 22.19.0, 24.21.0 and 26.7.0; the full suite passes on
+  Node 22.19.0 and 26.7.0 with 387 passed and the existing Windows-only test skipped. Twenty clean-home CLI
+  probes with the seeded config passed. No live requests, nested agents, CI rerun, push or merge.
+
 ## Status bar
 
 - Independent `extensions/RQW-statusbar/`, registered in `package.json` under `pi.extensions`. Owner: "independent

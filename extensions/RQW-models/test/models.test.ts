@@ -295,6 +295,8 @@ let cliCounter = 0;
 async function cli(flags: string[], noAnthropic = false, settings?: Record<string, unknown>) {
 	const dir = join(root, `cli-${cliCounter++}`);
 	await mkdir(dir);
+	// Seed auth before native-provider registration starts its asynchronous snapshot refreshes.
+	await writeFile(join(dir, "models.json"), JSON.stringify({ providers: { "openai-codex": { apiKey: "faux-only" } } }));
 	if (settings) await writeFile(join(dir, "settings.json"), JSON.stringify(settings));
 	const child = exec(process.execPath, [CLI, "--extension", FAUX, "--extension", EXTENSION,
 		"--no-tools", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-mcp", "--no-session", "--print", ...flags, "faux probe"], {
@@ -329,6 +331,9 @@ describe("real Pi CLI, no network and faux transport", () => {
 	it("does not select Opus without auth and preserves explicit model outside the picker", async () => {
 		assert.deepEqual(await cli(["--model", "openai-codex/gpt-5.6-luna", "--thinking", "minimal"], true), { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "minimal" });
 		const result = await cli([], true);
-		assert.equal(result.provider, "openai-codex"); assert.equal(result.thinking, "medium");
+		assert.deepEqual(result, { provider: "openai-codex", model: "gpt-6.1-sol", thinking: "medium" });
+		// A saved default is not an explicit CLI choice: keep it without Opus, but apply medium.
+		assert.deepEqual(await cli([], true, { defaultProvider: "openai-codex", defaultModel: "gpt-5.6-luna", defaultThinkingLevel: "high" }),
+			{ provider: "openai-codex", model: "gpt-5.6-luna", thinking: "medium" });
 	});
 });
