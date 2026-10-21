@@ -30,10 +30,8 @@ Every accepted decision, with its reason and the file that carries it.
   createAgentSession»), read only, and are checked on a model with a known-answer set (user: «Конечно, делай
   проверки, расходуй токены»). Their concept and models come from the history first: Spotty and Bossy in
   `my-omp-harness` branch `deprecated` (Haiku 5.5 and Sonnet 5.5) and in `my-codex-harness` (gpt-6-sol, gpt-6.1-sol).
-- Subagents of the work on this repository run on Sonnet high, Sonnet xhigh, Opus low or Opus medium only, each
-  chosen for its job, neither to save nor to waste limits (user: «модели теперь такие остаются: Sonnet High, Sonnet
-  Extra High, Opus Low, Opus Medium. Только такие саб-агенты, используем максимально их интеллектуально по
-  назначению. Не в целях экономии, но и в целях не излишней растраты»). This replaces the Opus-only rule.
+- Active engineering workers, including subagents, use GPT-6.1-Sol low, medium or high; small checks may use GPT-6-Luna, and GPT-6-Sol is also available at a task-appropriate reasoning level. RQW Review finishes on GPT-6.1-Sol low and GPT-6-Sol low. This supersedes the earlier active Sonnet/Opus worker rule (user: «Всё остальное продолжай делать моделями GPT-6-1-sol low, medium, high»; «RKV Review заканчивает на моделях GPT-6-1-Sol-Low и GPT-6-Low»).
+- Claude model probes, benchmarks and tuning are dormant until the owner explicitly resumes them; do not start or continue those runs before then (user: «замеры на Sonnet ... на паузе»; «дам команду, когда их продолжать»). Existing results remain. This pause does not change product reviewer model pins such as Haiku 5.5 and Sonnet 5.5 below.
 - Model probes and benches other than the reviewers' run on Sonnet medium or Sonnet high, Haiku high or xhigh, or the
   ChatGPT models, not on Opus (user: «Все тесты, которые ты делаешь на cloud-моделях, делай на моделях Sonnet Medium
   либо Sonnet High, не Opus ... если это не касается ревьюеров ... А ещё можно добавить хайку high или хайку extra
