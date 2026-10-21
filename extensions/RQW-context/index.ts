@@ -5,15 +5,16 @@
 // The window: Pi reads every limit from the session model `agent.state.model` (compaction trigger, overflow check,
 // context usage, the output cap of a request, summaries). The extension API cannot change that object, so each
 // session's agent state gets a `model` accessor that exposes a copy with contextWindow 500 000 for a model above it.
-// It is installed from `AgentSession._buildRuntime` at construction and reload, and lazily from the public `model`
-// getter for sessions created before the first owner. The stored model is always the declared original.
+// `AgentSession._buildRuntime` hooks the actual runtime Agent class. Its `state` getter lazily covers old and new
+// states, without requiring a session.model read. The native loop-config path also reads _state directly, so it
+// installs the same accessor before building a request. The stored model is always the declared original.
 //
 // The reserve: Pi triggers at `contextTokens > model.contextWindow - reserveTokens` and reads reserveTokens from
 // `SettingsManager.getCompactionSettings(model)` at every check (`pi.getSettings()` returns a copy, no setter), so
 // that method is wrapped to return `contextWindow - (W - R)`, which is R once the window is W. A reserve the user set
 // counts against W, unless it is W or more (no positive threshold left), then R applies. Virtual models keep Pi's own
 // values: Pi checks their threshold against the routed physical model's window.
-// The hooks are checked before any is patched, so a failed load changes nothing.
+// The session/settings hooks are checked before any is patched; native Agent hooks are checked together at runtime.
 // The patches stay in Pi's classes for the life of the process, but act only while a loaded RQW-context owns them:
 // each factory adds its own owner token and session_shutdown removes it; no live owners means stock Pi.
 // Design and proof: DECISIONS.md section Context.
@@ -77,6 +78,47 @@ const owned = () => (owners[OWNER]?.size ?? 0) > 0;
 
 type AgentState = { model: unknown };
 const cappedStates = new WeakSet<AgentState>();
+const WRAPPED_AGENT = Symbol.for("rqw-context/agent-state");
+type NativeAgent = {
+	state: AgentState;
+	_state: AgentState;
+	createLoopConfig: (this: NativeAgent, ...args: unknown[]) => unknown;
+	[WRAPPED_AGENT]?: boolean;
+};
+
+/** Use the session's actual Agent class: the CLI bundle has a different class from the library SDK. */
+function wrapAgentState(agent: NativeAgent): void {
+	const proto = Object.getPrototypeOf(agent) as NativeAgent;
+	if (Object.hasOwn(proto, WRAPPED_AGENT)) return;
+	const descriptor = Object.getOwnPropertyDescriptor(proto, "state");
+	const loopDescriptor = Object.getOwnPropertyDescriptor(proto, "createLoopConfig");
+	if (
+		!Object.isExtensible(proto) ||
+		typeof descriptor?.get !== "function" || !descriptor.configurable || descriptor.set ||
+		typeof loopDescriptor?.value !== "function" || !loopDescriptor.configurable ||
+		!Object.hasOwn(agent, "_state") || descriptor.get.call(agent) !== agent._state ||
+		!Object.getOwnPropertyDescriptor(agent._state, "model")?.configurable
+	) {
+		throw new Error("RQW-context: native Agent.state/createLoopConfig shape differs from Pi 1.3.0");
+	}
+	const originalLoop = loopDescriptor.value as NativeAgent["createLoopConfig"];
+	Object.defineProperty(proto, "state", {
+		...descriptor,
+		get(this: NativeAgent) {
+			const state = descriptor.get!.call(this) as AgentState;
+			if (owned()) capStateModel(state);
+			return state;
+		},
+	});
+	Object.defineProperty(proto, "createLoopConfig", {
+		...loopDescriptor,
+		value(this: NativeAgent, ...args: unknown[]) {
+			if (owned()) capStateModel(this._state);
+			return originalLoop.apply(this, args);
+		},
+	});
+	Object.defineProperty(proto, WRAPPED_AGENT, { value: true });
+}
 
 /** This agent state reads every model, now and later, through `capModel` while an owner is alive. */
 function capStateModel(state: AgentState): void {
@@ -122,7 +164,7 @@ type BuildRuntime = (this: SessionInternals, ...args: unknown[]) => unknown;
 type GetModel = (this: SessionInternals) => unknown;
 // `_buildRuntime` is private in Pi's types; `agent` is set before the constructor calls it.
 type SessionInternals = {
-	agent: { state: AgentState };
+	agent: NativeAgent;
 	_buildRuntime?: BuildRuntime;
 	[WRAPPED_SESSION]?: BuildRuntime;
 	[WRAPPED_MODEL]?: GetModel;
@@ -159,7 +201,10 @@ function wrapSessionModel(proto: SessionInternals): void {
 	if (proto[WRAPPED_SESSION]) return;
 	const original = proto._buildRuntime as BuildRuntime;
 	proto._buildRuntime = function _buildRuntime(this: SessionInternals, ...args: unknown[]) {
-		if (owned()) capStateModel(this.agent.state);
+		if (owned()) {
+			wrapAgentState(this.agent);
+			capStateModel(this.agent.state);
+		}
 		return original.apply(this, args);
 	};
 	proto[WRAPPED_SESSION] = original;
