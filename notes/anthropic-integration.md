@@ -2,15 +2,20 @@
 
 ## Scope and review boundary
 
-Owner: "Merge main INTO branch, resolve only mechanical docs/package conflicts";
-"Add anthropic#9, preserve8others and all docs"; "No live auth/network or model calls,nestedagents";
-"Report semantic integrationtest changes for independentreview, commit branch no push/mainmerge".
+The coordinator's integration brief C:3376, not a direct owner message, selected a merge of main into
+`rqw-anthropic`, preservation of existing modules/docs and reporting semantic test changes for independent review.
+Underlying owner requests: adapter (C:3133), provider visibility (C:3171) and independent modules (C:3046).
+Owner (C:3133): «в нашем репозитории должен быть адаптер для подписок Anthropic».
+Owner (C:3171): «Это именно отключить»; «Когда мы заходим в логин, там должны быть только кодекс,
+авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё».
+`C:<line>` uses the raw session reference in `DECISIONS.md`. Offline fixtures and the integration procedure
+are engineering choices, not additional owner requirements. The Claude benchmark/tuning pause C:3244 remains.
 
 The integration merges main `231b8ca9884baefaa8fae80ee80c7c40cc4fef31` into
 `rqw-anthropic` at `f5320a0212c17dca4cdd6b0449809c7a9fc95be7`.
 The independent securityB report `/tmp/review-anthropic-GPT-B.md` is CLEAN for that branch tip.
 That verdict predates this integration and is not claimed for the test changes below.
-No nested reviewer or other agent is launched for integration.
+The local integration report records no independent subagent review of these test changes.
 
 Conflicts are limited to `AGENTS.md`, `DECISIONS.md`, and `package.json`.
 Both documentation additions are retained. The package retains the eight main extensions in order,
@@ -50,7 +55,8 @@ beyond the incoming main merge.
 ## Proof boundary
 
 Offline integration does not prove server acceptance, subscription billing or absence of extra usage.
-No real credential files, login, refresh, provider requests, push or merge into main are authorized.
+The local integration report records no real credential-file access, login, refresh or provider requests.
+These are historical proof limits, not current branch-delivery or independent-review restrictions.
 Native Windows/Linux and the release executable remain outside this local macOS run.
 
 ## Local verification results

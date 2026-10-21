@@ -2,6 +2,12 @@
 
 Every accepted decision, with its reason and the file that carries it.
 
+Provenance: owner/user quotations are the owner's words; request summaries are not literal quotations.
+Engineering decisions and coordinator implementation briefs record the agents' choices, not direct owner approval
+of each detail. They do not narrow the owner's requirements. `C:<line>` refers to the raw conversation
+`2026-10-20T13-55-12-982Z_01a15998-41d6-76f4-be02-a0e599d0c214.jsonl`, physical JSONL line.
+The source remains outside this repository; no transcript or credentials are copied here.
+
 ## Work policy
 
 - Engineering work continues on GPT-6.1-Sol at low, medium or high reasoning; small changes may use GPT-6-Luna, and GPT-6-Sol may be selected when its reasoning level fits the task (user: «Всё остальное продолжай делать моделями GPT-6-1-sol low, medium, high ... мелочь ... GPT-6-Luna ... можешь ... GPT-6-sol ... reasoning ... выбери сам»).
@@ -193,8 +199,9 @@ Every accepted decision, with its reason and the file that carries it.
   window 272 000, compaction above 244 800; 500 000 and 1 000 000 -> window 500 000, compaction above 450 000.
   Built-in, models.json and extension models alike, at start (`--model`), on resume, after `/model` and model cycling.
   No per-model list.
-- The window above 500 000 is lowered for the session, not only the trigger. Owner, on the open question: option b,
-  «овераить его, если оно выше 500 тыс. токенов на 500 тыс. токенов», with compaction at W - R and R = 10% of W.
+- The window above 500 000 is lowered for the session, not only the trigger. Owner rule (C:2015): «если контекстное
+  окно больше 500 тыс. токенов, то пусть оно будет 500 тыс. токенов. Резерв — 10% от края».
+  The coordinator chose option b on the implementation question and reported that choice in C:2138.
   Reason: with the trigger alone the footer showed 45% at compaction and Pi still treated a 1M model as 1M everywhere
   else; the rule says the window itself becomes 500 000.
 - Mechanism, window: Pi reads every limit from the session model, `agent.state.model` (`agent-session.js:1037`
@@ -289,12 +296,17 @@ Every accepted decision, with its reason and the file that carries it.
   either shutdown order and reloads of other sessions; an old runtime removes only its own token, not a newer one.
   SDK `dispose()` alone disconnects listeners and does not emit `session_shutdown`; callers must emit the lifecycle
   event, as Pi does. While any owner remains, SDK sessions in the same process get the rule too, including sessions
-  that excluded the extension. Owner: "Replace owner slot with process-global Set of live owner tokens". Reason:
+  that excluded the extension. Engineering decision: replace the owner slot with a process-global Set of live
+  owner tokens. Underlying owner requirement (C:2047): «Это должны быть универсальные решения, которые будут
+  работать всегда автоматически». Reason:
   one slot let shutdown or reload of a newer SDK session disable an older, still-active owner.
   The patch code itself is installed once per process, so after an update of my-pi a `/reload` keeps the old RQW-context code; Pi must be restarted for RQW-context changes to apply
   (`INSTALL.md` step 4). Reason for text, not code: a replaceable implementation behind the guards adds machinery for
   a case a restart covers.
-- Out of scope: virtual models (`pi.registerVirtualModel`; Pi 1.3.0 ships none), owner's option a. A virtual model
+- Delegated technical choice by the coordinator, not owner approval: exclude virtual models
+  (`pi.registerVirtualModel`; Pi 1.3.0 ships none). The assistant reported choosing option a in C:2138.
+  The owner's universal rule (C:2015, C:2047) remains the requirement; whether the routed physical model's
+  uncapped window leaves that requirement unfinished is a separate review, not settled by this exclusion. A virtual model
   (`api` `pi-virtual`) is never capped and `getCompactionSettings` returns Pi's own values for it. Reason: Pi reads
   the settings of the virtual selection but checks them against the routed physical model's window
   (`agent-session.js:420-422`, `481`, `2363`, `2376`); a reserve from the virtual model's declared window made Pi
@@ -583,8 +595,8 @@ Every accepted decision, with its reason and the file that carries it.
 ## Review
 
 - Prompt adaptation is now tuned on GPT with the measured v3, carried byte-for-byte in
-  `extensions/RQW-review/REVIEWER.md` (owner: flexible reviewer conditions; team synergy only in the plugin;
-  finish the prompt on GPT). The criterion governs scope, including custom requirements outside the agreement and
+  `extensions/RQW-review/REVIEWER.md` (request summary, not a literal quote: flexible reviewer conditions C:2913;
+  team synergy only in the plugin C:3046; finish the prompt on GPT C:3400). The criterion governs scope, including custom requirements outside the agreement and
   exclusions; REQUIREMENT may quote the criterion with its source. Main and reviewer remain a pair through the
   plugin's `DESCRIPTION` and `NEXT` in `index.ts`, not `SYSTEM.md`. The reviewer checks independently, quotes exact
   file content and does not turn general test requests into invented coverage requirements. Reason: the measured
@@ -769,18 +781,22 @@ Every accepted decision, with its reason and the file that carries it.
 ## Anthropic subscription adapter
 
 - Extension `extensions/RQW-anthropic/`, listed in `package.json`, owns transport, OAuth recovery and visibility.
-  Owner, current branch brief: "Completely isolated self-contained toggleable extension RQW-anthropic; disabling
-  restores Pi defaults". Disable and reload unregisters only its overlay and restores in-memory hooks. No
+  Owner requirement (C:3046): «они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать
+  и выключать, как feature флаги». Engineering implementation: disable and reload unregisters only its overlay
+  and restores in-memory hooks. No
   node_modules edits or credential deletion. Toggle and migration: `extensions/RQW-anthropic/README.md`.
-- Owner: "same Claude Code OAuth behavior as omp", "self-healing (refresh/retry recoverable auth failures, no silent
-  broken state)", "/login support". The overlay preserves Pi's catalog/parser, delegates Pi's PKCE browser/copy-code
+- Owner request (C:3133): «чтобы он был такой же, как в OMP, чтобы у него был self-healing»;
+  «И чтобы можно было через него авторизоваться». Engineering implementation: the overlay preserves Pi's
+  catalog/parser, delegates Pi's PKCE browser/copy-code
   login and uses omp's refresh endpoint/headers, CLI billing block, original system role and exact-body XXH64 checksum.
   The installed pi-claude-auth's SDK relocation and normalized checksum contradict the reference and are not used.
   MIT attribution: `THIRD-PARTY-NOTICES.md`. No installed fork code is copied. Pi's delegated login endpoint/callback
   and parser remain Pi's, not a complete omp port. Subscription acceptance/billing, account rotation and all omp SDK
   headers are not claimed. Evidence and risks: `notes/anthropic-adapter.md`.
-- Owner: "only our Anthropic and openai-codex visible in login AND model picker, no other providers", "Preserve saved
-  credentials; hide providers, never delete keys". Public unregisterProvider restores builtins instead of hiding them.
+- Owner request (C:3171): «Это именно отключить»; «Когда мы заходим в логин, там должны быть только кодекс,
+  авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё».
+  Engineering decision: hide providers without deleting saved credentials. Public unregisterProvider restores
+  builtins instead of hiding them.
   `visibility.ts` wraps ModelRuntime provider/model listing and AgentSession.scopedModels with a checked,
   reference-counted reversible shim, only in runtimes with this overlay. It does not erase previously selected models
   or disable explicit SDK lookups. Disabling restores defaults without restoring stale credential snapshots.
@@ -790,32 +806,34 @@ Every accepted decision, with its reason and the file that carries it.
   and inference but not persistence of an already-rotating token. Permanent errors surface /login guidance without
   upstream token-response bodies. Subscription inference uses the official HTTPS origin only and rejects redirects.
   No bootstrap identity or startup version probe. `PI_AI_CLAUDE_CODE_VERSION` can pin the CLI version.
-- Owner: "Existing adapter might co-load; avoid duplicate Anthropic registrations during installation, document
-  migration without modifying owner's local config automatically". INSTALL stops at an enabled competing adapter;
+- Engineering migration decision under the adapter request C:3133: avoid duplicate Anthropic registrations
+  without automatically modifying the owner's local config. INSTALL stops at an enabled competing adapter;
   runtime guards reject conflicting registrations in either order. The owner disables the competing extension
   manually, keeps its package/credentials and restarts. No automatic local migration.
-- Branch-specific proof/delivery overrides the usual workflow. Owner: "No live model calls, no Anthropic OAuth
-  refresh/login/network probes using real account, no nested agents; mock fetch/local auth fixtures for tests";
-  "Commit on branch, do not push/merge". Tests use fake credentials, mock fetch, file-backed lock fixtures and both
-  Pi library/CLI-bundle entrypoints. No independent subagent review or live billing proof is performed on this branch.
-  Actual Windows/Linux execution remains for CI.
+- Proof boundary: tests use fake credentials, mock fetch, file-backed lock fixtures and both Pi library/CLI-bundle
+  entrypoints. These tests do not prove live subscription acceptance or billing. The owner's Claude benchmark/tuning
+  pause (C:3244) remains: «Те задачи, где ты должен делать замеры на Sonnet моделях, на Cloud моделях, пока на паузе
+  стоят»; «Я тебе дам команду, когда их продолжать». The local adapter implementation report records no independent
+  subagent review and no actual Windows/Linux execution; those are proof limits, not standing workflow exceptions.
 
-- Follow-up review fixes, owner: "Fix all four concrete independent review findings"; "either fully handle
-  canonical auth-token path or explicitly reject OAuth-header path before any external transport". The adapter
+- Engineering follow-up to four independent review findings under the adapter request C:3133: either fully handle
+  the canonical auth-token path or reject OAuth-header auth before external transport. The adapter
   rejects subscription Authorization headers before delegation and keeps ordinary API-key gateway behavior
   (`transport.ts`). Runtime conflicts survive swallowed SDK errors and block startup, lists and requests
   (`visibility.ts`, `lifecycle.ts`), with manual disable-and-restart migration and no settings edits.
-  Owner: "Idempotent cleanup before invalidation for SDK dispose". Pi 1.3.0 exposes no native SDK shutdown
+  Engineering decision: idempotent cleanup before invalidation for SDK dispose. Pi 1.3.0 exposes no native SDK shutdown
   event, so an isolated reversible dispose wrapper releases only this extension, before runner invalidation.
-  Owner: "Track sent version per request, one bounded replay if effective newer version meets rejection even
-  if already adopted". Each request records its sent version, including under concurrency; a pinned
+  Engineering decision: track the sent version per request, with one bounded replay if an effective newer version
+  meets a rejection, even if already adopted. Each request records its sent version, including under concurrency; a pinned
   `PI_AI_CLAUDE_CODE_VERSION` still forbids adaptation (`wire.ts`, `transport.ts`). License, privacy and
   delegated Pi parser/login design remain unchanged.
 
 ## Models
 
-- Owner: "independent toggleable model-picker extension matching omp"; "Opus, Sonnet, gpt-6.1-sol, gpt-6-sol,
-  gpt-6-luna, Haiku only; exclude GPT5.6, off and minimal reasoning". `extensions/RQW-models/index.ts` is independent,
+- Owner request (C:3113): «Надо, чтобы они работали как в нашем OMP»; «Один мод будет статус бара, а второй мод
+  будет Model Picker»; «То есть чисто модели Opus, Sonnet, GPT-6.1, GPT-6, Luna-6, Haiku».
+  Excluding `off` and `minimal` is the assistant's interpretation in C:3123, not the owner's exact wording.
+  `extensions/RQW-models/index.ts` is independent,
   imports only Pi, and is listed separately in `package.json` under `pi.extensions`. Disable its resource in Pi's
   `pi config`, then `/reload`; it installs no process-wide hooks and writes no settings. It registers no tool.
 - Model order in `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`,
@@ -823,14 +841,16 @@ Every accepted decision, with its reason and the file that carries it.
   configured auth are skipped, without resolving credentials or making requests itself. `familyOf` matches the same
   generation across provider paths, Claude dotted versions, dated aliases and Bedrock IDs. No old Claude generation,
   GPT 5.6, fast variant or invented model is substituted.
-- Owner: "Match supported model ids across providers, skip absent auth; providers remain Anthropic and openai-codex
-  (provider restriction implementation separate)". The preferred providers are `anthropic` for Claude and
+- Engineering decisions for the model request C:3113, elaborated in the coordinator implementation brief C:3274:
+  match supported IDs across providers and skip absent auth. Provider visibility is the separate owner request
+  C:3171. The preferred providers are `anthropic` for Claude and
   `openai-codex` for GPT. Conservative choice: one available variant per family, preferring that provider and its
   exact canonical ID, then stable provider/ID order. This keeps six entries, not duplicates of each model. A proxy
   variant can be selected only when the preferred provider/ID is unavailable. This extension does not disable any
   provider. A provider-wide restriction remains a separate task.
-- Owner: "Latest selected shortcuts: Alt+=/Alt+- cycle models; Alt+Shift+=/Alt+Shift+- cycle supported reasoning
-  levels". `registerShortcut` binds those physical keys. `alt++` and `alt+_` also handle the shifted symbols sent by
+- Owner request (C:3113): «мы модель меняем на Option плюс-минус либо Alt плюс-минус. А reasoning меняем на
+  Alt+Shift плюс-минус». The assistant resolved the ambiguous following wording into physical `Alt+=`/`Alt+-`
+  for models and `Alt+Shift+=`/`Alt+Shift+-` for reasoning in C:3123. `registerShortcut` binds those physical keys. `alt++` and `alt+_` also handle the shifted symbols sent by
   legacy terminals. `alt+shift++` and `alt+shift+_` handle CSI-u reporting the produced symbol while retaining Shift.
   The first match handles a press once, as in Pi's interactive editor. Shortcut actions are serialized so fast
   repeated presses do not race. Each queued action reads the live `model` getter of the latest `session_start`
@@ -844,8 +864,9 @@ Every accepted decision, with its reason and the file that carries it.
   UI would need internal hooks. The six-model/off/minimal exclusions apply to this extension's picker and shortcuts,
   not a global prohibition on explicit stock Pi choices. In print/JSON mode the picker has no dialog and does nothing;
   RPC can supply the standard select dialog. Disabling the extension restores stock behavior on `/reload`.
-- Owner: "Main initial model Opus medium; respect explicit CLI --model/--thinking; resumed sessions retain current
-  model". Without explicit CLI model selection, `session_start` selects available Opus and `medium` on a fresh
+- Owner request (C:3113): «И базовая модель всегда при запуске — это Opus-Medium. Это от провайдера не зависит».
+  CLI precedence and preservation of resumed sessions are engineering choices, not direct owner quotations
+  (assistant C:3123; coordinator implementation brief C:3274). Without explicit CLI model selection, `session_start` selects available Opus and `medium` on a fresh
   startup or `/new`. With no authenticated Opus
   it keeps Pi's initial model rather than silently choosing another family. A startup with existing conversation
   history or continuation/session flags, and events `resume`, `fork` and `reload`, keep the current model/thinking.
@@ -857,15 +878,16 @@ Every accepted decision, with its reason and the file that carries it.
   matching Pi's own new-session initialization. No defaults are persisted. An SDK host must pass reason `resume` for
   an empty restored session with no conversation history, since public session metadata cannot distinguish that
   session from a fresh one after Pi inserts initial model/thinking entries.
-- Owner: "Pi model support determines available thinking levels, don't fake unsupported xhigh". `levelsFor` uses
+- Engineering decision under the model request C:3113: Pi's model support determines available thinking levels;
+  do not invent unsupported xhigh. `levelsFor` uses
   Pi's exported `getSupportedThinkingLevels(model)` and removes off/minimal only. No copied omp effort caps or
   provider-payload rewrites. With Pi 1.3.0's canonical six models it currently offers low, medium, high, xhigh, max;
   a model or override without xhigh/max mappings offers neither. A non-reasoning model has no choices. On an
   extension model switch the previous effort is retained if supported, otherwise the nearest lower supported level
   or the lowest. Explicit off/minimal moves to the lowest allowed level on the next extension-driven selection.
-- P2 follow-up, owner: "obtain live current model when action executes via public live context/session mechanism";
-  "Prefer Pi resolved settings state over fragile manual CLI parser"; "Preserve default Opusmedium only when no
-  explicit selection, resumed unchanged". Reason: queued TUI snapshots retain the previous model and an extension
+- Engineering P2 follow-up for the model request C:3113: obtain the live current model when an action executes via
+  the public event context; prefer Pi's resolved settings over a manual CLI parser; preserve the selected CLI effort
+  and resumed model. These are implementation choices, not additional owner requirements. Reason: queued TUI snapshots retain the previous model and an extension
   override loses Pi's selected scoped effort. The fixes use the public event context and retain Pi's resolved
   explicit selection in `extensions/RQW-models/index.ts`.
 - Research sources and Pi mechanisms: `notes/models-omp.md`. Read-only: `~/Documents/ChatGPT/my-omp-harness`
@@ -882,17 +904,16 @@ Every accepted decision, with its reason and the file that carries it.
   sessions, model/thinking changes, history restore and reload, no persisted defaults, actual CLI flag handling,
   missing Anthropic auth and explicit excluded-model selection. The key test feeds realistic ESC-prefix, Kitty
   physical/alternate-symbol CSI-u and xterm modifyOtherKeys bytes into Pi's `matchesKey`, with first-match dispatch.
-  This is parser testing, not manual terminal testing. No live Claude requests, nested agents, push or merge in this
-  task, as explicitly requested. No independent agent review was run because nested agents are prohibited. Local
-  proof for the P2 fixes is on macOS, Node 22.19.0 and 26.7.0, with 26 model tests on each. Regression coverage
+  This is parser testing, not manual terminal testing. The local implementation report records no live Claude
+  requests and no independent agent review. Local proof for the P2 fixes is on macOS, Node 22.19.0 and 26.7.0, with 26 model tests on each. Regression coverage
   includes rapid snapshot contexts, reasoning queued behind a switch, real CLI mixed scoped suffixes and a saved
   default selecting the second scoped model. The complete repository suite passes on both with
   `--test-concurrency=1`, versions run sequentially. Strict TypeScript checking was not rerun: this worktree has no
   local compiler or typecheck script. No unrelated tests or timeouts were changed. Windows/Linux remain covered by
   the existing CI matrix but were not run locally, and no terminal
   capture or corporate VDI test was performed.
-- CI auth fixture fix, owner: "Preserve meaningful noOpusauth fallback test and no real requests";
-  "use deterministic fixture config if issue default-model selection before registration".
+- Engineering CI auth fixture fix for the model request C:3113: preserve a meaningful no-Opus-auth fallback test
+  without real requests, using deterministic fixture config for initial selection before registration.
   `extensions/RQW-models/test/models.test.ts` seeds `models.json` with
   `providers.openai-codex.apiKey: faux-only` before spawning Pi. This is fixture auth, not `--model` or a production
   fallback change. Pi 1.3.0 native-provider registration starts asynchronous availability refreshes, while
@@ -906,13 +927,14 @@ Every accepted decision, with its reason and the file that carries it.
   high effort to medium. The explicit excluded-model test, offline mode and fetch prohibition remain intact.
   Proof on macOS: all 26 model tests pass on Node 22.19.0, 24.21.0 and 26.7.0; the full suite passes on
   Node 22.19.0 and 26.7.0 with 387 passed and the existing Windows-only test skipped. Twenty clean-home CLI
-  probes with the seeded config passed. No live requests, nested agents, CI rerun, push or merge.
+  probes with the seeded config passed. The local fixture-fix report records no live requests or CI rerun.
 
 ## Status bar
 
-- Independent `extensions/RQW-statusbar/`, registered in `package.json` under `pi.extensions`. Owner: "independent
-  toggleable status bar matching his omp elements and placement ONLY; colors explicitly don't matter" and
-  "No coupling to RQW-models or other extension folder imports". The existing predecessor renderer and git helpers
+- Independent `extensions/RQW-statusbar/`, registered in `package.json` under `pi.extensions`.
+  Owner request (C:3133): «Просто нужны элементы и расположение их отображения, и всё».
+  Independent modules are required by C:3046 and the two-module request C:3113. No cross-folder imports is the
+  engineering isolation mechanism, not a literal owner quotation. The existing predecessor renderer and git helpers
   are retained and completed. Evidence and exact row contract: `notes/statusbar-omp.md`; do not copy other omp UI.
 - Enabled by default; `/statusbar [on|off]` toggles in the TUI, with the bare command inverting the choice. Off restores
   the stock footer and disposes polling/subscriptions. The choice is local to the loaded extension, not persisted.
@@ -926,24 +948,25 @@ Every accepted decision, with its reason and the file that carries it.
   output at message end, not omp's private smoothed meter. Limits, source citations and test samples live only in
   `notes/statusbar-omp.md`. Colors are stock Pi semantic colors, without tuning.
 - Branch and counts use the extension's own repository discovery and asynchronous git refresh, not Pi's cached
-  `getGitBranch()`. Owner: "Use extension's own repo discovery/async git refresh to update branch reliably
-  (including replacing repo and branch checkout), not just counts". Reason: Pi caches absent metadata when a session
+  `getGitBranch()`. Engineering choice for the status-bar request C:3113/C:3133: discover the repository and refresh
+  git asynchronously to handle repository replacement and branch checkout. Reason: Pi caches absent metadata when a session
   starts outside git and does not rediscover it after init in the same cwd. Carried by `extensions/RQW-statusbar/{git,index}.ts`;
   real-provider regression and evidence: `notes/statusbar-omp.md`.
-- Task-specific execution: owner requires "no Anthropic or other live model requests, no nested agents" and
-  "Commit on branch, no push/merge". Proof uses deterministic snapshots, no-request Pi library/bundle sessions,
-  local git fixtures and a PTY smoke run where available. No independent agent review or model run is authorized
-  for this task. Windows paths are exercised locally; native Windows execution remains the existing CI job.
+- Local proof uses deterministic snapshots, no-request Pi library/bundle sessions, local git fixtures and a PTY
+  smoke run where available. The local implementation report records no independent agent review or live model run.
+  Windows paths are exercised locally; native Windows execution remains the existing CI job. These are proof
+  boundaries, not exceptions to the workflow's independent-review requirement.
 
 ## Anthropic package integration
 
-- Owner: "Merge main INTO branch", "Add anthropic#9, preserve8others and all docs";
-  "package tests must use authenticated fake openai-codex/anthropic";
-  "do not weaken isolation predicates/turnsuccess". The manifest keeps the eight main extensions
+- Coordinator integration brief (C:3376), not a direct owner quotation: integrate RQW-anthropic with the eight
+  existing extensions and use authenticated fake allowed providers without weakening isolation assertions.
+  Underlying owner requests: adapter C:3133, provider visibility C:3171, independent modules C:3046. The manifest keeps the eight main extensions
   followed by RQW-anthropic. Package fixtures use fake authenticated allowed providers, not a visibility
   bypass. The dynamic isolation assertions are unchanged. Source order, unauthenticated startup,
   Opus medium with mock secrets, full-package login visibility and adapter-off stock fallback are
   covered in `test/anthropic-models.test.ts`. Semantic test changes for independent review and
   offline proof boundaries: `notes/anthropic-integration.md`.
-- Owner: "No live auth/network or model calls,nestedagents", "commit branch no push/mainmerge".
-  Integration uses only offline tests, commits on `rqw-anthropic`, and leaves main and remotes unchanged.
+- Integration proof uses offline fixtures only; it does not establish live auth, subscription acceptance or billing.
+  The owner's Claude pause C:3244 remains in force. Historical local results and their boundaries are recorded in
+  `notes/anthropic-integration.md`, not a standing prohibition on independent review or normal branch delivery.
