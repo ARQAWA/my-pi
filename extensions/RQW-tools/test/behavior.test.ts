@@ -39,11 +39,12 @@ describe("bash uses stock SettingsManager shellPath normalization", () => {
 
 	it("matches stock rejection paths for file URLs, tilde and Windows/MSYS/WSL/Cygwin", async () => {
 		const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+		const missingShellURL = pathToFileURL(join(process.cwd(), "rqw-no-such-shell name")).href;
 		try {
 			for (const platform of ["darwin", "linux", "win32"]) {
 				Object.defineProperty(process, "platform", { ...original, value: platform });
 				for (const shellPath of [
-					"file:///rqw-no-such-shell%20name", "~/rqw-no-such-shell", "~\\rqw-no-such-shell",
+					missingShellURL, "~/rqw-no-such-shell", "~\\rqw-no-such-shell",
 					"/z/rqw-no-such-shell", "/mnt/z/rqw-no-such-shell", "/cygdrive/z/rqw-no-such-shell",
 					"Z:\\rqw-no-such-shell", "//rqw-no-such-host/share/bash", "relative-no-such-shell",
 				]) {
