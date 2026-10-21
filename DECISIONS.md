@@ -16,10 +16,14 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Main is the coordinator, not an independent implementer: «Да, он как техлид/тимлид, координатор, но не исполнитель самостоятельный.»
   Reason: keep orchestration and acceptance with Main and actual execution with worker subagents. The procedure
   is carried by [PROCESS.md](PROCESS.md).
-- Development workers, including subagents, are authorized to use Sonnet high/xhigh, Opus low/medium and
-  GPT-6.1-Sol low/medium/high. The main agent selects by task; difficult tasks use Opus low/medium or GPT-6.1-Sol
-  high. This is development routing only, not a product model configuration or permission to add other GPT models.
-  Product review `LEVELS` remain Haiku 5.5 medium / Sonnet 5.5 low.
+- Development workers, including subagents, are authorized to use Sonnet medium/high/xhigh, Opus low only and
+  GPT-6.1-Sol low/medium/high. The main agent selects by task; difficult tasks use Sonnet xhigh, Opus low or
+  GPT-6.1-Sol high. This is development routing only, not a product model configuration or permission to add other
+  GPT models. Product review `LEVELS` remain Haiku 5.5 medium / Sonnet 5.5 low.
+- Owner: «Что-то подписка Cloud Code жёстко высаживается, поэтому давай пока уберём из работы саб-агентов Opus Low и Opus Medium. Давай оставим Sonnet Medium, Sonnet High, Sonnet Extra High. Для сложных задач будет Sonnet Extra High либо Opus Low. Opus Medium убираем вообще пока. Окей. Это надо скорректировать, отразить и сразу в работу внедрить»
+  Reason: the Claude subscription limit is running out; the restriction is temporary ("for now"). The balance rule
+  between Anthropic and GPT stays. Opus low stays only for complex tasks, Opus medium is removed. Carried by
+  [PROCESS.md, Worker models](PROCESS.md#worker-models), which holds the table.
 - Owner: «Смотри, надо скорректировать так, чтобы ты как координатор поровну поднимал модели из Anthropic и GPT, чтобы не было перевеса в другим, дисбаланса. Поднимай саб-агенты и те, и те, чтобы лимит расходовался равномерно. И зафиксирую это в процесс.nd файле, эту информацию на будущее»
   Reason: even use of both subscriptions' limits. Carried by [PROCESS.md, Worker models](PROCESS.md#worker-models).
 - The old paused Claude benchmark/tuning campaigns remain paused until explicitly resumed; saved results stay.
@@ -34,8 +38,16 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Work on a task's own branch and worktree at `../my-pi-worktrees/<task>`. Stage exact paths and make task-branch
   commits without an extra gate; finish with a squash into `main` and branch/worktree cleanup. History belongs
   in Git (owner: «История хранится в гиде.»), not a duplicate documentation ledger. See `PROCESS.md` for delivery details.
-- Use 20–30 independent subagents when useful, not as an artificial quota. Preserve the user's changes and secrets;
-  do not fix unrelated failures. Temporary files belong in OS temporary storage. No forks.
+- Owner: «И почему у тебя основной поток заблокирован, блядь? Почему у тебя основной поток исполнения заблокирован какой-то хуйнёй? Заблокирован какими-то запусками, тестами или что это такое, блядь, где ты по 20 секунд GitHub Review Run делаешь. Это что такое, нахуй? Ты не должен блокировать основной поток исполнения какой-то работой блокирующей. Ты всё делаешь через саб-агентов. Саб-агентов можешь поднимать до 40 штук параллельно.»
+  Reason: Main must stay free to coordinate and talk to the owner. It never blocks its own thread on waits,
+  polling, CI watching, test runs or other long work; subagents do it. Up to 50 subagents in parallel when useful,
+  not as an artificial quota. Carried by
+  [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
+  Later owner update of the limit, to be known to the agent at the prompt level: «Зафиксируй, пожалуйста, до 50 саб-агентов на уровне промта, на уровне Process MD, на уровне знания агента об этом, чтобы потом в будущем я это не напоминал опять и опять.»
+  The limit is stated in `PROCESS.md` and, as a short line, in `AGENTS.md` (project instructions loaded into every
+  agent session of this repo); the product prompt `extensions/RQW-prompt/SYSTEM.md` is unchanged.
+- Preserve the user's changes and secrets; do not fix unrelated failures. Temporary files belong in OS temporary
+  storage. No forks.
 - Run relevant checks once and reuse evidence while inputs are unchanged. Check locally on Mac and on Windows
   through GitHub in the background; no Linux requirement. Docs-only work needs no tests. A different task-branch
   commit versus the final squash alone is not a reason to rerun. Windows Node tooling runs through Git Bash,
@@ -43,6 +55,29 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Finish with an independent completeness-and-consistency check. For code changes, run a separate bug/quality
   reviewer in parallel via the existing agent custom system `.agents/reviewers/code.md`. This requires no new
   extension or product tool changes. Update installed Pi only for relevant runtime changes, never for docs-only work.
+- Deterministic delivery quality. Owner: «Теперь смотри насчет выполнения задач и пробелов, которые ты нашел. Я же не буду всегда тебя переспрашивать. Если бы я не спросил, ты бы об этом не узнал. Надо поэтому сделать какой-то процесс, как детерминированно эту проблему решить на постоянке, чтобы мне не надо было тебя постоянно переспрашивать, чтобы ты сам следил за качеством. Надо твое предложение по тому, как мы этот пробел будем закрывать.»
+  Approved proposal, the owner approving it with «Правила по Process MD я одобряю»: «1. Тестируется ровно то, что вливается. Если main изменился с момента создания ветки, исполнитель переносит ветку на свежий main. Тесты на Mac и Windows CI проходят на этом итоговом коммите.
+  2. Ревью действует только для того коммита, который оно проверило. Любой коммит после CLEAN снова отправляет изменённые места на проверку: и задачу, и код.
+  3. Перед каждым слиянием я запускаю скрипт npm run deliver-check <ветка>. Он проверяет три вещи. Ветка содержит текущий main. Windows CI прошёл именно на этом коммите. В описании коммита записаны номера ревью с CLEAN и список того, что не проверено вживую. Если чего-то нет, слияния нет.
+  4. В каждом отчёте о готовой задаче я сам даю таблицу доказательств и честный раздел «не проверено вживую», без твоего запроса.»
+  Reason: branches tested alone were squashed onto a moved `main`, so the combined tree went untested until a manual
+  dispatch, and a code-review CLEAN covered an earlier commit while two later fixes landed unreviewed. Carriers:
+  [PROCESS.md](PROCESS.md) (Sufficient proof, Independent review, Delivery) and `scripts/deliver-check.mjs`,
+  proven by `test/deliver-check.test.ts`. Implementation choices: the script takes the planned squash message file
+  as a second argument, also requires a clean main checkout and a green `pcli.yml` run when PCLI paths change, reads
+  the path filters from the workflow files of `main` and of the branch head (a file counts if either version
+  requires CI; a missing workflow file or filter in either is a failure), fails outside a checkout with `main`
+  checked out, and accepts only the latest run on the head SHA. Coordinator
+  interpretation of rule 2, derived from «Любой коммит после CLEAN снова отправляет изменённые места на проверку»:
+  a conflict-free rebase onto `main` changes no task places, so it needs new tests and CI on the new head (rule 1)
+  but no new review; places changed while resolving conflicts are changed places and go back to review.
+- Completeness check after every merge. Original concern, owner: «А у тебя есть встроенный процесс, который перепроверяет, что нигде ничего не забыто? ... должна быть независимая перепроверка, что каждый влитый pull request действительно соответствует истине, что там всё заебись.»
+  Approved proposal (coordinator's text): «a) После каждого слияния и перед итоговым отчётом свежий независимый ревьюер получает все твои сообщения из сессии и историю main. По каждой просьбе он отмечает: сделано и каким коммитом, в работе или ты её отменил. Если у просьбы нет ни одной отметки, это находка. Правило записываю в PROCESS.md.»
+  Owner: «Да, один по проверке, что ничего не забыто».
+  Reason: a request can be dropped silently between sessions, merges and reports, and only the owner's repeated
+  question found it. Carried by [PROCESS.md, Delivery](PROCESS.md#delivery) step 5. Implementation choice: the
+  reviewer is the existing `review` tool; its object is `main`'s git log since the session start plus in-progress
+  branches/worktrees and owner-cancelled items.
 - Keep replies short unless expansion is needed: «Он отвечает не больше трех абзацев по максимум две строки
   в абзаце. Если это не требует расширения, конечно».
 

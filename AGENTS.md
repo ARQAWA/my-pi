@@ -6,6 +6,7 @@ Stock Pi tools stay as they are. Everything is an extension, one folder per exte
 Before every task, read and follow [PROCESS.md](PROCESS.md). Restore it after compaction or a handoff before
 continuing. This is mandatory lazy loading, not optional background reading. Give subagents the relevant process
 rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
+The coordinator delegates all execution, waits and checks to subagents and may run up to 50 in parallel when useful.
 
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
 - `extensions/RQW-settings/`: extension 1, the harness settings. Turns on Pi's built-in `codemode` and `tool_search` by
@@ -57,6 +58,7 @@ rules in their briefs. The owner's personal manifesto is a separate memory docum
 - `notes/`: research notes, such as how the omp-lite prompt was built.
 - `WORKFLOW-MANIFEST.md`: the owner's personal working principles and aspirations, written in Russian for him.
 - `PROCESS.md`: the mandatory development procedure, from research and questions to autonomous squash delivery.
+- `scripts/deliver-check.mjs`: the pre-merge gate, `npm run deliver-check -- <branch> <message-file>`; see `PROCESS.md` Delivery.
 - `.agents/reviewers/code.md`: the separate read-only bug and code-quality reviewer prompt, used through `agent`.
 - `DECISIONS.md`: every accepted decision with its reason and the file that carries it.
 

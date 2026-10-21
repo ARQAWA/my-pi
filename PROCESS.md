@@ -29,9 +29,11 @@ the accepted decisions and their reasons. New owner instructions take precedence
   Give each worker a self-contained brief: agreement, files and worktree, ownership, dependencies, expected result
   and sufficient proof. Include the relevant process rules in its system prompt or brief; do not assume a child
   inherits this file.
-- Run independent research, implementation, probes and checks in parallel. Use 20-30 workers when there are that
-  many useful independent blocks, not to fill a quota. Minimize sequential work and avoid concurrent writes to the
-  same files. Stop superseded workers.
+- Main never blocks its own thread on waiting, polling, CI watching, test runs or any other long work. It hands
+  all of that to subagents and stays free to coordinate and talk to the owner.
+- Run independent research, implementation, probes and checks in parallel. Up to 50 subagents may run in parallel
+  when there are that many useful independent blocks; this is a ceiling, not a quota. Minimize sequential work
+  and avoid concurrent writes to the same files. Stop superseded workers.
 - Main drives the whole agreed task to completion autonomously through workers: they implement, inspect, make the
   needed probes and measurements, and fix obvious defects and relevant corner cases. Do not polish extremely
   unlikely scenarios or expand the task.
@@ -53,12 +55,13 @@ Choose model and reasoning for the work, not all workers at maximum reasoning:
 
 | Model | Allowed reasoning |
 | --- | --- |
-| Sonnet 5.5 | high, xhigh |
-| Opus 5.5 | low, medium |
+| Sonnet 5.5 | medium, high, xhigh |
+| Opus 5.5 | low |
 | GPT-6.1-Sol | low, medium, high |
 
-GPT-6.1 low suits ordinary work; medium suits more difficult work. Opus low/medium and GPT-6.1 high are available
-for complex tasks as appropriate. Use the listed Sonnet levels where they fit. These are development workers,
+GPT-6.1 low suits ordinary work; medium suits more difficult work. Complex tasks use Sonnet 5.5 xhigh or Opus 5.5
+low; GPT-6.1 high is also available for them. Opus 5.5 medium is removed for now to spare the Claude
+subscription limit. These are development workers,
 not changes to the fixed product models in `RQW-review`. A pause of a named benchmark campaign pauses that
 campaign only; it does not pause unrelated work or prohibit the currently authorized worker models.
 
@@ -75,9 +78,12 @@ campaign only; it does not pause unrelated work or prohibit the currently author
   on, including relevant Node, Bun and PortableGit coverage. Linux is out of scope.
 - Use a focused test command for a focused change; use `npm test` locally when the affected surface requires the
   full suite. Run `npm run test:bun` when Bun/codemode behavior is affected. Test extension isolation when affected.
+- Test exactly what gets merged. If `main` moved since the branch was created, the worker rebases the branch onto
+  current `main`; Mac tests and Windows CI must pass on that final head commit, whose squash has the same tree.
+  If the push started no `tests.yml` run (path filter), dispatch it: `gh workflow run tests.yml --ref <branch>`.
 - Root documentation, notes and development instructions alone do not justify application tests or model runs.
-  A workflow change does require validating its triggers and affected Windows jobs. Manually dispatch CI when
-  branch evidence does not cover the current merge result. Do not claim a queued or incomplete run passed.
+  A workflow change does require validating its triggers and affected Windows jobs. Do not claim a queued or
+  incomplete run passed.
 - Fix failures caused by the task, including assertions for deliberately changed behavior. Report unrelated failures
   without repairing them or falsely counting a failing required check as clean. If they block delivery, ask the owner.
 - For prompt/tool behavior performance claims, compare against the relevant baseline. The product goal remains
@@ -100,8 +106,11 @@ campaign only; it does not pause unrelated work or prohibit the currently author
 - Admit real evidenced defects, not taste or unlikely hypotheticals. Check findings rather than accepting them
   just because a quote exists. Main validates real findings and routes admitted fixes to workers in one batch;
   explain rejected findings with evidence. Workers recheck affected parts and checks, not untouched parts.
-  Reuse valid CLEAN results. Stop when the required reviews are
-  clean; do not invent either a one-pass cap that leaves known bugs or endless fresh passes for confidence.
+- A CLEAN covers only the commit it reviewed. Any commit after CLEAN sends the places it changed back to review:
+  result review, and code review for code. A conflict-free rebase onto `main` changes no task places: it needs new
+  tests and CI on the new head, not new review; places changed while resolving conflicts go back to review.
+  Otherwise reuse CLEAN only while its commit is unchanged. Stop when the required reviews are clean; do not
+  invent either a one-pass cap that leaves known bugs or endless fresh passes for confidence.
 - A finished substage handed over separately gets its own blind independent check. Internal draft/stage commits
   are not handovers and do not create an automatic review gate. Reuse its valid coverage in final review.
 
@@ -111,16 +120,30 @@ campaign only; it does not pause unrelated work or prohibit the currently author
    quote, reason and carrier; keep each rule in one place and link to it elsewhere. Current docs describe current
    facts, not a history ledger. Remove obsolete current instructions, retain deferred work as deferred.
 2. Push the task branch to start affected Windows CI early; continue independent work while it runs. Before merging,
-   require sufficient proof and the required clean reviews for the actual final tree. A changed base invalidates
-   only evidence whose checked inputs or dependent behavior changed.
-3. Squash merge into `main`: one task, one commit. Never merge the task's stage commits into main as a merge commit.
-   Push main autonomously. The workflow reuses task-branch proof rather than automatically retesting the same tree
-   after squash; dispatch it explicitly if the merge changes checked inputs.
-4. Update the locally installed Pi when a runtime/package change requires it, preserving auth and other settings;
+   require sufficient proof and the required clean reviews for the final head commit on current `main`
+   (see [Sufficient proof](#sufficient-proof-without-idle-reruns) and [Independent review](#independent-review)).
+3. Before every squash merge, Main writes the planned squash message and runs, from the clean main checkout,
+   `npm run deliver-check -- <branch> <message-file>` (`scripts/deliver-check.mjs`; it fails in any checkout
+   without `main` checked out). It requires: the branch
+   contains current `origin/main` and the main checkout's HEAD, the merge destination; for changes (both sides
+   of a move) outside the `tests.yml` `paths-ignore` filter, the latest `tests.yml` run on the exact head SHA
+   succeeded, and likewise `pcli.yml` when its `paths` changed; the filters are `main`'s and the branch head's
+   (a file counts if either version requires CI); the message carries the
+   trailers `Review: review#N CLEAN` (one per clean result review), `Code-review: CLEAN` (non-doc changes),
+   `CI: <run url>` (each required run) and `Unverified: <what was not verified live, or none>`. Any failure: no merge.
+4. Squash merge into `main`: one task, one commit, with that message. Never merge the task's stage commits into main
+   as a merge commit. Push main autonomously; the squash tree equals the tested head, so it is not retested.
+5. After every merge and before the final report, run a completeness check for the session: a fresh independent
+   `review` (the tool already receives all the owner's messages verbatim). Object: `main`'s git log since the session
+   start, plus the in-progress branches and worktrees and the items the owner cancelled. Criterion: every owner
+   request is marked done (by which commit), in progress (by which branch) or cancelled by the owner. A request
+   with no mark is a finding: do it, or ask the owner.
+6. Update the locally installed Pi when a runtime/package change requires it, preserving auth and other settings;
    restart when process-wide patches require it. Documentation-only work needs no package update or restart.
-5. After successful delivery, remove this task's worktree and branch. Do not clean up other tasks' worktrees.
+7. After successful delivery, remove this task's worktree and branch. Do not clean up other tasks' worktrees.
    Publishing a release or Marketplace version requires the owner's direct request.
-6. Report the result once, with necessary checks, any real limitation and manual commands only when useful.
+8. Report the result once, unprompted with an evidence table (claim, check, result or run link) and an honest
+   "not verified live" section, plus any real limitation and manual commands only when useful.
 
 ## Communication and continuity
 
