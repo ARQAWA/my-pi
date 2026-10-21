@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { CredentialStore, OAuthCredential } from "@earendil-works/pi-ai";
 
@@ -6,7 +7,7 @@ import { Compile } from "typebox/compile";
 
 const TokenResponse = Compile(Type.Object({
     access_token: Type.String({ pattern: "^sk-ant-oat" }),
-    refresh_token: Type.String({ minLength: 1 }),
+    refresh_token: Type.Optional(Type.String({ minLength: 1, pattern: "^\\S+$" })),
     expires_in: Type.Number({ exclusiveMinimum: 300 }),
 }));
 
@@ -25,11 +26,48 @@ export function validateCredential(value: unknown): OAuthCredential {
 export const TOKEN_URL = "https://api.anthropic.com/v1/oauth/token";
 const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 export const LOGIN_HELP = "RQW-anthropic: subscription authentication failed. Retry the turn; if it persists, use /login anthropic. Saved credentials were not removed.";
+export const AUTH_FAILURE = Symbol.for("rqw-anthropic/auth-failure");
+const ROTATIONS = Symbol.for("rqw-anthropic/proven-refresh-rotations/v1");
+const MAX_ROTATIONS = 256;
+type Rotation = { access: string; refresh: string };
+// Shared across module copies and reloads. Only bounded, non-secret hashes survive a request.
+const processState = globalThis as typeof globalThis & { [ROTATIONS]?: Map<string, Rotation> };
+const rotations = processState[ROTATIONS] ??= new Map<string, Rotation>();
+const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+
+function recordRotation(previous: OAuthCredential, next: OAuthCredential): void {
+	const key = hash(previous.access);
+	rotations.delete(key);
+	rotations.set(key, { access: hash(next.access), refresh: hash(next.refresh) });
+	if (rotations.size > MAX_ROTATIONS) rotations.delete(rotations.keys().next().value!);
+}
+
+function provenRotation(previous: string, current: OAuthCredential): boolean {
+	const target = hash(current.access), refresh = hash(current.refresh);
+	let access = hash(previous);
+	for (let depth = 0; depth < MAX_ROTATIONS; depth++) {
+		const next = rotations.get(access);
+		if (!next) return false;
+		if (next.access === target && next.refresh === refresh) return true;
+		access = next.access;
+	}
+	return false;
+}
+
+export class AuthRecoveryError extends Error {
+	readonly [AUTH_FAILURE] = true;
+	readonly status: number;
+	constructor(message = LOGIN_HELP, status = 401) { super(message); this.status = status; }
+}
 
 /** Only transport failures, 429 and 5xx merit a second refresh attempt. Never log response bodies. */
 export async function refreshCredential(
 	credential: OAuthCredential, signal: AbortSignal, transport: typeof fetch = globalThis.fetch,
 ): Promise<OAuthCredential> {
+	signal.throwIfAborted();
+	if (typeof credential.refresh !== "string" || credential.refresh.trim().length === 0) {
+		throw new AuthRecoveryError(`${LOGIN_HELP} Saved refresh token is invalid.`);
+	}
 	for (let attempt = 0; attempt < 2; attempt++) {
 		signal.throwIfAborted();
 		let response: Response;
@@ -45,7 +83,7 @@ export async function refreshCredential(
 			});
 		} catch {
 			signal.throwIfAborted();
-			if (attempt === 1) throw new Error(LOGIN_HELP);
+			if (attempt === 1) throw new AuthRecoveryError(`${LOGIN_HELP} Token endpoint could not be reached.`);
 			await sleep(100, undefined, { signal });
 			continue;
 		}
@@ -55,17 +93,23 @@ export async function refreshCredential(
 				await sleep(100, undefined, { signal });
 				continue;
 			}
-			throw new Error(`${LOGIN_HELP} Refresh HTTP ${response.status}.`);
+			const meaning = response.status === 400 ? " Refresh grant was rejected or invalid." :
+				response.status === 401 ? " Refresh authentication was rejected." :
+				response.status === 403 ? " Refresh permission was denied." : "";
+			throw new AuthRecoveryError(`${LOGIN_HELP} Refresh HTTP ${response.status}.${meaning}`);
 		}
 		let data: unknown;
-		try { data = await response.json(); } catch { throw new Error(LOGIN_HELP); }
-		if (!TokenResponse.Check(data)) {
-			throw new Error(`${LOGIN_HELP} Invalid token response.`);
+		try { data = await response.json(); } catch { throw new AuthRecoveryError(`${LOGIN_HELP} Invalid token response.`); }
+		if (!TokenResponse.Check(data) || !Number.isFinite(data.expires_in)) {
+			throw new AuthRecoveryError(`${LOGIN_HELP} Invalid token response.`);
 		}
-		return { ...credential, type: "oauth", access: data.access_token, refresh: data.refresh_token,
-			expires: Date.now() + data.expires_in * 1000 - 300_000 };
+		// Pi already applies its five-minute minimum validity under the store lock.
+		const next: OAuthCredential = { ...credential, type: "oauth", access: data.access_token, refresh: data.refresh_token ?? credential.refresh,
+			expires: Date.now() + data.expires_in * 1000 };
+		recordRotation(credential, next);
+		return next;
 	}
-	throw new Error(LOGIN_HELP);
+	throw new AuthRecoveryError();
 }
 
 /** Abort the wait promptly without abandoning a refresh token already rotating under the store lock. */
@@ -84,17 +128,23 @@ export async function recoverCredential(
 			// From this point cancellation must not discard a rotated refresh token.
 			signal.removeEventListener("abort", abortWait);
 			signal.throwIfAborted();
-			if (current?.type !== "oauth") throw new Error(LOGIN_HELP);
-			if (current.access !== rejected) return undefined;
+			if (current?.type !== "oauth") throw new AuthRecoveryError();
+			if (current.access !== rejected) {
+				if (!provenRotation(rejected, current)) {
+					throw new AuthRecoveryError(`${LOGIN_HELP} Saved login changed without a refresh proven in this process. Start a new turn to use the current login.`);
+				}
+				return undefined;
+			}
 			return refreshCredential(current, AbortSignal.timeout(15_000), transport);
 		}, { signal: waiting.signal });
 		const result = await Promise.race([operation, cancelled.promise]);
 		signal.throwIfAborted();
-		if (result?.type !== "oauth" || result.access === rejected) throw new Error(LOGIN_HELP);
+		if (result?.type !== "oauth" || result.access === rejected) throw new AuthRecoveryError();
 		return result.access;
-	} catch {
+	} catch (error) {
 		signal.throwIfAborted();
-		throw new Error(LOGIN_HELP);
+		if (error instanceof AuthRecoveryError) throw error;
+		throw new AuthRecoveryError();
 	} finally {
 		signal.removeEventListener("abort", abortWait);
 		signal.removeEventListener("abort", cancel);

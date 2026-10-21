@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { CredentialStore, Provider, SimpleStreamOptions } from "@earendil-works/pi-ai";
-import { LOGIN_HELP, recoverCredential } from "./auth.ts";
-import { billingBody, versionState } from "./wire.ts";
-import type { VersionState } from "./wire.ts";
+import { AuthRecoveryError, LOGIN_HELP, recoverCredential } from "./auth.ts";
 import { assertAnthropicAuthBoundary } from "./auth-boundary.ts";
+import { AUTH_ORIGIN, protectPartialStream, STREAM_CONTRACT, type AuthOrigin } from "./retry.ts";
+import { billingBody, versionState, type VersionState } from "./wire.ts";
 import { OVERLAY } from "./visibility.ts";
 
 /** Retries HTTP rejections only, before any stream bytes can escape to the agent. */
 export function subscriptionFetch(
 	transport: typeof fetch, store: CredentialStore | undefined, version: VersionState,
-	sessionId: string, deviceId: string, initialSignal?: AbortSignal,
+	sessionId: string, deviceId: string, initialSignal?: AbortSignal, origin?: AuthOrigin,
 ): typeof fetch {
 	return async (input, init) => {
 		const request = new Request(input, { ...init, redirect: "error" });
@@ -20,6 +20,11 @@ export function subscriptionFetch(
 		signal.throwIfAborted();
 		const raw = await request.text();
 		const headers = new Headers(request.headers);
+		const bearer = headers.get("authorization")?.replace(/^Bearer /i, "");
+		// Runtime provenance precedes payload hooks. Direct helpers require first-fetch store equality.
+		const initial = origin === undefined ? await store?.read("anthropic", { signal }) : undefined;
+		const owned = origin === undefined ? initial?.type === "oauth" && initial.access === bearer :
+			origin.storedOAuth && origin.bearer === bearer;
 		let authRetried = false;
 		let versionRetried = false;
 		for (;;) {
@@ -37,10 +42,8 @@ export function subscriptionFetch(
 			});
 			if (response.status === 401) {
 				await response.body?.cancel();
-				if (authRetried || !store) throw new Error(LOGIN_HELP);
+				if (authRetried || !store || !owned || !bearer) throw new AuthRecoveryError();
 				authRetried = true;
-				const bearer = headers.get("authorization")?.replace(/^Bearer /i, "");
-				if (!bearer) throw new Error(LOGIN_HELP);
 				headers.set("authorization", `Bearer ${await recoverCredential(store, bearer, signal, transport)}`);
 				continue;
 			}
@@ -54,7 +57,7 @@ export function subscriptionFetch(
 			}
 			if (response.status === 403) {
 				await response.body?.cancel();
-				throw new Error("RQW-anthropic: subscription access denied, HTTP 403. Check account permissions and quota; use /login anthropic if access changed.");
+				throw new AuthRecoveryError("RQW-anthropic: subscription access denied, HTTP 403. Check account permissions and quota; use /login anthropic if access changed.", 403);
 			}
 			return response;
 		}
@@ -66,13 +69,27 @@ export function createOverlay(
 	version = versionState(),
 ) {
 	const handler = (model: Parameters<Provider["streamSimple"]>[0], context: Parameters<Provider["streamSimple"]>[1], options?: SimpleStreamOptions) => {
-		// The Pi composer sends both stream contracts here. Keep explicit API-shaped thinking options.
-		const apiShaped = options && ["thinkingEnabled", "effort", "thinkingBudgetTokens"].some(key => key in options);
-		const delegate = apiShaped ? base.stream.bind(base) : base.streamSimple.bind(base);
+		// Pi merges both entrypoints into this handler; retain the original options contract.
+		const provenance = options as (SimpleStreamOptions & { [STREAM_CONTRACT]?: string; [AUTH_ORIGIN]?: AuthOrigin }) | undefined;
+		const contract = provenance?.[STREAM_CONTRACT];
+		const simple = contract === "simple" || (!contract && options && ("reasoning" in options || "thinkingBudgets" in options));
+		const delegate = simple ? base.streamSimple.bind(base) : base.stream.bind(base);
 		if (!assertAnthropicAuthBoundary(model, options, process.env.ANTHROPIC_CUSTOM_HEADERS)) return delegate(model, context, options);
 		const transport = options?.fetch ?? globalThis.fetch;
-		return delegate(model, context, { ...options, maxRetries: 0,
-			fetch: subscriptionFetch(transport, getStore(), version, options?.sessionId ?? randomUUID(), deviceId, options?.signal) });
+		const subscription = subscriptionFetch(transport, getStore(), version, options?.sessionId ?? randomUUID(), deviceId,
+			options?.signal, provenance?.[AUTH_ORIGIN]);
+		const fetch: typeof globalThis.fetch = async (input, init) => {
+			try { return await subscription(input, init); }
+			catch (error) {
+				options?.signal?.throwIfAborted();
+				if (!(error instanceof AuthRecoveryError)) throw error;
+				// A fetch exception becomes SDK APIConnectionError. An HTTP response keeps auth semantics.
+				return Response.json({ type: "error", error: {
+					type: error.status === 403 ? "permission_error" : "authentication_error", message: error.message || LOGIN_HELP,
+				} }, { status: error.status, headers: { "x-should-retry": "false" } });
+			}
+		};
+		return protectPartialStream(delegate(model, context, { ...options, maxRetries: 0, fetch }));
 	};
 	Object.assign(handler, { [OVERLAY]: true });
 	return { api: "anthropic-messages", streamSimple: handler };
