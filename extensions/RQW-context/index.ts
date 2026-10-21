@@ -15,7 +15,7 @@
 // values: Pi checks their threshold against the routed physical model's window.
 // Both internals are checked before either is patched, so a failed load changes nothing.
 // The patches stay in Pi's classes for the life of the process, but act only while a loaded RQW-context owns them:
-// the factory sets the owner, its session_shutdown clears it, so a /reload without the extension gives stock Pi.
+// each factory adds its own owner token and session_shutdown removes it; no live owners means stock Pi.
 // Design and proof: DECISIONS.md section Context.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AgentSession, SettingsManager } from "@earendil-works/pi-coding-agent";
@@ -58,11 +58,10 @@ export function capModel<T>(model: T): T {
 	return copy as T;
 }
 
-// The loaded RQW-context that owns the patches: a token per factory run, on globalThis because a /reload evaluates
-// this module again while the patches of the first evaluation stay in place.
+// Live owners of the process-wide patches: one token per factory run, shared across module reloads.
 const OWNER = Symbol.for("rqw-context/owner");
-const owners = globalThis as { [OWNER]?: object };
-const owned = () => owners[OWNER] !== undefined;
+const owners = globalThis as { [OWNER]?: Set<object> };
+const owned = () => (owners[OWNER]?.size ?? 0) > 0;
 
 type AgentState = { model: unknown };
 const cappedStates = new WeakSet<AgentState>();
@@ -148,12 +147,11 @@ export default function context(pi: ExtensionAPI) {
 	}
 	wrapCompactionSettings(settings);
 	wrapSessionModel(session);
-	// Pi emits session_shutdown before it loads the extensions of the next runtime (reload, new, resume, fork), so the
-	// next factory run, or none when the extension is switched off, decides. The token keeps a late shutdown of the
-	// old runtime from clearing a newer owner.
+	// Pi emits session_shutdown before loading the next runtime (reload, new, resume, fork). Removing only this
+	// factory's token leaves concurrent sessions and newer runtimes in control of their own ownership.
 	const token = {};
-	owners[OWNER] = token;
+	(owners[OWNER] ??= new Set()).add(token);
 	pi.on("session_shutdown", () => {
-		if (owners[OWNER] === token) delete owners[OWNER];
+		owners[OWNER]?.delete(token);
 	});
 }

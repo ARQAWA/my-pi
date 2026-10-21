@@ -262,16 +262,20 @@ Every accepted decision, with its reason and the file that carries it.
   response is skipped only when nothing lies beyond `keepRecentTokens` to summarize. The extension leaves that
   unchanged.
 - Both wraps live as long as the process, one per class (`Symbol.for` guards), and act only while a loaded
-  RQW-context owns them: the factory puts a fresh token under `Symbol.for("rqw-context/owner")` on `globalThis`, its
-  `session_shutdown` handler deletes it if it is still its own. Without an owner `getCompactionSettings` returns Pi's
+  RQW-context owns them: each factory adds a fresh token to the process-global `Set` under
+  `Symbol.for("rqw-context/owner")` on `globalThis`; its `session_shutdown` handler removes only that token.
+  The wraps act while the set is nonempty. Without an owner `getCompactionSettings` returns Pi's
   own values, `_buildRuntime` installs no accessor, and an accessor already installed returns the model as stored.
   Pi emits `session_shutdown` before it loads the next runtime's extensions: `/reload` (`agent-session.js:2972`,
   then `_resourceLoader.reload()` at `2981`), `/new`, `/resume` and `/fork` (`agent-session-runtime.js:102-113`,
-  `teardownCurrent` before `createRuntime`). So after RQW-context is switched off and `/reload`, the window and the
-  reserve are stock Pi's again, as on a fresh start without it (section Isolation).
-  The token keeps a late shutdown of an old runtime from clearing a newer owner. While RQW-context is on, SDK sessions
-  in the same process get the rule too. The patch code itself is installed once per process, so after an update of
-  my-pi a `/reload` keeps the old RQW-context code; Pi must be restarted for RQW-context changes to apply
+  `teardownCurrent` before `createRuntime`). After the last owner switches RQW-context off and reloads, or emits
+  `session_shutdown`, the window and reserve are stock Pi's again (section Isolation). Concurrent owners survive
+  either shutdown order and reloads of other sessions; an old runtime removes only its own token, not a newer one.
+  SDK `dispose()` alone disconnects listeners and does not emit `session_shutdown`; callers must emit the lifecycle
+  event, as Pi does. While any owner remains, SDK sessions in the same process get the rule too, including sessions
+  that excluded the extension. Owner: "Replace owner slot with process-global Set of live owner tokens". Reason:
+  one slot let shutdown or reload of a newer SDK session disable an older, still-active owner.
+  The patch code itself is installed once per process, so after an update of my-pi a `/reload` keeps the old RQW-context code; Pi must be restarted for RQW-context changes to apply
   (`INSTALL.md` step 4). Reason for text, not code: a replaceable implementation behind the guards adds machinery for
   a case a restart covers.
 - Out of scope: virtual models (`pi.registerVirtualModel`; Pi 1.3.0 ships none), owner's option a. A virtual model
@@ -288,7 +292,9 @@ Every accepted decision, with its reason and the file that carries it.
   with compaction off, a virtual model as stock, load order, a load without either internal, the request body
   against stock Pi, and the switch: listed in `settings.json`, dropped, `/reload` gives window 1 000 000 and reserve
   16 384, listed again and `/reload` gives the rule back. `test/isolation.test.ts` checks the same through the
-  `packages` filter.
+  `packages` filter. Concurrent SDK tests in `context.test.ts` run for library and bundle: A/B shutdown in both
+  orders, package-filter reload excluding B while A remains, reload A, and stock values after the last owner leaves.
+  Tests emit `session_shutdown` before SDK `dispose()` so their owner tokens do not leak between cases.
 
 ## Prompt
 
@@ -345,7 +351,9 @@ Every accepted decision, with its reason and the file that carries it.
   включать и выключать, как feature флаги.»). Rules: no file of an extension, tests included, imports a file outside
   its own folder; a helper two extensions need is copied (`selection.ts`, 19 lines); an extension's tests load only
   that extension; tests of several extensions together live in `test/` at the package root (`test/package.test.ts`);
-  no extension leaves a trace after it is switched off (RQW-context, section Context).
+  no extension leaves active behaviour after it is switched off. RQW-context deliberately has process-wide scope:
+  stock behaviour returns only when the last live owner in that process leaves (section Context); switching it off
+  in B does not disable it in an active A.
 - Proof: `test/isolation.test.ts` (in `npm test`). The list comes from `package.json` `pi.extensions`, so a new
   extension is covered without a change to the test. Static part: every relative import of every file under
   `extensions/<E>/` resolves inside it. Runtime part, one child process per variant (`test/isolation-run.ts`, real
