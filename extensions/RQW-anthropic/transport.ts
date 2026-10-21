@@ -22,7 +22,8 @@ export function subscriptionFetch(
 		let versionRetried = false;
 		for (;;) {
 			signal.throwIfAborted();
-			headers.set("user-agent", `claude-cli/${version.value} (external, cli)`);
+			const sentVersion = version.value;
+			headers.set("user-agent", `claude-cli/${sentVersion} (external, cli)`);
 			headers.set("x-app", "cli");
 			headers.set("x-client-request-id", randomUUID());
 			headers.set("x-claude-code-session-id", sessionId);
@@ -30,7 +31,7 @@ export function subscriptionFetch(
 			headers.delete("content-length");
 			const response = await transport(request.url, {
 				method: request.method, headers, signal, redirect: "error",
-				body: billingBody(raw, version.value, sessionId, deviceId),
+				body: billingBody(raw, sentVersion, sessionId, deviceId),
 			});
 			if (response.status === 401) {
 				await response.body?.cancel();
@@ -43,7 +44,7 @@ export function subscriptionFetch(
 			}
 			if (response.status === 400 && !versionRetried) {
 				const text = await response.clone().text();
-				if (version.adopt(text)) {
+				if (version.adopt(text, sentVersion)) {
 					await response.body?.cancel();
 					versionRetried = true;
 					continue;
@@ -66,6 +67,15 @@ export function createOverlay(
 		// The Pi composer sends both stream contracts here. Keep explicit API-shaped thinking options.
 		const apiShaped = options && ["thinkingEnabled", "effort", "thinkingBudgetTokens"].some(key => key in options);
 		const delegate = apiShaped ? base.stream.bind(base) : base.streamSimple.bind(base);
+		// Pi resolves ANTHROPIC_AUTH_TOKEN and configured auth into headers, not apiKey.
+		for (const source of [model.headers, options?.headers]) {
+			for (const [name, value] of Object.entries(source ?? {})) {
+				if (name.toLowerCase() === "authorization" && typeof value === "string" &&
+					isOAuth(/^Bearer\s+(\S+)$/i.exec(value.trim())?.[1])) {
+					throw new Error("RQW-anthropic: OAuth Authorization headers, including ANTHROPIC_AUTH_TOKEN, are unsupported. Use /login anthropic or ANTHROPIC_OAUTH_TOKEN; request not sent.");
+				}
+			}
+		}
 		if (!isOAuth(options?.apiKey)) return delegate(model, context, options);
 		const transport = options?.fetch ?? globalThis.fetch;
 		return delegate(model, context, { ...options, maxRetries: 0,

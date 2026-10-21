@@ -62,7 +62,11 @@ cannot hide builtins from both selectors.
 
 Use a narrow in-memory reversible shim, owned entirely by this extension: filter ModelRuntime's provider/model
 listing methods and AgentSession's scopedModels getter. Keep provider/auth stores and their contents untouched.
-The shim is installed while the extension is loaded and restored on session_shutdown, including reload. Use
+The shim is installed while the extension is loaded and restored on session_shutdown, including reload, or
+public SDK dispose. Pi 1.3.0 has no native pre-dispose event: `lifecycle.ts` narrowly wraps checked
+`AgentSession.dispose` and performs synchronous idempotent cleanup before invalidation, without synthesizing
+shutdown events for other extensions. Its bindExtensions guard rejects a persisted runtime conflict before
+any session_start handlers run. Use
 reference-counted shared patch state so concurrent extension instances do not restore each other's hooks. Check
 all patched descriptors before changing anything. No node_modules edits, no disk core patch. Tests must exercise
 Pi's real login-option builder and both model-selector input paths, plus restoration. This is version-sensitive
@@ -75,7 +79,9 @@ Pi 1.3.0 integration; a missing hook must produce an explicit load error, never 
    refresh retry implementation using omp's refresh endpoint and headers. Pi remains the sole credential owner.
 2. The overlay keeps Pi's message/tool parser. A per-request fetch wrapper inserts the omp billing shape after
    serialization, keeps system instructions in place, stamps session metadata and user agent, and computes cch
-   over the exact bytes sent. API-key calls pass through. No startup network/version lookup or ~/.claude reads.
+   over the exact bytes sent. API-key calls pass through. Subscription Authorization headers are explicitly rejected before delegation;
+   Pi resolves ANTHROPIC_AUTH_TOKEN to that header path. Only canonical OAuth apiKey auth is signed.
+   No startup network/version lookup or ~/.claude reads.
 3. On an HTTP 401 before stream delivery, compare the rejected bearer under the existing store's modify lock;
    reuse an already-rotated token or refresh once and persist it before replay. Cancellation stops waiting/requests,
    not an already-started rotating refresh. No replay after partial streamed output, no retry of 403/quota errors,
@@ -84,7 +90,10 @@ Pi 1.3.0 integration; a missing hook must produce an explicit load error, never 
    The existing registration shim passes the checked ModelRuntime.credentials store to the marked handler.
    This also works before session_start and after headless SDK reloads. Surface actionable /login anthropic guidance on terminal auth
    failure and redact upstream auth failure bodies. Do not log request headers or credentials.
-5. Installation must stop when pi-claude-auth or another Anthropic overlay is enabled. Explain how the owner can
+5. Retain co-load conflicts per runtime even when SDK binding swallows the registration exception. Fail
+   provider/model lists, request preparation and SDK bindExtensions with an actionable message in both orders.
+   The own session_start handler also reports the conflict, not a generic auth failure.
+   Installation must stop when pi-claude-auth or another Anthropic overlay is enabled. Explain how the owner can
    disable only that extension and keep auth.json. Do not automatically edit local configuration or uninstall it.
 6. Toggle: disable this package extension using Pi's package extension filter, then reload/restart. Restore default
    visibility and provider composition, without restoring stale credential snapshots. The other RQW extensions stay.
@@ -108,17 +117,38 @@ and live model runs are excluded by the owner's no-nested-agents/no-live-calls r
 
 The extension is registered in the package and documented in AGENTS and DECISIONS. INSTALL now stops at a competing
 Anthropic extension; no owner's local settings were read/rewritten for migration and no credential file was touched.
-Runtime registration binds the actual credential store before any request, even before session_start. Shutdown uses
-its public context to unregister the exact owned handler, including after an SDK reload that emits no session_start.
+Runtime registration binds the actual credential store and owning runtime before any request, even before
+session_start. Shutdown and SDK dispose share idempotent cleanup, unregistering only the exact owned handler
+without reading an invalidated extension context, including after SDK reload without session_start.
 This lifecycle was tested through repeated enabled reload, a forced-401 request after that reload, then disabling.
 A missing credential bridge rejects registration before changing the provider or its visibility.
 
-Final offline check: `node --test --test-reporter=dot "extensions/*/test/*.test.ts"` completed with exit status 0.
-This is the same suite as `npm test`. The adapter has 23 tests, including real Pi library and CLI-bundle loading,
-copy-code PKCE login with a fake exchange, malformed-login preservation, proactive refresh, forced refresh after
-reload, two file-backed stores sharing a lock, abort before/during refresh, saved API-key preservation, actual
-serialized request signing, bounded 401/version retries, no partial-stream replay, and reversible picker/login hooks.
-The full suite retains its platform-specific Windows skip on macOS. `git diff --cached --check` passed.
+Regression coverage includes resolved options.env and process-env ANTHROPIC_AUTH_TOKEN, configured/request
+Authorization headers, canonical ANTHROPIC_OAUTH_TOKEN and ordinary API-key gateway delegation; real SDK
+co-loading in both orders, persisted list/request errors, an unrelated runtime, and actual CLI --list-models/RPC
+subprocesses. A configured external extension path exercises the installed edxeth adapter without vendoring it.
+Two independent SDK sessions dispose in both orders, with reload, duplicate shutdown and repeated dispose;
+all patched descriptors and owned overlays are checked for exact restoration. Concurrent explicit version
+rejections must yield two successes in exactly four inference calls; pins and replay bounds are also tested.
+
+Bun 1.3.14 cannot import the stock npm CLI bundle because webidl.util.markAsUncloneable is absent.
+The test entrypoint loader skips only this exact known error on that version; all library/transport tests still
+run, and any other import failure fails the suite. Node 22 and current Node run the full suite and CLI bundle.
+Offline verification of the four review fixes:
+
+- Full suite on Node 26.7.0 and Node 22.19.0: 273 tests, 272 pass, zero failures, one Windows-only skip each.
+- Targeted regressions and CLI with the installed edxeth/pi-claude-auth source: 12 pass, zero failures.
+- Targeted adapter suite with that source on Bun 1.4.3: 34 pass, zero failures. On Bun 1.3.14:
+  27 pass, two explicitly reported stock-bundle-dependent skips, zero failures.
+- New regression tests against the original 8a1f2ed sources fail on all four findings: leaked header transport,
+  swallowed SDK conflict and successful misleading CLI list, retained overlay after dispose, and concurrent
+  version responses [200, 400]. The fixed external repro yields [200, 200] in exactly four calls, restores
+  both SDK overlays/prototypes, blocks header OAuth, and makes both conflicting CLI orders exit 1.
+- External multimodal/tool-signature and partial-SSE probes still pass; the latter performs one inference call,
+  preserves partial text and never replays. The original SDK conflict script now rejects bindExtensions with
+  the actionable migration error instead of returning a mixed active session.
+- `git diff --check` passes. No existing source, user configuration or real credential files outside this
+  worktree were changed; temporary fake fixtures were removed.
 
 No live model requests, real-account login/refresh, account probes, token logging, nested agents or independent
 subagent review were used. Windows/Linux execution and real subscription acceptance/billing remain unverified.

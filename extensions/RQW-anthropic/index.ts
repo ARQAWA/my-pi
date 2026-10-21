@@ -3,10 +3,11 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CredentialStore, OAuthCredential } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
-import { getAgentDir, VERSION, type ExtensionAPI, type ProviderConfig } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, VERSION, type ExtensionAPI, type ModelRuntime, type ProviderConfig } from "@earendil-works/pi-coding-agent";
 import { LOGIN_HELP, refreshCredential, validateCredential } from "./auth.ts";
+import { installLifecycle } from "./lifecycle.ts";
 import { createOverlay } from "./transport.ts";
-import { installVisibility, BIND_STORE } from "./visibility.ts";
+import { assertNoConflict, clearConflict, installVisibility, BIND_STORE } from "./visibility.ts";
 import { versionState } from "./wire.ts";
 
 export default function anthropic(pi: ExtensionAPI) {
@@ -23,10 +24,31 @@ export default function anthropic(pi: ExtensionAPI) {
 	if (!/^[a-f0-9]{64}$/.test(installId)) throw new Error("RQW-anthropic: invalid rqw-anthropic-install-id; request not sent");
 	const deviceId = createHash("sha256").update(`omp-claude-device-id-v1:${installId}`).digest("hex");
 	let store: CredentialStore | undefined;
+	let runtime: ModelRuntime | undefined;
+	let cleaned = false;
 	const overlay = createOverlay(base, () => store, deviceId, version);
-	Object.assign(overlay.streamSimple, { [BIND_STORE]: (credentials: CredentialStore) => { store = credentials; } });
 	const release = installVisibility();
+	let lifecycle: ReturnType<typeof installLifecycle> | undefined;
+	function cleanup() {
+		if (cleaned) return;
+		cleaned = true;
+		try {
+			if (runtime?.getRegisteredProviderConfig("anthropic")?.streamSimple === overlay.streamSimple) runtime.unregisterProvider("anthropic");
+		} finally {
+			if (runtime) clearConflict(runtime);
+			lifecycle?.release();
+			release();
+			store = undefined;
+			runtime = undefined;
+		}
+	}
 	try {
+		lifecycle = installLifecycle();
+		Object.assign(overlay.streamSimple, { [BIND_STORE]: (credentials: CredentialStore, boundRuntime: ModelRuntime) => {
+			store = credentials;
+			runtime = boundRuntime;
+			lifecycle!.bind(boundRuntime, cleanup);
+		} });
 		pi.registerProvider("anthropic", {
 			...overlay,
 			oauth: {
@@ -57,18 +79,12 @@ export default function anthropic(pi: ExtensionAPI) {
 			},
 		} as ProviderConfig);
 		pi.on("session_start", (_event, ctx) => {
+			if (runtime) assertNoConflict(runtime);
 			if (!store || ctx.modelRegistry.getRegisteredProviderConfig("anthropic")?.streamSimple !== overlay.streamSimple) {
-				if (ctx.modelRegistry.getRegisteredProviderConfig("anthropic")?.streamSimple === overlay.streamSimple) pi.unregisterProvider("anthropic");
-				release();
-				store = undefined;
+				cleanup();
 				throw new Error(`${LOGIN_HELP} Adapter registration is unavailable.`);
 			}
 		});
-		pi.on("session_shutdown", (_event, ctx) => {
-			try {
-				// Shutdown also runs after an SDK reload that emitted no session_start.
-				if (ctx.modelRegistry.getRegisteredProviderConfig("anthropic")?.streamSimple === overlay.streamSimple) pi.unregisterProvider("anthropic");
-			} finally { release(); store = undefined; }
-		});
-	} catch (error) { release(); throw error; }
+		pi.on("session_shutdown", cleanup);
+	} catch (error) { cleanup(); throw error; }
 }

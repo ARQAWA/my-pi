@@ -13,6 +13,7 @@ import { IDENTITY, billingBody, versionState, xxh64 } from "../wire.ts";
 import { LOGIN_HELP, recoverCredential, refreshCredential, TOKEN_URL } from "../auth.ts";
 import { subscriptionFetch, createOverlay } from "../transport.ts";
 import { installVisibility, OVERLAY, BIND_STORE } from "../visibility.ts";
+import { entries } from "./pi-entrypoints.ts";
 
 // Internal storage import deliberately tests Pi's file locking boundary, not a public extension dependency.
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
@@ -279,8 +280,7 @@ describe("compatibility guards", () => {
     });
 });
 
-const bundle: typeof pi = await import(new URL("./bundle/index.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
-for (const [label, entry] of [["library", pi], ["CLI bundle", bundle]] as const) describe(`real Pi integration: ${label}`, () => {
+for (const [label, entry] of entries) describe(`real Pi integration: ${label}`, () => {
 	it("loads the isolated extension; filters login, all and scoped picker inputs; reload without it restores defaults", async () => {
 		const dir = await mkdtemp(join(root, "session-"));
 		const store = AuthStorage.inMemory({ anthropic: credential, openrouter: { type: "api_key", key: "fake-other" }, "openai-codex": { ...credential } });

@@ -399,3 +399,15 @@ Every accepted decision, with its reason and the file that carries it.
   "Commit on branch, do not push/merge". Tests use fake credentials, mock fetch, file-backed lock fixtures and both
   Pi library/CLI-bundle entrypoints. No independent subagent review or live billing proof is performed on this branch.
   Actual Windows/Linux execution remains for CI.
+
+- Follow-up review fixes, owner: "Fix all four concrete independent review findings"; "either fully handle
+  canonical auth-token path or explicitly reject OAuth-header path before any external transport". The adapter
+  rejects subscription Authorization headers before delegation and keeps ordinary API-key gateway behavior
+  (`transport.ts`). Runtime conflicts survive swallowed SDK errors and block startup, lists and requests
+  (`visibility.ts`, `lifecycle.ts`), with manual disable-and-restart migration and no settings edits.
+  Owner: "Idempotent cleanup before invalidation for SDK dispose". Pi 1.3.0 exposes no native SDK shutdown
+  event, so an isolated reversible dispose wrapper releases only this extension, before runner invalidation.
+  Owner: "Track sent version per request, one bounded replay if effective newer version meets rejection even
+  if already adopted". Each request records its sent version, including under concurrency; a pinned
+  `PI_AI_CLAUDE_CODE_VERSION` still forbids adaptation (`wire.ts`, `transport.ts`). License, privacy and
+  delegated Pi parser/login design remain unchanged.

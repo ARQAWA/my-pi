@@ -52,7 +52,14 @@ export function xxh64(bytes: Uint8Array, seed = 0n): bigint {
 	return (h ^ h >> 32n) & MASK;
 }
 
-export interface VersionState { readonly value: string; adopt(message: string): boolean }
+export interface VersionState { readonly value: string; adopt(message: string, sentVersion?: string): boolean }
+
+function compareVersions(a: string, b: string): number {
+	const left = a.split(".").map(Number);
+	const right = b.split(".").map(Number);
+	const different = left.findIndex((part, i) => part !== right[i]);
+	return different < 0 ? 0 : Math.sign(left[different] - right[different]);
+}
 
 export function versionState(override = process.env.PI_AI_CLAUDE_CODE_VERSION): VersionState {
 	if (override !== undefined && !/^\d+\.\d+\.\d+$/.test(override)) {
@@ -61,16 +68,13 @@ export function versionState(override = process.env.PI_AI_CLAUDE_CODE_VERSION): 
 	let value = override ?? DEFAULT_VERSION;
 	return {
 		get value() { return value; },
-		adopt(message: string): boolean {
+		adopt(message: string, sentVersion = value): boolean {
 			if (override || !message.includes("claude_code_version_too_old")) return false;
 			const required = /version (\d+\.\d+\.\d+) or newer is required/i.exec(message)?.[1];
 			if (!required) return false;
-			const a = required.split(".").map(Number);
-			const b = value.split(".").map(Number);
-			const different = a.findIndex((v, i) => v !== b[i]);
-			if (different < 0 || a[different] <= b[different]) return false;
-			value = required;
-			return true;
+			if (compareVersions(required, value) > 0) value = required;
+			// A neighbor may already have adopted the minimum while this request was in flight.
+			return compareVersions(value, sentVersion) > 0 && compareVersions(value, required) >= 0;
 		},
 	};
 }

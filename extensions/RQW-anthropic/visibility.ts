@@ -4,17 +4,27 @@ import { AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
 export const OVERLAY = Symbol.for("rqw-anthropic/overlay");
 export const BIND_STORE = Symbol.for("rqw-anthropic/bind-store");
 const PATCH = Symbol.for("rqw-anthropic/visibility");
+const CONFLICTED = Symbol.for("rqw-anthropic/conflict");
 const ALLOWED: Record<string, true | undefined> = { anthropic: true, "openai-codex": true };
-const CONFLICT = "RQW-anthropic: another Anthropic extension is enabled. Disable pi-claude-auth or the other Anthropic adapter, keep auth.json, then reload.";
-type Registration = { streamSimple?: { [OVERLAY]?: boolean; [BIND_STORE]?: (store: CredentialStore) => void } };
+const CONFLICT = "RQW-anthropic: another Anthropic extension is enabled. Disable pi-claude-auth or the other Anthropic adapter in personal/project settings and explicit -e arguments, keep auth.json, then restart Pi.";
+type Registration = { streamSimple?: { [OVERLAY]?: boolean; [BIND_STORE]?: (store: CredentialStore, runtime: ModelRuntime) => void } };
 type RuntimeView = {
 	credentials?: CredentialStore;
+	[CONFLICTED]?: boolean;
 	getRegisteredProviderConfig(id: string): Registration | undefined;
 	getRegisteredNativeProvider(id: string): unknown;
 };
 type Hook = (this: RuntimeView, ...args: unknown[]) => unknown;
 type Original = [object, string, PropertyDescriptor];
 type PatchState = { count: number; originals: Original[] };
+
+export function assertNoConflict(runtime: object): void {
+	if ((runtime as RuntimeView)[CONFLICTED]) throw new Error(CONFLICT);
+}
+
+export function clearConflict(runtime: object): void {
+	delete (runtime as RuntimeView)[CONFLICTED];
+}
 
 // Pi 1.3.0 exposes the classes but no visibility policy. Never patch stores or credential contents.
 export function installVisibility(Runtime = ModelRuntime, Session = AgentSession): () => void {
@@ -24,7 +34,7 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 	if (!state) {
 		const runtime = Runtime.prototype;
 		const session = Session.prototype;
-		const methods = ["getProviders", "getModels", "getAvailableSnapshot", "getAvailable", "registerProvider", "registerNativeProvider"];
+		const methods = ["getProviders", "getModels", "getAvailableSnapshot", "getAvailable", "prepareRequest", "registerProvider", "registerNativeProvider"];
 		const scoped = Object.getOwnPropertyDescriptor(session, "scopedModels");
 		const descriptors = methods.map(name => Object.getOwnPropertyDescriptor(runtime, name));
 		if (descriptors.some(d => typeof d?.value !== "function" || !d.configurable) || !scoped?.get || !scoped.configurable ||
@@ -45,22 +55,33 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 						const previous = this.getRegisteredProviderConfig(id) ?? this.getRegisteredNativeProvider(id);
 						const own = config && typeof config === "object" && "streamSimple" in config &&
 							(config.streamSimple as Registration["streamSimple"])?.[OVERLAY] === true;
-						if (previous && (enabled(this) || own) && !(enabled(this) && own)) throw new Error(CONFLICT);
-                        if (own) {
-                            const bind = (config as Registration).streamSimple?.[BIND_STORE];
-                            if (bind) {
-                                const store = this.credentials;
-                                if (!store || typeof store.read !== "function" || typeof store.modify !== "function") {
-                                    throw new Error("RQW-anthropic: Pi 1.3.0 runtime credential bridge is unavailable; adapter not registered");
-                                }
-                                bind(store);
-                            }
-                        }
+						if (own) {
+							const bind = (config as Registration).streamSimple?.[BIND_STORE];
+							if (bind) {
+								const store = this.credentials;
+								if (!store || typeof store.read !== "function" || typeof store.modify !== "function") {
+									throw new Error("RQW-anthropic: Pi 1.3.0 runtime credential bridge is unavailable; adapter not registered");
+								}
+								// Bind even a rejected owner so SDK dispose can release its hooks.
+								bind(store, this as unknown as ModelRuntime);
+							}
+						}
+						if (previous && (enabled(this) || own) && !(enabled(this) && own)) {
+							this[CONFLICTED] = true;
+							throw new Error(CONFLICT);
+						}
+						assertNoConflict(this);
 					}
 					return original.call(this, idOrProvider, config);
 				};
+			} else if (name === "prepareRequest") {
+				wrapped = async function(...args) {
+					assertNoConflict(this);
+					return original.apply(this, args);
+				};
 			} else {
 				wrapped = function(...args) {
+					assertNoConflict(this);
 					const result = original.apply(this, args);
 					if (!enabled(this)) return result;
 					// Each checked accessor returns providers/models or a promise of that list.
@@ -72,6 +93,7 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 		}
 		const scopedGetter = scoped.get;
 		Object.defineProperty(session, "scopedModels", { ...scoped, get(this: AgentSession) {
+			assertNoConflict(this.modelRuntime);
 			const result: AgentSession["scopedModels"] = scopedGetter.call(this);
 			return enabled(this.modelRuntime as unknown as RuntimeView) ? result.filter(entry => ALLOWED[entry.model.provider]) : result;
 		} });
