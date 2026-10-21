@@ -38,6 +38,7 @@ export function contextLimit(pi: Pick<ExtensionAPI, "getSettings">, ctx: Pick<Ex
 export default function statusbar(pi: ExtensionAPI) {
 	let enabled = true;
 	let active = false;
+	let measuring = false;
 	let redraw: (() => void) | undefined;
 	let refresh: (() => void) | undefined;
 	let dispose: (() => void) | undefined;
@@ -94,6 +95,8 @@ export default function statusbar(pi: ExtensionAPI) {
 				clearInterval(poll);
 				stopBranch();
 				active = false;
+				measuring = false;
+				rate.reset();
 				redraw = undefined;
 				refresh = undefined;
 				if (dispose === cleanup) dispose = undefined;
@@ -163,10 +166,13 @@ export default function statusbar(pi: ExtensionAPI) {
 	pi.on("thinking_level_select", () => redraw?.());
 	pi.on("session_compact", () => redraw?.());
 	pi.on("message_start", (event) => {
-		if (active && event.message.role === "assistant") rate.start(Date.now());
+		if (active && event.message.role === "assistant") {
+			measuring = true;
+			rate.start(Date.now());
+		}
 	});
 	pi.on("message_update", (event) => {
-		if (!active) return;
+		if (!active || !measuring) return;
 		const update = event.assistantMessageEvent;
 		if (update.type === "text_delta" || update.type === "thinking_delta" || update.type === "toolcall_delta") {
 			rate.push(update.delta, Date.now());
@@ -174,7 +180,8 @@ export default function statusbar(pi: ExtensionAPI) {
 		}
 	});
 	pi.on("message_end", (event) => {
-		if (!active || event.message.role !== "assistant") return;
+		if (!active || !measuring || event.message.role !== "assistant") return;
+		measuring = false;
 		rate.end(event.message.usage?.output, Date.now());
 		redraw?.();
 	});

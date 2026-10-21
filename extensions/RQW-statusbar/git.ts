@@ -49,7 +49,7 @@ export function gitCounts(root: string): Promise<GitCounts | undefined> {
 	const { promise, resolve: done } = Promise.withResolvers<GitCounts | undefined>();
 	execFile(
 		"git",
-		["--no-optional-locks", "status", "--porcelain=v1", "-z"],
+		["--no-optional-locks", "status", "--porcelain=v1", "-z", "--untracked-files=normal"],
 		{ cwd: root, timeout: 5000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
 		(error, stdout) => done(error ? undefined : parsePorcelain(stdout)),
 	);
