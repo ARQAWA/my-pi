@@ -5,9 +5,12 @@ You are running inside Pi. Install the my-pi package into this Pi installation, 
 0. Run `pi --version`. The package is built and tested for Pi 1.3.0. If the version differs, tell the user and stop:
    the tools wrap Pi's own tool code, which may change between versions.
 0.1. Run `pi list` and inspect enabled extensions in personal and project scope with `pi config`, plus any explicit
-   `-e` arguments. RQW-anthropic must not co-load with pi-claude-auth or another Anthropic provider extension. If one
-   is enabled, stop and ask the owner to disable that extension first, keeping its package and auth.json. Do not
-   modify the other package or any credentials automatically. Migration and the opt-out filter are in
+   `-e` arguments. If `git:github.com/edxeth/pi-claude-auth` is installed, run
+   `pi remove git:github.com/edxeth/pi-claude-auth` in its installed scope, adding `--local` for a project install.
+   This known adapter replacement is authorized; do not ask for confirmation. Preserve `auth.json` and all unrelated
+   packages and settings. RQW-anthropic must run as the only Anthropic adapter. Omit any old adapter's explicit `-e`
+   arguments on the next launch; do not edit other projects' scripts. If another competing adapter is enabled,
+   stop and ask the owner to disable it. Migration and the opt-out filter are in
    `extensions/RQW-anthropic/README.md`.
 1. Run `pi list`. If it already shows `git:github.com/ARQAWA/my-pi`, run `pi update git:github.com/ARQAWA/my-pi` and skip step 2.
 2. Run `pi install git:github.com/ARQAWA/my-pi`. It writes the package to `~/.pi/agent/settings.json` under `packages`.
@@ -16,7 +19,8 @@ You are running inside Pi. Install the my-pi package into this Pi installation, 
    `pi update` in step 1, tell the user to restart Pi: RQW-context patches Pi's classes once per process, so a
    `/reload` keeps its old code.
 
-Change nothing else: no other packages, settings or files.
+Apart from the authorized old adapter replacement above and installing or updating my-pi, change nothing else:
+no unrelated packages, settings, credentials or files.
 
 ## Switch one extension off
 

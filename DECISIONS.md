@@ -17,8 +17,10 @@ The source remains outside this repository; no transcript or credentials are cop
 
 ## Scope
 
-- my-pi is built on stock Pi 1.3.0 with stock tools and its own extensions. Only `RQW-models` and `RQW-statusbar`
-  ported UI, as described in [Models](#models) and [Statusbar](#statusbar); other omp-lite UI and tools are not
+- my-pi is an extension layer around stock Pi 1.3.0, not a fork (user: «Мы делаем просто обвес вокруг оригинального Pi.»;
+  «Нет, никаких форков.»). Reason: keep Pi's own behavior and add only the agreed extensions. Carried by
+  `package.json` and `extensions/`. Only `RQW-models` and `RQW-statusbar` ported UI, as described in [Models](#models)
+  and [Statusbar](#statusbar); other omp-lite UI and tools are not
   carried over (user: «Давай полностью отбросим все UI припоны и оставим только чистую механику и промпты»,
   «Так же мы можем отбросить тулинг»).
 - Reason: bench41 (`~/Documents/ChatGPT/my-omp-harness/bench/bench41.csv`, T01-T07, 3 runs): the omp-lite prompt alone
@@ -64,6 +66,12 @@ The source remains outside this repository; no transcript or credentials are cop
   adapter `RQW-anthropic` (Claude Code login, as in omp, with self-healing); every other provider is hidden (user:
   «Это именно отключить. Когда мы заходим в логин, там должны быть только кодекс, авторизация и авторизация через
   Anthropic, которую ты сейчас делаешь. И всё»).
+
+- Lean engineering scope (user: «Не надо делать микроправки всяких хуёвин, которые возможно никогда не всплывут, и у них редкость возникновения очень высокая, вероятность, что они возникнут, крайне мала. Надо править именно очевидные жирные ошибки, а не вылизывать до предела.»).
+  Reason: fix obvious major failures, not speculative rare cases. The coordinator defers rare virtual-model routing
+  and a native filesystem alias engine from this iteration; these were not previously accepted owner requirements.
+  This is not a specific owner quotation about virtual models or filesystem aliases. Current carriers:
+  `extensions/RQW-context/index.ts`, `extensions/RQW-tools/`, and `notes/context-questions.md`.
 
 ## Structure
 
@@ -194,7 +202,7 @@ The source remains outside this repository; no transcript or credentials are cop
 
 ## Context
 
-- `extensions/RQW-context/index.ts` applies the owner's rule to every model: W = min(model.contextWindow, 500000) is
+- `extensions/RQW-context/index.ts` applies the owner's rule to direct physical models: W = min(model.contextWindow, 500000) is
   the context window Pi uses, R = `Math.round(W / 10)` (a .5 rounds up), and Pi compacts above W - R. 272 000 ->
   window 272 000, compaction above 244 800; 500 000 and 1 000 000 -> window 500 000, compaction above 450 000.
   Built-in, models.json and extension models alike, at start (`--model`), on resume, after `/model` and model cycling.
@@ -211,8 +219,11 @@ The source remains outside this repository; no transcript or credentials are cop
   output cap pi-ai derives from it (`pi-ai/dist/api/simple-options.js:5-9`: contextWindow - context - 4096), and the
   summary requests (`_getSummarizationRequestAuth(this.model)`). `state.model` is a plain property
   (`pi-agent-core/dist/agent.js:40`), so the extension replaces it on each session's state with an accessor that
-  stores `{ ...model, contextWindow: 500000 }` for a model above 500 000 and the same object otherwise, one stable copy
-  per declared model. It is installed from `AgentSession.prototype._buildRuntime`, which Pi runs in the session
+  stores `{ ...model, contextWindow: 500000 }` for a physical model above 500 000 and the same object otherwise, one
+  stable copy per declared model, retaining the declared original on reassignment. `wrapAgentState` hooks the actual
+  native Agent's `state` getter and `createLoopConfig`, covering state replacement and direct native requests without
+  a preceding session getter read. `wrapModelGetter` also covers session reads. These hooks are installed from
+  `AgentSession.prototype._buildRuntime`, which Pi runs in the session
   constructor right after `this.agent = config.agent` (`agent-session.js:177`, `210`) and again on `/reload`
   (`2988`), so every assignment Pi makes later (`setModel` `1985`, cycling `2037`, `2064`, registry refresh `2711`)
   goes through it. Reason for an internal hook: the extension API has no way to change the session model's window.
@@ -221,11 +232,11 @@ The source remains outside this repository; no transcript or credentials are cop
   provider" (`extensions/types.d.ts:1442`); models.json `modelOverrides` needs an entry per model; the `model_select`
   event is a notification. Extensions get Pi's own `AgentSession` class (jiti alias in the library, virtual modules
   in the bundle); the tests run both.
-- Load check: before patching anything the extension checks that both internals it patches exist,
-  `AgentSession.prototype._buildRuntime` and `SettingsManager.prototype.getCompactionSettings`. If either is missing
-  (another Pi version), it throws one load error naming the missing method and patches nothing. Reason: Pi turns the
-  throw into a load error and keeps running (`core/extensions/loader.js:524-537`), so a half-installed patch would run
-  a rule the user is told is off; now the rule is either whole or absent.
+- Load check: before installing the session/settings hooks, the extension checks
+  `AgentSession.prototype._buildRuntime`, the configurable `AgentSession.model` getter and
+  `SettingsManager.prototype.getCompactionSettings`. A missing hook gives a load error before those patches.
+  `wrapAgentState` checks the native Agent's `state`, `createLoopConfig` and `_state` shape together before wrapping
+  that class at runtime. Reason: these internal hooks are specific to Pi 1.3.0; incompatible shapes must be reported.
 - Mechanism, reserve: Pi compacts when `contextTokens > model.contextWindow - reserveTokens` (`compaction.js:176`) and
   reads reserveTokens from `SettingsManager.getCompactionSettings(model)` at every check. The extension wraps that
   method on Pi's class and returns contextWindow - (W - R), which is R itself once the window is W: a computed
@@ -303,15 +314,12 @@ The source remains outside this repository; no transcript or credentials are cop
   The patch code itself is installed once per process, so after an update of my-pi a `/reload` keeps the old RQW-context code; Pi must be restarted for RQW-context changes to apply
   (`INSTALL.md` step 4). Reason for text, not code: a replaceable implementation behind the guards adds machinery for
   a case a restart covers.
-- Delegated technical choice by the coordinator, not owner approval: exclude virtual models
-  (`pi.registerVirtualModel`; Pi 1.3.0 ships none). The assistant reported choosing option a in C:2138.
-  The owner's universal rule (C:2015, C:2047) remains the requirement; whether the routed physical model's
-  uncapped window leaves that requirement unfinished is a separate review, not settled by this exclusion. A virtual model
-  (`api` `pi-virtual`) is never capped and `getCompactionSettings` returns Pi's own values for it. Reason: Pi reads
-  the settings of the virtual selection but checks them against the routed physical model's window
-  (`agent-session.js:420-422`, `481`, `2363`, `2376`); a reserve from the virtual model's declared window made Pi
-  compact before every prompt (1M virtual routed to 272k: reserve 550 000, threshold below 0). Under a virtual model
-  the behaviour is stock Pi's: the routed model's declared window and Pi's reserve.
+- Native virtual-model routing is deferred by the coordinator under the lean scope above, not by specific owner
+  approval of a virtual-model exception. Current implementation: `capModel` leaves `api: pi-virtual` unchanged and
+  `getCompactionSettings` returns Pi's own settings for it. Pi delegates limits to the routed physical model;
+  this iteration leaves that native route stock rather than adding a routed-window hook. Direct physical-model
+  state and native request paths are capped as described above. Carried by `extensions/RQW-context/index.ts`;
+  implementation boundary: `notes/context-questions.md`.
 - Proof: `extensions/RQW-context/test/context.test.ts` runs real sessions of the library and the bundle with a
   scripted provider that reports exact usage and a local OpenAI-compatible endpoint: Pi's own `session.model`,
   `getContextUsage()`, `compaction_start` at W - R + 1 and not at W - R (also after a switch, `/reload`, resume, fork
@@ -806,24 +814,27 @@ The source remains outside this repository; no transcript or credentials are cop
   and inference but not persistence of an already-rotating token. Permanent errors surface /login guidance without
   upstream token-response bodies. Subscription inference uses the official HTTPS origin only and rejects redirects.
   No bootstrap identity or startup version probe. `PI_AI_CLAUDE_CODE_VERSION` can pin the CLI version.
-- Engineering migration decision under the adapter request C:3133: avoid duplicate Anthropic registrations
-  without automatically modifying the owner's local config. INSTALL stops at an enabled competing adapter;
-  runtime guards reject conflicting registrations in either order. The owner disables the competing extension
-  manually, keeps its package/credentials and restarts. No automatic local migration.
+- Adapter replacement (user: «Просто старый адаптер выкидываешь, который есть уже, и ставишь наш адаптер»).
+  `INSTALL.md` step 0.1 removes an installed `git:github.com/edxeth/pi-claude-auth` with official `pi remove`, in its
+  installed scope, then installs or updates my-pi normally. No confirmation is needed for this known replacement.
+  Preserve `auth.json` and unrelated packages/settings. Omit old explicit `-e` arguments on the next launch without
+  editing other projects' scripts. Reason: run one Anthropic adapter, with the old one off, not support a mixed
+  configuration. Another competing adapter must be switched off before use. Mixed-config support, poisoning future
+  refreshes after a conflict and SDK changes are not required by this migration. Carried by `INSTALL.md` and
+  `extensions/RQW-anthropic/`; adapter details live in its README.
 - Proof boundary: tests use fake credentials, mock fetch, file-backed lock fixtures and both Pi library/CLI-bundle
   entrypoints. These tests do not prove live subscription acceptance or billing. The owner's Claude benchmark/tuning
   pause (C:3244) remains: «Те задачи, где ты должен делать замеры на Sonnet моделях, на Cloud моделях, пока на паузе
-  стоят»; «Я тебе дам команду, когда их продолжать». The local adapter implementation report records no independent
-  subagent review and no actual Windows/Linux execution; those are proof limits, not standing workflow exceptions.
+  стоят»; «Я тебе дам команду, когда их продолжать». Offline fixture coverage in `notes/anthropic-adapter.md` is
+  not a current verification report or proof of actual Windows/Linux execution; independent review remains required
+  by the workflow manifest.
 
 - Engineering follow-up to four independent review findings under the adapter request C:3133: either fully handle
   the canonical auth-token path or reject OAuth-header auth before external transport. The adapter
   rejects subscription Authorization headers before delegation and keeps ordinary API-key gateway behavior
-  (`transport.ts`). Runtime conflicts survive swallowed SDK errors and block startup, lists and requests
-  (`visibility.ts`, `lifecycle.ts`), with manual disable-and-restart migration and no settings edits.
-  Engineering decision: idempotent cleanup before invalidation for SDK dispose. Pi 1.3.0 exposes no native SDK shutdown
-  event, so an isolated reversible dispose wrapper releases only this extension, before runner invalidation.
-  Engineering decision: track the sent version per request, with one bounded replay if an effective newer version
+  (`transport.ts`). The single-adapter migration policy is defined above; no mixed-configuration or SDK changes
+  are part of that requirement. Engineering decision: track the sent version per request, with one bounded replay
+  if an effective newer version
   meets a rejection, even if already adopted. Each request records its sent version, including under concurrency; a pinned
   `PI_AI_CLAUDE_CODE_VERSION` still forbids adaptation (`wire.ts`, `transport.ts`). License, privacy and
   delegated Pi parser/login design remain unchanged.

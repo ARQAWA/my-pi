@@ -1,6 +1,7 @@
 # RQW-context: questions, answered
 
-The rule: W = min(contextWindow, 500000) is the window Pi uses, R = Math.round(W / 10), Pi compacts above W - R.
+For direct physical models: W = min(contextWindow, 500000) is the window Pi uses, R = Math.round(W / 10),
+Pi compacts above W - R.
 The coordinator answered both implementation questions as delegated technical choices, reported in C:2138,
 not as direct owner approvals. Owner requirements and implementation evidence are in `DECISIONS.md`, section Context.
 `C:<line>` uses the raw session reference defined in that document.
@@ -11,8 +12,11 @@ Owner rule (C:2015): «если контекстное окно больше 500
 Резерв — 10% от края». The coordinator chose to apply that window everywhere Pi reads it (C:2138),
 with compaction at W - R and R = 10% of W.
 
-Built: for a model above 500 000 the session model gets contextWindow 500 000, so every place Pi reads the window
-follows: the compaction trigger before a prompt and before each next turn, threshold and overflow checks after a
+Built: for a direct physical model above 500 000 the session model gets contextWindow 500 000.
+`capModel` preserves the declared original; `wrapAgentState` covers the native Agent state getter, replacement states
+and `createLoopConfig`, so direct native requests are capped without first reading the session model.
+`wrapModelGetter` also covers session reads. Every place Pi reads that physical window follows: the compaction
+trigger before a prompt and before each next turn, threshold and overflow checks after a
 response, context usage and the footer percent (90% at the threshold), the output cap of each request
 (500 000 - context - 4096, 45 902 in the test at 450 000 context) and the summary limits (40 000 and 25 000).
 An answer with more than 500 000 input tokens counts as overflow; with compaction on and a history of several turns
@@ -46,16 +50,14 @@ Known limits of the 500 000 window (no code change, the window rule is the owner
   400 000, compacts above 100 000 instead of 600 000. A reserve of W or more would leave no threshold; the rule's R
   applies then.
 
-## 2. Virtual models — delegated technical choice: a
+## 2. Virtual models: deferred native routing
 
-The coordinator chose option a, excluding virtual models, and reported it in assistant message C:2138:
-«Виртуальные модели остаются вне правила: в Pi 1.3.0 их нет». This is an assistant quotation, not owner approval.
-The owner required universal automatic behavior (C:2047): «Это должны быть универсальные решения, которые будут
-работать всегда автоматически». Whether the uncapped routed physical model leaves that requirement unfinished
-is a separate review; this note does not establish an owner-approved exclusion or final policy. A virtual model (`pi.registerVirtualModel`; Pi 1.3.0 ships none) is
-never capped and keeps Pi's own compaction settings; Pi takes its limits from the routed physical model
-(`agent-session.js:312`, `422`), so under it the window is the routed model's declared one, the reserve is Pi's, and
-the behaviour is stock Pi's.
+The coordinator leaves native virtual-model routing outside this iteration under the owner's lean-scope rule in
+`DECISIONS.md`, section Scope. This is not a specific owner quotation approving a virtual-model exception, nor a
+previously accepted owner requirement to build a routing hook. The earlier choice reported in assistant message
+C:2138 was a delegated technical choice, not owner approval.
 
-- a) Exclude virtual selections from the implementation. — chosen by the coordinator, not the owner
-- b) Cover virtual models too: needs a hook at the routed model; a deeper internal patch of `AgentSession`.
+Current implementation: `capModel` does not cap `api: pi-virtual`, and `getCompactionSettings` leaves its settings
+stock. Pi delegates limits to the routed physical model (`pi.registerVirtualModel`; Pi 1.3.0 ships none). That native
+virtual route keeps Pi's declared routed window and reserve; the direct physical-model cap described above does
+not add a virtual-routing hook. A deeper routed-window implementation is deferred, not included in this iteration.
