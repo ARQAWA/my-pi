@@ -490,6 +490,123 @@ Every accepted decision, with its reason and the file that carries it.
   the queued follow-up in the same message (`[agent#1] W: ... first ... W: ... second`,
   `[agent#2] Q: The bug is in add ...`).
 
+## Review
+
+- `extensions/RQW-review/` is the accepted reviewers plan (user: «То, что ты предложил по ревьюерам — it's OK, я
+  принимаю»): one tool `review` with `level` `blind` or `high` (user: «Smart не нужен ... будет Blind и High»), held
+  to the existing contract and nothing more (user: «эти три саб-агента должны быть забиты за тем контрактом, который
+  есть, и всё»).
+- Models live in one table, `LEVELS` at the top of `index.ts`: `blind` is `anthropic/claude-haiku-5-5` with thinking
+  medium, `high` is `anthropic/claude-sonnet-5-5` with thinking low (user: «Ревьюеры будут только на этих двух
+  моделях»). The thinking levels are to be confirmed by the known-answer measurement. No fallback: a missing model,
+  missing credentials, a failed request or no verdict in 10 minutes give `[review#N] Review failed: <reason>`.
+- Parameters: `level`, `object` (paths, the diff as a file path, the stage), `criterion`, optional `agreement`
+  (accepted proposals and decisions that are not in the user's own messages) and `rejected`. The description has
+  four sentences, 426 characters (test limit 500). Empty strings count as not given, since strict mode fills every
+  field.
+- The main agent and the reviewer work as a pair, one team for the user's agreement (owner, 2026-10-09: «чтобы они
+  действовали в одной команде ... либо принимает правку, либо её отклоняет и пишет, почему»; 2026-10-20: «он с ним
+  действует в унисон, в паре ... их синергия должна идти в рамках плагина. Это не должно размазываться»). The reviewer
+  side is `REVIEWER.md` ("on Main's team"). The main side lives in three carriers of `index.ts`, each paid only where
+  it is needed:
+  - `DESCRIPTION` (every request while the plugin is on): who the reviewer is, "works with you as one team for the
+    user's agreement", and how to call it; the handling rules left it.
+  - the tool result, `startedText`: `review#N started. Keep working, but leave the reviewed files unchanged until its
+    verdict.`
+  - the verdict wrapper, `verdictMessage`: `[review#N]` first, the verdict verbatim, then one paragraph of `NEXT` by
+    kind. `clean` (the trimmed verdict is exactly `CLEAN`): passed, no further pass for confidence.
+    `incomplete` (a trimmed verdict begins with `CLEAN` but includes extra nonblank text): resolve UNCHECKED or retry
+    malformed output, never claim passed or treat it as findings needing field access. `findings` (other reviewer
+    text): find each quote by searching; a finding with both quotes verbatim is admitted and fixed exactly to
+    its REQUIRED OUTCOME and no further, never rejected, argued with or put to the user; reject only when a quote is not
+    verbatim or a NOT AGREED element is covered by a verbatim agreement quote, giving that quote; fix all admitted in
+    one batch, then call `review` again with the same level, object and criterion and every rejection so far, until
+    CLEAN. `failed` (the catch branch, not parsed text): the check has not passed and no self-check replaces it; retry
+    once on the unchanged object, then tell the user and wait.
+  Not `promptSnippet` or `promptGuidelines`: RQW-prompt sets `systemPromptOptions.customPrompt`, and Pi builds the
+  section where they go only without a custom prompt, so they would never reach the model while RQW-prompt is on.
+  Not `SYSTEM.md`: turning RQW-review off must remove the pair completely, and with the rules in the plugin it does.
+  Source: `/tmp/review-pair.md` section 3.
+- Reviewer-side tuning candidates, not edits (`REVIEWER.md` changes only through the measurement bench):
+  1. REQUIRED OUTCOME names the one end state the agreement requires, never a choice between fixes or a question to
+     the user (the 2026-10-09 loops came partly from such choices).
+  2. Describe the real brief tags: `<user_messages>` (every user message of the branch in order, summaries labeled as
+     not the user's words), `<agreement>`, `<object>`, `<criterion>` and, from the second pass, `<rejected_earlier>`;
+     requirements come from the messages this object answers.
+- The diff goes in as a file path, not as a command: the reviewer only reads files and cannot run one.
+- The extension builds the brief itself (`buildBrief`): the user's messages of the current branch, verbatim, numbered
+  and in order, with compaction and branch summaries labeled as not the user's words, then `agreement`, `object`,
+  `criterion` and `rejected`. Reason: the main agent no longer retypes the user's words, the largest output cost of a
+  call, and the words cannot drift.
+- Each call is a fresh session in the same process: `createAgentSession` with in-memory `SessionManager` and
+  `SettingsManager` (compaction off), a resource loader with no extensions, skills, prompt templates, themes, context
+  files or appended prompt, `REVIEWER.md` as the prompt and the tools `read`, `grep`, `find` only. Pi still adds its
+  `<cwd>` block after the prompt, so relative paths in the brief resolve; nothing else is added.
+- The reviewer gets Pi's stock `read`, `grep` and `find`, not the RQW-tools ones. Reasons: the RQW descriptions carry
+  the main agent's method (grep: a broad search wave plus a find for deploy and run files; read: read the files you
+  will change), which works against the reviewer's first batch of whole-file reads; the barrier never orders
+  read-only calls, so an own barrier adds nothing; the RQW definitions are built inside the RQW-tools factory and
+  are not exported. The execute code is the same stock code, so the output matches. Cost: stock caps of 100 grep
+  matches and 1000 find results, each with a note on how to get more.
+- grep and find go to the reviewer as `customTools` (`reviewerTools`): the stock definitions with a
+  `prepareArguments` that drops optional arguments equal to the string `"null"`, `"undefined"` or blank
+  (`dropEmptyOptional`) before Pi validates them; execute stays stock. Reason (review finding): stock grep passed
+  `--glob null` to rg and answered "No matches found", so a reviewer could confirm a removed name was gone everywhere.
+  RQW-tools has no such normalizer to reuse; a real JSON `null` Pi already strips.
+- The reviewer uses the session's own model runtime, `ctx.modelRegistry.runtime`, private to TypeScript only.
+  Reason: providers and logins that the user's extensions register reach the reviewer (here `pi-claude-auth`
+  registers the `anthropic` provider), and no second runtime refreshes the same OAuth login.
+- `REVIEWER.md` is the Spotty body from `my-omp-harness` `deprecated:agents/spotty.md` with two changes for Pi: the
+  `read` note (Pi's read prints no line numbers; the bracketed continuation note is not file content) and the final
+  answer as the last message instead of a `yield` call, worded as in master `agents/review.md`. The verdict format
+  stays: `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED
+  OUTCOME), and an optional `UNCHECKED:` section.
+- Async: the call returns `review#N started. ...` at once. The verdict, the reviewer's last assistant text, arrives as
+  `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>\n\n<next step>", display: true }, ...)`; `details` carry
+  `n`, level, model, thinking and seconds for the user and logs only. Numbers count per session and go on after a
+  resume. `session_shutdown` aborts every running review and delivers nothing; the 10-minute timer does not keep the
+  process alive.
+- Delivery: a verdict never waits in the agent's queue and gets exactly one main turn unless the run was aborted
+  (review findings: in print and json mode Pi disposed the session when the main run settled and the verdict never
+  came; a follow-up waited in the agent's queue, which TUI Esc and RPC `clear_queue` clear and an RPC abort or an
+  error-ended run leaves without a turn; a verdict that came in while another extension's slow `agent_before_settle`
+  handler ran after ours got no turn).
+  The `session_start` context is kept. When `ctx.isIdle()`, the verdict goes with `triggerTurn: true, deliverAs:
+  "followUp"` and starts a turn. When busy, it goes with `triggerTurn: false`: Pi appends it to the session at the
+  end of the current turn or run, aborted or not, and the `agent_before_settle` handler returns `continue: true`
+  while the verdict is not yet followed by an assistant message in the branch. Each review sends one verdict, so its
+  number `n` in `details` is the delivery number. When that handler returns without `continue`, a `settling` flag is
+  set until `turn_start` or `agent_settled`; verdicts that arrive meanwhile wait in a `late` list, and the
+  `agent_settled` handler sends them, all but the last with `triggerTurn: false` and the last with
+  `triggerTurn: !event.aborted`, so several get one turn. After an abort no turn starts; the verdict stays in the
+  session and the model sees it on the next prompt, once. In print and json mode the handler first waits for running
+  reviews (each ends within the 10-minute timeout), and their verdicts continue that same run before Pi exits.
+- Credentials: a review fails with "no credentials" only when both `ctx.modelRegistry.hasConfiguredAuth(model)` and
+  `await runtime.checkAuth(provider)` say so, as in Pi's own prompt. Reason: the auth snapshot behind
+  `hasConfiguredAuth` is filled asynchronously, so right after startup or a reload it can miss credentials that exist.
+- Proof: `extensions/RQW-review/test/review.test.ts` (real sessions, faux providers for the main and the reviewer
+  models) and one real run per level: a temp copy of a fixture with `calc.py` (`add` returns `a - b` instead of the
+  sum) and a correct `config.py` (`MAX_ITEMS = 50`), command
+  `pi -e /tmp/my-pi-review --mode json --model anthropic/claude-opus-5-5 --thinking low -p "<prompt>"`, the prompt
+  quoting the request and asking to call `review` and then `sleep 150`. Both verdicts named the defect and nothing
+  else and started a main turn: `blind` in 8.7 s (`EVIDENCE: "return a - b"`), `high` in 3.8 s. After the delivery
+  fixes, tests for print and json mode (the run waits and continues with the verdict), a verdict arriving while the
+  main agent streams (continues its run once), TUI Esc and RPC abort (the verdict is in the session once, no run
+  starts, the next prompt carries it once), two verdicts that arrive while a slow second extension
+  (`test/slow-settle.ts`, loaded after RQW-review) holds `agent_before_settle` (one main turn for both), and grep and
+  find with `"null"`, `"undefined"` and blank arguments through Pi's validation and inside a reviewer session.
+  Without the `agent_before_settle` handler, the busy-time delivery, the `settling` flag or `reviewerTools`, these
+  tests fail. Every test passes when run alone, which needs the `checkAuth` fallback. Live run in json mode with no
+  `sleep`: Haiku 5.5 as the main model replied `started`, the run waited, `[review#1] FINDINGS: ... EVIDENCE:
+  "return a - b"` arrived after 5.1 s and the main agent answered it in the same run (`GOT VERDICT: ... returns
+  a - b instead of the sum`), exit 0 in 13 s.
+- Open: `ctx.modelRegistry.runtime` may be renamed by a Pi update, then every review fails with "the model runtime of
+  the session is not reachable"; a verdict that finishes after the session ended (quit, `/new`, `/resume`, reload)
+  is dropped, since `session_shutdown` aborts running reviews; in print and json mode the run waits up to 10 minutes
+  for a slow review; a verdict that arrives during a manual `/compact` with no run is appended without a turn and is
+  seen on the next one; the reviewer may read a file the main agent is still editing; the main agent's own RQW-tools
+  grep still passes a string `"null"` glob to rg; in one smoke run Haiku wrote a MISMATCH of more than 20 words.
+
 ## PCLI
 
 - `pcli-vscode/` is a VS Code extension `arqawa.pcli` ("ARQAWA PCLI", win32-x64) that starts Pi like CCLI starts Codex

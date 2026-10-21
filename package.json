@@ -19,7 +19,8 @@
       "./extensions/RQW-prompt/index.ts",
       "./extensions/RQW-tools/index.ts",
       "./extensions/RQW-context/index.ts",
-      "./extensions/RQW-agent/index.ts"
+      "./extensions/RQW-agent/index.ts",
+      "./extensions/RQW-review/index.ts"
     ]
   },
   "devDependencies": {
