@@ -212,6 +212,21 @@ it("git handles ordinary repos, missing git/metadata, linked worktrees, and file
 	} finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
+it("git untracked counts use normal mode despite user no/all settings", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "rqw-status-git-config-"));
+	const git = (...args: string[]) => execFileSync("git", args, { cwd, stdio: "ignore" });
+	try {
+		git("init", "-b", "main");
+		mkdirSync(join(cwd, "new-dir"));
+		writeFileSync(join(cwd, "new-dir", "one"), "one");
+		writeFileSync(join(cwd, "new-dir", "two"), "two");
+		for (const setting of ["normal", "no", "all"]) {
+			git("config", "status.showUntrackedFiles", setting);
+			assert.deepEqual(await gitCounts(cwd), { staged: 0, unstaged: 0, untracked: 1 }, setting);
+		}
+	} finally { rmSync(cwd, { recursive: true, force: true }); }
+});
+
 it("the extension imports no other extension folders and is registered in the package", () => {
 	for (const file of ["index.ts", "render.ts", "git.ts"]) {
 		const text = readFileSync(join(root, file), "utf8");
