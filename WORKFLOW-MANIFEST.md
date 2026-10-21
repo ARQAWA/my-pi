@@ -16,7 +16,7 @@ The agreement is the owner's own words across the whole conversation, his answer
 
 ## Autonomy and execution
 
-From the go, the task runs autonomously to the final proven result; the owner hears nothing before it unless a blocker only he can remove appears. Speed is wall-clock time to a correct result, and everything independent runs in parallel. The main agent is the coordinator: it chooses how to execute the task, keeps its own context lean, hands the work to as many parallel subagents as the task needs, each with a self-contained task that returns its result, and remains responsible for scope and result. Subagents run on Opus only, at low, medium or high reasoning. Work happens only in this repository; other repositories are read-only sources.
+From the go, the task runs autonomously to the final proven result; the owner hears nothing before it unless a blocker only he can remove appears. Speed is wall-clock time to a correct result, and everything independent runs in parallel. The main agent is the coordinator: it chooses how to execute the task, keeps its own context lean, hands the work to as many parallel subagents as the task needs, each with a self-contained task that returns its result, and remains responsible for scope and result. Engineering work uses GPT-6.1-Sol at low, medium or high reasoning; small changes may use GPT-6-Luna, and GPT-6-Sol may be chosen when its reasoning level fits the task. RQW Review finishes on GPT-6.1-Sol low and GPT-6-Sol low. Claude model benchmarks and tuning are paused until the owner explicitly resumes them. Work happens only in this repository; other repositories are read-only sources.
 
 ## Proof
 

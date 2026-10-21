@@ -2,6 +2,13 @@
 
 Every accepted decision, with its reason and the file that carries it.
 
+## Work policy
+
+- Engineering work continues on GPT-6.1-Sol at low, medium or high reasoning; small changes may use GPT-6-Luna, and GPT-6-Sol may be selected when its reasoning level fits the task (user: «Всё остальное продолжай делать моделями GPT-6-1-sol low, medium, high ... мелочь ... GPT-6-Luna ... можешь ... GPT-6-sol ... reasoning ... выбери сам»).
+- RQW Review finishing work uses GPT-6.1-Sol low and GPT-6-Sol low (user: «RKV Review заканчивает на моделях GPT-6-1-Sol-Low и GPT-6-Low. Вот на таких моделях»). This does not change the product reviewer pins Haiku 5.5 medium and Sonnet 5.5 recorded below.
+- Claude model benchmarks and tuning are paused until the owner explicitly resumes them; saved results stay in place (user: «задачи ... замеры на Sonnet ... на Cloud ... на паузе ... дам команду»).
+- Carried by `WORKFLOW-MANIFEST.md`; no prompt, model configuration, code or tests change.
+
 ## Scope
 
 - my-pi is built on stock Pi 1.3.0 with its own tools (`read`, `bash`, `edit`, `write`); the interface and the omp-lite
@@ -23,14 +30,11 @@ Every accepted decision, with its reason and the file that carries it.
   createAgentSession»), read only, and are checked on a model with a known-answer set (user: «Конечно, делай
   проверки, расходуй токены»). Their concept and models come from the history first: Spotty and Bossy in
   `my-omp-harness` branch `deprecated` (Haiku 5.5 and Sonnet 5.5) and in `my-codex-harness` (gpt-6-sol, gpt-6.1-sol).
-- Subagents of the work on this repository run on Sonnet high, Sonnet xhigh, Opus low or Opus medium only, each
-  chosen for its job, neither to save nor to waste limits (user: «модели теперь такие остаются: Sonnet High, Sonnet
-  Extra High, Opus Low, Opus Medium. Только такие саб-агенты, используем максимально их интеллектуально по
-  назначению. Не в целях экономии, но и в целях не излишней растраты»). This replaces the Opus-only rule.
-- Model probes and benches other than the reviewers' run on Sonnet medium or Sonnet high, Haiku high or xhigh, or the
-  ChatGPT models, not on Opus (user: «Все тесты, которые ты делаешь на cloud-моделях, делай на моделях Sonnet Medium
-  либо Sonnet High, не Opus ... если это не касается ревьюеров ... А ещё можно добавить хайку high или хайку extra
-  high»). bench46 had already run Opus medium; its Sonnet xhigh config was replaced by Sonnet medium.
+- Active engineering workers, including subagents, use GPT-6.1-Sol low, medium or high; small checks may use GPT-6-Luna, and GPT-6-Sol is also available at a task-appropriate reasoning level. RQW Review finishes on GPT-6.1-Sol low and GPT-6-Sol low. This supersedes the earlier active Sonnet/Opus worker rule (user: «Всё остальное продолжай делать моделями GPT-6-1-sol low, medium, high»; «RKV Review заканчивает на моделях GPT-6-1-Sol-Low и GPT-6-Low»).
+- Claude model probes, benchmarks and tuning are dormant until the owner explicitly resumes them; do not start or continue those runs before then (user: «замеры на Sonnet ... на паузе»; «дам команду, когда их продолжать»). Existing results remain. This pause does not change product reviewer model pins such as Haiku 5.5 and Sonnet 5.5 below.
+- Non-Claude model probes, including the four SYSTEM.md edits, may run on GPT-6 and GPT-6.1 now.
+  Claude probes remain paused until an explicit resume command (user: «Замеры правок System LMD можно тоже
+  проводить на модели GPT-6»). Earlier Sonnet/Haiku probe choices apply only after that command.
 - Reviewers, accepted plan (user: «То, что ты предложил по ревьюерам — it's OK, я принимаю»): own extension
   `RQW-review` on `createAgentSession`, no ready package (pi-subagents: ~98k lines, ~1.3k tokens per request, fails
   strict schemas). One tool `review` with `level` `blind` or `high`; a fresh read-only session per pass with `read`,
