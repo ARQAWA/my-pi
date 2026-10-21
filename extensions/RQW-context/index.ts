@@ -3,6 +3,7 @@
 // Virtual selection stays native, including its unknown window. Request/check-local context supplies the physical
 // reserve when Pi asks for the selection's settings. Preparation uses the triggering request/response (manual: latest
 // successful response); native default summaries bind R once to their actual direct-route target, after routing.
+// Explicit reserve intent/value is captured at the original settings read, before interception or routing.
 // Explicit selection settings and native compaction policy still win. No owners means stock Pi again.
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -61,6 +62,11 @@ type GetCompactionSettings = SettingsManager["getCompactionSettings"];
 type CompactionModel = Parameters<GetCompactionSettings>[0];
 type CompactionSettings = ReturnType<GetCompactionSettings>;
 type Preparation = { settings: CompactionSettings };
+type ReserveIntent = { explicitReserve?: number };
+// The native preparation keeps this exact settings object. Reloads share provenance, not live settings or models.
+const RESERVES = Symbol.for("rqw-context/reserve-intents");
+const reserves = globalThis as { [RESERVES]?: WeakMap<CompactionSettings, ReserveIntent> };
+const reserveIntents = (reserves[RESERVES] ??= new WeakMap<CompactionSettings, ReserveIntent>());
 type AgentState = { model: unknown };
 const cappedStates = new WeakSet<AgentState>();
 const WRAPPED_AGENT = Symbol.for("rqw-context/agent-state");
@@ -89,6 +95,7 @@ type LimitScope = {
 	selectedModel?: CompactionModel;
 	physical?: CompactionModel;
 	preparation?: Preparation;
+	reserveIntent?: ReserveIntent;
 };
 const SCOPE = Symbol.for("rqw-context/physical-scope");
 const scopes = globalThis as { [SCOPE]?: AsyncLocalStorage<LimitScope> };
@@ -189,13 +196,14 @@ function wrapCompactionSettings(proto: SettingsPrototype): void {
 		const settings = original.call(this, model);
 		if (!owned() || !model) return settings;
 		const scope = physicalScope.getStore();
-		const limits = isVirtual(model)
-			? scope?.session?.settingsManager === this && scope.selectedModel === model ? scope.physical : undefined
-			: model;
+		const limits = scope?.session?.settingsManager === this && scope.selectedModel === model
+			? scope.physical : isVirtual(model) ? undefined : model;
 		const contextWindow = contextWindowOf(limits);
-		if (contextWindow === undefined || (limits && isVirtual(limits))) return settings;
-		const userReserve = userSetReserve(this, model) ? settings.reserveTokens : undefined;
-		return { ...settings, reserveTokens: reserveFor(contextWindow, userReserve) };
+		const explicitReserve = userSetReserve(this, model) ? settings.reserveTokens : undefined;
+		const effective = contextWindow === undefined || (limits && isVirtual(limits)) ? settings
+			: { ...settings, reserveTokens: reserveFor(contextWindow, explicitReserve) };
+		reserveIntents.set(effective, { explicitReserve });
+		return effective;
 	};
 	proto[WRAPPED_SETTINGS] = original;
 }
@@ -281,18 +289,19 @@ function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<sym
 	wrap("_runDefaultCompaction", (original) => function (preparation: Preparation, model, ...args) {
 		if (!owned()) return original.call(this, preparation, model, ...args);
 		// Keep the interception hook's preparation intact. Only the native default summary rebinds its reserve.
+		const reserveIntent = reserveIntents.get(preparation.settings);
 		const summaryPreparation = { ...preparation, settings: { ...preparation.settings } };
 		// Pi captured this selection before interception; hooks and pending routing may change the live selection.
-		return physicalScope.run({ agent: this.agent, session: this, selectedModel: model, preparation: summaryPreparation },
+		return physicalScope.run({ agent: this.agent, session: this, selectedModel: model, preparation: summaryPreparation, reserveIntent },
 			() => original.call(this, summaryPreparation, model, ...args));
 	});
 	wrap("_getSummarizationRequestAuth", (original) => async function (model, signal) {
 		const scope = physicalScope.getStore();
 		const request = await original.call(this, model, signal);
-		if (owned() && scope?.session === this && scope.selectedModel === model && scope.preparation && model && isVirtual(model)) {
-			const settings = physicalScope.run({ ...scope, physical: request.model },
-				() => this.settingsManager.getCompactionSettings(model));
-			scope.preparation.settings.reserveTokens = settings.reserveTokens;
+		const contextWindow = contextWindowOf(request.model);
+		if (owned() && scope?.session === this && scope.selectedModel === model && scope.preparation && scope.reserveIntent &&
+			contextWindow !== undefined && !isVirtual(request.model)) {
+			scope.preparation.settings.reserveTokens = reserveFor(contextWindow, scope.reserveIntent.explicitReserve);
 		}
 		return request;
 	});

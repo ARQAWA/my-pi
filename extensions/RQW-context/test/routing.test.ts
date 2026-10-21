@@ -70,7 +70,7 @@ async function host(pi: typeof library): Promise<Host> {
 	return { runtime, scripts };
 }
 
-type Open = { owner?: boolean; window?: number; target?: string; settings?: object; host?: Host; intercept?: "cancel" | "custom" };
+type Open = { owner?: boolean; window?: number; target?: string; settings?: object; manager?: library.SettingsManager; host?: Host; intercept?: "cancel" | "custom" };
 async function open(pi: typeof library, options: Open = {}) {
 	const shared = options.host ?? await host(pi);
 	const { runtime, scripts } = shared;
@@ -110,7 +110,7 @@ async function open(pi: typeof library, options: Open = {}) {
 	const { session } = await pi.createAgentSession({ cwd: dir, agentDir: dir, modelRuntime: runtime,
 		model: runtime.getModel("routing-test", "small")!, thinkingLevel: "low", resourceLoader: loader,
 		sessionManager: pi.SessionManager.inMemory(dir),
-		settingsManager: pi.SettingsManager.inMemory({ retry: { enabled: false },
+		settingsManager: options.manager ?? pi.SettingsManager.inMemory({ retry: { enabled: false },
 			compaction: { keepRecentTokens: 0 }, ...options.settings }),
 	});
 	await session.bindExtensions({});
@@ -319,6 +319,126 @@ for (const [entry, pi] of ENTRIES) {
 					await other.close(); await f.close();
 				}
 			});
+		}
+
+		for (const [target, selected, usage, compact] of [
+			["small", "big", 230_000, false], ["big", "small", 460_000, true],
+		] as const) {
+			it(`235 F1: ordinary route to ${target} retains its reserve after selecting physical ${selected}`, async () => {
+				const f = await open(pi, { settings: { compaction: { enabled: false, keepRecentTokens: 0 } } });
+				const entered = Promise.withResolvers<void>();
+				const release = Promise.withResolvers<void>();
+				let operation: Promise<unknown> | undefined;
+				try {
+					await f.prompt(usage);
+					f.script.target = target; f.script.requests = [];
+					f.script.routeGate = async (request) => {
+						if (request.reason !== "user") return;
+						entered.resolve(); await release.promise;
+					};
+					operation = f.prompt(1_000);
+					await entered.promise;
+					f.session.settingsManager.setCompactionEnabled(true);
+					await f.session.setModel(f.runtime.getModel("routing-test", selected)!);
+					const liveReserve = selected === "big" ? 50_000 : 27_200;
+					assert.equal(f.session.settingsManager.getCompactionSettings(f.session.model).reserveTokens, liveReserve);
+					release.resolve(); await operation;
+					assert.deepEqual(f.starts, compact ? ["threshold"] : []);
+					assert.deepEqual(f.preparations, compact ? [50_000] : []);
+					assert.equal(f.script.requests.at(-1)?.id, target, "the ordinary route still stands");
+					assert.equal(f.script.routes.filter((q) => q.reason === "user").length, 2);
+					assert.equal(f.script.routes.filter((q) => q.reason === "direct").length, 0,
+						"physical summary selections do not add virtual routes");
+					assert.equal(f.session.model?.id, selected);
+					assert.equal(f.session.settingsManager.getCompactionSettings(f.session.model).reserveTokens, liveReserve,
+						"physical operation limits must not leak to later settings reads");
+					assert.ok(f.script.requests.every((q) => q.window <= 500_000));
+				} finally {
+					release.resolve(); await operation?.catch(() => {}); await f.close();
+				}
+			});
+		}
+
+		const reserveChanges = [
+			{ name: "explicit 20k to 30k", initial: 20_000, next: 30_000, expected: 20_000 },
+			{ name: "explicit old derived R stays explicit", initial: 50_000, next: 30_000, expected: 50_000 },
+			{ name: "explicit stock default stays explicit", initial: 16_384, next: 30_000, expected: 16_384 },
+			{ name: "explicit to undefined", initial: 20_000, next: undefined, expected: 20_000 },
+			{ name: "implicit to explicit old derived R", initial: undefined, next: 50_000, expected: 27_200 },
+			{ name: "virtual override 20k to 30k", initial: 20_000, next: 30_000, expected: 20_000, override: true },
+			{ name: "virtual override removed to global fallback", initial: 20_000, next: undefined, expected: 20_000, override: true },
+			{ name: "explicit equal actual W falls back", initial: 272_000, next: 20_000, expected: 27_200 },
+			{ name: "explicit above actual W falls back", initial: 600_000, next: 20_000, expected: 27_200 },
+			{ name: "raw explicit invalid for chat becomes valid for summary", initial: 300_000, next: 20_000,
+				expected: 300_000, chat: "small", summary: "big" },
+		] as const;
+		for (const change of reserveChanges) for (const mode of ["manual", "automatic"] as const) {
+			for (const timing of ["before compact hook", "pending direct route"] as const) {
+				it(`235 F2: ${mode} freezes ${change.name} in ${timing}`, async () => {
+					const override = "override" in change;
+					const chat = "chat" in change ? change.chat : "big";
+					const summary = "summary" in change ? change.summary : "small";
+					const initialCompaction = { keepRecentTokens: 0, ...(override
+						? { reserveTokens: 40_000, modelOverrides: { "routing/auto": { reserveTokens: change.initial } } }
+						: { reserveTokens: change.initial }) };
+					let stored = JSON.stringify({ retry: { enabled: false }, compaction: initialCompaction });
+					const manager = pi.SettingsManager.fromStorage({ withLock(scope, fn) {
+						const next = fn(scope === "global" ? stored : undefined);
+						if (scope === "global" && next !== undefined) stored = next;
+					} });
+					const f = await open(pi, { target: chat, manager });
+					const entered = Promise.withResolvers<void>();
+					const release = Promise.withResolvers<void>();
+					let operation: Promise<unknown> | undefined;
+					let hookSettings: { reserveTokens: number } | undefined;
+					const prepared = chat === "small" ? 27_200 : change.initial === undefined ? 50_000
+						: change.initial >= 500_000 ? 50_000 : change.initial;
+					try {
+						await f.prompt(1_000); await f.prompt(2_000);
+						f.script.summaryTarget = summary; f.script.requests = [];
+						const mutate = async () => {
+							stored = JSON.stringify({ retry: { enabled: false }, compaction: {
+								...initialCompaction, enabled: false, keepRecentTokens: 999_999,
+								...(override ? { modelOverrides: { "routing/auto": { reserveTokens: change.next } } }
+									: { reserveTokens: change.next }),
+							} });
+							await manager.reload();
+						};
+						f.script.beforeCompact = async (settings) => {
+							hookSettings = settings;
+							assert.equal(settings.reserveTokens, prepared);
+							if (timing === "before compact hook") await mutate();
+						};
+						if (timing === "pending direct route") f.script.routeGate = async (request) => {
+							if (request.reason !== "direct") return;
+							entered.resolve(); await release.promise;
+						};
+						operation = mode === "manual" ? f.session.compact() : f.prompt((chat === "small" ? 272_000 : 500_000) - prepared + 1);
+						if (timing === "pending direct route") {
+							await entered.promise; await mutate(); release.resolve();
+						}
+						await operation;
+						const summaries = f.script.requests.slice(mode === "manual" ? 0 : 1);
+						const budgets = [0.8, 0.5].map((ratio) => Math.min(Math.floor(ratio * change.expected), 128_000));
+						assert.deepEqual(summaries.map((q) => q.supplied), budgets);
+						assert.deepEqual(summaries.map((q) => q.maxTokens), budgets);
+						assert.ok(summaries.every((q) => q.id === summary && q.window === (summary === "small" ? 272_000 : 500_000)));
+						assert.deepEqual(f.preparations, [prepared]);
+						assert.deepEqual(hookSettings, { enabled: true, reserveTokens: prepared, keepRecentTokens: 0 },
+							"live settings changes do not rewrite the native preparation");
+						const direct = f.script.routes.filter((q) => q.reason === "direct");
+						assert.equal(direct.length, 1); assert.equal(direct[0].model, f.selection);
+						const live = f.session.settingsManager.getCompactionSettings(f.selection);
+						assert.equal(live.reserveTokens, change.next ?? (override ? 40_000 : 16_384),
+							"subsequent settings reads retain the new user policy");
+						assert.equal(live.keepRecentTokens, 999_999);
+						assert.equal(f.session.settingsManager.getCompactionEnabled(), false);
+						assert.ok(f.ends[0].result); assert.equal(f.ends[0].errorMessage, undefined);
+					} finally {
+						release.resolve(); await operation?.catch(() => {}); await f.close();
+					}
+				});
+			}
 		}
 
 		it("native buildBaseOptions output cap and usage with automatic compaction disabled", async () => {
