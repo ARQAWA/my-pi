@@ -165,27 +165,17 @@ const byId = (run: Run, i: number) => {
 
 const exists = (p: string) => stat(p).then(() => true, () => false);
 
-const STOCK_ARGV: Record<string, string[]> = {
-	// The SDK takes the selection as options; the CLI turns the same selection into these flags. The extension
-	// can only see the flags, so a test that passes an option also puts its CLI spelling into argv.
-	tools: ["--tools"],
-	excludeTools: ["--exclude-tools"],
-	noTools: ["--no-builtin-tools"],
-};
-
 /** Active tool names of a real session, with or without our extension, for the given tool options and settings. */
 async function activeToolsFor(
 	options: { tools?: string[]; excludeTools?: string[]; noTools?: "builtin" | "all" },
 	settings: Record<string, unknown> = {},
 	withExtension = true,
+	flags?: string[],
 ): Promise<string[]> {
 	const dir = await freshDir();
 	process.chdir(dir);
 	const argv = process.argv;
-	const flags = Object.entries(options).flatMap(([key, value]) =>
-		key === "noTools" ? STOCK_ARGV.noTools : [...STOCK_ARGV[key], (value as string[]).join(",")],
-	);
-	process.argv = [...argv, ...flags];
+	if (flags) process.argv = [...argv, ...flags];
 	try {
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: dir,
@@ -221,36 +211,59 @@ async function activeToolsFor(
 	}
 }
 
-describe("pipeline: tool selection of the user", () => {
+describe("pipeline: CLI flags and defaultTools", () => {
 	it("defaults give read, bash, edit, write, grep, find", async () => {
 		assert.deepEqual(await activeToolsFor({}), ["bash", "edit", "find", "grep", "read", "write"]);
 	});
 
-	const rows: [string, Parameters<typeof activeToolsFor>[0], Record<string, unknown>][] = [
-		["tools -grep", { tools: ["-grep"] }, {}],
-		["tools +grep,-find", { tools: ["+grep", "-find"] }, {}],
-		["tools -edit", { tools: ["-edit"] }, {}],
-		["tools read,bash", { tools: ["read", "bash"] }, {}],
-		["excludeTools edit", { excludeTools: ["edit"] }, {}],
-		["excludeTools grep", { excludeTools: ["grep"] }, {}],
+	const rows: [string, Parameters<typeof activeToolsFor>[0], Record<string, unknown>, string[]?][] = [
+		["tools -grep", { tools: ["-grep"] }, {}, ["--tools", "-grep"]],
+		["tools +grep,-find", { tools: ["+grep", "-find"] }, {}, ["--tools", "+grep,-find"]],
+		["tools -edit", { tools: ["-edit"] }, {}, ["--tools", "-edit"]],
+		["tools read,bash", { tools: ["read", "bash"] }, {}, ["--tools", "read,bash"]],
+		["excludeTools edit", { excludeTools: ["edit"] }, {}, ["--exclude-tools", "edit"]],
+		["excludeTools grep", { excludeTools: ["grep"] }, {}, ["--exclude-tools", "grep"]],
 		["defaultTools read,bash", {}, { defaultTools: ["read", "bash"] }],
 		["defaultTools -grep", {}, { defaultTools: ["-grep"] }],
 		["defaultTools read,grep,find", {}, { defaultTools: ["read", "grep", "find"] }],
-		["noTools builtin", { noTools: "builtin" }, {}],
+		["noTools builtin", { noTools: "builtin" }, {}, ["--no-builtin-tools"]],
 	];
-	for (const [name, options, settings] of rows) {
+	for (const [name, options, settings, flags] of rows) {
 		it(`${name}: the active set equals stock Pi without our extension`, async () => {
-			const stock = await activeToolsFor(options, settings, false);
-			assert.deepEqual(await activeToolsFor(options, settings), stock);
+			const stock = await activeToolsFor(options, settings, false, flags);
+			assert.deepEqual(await activeToolsFor(options, settings, true, flags), stock);
 		});
 	}
 
 	it("explicit rows are exactly the stock sets", async () => {
-		assert.deepEqual(await activeToolsFor({ tools: ["-grep"] }), ["bash", "edit", "read", "write"]);
+		assert.deepEqual(await activeToolsFor({ tools: ["-grep"] }, {}, true, ["--tools", "-grep"]), ["bash", "edit", "read", "write"]);
 		assert.deepEqual(await activeToolsFor({}, { defaultTools: ["read", "bash"] }), ["bash", "read"]);
-		assert.deepEqual(await activeToolsFor({ noTools: "builtin" }), []);
-		assert.deepEqual(await activeToolsFor({ excludeTools: ["grep"] }), ["bash", "edit", "read", "write"]);
+		assert.deepEqual(await activeToolsFor({ noTools: "builtin" }, {}, true, ["--no-builtin-tools"]), []);
+		assert.deepEqual(await activeToolsFor({ excludeTools: ["grep"] }, {}, true, ["--exclude-tools", "grep"]), ["bash", "edit", "read", "write"]);
 	});
+});
+
+describe("pipeline: real SDK selection, without synthetic CLI flags", () => {
+	for (const options of [{ tools: ["read", "bash"] }, { excludeTools: ["grep", "find"] }, { noTools: "all" as const }]) {
+		it(`SDK registry filtering remains stock: ${JSON.stringify(options)}`, async () => {
+			const argv = [...process.argv];
+			assert.deepEqual(await activeToolsFor(options), await activeToolsFor(options, {}, false));
+			assert.deepEqual(process.argv, argv);
+		});
+	}
+	for (const options of [
+		{ tools: ["-grep"] }, { tools: ["+grep", "-find"] }, { tools: ["-edit"] },
+		{ excludeTools: ["edit"] }, { noTools: "builtin" as const },
+	]) {
+		it(`SDK selection must suppress grep/find defaults: ${JSON.stringify(options)}`,
+			{ todo: "Pi 1.3.0 exposes no explicit SDK selection to ExtensionAPI; requires upstream selection API" }, async () => {
+				const argv = [...process.argv];
+				const stock = await activeToolsFor(options, {}, false);
+				const extended = await activeToolsFor(options);
+				assert.deepEqual(process.argv, argv);
+				assert.deepEqual(extended, stock);
+			});
+	}
 });
 
 describe("pipeline: settings of the session reach read and bash", () => {

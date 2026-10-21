@@ -5,7 +5,7 @@ import { noToolSelection } from "./selection.ts";
 const DEFAULT_ON = ["codemode", "tool_search"];
 
 export default function settings(pi: ExtensionAPI) {
-	// Same rule as grep and find in RQW-tools: only when the user made no tool selection. A tool is added only when
+	// Same CLI/settings predicate as grep and find in RQW-tools (SDK limitation: selection.ts). A tool is added only when
 	// it is registered, so a user who turned off `builtin:codemode` or `builtin:tool-search` gets no error. The
 	// handler reads the active set at call time, so it keeps whatever RQW-tools added, whichever runs first.
 	// Not on `reload`: Pi keeps the active set through a reload, including tools the user switched off during the

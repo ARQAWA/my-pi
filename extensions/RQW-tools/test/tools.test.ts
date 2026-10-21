@@ -213,7 +213,12 @@ describe("edit", () => {
 		);
 		assert.equal(text(result), "Edited: a.txt (2 block(s))\nEdited: b.txt (1 block(s))");
 		assert.equal(result.isError, undefined);
-		assert.deepEqual(result.details, { files: [{ path: "a.txt", ok: true }, { path: "b.txt", ok: true }] });
+		assert.deepEqual(result.details.files.map(({ details, ...file }) => file), [{ path: "a.txt", ok: true }, { path: "b.txt", ok: true }]);
+		for (const file of result.details.files) {
+			assert.equal(typeof file.details.diff, "string");
+			assert.equal(typeof file.details.patch, "string");
+			assert.equal(file.details.firstChangedLine, 1);
+		}
 		assert.equal(await readFile(join(dir, "a.txt"), "utf-8"), "1\n2\n");
 		assert.equal(await readFile(join(dir, "b.txt"), "utf-8"), "A\nbeta\n");
 	});

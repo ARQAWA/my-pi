@@ -1,8 +1,7 @@
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
+	SettingsManager,
 	createBashToolDefinition,
 	createEditToolDefinition,
 	createFindToolDefinition,
@@ -115,7 +114,6 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 	// Effective settings of the running session (trust decision applied), read per call like stock `_buildRuntime`
 	// does for its own read and bash. No settings, or a failing read, means stock defaults.
 	const sessionSettings = (): any => safely(settings);
-	const expandTilde = (p: string) => (p === "~" ? homedir() : p.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 
 	// All six tools are off by default for Pi's own activation. The user's `--tools` / `defaultTools` decide what is
 	// on; the session_start handler below adds grep and find only for the default selection.
@@ -136,7 +134,7 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 	register("bash", bash, { ...notDefault, description: bashText }, (id, params, signal, onUpdate, ctx) => {
 		const s = sessionSettings();
 		const options = s
-			? { commandPrefix: s.shellCommandPrefix, shellPath: s.shellPath ? expandTilde(s.shellPath) : s.shellPath }
+			? { commandPrefix: s.shellCommandPrefix, shellPath: SettingsManager.inMemory({ shellPath: s.shellPath }).getShellPath() }
 			: undefined;
 		const def: any = createBashToolDefinition(ctx?.cwd || process.cwd(), options);
 		return def.execute(id, params, signal, onUpdate, ctx);

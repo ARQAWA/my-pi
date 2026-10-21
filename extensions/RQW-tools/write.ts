@@ -83,18 +83,23 @@ export async function executeWrite(stockExecute: any, id: string, params: any, s
 
 	if (files.length === 1) return runFile(files[0]);
 
+	const alreadyAborted = signal?.aborted === true;
 	const settled = await Promise.allSettled(files.map(runFile));
 	const lines: string[] = [];
-	const details: { path: string; ok: boolean; error?: string }[] = [];
+	const details: { path: string; ok: boolean; error?: string; outcome?: "possibly_changed"; details?: unknown }[] = [];
 	settled.forEach((result, i) => {
 		const path = files[i].path;
 		if (result.status === "fulfilled") {
 			lines.push(`Written: ${path}`);
-			details.push({ path, ok: true });
+			details.push({ path, ok: true, ...(result.value.details !== undefined ? { details: result.value.details } : {}) });
 		} else {
 			const message = String((result.reason as any)?.message ?? result.reason);
-			lines.push(`Failed: ${path}: ${message}`);
-			details.push({ path, ok: false, error: message });
+			// Cancellation can be observed only after stock writeFile has committed.
+			const cancelled = !alreadyAborted && (result.reason?.name === "AbortError" || message === "Operation aborted");
+			lines.push(cancelled
+				? `Possibly changed: ${path}: ${message}. Read this file before retrying.`
+				: `Failed: ${path}: ${message}`);
+			details.push({ path, ok: false, error: message, ...(cancelled ? { outcome: "possibly_changed" as const } : {}) });
 		}
 	});
 	return {
