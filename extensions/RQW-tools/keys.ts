@@ -26,20 +26,37 @@ function resolveLexical(p: string, cwd: string, platform: NodeJS.Platform): stri
   return P.resolve(cwd, p);
 }
 
-// realpath of the deepest existing ancestor, then the missing segments. A missing root (an unreachable share or
-// drive) gives the lexical path, so the same spelling still gives the same key. Any other error (a symlink loop,
-// no access) propagates and the caller treats the call like bash.
-function canonical(abs: string, P: path.PlatformPath): { key: string; existing?: string } {
+// realpath of the deepest existing ancestor, then the missing segments. Missing roots keep their spelling.
+// Failed realpath may hide an existing dangling link: follow it only for metadata, never for stock arguments.
+function canonical(abs: string, P: path.PlatformPath): { key: string; existing?: string; dangling: boolean } {
   const rest: string[] = [];
+  const links = new Set<string>();
+  let dangling = false;
   for (let cur = abs; ; ) {
     try {
       const existing = fs.realpathSync.native(cur);
-      return { key: P.join(existing, ...rest), existing };
+      return { key: P.join(existing, ...rest), existing, dangling };
     } catch (e) {
       const code = typeof e === "object" && e !== null && "code" in e ? e.code : undefined;
       if (code !== "ENOENT" && code !== "ENOTDIR") throw e;
+      let link = false;
+      try { link = fs.lstatSync(cur).isSymbolicLink(); }
+      catch (error) {
+        if (!["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+      }
+      if (link) {
+        if (links.has(cur)) throw Object.assign(new Error("Symlink cycle"), { code: "ELOOP" });
+        links.add(cur);
+        dangling = true;
+        const target = fs.readlinkSync(cur);
+        // Link targets are native spellings; preserve '..' across other symlinks until realpath resolves them.
+        cur = P.isAbsolute(target) ? target : P.dirname(cur) + P.sep + target;
+        if (rest.length) cur += P.sep + rest.join(P.sep);
+        rest.length = 0;
+        continue;
+      }
       const parent = P.dirname(cur);
-      if (parent === cur) return { key: abs };
+      if (parent === cur) return { key: abs, dangling };
       rest.unshift(P.basename(cur));
       cur = parent;
     }
@@ -89,7 +106,8 @@ function spellingKey(value: string, platform: NodeJS.Platform): string {
   return platform === "darwin" ? value.normalize("NFC") : value;
 }
 
-type Identity = { key: string; base?: string; existing?: string; missing?: string };
+type TargetKey = { key: string; leaf?: string };
+type Identity = TargetKey & { base?: string; existing?: string; missing?: string };
 
 function nativeIdentity(abs: string): Identity {
   const { key, existing } = canonical(abs, path);
@@ -106,7 +124,8 @@ function nativeIdentity(abs: string): Identity {
   // Missing spellings are not Unicode case identities. Edit only groups existing aliases; batch write below
   // asks the native namespace when different missing spellings might alias.
   const suffix = process.platform === "win32" ? missing.replaceAll("\\", "/") : missing;
-  return { key: missing ? base + "/missing:" + suffix : base, base, existing, missing };
+  return { key: missing ? base + "/missing:" + suffix : base, base, existing, missing,
+    leaf: missing ? undefined : "leaf:" + components[components.length - 1] };
 }
 
 // `abs` is already a filesystem spelling, including read fallbacks. Never apply user space/@/URL rules here.
@@ -121,9 +140,8 @@ function resolvedKey(abs: string, platform: NodeJS.Platform, identity = false): 
   }
 }
 
-// Opaque grouping key for edit. Existing components use filesystem identities; missing suffixes keep their exact
-// spelling. It need not stay equal after creation. `identity = false` exposes the conservative ordering key;
-// production scopes pass already-resolved spellings directly.
+// Path-shaped native identity, retained separately from leaf equality for ancestor checks. `identity = false`
+// exposes the conservative ordering key; production scopes pass already-resolved spellings directly.
 export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = process.platform, identity = true): string | undefined {
   try {
     if (typeof p !== "string" || typeof cwd !== "string") return undefined;
@@ -133,11 +151,19 @@ export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = proc
   }
 }
 
+/** Equality only: hardlinks in different parents share a leaf, not a path-shaped ancestor key. */
+export function editPathKey(p: string, cwd: string): string | undefined {
+  try {
+    const identity = nativeIdentity(resolvePath(p, cwd));
+    return identity.leaf ?? identity.key;
+  } catch { return undefined; }
+}
+
 const inside = (a: string, b: string) => b.startsWith(a.endsWith("/") ? a : a + "/");
 const related = (a: string, b: string) => a === b || inside(a, b) || inside(b, a);
 
 /** Batch-local validation identities. Only ambiguous, colliding missing spellings need native namespace probes. */
-export function writePathKeys(paths: string[], cwd: string, signal?: AbortSignal): string[] {
+export function writePathKeys(paths: string[], cwd: string, signal?: AbortSignal): TargetKey[] {
   const checkAbort = () => { if (signal?.aborted) throw new Error("Operation aborted"); };
   const entries = paths.map((p): Identity => {
     try { return nativeIdentity(resolvePath(p, cwd)); }
@@ -204,7 +230,19 @@ export function writePathKeys(paths: string[], cwd: string, signal?: AbortSignal
       fs.rmSync(temp, { recursive: true, force: true });
     }
   }
-  return keys;
+  return keys.map((key, i) => ({ key, leaf: entries[i].leaf }));
+}
+
+// A hardlinked regular file can be outside every lexical ancestor. A dangling component can create a different
+// target when stock runs. Use ALL locally; directory nlink counts are not evidence of file aliases.
+function scopeKey(abs: string): string | undefined {
+  const resolved = canonical(abs, path);
+  if (resolved.dangling) return undefined;
+  if (resolved.existing) {
+    const stat = fs.statSync(resolved.existing);
+    if (stat.isFile() && stat.nlink > 1) return undefined;
+  }
+  return spellingKey(resolved.key, process.platform);
 }
 
 type Fields = Record<string, unknown>;
@@ -244,7 +282,7 @@ export function scopeOf(tool: string, args: unknown, cwd: string): Scope {
     if (kind === "mutate") paths = paths.filter((x) => x !== "");
     // Read spellings have already passed user normalization. Their fallback spaces are real filesystem names.
     const keys = paths.map((x) => typeof x !== "string" ? undefined
-      : resolvedKey(tool === "read" ? x : resolvePath(x, cwd), process.platform));
+      : scopeKey(tool === "read" ? x : resolvePath(x, cwd)));
     if (keys.length === 0 || keys.includes(undefined)) return all;
     return { kind, keys: [...new Set(keys as string[])] };
   } catch {

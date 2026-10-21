@@ -63,9 +63,10 @@ export async function executeWrite(stockExecute: any, id: string, params: any, s
 	const keys = writePathKeys(files.map((file) => file.path), base, signal);
 	for (let i = 0; i < files.length; i++) {
 		for (let j = i + 1; j < files.length; j++) {
-			if (keys[i] === keys[j]) throw new Error(`files lists ${files[j].path} twice`);
-			if (isInside(keys[i], keys[j])) throw new Error(`files lists ${files[i].path} and ${files[j].path}, one inside the other`);
-			if (isInside(keys[j], keys[i])) throw new Error(`files lists ${files[j].path} and ${files[i].path}, one inside the other`);
+			const a = keys[i], b = keys[j];
+			if (a.key === b.key || (a.leaf !== undefined && a.leaf === b.leaf)) throw new Error(`files lists ${files[j].path} twice`);
+			if (isInside(a.key, b.key)) throw new Error(`files lists ${files[i].path} and ${files[j].path}, one inside the other`);
+			if (isInside(b.key, a.key)) throw new Error(`files lists ${files[j].path} and ${files[i].path}, one inside the other`);
 		}
 	}
 

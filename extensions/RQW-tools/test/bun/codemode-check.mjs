@@ -5,7 +5,7 @@
 //
 // Usage: node extensions/RQW-tools/test/bun/codemode-check.mjs  (needs `bun` on PATH; PI_CHECK_TIMEOUT_MS, default 60000)
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, statSync, symlinkSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync, statSync, symlinkSync, linkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,10 @@ mkdirSync(join(work, "next"));
 writeFileSync(join(work, "old/f.txt"), "OLD TARGET\n");
 writeFileSync(join(work, "next/f.txt"), "BEFORE\n");
 symlinkSync(join(work, "old"), join(work, "link"), process.platform === "win32" ? "junction" : "dir");
+mkdirSync(join(work, "hard-left"));
+mkdirSync(join(work, "hard-right"));
+writeFileSync(join(work, "hard-left/a.txt"), "alpha beta\n");
+linkSync(join(work, "hard-left/a.txt"), join(work, "hard-right/b.txt"));
 function equivalent(a, b) {
   const dir = join(work, "oracle");
   mkdirSync(dir);
@@ -95,10 +99,16 @@ for (const [id, same, a, b, first, second] of [
   }
 }
 
+for (const id of ["c0/9", "c0/10", "c0/11", "c0/12"]) {
+  if (end(id)?.isError !== false) failures.push(`${id} alias operation failed`);
+}
+if (end("c0/8")?.isError !== true || !/twice/.test(text(end("c0/8") ?? {}))) failures.push("hardlink duplicate not rejected");
+if (readFileSync(join(work, "hard-right/b.txt"), "utf8") !== "ALPHA BETA\n") failures.push("hardlink edit lost a block");
+if (text(end("c0/12") ?? {}) !== "FUTURE\n") failures.push("dangling target read raced creation");
 rmSync(root, { recursive: true, force: true });
 if (failures.length > 0) {
 	console.log(`FAIL after ${seconds} s: ${failures.join("; ")}`);
 	if (stderr) console.log(`stderr:\n${stderr.slice(-2000)}`);
 	process.exit(1);
 }
-console.log(`PASS in ${seconds} s: codemode under Bun, ordered retarget and native missing-name validation passed`);
+console.log(`PASS in ${seconds} s: codemode under Bun, ordered retarget, native missing-name validation and hardlink/dangling aliases passed`);

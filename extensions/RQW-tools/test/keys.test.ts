@@ -397,7 +397,7 @@ test("Darwin ordering policy stays stable when the first cased component is crea
   });
   t.mock.method(fs, "statSync", (p: fs.PathLike) => {
     if (String(p) === "/123/456/new.txt") return missing();
-    return { dev: String(p) === "/" ? 0 : 1, ino: 123 };
+    return { dev: String(p) === "/" ? 0 : 1, ino: 123, nlink: 1, isFile: () => String(p).endsWith(".txt") };
   });
   const before = scopeOf("write", { path: "New.txt" }, "/123/456");
   assert.deepStrictEqual(before, { kind: "mutate", keys: ["/123/456/new.txt"] });
