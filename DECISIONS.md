@@ -457,9 +457,9 @@ Current accepted development policy (request summaries unless quoted); detailed 
   включать и выключать, как feature флаги.»). Rules: no file of an extension, tests included, imports a file outside
   its own folder; a helper two extensions need is copied (`selection.ts`, 19 lines); an extension's tests load only
   that extension; tests of several extensions together live in `test/` at the package root (`test/package.test.ts`);
-  no extension leaves active behaviour after it is switched off. RQW-context deliberately has process-wide scope:
-  stock behaviour returns only when the last live owner in that process leaves (section Context); switching it off
-  in B does not disable it in an active A.
+  no extension leaves active behaviour after it is switched off. RQW-context and RQW-mouse deliberately have
+  process-wide scope: stock behaviour returns only when the last live owner in that process leaves (sections Context
+  and PCLI); switching one off in B does not disable it in an active A.
 - Proof: `test/isolation.test.ts` (in `npm test`). The list comes from `package.json` `pi.extensions`, so a new
   extension is covered without a change to the test. Static part: every relative import of every file under
   `extensions/<E>/` resolves inside it. Runtime part, one child process per variant (`test/isolation-run.ts`, real
@@ -829,6 +829,60 @@ Current accepted development policy (request summaries unless quoted); detailed 
   fake model is HTTPS with a self-signed certificate: strict TLS fails, `http.proxyStrictSSL: false` works. It also
   checks CONNECT to GitHub with proxy credentials, paths with Cyrillic, spaces and an apostrophe, and no `pi.exe`
   left after closing tabs, `/quit` or VS Code itself. Not covered: a real model call and the corporate VDI restrictions.
+- Wheel scroll on the VDI. In PCLI the wheel scrolled the input editor's past messages instead of the conversation;
+  the owner's Codex in CCLI scrolled normally. Owner (`2026-10-21T12-13-54-289Z_01a15e61-dcf1-7476-b1d6-42f03584b9e6.jsonl`
+  line 158): «Еще знаешь, какая проблема? У нас есть наш PCLI для Windows VDI тачки. Там такая проблема, что не
+  работает скроллинг. Когда я пытаюсь скроллить в терминале, у меня прокручиваются последние сообщения вместо того,
+  чтобы скроллился чат. А когда я запустил коды в CLI своим extension, там скролл нормально работает. Посмотри эту
+  проблему, пожалуйста.»
+  Cause, read from the Pi 1.3.0 sources: `TuiBase.start()` (`pi-tui/dist/tui.js:569-573`) calls `beforeTerminalStart`,
+  then `terminal.start`, then `afterTerminalStart`. `TuiAltScreen.beforeTerminalStart` (`tui-alt-screen.js:184-194`)
+  writes `?1049h` and the mouse enable `?1000h ?1002h ?1003h ?1004h ?1006h` (without `?1003h` in tmux, Zellij and
+  screen: `TMUX`, `ZELLIJ`, `STY` set, or `TERM` starting with `tmux` or `screen`), before `terminal.start` turns on raw
+  mode and `enableWindowsVTInput` (`terminal.js:117-138`). ConPTY loses what is written that early, VS Code's terminal
+  never learns that the app wants the mouse, and the wheel in the alternate screen becomes arrow keys, which move
+  through the editor's input history. `TuiAltScreen` has no `afterTerminalStart` of its own, and the same start path
+  runs again after the external editor, a TUI mode switch and suspend/resume. Upstream: issue earendil-works/pi#9656
+  (its workaround sends the mouse commands again after the terminal started, and only them: moving `?1049h` breaks
+  the Kitty keyboard protocol); PRs 9655 and 10560 were closed unmerged; related 11205, 11172, 8913. The loss of the
+  commands is measured (Proof below); the wheel-to-arrows step on the owner's VDI is not reproduced here.
+- The fix is a my-pi extension and matters only where my-pi is installed in PCLI's Pi. Owner
+  (`2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`):
+  «Теперь по нестабильному тесту 1А: myIP на VDI, исправление прокрутки делаю расширением myIP. Да, насчёт myIP в VDI: это только если myIP установлен. Если он не установлен, то поебать вообще.»
+  Here "myIP" is the speech-to-text spelling of my-pi. Engineering choice within that decision: only on Windows
+  and only in fullscreen, enable the mouse again after the terminal started and after every restart of the TUI, with exactly Pi's set,
+  multiplexer variant included, and keep Pi's disable on stop. Carrier: `extensions/RQW-mouse/index.ts`, its own
+  extension in `package.json` `pi.extensions`, switched off alone like every `RQW-*` extension
+  ([Isolation](#isolation)). A new folder because the behaviour belongs to no existing extension, and PCLI only
+  launches a stock Pi binary and does not install my-pi (see above). On `process.platform === "win32"` the factory wraps
+  `TuiAltScreen.prototype.afterTerminalStart`, stock Pi's empty hook; after Pi's own hook the wrapper writes Pi's set,
+  chosen by the same environment test, when the renderer has the mouse enabled (`mouseEnabled`). Pi's early write
+  and `?1049h` stay where they are, `beforeTerminalStop` still disables the mouse, and regular mode (`TuiMainScreen`)
+  and the print, JSON and RPC modes never use the class. The patch is process-wide: each factory run adds an owner
+  token to the `Set` under `Symbol.for("rqw-mouse/state")` on `globalThis`, its `session_shutdown` removes only that
+  token, and when the last owner leaves the prototype is exactly as Pi made it (a wrapper someone else put on top stays
+  and is inert). Pi emits `session_shutdown` before it loads the next runtime's extensions, so `/reload`, `/new` and
+  `/resume` renew the patch; switching the extension off and reloading removes it.
+- Limits of the wheel fix. It acts when Pi's terminal starts, so after installing or updating my-pi Pi must be
+  restarted: a `/reload` does not restart the TUI. my-pi must be installed in the Pi that PCLI runs (`INSTALL.md`; PCLI
+  does not install it). It brings the mouse commands to VS Code; the VDI's own wheel handling is the owner's manual
+  check. Pi stays pinned at 1.3.0: the extension throws a load error when `TuiAltScreen.beforeTerminalStart` or the
+  base `afterTerminalStart` hook is missing, and its test compares the set with what Pi's own `TuiAltScreen` writes.
+- Proof of the wheel fix. `extensions/RQW-mouse/test/mouse.test.ts` (in `npm test`, the same cases on the Mac and in
+  the Windows CI): Pi's real `TuiAltScreen` on a terminal that records every write and the moment of `terminal.start`,
+  Windows simulated through `process.platform` where the test runs elsewhere. The write right after `terminal.start`
+  equals the set Pi wrote before it, for a plain terminal and for each multiplexer variant; it repeats after every
+  restart; Pi's disable runs on every stop; nothing is added with the mouse off, in regular mode, on macOS and Linux;
+  owner counting in either shutdown order, `/reload`, a hook Pi itself defines on the class and a wrapper put on top;
+  loading through Pi's resource loader and extension runner, with the jiti-loaded file getting the same `TuiAltScreen`
+  class as Pi's TUI. A model of ConPTY that drops writes before `start` gives 0 and 1; it is a model, the measurement
+  follows. `test/isolation.test.ts` covers the extension through the manifest. Capture: job `mouse` of
+  `.github/workflows/pcli.yml` (`workflow_dispatch`, or a push to branch `pcli`) runs `pcli-vscode/test/mouse.mjs`,
+  which drives `pcli-vscode/test/mouse-suite.cjs` in a real VS Code: VS Code's own node-pty starts the PCLI chain
+  (PowerShell, Git Bash, the bundled Bun-build `pi.exe` 1.3.0) twice, stock and with `-e extensions/RQW-mouse/index.ts`,
+  and counts `?1000h` in the pseudo terminal's output once Pi is in the alternate screen. Measured on `windows-latest`
+  with VS Code 1.143.0: 0 times stock, 1 time with the extension, `?1049h` once in both, the set arriving after
+  `?2004h`. This also shows that the Bun build loads the extension, with its pi-tui module shared with Pi.
 - Publishing: skill `publish-pcli` (`.agents/skills/publish-pcli/SKILL.md`), `vsce publish --target win32-x64` from
   `pcli-vscode/` under publisher `arqawa`, `version` raised before each publish, only on a direct request.
 

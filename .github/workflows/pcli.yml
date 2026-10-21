@@ -3,7 +3,7 @@ name: pcli
 on:
   push:
     branches: [pcli]
-    paths: ['pcli-vscode/**', '.github/workflows/pcli.yml']
+    paths: ['pcli-vscode/**', 'extensions/RQW-mouse/**', '.github/workflows/pcli.yml']
   workflow_dispatch:
 
 permissions:
@@ -73,3 +73,25 @@ jobs:
             pcli-vscode/pcli.vsix
             pcli-vscode/proxy.log
             ${{ runner.temp }}/pcli-e2e/agent-*/**/*.jsonl
+
+  # ConPTY capture: how often the mouse-enable command ?1000h comes out of the pseudo terminal when the bundled pi.exe
+  # (Bun build of Pi 1.3.0) starts, stock (expected 0) and with my-pi's RQW-mouse loaded (expected 1).
+  mouse:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Bundled Pi and the VS Code test runner
+        working-directory: pcli-vscode
+        run: |
+          npm install --no-audit --no-fund
+          node fetch-pi.mjs
+
+      - name: ConPTY capture, ?1000h count without and with RQW-mouse
+        working-directory: pcli-vscode
+        run: node test/mouse.mjs

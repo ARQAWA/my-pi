@@ -41,6 +41,10 @@ rules in their briefs. The owner's personal manifesto is a separate memory docum
 - `extensions/RQW-send-now/`: extension 12, Enter on an empty editor while steering is queued interrupts the turn and
   sends the queue at once, as in oh-my-pi. Public Pi API only, no custom editor. Behavior and limits:
   `extensions/RQW-send-now/README.md`. Tests drive Pi's real interactive mode: `npm test`.
+- `extensions/RQW-mouse/`: extension 13, on Windows Pi's fullscreen view enables mouse reporting again right after the
+  terminal has started, so the wheel scrolls the conversation (the PCLI wheel bug) instead of the input history.
+  Windows only; inert elsewhere. Cause, limits and proof: `DECISIONS.md` section PCLI. Tests: `npm test`; the ConPTY
+  capture of the bundled `pi.exe` is `pcli-vscode/test/mouse.mjs`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.3.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.
