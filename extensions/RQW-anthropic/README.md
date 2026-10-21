@@ -53,13 +53,19 @@ Pi interprets only env `long` as long retention; other env values retain its sho
 `cache.ts` wraps the session's stream function before Pi's SDK starts CacheWarmer, resolving auth through Pi and
 passing a request-local `cacheRetention: "long"` only for OAuth. Native provider preparation still resolves its own
 credentials; no resolved key is forwarded. `transport.ts` supplies the same default for direct SDK/provider calls.
-Generic and reviewer sessions sharing the active runtime get the rule even without loading their own adapter.
-Unrelated runtimes/providers are unchanged. No process env, `showCacheMissNotices` or `cacheWarming` setting is edited.
+Generic sessions sharing the active runtime get the rule even without loading their own adapter. RQW-agent and
+RQW-review own a built-in Anthropic `cacheRetention: "short"` request policy (5m), applied before this wrapper;
+both `cache.ts` and `transport.ts` preserve it. They keep cache markers, with no `ttl: "1h"`, independently of
+user config and whether this adapter is enabled. The main session retains the OAuth 1h default.
+Unrelated runtimes/providers are unchanged. This adapter edits no process env or notice/warming settings.
+Background warming is separately disabled by RQW-settings regardless of user config, and off in RQW-agent/reviewer
+sessions; prompt caching remains on. Built-in policy: [Settings](../../DECISIONS.md#settings).
 Disabling the last adapter owner restores the stream functions; surviving owners keep their runtime's rule.
 
-For Opus 5.5 the catalog TTLs are 300/3600 seconds. Pi schedules at 90% of TTL: 54 minutes, not 4m30s. Its unchanged
-one-hour streaming safety horizon allows at most one such warm; the 30-minute idle horizon prevents idle warming
-with this TTL. Warming still depends on the user's warming mode, replay safety and Pi's economic decision.
+For Opus 5.5 the catalog TTLs are 300/3600 seconds. With RQW-settings on, no warmer timer is armed; real requests
+alone write and read the cache. If RQW-settings is disabled, stock Pi behavior returns: an enabled warmer schedules
+at 90% of TTL (54 minutes, not 4m30s). Its one-hour streaming safety horizon allows at most one such warm;
+the 30-minute idle horizon prevents idle warming with this TTL. Replay safety and Pi's economic decision apply.
 
 Catalog USD estimates per million Opus 5.5 tokens: input 4, output 20, cache read 0.20, short cache write 5.
 Anthropic's 1-hour write costs 2x input (8), versus 1.25x (5) for five minutes, but can avoid repeated writes.
@@ -74,7 +80,9 @@ or (for explicit-mode models) 30m, subject to model compatibility and ChatGPT-si
 cache key. Neither provider is changed by this adapter's request-local Anthropic default.
 
 Proof: `test/cache.test.ts` uses fake OAuth, real Pi SDK/library and CLI-bundle sessions, captured payloads and fake
-timers. It covers 1h TTL, no warm at 4m30s, shared-runtime children, explicit preferences, API keys and disable/reload.
+timers. It covers 1h TTL, no warm at 4m30s, generic shared-runtime children, explicit preferences, API keys and disable/reload.
+Package `test/prompt-cache.test.ts` exercises actual RQW-agent and RQW-review sessions: 5m markers, main 1h,
+adapter on/off, and a conflicting `PI_CACHE_RETENTION=long`, in the library and CLI-bundle SDKs.
 
 ## Recovery and security
 
@@ -130,7 +138,8 @@ event, and `_bindExtensionCore` to associate cleanup with the exact owning sessi
 Recovery hooks preserve native `stream` versus `streamSimple` options and OAuth provenance. Only visible main-turn
 recovery is guarded; native summary retry is not wrapped. Unrelated SDK runtimes retain stock Pi behavior.
 
-Research, mechanisms and risks: `notes/anthropic-adapter.md`. Attribution: `THIRD-PARTY-NOTICES.md`.
+Research, mechanisms and risks: `notes/anthropic-adapter.md`. TTL evidence and the accepted role policy:
+[Prompt cache policy](../../notes/prompt-cache-policy.md). Attribution: `THIRD-PARTY-NOTICES.md`.
 Tests: `npm test`, using fake credentials and mock fetch only. No live OAuth or model calls.
 The unsupported co-load regression uses a portable competing-registration fixture with a temporary home and
 `PI_OFFLINE=1`; it expects native diagnostics, not a mandatory early-fatal policy.

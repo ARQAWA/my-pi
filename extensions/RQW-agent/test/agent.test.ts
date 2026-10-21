@@ -19,7 +19,7 @@ import {
 	type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import {
-	type AgentSession,
+	AgentSession,
 	createAgentSession,
 	DefaultResourceLoader,
 	type ExtensionContext,
@@ -193,6 +193,27 @@ async function shutdown(m: Main) {
 }
 
 describe("agent tool", () => {
+	it("child requests never arm a warmer, independently of the main settings", async t => {
+		const sessions: AgentSession[] = [];
+		const original = (AgentSession.prototype as any)._bindExtensionCore;
+		t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function(this: AgentSession, ...args: unknown[]) {
+			sessions.push(this);
+			return original.apply(this, args);
+		});
+		const m = await startMain();
+		const g = gate("done");
+		sub.replies.push(g.reply);
+		try {
+			m.session.setCacheWarmingMode("idle");
+			await m.call({ action: "start", system: SYSTEM, task: "hi", model: "sub/a" });
+			await until(() => sub.requests.length === 1, "child request");
+			const child = sessions.find(s => s !== m.session)!;
+			assert.equal(child.settingsManager.getGlobalSettings().cacheWarming, "off");
+			await (await child.agent.streamFunction({ ...child.model!, promptCache: { short: 300 } },
+				{ messages: [{ role: "user", content: "cache probe", timestamp: 0 }] }, { sessionId: child.sessionId })).result();
+			assert.deepEqual(child.cacheWarmingStatus, { state: "inactive", reason: "cache warming disabled" });
+		} finally { g.release(); await shutdown(m); }
+	});
 	it("has a short description and a schema that passes Pi's strict mode", async () => {
 		const m = await startMain();
 		const tool = m.session.getToolDefinition("agent") as ToolDefinition;

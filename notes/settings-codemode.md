@@ -1,5 +1,9 @@
 # Settings: what turning on `codemode` and `tool_search` changes for the model
 
+RQW-settings also disables background prompt-cache warming, without disabling prompt caching or writing user
+settings. Config values cannot enable warming; switching the extension off restores stock Pi behavior. The policy and
+mechanism live in [DECISIONS.md, Settings](../DECISIONS.md#settings); tests: `extensions/RQW-settings/test/cache-warming.test.ts`.
+
 Decision: `extensions/RQW-settings/index.ts` adds `codemode` and `tool_search` to the active tools at `session_start`
 when the user made no tool selection (owner: «Давай включим CodeMode и Tool Search»). Pi 1.3.0. Source paths below are
 relative to `node_modules/@earendil-works/pi-coding-agent/dist/`.

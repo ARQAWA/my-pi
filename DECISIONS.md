@@ -432,6 +432,25 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 ## Settings
 
+- Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.»
+  Owner clarification: «Нам тоже настройки прогрева кэша нахуй не нужны через конфиги. Надо просто, чтобы они были внутри настроены в рамках плагина, и всё на этом. Чтобы они работали супер корректно, супер пиздато и эффективно.»
+  Background prompt-cache warming is off inside the plugin; normal inference requests still populate and read the
+  cache. `extensions/RQW-settings/cache-warming.ts` supplies a reversible, session-owned `getCacheWarmingMode`
+  policy only while that session loads RQW-settings. User `cacheWarming` values, including changes during a session,
+  cannot enable it. No new config knobs or settings-file, environment or `showCacheMissNotices` changes.
+  Reason: no synthetic keepalive inference; the first real request writes the cache. Pi 1.3.0 always constructs
+  its warmer, but off prevents it arming. Disabling/reloading or disposing restores the native getter and default
+  (`streaming`), without affecting another owning session. A checked lifecycle shim is needed because the public
+  extension API exposes a settings copy, and Pi's global-only getter ignores `applyOverrides`.
+  The lifecycle registry persists at zero owners and weakly maps wrappers to their original descriptors. Reinstall
+  recognizes a dormant settings wrapper restored by a later-released foreign hook, rather than nesting another
+  layer. Reason: RQW-settings precedes RQW-anthropic in production load order; their shutdown order must not grow
+  the prototype chain on every reload. Dormant hooks pass through and restore themselves when exposed at the top.
+  Proof: `extensions/RQW-settings/test/cache-warming.test.ts` (real SDK, faux provider and fake timers) and package
+  `test/cache-warming-reload.test.ts` (library/bundle, 12 co-loaded reloads, actual bind/dispose stack depth stays 2).
+  Child-session policy is carried independently by RQW-agent and RQW-review (sections Agent and Review).
+  TTL measurements and the accepted role policy: `notes/prompt-cache-policy.md` (owner:
+  «Надо, чтобы ты замерил, как у нас сейчас это работает, и предложил какое-то наилучшее решение для нас.»).
 - `codemode` and `tool_search`, Pi's built-in tools, are active by default (owner: «Давай включим CodeMode и Tool
   Search»). `extensions/RQW-settings/index.ts` adds them to the active tools at `session_start` under the same rule as
   `grep` and `find`: no tool flag in argv and no `defaultTools` setting. It is the same rule with one copy in each
@@ -516,6 +535,15 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 ## Agent
 
+- Owner: «Да, давайте мы исполнителям, ревьюерам кэш выключай.» This disables background warming, not prompt
+  caching (owner clarification: «Потому что если мы вообще выключим им кэш, то они будут пиздец жрать токенов нахуй.»).
+  `extensions/RQW-agent/index.ts` gives every child's in-memory SettingsManager `cacheWarming: "off"`, independent
+  of RQW-settings or the main user's mode. Prompt caching stays on. TTL approval (full quote in
+  [Anthropic subscription adapter](#anthropic-subscription-adapter)): «Если это замеренная цифра и 5 минут будет заебись в большинстве случаев, то пусть будет 5 минут.»
+  Each child's existing guarded stream wrapper sets `cacheRetention: "short"` on Anthropic Messages requests,
+  before the adapter's OAuth fallback. This is a built-in 5m policy, not a config knob; other APIs keep their options.
+  Reason: median observed resend gap 163s, with one of seven above 5m; a short write costs less than a 1h write.
+  Proof: `test/agent.test.ts` and package `test/prompt-cache.test.ts`; evidence: `notes/prompt-cache-policy.md`.
 - A general subagent for the main agent, the one the Scope section names as a separate task. The owner's words: «должна
   быть опция поднимать любых рандомных саб-агентов, которые являются саб-потоком основного агента. Можно за базу взять
   агента General Purpose из курсора и его воспроизвести»; «этот кастомный саб-агент, абстрактный саб-агент, должен
@@ -661,6 +689,14 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 ## Review
 
+- Owner: «Да, давайте мы исполнителям, ревьюерам кэш выключай.» `extensions/RQW-review/index.ts` sets
+  `cacheWarming: "off"` in each reviewer's in-memory SettingsManager, independently of RQW-settings and the main
+  user's mode. Prompt caching stays on. TTL approval (full quote in
+  [Anthropic subscription adapter](#anthropic-subscription-adapter)): «Если это замеренная цифра и 5 минут будет заебись в большинстве случаев, то пусть будет 5 минут.»
+  Each reviewer's existing guarded stream wrapper sets `cacheRetention: "short"` on Anthropic Messages requests
+  before the adapter's OAuth fallback, a built-in 5m policy with no config knob. Other APIs are unchanged.
+  Reason: measured review duration median 30.9s, maximum 178s, so buying 1h writes is usually unnecessary.
+  Proof: `test/review.test.ts` and package `test/prompt-cache.test.ts`; evidence: `notes/prompt-cache-policy.md`.
 - Prompt adaptation is now tuned on GPT with the measured v3, carried byte-for-byte in
   `extensions/RQW-review/REVIEWER.md` (request summary, not a literal quote: flexible reviewer conditions C:2913;
   team synergy only in the plugin C:3046; finish the prompt on GPT C:3400). The criterion governs scope, including custom requirements outside the agreement and
@@ -901,13 +937,21 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 ## Anthropic subscription adapter
 
+- Owner TTL approval: «По поводу кэшей вопрос-ответ A: основному агенту час А под основным 5 минут ещё какие-то варианты есть? Может, 10 минут? Или это замеренная цифра? Если это замеренная цифра и 5 минут будет заебись в большинстве случаев, то пусть будет 5 минут. Если можно больше и это будет более эффективно, то можно 10 минут поставить или 15. Я не знаю.»
+  Anthropic offers 5m and 1h, not 10m or 15m. Keep the main OAuth 1h default; the independent child extensions own
+  their 5m request policy ([Agent](#agent), [Review](#review)). Their explicit `short` wins in both `cache.ts` and
+  `transport.ts`, so wire cache markers stay on without `ttl: "1h"`, with or without this adapter loaded. No new
+  config knobs or process env changes. Reason: the measured short review/resend gaps favor cheaper short writes;
+  [measurements](notes/prompt-cache-policy.md) retain the tradeoffs and evidence limits.
+  Carrier proof: package `test/prompt-cache.test.ts`, real Pi library/bundle SDK and mocked Anthropic payloads.
 - Owner request (session 2026-10-21, lines 275, 281): «Почему ты не юзаешь какой-то часовой cash?»;
   «Это надо будет пофиксить тоже». OAuth subscription requests default to 1-hour prompt caching; explicit request
   retention and user-set `PI_CACHE_RETENTION` win. Engineering choice: request-local options before the SDK warmer
   starts, not a process-wide env write, because the latter also changes OpenAI retention. `cache.ts` resolves Pi
   auth before the SDK stream and supplies `long` for OAuth only; `lifecycle.ts` binds/restores this wrapper for
   owning and shared-runtime child sessions, and `transport.ts` covers direct provider calls. API keys, unrelated
-  runtimes/providers and owner notice/warming settings stay unchanged. Reason: the provider alone runs too late
+  runtimes/providers and owner notice settings stay unchanged. Warming policy lives in [Settings](#settings),
+  independently of retention; prompt caching stays enabled. Reason: the provider alone runs too late
   to set the warmer's TTL. Lifecycle cleanup restores stock behavior when the last adapter is disabled.
   TTL, timing, pricing and Pi's prospective warmer-cost limitation have one reference:
   `extensions/RQW-anthropic/README.md`, Prompt cache. Deterministic proof: its `test/cache.test.ts`.

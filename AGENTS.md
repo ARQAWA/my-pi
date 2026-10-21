@@ -9,7 +9,8 @@ rules in their briefs. The owner's personal manifesto is a separate memory docum
 
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
 - `extensions/RQW-settings/`: extension 1, the harness settings. Turns on Pi's built-in `codemode` and `tool_search` by
-  default (same rule as `grep` and `find` in RQW-tools). Details: `notes/settings-codemode.md`. Tests: `npm test`.
+  default (same rule as `grep` and `find` in RQW-tools), and disables background cache warming regardless of user
+  config (prompt caching stays on). Details: `notes/settings-codemode.md`, `DECISIONS.md` Settings. Tests: `npm test`.
 - `extensions/RQW-prompt/`: extension 2, the system prompt. `SYSTEM.md` is the text; `index.ts` puts it in place of Pi's
   default prompt prefix and appends the workstation, critical, environment and date blocks.
 - `extensions/RQW-tools/`: extension 3, the base tools. Stock `read`, `bash`, `edit`, `write`, `grep`, `find` with our
@@ -20,10 +21,12 @@ rules in their briefs. The owner's personal manifesto is a separate memory docum
   in-process Pi sessions with the whole system prompt, model, thinking and tools from the main agent; results come
   back as `[agent#N]` messages. Imports nothing from another extension folder: subagents get RQW-tools only when
   RQW-tools is loaded and offers them on `pi.events` channel `rqw-tools:subagent-tools`, otherwise Pi's stock
-  tools. Tests: `npm test`.
+  tools. Child background cache warming is off; Anthropic prompt caching uses built-in 5m (`DECISIONS.md`, Agent).
+  Tests: `npm test`.
 - `extensions/RQW-review/`: extension 6, the `review` tool with levels `blind` and `high`. Each call runs a fresh
   read-only reviewer session in the same process (`createAgentSession`, stock `read`, `grep`, `find`) with
-  `REVIEWER.md` as its prompt; the verdict comes back later as a `[review#N]` message. Tests: `npm test`.
+  `REVIEWER.md` as its prompt; the verdict comes back later as a `[review#N]` message. Background cache warming is off;
+  Anthropic prompt caching uses built-in 5m (`DECISIONS.md`, Review). Tests: `npm test`.
 - `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout, with the context bar as
   the input editor's bottom border and the session ID at the right end of its top border. On by default; `/statusbar [on|off]` toggles it and restores the stock editor and
   footer when off. Elements, evidence and limits:

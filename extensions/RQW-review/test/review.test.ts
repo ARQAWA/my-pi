@@ -277,6 +277,33 @@ describe("verdict classification", () => {
 });
 
 describe("review tool", () => {
+	it("reviewer requests never arm a warmer, independently of the main settings", async t => {
+		const sessions: AgentSession[] = [];
+		const original = (AgentSession.prototype as any)._bindExtensionCore;
+		t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function(this: AgentSession, ...args: unknown[]) {
+			sessions.push(this);
+			return original.apply(this, args);
+		});
+		const g = gate("CLEAN");
+		let count = 0;
+		const reviews = scriptReviewer((_c, options) => ++count === 1 ? g.reply(options?.signal) : fauxAssistantMessage("ok"));
+		const main = await openMain(full, { level: "blind", object: "a.ts", criterion: "c" });
+		try {
+			main.session.setCacheWarmingMode("idle");
+			await main.session.prompt(SECOND);
+			await until(() => reviews.length === 1, "reviewer request");
+			const child = sessions.find(s => s !== main.session)!;
+			assert.equal(child.settingsManager.getGlobalSettings().cacheWarming, "off");
+			await (await child.agent.streamFunction({ ...child.model!, promptCache: { short: 300 } },
+				{ messages: [{ role: "user", content: "cache probe", timestamp: 0 }] }, { sessionId: child.sessionId })).result();
+			assert.deepEqual(child.cacheWarmingStatus, { state: "inactive", reason: "cache warming disabled" });
+		} finally {
+			g.release();
+			await within(main.verdictTurn, 5000, "verdict");
+			await main.session.waitForIdle();
+			main.session.dispose();
+		}
+	});
 	it("is registered with a short description and a strict-mode schema", async () => {
 		scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
 		const main = await openMain(full, { level: "blind", object: "a.ts", criterion: "c" });

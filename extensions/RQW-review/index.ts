@@ -215,7 +215,7 @@ async function runReviewer(level: Level, brief: string, ctx: ExtensionContext, s
 		tools: [...REVIEWER_TOOLS],
 		customTools: reviewerTools(ctx.cwd),
 		sessionManager: SessionManager.inMemory(ctx.cwd),
-		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+		settingsManager: SettingsManager.inMemory({ cacheWarming: "off", compaction: { enabled: false } }),
 	}).then((created) => {
 		// createAgentSession has no signal: dispose a session that materializes after cancellation.
 		if (signal.aborted) {
@@ -237,7 +237,8 @@ async function runReviewer(level: Level, brief: string, ctx: ExtensionContext, s
 	const stream = session.agent.streamFunction;
 	session.agent.streamFunction = (model, context, options) => {
 		signal.throwIfAborted();
-		return stream(model, context, options);
+		// Reviewer Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
+		return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 	};
 	const stop = () => { void session.abort().catch(() => {}); };
 	try {

@@ -4,6 +4,14 @@ The public `agent` description, parameters, task/system text, model choice, thin
 This extension imports no other RQW extension. Optional RQW-tools definitions still come exclusively from a fresh
 `rqw-tools:subagent-tools` factory offer on `pi.events`; with no offer, Pi supplies stock tools.
 
+## Prompt cache
+
+Child Anthropic Messages requests carry the built-in `cacheRetention: "short"` policy (5m), independently of
+RQW-anthropic and user config. Cache markers stay enabled; background warming is off. The existing stream guard
+applies the option before RQW-anthropic can supply its generic OAuth 1h fallback. Other APIs are unchanged.
+Policy, approval and measurements: [DECISIONS.md, Agent](../../DECISIONS.md#agent),
+[prompt cache policy](../../notes/prompt-cache-policy.md). Package wire proof: `test/prompt-cache.test.ts`.
+
 ## Cancellation and replacement
 
 Each tool call captures both its explicit caller signal and `ctx.signal` before entering the ordered queue. Canceled

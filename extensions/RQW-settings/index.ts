@@ -1,11 +1,14 @@
-// Extension 1: settings of the harness. For now it turns on Pi's built-in `codemode` and `tool_search` tools.
+// Extension 1: harness defaults: codemode/tool_search on, background cache warming off.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { installSelectionIntent, noToolSelection } from "./selection.ts";
+import { installCacheDefault } from "./cache-warming.ts";
 
 const DEFAULT_ON = ["codemode", "tool_search"];
 
 export default function settings(pi: ExtensionAPI) {
-	pi.on("session_shutdown", installSelectionIntent());
+	const releaseSelection = installSelectionIntent();
+	const releaseCache = installCacheDefault(pi);
+	pi.on("session_shutdown", () => { releaseCache(); releaseSelection(); });
 	// Same captured SDK intent and CLI/settings predicate as grep and find. A tool is added only when
 	// it is registered, so a user who turned off `builtin:codemode` or `builtin:tool-search` gets no error. The
 	// handler reads the active set at call time, so it keeps whatever RQW-tools added, whichever runs first.

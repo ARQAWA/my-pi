@@ -168,6 +168,7 @@ export default function agent(pi: ExtensionAPI) {
 		const own = pi.getSettings();
 		// Keep the main session's shell, including Git Bash on Windows, and read image settings.
 		const settingsManager = SettingsManager.inMemory({
+			cacheWarming: "off",
 			shellPath: own.shellPath,
 			shellCommandPrefix: own.shellCommandPrefix,
 			images: { autoResize: own.images?.autoResize },
@@ -194,7 +195,11 @@ export default function agent(pi: ExtensionAPI) {
 			if (signal.aborted) { session.dispose(); signal.throwIfAborted(); }
 			// prompt() may finish auth after abort()/dispose(). Never let an abandoned preflight reach inference.
 			const stream = session.agent.streamFunction;
-			session.agent.streamFunction = (model, context, options) => { check(); return stream(model, context, options); };
+			session.agent.streamFunction = (model, context, options) => {
+				check();
+				// Child Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
+				return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
+			};
 			return { session, controller, guard };
 		});
 		try {
