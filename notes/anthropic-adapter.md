@@ -2,13 +2,16 @@
 
 ## Agreement
 
-Owner's current brief is the authority for this branch: "Work only here, other repos read-only";
-"same Claude Code OAuth behavior as omp"; "self-healing (refresh/retry recoverable auth failures, no silent broken state)";
-"only our Anthropic and openai-codex visible in login AND model picker";
-"Preserve saved credentials; hide providers, never delete keys";
-"Completely isolated self-contained toggleable extension RQW-anthropic; disabling restores Pi defaults";
-"No live model calls, no Anthropic OAuth refresh/login/network probes using real account, no nested agents";
-"Commit on branch, do not push/merge". No absent historical owner quotation is reconstructed.
+Owner request (C:3133): «в нашем репозитории должен быть адаптер для подписок Anthropic»;
+«чтобы он был такой же, как в OMP, чтобы у него был self-healing»;
+«И чтобы можно было через него авторизоваться».
+Provider visibility (C:3171): «Это именно отключить»; «Когда мы заходим в логин, там должны быть только кодекс,
+авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё».
+Module independence is required by C:3046; work only in my-pi by C:1653. `C:<line>` uses the raw session reference
+in `DECISIONS.md`. Credential preservation, reversible hooks, retry bounds and manual migration below are
+engineering choices implementing those requests, not English direct quotations of the owner.
+The owner's Claude benchmark/tuning pause remains (C:3244): «Я тебе дам команду, когда их продолжать».
+Offline fixtures document only the proof they provide, not live acceptance or permission to resume Claude.
 
 ## Sources inspected
 
@@ -110,8 +113,9 @@ Verification uses fake credentials, a mocked official Anthropic origin and faux 
 API-key bypass, refresh persistence/concurrency/cross-store locking, transient versus permanent errors, retry bounds,
 abort-before-start and abort-during-refresh, second 401, invalid responses, provider visibility, co-load conflicts,
 reload and disabling in the library and CLI bundle. Windows/Linux behavior is portable code plus tests suitable for
-existing CI; actual execution on those systems is not claimed from this macOS worktree. Independent model review
-and live model runs are excluded by the owner's no-nested-agents/no-live-calls restriction for this branch.
+existing CI; actual execution on those systems is not claimed from this macOS worktree. The local implementation
+report below records no independent subagent review or live model run; this is a proof boundary, not a standing
+exception to independent review or a new owner policy.
 
 ## Implemented result and verification
 
@@ -152,5 +156,5 @@ Offline verification of the four review fixes:
 
 No live model requests, real-account login/refresh, account probes, token logging, nested agents or independent
 subagent review were used. Windows/Linux execution and real subscription acceptance/billing remain unverified.
-No push or merge is part of this branch delivery. The delegated stock login endpoint/callback and incomplete omp
+The delegated stock login endpoint/callback and incomplete omp
 SDK/advanced streaming parity are explicit limits, not silently replaced behavior.

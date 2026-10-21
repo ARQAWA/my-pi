@@ -88,7 +88,8 @@ The normal `npm test` command includes these package integration tests on the ex
 Local results on macOS: `npm test` on Node 26.7.0: 307 tests, 306 passed, one Windows-only skip, zero failures.
 `npm exec --offline --package=node@22 -- node --test test/prompt-tools-isolation.test.ts` on Node 22.23.3:
 13 passed. `bun test test/prompt-tools-isolation.test.ts` on Bun 1.4.3: 13 passed. `git diff --check` passed.
-Windows/Linux runs and an independent review were not performed here; this task forbids nested agents and does not merge.
+Windows/Linux runs and an independent review were not performed in this local implementation report.
+This proof boundary does not override the workflow's independent-review requirement.
 
 Position and repetition can affect a model even when the remaining instructions are identical. The search and
 barrier text now appears later; two partial-write reminders disappear. GPT benchmarks must measure that change

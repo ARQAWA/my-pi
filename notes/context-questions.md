@@ -1,11 +1,15 @@
 # RQW-context: questions, answered
 
 The rule: W = min(contextWindow, 500000) is the window Pi uses, R = Math.round(W / 10), Pi compacts above W - R.
-Both questions below are answered by the owner; the decision and its proof are in `DECISIONS.md`, section Context.
+The coordinator answered both implementation questions as delegated technical choices, reported in C:2138,
+not as direct owner approvals. Owner requirements and implementation evidence are in `DECISIONS.md`, section Context.
+`C:<line>` uses the raw session reference defined in that document.
 
-## 1. What else "treated as 500 000" covers — answered: b
+## 1. What else "treated as 500 000" covers — coordinator choice: b
 
-Owner: «овераить его, если оно выше 500 тыс. токенов на 500 тыс. токенов», compaction at W - R, R = 10% of W.
+Owner rule (C:2015): «если контекстное окно больше 500 тыс. токенов, то пусть оно будет 500 тыс. токенов.
+Резерв — 10% от края». The coordinator chose to apply that window everywhere Pi reads it (C:2138),
+with compaction at W - R and R = 10% of W.
 
 Built: for a model above 500 000 the session model gets contextWindow 500 000, so every place Pi reads the window
 follows: the compaction trigger before a prompt and before each next turn, threshold and overflow checks after a
@@ -42,12 +46,16 @@ Known limits of the 500 000 window (no code change, the window rule is the owner
   400 000, compacts above 100 000 instead of 600 000. A reserve of W or more would leave no threshold; the rule's R
   applies then.
 
-## 2. Virtual models — answered: a
+## 2. Virtual models — delegated technical choice: a
 
-Owner: option a, virtual models are out of scope. A virtual model (`pi.registerVirtualModel`; Pi 1.3.0 ships none) is
+The coordinator chose option a, excluding virtual models, and reported it in assistant message C:2138:
+«Виртуальные модели остаются вне правила: в Pi 1.3.0 их нет». This is an assistant quotation, not owner approval.
+The owner required universal automatic behavior (C:2047): «Это должны быть универсальные решения, которые будут
+работать всегда автоматически». Whether the uncapped routed physical model leaves that requirement unfinished
+is a separate review; this note does not establish an owner-approved exclusion or final policy. A virtual model (`pi.registerVirtualModel`; Pi 1.3.0 ships none) is
 never capped and keeps Pi's own compaction settings; Pi takes its limits from the routed physical model
 (`agent-session.js:312`, `422`), so under it the window is the routed model's declared one, the reserve is Pi's, and
 the behaviour is stock Pi's.
 
-- a) Accept: the rule covers physical models. — chosen
+- a) Exclude virtual selections from the implementation. — chosen by the coordinator, not the owner
 - b) Cover virtual models too: needs a hook at the routed model; a deeper internal patch of `AgentSession`.
