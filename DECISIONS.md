@@ -555,6 +555,46 @@ Current accepted development policy (request summaries unless quoted); detailed 
   request; the cost is recorded here.
 - On `/reload` the `session_start` handlers of RQW-settings and RQW-tools leave the active set alone: Pi keeps the tools
   the user switched off, and the handlers had added them again.
+- GPT Fast: OpenAI priority processing for GPT (Codex CLI maps its Fast to `service_tier` `"priority"`; Pi's openai-codex
+  provider sends the request body's `service_tier`, and Pi's cost table bills priority at 2x). Owner: «Так давай временно все
+  гпт в fast режиме что бы все саб агенты работали». Owner: «Как мне fast режим включить в нашем Pico? И чтобы он ещё и
+  отображался в статус баре, что мы в fast режиме. Есть такая опция? Нет?» Owner, final shape: «Режим Fast должен действовать
+  только на основной чат. И по умолчанию он должен передаваться сабогентам. Но если я запрещу исполнителю сабогенты запускать
+  в режиме Fast, то он должен этому повиноваться. Так это должно работать», «В CloudCode у нас режима Fast нет, потому что у
+  меня нет кредитов, чтобы режим Fast поддерживать в CloudCode. Поэтому наш режим Fast распространяется только на GPT. Можно
+  даже называять его GPT Fast.», «Чтобы не было заблуждения, пусть он будет Fast-GPT командой через дефис». Rules:
+  - The command is `/fast-gpt [on|off]` (no argument toggles), carried by `extensions/RQW-settings/fast-gpt.ts`. It
+    switches the main chat only. Only `openai-codex` requests get `service_tier: "priority"`; Anthropic requests are
+    never touched. The state is process-wide (it survives `/reload` and new sessions) and is not persisted across restarts,
+    as `/statusbar` is not; there is no settings key. RQW-settings owns the main chat's rule and the command because it is
+    the harness-settings extension: a request-level default that holds whatever the user's config says.
+  - Default on. TEMPORARY, per the owner's «временно»: it stays on until the owner turns it off. The one-line removal is
+    `FAST_GPT_DEFAULT = false` in `fast-gpt.ts`; deleting the feature is deleting the three `fast-gpt.ts` files and their
+    calls, the `fast_gpt` parameter and the lightning.
+  - Hook: Pi 1.4.0's `streamSimple` of the openai-codex provider drops `serviceTier` (`buildBaseOptions` forwards a fixed
+    list of options), so the stream options cannot carry it. The public `before_provider_request` event (the main chat)
+    sets the body's `service_tier`, after checking that the payload's `model` is the session model of provider
+    `openai-codex`. Pi's pricing reads the response's `service_tier`, so priority cost is still counted. The WebSocket
+    transport (Pi's default `auto` tries it first) sends the same body: pi-ai `dist/api/openai-codex-responses.js` passes the
+    `onPayload` result (lines 175-178) to `processWebSocketStream`, which sends `{ type: "response.create", ...body }`
+    (line 1211; the cached-continuation frame spreads the body too, lines 1158-1168), so `model` is the bare id and
+    `service_tier` is top-level on both transports. The tests drive both: SSE with a replaced `fetch`, WebSocket with a
+    fake `globalThis.WebSocket` (the child tests use the default transport, so they run offline).
+  - Children (RQW-agent's `agent` subagents, `code_writer`, `shell_runner`; RQW-review's reviewers) inherit the caller's
+    GPT Fast state once, when they start, and keep it for their life, including `send` and `restart`; later `/fast-gpt`
+    changes do not reach a running child. A nested child inherits from its direct caller. Reviewers inherit the main chat's
+    state at their start. `agent`, `code_writer`, `shell_runner` and `review` take an optional boolean `fast_gpt` that overrides the
+    inherited state (`false` when the user forbids Fast for subagents; `send` and `restart` of `agent` may change it); a
+    null from a strict-mode provider means inherit. Each tool description carries the one sentence "By default children
+    inherit GPT Fast; pass fast_gpt false when the user forbids Fast for subagents." Each extension applies the rule to
+    its own sessions through its own `fast-gpt.ts` (`extensions/RQW-agent/fast-gpt.ts`, `extensions/RQW-review/fast-gpt.ts`),
+    reading the main chat's state at the child's start from RQW-settings over `pi.events` (query channel
+    `rqw-settings:fast-gpt-query`, answered synchronously; change channel `rqw-settings:fast-gpt`). This avoids any import
+    between extensions (section Isolation); without RQW-settings nobody answers and children stay on the standard tier.
+  - Status bar: the main chat's state is shown by the bright yellow lightning, see [Status bar](#status-bar).
+  - Proof: `extensions/RQW-settings/test/fast-gpt.test.ts`, `extensions/RQW-agent/test/fast-gpt.test.ts`,
+    `extensions/RQW-review/test/fast-gpt.test.ts`, `extensions/RQW-statusbar/test/fast-gpt.test.ts`: the real openai-codex
+    and anthropic providers inside real Pi sessions with only `fetch` replaced, so the asserted bodies are what Pi would send.
 
 ## Isolation
 
@@ -637,6 +677,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   before the adapter's OAuth fallback. This is a built-in 5m policy, not a config knob; other APIs keep their options.
   Reason: median observed resend gap 163s, with one of seven above 5m; a short write costs less than a 1h write.
   Proof: `test/agent.test.ts` and package `test/prompt-cache.test.ts`; evidence: `notes/prompt-cache-policy.md`.
+- Children inherit GPT Fast at start and `fast_gpt` overrides it: rule, quotes and carrier in
+  [Settings](#settings), «GPT Fast» (`extensions/RQW-agent/fast-gpt.ts`, `index.ts`).
 - A general subagent for the main agent, the one the Scope section names as a separate task. The owner's words: «должна
   быть опция поднимать любых рандомных саб-агентов, которые являются саб-потоком основного агента. Можно за базу взять
   агента General Purpose из курсора и его воспроизвести»; «этот кастомный саб-агент, абстрактный саб-агент, должен
@@ -898,6 +940,9 @@ Current accepted development policy (request summaries unless quoted); detailed 
   before the adapter's OAuth fallback, a built-in 5m policy with no config knob. Other APIs are unchanged.
   Reason: measured review duration median 30.9s, maximum 178s, so buying 1h writes is usually unnecessary.
   Proof: `test/review.test.ts` and package `test/prompt-cache.test.ts`; evidence: `notes/prompt-cache-policy.md`.
+- A reviewer inherits the main chat's GPT Fast state when it starts: rule, quotes and carrier in
+  [Settings](#settings), «GPT Fast» (`extensions/RQW-review/fast-gpt.ts`, `index.ts`); the optional `fast_gpt` of the
+  `review` tool overrides it for that reviewer.
 - Prompt adaptation is now tuned on GPT with the measured v3, the base of
   `extensions/RQW-review/REVIEWER.md`; the dispute paragraph and the DISPUTE, RULING and ANSWER fields were added on
   top of it by the pair contract below and are not part of that measurement (request summary, not a literal quote: flexible reviewer conditions C:2913;
@@ -941,9 +986,10 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Also one login and rate limit per family. Proof: `extensions/RQW-review/test/review.test.ts` ("the family table",
   "GPT main, blind", "GPT main, high", the two fallback tests and the two failure tests).
 - Parameters: `level`, `object` (paths, the diff as a file path, the stage), `criterion`, optional `agreement`
-  (accepted proposals and decisions that are not in the user's own messages) and optional `rebuttals` (see the
-  dispute rule below). The description is limited to 500 characters by its test. Empty strings and a
-  null or empty `rebuttals` count as not given, since strict mode fills every field.
+  (accepted proposals and decisions that are not in the user's own messages), optional `rebuttals` (see the
+  dispute rule below) and optional boolean `fast_gpt` (GPT Fast of this reviewer, see [Settings](#settings), «GPT Fast»).
+  The description is limited to 600 characters by its test: 500, and 100 for the one GPT Fast sentence. Empty strings and a
+  null or empty `rebuttals` and a null `fast_gpt` count as not given, since strict mode fills every field.
 - The main agent and the reviewer work as a pair, one team for the user's agreement (owner, 2026-10-09: «чтобы они
   действовали в одной команде ... либо принимает правку, либо её отклоняет и пишет, почему»; 2026-10-20: «он с ним
   действует в унисон, в паре ... их синергия должна идти в рамках плагина. Это не должно размазываться»). The reviewer
@@ -1554,6 +1600,20 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Conditional omp data without a stock Pi API is not invented: modes, collaboration, streaming/recording, running
   agent/job counts and PR metadata. Limits, source citations and test samples live only in
   `notes/statusbar-omp.md`. Colors are stock Pi semantic colors, without tuning.
+- GPT Fast lightning: the main chat's GPT Fast state ([Settings](#settings), «GPT Fast») shows as a bright yellow
+  lightning drawn after the model name, between the name and the thinking level, when the state is on and the current model's
+  provider is `openai-codex`; nothing otherwise. Owner: «Надо, чтобы метка фаз была в виде молнии яркой Желательно которая
+  ярко-желтая с бликом переливающимся. Можешь так сделать?» Owner on the place: «А насчёт визуализации в статус баре, где
+  модель, где глиф модели, нарисована какая-то шестерёнка или что-то такое перед названием модели, её нужно заменять будет на
+  значок молнии. Нет, лучше значок молнии пририсовывать после имени модели между моделью и резонингом. Вот так давай
+  сделаем.» The glyph before the model name stays. While the agent works a shimmer runs over the bolt (bright yellow, paler
+  yellow, white, back; 120 ms per step); idle it is a static bright yellow. The timer runs only while the agent works
+  and the lightning is shown (GPT Fast on and an `openai-codex` model), and starts or stops on `/fast-gpt` and model changes. The coordinator's description the owner accepted:
+  the shimmer runs "пока агент работает", idle it "горит ровным жёлтым". Engineering choices: the Nerd Font bolt `\uf0e7`
+  (the bar already uses Nerd Font glyphs), because U+26A1 is two cells wide in pi-tui even with VS15; own ANSI colours
+  (bold 93, 38;5;220/226/229, 97), not a theme role, so the yellow holds in every theme. The state is learned from
+  RQW-settings over `pi.events` at every render (query) and redrawn on its change event; the extension imports nothing from it.
+  Carrier: `extensions/RQW-statusbar/{render,index}.ts`; proof: `extensions/RQW-statusbar/test/fast-gpt.test.ts`.
 - Branch and counts use the extension's own repository discovery and asynchronous git refresh, not Pi's cached
   `getGitBranch()`. Engineering choice for the status-bar request C:3113/C:3133: discover the repository and refresh
   git asynchronously to handle repository replacement and branch checkout. Reason: Pi caches absent metadata when a session

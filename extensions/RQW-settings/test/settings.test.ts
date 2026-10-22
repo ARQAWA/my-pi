@@ -359,6 +359,8 @@ describe("settings: the session_start handler acts on every reason but reload", 
 			getActiveTools: () => active,
 			getAllTools: () => registered.map((name) => ({ name })),
 			getSettings: () => ({}),
+			events: { on: () => () => {}, emit() {} },
+			registerCommand() {},
 			setActiveTools: (names: string[]) => set.push(names),
 		};
 		const manager = {};

@@ -8,6 +8,10 @@ import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
 import { type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar } from "./render.ts";
 
 const GIT_POLL_MS = 10_000;
+const SHIMMER_MS = 120;
+// RQW-settings owns /fast-gpt. Its channels on pi.events are the only coupling; nobody answering means no lightning.
+const FAST_GPT_QUERY = "rqw-settings:fast-gpt-query";
+const FAST_GPT_CHANGED = "rqw-settings:fast-gpt";
 const COLORS: Record<Role, ThemeColor> = {
 	bar: "text", barEmpty: "dim", label: "muted", model: "text", path: "text",
 	gitClean: "success", gitDirty: "warning", staged: "success", unstaged: "warning",
@@ -43,6 +47,27 @@ export default function statusbar(pi: ExtensionAPI) {
 	let refresh: (() => void) | undefined;
 	let dispose: (() => void) | undefined;
 	const rate = new RateMeter();
+	let working = false;
+	let unsubscribeFast: (() => void) | undefined;
+	let frame = 0;
+	let shimmer: ReturnType<typeof setInterval> | undefined;
+	let lightCtx: ExtensionContext | undefined;
+	/** The main chat's GPT Fast is on (asked from RQW-settings) and its model is GPT through openai-codex: the lightning shows. */
+	const lit = (ctx: ExtensionContext | undefined): boolean => {
+		if (ctx?.model?.provider !== "openai-codex") return false;
+		const query: { fastGpt?: boolean } = {};
+		pi.events.emit(FAST_GPT_QUERY, query);
+		return query.fastGpt === true;
+	};
+	const fastState = (ctx: ExtensionContext): BarState["fast"] => lit(ctx) ? { frame: working ? frame : undefined } : undefined;
+	const stopShimmer = () => { if (shimmer) clearInterval(shimmer); shimmer = undefined; };
+	/** The shimmer timer runs only while the agent works, the footer is up and the lightning is shown; re-checked on every change. */
+	const syncShimmer = () => {
+		if (!working || !active || !lit(lightCtx)) return stopShimmer();
+		if (shimmer) return;
+		shimmer = setInterval(() => { frame++; if (!lit(lightCtx)) stopShimmer(); redraw?.(); }, SHIMMER_MS);
+		shimmer.unref?.();
+	};
 	// The context row is drawn as the bottom border of this extension's editor. One factory per extension instance
 	// identifies our editor in `getEditorComponent()`; its border reads the current install's source.
 	let border: BorderSource | undefined;
@@ -53,6 +78,8 @@ export default function statusbar(pi: ExtensionAPI) {
 		dispose?.();
 		border = undefined;
 		if (ctx.mode !== "tui" || !enabled) return;
+		lightCtx = ctx;
+		unsubscribeFast ??= pi.events.on(FAST_GPT_CHANGED, () => { syncShimmer(); redraw?.(); });
 		let cacheKey: unknown[] = [];
 		let cached: Pick<BarState, "context" | "compactions"> = { compactions: 0 };
 		const contextState = (): Pick<BarState, "context" | "compactions"> => {
@@ -87,6 +114,7 @@ export default function statusbar(pi: ExtensionAPI) {
 			const paint = themePaint(theme);
 			active = true;
 			redraw = () => tui.requestRender();
+			syncShimmer();
 
 			async function refreshGit(): Promise<void> {
 				if (disposed) return;
@@ -120,6 +148,7 @@ export default function statusbar(pi: ExtensionAPI) {
 				disposed = true;
 				clearInterval(poll);
 				stopBranch();
+				stopShimmer();
 				active = false;
 				rate.reset();
 				redraw = undefined;
@@ -142,6 +171,7 @@ export default function statusbar(pi: ExtensionAPI) {
 						thinkingLevel: pi.getThinkingLevel(),
 						...contextState(),
 						rate: rate.value(),
+						fast: fastState(ctx),
 						place: placeOf({ cwd: ctx.cwd, home: homedir(), scratchRoots: roots, worktree: repo?.worktree, branch }),
 						git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts },
 						statuses: [...footer.getExtensionStatuses().entries()]
@@ -179,9 +209,11 @@ export default function statusbar(pi: ExtensionAPI) {
 		rate.reset();
 		install(ctx);
 	});
-	pi.on("session_shutdown", () => { dispose?.(); border = undefined; });
+	pi.on("session_shutdown", () => { unsubscribeFast?.(); unsubscribeFast = undefined; dispose?.(); stopShimmer(); working = false; border = undefined; });
 	pi.on("session_tree", () => { rate.reset(); redraw?.(); });
-	pi.on("model_select", () => redraw?.());
+	pi.on("model_select", () => { syncShimmer(); redraw?.(); });
+	pi.on("agent_start", () => { working = true; frame = 0; syncShimmer(); redraw?.(); });
+	pi.on("agent_end", () => { working = false; syncShimmer(); redraw?.(); });
 	pi.on("thinking_level_select", () => redraw?.());
 	pi.on("session_compact", () => redraw?.());
 	pi.on("message_end", (event) => {

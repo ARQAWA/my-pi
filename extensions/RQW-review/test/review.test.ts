@@ -244,6 +244,7 @@ describe("measured reviewer prompt contract", () => {
 		try {
 			await writeFile(join(dir, "index.ts"), readFileSync(EXTENSION, "utf8"));
 			await writeFile(join(dir, "git-guard.ts"), readFileSync(join(dirname(EXTENSION), "git-guard.ts"), "utf8"));
+			await writeFile(join(dir, "fast-gpt.ts"), readFileSync(join(dirname(EXTENSION), "fast-gpt.ts"), "utf8"));
 			const crlf = REVIEWER_SOURCE.replace(/\n/g, "\r\n");
 			assert.equal(createHash("sha256").update(crlf).digest("hex"),
 				"dd7eb761e6ac52d35f7b2e0dfa0a9c3d0d7c1f7a89567c9a22ddd59c3185a476");
@@ -280,7 +281,8 @@ describe("measured reviewer prompt contract", () => {
 		assert.ok(REVIEWER.includes("REQUIREMENT: <verbatim quote of the agreement or criterion with its source"));
 		assert.ok(DESCRIPTION.includes("criterion, including checks beyond the agreement and exclusions"));
 		assert.ok(!DESCRIPTION.includes("read-only"), "no stale read-only claim");
-		assert.ok(DESCRIPTION.length <= 500);
+		assert.ok(DESCRIPTION.length <= 600);
+		assert.ok(DESCRIPTION.endsWith("By default a reviewer inherits GPT Fast; pass fast_gpt false when the user forbids Fast for subagents."));
 	});
 	it("keeps the deep read constraints, the run-result prohibition and the exact clean verdict contract", () => {
 		assert.ok(REVIEWER.includes("Start by reading whole every path the brief names, the diff included."));
@@ -354,7 +356,7 @@ describe("review tool", () => {
 			await main.session.prompt("hello");
 			const review = main.tools.find((t) => t.name === "review");
 			assert.ok(review, "the main model sees a review tool");
-			assert.ok(review.description.length <= 500, `description is ${review.description.length} characters`);
+			assert.ok(review.description.length <= 600, `description is ${review.description.length} characters`);
 			assert.match(review.description, /\[review#N\]/);
 			assert.equal(review.description, DESCRIPTION);
 			assert.ok(review.description.includes("works with you as one team for the user's agreement"), "the teammate sentence");
@@ -362,6 +364,7 @@ describe("review tool", () => {
 			assert.deepEqual(Object.keys((strict as { properties: object }).properties).sort(), [
 				"agreement",
 				"criterion",
+				"fast_gpt",
 				"level",
 				"object",
 				"rebuttals",

@@ -23,6 +23,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { blockedGit } from "./git-guard.ts";
+import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 
 /**
  * The one table of reviewers: for each model family of the main agent, the reviewer of each level. A reviewer of
@@ -71,7 +72,7 @@ export const DESCRIPTION =
 	"it checks the requested criterion, including checks beyond the agreement and exclusions, and gets the user's own messages verbatim. Use " +
 	"it when the user asks for a review or a checked result. The call returns at once; the verdict arrives later as a " +
 	"`[review#N]` message with what to do next. Keep working meanwhile. You may rebut a finding once, with proof; the " +
-	"next reviewer's answer is final.";
+	"next reviewer's answer is final. By default a reviewer inherits GPT Fast; pass fast_gpt false when the user forbids Fast for subagents.";
 
 /** What the main agent does next, appended to each verdict by its kind; the pair rules live here, not in the prompt. */
 export const NEXT = {
@@ -380,6 +381,9 @@ const parameters = Type.Object({
 			{ description: "Findings you disprove, one rebuttal per finding ever; without proof, fix the finding instead." },
 		),
 	),
+	fast_gpt: Type.Optional(
+		Type.Boolean({ description: "GPT Fast for this reviewer; default: inherit the main chat's. false when the user forbids Fast for subagents." }),
+	),
 });
 
 type Params = {
@@ -388,6 +392,7 @@ type Params = {
 	criterion: string;
 	agreement?: string | null;
 	rebuttals?: Rebuttal[] | null;
+	fast_gpt?: boolean | null;
 };
 
 /**
@@ -547,7 +552,7 @@ async function pickReviewer(level: Level, ctx: ExtensionContext, signal: AbortSi
 }
 
 /** One reviewer session from start to its last assistant text. Throws with the reason when there is no verdict. */
-async function runReviewer(pi: ExtensionAPI, level: Level, brief: string, ctx: ExtensionContext, signal: AbortSignal, used: { spec?: Spec }): Promise<string> {
+async function runReviewer(pi: ExtensionAPI, level: Level, brief: string, ctx: ExtensionContext, signal: AbortSignal, used: { spec?: Spec }, fast?: boolean): Promise<string> {
 	signal.throwIfAborted();
 	const { spec, model, modelRuntime } = await pickReviewer(level, ctx, signal);
 	used.spec = spec;
@@ -562,6 +567,8 @@ async function runReviewer(pi: ExtensionAPI, level: Level, brief: string, ctx: E
 		shellCommandPrefix: own.shellCommandPrefix,
 		images: { autoResize: own.images?.autoResize },
 	});
+	// GPT Fast: the caller's `fast_gpt`, else the main chat's state at the reviewer's start; kept for the session.
+	const inherited = fast ?? inheritedFastGpt(pi.events);
 	// No extensions, skills, prompt templates, themes or context files; the prompt is REVIEWER.md, with Pi's <cwd> block.
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: ctx.cwd,
@@ -576,6 +583,7 @@ async function runReviewer(pi: ExtensionAPI, level: Level, brief: string, ctx: E
 		appendSystemPromptOverride: () => [],
 		// The only extension of the reviewer: the git guard of every bash call, stock or offered.
 		extensionFactories: [(sub: ExtensionAPI) => {
+			fastGpt(sub, () => inherited);
 			sub.on("tool_call", (event) => {
 				if (event.toolName !== "bash" || typeof event.input.command !== "string") return;
 				const reason = blockedGit(event.input.command);
@@ -767,7 +775,7 @@ export default function review(pi: ExtensionAPI) {
 	});
 
 	/** `carried` lists the open disputes in this review's brief; its verdict answers those still open when it comes. */
-	async function job(n: number, level: Level, brief: string, ctx: ExtensionContext, carried: readonly string[]) {
+	async function job(n: number, level: Level, brief: string, ctx: ExtensionContext, carried: readonly string[], fast?: boolean) {
 		const controller = new AbortController();
 		running.add(controller);
 		const startedAt = Date.now();
@@ -778,7 +786,7 @@ export default function review(pi: ExtensionAPI) {
 		let failed = false;
 		const used: { spec?: Spec } = {};
 		try {
-			verdict = await runReviewer(pi, level, brief, ctx, controller.signal, used);
+			verdict = await runReviewer(pi, level, brief, ctx, controller.signal, used, fast);
 		} catch (error) {
 			const reason =
 				controller.signal.reason === TIMEOUT
@@ -854,7 +862,7 @@ export default function review(pi: ExtensionAPI) {
 			for (const r of accepted) all.get(r.finding)!.rebuttal = { ...r, review: n };
 			const carried = [...all.values()].filter(isOpen).map((d) => d.id);
 			const brief = buildBrief(branch, p, all);
-			const pending = job(n, p.level, brief, ctx, carried);
+			const pending = job(n, p.level, brief, ctx, carried, typeof p.fast_gpt === "boolean" ? p.fast_gpt : undefined);
 			jobs.add(pending);
 			void pending.finally(() => jobs.delete(pending));
 			return {

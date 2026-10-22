@@ -14,6 +14,7 @@ import {
 import { type Static, Type } from "typebox";
 import { registerWorkers, type RuntimeHandle, type WorkerProfile } from "./workers.ts";
 import { Activity } from "./activity.ts";
+import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 import { Coordinator, type Result, waitTimeout, targetIds, messageCount, waitResult } from "./coordinator.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
@@ -31,6 +32,7 @@ export const DESCRIPTION = [
 	"interrupt: id; requests cancellation, keeps history; inspect status while cancellation is pending. stop: id; closes it.",
 	"restart: id, optional task and new system/model/thinking/tools; a fresh session.",
 	"Defaults: this session's model and thinking, all tools.",
+	"By default children inherit GPT Fast; pass fast_gpt false when the user forbids Fast for subagents.",
 ].join(" ");
 
 const PARAMETERS = Type.Object({
@@ -44,6 +46,7 @@ const PARAMETERS = Type.Object({
 	model: Type.Optional(Type.String({ description: "provider/id" })),
 	thinking: Type.Optional(StringEnum(THINKING)),
 	tools: Type.Optional(Type.Array(StringEnum(TOOLS), { description: "Base subset; default all. Workers stay available." })),
+	fast_gpt: Type.Optional(Type.Boolean({ description: "GPT Fast for this child; default: inherit yours. false when the user forbids Fast for subagents; send and restart may change it" })),
 });
 type Params = Static<typeof PARAMETERS>;
 
@@ -51,6 +54,8 @@ type Config = { system: string; model: Model<Api>; thinking: Thinking; tools: st
 type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle; activity: Activity };
 type Agent = Child & {
 	id: number;
+	/** GPT Fast of this child for its life: inherited at start, or the caller's `fast_gpt`. Its own workers inherit it. */
+	fast: { on: boolean };
 	config: Config;
 	epoch: string;
 	runNumber: number;
@@ -112,14 +117,15 @@ const isAssistant = (m: { role: string }): m is AssistantMessage => m.role === "
 const runtimeOf = (ctx: ExtensionContext) => (ctx.modelRegistry as unknown as { runtime: ModelRuntime }).runtime;
 
 export default function agent(pi: ExtensionAPI) {
-	registerCaller(pi, pi.events, false, true);
+	registerCaller(pi, pi.events, false, true, () => inheritedFastGpt(pi.events));
 }
 
-function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, general: boolean): RuntimeHandle {
+/** `callerFast`: this caller's GPT Fast state at the moment it starts a child (the main chat's, or a child's own). */
+function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, general: boolean, callerFast: () => boolean): RuntimeHandle {
 	const coordinator = new Coordinator(pi);
 	const runtimes: RuntimeHandle[] = [];
-	if (general) runtimes.push(registerSessionRuntime(pi, undefined, toolEvents, background, coordinator));
-	runtimes.push(registerWorkers(pi, (caller, profile) => registerSessionRuntime(caller, profile, toolEvents, background, coordinator)));
+	if (general) runtimes.push(registerSessionRuntime(pi, undefined, toolEvents, background, coordinator, callerFast));
+	runtimes.push(registerWorkers(pi, (caller, profile) => registerSessionRuntime(caller, profile, toolEvents, background, coordinator, callerFast)));
 	pi.on("agent_end", async (_event, ctx) => {
 		if (!background && (ctx.mode === "print" || ctx.mode === "json") && ctx.signal) {
 			try { await coordinator.observe(ctx.signal); } catch (error) { if (!ctx.signal.aborted) throw error; }
@@ -135,7 +141,7 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 }
 
 /** Caller-local state. Nested callers settle normally; startRun tracks their workers across background wakeups. */
-export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi)): RuntimeHandle {
+export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents)): RuntimeHandle {
 	const name = worker?.name ?? "agent";
 	const agents = new Map<number, Agent>();
 	const lifetime = new AbortController();
@@ -214,7 +220,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		return factory ? factory(cwd, () => pi.getSettings()).filter((d) => names.includes(d.name)) : [];
 	}
 
-	async function createSession(config: Config, ctx: ExtensionContext, signal: AbortSignal): Promise<Child> {
+	async function createSession(config: Config, ctx: ExtensionContext, signal: AbortSignal, fast: { on: boolean }): Promise<Child> {
 		signal.throwIfAborted();
 		const controller = new AbortController();
 		const guard: Child["guard"] = {};
@@ -235,12 +241,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			appendSystemPromptOverride: () => [],
 			// Only a forced prompt avoids Pi's appended sections, such as <cwd>.
 			extensionFactories: [(sub: ExtensionAPI) => {
+				fastGpt(sub, () => fast.on);
 				sub.on("before_agent_start", () => {
 					check();
 					return { systemPrompt: config.system };
 				});
 				if (worker) worker.configure(sub);
-				else workers = registerCaller(sub, toolEvents, true, false);
+				else workers = registerCaller(sub, toolEvents, true, false, () => fast.on);
 			}],
 		});
 		await untilAborted(resourceLoader.reload(), signal);
@@ -416,6 +423,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			task: Type.Optional(Type.String({ minLength: 1 })),
 			id: Type.Optional(Type.String({ description: `${name}#N; management actions` })), ids: PARAMETERS.properties.ids,
 			timeout_ms: PARAMETERS.properties.timeout_ms, messages: PARAMETERS.properties.messages,
+			fast_gpt: PARAMETERS.properties.fast_gpt,
 		}) : PARAMETERS,
 		execute: (toolCallId, raw, callerSignal, _onUpdate, ctx) => {
 			// Capture ctx.signal now: its getter can point at another run when the internal queue drains.
@@ -451,8 +459,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				if (counter >= Number.MAX_SAFE_INTEGER) throw new Error("Agent id space exhausted");
 				const id = ++counter;
 				pi.appendEntry(name, { id });
-				const child = await createSession(config, ctx, signal);
-				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, ...child };
+				const fast = { on: params.fast_gpt ?? callerFast() };
+				const child = await createSession(config, ctx, signal, fast);
+				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, fast, ...child };
 				try {
 					signal.throwIfAborted();
 					await startRun(a, params.task, signal);
@@ -466,6 +475,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const a = find(params.id);
 				if (!params.task) throw new Error("task is required");
 				if (a.run?.quiet) throw new Error(`${name}#${a.id}: cancellation pending; inspect status before send`);
+				if (params.fast_gpt !== undefined) a.fast.on = params.fast_gpt;
 				if (a.run) {
 					await untilAborted(a.session.followUp(params.task), signal);
 					return ok(`${name}#${a.id}: queued after the current run`);
@@ -503,8 +513,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				agents.delete(old.id);
 				coordinator.change(`${name}#${old.id}`, "restart");
 				close(old);
-				const child = await createSession(config, ctx, signal);
-				const a: Agent = { id: old.id, config, epoch: randomUUID(), runNumber: 0, ...child };
+				const fast = { on: params.fast_gpt ?? old.fast.on };
+				const child = await createSession(config, ctx, signal, fast);
+				const a: Agent = { id: old.id, config, epoch: randomUUID(), runNumber: 0, fast, ...child };
 				try {
 					signal.throwIfAborted();
 					if (params.task) await startRun(a, params.task, signal);

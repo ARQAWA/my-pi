@@ -167,6 +167,10 @@ status); without a source it draws Pi's stock borders. It also checks every widt
 either Pi's own border at the reduced width followed by ` <id> ──` or, below the computed threshold, Pi's border
 unchanged. `render.test.ts` checks the ID rule on its own (styling, terminal controls, an ID with spaces, a status
 that would change at the reduced width).
+`fast-gpt.test.ts` checks the GPT Fast lightning: its place after the model name and before the thinking level, the
+static idle yellow, the shimmer frames while working, one cell width at every width 0..120, and in a real session the
+rule (fast on and an `openai-codex` model), the change event, the timer and a footer installed mid-run
+([DECISIONS.md, Status bar](../DECISIONS.md#status-bar)).
 `statusbar.test.ts` loads the extension in real Pi library and CLI-bundle sessions without sending any prompt,
 checks live state changes, compaction count, thresholds, status ordering, toggle and non-TUI guards. With the
 editor installed the footer has two rows and the editor's last row is the context row, including the hidden-lines

@@ -11,7 +11,8 @@ The coordinator delegates all execution, waits and checks to subagents and may r
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
 - `extensions/RQW-settings/`: extension 1, the harness settings. Turns on Pi's built-in `codemode` and `tool_search` by
   default (same rule as `grep` and `find` in RQW-tools), and disables background cache warming regardless of user
-  config (prompt caching stays on). Details: `notes/settings-codemode.md`, `DECISIONS.md` Settings. Tests: `npm test`.
+  config (prompt caching stays on). Owns GPT Fast for the main chat: `/fast-gpt [on|off]`, default on (temporary), only
+  `openai-codex` requests get `service_tier` priority (`DECISIONS.md` Settings, «GPT Fast»). Details: `notes/settings-codemode.md`, `DECISIONS.md` Settings. Tests: `npm test`.
 - `extensions/RQW-prompt/`: extension 2, the system prompt. `SYSTEM.md` is the text; `index.ts` puts it in place of Pi's
   default prompt prefix and appends the workstation, critical, environment and date blocks.
 - `extensions/RQW-tools/`: extension 3, the base tools. Stock `read`, `bash`, `edit`, `write`, `grep`, `find` with our
@@ -27,6 +28,8 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   Imports nothing from another extension folder: subagents get RQW-tools only when
   RQW-tools is loaded and offers them on `pi.events` channel `rqw-tools:subagent-tools`, otherwise Pi's stock
   tools. Child background cache warming is off; Anthropic prompt caching uses built-in 5m (`DECISIONS.md`, Agent).
+  Children inherit the caller's GPT Fast at start; the optional `fast_gpt` parameter of `agent`, `code_writer` and
+  `shell_runner` overrides it (`false` when the user forbids Fast for subagents).
   Tests: `npm test`.
 - `extensions/RQW-review/`: extension 6, the `review` tool with levels `blind` and `high`. Each call runs a fresh
   reviewer session in the same process and main agent's cwd (`createAgentSession`, `read`, `bash`, `grep`, `find`;
@@ -35,9 +38,9 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   back later as a `[review#N]` message. Main may rebut a finding once with proof; the next reviewer's answer is final (fix, or ask the user), kept by the extension: `DECISIONS.md`
   section Review. The reviewer model follows the main agent's family (Claude or GPT) with the other family as
   fallback: `extensions/RQW-review/README.md`. Background cache warming is off; Anthropic prompt caching uses
-  built-in 5m (`DECISIONS.md`, Review). Tests: `npm test`.
+  built-in 5m (`DECISIONS.md`, Review). A reviewer inherits the main chat's GPT Fast at its start; the `review` tool's optional `fast_gpt` overrides it. Tests: `npm test`.
 - `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout, with the context bar as
-  the input editor's bottom border and the session ID at the right end of its top border. On by default; `/statusbar [on|off]` toggles it and restores the stock editor and
+  the input editor's bottom border and the session ID at the right end of its top border. Shows the GPT Fast lightning after the model name (main chat, `openai-codex` model, shimmer while working). On by default; `/statusbar [on|off]` toggles it and restores the stock editor and
   footer when off. Elements, evidence and limits:
   `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.

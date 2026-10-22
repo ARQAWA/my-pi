@@ -177,6 +177,7 @@ it("refreshes branches after git init, checkout and repo replacement despite Pi'
 		sessionManager: { getSessionId: () => "id", getLeafId: () => null, getEntryCount: () => 0, getEntries: () => [] },
 		getContextUsage: () => undefined };
 	statusbar({ on: (event: string, fn: Function) => handlers.set(event, fn), registerCommand() {},
+		events: { on: () => () => {}, emit() {} },
 		getSettings: () => ({}), getThinkingLevel: () => "off" } as unknown as ExtensionAPI);
 	async function refresh(action: () => void) {
 		const previous = h.renders;

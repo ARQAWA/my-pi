@@ -52,6 +52,14 @@ through a `tool_call` hook; blocked commands return its reason as a tool error. 
   summary; of two parallel rebuttals of one finding exactly one is accepted.
 - Each finding gets an id `<review number>.<position>`; disputes survive reload and resume (custom `review` entries).
 
+## GPT Fast
+
+A reviewer inherits the main chat's GPT Fast state when it starts (RQW-settings answers over `pi.events`, query
+channel `rqw-settings:fast-gpt-query`) and keeps it for its session: its openai-codex requests then carry
+`service_tier: "priority"`. The optional boolean `fast_gpt` of the `review` tool overrides the inherited state for
+that reviewer (`false` when the user forbids Fast for subagents; null inherits). Anthropic requests are untouched; without RQW-settings the reviewer stays on the standard
+tier. Rule and quotes: [DECISIONS.md, Settings](../../DECISIONS.md#settings). Proof: `test/fast-gpt.test.ts`.
+
 ## Limits
 
 - The bash git guard is a shell-syntax check, not a sandbox: it does not interpret scripts, aliases or computed

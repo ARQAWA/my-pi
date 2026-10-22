@@ -78,6 +78,16 @@ and does not interpret external scripts, aliases or computed commands.
 Offline proofs: `test/workers.test.ts`, `test/nested-workers.test.ts`, `test/worker-model.test.ts` and
 `test/git-guard.test.ts`. [Isolation](../../DECISIONS.md#isolation) applies to workers and their tests too.
 
+## GPT Fast
+
+A child (`agent`, `code_writer`, `shell_runner`) inherits its caller's GPT Fast state once, when it starts, and keeps it
+for its life, `send` and `restart` included; a nested child inherits from its direct caller. The state is answered by
+RQW-settings over `pi.events` (`rqw-settings:fast-gpt-query`); without it children stay on the standard tier. The optional
+boolean `fast_gpt` overrides the inherited state (`false` when the user forbids Fast for subagents; `send` and
+`restart` of `agent` may change it). `fast-gpt.ts` sets `service_tier: "priority"` on the child's openai-codex requests
+through `before_provider_request`; Anthropic requests are untouched. Temporary default, rule and quotes:
+[DECISIONS.md, Settings](../../DECISIONS.md#settings). Proof: `test/fast-gpt.test.ts`.
+
 ## Wait, status and management
 
 All three tools accept `wait`, `status`, `send`, `interrupt`, `stop`, `restart`; workers also keep `{task}` for a fresh

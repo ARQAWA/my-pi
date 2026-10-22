@@ -19,6 +19,8 @@ export const ICON = {
 	worktree: "\uf0e8",
 	branch: "\uf126",
 	throughput: "\uf0e4",
+	/** Nerd Font bolt: one cell wide and coloured by ANSI, unlike U+26A1, which pi-tui measures as two cells even with VS15. */
+	fast: "\uf0e7",
 } as const;
 
 export type Role =
@@ -56,6 +58,8 @@ export interface BarState {
 	place: { kind: PlaceKind; text: string };
 	/** Undefined outside a git repository. */
 	git?: GitCounts & { branch: string | null };
+	/** GPT Fast of the main chat: the lightning right after the model name, before the thinking level. `frame` is the shimmer step while the agent works, undefined when idle. */
+	fast?: { frame?: number };
 	/** Texts other extensions set with `ctx.ui.setStatus`, in key order. */
 	statuses: string[];
 }
@@ -168,10 +172,25 @@ export function sessionTopBorder(width: number, sessionId: string | undefined, s
 	return left + border(" ") + paint("label", id) + border(" ──");
 }
 
+/** Bright yellow, a paler yellow, white and back: SGR foreground colours of one shimmer cycle. */
+export const SHIMMER = ["38;5;220", "38;5;226", "38;5;229", "97", "38;5;229", "38;5;226"] as const;
+/** Static bright yellow for the idle lightning. */
+export const FAST_YELLOW = "93";
+
+/** The GPT Fast lightning. Own colours, not a theme role: the owner asked for a bright yellow whatever the theme. */
+export function fastMark(frame: number | undefined): string {
+	const color = frame === undefined ? FAST_YELLOW : SHIMMER[((Math.trunc(frame) % SHIMMER.length) + SHIMMER.length) % SHIMMER.length];
+	return `\x1b[1;${color}m${ICON.fast}\x1b[22;39m`;
+}
+
 /** Row 2: model and thinking level on the left (then other extensions' statuses), `cmp N · R tok/s` on the right. */
 export function modelRow(state: BarState, width: number, paint: Paint = plain): string {
 	const level = thinkingLabel(state.model, state.thinkingLevel);
-	let left = ` ${paint("model", `${ICON.model} ${modelName(state.model)}${level ? ` ${level}` : ""}`)}`;
+	// GPT Fast: the lightning sits right after the model name, before the thinking level; the model icon stays in front.
+	const name = `${ICON.model} ${modelName(state.model)}`;
+	let left = state.fast
+		? ` ${paint("model", name)} ${fastMark(state.fast.frame)}${level ? ` ${paint("model", level)}` : ""}`
+		: ` ${paint("model", `${name}${level ? ` ${level}` : ""}`)}`;
 	const dot = ` ${paint("sep", "·")} `;
 	const statuses = state.statuses.map(singleLine).filter(Boolean);
 	if (statuses.length > 0) left += dot + statuses.join(dot);
