@@ -18,9 +18,11 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   descriptions (`descriptions/*.md`), multi-file `edit` and `write`, and the ordered barrier (Pi's `codemode` is one call of it). Tests: `npm test`.
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
   window W = min(contextWindow, 500000) and compacts above W - R, where R = round(W / 10). Tests: `npm test`.
-- `extensions/RQW-agent/`: extension 5, the subagents. One tool `agent` (start, send, interrupt, stop, restart) runs
-  in-process Pi sessions with the whole system prompt, model, thinking and tools from the main agent; results come
-  back as `[agent#N]` messages. Imports nothing from another extension folder: subagents get RQW-tools only when
+- `extensions/RQW-agent/`: extension 5, subagents and the fixed `code_writer` / `shell_runner` workers. `agent`
+  (start, send, interrupt, stop, restart) runs in-process Pi sessions with a caller-supplied whole system prompt,
+  chosen model/thinking and base tools; results come back as `[agent#N]` messages. Worker briefs, nesting and delivery:
+  [RQW-agent README](extensions/RQW-agent/README.md#workers); decisions: [Workers](DECISIONS.md#workers).
+  Imports nothing from another extension folder: subagents get RQW-tools only when
   RQW-tools is loaded and offers them on `pi.events` channel `rqw-tools:subagent-tools`, otherwise Pi's stock
   tools. Child background cache warming is off; Anthropic prompt caching uses built-in 5m (`DECISIONS.md`, Agent).
   Tests: `npm test`.

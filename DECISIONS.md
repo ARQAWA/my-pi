@@ -102,11 +102,11 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Public repository [ARQAWA/my-pi](https://github.com/ARQAWA/my-pi) (user: «он должен быть паблик»).
 - Dropped for good: loading of `eval`, `lsp`, `ast_grep` (user: «eval нахуй не нужен, lsp ... ast-grep ... выбросить
   всё это на помойку»; Pi has its own codemode).
-- Postponed, not dropped (user: «мы их не упраздняем, а откладываем»): `codebase_explorer`, `code_writer`,
-  `shell_runner`, `custom`; the `define-goal` skill and work orders; and the task list with the check before stopping
-  (later switched on by a skill rather than always on). The extension-provided `agent` and `review` tools are
-  implemented separately; see [Agent](#agent) and [Review](#review) below. `RQW-models`, `RQW-statusbar` and
-  `RQW-send-now` also port UI; see [Models](#models), [Statusbar](#statusbar) and [Send now](#send-now).
+- Postponed, not dropped (user: «мы их не упраздняем, а откладываем»): `codebase_explorer`, `custom`; the
+  `define-goal` skill and work orders; and the task list with the check before stopping (later switched on by a skill
+  rather than always on). The extension-provided `agent`, `review`, `code_writer` and `shell_runner` tools are
+  implemented separately; see [Agent](#agent), [Review](#review) and [Workers](#workers) below. `RQW-models`,
+  `RQW-statusbar` and `RQW-send-now` also port UI; see [Models](#models), [Statusbar](#statusbar) and [Send now](#send-now).
 - Development worker authorization and the old paused benchmark campaigns are governed by [Work policy](#work-policy),
   independently of the product reviewer pins below.
 - Reviewers, accepted plan (user: «То, что ты предложил по ревьюерам — it's OK, я принимаю»): own extension
@@ -605,23 +605,23 @@ Current accepted development policy (request summaries unless quoted); detailed 
   без оверенджинеринга»; «всё должно быть доказано». Carried by `extensions/RQW-agent/index.ts`.
 - One tool `agent` with `action` `start`, `send`, `interrupt`, `stop`, `restart` and the fields `id`, `system`, `task`,
   `model` (`provider/id`), `thinking` (Pi's levels `off` to `max`), `tools` (a subset of `read`, `bash`, `edit`,
-  `write`, `grep`, `find`). Cost for the main agent on every request: description 584 characters, schema 636. The
-  schema passes Pi's `makeStrictJsonSchema`; `null` in an optional field counts as omitted.
+  `write`, `grep`, `find`). This selects base tools; delegation tools follow [Workers](#workers).
+  The schema passes Pi's `makeStrictJsonSchema`; `null` in an optional field counts as omitted.
 - In process, no spawn (Windows-safe): `createAgentSession` with `SessionManager.inMemory`, `SettingsManager.inMemory`,
   and `DefaultResourceLoader` with `noExtensions`, `noSkills`, `noPromptTemplates`, `noThemes`, `noContextFiles`; cwd
   is the main session's `ctx.cwd`. Neither RQW-prompt nor AGENTS.md reaches the subagent.
 - The system prompt is exactly `system`. Pi appends `<cwd>` and other sections to every custom prompt
   (`buildSystemPromptSections` in Pi's `dist/core/system-prompt.js`); only a forced prompt goes out as it is. So the
-  loader carries one inline handler, `before_agent_start` returning `{ systemPrompt: system }`. This is the closest
-  thing to "no extensions": the only handler is ours and does nothing else. A test checks that the request has one
-  system message equal to `system`.
+  loader carries an inline `before_agent_start` handler returning `{ systemPrompt: system }`. Only our inline
+  runtime hooks and the [worker tools](#workers) are loaded, not external extensions. A test checks that the request
+  has one system message equal to `system`.
 - The model runtime is the main session's, taken from `ctx.modelRegistry.runtime`, a plain field that is private only
   in the TypeScript types. Reason: one credential store and one OAuth refresh (risk 1 of
   `/tmp/pi-subagent-eval/report.md`), and providers that extensions register also serve the subagent, such as the
   `anthropic` overlay of the installed `pi-claude-auth`. If Pi renames the field, `start` fails and the tests show it.
 - Defaults follow Cursor's generalPurpose: all tools, the main model ("inherit"), no subagents of its own (Cursor
   transcript 704ada44 in `cursor-like-harness/kb/sources/cursor-reverse-extra`). Here: the main session's model and
-  thinking level, all six tools, and no `agent` tool for the subagent.
+  thinking level, all six base tools, the [worker tools](#workers), and no `agent` tool for the subagent.
 - No imports across extension folders: `extensions/RQW-agent/` loads and works with every other RQW-* switched off or
   absent, and switching RQW-tools off switches it off for subagents too (owner: «Когда мы делаем эти отдельные модули,
   они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать и выключать, как feature флаги»;
@@ -646,7 +646,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   definitions read the main session's settings per call instead.
 - Results are async. At the end of each run the main session gets `[agent#N] <text>` through `pi.sendMessage`. The
   text is every final answer of the run, so a follow-up queued during the run does not hide the first answer (the brief
-  said "last assistant text"). The text also carries every final error of the run as `error: <reason>`, in order with
+  said "last assistant text"). Native runs awaiting worker results are intermediate, not final; see [Workers](#workers). The text also carries every final error of the run as `error: <reason>`, in order with
   the answers: a failed follow-up does not hide the first answer (`[agent#1] FIRST ANSWER\n\nerror: bad request`,
   review C), and a first task that fails for good does not vanish when Pi then runs a queued follow-up that succeeds
   (`[agent#1] error: bad request: first task\n\nSECOND ANSWER`, review D). An attempt that Pi repeats is not a result. Pi
@@ -710,7 +710,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - `RQW-context` patches Pi classes for the whole process, so a subagent gets the owner's universal window rule like
   every model: its window is capped at 500 000 and its compaction reserve is 10% of that window. Checked in review: a
   subagent on a 1 000 000 model sends its request with window 500 000 when RQW-context is loaded.
-- Proof: `extensions/RQW-agent/test/agent.test.ts`, 33 tests on two faux providers (a copy of `index.ts` alone in a
+- Proof: `extensions/RQW-agent/test/agent.test.ts`, faux-provider tests (a copy of the RQW-agent folder in a
   folder with no other extension loads and delivers, and the source has no `../` import; without RQW-tools the
   subagent's `write` is the stock one, no `files`; exact system prompt, model,
   thinking, tool subset, the five actions, follow-up while running, the main turn, shutdown, errors, call order, print
@@ -738,6 +738,89 @@ Current accepted development policy (request summaries unless quoted); detailed 
   (`[agent#1] W: RESTARTED`, 11 s, no `sleep` left); Opus 5.5 ran two subagents, one with an inherited model, and got
   the queued follow-up in the same message (`[agent#1] W: ... first ... W: ... second`,
   `[agent#2] Q: The bug is in add ...`).
+
+## Workers
+
+- Owner: «Я хочу сделать такие два саб-агента сейчас для моего My Pi. ... чтобы и основной агент мог вызывать этих
+  саб-агентов для этих задач, и саб-агенты могли их тоже вызывать. Чтобы были вложенные саб-агенты, чтобы, допустим,
+  саб-агент Opus или саб-агент Sonnet мог вызвать CodeWriter либо ShellRunner, которые будут выполнять шумную
+  механическую работу, которая токены утилизирует.» The final answer goes «тому агенту, который его вызвал».
+  Reason: the deciding agent at either caller level can delegate mechanical work without routing raw worker reports
+  through main. `extensions/RQW-agent/index.ts` binds workers to the direct caller's API, with no `agent` tool in
+  subagents and no delegation tools in workers. It keeps the subagent's logical assignment open across worker
+  wakeups, withholding intermediate answers until no workers or unconsumed results remain. Carrier: `index.ts` and
+  `workers.ts` in that folder; proof: `test/nested-workers.test.ts` and the worker-only declarations checked by
+  `test/cli-provider.ts` through `test/cli.test.ts`. Current lifecycle and cancellation rules:
+  [RQW-agent README, Workers](extensions/RQW-agent/README.md#runtime-and-delivery).
+- Owner: «И каждый раз, когда ты даешь ему новое задание, сбрасываешь ему контекстное окно».
+  Reason: assignments must not inherit unrelated tasks or old worker answers. Every call creates a fresh
+  in-process session with only `task` supplied by the caller, no send or resume. Role prompts, descriptions and
+  tool allowlists are fixed in `extensions/RQW-agent/workers.ts`, `roles/` and `descriptions/`; model/reasoning is
+  fixed in `worker-model.ts` in that folder.
+- Owner: «Например, чтобы агент Main не использовал кодрайтер в той ситуации, где бриф будет длиннее, чем написать код
+  самостоятельно.»; «Идея в том, что саб-агент ускоряет main-агента. Main-агент должен доверять саб-агенту.»
+  Reason: delegation must accelerate the caller rather than create briefing and repeated-work overhead. Caller
+  descriptions require complete decided briefs, trusting results, no waiting/polling and parallel calls only when
+  independent, never two code_writers on the same file. Carriers:
+  `extensions/RQW-agent/descriptions/code_writer.md` and `descriptions/shell_runner.md` in that folder.
+- D2: code_writer has bash and may run a focused check of its own change. Owner's scope:
+  «только код. не документацию, не промпты, а только код и какие-то конфиги. и всё».
+  Reason: checking the decided code/config change belongs with its mechanical execution, but documentation,
+  prompts and product decisions do not. RQW-tools' existing [ordered barrier](#tools) orders edits and checks when
+  loaded; without an offer, workers use stock tools, as [Agent](#agent) describes. Carriers:
+  `extensions/RQW-agent/roles/code_writer.md`, `workers.ts` and `index.ts`; shell_runner's exact-command/no-fixes
+  contract and report format are carried by `roles/shell_runner.md` in that folder. Briefs, reports and tool sets:
+  [RQW-agent README](extensions/RQW-agent/README.md#briefs-and-reports).
+- D3: neither worker changes git state; supported read-only git queries are allowed. Reason: commits, staging,
+  branches, merges and pushes belong to the caller and [PROCESS.md](PROCESS.md); such a command is shorter than
+  a brief, and a cheap low-reasoning model must not own destructive git commands. Enforcement is code, not just
+  role text: `extensions/RQW-agent/workers.ts` installs `git-guard.ts` in each worker's `tool_call` hook before bash
+  executes. The syntax guard blocks obvious launcher/config-injection bypasses without rejecting ordinary
+  listings; it is not a sandbox. Supported queries, execution-override rules and limits have one description:
+  [RQW-agent README, Git guard](extensions/RQW-agent/README.md#git-guard).
+  Proof: `extensions/RQW-agent/test/git-guard.test.ts` and `test/workers.test.ts` in that folder.
+- D1: `anthropic/claude-haiku-5-5` is primary; `openai-codex/gpt-6-luna` is the credential fallback. If neither
+  is available with credentials, the call fails with a clear error. Missing candidates and rejected provider auth
+  checks do not disable the remaining fallback. Owner:
+  «Я бы хотел, чтобы мы прогнали этих малышей на каких-то нижних reasoning. Например, Haiku 5.5 medium либо low и
+  GPT-6 Luna medium либо low. Для нас предпочтительно утилизировать шумную работу внутри Haiku и внутри Luna, потому
+  что они полностью бесплатны для наших подписок. ... Я бы хотел это сделать для обоих моделей, но надо сделать
+  честные замеры.»; «Протестировали этих workers с max reasoning — полная хуета.»
+  Reason: put noisy work on the preferred subscription models at measured lower reasoning, rather than inheriting
+  the caller's expensive model/level or assuming max is better. Carrier: `extensions/RQW-agent/worker-model.ts`;
+  proof: `test/worker-model.test.ts` and `test/workers.test.ts` in that folder.
+- B4: only levels meeting the owner's bar independently on tuning and holdout qualify. Owner:
+  «Даже 4% не было ошибок»; «Поставь 95, хоть помягче
+  чуть-чуть». The bar is 95%, not lowered by the coordinator. Low is chosen when it qualifies, its combined
+  tuning/holdout pass rate is not below medium's and its judge mean is at most 0.5 below medium's; otherwise use
+  qualifying medium. Reason: lower reasoning must retain reliable execution and report quality. Owner on honest
+  repeated measurements: «замеры можно делать бесконечно, потому что хайку и Luna бесплатные».
+  If neither low nor medium qualifies, the owner chooses the trade-off rather than the coordinator raising the
+  level or lowering the bar: «Гораздо проще, если там будет высокий процент успеха, допустим,
+  70-80, то пусть лучше он в один проход напишет большую часть, потом его основной агент подправит. Чем
+  он будет сидеть по пять минут писать код».
+  Source: [workers benchmark, Results and B4](notes/workers-bench.md#b4-chosen-levels), saved log
+  `logs/b3-final-3models-summary.md` under the benchmark directory named in that report. Each pair below is
+  low vs medium; judge means cover all runs.
+
+  | Model | Role | Tuning pass: low vs medium | Holdout pass: low vs medium | Judge mean: low vs medium | Chosen |
+  | --- | --- | --- | --- | --- | --- |
+  | anthropic/claude-haiku-5-5 | code_writer | 75/75 vs 75/75 | 50/50 vs 50/50 | 9.7 vs 9.7 | low |
+  | anthropic/claude-haiku-5-5 | shell_runner | 75/75 vs 75/75 | 50/50 vs 50/50 | 9.6 vs 9.6 | low |
+  | openai-codex/gpt-6-luna | code_writer | 75/75 vs 75/75 | 50/50 vs 49/50 | 9.9 vs 9.8 | low |
+  | openai-codex/gpt-6-luna | shell_runner | 72/75 vs 75/75 | 49/50 vs 50/50 | 9.5 vs 9.6 | medium |
+
+  GPT-6 Luna shell_runner low qualifies but loses to medium on pass rate, so medium is selected. The separately
+  measured GPT-5.6 Luna is not in this model chain and is not used. Its code_writer met the bar at no level:
+  holdout pass rates were 84.0%, 82.0%, 86.0% and 92.0% for low, medium, high and xhigh, with runaway writes hitting
+  the 15-minute cut. Those measurements do not add a model or change the accepted primary/fallback chain.
+  Carrier: `extensions/RQW-agent/worker-model.ts` (`WORKER_REASONING`); proof is shared with D1 above.
+- Engineering choice: worker profiles parameterize the existing session runtime in `extensions/RQW-agent/index.ts`,
+  rather than copying id allocation/persistence, cancellation, delivery and late-after-abort rules. `workers.ts`
+  groups caller-local handles; completed sessions are disposed and caller shutdown closes pending workers.
+  Reason: keep one lifecycle implementation and prevent worker results from leaking into another caller's session.
+  Offline proof: `extensions/RQW-agent/test/workers.test.ts`; [Isolation](#isolation) remains covered by
+  `test/isolation.test.ts` and the extension-local standalone import scan. No other extension is imported.
 
 ## Review
 

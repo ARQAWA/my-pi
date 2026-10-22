@@ -3,9 +3,9 @@
 // model, the reasoning level, the system messages and the declared tools Pi sent.
 import assert from "node:assert/strict";
 import { realpathSync } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { after, before, beforeEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -219,6 +219,7 @@ describe("agent tool", () => {
 		const tool = m.session.getToolDefinition("agent") as ToolDefinition;
 		assert.ok(tool.description.length <= 700, `description is ${tool.description.length} characters`);
 		assert.doesNotThrow(() => makeStrictJsonSchema(tool.parameters));
+		assert.match(tool.description, /you supply its whole system prompt/);
 		await shutdown(m);
 	});
 
@@ -233,7 +234,7 @@ describe("agent tool", () => {
 		assert.deepEqual(r.system, [SYSTEM], "one system message, exactly the given text");
 		assert.equal(r.model, "a");
 		assert.equal(r.reasoning, "high");
-		assert.deepEqual(r.tools.sort(), ["grep", "read"]);
+		assert.deepEqual(r.tools.sort(), ["code_writer", "grep", "read", "shell_runner"]);
 		assert.deepEqual(r.texts, ["do X"]);
 		assert.deepEqual(m.delivered(), [], "nothing delivered while running");
 		g.release();
@@ -244,7 +245,7 @@ describe("agent tool", () => {
 		await shutdown(m);
 	});
 
-	it("defaults: the main model and thinking level, all six tools, no agent tool", async () => {
+	it("defaults: the main model and thinking level, all six tools and workers, no agent tool", async () => {
 		const m = await startMain();
 		await m.call({ action: "start", system: SYSTEM, task: "hi" });
 		await until(() => m.delivered().length === 1, "the delivery");
@@ -252,16 +253,24 @@ describe("agent tool", () => {
 		assert.deepEqual(r.system, [SYSTEM]);
 		assert.equal(r.model, "m");
 		assert.equal(r.reasoning, "low");
-		assert.deepEqual(r.tools.sort(), ["bash", "edit", "find", "grep", "read", "write"]);
+		assert.deepEqual(r.tools.sort(), ["bash", "code_writer", "edit", "find", "grep", "read", "shell_runner", "write"]);
 		await shutdown(m);
 	});
 
 	it("loads and works from a folder with no other extension, importing nothing from one", async () => {
-		const source = await readFile(EXTENSION, "utf8");
-		assert.deepEqual(source.match(/(?:from\s+|import\s*\()["']\.\.\/[^"']*["']/g) ?? [], [], "no import from ../");
+		const folder = resolve(HERE, "..");
+		const outside: string[] = [];
+		for (const name of await readdir(folder, { recursive: true })) {
+			if (!name.endsWith(".ts")) continue;
+			const file = join(folder, name);
+			const source = await readFile(file, "utf8");
+			for (const match of source.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)["'](\.{1,2}\/[^"']+)["']/g))
+				if (!resolve(dirname(file), match[1]).startsWith(folder + sep)) outside.push(`${name} -> ${match[1]}`);
+		}
+		assert.deepEqual(outside, [], "all TypeScript imports, including test imports, stay inside RQW-agent");
 		const alone = join(root, "alone");
 		await mkdir(join(alone, "extensions", "RQW-agent"), { recursive: true });
-		await copyFile(EXTENSION, join(alone, "extensions", "RQW-agent", "index.ts"));
+		await cp(join(HERE, ".."), join(alone, "extensions", "RQW-agent"), { recursive: true, filter: path => path !== HERE });
 		await symlink(realpathSync(join(HERE, "..", "..", "..", "node_modules")), join(alone, "node_modules"), "junction");
 		const m = await startMain("tui", undefined, [], join(alone, "extensions", "RQW-agent", "index.ts"));
 		sub.replies.push(fauxAssistantMessage("alone"));
@@ -390,7 +399,7 @@ describe("agent tool", () => {
 		assert.equal(m.delivered()[0], "[agent#1] fresh");
 		const r = sub.requests[1];
 		assert.deepEqual(r.texts, ["new task"], "no old history");
-		assert.deepEqual([r.system, r.model, r.reasoning, r.tools], [[SYSTEM], "a", "high", ["read"]]);
+		assert.deepEqual([r.system, r.model, r.reasoning, r.tools.sort()], [[SYSTEM], "a", "high", ["code_writer", "read", "shell_runner"]]);
 		assert.equal(await m.call({ action: "restart", id: "agent#1", model: "sub/b", system: "S2" }), "agent#1 restarted, idle");
 		await m.call({ action: "send", id: "agent#1", task: "go" });
 		await until(() => m.delivered().length === 2, "the second delivery");

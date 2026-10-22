@@ -17,7 +17,8 @@ export default function (pi: ExtensionAPI) {
 			assert.equal(systems.length, 1);
 			assert.equal(getSystemMessageText(systems[0]), "AUDIT_EXACT_SYSTEM");
 			assert.equal(options?.reasoning, "high");
-			assert.equal(systems[0].toolsAdded?.length ?? 0, 0);
+			// tools:[] removes base tools, not the fixed worker tools available to every agent child.
+			assert.deepEqual((systems[0].toolsAdded ?? []).map(tool => tool.name).sort(), ["code_writer", "shell_runner"]);
 			options?.signal?.addEventListener("abort", () => release.resolve(), { once: true });
 			if (scenario !== "nested") await release.promise;
 			return answer(`CLI_CHILD_${n}`);

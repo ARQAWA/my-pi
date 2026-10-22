@@ -1,5 +1,4 @@
-// Extension 5: one tool `agent` that runs subagents as in-process Pi sessions. The main agent writes the whole system
-// prompt and picks model, thinking and tools; the subagent's answer comes back later as a message `[agent#N] ...`.
+// Extension 5: asynchronous subagents and fixed-role workers, sharing one session lifecycle implementation.
 import { randomUUID } from "node:crypto";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { StringEnum } from "@earendil-works/pi-ai";
@@ -13,13 +12,14 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
+import { registerWorkers, type RuntimeHandle, type WorkerProfile } from "./workers.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
 const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type Thinking = (typeof THINKING)[number];
 
 export const DESCRIPTION = [
-	"Run a subagent: a separate session with its own model and tools, no system prompt of its own and no agent tool.",
+	"Run a subagent: you supply its whole system prompt; it has its own model/tools, code_writer and shell_runner, no agent.",
 	"Its answer arrives later as a message [agent#N] ...; do not wait or poll.",
 	"start: system (the whole system prompt), task, optional model (provider/id), thinking, tools; returns agent#N.",
 	"send: id, task; queued after the current run, or a new run with its history when idle.",
@@ -35,12 +35,12 @@ const PARAMETERS = Type.Object({
 	task: Type.Optional(Type.String({ description: "Message to the subagent" })),
 	model: Type.Optional(Type.String({ description: "provider/id" })),
 	thinking: Type.Optional(StringEnum(THINKING)),
-	tools: Type.Optional(Type.Array(StringEnum(TOOLS), { description: "Subset; default all" })),
+	tools: Type.Optional(Type.Array(StringEnum(TOOLS), { description: "Base subset; default all. Workers stay available." })),
 });
 type Params = Static<typeof PARAMETERS>;
 
 type Config = { system: string; model: Model<Api>; thinking: Thinking; tools: string[] };
-type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal } };
+type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle };
 type Agent = Child & {
 	id: number;
 	config: Config;
@@ -70,19 +70,19 @@ const textOf = (message: AssistantMessage): string =>
 		.trim();
 
 /** Highest owned id, including old histories without allocation metadata. Never scan a result's body. */
-function lastNumber(entries: readonly SessionEntry[]): number {
+function lastNumber(entries: readonly SessionEntry[], name: string): number {
 	let max = 0;
 	const take = (n: unknown) => {
 		if (typeof n === "number" && Number.isSafeInteger(n) && n > 0) max = Math.max(max, n);
 	};
 	for (const e of entries) {
-		if (e.type === "custom" && e.customType === "agent") take((e.data as { id?: unknown } | undefined)?.id);
+		if (e.type === "custom" && e.customType === name) take((e.data as { id?: unknown } | undefined)?.id);
 		let match: RegExpExecArray | null = null;
-		if (e.type === "custom_message" && e.customType === "agent" && typeof e.content === "string")
-			match = /^\[agent#(\d+)\](?:\s|$)/.exec(e.content);
-		else if (e.type === "message" && e.message.role === "toolResult" && e.message.toolName === "agent") {
+		if (e.type === "custom_message" && e.customType === name && typeof e.content === "string")
+			match = new RegExp(`^\\[${name}#(\\d+)\\](?:\\s|$)`).exec(e.content);
+		else if (e.type === "message" && e.message.role === "toolResult" && e.message.toolName === name) {
 			const text = e.message.content.map((c) => c.type === "text" ? c.text : "").join("");
-			match = /^agent#(\d+)(?: started| restarted| stopped| interrupted| is idle|: sent|: queued after the current run)(?:$|[\s,])/.exec(text);
+			match = new RegExp(`^${name}#(\\d+)(?: started| restarted| stopped| interrupted| is idle|: sent|: queued after the current run)(?:$|[\\s,])`).exec(text);
 		}
 		if (match) take(Number(match[1]));
 	}
@@ -102,8 +102,16 @@ const isAssistant = (m: { role: string }): m is AssistantMessage => m.role === "
 const runtimeOf = (ctx: ExtensionContext) => (ctx.modelRegistry as unknown as { runtime: ModelRuntime }).runtime;
 
 export default function agent(pi: ExtensionAPI) {
+	registerSessionRuntime(pi);
+	registerWorkers(pi, registerSessionRuntime);
+}
+
+/** Caller-local state. Nested callers settle normally; startRun tracks their workers across background wakeups. */
+export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false): RuntimeHandle {
+	const name = worker?.name ?? "agent";
 	const agents = new Map<number, Agent>();
 	const lifetime = new AbortController();
+	let generation = new AbortController();
 	let counter = 0;
 	let main: ExtensionContext | undefined;
 	let mainAborted = false;
@@ -114,7 +122,7 @@ export default function agent(pi: ExtensionAPI) {
 
 	function deliver(id: number, text: string) {
 		if (lifetime.signal.aborted) return;
-		const message = { customType: "agent", content: `[agent#${id}] ${text}`, display: true, details: { delivery: randomUUID() } };
+		const message = { customType: name, content: `[${name}#${id}] ${text}`, display: true, details: { delivery: randomUUID() } };
 		if (settling) {
 			late.push(message);
 			return;
@@ -139,7 +147,7 @@ export default function agent(pi: ExtensionAPI) {
 		const branch = ctx.sessionManager.getBranch();
 		const lastAnswer = branch.findLastIndex((e) => e.type === "message" && e.message.role === "assistant");
 		const isResult = (n: string) => (e: (typeof entries)[number]) =>
-			e.type === "custom_message" && e.customType === "agent" && (e.details as { delivery?: unknown } | undefined)?.delivery === n;
+			e.type === "custom_message" && e.customType === name && (e.details as { delivery?: unknown } | undefined)?.delivery === n;
 		for (const n of unanswered) {
 			if (!entries.some(isResult(n))) continue; // still held by Pi until the turn ends
 			const at = branch.findIndex(isResult(n));
@@ -152,7 +160,7 @@ export default function agent(pi: ExtensionAPI) {
 	function offeredTools(cwd: string, names: string[]): ToolDefinition[] {
 		let factory = undefined as ToolsFactory | undefined;
 		// Pi's event bus calls every handler synchronously inside emit, so an offer is in place when emit returns.
-		pi.events.emit(SUBAGENT_TOOLS, {
+		toolEvents.emit(SUBAGENT_TOOLS, {
 			offer: (f: ToolsFactory) => {
 				factory = f;
 			},
@@ -166,6 +174,7 @@ export default function agent(pi: ExtensionAPI) {
 		const guard: Child["guard"] = {};
 		const check = () => { controller.signal.throwIfAborted(); guard.signal?.throwIfAborted(); };
 		const own = pi.getSettings();
+		let workers: RuntimeHandle | undefined;
 		// Keep the main session's shell, including Git Bash on Windows, and read image settings.
 		const settingsManager = SettingsManager.inMemory({
 			cacheWarming: "off",
@@ -179,17 +188,21 @@ export default function agent(pi: ExtensionAPI) {
 			systemPromptOverride: () => config.system,
 			appendSystemPromptOverride: () => [],
 			// Only a forced prompt avoids Pi's appended sections, such as <cwd>.
-			extensionFactories: [(sub: ExtensionAPI) => sub.on("before_agent_start", () => {
-				check();
-				return { systemPrompt: config.system };
-			})],
+			extensionFactories: [(sub: ExtensionAPI) => {
+				sub.on("before_agent_start", () => {
+					check();
+					return { systemPrompt: config.system };
+				});
+				if (worker) worker.configure(sub);
+				else workers = registerWorkers(sub, (caller, profile) => registerSessionRuntime(caller, profile, toolEvents, true));
+			}],
 		});
 		await untilAborted(resourceLoader.reload(), signal);
 		const customTools = offeredTools(ctx.cwd, config.tools);
 		signal.throwIfAborted();
 		const creating = createAgentSession({
 			cwd: ctx.cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
-			tools: config.tools, customTools, resourceLoader,
+			tools: worker ? config.tools : [...config.tools, "code_writer", "shell_runner"], customTools, resourceLoader,
 			sessionManager: SessionManager.inMemory(ctx.cwd), settingsManager,
 		}).then(({ session }) => {
 			if (signal.aborted) { session.dispose(); signal.throwIfAborted(); }
@@ -200,7 +213,7 @@ export default function agent(pi: ExtensionAPI) {
 				// Child Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
 				return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 			};
-			return { session, controller, guard };
+			return { session, controller, guard, workers };
 		});
 		try {
 			return await untilAborted(creating, signal);
@@ -218,9 +231,22 @@ export default function agent(pi: ExtensionAPI) {
 		const session = a.session;
 		const texts: string[] = [];
 		let lastPushed = 0;
+		let nativeRunStart = 0;
+		let workerRunStart: number | undefined;
 		const run: NonNullable<Agent["run"]> = { done: Promise.resolve(), quiet: false, controller: new AbortController() };
 		a.guard.signal = AbortSignal.any([run.controller.signal, signal]);
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
+			if (event.type === "agent_start") {
+				// Multiple background wakeups may be deferred at settlement. Keep only their final native run's answer.
+				if (workerRunStart !== undefined) { texts.splice(workerRunStart); lastPushed = 0; }
+				nativeRunStart = texts.length;
+			}
+			if (event.type === "agent_end" && a.workers?.pending()) {
+				// This native run ended before all delegated results were consumed. It is not a final answer to main.
+				workerRunStart ??= nativeRunStart;
+				texts.splice(nativeRunStart);
+				lastPushed = 0;
+			}
 			if (event.type === "compaction_start") {
 				// A late prompt preflight may enter compaction after cancellation; stop its summary too.
 				if (a.guard.signal?.aborted || a.controller.signal.aborted) void session.abort().catch(() => {});
@@ -252,8 +278,15 @@ export default function agent(pi: ExtensionAPI) {
 		run.done = (async () => {
 			try {
 				await session.prompt(task, { preflightResult: () => started.resolve() });
-				while (!run.quiet && !a.guard.signal?.aborted && session.getFollowUpMessages().length > 0)
-					await session.prompt(session.clearQueue().followUp.join("\n\n"));
+				while (!run.quiet && !a.guard.signal?.aborted) {
+					const signal = a.guard.signal ?? a.controller.signal;
+					// A worker may have woken a new native run after the original prompt settled.
+					await untilAborted(session.waitForIdle(), signal);
+					if (session.getFollowUpMessages().length > 0)
+						await session.prompt(session.clearQueue().followUp.join("\n\n"));
+					else if (a.workers?.pending()) await untilAborted(a.workers.wait(), signal);
+					else break;
+				}
 				if (!run.quiet && !a.guard.signal?.aborted) deliver(a.id, texts.join("\n\n") || "(no text)");
 			} catch (error) {
 				if (!run.quiet && !a.guard.signal?.aborted) {
@@ -281,6 +314,7 @@ export default function agent(pi: ExtensionAPI) {
 	function close(a: Agent) {
 		if (a.run) { a.run.quiet = true; a.run.controller.abort(); }
 		a.controller.abort();
+		a.workers?.close();
 		a.session.clearQueue();
 		// abort first: dispose alone does not set Pi's abort flag for queued follow-ups or compaction.
 		void a.session.abort().catch(() => {}).finally(() => a.session.dispose());
@@ -295,6 +329,10 @@ export default function agent(pi: ExtensionAPI) {
 
 	async function resolveConfig(params: Params, ctx: ExtensionContext, signal: AbortSignal, base?: Config): Promise<Config> {
 		signal.throwIfAborted();
+		if (worker) {
+			const selected = await untilAborted(worker.resolve(ctx), signal);
+			return { system: worker.system, tools: [...worker.tools], ...selected };
+		}
 		const system = params.system ?? base?.system;
 		if (!system) throw new Error("system is required");
 		let model: Model<Api> | undefined = base?.model ?? ctx.model;
@@ -315,15 +353,16 @@ export default function agent(pi: ExtensionAPI) {
 	const ok = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
 	let queue: Promise<unknown> = Promise.resolve();
 	pi.registerTool({
-		name: "agent",
-		label: "Agent",
-		description: DESCRIPTION,
-		parameters: PARAMETERS,
+		name,
+		label: worker?.name ?? "Agent",
+		description: worker?.description ?? DESCRIPTION,
+		parameters: worker ? Type.Object({ task: Type.String({ minLength: 1 }) }) : PARAMETERS,
 		execute: (_toolCallId, raw, callerSignal, _onUpdate, ctx) => {
 			// Capture ctx.signal now: its getter can point at another run when the internal queue drains.
-			const signal = AbortSignal.any([lifetime.signal, callerSignal, ctx.signal].filter((s): s is AbortSignal => !!s));
-			if (!main) { main = ctx; counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries())); }
-			const next = queue.then(() => { signal.throwIfAborted(); return act(raw, ctx, signal); });
+			const signal = AbortSignal.any([lifetime.signal, generation.signal, callerSignal, ctx.signal].filter((s): s is AbortSignal => !!s));
+			if (!main) { main = ctx; counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries(), name)); }
+			const params = worker ? { action: "start" as const, task: raw.task } : raw;
+			const next = queue.then(() => { signal.throwIfAborted(); return act(params, ctx, signal); });
 			queue = next.catch(() => {});
 			return untilAborted(next, signal);
 		},
@@ -340,7 +379,7 @@ export default function agent(pi: ExtensionAPI) {
 				signal.throwIfAborted();
 				if (counter >= Number.MAX_SAFE_INTEGER) throw new Error("Agent id space exhausted");
 				const id = ++counter;
-				pi.appendEntry("agent", { id });
+				pi.appendEntry(name, { id });
 				const child = await createSession(config, ctx, signal);
 				const a: Agent = { id, config, ...child };
 				try {
@@ -350,7 +389,11 @@ export default function agent(pi: ExtensionAPI) {
 					a.guard.signal = a.run?.controller.signal;
 					agents.set(id, a);
 				} catch (error) { close(a); throw error; }
-				return ok(`agent#${id} started`);
+				if (worker) void (a.run?.done ?? Promise.resolve()).then(() => {
+					agents.delete(id);
+					close(a);
+				});
+				return ok(`${name}#${id} started`);
 			}
 			case "send": {
 				const a = find(params.id);
@@ -367,6 +410,7 @@ export default function agent(pi: ExtensionAPI) {
 			}
 			case "interrupt": {
 				const a = find(params.id);
+				a.workers?.abortAll();
 				const run = a.run;
 				if (!run) return ok(`agent#${a.id} is idle`);
 				run.quiet = true;
@@ -405,13 +449,13 @@ export default function agent(pi: ExtensionAPI) {
 
 	pi.on("session_start", (_event, ctx) => {
 		main = ctx;
-		counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries()));
+		counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries(), name));
 	});
 	// agent_end still has the native run's live abort signal. before_settle no longer does.
 	pi.on("agent_end", async (_event, ctx) => {
 		// isIdle becomes true before earlier agent_settled hooks finish, including after an abort.
 		settling = true;
-		if (ctx.mode !== "print" && ctx.mode !== "json") return;
+		if (backgroundCaller || (ctx.mode !== "print" && ctx.mode !== "json")) return;
 		const signal = ctx.signal;
 		if (!signal) return;
 		try {
@@ -440,9 +484,24 @@ export default function agent(pi: ExtensionAPI) {
 		held.forEach((message, i) => pi.sendMessage(message, { triggerTurn: !event.aborted && i === held.length - 1 }));
 	});
 	const runs = () => [...agents.values()].flatMap((a) => (a.run ? [a.run.done] : []));
-	pi.on("session_shutdown", () => {
-		lifetime.abort(new Error("The main session is shutting down"));
+	const abortAll = () => {
+		// Fence queued/preflight starts as well as accepted children, but allow later assignments.
+		generation.abort(new Error("The caller interrupted its children"));
+		generation = new AbortController();
 		for (const a of agents.values()) close(a);
 		agents.clear();
-	});
+		late.length = 0;
+		unanswered.clear();
+	};
+	const shutdown = () => {
+		lifetime.abort(new Error("The caller session is shutting down"));
+		abortAll();
+	};
+	pi.on("session_shutdown", shutdown);
+	return {
+		pending: () => runs().length > 0 || late.length > 0 || !!(main && needsTurn(main)),
+		async wait() { await Promise.all(runs()); },
+		abortAll,
+		close: shutdown,
+	};
 }
