@@ -116,7 +116,7 @@ try {
 	fail(`cannot read message file ${messageFile}: ${e.message}`);
 }
 const has = (re) => lines.some((l) => re.test(l));
-const reviews = lines.filter((l) => /^Review: review#\d+ CLEAN$/.test(l)).map((l) => l.slice(8, -6));
+const reviews = lines.filter((l) => /^Review: (?:review|agent)#\d+ CLEAN$/.test(l)).map((l) => l.slice(8, -6));
 const ciIds = lines.map((l) => /^CI: \S*\/actions\/runs\/(\d+)/.exec(l)?.[1]).filter(Boolean);
 
 const passed = [];
@@ -126,7 +126,7 @@ for (const workflow of required) {
 	if (run) passed.push(`${workflow} ${run.url}`);
 	if (!run && !ciIds.length) fail(`message: missing trailer "CI: <run url>" for ${workflow}`);
 }
-if (!reviews.length) fail('message: missing trailer "Review: review#N CLEAN"');
+if (!reviews.length) fail('message: missing trailer "Review: review#N CLEAN" or "Review: agent#N CLEAN"');
 if (codeChanged && !has(/^Code-review: CLEAN$/)) fail('message: missing trailer "Code-review: CLEAN" (non-doc files changed)');
 if (!has(/^Unverified: \S/)) fail('message: missing trailer "Unverified: <text or none>"');
 

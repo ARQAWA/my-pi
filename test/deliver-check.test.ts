@@ -101,6 +101,26 @@ describe("deliver-check", () => {
 		assert.match(r.out, /tests\.yml https:\/\/github\.com\/o\/r\/actions\/runs\/11/);
 	});
 
+	it("passes an agent result-review trailer", () => {
+		const t = setup();
+		const head = t.task({ "src/a.js": "1\n" });
+		t.runs({ "tests.yml": [ok(11, head)] });
+		const r = t.run(MSG([11]).replace("review#7", "agent#7"));
+		assert.equal(r.code, 0, r.out);
+		assert.match(r.out, /reviews: agent#7; code review CLEAN/);
+	});
+
+	it("fails malformed or absent result-review trailers", () => {
+		const t = setup();
+		const head = t.task({ "src/a.js": "1\n" });
+		t.runs({ "tests.yml": [ok(11, head)] });
+		for (const trailer of ["Review: agent#N CLEAN", "Review: agent7 CLEAN", "Review: agent#7 found issues", ""]) {
+			const r = t.run(MSG([11]).replace("Review: review#7 CLEAN", trailer));
+			assert.equal(r.code, 1, r.out);
+			assert.match(r.out, /FAIL message: missing trailer "Review: review#N CLEAN" or "Review: agent#N CLEAN"/);
+		}
+	});
+
 	it("fails a branch that does not contain the current origin/main", () => {
 		const t = setup();
 		const head = t.task({ "src/a.js": "1\n" });

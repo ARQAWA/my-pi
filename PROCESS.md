@@ -93,6 +93,9 @@ campaign only; it does not pause unrelated work or prohibit the currently author
 
 ## Independent review
 
+- While RQW-review is disabled in the owner's settings, result review runs through an `agent` subagent whose
+  whole system prompt is the new reviewer text (`extensions/RQW-review/REVIEWER.md` in `main`). Give it the
+  owner's messages verbatim (the session file), plus agreement, object and criterion; record `Review: agent#N CLEAN`.
 - Review is proportional. Mechanical point corrections with no new decision need no review. Small work, at most
   five requirements and five changed files, uses `review` level `blind`; larger work uses `high`. An answer or report
   without changes needs no review. Explicit owner requirements for a review take precedence.
@@ -132,12 +135,14 @@ campaign only; it does not pause unrelated work or prohibit the currently author
    of a move) outside the `tests.yml` `paths-ignore` filter, the latest `tests.yml` run on the exact head SHA
    succeeded, and likewise `pcli.yml` when its `paths` changed; the filters are `main`'s and the branch head's
    (a file counts if either version requires CI); the message carries the
-   trailers `Review: review#N CLEAN` (one per clean result review), `Code-review: CLEAN` (non-doc changes),
+   trailers `Review: review#N CLEAN` (or `Review: agent#N CLEAN` under the temporary
+   [disabled-review rule](#independent-review); at least one clean result review), `Code-review: CLEAN` (non-doc changes),
    `CI: <run url>` (each required run) and `Unverified: <what was not verified live, or none>`. Any failure: no merge.
 4. Squash merge into `main`: one task, one commit, with that message. Never merge the task's stage commits into main
    as a merge commit. Push main autonomously; the squash tree equals the tested head, so it is not retested.
 5. After every merge and before the final report, run a completeness check for the session: a fresh independent
-   `review` (the tool already receives all the owner's messages verbatim). Object: `main`'s git log since the session
+   `review` (the tool already receives all the owner's messages verbatim), or an `agent` subagent running the same
+   way under the [disabled-review rule](#independent-review) while RQW-review is disabled. Object: `main`'s git log since the session
    start, plus the in-progress branches and worktrees and the items the owner cancelled. Criterion: every owner
    request is marked done (by which commit), in progress (by which branch) or cancelled by the owner. A request
    with no mark is a finding: do it, or ask the owner.

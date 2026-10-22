@@ -77,6 +77,11 @@ Current accepted development policy (request summaries unless quoted); detailed 
   interpretation of rule 2, derived from «Любой коммит после CLEAN снова отправляет изменённые места на проверку»:
   a conflict-free rebase onto `main` changes no task places, so it needs new tests and CI on the new head (rule 1)
   but no new review; places changed while resolving conflicts are changed places and go back to review.
+- Temporary result-review route. Coordinator question: «Слияния, пока ревьюер выключен ... a) Маленькой правкой научить проверку перед слиянием принимать ревью субагентом с текстом ревьюера, с честной отметкой agent#N. В процессе записать, что так делаем, пока ревьюер выключен.» Owner: «1а», then «только с текстом нового ревьюера».
+  Reason: the owner disabled RQW-review while the new reviewer is tuned («Сейчас ревьюеров надо отключить, пока мы их не дотюнили»).
+  The temporary route and completeness check are defined in [PROCESS.md](PROCESS.md#independent-review);
+  carriers: `PROCESS.md`, `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`. The gate accepts either honest
+  result-review trailer and keeps all other checks.
 - Completeness check after every merge. Original concern, owner: «А у тебя есть встроенный процесс, который перепроверяет, что нигде ничего не забыто? ... должна быть независимая перепроверка, что каждый влитый pull request действительно соответствует истине, что там всё заебись.»
   Approved proposal (coordinator's text): «a) После каждого слияния и перед итоговым отчётом свежий независимый ревьюер получает все твои сообщения из сессии и историю main. По каждой просьбе он отмечает: сделано и каким коммитом, в работе или ты её отменил. Если у просьбы нет ни одной отметки, это находка. Правило записываю в PROCESS.md.»
   Owner: «Да, один по проверке, что ничего не забыто».
