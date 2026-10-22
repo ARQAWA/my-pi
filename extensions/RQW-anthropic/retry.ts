@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { type AssistantMessage, type AssistantMessageEventStream, type SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { AgentSession, ModelRuntime, VERSION } from "@earendil-works/pi-coding-agent";
 import { AUTH_FAILURE } from "./auth.ts";
-import { OVERLAY } from "./visibility.ts";
+import { OVERLAY } from "./registration.ts";
 
 export const STREAM_CONTRACT = Symbol.for("rqw-anthropic/stream-contract");
 export const AUTH_ORIGIN = Symbol.for("rqw-anthropic/auth-origin");

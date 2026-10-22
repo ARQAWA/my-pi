@@ -248,34 +248,4 @@ for (const [label, entry] of entries) describe(`auth boundary with real Pi: ${la
 			assert.equal(calls, 1);
 		} finally { session.dispose(); }
 	});
-	it("hides all Object.prototype aliases on every list and scoped/login path while preserving native fixtures", async () => {
-		const aliases = ["constructor", "toString", "__proto__", "valueOf", "hasOwnProperty", "normal-hidden"];
-		const { session, runtime, store } = await setup();
-		try {
-			const models = aliases.map(id => ({ ...base.getModels()[0], provider: id }));
-			for (const model of models) {
-				await store.modify(model.provider, async () => ({ type: "api_key", key: "FAKE-alias" }));
-				runtime.registerNativeProvider({ ...base, id: model.provider, name: model.provider,
-					auth: { apiKey: { name: "fake", resolve: async () => ({ auth: { apiKey: "FAKE-alias" }, source: "fake fixture" }) } },
-					getModels: () => [model], getAllModels: () => [model] });
-			}
-			await runtime.refresh({ allowNetwork: false });
-			session.setScopedModels([...models, session.model!].map(model => ({ model })));
-			assert.deepEqual(runtime.getProviders().map(provider => provider.id).sort(), ["anthropic", "openai-codex"]);
-			for (const list of [runtime.getModels(), await runtime.getAvailable(), runtime.getAvailableSnapshot(), session.scopedModels.map(entry => entry.model)]) {
-				assert.ok(list.length > 0);
-				assert.ok(list.every(model => ["anthropic", "openai-codex"].includes(model.provider)));
-			}
-			const login = entry.InteractiveMode.prototype.getLoginProviderOptions.call({ session }).map(provider => provider.id);
-			assert.deepEqual([...new Set(login)].sort(), ["anthropic", "openai-codex"]);
-		} finally { session.dispose(); }
-		// These are valid, authenticated native providers, not fixtures that disappear on their own.
-		await runtime.refresh({ allowNetwork: false });
-		for (const id of aliases) {
-			assert.ok(runtime.getProviders().some(provider => provider.id === id));
-			for (const list of [runtime.getModels(), await runtime.getAvailable(), runtime.getAvailableSnapshot()]) assert.ok(list.some(model => model.provider === id), id);
-			assert.deepEqual(await store.read(id), { type: "api_key", key: "FAKE-alias" });
-		}
-		assert.equal(session.scopedModels.length, aliases.length + 1);
-	});
 });

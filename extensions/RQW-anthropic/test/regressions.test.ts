@@ -176,14 +176,13 @@ for (const [label, entry] of entries) describe(`regressions with real Pi: ${labe
 					assert.deepEqual(errors, paths[0] === extensionPath ? [] : ["RQW-anthropic: subscription authentication failed. Retry the turn; if it persists, use /login anthropic. Saved credentials were not removed. Adapter registration is unavailable."]);
 					assert.ok(runtime.getProviders().length >= 2);
 					assert.ok(runtime.getModels().length > 0);
-					assert.equal(independent.runtime.getProviders().length, 2);
 				} finally { session.dispose(); }
 			}
 		} finally { independent.session.dispose(); }
 	});
 	it("SDK dispose cleans both session orders, reload and repeated shutdown without leaking any descriptor or overlay", async () => {
-		const runtimeNames = ["getProviders", "getModels", "getAvailableSnapshot", "getAvailable", "prepareRequest", "registerProvider", "registerNativeProvider"];
-		const sessionNames = ["scopedModels", "dispose", "bindExtensions", "_bindExtensionCore"];
+		const runtimeNames = ["prepareRequest", "registerProvider", "registerNativeProvider"];
+		const sessionNames = ["dispose", "bindExtensions", "_bindExtensionCore"];
 		const snapshot = () => [
 			...runtimeNames.map(name => Object.getOwnPropertyDescriptor(entry.ModelRuntime.prototype, name)),
 			...sessionNames.map(name => Object.getOwnPropertyDescriptor(entry.AgentSession.prototype, name)),
@@ -202,8 +201,6 @@ for (const [label, entry] of entries) describe(`regressions with real Pi: ${labe
 					}
 					a.session.dispose(); a.session.dispose();
 					assert.equal(a.runtime.getRegisteredProviderConfig("anthropic"), undefined);
-					assert.ok(a.runtime.getProviders().length > 2);
-					assert.equal(b.runtime.getProviders().length, 2);
 					assert.notDeepEqual(snapshot(), original);
 					b.session.dispose(); b.session.dispose();
 					for (const item of sessions) {

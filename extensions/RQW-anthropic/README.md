@@ -2,9 +2,8 @@
 
 Subscription transport for stock Pi 1.4.0. `/login anthropic` still uses Pi's browser or copy-code login.
 The builtin model catalog and Pi's message/tool parser stay intact. Plain API-key requests pass through unchanged.
-Only `anthropic` and `openai-codex` are listed in login and model pickers while the adapter is active.
-Credentials for every other provider remain saved. This is a visibility policy, not a credential access sandbox:
-explicit SDK lookups and previously selected hidden models are not erased or silently switched.
+This extension is the Anthropic transport only. Hiding the other providers (only `anthropic` and `openai-codex`
+stay visible) is the separate [RQW-providers](../RQW-providers/README.md); each works with the other switched off.
 
 ## Before enabling
 
@@ -34,7 +33,7 @@ Equivalent personal package declaration:
 
 Pi package filters narrow the package's manifest; they do not enable undeclared files. Keep any other filters you
 already have. Disable duplicates in both project and personal scope. A reload unregisters this Anthropic overlay
-and restores the original visibility methods when the last owning session is gone. Public SDK `session.dispose()`
+and restores the original registration and request hooks when the last owning session is gone. Public SDK `session.dispose()`
 also releases this exact session's overlay synchronously before Pi invalidates the extension context. Disposing
 an unowned reviewer or generic child sharing its runtime leaves the main adapter active. The last owner restores
 the original hooks; a surviving instance of this same adapter keeps its registration. Disposal and shutdown are
@@ -130,9 +129,10 @@ and callback port. Only refresh uses omp's api.anthropic.com endpoint/headers. M
 account lookup, all omp SDK fingerprint headers and advanced streaming features are not ported. Real Anthropic
 acceptance and subscription billing have not been verified by offline tests and cannot be promised by this adapter.
 
-Provider hiding needs a version-guarded, reversible in-memory shim of Pi's exported classes because the public
-extension API cannot remove builtin login methods. No node_modules file is patched. The policy is limited to
-runtimes with this marked overlay. The hooks are reference-counted and removed on shutdown, reload or SDK
+The registration guard (`registration.ts`) is a version-guarded, reversible in-memory shim of three `ModelRuntime`
+methods: it rejects a second Anthropic overlay in either order, binds the runtime credential store to this overlay,
+and checks the auth boundary before each request. No node_modules file is patched. It is limited to runtimes with this
+marked overlay. The hooks are reference-counted and removed on shutdown, reload or SDK
 dispose. A separate checked shim wraps `AgentSession.dispose` because Pi 1.4.0 has no public SDK pre-dispose
 event, and `_bindExtensionCore` to associate cleanup with the exact owning session, even without `session_start`.
 Recovery hooks preserve native `stream` versus `streamSimple` options and OAuth provenance. Only visible main-turn

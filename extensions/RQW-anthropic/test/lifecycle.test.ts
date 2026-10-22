@@ -22,7 +22,6 @@ for (const [label, entry] of entries) {
 				assert.equal(child.resourceLoader.getExtensions().extensions.length, 0);
 				child.dispose(); child.dispose();
 				assert.equal(active.runtime.getRegisteredProviderConfig("anthropic")!.streamSimple, overlay);
-				assert.deepEqual(active.runtime.getProviders().map(provider => provider.id).sort(), ["anthropic", "openai-codex"]);
 				let calls = 0;
 				const result = await active.runtime.completeSimple(active.session.model!, context, { fetch: async (_input, init) => {
 					calls++; assert.ok(String(init?.body).includes("cc_entrypoint=cli;"));
@@ -33,7 +32,6 @@ for (const [label, entry] of entries) {
 			assert.deepEqual(await active.store.read("anthropic"), credential);
 		} finally { active.session.dispose(); }
 		assert.equal(active.runtime.getRegisteredProviderConfig("anthropic"), undefined);
-		assert.ok(active.runtime.getProviders().length > 2);
 	});
 
 	it(`${label}: an old disposed session cannot release a new owner reusing its session manager`, async () => {

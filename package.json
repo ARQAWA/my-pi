@@ -28,7 +28,8 @@
       "./extensions/RQW-scroll/index.ts",
       "./extensions/RQW-session/index.ts",
       "./extensions/RQW-send-now/index.ts",
-      "./extensions/RQW-mouse/index.ts"
+      "./extensions/RQW-mouse/index.ts",
+      "./extensions/RQW-providers/index.ts"
     ]
   },
   "devDependencies": {

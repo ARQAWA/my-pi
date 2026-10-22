@@ -5,7 +5,7 @@ import { calculateCost } from "@earendil-works/pi-ai";
 import { entries } from "./pi-entrypoints.ts";
 import { setup, context, model, textEvents, finish, response } from "./recovery-fixtures.ts";
 import { bindSessionCache, subscriptionCacheOptions } from "../cache.ts";
-import { OVERLAY } from "../visibility.ts";
+import { OVERLAY } from "../registration.ts";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 
 const savedRetention = process.env.PI_CACHE_RETENTION;

@@ -5,7 +5,7 @@ import { assertAnthropicAuthBoundary } from "./auth-boundary.ts";
 import { subscriptionCacheOptions } from "./cache.ts";
 import { AUTH_ORIGIN, protectPartialStream, STREAM_CONTRACT, type AuthOrigin } from "./retry.ts";
 import { billingBody, versionState, type VersionState } from "./wire.ts";
-import { OVERLAY } from "./visibility.ts";
+import { OVERLAY } from "./registration.ts";
 
 /** Retries HTTP rejections only, before any stream bytes can escape to the agent. */
 export function subscriptionFetch(

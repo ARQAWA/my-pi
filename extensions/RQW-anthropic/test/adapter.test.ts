@@ -12,7 +12,7 @@ import * as pi from "@earendil-works/pi-coding-agent";
 import { IDENTITY, billingBody, versionState, xxh64 } from "../wire.ts";
 import { LOGIN_HELP, recoverCredential, refreshCredential, TOKEN_URL } from "../auth.ts";
 import { subscriptionFetch, createOverlay } from "../transport.ts";
-import { installVisibility, OVERLAY, BIND_STORE } from "../visibility.ts";
+import { installRegistrationGuard, OVERLAY, BIND_STORE } from "../registration.ts";
 import { entries } from "./pi-entrypoints.ts";
 
 // Internal storage import deliberately tests Pi's file locking boundary, not a public extension dependency.
@@ -269,19 +269,17 @@ describe("bounded transport recovery", () => {
 
 // The package exports hide the CLI bundle. Deliberately exercise its independent class/loader boundary.
 describe("compatibility guards", () => {
-    it("checks every hook before mutating either class", () => {
-        class RuntimeStub { getProviders() { return []; } }
-        class SessionStub {}
+    it("checks every hook before mutating the class", () => {
+        class RuntimeStub { prepareRequest() { return undefined; } registerProvider() {} }
         const before = Object.getOwnPropertyDescriptors(RuntimeStub.prototype);
         // Deliberately incomplete stand-ins test the guarded private integration boundary.
-        assert.throws(() => installVisibility(RuntimeStub as unknown as typeof pi.ModelRuntime,
-            SessionStub as unknown as typeof pi.AgentSession), /Nothing was patched/);
+        assert.throws(() => installRegistrationGuard(RuntimeStub as unknown as typeof pi.ModelRuntime), /Nothing was patched/);
         assert.deepEqual(Object.getOwnPropertyDescriptors(RuntimeStub.prototype), before);
     });
 });
 
 for (const [label, entry] of entries) describe(`real Pi integration: ${label}`, () => {
-	it("loads the isolated extension; filters login, all and scoped picker inputs; reload without it restores defaults", async () => {
+	it("loads the isolated extension: login, recovery and request boundary; it hides no provider; reload without it restores defaults", async () => {
 		const dir = await mkdtemp(join(root, "session-"));
 		const store = AuthStorage.inMemory({ anthropic: credential, openrouter: { type: "api_key", key: "fake-other" }, "openai-codex": { ...credential } });
 		const runtime = await entry.ModelRuntime.create({ credentials: store, modelsPath: null, refreshOnCreate: false });
@@ -303,10 +301,11 @@ for (const [label, entry] of entries) describe(`real Pi integration: ${label}`, 
 		await session.bindExtensions({});
 		try {
 			const login = entry.InteractiveMode.prototype as unknown as { getLoginProviderOptions(this: { session: typeof session }): { id: string }[] };
-			assert.deepEqual([...new Set(login.getLoginProviderOptions.call({ session }).map(p => p.id))].sort(), ["anthropic", "openai-codex"]);
-			assert.ok(runtime.getAvailableSnapshot().every(m => ["anthropic", "openai-codex"].includes(m.provider)));
-			assert.ok(runtime.getModels().every(m => ["anthropic", "openai-codex"].includes(m.provider)));
-			assert.equal(session.scopedModels.length, 1);
+			// Provider hiding is RQW-providers; the transport alone leaves Pi's lists as they are.
+			assert.ok(login.getLoginProviderOptions.call({ session }).some(p => p.id === "openrouter"));
+			assert.ok(runtime.getAvailableSnapshot().some(m => m.provider === "openrouter"));
+			assert.ok(runtime.getModels().some(m => m.provider === "openrouter"));
+			assert.equal(session.scopedModels.length, 2);
             const captures: string[] = [];
             const transport: typeof fetch = async (_input, init) => {
                 captures.push(String(init?.body));
@@ -364,8 +363,6 @@ for (const [label, entry] of entries) describe(`real Pi integration: ${label}`, 
             }
 			assert.deepEqual(await store.read("openrouter"), { type: "api_key", key: "fake-other" });
 			await session.reload();
-			assert.equal(session.scopedModels.length, 1);
-            assert.equal(runtime.getProviders().length, 2);
             let afterReload = 0;
             let reloadRefresh = 0;
             const recoverAfterReload: typeof fetch = async input => {
@@ -386,10 +383,10 @@ for (const [label, entry] of entries) describe(`real Pi integration: ${label}`, 
 			assert.deepEqual(await store.read("anthropic"), credential);
 		} finally { session.dispose(); }
 	});
-	it("conflicting Anthropic overlays are rejected in either registration order; shim restores exact methods", async () => {
-		const original = entry.ModelRuntime.prototype.getProviders;
-		const release = installVisibility(entry.ModelRuntime, entry.AgentSession);
-		const secondRelease = installVisibility(entry.ModelRuntime, entry.AgentSession);
+	it("conflicting Anthropic overlays are rejected in either registration order; guard restores exact methods", async () => {
+		const original = entry.ModelRuntime.prototype.prepareRequest;
+		const release = installRegistrationGuard(entry.ModelRuntime);
+		const secondRelease = installRegistrationGuard(entry.ModelRuntime);
 		try {
 			for (const ownFirst of [true, false]) {
 				const runtime = await entry.ModelRuntime.create({ credentials: AuthStorage.inMemory(), modelsPath: null, refreshOnCreate: false });
@@ -404,10 +401,9 @@ for (const [label, entry] of entries) describe(`real Pi integration: ${label}`, 
             const needsStore = Object.assign(() => { throw new Error("unused"); }, { [OVERLAY]: true, [BIND_STORE]: () => {} });
             assert.throws(() => missingBridge.registerProvider("anthropic", { api: "anthropic-messages", streamSimple: needsStore }), /credential bridge is unavailable/);
             assert.equal(missingBridge.getRegisteredProviderConfig("anthropic"), undefined);
-            assert.ok(missingBridge.getProviders().length > 2);
             release();
-            assert.notEqual(entry.ModelRuntime.prototype.getProviders, original);
+            assert.notEqual(entry.ModelRuntime.prototype.prepareRequest, original);
 		} finally { release(); secondRelease(); }
-		assert.equal(entry.ModelRuntime.prototype.getProviders, original);
+		assert.equal(entry.ModelRuntime.prototype.prepareRequest, original);
 	});
 });

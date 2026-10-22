@@ -1,11 +1,10 @@
 import type { CredentialStore } from "@earendil-works/pi-ai";
-import { AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { assertAnthropicAuthBoundary } from "./auth-boundary.ts";
 
 export const OVERLAY = Symbol.for("rqw-anthropic/overlay");
 export const BIND_STORE = Symbol.for("rqw-anthropic/bind-store");
-const PATCH = Symbol.for("rqw-anthropic/visibility");
-const ALLOWED = new Set(["anthropic", "openai-codex"]);
+const PATCH = Symbol.for("rqw-anthropic/registration");
 const CONFLICT = "RQW-anthropic: another Anthropic extension is enabled. Disable pi-claude-auth or the other Anthropic adapter in personal/project settings and explicit -e arguments, keep auth.json, then restart Pi.";
 type Registration = { streamSimple?: { [OVERLAY]?: boolean; [BIND_STORE]?: (store: CredentialStore, runtime: ModelRuntime) => (restore: () => void) => void } };
 type RuntimeView = {
@@ -17,17 +16,16 @@ type Hook = (this: RuntimeView, ...args: unknown[]) => unknown;
 type Original = [object, string, PropertyDescriptor];
 type PatchState = { count: number; originals: Original[] };
 
-// Pi 1.4.0 exposes the classes but no visibility policy. Never patch stores or credential contents.
-export function installVisibility(Runtime = ModelRuntime, Session = AgentSession): () => void {
+// Pi 1.4.0 has no hook for the Anthropic transport's registration and request boundary. Never patch stores or credential contents.
+// Provider visibility is not here: it belongs to RQW-providers.
+export function installRegistrationGuard(Runtime = ModelRuntime): () => void {
 	const owner = Runtime as unknown as { [PATCH]?: PatchState };
 	let state = owner[PATCH];
 	if (!state) {
 		const runtime = Runtime.prototype;
-		const session = Session.prototype;
-		const methods = ["getProviders", "getModels", "getAvailableSnapshot", "getAvailable", "prepareRequest", "registerProvider", "registerNativeProvider"];
-		const scoped = Object.getOwnPropertyDescriptor(session, "scopedModels");
+		const methods = ["prepareRequest", "registerProvider", "registerNativeProvider"];
 		const descriptors = methods.map(name => Object.getOwnPropertyDescriptor(runtime, name));
-		if (descriptors.some(d => typeof d?.value !== "function" || !d.configurable) || !scoped?.get || !scoped.configurable ||
+		if (descriptors.some(d => typeof d?.value !== "function" || !d.configurable) ||
 			typeof runtime.getRegisteredProviderConfig !== "function" || typeof runtime.getRegisteredNativeProvider !== "function") {
 			throw new Error("RQW-anthropic: incompatible Pi internals; requires Pi 1.4.0. Nothing was patched.");
 		}
@@ -61,7 +59,7 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 					registered?.(() => { original.call(this, idOrProvider, config); });
 					return result;
 				};
-			} else if (name === "prepareRequest") {
+			} else {
 				wrapped = async function(...args) {
 					const prepared = await original.apply(this, args) as {
 						model: Parameters<typeof assertAnthropicAuthBoundary>[0];
@@ -70,22 +68,10 @@ export function installVisibility(Runtime = ModelRuntime, Session = AgentSession
 					if (enabled(this)) assertAnthropicAuthBoundary(prepared.model, prepared.options, process.env.ANTHROPIC_CUSTOM_HEADERS);
 					return prepared;
 				};
-			} else {
-				wrapped = function(...args) {
-					const result = original.apply(this, args);
-					if (!enabled(this)) return result;
-					const filter = (items: readonly { provider?: string; id: string }[]) => items.filter(item => ALLOWED.has(item.provider ?? item.id));
-					return result instanceof Promise ? result.then(filter) : filter(result as Parameters<typeof filter>[0]);
-				};
 			}
 			Object.defineProperty(target, name, { ...descriptor, value: wrapped });
 		}
-		const scopedGetter = scoped.get;
-		Object.defineProperty(session, "scopedModels", { ...scoped, get(this: AgentSession) {
-			const result: AgentSession["scopedModels"] = scopedGetter.call(this);
-			return enabled(this.modelRuntime as unknown as RuntimeView) ? result.filter(entry => ALLOWED.has(entry.model.provider)) : result;
-		} });
-		state = { count: 0, originals: [...originals, [session, "scopedModels", scoped]] };
+		state = { count: 0, originals };
 		owner[PATCH] = state;
 	}
 	state.count++;

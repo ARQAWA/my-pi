@@ -47,8 +47,8 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   Shift+Up/Down: stronger/weaker model; Shift+Right/Left: reasoning up/down (the old omp keys).
   Only its listed models can be selected or requested; Pi's stock model lists are empty (rule and limits:
   `DECISIONS.md` section Models). Disable it separately in `pi config`. Tests: `extensions/RQW-models/test/`, `npm test`.
-- `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery.
-  Only `anthropic` and `openai-codex` remain visible, credentials stay. Toggle, migration and limits:
+- `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery, nothing else (no
+  provider hiding: that is extension 14). Toggle, migration and limits:
   `extensions/RQW-anthropic/README.md`; research: `notes/anthropic-adapter.md`. Tests use fake credentials: `npm test`.
 - `extensions/RQW-scroll/`: extension 10, Escape in the fullscreen view returns a scrolled-up transcript to the latest
   message; elsewhere Escape stays stock. Contract and limits: `DECISIONS.md` section Scroll. Tests: `npm test`.
@@ -61,6 +61,9 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   terminal has started, so the wheel scrolls the conversation (the PCLI wheel bug) instead of the input history.
   Windows only; inert elsewhere. Cause, limits and proof: `DECISIONS.md` section PCLI. Tests: `npm test`; the ConPTY
   capture of the bundled `pi.exe` is `pcli-vscode/test/mouse.mjs`.
+- `extensions/RQW-providers/`: extension 14, provider visibility. Only `anthropic` and `openai-codex` remain visible in
+  login, model pickers and `--list-models`, credentials stay. Independent of `RQW-anthropic` (either switches off alone).
+  Mechanism and limits: `extensions/RQW-providers/README.md`; decision: `DECISIONS.md` section Providers. Tests: `npm test`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.4.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.

@@ -8,7 +8,7 @@ import { LOGIN_HELP, refreshCredential, validateCredential } from "./auth.ts";
 import { installLifecycle, SESSION_BIND, type Lifecycle } from "./lifecycle.ts";
 import { installRecoveryHooks } from "./retry.ts";
 import { createOverlay } from "./transport.ts";
-import { installVisibility, BIND_STORE } from "./visibility.ts";
+import { installRegistrationGuard, BIND_STORE } from "./registration.ts";
 import { versionState } from "./wire.ts";
 
 export default function anthropic(pi: ExtensionAPI) {
@@ -28,7 +28,7 @@ export default function anthropic(pi: ExtensionAPI) {
 	let runtime: ModelRuntime | undefined;
 	let cleaned = false;
 	const overlay = createOverlay(base, () => store, deviceId, version);
-	const release = installVisibility();
+	const release = installRegistrationGuard();
 	let releaseRecovery: (() => void) | undefined;
 	let lifecycle: Lifecycle | undefined;
 	function cleanup() {

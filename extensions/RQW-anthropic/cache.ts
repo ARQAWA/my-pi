@@ -1,7 +1,7 @@
 import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { isOAuth } from "./auth-boundary.ts";
-import { OVERLAY } from "./visibility.ts";
+import { OVERLAY } from "./registration.ts";
 
 /** Explicit request and environment preferences retain stock Pi semantics, even empty values. */
 export function subscriptionCacheOptions(options: SimpleStreamOptions | undefined): SimpleStreamOptions | undefined {

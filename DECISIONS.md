@@ -143,7 +143,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - `WORKFLOW-MANIFEST.md` records the owner's personal working principles and lifelong aspiration, not package
   behavior or procedural commands. The accepted manifesto content does not override the process; see [Work policy](#work-policy).
 - Providers: `/login` and the model list show only two providers, openai-codex and our own Anthropic subscription
-  adapter `RQW-anthropic` (Claude Code login, as in omp, with self-healing); every other provider is hidden (user:
+  adapter `RQW-anthropic` (Claude Code login, as in omp, with self-healing); every other provider is hidden by the
+  separate extension `RQW-providers` ([Providers](#providers)) (user:
   «Это именно отключить. Когда мы заходим в логин, там должны быть только кодекс, авторизация и авторизация через
   Anthropic, которую ты сейчас делаешь. И всё»).
 
@@ -1338,7 +1339,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   TTL, timing, pricing and Pi's prospective warmer-cost limitation have one reference:
   `extensions/RQW-anthropic/README.md`, Prompt cache. Deterministic proof: its `test/cache.test.ts`.
 
-- Extension `extensions/RQW-anthropic/`, listed in `package.json`, owns transport, OAuth recovery and visibility.
+- Extension `extensions/RQW-anthropic/`, listed in `package.json`, owns transport and OAuth recovery. Visibility moved to
+  `RQW-providers` ([Providers](#providers)).
   Owner requirement (C:3046): «они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать
   и выключать, как feature флаги». Engineering implementation: disable and reload unregisters only its overlay
   and restores in-memory hooks. No
@@ -1355,13 +1357,14 @@ Current accepted development policy (request summaries unless quoted); detailed 
   авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё».
   Engineering decision: hide providers without deleting saved credentials. Public unregisterProvider restores
   builtins instead of hiding them.
-  `visibility.ts` wraps ModelRuntime provider/model listing and AgentSession.scopedModels with a checked,
-  reference-counted reversible shim, only in runtimes with this overlay. It does not erase previously selected models
-  or disable explicit SDK lookups. Disabling restores defaults without restoring stale credential snapshots.
+  `extensions/RQW-providers/index.ts` wraps ModelRuntime provider/model listing and AgentSession.scopedModels with a
+  checked, reference-counted reversible shim, only in runtimes with an owning session of that extension. It does not
+  erase previously selected models or disable explicit SDK lookups. Disabling restores defaults without restoring
+  stale credential snapshots. Moved out of `RQW-anthropic` ([Providers](#providers)).
 - Owner clarification: «Смотри, в нашем Pi должен быть старый OpenAI кодекс и всё, блядь. Legacy, который через девайс. А новый OpenAI нахуй не нужен, блядь. Я не знаю, что там за глупость новый OpenAI. У нас должен быть вход именно такой же, как сейчас это работает в текущем OpenAI кодексе, и всё, больше никак.»
   Keep only `anthropic` and legacy `openai-codex` visible. Pi 1.4.0's `openai` ("Sign in with ChatGPT" and
   `OPENAI_API_KEY`) stays hidden: the owner wants the existing legacy device login, not the new OpenAI provider.
-  Carrier: `extensions/RQW-anthropic/visibility.ts`, `ALLOWED`.
+  Carrier: `extensions/RQW-providers/index.ts`, `ALLOWED`.
 - `auth.ts` refreshes under Pi's runtime credential-store lock, rechecks the rejected bearer, reuses a concurrent
   update and persists rotation before replay. One HTTP 401 replay, at most two transient refresh attempts and one
   explicit newer-version replay; no auth retry for 403/quota, no replay after streaming. Caller abort cancels waiting
@@ -1677,7 +1680,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   followed by RQW-anthropic. Package fixtures use fake authenticated allowed providers, not a visibility
   bypass. The dynamic isolation assertions are unchanged. Source order, unauthenticated startup,
   Opus medium with mock secrets, full-package login visibility and the stock fallback with the adapter or
-  RQW-models switched off are covered in `test/anthropic-models.test.ts`. Semantic test changes for independent review and
+  RQW-models switched off, and each of RQW-anthropic and RQW-providers switched off alone, are covered in
+  `test/anthropic-models.test.ts`. Semantic test changes for independent review and
   offline proof boundaries: `notes/anthropic-integration.md`.
 - Integration proof uses offline fixtures only; it does not establish live auth, subscription acceptance or billing.
   The owner's old Claude campaign pause C:3244 remains in force, not a ban on Claude workers. Historical local results and their boundaries are recorded in
@@ -1815,3 +1819,25 @@ Current accepted development policy (request summaries unless quoted); detailed 
   extension's `input` handler can leave the count stale until the queue empties. Proof: Pi's real `InteractiveMode`
   on a scripted terminal with a faux streaming model, `extensions/RQW-send-now/test/send-now.test.ts`, in `npm test`
   and the Windows CI matrix.
+
+## Providers
+
+- Provider hiding is its own extension. Owner question, answer «7a»: «Скрытие лишних провайдеров.
+  Сейчас его делает расширение Anthropic. Если его выключить, скрытие пропадёт. a) Вынести скрытие в отдельное
+  расширение». Reason: hiding the other providers is a policy of its own (the visible set is the owner's rule from
+  [Anthropic subscription adapter](#anthropic-subscription-adapter), C:3171 and the `openai` clarification there) and
+  must not vanish when the Anthropic transport is switched off; switching either off alone is the rule of
+  [Isolation](#isolation).
+  Carrier: `extensions/RQW-providers/index.ts`, listed last in `package.json` `pi.extensions`.
+- Same behaviour as before, now with its own tests (`extensions/RQW-providers/test/providers.test.ts`): only `anthropic`
+  and `openai-codex` in login, pickers, `--list-models` and scoped models; credentials stay; the policy covers only a
+  runtime with an owning session of this extension, so loading alone or an unrelated runtime keeps Pi's lists. The
+  Anthropic extension keeps only the transport: `registration.ts` (conflict guard, credential-store binding and request
+  auth boundary), recovery, cache. It no longer filters anything, so with only `RQW-anthropic` on, Pi lists every provider.
+- Engineering choices: ownership comes from the patched `AgentSession._bindExtensionCore`, because Pi emits no event
+  before `--list-models` and `/reload` of a host without bindings emits no `session_start`; liveness is read from Pi's
+  extension API going stale, and the patched `AgentSession.dispose` releases the disposed session's instances. Both
+  extensions wrap `_bindExtensionCore` and `dispose`, and `RQW-anthropic`'s lifecycle restores Pi's own methods when its
+  last owner leaves, so each load of this extension checks its wrapper is still in the slots and wraps again if not
+  (`test/providers-anthropic.test.ts`). Pi's restore is last-in-first-out, so the manifest keeps this extension after
+  `RQW-anthropic`, and an inert wrapper may stay in the other order (limits: `extensions/RQW-providers/README.md`). Mechanism research: `notes/anthropic-adapter.md`.

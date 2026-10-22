@@ -57,6 +57,9 @@ by blindly refreshing. omp's bootstrap identity fetch is unnecessary for a singl
 
 ## Provider visibility: concrete mechanism, not an unsupported claim
 
+(Carried by the separate extension `RQW-providers` since the owner's answer «7a»; `DECISIONS.md` section Providers.
+Ownership there comes from the patched `_bindExtensionCore`, not from the Anthropic overlay registration described below.)
+
 `InteractiveMode.getLoginProviderOptions` enumerates `session.modelRuntime.getProviders()`.
 The model selector uses `getAvailableSnapshot()`, with a separate scoped list from `AgentSession.scopedModels`;
 model autocomplete/cycling also use those surfaces. `ModelRegistry.getAll()` delegates to `ModelRuntime.getModels()`.

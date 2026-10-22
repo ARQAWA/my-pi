@@ -69,6 +69,7 @@ it("actual CLI keeps native metadata and RPC handling of unsupported adapter con
 		const healthy = await run([own], ["--list-models"]);
 		assert.equal(healthy.code, 0, healthy.err);
 		assert.match(healthy.out, /^anthropic\s/m);
-		assert.doesNotMatch(healthy.out, /^openrouter\s/m);
+		// The transport alone hides nothing; provider hiding is RQW-providers.
+		assert.match(healthy.out, /^openrouter\s/m);
 	} finally { await rm(root, { recursive: true, force: true }); }
 });
