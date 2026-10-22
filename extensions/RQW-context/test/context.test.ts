@@ -302,8 +302,9 @@ function piValues(session: AgentSession) {
 
 /**
  * Pi compacts above `threshold` and not at it: one fresh session per side of the edge. The second session has an
- * earlier small turn, so the summary has a history part (0.8 x reserve) and a split-turn part (0.5 x reserve); the
- * output limits of both summary requests and the windows the provider saw are returned.
+ * earlier small turn, so the summary has a history part and a split-turn part; the
+ * explicit output limits Pi 1.4 supplies to both summary requests (none, it uses the model limit) and the windows
+ * the provider saw are returned.
  */
 async function assertFlipsAt(pi: Pi, model: string, threshold: number, open: Open = {}) {
 	{
@@ -670,22 +671,22 @@ for (const [entry, pi] of ENTRIES) {
 		it("272 000: R 27 200, compaction above 244 800", async () => {
 			const { summaryLimits, session } = await assertFlipsAt(pi, "w272k", 244_800);
 			assert.deepEqual(session, { contextWindow: 272_000, reserve: 27_200, threshold: 244_800 });
-			// Summary requests ask for floor(0.8 x 27200) and floor(0.5 x 27200) output tokens.
-			assert.deepEqual(summaryLimits, [21_760, 13_600]);
+			// Pi 1.4 summary requests carry no explicit maxTokens: R is only the trigger.
+			assert.deepEqual(summaryLimits, [undefined, undefined]);
 		});
 
 		it("500 000: R 50 000, compaction above 450 000", async () => {
 			const { summaryLimits, session } = await assertFlipsAt(pi, "w500k", 450_000);
 			assert.deepEqual(session, { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 });
-			assert.deepEqual(summaryLimits, [40_000, 25_000]);
+			assert.deepEqual(summaryLimits, [undefined, undefined]);
 		});
 
-		it("1 000 000: W 500 000, R 50 000, compaction above 450 000, summary limits as for 500 000", async () => {
+		it("1 000 000: W 500 000, R 50 000, compaction above 450 000, summary requests as for 500 000", async () => {
 			const { summaryLimits, windows, session } = await assertFlipsAt(pi, "w1m", 450_000);
 			assert.deepEqual(session, { contextWindow: 500_000, reserve: 50_000, threshold: 450_000 });
 			// The chat request and both summary requests reach the provider with the 500 000 window.
 			assert.deepEqual(windows, [500_000, 500_000, 500_000]);
-			assert.deepEqual(summaryLimits, [40_000, 25_000]);
+			assert.deepEqual(summaryLimits, [undefined, undefined]);
 		});
 
 		it("128 000: R 12 800, compaction above 115 200 (stock Pi: above 111 616)", async () => {

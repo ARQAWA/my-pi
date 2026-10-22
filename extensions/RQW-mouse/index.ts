@@ -4,7 +4,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { TuiAltScreen } from "@earendil-works/pi-tui";
 
-// The two sets Pi 1.3.0 writes (pi-tui dist/tui-alt-screen.js:16-17), copied verbatim; the test compares them with
+// The two sets Pi 1.4.0 writes (pi-tui dist/tui-alt-screen.js:16-17), copied verbatim; the test compares them with
 // what Pi's own TuiAltScreen writes. Pi's disable-on-stop (DISABLE_MOUSE) is left alone.
 const ENABLE_BUTTON_MOTION_MOUSE = "\x1b[?1000h\x1b[?1002h\x1b[?1004h\x1b[?1006h";
 const ENABLE_ALL_MOTION_MOUSE = "\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1004h\x1b[?1006h";
@@ -54,7 +54,7 @@ export default function mouse(pi: ExtensionAPI) {
 	const proto = TuiAltScreen?.prototype as unknown as Record<string, unknown> | undefined;
 	const base = proto && (Object.getPrototypeOf(proto) as Record<string, unknown> | null);
 	if (!proto || typeof proto.beforeTerminalStart !== "function" || typeof base?.afterTerminalStart !== "function" || !Object.isExtensible(proto)) {
-		throw new Error("RQW-mouse: TuiAltScreen.beforeTerminalStart or the afterTerminalStart hook not found; the fix is built for Pi 1.3.0, nothing is changed");
+		throw new Error("RQW-mouse: TuiAltScreen.beforeTerminalStart or the afterTerminalStart hook not found; the fix is built for Pi 1.4.0, nothing is changed");
 	}
 	const state = (shared[STATE] ??= { owners: new Set() });
 	const token = {};

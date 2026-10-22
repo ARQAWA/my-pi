@@ -1,6 +1,6 @@
 # RQW-session
 
-Independent session commands for Pi 1.3.0. No tool, UI replacement, other-extension import or Pi patch.
+Independent session commands for Pi 1.4.0. No tool, UI replacement, other-extension import or Pi patch.
 
 - `/copy-session`: copy the current ID and notify `Session ID copied: <id>`. Stock `/copy` still copies the last
   assistant message. Clipboard failures produce an error notification, not success.
@@ -38,7 +38,7 @@ The outgoing JSONL is reread after shutdown to include final output references. 
 the new session remains active and the error identifies the old session file. Cleanup is not atomic: an error
 partway through may leave some artifacts deleted and the old JSONL present.
 
-**Limit:** Pi 1.3.0 names temp artifacts randomly, without session ownership metadata. Unreferenced temp files,
+**Limit:** Pi 1.4.0 names temp artifacts randomly, without session ownership metadata. Unreferenced temp files,
 including spills from RQW-agent's in-memory subagents and RQW-review's in-memory reviewers, cannot safely be
 attributed and are left for OS temp cleanup. Their in-memory sessions are cancelled/disposed by their own native
 shutdown handlers; RQW-session adds no tracking or cross-extension dependency. RQW-anthropic's installation ID,

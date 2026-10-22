@@ -613,7 +613,7 @@ async function runReviewer(pi: ExtensionAPI, level: Level, brief: string, ctx: E
 		throw error;
 	}
 	const { session } = created;
-	// Pi 1.3 prompt() awaits auth before an active run exists, so abort() alone cannot stop that preflight.
+	// Pi 1.4 prompt() awaits auth before an active run exists, so abort() alone cannot stop that preflight.
 	// This public request hook stays guarded even if the abandoned prompt resumes after dispose().
 	const stream = session.agent.streamFunction;
 	session.agent.streamFunction = (model, context, options) => {

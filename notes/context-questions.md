@@ -23,8 +23,8 @@ The old routed-physical bypass was a bug in applying the existing rule, not a ne
 was an assistant technical choice in C:2138, not an owner answer. No Owner option a/b attribution applies.
 
 For W=272000 the reserve is 27200 and the threshold 244800; for a physical 1M model W=500000, reserve 50000,
-threshold 450000. Default summary output ceilings are floor(0.8 R) and floor(0.5 R), additionally bounded by the
-chosen physical model's maxTokens and the native context/output budget. Usage reports the capped physical window.
+threshold 450000. Since Pi 1.4.0 default summaries carry no R-based output ceiling (before it: floor(0.8 R) and floor(0.5 R)); the
+chosen physical model's maxTokens and the native context/output budget bound them. Usage reports the capped physical window.
 A completed input above W is overflow under native recovery policy. Providers receive no window field in the
 OpenAI-compatible request; the output cap changes. Known recovery limits remain below.
 

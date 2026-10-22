@@ -15,7 +15,7 @@ const referenceText = (s: string) => {
 	const text = s.replaceAll("\\", "/");
 	return process.platform === "win32" ? text.toLowerCase() : text;
 };
-// Pi 1.3.0 output-files.js: randomBytes(8).toString("hex"); clipboard paste: crypto.randomUUID().
+// Pi 1.4.0 output-files.js: randomBytes(8).toString("hex"); clipboard paste: crypto.randomUUID().
 const OUTPUT_NAME = "pi-(?:bash|powershell|output|codemode|mcp)-[a-f0-9]{16}";
 const CLIPBOARD_NAME = "pi-clipboard-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}";
 const ARTIFACT_NAME = `(?:${OUTPUT_NAME}|${CLIPBOARD_NAME})\\.[A-Za-z0-9]{1,8}`;

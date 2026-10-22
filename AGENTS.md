@@ -1,6 +1,6 @@
 # my-pi
 
-A Pi package (`@earendil-works/pi-coding-agent` 1.3.0) that carries the omp-lite behaviour into stock Pi step by step.
+A Pi package (`@earendil-works/pi-coding-agent` 1.4.0) that carries the omp-lite behaviour into stock Pi step by step.
 Stock Pi tools stay as they are. Everything is an extension, one folder per extension under `extensions/`.
 
 Before every task, read and follow [PROCESS.md](PROCESS.md). Restore it after compaction or a handoff before
@@ -56,7 +56,7 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   Windows only; inert elsewhere. Cause, limits and proof: `DECISIONS.md` section PCLI. Tests: `npm test`; the ConPTY
   capture of the bundled `pi.exe` is `pcli-vscode/test/mouse.mjs`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
-  runs a bundled Pi 1.3.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
+  runs a bundled Pi 1.4.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.
 - Every `RQW-*` extension is self-contained and can be switched off alone (no import outside its folder, its tests load
   only it); `test/isolation.test.ts` proves it, `INSTALL.md` shows the switch, `DECISIONS.md` section Isolation.

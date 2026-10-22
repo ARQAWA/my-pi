@@ -95,7 +95,7 @@ function lease(target: object, key: symbol, install: (mask: Mask) => () => void)
 	}];
 }
 
-/** Pi 1.3.0 gives extensions no session handle; borrow it for one synchronous call. */
+/** Pi 1.4.0 gives extensions no session handle; borrow it for one synchronous call. */
 function sessionOf(ctx: ExtensionContext): AgentSession | undefined {
 	const prototype = AgentSession.prototype;
 	const descriptor = Object.getOwnPropertyDescriptor(prototype, "getContextUsage");
@@ -182,7 +182,7 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		const session = sessionOf(ctx);
 		if (!session) {
 			unbind();
-			warn(ctx, "RQW-models cannot restrict Pi's own model selection: incompatible Pi internals (requires Pi 1.3.0)", true);
+			warn(ctx, "RQW-models cannot restrict Pi's own model selection: incompatible Pi internals (requires Pi 1.4.0)", true);
 			return;
 		}
 		if (bound?.session === session) return;

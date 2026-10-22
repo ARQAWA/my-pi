@@ -1,7 +1,7 @@
 import { AgentSession, VERSION, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const TOOL_FLAGS = ["--tools", "-t", "--exclude-tools", "-xt", "--no-tools", "-nt", "--no-builtin-tools", "-nbt"];
-const HOOK = Symbol.for("rqw/tool-selection-intent/1.3.0");
+const HOOK = Symbol.for("rqw/tool-selection-intent/1.4.0");
 type SessionClass = { prototype: object };
 type IntentBinding = { session: WeakRef<object>; selected: boolean };
 type HookState = {
@@ -13,7 +13,7 @@ type HookState = {
 type HookOwner = { [HOOK]?: HookState };
 
 function unsupported(detail: string): never {
-	throw new Error(`RQW tool selection requires Pi 1.3.0: ${detail}; defaults were not applied.`);
+	throw new Error(`RQW tool selection requires Pi 1.4.0: ${detail}; defaults were not applied.`);
 }
 
 function dataField(session: object, name: string): unknown {
@@ -22,7 +22,7 @@ function dataField(session: object, name: string): unknown {
 	return descriptor.value;
 }
 
-/** SDK 1.3.0 retains intent, not just the resulting active set, in these constructor fields. */
+/** SDK 1.4.0 retains intent, not just the resulting active set, in these constructor fields. */
 function capture(session: object, state: HookState): void {
 	const manager = dataField(session, "sessionManager");
 	if (!manager || typeof manager !== "object") unsupported("invalid sessionManager");
@@ -80,7 +80,7 @@ function register(owner: HookOwner, state: HookState): () => void {
 
 /** Capture-only registrations are weak: a failed SDK factory has no shutdown event or strong lease to leak. */
 export function installSelectionIntent(Session: SessionClass = AgentSession, version = VERSION): () => void {
-	if (version !== "1.3.0") unsupported(`unsupported version ${version}`);
+	if (version !== "1.4.0") unsupported(`unsupported version ${version}`);
 	const owner = Session.prototype as HookOwner;
 	const descriptor = Object.getOwnPropertyDescriptor(owner, "bindExtensions");
 	if (!descriptor || typeof descriptor.value !== "function" || !descriptor.configurable || !descriptor.writable) {

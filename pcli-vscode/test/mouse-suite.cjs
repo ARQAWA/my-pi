@@ -1,6 +1,6 @@
 'use strict';
 // Runs inside the VS Code extension host (extensionTestsPath of mouse.mjs). ConPTY capture of the bundled pi.exe
-// (Bun build of Pi 1.3.0): how often the mouse-enable command ?1000h comes out of the pseudo terminal at startup,
+// (Bun build of Pi 1.4.0): how often the mouse-enable command ?1000h comes out of the pseudo terminal at startup,
 // stock and with my-pi's RQW-mouse loaded. Expected: 0 and 1 (DECISIONS.md, section PCLI).
 const vscode = require('vscode');
 const fs = require('fs');

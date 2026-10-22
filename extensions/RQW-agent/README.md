@@ -126,7 +126,7 @@ by a rounded duplicate id.
 
 ## Offline proof
 
-All tests use real Pi 1.3.0 SDK sessions or its actual CLI with faux providers. No real models, credentials or network
+All tests use real Pi 1.4.0 SDK sessions or its actual CLI with faux providers. No real models, credentials or network
 are required. Use Node 22.19.0 or the current Node runtime from the repository root:
 
 ```sh

@@ -75,7 +75,7 @@ jobs:
             ${{ runner.temp }}/pcli-e2e/agent-*/**/*.jsonl
 
   # ConPTY capture: how often the mouse-enable command ?1000h comes out of the pseudo terminal when the bundled pi.exe
-  # (Bun build of Pi 1.3.0) starts, stock (expected 0) and with my-pi's RQW-mouse loaded (expected 1).
+  # (Bun build of Pi 1.4.0) starts, stock (expected 0) and with my-pi's RQW-mouse loaded (expected 1).
   mouse:
     runs-on: windows-latest
     timeout-minutes: 20

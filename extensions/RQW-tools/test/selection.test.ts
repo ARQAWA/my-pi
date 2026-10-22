@@ -10,7 +10,7 @@ import * as library from "@earendil-works/pi-coding-agent";
 import { installSelectionIntent, noToolSelection } from "../selection.ts";
 
 const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
-const HOOK = Symbol.for("rqw/tool-selection-intent/1.3.0");
+const HOOK = Symbol.for("rqw/tool-selection-intent/1.4.0");
 const FOUR = ["bash", "edit", "read", "write"];
 const ADDED = ["find", "grep"];
 type IntentBinding = { session: WeakRef<object>; selected: boolean };
@@ -29,7 +29,7 @@ class NativeShape {
 describe("selection hook: checked native metadata and weak registrations", () => {
 	it("rejects unsupported versions and descriptors without changing the method", () => {
 		const before = Object.getOwnPropertyDescriptor(NativeShape.prototype, "bindExtensions");
-		assert.throws(() => installSelectionIntent(NativeShape, "1.4.0"), /requires Pi 1.3.0/);
+		assert.throws(() => installSelectionIntent(NativeShape, "1.3.0"), /requires Pi 1.4.0/);
 		assert.deepEqual(Object.getOwnPropertyDescriptor(NativeShape.prototype, "bindExtensions"), before);
 		for (const descriptor of [
 			{ get: () => () => {}, configurable: true },

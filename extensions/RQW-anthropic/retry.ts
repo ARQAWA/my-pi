@@ -47,7 +47,7 @@ export function protectPartialStream(source: AssistantMessageEventStream) {
 	return source;
 }
 
-/** Pi 1.3 has neither a before-retry hook nor separate extension stream contracts. */
+/** Pi 1.4 has neither a before-retry hook nor separate extension stream contracts. */
 export function installRecoveryHooks(Runtime = ModelRuntime, Session = AgentSession): () => void {
 	const owner = Runtime as unknown as { [PATCH]?: State };
 	let state = owner[PATCH];
@@ -69,8 +69,8 @@ export function installRecoveryHooks(Runtime = ModelRuntime, Session = AgentSess
 				"_getSummarizationRequestAuth"].map(name =>
 				[Session.prototype, name, Object.getOwnPropertyDescriptor(Session.prototype, name)])),
 		] as Original[];
-		if (VERSION !== "1.3.0" || originals.some(([, , d]) => typeof d?.value !== "function" || !d.configurable)) {
-			throw new Error("RQW-anthropic: incompatible Pi recovery hooks; requires Pi 1.3.0. Nothing was patched.");
+		if (VERSION !== "1.4.0" || originals.some(([, , d]) => typeof d?.value !== "function" || !d.configurable)) {
+			throw new Error("RQW-anthropic: incompatible Pi recovery hooks; requires Pi 1.4.0. Nothing was patched.");
 		}
 		for (const [prototype, name, descriptor] of originals) {
 			const original = descriptor.value;

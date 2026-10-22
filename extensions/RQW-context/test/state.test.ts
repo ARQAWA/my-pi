@@ -204,7 +204,7 @@ for (const [entry, pi] of ENTRIES) {
 					if (broken === "model") Object.defineProperty(agent._state, "model", { configurable: false });
 					if (broken === "extensible") Object.preventExtensions(OtherAgent.prototype);
 					const before = Object.getOwnPropertyDescriptors(OtherAgent.prototype);
-					assert.throws(() => build.call({ agent }), /native Agent.state\/createLoopConfig shape differs from Pi 1.3.0/);
+					assert.throws(() => build.call({ agent }), /native Agent.state\/createLoopConfig shape differs from Pi 1.4.0/);
 					assert.deepEqual(Object.getOwnPropertyDescriptors(OtherAgent.prototype), before);
 				}
 				await owner.select(false);
@@ -248,7 +248,7 @@ for (const [entry, pi] of ENTRIES) {
 						}
 						for (const fixture of [threshold, overflow]) {
 							assert.deepEqual(fixture.script.requests.map((request) => request.window), on ? [500_000, 500_000, 500_000] : [1_000_000]);
-							assert.deepEqual(fixture.script.requests.slice(1).map((request) => request.maxTokens), on ? [40_000, 25_000] : []);
+							assert.deepEqual(fixture.script.requests.slice(1).map((request) => request.maxTokens), on ? [undefined, undefined] : []);
 							assert.equal(fixture.session.getContextUsage()?.contextWindow, on ? 500_000 : 1_000_000);
 						}
 					} finally { await shutdown(threshold.session); await shutdown(overflow.session); }

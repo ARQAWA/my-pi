@@ -36,7 +36,7 @@ Alt shortcuts and custom effort lists from [DECISIONS.md, Models](../DECISIONS.m
 not off, provider restrictions or Anthropic payload rewrites. Its explicit per-family lists are intersected with Pi support at runtime;
 there is no runtime import from the harness or its catalog.
 
-## Pi 1.3.0 mechanisms used by the fixes
+## Pi 1.4.0 mechanisms used by the fixes
 
 Paths are relative to the installed `@earendil-works/pi-coding-agent` package.
 
@@ -68,7 +68,7 @@ Paths are relative to the installed `@earendil-works/pi-coding-agent` package.
   Current per-model lists and shortcut direction are in
   [DECISIONS.md, Models](../DECISIONS.md#models).
 
-## Pi 1.3.0 mechanisms behind the listed-models rule
+## Pi 1.4.0 mechanisms behind the listed-models rule
 
 The rule is in [DECISIONS.md, Models](../DECISIONS.md#models). Paths as above.
 

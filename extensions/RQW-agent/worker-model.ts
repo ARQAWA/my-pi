@@ -18,7 +18,7 @@ type Registry = Pick<ModelRegistry, "find" | "hasConfiguredAuth">;
 
 /** Use the caller's registry and credential runtime, just like agent's resolveConfig. */
 export async function pickWorkerModel(registry: Registry, role: WorkerRole): Promise<WorkerModel | string> {
-	// Pi 1.3.0's facade keeps the shared runtime in a field private only to TypeScript.
+	// Pi 1.4.0's facade keeps the shared runtime in a field private only to TypeScript.
 	const runtime = (registry as unknown as { runtime: ModelRuntime }).runtime;
 	for (const key of Object.keys(WORKER_REASONING) as (keyof typeof WORKER_REASONING)[]) {
 		const slash = key.indexOf("/");

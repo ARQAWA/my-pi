@@ -10,7 +10,7 @@ import * as library from "@earendil-works/pi-coding-agent";
 const root = await mkdtemp(join(tmpdir(), "rqw-selection-gc-"));
 const SETTINGS = fileURLToPath(new URL("../../extensions/RQW-settings/index.ts", import.meta.url));
 const TOOLS = fileURLToPath(new URL("../../extensions/RQW-tools/index.ts", import.meta.url));
-const HOOK = Symbol.for("rqw/tool-selection-intent/1.3.0");
+const HOOK = Symbol.for("rqw/tool-selection-intent/1.4.0");
 const FOUR = ["bash", "edit", "read", "write"];
 const SIX = [...FOUR, "find", "grep"].sort();
 const bundle = await import(new URL("./bundle/index.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href) as typeof library;
@@ -110,7 +110,7 @@ try {
 				Object.defineProperty(sdk.AgentSession.prototype, "bindExtensions", bootstrap);
 			}
 			await exercise();
-			// SDK 1.3.0 has no pre-constructor failure event. Collection is not synchronous with its rejection.
+			// SDK 1.4.0 has no pre-constructor failure event. Collection is not synchronous with its rejection.
 			// Once orphan factories are collected, the next bind prunes weak registrations and restores native.
 			await new Promise<void>((resolve) => setImmediate(resolve));
 			gc();

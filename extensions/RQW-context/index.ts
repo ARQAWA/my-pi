@@ -129,7 +129,7 @@ function wrapAgentState(agent: NativeAgent): void {
 		!Object.hasOwn(agent, "_state") || descriptor.get.call(agent) !== agent._state ||
 		!Object.getOwnPropertyDescriptor(agent._state, "model")?.configurable
 	) {
-		throw new Error("RQW-context: native Agent.state/createLoopConfig shape differs from Pi 1.3.0");
+		throw new Error("RQW-context: native Agent.state/createLoopConfig shape differs from Pi 1.4.0");
 	}
 	const originalLoop = loopDescriptor.value as NativeAgent["createLoopConfig"];
 	Object.defineProperty(proto, "state", {
@@ -234,7 +234,7 @@ function wrapSessionModel(proto: SessionInternals): void {
 	proto[WRAPPED_SESSION] = original;
 }
 
-// Checked Pi 1.3.0 method boundaries, not rewritten compaction or routing implementations.
+// Checked Pi 1.4.0 method boundaries, not rewritten compaction or routing implementations.
 const ROUTING_METHODS = {
 	_exceedsCompactionThreshold: 2, _checkCompaction: 1, _runAutoCompaction: 2, compact: 1,
 	_runDefaultCompaction: 5, _getSummarizationRequestAuth: 2, _modelForMessage: 1, _limitsModel: 0,
@@ -330,7 +330,7 @@ export default function context(pi: ExtensionAPI) {
 		(!Object.isExtensible(session) || !Object.isExtensible(settings) || !Object.isExtensible(runtime)) && "extensible native prototypes",
 	].filter(Boolean);
 	if (missing.length > 0) {
-		throw new Error(`RQW-context: ${missing.join(" and ")} not found; the 500 000 window rule is built for Pi 1.3.0, nothing is changed`);
+		throw new Error(`RQW-context: ${missing.join(" and ")} not found; the 500 000 window rule is built for Pi 1.4.0, nothing is changed`);
 	}
 	wrapCompactionSettings(settings);
 	wrapModelGetter(session, modelDescriptor!);

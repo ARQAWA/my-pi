@@ -1,6 +1,6 @@
 # RQW-anthropic
 
-Subscription transport for stock Pi 1.3.0. `/login anthropic` still uses Pi's browser or copy-code login.
+Subscription transport for stock Pi 1.4.0. `/login anthropic` still uses Pi's browser or copy-code login.
 The builtin model catalog and Pi's message/tool parser stay intact. Plain API-key requests pass through unchanged.
 Only `anthropic` and `openai-codex` are listed in login and model pickers while the adapter is active.
 Credentials for every other provider remain saved. This is a visibility policy, not a credential access sandbox:
@@ -133,7 +133,7 @@ acceptance and subscription billing have not been verified by offline tests and 
 Provider hiding needs a version-guarded, reversible in-memory shim of Pi's exported classes because the public
 extension API cannot remove builtin login methods. No node_modules file is patched. The policy is limited to
 runtimes with this marked overlay. The hooks are reference-counted and removed on shutdown, reload or SDK
-dispose. A separate checked shim wraps `AgentSession.dispose` because Pi 1.3.0 has no public SDK pre-dispose
+dispose. A separate checked shim wraps `AgentSession.dispose` because Pi 1.4.0 has no public SDK pre-dispose
 event, and `_bindExtensionCore` to associate cleanup with the exact owning session, even without `session_start`.
 Recovery hooks preserve native `stream` versus `streamSimple` options and OAuth provenance. Only visible main-turn
 recovery is guarded; native summary retry is not wrapped. Unrelated SDK runtimes retain stock Pi behavior.

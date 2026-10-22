@@ -73,7 +73,7 @@ forms; Windows root comparison ignores case, with directory boundaries. Git uses
 
 ## Pi APIs and independence
 
-Pi is pinned at 1.3.0. The implementation uses `ctx.mode === "tui"` and the supported
+Pi is pinned at 1.4.0. The implementation uses `ctx.mode === "tui"` and the supported
 `ctx.ui.setFooter(factory)` and `ctx.ui.setEditorComponent(factory)` APIs. `setFooter(undefined)` restores Pi's
 built-in footer, `setEditorComponent(undefined)` its default editor.
 

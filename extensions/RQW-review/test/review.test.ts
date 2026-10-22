@@ -1141,7 +1141,7 @@ describe("cancellation stage boundaries", () => {
 					reviewSignal = options?.signal;
 					return Promise.resolve(auth);
 				}
-				assert.equal(options?.signal, undefined, "native Pi 1.3 prompt preflight has no abort signal");
+				assert.equal(options?.signal, undefined, "native Pi 1.4 prompt preflight has no abort signal");
 				entered.resolve();
 				return preflight.promise;
 			});

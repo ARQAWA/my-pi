@@ -94,7 +94,15 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 ## Scope
 
-- my-pi is an extension layer around stock Pi 1.3.0, not a fork (user: «Мы делаем просто обвес вокруг оригинального Pi.»;
+- Pi 1.4.0 is the one supported and tested version (user: «Надо понять, сможем ли мы сейчас апгрейдить весь наш пакет на
+  1.4 версию Pi.»; «1а»; «Можно начинать уже и можно продолжать всю работу, которая была до этого начата»). Reason: the
+  1.4.0 research found only intentional version gates and stale summary-output assertions in the way, no reason to wait
+  for another release or to fork. The gates of `RQW-settings` (`selection.ts`, `cache-warming.ts`), `RQW-tools`
+  (`selection.ts`) and `RQW-anthropic` (`index.ts`, `retry.ts`) accept exactly 1.4.0: 1.3.0 is no longer supported and
+  the range is not widened to future versions; the shared tool-selection symbol keeps one namespace in both copies of
+  `selection.ts`. `package.json` pins the development dependency to 1.4.0 and its peer range to the tested 1.4.0. PCLI
+  bundles the official 1.4.0 binary, [PCLI](#pcli). Carried by those files, `package.json`, `package-lock.json`.
+- my-pi is an extension layer around stock Pi 1.4.0, not a fork (user: «Мы делаем просто обвес вокруг оригинального Pi.»;
   «Нет, никаких форков.»). Reason: keep Pi's own behavior and add only the agreed extensions. Carried by
   `package.json` and `extensions/`. Only `RQW-models`, `RQW-statusbar` and `RQW-send-now` ported UI, as described in
   [Models](#models), [Statusbar](#statusbar) and [Send now](#send-now); `RQW-scroll` adds one owner-requested key
@@ -196,7 +204,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   stale text: a replay of the files from Git plus every successful edit matched each successful oldText exactly once.
   Each failed oldText broke where Cyrillic text began (literal `\u0430`-style escapes, a lone `"` or `\b`, an added
   newline, newText `x`). All were single calls; both parallel batches succeeded, so neither the barrier nor
-  multi-file grouping was involved. Pi 1.3.0 marks stock edit `strict: "prefer"` and Opus 5.5 `supportsStrictTools`.
+  multi-file grouping was involved. Pi 1.4.0 marks stock edit `strict: "prefer"` and Opus 5.5 `supportsStrictTools`.
   Probe replaying the session before four failing turns, 4 runs each: edit as sent (strict) 0 of 12 Cyrillic edit
   calls usable; the stock-shaped edit schema with strict garbled 5 of 9 calls; edit without strict matched 40 of 41
   blocks (the miss: a space for a line break). gpt-6.1-sol matched all 27 blocks with and without strict. A strict
@@ -348,22 +356,26 @@ Current accepted development policy (request summaries unless quoted); detailed 
   response after native abort settles. Without a known physical window, native settings remain unchanged.
   Native default summarization keeps the interception hook's preparation intact and uses a copy. Its existing
   direct summary route is resolved once after interception; the copied preparation reserve binds once to that
-  target's W. History and split-turn summaries share that R and native maxTokens/output limits. A cancelled/custom
+  target's W. Since Pi 1.4.0 R is only the trigger: `generateSummary*` ignores it, history and split-turn summaries
+  carry no explicit `maxTokens` and use the summarizing model's own output limit (`compaction.js`, `#9512`), still
+  clamped by pi-ai to the window minus the estimated input minus 4096 (limits 1 and 2 below). A cancelled/custom
   compaction does not route a default summary. No router, registry mutation, dependency or public setting is added.
 - Consequences for a model above 500 000, all as for a 500 000 model: footer and `getContextUsage()` show the window
-  500k and 90% at the threshold; summary output limits are 40 000 and 25 000 for a split turn (0.8 and 0.5 x R,
-  `compaction.js:512`, `727`); the output cap of a request is 500 000 - context - 4096, about 45 900 at 450 000
-  context (the test sees 45 902); an answer reporting more than 500 000 input tokens counts as overflow
-  (`pi-ai/dist/utils/overflow.js:147-150`). With compaction on and a history of several turns that a summary can
+  500k and 90% at the threshold; summary requests reach the provider with the 500 000 window and without an explicit
+  output limit (Pi 1.4.0; before it they were 0.8 and 0.5 x R, 40 000 and 25 000); the output cap of a request is
+  500 000 - context - 4096, about 45 900 at 450 000 context (the test sees 45 902); an answer reporting more than
+  500 000 input tokens counts as overflow (`pi-ai/dist/utils/overflow.js:152-156`). With compaction on and a history of several turns that a summary can
   fit, Pi recovers: a completed answer is kept and the session is compacted with reason `overflow` and no retry
-  (`agent-session.js:2410-2414`); a length stop with no output at 99% of the window is compacted and retried once
-  (`2440`, `overflow.js:156-159`). Nothing about the window goes to the provider: the OpenAI-compatible body has only
-  `max_completion_tokens` changed, every other field as stock Pi.
+  (`agent-session.js:2440-2443`); a length stop with no output at 99% of the window is compacted and retried once
+  (`agent-session.js:2437-2443`, `2467-2469`, `overflow.js:161-165`). Nothing about the window goes to the provider:
+  the OpenAI-compatible body has only `max_completion_tokens` changed, every other field as stock Pi.
 - Known limits of the 500 000 window, no code change: the window rule is the owner's, and all follow from it.
+  The numbers below were measured on Pi 1.3.0 with explicit summary caps; Pi 1.4.0 keeps the same pi-ai clamp
+  (`simple-options.js:3-9`) on a summary request, now sized from the model's output limit. Not re-measured.
   1. The output cap. pi-ai clamps a request's output to `contextWindow - context - 4096` with a floor of 1 token
      (`pi-ai/dist/api/simple-options.js:5-9`), so on a 1M model it reaches 1 token at about 495 900 context tokens.
      Pi does not recover in three cases. With `compaction.enabled: false` there is no compaction at all
-     (`agent-session.js:2363-2364`): measured `max_completion_tokens` at context 0 / 480 000 / 497 000 / 520 000 is
+     (`agent-session.js:2392-2394`): measured `max_completion_tokens` at context 0 / 480 000 / 497 000 / 520 000 is
      `[128000, 15902, 1, 1]` (stock Pi `[128000, 128000, 128000, 128000]`); a provider that obeys it answers 1 token
      with stop reason `length` and no error. A history that is one oversized turn, such as a 700 000-token first
      paste, gives requests with a 1-token cap; the overflow compaction that follows also has its turn-prefix summary
@@ -372,7 +384,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
      history estimates above about 496 000 tokens by characters, every request gets a 1-token cap and every
      compaction fails: the summary request is capped the same way ("Summarization failed: generation hit the token
      cap and the summary is incomplete"). A text-heavy history a little above the window still recovers, a resumed
-     one too: Pi checks a resumed session at its first prompt (`agent-session.js:1452-1454`); in review runs against
+     one too: Pi checks a resumed session at its first prompt (`agent-session.js:1483-1485`, `_prepareRun`); in review runs against
      a local stub the dead end began between 535 000 and 541 728 tokens (summary cap 5 112 at 534 864, 1 at
      541 728). A tool-heavy history of the same size recovers, because summaries cut tool results to 2 000 characters
      (`compaction/utils.js:82`). The test pins the cap with compaction off.
@@ -400,7 +412,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   written, also to lower a 1M model; above 500 000 it is capped like any other source, because Pi's composed model
   does not say where its window came from. A model without a positive contextWindow keeps Pi's values, as stock: for
   a window of 0 or undefined Pi itself compacts after every response, because its post-response check is
-  `tokens > 0 - reserve` (`agent-session.js:2376`, `2477`; only the pre-request check has a `<= 0` guard, `421`); a
+  `tokens > 0 - reserve` (`agent-session.js:2506` via `compaction/compaction.js:173-176`; only the pre-request check has a
+  `<= 0` guard, `agent-session.js:419-420`); a
   response is skipped only when nothing lies beyond `keepRecentTokens` to summarize. The extension leaves that
   unchanged.
 - The hooks live as long as the process, one per class (`Symbol.for` guards), and act only while a loaded
@@ -408,8 +421,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `Symbol.for("rqw-context/owner")` on `globalThis`; its `session_shutdown` handler removes only that token.
   The wraps act while the set is nonempty. Without an owner `getCompactionSettings` returns Pi's
   own values, `_buildRuntime` installs no accessor, and an accessor already installed returns the model as stored.
-  Pi emits `session_shutdown` before it loads the next runtime's extensions: `/reload` (`agent-session.js:2972`,
-  then `_resourceLoader.reload()` at `2981`), `/new`, `/resume` and `/fork` (`agent-session-runtime.js:102-113`,
+  Pi emits `session_shutdown` before it loads the next runtime's extensions: `/reload` (`agent-session.js:3001`,
+  then `_resourceLoader.reload()` at `3010`), `/new`, `/resume` and `/fork` (`agent-session-runtime.js:102-113`,
   `teardownCurrent` before `createRuntime`). After the last owner switches RQW-context off and reloads, or emits
   `session_shutdown`, the window and reserve are stock Pi's again (section Isolation). Concurrent owners survive
   either shutdown order and reloads of other sessions; an old runtime removes only its own token, not a newer one.
@@ -428,8 +441,9 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Automatic preparation uses its trigger target; manual preparation uses the latest successful response after
   native abort. Default summarization keeps interception preparation intact and routes once using the captured
   selection. Its copy binds R to the summary target, retaining the original explicit reserve intent from preparation
-  through `reserveIntents`, without rereading live settings after interception or an awaited route. Both summaries
-  share that R, bounded by native maxTokens/output limits. No extra route, router or SDK fork is added.
+  through `reserveIntents`, without rereading live settings after interception or an awaited route. Pi 1.4.0 ignores
+  that R for the summary output (no explicit maxTokens, the model's own output limit bounds both summaries), so the
+  rebinding no longer changes a request; it stays, a later simplification is optional. No extra route, router or SDK fork is added.
   The prior routed-physical bypass was a bug, not an owner-approved exception. Last-owner shutdown restores stock
   physical lookup identity and settings. Implementation: `extensions/RQW-context/index.ts`;
   details: `notes/context-questions.md`.
@@ -475,7 +489,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   no import or handshake with RQW-prompt. `search_method` needs declared read, grep and find;
   `rqw_tools_execution` needs declared bash. Both check `selectedTools` minus `hiddenTools`, so explicit selections
   do not acquire instructions for unavailable tools. Stock or custom prompt works in either extension order.
-- Source proof, Pi 1.3.0: `dist/core/extensions/runner.js`, `emitBeforeAgentStart`, shares one normalized options
+- Source proof, Pi 1.4.0: `dist/core/extensions/runner.js`, `emitBeforeAgentStart`, shares one normalized options
   object across handlers; `dist/core/system-prompt.js`, `buildSystemPromptSections`, uses `customPrompt` as preamble
   and still appends `sections` after cwd. `promptGuidelines` and tool guidelines are built only without customPrompt,
   so they cannot carry these instructions. `forceSystemPrompt` deliberately bypasses sections; no override is added.
@@ -496,7 +510,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   cache. `extensions/RQW-settings/cache-warming.ts` supplies a reversible, session-owned `getCacheWarmingMode`
   policy only while that session loads RQW-settings. User `cacheWarming` values, including changes during a session,
   cannot enable it. No new config knobs or settings-file, environment or `showCacheMissNotices` changes.
-  Reason: no synthetic keepalive inference; the first real request writes the cache. Pi 1.3.0 always constructs
+  Reason: no synthetic keepalive inference; the first real request writes the cache. Pi 1.4.0 always constructs
   its warmer, but off prevents it arming. Disabling/reloading or disposing restores the native getter and default
   (`streaming`), without affecting another owning session. A checked lifecycle shim is needed because the public
   extension API exposes a settings copy, and Pi's global-only getter ignores `applyOverrides`.
@@ -526,12 +540,14 @@ Current accepted development policy (request summaries unless quoted); detailed 
   barrier, or runs at once when an ancestor has a live entry there, so it never waits for itself. Reason: the first
   version carried the barrier in `AsyncLocalStorage`, and Bun, which runs the Pi release binaries (`pi.exe` of PCLI
   included), drops that context in a worker's `message` callback; every script that called a tool hung (review A).
-  Proven on Node 22 and 26 (`npm test`) and on Bun 1.3.14 (the Pi 1.3.0 binary) and 1.4.3:
+  Proven on Node 22 and 26 (`npm test`) and on Bun 1.3.14 (the runtime inside the Pi 1.4.0
+  binary, read from the release's `pi.exe`) and 1.4.3:
   `extensions/RQW-tools/test/bun/codemode-check.mjs` runs Pi's CLI under Bun with a faux model; CI job `bun-codemode`.
-  Known limit of stock Pi 1.3.0 on Bun, `pi.exe` included: a codemode call that starts right after other scripts,
-  such as the third in one message, can fail with "Codemode worker limit reached" (2 workers, a slot freed only on
-  the worker's late `exit` event); Node does not do this; the take-over does not change it. Details:
-  `notes/settings-codemode.md`, Limits.
+  Pi 1.4.0 admits codemode scripts through a FIFO wait for a worker slot (`PI_CODEMODE_MAX_WORKERS`, default 2, read
+  per call), capped at 60 seconds or the script's remaining deadline, instead of failing at once with "Codemode worker
+  limit reached"; the wait counts against the script timeout and each worker has a 256 MB VM limit, so a script
+  that waits on slots held by other waiting scripts can still time out. It is not unlimited parallel capacity and does
+  not replace the barrier above. Details: `notes/settings-codemode.md`, Limits.
 - Measured with codemode on (bench45, T01-T07, 5 runs, the bench44 judge; `~/stock-bench/bench45.csv`): gpt-6.1-sol
   medium quality 99.5 -> 97.4 (90% interval -3.7 to -0.5), seconds 51.1 -> 50.4, calls 40.9 -> 35.7; codemode called
   32 times in 19 of 35 runs, `tool_search` never; most of the loss is one T06 point. gpt-6-sol low never calls
@@ -569,14 +585,14 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `matchesAnyExactPattern` `:500-519`), so it must name the file: `-extensions/RQW-<name>` (the folder) excludes
   nothing. Docs: `docs/packages.md:94-121`. A git package is identified by its URL without the ref
   (`docs/packages.md:127`), so the `source` stays `git:github.com/ARQAWA/my-pi`. It takes effect after `/reload`
-  (`dist/core/agent-session.js:2969-2990` re-reads settings and reloads the resources) or a restart.
+  (`dist/core/agent-session.js:2998-3021` re-reads settings and reloads the resources) or a restart.
 - Limits of the switch, all Pi's own. `pi -e <dir>` ignores the filter: `-e` sources are resolved without one
   (`package-manager.js:746-757` `resolveExtensionSources`) and merged with the settings paths
   (`dist/core/resource-loader.js:370-372`, `:409`); for one run without an extension pass the wanted `index.ts` files
   with `-e`, plus `-ne` if the installed copy must not load too (`docs/cli.md:194-197`). Pi's built-in extensions are
   not package resources: they are switched off with `-builtin:<name>` in the top-level `extensions` setting
   (`docs/settings.md:163`, `package-manager.js:736-744`). After `/reload` Pi keeps the active tool set
-  (`agent-session.js:2981-2990`, `docs/settings.md:58`), so with RQW-tools or RQW-settings switched off, `grep`/`find`
+  (`agent-session.js:3011-3021`, `docs/settings.md:58`), so with RQW-tools or RQW-settings switched off, `grep`/`find`
   or `codemode`/`tool_search` stay active, now the stock ones, until `/new` or a restart.
 - Prompt/tools isolation is complete (section Prompt/tools isolation): `SYSTEM.md` no longer describes RQW-tools;
   RQW-tools supplies conditional search and execution sections. The package-level
@@ -1085,14 +1101,14 @@ Current accepted development policy (request summaries unless quoted); detailed 
   A verdict finishing after Esc or RPC abort while idle is saved once without starting Main, and the next prompt
   carries it once. In print and json mode `agent_end` waits for jobs using its active `ctx.signal`; abort
   interrupts only that wait, not the independent reviewer. `agent_before_settle` only decides continuation and marks
-  settlement; Pi 1.3.0 has no active `ctx.signal` there. Normal verdicts still continue the same run before Pi exits.
+  settlement; Pi 1.4.0 has no active `ctx.signal` there. Normal verdicts still continue the same run before Pi exits.
 - Credentials: a review fails with "no credentials" only when both `ctx.modelRegistry.hasConfiguredAuth(model)` and
   `await runtime.checkAuth(provider, { signal })` say so, as in Pi's own prompt. Reason: the auth snapshot behind
   `hasConfiguredAuth` is filled asynchronously, so right after startup or a reload it can miss credentials that exist.
 - Cancellation bounds the whole review job, including auth, session creation and prompt preflight (owner: "deadline boundsWHOLEjobinclcheckAuth/create/promptpreflight").
   `untilAborted` races each asynchronous stage, observes late rejection and removes its abort listener. Auth receives
   the signal, late-created sessions are disposed without prompting, and prompt cancellation aborts and disposes its
-  session without awaiting an uncooperative provider. Pi 1.3.0's own prompt auth await has no signal; the reviewer's
+  session without awaiting an uncooperative provider. Pi 1.4.0's own prompt auth await has no signal; the reviewer's
   public `agent.streamFunction` checks the job signal before calling the SDK stream function, so even a preflight
   resuming after disposal cannot make a model request. The underlying unabortable promise may remain pending until
   its implementation settles; it cannot hold the job, deliver a second verdict or escape the request guard.
@@ -1133,11 +1149,14 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - VDI constraint: everything runs inside VS Code as a subprocess of the extension host (user: «у нас нет админских прав,
   у нас нет wsl, и нам нельзя запускать ничего такого прямо на хосте, только внутри vs code, только как extension vs
   code, как субпроцесс extension VS code. только так»). Carried by `pcli-vscode/extension.js`.
-- Pi is pinned to 1.3.0 and bundled in the VSIX (about 43 MB), no update at runtime (user: «мы не будем автоматически
-  обновлять PCLai. Как есть 1.3 версия, так и есть.»; «1 да давай 2 да давай»). `vscode:prepublish` runs
-  `pcli-vscode/fetch-pi.mjs`: it downloads `pi-windows-x64.zip` of the release `earendil-works/pi` v1.3.0, checks the
-  hard-coded SHA256 from the release's SHA256SUMS and extracts it into `pcli-vscode/pi/` (git-ignored). A new Pi
-  version means new VERSION, URL and SHA256 there and a new VSIX.
+- Pi is pinned to 1.4.0 and bundled in the VSIX (44.06 MB, [run](https://github.com/ARQAWA/my-pi/actions/runs/39824069227), job `e2e`), no update at runtime (user: «мы не будем автоматически
+  обновлять PCLai. Как есть 1.3 версия, так и есть.»; «1 да давай 2 да давай»; the pin moved from 1.3.0 to 1.4.0 with
+  the package upgrade, [Scope](#scope), not by an update of an installed PCLI). `vscode:prepublish` runs
+  `pcli-vscode/fetch-pi.mjs`: it downloads `pi-windows-x64.zip` of the release `earendil-works/pi` v1.4.0, checks the
+  hard-coded SHA256 (`0f7256ea8bdac3af20012b94fdc1252a31cc6dc0d2f9b9eb539555d22e3e321b`, equal to the release's
+  `SHA256SUMS` line and to the downloaded archive) and extracts it into `pcli-vscode/pi/` (git-ignored). A new Pi
+  version means new VERSION, URL and SHA256 there and a new VSIX. Bumping the root npm dependency does not change the
+  bundled `pi.exe`. The `pi.exe` of 1.4.0 still embeds Bun 1.3.14 (read from the binary).
 - Release binary, not npm: Pi from npm is a Node program and would run inside `Code.exe` with `ELECTRON_RUN_AS_NODE=1`,
   which leaks into every bash command Pi runs and depends on the Node version of VS Code. `pi.exe` carries its own
   runtime; the same path (Bun exe from a GitHub release) already works on the VDI in omp-vscode. Carried by
@@ -1166,8 +1185,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   работает скроллинг. Когда я пытаюсь скроллить в терминале, у меня прокручиваются последние сообщения вместо того,
   чтобы скроллился чат. А когда я запустил коды в CLI своим extension, там скролл нормально работает. Посмотри эту
   проблему, пожалуйста.»
-  Cause, read from the Pi 1.3.0 sources: `TuiBase.start()` (`pi-tui/dist/tui.js:569-573`) calls `beforeTerminalStart`,
-  then `terminal.start`, then `afterTerminalStart`. `TuiAltScreen.beforeTerminalStart` (`tui-alt-screen.js:184-194`)
+  Cause, read from the Pi 1.4.0 sources: `TuiBase.start()` (`pi-tui/dist/tui.js:591-597`) calls `beforeTerminalStart`,
+  then `terminal.start`, then `afterTerminalStart`. `TuiAltScreen.beforeTerminalStart` (`tui-alt-screen.js:158-195`)
   writes `?1049h` and the mouse enable `?1000h ?1002h ?1003h ?1004h ?1006h` (without `?1003h` in tmux, Zellij and
   screen: `TMUX`, `ZELLIJ`, `STY` set, or `TERM` starting with `tmux` or `screen`), before `terminal.start` turns on raw
   mode and `enableWindowsVTInput` (`terminal.js:117-138`). ConPTY loses what is written that early, VS Code's terminal
@@ -1197,7 +1216,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Limits of the wheel fix. It acts when Pi's terminal starts, so after installing or updating my-pi Pi must be
   restarted: a `/reload` does not restart the TUI. my-pi must be installed in the Pi that PCLI runs (`INSTALL.md`; PCLI
   does not install it). It brings the mouse commands to VS Code; the VDI's own wheel handling is the owner's manual
-  check. Pi stays pinned at 1.3.0: the extension throws a load error when `TuiAltScreen.beforeTerminalStart` or the
+  check. Pi stays pinned at 1.4.0: the extension throws a load error when `TuiAltScreen.beforeTerminalStart` or the
   base `afterTerminalStart` hook is missing, and its test compares the set with what Pi's own `TuiAltScreen` writes.
 - Proof of the wheel fix. `extensions/RQW-mouse/test/mouse.test.ts` (in `npm test`, the same cases on the Mac and in
   the Windows CI): Pi's real `TuiAltScreen` on a terminal that records every write and the moment of `terminal.start`,
@@ -1210,12 +1229,18 @@ Current accepted development policy (request summaries unless quoted); detailed 
   follows. `test/isolation.test.ts` covers the extension through the manifest. Capture: job `mouse` of
   `.github/workflows/pcli.yml` (`workflow_dispatch`, or a push to branch `pcli`) runs `pcli-vscode/test/mouse.mjs`,
   which drives `pcli-vscode/test/mouse-suite.cjs` in a real VS Code: VS Code's own node-pty starts the PCLI chain
-  (PowerShell, Git Bash, the bundled Bun-build `pi.exe` 1.3.0) twice, stock and with `-e extensions/RQW-mouse/index.ts`,
+  (PowerShell, Git Bash, the bundled Bun-build `pi.exe` 1.4.0) twice, stock and with `-e extensions/RQW-mouse/index.ts`,
   and counts `?1000h` in the pseudo terminal's output once Pi is in the alternate screen. Measured on `windows-latest`
-  with VS Code 1.143.0: 0 times stock, 1 time with the extension, `?1049h` once in both, the set arriving after
-  `?2004h`. This also shows that the Bun build loads the extension, with its pi-tui module shared with Pi.
+  with VS Code 1.143.0 and Pi 1.4.0 ([run](https://github.com/ARQAWA/my-pi/actions/runs/39824069227), job `mouse`):
+  0 times stock, 1 time with the extension, `?1049h` once in both, the set arriving after `?2004h` (2013 bytes with the
+  extension, 1727 stock). This also shows that the Bun build loads the extension, with its pi-tui module shared with Pi.
 - Publishing: skill `publish-pcli` (`.agents/skills/publish-pcli/SKILL.md`), `vsce publish --target win32-x64` from
   `pcli-vscode/` under publisher `arqawa`, `version` raised before each publish, only on a direct request.
+- The Pi 1.4.0 PCLI is published right after the merge, then the package on the VDI is updated (owner, to the question
+  of when to release: «2a» to «Выпустить новую версию PCLI сразу после слияния, потом обновить пакет на VDI»). Reason:
+  main carries the version that gets published, so `pcli-vscode/package.json` and its lockfile are at 0.0.2, one patch
+  above the latest Marketplace version 0.0.1 (read-only query of the gallery, `/tmp/pi14-marketplace.json`). The
+  branch does not publish; publishing stays a separate step on the owner's request.
 
 ## Anthropic subscription adapter
 
@@ -1259,7 +1284,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   reference-counted reversible shim, only in runtimes with this overlay. It does not erase previously selected models
   or disable explicit SDK lookups. Disabling restores defaults without restoring stale credential snapshots.
 - Owner clarification: «Смотри, в нашем Pi должен быть старый OpenAI кодекс и всё, блядь. Legacy, который через девайс. А новый OpenAI нахуй не нужен, блядь. Я не знаю, что там за глупость новый OpenAI. У нас должен быть вход именно такой же, как сейчас это работает в текущем OpenAI кодексе, и всё, больше никак.»
-  Keep only `anthropic` and legacy `openai-codex` visible. Pi 1.3.0's `openai` ("Sign in with ChatGPT" and
+  Keep only `anthropic` and legacy `openai-codex` visible. Pi 1.4.0's `openai` ("Sign in with ChatGPT" and
   `OPENAI_API_KEY`) stays hidden: the owner wants the existing legacy device login, not the new OpenAI provider.
   Carrier: `extensions/RQW-anthropic/visibility.ts`, `ALLOWED`.
 - `auth.ts` refreshes under Pi's runtime credential-store lock, rechecks the rejected bearer, reuses a concurrent
@@ -1364,7 +1389,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   покажет предупреждение.» This supersedes the earlier choice that stock `/model`, Ctrl+L, Ctrl+P, `/scoped-models`
   and CLI/RPC selection stay intact. Reason: only the listed models may be selected or used anywhere.
   Carrier: `extensions/RQW-models/index.ts`. Listed means any provider variant matched by `familyOf`; nothing else.
-  - Stock lists are empty. Pi 1.3.0 gives extensions no session handle, so on every `session_start` RQW-models
+  - Stock lists are empty. Pi 1.4.0 gives extensions no session handle, so on every `session_start` RQW-models
     borrows the owning `AgentSession` in one synchronous `ctx.getContextUsage()` call, with
     `AgentSession.prototype.getContextUsage` swapped and restored in the same call. It then sets own-property masks
     on that session and its `ModelRuntime`: `getAvailableSnapshot()` and `session.scopedModels` return `[]`. So the
@@ -1655,7 +1680,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   identity sets replace the artifact-by-alias transcript rescans. The final outgoing JSONL is read after shutdown.
   Reason: avoid credential/unrelated-file deletion, support interrupted session tails and keep long scans responsive.
   Generated-name rules, precise cleanup boundary and failure behavior live in `extensions/RQW-session/README.md`.
-- Pi 1.3.0 research: `dist/utils/output-files.js` creates random-named OS-temp outputs with no session ID;
+- Pi 1.4.0 research: `dist/utils/output-files.js` creates random-named OS-temp outputs with no session ID;
   `dist/core/session-manager.js` stores names/labels/history in JSONL and discovers recent files by mtime;
   `dist/modes/interactive/components/session-selector.js` tries `trash` then unlink, which does not meet permanent-delete
   semantics. RQW-agent and RQW-review create in-memory child sessions; RQW-statusbar has no per-session persistence;
@@ -1679,7 +1704,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   можем, надо сделать». Agreed behavior (coordinator brief, not a literal quote): while the agent works, Enter with
   text queues steering as stock Pi does; Enter on an empty editor while steering is queued interrupts the turn and
   sends the queue at once; with nothing queued empty Enter does nothing; no other key changes.
-  Reason: stock Pi 1.3.0 needs Escape (which moves the queue back into the editor and aborts) and then Enter.
+  Reason: stock Pi 1.4.0 needs Escape (which moves the queue back into the editor and aborts) and then Enter.
   Carrier: independent `extensions/RQW-send-now/index.ts`, listed in `package.json` `pi.extensions`, switchable off
   alone ([Isolation](#isolation)). Behavior, mechanism and limits: `extensions/RQW-send-now/README.md`.
 - Engineering choices within that outcome: public Pi API only (`ctx.ui.onTerminalInput`, `ctx.abort`, editor

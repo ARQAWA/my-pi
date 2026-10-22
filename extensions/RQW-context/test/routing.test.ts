@@ -1,4 +1,4 @@
-// Real Pi 1.3.0 library and CLI runtime, native routing/compaction, only synthetic providers and fake auth.
+// Real Pi 1.4.0 library and CLI runtime, native routing/compaction, only synthetic providers and fake auth.
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -197,7 +197,8 @@ for (const [entry, pi] of ENTRIES) {
 						f.script.requests = [];
 						assert.deepEqual(await f.prompt(w - r + 1), ["threshold"]);
 						assert.deepEqual(f.script.requests.map((q) => q.window), [w, w, w]);
-						assert.deepEqual(f.script.requests.slice(1).map((q) => q.supplied), [0.8 * r, 0.5 * r]);
+						assert.deepEqual(f.script.requests.slice(1).map((q) => q.supplied), [undefined, undefined], "Pi 1.4 summaries carry no explicit maxTokens");
+						assert.deepEqual(f.script.requests.slice(1).map((q) => q.maxTokens), [128_000, 128_000], "native model output limit");
 						assert.deepEqual(f.preparations, [r]);
 						assert.ok(f.ends[0].result); assert.equal(f.ends[0].errorMessage, undefined);
 						assert.equal(f.session.model, f.selection); assert.equal(f.session.thinkingLevel, "low");
@@ -222,7 +223,7 @@ for (const [entry, pi] of ENTRIES) {
 					assert.deepEqual(await f.prompt(1_000, "next"), extra ? ["threshold"] : []);
 					assert.equal(f.script.requests.at(-1)?.id, target, "chosen route stands after compaction");
 					assert.equal(f.script.routes.filter((q) => q.reason === "user").length, 2, "no reroute for limits");
-					assert.deepEqual(f.script.requests.slice(0, -1).map((q) => q.supplied), extra ? [0.8 * reserve] : []);
+					assert.deepEqual(f.script.requests.slice(0, -1).map((q) => q.supplied), extra ? [undefined] : []);
 					assert.deepEqual(f.preparations, extra ? [reserve] : []);
 				} finally { await f.close(); }
 			}
@@ -301,8 +302,8 @@ for (const [entry, pi] of ENTRIES) {
 					}
 					await operation;
 					const summaries = f.script.requests.slice(mode === "manual" ? 0 : 1);
-					assert.deepEqual(summaries.map((q) => q.supplied), [21_760, 13_600]);
-					assert.deepEqual(summaries.map((q) => q.maxTokens), [21_760, 13_600]);
+					assert.deepEqual(summaries.map((q) => q.supplied), [undefined, undefined]);
+					assert.deepEqual(summaries.map((q) => q.maxTokens), [128_000, 128_000], "native model output limit, not R");
 					assert.deepEqual(summaries.map((q) => [q.id, q.window]), [["small", 272_000], ["small", 272_000]]);
 					assert.deepEqual(f.preparations, [50_000]);
 					assert.equal(hookSettings?.reserveTokens, 50_000, "interception preparation is not rewritten");
@@ -360,24 +361,26 @@ for (const [entry, pi] of ENTRIES) {
 		}
 
 		const reserveChanges = [
-			{ name: "explicit 20k to 30k", initial: 20_000, next: 30_000, expected: 20_000 },
-			{ name: "explicit old derived R stays explicit", initial: 50_000, next: 30_000, expected: 50_000 },
-			{ name: "explicit stock default stays explicit", initial: 16_384, next: 30_000, expected: 16_384 },
-			{ name: "explicit to undefined", initial: 20_000, next: undefined, expected: 20_000 },
-			{ name: "implicit to explicit old derived R", initial: undefined, next: 50_000, expected: 27_200 },
-			{ name: "virtual override 20k to 30k", initial: 20_000, next: 30_000, expected: 20_000, override: true },
-			{ name: "virtual override removed to global fallback", initial: 20_000, next: undefined, expected: 20_000, override: true },
-			{ name: "explicit equal actual W falls back", initial: 272_000, next: 20_000, expected: 27_200 },
-			{ name: "explicit above actual W falls back", initial: 600_000, next: 20_000, expected: 27_200 },
-			{ name: "raw explicit invalid for chat becomes valid for summary", initial: 300_000, next: 20_000,
-				expected: 300_000, chat: "small", summary: "big" },
+			{ name: "explicit 20k to 30k", initial: 20_000, next: 30_000 },
+			{ name: "explicit old derived R stays explicit", initial: 50_000, next: 30_000 },
+			{ name: "explicit stock default stays explicit", initial: 16_384, next: 30_000 },
+			{ name: "explicit to undefined", initial: 20_000, next: undefined },
+			{ name: "implicit to explicit old derived R", initial: undefined, next: 50_000 },
+			{ name: "virtual override 20k to 30k", initial: 20_000, next: 30_000, override: true },
+			{ name: "virtual override removed to global fallback", initial: 20_000, next: undefined, override: true },
+			{ name: "explicit reserve equal to the summary model's window, valid for the chat window", initial: 272_000, next: 20_000 },
+			{ name: "explicit reserve above the chat window falls back to R", initial: 600_000, next: 20_000 },
 		] as const;
+		// Since Pi 1.4.0 R no longer sets a summary output limit, so the extension's summary-side reserve rebinding is
+		// kept but inert. What these cases still prove: the native preparation seen by the interception hook carries
+		// the reserve valid when compaction started, a live settings change during the operation does not rewrite it,
+		// the summaries still go to the one routed physical model, and later settings reads see the new policy.
 		for (const change of reserveChanges) for (const mode of ["manual", "automatic"] as const) {
 			for (const timing of ["before compact hook", "pending direct route"] as const) {
-				it(`235 F2: ${mode} freezes ${change.name} in ${timing}`, async () => {
+				it(`235 F2: ${mode} preparation keeps its reserve, ${change.name}, when settings change in ${timing}`, async () => {
 					const override = "override" in change;
-					const chat = "chat" in change ? change.chat : "big";
-					const summary = "summary" in change ? change.summary : "small";
+					const chat = "big";
+					const summary = "small";
 					const initialCompaction = { keepRecentTokens: 0, ...(override
 						? { reserveTokens: 40_000, modelOverrides: { "routing/auto": { reserveTokens: change.initial } } }
 						: { reserveTokens: change.initial }) };
@@ -391,7 +394,7 @@ for (const [entry, pi] of ENTRIES) {
 					const release = Promise.withResolvers<void>();
 					let operation: Promise<unknown> | undefined;
 					let hookSettings: { reserveTokens: number } | undefined;
-					const prepared = chat === "small" ? 27_200 : change.initial === undefined ? 50_000
+					const prepared = change.initial === undefined ? 50_000
 						: change.initial >= 500_000 ? 50_000 : change.initial;
 					try {
 						await f.prompt(1_000); await f.prompt(2_000);
@@ -413,16 +416,15 @@ for (const [entry, pi] of ENTRIES) {
 							if (request.reason !== "direct") return;
 							entered.resolve(); await release.promise;
 						};
-						operation = mode === "manual" ? f.session.compact() : f.prompt((chat === "small" ? 272_000 : 500_000) - prepared + 1);
+						operation = mode === "manual" ? f.session.compact() : f.prompt(500_000 - prepared + 1);
 						if (timing === "pending direct route") {
 							await entered.promise; await mutate(); release.resolve();
 						}
 						await operation;
 						const summaries = f.script.requests.slice(mode === "manual" ? 0 : 1);
-						const budgets = [0.8, 0.5].map((ratio) => Math.min(Math.floor(ratio * change.expected), 128_000));
-						assert.deepEqual(summaries.map((q) => q.supplied), budgets);
-						assert.deepEqual(summaries.map((q) => q.maxTokens), budgets);
-						assert.ok(summaries.every((q) => q.id === summary && q.window === (summary === "small" ? 272_000 : 500_000)));
+						assert.deepEqual(summaries.map((q) => q.supplied), [undefined, undefined]);
+						assert.deepEqual(summaries.map((q) => q.maxTokens), [128_000, 128_000], "native model output limit, not the frozen reserve");
+						assert.ok(summaries.every((q) => q.id === summary && q.window === 272_000));
 						assert.deepEqual(f.preparations, [prepared]);
 						assert.deepEqual(hookSettings, { enabled: true, reserveTokens: prepared, keepRecentTokens: 0 },
 							"live settings changes do not rewrite the native preparation");
@@ -466,7 +468,7 @@ for (const [entry, pi] of ENTRIES) {
 					await f.session.prompt(`${f.script.tag} overflow`); await f.session.waitForIdle();
 					assert.deepEqual(f.starts, ["overflow"]);
 					assert.equal(f.ends[0].willRetry, length); assert.equal(f.ends[0].errorMessage, undefined);
-					assert.deepEqual(f.script.requests.slice(1, 3).map((q) => q.supplied), [40_000, 25_000]);
+					assert.deepEqual(f.script.requests.slice(1, 3).map((q) => q.supplied), [undefined, undefined]);
 					assert.ok(f.script.requests.every((q) => q.window === 500_000));
 					assert.equal(f.script.routes.filter((q) => q.reason === "retry").length, length ? 1 : 0);
 					assert.equal(f.script.routes.filter((q) => q.reason === "direct").length, 1);
@@ -475,15 +477,16 @@ for (const [entry, pi] of ENTRIES) {
 			}
 		});
 
-		it("manual summary routes once and binds both budgets to its chosen physical model", async () => {
-			for (const [chat, summary, reserve] of [["big", "small", 27_200], ["small", "big", 50_000]] as const) {
+		it("manual summary routes once and both requests use its chosen physical model", async () => {
+			for (const [chat, summary] of [["big", "small"], ["small", "big"]] as const) {
 				const f = await open(pi, { target: chat });
 				try {
 					await f.prompt(1_000); await f.prompt(2_000);
 					f.script.summaryTarget = summary; f.script.requests = [];
 					await f.session.compact();
 					assert.deepEqual(f.preparations, [chat === "big" ? 50_000 : 27_200]);
-					assert.deepEqual(f.script.requests.map((q) => q.supplied), [0.8 * reserve, 0.5 * reserve]);
+					assert.deepEqual(f.script.requests.map((q) => q.supplied), [undefined, undefined]);
+					assert.deepEqual(f.script.requests.map((q) => q.maxTokens), [128_000, 128_000]);
 					assert.ok(f.script.requests.every((q) => q.id === summary && q.window === (summary === "big" ? 500_000 : 272_000)));
 					assert.equal(f.script.routes.filter((q) => q.reason === "direct").length, 1);
 				} finally { await f.close(); }
@@ -494,7 +497,7 @@ for (const [entry, pi] of ENTRIES) {
 
 for (const [entry, pi] of ENTRIES) {
 	describe(`${entry}: routed isolation, policy and lifecycle`, () => {
-		it("parallel sessions share a runtime and selection, not physical reserve or summary budgets", async () => {
+		it("parallel sessions share a runtime and selection, not physical reserve or summary routes", async () => {
 			const shared = await host(pi);
 			const a = await open(pi, { host: shared, target: "big" });
 			const b = await open(pi, { host: shared, target: "small", owner: false });
@@ -514,8 +517,7 @@ for (const [entry, pi] of ENTRIES) {
 				assert.deepEqual(a.preparations, [50_000]); assert.deepEqual(b.preparations, [27_200]);
 				assert.deepEqual(a.script.requests.map((q) => q.window), [500_000, 272_000, 272_000]);
 				assert.deepEqual(b.script.requests.map((q) => q.window), [272_000, 500_000, 500_000]);
-				assert.deepEqual(a.script.requests.slice(1).map((q) => q.supplied), [21_760, 13_600]);
-				assert.deepEqual(b.script.requests.slice(1).map((q) => q.supplied), [40_000, 25_000]);
+				for (const f of [a, b]) assert.deepEqual(f.script.requests.slice(1).map((q) => q.supplied), [undefined, undefined]);
 				for (const f of [a, b]) assert.equal(f.script.routes.length, 3);
 			} finally { await a.close(); await b.close(); }
 		});
@@ -534,7 +536,7 @@ for (const [entry, pi] of ENTRIES) {
 				await internals._checkCompaction(previous);
 				assert.deepEqual(f.starts, ["threshold"]);
 				assert.deepEqual(f.preparations, [27_200]);
-				assert.deepEqual(f.script.requests.map((q) => q.supplied), [40_000, 25_000]);
+				assert.deepEqual(f.script.requests.map((q) => q.supplied), [undefined, undefined]);
 			} finally { await f.close(); }
 		});
 
@@ -560,7 +562,7 @@ for (const [entry, pi] of ENTRIES) {
 			}
 		});
 
-		it("summary-target reserve fallback and native maxTokens stay consistent across both summary calls", async () => {
+		it("an explicit 300 000 reserve follows the chat model's window in the preparation; both summary calls use native maxTokens", async () => {
 			for (const chat of ["small", "big"]) {
 				const f = await open(pi, { target: chat, settings: { compaction: { keepRecentTokens: 0, reserveTokens: 300_000 } } });
 				try {
@@ -569,7 +571,8 @@ for (const [entry, pi] of ENTRIES) {
 					f.script.requests = [];
 					await f.session.compact();
 					assert.deepEqual(f.preparations, [chat === "big" ? 300_000 : 27_200]);
-					assert.deepEqual(f.script.requests.map((q) => q.supplied), chat === "big" ? [21_760, 13_600] : [128_000, 128_000]);
+					assert.deepEqual(f.script.requests.map((q) => q.supplied), [undefined, undefined]);
+					assert.deepEqual(f.script.requests.map((q) => q.maxTokens), [128_000, 128_000]);
 					assert.equal(f.script.routes.filter((q) => q.reason === "direct").length, 1);
 				} finally { await f.close(); }
 			}

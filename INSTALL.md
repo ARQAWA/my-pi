@@ -2,7 +2,7 @@
 
 You are running inside Pi. Install the my-pi package into this Pi installation, then report the result in one short message.
 
-0. Run `pi --version`. The package is built and tested for Pi 1.3.0. If the version differs, tell the user and stop:
+0. Run `pi --version`. The package is built and tested for Pi 1.4.0. If the version differs, tell the user and stop:
    the tools wrap Pi's own tool code, which may change between versions.
 0.1. Run `pi list` and inspect enabled extensions in personal and project scope with `pi config`, plus any explicit
    `-e` arguments. If `git:github.com/edxeth/pi-claude-auth` is installed, run

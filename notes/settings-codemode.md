@@ -5,8 +5,10 @@ settings. Config values cannot enable warming; switching the extension off resto
 mechanism live in [DECISIONS.md, Settings](../DECISIONS.md#settings); tests: `extensions/RQW-settings/test/cache-warming.test.ts`.
 
 Decision: `extensions/RQW-settings/index.ts` adds `codemode` and `tool_search` to the active tools at `session_start`
-when the user made no tool selection (owner: «Давай включим CodeMode и Tool Search»). Pi 1.3.0. Source paths below are
-relative to `node_modules/@earendil-works/pi-coding-agent/dist/`.
+when the user made no tool selection (owner: «Давай включим CodeMode и Tool Search»). Pi 1.4.0. Source paths and measurements below were taken on
+Pi 1.3.0; the 1.4.0 comparison found the tool factories, nested ids and `tool_search` unchanged, and the only changed
+codemode behavior is the worker admission, see Limits. Source paths are relative to
+`node_modules/@earendil-works/pi-coding-agent/dist/`.
 
 Captured by building a real session (three extensions in package order, faux provider, no model call) and reading the
 system message that the request carries: `toolsAdded[]` of the first `role: "system"` message in the faux provider's
@@ -190,7 +192,7 @@ Bun 1.4.3). Pi's release binaries run on Bun (`config.js:424` `isBunBinary ? "bu
 PCLI included. There every script call went to the outer barrier, waited for its own codemode call, and hung: the
 real 1.3.0 binary printed `tool_execution_start c0 codemode`, `tool_execution_start c0/1 write`, then nothing.
 
-Tests that prove the routing, on Node 22.19 and Node 26, and on Bun 1.3.14 (the runtime inside the Pi 1.3.0 binaries)
+Tests that prove the routing, on Node 22.19 and Node 26, and on Bun 1.3.14 (the runtime inside the Pi 1.4.0 binaries, read from the Windows release's `pi.exe`)
 and Bun 1.4.3:
 
 - `extensions/RQW-tools/test/bun/codemode-check.mjs` (`npm run test:bun`, CI job `bun-codemode` on Ubuntu and
@@ -243,11 +245,13 @@ iterations per variant, each including ten repetitions of the 500 KB case: 100 s
 ### Limits
 
 - Two `codemode` calls in one message run one after the other (`all` against `all`), like two `bash` calls.
-- Stock Pi 1.3.0 on Bun, `pi.exe` included, allows 2 codemode workers (`extensions/codemode/execute.js:23`
-  `MAX_CONCURRENT_CODEMODE_WORKERS = 2`) and frees a slot only on the worker's `exit` event
-  (`pi-codemode/dist/runtime/host.js:36-37`), which Bun sends late. A codemode call that starts right after other
-  scripts, such as the third in one message, can fail at once with "Codemode worker limit reached (2 workers are still
-  running or shutting down)". Node does not do this. It is the same with the take-over switched off (review B).
+- Pi 1.4.0 admits codemode scripts through a FIFO wait for a worker slot instead of failing at once with "Codemode
+  worker limit reached" (`extensions/codemode/execute.js:22-77,481-552`, `docs/codemode.md:224-230`). The limit is
+  `PI_CODEMODE_MAX_WORKERS`, a positive integer read per call, default 2; the wait is capped at 60 seconds or the
+  script's remaining deadline and counts against its timeout. Each worker has a 256 MB VM limit, so do not raise the
+  count blindly. A script that waits for slots held by other waiting scripts can still time out: the queue is not
+  extra parallel capacity. Before 1.4.0 the third call in one message could fail at once on Bun (late worker `exit`).
+  The barrier below the codemode call is unchanged.
 - The routing relies on Pi's nested id format `<parent id>/<n>` (`core/nested-tool-calls.js:106`). A Pi update that
   changes it sends script calls to the outer barrier, where they wait for their codemode call: the Bun check and the
   codemode tests of RQW-tools then fail on their watchdogs. A model call id that has a `/` and starts with the id of a running

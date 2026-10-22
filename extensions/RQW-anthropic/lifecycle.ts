@@ -20,7 +20,7 @@ export type Lifecycle = {
 	release(): void;
 };
 
-/** Pi 1.3.0 SDK dispose has no shutdown hook. Release only the disposing session's leases. */
+/** Pi 1.4.0 SDK dispose has no shutdown hook. Release only the disposing session's leases. */
 export function installLifecycle(cleanup: Cleanup, Session = AgentSession): Lifecycle {
 	const owner = Session as unknown as { [PATCH]?: PatchState };
 	let state = owner[PATCH];
@@ -28,7 +28,7 @@ export function installLifecycle(cleanup: Cleanup, Session = AgentSession): Life
 		const prototype = Session.prototype;
 		const originals = ["dispose", "_bindExtensionCore"].map(name => [name, Object.getOwnPropertyDescriptor(prototype, name)] as const);
 		if (originals.some(([, descriptor]) => typeof descriptor?.value !== "function" || !descriptor.configurable)) {
-			throw new Error("RQW-anthropic: incompatible Pi lifecycle; requires Pi 1.3.0. Nothing was patched.");
+			throw new Error("RQW-anthropic: incompatible Pi lifecycle; requires Pi 1.4.0. Nothing was patched.");
 		}
 		state = { count: 0, cacheBindings: new Map(), callbacks: new WeakMap(), leases: new WeakMap(), originals: originals as PatchState["originals"] };
 		const installed = state;

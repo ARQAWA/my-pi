@@ -43,8 +43,8 @@ description: "Опубликовать новую версию расширен�
    результата и не публикуй при красном. Если менялся `extension.js`, выполни
    ещё `node --check extension.js` из `pcli-vscode/`.
 5. `npx --yes @vscode/vsce@latest publish --target win32-x64 --skip-license --pat "$T"`
-   из `pcli-vscode/`. Перед упаковкой `vscode:prepublish` сам скачивает Pi 1.3.0
-   (`fetch-pi.mjs`) и проверяет его SHA256; VSIX получается около 43 МБ.
+   из `pcli-vscode/`. Перед упаковкой `vscode:prepublish` сам скачивает Pi 1.4.0
+   (`fetch-pi.mjs`) и проверяет его SHA256; VSIX получается около 44 МБ.
 6. Повтори запрос из шага 2: новая версия появилась. Marketplace проверяет пакет
    несколько минут, до этого версия может не отображаться.
 
