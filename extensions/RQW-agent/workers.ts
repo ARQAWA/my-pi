@@ -16,7 +16,8 @@ export type WorkerProfile = {
 /** Caller-owned children and results, including a result not yet consumed by the caller model. */
 export type RuntimeHandle = {
 	pending(): boolean;
-	wait(): Promise<void>;
+	wait(signal: AbortSignal): Promise<void>;
+	ids(): string[];
 	abortAll(): void;
 	close(): void;
 };
@@ -51,7 +52,8 @@ export function registerWorkers(caller: ExtensionAPI, register: (caller: Extensi
 	}
 	return {
 		pending: () => runtimes.some(runtime => runtime.pending()),
-		async wait() { await Promise.all(runtimes.map(runtime => runtime.wait())); },
+		async wait(signal) { await Promise.all(runtimes.map(runtime => runtime.wait(signal))); },
+		ids: () => runtimes.flatMap(runtime => runtime.ids()),
 		abortAll() { for (const runtime of runtimes) runtime.abortAll(); },
 		close() { for (const runtime of runtimes) runtime.close(); },
 	};

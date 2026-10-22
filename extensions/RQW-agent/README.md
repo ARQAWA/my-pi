@@ -6,9 +6,9 @@ exclusively from a fresh `rqw-tools:subagent-tools` factory offer on `pi.events`
 
 ## Workers
 
-Main and every `agent` subagent can call `code_writer` or `shell_runner`. Each tool takes only a required `task`
-brief: the whole role prompt, model, reasoning and tool allowlist are fixed, not caller overrides. Every call creates
-a fresh in-process session in the caller's cwd, with no send or resume. Subagents retain both worker tools even
+Main and every `agent` subagent can call `code_writer` or `shell_runner`. Omitted action (or `start`) takes a required
+`task` brief and creates a fresh in-process session in the caller's cwd. The role prompt, model, reasoning and tool
+allowlist are fixed, not caller overrides. Explicit `send` continues that assignment with its history. Subagents retain both worker tools even
 with an empty base-tool subset; workers have no `agent`, `code_writer` or `shell_runner` tools. Maximum delegation
 depth is main -> subagent -> worker. These are product workers; [PROCESS.md](../../PROCESS.md) governs development.
 
@@ -24,15 +24,18 @@ Caller-facing instructions live in [descriptions/](descriptions/); complete role
 | `shell_runner` | directory; commands in order; timeout; on failure stop or continue | Runs the given commands without choosing alternatives or fixing failures. Reports each command, exit code, duration, outcome, verbatim error lines and full-output path in the OS temp directory; services include readiness, port, log path and process id. | `bash`, `read`, `grep`, `find` |
 
 An ambiguous or contradictory brief is reported as blocked instead of guessed. The tool returns `code_writer#N started`
-or `shell_runner#N started` without waiting for completion; do not wait or poll. Its final result arrives later as
-`[code_writer#N] ...` or `[shell_runner#N] ...` in the direct caller's session, never directly to main for a nested worker.
+or `shell_runner#N started` without waiting for completion. Its final result arrives once through `wait` or as
+`[code_writer#N] ...` / `[shell_runner#N] ...` in the direct caller's session, never directly to main for a nested worker.
 
 ### Runtime and delivery
 
 [workers.ts](workers.ts) supplies profiles to the same session runtime in [index.ts](index.ts) that implements `agent`:
 allocation metadata, abortable creation, result delivery, caller-abort latching and shutdown are shared, not copied.
-Registration takes the direct caller's API explicitly; there is no global caller session. Completed worker sessions
-are disposed; caller shutdown aborts pending workers and drops their results. Caller Esc leaves accepted workers
+Registration takes the direct caller's API explicitly; there is no global caller session. Completed workers stay idle
+with history until `stop` or caller shutdown. Idle retained sessions do not keep the parent assignment pending.
+Each `start` is clean; only explicit `send` reuses history. Retained history costs memory; send pays its input tokens
+and may trigger Pi compaction or a new cache write after expiry. There is no automatic eviction/cap. Caller shutdown
+aborts and disposes active and retained sessions and drops their results. Caller Esc leaves accepted workers
 running and keeps late answers without waking the aborted caller; see [Results and main abort](#results-and-main-abort).
 
 A subagent's native run can settle while workers are pending. Their messages wake it normally; its parent keeps the
@@ -47,7 +50,8 @@ above. Session state and delivery remain caller-local. The ordered edit/check ba
 loaded. [worker-model.ts](worker-model.ts) selects from the fixed primary/fallback chain, skipping missing candidates
 and provider auth-check failures; exhausting the candidates returns a clear No credentials error. The accepted chain,
 measured reasoning levels, reasons and evidence have one decision record: [Workers](../../DECISIONS.md#workers).
-There is no worker-specific token cap or timeout; provider limits and caller cancellation still apply.
+There is no worker-specific execution, turn, token, output-growth or wall-clock limit; provider limits and explicit
+management cancellation still apply. Wait timeout limits the caller's pause, never the child's lifetime.
 
 ### Git guard
 
@@ -73,6 +77,56 @@ and does not interpret external scripts, aliases or computed commands.
 
 Offline proofs: `test/workers.test.ts`, `test/nested-workers.test.ts`, `test/worker-model.test.ts` and
 `test/git-guard.test.ts`. [Isolation](../../DECISIONS.md#isolation) applies to workers and their tests too.
+
+## Wait, status and management
+
+All three tools accept `wait`, `status`, `send`, `interrupt`, `stop`, `restart`; workers also keep `{task}` for a fresh
+start. Management `id` belongs to that tool's kind (`agent` also accepts its legacy numeric string). `wait`/`status`
+accept nonempty `ids` of fully qualified IDs, mixing any direct agents/workers. No access to siblings/grandchildren.
+
+```js
+agent({action: "wait", ids: ["agent#1", "code_writer#1", "shell_runner#1"], timeout_ms: 90000})
+code_writer({action: "status", ids: ["code_writer#1"], messages: 8})
+code_writer({action: "send", id: "code_writer#1", task: "Fix the reported assertion only"})
+shell_runner({action: "stop", id: "shell_runner#1"})
+```
+
+Work in parallel when useful. When blocked, estimate remaining duration and choose `timeout_ms` somewhat longer on
+**each** wait; 300000 ms is only the omission/null default, not a periodic requirement or maximum. A positive finite
+safe integer is required; large waits use monotonic deadlines and platform-safe timer chunks. Timeout never stops a
+child. Re-estimate and wait again, or inspect status before deciding management. No busy polling, model turn or network
+request comes from the timer; children continue their own work/tokens. No new execution limits/watchdogs are added.
+
+The tool returns text JSON mirrored in `details` (no outputSchema): `reason`, `timed_out`, `results`, `receipts`,
+`statuses`; `target_changed` also identifies the old run/change. `result` returns the first selected completion and
+any other already-ready results, including terminal errors. `timeout` returns every selected status without consuming
+a future result. `idle` returns immediately if no selected run/result exists. Unknown/closed IDs are explicit status
+errors. Interrupt/stop/restart wake old waits; they never silently follow replacements. Management registration is
+ordered, but the wait Promise holds neither that queue nor the optional RQW-tools barrier.
+
+Results have caller-local ID, epoch/run identity and a UUID delivery. A broker reserves a result for one waiter or
+commits it to the usual push message. Repeated/competing waits receive receipts (`delivered_via`, `claimed_by`), not
+second copies. Pending settlement messages can still be claimed; an already submitted Pi message cannot be recalled.
+A wait handoff commits only with a successful finalized persisted toolResult. Failed hooks, abort or an outer codemode
+error before saved handoff return the reservation to the message path. Nested ownership uses actual `parentToolCallId`
+events, not ID parsing or the bounded nestedCalls log. A successful script deliberately filtering its result owns that
+choice. In codemode use `text(result)` or return the result to read its JSON.
+
+`status` is a local snapshot, without invoking the child model or consuming a result. `messages` defaults to 8,
+validated from 5 to 10: chronological role/time/tool IDs, trimmed head/tail previews, image/binary metadata only,
+thinking presence/size rather than raw reasoning, plus unfinished assistant/tool data. State distinguishes native
+running/preflight/model/retry/compaction, streaming tool arguments, running tools and idle; `pending_children` explains
+a native-idle subagent still awaiting workers. Elapsed/idle/activity ages are monotonic. Diagnostics preserve parallel
+call IDs, previews, argument byte growth, last updates and repetition suspicions (not stall verdicts). Known session
+token totals/run deltas and explicitly incomplete live usage are not token estimates derived from bytes. Preview budgets
+(1200 characters/message, 12000/ID) limit representation only, never execution/history.
+
+`interrupt` returns the pre-interrupt snapshot and `interruption_requested`: it requests abort, clears follow-ups and
+preserves history. Cancellation may still be pending: send is rejected until settlement. `stop` closes and forgets the
+ID. `restart` fences the old generation and creates a fresh session with the same external ID; without task it is idle,
+not a replay. Workers cannot override fixed configuration. An in-process tool may ignore AbortSignal and still have
+side effects; controls do not wait indefinitely for it. No transaction or forced JavaScript kill is promised. Inspect
+files/commands before retrying. Reload/resume restores ID high-water marks, never live children.
 
 ## Prompt cache
 
@@ -106,8 +160,12 @@ A final `compaction_end.errorMessage` without `willRetry` is delivered as `error
 drops only the provisional assistant attempt, including its truncation marker. Genuine final answers and errors remain
 in order across follow-ups.
 
-Print and JSON wait for accepted children in `agent_end`, while `ctx.signal` is live, using an abortable race. Main abort
-returns without waiting for independent children. `agent_before_settle` only checks continuation and late-result flow.
+Print/JSON use one caller-wide non-consuming fallback wait at `agent_end`, not serial waits per profile. It uses the
+omitted default; completion follows normal message continuation, and timeout adds compact status so the caller can
+decide. A native-idle subagent uses the same bounded fallback for its own workers, never forwarding an intermediate
+timeout as its final answer to main. Explicit wait takes priority. TUI/RPC idle callers keep normal push wakeups.
+Caller abort ends only its wait, leaving accepted children running; late results do not wake the aborted caller.
+`agent_before_settle` checks continuation and late-result flow.
 
 TUI Esc and RPC abort latch the main session as aborted through `agent_settled`. A child that finishes **after** that
 abort is appended without waking the main model. The next main run clears the latch and sees the saved result once.
@@ -138,7 +196,11 @@ The second command requires an installed Bun. CLI children use a temporary HOME 
 environment, offline flags and the same transport-denying preload before Pi loads. They cover normal text/JSON/RPC,
 main cancellation during text/JSON waiting, late-after-abort RPC, and actual builtin codemode nested ids. The CLI faux
 provider asserts that an empty base-tool subset declares exactly the worker tools, matching [Workers](#workers).
-SDK regressions cover auth/queue/loader/factory/creation/preflight cancellation, failed replacement, unrecovered
+`test/coordinator.test.ts` covers broker races, handoff, caller-chosen deadlines, implicit fallback and explicit-wait
+priority with virtual time. `test/activity.test.ts` covers live diagnostics, usage, trimming and argument growth.
+`test/wait.test.ts` uses real sessions for mixed waits, retention, history, cancellation-pending tools and hook failure.
+CLI scenarios cover direct/nested waits, mixed workers, codemode handoff and outer error/timeout/abort; the same focused
+CLI file runs under Bun in CI. SDK regressions cover auth/queue/loader/factory/creation/preflight cancellation, failed replacement, unrecovered
 length/summary failure, safe ids, reload, shutdown and TUI/RPC late-after-abort. Coverage also includes successful retry,
 compaction, settings inheritance, exact system prompt and optional-tools integration.
 

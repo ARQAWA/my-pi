@@ -48,6 +48,22 @@ async function workers(t: TestContext) {
 	return { ...f, call, delivered, requests, mainRequests: f.requests.main, replies, auth: (providers: string[]) => { credentials = providers; } };
 }
 
+test("worker descriptions give the estimate-and-wait contract with 300000 only as the omitted default", async t => {
+	const f = await workers(t);
+	try {
+		for (const role of ROLES) {
+			const description = f.session.getToolDefinition(role)!.description;
+			assert.match(description, /estimate/);
+			assert.match(description, /timeout_ms/);
+			assert.match(description, /estimate how long their remaining work should take and set timeout_ms somewhat longer/);
+			assert.match(description, /300000/);
+			assert.match(description, /only.*default/);
+			assert.match(description, /300000 is only the omitted default, not a required interval or maximum\./);
+			assert.doesNotMatch(description, /300000 (?:is )?(?:a |the )?(?:required|maximum|max)\b/i);
+		}
+	} finally { await f.cleanup(); }
+});
+
 test("main starts both workers immediately and receives their results as caller messages", async t => {
 	const f = await workers(t);
 	const first = gate("CODE_DONE"), second = gate("SHELL_DONE");
@@ -73,8 +89,9 @@ test("main starts both workers immediately and receives their results as caller 
 			assert.deepEqual(toolNames(request.context), role === "code_writer"
 				? ["bash", "edit", "find", "grep", "read", "write"] : ["bash", "find", "grep", "read"]);
 			const definition = f.session.getToolDefinition(role)!;
-			assert.deepEqual(Object.keys(definition.parameters.properties), ["task"]);
-			assert.deepEqual(definition.parameters.required, ["task"]);
+			assert.deepEqual(Object.keys(definition.parameters.properties).sort(), ["action", "id", "ids", "messages", "task", "timeout_ms"]);
+			assert.deepEqual(definition.parameters.required ?? [], []);
+			assert.equal(definition.parameters.properties.id.description, `${role}#N; management actions`);
 		}
 		first.release(); second.release();
 		await until(() => f.delivered().length === 2, "caller messages");

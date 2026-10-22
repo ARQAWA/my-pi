@@ -159,8 +159,12 @@ test("interrupt aborts running workers and drops results, then send can start fr
 		await f.start();
 		await until(() => code.entered() && shell.entered() && f.subSession().isIdle, "running workers on idle subagent");
 		const sub = f.subSession();
-		assert.equal(await f.call({ action: "interrupt", id: "agent#1" }), "agent#1 interrupted");
+		const interrupted = JSON.parse(await f.call({ action: "interrupt", id: "agent#1" }));
+		assert.equal(interrupted.id, "agent#1");
+		assert.equal(interrupted.reason, "interruption_requested");
+		assert.equal(interrupted.cancellation_requested, true);
 		await until(() => code.aborted() && shell.aborted(), "interrupt aborted both roles");
+		await until(() => sub.isIdle, "interrupted subagent settled");
 		await tick();
 		assert.deepEqual(f.delivered(), []);
 		assert.deepEqual(workerMessages(sub), [], "canceled worker results were dropped");

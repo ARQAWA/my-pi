@@ -87,6 +87,9 @@ jobs:
       - name: Codemode script under Bun (write then read, 60 s limit)
         run: npm run test:bun
 
+      - name: RQW-agent wait and codemode CLI under Bun (real CLI, faux models, no network)
+        run: RQW_AGENT_BUN=1 node --import ./test/no-network.mjs --test extensions/RQW-agent/test/cli.test.ts
+
   windows-portable-git:
     name: windows-portable-git (node 22.19.0)
     runs-on: windows-latest

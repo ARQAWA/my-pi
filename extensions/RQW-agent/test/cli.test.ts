@@ -13,6 +13,16 @@ const EXTENSION = join(ROOT, "extensions/RQW-agent/index.ts");
 const PROVIDER = join(import.meta.dirname, "cli-provider.ts");
 const PRELOAD = join(ROOT, "test/no-network.mjs");
 type Event = Record<string, any>;
+// Wait scenarios: the main tools, the final marker, the exact custom messages a caller may see, and the worker credential.
+const WAIT: Record<string, { tools: string; marker: string; customs: string[]; workers?: boolean }> = {
+	wait: { tools: "agent", marker: "CLI_WAIT_FINAL", customs: [] },
+	"codemode-wait": { tools: "agent,codemode", marker: "CLI_CODEMODE_WAIT_FINAL", customs: [] },
+	"codemode-error": { tools: "agent,codemode", marker: "CLI_ERROR_FINAL", customs: ["[agent#1] CLI_ERROR_CHILD"] },
+	"codemode-timeout": { tools: "agent,codemode", marker: "CLI_TIMEOUT_LATE", customs: ["[agent#1] CLI_TIMEOUT_CHILD"] },
+	"codemode-mixed": { tools: "agent,codemode,code_writer,shell_runner", marker: "CLI_MIXED_FINAL", customs: [], workers: true },
+	"nested-wait": { tools: "agent", marker: "CLI_NESTED_WAIT_FINAL", customs: [], workers: true },
+	"codemode-abort": { tools: "agent,codemode", marker: "CLI_ABORT_WAIT_FINAL", customs: ["[agent#1] CLI_ABORT_CHILD"] },
+};
 
 async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 	const root = await mkdtemp(join(tmpdir(), "rqw-agent-cli-"));
@@ -21,14 +31,15 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 	const env: Record<string, string> = {};
 	for (const key of ["PATH", "TMPDIR", "SystemRoot", "WINDIR"]) if (process.env[key]) env[key] = process.env[key]!;
 	Object.assign(env, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home,
-		PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", RQW_AGENT_SCENARIO: scenario });
+		PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", RQW_AGENT_SCENARIO: scenario,
+		...(WAIT[scenario]?.workers ? { ANTHROPIC_API_KEY: "wait-faux-worker" } : {}) });
 	const executable = BUN ? "bun" : process.execPath;
 	const args = [BUN ? "--preload" : "--import", BUN ? PRELOAD : pathToFileURL(PRELOAD).href,
 		join(ROOT, `node_modules/@earendil-works/pi-coding-agent/dist/${BUN ? "bun" : "bundle"}/cli.js`),
 		"--no-extensions", "-e", PROVIDER, "-e", EXTENSION,
-		...(scenario === "nested" ? ["-e", "builtin:codemode"] : []),
+		...(scenario === "nested" || scenario.startsWith("codemode") ? ["-e", "builtin:codemode"] : []),
 		"--no-skills", "--no-prompt-templates", "--no-context-files", "--no-themes", "--no-mcp", "--no-session",
-		"--tools", scenario === "nested" ? "agent,codemode" : "agent", "--provider", "agent-audit-cli", "--model", "main", "--thinking", "low",
+		"--tools", scenario === "nested" ? "agent,codemode" : (WAIT[scenario]?.tools ?? "agent"), "--provider", "agent-audit-cli", "--model", "main", "--thinking", "low",
 		...(mode === "rpc" ? ["--mode", "rpc"] : mode === "json" ? ["--mode", "json", "--print", "GO"] : ["--print", "GO"])];
 	const child = spawn(executable, args, { cwd: work, env, stdio: ["pipe", "pipe", "pipe"] });
 	if (mode !== "rpc") child.stdin.end();
@@ -52,7 +63,8 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 	let abortSent = false;
 	child.stderr.on("data", data => {
 		stderr += data;
-		if ((scenario === "abort-rpc" || scenario === "abort-window") && !abortSent && stderr.includes("AUDIT_MAIN_BUSY")) {
+		const abortMarker = scenario === "codemode-abort" ? "AUDIT_CODEMODE_WAIT_READY" : "AUDIT_MAIN_BUSY";
+		if ((scenario === "abort-rpc" || scenario === "abort-window" || scenario === "codemode-abort") && !abortSent && stderr.includes(abortMarker)) {
 			abortSent = true;
 			send({ type: "abort", id: "abort" });
 		}
@@ -68,11 +80,24 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 		});
 	}
 	const custom = (e: Event) => e.type === "message_end" && e.message?.role === "custom" && e.message.customType === "agent";
-	const final = (e: Event) => e.type === "message_end" && e.message?.role === "assistant" && JSON.stringify(e.message.content).includes("CLI_FINAL_GOT_CHILD");
+	const marker = WAIT[scenario]?.marker ?? "CLI_FINAL_GOT_CHILD";
+	const final = (e: Event) => e.type === "message_end" && e.message?.role === "assistant" && JSON.stringify(e.message.content).includes(marker);
 	try {
 		if (mode === "rpc") {
 			send({ type: "prompt", id: "go", message: "GO" });
-			if (scenario === "abort-rpc" || scenario === "abort-window") {
+			if (scenario === "codemode-abort") {
+				// The RPC abort lands while the nested wait is pending; the late child result is a custom message, never an auto-wake.
+				const response = await event(e => e.type === "response" && e.id === "abort");
+				assert.equal(response.success, true);
+				await event(custom);
+				send({ type: "get_state", id: "state" });
+				const state = await event(e => e.type === "response" && e.id === "state");
+				assert.equal(state.data.isStreaming, false);
+				assert.equal(state.data.pendingMessageCount, 0);
+				assert.equal(events.some(final), false, "late child cannot wake an aborted main");
+				assert.equal(events.filter(custom).length, 1, "late child result is delivered once");
+				send({ type: "prompt", id: "next", message: "NEXT" });
+			} else if (scenario === "abort-rpc" || scenario === "abort-window") {
 				const response = await event(e => e.type === "response" && e.id === "abort");
 				assert.equal(response.success, true);
 				await event(custom);
@@ -102,6 +127,27 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 				assert.equal(calls.length, 2);
 				assert.ok(calls.every(e => e.parentToolCallId === "nested" && !e.isError));
 			}
+		} else if (WAIT[scenario]) {
+			assert.ok(stdout.includes(marker), stdout);
+			if (mode !== "text") {
+				// Custom messages are the only deliveries outside the wait tool: each expected one exactly once, none otherwise.
+				const customs = events.filter(e => e.type === "message_end" && e.message?.role === "custom").map(e => String(e.message.content));
+				if (scenario === "codemode-mixed") {
+					// Whether the first wait or a message delivers the agent's text depends on its finish time: exactly one of the two.
+					const NEEDLES = ["CHILD_MIXED_DONE", "CODE_MIXED_DONE", "SHELL_MIXED_DONE"];
+					const text = events.filter(e => (e.type === "tool_execution_end" && e.toolName === "codemode") || (e.type === "message_end" && e.message?.role === "custom"))
+						.map(e => JSON.stringify(e)).join("");
+					for (const needle of NEEDLES) assert.equal(text.split(needle).length - 1, 1, needle);
+					assert.ok(customs.every(content => NEEDLES.some(needle => content.includes(needle))), customs.join("\n"));
+				} else assert.deepEqual(customs, WAIT[scenario].customs);
+				if (scenario === "codemode-abort") {
+					// The nested wait may be reported on its start event; when it carries a parent id it is the codemode call.
+					for (const e of events) if (e.type === "tool_execution_start" && e.toolName === "agent" && "parentToolCallId" in e) assert.equal(e.parentToolCallId, "codemode-abort");
+					assert.equal(events.filter(e => e.type === "message_end" && e.message?.role === "toolResult" && e.message.toolName === "agent").length, 0, "no raw nested toolResult");
+				}
+				if (scenario === "wait" || scenario === "nested-wait")
+					assert.ok(events.some(e => e.type === "tool_execution_end" && e.toolName === "agent" && !e.parentToolCallId && e.result?.details?.reason === "result"));
+			}
 		} else {
 			assert.ok(stdout.includes("CLI_FINAL_GOT_CHILD"));
 			if (mode === "text") assert.equal(stdout.trim(), "CLI_FINAL_GOT_CHILD");
@@ -127,3 +173,14 @@ for (const mode of ["text", "json"] as const) {
 test(`real ${BUN ? "Bun" : "Node"} CLI rpc: late-after-abort stays idle until next prompt`, { timeout: 30000 }, () => cli("rpc", "abort-rpc"));
 
 test(`real ${BUN ? "Bun" : "Node"} CLI rpc: two results in earlier aborted agent_settled never auto-wake`, { timeout: 30000 }, () => cli("rpc", "abort-window"));
+
+test(`real ${BUN ? "Bun" : "Node"} CLI rpc: abort while codemode nested wait is pending delivers the late child once`, { timeout: 30000 }, () => cli("rpc", "codemode-abort"));
+
+for (const mode of ["text", "json", "rpc"] as const) {
+	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: start and wait for one child in the same turn`, { timeout: 30000 }, () => cli(mode, "wait"));
+	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: codemode start and wait in one script`, { timeout: 30000 }, () => cli(mode, "codemode-wait"));
+	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: codemode error after the wait result releases it once`, { timeout: 30000 }, () => cli(mode, "codemode-error"));
+	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: codemode script timeout ends the wait, the child keeps running`, { timeout: 30000 }, () => cli(mode, "codemode-timeout"));
+	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: codemode waits for mixed code_writer, shell_runner and agent`, { timeout: 30000 }, () => cli(mode, "codemode-mixed"));
+	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: subagent waits its own worker; main sees only the final answer`, { timeout: 30000 }, () => cli(mode, "nested-wait"));
+}

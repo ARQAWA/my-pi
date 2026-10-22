@@ -37,6 +37,7 @@ test("F1: pending idle send cancellation keeps the child valid and fences late p
 		await f.start("x".repeat(500000));
 		await until(() => child.entered(), "large child request");
 		await f.call({ action: "interrupt", id: "1" });
+		await tick(); // Explicit interruption is a request, not a promise of synchronous settlement.
 		assert.ok(subSession);
 		auth = promptAuth(f);
 		const controller = new AbortController();

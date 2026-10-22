@@ -214,12 +214,15 @@ describe("agent tool", () => {
 			assert.deepEqual(child.cacheWarmingStatus, { state: "inactive", reason: "cache warming disabled" });
 		} finally { g.release(); await shutdown(m); }
 	});
-	it("has a short description and a schema that passes Pi's strict mode", async () => {
+	it("has a complete description and a schema that passes Pi's strict mode", async () => {
 		const m = await startMain();
 		const tool = m.session.getToolDefinition("agent") as ToolDefinition;
-		assert.ok(tool.description.length <= 700, `description is ${tool.description.length} characters`);
 		assert.doesNotThrow(() => makeStrictJsonSchema(tool.parameters));
 		assert.match(tool.description, /you supply its whole system prompt/);
+		assert.match(tool.description, /estimate/i);
+		assert.match(tool.description, /timeout_ms/);
+		assert.match(tool.description, /default/i);
+		assert.match(tool.description, /busy[- ]poll/i);
 		await shutdown(m);
 	});
 
@@ -334,8 +337,12 @@ describe("agent tool", () => {
 		await m.call({ action: "start", system: SYSTEM, task: "long", model: "sub/a" });
 		await until(() => sub.requests.length === 1, "the request");
 		await m.call({ action: "send", id: "agent#1", task: "dropped" });
-		assert.equal(await m.call({ action: "interrupt", id: "agent#1" }), "agent#1 interrupted");
-		assert.ok(g.wasAborted());
+		const interrupted = JSON.parse(await m.call({ action: "interrupt", id: "agent#1" }));
+		assert.deepEqual(Object.keys(interrupted).sort(), ["cancellation_requested", "id", "reason", "snapshot"]);
+		assert.equal(interrupted.id, "agent#1");
+		assert.equal(interrupted.reason, "interruption_requested");
+		assert.equal(interrupted.cancellation_requested, true);
+		await until(() => g.wasAborted(), "the abort");
 		await tick();
 		assert.deepEqual(m.delivered(), []);
 		assert.equal(await m.call({ action: "interrupt", id: "agent#1" }), "agent#1 is idle");
@@ -508,8 +515,15 @@ describe("agent tool", () => {
 			const result = await Promise.race([ended, tick(1000).then(() => "still waiting")]);
 			g.release();
 			await ended;
-			const expected = { interrupt: "agent#1 interrupted", stop: "agent#1 stopped", restart: "agent#1 restarted, idle" }[end];
-			assert.equal(result, expected, `${end} returns at once`);
+			if (end === "interrupt") {
+				const interrupted = JSON.parse(result);
+				assert.equal(interrupted.id, "agent#1", `${end} returns at once`);
+				assert.equal(interrupted.reason, "interruption_requested", `${end} returns at once`);
+				assert.equal(interrupted.cancellation_requested, true, `${end} returns at once`);
+			} else {
+				const expected = { stop: "agent#1 stopped", restart: "agent#1 restarted, idle" }[end];
+				assert.equal(result, expected, `${end} returns at once`);
+			}
 			await tick(300);
 			assert.equal(sub.requests.length, 0, `${end}: no subagent request`);
 			assert.deepEqual(m.delivered(), [], `${end}: no message`);
@@ -644,6 +658,7 @@ describe("agent tool", () => {
 		await m.call({ action: "send", id: "agent#1", task: "x".repeat(500_000) });
 		await until(() => sub.requests.length === 2, "the large request");
 		await m.call({ action: "interrupt", id: "agent#1" });
+		await tick(); // interrupt acknowledges the request; this cooperative faux run settles before send.
 		const summary = gate("SUMMARY");
 		sub.replies.push(summary.reply, fauxAssistantMessage("LEAKED"));
 		const timer = setTimeout(() => summary.release(), 3000);

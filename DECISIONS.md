@@ -609,6 +609,25 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 ## Agent
 
+- Owner (verbatim): «основной агент запускает сабагента — воркера, shellrunner или codewriter. Пока они работают, он его либо ждёт, либо что-то делает параллельно, а потом ждёт. Когда shellrunner или codewriter отвечает, тот обрывает ожидание и дальше работает с его ответом. Если же он не ответил за время ожидания, то основной агент сам идёт и смотрит состояние codewriter или shellrunner, что там происходит, вычитывает его последние пять-десять сообщений и думает, что с ним делать дальше: interrupt его, давать ему какой-то follow-up, либо вырубать, либо перезапускать.»
+  «Надо сделать интеллектуально, чтобы основной агент большой, который поднял runner, через время поглядывал за ним, через пять минут проверял статус. Только не тратить токены, а через механический wait.»
+  «надо сделать интеллектуальное ожидание. Не пять минут, а чтобы большой агент сам решил, сколько он будет ждать.»
+  «Если они работают долго, пусть работают.»
+  «А почему стоп мы им делаем? Мы же договорились о том, что мы это сделаем, как в кодексе.»
+  «Можно начинать уже и можно продолжать всю работу, которая была до этого начата».
+  Reason: the caller, not a watchdog, decides how long to wait and how to manage continuing work. All three tools
+  share caller-local `wait`/`status` with mixed direct-child IDs. The caller estimates remaining duration and sets
+  timeout_ms somewhat longer on each wait; 300000 is only the omission/null default, not a cadence or maximum.
+  The mechanical pause itself spends no tokens and makes no model turns; children continue their own work, and
+  the wait call and its result are normal caller context.
+  Deadline returns diagnostics without canceling children; status includes the last 5–10 trimmed messages and
+  in-flight calls. Results arrive once through wait or the existing message wakeup, with delivery receipts on races.
+  No execution/turn/token/output-growth limits or automatic interrupt/stop/restart are introduced. Explicit controls
+  retain history on interrupt, fence old generations on restart/stop, and do not block on an uncooperative tool.
+  Carriers: `extensions/RQW-agent/index.ts`, `coordinator.ts`, `activity.ts`, descriptions and roles in that folder;
+  API, retention cost, implicit fallback and public in-process cancellation limits:
+  [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management).
+
 - Owner: «Да, давайте мы исполнителям, ревьюерам кэш выключай.» This disables background warming, not prompt
   caching (owner clarification: «Потому что если мы вообще выключим им кэш, то они будут пиздец жрать токенов нахуй.»).
   `extensions/RQW-agent/index.ts` gives every child's in-memory SettingsManager `cacheWarming: "off"`, independent
@@ -625,7 +644,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   от начала до конца»; «Чтобы он мог ему ставить задачу, прерывать, выключать, перезапускать. Он мог ему посылать
   сообщение follow-up»; «чтобы основной агент тратил минимум токенов»; «все решения должны быть максимально простые ...
   без оверенджинеринга»; «всё должно быть доказано». Carried by `extensions/RQW-agent/index.ts`.
-- One tool `agent` with `action` `start`, `send`, `interrupt`, `stop`, `restart` and the fields `id`, `system`, `task`,
+- One tool `agent` with `action` `start`, `wait`, `status`, `send`, `interrupt`, `stop`, `restart` and the fields
+  `ids`, `timeout_ms`, `messages` (wait/status above), `id`, `system`, `task`,
   `model` (`provider/id`), `thinking` (Pi's levels `off` to `max`), `tools` (a subset of `read`, `bash`, `edit`,
   `write`, `grep`, `find`). This selects base tools; delegation tools follow [Workers](#workers).
   The schema passes Pi's `makeStrictJsonSchema`; `null` in an optional field counts as omitted.
@@ -666,7 +686,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `images.autoResize`, the three settings Pi builds stock read and bash from (`_buildRuntime` in
   `dist/core/agent-session.js` lines 2935-2946), so Git Bash on Windows applies to stock bash too. RQW-tools
   definitions read the main session's settings per call instead.
-- Results are async. At the end of each run the main session gets `[agent#N] <text>` through `pi.sendMessage`. The
+- Results are async. At the end of each run the direct caller gets the text through wait or `[agent#N] <text>`
+  through `pi.sendMessage`, once, as the wait decision above specifies. The
   text is every final answer of the run, so a follow-up queued during the run does not hide the first answer (the brief
   said "last assistant text"). Native runs awaiting worker results are intermediate, not final; see [Workers](#workers). The text also carries every final error of the run as `error: <reason>`, in order with
   the answers: a failed follow-up does not hide the first answer (`[agent#1] FIRST ANSWER\n\nerror: bad request`,
@@ -705,14 +726,18 @@ Current accepted development policy (request summaries unless quoted); detailed 
   its counter on `session_start` above the highest `agent#N` in the session's `[agent#N]` messages and `agent` tool
   results, so a new subagent in a continued session gets `agent#2`, not a second `agent#1` whose result would read as
   the old task's and to which a `send agent#1` meant for the old, killed subagent would go (review D).
-- No timeout of our own: Pi's provider timeouts and retries apply, and the main agent can interrupt.
+- No execution timeout of our own: Pi's provider timeouts and retries apply, and the caller can interrupt.
+  Caller-chosen wait deadlines return control/diagnostics, not a child cancellation (wait decision above).
 - `send` to a running subagent queues `session.followUp`; to an idle one it starts a new run with the history.
-  `interrupt` calls `session.abort()`, drops the run's queued follow-ups, sends no message and keeps the history.
+  `interrupt` requests `session.abort()`, drops queued follow-ups, sends no result message and keeps history.
+  It returns the pre-interrupt snapshot and cancellation-requested state without waiting indefinitely; send is rejected
+  while cancellation remains pending.
   `stop` disposes the session and forgets the id. Closing a session (`stop`, `restart`, `session_shutdown`) clears its
   queue before `dispose()`: `dispose()` aborts without Pi's abort flag, so Pi would run a queued follow-up on the
   disposed session and bill a request after `stopped`. `restart` disposes and creates a fresh session with the same
   `system`, model, thinking and tools or the ones given, and runs `task` if given.
-- Calls of `agent` run one at a time in call order. Pi runs the calls of one response in parallel, and a batch of
+- Management registration across the three tools runs in call order; wait releases the queue after subscription,
+  before its Promise settles. Pi runs the calls of one response in parallel, and a batch of
   `start` and `send agent#1` failed without this (checked by removing it). `start`, `send` to an idle subagent and
   `restart` with a task return only once Pi has started the run, through the `preflightResult` callback of
   `session.prompt` (or once the run has ended). Before that Pi's async preflight runs with no active run, so an
@@ -723,9 +748,10 @@ Current accepted development policy (request summaries unless quoted); detailed 
   behind it and Esc for a whole summary request. Closing a session (`stop`, `restart`, `session_shutdown`) calls
   `abort()` and disposes only after it: `dispose()` alone sets no abort flag, so Pi went on from an aborted pre-run
   compaction to a request from the disposed session (review F).
-- Print and JSON modes exit when the main run settles, so there the `agent_before_settle` handler first waits for
-  running subagents; their messages continue the same run. In the TUI and RPC a result for an idle main session
-  starts a new turn.
+- Print/JSON use one caller-wide non-consuming fallback wait in `agent_end`, with the omission default. A result
+  follows normal message continuation; deadline returns compact status to the caller for its decision, not a stop.
+  Native-idle subagents use the same bounded fallback for their workers without forwarding intermediate answers.
+  Explicit waits take priority. TUI/RPC idle callers retain push wakeups. Carrier: `coordinator.ts` and `index.ts`.
 - `session_shutdown` aborts and disposes every subagent without messages. No cap on the count.
 - Accepted limits: a result that arrives after the main session ended is lost; a subagent may read files the main agent
   is editing; subagents share the process with the TUI.
@@ -735,7 +761,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Proof: `extensions/RQW-agent/test/agent.test.ts`, faux-provider tests (a copy of the RQW-agent folder in a
   folder with no other extension loads and delivers, and the source has no `../` import; without RQW-tools the
   subagent's `write` is the stock one, no `files`; exact system prompt, model,
-  thinking, tool subset, the five actions, follow-up while running, the main turn, shutdown, errors, call order, print
+  thinking, tool subset, management actions, follow-up while running, the main turn, shutdown, errors, call order, print
   mode; one request only after `stop`, `restart` or `session_shutdown` with a queued follow-up; a result arriving
   while the main agent streams continues its run once; after TUI Esc and after RPC abort the result is in the session
   once, no run starts, and the next prompt carries it once; in a continued session that already holds an `[agent#1]`
@@ -775,14 +801,16 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `test/cli-provider.ts` through `test/cli.test.ts`. Current lifecycle and cancellation rules:
   [RQW-agent README, Workers](extensions/RQW-agent/README.md#runtime-and-delivery).
 - Owner: «И каждый раз, когда ты даешь ему новое задание, сбрасываешь ему контекстное окно».
-  Reason: assignments must not inherit unrelated tasks or old worker answers. Every call creates a fresh
-  in-process session with only `task` supplied by the caller, no send or resume. Role prompts, descriptions and
+  Reason: new assignments must not inherit unrelated tasks or old worker answers. `{task}`/`start` creates a fresh
+  in-process session. Explicit `send` is a follow-up to the same assignment, not a new assignment; see the later
+  owner-approved [wait and management decision](#agent). Completed workers remain idle until stop/caller shutdown;
+  retained history consumes memory and send input/cache/compaction costs. Idle retention never counts as pending. Role prompts, descriptions and
   tool allowlists are fixed in `extensions/RQW-agent/workers.ts`, `roles/` and `descriptions/`; model/reasoning is
   fixed in `worker-model.ts` in that folder.
 - Owner: «Например, чтобы агент Main не использовал кодрайтер в той ситуации, где бриф будет длиннее, чем написать код
   самостоятельно.»; «Идея в том, что саб-агент ускоряет main-агента. Main-агент должен доверять саб-агенту.»
   Reason: delegation must accelerate the caller rather than create briefing and repeated-work overhead. Caller
-  descriptions require complete decided briefs, trusting results, no waiting/polling and parallel calls only when
+  descriptions require complete decided briefs, trusting results, no busy polling and parallel calls only when
   independent, never two code_writers on the same file. Carriers:
   `extensions/RQW-agent/descriptions/code_writer.md` and `descriptions/shell_runner.md` in that folder.
 - D2: code_writer has bash and may run a focused check of its own change. Owner's scope:
@@ -839,7 +867,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Carrier: `extensions/RQW-agent/worker-model.ts` (`WORKER_REASONING`); proof is shared with D1 above.
 - Engineering choice: worker profiles parameterize the existing session runtime in `extensions/RQW-agent/index.ts`,
   rather than copying id allocation/persistence, cancellation, delivery and late-after-abort rules. `workers.ts`
-  groups caller-local handles; completed sessions are disposed and caller shutdown closes pending workers.
+  groups caller-local handles; completed sessions are retained for explicit follow-ups and caller shutdown closes
+  active and retained workers, as the owner's [Agent wait decision](#agent) requires.
   Reason: keep one lifecycle implementation and prevent worker results from leaking into another caller's session.
   Offline proof: `extensions/RQW-agent/test/workers.test.ts`; [Isolation](#isolation) remains covered by
   `test/isolation.test.ts` and the extension-local standalone import scan. No other extension is imported.
