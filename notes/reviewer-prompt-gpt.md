@@ -1,6 +1,6 @@
 # Reviewer prompt: measured GPT candidate
 
-Carrier: `extensions/RQW-review/REVIEWER.md`, copied byte-for-byte from `~/stock-bench/review-bench/prompts/gpt-final.md` (SHA256 `a9cc1a3fac50fe32b6911e5bb8bf152caecad9947e2d36d162696eed5db3117a`). Baseline was the production prompt (SHA256 `4ff692b9440a0ae85098200c379a55bd3530885777ea719fa62a9a6886308227`). Source report: `/tmp/reviewer-prompt-gpt-report.md`; raw and scored results: `~/stock-bench/review-bench/gpt/`. These are read-only sources, not bundled with the product.
+Carrier: `extensions/RQW-review/REVIEWER.md`, which now adds the unmeasured dispute rules (`DECISIONS.md` section Review) to the candidate copied byte-for-byte from `~/stock-bench/review-bench/prompts/gpt-final.md` (SHA256 `a9cc1a3fac50fe32b6911e5bb8bf152caecad9947e2d36d162696eed5db3117a`). Baseline was the production prompt (SHA256 `4ff692b9440a0ae85098200c379a55bd3530885777ea719fa62a9a6886308227`). Source report: `/tmp/reviewer-prompt-gpt-report.md`; raw and scored results: `~/stock-bench/review-bench/gpt/`. These are read-only sources, not bundled with the product.
 
 The candidate SHA256 covers the full UTF-8 source with canonical LF line endings, including its final newline. The production loader converts CRLF to LF before trimming the prompt end, so existing Windows checkouts use the same measured content. The exact hash check normalizes only CRLF and does not trim the source.
 
@@ -17,7 +17,7 @@ The candidate SHA256 covers the full UTF-8 source with canonical LF line endings
 | Evidence and output | Copy file text without escaping, diff markers or placeholders; one EVIDENCE field and one concrete REQUIRED OUTCOME | No line numbers, no `yield`; exactly `CLEAN` on checked clean work |
 | Unavailable source or runtime-only check | UNCHECKED names source or check and reason | An available in-scope file must be read |
 
-`buildBrief` passes user messages verbatim, optional `<agreement>`, `<object>`, `<criterion>` and optional `<rejected_earlier>`. The extension still loads only `REVIEWER.md` plus Pi's `<cwd>` for the reviewer, with read/grep/find; `DESCRIPTION` and verdict `NEXT` are the main-agent side of this plugin-only pair. `LEVELS` stays Haiku 5.5 medium / Sonnet 5.5 low. No `SYSTEM.md` change and no Claude-model inference from these GPT runs.
+`buildBrief` passes user messages verbatim, optional `<agreement>`, `<object>`, `<criterion>` and, at measurement time, optional `<rejected_earlier>`, since replaced by `<disputes>` (`DECISIONS.md` section Review). The extension still loads only `REVIEWER.md` plus Pi's `<cwd>` for the reviewer, with read/grep/find; `DESCRIPTION` and verdict `NEXT` are the main-agent side of this plugin-only pair. `LEVELS` is a family table with a Claude row (Haiku 5.5 medium / Sonnet 5.5 low) and a GPT row (GPT-5.6-Luna medium / high, the owner's choice), chosen by the main agent's model family (`DECISIONS.md` section Review). No `SYSTEM.md` change and no Claude-model inference from these GPT runs.
 
 ## Paired result and limits
 

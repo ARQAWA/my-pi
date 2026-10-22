@@ -62,7 +62,7 @@ Choose model and reasoning for the work, not all workers at maximum reasoning:
 GPT-6.1 low suits ordinary work; medium suits more difficult work. Complex tasks use Sonnet 5.5 xhigh or Opus 5.5
 low; GPT-6.1 high is also available for them. Opus 5.5 medium is removed for now to spare the Claude
 subscription limit. These are development workers,
-not changes to the fixed product models in `RQW-review`. A pause of a named benchmark campaign pauses that
+not changes to the product reviewer models of `RQW-review`. A pause of a named benchmark campaign pauses that
 campaign only; it does not pause unrelated work or prohibit the currently authorized worker models.
 
 ## Sufficient proof, without idle reruns

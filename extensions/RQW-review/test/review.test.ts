@@ -35,11 +35,16 @@ import {
 	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { buildBrief, DESCRIPTION, NEXT, reviewerTools, startedText, verdictMessage } from "../index.ts";
+import { buildBrief, candidates, DESCRIPTION, disputes, familyOf, findingBlocks, LEVELS, NEXT, refusals, reviewerTools, settle, startedText, verdictMessage, verdictOf } from "../index.ts";
+
+const kindOfMessage = (verdict: string) => verdictMessage(1, verdict, false).split("\n\n").at(-1);
 
 /** The delivered message of review `n` for a verdict of each kind: the verdict verbatim, then the next step. */
 const clean = (n = 1) => `[review#${n}] CLEAN\n\n${NEXT.clean}`;
-const found = (verdict: string, n = 1) => `[review#${n}] ${verdict}\n\n${NEXT.findings}`;
+/** A reply that is neither CLEAN nor a complete FINDINGS verdict is incomplete and gets the incomplete paragraph. */
+const other = (verdict: string, n = 1) => `[review#${n}] ${verdict}\n\n${NEXT.incomplete}`;
+/** Four filled required fields of one finding, the smallest complete block body. */
+const FIELDS = (tag = "x") => `REQUIREMENT: ${tag}\nMISMATCH: y\nEVIDENCE: z (a.ts)\nREQUIRED OUTCOME: w`;
 const failedWith = (reason: string) => `[review#1] Review failed: ${reason}\n\n${NEXT.failed}`;
 
 const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
@@ -47,10 +52,13 @@ const REVIEWER_SOURCE = readFileSync(join(dirname(EXTENSION), "REVIEWER.md"), "u
 const REVIEWER = REVIEWER_SOURCE.trimEnd();
 
 type Factory = (context: TranscriptContext, options: SimpleStreamOptions | undefined) => AssistantMessage | Promise<AssistantMessage>;
-type Request = { model: string; reasoning?: string; system: string; tools: string[]; text: string };
+type Request = { model: string; reasoning?: string; system: string; tools: string[]; text: string; messages: number };
 type Declared = { name: string; description: string; parameters: Record<string, unknown> };
 
 const mainFaux = fauxProvider({ provider: "main", models: [{ id: "main" }] });
+// A main agent of the GPT family, and the GPT reviewers (`openai-codex/gpt-5.6-luna`).
+const gptMainFaux = fauxProvider({ provider: "openai", models: [{ id: "gpt-main" }] });
+const gptReviewerFaux = fauxProvider({ provider: "openai-codex", models: [{ id: "gpt-5.6-luna", reasoning: true }] });
 const reviewerFaux = fauxProvider({
 	provider: "anthropic",
 	models: [
@@ -65,18 +73,26 @@ let counter = 0;
 let full: ModelRuntime;
 let mainOnly: ModelRuntime;
 let otherModels: ModelRuntime;
+let gptMainBoth: ModelRuntime;
+let gptMainClaudeOnly: ModelRuntime;
+let unknownMainGptOnly: ModelRuntime;
 
 before(async () => {
 	root = await mkdtemp(join(tmpdir(), "rqw-review-"));
 	agentDir = join(root, "agent");
 	await mkdir(agentDir, { recursive: true });
-	const runtime = async (reviewer?: typeof reviewerFaux) => {
+	const runtime = async (...reviewers: (typeof reviewerFaux)[]) => {
 		const r = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
 		r.registerNativeProvider(mainFaux.provider);
-		if (reviewer) r.registerNativeProvider(reviewer.provider);
+		r.registerNativeProvider(gptMainFaux.provider);
+		for (const reviewer of reviewers) r.registerNativeProvider(reviewer.provider);
 		return r;
 	};
 	full = await runtime(reviewerFaux);
+	gptMainBoth = await runtime(reviewerFaux, gptReviewerFaux);
+	// The catalog lists openai-codex too, but no credentials are configured for it.
+	gptMainClaudeOnly = await runtime(reviewerFaux);
+	unknownMainGptOnly = await runtime(gptReviewerFaux);
 	// Pi's own catalog still lists the anthropic models, but no credentials are configured for them.
 	mainOnly = await runtime();
 	// An anthropic provider that has no model of that name.
@@ -113,7 +129,7 @@ function systemText(context: TranscriptContext): string {
 }
 
 /** Every reviewer request is answered by `answer` and recorded. */
-function scriptReviewer(answer: Factory): Request[] {
+function scriptReviewer(answer: Factory, faux: typeof reviewerFaux = reviewerFaux): Request[] {
 	const requests: Request[] = [];
 	const step = (context: TranscriptContext, options: SimpleStreamOptions | undefined, _state: unknown, model: Model<string>) => {
 		const users = context.messages.filter((m) => m.role === "user");
@@ -123,10 +139,11 @@ function scriptReviewer(answer: Factory): Request[] {
 			system: systemText(context),
 			tools: declaredTools(context).map((t) => t.name).sort(),
 			text: textOf(users.at(-1)?.content),
+			messages: context.messages.filter((m) => m.role !== "system").length,
 		});
 		return answer(context, options);
 	};
-	reviewerFaux.setResponses(Array.from({ length: 5 }, () => step));
+	faux.setResponses(Array.from({ length: 5 }, () => step));
 	return requests;
 }
 
@@ -152,6 +169,7 @@ async function openMain(
 	// Other extensions, loaded after this one.
 	extra: string[] = [],
 	before: string[] = [],
+	mainProvider: typeof mainFaux = mainFaux,
 ): Promise<Main> {
 	const dir = join(root, `w${counter++}`);
 	await mkdir(dir, { recursive: true });
@@ -169,7 +187,7 @@ async function openMain(
 	const { session } = await createAgentSession({
 		cwd: dir,
 		agentDir,
-		model: mainFaux.getModel(),
+		model: mainProvider.getModel(),
 		thinkingLevel: "off",
 		modelRuntime: runtime,
 		resourceLoader,
@@ -198,7 +216,7 @@ async function openMain(
 		}
 		return fauxAssistantMessage(fauxText(last?.role === "toolResult" ? "waiting" : "ok"));
 	};
-	mainFaux.setResponses(Array.from({ length: 10 }, () => step));
+	mainProvider.setResponses(Array.from({ length: 10 }, () => step));
 	return main;
 }
 
@@ -226,7 +244,7 @@ describe("measured reviewer prompt contract", () => {
 			await writeFile(join(dir, "index.ts"), readFileSync(EXTENSION, "utf8"));
 			const crlf = REVIEWER_SOURCE.replace(/\n/g, "\r\n");
 			assert.equal(createHash("sha256").update(crlf).digest("hex"),
-				"894a2e229dd7a718c932d50276506b82842fa224f21c9489c945da8d47a915bf");
+				"45b1413ef4389788e78ff8892f3641ae3878e2da8060772a015c4311a83ddf7a");
 			await writeFile(join(dir, "REVIEWER.md"), crlf);
 			const loaded = await import(pathToFileURL(join(dir, "index.ts")).href);
 			assert.equal(loaded.REVIEWER, REVIEWER);
@@ -236,9 +254,23 @@ describe("measured reviewer prompt contract", () => {
 		}
 	});
 
-	it("loads the exact GPT v3 candidate and keeps criterion-only checks in scope", () => {
+	it("loads the exact GPT v3 candidate with the dispute rules and keeps criterion-only checks in scope", () => {
+		// Deliberately changed from the measured v3 (a9cc1a3f...) by the main/reviewer dispute contract.
 		assert.equal(createHash("sha256").update(REVIEWER_SOURCE).digest("hex"),
-			"a9cc1a3fac50fe32b6911e5bb8bf152caecad9947e2d36d162696eed5db3117a");
+			"bc713f2ceb03ebe1d465a59b1a0134090e84977a43cc23137653cc1cb3069dde");
+		assert.ok(!REVIEWER.includes("Repeat a rejected finding only when"), "the quote-equals-admitted rule is gone");
+		assert.ok(REVIEWER.includes("Answer every dispute with status `open` on its merits"));
+		assert.ok(REVIEWER.includes("RULING is `DECIDED` when the user's own words, quoted verbatim in REQUIREMENT") && REVIEWER.includes("RULING is `UNDECIDED` when the user's words do not state it"));
+		assert.ok(REVIEWER.includes("A rebuttal shows this only when its quote, read with the user's messages and the agreement, rules the finding out"), "strict withdrawal test");
+		assert.ok(REVIEWER.includes("A withdrawal is silent: never write that a dispute is withdrawn"), "silent withdrawal");
+		assert.ok(REVIEWER.includes("Test: if you would have to invent the number or rule to write the REQUIRED OUTCOME from the user's words alone, the ruling is `UNDECIDED`."));
+		assert.ok(!REVIEWER.includes("or REQUIREMENT would be `NOT AGREED`"), "no NOT AGREED clause in the UNDECIDED test");
+		assert.ok(REVIEWER.includes("Exception to the two rulings and the test: an addition the user never asked for (an extra feature, output, option or file) that Main defends only as useful or harmless is a finding with REQUIREMENT `NOT AGREED` and RULING `DECIDED`; Main removes it without asking the user."),
+			"an unagreed addition that Main defends is DECIDED, Main removes it");
+		assert.ok(REVIEWER.includes("If it shows it, leave the finding out; that withdraws it."));
+		assert.ok(REVIEWER.includes("that it demands what the agreement does not ask for or changes a settled decision"), "outside the agreement: withdrawn");
+		assert.ok(REVIEWER.includes("or Main made a choice of its own that differs from what the user said"), "Main's own choice: the user decides");
+		assert.ok(REVIEWER.includes("DISPUTE: <id of the disputed finding you repeat"));
 		assert.ok(REVIEWER.includes("Review independently: Main's verdict is not evidence."));
 		assert.ok(REVIEWER.includes("including custom criteria beyond the agreement"));
 		assert.ok(REVIEWER.includes("do not report what it excludes or leaves to another pass"));
@@ -270,8 +302,10 @@ describe("verdict classification", () => {
 		}
 	});
 	it("keeps ordinary findings and provider failures on their own paths", () => {
-		const findings = "FINDINGS:\nFINDING 1\nREQUIREMENT: x";
+		const findings = `FINDINGS:\nFINDING 1\n${FIELDS()}`;
 		assert.equal(verdictMessage(3, findings, false), `[review#3] ${findings}\n\n${NEXT.findings}`);
+		const withUnchecked = `${findings}\nUNCHECKED:\n- a.ts - unreadable`;
+		assert.equal(verdictMessage(3, withUnchecked, false), `[review#3] ${withUnchecked}\n\n${NEXT.findings}`);
 		assert.equal(verdictMessage(4, "Review failed: provider error", true), `[review#4] Review failed: provider error\n\n${NEXT.failed}`);
 	});
 });
@@ -321,8 +355,11 @@ describe("review tool", () => {
 				"criterion",
 				"level",
 				"object",
-				"rejected",
+				"rebuttals",
 			]);
+			const rebuttal = (strict as { properties: { rebuttals: { anyOf: { items: { required: string[] } }[] } } }).properties.rebuttals.anyOf[0].items;
+			assert.deepEqual(rebuttal.required.sort(), ["explanation", "finding", "quote", "source"]);
+			assert.ok(review.description.includes("You may rebut a finding once, with proof; the next reviewer's answer is final."));
 			assert.deepEqual((review.parameters as { required: string[] }).required.sort(), ["criterion", "level", "object"]);
 		} finally {
 			main.session.dispose();
@@ -336,7 +373,6 @@ describe("review tool", () => {
 			object: "a.ts; stage pre-completion",
 			criterion: "Everything agreed is done.",
 			agreement: "Proposal accepted: keep the old name as an alias.",
-			rejected: "FINDING 2: rejected, «Keep» covers it.",
 		};
 		const main = await openMain(full, args);
 		try {
@@ -361,7 +397,7 @@ describe("review tool", () => {
 			assert.ok(r.text.includes(`<object>\n${args.object}\n</object>`));
 			assert.ok(r.text.includes(`<criterion>\n${args.criterion}\n</criterion>`));
 			assert.ok(!r.system.includes("RQW-prompt/SYSTEM.md"), "no main prompt reference");
-			assert.ok(r.text.includes(`<rejected_earlier>\n${args.rejected}\n</rejected_earlier>`));
+			assert.ok(!r.text.includes("<disputes>"), "no disputes section without a rebuttal");
 
 			assert.equal(turn, clean(), "the verdict started a main turn");
 			const delivered = reviewMessages(main.session);
@@ -384,7 +420,7 @@ describe("review tool", () => {
 	it("high: Sonnet low; empty optional fields are left out; the verdict text is passed through", async () => {
 		const findings = "FINDINGS:\nFINDING 1\nREQUIREMENT: x\nMISMATCH: y\nEVIDENCE: z (a.ts)\nREQUIRED OUTCOME: w";
 		const requests = scriptReviewer(() => fauxAssistantMessage(fauxText(findings)));
-		const main = await openMain(full, { level: "high", object: "a.ts", criterion: "c", agreement: "", rejected: "" });
+		const main = await openMain(full, { level: "high", object: "a.ts", criterion: "c", agreement: "", rebuttals: [] });
 		try {
 			await main.session.prompt(SECOND);
 			const turn = await within(main.verdictTurn, 5000, "verdict turn");
@@ -392,28 +428,145 @@ describe("review tool", () => {
 			assert.equal(requests.length, 1);
 			assert.equal(requests[0].model, "claude-sonnet-5-5");
 			assert.equal(requests[0].reasoning, "low");
-			assert.ok(!requests[0].text.includes("<agreement>") && !requests[0].text.includes("<rejected_earlier>"));
+			assert.ok(!requests[0].text.includes("<agreement>") && !requests[0].text.includes("<disputes>"));
 			assert.ok(requests[0].text.includes("<criterion>\nc\n</criterion>"), "criterion survives without agreement");
-			assert.equal(turn, found(findings));
+			assert.equal(turn, `[review#1] ${findings}\n\nFinding ids: FINDING 1 = 1.1.\n\n${NEXT.findings}`);
 			for (const rule of [
 				"Find each quote by searching for it.",
-				"fix it exactly to its REQUIRED OUTCOME and no further; do not reject it, argue with it or put it to the user.",
-				"Reject a finding only when a quote is not verbatim",
-				"Fix all admitted findings in one batch",
-				"every rejection so far in `rejected`, until CLEAN.",
+				"Fix each new finding exactly to its REQUIRED OUTCOME and no further, unless you can prove the reviewer misunderstood",
+				"rebut it once in `rebuttals` with its id, an exact quote from a file or from the user's messages, that source, and why the finding is wrong.",
+				"Without such proof, fix it.",
+				"But a finding that rests on a value, rule or choice the user never gave is not yours to settle: put it to the user and follow the user's decision; do not fix it with another choice of your own.",
+				"Fix all the others in one batch, then call `review` again with the same level, object and criterion and your new rebuttals, until CLEAN.",
+				"A finding that demands what the agreement does not ask for, or changes a settled decision, is such a misreading: rebut it with the quote of the agreement.",
+				"Earlier disputes go to the next reviewer by themselves; its answer on each is final.",
 			])
 				assert.ok(turn.endsWith(NEXT.findings) && NEXT.findings.includes(rule), rule);
+			for (const gone of ["do not reject it, argue with it or put it to the user", "`rejected`"]) assert.ok(!NEXT.findings.includes(gone), gone);
 		} finally {
 			main.session.dispose();
 		}
 	});
 
+	it("the family table: Claude main uses Haiku and Sonnet, GPT main uses GPT-5.6-Luna, anything else starts with Claude", () => {
+		assert.deepEqual(LEVELS.claude, {
+			blind: { provider: "anthropic", model: "claude-haiku-5-5", thinking: "medium" },
+			high: { provider: "anthropic", model: "claude-sonnet-5-5", thinking: "low" },
+		});
+		assert.deepEqual(LEVELS.gpt, {
+			blind: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "medium" },
+			high: { provider: "openai-codex", model: "gpt-5.6-luna", thinking: "high" },
+		});
+		for (const [model, family] of [
+			[{ provider: "anthropic", id: "claude-opus-5-5" }, "claude"],
+			[{ provider: "openrouter", id: "claude-sonnet-5-5" }, "claude"],
+			[{ provider: "openai-codex", id: "gpt-6.1-sol" }, "gpt"],
+			[{ provider: "openai", id: "gpt-6-sol" }, "gpt"],
+			[{ provider: "github-copilot", id: "gpt-5.5" }, "gpt"],
+			[{ provider: "google", id: "gemini-3" }, undefined],
+			[undefined, undefined],
+		] as const) assert.equal(familyOf(model), family, JSON.stringify(model));
+		assert.deepEqual(candidates("blind", { provider: "anthropic", id: "claude-opus-5-5" }), [LEVELS.claude.blind, LEVELS.gpt.blind]);
+		assert.deepEqual(candidates("high", { provider: "openai-codex", id: "gpt-6.1-sol" }), [LEVELS.gpt.high, LEVELS.claude.high]);
+		assert.deepEqual(candidates("high", undefined), [LEVELS.claude.high, LEVELS.gpt.high]);
+	});
+
+	for (const [level, thinking] of [["blind", "medium"], ["high", "high"]] as const) {
+		it(`GPT main, ${level}: GPT-5.6-Luna ${thinking}`, async () => {
+			const requests = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")), gptReviewerFaux);
+			const claudeRequests = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+			const main = await openMain(gptMainBoth, { level, object: "a.ts", criterion: "c" }, true, "tui", [], [], gptMainFaux);
+			try {
+				await main.session.prompt(SECOND);
+				const turn = await within(main.verdictTurn, 5000, "verdict turn");
+				await main.session.waitForIdle();
+				assert.equal(turn, clean());
+				assert.equal(claudeRequests.length, 0, "no Claude reviewer");
+				assert.equal(requests.length, 1);
+				assert.equal(requests[0].model, "gpt-5.6-luna");
+				assert.equal(requests[0].reasoning, thinking);
+				assert.ok(requests[0].system.startsWith(REVIEWER), "the same REVIEWER.md");
+				assert.deepEqual(requests[0].tools, ["find", "grep", "read"]);
+				assert.deepEqual(
+					{ ...(reviewMessages(main.session)[0]?.details as Record<string, unknown>), seconds: 0 },
+					{ n: 1, level, model: "openai-codex/gpt-5.6-luna", thinking, seconds: 0 },
+				);
+			} finally {
+				main.session.dispose();
+			}
+		});
+	}
+
+	it("GPT main without GPT credentials falls back to the Claude reviewer of the level", async () => {
+		const requests = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+		const main = await openMain(gptMainClaudeOnly, { level: "high", object: "a.ts", criterion: "c" }, true, "tui", [], [], gptMainFaux);
+		try {
+			await main.session.prompt(SECOND);
+			const turn = await within(main.verdictTurn, 5000, "verdict turn");
+			await main.session.waitForIdle();
+			assert.equal(turn, clean());
+			assert.deepEqual(requests.map((r) => [r.model, r.reasoning]), [["claude-sonnet-5-5", "low"]]);
+			assert.deepEqual(
+				{ ...(reviewMessages(main.session)[0]?.details as Record<string, unknown>), seconds: 0 },
+				{ n: 1, level: "high", model: "anthropic/claude-sonnet-5-5", thinking: "low", seconds: 0 },
+			);
+		} finally {
+			main.session.dispose();
+		}
+	});
+
+	it("a main agent of neither family without Anthropic credentials falls back to the GPT reviewer", async () => {
+		const requests = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")), gptReviewerFaux);
+		const main = await openMain(unknownMainGptOnly, { level: "blind", object: "a.ts", criterion: "c" });
+		try {
+			await main.session.prompt(SECOND);
+			const turn = await within(main.verdictTurn, 5000, "verdict turn");
+			await main.session.waitForIdle();
+			assert.equal(turn, clean());
+			assert.deepEqual(requests.map((r) => [r.model, r.reasoning]), [["gpt-5.6-luna", "medium"]]);
+		} finally {
+			main.session.dispose();
+		}
+	});
+
+	it("prose before the first line that is exactly FINDINGS: is dropped from the verdict and finding ids are assigned", async () => {
+		const body = "FINDINGS:\nFINDING 1\nREQUIREMENT: x\nMISMATCH: y\nEVIDENCE: z (a.ts)\nREQUIRED OUTCOME: w";
+		const requests = scriptReviewer(() => fauxAssistantMessage(fauxText(`Dispute 1.1 holds, so I leave it out.\n${body}`)));
+		const main = await openMain(full, { level: "blind", object: "a.ts", criterion: "c" });
+		try {
+			await main.session.prompt(SECOND);
+			const turn = await within(main.verdictTurn, 5000, "verdict turn");
+			await main.session.waitForIdle();
+			assert.equal(requests.length, 1);
+			assert.equal(turn, `[review#1] ${body}\n\nFinding ids: FINDING 1 = 1.1.\n\n${NEXT.findings}`);
+		} finally {
+			main.session.dispose();
+		}
+	});
+
+	it("verdictOf starts at a line that is exactly FINDINGS: and touches nothing else", () => {
+		const body = `FINDINGS:\nFINDING 1\n${FIELDS()}`;
+		assert.equal(verdictOf(`remark\n${body}`), body);
+		assert.equal(verdictOf(`remark\r\nmore\r\n${body.replace(/\n/g, "\r\n")}\r\n`), body.replace(/\n/g, "\r\n"));
+		assert.equal(verdictOf(`  \n${body}\n`), body, "plain surrounding whitespace");
+		assert.equal(verdictOf("CLEAN"), "CLEAN");
+		assert.equal(verdictOf("remark\nCLEAN"), "remark\nCLEAN", "prose before CLEAN stays incomplete");
+		assert.equal(verdictOf("I think FINDINGS: none"), "I think FINDINGS: none", "not a line of its own");
+		assert.equal(verdictOf("remark\n  FINDINGS: x\nmore"), "remark\n  FINDINGS: x\nmore", "the line must be exactly FINDINGS:");
+		assert.equal(verdictOf("CLEAN\nFINDINGS:\nFINDING 1"), "CLEAN\nFINDINGS:\nFINDING 1", "a CLEAN start is not rewritten");
+		assert.equal(kindOfMessage(verdictOf(`remark\n${body}`)), NEXT.findings);
+	});
+
 	const failures: [string, () => ModelRuntime, string][] = [
-		["a missing reviewer model", () => otherModels, failedWith("model anthropic/claude-haiku-5-5 is not available")],
 		[
-			"missing credentials",
+			"a missing reviewer model, with the other family unavailable too",
+			() => otherModels,
+			failedWith("model anthropic/claude-haiku-5-5 is not available; no credentials for openai-codex (model openai-codex/gpt-5.6-luna)"),
+		],
+		[
+			"missing credentials for both families",
 			() => mainOnly,
-			failedWith("no credentials for anthropic (model anthropic/claude-haiku-5-5)"),
+			failedWith("no credentials for anthropic (model anthropic/claude-haiku-5-5); no credentials for openai-codex (model openai-codex/gpt-5.6-luna)"),
 		],
 	];
 	for (const [what, runtime, expected] of failures) {
@@ -637,8 +790,8 @@ describe("delivery", () => {
 			await tick(300);
 			await main.session.waitForIdle();
 			assert.equal(requests.length, 3, "the prompt, the tool turn and one turn for both verdicts");
-			assert.deepEqual(delivered(main.session).sort(), [found("R1", 1), found("R2", 2)]);
-			for (const v of [found("R1", 1), found("R2", 2)]) assert.equal(requests[2].filter((t) => t === v).length, 1, v);
+			assert.deepEqual(delivered(main.session).sort(), [other("R1", 1), other("R2", 2)]);
+			for (const v of [other("R1", 1), other("R2", 2)]) assert.equal(requests[2].filter((t) => t === v).length, 1, v);
 			assert.equal(lastText(main.session), "ok");
 		} finally {
 			slow.enabled = false;
@@ -709,7 +862,7 @@ describe("reviewer grep and find", () => {
 		try {
 			await writeFile(join(main.dir, "a.ts"), "const foo = 1;\n");
 			await main.session.prompt(SECOND);
-			assert.equal(await within(main.verdictTurn, 5000, "verdict turn"), found(FILE));
+			assert.equal(await within(main.verdictTurn, 5000, "verdict turn"), other(FILE));
 			await main.session.waitForIdle();
 		} finally {
 			main.session.dispose();
@@ -862,10 +1015,37 @@ describe("runtime regressions and controls", () => {
 		assert.equal(messages.length, 1);
 	});
 
-	it("arbitrary malformed output receives actionable findings instructions", () => {
+	it("arbitrary malformed output is incomplete, never findings", () => {
 		for (const v of ["UNCHECKED:\n- a.ts unreadable", "I could not finish", "FINDINGS:"]) {
-			assert.ok(verdictMessage(1, v, false).endsWith(NEXT.findings));
+			assert.ok(verdictMessage(1, v, false).endsWith(NEXT.incomplete), v);
 		}
+	});
+
+	it("structure: an empty or partial finding block, a header with text, prose before CLEAN and stray text are incomplete and settle nothing", () => {
+		const full = `FINDINGS:\nFINDING 1\n${FIELDS()}`;
+		const bad: [string, string][] = [
+			["an empty block after FINDINGS:", "FINDINGS:\nFINDING 1"],
+			["a block with one field", "FINDINGS:\nFINDING 1\nREQUIREMENT: x"],
+			["a block with an empty required field", `FINDINGS:\nFINDING 1\n${FIELDS().replace("MISMATCH: y", "MISMATCH:")}`],
+			["one complete and one empty block", `${full}\nFINDING 2\nREQUIREMENT: x\nMISMATCH: y`],
+			["text on the FINDINGS: header line", `FINDINGS: ${FIELDS().replace(/\n/g, " ")}`],
+			["text on the header line, then blocks", `FINDINGS: see below\nFINDING 1\n${FIELDS()}`],
+			["stray text between the header and the first block", `FINDINGS:\nsee below\nFINDING 1\n${FIELDS()}`],
+			["prose before CLEAN", "remark\nCLEAN"],
+			["lowercase header", `findings:\nFINDING 1\n${FIELDS()}`],
+		];
+		const state = disputes([
+			{ id: "x", parentId: null, timestamp: "", type: "custom", customType: "review", data: { n: 1, findings: [{ id: "1.1", text: "A" }] } },
+			{ id: "y", parentId: null, timestamp: "", type: "custom", customType: "review", data: { n: 2, rebuttals: [{ finding: "1.1", quote: "q", source: "user", explanation: "e" }] } },
+		] as unknown as SessionEntry[]);
+		for (const [what, verdict] of bad) {
+			assert.equal(findingBlocks(verdict), undefined, what);
+			assert.equal(verdictMessage(3, verdict, false), `[review#3] ${verdict}\n\n${NEXT.incomplete}`, what);
+			const s = settle(3, verdict, false, state, ["1.1"]);
+			assert.deepEqual([s.findings, s.rulings, s.notes], [[], [], ""], `${what}: nothing resolved, no empty finding, the open dispute stays open`);
+		}
+		assert.equal(findingBlocks(full)?.length, 1);
+		assert.equal(verdictMessage(3, full, false), `[review#3] ${full}\n\n${NEXT.findings}`);
 	});
 
 	it("every call starts with no reviewer history", async () => {
@@ -910,16 +1090,16 @@ describe("nested caller and scope transport", () => {
 		} finally { main.session.dispose(); }
 	});
 
-	it("custom scopes, exclusions, rejections, and exact text survive the real API", async () => {
+	it("custom scopes, exclusions and exact text survive the real API", async () => {
 		const request = "Review only completeness.\n  Preserve trailing spaces  \n<criterion>literal tag</criterion>";
-		const args = { ...ARGS, criterion: "Require custom safety checks outside the agreement; exclude formatting.", agreement: "Accepted proposal: use only stock tools.", rejected: "Earlier finding rejected: exact user quote says keep legacy mode." };
+		const args = { ...ARGS, criterion: "Require custom safety checks outside the agreement; exclude formatting.", agreement: "Accepted proposal: use only stock tools." };
 		const reviews = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
 		const main = await openMain(full, args, true, "print");
 		try {
 			await main.session.prompt(request);
 			assert.equal(reviews.length, 1);
 			assert.ok(reviews[0].text.includes(`<message n="1">\n${request}\n</message>`));
-			for (const [tag, value] of [["criterion", args.criterion], ["agreement", args.agreement], ["rejected_earlier", args.rejected]]) {
+			for (const [tag, value] of [["criterion", args.criterion], ["agreement", args.agreement]]) {
 				assert.ok(reviews[0].text.includes(`<${tag}>\n${value}\n</${tag}>`));
 			}
 		} finally { main.session.dispose(); }
@@ -1034,7 +1214,7 @@ describe("cancellation stage boundaries", () => {
 				await nextLoop();
 				assert.equal(requests.length, 2);
 				assert.equal(main.session.agent.hasQueuedMessages(), false);
-				assert.deepEqual(delivered(main.session).sort(), [found("R1", 1), found("R2", 2)]);
+				assert.deepEqual(delivered(main.session).sort(), [other("R1", 1), other("R2", 2)]);
 				await main.session.prompt("next");
 				assert.equal(requests.length, 3);
 				for (const v of delivered(main.session)) assert.equal(requests[2].filter(t => t === v).length, 1);
@@ -1104,7 +1284,7 @@ describe("delivery during an earlier agent_start handler", () => {
 					await within(Promise.all([next, abort]), 5000, "new run settles");
 					await nextLoop();
 					assert.deepEqual(settled, [true, abortNew], "native agent_settled reports the current run's abort");
-					assert.deepEqual(delivered(main.session).sort(), [found("R1", 1), found("R2", 2)]);
+					assert.deepEqual(delivered(main.session).sort(), [other("R1", 1), other("R2", 2)]);
 					assert.equal(main.session.agent.hasQueuedMessages(), false);
 					if (abortNew) {
 						assert.equal(requests.length, 2, "current abort saves both verdicts without any automatic request");
@@ -1300,7 +1480,7 @@ describe("settlement phase delivery", () => {
 						await until(() => delivered(main.session).length === 2, "both verdicts persisted");
 						await main.session.waitForIdle();
 						await tick();
-						const results = [found("R1", 1), found("R2", 2)];
+						const results = [other("R1", 1), other("R2", 2)];
 						assert.deepEqual(delivered(main.session).sort(), results);
 						assert.equal(requests.length, aborted ? 1 : 2, "abort stays stopped; normal settlement gets one batch turn");
 						assert.equal(main.session.agent.hasQueuedMessages(), false);
@@ -1311,7 +1491,7 @@ describe("settlement phase delivery", () => {
 						gates[2].release();
 						await until(() => requests.length === 3, "ordinary idle wakeup");
 						await main.session.waitForIdle();
-						assert.equal(requests[2].filter(text => text === found("R3", 3)).length, 1);
+						assert.equal(requests[2].filter(text => text === other("R3", 3)).length, 1);
 					} finally {
 						hold.enabled = false; hold.release();
 						for (const g of gates) g.release();
@@ -1377,9 +1557,248 @@ describe("review number safety", () => {
 			assert.equal(textOf(result.content), startedText(max));
 			assert.deepEqual(persisted, [{ n: max }]);
 			await assert.rejects(() => definition!.execute("exhausted", ARGS as never, undefined, undefined, ctx), /Review id space exhausted/);
-			assert.equal(lookups, 1, "exhaustion starts no job");
+			assert.equal(lookups, 2, "the one allowed start looked up both families; exhaustion starts no job");
 			assert.deepEqual(persisted, [{ n: max }]);
 			await nextLoop();
 		});
 	}
+});
+
+describe("disputes: one finding, one rebuttal, one final answer", () => {
+	const USER = "Rename `foo` to `bar` in a.ts. Keep `foo` exported as an alias.";
+	const BODY = 'REQUIREMENT: "Rename `foo` to `bar`" (user message 1)\nMISMATCH: a.ts still declares foo.\nEVIDENCE: "export const foo = bar;" (a.ts)\nREQUIRED OUTCOME: a.ts declares no foo.';
+	const FIRST_FINDING = `FINDINGS:\nFINDING 1\n${BODY}`;
+	const REBUTTAL = { finding: "1.1", quote: "Keep `foo` exported as an alias.", source: "user", explanation: "The user asked to keep foo as an alias of bar." };
+	const upheld = (ruling?: string) =>
+		`FINDINGS:\nFINDING 1\nDISPUTE: 1.1\n${BODY}${ruling ? `\nRULING: ${ruling}` : ""}\nANSWER: The alias must not be a declaration.`;
+
+	type Pass = { result: string; isError: boolean; request?: Request; message?: string };
+	/** One main turn that calls `review` with `args`; the reviewer answers `answer`. Print mode waits for the verdict. */
+	async function pass(main: Main, args: Record<string, unknown>, answer: () => AssistantMessage): Promise<Pass> {
+		const requests = scriptReviewer(answer);
+		const before = delivered(main.session).length;
+		scriptMain([fauxAssistantMessage(fauxToolCall("review", args, { id: `p${counter++}` }), { stopReason: "toolUse" })]);
+		await main.session.prompt("Review it");
+		await main.session.waitForIdle();
+		const result = main.session.messages.findLast((m) => m.role === "toolResult" && m.toolName === "review");
+		assert.ok(result?.role === "toolResult");
+		assert.ok(requests.length <= 1);
+		const now = delivered(main.session);
+		assert.ok(now.length - before <= 1);
+		return { result: textOf(result.content), isError: !!result.isError, request: requests[0], message: now.length > before ? String(now.at(-1)) : undefined };
+	}
+	const say = (text: string) => () => fauxAssistantMessage(fauxText(text));
+	const reviewData = (main: Main) =>
+		main.session.sessionManager.getEntries().flatMap((e) => (e.type === "custom" && e.customType === "review" ? [e.data] : []));
+
+	async function opened(): Promise<Main> {
+		scriptMain([]);
+		const main = await openMain(full, ARGS, true, "print");
+		await writeFile(join(main.dir, "a.ts"), "export const bar = 1;\nexport const foo = bar;\n");
+		await main.session.prompt(USER);
+		return main;
+	}
+
+	it("a rebuttal with verbatim quotes goes to a fresh reviewer, which withdraws the finding", async () => {
+		const main = await opened();
+		try {
+			const first = await pass(main, ARGS, say(FIRST_FINDING));
+			assert.equal(first.message, `[review#1] ${FIRST_FINDING}\n\nFinding ids: FINDING 1 = 1.1.\n\n${NEXT.findings}`);
+
+			const second = await pass(main, { ...ARGS, rebuttals: [REBUTTAL] }, say("CLEAN"));
+			assert.equal(second.result, startedText(2));
+			const r = second.request!;
+			assert.equal(r.messages, 1, "a fresh reviewer session: the brief is its only message");
+			assert.ok(!r.text.includes("[review#"), "no earlier verdict text");
+			assert.ok(r.text.includes(
+				`<disputes>\n<dispute finding="1.1" status="open">\n<finding>\n${BODY}\n</finding>\n<rebuttal>\nQUOTE: ${REBUTTAL.quote}\nSOURCE: user\nEXPLANATION: ${REBUTTAL.explanation}\n</rebuttal>\n</dispute>\n</disputes>`,
+			), r.text);
+			assert.equal(second.message, `[review#2] CLEAN\n\n${NEXT.withdrawn} 1.1.\n\n${NEXT.clean}`);
+
+			// The withdrawn dispute stays in the brief so a fresh reviewer does not raise it again.
+			const third = await pass(main, ARGS, say("CLEAN"));
+			assert.ok(third.request!.text.includes('<dispute finding="1.1" status="withdrawn">'));
+			assert.equal(third.message, clean(3));
+			const again = await pass(main, { ...ARGS, rebuttals: [REBUTTAL] }, say("CLEAN"));
+			assert.ok(again.isError && again.result.includes("finding 1.1 was already withdrawn in review#2"), again.result);
+			assert.equal(again.request, undefined);
+			assert.deepEqual(reviewData(main), [
+				{ n: 1 },
+				{ n: 1, findings: [{ id: "1.1", text: BODY }] },
+				{ n: 2, rebuttals: [REBUTTAL] },
+				{ n: 2, rulings: [{ finding: "1.1", ruling: "withdrawn" }] },
+				{ n: 3 },
+			]);
+		} finally { main.session.dispose(); }
+	});
+
+	for (const [ruling, next, refusal] of [
+		["DECIDED", NEXT.decided, "on the user's decision, and that answer is final: fix it to its REQUIRED OUTCOME."],
+		["UNDECIDED", NEXT.undecided, "on a point the user has not decided, and that answer is final: put the dispute to the user and follow the user's decision."],
+	] as const) {
+		it(`upheld ${ruling}: the next step is ${ruling === "DECIDED" ? "to fix" : "to ask the user"}, and a second rebuttal is refused`, async () => {
+			const main = await opened();
+			try {
+				await pass(main, ARGS, say(FIRST_FINDING));
+				const second = await pass(main, { ...ARGS, rebuttals: [REBUTTAL] }, say(upheld(ruling)));
+				assert.equal(second.message, `[review#2] ${upheld(ruling)}\n\nFinding ids: FINDING 1 = 1.1.\n${next} 1.1.\n\n${NEXT.findings}`);
+				assert.ok(ruling === "DECIDED" ? next.includes("fix each to its REQUIRED OUTCOME") : next.includes("put each dispute to the user"));
+
+				const twice = await pass(main, { ...ARGS, rebuttals: [{ ...REBUTTAL, explanation: "Another argument." }] }, say("CLEAN"));
+				assert.ok(twice.isError, twice.result);
+				assert.ok(twice.result.includes(`Review not started. Refused: finding 1.1 was upheld in review#2 ${refusal}`), twice.result);
+				assert.equal(twice.request, undefined, "no reviewer runs");
+				assert.equal(twice.message, undefined);
+
+				// The next pass sees the whole dispute: the finding, the rebuttal and the final answer.
+				const third = await pass(main, ARGS, say(upheld(ruling)));
+				assert.equal(third.result, startedText(3), "the refused call took no number");
+				assert.ok(third.request!.text.includes(`<dispute finding="1.1" status="upheld" ruling="${ruling}">\n<finding>\n${BODY}\n</finding>\n<rebuttal>\nQUOTE: ${REBUTTAL.quote}`));
+				assert.ok(third.request!.text.includes("<answer>\nThe alias must not be a declaration.\n</answer>\n</dispute>"));
+				assert.equal(third.message, `[review#3] ${upheld(ruling)}\n\nFinding ids: FINDING 1 = 1.1.\n${next} 1.1.\n\n${NEXT.findings}`);
+				assert.deepEqual(reviewData(main).filter((d) => "rulings" in (d as object)), [
+					{ n: 2, rulings: [{ finding: "1.1", ruling: ruling.toLowerCase(), answer: "The alias must not be a declaration." }] },
+				]);
+			} finally { main.session.dispose(); }
+		});
+	}
+
+	it("refuses rebuttals without proof, with a quote missing from its source, or for an unknown finding", async () => {
+		const main = await opened();
+		try {
+			await pass(main, ARGS, say(FIRST_FINDING));
+			const cases: [Record<string, unknown>, string][] = [
+				[{ ...REBUTTAL, quote: "" }, "the rebuttal of 1.1 has no proof: it needs a quote, its source and an explanation. Without proof, fix the finding."],
+				[{ ...REBUTTAL, explanation: " " }, "has no proof"],
+				[{ ...REBUTTAL, quote: "Keep foo forever." }, `the quote of the rebuttal of 1.1 is not in "user"; quote it exactly, or fix the finding.`],
+				[{ ...REBUTTAL, quote: "export const foo = baz;", source: "a.ts" }, `is not in "a.ts"`],
+				[{ ...REBUTTAL, quote: "x", source: "missing.ts" }, `"missing.ts", is not a readable file`],
+				[{ ...REBUTTAL, finding: "9.9" }, `no finding "9.9" in this session`],
+			];
+			for (const [rebuttal, reason] of cases) {
+				const refused = await pass(main, { ...ARGS, rebuttals: [rebuttal] }, say("CLEAN"));
+				assert.ok(refused.isError && refused.result.includes(reason), `${reason}: ${refused.result}`);
+				assert.equal(refused.request, undefined);
+			}
+			const twice = await pass(main, { ...ARGS, rebuttals: [REBUTTAL, REBUTTAL] }, say("CLEAN"));
+			assert.ok(twice.isError && twice.result.includes("finding 1.1 is rebutted twice in this call"), twice.result);
+			// A file quote counts, whitespace runs aside.
+			const ok = await pass(main, { ...ARGS, rebuttals: [{ ...REBUTTAL, quote: "export  const foo =\nbar;", source: "a.ts" }] }, say("CLEAN"));
+			assert.equal(ok.result, startedText(2));
+			assert.equal(ok.message, `[review#2] CLEAN\n\n${NEXT.withdrawn} 1.1.\n\n${NEXT.clean}`);
+			assert.equal(reviewData(main).filter((d) => "n" in (d as object) && Object.keys(d as object).length === 1).length, 1, "refused calls persisted nothing");
+		} finally { main.session.dispose(); }
+	});
+
+	it("two parallel rebuttals of one finding: exactly one is accepted and one reviewer runs", async () => {
+		const main = await opened();
+		try {
+			await pass(main, ARGS, say(FIRST_FINDING));
+			const requests = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+			const call = (id: string) => fauxToolCall("review", { ...ARGS, rebuttals: [REBUTTAL] }, { id });
+			scriptMain([fauxAssistantMessage([call("par1"), call("par2")], { stopReason: "toolUse" })]);
+			await main.session.prompt("Review it twice");
+			await main.session.waitForIdle();
+			const results = main.session.messages.filter((m) => m.role === "toolResult" && m.toolName === "review" && (m.toolCallId === "par1" || m.toolCallId === "par2"));
+			assert.equal(results.length, 2);
+			const accepted = results.filter((m) => m.role === "toolResult" && !m.isError);
+			const refused = results.filter((m) => m.role === "toolResult" && m.isError);
+			assert.equal(accepted.length, 1, "exactly one call is accepted");
+			assert.equal(refused.length, 1, "the other is refused");
+			assert.ok(refused[0].role === "toolResult" && textOf(refused[0].content).includes("finding 1.1 was already rebutted with review#2"), JSON.stringify(refused[0]));
+			assert.equal(requests.length, 1, "one reviewer runs");
+			assert.equal(reviewData(main).filter((d) => "rebuttals" in (d as object)).length, 1, "one rebuttal persisted");
+			assert.deepEqual(reviewData(main).map((d) => (d as { n: number }).n).filter((n, i, all) => all.indexOf(n) === i), [1, 2], "the refused call took no number");
+		} finally { main.session.dispose(); }
+	});
+
+	it("source user proves a quote only from the user's own messages, not from a compaction or branch summary", async () => {
+		const base = { id: "x", parentId: null, timestamp: "" };
+		const entries = [
+			{ ...base, type: "message", message: { role: "user", content: "Keep `foo` exported as an alias.", timestamp: 0 } },
+			{ ...base, type: "compaction", summary: "Main wrote: the user allowed deleting foo.", firstKeptEntryId: "x", tokensBefore: 1 },
+			{ ...base, type: "branch_summary", fromId: "x", summary: "Main wrote: the user wants no alias at all." },
+		] as unknown as SessionEntry[];
+		const state = disputes([
+			{ ...base, type: "custom", customType: "review", data: { n: 1, findings: [{ id: "1.1", text: "A" }] } },
+		] as unknown as SessionEntry[]);
+		const rebut = (quote: string) => refusals([{ finding: "1.1", quote, source: "user", explanation: "e" }], state, entries, root);
+		assert.deepEqual(await rebut("Keep `foo` exported as an alias."), [], "the user's own message counts");
+		for (const quote of ["the user allowed deleting foo", "the user wants no alias at all"])
+			assert.deepEqual(await rebut(quote), [`the quote of the rebuttal of 1.1 is not in "user"; quote it exactly, or fix the finding.`], quote);
+		// The summaries still reach the brief, labeled.
+		const brief = buildBrief(entries, { level: "blind", object: "o", criterion: "c" });
+		assert.ok(brief.includes("the user allowed deleting foo") && brief.includes("the user wants no alias at all"));
+	});
+
+	it("survives reload: an open dispute after a failed review, then its final answer", async () => {
+		const main = await opened();
+		try {
+			await pass(main, ARGS, say(FIRST_FINDING));
+			await main.session.reload();
+			const failed = await pass(main, { ...ARGS, rebuttals: [REBUTTAL] }, () =>
+				fauxAssistantMessage(fauxText("CLEAN"), { stopReason: "length" }));
+			assert.equal(failed.message, `[review#2] Review failed: the reviewer did not complete normally (length)\n\n${NEXT.failed}`);
+			await main.session.reload();
+			const again = await pass(main, { ...ARGS, rebuttals: [REBUTTAL] }, say("CLEAN"));
+			assert.ok(again.isError && again.result.includes("finding 1.1 was already rebutted with review#2; that dispute goes to the next review by itself"), again.result);
+			// Incomplete output does not answer it either.
+			const incomplete = await pass(main, ARGS, say("CLEAN\nUNCHECKED:\n- a.ts - unreadable"));
+			assert.ok(incomplete.request!.text.includes('<dispute finding="1.1" status="open">'));
+			assert.equal(incomplete.message, `[review#3] CLEAN\nUNCHECKED:\n- a.ts - unreadable\n\n${NEXT.incomplete}`);
+			await main.session.reload();
+			const answered = await pass(main, ARGS, say(upheld("UNDECIDED")));
+			assert.ok(answered.request!.text.includes('<dispute finding="1.1" status="open">'));
+			assert.ok(answered.message!.includes(`${NEXT.undecided} 1.1.`));
+			await main.session.reload();
+			const refused = await pass(main, { ...ARGS, rebuttals: [REBUTTAL] }, say("CLEAN"));
+			assert.ok(refused.isError && refused.result.includes("finding 1.1 was upheld in review#4 on a point the user has not decided"), refused.result);
+		} finally { main.session.dispose(); }
+	});
+});
+
+describe("dispute mechanics", () => {
+	const base = { id: "x", parentId: null, timestamp: "" };
+	const entry = (data: unknown) => ({ ...base, type: "custom", customType: "review", data }) as unknown as SessionEntry;
+	const rebuttal = (finding: string) => ({ finding, quote: "q", source: "user", explanation: "e" });
+	const state = disputes([
+		entry({ n: 1 }),
+		entry({ n: 1, findings: [{ id: "1.1", text: "A" }, { id: "1.2", text: "B" }, { id: "1.3", text: "C" }] }),
+		entry({ n: 2, rebuttals: [rebuttal("1.1"), rebuttal("1.2")] }),
+		entry({ n: 2, findings: "junk", rulings: [{ finding: "1.3", ruling: "withdrawn" }, { finding: "1.1", ruling: "bogus" }] }),
+	]);
+
+	it("rebuilds findings and rebuttals and ignores malformed or unrebutted rulings", () => {
+		assert.deepEqual([...state.keys()], ["1.1", "1.2", "1.3"]);
+		assert.equal(state.get("1.1")!.rebuttal?.review, 2);
+		assert.equal(state.get("1.1")!.ruling, undefined);
+		assert.equal(state.get("1.3")!.ruling, undefined, "a ruling needs a rebuttal");
+	});
+
+	it("exact CLEAN withdraws the open disputes it carried; incomplete, failed and malformed answer nothing", () => {
+		assert.deepEqual(settle(3, " CLEAN\n", false, state, ["1.1", "1.2"]).rulings,
+			[{ finding: "1.1", ruling: "withdrawn" }, { finding: "1.2", ruling: "withdrawn" }]);
+		assert.deepEqual(settle(3, "CLEAN", false, state, ["1.1"]).rulings, [{ finding: "1.1", ruling: "withdrawn" }], "only what its brief carried");
+		for (const [verdict, failed] of [["CLEAN\nUNCHECKED:\n- a", false], ["Review failed: x", true], ["I could not finish", false], ["FINDINGS:", false]] as const) {
+			const s = settle(3, verdict, failed, state, ["1.1", "1.2"]);
+			assert.deepEqual([s.findings, s.rulings, s.notes], [[], [], ""], verdict);
+			assert.equal(verdictMessage(3, verdict, failed, s.notes), `[review#3] ${verdict}\n\n${NEXT[failed ? "failed" : "incomplete"]}`);
+		}
+	});
+
+	it("keeps stable ids: new findings by position, repeated disputes by DISPUTE; a missing RULING goes to the user", () => {
+		const verdict = `FINDINGS:\nFINDING 1\n${FIELDS("r")}\nFINDING 2\nDISPUTE: 1.2\n${FIELDS("B")}\nANSWER: no\nFINDING 3\nDISPUTE: 7.7\n${FIELDS("z")}\nUNCHECKED:\n- f - g`;
+		const s = settle(3, verdict, false, state, ["1.1", "1.2"]);
+		assert.deepEqual(s.findings, [{ id: "3.1", text: FIELDS("r") }, { id: "3.3", text: `DISPUTE: 7.7\n${FIELDS("z")}` }]);
+		assert.deepEqual(s.rulings, [{ finding: "1.2", ruling: "undecided", answer: "no" }, { finding: "1.1", ruling: "withdrawn" }]);
+		assert.equal(s.notes, `Finding ids: FINDING 1 = 3.1, FINDING 2 = 1.2, FINDING 3 = 3.3.\n${NEXT.withdrawn} 1.1.\n${NEXT.undecided} 1.2.`);
+	});
+
+	it("parses dispute fields and ignores the UNCHECKED section", () => {
+		const tail = "MISMATCH: y\nEVIDENCE: z (a.ts)\nREQUIRED OUTCOME: w";
+		assert.deepEqual(findingBlocks(`FINDINGS:\nFINDING 1\nDISPUTE: 2.1.\nREQUIREMENT: a\nmore\n${tail}\nRULING: decided, the user said so\nANSWER: x\ny\nUNCHECKED:\n- p - q`), [
+			{ header: "FINDING 1", text: `DISPUTE: 2.1.\nREQUIREMENT: a\nmore\n${tail}\nRULING: decided, the user said so\nANSWER: x\ny`, dispute: "2.1", ruling: "decided", answer: "x\ny" },
+		]);
+		assert.equal(findingBlocks("CLEAN"), undefined);
+	});
 });

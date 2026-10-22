@@ -28,8 +28,11 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   Tests: `npm test`.
 - `extensions/RQW-review/`: extension 6, the `review` tool with levels `blind` and `high`. Each call runs a fresh
   read-only reviewer session in the same process (`createAgentSession`, stock `read`, `grep`, `find`) with
-  `REVIEWER.md` as its prompt; the verdict comes back later as a `[review#N]` message. Background cache warming is off;
-  Anthropic prompt caching uses built-in 5m (`DECISIONS.md`, Review). Tests: `npm test`.
+  `REVIEWER.md` as its prompt; the verdict comes back later as a `[review#N]` message. Main may rebut a finding once
+  with proof; the next reviewer's answer is final (fix, or ask the user), kept by the extension: `DECISIONS.md`
+  section Review. The reviewer model follows the main agent's family (Claude or GPT) with the other family as
+  fallback: `extensions/RQW-review/README.md`. Background cache warming is off; Anthropic prompt caching uses
+  built-in 5m (`DECISIONS.md`, Review). Tests: `npm test`.
 - `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout, with the context bar as
   the input editor's bottom border and the session ID at the right end of its top border. On by default; `/statusbar [on|off]` toggles it and restores the stock editor and
   footer when off. Elements, evidence and limits:

@@ -113,9 +113,10 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `RQW-review` on `createAgentSession`, no ready package (pi-subagents: ~98k lines, ~1.3k tokens per request, fails
   strict schemas). One tool `review` with `level` `blind` or `high`; a fresh read-only session per pass with `read`,
   `grep`, `find` and the shared Spotty prompt; no main prompt, extensions, skills or AGENTS.md in the reviewer;
-  `blind` on Haiku 5.5 medium, `high` on Sonnet 5.5, levels fixed by measurement; no silent model fallback; the
-  extension copies the user's messages verbatim into the brief; the verdict arrives later as a message. The two
-  reviewers keep this contract and these two models only (user: «Ревьюеры будут только на этих двух моделях»).
+  `blind` on Haiku 5.5 medium, `high` on Sonnet 5.5 for a Claude main agent (a GPT main agent has its own pair, and
+  the other family takes over without credentials: see [Review](#review)); the extension copies the user's messages
+  verbatim into the brief; the verdict arrives later as a message. The reviewers keep this contract (user:
+  «Ревьюеры будут только на этих двух моделях», replaced by the family table in [Review](#review)).
   When each runs is decided by measurement (user: «Реши сам, найди самое лучшее решение»); quality is measured on a
   rebuilt known-answer set and the prompt is tuned on it (user: «найди сам самый лучший способ замерить, и после
   этого можешь подтюнить его промптом»).
@@ -832,8 +833,9 @@ Current accepted development policy (request summaries unless quoted); detailed 
   before the adapter's OAuth fallback, a built-in 5m policy with no config knob. Other APIs are unchanged.
   Reason: measured review duration median 30.9s, maximum 178s, so buying 1h writes is usually unnecessary.
   Proof: `test/review.test.ts` and package `test/prompt-cache.test.ts`; evidence: `notes/prompt-cache-policy.md`.
-- Prompt adaptation is now tuned on GPT with the measured v3, carried byte-for-byte in
-  `extensions/RQW-review/REVIEWER.md` (request summary, not a literal quote: flexible reviewer conditions C:2913;
+- Prompt adaptation is now tuned on GPT with the measured v3, the base of
+  `extensions/RQW-review/REVIEWER.md`; the dispute paragraph and the DISPUTE, RULING and ANSWER fields were added on
+  top of it by the pair contract below and are not part of that measurement (request summary, not a literal quote: flexible reviewer conditions C:2913;
   team synergy only in the plugin C:3046; finish the prompt on GPT C:3400). The criterion governs scope, including custom requirements outside the agreement and
   exclusions; REQUIREMENT may quote the criterion with its source. Main and reviewer remain a pair through the
   plugin's `DESCRIPTION` and `NEXT` in `index.ts`, not `SYSTEM.md`. The reviewer checks independently, quotes exact
@@ -842,21 +844,41 @@ Current accepted development policy (request summaries unless quoted); detailed 
   comparison; this is not a claim of universal recall improvement. Paired GPT-6.1 recall 87/90 -> 87/90, GPT-6
   87/90 -> 86/90; GPT-6 false findings after audit 6 -> 0, final 0 on both; mean seconds 7.9 -> 9.2 and
   10.8 -> 12.3. Only 12 cases x 3 runs per model, four GPT-held-out cases, no new Claude probes; details and limits
-  in `notes/reviewer-prompt-gpt.md`. The tool contract, read-only tools, verdict handling and product pins
-  Haiku 5.5 medium / Sonnet 5.5 low stay unchanged.
+  in `notes/reviewer-prompt-gpt.md`. The tool contract, read-only tools and verdict handling stay unchanged; the
+  reviewer models are the family table below.
 
 - `extensions/RQW-review/` is the accepted reviewers plan (user: «То, что ты предложил по ревьюерам — it's OK, я
   принимаю»): one tool `review` with `level` `blind` or `high` (user: «Smart не нужен ... будет Blind и High»), held
   to the existing contract and nothing more (user: «эти три саб-агента должны быть забиты за тем контрактом, который
   есть, и всё»).
-- Models live in one table, `LEVELS` at the top of `index.ts`: `blind` is `anthropic/claude-haiku-5-5` with thinking
-  medium, `high` is `anthropic/claude-sonnet-5-5` with thinking low (user: «Ревьюеры будут только на этих двух
-  моделях»). The thinking levels are to be confirmed by the known-answer measurement. No fallback: a missing model,
-  missing credentials, a failed request or no verdict in 10 minutes give `[review#N] Review failed: <reason>`.
+- Models live in one table, `LEVELS` at the top of `index.ts`, by the family of the main agent's model (a one-line
+  change per model or thinking level). Claude main: `blind` is `anthropic/claude-haiku-5-5` with thinking medium,
+  `high` is `anthropic/claude-sonnet-5-5` with thinking low (the Claude `high` slot is being re-measured, Haiku
+  high and xhigh against Sonnet low, and may change; it is not changed here). GPT main: `blind` is
+  `openai-codex/gpt-5.6-luna` with thinking medium, `high` is `openai-codex/gpt-5.6-luna` with thinking high. The
+  family comes from `ctx.model` (provider `anthropic` or a `claude*` id: Claude; provider `openai` or `openai-codex`
+  or a `gpt-*` id: GPT); a main model of neither family, or none, starts with the Claude table. Owner (earlier,
+  replaced here): «Ревьюеры будут только на этих двух моделях». Owner, 2026-10-22, answering the coordinator's three
+  questions (model by family, unagreed additions, tolerant extraction) with: «2а 3а». The first question got no
+  answer, so its recommended option 1a applies: reviewer model by the main agent's family. Owner, 2026-10-22, on
+  the GPT row: «Давай тогда сделаем, что на blind review будет Luna Medium. На high review будет Luna High. Да»
+  (after «и потом будем думать» while more probes ran; the earlier placeholder, GPT-6.1-Sol low and medium, is
+  gone). Reason, from the gpt-match probes (`notes/reviewer-probes.md`, section "GPT match for the Claude slots"):
+  GPT-5.6-Luna medium matches Haiku 5.5 medium (recall 94.1% against 95.6%, 164 of 165 dispute items right for
+  both, 12.6 s and 0.0027 USD per pass against 14.4 s and 0.0022) and GPT-5.6-Luna high matches Sonnet 5.5 low
+  (recall 96.3% against 96.7%, 165 of 165 against 154 with the strict reply parse, 0.0043 USD against 0.0226, but
+  20.8 s against 6.7 s and 31 of 33 clean cases against 33); GPT-6-Luna is unusable. Limits: 17 false findings for
+  Luna high against 15 for Sonnet low, 10 for Luna medium against 1 for Haiku medium; one run set per cell, so
+  one- or two-item differences are noise. Fallback: when the family's reviewer has no model or its provider has no
+  credentials, the other family's reviewer of the same level is used; the failure `[review#N] Review failed:
+  <reason>` names both reasons when neither can start. A failed request or no verdict in 10 minutes still gives
+  `Review failed: <reason>` with no second attempt. `details` of the verdict carry the model that actually ran.
+  Also one login and rate limit per family. Proof: `extensions/RQW-review/test/review.test.ts` ("the family table",
+  "GPT main, blind", "GPT main, high", the two fallback tests and the two failure tests).
 - Parameters: `level`, `object` (paths, the diff as a file path, the stage), `criterion`, optional `agreement`
-  (accepted proposals and decisions that are not in the user's own messages) and `rejected`. The description has
-  four sentences, 440 characters (test limit 500). Empty strings count as not given, since strict mode fills every
-  field.
+  (accepted proposals and decisions that are not in the user's own messages) and optional `rebuttals` (see the
+  dispute rule below). The description has five sentences, 495 characters (test limit 500). Empty strings and a
+  null or empty `rebuttals` count as not given, since strict mode fills every field.
 - The main agent and the reviewer work as a pair, one team for the user's agreement (owner, 2026-10-09: «чтобы они
   действовали в одной команде ... либо принимает правку, либо её отклоняет и пишет, почему»; 2026-10-20: «он с ним
   действует в унисон, в паре ... их синергия должна идти в рамках плагина. Это не должно размазываться»). The reviewer
@@ -869,24 +891,120 @@ Current accepted development policy (request summaries unless quoted); detailed 
   - the verdict wrapper, `verdictMessage`: `[review#N]` first, the verdict verbatim, then one paragraph of `NEXT` by
     kind. `clean` (the trimmed verdict is exactly `CLEAN` after a normal `stop`): passed, no further pass for confidence.
     A `length`, `error`, `aborted` or other non-normal final stop is a failed review, never a pass.
-    `incomplete` (a trimmed verdict begins with `CLEAN` but includes extra nonblank text): resolve UNCHECKED or retry
-    malformed output, never claim passed or treat it as findings needing field access. `findings` (other reviewer
-    text): find each quote by searching; a finding with both quotes verbatim is admitted and fixed exactly to
-    its REQUIRED OUTCOME and no further, never rejected, argued with or put to the user; reject only when a quote is not
-    verbatim or a NOT AGREED element is covered by a verbatim agreement quote, giving that quote; fix all admitted in
-    one batch, then call `review` again with the same level, object and criterion and every rejection so far, until
-    CLEAN. `failed` (the catch branch, not parsed text): the check has not passed and no self-check replaces it; retry
-    once on the unchanged object, then tell the user and wait.
+    `incomplete` (anything that is not exactly `CLEAN` and not a complete findings verdict: `CLEAN` with extra text,
+    prose before `CLEAN`, `FINDINGS:` with text on its header line, a `FINDING` block with a required field missing
+    or empty, any other text): resolve UNCHECKED or retry malformed output, never claim passed or treat it as
+    findings; it creates no finding id and answers no dispute. `findings` (the header is a line that is exactly
+    `FINDINGS:`, then at least one `FINDING n` block, every block with REQUIREMENT, MISMATCH, EVIDENCE and REQUIRED
+    OUTCOME filled; one structural check in `findingBlocks`, used by `kindOf` and `settle`): find each quote by searching; fix each new finding exactly to its REQUIRED OUTCOME and no further, unless
+    Main can prove the reviewer misunderstood, then rebut it once; without proof, fix it; but a finding that rests on a
+    value, rule or choice the user never gave is put to the user and not fixed with another choice of Main's own
+    (measured: [Reviewer probes](notes/reviewer-probes.md), variant n1); fix all the others in one batch, then
+    call `review` again with the same level, object and criterion and the new rebuttals, until CLEAN. `failed` (the
+    catch branch, not parsed text): the check has not passed and no self-check replaces it; retry once on the
+    unchanged object, then tell the user and wait. Between the verdict and `NEXT` the extension adds the finding ids
+    and the dispute outcomes of this verdict (dispute rule below).
   Not `promptSnippet` or `promptGuidelines`: RQW-prompt sets `systemPromptOptions.customPrompt`, and Pi builds the
   section where they go only without a custom prompt, so they would never reach the model while RQW-prompt is on.
   Not `SYSTEM.md`: turning RQW-review off must remove the pair completely, and with the rules in the plugin it does.
   Source: `/tmp/review-pair.md` section 3.
+- Disputes follow the three-message rule, enforced by the extension, not only by prompts. Owner, original task:
+  «Задача: доработать RQW-review так, чтобы main и reviewer работали в паре: main может опровергнуть находку по
+  существу ... 1. Main может отклонить находку даже с дословными цитатами, если у него есть доказательство, что
+  ревьюер понял неправильно: цитата из файла или из сообщения пользователя и объяснение. Без доказательства main
+  исправляет находку. 2. Опровержение main уходит в следующий проход review. 3. Ревьюер оценивает довод по существу:
+  если довод верный, снимает находку; если нет, повторяет её и отвечает, почему опровержение не подходит. 4. Следующий
+  проход видит весь спор по каждой находке, а не только последнюю причину отказа. 5. Правила пары остаются внутри
+  плагина (DESCRIPTION, NEXT, REVIEWER.md), а не в SYSTEM.md.» Owner, 2026-10-21: «У них цикла быть не должно.
+  Знаешь, тут даже не должно быть трёх кругов. Смотри, как должно быть: должно быть правило трёх сообщений. Ревьюер
+  даёт комментарий, main ему отвечает, и ревьюер либо соглашается, либо выступает против. И это конечное. Дальше main
+  с ним уже не спорит: он либо принимает его решение, либо идёт к пользователю, чтобы тот разрешил спор, конфликт. Вот
+  и всё.»; «Если у ревьюера железобетонные доказательства, то мейн должен принять. ... Если ревьюер выявил работу,
+  которая не была зафиксирована однозначным решением, то надо вопрос отдать этому пользователю, чтобы пользователь
+  разрешил спор. Всегда всё идёт на основании решения пользователя.»; «Да, и на каждом круге, конечно же, всегда у нас
+  новый, свежий ревьюер»; «Причем ему отдается инфа об отказе, возражения основного агента отдаются так, чтобы новый
+  ревьюер потом без проблем понял, о чем идет речь.» The rule, carried by `extensions/RQW-review/index.ts`
+  (`NEXT`, `DESCRIPTION`, schema, `findingBlocks`, `disputes`, `settle`, `refusals`, `buildBrief`) and `REVIEWER.md`:
+  - Ids: each finding of a parsed `FINDINGS:` verdict gets a stable id `<review number>.<position>`, such as `3.2`,
+    listed after the verdict (`Finding ids: FINDING 1 = 3.2.`). A finding the reviewer repeats with `DISPUTE: <id>`
+    keeps that id; the reviewer's `FINDING n` numbering is not the identity.
+  - Message 2: Main fixes a finding or rebuts it once in `rebuttals` (`finding`, `quote`, `source`, `explanation`).
+    The tool refuses the whole call, with no review started and no number taken, when a rebuttal names an unknown
+    finding, lacks a quote, source or explanation, has a quote that is not in its source (`user` for the user's
+    own messages of the branch only, not a compaction or branch summary, which may stay in the brief but are Main's
+    text; or a file under the session cwd; whitespace runs and one pair of surrounding quotation marks are ignored),
+    repeats a finding in one call, or rebuts a finding that already has a rebuttal or a final answer. The final
+    state check and the persisting of the accepted rebuttals run with no await between them, so of two parallel
+    calls that rebut the same finding exactly one is accepted. The refusal says what to do instead: fix it, ask the
+    user, or wait for the pending answer.
+  - Message 3: every review brief carries every dispute of the branch under `<disputes>`: the finding as written, its
+    id, Main's quote, source and explanation, and once answered the status and the reviewer's answer, so a fresh
+    reviewer understands it without earlier context. The first exact `CLEAN` or parsed `FINDINGS:` verdict of a review
+    whose brief carried a dispute open answers it: a finding the reviewer leaves out is withdrawn; a finding it repeats
+    with `DISPUTE: <id>` is upheld with `RULING: DECIDED` (a verbatim user or agreement quote settles it: Main fixes it)
+    or `RULING: UNDECIDED` (no unambiguous user decision: Main puts the dispute to the user and follows the decision),
+    plus a one-sentence `ANSWER`. A missing or invalid RULING counts as UNDECIDED, since nothing shows a user decision.
+    Failed, incomplete or malformed verdicts answer nothing; the dispute stays open for the next call. The outcome
+    lines (`NEXT.withdrawn`, `NEXT.decided`, `NEXT.undecided` with the ids) follow the verdict. CLEAN, incomplete and
+    failed classification is unchanged; only an exact `CLEAN` passes.
+  - An unagreed addition that Main defends ("useful") is `DECIDED`: the finding has REQUIREMENT `NOT AGREED`, the
+    reviewer repeats it with `RULING: DECIDED`, and Main removes the addition without asking the user. Owner,
+    2026-10-22: «2а 3а» (question 2, option a: the reviewer rules DECIDED and Main removes it without asking the owner;
+    the v2 behaviour). The `REVIEWER.md` wording therefore has no "or REQUIREMENT would be `NOT AGREED`" clause in the
+    UNDECIDED test, and carries an explicit exception, because the DECIDED condition (the user's own words quoted in
+    REQUIREMENT) cannot hold for REQUIREMENT `NOT AGREED`: "Exception to the two rulings and the test: an addition
+    the user never asked for (an extra feature, output, option or file) that Main defends only as useful or harmless
+    is a finding with REQUIREMENT `NOT AGREED` and RULING `DECIDED`; Main removes it without asking the user."
+    The measured v3h text had the clause (it made GPT-6.1-Sol rule UNDECIDED on that case); the adopted text, with
+    the exception sentence added after the probes, was not measured as a whole (`notes/reviewer-probes.md`, section
+    U12). Proof: `review.test.ts` ("loads the exact GPT v3 candidate with the dispute rules").
+  - Verdict extraction tolerates prose before the verdict: when a reviewer reply does not start with `CLEAN` or
+    `FINDINGS:`, the verdict starts at the first line that is exactly `FINDINGS:` and the text before it is dropped
+    (`verdictOf` in `index.ts`, applied to the reviewer's last text before classification, so the delivered
+    message, the finding ids and the dispute answers all use the same text). Prose before `CLEAN` is not tolerated:
+    that reply stays `incomplete`. Owner, 2026-10-22: «2а 3а» (question 3, option a: tolerate prose before the first
+    line that is exactly `FINDINGS:`). Reason: Sonnet 5.5 wrote a one-line remark before `FINDINGS:` in 11 of 147 (low)
+    and 4 of 147 (medium) dispute passes with the adopted wording, which left the dispute open; the rescore with
+    tolerant extraction resolves all of them (`notes/reviewer-probes.md`, section "Sonnet's remark before
+    `FINDINGS:`"). Proof: `review.test.ts` ("prose before the first line that is exactly FINDINGS:", "verdictOf").
+  - What decides the outcome. A settled requirement with decisive evidence: Main fixes. A reviewer misreading: one
+    rebuttal with evidence, then the fresh reviewer decides. A finding that demands what the agreement does not ask
+    for, or changes a settled decision, is such a misreading: Main rebuts it with the agreement quote and the reviewer
+    withdraws it; it is not put to the user. A missing or ambiguous decision, or a choice Main made itself that differs
+    from what the user said, is `UNDECIDED` and goes to the user. Earlier owner sources: 2026-10-09
+    (`~/.omp/agent/sessions/-Documents-ChatGPT-my-omp-harness/2026-10-09T21-54-24-425Z_01a122a9-0429-72c6-a863-e5df03772564.jsonl:103`):
+    «Второй чувак не идёт слепо её править, а у него контекста больше, потому что он сам эту работу делал. И он видит,
+    перепроверяет своё решение, свою работу и либо принимает правку, либо её отклоняет и пишет, почему он её
+    отклоняет. И в итоге они приходят к консенсусу.»; the same file `:99`: «Ну, то есть если она меняет, а-а-а, как бы
+    согласованный план, то её отклоняют»; «То есть мы либо отклоняем правку, потому что она как бы нарушает, либо мы её
+    принимаем, и всё.»; 2026-10-14
+    (`~/.omp/agent/sessions/-Documents-ChatGPT-my-omp-harness/2026-10-12T15-30-39-654Z_01a130bc-c3a6-7101-b570-e995b9c08136.jsonl:3964`):
+    «Он должен согласовывать со мной только те места, которые однозначно являются неоднозначными. Там, где reviewer не
+    сможет провести нормальное review, не сможет подтвердить результат работы, потому что формулировка
+    неоднозначная. Или он согласовывает со мной решения, которые он придумал самостоятельно, которые отличаются от
+    того, что я ему сказал сделать.»; 2026-10-09
+    (`~/.omp/agent/sessions/--private-tmp--/2026-10-09T06-26-18-422Z_01a11f57-50b6-7042-9bc8-745d0f4b32ed.jsonl:344`):
+    «И если он чё-то реджектит, то он в следующем запуске присылает свои реджекты из прошлых прогонов. ... Там должны
+    работать в команде, а не быть друг у друга.» The former rule that a finding with verbatim quotes is mandatory and
+    never rejected was an agent proposal inside an approved plan, not the owner's words; the 2026-10-21 messages
+    replace it. The three-message limit has no earlier owner source; it comes from 2026-10-21.
+  - State: rebuttals are persisted with the review number entry (`{ n, rebuttals }`), findings and rulings with a
+    second entry of the same review (`{ n, findings, rulings }`), all `pi.appendEntry("review", ...)`; the state is
+    rebuilt from the current branch on every call and verdict, so it survives reload and resume.
+  Reason: the owner's three-message rule and user-decides rule; a fresh reviewer each pass stays as before. Proof:
+  `extensions/RQW-review/test/review.test.ts` suites "disputes: one finding, one rebuttal, one final answer" and "dispute mechanics" (faux providers; withdrawn
+  after a verbatim rebuttal, upheld DECIDED and UNDECIDED with the second rebuttal refused, refusals without proof,
+  fresh reviewer with the whole dispute, reload recovery after a failed and an incomplete review). Limits: a reviewer
+  that upholds a dispute without the DISPUTE field produces a new finding id, which Main could rebut once more; the
+  dispute wording in `REVIEWER.md` and `NEXT` was measured on models in the probe campaign
+  (`notes/reviewer-probes.md`: 8 reviewer configs x 49 dispute fixtures x 3 runs per wording; the main side on three
+  main configs, 43 fixtures x 3 runs per round), with the limits listed there.
 - Reviewer-side tuning is complete on GPT: REQUIRED OUTCOME states one concrete end state; the measured prompt
   treats `<criterion>` as the scope alongside the real brief tags. Evidence and limits: `notes/reviewer-prompt-gpt.md`.
 - The diff goes in as a file path, not as a command: the reviewer only reads files and cannot run one.
 - The extension builds the brief itself (`buildBrief`): the user's messages of the current branch, verbatim, numbered
   and in order, with compaction and branch summaries labeled as not the user's words, then `agreement`, `object`,
-  `criterion` and `rejected`. Reason: the main agent no longer retypes the user's words, the largest output cost of a
+  `criterion` and `<disputes>`. Reason: the main agent no longer retypes the user's words, the largest output cost of a
   call, and the words cannot drift.
 - Each call is a fresh session in the same process: `createAgentSession` with in-memory `SessionManager` and
   `SettingsManager` (compaction off), a resource loader with no extensions, skills, prompt templates, themes, context
@@ -909,7 +1027,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - `REVIEWER.md` now carries the measured v3 adaptation of the Spotty body. Pi's read has no line numbers; initial
   reads omit numeric windows and truncated files resume at the reported offset. The final answer is the last message,
   not `yield`. The verdict format stays `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT,
-  MISMATCH, EVIDENCE, REQUIRED OUTCOME), and an optional `UNCHECKED:` section.
+  MISMATCH, EVIDENCE, REQUIRED OUTCOME; DISPUTE, RULING and ANSWER only on a repeated disputed finding), and an
+  optional `UNCHECKED:` section.
 - Async: the call returns `review#N started. ...` at once. The verdict, the reviewer's last assistant text, arrives as
   `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>\n\n<next step>", display: true }, ...)`; `details` carry
   `n`, level, model, thinking and seconds for the user and logs only. Numbers count per session and go on after a
@@ -1163,8 +1282,10 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `pi config`, then `/reload`; it writes no settings and registers no tool. Its only hooks are the instance-level
   masks of the listed-models rule below, removed when it is switched off.
 - Owner: «Надо подобрать сопостовимую модель на gpt, попробоуй 5.6 luna и более сильные модели типа medium ризонинг 6 и 6.1 sol, на время замеров добавь 5.6 luna в список моделей наших сразу после хайку и вообще хайку надо поставить над всеми в слабых моделях ь.е. порядок должен быть типа haiku 5.5, luna 5.6, luna 6 так как luna 6 слабее 5.6 луны и потом будем думать»
-  Reason: put Haiku above both Luna models and temporarily include GPT 5.6 Luna for the measurements; the
-  decision on keeping that addition is pending. Carrier: `extensions/RQW-models/index.ts` (`FAMILIES` and
+  Reason: put Haiku above both Luna models and include GPT 5.6 Luna for the measurements. Owner, 2026-10-22:
+  «Давай тогда сделаем, что на blind review будет Luna Medium. На high review будет Luna High. Да» - the GPT
+  reviewers of `RQW-review` use `openai-codex/gpt-5.6-luna` (DECISIONS, [Review](#review)), so GPT 5.6 Luna stays in the
+  model list permanently, no longer a temporary addition. Carrier: `extensions/RQW-models/index.ts` (`FAMILIES` and
   `FAMILY_LEVELS`). Pi's catalog has `openai-codex/gpt-5.6-luna`; its low, medium, high, xhigh and max efforts
   are selectable, still intersected with Pi support. This list change does not itself run the measurements.
 - Model order in `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`, `gpt-6.1-sol`, `gpt-6-sol`,
@@ -1275,7 +1396,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `extensions/RQW-models/index.ts`, explicit `FAMILY_LEVELS` intersected with Pi's
   `getSupportedThinkingLevels(model)`, so no unsupported level is offered. Opus: low, medium, high;
   Sonnet: low, medium, high, xhigh; GPT-6.1 Sol, GPT-6 Sol, both listed Luna models and Haiku:
-  low, medium, high, xhigh, max (GPT 5.6 Luna is the temporary catalog-based addition above).
+  low, medium, high, xhigh, max (GPT 5.6 Luna is the catalog-based addition above, permanent).
   The harness's ORDER contains no minimal; off is removed by request. These lists apply to matched families,
   including aliases and proxy providers. A non-reasoning model has no choices. On an extension model switch the
   previous effort is retained if allowed, otherwise the nearest lower allowed level or the lowest. Explicit
