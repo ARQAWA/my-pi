@@ -1,9 +1,9 @@
 # RQW-review
 
-The `review` tool with levels `blind` and `high`. Each call runs a fresh read-only reviewer session in the same
-process (stock `read`, `grep`, `find`; `REVIEWER.md` is its whole prompt) and the verdict comes back later as a
-`[review#N]` message. Self-contained: no import from another extension folder. Rules, quotes and reasons:
-`DECISIONS.md` section Review. Measurements: `notes/reviewer-probes.md`. Tests: `npm test`.
+The `review` tool with levels `blind` and `high`. Each call runs a fresh reviewer session in the same process
+and main agent's cwd (`read`, `bash`, `grep`, `find`; the same deep `REVIEWER.md` is the whole prompt for both levels).
+The verdict comes back later as a `[review#N]` message. Self-contained: no import from another extension folder.
+Rules, quotes and reasons: `DECISIONS.md` section Review. Measurements: `notes/reviewer-probes.md`. Tests: `npm test`.
 
 ## Which model reviews
 
@@ -19,8 +19,24 @@ The GPT row is the owner's choice (`DECISIONS.md` section Review); `gpt-5.6-luna
 
 A main model of neither family starts with the Claude row. When the first reviewer has no model or its provider has
 no credentials, the other family's reviewer of the same level takes over; the review fails only when neither can
-start, and the message names both reasons. A failed request or no verdict in 10 minutes fails the review with no
-second attempt. The verdict message's `details` carry the model that actually ran.
+start, and the message names both reasons. A failed request or no verdict in 30 minutes fails the review with no
+automatic second attempt. This existing hang guard allows deeper reading and tests; replacing hang protection is
+separate later work. The verdict message's `details` carry the model that actually ran.
+
+## Tools and working directory
+
+Each fresh session asks on `pi.events` channel `rqw-tools:subagent-tools` for a factory, using the RQW-agent
+handshake without importing it. When offered, its fresh definitions are filtered to `read`, `bash`, `grep`, `find`;
+otherwise Pi supplies stock tools. Both offered and stock grep/find drop empty optional arguments before chaining
+any existing `prepareArguments`; their execute functions stay unchanged. The caller's cwd, shell and image settings
+are retained. No `edit` or `write` is exposed.
+
+The prompt sets no tool-count or reading limit: it requires reading whatever is needed to judge each in-scope
+requirement and change, including affected callers, tests and docs. Unagreed style or taste, minor inaccuracies
+that do not affect the result, and rare hypotheticals are not findings.
+For ordinary code the reviewer may run repository tests; it never runs the delivered result itself (including
+not running autotests when autotests are the deliverable). Every bash call passes the copied `git-guard.ts`
+through a `tool_call` hook; blocked commands return its reason as a tool error. See limits below.
 
 ## Pair contract in short
 
@@ -38,10 +54,12 @@ second attempt. The verdict message's `details` carry the model that actually ra
 
 ## Limits
 
-- The reviewer wording was measured on models with `REVIEWER.md` variant v3h; the adopted text drops its
-  "or REQUIREMENT would be `NOT AGREED`" clause and adds one exception sentence (an unagreed addition that Main
-  defends as useful is `DECIDED`, Main removes it); that exact text, with the sentence added after the probes, was
-  not measured as a whole.
+- The bash git guard is a shell-syntax check, not a sandbox: it does not interpret scripts, aliases or computed
+  command names. No file edits through bash and never running the delivered result are prompt rules, not runtime
+  enforcement. Tests themselves may have filesystem side effects.
+- `REVIEWER.md` adopts the supplied `REVIEWER-DEEP.md` text. Earlier wording was measured with variant v3h;
+  those measurements do not establish the quality of this deep prompt/tool combination. No new live model
+  quality measurement is claimed.
 - The GPT row (GPT-5.6-Luna medium and high) is the owner's choice and one constant in `LEVELS`, with its model and
   thinking pinned in `review.test.ts`. The Claude `high` slot is being re-measured and may change. GPT-5.6-Luna has
   more false findings than Haiku medium and answers CLEAN on 30-31 of 33 clean cases (`notes/reviewer-probes.md`).

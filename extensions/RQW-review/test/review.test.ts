@@ -35,7 +35,8 @@ import {
 	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { buildBrief, candidates, DESCRIPTION, disputes, familyOf, findingBlocks, LEVELS, NEXT, refusals, reviewerTools, settle, startedText, verdictMessage, verdictOf } from "../index.ts";
+import { buildBrief, candidates, DESCRIPTION, disputes, familyOf, findingBlocks, LEVELS, NEXT, refusals, REVIEWER_TOOLS, reviewerTools, settle, startedText, verdictMessage, verdictOf } from "../index.ts";
+import { blockedGit } from "../git-guard.ts";
 
 const kindOfMessage = (verdict: string) => verdictMessage(1, verdict, false).split("\n\n").at(-1);
 
@@ -242,9 +243,10 @@ describe("measured reviewer prompt contract", () => {
 		const dir = await mkdtemp(join(dirname(EXTENSION), ".crlf-test-"));
 		try {
 			await writeFile(join(dir, "index.ts"), readFileSync(EXTENSION, "utf8"));
+			await writeFile(join(dir, "git-guard.ts"), readFileSync(join(dirname(EXTENSION), "git-guard.ts"), "utf8"));
 			const crlf = REVIEWER_SOURCE.replace(/\n/g, "\r\n");
 			assert.equal(createHash("sha256").update(crlf).digest("hex"),
-				"45b1413ef4389788e78ff8892f3641ae3878e2da8060772a015c4311a83ddf7a");
+				"dd7eb761e6ac52d35f7b2e0dfa0a9c3d0d7c1f7a89567c9a22ddd59c3185a476");
 			await writeFile(join(dir, "REVIEWER.md"), crlf);
 			const loaded = await import(pathToFileURL(join(dir, "index.ts")).href);
 			assert.equal(loaded.REVIEWER, REVIEWER);
@@ -254,10 +256,10 @@ describe("measured reviewer prompt contract", () => {
 		}
 	});
 
-	it("loads the exact GPT v3 candidate with the dispute rules and keeps criterion-only checks in scope", () => {
-		// Deliberately changed from the measured v3 (a9cc1a3f...) by the main/reviewer dispute contract.
+	it("loads the deep reviewer prompt byte for byte, with the dispute rules and criterion-only checks in scope", () => {
 		assert.equal(createHash("sha256").update(REVIEWER_SOURCE).digest("hex"),
-			"bc713f2ceb03ebe1d465a59b1a0134090e84977a43cc23137653cc1cb3069dde");
+			"68664f5cafa8a79f1cb6b29c822ab2cf934a83b1fbe11e5e99c537f274e66542");
+		assert.ok(REVIEWER.startsWith("You are a blind reviewer on Main's team"));
 		assert.ok(!REVIEWER.includes("Repeat a rejected finding only when"), "the quote-equals-admitted rule is gone");
 		assert.ok(REVIEWER.includes("Answer every dispute with status `open` on its merits"));
 		assert.ok(REVIEWER.includes("RULING is `DECIDED` when the user's own words, quoted verbatim in REQUIREMENT") && REVIEWER.includes("RULING is `UNDECIDED` when the user's words do not state it"));
@@ -277,15 +279,22 @@ describe("measured reviewer prompt contract", () => {
 		assert.ok(REVIEWER.includes("the agreement or criterion with its source"));
 		assert.ok(REVIEWER.includes("REQUIREMENT: <verbatim quote of the agreement or criterion with its source"));
 		assert.ok(DESCRIPTION.includes("criterion, including checks beyond the agreement and exclusions"));
+		assert.ok(!DESCRIPTION.includes("read-only"), "no stale read-only claim");
 		assert.ok(DESCRIPTION.length <= 500);
 	});
-	it("preserves stock read constraints and the exact clean verdict contract", () => {
-		assert.ok(REVIEWER.includes("Omit offset and limit on initial reads"));
+	it("keeps the deep read constraints, the run-result prohibition and the exact clean verdict contract", () => {
+		assert.ok(REVIEWER.includes("Start by reading whole every path the brief names, the diff included."));
 		assert.ok(REVIEWER.includes("`read` returns the file text without line numbers"));
 		assert.ok(REVIEWER.includes("Never give or work out line numbers"));
+		assert.ok(REVIEWER.includes("Never edit files or change git state, and never run the delivered result itself (for autotest work, not the autotests)."));
 		assert.ok(REVIEWER.includes("Reply with the result of the review as your last message"));
 		assert.ok(REVIEWER.includes("With no findings, return exactly `CLEAN`"));
+		assert.ok(!REVIEWER.includes("Omit offset and limit on initial reads"), "the non-deep prompt is gone");
 		assert.ok(!REVIEWER.includes("yield"));
+	});
+	it("pins the explicit deadline and the four reviewer tools", () => {
+		assert.equal(TIMEOUT_MS, 30 * 60 * 1000);
+		assert.deepEqual(REVIEWER_TOOLS, ["read", "bash", "grep", "find"]);
 	});
 });
 
@@ -366,7 +375,7 @@ describe("review tool", () => {
 		}
 	});
 
-	it("blind: Haiku medium, REVIEWER.md as the prompt, read/grep/find only, the user's words verbatim, verdict as a follow-up", async () => {
+	it("blind: Haiku medium, REVIEWER.md as the prompt, read/bash/grep/find only, the user's words verbatim, verdict as a follow-up", async () => {
 		const requests = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
 		const args = {
 			level: "blind",
@@ -387,7 +396,7 @@ describe("review tool", () => {
 			assert.equal(r.reasoning, "medium");
 			assert.ok(r.system.startsWith(REVIEWER), "the prompt starts with REVIEWER.md");
 			assert.match(r.system.slice(REVIEWER.length), /^\n\n<cwd>\n[^\n]+\n<\/cwd>$/, "only Pi's <cwd> block follows it");
-			assert.deepEqual(r.tools, ["find", "grep", "read"]);
+			assert.deepEqual(r.tools, ["bash", "find", "grep", "read"]);
 
 			assert.ok(r.text.includes(`<message n="1">\n${FIRST}\n</message>`), "first user message verbatim");
 			assert.ok(r.text.includes(`<message n="2">\n${SECOND}\n</message>`), "second user message verbatim");
@@ -486,7 +495,7 @@ describe("review tool", () => {
 				assert.equal(requests[0].model, "gpt-5.6-luna");
 				assert.equal(requests[0].reasoning, thinking);
 				assert.ok(requests[0].system.startsWith(REVIEWER), "the same REVIEWER.md");
-				assert.deepEqual(requests[0].tools, ["find", "grep", "read"]);
+				assert.deepEqual(requests[0].tools, ["bash", "find", "grep", "read"]);
 				assert.deepEqual(
 					{ ...(reviewMessages(main.session)[0]?.details as Record<string, unknown>), seconds: 0 },
 					{ n: 1, level, model: "openai-codex/gpt-5.6-luna", thinking, seconds: 0 },
@@ -1007,7 +1016,7 @@ describe("runtime regressions and controls", () => {
 		handlers.get("agent_before_settle")!({} as never, ctx as never);
 		assert.equal(authSignal?.aborted, true);
 		assert.equal(messages.length, 1);
-		assert.match(String(messages[0].content), /Review failed: no verdict within 10 minutes/);
+		assert.match(String(messages[0].content), /Review failed: no verdict within 30 minutes/);
 		assert.equal(sessionStage, false);
 		auth.resolve({});
 		await nextLoop();
@@ -1150,7 +1159,7 @@ describe("cancellation stage boundaries", () => {
 				assert.equal(getEventListeners(reviewSignal!, "abort").length, 0, "review listeners removed");
 				assert.equal(reviews.length, 0);
 				assert.equal(delivered(main.session).length, finish === "shutdown" ? 0 : 1);
-				if (finish !== "shutdown") assert.equal(delivered(main.session)[0], failedWith("no verdict within 10 minutes"));
+				if (finish !== "shutdown") assert.equal(delivered(main.session)[0], failedWith("no verdict within 30 minutes"));
 				if (finish === "reject") preflight.reject(new Error("late auth rejection"));
 				else preflight.resolve(auth);
 				await nextLoop();
@@ -1183,7 +1192,7 @@ describe("cancellation stage boundaries", () => {
 			t.mock.timers.reset();
 			await within(run, 1000, "deadline despite ignoring provider");
 			assert.equal(signal?.aborted, true);
-			assert.deepEqual(delivered(main.session), [failedWith("no verdict within 10 minutes")]);
+			assert.deepEqual(delivered(main.session), [failedWith("no verdict within 30 minutes")]);
 			response.reject(new Error("late provider rejection"));
 			await nextLoop();
 			assert.equal(delivered(main.session).length, 1);
@@ -1364,18 +1373,19 @@ describe("native creation and wait cleanup", () => {
 			registerTool: (d: ToolDefinition) => { definition = d; },
 			appendEntry: () => {},
 			sendMessage: (m: { content: unknown }) => messages.push(m),
+			events: { emit: () => {}, on: () => () => {} },
+			getSettings: () => ({}),
 		} as unknown as ExtensionAPI);
-		let scheduled = false;
-		const ctx = { mode: "print", signal: new AbortController().signal, isIdle: () => false,
+		// The deadline fires as the session is being created (its in-memory manager is built just before the call), after
+		// the loader has reloaded: the session materializes after the deadline and must be disposed without a prompt.
+		const inMemory = SessionManager.inMemory;
+		t.mock.method(SessionManager, "inMemory", (...args: Parameters<typeof SessionManager.inMemory>) => {
+			t.mock.timers.tick(TIMEOUT_MS);
+			return inMemory.apply(SessionManager, args);
+		});
+		const ctx = { mode: "print", cwd: root, signal: new AbortController().signal, isIdle: () => false,
 			sessionManager: { getEntries: () => [], getBranch: () => [] },
 			modelRegistry: { find: () => reviewerFaux.getModel("claude-haiku-5-5"), hasConfiguredAuth: () => true, runtime: full },
-			get cwd() {
-				if (!scheduled) {
-					scheduled = true;
-					queueMicrotask(() => t.mock.timers.tick(TIMEOUT_MS));
-				}
-				return root;
-			},
 		} as unknown as ExtensionContext;
 		handlers.get("session_start")!({} as never, ctx as never);
 		try {
@@ -1388,7 +1398,7 @@ describe("native creation and wait cleanup", () => {
 			assert.equal(disposed, 1);
 			assert.equal(reviews.length, 0);
 			assert.equal(messages.length, 1);
-			assert.equal(messages[0].content, failedWith("no verdict within 10 minutes"));
+			assert.equal(messages[0].content, failedWith("no verdict within 30 minutes"));
 		} finally { t.mock.timers.reset(); }
 	});
 
@@ -1800,5 +1810,147 @@ describe("dispute mechanics", () => {
 			{ header: "FINDING 1", text: `DISPUTE: 2.1.\nREQUIREMENT: a\nmore\n${tail}\nRULING: decided, the user said so\nANSWER: x\ny`, dispute: "2.1", ruling: "decided", answer: "x\ny" },
 		]);
 		assert.equal(findingBlocks("CLEAN"), undefined);
+	});
+});
+
+// The reviewer's own bash: the stock tool in its cwd, with the git guard on every call, stock or offered.
+describe("reviewer bash guard and offered tools", () => {
+	const PROBE = "__reviewerOfferProbe";
+	// Read a file unique to Main's directory instead of comparing Windows short/long or case-variant cwd spellings.
+	const ECHO_CWD = `node -e "process.stdout.write(require('node:fs').readFileSync('review-cwd-marker.txt', 'utf8'))"`;
+	const DENIED = "git commit -m forbidden";
+	const ALLOWED = "git status --short";
+	type Probe = { factories: { cwd: string; getter: string; value: unknown }[]; executed: string[]; prepared: unknown[] };
+
+	/** A main-session extension that answers the offer with sentinel stock definitions of all six tools. */
+	const OFFER = `import { createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createReadToolDefinition, createWriteToolDefinition } from "@earendil-works/pi-coding-agent";
+const probe = () => globalThis["${PROBE}"];
+export default function (pi) {
+	pi.events.on("rqw-tools:subagent-tools", (request) => {
+		request.offer((cwd, settings) => {
+			probe().factories.push({ cwd, getter: typeof settings, value: typeof settings === "function" ? settings() : undefined });
+			return [createReadToolDefinition, createBashToolDefinition, createEditToolDefinition, createWriteToolDefinition, createGrepToolDefinition, createFindToolDefinition].map((make) => {
+				const stock = make(cwd);
+				const prepare = stock.name === "grep" || stock.name === "find" ? { prepareArguments: (input) => { probe().prepared.push(input); return stock.prepareArguments ? stock.prepareArguments(input) : input; } } : {};
+				return { ...stock, ...prepare, description: "SENTINEL " + stock.name, execute: (...args) => { probe().executed.push(stock.name); return stock.execute(...args); } };
+			});
+		});
+	});
+}
+`;
+
+	/** One main session whose reviewer runs three bash calls, then answers CLEAN; returns what the reviewer saw. */
+	async function guardedRun(withOffer: boolean) {
+		const fixture = withOffer ? await mkdtemp(join(dirname(EXTENSION), ".offer-test-")) : undefined;
+		const results: { name: string; isError: boolean; text: string }[] = [];
+		let declared: Declared[] = [];
+		const commands = [ECHO_CWD, DENIED, ALLOWED];
+		let step = 0;
+		const requests = scriptReviewer((context) => {
+			if (step === 0) declared = declaredTools(context);
+			const last = context.messages.at(-1);
+			if (last?.role === "toolResult") results.push({ name: last.toolName, isError: last.isError, text: textOf(last.content) });
+			if (step < commands.length) {
+				const command = commands[step++];
+				return fauxAssistantMessage(fauxToolCall("bash", { command, timeout: 30 }, { id: `b${step}` }), { stopReason: "toolUse" });
+			}
+			return fauxAssistantMessage(fauxText("CLEAN"));
+		});
+		const probe: Probe = { factories: [], executed: [], prepared: [] };
+		(globalThis as Record<string, unknown>)[PROBE] = probe;
+		try {
+			if (fixture) await writeFile(join(fixture, "index.ts"), OFFER);
+			const main = await openMain(full, ARGS, true, "print", fixture ? [join(fixture, "index.ts")] : []);
+			try {
+				await writeFile(join(main.dir, "review-cwd-marker.txt"), main.dir);
+				await main.session.prompt(SECOND);
+				await within(main.verdictTurn, 5000, "verdict turn");
+				await main.session.waitForIdle();
+				return { dir: main.dir, requests, declared, results, probe };
+			} finally {
+				main.session.dispose();
+			}
+		} finally {
+			delete (globalThis as Record<string, unknown>)[PROBE];
+			if (fixture) await rm(fixture, { recursive: true, force: true });
+		}
+	}
+
+	for (const withOffer of [false, true]) {
+		it(`${withOffer ? "offered" : "stock"} reviewer: four tools, bash in its cwd, git guard on every bash call`, async () => {
+			const run = await guardedRun(withOffer);
+			assert.equal(run.requests.length, 4);
+			assert.deepEqual(run.requests[0].tools, ["bash", "find", "grep", "read"]);
+			assert.deepEqual(run.declared.map((t) => t.name).sort(), ["bash", "find", "grep", "read"]);
+			assert.equal(run.declared.find((t) => t.name === "bash")?.description.startsWith("SENTINEL bash"), withOffer);
+
+			assert.equal(run.results.length, 3);
+			assert.equal(run.results[0].name, "bash");
+			assert.equal(run.results[0].isError, false);
+			assert.equal(run.results[0].text.trim(), run.dir, "bash reads the marker in Main's cwd");
+
+			assert.equal(run.results[1].name, "bash");
+			assert.equal(run.results[1].isError, true);
+			assert.equal(run.results[1].text, blockedGit(DENIED), "the exact blockedGit reason");
+			assert.ok(blockedGit(DENIED));
+
+			assert.doesNotMatch(run.results[2].text, /Workers may not/, "read-only git is not blocked");
+			assert.equal(blockedGit(ALLOWED), undefined);
+
+			if (withOffer) {
+				assert.equal(run.probe.factories.length, 1, "one fresh factory for the child");
+				assert.equal(run.probe.factories[0].cwd, run.dir, "factory receives the main cwd");
+				assert.equal(run.probe.factories[0].getter, "function", "factory receives a settings getter");
+				assert.equal(typeof run.probe.factories[0].value, "object");
+				assert.deepEqual(run.probe.executed, ["bash", "bash"], "offered execute reached for allowed bash only, never for the blocked git");
+			} else {
+				assert.deepEqual(run.probe.factories, [], "no offer: stock tools");
+				assert.deepEqual(run.probe.executed, []);
+			}
+		});
+	}
+
+	it("offered grep and find: optional null, blank and undefined arguments are dropped before the offered prepare, and the session runs them", async () => {
+		const fixture = await mkdtemp(join(dirname(EXTENSION), ".offer-test-"));
+		const results: { name: string; isError: boolean; text: string }[] = [];
+		const calls = [
+			fauxToolCall("grep", { pattern: "foo", glob: "null", path: "  " }, { id: "g1" }),
+			fauxToolCall("find", { pattern: "*.ts", path: "null", limit: "undefined" }, { id: "f1" }),
+		];
+		let step = 0;
+		const requests = scriptReviewer((context) => {
+			const last = context.messages.at(-1);
+			if (last?.role === "toolResult") results.push({ name: last.toolName, isError: last.isError, text: textOf(last.content) });
+			if (step < calls.length) return fauxAssistantMessage(calls[step++], { stopReason: "toolUse" });
+			return fauxAssistantMessage(fauxText("CLEAN"));
+		});
+		const probe: Probe = { factories: [], executed: [], prepared: [] };
+		(globalThis as Record<string, unknown>)[PROBE] = probe;
+		try {
+			await writeFile(join(fixture, "index.ts"), OFFER);
+			const main = await openMain(full, ARGS, true, "print", [join(fixture, "index.ts")]);
+			try {
+				await writeFile(join(main.dir, "a.ts"), "const foo = 1;\n");
+				await main.session.prompt(SECOND);
+				assert.equal(await within(main.verdictTurn, 5000, "verdict turn"), clean());
+				await main.session.waitForIdle();
+				assert.equal(requests.length, 3);
+				assert.equal(results.length, 2);
+				assert.equal(results[0].name, "grep");
+				assert.equal(results[0].isError, false);
+				assert.ok(results[0].text.includes("a.ts") && results[0].text.includes("const foo = 1"), results[0].text);
+				assert.equal(results[1].name, "find");
+				assert.equal(results[1].isError, false);
+				assert.ok(results[1].text.includes("a.ts"), results[1].text);
+				assert.deepEqual(probe.prepared, [{ pattern: "foo" }, { pattern: "*.ts" }], "the offered prepare ran for each call with only the required pattern");
+				assert.deepEqual(probe.executed, ["grep", "find"], "execute used the offered definitions");
+				assert.equal(probe.factories.length, 1);
+			} finally {
+				main.session.dispose();
+			}
+		} finally {
+			delete (globalThis as Record<string, unknown>)[PROBE];
+			await rm(fixture, { recursive: true, force: true });
+		}
 	});
 });

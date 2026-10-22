@@ -111,8 +111,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   independently of the product reviewer pins below.
 - Reviewers, accepted plan (user: «То, что ты предложил по ревьюерам — it's OK, я принимаю»): own extension
   `RQW-review` on `createAgentSession`, no ready package (pi-subagents: ~98k lines, ~1.3k tokens per request, fails
-  strict schemas). One tool `review` with `level` `blind` or `high`; a fresh read-only session per pass with `read`,
-  `grep`, `find` and the shared Spotty prompt; no main prompt, extensions, skills or AGENTS.md in the reviewer;
+  strict schemas). One tool `review` with `level` `blind` or `high`; a fresh session per pass with `read`, `bash`,
+  `grep`, `find` and the shared deep prompt; no main prompt, user extensions, skills or AGENTS.md in the reviewer;
   `blind` on Haiku 5.5 medium, `high` on Sonnet 5.5 for a Claude main agent (a GPT main agent has its own pair, and
   the other family takes over without credentials: see [Review](#review)); the extension copies the user's messages
   verbatim into the brief; the verdict arrives later as a message. The reviewers keep this contract (user:
@@ -825,6 +825,21 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 ## Review
 
+- Owner (verbatim): «Он не должен быть супердушным, супердотошным, проверять на 1000%, быть перфекционистом. Он должен просто контролировать качество работы: всё сделано качественно, всё сделано, что было заказано, ничего лишнего не было сделано.»
+  «никакой экономии нахуй. Агент должен делать столько, сколько ему необходимо, чтобы достичь качественного результата, качественной оценки, качественной проверки. Никаких не должно быть экономических ограничений.»
+  «У него не должно быть ограничения по tool call, по инструментам, по прочему. Он должен работать в рамках того, как работают все большие агенты. У него должен быть тот же самый инструментарий»
+  «Прямо в рабочей папке, в которой работает основной агент.»
+  «для кода он запускает тесты, не запускает сам код для обычного кода, а для автотестов он не запускает автотесты... сам результат работы он не запускает»
+  «Давай пойдем коротким путем... Сначала сделаем нового ревьюера, потом уже будем дальше двигаться.»
+  Reason: judge quality, completeness and absence of unagreed additions, not perfectionism; read and check as much
+  as needed without economy or a tool-call budget. Carrier: `extensions/RQW-review/REVIEWER.md`, replaced with
+  the supplied `/Users/arkadijcukavin/ai-project/my-pi-evidence/real-bench/prompts/REVIEWER-DEEP.md` verbatim.
+  Both levels share it; `LEVELS` models/thinking, disputes and verdict handling stay unchanged. The accepted
+  coordinator proposal supplies `read`, `bash`, `grep`, `find`, without `edit` or `write`; tool sourcing and limits
+  are specified below. Engineering decision requested in the task: retain the existing hang guard and raise
+  `TIMEOUT_MS` from 10 to 30 minutes for deeper reading and repository tests. This is hang protection, not an
+  economic budget; replacing hang protection is a separate later task. No new live model quality claim is made.
+
 - Owner: «Да, давайте мы исполнителям, ревьюерам кэш выключай.» `extensions/RQW-review/index.ts` sets
   `cacheWarming: "off"` in each reviewer's in-memory SettingsManager, independently of RQW-settings and the main
   user's mode. Prompt caching stays on. TTL approval (full quote in
@@ -844,8 +859,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   comparison; this is not a claim of universal recall improvement. Paired GPT-6.1 recall 87/90 -> 87/90, GPT-6
   87/90 -> 86/90; GPT-6 false findings after audit 6 -> 0, final 0 on both; mean seconds 7.9 -> 9.2 and
   10.8 -> 12.3. Only 12 cases x 3 runs per model, four GPT-held-out cases, no new Claude probes; details and limits
-  in `notes/reviewer-prompt-gpt.md`. The tool contract, read-only tools and verdict handling stay unchanged; the
-  reviewer models are the family table below.
+  in `notes/reviewer-prompt-gpt.md`. These are earlier prompt measurements, not proof for the deep prompt/tool
+  combination above. Verdict handling stays unchanged; reviewer models are the family table below.
 
 - `extensions/RQW-review/` is the accepted reviewers plan (user: «То, что ты предложил по ревьюерам — it's OK, я
   принимаю»): one tool `review` with `level` `blind` or `high` (user: «Smart не нужен ... будет Blind и High»), held
@@ -871,13 +886,13 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Luna high against 15 for Sonnet low, 10 for Luna medium against 1 for Haiku medium; one run set per cell, so
   one- or two-item differences are noise. Fallback: when the family's reviewer has no model or its provider has no
   credentials, the other family's reviewer of the same level is used; the failure `[review#N] Review failed:
-  <reason>` names both reasons when neither can start. A failed request or no verdict in 10 minutes still gives
-  `Review failed: <reason>` with no second attempt. `details` of the verdict carry the model that actually ran.
+  <reason>` names both reasons when neither can start. A failed request or no verdict in 30 minutes gives
+  `Review failed: <reason>` with no automatic second attempt. `details` of the verdict carry the model that actually ran.
   Also one login and rate limit per family. Proof: `extensions/RQW-review/test/review.test.ts` ("the family table",
   "GPT main, blind", "GPT main, high", the two fallback tests and the two failure tests).
 - Parameters: `level`, `object` (paths, the diff as a file path, the stage), `criterion`, optional `agreement`
   (accepted proposals and decisions that are not in the user's own messages) and optional `rebuttals` (see the
-  dispute rule below). The description has five sentences, 495 characters (test limit 500). Empty strings and a
+  dispute rule below). The description is limited to 500 characters by its test. Empty strings and a
   null or empty `rebuttals` count as not given, since strict mode fills every field.
 - The main agent and the reviewer work as a pair, one team for the user's agreement (owner, 2026-10-09: «чтобы они
   действовали в одной команде ... либо принимает правку, либо её отклоняет и пишет, почему»; 2026-10-20: «он с ним
@@ -957,7 +972,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
     is a finding with REQUIREMENT `NOT AGREED` and RULING `DECIDED`; Main removes it without asking the user."
     The measured v3h text had the clause (it made GPT-6.1-Sol rule UNDECIDED on that case); the adopted text, with
     the exception sentence added after the probes, was not measured as a whole (`notes/reviewer-probes.md`, section
-    U12). Proof: `review.test.ts` ("loads the exact GPT v3 candidate with the dispute rules").
+    U12). Proof: `review.test.ts` (prompt hash pins and dispute-rule assertions).
   - Verdict extraction tolerates prose before the verdict: when a reviewer reply does not start with `CLEAN` or
     `FINDINGS:`, the verdict starts at the first line that is exactly `FINDINGS:` and the text before it is dropped
     (`verdictOf` in `index.ts`, applied to the reviewer's last text before classification, so the delivered
@@ -1001,31 +1016,39 @@ Current accepted development policy (request summaries unless quoted); detailed 
   main configs, 43 fixtures x 3 runs per round), with the limits listed there.
 - Reviewer-side tuning is complete on GPT: REQUIRED OUTCOME states one concrete end state; the measured prompt
   treats `<criterion>` as the scope alongside the real brief tags. Evidence and limits: `notes/reviewer-prompt-gpt.md`.
-- The diff goes in as a file path, not as a command: the reviewer only reads files and cannot run one.
+- The diff goes in as a file path, not as a command, so the reviewer can read it whole alongside the named sources.
 - The extension builds the brief itself (`buildBrief`): the user's messages of the current branch, verbatim, numbered
   and in order, with compaction and branch summaries labeled as not the user's words, then `agreement`, `object`,
   `criterion` and `<disputes>`. Reason: the main agent no longer retypes the user's words, the largest output cost of a
   call, and the words cannot drift.
 - Each call is a fresh session in the same process: `createAgentSession` with in-memory `SessionManager` and
-  `SettingsManager` (compaction off), a resource loader with no extensions, skills, prompt templates, themes, context
-  files or appended prompt, `REVIEWER.md` as the prompt and the tools `read`, `grep`, `find` only. Pi still adds its
+  `SettingsManager` (compaction off), in the main agent's `ctx.cwd`, retaining caller shell and image settings.
+  The resource loader loads no user extensions, skills, prompt templates, themes, context files or appended prompt;
+  its sole inline extension installs the bash guard. `REVIEWER.md` is the prompt for both levels. Pi still adds its
   `<cwd>` block after the prompt, so relative paths in the brief resolve; nothing else is added.
-- The reviewer gets Pi's stock `read`, `grep` and `find`, not the RQW-tools ones. Reasons: the RQW descriptions carry
-  the main agent's method (grep: a broad search wave plus a find for deploy and run files; read: read the files you
-  will change), which works against the reviewer's first batch of whole-file reads; the barrier never orders
-  read-only calls, so an own barrier adds nothing; the RQW definitions are built inside the RQW-tools factory and
-  are not exported. The execute code is the same stock code, so the output matches. Cost: stock caps of 100 grep
-  matches and 1000 find results, each with a note on how to get more.
-- grep and find go to the reviewer as `customTools` (`reviewerTools`): the stock definitions with a
-  `prepareArguments` that drops optional arguments equal to the string `"null"`, `"undefined"` or blank
-  (`dropEmptyOptional`) before Pi validates them; execute stays stock. Reason (review finding): stock grep passed
-  `--glob null` to rg and answered "No matches found", so a reviewer could confirm a removed name was gone everywhere.
-  RQW-tools has no such normalizer to reuse; a real JSON `null` Pi already strips.
+- Reviewer tools are exactly `read`, `bash`, `grep`, `find`, no `edit` or `write`. Each session requests fresh
+  RQW-tools definitions over `pi.events` channel `rqw-tools:subagent-tools` using RQW-agent's `{ offer(factory) }`
+  handshake, calls the offered factory with cwd and a settings getter, then filters to those four names. No
+  cross-extension import is added. Without an offer Pi supplies stock tools. Both offered and stock grep/find use
+  the same `dropEmptyOptional` wrapper: `prepareArguments` drops optional arguments equal to the string `"null"`,
+  `"undefined"` or blank, then chains the definition's existing `prepareArguments` before Pi validates them.
+  Execute and the other definition fields stay unchanged. Reason: grep otherwise passes `--glob null` to rg and
+  answers "No matches found", a silent false negative; RQW-tools has no such normalizer of its own. A real JSON
+  `null` Pi already strips. Proof: `extensions/RQW-review/test/review.test.ts`, stock and offered search paths.
+- `extensions/RQW-review/git-guard.ts` is a verbatim self-contained copy of `extensions/RQW-agent/git-guard.ts`.
+  The root `test/copies.test.ts` asserts byte equality to prevent drift, reading both files without importing
+  either extension; each extension's own tests still load only that extension.
+  Every child bash `tool_call` checks `blockedGit`, for offered and stock tools alike, returning its reason as the
+  tool error when blocked. Reason: prevent state-changing git commands while permitting supported read queries.
+  Limit: this shell-syntax guard is not a sandbox; it does not interpret scripts, aliases or computed command names.
+  No file edits through bash and never running the delivered result are prompt rules, not runtime enforcement.
+  For ordinary code the reviewer may run repository tests; for autotest work it must not run the autotests that
+  are the deliverable. Tests may have filesystem side effects. Carriers: `index.ts`, `git-guard.ts`, `REVIEWER.md`.
 - The reviewer uses the session's own model runtime, `ctx.modelRegistry.runtime`, private to TypeScript only.
   Reason: providers and logins that the user's extensions register reach the reviewer (here `pi-claude-auth`
   registers the `anthropic` provider), and no second runtime refreshes the same OAuth login.
-- `REVIEWER.md` now carries the measured v3 adaptation of the Spotty body. Pi's read has no line numbers; initial
-  reads omit numeric windows and truncated files resume at the reported offset. The final answer is the last message,
+- `REVIEWER.md` carries the supplied deep adaptation of the Spotty body. Pi's read has no line numbers; named
+  paths are read whole and truncated files resume at the reported offset. The final answer is the last message,
   not `yield`. The verdict format stays `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT,
   MISMATCH, EVIDENCE, REQUIRED OUTCOME; DISPUTE, RULING and ANSWER only on a repeated disputed finding), and an
   optional `UNCHECKED:` section.
@@ -1036,7 +1059,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   not an LLM message, before any asynchronous work. Recovery also accepts old direct review tool results and verdicts,
   but does not scan arbitrary tool text. This covers nested `ctx.executeTool` callers without a direct tool result.
   If an SDK reload emits no `session_start`, the first execution restores the context and counter from history.
-  `session_shutdown` aborts every running review and delivers nothing; the 10-minute timer does not keep the process alive.
+  `session_shutdown` aborts every running review and delivers nothing; the 30-minute timer does not keep the process alive.
 - Delivery: a verdict never waits in the agent's queue and gets exactly one main turn unless the run was aborted
   (review findings: in print and json mode Pi disposed the session when the main run settled and the verdict never
   came; a follow-up waited in the agent's queue, which TUI Esc and RPC `clear_queue` clear and an RPC abort or an
@@ -1091,7 +1114,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   a - b instead of the sum`), exit 0 in 13 s.
 - Open: `ctx.modelRegistry.runtime` may be renamed by a Pi update, then every review fails with "the model runtime of
   the session is not reachable"; a verdict that finishes after the session ended (quit, `/new`, `/resume`, reload)
-  is dropped, since `session_shutdown` aborts running reviews; in print and json mode the run waits up to 10 minutes
+  is dropped, since `session_shutdown` aborts running reviews; in print and json mode the run waits up to 30 minutes
   for a slow review; a verdict that arrives during a manual `/compact` with no run is appended without a turn and is
   seen on the next one; the reviewer may read a file the main agent is still editing; the main agent's own RQW-tools
   grep still passes a string `"null"` glob to rg; in one smoke run Haiku wrote a MISMATCH of more than 20 words.

@@ -27,9 +27,10 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   tools. Child background cache warming is off; Anthropic prompt caching uses built-in 5m (`DECISIONS.md`, Agent).
   Tests: `npm test`.
 - `extensions/RQW-review/`: extension 6, the `review` tool with levels `blind` and `high`. Each call runs a fresh
-  read-only reviewer session in the same process (`createAgentSession`, stock `read`, `grep`, `find`) with
-  `REVIEWER.md` as its prompt; the verdict comes back later as a `[review#N]` message. Main may rebut a finding once
-  with proof; the next reviewer's answer is final (fix, or ask the user), kept by the extension: `DECISIONS.md`
+  reviewer session in the same process and main agent's cwd (`createAgentSession`, `read`, `bash`, `grep`, `find`;
+  RQW-tools definitions when offered, otherwise Pi's stock tools) with `REVIEWER.md` as its prompt; a bash git-state
+  guard blocks mutations, while no file edits or running the delivered result are prompt rules. The verdict comes
+  back later as a `[review#N]` message. Main may rebut a finding once with proof; the next reviewer's answer is final (fix, or ask the user), kept by the extension: `DECISIONS.md`
   section Review. The reviewer model follows the main agent's family (Claude or GPT) with the other family as
   fallback: `extensions/RQW-review/README.md`. Background cache warming is off; Anthropic prompt caching uses
   built-in 5m (`DECISIONS.md`, Review). Tests: `npm test`.

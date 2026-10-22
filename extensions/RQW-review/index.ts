@@ -1,4 +1,4 @@
-// Extension 5: the `review` tool. Each call starts a fresh read-only reviewer session in this process on the model of
+// Extension 5: the `review` tool. Each call starts a fresh reviewer session in this process on the model of
 // its level, with REVIEWER.md as the prompt and a brief built from the user's own messages; the call returns at once
 // and the verdict comes back later as a `[review#N]` message that the main model answers. Main may rebut a finding once
 // with proof; the extension keeps each dispute in the session and the next fresh reviewer's answer on it is final.
@@ -9,19 +9,20 @@ import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
 	createAgentSession,
-	createExtensionRuntime,
 	createFindToolDefinition,
 	createGrepToolDefinition,
+	DefaultResourceLoader,
 	type ExtensionAPI,
 	type ExtensionContext,
+	getAgentDir,
 	type ModelRuntime,
-	type ResourceLoader,
 	type SessionEntry,
 	SessionManager,
 	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { blockedGit } from "./git-guard.ts";
 
 /**
  * The one table of reviewers: for each model family of the main agent, the reviewer of each level. A reviewer of
@@ -58,15 +59,15 @@ export function candidates(level: Level, main: { provider?: string; id?: string 
 	return [LEVELS[own][level], LEVELS[other][level]];
 }
 
-/** Stock Pi tools of the reviewer: read only. grep and find go in through `reviewerTools`. */
-export const REVIEWER_TOOLS = ["read", "grep", "find"];
-export const TIMEOUT_MS = 10 * 60 * 1000;
+/** The tools of the reviewer, by name: read, bash, grep and find. grep and find go in through `reviewerTools` when no RQW-tools offer is made. */
+export const REVIEWER_TOOLS = ["read", "bash", "grep", "find"];
+export const TIMEOUT_MS = 30 * 60 * 1000;
 export const MESSAGE_TYPE = "review";
 
 export const REVIEWER = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "REVIEWER.md"), "utf8").replace(/\r\n/g, "\n").trimEnd();
 
 export const DESCRIPTION =
-	"Blind review by a separate read-only model that works with you as one team for the user's agreement: " +
+	"Blind review by a separate model that works with you as one team for the user's agreement: " +
 	"it checks the requested criterion, including checks beyond the agreement and exclusions, and gets the user's own messages verbatim. Use " +
 	"it when the user asks for a review or a checked result. The call returns at once; the verdict arrives later as a " +
 	"`[review#N]` message with what to do next. Keep working meanwhile. You may rebut a finding once, with proof; the " +
@@ -362,7 +363,7 @@ const parameters = Type.Object({
 	level: StringEnum(["blind", "high"] as const, { description: "blind by default; high when the user asks for it." }),
 	object: Type.String({
 		description:
-			"Paths of the object and its sources, the diff as a file path (the reviewer only reads files), and the stage: pre-action or pre-completion.",
+			"Paths of the object and its sources, the diff as a file path, and the stage: pre-action or pre-completion.",
 	}),
 	criterion: Type.String({ description: "What this check confirms." }),
 	agreement: Type.Optional(
@@ -389,21 +390,23 @@ type Params = {
 	rebuttals?: Rebuttal[] | null;
 };
 
-// No extensions, skills, prompt templates, themes or context files; the prompt is REVIEWER.md.
-function reviewerResources(): ResourceLoader {
-	return {
-		getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
-		getSkills: () => ({ skills: [], diagnostics: [] }),
-		getPrompts: () => ({ prompts: [], diagnostics: [] }),
-		getThemes: () => ({ themes: [], diagnostics: [] }),
-		getAgentsFiles: () => ({ agentsFiles: [] }),
-		getSystemPrompt: () => REVIEWER,
-		getSystemPromptSource: () => undefined,
-		getAppendSystemPrompt: () => [],
-		getAppendSystemPromptSources: () => [],
-		extendResources: () => {},
-		reload: async () => {},
-	};
+/**
+ * Channel on `pi.events` where RQW-tools, when it is loaded, offers its tools for reviewers: a request `{ offer(factory) }`
+ * gets a factory of fresh definitions. Nothing here imports RQW-tools; the same handshake as RQW-agent.
+ */
+const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
+type ToolsFactory = (cwd: string, settings: () => unknown) => ToolDefinition[];
+
+/** The offered RQW-tools definitions of the reviewer, filtered to its four names; undefined when none is offered. */
+function offeredTools(pi: ExtensionAPI, cwd: string): ToolDefinition[] | undefined {
+	let factory: ToolsFactory | undefined;
+	// Pi's event bus calls every handler synchronously inside emit, so an offer is in place when emit returns.
+	pi.events.emit(SUBAGENT_TOOLS, {
+		offer: (f: ToolsFactory) => {
+			factory = f;
+		},
+	});
+	return factory?.(cwd, () => pi.getSettings()).filter((d) => REVIEWER_TOOLS.includes(d.name)).map(normalizeSearchTool);
 }
 
 function textOf(content: unknown): string {
@@ -480,20 +483,23 @@ export function dropEmptyOptional(input: unknown, required: readonly string[]): 
 	return kept.length === entries.length ? input : Object.fromEntries(kept);
 }
 
-/** Stock grep and find with `dropEmptyOptional` before Pi validates the arguments; execute stays stock. */
+/** grep and find get `dropEmptyOptional` before Pi validates the arguments; any other definition is returned unchanged. */
+function normalizeSearchTool(definition: ToolDefinition): ToolDefinition {
+	if (definition.name !== "grep" && definition.name !== "find") return definition;
+	const required: string[] = (definition.parameters as { required?: string[] }).required ?? [];
+	const prepare = definition.prepareArguments;
+	return {
+		...definition,
+		prepareArguments: (input: unknown) => {
+			const args = dropEmptyOptional(input, required);
+			return prepare ? prepare(args) : args;
+		},
+	} as ToolDefinition;
+}
+
+/** Stock grep and find with `normalizeSearchTool`; execute stays stock. */
 export function reviewerTools(cwd: string): ToolDefinition[] {
-	return [createGrepToolDefinition(cwd), createFindToolDefinition(cwd)].map((stock) => {
-		const definition = stock as unknown as ToolDefinition;
-		const required: string[] = (definition.parameters as { required?: string[] }).required ?? [];
-		const prepare = definition.prepareArguments;
-		return {
-			...definition,
-			prepareArguments: (input: unknown) => {
-				const args = dropEmptyOptional(input, required);
-				return prepare ? prepare(args) : args;
-			},
-		} as ToolDefinition;
-	});
+	return [createGrepToolDefinition(cwd), createFindToolDefinition(cwd)].map((stock) => normalizeSearchTool(stock as unknown as ToolDefinition));
 }
 
 const SHUTDOWN = "shutdown";
@@ -541,22 +547,56 @@ async function pickReviewer(level: Level, ctx: ExtensionContext, signal: AbortSi
 }
 
 /** One reviewer session from start to its last assistant text. Throws with the reason when there is no verdict. */
-async function runReviewer(level: Level, brief: string, ctx: ExtensionContext, signal: AbortSignal, used: { spec?: Spec }): Promise<string> {
+async function runReviewer(pi: ExtensionAPI, level: Level, brief: string, ctx: ExtensionContext, signal: AbortSignal, used: { spec?: Spec }): Promise<string> {
 	signal.throwIfAborted();
 	const { spec, model, modelRuntime } = await pickReviewer(level, ctx, signal);
 	used.spec = spec;
 
+	signal.throwIfAborted();
+	// The main session's shell, including Git Bash on Windows, and its image settings; no warmer, no compaction.
+	const own = pi.getSettings();
+	const settingsManager = SettingsManager.inMemory({
+		cacheWarming: "off",
+		compaction: { enabled: false },
+		shellPath: own.shellPath,
+		shellCommandPrefix: own.shellCommandPrefix,
+		images: { autoResize: own.images?.autoResize },
+	});
+	// No extensions, skills, prompt templates, themes or context files; the prompt is REVIEWER.md, with Pi's <cwd> block.
+	const resourceLoader = new DefaultResourceLoader({
+		cwd: ctx.cwd,
+		agentDir: getAgentDir(),
+		settingsManager,
+		noExtensions: true,
+		noSkills: true,
+		noPromptTemplates: true,
+		noThemes: true,
+		noContextFiles: true,
+		systemPromptOverride: () => REVIEWER,
+		appendSystemPromptOverride: () => [],
+		// The only extension of the reviewer: the git guard of every bash call, stock or offered.
+		extensionFactories: [(sub: ExtensionAPI) => {
+			sub.on("tool_call", (event) => {
+				if (event.toolName !== "bash" || typeof event.input.command !== "string") return;
+				const reason = blockedGit(event.input.command);
+				if (reason) return { block: true, reason };
+			});
+		}],
+	});
+	await untilAborted(resourceLoader.reload(), signal);
+	signal.throwIfAborted();
+	const offered = offeredTools(pi, ctx.cwd);
 	signal.throwIfAborted();
 	const creating = createAgentSession({
 		cwd: ctx.cwd,
 		model,
 		thinkingLevel: spec.thinking,
 		modelRuntime,
-		resourceLoader: reviewerResources(),
+		resourceLoader,
 		tools: [...REVIEWER_TOOLS],
-		customTools: reviewerTools(ctx.cwd),
+		customTools: offered ?? reviewerTools(ctx.cwd),
 		sessionManager: SessionManager.inMemory(ctx.cwd),
-		settingsManager: SettingsManager.inMemory({ cacheWarming: "off", compaction: { enabled: false } }),
+		settingsManager,
 	}).then((created) => {
 		// createAgentSession has no signal: dispose a session that materializes after cancellation.
 		if (signal.aborted) {
@@ -738,7 +778,7 @@ export default function review(pi: ExtensionAPI) {
 		let failed = false;
 		const used: { spec?: Spec } = {};
 		try {
-			verdict = await runReviewer(level, brief, ctx, controller.signal, used);
+			verdict = await runReviewer(pi, level, brief, ctx, controller.signal, used);
 		} catch (error) {
 			const reason =
 				controller.signal.reason === TIMEOUT
