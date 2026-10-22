@@ -22,17 +22,13 @@ You are running inside Pi. Install the my-pi package into this Pi installation, 
 Apart from the authorized old adapter replacement above and installing or updating my-pi, change nothing else:
 no unrelated packages, settings, credentials or files.
 
-## macOS Option shortcuts
+## Model and reasoning shortcuts
 
-For the user, not part of the install. Option plus/minus changes reasoning; Option+Shift plus/minus changes
-models, following the [Models shortcut contract and current family order](DECISIONS.md#models), including the
-GPT 5.6 Luna addition (the GPT reviewers use it). Configure the active terminal profile:
-
-- iTerm2: Settings > Profiles > select the profile > Keys; set both Left Option Key and Right Option Key to
-  `Esc+` (Esc-prefix mode).
-- Terminal.app: Terminal > Settings > Profiles > select the profile > Keyboard; enable "Use Option as Meta key".
-
-This is terminal configuration, not a Pi keybinding change. See the [Models decision](DECISIONS.md#models).
+For the user, not part of the install. Shift+Up / Shift+Down change the model (up to stronger, down to weaker);
+Shift+Right / Shift+Left raise / lower reasoning, as in oh-my-pi. The model order and clamps are in the
+[Models decision](DECISIONS.md#models), including the GPT 5.6 Luna addition (the GPT reviewers use it). The keys
+need no terminal setup: iTerm2, Terminal.app and the VS Code terminal send them as standard sequences, and Pi 1.4.0
+binds none of them itself.
 
 ## Switch one extension off
 

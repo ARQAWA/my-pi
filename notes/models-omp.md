@@ -32,7 +32,7 @@ Repository: `~/Documents/ChatGPT/my-omp-harness`, checked-out `master` at
   openai-codex row, so its evidence is the bundled catalog, not live discovery.
 
 RQW-models keeps the owner's current family order, permanent GPT 5.6 Luna addition (the GPT reviewers of RQW-review use it),
-Alt shortcuts and custom effort lists from [DECISIONS.md, Models](../DECISIONS.md#models),
+Shift+arrow shortcuts (same direction as omp: Up stronger, Right more effort) and custom effort lists from [DECISIONS.md, Models](../DECISIONS.md#models),
 not off, provider restrictions or Anthropic payload rewrites. Its explicit per-family lists are intersected with Pi support at runtime;
 there is no runtime import from the harness or its catalog.
 

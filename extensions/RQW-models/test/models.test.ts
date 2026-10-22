@@ -123,63 +123,63 @@ describe("RQW model families and Pi thinking capabilities", () => {
 });
 
 describe("shortcuts and picker", () => {
-	it("plus strengthens, minus weakens, clamps both ends and enters at the matching strength end", async () => {
+	it("Shift+Up strengthens, Shift+Down weakens, clamps both ends and enters at the matching strength end", async () => {
 		const h = harness();
-		await h.press("alt+shift+="); assert.equal(h.selected.length, 0);
-		for (const expected of LISTED.slice(1)) { await h.press("alt+shift+-"); assert.equal(h.current, expected); }
-		await h.press("alt+shift+-"); assert.equal(h.selected.length, LISTED.length - 1);
-		for (const expected of LISTED.slice(0, -1).toReversed()) { await h.press("alt+shift+="); assert.equal(h.current, expected); }
-		await h.press("alt+shift+="); assert.equal(h.selected.length, (LISTED.length - 1) * 2);
+		await h.press("shift+up"); assert.equal(h.selected.length, 0);
+		for (const expected of LISTED.slice(1)) { await h.press("shift+down"); assert.equal(h.current, expected); }
+		await h.press("shift+down"); assert.equal(h.selected.length, LISTED.length - 1);
+		for (const expected of LISTED.slice(0, -1).toReversed()) { await h.press("shift+up"); assert.equal(h.current, expected); }
+		await h.press("shift+up"); assert.equal(h.selected.length, (LISTED.length - 1) * 2);
 		// An unlisted model survives startup only while no listed model is authenticated, e.g. before /login.
 		const outside = model("other");
 		const later = async (models: Model<string>[]) => { const h = harness([], outside); await h.start("reload"); h.models = models; return h; };
-		const forward = await later(LISTED); await forward.press("alt+shift+="); assert.equal(forward.current, LISTED[0]);
-		const backward = await later(LISTED); await backward.press("alt+shift+-"); assert.equal(backward.current, LISTED.at(-1));
+		const forward = await later(LISTED); await forward.press("shift+up"); assert.equal(forward.current, LISTED[0]);
+		const backward = await later(LISTED); await backward.press("shift+down"); assert.equal(backward.current, LISTED.at(-1));
 		const sparseModels = [LISTED[1], LISTED[3], LISTED[4]];
 		const sparsePlus = await later(sparseModels);
-		await sparsePlus.press("alt+shift+="); assert.equal(sparsePlus.current, LISTED[1]);
-		await sparsePlus.press("alt+shift+="); assert.equal(sparsePlus.selected.length, 1);
+		await sparsePlus.press("shift+up"); assert.equal(sparsePlus.current, LISTED[1]);
+		await sparsePlus.press("shift+up"); assert.equal(sparsePlus.selected.length, 1);
 		const sparseMinus = await later(sparseModels);
-		await sparseMinus.press("alt+shift+-"); assert.equal(sparseMinus.current, LISTED[4]);
-		await sparseMinus.press("alt+shift+-"); assert.equal(sparseMinus.selected.length, 1);
+		await sparseMinus.press("shift+down"); assert.equal(sparseMinus.current, LISTED[4]);
+		await sparseMinus.press("shift+down"); assert.equal(sparseMinus.selected.length, 1);
 	});
 	it("recognizes the current family even when resume used another provider variant", async () => {
 		const proxySonnet = model("anthropic/claude-sonnet-5.5", "proxy");
 		const h = harness(LISTED, proxySonnet);
-		await h.press("alt+shift+="); assert.equal(h.current, LISTED[0]);
+		await h.press("shift+up"); assert.equal(h.current, LISTED[0]);
 	});
 	it("serializes quick model presses and preserves the pre-switch thinking level", async () => {
 		const h = harness(LISTED, LISTED[0], "high");
-		await Promise.all([h.press("alt+shift+-"), h.press("alt+shift+-"), h.press("alt+shift+-")]);
+		await Promise.all([h.press("shift+down"), h.press("shift+down"), h.press("shift+down")]);
 		assert.equal(h.current, LISTED[3]); assert.equal(h.thinking, "high");
 		assert.deepEqual(h.selected, LISTED.slice(1, 4).map((m) => `${m.provider}/${m.id}`));
 	});
 	it("queued reasoning reads the new model capabilities, not the keypress snapshot", async () => {
 		const limitedOpus = model("claude-opus-5-5", "anthropic", {});
 		const h = harness([limitedOpus, LISTED[1]], limitedOpus, "high");
-		await Promise.all([h.press("alt+shift+-"), h.press("alt+=")]);
+		await Promise.all([h.press("shift+down"), h.press("shift+right")]);
 		assert.equal(h.current, LISTED[1]); assert.equal(h.thinking, "xhigh");
 	});
 	it("switching lowers unsupported effort to nearest lower level, or lowest, not Pi's upward clamp", async () => {
 		const limited = model("claude-sonnet-5-5", "anthropic", {});
 		const h = harness([LISTED[0], limited], LISTED[0], "max");
-		await h.press("alt+shift+-"); assert.equal(h.thinking, "high");
-		const off = harness(LISTED, LISTED[0], "off"); await off.press("alt+shift+-"); assert.equal(off.thinking, "low");
-		const minimal = harness(LISTED, LISTED[1], "minimal"); await minimal.press("alt+shift+="); assert.equal(minimal.thinking, "low");
+		await h.press("shift+down"); assert.equal(h.thinking, "high");
+		const off = harness(LISTED, LISTED[0], "off"); await off.press("shift+down"); assert.equal(off.thinking, "low");
+		const minimal = harness(LISTED, LISTED[1], "minimal"); await minimal.press("shift+up"); assert.equal(minimal.thinking, "low");
 		const capped = harness(LISTED, LISTED[2], "max");
-		await capped.press("alt+shift+="); assert.equal(capped.thinking, "xhigh");
-		await capped.press("alt+shift+="); assert.equal(capped.thinking, "high");
+		await capped.press("shift+up"); assert.equal(capped.thinking, "xhigh");
+		await capped.press("shift+up"); assert.equal(capped.thinking, "high");
 	});
 	it("cycles only supported reasoning, clamps both ends and handles off/minimal", async () => {
 		const h = harness(LISTED, LISTED[2], "off");
-		for (const expected of ["low", "medium", "high", "xhigh", "max", "max"]) { await h.press("alt+="); assert.equal(h.thinking, expected); }
-		for (const expected of ["xhigh", "high", "medium", "low", "low"]) { await h.press("alt+-"); assert.equal(h.thinking, expected); }
-		const minimal = harness(LISTED, LISTED[0], "minimal"); await minimal.press("alt+-"); assert.equal(minimal.thinking, "low");
-		const noThinking = harness(LISTED, { ...LISTED[0], reasoning: false }, "off"); await noThinking.press("alt+="); assert.equal(noThinking.thinking, "off");
+		for (const expected of ["low", "medium", "high", "xhigh", "max", "max"]) { await h.press("shift+right"); assert.equal(h.thinking, expected); }
+		for (const expected of ["xhigh", "high", "medium", "low", "low"]) { await h.press("shift+left"); assert.equal(h.thinking, expected); }
+		const minimal = harness(LISTED, LISTED[0], "minimal"); await minimal.press("shift+left"); assert.equal(minimal.thinking, "low");
+		const noThinking = harness(LISTED, { ...LISTED[0], reasoning: false }, "off"); await noThinking.press("shift+right"); assert.equal(noThinking.thinking, "off");
 	});
 	it("no models, auth lost and cancelled/headless pickers are harmless", async () => {
-		const empty = harness([]); await empty.press("alt+shift+="); await empty.pick(); assert.equal(empty.selected.length, 0); assert.equal(empty.warnings.length, 1);
-		const lost = harness(); lost.allowSet = false; await lost.press("alt+shift+-"); assert.equal(lost.current, LISTED[0]); assert.equal(lost.thinking, "medium"); assert.equal(lost.warnings.length, 1);
+		const empty = harness([]); await empty.press("shift+up"); await empty.pick(); assert.equal(empty.selected.length, 0); assert.equal(empty.warnings.length, 1);
+		const lost = harness(); lost.allowSet = false; await lost.press("shift+down"); assert.equal(lost.current, LISTED[0]); assert.equal(lost.thinking, "medium"); assert.equal(lost.warnings.length, 1);
 		const h = harness(); await h.pick(); assert.deepEqual(h.offered, LISTED.map((m) => `${m.provider}/${m.id}`)); assert.equal(h.selected.length, 0);
 		h.choice = "openai-codex/gpt-6-sol"; await h.pick(); assert.equal(h.current, LISTED[3]);
 		h.hasUI = false; await h.pick(); assert.equal(h.selected.length, 1);
@@ -187,34 +187,43 @@ describe("shortcuts and picker", () => {
 });
 
 describe("real terminal byte sequences through Pi's key matcher", () => {
-	it("legacy ESC prefix, Kitty physical/shifted symbols, CSI-u and xterm modifyOtherKeys dispatch once", async () => {
-		const rows: [boolean, string, KeyId][] = [
-			[false, "\x1b=", "alt+="], [false, "\x1b-", "alt+-"],
-			[false, "\x1b+", "alt++"], [false, "\x1b_", "alt+_"],
-			[true, "\x1b[61;3u", "alt+="], [true, "\x1b[45;3u", "alt+-"],
-			[true, "\x1b[61:43;4u", "alt+shift+="], [true, "\x1b[45:95;4u", "alt+shift+-"],
-			[true, "\x1b[43;4u", "alt+shift++"], [true, "\x1b[95;4u", "alt+shift+_"],
-			[false, "\x1b[27;3;61~", "alt+="], [false, "\x1b[27;3;45~", "alt+-"],
-			[false, "\x1b[27;4;43~", "alt++"], [false, "\x1b[27;4;95~", "alt+_"],
-		];
-		for (const [kitty, bytes, key] of rows) {
+	// Legacy xterm modified keys (iTerm2, Terminal.app, VS Code terminal) and the Kitty protocol both send CSI 1;2<A-D>.
+	const ROWS: [boolean, string, KeyId][] = [
+		[false, "\x1b[1;2A", "shift+up"], [false, "\x1b[1;2B", "shift+down"],
+		[false, "\x1b[1;2C", "shift+right"], [false, "\x1b[1;2D", "shift+left"],
+		[true, "\x1b[1;2A", "shift+up"], [true, "\x1b[1;2B", "shift+down"],
+		[true, "\x1b[1;2C", "shift+right"], [true, "\x1b[1;2D", "shift+left"],
+		[true, "\x1b[1;2:1A", "shift+up"], [true, "\x1b[1;2:1B", "shift+down"],
+		[true, "\x1b[1;2:1C", "shift+right"], [true, "\x1b[1;2:1D", "shift+left"],
+	];
+	it("Shift+arrow sequences dispatch once: Up/Down change the model, Right/Left change reasoning", async () => {
+		for (const [kitty, bytes, key] of ROWS) {
 			setKittyProtocolActive(kitty);
 			const h = harness(LISTED, LISTED[2]);
 			// InteractiveMode takes the first matching registered shortcut, then returns true.
-			const actual = [...h.shortcuts.keys()].find((candidate) => matchesKey(bytes, candidate));
-			assert.equal(actual, key, JSON.stringify(bytes));
-			await h.press(actual!);
-			const reasoning = key === "alt+=" || key === "alt+-";
-			const decrease = key.includes("_") || key.endsWith("+-");
+			const matching = [...h.shortcuts.keys()].filter((candidate) => matchesKey(bytes, candidate));
+			assert.deepEqual(matching, [key], JSON.stringify(bytes));
+			await h.press(key);
+			const reasoning = key === "shift+right" || key === "shift+left";
+			const lower = key === "shift+down" || key === "shift+left";
 			assert.equal(h.selected.length, reasoning ? 0 : 1, JSON.stringify(bytes));
-			assert.equal(h.current, reasoning ? LISTED[2] : LISTED[decrease ? 3 : 1], JSON.stringify(bytes));
-			assert.equal(h.thinking, reasoning ? (decrease ? "low" : "high") : "medium", JSON.stringify(bytes));
-			assert.equal(h.shortcuts.get(actual!)!.description, reasoning
-				? (decrease ? "RQW: decrease reasoning" : "RQW: increase reasoning")
-				: (decrease ? "RQW: weaker model" : "RQW: stronger model"));
+			assert.equal(h.current, reasoning ? LISTED[2] : LISTED[lower ? 3 : 1], JSON.stringify(bytes));
+			assert.equal(h.thinking, reasoning ? (lower ? "low" : "high") : "medium", JSON.stringify(bytes));
+			assert.equal(h.shortcuts.get(key)!.description, reasoning
+				? (lower ? "RQW: decrease reasoning" : "RQW: increase reasoning")
+				: (lower ? "RQW: weaker model" : "RQW: stronger model"));
 		}
 		setKittyProtocolActive(false);
-		for (const bytes of ["=", "-", "+", "_", "\x1b[A", "\x1b[B"]) assert.equal([...harness().shortcuts.keys()].some((key) => matchesKey(bytes, key)), false);
+	});
+	it("registers exactly the four Shift+arrow keys; the old Alt shortcuts and other arrows are not bound", () => {
+		assert.deepEqual([...harness().shortcuts.keys()].sort(), ["shift+down", "shift+left", "shift+right", "shift+up"]);
+		for (const kitty of [false, true]) {
+			setKittyProtocolActive(kitty);
+			for (const bytes of ["\x1b[A", "\x1b[B", "\x1b[C", "\x1b[D", "\x1b[1;3A", "\x1b[1;4A", "\x1b[1;5A", "\x1b[1;6A", "\x1b=", "\x1b-", "\x1b+", "\x1b_", "\x1b[61;3u", "\x1b[45;3u", "\x1b[61:43;4u", "\x1b[45:95;4u"]) {
+				assert.equal([...harness().shortcuts.keys()].some((key) => matchesKey(bytes, key)), false, JSON.stringify(bytes));
+			}
+		}
+		setKittyProtocolActive(false);
 	});
 });
 
@@ -317,8 +326,8 @@ describe("real Pi SDK and faux providers only", () => {
 				assert.ok(levelsFor(catalogue.get(m.id)).every((level) => getSupportedThinkingLevels(catalogue.get(m.id)!).includes(level)));
 			}
 			anthropic.setResponses([fauxAssistantMessage("faux only")]); await session.prompt("hello"); assert.equal(session.getLastAssistantText(), "faux only");
-			await press(session, "alt+shift+-"); assert.equal(session.model?.id, "claude-sonnet-5-5"); assert.equal(session.thinkingLevel, "medium");
-			await press(session, "alt+="); assert.equal(session.thinkingLevel, "high");
+			await press(session, "shift+down"); assert.equal(session.model?.id, "claude-sonnet-5-5"); assert.equal(session.thinkingLevel, "medium");
+			await press(session, "shift+right"); assert.equal(session.thinkingLevel, "high");
 			const saved = session.settingsManager.getSettings(); assert.equal(saved.defaultModel, undefined); assert.equal(saved.defaultThinkingLevel, undefined);
 		} finally { session.dispose(); }
 	});
@@ -328,18 +337,18 @@ describe("real Pi SDK and faux providers only", () => {
 			try {
 				const expected = EXPECTED_LEVELS[index];
 				for (const level of [...expected.slice(1), expected.at(-1)]) {
-					await press(session, "alt+="); assert.equal(session.thinkingLevel, level, m.id);
+					await press(session, "shift+right"); assert.equal(session.thinkingLevel, level, m.id);
 				}
 				for (const level of [...expected.slice(0, -1).toReversed(), "low"]) {
-					await press(session, "alt+-"); assert.equal(session.thinkingLevel, level, m.id);
+					await press(session, "shift+left"); assert.equal(session.thinkingLevel, level, m.id);
 				}
 			} finally { session.dispose(); }
 		}
 	});
-	it("rapid minus snapshot-context presses weaken Opus to Sonnet to GPT6.1 to GPT6", async () => {
+	it("rapid Shift+Down snapshot-context presses weaken Opus to Sonnet to GPT6.1 to GPT6", async () => {
 		const session = await realSession();
 		try {
-			await Promise.all([press(session, "alt+shift+-"), press(session, "alt+shift+-"), press(session, "alt+shift+-")]);
+			await Promise.all([press(session, "shift+down"), press(session, "shift+down"), press(session, "shift+down")]);
 			const changes = session.sessionManager.getBranch().filter((entry) => entry.type === "model_change");
 			assert.deepEqual(changes.slice(-3).map((entry) => entry.modelId), FAMILIES.slice(1, 4));
 			assert.equal(session.model?.id, "gpt-6-sol"); assert.equal(session.thinkingLevel, "medium");
@@ -359,7 +368,7 @@ describe("real Pi SDK and faux providers only", () => {
 		const manager = SessionManager.inMemory(root);
 		const session = await realSession({ manager, reason: "new" });
 		try {
-			await press(session, "alt+shift+-"); await press(session, "alt+shift+-"); await press(session, "alt+=");
+			await press(session, "shift+down"); await press(session, "shift+down"); await press(session, "shift+right");
 			codex.setResponses([fauxAssistantMessage("saved")]); await session.prompt("save history");
 			await session.reload(); assert.equal(session.model?.id, "gpt-6.1-sol"); assert.equal(session.thinkingLevel, "high");
 		} finally { session.dispose(); }
@@ -375,7 +384,7 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 	const ui = (notes: string[], pick?: (labels: string[]) => string | undefined): Partial<ExtensionUIContext> => ({
 		notify: (text: string) => { notes.push(text); }, select: async (_title: string, labels: string[]) => pick?.(labels),
 	});
-	it("empties the stock snapshot and scoped list; Ctrl+P cannot switch; /rqw-models and Option keys still work", async () => {
+	it("empties the stock snapshot and scoped list; Ctrl+P cannot switch; /rqw-models and Shift+arrow keys still work", async () => {
 		let offered: string[] = [];
 		const notes: string[] = [];
 		const scoped = [{ model: unlisted() }, { model: codex.getModel("gpt-6-sol")! }];
@@ -389,7 +398,7 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 			assert.equal(await session.cycleModel("forward"), undefined);
 			assert.equal(await session.cycleModel("backward"), undefined);
 			assert.equal(session.model?.id, "claude-opus-5-5");
-			await press(session, "alt+shift+-"); assert.equal(session.model?.id, "claude-sonnet-5-5");
+			await press(session, "shift+down"); assert.equal(session.model?.id, "claude-sonnet-5-5");
 			await session.extensionRunner.getCommand("rqw-models")!.handler("", session.extensionRunner.createCommandContext());
 			assert.deepEqual(offered, LISTED.map((m) => `${m.provider}/${m.id}`));
 			assert.equal(session.model?.id, "gpt-6.1-sol");
@@ -472,7 +481,7 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 			assert.ok(runtime.hasConfiguredAuth("openai-codex"));
 			await session.extensionRunner.getCommand("rqw-models")!.handler("", session.extensionRunner.createCommandContext());
 			assert.deepEqual(offered, LISTED.filter((m) => m.id !== "gpt-6-sol").map((m) => `${m.provider}/${m.id}`));
-			for (const id of ["claude-sonnet-5-5", "gpt-6.1-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna"]) { await press(session, "alt+shift+-"); assert.equal(session.model?.id, id); }
+			for (const id of ["claude-sonnet-5-5", "gpt-6.1-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna"]) { await press(session, "shift+down"); assert.equal(session.model?.id, id); }
 		} finally {
 			session.dispose();
 			delete codex.provider.filterModels;

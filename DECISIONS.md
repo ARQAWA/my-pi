@@ -1432,26 +1432,23 @@ Current accepted development policy (request summaries unless quoted); detailed 
   exact canonical ID, then stable provider/ID order. This keeps one entry per family, not duplicates of each model. A proxy
   variant can be selected only when the preferred provider/ID is unavailable. This extension does not disable any
   provider. A provider-wide restriction remains a separate task.
-- Owner request: «Смотри, что нужно поправить. У нас сейчас хоткеи Alt+Shift или Option+Shift, плюс-минус — это изменение reasoning, а модель меняется просто на Option плюс-минус. Короче, надо поменять их местами, чтобы reasoning менялся на просто Option плюс-минус, а чтобы модель менялась на Option+Shift плюс-минус. Вот так надо сделать.»
-  Reason: put reasoning on the unshifted shortcuts and model selection on the shifted shortcuts.
-  Carrier: `extensions/RQW-models/index.ts`. `registerShortcut` binds physical `Alt+=`/`Alt+-`
-  for reasoning (plus raises effort, minus lowers it) and `Alt+Shift+=`/`Alt+Shift+-` for models.
-  `alt++` and `alt+_` also change models for shifted symbols sent by legacy terminals.
-  `alt+shift++` and `alt+shift+_` change models for CSI-u reporting the produced symbol while retaining Shift.
-  The first match handles a press once, as in Pi's interactive editor. Shortcut actions are serialized so fast
-  repeated presses do not race. Each queued action reads the live `model` getter of the latest `session_start`
-  event context, not the TUI shortcut snapshot; this includes reasoning queued behind a model switch. The event
-  context is refreshed even on resume and reload. Both model and reasoning movement stop at either end, as omp does,
-  rather than wrap.
-  `Alt+Shift+=` increases model strength (toward Opus); `Alt+Shift+-` decreases it (toward the weakest listed family).
-  Engineering entry rule: from outside the list, plus enters at the strongest available model and minus at the
-  weakest, so entry follows the stated strength direction. The picker stays strongest first.
-- macOS Option uses the same shortcuts as Alt when the terminal sends it as Meta / an Esc prefix.
-  Owner: «Я вроде как в задаче ставил, что должно работать и на Alt, и на Option» (line 49 of
-  `2026-10-21T12-13-54-289Z_01a15e61-dcf1-7476-b1d6-42f03584b9e6.jsonl`). Reason: the terminal must send
-  shortcut sequences instead of Option's special characters; no extension code change is needed.
-  Carrier: the existing Alt bindings in `extensions/RQW-models/index.ts`; terminal setup is in
-  [INSTALL.md](INSTALL.md#macos-option-shortcuts).
+- Owner request: «Надо вернуть старое управление моделями: Shift + Вверх/Вниз будет смена модели, Shift + Вверх — к более сильным, Shift + Вниз — к более слабым. А Shift + Влево/Вправо — это будет смена ризенинга, так же, как и раньше это было в ОМП.»
+  Reason: the old oh-my-pi layout (`model-arrows.js`, `reasoning-arrows.js`, [notes/models-omp.md](notes/models-omp.md)),
+  where Shift+Up moves to earlier (stronger) entries of the list and Shift+Down to later (weaker) ones, and Shift+Right
+  raises reasoning, Shift+Left lowers it. This replaces the earlier Option/Alt+plus/minus layout; those shortcuts and their
+  aliases are removed. Pi 1.4.0 binds none of the four Shift+arrow keys (editor, app and `tui.altScreen` defaults use
+  plain, `ctrl` and `ctrl+shift` arrows), so nothing stock is shadowed. Terminals send CSI `1;2A`/`B`/`C`/`D` for them
+  (xterm modified keys in iTerm2, Terminal.app and the VS Code terminal; the Kitty protocol keeps the same form, also
+  with an event type such as `1;2:1A`), so no Option/Meta setup is needed.
+  Carrier: `extensions/RQW-models/index.ts`. `registerShortcut` binds `shift+up` (stronger model), `shift+down` (weaker
+  model), `shift+right` (reasoning up) and `shift+left` (reasoning down). The first match handles a press once, as in
+  Pi's interactive editor. Shortcut actions are serialized so fast repeated presses do not race. Each queued action
+  reads the live `model` getter of the latest `session_start` event context, not the TUI shortcut snapshot; this includes
+  reasoning queued behind a model switch. The event context is refreshed even on resume and reload. Both model and
+  reasoning movement stop at either end, as omp does, rather than wrap.
+  Engineering entry rule: from outside the list, Shift+Up enters at the strongest available model and Shift+Down at the
+  weakest, so entry follows the stated strength direction. The picker stays strongest first. Tests:
+  `extensions/RQW-models/test/models.test.ts` (byte sequences through Pi's key matcher, direction, limits).
 - `/rqw-models` is the extension's authenticated listed-model picker via `ctx.ui.select`. Pi reserves its built-in model
   shortcuts and disambiguates commands conflicting with built-ins, so RQW-models does not replace them; it empties
   them (next item). Shift+Tab (thinking cycle) and provider definitions stay stock. In print/JSON mode the picker
@@ -1500,7 +1497,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
   - Limits: Ctrl+P changes nothing but Pi still shows "Only one model available"; Pi prints it for an empty cycle
     result and has no hook, and a fake result would print a false "Switched to". `/scoped-models` lists no model,
     only saved patterns that match nothing, as unavailable rows. After `/login` from no model Pi suggests `/model`;
-    `/rqw-models` or Option/Alt+Shift+= select a model. If Pi's internals change and the session cannot be borrowed,
+    `/rqw-models` or Shift+Up/Down select a model. If Pi's internals change and the session cannot be borrowed,
     RQW-models warns and the stock lists stay. Pi mechanisms: [notes/models-omp.md](notes/models-omp.md).
 - Owner request (C:3113): «И базовая модель всегда при запуске — это Opus-Medium. Это от провайдера не зависит».
   CLI precedence and preservation of resumed sessions are engineering choices, not direct owner quotations
@@ -1517,7 +1514,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   an empty restored session with no conversation history, since public session metadata cannot distinguish that
   session from a fresh one after Pi inserts initial model/thinking entries.
 - Owner correction: «Теперь смотри насчет переключателя модели, пикера модели. Ты как сделал? Ты сделал, что я нажимаю Option + плюс/минус, и у тебя изменение effort идет правильно. Ты на плюс увеличиваешь effort, на минус уменьшаешь. А выбор модели у тебя идет неправильно. Ты на плюс ухудшаешь модель, а на минус улучшаешь модель. В самом конце у тебя стоит самая сильная модель, а в самом верху самая слабая. Список должен наоборот идти, в том же порядке, только наоборот. Еще смотри, effort у моделей должны быть такие же, как у пикера в MyPy, только без no reasoning моделей.»
-  Reason: model plus/minus must agree with effort plus/minus in strength. Carrier:
+  Reason: the picker lists strongest first, and the stronger direction of the model keys must agree with the stronger
+  direction of the effort keys. The key layout itself was replaced by the Shift+arrow request above. Carrier:
   `extensions/RQW-models/index.ts`; the strength and entry rules are above.
 - Owner clarification: «Нет, ты не понял: уровни effort будут не те, что в стоковом выборе Pi, а те, что в нашем MyOMPHarness были. Там они были перенастроены кастомно. Допустим, у Opus были low, medium, high, у Sonnet были low, medium, high, extra high. Такие же должны быть, только без no reasoning.»
   Reason: preserve the harness's custom effort choices, not stock Pi's wider list. Carrier:
@@ -1551,7 +1549,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Proof: `extensions/RQW-models/test/models.test.ts`, faux only, runs standalone loading and disabling, real SDK
   sessions, model/thinking changes, history restore and reload, no persisted defaults, actual CLI flag handling,
   missing Anthropic auth and the listed-models rule: empty stock snapshot and scoped list with `/rqw-models` and
-  the Alt keys working, a stock cycle that does not switch, refusal before mutation, CLI `--model`/`--models` and
+  the Shift+arrow keys working, a stock cycle that does not switch, refusal before mutation, CLI `--model`/`--models` and
   saved defaults outside the list (also through Pi's CLI bundle, which the installed `pi` runs), restored and
   resumed sessions, no authenticated listed model, a provider `filterModels` dropping a family, a pending
   availability pass at startup, a subagent-style session on the shared runtime,

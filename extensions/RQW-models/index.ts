@@ -220,14 +220,14 @@ export default function modelsExtension(pi: ExtensionAPI) {
 			: levels.findLast((level) => ORDER.indexOf(level) < current) ?? levels[0];
 		if (next) pi.setThinkingLevel(next);
 	});
-	for (const [key, direction] of [["alt+=", 1], ["alt+-", -1]] as const) {
+	// Shift+Left/Right change reasoning, Shift+Up/Down change the model; Up is stronger, Right is more effort.
+	for (const [key, direction] of [["shift+right", 1], ["shift+left", -1]] as const) {
 		pi.registerShortcut(key, {
 			description: direction > 0 ? "RQW: increase reasoning" : "RQW: decrease reasoning",
 			handler: () => cycleThinking(direction),
 		});
 	}
-	// Legacy terminals send ESC + '+'/'_', without a separate Shift modifier.
-	for (const [key, direction] of [["alt+shift+=", 1], ["alt+shift+-", -1], ["alt++", 1], ["alt+_", -1], ["alt+shift++", 1], ["alt+shift+_", -1]] as const) {
+	for (const [key, direction] of [["shift+up", 1], ["shift+down", -1]] as const) {
 		pi.registerShortcut(key, {
 			description: direction > 0 ? "RQW: stronger model" : "RQW: weaker model",
 			handler: (ctx) => cycleModel(ctx, direction),
