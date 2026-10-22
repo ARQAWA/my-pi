@@ -96,6 +96,7 @@ describe("GPT Fast, main chat", () => {
 		globalThis.WebSocket = FakeWebSocket as never;
 		const session = await open(codex(), "websocket");
 		try {
+			await command(session, "on");
 			bodies.length = 0; frames.length = 0;
 			await session.prompt("hi");
 			assert.equal(frames.length, 1, "one frame on the socket");
@@ -111,10 +112,12 @@ describe("GPT Fast, main chat", () => {
 		} finally { globalThis.WebSocket = realWebSocket; session.dispose(); delete (globalThis as any)[STATE]; }
 	});
 
-	it("default on: openai-codex gets service_tier priority, anthropic gets none", async () => {
+	it("default off: openai-codex gets no tier; after /fast-gpt on it gets priority, anthropic gets none", async () => {
 		delete (globalThis as any)[STATE];
 		const session = await open();
 		try {
+			assert.ok(!("service_tier" in await body(session)), "default off");
+			await command(session, "on");
 			assert.equal((await body(session)).service_tier, "priority");
 			await session.setModel(claude());
 			const sent = await body(session);
@@ -129,7 +132,7 @@ describe("GPT Fast, main chat", () => {
 		const notes: string[] = [];
 		try {
 			await command(session, "", notes);
-			assert.ok(!("service_tier" in await body(session)), "no argument toggles on to off");
+			assert.equal((await body(session)).service_tier, "priority", "no argument toggles off to on");
 			await command(session, "on", notes);
 			assert.equal((await body(session)).service_tier, "priority");
 			await command(session, "off", notes);
@@ -137,7 +140,7 @@ describe("GPT Fast, main chat", () => {
 			try { assert.ok(!("service_tier" in await body(second)), "off holds for a new session of the process"); } finally { second.dispose(); }
 			await command(session, "maybe", notes);
 			assert.ok(!("service_tier" in await body(session)), "bad input changes nothing");
-			assert.deepEqual(notes, ["GPT Fast off (main chat, GPT only)", "GPT Fast on (main chat, GPT only)",
+			assert.deepEqual(notes, ["GPT Fast on (main chat, GPT only)", "GPT Fast on (main chat, GPT only)",
 				"GPT Fast off (main chat, GPT only)", "Usage: /fast-gpt [on|off]"]);
 		} finally { session.dispose(); delete (globalThis as any)[STATE]; }
 	});
@@ -149,12 +152,12 @@ describe("GPT Fast, main chat", () => {
 		const stop = bus.on("rqw-settings:fast-gpt", (change) => announced.push(change));
 		const ask = () => { const query: { fastGpt?: boolean } = {}; bus.emit("rqw-settings:fast-gpt-query", query); return query.fastGpt; };
 		try {
-			assert.equal(ask(), true, "default on (temporary, FAST_GPT_DEFAULT)");
-			await command(session, "off");
-			assert.equal(ask(), false);
+			assert.equal(ask(), false, "default off (FAST_GPT_DEFAULT)");
 			await command(session, "on");
 			assert.equal(ask(), true);
-			assert.deepEqual(announced, [{ on: false }, { on: true }]);
+			await command(session, "off");
+			assert.equal(ask(), false);
+			assert.deepEqual(announced, [{ on: true }, { on: false }]);
 			await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 			assert.equal(ask(), undefined, "a shut-down extension no longer answers");
 		} finally { stop(); session.dispose(); delete (globalThis as any)[STATE]; }

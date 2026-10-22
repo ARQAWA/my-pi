@@ -85,7 +85,7 @@ for its life, `send` and `restart` included; a nested child inherits from its di
 RQW-settings over `pi.events` (`rqw-settings:fast-gpt-query`); without it children stay on the standard tier. The optional
 boolean `fast_gpt` overrides the inherited state (`false` when the user forbids Fast for subagents; `send` and
 `restart` of `agent` may change it). `fast-gpt.ts` sets `service_tier: "priority"` on the child's openai-codex requests
-through `before_provider_request`; Anthropic requests are untouched. Temporary default, rule and quotes:
+through `before_provider_request`; Anthropic requests are untouched. Default, rule and quotes:
 [DECISIONS.md, Settings](../../DECISIONS.md#settings). Proof: `test/fast-gpt.test.ts`.
 
 ## Wait, status and management

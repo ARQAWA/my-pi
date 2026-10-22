@@ -5,7 +5,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 // which owns /fast-gpt, through the query channel on `pi.events`; a nested child gets its direct caller's) and keeps
 // it for its life unless the caller's `fast_gpt` parameter overrides it. Without RQW-settings nobody answers and
 // children stay on the standard tier. This file cannot import RQW-settings.
-// TEMPORARY: DECISIONS.md, section Settings, "GPT Fast". Removal: delete this file and its uses, and the `fast_gpt` parameter.
+// DECISIONS.md, section Settings, "GPT Fast".
 const FAST_GPT_QUERY = "rqw-settings:fast-gpt-query";
 
 export function inheritedFastGpt(events: ExtensionAPI["events"]): boolean {

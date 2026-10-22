@@ -8,8 +8,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 // below, and applies its own rule in its own extension (they cannot import this file).
 // DECISIONS.md, section Settings, "GPT Fast".
 
-/** TEMPORARY (owner: «временно»): the default is on until the owner turns it off. Removal: set this to false. */
-export const FAST_GPT_DEFAULT = true;
+/** Default off: the owner turns GPT Fast on with /fast-gpt on. */
+export const FAST_GPT_DEFAULT = false;
 
 /** Request channel on `pi.events`: the handler fills `request.fastGpt` synchronously. No handler: GPT Fast is off. */
 export const FAST_GPT_QUERY = "rqw-settings:fast-gpt-query";

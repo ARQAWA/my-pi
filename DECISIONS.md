@@ -568,8 +568,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
     never touched. The state is process-wide (it survives `/reload` and new sessions) and is not persisted across restarts,
     as `/statusbar` is not; there is no settings key. RQW-settings owns the main chat's rule and the command because it is
     the harness-settings extension: a request-level default that holds whatever the user's config says.
-  - Default on. TEMPORARY, per the owner's «временно»: it stays on until the owner turns it off. The one-line removal is
-    `FAST_GPT_DEFAULT = false` in `fast-gpt.ts`; deleting the feature is deleting the three `fast-gpt.ts` files and their
+  - Default off. Owner: «Все, вырубаю всех в fast режим, пожалуйста, сейчас». Owner: «Блять, Fast должен быть всегда по умолчанию выключенным. Почему ты сделал его включенным по умолчанию? Поправь это, пожалуйста». It is `FAST_GPT_DEFAULT = false` in
+    `fast-gpt.ts`; the owner turns it on with `/fast-gpt on`. Deleting the feature is deleting the three `fast-gpt.ts` files and their
     calls, the `fast_gpt` parameter and the lightning.
   - Hook: Pi 1.4.0's `streamSimple` of the openai-codex provider drops `serviceTier` (`buildBaseOptions` forwards a fixed
     list of options), so the stream options cannot carry it. The public `before_provider_request` event (the main chat)

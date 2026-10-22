@@ -11,7 +11,7 @@ The coordinator delegates all execution, waits and checks to subagents and may r
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
 - `extensions/RQW-settings/`: extension 1, the harness settings. Turns on Pi's built-in `codemode` and `tool_search` by
   default (same rule as `grep` and `find` in RQW-tools), and disables background cache warming regardless of user
-  config (prompt caching stays on). Owns GPT Fast for the main chat: `/fast-gpt [on|off]`, default on (temporary), only
+  config (prompt caching stays on). Owns GPT Fast for the main chat: `/fast-gpt [on|off]`, default off, only
   `openai-codex` requests get `service_tier` priority (`DECISIONS.md` Settings, «GPT Fast»). Details: `notes/settings-codemode.md`, `DECISIONS.md` Settings. Tests: `npm test`.
 - `extensions/RQW-prompt/`: extension 2, the system prompt. `SYSTEM.md` is the text; `index.ts` puts it in place of Pi's
   default prompt prefix and appends the workstation, critical, environment and date blocks.
