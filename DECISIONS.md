@@ -22,19 +22,28 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Owner: «Что-то подписка Cloud Code жёстко высаживается, поэтому давай пока уберём из работы саб-агентов Opus Low и Opus Medium. Давай оставим Sonnet Medium, Sonnet High, Sonnet Extra High. Для сложных задач будет Sonnet Extra High либо Opus Low. Opus Medium убираем вообще пока. Окей. Это надо скорректировать, отразить и сразу в работу внедрить»
   Reason: the Claude subscription limit is running out; the restriction is temporary ("for now"). The balance rule
   between Anthropic and GPT stays. Superseded by the next entry.
-- Development worker models and parallel limit, current rule. Owner, in order:
+- Development worker models and parallel limit. The parallel limit below is current; the model assignment is
+  superseded by the next entry. Owner, in order:
   «ТАк вот все верно там написано давай не выдумывай хуйню»
   «Одновременно до 10 первого уровня, вложенные похуй»
   «модели - Соннет хай, и опус лоу / 6-1 лоу и медиум»
   «опус и 6-1 лоу для обычной работы, для сложной хай соннет и медиум 6-1»
   «вот так хочу переделать эту часть»
   «блять не для сложных сделай опус медиум все таки»
-  Rule: ordinary work uses Opus 5.5 low or GPT-6.1-Sol low; complex work uses Sonnet 5.5 high, Opus 5.5 medium or
-  GPT-6.1-Sol medium; no other models or levels for development workers. At most 10 first-level subagents (started
+  Rule at that time (model assignment superseded by the next entry): ordinary work uses Opus 5.5 low or GPT-6.1-Sol low;
+  complex work uses Sonnet 5.5 high, Opus 5.5 medium or GPT-6.1-Sol medium; no other models or levels for
+  development workers. Current: at most 10 first-level subagents (started
   by the coordinator) run in parallel; nested subagents do not count; a ceiling, not a quota. The even
   Anthropic/GPT balance stays. Product review `LEVELS` are unchanged.
-  Reason: owner decision. Carried by [PROCESS.md, Worker models](PROCESS.md#worker-models) (the table),
-  [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution) and `AGENTS.md`.
+  Reason: owner decision. The limit is carried by [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution)
+  and `AGENTS.md`.
+- Development worker models, current rule, correcting the previous entry. Owner (verbatim, after the quotes above):
+  «сложная работа опус медиум простая работа сонет хай»
+  Coordinator interpretation (the owner may correct it): Claude side, simple work is Sonnet 5.5 high and complex work
+  is Opus 5.5 medium; GPT side unchanged, simple is GPT-6.1-Sol low and complex is GPT-6.1-Sol medium. Opus low,
+  Sonnet medium/xhigh and Sol high are not allowed for development workers; no other models or levels. The limit of 10
+  first-level subagents and the even Anthropic/GPT balance stay. Product review `LEVELS` are unchanged.
+  Reason: owner decision. Carried by [PROCESS.md, Worker models](PROCESS.md#worker-models) (the table).
 - Owner: «Смотри, надо скорректировать так, чтобы ты как координатор поровну поднимал модели из Anthropic и GPT, чтобы не было перевеса в другим, дисбаланса. Поднимай саб-агенты и те, и те, чтобы лимит расходовался равномерно. И зафиксирую это в процесс.nd файле, эту информацию на будущее»
   Reason: even use of both subscriptions' limits. Carried by [PROCESS.md, Worker models](PROCESS.md#worker-models).
 - The old paused Claude benchmark/tuning campaigns remain paused until explicitly resumed; saved results stay.

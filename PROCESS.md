@@ -57,10 +57,10 @@ Choose model and reasoning for the work, not all workers at maximum reasoning:
 | Model | Allowed reasoning |
 | --- | --- |
 | Sonnet 5.5 | high |
-| Opus 5.5 | low, medium |
+| Opus 5.5 | medium |
 | GPT-6.1-Sol | low, medium |
 
-Ordinary work uses Opus 5.5 low or GPT-6.1-Sol low. Complex work uses Sonnet 5.5 high, Opus 5.5 medium or
+Simple work uses Sonnet 5.5 high or GPT-6.1-Sol low. Complex work uses Opus 5.5 medium or
 GPT-6.1-Sol medium. No other models or reasoning levels are used for these workers. These are development workers,
 not changes to the product reviewer models of `RQW-review`. A pause of a named benchmark campaign pauses that
 campaign only; it does not pause unrelated work or prohibit the currently authorized worker models.
