@@ -15,7 +15,11 @@ const RULES = {
 		hardest: [["anthropic/claude-opus-5-5", "medium"], ["openai-codex/gpt-6.1-sol", "high"]],
 	},
 	fixedWorkers: "block",
+	temporaryOpusRestriction: { until: "2026-10-28T16:00:00Z", arbiterTitlePrefix: "Арбитр замера" },
 };
+// Clocks around the restriction; every test outside the restriction block runs at the exact expiry, the normal table.
+const UNTIL = Date.parse(RULES.temporaryOpusRestriction.until);
+const BEFORE = UNTIL - 1;
 const processMd = (json: unknown) => `# Development process\n\n## Worker models\n\n\`\`\`json coordinator-rules\n${typeof json === "string" ? json : JSON.stringify(json, null, 2)}\n\`\`\`\n\nMore prose.\n`;
 
 // Layout: <tmp>/my-pi (main checkout, .git folder), <tmp>/my-pi-worktrees/wt (this worktree, root of the guard),
@@ -42,11 +46,11 @@ const setRules = (json: unknown) => writeFileSync(PROCESS, processMd(json));
 setRules(RULES);
 
 type Handler = (event: any, ctx: any) => any;
-function load(entries: unknown[] = []) {
+function load(entries: unknown[] = [], now: number = UNTIL) {
 	const handlers = new Map<string, Handler[]>();
 	const status: Record<string, string | undefined> = {};
 	const pi = { on: (name: string, h: Handler) => void handlers.set(name, [...(handlers.get(name) ?? []), h]) };
-	createCoordinatorGuard({ root: WT })(pi as never);
+	createCoordinatorGuard({ root: WT, now: () => now })(pi as never);
 	const ctx = { cwd: WT, hasUI: true, ui: { setStatus: (k: string, v?: string) => void (status[k] = v) }, sessionManager: { getEntries: () => entries } };
 	const call = (toolName: string, input: Record<string, unknown>) => {
 		const event = { type: "tool_call", toolName, toolCallId: "t1", input };
@@ -75,7 +79,7 @@ describe("coordinator-guard: agent model and thinking", () => {
 		it(`allows ${model} ${thinking} and appends the child instruction`, () => {
 			const r = g.call("agent", { action: "start", model, thinking, task: "do it" });
 			passed(r);
-			assert.equal(r.input.task, `do it\n\n${childInstruction(parseRules(processMd(RULES)))}`);
+			assert.equal(r.input.task, `do it\n\n${childInstruction(parseRules(processMd(RULES)), UNTIL)}`);
 		});
 	}
 	const denied: [string, string][] = [
@@ -110,11 +114,106 @@ describe("coordinator-guard: agent model and thinking", () => {
 		passed(g.call("agent", { action: "send", id: "agent#1", task: "more" }));
 	});
 	it("the child instruction keeps fixed workers, explore and review open for children", () => {
-		const line = childInstruction(parseRules(processMd(RULES)));
+		const line = childInstruction(parseRules(processMd(RULES)), UNTIL);
 		assert.match(line, /ordinary `agent` subagent, give model and thinking explicitly/);
 		assert.match(line, /simple: anthropic\/claude-sonnet-5-5 medium, openai-codex\/gpt-6\.1-sol low; complex: .*; hardest: anthropic\/claude-opus-5-5 medium, openai-codex\/gpt-6\.1-sol high/);
 		assert.match(line, /You may use code_writer, shell_runner, explore and review yourself/);
 		assert.doesNotMatch(line, /«|»/);
+	});
+});
+
+describe("coordinator-guard: temporary Opus restriction", () => {
+	const OPUS = "anthropic/claude-opus-5-5";
+	const opus = (extra: Record<string, unknown> = {}) => ({ action: "start", model: OPUS, thinking: "medium", task: "x", ...extra });
+	const restricted = load([], BEFORE);
+
+	it("refuses ordinary Opus on start and restart, one millisecond before expiry", () => {
+		blocked(restricted.call("agent", opus()), /anthropic\/claude-opus-5-5 medium is not an allowed pair; allowed: .*Temporary rule until 2026-10-28T16:00:00Z/);
+		blocked(restricted.call("agent", { action: "restart", id: "agent#1", model: OPUS, thinking: "medium" }), /Temporary rule until/);
+		blocked(restricted.call("agent", opus({ title: "Обычная задача" })), /is not an allowed pair/);
+		blocked(restricted.call("agent", opus({ title: "арбитр замера" })), /is not an allowed pair/, "the prefix is case-sensitive");
+		blocked(restricted.call("agent", opus({ title: " Арбитр замера" })), /is not an allowed pair/, "the title must start with the prefix");
+	});
+	it("hides Opus from the allowed list in reasons", () => {
+		const r = restricted.call("agent", opus({ model: "anthropic/claude-haiku-5-5" }));
+		blocked(r, /allowed: simple: .*; complex: .*; hardest: openai-codex\/gpt-6\.1-sol high \(/);
+		assert.doesNotMatch(r.result.reason.split("Temporary rule")[0], /claude-opus-5-5 medium/);
+	});
+	it("lets a title with the arbiter prefix use the normal Opus pair only", () => {
+		for (const title of ["Арбитр замера", "Арбитр замера 3: reviewer A"]) {
+			const r = restricted.call("agent", opus({ title }));
+			passed(r);
+			assert.match(r.input.task as string, /Temporary rule until 2026-10-28T16:00:00Z/);
+			passed(restricted.call("agent", { action: "restart", id: "agent#1", model: OPUS, thinking: "medium", title }));
+		}
+		for (const thinking of ["high", "low", "xhigh", "max", "off"]) {
+			blocked(restricted.call("agent", opus({ title: "Арбитр замера", thinking })), /is not an allowed pair/, `${thinking} is no new level`);
+		}
+		blocked(restricted.call("agent", opus({ title: "Арбитр замера", model: "anthropic/claude-haiku-5-5" })), /is not an allowed pair/);
+	});
+	it("allows Sonnet and Sol as before, with or without a title", () => {
+		for (const [model, thinking] of Object.values(RULES.workerModels).flat().filter(([m]) => m !== OPUS)) {
+			passed(restricted.call("agent", { action: "start", model, thinking, task: "x" }));
+			passed(restricted.call("agent", { action: "start", model, thinking, task: "x", title: "Арбитр замера" }));
+		}
+	});
+	it("the prompt and the child line state the rule, the expiry and the narrow exception", () => {
+		const prompt = restricted.prompt();
+		const line = childInstruction(parseRules(processMd(RULES)), BEFORE);
+		for (const text of [prompt, line]) {
+			assert.match(text, /Temporary rule until 2026-10-28T16:00:00Z: anthropic\/claude-opus-5-5 is not allowed\./);
+			assert.match(text, /Only a start whose title begins with "Арбитр замера" \(the reviewer benchmark arbiter\) may use the normal allowed Opus pair \(anthropic\/claude-opus-5-5 medium\), with no other thinking level\./);
+			assert.match(text, /After that time the normal table applies again\./);
+			assert.match(text, /hardest: openai-codex\/gpt-6\.1-sol high/);
+			assert.doesNotMatch(text, /hardest: anthropic\/claude-opus-5-5/);
+			assert.doesNotMatch(text, /«|»/);
+		}
+		const sent = restricted.call("agent", { action: "start", model: "anthropic/claude-sonnet-5-5", thinking: "high", task: "x" });
+		assert.match(sent.input.task as string, /Temporary rule until 2026-10-28T16:00:00Z/, "the line reaches nested starts");
+	});
+	it("at the exact expiry and after it the normal table is back", () => {
+		for (const now of [UNTIL, UNTIL + 1, UNTIL + 86_400_000]) {
+			const g = load([], now);
+			const r = g.call("agent", opus());
+			passed(r);
+			assert.doesNotMatch(r.input.task as string, /Temporary rule/);
+			passed(g.call("agent", opus({ title: "Арбитр замера" })));
+			assert.match(g.prompt(), /hardest: anthropic\/claude-opus-5-5 medium, openai-codex\/gpt-6\.1-sol high/);
+			assert.doesNotMatch(g.prompt(), /Temporary rule/);
+			blocked(g.call("agent", opus({ thinking: "high" })), /is not an allowed pair/, "expiry adds no thinking level");
+		}
+	});
+	it("the clock is read on every call, so expiry needs no reload", () => {
+		let now = BEFORE;
+		const handlers = new Map<string, Handler>();
+		createCoordinatorGuard({ root: WT, now: () => now })({ on: (n: string, h: Handler) => void handlers.set(n, h) } as never);
+		const ctx = { cwd: WT, sessionManager: { getEntries: () => [] } };
+		const call = () => handlers.get("tool_call")!({ toolName: "agent", input: opus() }, ctx);
+		assert.equal(call()?.block, true);
+		now = UNTIL;
+		assert.equal(call(), undefined);
+	});
+	it("an absent restriction key means no temporary restriction: the base table at any time", () => {
+		writeFileSync(PROCESS, processMd({ workerModels: RULES.workerModels, fixedWorkers: "block" }));
+		try {
+			assert.equal(parseRules(readFileSync(PROCESS, "utf8")).temporaryOpusRestriction, undefined);
+			const g = load([], BEFORE);
+			passed(g.call("agent", opus()));
+			assert.match(g.prompt(), /hardest: anthropic\/claude-opus-5-5 medium/);
+			assert.doesNotMatch(g.prompt(), /Temporary rule/);
+		} finally {
+			setRules(RULES);
+		}
+	});
+	it("a present but malformed restriction keeps everything blocked, also for the arbiter title", () => {
+		writeFileSync(PROCESS, processMd({ ...RULES, temporaryOpusRestriction: { until: "soon", arbiterTitlePrefix: "Арбитр замера" } }));
+		try {
+			const g = load([], UNTIL + 1);
+			blocked(g.call("agent", opus({ title: "Арбитр замера" })), /until must be a UTC time/);
+			blocked(g.call("agent", { action: "start", model: "anthropic/claude-sonnet-5-5", thinking: "medium", task: "x" }), /unreadable/);
+		} finally {
+			setRules(RULES);
+		}
 	});
 });
 
@@ -164,7 +263,16 @@ describe("coordinator-guard: rules are read fresh and fail closed", () => {
 		["bad pair", processMd({ workerModels: { simple: [["anthropic/claude-sonnet-5-5"]] }, fixedWorkers: "block" }), /must be \[model, thinking\]/],
 		["model without provider", processMd({ workerModels: { simple: [["sonnet", "high"]] }, fixedWorkers: "block" }), /provider\/id/],
 		["bad thinking", processMd({ workerModels: { simple: [["a/b", "ultra"]] }, fixedWorkers: "block" }), /thinking must be one of/],
-		["missing fixedWorkers", processMd({ workerModels: RULES.workerModels }), /fixedWorkers must be/],
+		["missing fixedWorkers", processMd({ workerModels: RULES.workerModels, temporaryOpusRestriction: RULES.temporaryOpusRestriction }), /fixedWorkers must be/],
+		["null restriction", processMd({ ...RULES, temporaryOpusRestriction: null }), /temporaryOpusRestriction must be an object/],
+		["array restriction", processMd({ ...RULES, temporaryOpusRestriction: [] }), /temporaryOpusRestriction must be an object/],
+		["missing until", processMd({ ...RULES, temporaryOpusRestriction: { arbiterTitlePrefix: "Арбитр замера" } }), /until must be a UTC time/],
+		["until without Z", processMd({ ...RULES, temporaryOpusRestriction: { until: "2026-10-28T16:00:00", arbiterTitlePrefix: "Арбитр замера" } }), /until must be a UTC time/],
+		["until with offset", processMd({ ...RULES, temporaryOpusRestriction: { until: "2026-10-28T16:00:00+03:00", arbiterTitlePrefix: "Арбитр замера" } }), /until must be a UTC time/],
+		["until a number", processMd({ ...RULES, temporaryOpusRestriction: { until: 1793203200000, arbiterTitlePrefix: "Арбитр замера" } }), /until must be a UTC time/],
+		["impossible until", processMd({ ...RULES, temporaryOpusRestriction: { until: "2026-02-30T16:00:00Z", arbiterTitlePrefix: "Арбитр замера" } }), /until is not a real date/],
+		["missing prefix", processMd({ ...RULES, temporaryOpusRestriction: { until: RULES.temporaryOpusRestriction.until } }), /arbiterTitlePrefix must be a non-empty string/],
+		["blank prefix", processMd({ ...RULES, temporaryOpusRestriction: { until: RULES.temporaryOpusRestriction.until, arbiterTitlePrefix: "  " } }), /arbiterTitlePrefix must be a non-empty string/],
 	];
 	for (const [label, text, error] of broken) {
 		it(`${label}: blocks agent starts and fixed workers, shows the error in the prompt and status`, () => {
@@ -302,7 +410,9 @@ describe("coordinator-guard: prompt reinjection", () => {
 		assert.match(first, /simple: anthropic\/claude-sonnet-5-5 medium, openai-codex\/gpt-6\.1-sol low; complex: anthropic\/claude-sonnet-5-5 high, openai-codex\/gpt-6\.1-sol medium; hardest: anthropic\/claude-opus-5-5 medium, openai-codex\/gpt-6\.1-sol high/);
 		assert.match(first, /never uses code_writer or shell_runner and never starts an explore subagent/);
 		assert.match(first, /Subagents Main starts may use them/);
-		assert.match(first, /also when the owner says "ты сам"/);
+		assert.match(first, /When the owner asks Main to do such work personally \(for example "ты сам" or "you do it"\), Main objects and proposes a subagent for it; only an explicit owner override lets Main do that work itself/);
+		assert.match(first, /Main never edits or writes files in the checkout or its worktrees \(edit and write there are blocked\)/);
+		assert.doesNotMatch(first, /Temporary rule/, "no temporary rule at the exact expiry");
 		assert.match(first, /one exact contiguous span of one owner message: no inserted omissions, cuts or paraphrase; only Unicode NFC and whitespace runs are normalised/);
 		assert.doesNotMatch(first, /copied whole/);
 		assert.equal(g.prompt(), first, "a fresh run gets the same section again");
@@ -324,6 +434,8 @@ describe("coordinator-guard: placement", () => {
 	});
 	it("the real PROCESS.md block parses with the guard's parser", () => {
 		const rules = parseRules(readFileSync(join(ROOT, "PROCESS.md"), "utf8"));
-		assert.deepEqual(rules, RULES);
+		assert.deepEqual(rules.workerModels, RULES.workerModels);
+		assert.equal(rules.fixedWorkers, RULES.fixedWorkers);
+		assert.deepEqual({ until: rules.temporaryOpusRestriction.until, arbiterTitlePrefix: rules.temporaryOpusRestriction.arbiterTitlePrefix }, RULES.temporaryOpusRestriction);
 	});
 });

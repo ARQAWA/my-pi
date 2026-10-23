@@ -3947,3 +3947,33 @@ Original DECISIONS.md lines 585-588 at `3430f32`, verbatim:
 >   Coordinator text: the explorer option reuses the existing runtime rather than adding a tool.
 >   Reason: retain compact metadata and a read-only search mode without another lifecycle implementation.
 >   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`, `extensions/RQW-agent/git-guard.ts`. Since: `c86e9bb`.
+
+
+## A-0242 · archived 2026-10-23 · Work policy · Replaced coordinator rule
+
+Status: SUPERSEDED by `[D-WORK-EXECUTOR-ROLE]` (DECISIONS.md#work-policy).
+Source tree: `cbcdde0`; introducing commits are retained in the verbatim entry.
+Archived by: process-rules-oct23 squash.
+
+> - **Executor role** `[D-WORK-EXECUTOR-ROLE]`. When the owner tells Main to do something, Main starts a subagent that does
+>   it. Owner (`16-27-59:4025`, `16-27-59:4034`):
+>   «Когда я говорю, что ты должен что-то сделать буквально, это значит, что ты должен поднять саб-агента, который это сделает. Не забывай свою роль и запиши это, зафиксируй, чтобы больше так не наёбываться.»
+>   «Я всегда с тобой разговариваю так, как будто ты и есть мой исполнитель. Потому что для меня ты исполнитель, но ты сам работаешь в рамках роли, которая тебе назначена. И ты должен это помнить, и ты должен этому следовать всегда. Ты не должен никогда от этого отклоняться. Понял? Это супер важно.»
+>   Reason: asked to arbitrate judge disputes himself, the coordinator once read run files in its own thread.
+>   Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution). Since: `30952e6`.
+
+
+## A-0243 · archived 2026-10-23 · Work policy · Replaced coordinator rule
+
+Status: SUPERSEDED by `[D-WORK-PARALLEL]` (DECISIONS.md#work-policy).
+Source tree: `cbcdde0`; introducing commits are retained in the verbatim entry.
+Archived by: process-rules-oct23 squash.
+
+> - **Non-blocking coordinator and parallel limit** `[D-WORK-PARALLEL]`. Main never blocks its own thread on waits,
+>   polling, CI watching, test runs or other long work; subagents do it. At most 10 first-level subagents run in parallel;
+>   nested ones do not count; a ceiling, not a quota. Owner (`16-27-59:2462`):
+>   «Одновременно до 10 первого уровня, вложенные похуй»
+>   Reason: Main stays free to coordinate and talk to the owner.
+>   Carriers: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution) and a short line in
+>   `AGENTS.md`; the product prompt `extensions/RQW-prompt/SYSTEM.md` does not carry it. Since: `47868b0`; limit 10 since `57fa3ff`.
+>   Historical parallel-limit source: `DECISIONS-ARCHIVE.md`, A-0003, USER entry at session line 2462.

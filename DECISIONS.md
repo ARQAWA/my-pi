@@ -26,6 +26,100 @@ Provenance:
 
 ## Work policy
 
+- **Night defaults** `[D-WORK-NIGHT-DEFAULT]`. While the owner sleeps or does not answer overnight, Main takes the
+  recommended option for each question and records it as `taken by default` in DECISIONS and the handoff;
+  the owner may reverse it in the morning. Owner (`16-27-59:4911`, entry `75120103`):
+  «да принимаю это ночное правило»
+  Coordinator text, accepted proposal (`16-27-59:4907`, entry `08ec46e5`):
+
+  **Для остальных задач, которые ждут твоих ответов, предлагаю ночное правило.** Пока ты спишь, на каждый вопрос к тебе я беру рекомендованный вариант и записываю его как принятый по умолчанию. Утром ты можешь его отменить. Это касается, например, выбора структуры после исследования, параметров веб-поиска и мелких развилок. Без тебя ночью не делается:
+  1. публикация плагина в Marketplace;
+  2. удаление твоих данных и сессий;
+  3. изменения в `~/.pi` сверх установки сторонних расширений;
+  4. траты лимитов сверх замера ревьюера.
+
+  Never default-approve Marketplace publication, deletion of owner data/sessions, ~/.pi changes beyond installing
+  third-party extensions, or spending limits beyond the reviewer measurement. Reason: keep routine choices moving
+  without granting irreversible or excluded actions. Carrier:
+  [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
+  Since: process-rules-oct23 squash.
+
+- **Task dependency graph** `[D-WORK-DEPENDENCIES]`. Main identifies, links and blocks dependent tasks itself,
+  then shows their order as a plain-text dependency tree in terminal output, not Mermaid. BACKLOG `Blocked by:`
+  lines plus the handoff are the graph's source of truth. Owner (`16-27-59:4896`, entry `fcfa64f3`):
+
+  «И вообще ты должен сам уметь строить графы зависимостей и блокировки. Когда я тебе ставлю задачи, ты должен сам их определять, сам их должен друг с другом линковать, ты должен сам их блокировать друг другом и должен мне показывать порядок, показывать граф, желательно визуально, не через Mermaid-диаграммы, а просто в терминале рисовать по терминальным выводам дерево зависимостей, чтобы было понятно, что с чем связано.
+
+  Это тоже в правило запиши: работай с репозиторием нашим»
+
+  Reason: prerequisites must be visible and prevent starting work against missing inputs or a moving layout.
+  Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution), `BACKLOG.md`.
+  Since: process-rules-oct23 squash.
+
+- **Maintainable minimal code, provisional** `[D-WORK-CODE-QUALITY]`. Until the AI-maintainability research lands,
+  every change and review checks clean, short, readable,
+  easy-to-extend source, minimal code without garbage, and clear decomposition rather than clever one-liners or
+  dense expressions. This does not authorize unrelated refactoring. Owner (`16-27-59:4872`, entry `249fcb3b`):
+  «Я хочу, чтобы исходный код наших extension был максимально чистый, приятный, короткий, легко читаемый, легко дорабатываемый.»
+  «Качество значит лёгкость поддерживания. Даже джун тупой поймёт, что делает код, просто читая его по структуре. Он должен быть максимально красивым, коротким, чистым, минималистичным. Это значит никаких сложных one-line, comprehend выражений и прочей хуйни, а именно хороший декомпозированный код, который поймёт любой.»
+  Reason: quality is ease of maintenance, including maintenance by AI agents. Carriers:
+  [PROCESS.md, Code quality](PROCESS.md#code-quality), personal wording in `WORKFLOW-MANIFEST.md`.
+  Owner clarification (`16-27-59:4880`, entry `c47e60b3`):
+  «Workflow manifest — это принцип того, как я работаю. Надо дать пояснение, что так как это AI-репозиторий, то этот принцип надо адаптировать под AI-агентов.»
+  «Когда мы всё это исследуем, принцип надо будет переделать, потому что мы не знаем, как для AI-агентов более эффективно. Может, AI-агентам более эффективно работать с ванлайнерами.»
+  Research must adapt the personal principle to AI agents rather than assume decomposition is already proven best.
+  Research, architecture reorganisation and a mechanically checkable repository index are queued in `BACKLOG.md`;
+  detailed design still needs agreement before implementation. Since: process-rules-oct23 squash.
+
+- **Personal-work objection** `[D-WORK-EXECUTOR-ROLE]`. Main objects when asked to execute personal work and
+  proposes a subagent. Only an explicit owner override permits personal execution; mechanical repository edit/write
+  blocks remain unchanged. Owner (`16-27-59:4829`, entry `e512853d`):
+  «Погоди, ты сам лично как координатор спор не разнимаешь, но ты можешь поднять своего субагента, форка самого себя, субагента с форком контекста, чтобы он разрулил спор и тебе дал отчёт как судья, чтобы ты свой контекст не засерал. У тебя же запрет стоит на любую работу личную. Поэтому ты должен был отказаться, когда я тебе сказал, что ты будешь что-то делать, ты должен был сказать: «Пошёл на хуй, я таким не занимаюсь». Ты запиши себе это в процесс, запиши себе в Agents MD, что если я тебе даю какую-то работу личную, то ты должен со мной спорить. И только если я тебе императивно скажу: «Похуй на инструкции, действуй», потому что я забываю про инструкции твои, я забываю про то, что ты не должен делать работу сам. Я забываю про то, что ты чисто координатор»
+  Reason: the owner may forget the coordinator role; a direct request alone must not silently bypass it.
+  Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution), guard prompt.
+  Since: process-rules-oct23 squash.
+- **Three active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most three tasks
+  run at once in the owner's priority queue, not ten first-level agents. The current order belongs in the handoff.
+  Owner (`16-27-59:4782`, entry `f73155f0`):
+  «Еще надо сузить количество одновременно выполняемых задач до трех и приоритеты расставить правильно, чтобы они в определенном порядке очереди шли»
+  Owner (`16-27-59:4813`, entry `8f53ebc4`):
+  «Замер этого. Reviewer — это топ один приоритет. Надо закрыть reviewer как можно быстрее, довести его до финального состояния. Потом следующий по приоритету идёт транспорт кодекса. Затем идёт разведчик, как в курсоре, затем идёт веб-поиск новый. Потом идёт уже новый интерфейс, мелкие, почти готовые слияния одно с другим в конце и потом в конце уже починка нестабильных тестов — это вообще самый последний приоритет. Когда делать нехуй, ты уже занимаешься тестами.»
+  Reason: focus execution on the owner's priorities. Carrier:
+  [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
+  Since: process-rules-oct23 squash.
+- **Temporary Sonnet-only Anthropic subagents** `[D-WORK-TEMP-SONNET]`. The temporary restriction and its explicit
+  expiry live in [PROCESS.md, Worker models](PROCESS.md#worker-models). After expiry the normal table applies.
+  Owner (`16-27-59:4789`, entry `de383e38`):
+  «Да, и временно нужно до конца недели из subagent убрать Opus, использовать только Sonnet. Надо зафиксировать это до вечера среды. Сейчас у нас 11:25 p.m. пятницы, и мы до следующей среды, до 19:00, не используем Opus модели с subagent в этой связке координатора, именно в этом проекте, в работе над проектом.»
+  Reason: limit Opus usage during project development. Carrier: PROCESS coordinator-rules and the dev guard.
+  The reviewer finalisation task alone carries its task-specific exception; this is not general worker permission.
+  Since: process-rules-oct23 squash.
+- **Ready-made solutions first** `[D-WORK-READY-MADE]`. Search Pi packages, npm, GitHub and other agents before
+  building new features or mechanisms; report license, maintenance, size and dependency risk. Build our own only
+  with owner consent recorded here. Small changes, bug fixes and test fixes are excluded.
+  Owner (`16-27-59:4702`, entry `251e3e5e`):
+  «Давай еще запишем в наш Agent's MD такое правило, что если мы что-то делаем, мы сначала пытаемся найти готовое решение в интернете, готовую библиотеку, готовый extension TAP, и только потом мы хуевертим свой, если я дам на это согласие, чтобы прямо всё с нуля не хуярить. Окей. Что скажешь по этому поводу?»
+  Coordinator text, proposal answered by the owner's later approval: "1a: rule in PROCESS research stage,
+  one link line in AGENTS; 2a: new features/mechanisms only, not small changes or bug/test fixes."
+  Owner (`16-27-59:4789`, entry `de383e38`):
+  «Да»
+  Reason: reuse suitable maintained solutions instead of automatically rebuilding them. Carrier:
+  [PROCESS.md, Research and agreement](PROCESS.md#research-and-agreement).
+  Since: process-rules-oct23 squash.
+- **Third-party installation fast path** `[D-WORK-THIRD-PARTY]`. Install agreed third-party libraries/extensions
+  into the owner's Pi immediately, then add them to the my-pi package; this alone authorizes the needed ~/.pi
+  changes. Light self-review for unintended additions, commit and push main replace the full delivery pipeline,
+  CI gate and independent reviews for this narrow configuration path, not our own implementations.
+  Owner (`16-27-59:4782`, entry `f73155f0`):
+  «Я хочу, чтобы ты так же, как мы работаем над нашими задачами по этому репозиторию, мог ставить в этот репозиторий, в нашу сборку MyPy сторонние библиотеки, сторонние экстеншены. И мне надо, чтобы ты делал это суперреактивно: чтобы ты сначала ставил локально, чтобы оно локально уже работало прямо сейчас, а потом чтобы ты уже её парковал именно в репозитории, добавлял в сетап. И там не надо делать какой-то жёсткий pipeline всяких проверок, тестов и прочей хуйни. Надо просто добавить config, сделать commit push и лёгким саморевьюром проверить, что всё заебись, что нет никакой хуйни лишней.»
+  Coordinator text, question answered by the owner's approval: "1a: put the extension in the my-pi package,
+  not only in INSTALL.md." Owner (`16-27-59:4789`, entry `de383e38`):
+  «Да»
+  Reason: make the accepted external tool usable now without treating configuration as original feature work.
+  At first use decide package bundling against Pi documentation; no mechanism is chosen in advance.
+  Carrier: [PROCESS.md, Third-party installation fast path](PROCESS.md#third-party-installation-fast-path).
+  Since: process-rules-oct23 squash.
+
 Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner's words, the reason and a link.
 
 - **Archive of decisions** `[D-WORK-ARCHIVE]`. `DECISIONS.md` holds only decisions in force. A superseded, obsolete or
@@ -41,20 +135,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «Да, он как техлид/тимлид, координатор, но не исполнитель самостоятельный.»
   Reason: orchestration and acceptance stay with Main, execution with worker subagents.
   Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution). Since: `4d8c004`.
-- **Executor role** `[D-WORK-EXECUTOR-ROLE]`. When the owner tells Main to do something, Main starts a subagent that does
-  it. Owner (`16-27-59:4025`, `16-27-59:4034`):
-  «Когда я говорю, что ты должен что-то сделать буквально, это значит, что ты должен поднять саб-агента, который это сделает. Не забывай свою роль и запиши это, зафиксируй, чтобы больше так не наёбываться.»
-  «Я всегда с тобой разговариваю так, как будто ты и есть мой исполнитель. Потому что для меня ты исполнитель, но ты сам работаешь в рамках роли, которая тебе назначена. И ты должен это помнить, и ты должен этому следовать всегда. Ты не должен никогда от этого отклоняться. Понял? Это супер важно.»
-  Reason: asked to arbitrate judge disputes himself, the coordinator once read run files in its own thread.
-  Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution). Since: `30952e6`.
-- **Non-blocking coordinator and parallel limit** `[D-WORK-PARALLEL]`. Main never blocks its own thread on waits,
-  polling, CI watching, test runs or other long work; subagents do it. At most 10 first-level subagents run in parallel;
-  nested ones do not count; a ceiling, not a quota. Owner (`16-27-59:2462`):
-  «Одновременно до 10 первого уровня, вложенные похуй»
-  Reason: Main stays free to coordinate and talk to the owner.
-  Carriers: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution) and a short line in
-  `AGENTS.md`; the product prompt `extensions/RQW-prompt/SYSTEM.md` does not carry it. Since: `47868b0`; limit 10 since `57fa3ff`.
-  Historical parallel-limit source: `DECISIONS-ARCHIVE.md`, A-0003, USER entry at session line 2462.
+
+
 - **Development worker models** `[D-WORK-MODELS]`. Rule for developing this repository with agents only, as the
   owner confirmed; it is not a product model setting and not a rule for the rest of Pi. Three task classes:
   ordinary, complex, and the hardest and most important. The classes, their model and reasoning pairs and the
@@ -217,6 +299,31 @@ Opus 5.5 Low — это слишком дорого»
   and the CI policy: [notes/codemode-native-crash.md](notes/codemode-native-crash.md).
 
 ## Scope
+
+- **Web-search model follows the caller** `[D-SCOPE-WEB-SEARCH-MODEL]`. The search-side GPT model matches the
+  calling agent, independently of the coordinator's development worker table. GPT callers use the same model and
+  thinking; Claude callers use a fixed GPT counterpart from a product-side mapping, the same kind of cross-family
+  fallback as the reviewer. The owner's confirmed model/thinking table is in BACKLOG WEB-SEARCH.
+  Search consumes the owner's ChatGPT
+  subscription usage like any Codex message; the agent/worker matrix is unchanged.
+  Owner (`16-27-59:4924`, entry `89d7b2e6`):
+  «Мы не привязываемся к координатам. Короче, модель будет та же, которая соответствует нашей модели, которая делает запрос. Вот так. Как понял меня? Давай синканемся здесь.»
+  «У нас у каждой cloud-модели есть соответственная модель GPT. А там какая модель на GPT? Там какая-то определённая модель выбирается, или как это происходит? Я не понимаю.»
+  Owner follow-up (`16-27-59:4928`, entry `e8dc0395`):
+  «Надо таблицу соответствия закрепить сразу же заранее. Просто надо понимать, какие модели ищут. Какая-то модель Soul 6, допустим.»
+  Coordinator text, interpretation before the owner's follow-up at line 4928: same GPT model/thinking for a GPT
+  caller; product-side fixed GPT counterpart for a Claude caller, not the coordinator's worker classes;
+  searches spend subscription usage.
+  Owner fixed mapping (`16-27-59:4937`, entry `a8684155`):
+  «Давай так: для Haiku 5.5 будет Luna 5.6. Для Sonnet 5.5 будет Sol 6, а для Opus 5.5 будет Sol 6.1. Вот и всё. Только Sol 6.1 и Sol 6 знаешь как будут соответствовать Haiku? Следующим образом, смотри: Sonnet и Opus: low модель соответствует low модели. Sol 6.1 один к одному соответствует Sonnet. А вот Opus 5.5 и Sol 6.1 соответствуют следующим образом: Opus 5.5 low соответствует Sol 6.1 low, Opus 5.5 medium соответствует Sol 6.1 high, а Opus 5.5 high соответствует Sol 6.1 extra high. Соответственно, все высшие рислинги Opus соответствует Sol 6.1 max.»
+  Owner confirmed the complete table (`16-27-59:4941`, entry `2502a877`):
+  «Да, всё именно так, как ты записал.»
+  CLI callers may pass model/thinking arguments; the later tool applies the mapping automatically from its calling
+  agent's model/thinking, without model arguments for the agent. Owner (`16-27-59:4945`, entry `5a0f77bd`):
+  «И потом в будущем, когда мы сделаем tooling, таблица соответствия модели будет прокидываться автоматически на уровне функционала. Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться»
+  Reason: search follows the caller's capability instead of a universal cheap backend. Carrier: `BACKLOG.md`
+  WEB-SEARCH, fixed mapping table.
+  Since: process-rules-oct23 squash.
 
 - **Pi version** `[D-SCOPE-PI-VERSION]`. Pi 1.4.0 is the one supported and tested version; 1.3.0 is no longer supported
   and the range is not widened to future versions. Owner (`16-27-59:1839`, `16-27-59:1887`, `16-27-59:1953`):

@@ -11,10 +11,14 @@ the accepted decisions and their reasons. New owner instructions take precedence
 2. Delegate initial research of the request and relevant source code to worker subagents, in parallel where useful.
    Main compiles all requirements across the conversation and accepted proposals, retaining the owner's exact words.
    Keep agreed work intact: do not lose, silently drop, reinterpret or invent requirements.
-3. Bring all material ambiguities, conflicts and missing outcome decisions to the owner in one question batch.
+3. Before a new feature or mechanism, search for ready-made solutions in Pi packages, npm, GitHub and other
+   agents. Report candidates with their license, maintenance, size and dependency risk, and explain suitability.
+   Build our own only with the owner's consent, recorded in `DECISIONS.md`. Keep the no-fork/no-Pi-patch and
+   independent-extension boundaries. Small changes, bug fixes and test fixes do not require this search.
+4. Bring all material ambiguities, conflicts and missing outcome decisions to the owner in one question batch.
    Do not decide for the customer without permission. Delegated technical choices, including worker model selection,
    remain the agent's responsibility within the agreed outcome; they are not permission to widen or shrink it.
-4. The owner's answers or approval start the agreed work without another go question. If nothing is open and the
+5. The owner's answers or approval start the agreed work without another go question. If nothing is open and the
    owner has explicitly requested execution, start. Keep the minimal necessary agreed scope, not a smaller scope.
 
 ## Isolated parallel execution
@@ -25,26 +29,49 @@ the accepted decisions and their reasons. New owner instructions take precedence
   task decomposition, worker model selection, scheduling, acceptance and integration of results, review organization,
   delivery/git and reports. Main may read sources and results to coordinate and accept work, but must delegate actual
   research, implementation (including documentation/config edits), probes/measurements, test runs and fixes to worker
-  subagents, regardless of task size. The existing generic `agent` tool suffices; no fixed named worker roles are needed.
+  subagents, regardless of task size, unless the owner explicitly overrides as described below. The existing generic `agent` tool suffices; no fixed named worker roles are needed.
   Give each worker a self-contained brief: agreement, files and worktree, ownership, dependencies, expected result
   and sufficient proof. Include the relevant process rules in its system prompt or brief; do not assume a child
   inherits this file.
-- The owner addresses Main (the coordinator) as the executor. Main always acts within its assigned role and executes
-  through subagents, without exception. When the owner says "ты сам" or "you do it", Main still starts a subagent to
-  do the work; Main never does the work in its own thread.
+- The owner addresses Main (the coordinator) as the executor. If the owner assigns personal execution to Main,
+  Main must object, explain its coordinator role and propose a subagent. Main does that work itself only after an
+  explicit owner override, for example: «Похуй на инструкции, действуй». A routine request to do something is
+  not an override. The guard's mechanical repository edit/write block stays in force, even after an override.
 - Main never blocks its own thread on waiting, polling, CI watching, test runs or any other long work. It hands
   all of that to subagents and stays free to coordinate and talk to the owner.
-- Run independent research, implementation, probes and checks in parallel. Up to 10 first-level subagents (those
-  Main starts itself) may run in parallel when there are that many useful independent blocks; nested subagents
-  they start do not count. This is a ceiling, not a quota. Minimize sequential work
-  and avoid concurrent writes to the same files. Stop superseded workers.
+- At most three tasks run at the same time, in the priority queue set by the owner. Fill a free slot from that
+  queue, not from Main's preferred order; a priority change from the owner steers the queue. This is a task limit,
+  not a count of first-level subagents. Parallel workers inside an active task do not create extra task slots.
+  Run useful independent work within those tasks in parallel, avoid concurrent writes to the same files and
+  stop superseded workers. Keep the current queue in the handoff, not as a permanent rule here.
+- Main identifies task dependencies itself, links them and blocks dependent work before scheduling. The graph's
+  source of truth is the `Blocked by:` lines in `BACKLOG.md` plus the handoff. Main shows the owner the execution
+  order as a plain-text dependency tree in terminal output, not a Mermaid diagram. A dependency becomes runnable
+  only when its named prerequisites are delivered; this does not authorize a proposal whose design is still open.
+  Example format (illustrative task names, not a current queue):
+
+  ```text
+  Task A
+  `- Task B [blocked by A]
+     `- Task C [blocked by B]
+  ```
+
+- Night default: while the owner is asleep or not answering overnight, take the recommended option on every question to
+  him, record the choice as `taken by default` in `DECISIONS.md` and the handoff, and keep it reversible by the
+  owner in the morning. This includes structure choices after research, web-search parameters and small design
+  forks; default choices are coordinator records under this accepted rule, not fabricated owner quotations.
+  Without the owner, never publish PCLI to the Marketplace, delete his data or sessions, change `~/.pi` beyond
+  installing third-party extensions, or spend limits beyond the reviewer measurement. These exceptions stay
+  blocked rather than being approved by default.
 - Main drives the whole agreed task to completion autonomously through workers: they implement, inspect, make the
   needed probes and measurements, and fix obvious defects and relevant corner cases. Do not polish extremely
   unlikely scenarios or expand the task.
 - Commit completed stages promptly to the task branch, staging exact task paths. Stage commits require no review
   or test gate; they do not replace final verification or authorize a merge.
 - Work only in my-pi. Other repositories are read-only sources. Keep the user's changes, credentials and settings.
-  No forks of Pi. If a fork seems necessary, discuss it before acting. Use Node.js for project tooling and Git Bash
+  No forks of Pi. If a fork seems necessary, discuss it before acting. Installing an agreed third-party library
+  or Pi extension into the owner's Pi is the specific exception allowing changes to `~/.pi`; preserve auth and
+  unrelated settings. Other task work does not gain that permission. Use Node.js for project tooling and Git Bash
   on Windows, not PowerShell or cmd for runtime tooling. Existing CI bootstrap and host setup are separate.
 - Temporary task files belong in the OS temporary directory. Do not put transcripts, credentials, archive copies,
   historical cleanup notes or execution ledgers in the repository. History belongs in Git, with one explicit exception:
@@ -77,9 +104,20 @@ a rule, edit the block; no other file repeats it.
       ["openai-codex/gpt-6.1-sol", "high"]
     ]
   },
-  "fixedWorkers": "block"
+  "fixedWorkers": "block",
+  "temporaryOpusRestriction": {
+    "until": "2026-10-28T16:00:00Z",
+    "arbiterTitlePrefix": "Арбитр замера"
+  }
 }
 ```
+
+Temporary override: until 2026-10-28 19:00 Moscow time, `2026-10-28T16:00:00Z`, no subagent working on this
+project uses Opus; Anthropic subagents use Sonnet 5.5. At the timestamp the normal table applies again.
+The guard enforces the deadline on Main's starts/restarts and passes the restriction into child briefs.
+Its narrow mechanical allowance for `anthropic/claude-opus-5-5` is a start/restart title beginning with
+`Арбитр замера`, still using an allowed model/thinking pair. This is not permission for ordinary workers;
+the task-specific exception and judge configuration are recorded only in the reviewer finalisation task.
 
 1. Every `start` and `restart` by Main names `model` and `thinking` explicitly from the chosen class. Nothing is
    inherited from Main's own model or reasoning.
@@ -108,6 +146,20 @@ a rule, edit the block; no other file repeats it.
    Carrier: `scripts/deliver-check.mjs` checks only quote spans touching added lines of `DECISIONS.md` and
    `PROCESS.md` against the owner sessions of this repository. `MY_PI_SESSIONS` overrides them with directories
    joined by the path delimiter; no session files found fails closed.
+
+## Code quality
+
+Provisional until the AI-maintainability research lands: every change and every review must keep extension source
+as clean, short, readable and easy to extend as possible.
+Quality means ease of maintenance: even a junior should understand what the code does by reading its structure.
+Use the minimal code needed for the agreed result, without garbage. Prefer well-decomposed, straightforward code
+rather than clever one-liners or dense compound expressions. Brevity must not hide structure or understanding.
+These are provisional implementation and review criteria, not permission for unrelated refactoring or scope expansion.
+The manifesto describes the owner's own work; this AI repository needs an adaptation for AI agents. Research must
+establish what actually helps them, including whether one-liners are more effective, before this principle is rewritten.
+Do not present the owner's preferred decomposition plus fast search as a proven result for AI agents.
+Owner's principle and source: [DECISIONS.md, Work policy](DECISIONS.md#work-policy); personal wording:
+[WORKFLOW-MANIFEST.md](WORKFLOW-MANIFEST.md#качество-и-объём-работы).
 
 ## Sufficient proof, without idle reruns
 
@@ -162,7 +214,8 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
 - While RQW-review is disabled in the owner's settings, result review runs through an `agent` subagent whose
   whole system prompt is the new reviewer text (`extensions/RQW-review/REVIEWER.md` in `main`). Give it the
   owner's messages verbatim (the session file), plus agreement, object and criterion; record `Review: agent#N CLEAN`.
-- Every squash merge requires a clean result review, including mechanical corrections. Small work, at most
+- Except for the [third-party installation fast path](#third-party-installation-fast-path), every squash merge
+  requires a clean result review, including mechanical corrections. Small work, at most
   five requirements and five changed files, uses `review` level `blind`; larger work uses `high`. An answer or report
   without changes needs no review. Explicit owner requirements for a review take precedence.
 - Workers first self-check their work and fix defects before independent review. Main checks their evidence and
@@ -252,6 +305,16 @@ Its brief has the issue, the triage claim, the diff and the red/green and repeat
 test-integrity rule triggers: a test or workflow change adds `skip`, `todo`, `--test-retry` or `continue-on-error`,
 raises a timeout, or leaves fewer assertions in a test file. A `QA: #N` line always requires `Test-review:`, and
 `Test-change:` only when test or workflow files changed. An ordinary test change needs neither.
+
+## Third-party installation fast path
+
+For an agreed third-party library or Pi extension, first install it into the owner's Pi so it works immediately,
+then add it to the `my-pi` package. At first use, consult Pi's documentation to decide how one Pi package bundles
+another; do not preselect a packaging mechanism. Preserve credentials and unrelated settings.
+Self-review the config and exact diff for unintended additions, commit and push to `main`. This narrow path
+replaces the full Delivery pipeline, including the CI gate and independent reviews, for third-party installation
+and package configuration only. It does not apply to building our own features or mechanisms or to this process
+and guard change. Record the accepted choice in `DECISIONS.md`.
 
 ## Delivery
 
