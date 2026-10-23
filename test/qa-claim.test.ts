@@ -39,7 +39,9 @@ if (method === "GET" && (m = endpoint.match(/^issues\\/(\\d+)$/))) {
 	out(issue);
 } else if (method === "GET" && (m = endpoint.match(/^issues\\/(\\d+)\\/comments/))) {
 	if (process.env.FAKE_DELAY_COMMENTS) await sleep(Number(process.env.FAKE_DELAY_COMMENTS));
-	out(existsSync(dir + "/comments-" + m[1] + ".json") ? read("comments-" + m[1] + ".json") : []);
+	const all = existsSync(dir + "/comments-" + m[1] + ".json") ? read("comments-" + m[1] + ".json") : [];
+	const page = Number((endpoint.match(/[?&]page=(\\d+)/) ?? [])[1] ?? 1);
+	out(all.slice((page - 1) * 100, page * 100));
 	appendFileSync(dir + "/calls.log", Date.now() + " E " + call + "\\n");
 } else if (method === "GET" && endpoint.startsWith("issues?")) {
 	out(readdirSync(dir).filter((f) => f.startsWith("issue-")).map((f) => read(f)).filter((i) => i.state === "open"));
@@ -226,6 +228,31 @@ describe("qa-claim helper", () => {
 		assert.match(item.text, /claimed, in progress: branch b since/);
 	});
 
+	it("a failing label write rolls the lock ref back and says so; a retry then works", async () => {
+		const t = setup();
+		t.issue(3);
+		t.env.FAKE_FAIL = "^POST issues/3/labels"; t.env.FAKE_FAIL_TEXT = "Server Error (HTTP 500)";
+		await assert.rejects(t.doClaim(3, "b"), /setting the qa:claimed label failed.*HTTP 500.*lock ref was removed again, nothing is claimed/);
+		assert.ok(!existsSync(t.refPath(3)));
+		assert.deepEqual(t.labelsOf(3), ["qa-inbox"]);
+		delete t.env.FAKE_FAIL; delete t.env.FAKE_FAIL_TEXT;
+		assert.equal((await t.doClaim(3, "b")).claimed, true);
+	});
+
+	it("a failing label write whose rollback fails reports the remaining lock and the release command", async () => {
+		const t = setup();
+		t.issue(3);
+		t.env.FAKE_FAIL = "^(POST issues/3/labels|DELETE git/refs)"; t.env.FAKE_FAIL_TEXT = "Server Error (HTTP 500)";
+		await assert.rejects(t.doClaim(3, "b"), /label failed.*could NOT be removed.*still blocks claims: run npm run qa-claim -- --release 3/);
+		assert.ok(existsSync(t.refPath(3)));
+		delete t.env.FAKE_FAIL; delete t.env.FAKE_FAIL_TEXT;
+		const retry = await t.doClaim(3, "b");
+		assert.equal(retry.claimed, false);
+		assert.match(retry.why, /half written/);
+		await release({ number: 3, repo: "example/project", cwd: t.tmp, run: (c: string, a: string[], o: object) => run(c, a, { ...o, env: t.env }) });
+		assert.equal((await t.doClaim(3, "b")).claimed, true);
+	});
+
 	it("release frees the ref and the label; the issue can be claimed again; a missing part is fine", async () => {
 		const t = setup();
 		t.seedClaim(3, "old", iso(Date.now() - 40 * HOUR));
@@ -294,6 +321,33 @@ describe("qa-status claim view", () => {
 		assert.doesNotMatch(item.text, /since/);
 	});
 
+	it("after release and reclaim the status shows the new branch and time, not the old comment or a stale claim", async () => {
+		const t = setup();
+		t.seedClaim(3, "old-branch", iso(Date.now() - 40 * HOUR));
+		t.branches({ "old-branch": iso(Date.now() - 39 * HOUR) });
+		assert.match((await t.status()).items.find((i: any) => i.text.startsWith("#3")).id, /stale-claim$/);
+		await release({ number: 3, repo: "example/project", cwd: t.tmp, run: (c: string, a: string[], o: object) => run(c, a, { ...o, env: t.env }) });
+		const now = Date.now();
+		assert.equal((await t.doClaim(3, "new-branch", now)).claimed, true);
+		assert.equal(t.comments(3).length, 3, "the old claim comment stays in the issue");
+		const item = (await t.status()).items.find((i: any) => i.text.startsWith("#3"));
+		assert.equal(item.level, "pending");
+		assert.equal(item.id, "claim:3:new-branch");
+		assert.match(item.text, new RegExp(`branch new-branch since ${iso(now)}`));
+		assert.doesNotMatch(item.text, /old-branch/);
+	});
+
+	it("without a readable ref the newest valid claim comment wins, also from a later comment page", async () => {
+		const t = setup();
+		const rec = (branch: string, at: string) => ({ body: `QA claim\n\n<!-- ${encodeClaim({ number: 3, branch, at })} -->` });
+		t.seedClaim(3, "x", iso(Date.now()), { comment: false, ref: false });
+		const filler = Array.from({ length: 120 }, (_, i) => ({ body: `note ${i}` }));
+		const at = iso(Date.now() - HOUR);
+		writeFileSync(join(t.dir, "comments-3.json"), JSON.stringify([rec("older", iso(Date.now() - 50 * HOUR)), ...filler, rec("newest", at), { body: "later note" }]));
+		const item = (await t.status()).items.find((i: any) => i.text.startsWith("#3"));
+		assert.match(item.text, new RegExp(`branch newest since ${at}`));
+	});
+
 	it("a label with only the comment, or only the claim commit, still shows branch and time", async () => {
 		const t = setup();
 		const at = iso(Date.now() - HOUR);
@@ -338,16 +392,22 @@ describe("qa-status claim view", () => {
 	it("a real gh failure (auth, network) makes the status unavailable instead of hiding it", async () => {
 		const t = setup();
 		t.seedClaim(3, "x", iso(Date.now()));
-		t.env.FAKE_FAIL = "^GET issues/3/comments";
-		const state = await t.status();
-		assert.equal(state.ok, false);
-		assert.match(render(state), /QA status unavailable:.*HTTP 401/);
+		for (const failing of ["^GET git/ref/qa-claims/3", "^GET git/commits/claim3"]) {
+			t.env.FAKE_FAIL = failing;
+			const state = await t.status();
+			assert.equal(state.ok, false, failing);
+			assert.match(render(state), /QA status unavailable:.*HTTP 401/);
+		}
+		// The comment read is a fallback and fails the same way.
+		t.seedClaim(4, "x", iso(Date.now()), { ref: false });
+		t.env.FAKE_FAIL = "^GET issues/4/comments";
+		assert.equal((await t.status()).ok, false);
 		delete t.env.FAKE_FAIL;
 	});
 
 	it("reads claimed issues through a small pool and has no growing global ref list", async () => {
 		const t = setup();
-		for (let n = 10; n < 22; n++) t.seedClaim(n, `branch-${n}`, iso(Date.now() - HOUR));
+		for (let n = 10; n < 22; n++) t.seedClaim(n, `branch-${n}`, iso(Date.now() - HOUR), { ref: false }); // read through the comment fallback
 		for (let n = 100; n < 260; n++) writeFileSync(t.refPath(n), "old"); // historic refs of closed issues
 		t.env.FAKE_DELAY_COMMENTS = "250";
 		const state = await t.status();

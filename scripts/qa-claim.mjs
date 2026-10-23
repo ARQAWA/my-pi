@@ -64,10 +64,23 @@ export async function claim({ number, branch, repo, cwd = process.cwd(), run: ex
 			if (!/Reference already exists/i.test(String(e?.message ?? e))) throw e;
 			return { claimed: false, why: `lost the race or the claim is half written: ${await describe({ api, number, labeled: false, now: now() })}` };
 		}
-		const want = LABELS[CLAIM_LABEL];
-		try { await send("POST", "labels", { name: CLAIM_LABEL, color: want.color, description: want.description }); }
-		catch (e) { if (!/\bHTTP 422\b|already_exists/i.test(String(e?.message ?? e))) throw e; }
-		await send("POST", `issues/${number}/labels`, { labels: [CLAIM_LABEL] });
+		// The ref exists now. A failing label write must not leave a lock nobody knows about: undo the ref, and say
+		// truthfully when that fails too (the lock then blocks retries until `--release`).
+		try {
+			const want = LABELS[CLAIM_LABEL];
+			try { await send("POST", "labels", { name: CLAIM_LABEL, color: want.color, description: want.description }); }
+			catch (e) { if (!/\bHTTP 422\b|already_exists/i.test(String(e?.message ?? e))) throw e; }
+			await send("POST", `issues/${number}/labels`, { labels: [CLAIM_LABEL] });
+		} catch (e) {
+			let outcome;
+			try {
+				await send("DELETE", `git/refs/${claimRefName(number)}`);
+				outcome = "the lock ref was removed again, nothing is claimed";
+			} catch (undo) {
+				outcome = `the lock ref ${claimRefName(number)} could NOT be removed (${String(undo?.message ?? undo).slice(0, 200)}), so it still blocks claims: run npm run qa-claim -- --release ${number}`;
+			}
+			throw new Error(`setting the ${CLAIM_LABEL} label failed (${String(e?.message ?? e).slice(0, 300)}); ${outcome}`);
+		}
 		try {
 			await send("POST", `issues/${number}/comments`, { body: `QA claim: branch \`${branch}\` since ${at} UTC.\n\n<!-- ${record} -->` });
 		} catch (e) {
@@ -117,7 +130,7 @@ export async function main(argv = process.argv.slice(2)) {
 		console.log(result.claimed ? `CLAIMED ${result.why}` : `NOT CLAIMED ${result.why}. Do not start; report to the coordinator.`);
 		return result.claimed ? 0 : 3;
 	} catch (e) {
-		console.error(`qa-claim failed, nothing changed or claimed: ${String(e?.message ?? e)}`);
+		console.error(`qa-claim failed: ${String(e?.message ?? e)}`);
 		return 1;
 	}
 }

@@ -134,29 +134,36 @@ async function tryApi(api, endpoint) {
 
 // What is known about the claim of an open issue, or null when it is not claimed. api(endpoint): parsed JSON of
 // repos/<repo>/<endpoint>. Claimed means: the label is on the issue, or the claim ref exists (a lost label).
-// Returns { labeled, record: { number, branch, at } | null }. The record comes from the first valid claim comment,
-// else from the commit the ref points at; a missing, non-commit or malformed one leaves record null.
+// Returns { labeled, record: { number, branch, at } | null }. The current lock ref decides first: its commit holds
+// the record of the current claim. Only without a readable ref record the newest valid claim comment is used,
+// because comments of released claims stay in the issue. Comments are read oldest first, 100 per page, at most
+// COMMENT_PAGES pages; a claim comment beyond them is not seen and the record stays unknown.
+export const COMMENT_PAGES = 5;
 export async function readClaim({ api, number, labeled }) {
 	const fromComments = async () => {
-		const comments = await tryApi(api, `issues/${number}/comments?per_page=100`);
-		for (const c of Array.isArray(comments) ? comments : []) {
-			const rec = decodeClaim(c.body);
-			if (rec && rec.number === number) return rec;
+		let newest = null;
+		for (let page = 1; page <= COMMENT_PAGES; page++) {
+			const comments = await tryApi(api, `issues/${number}/comments?per_page=100&page=${page}`);
+			const list = Array.isArray(comments) ? comments : [];
+			for (const c of list) {
+				const rec = decodeClaim(c.body);
+				if (rec && rec.number === number) newest = rec;
+			}
+			if (list.length < 100) break;
 		}
-		return null;
+		return newest;
 	};
-	const fromRef = async () => {
-		const ref = await tryApi(api, `git/ref/${claimRefName(number)}`);
-		if (!ref || Array.isArray(ref)) return { exists: false, record: null };
+	const ref = await tryApi(api, `git/ref/${claimRefName(number)}`);
+	const exists = Boolean(ref) && !Array.isArray(ref);
+	if (!labeled && !exists) return null;
+	let record = null;
+	if (exists) {
 		const sha = ref.object?.type === "commit" ? ref.object.sha : null;
 		const commit = sha ? await tryApi(api, `git/commits/${sha}`) : null;
 		const rec = decodeClaim(commit?.message);
-		return { exists: true, record: rec && rec.number === number ? rec : null };
-	};
-	if (labeled) return { labeled, record: (await fromComments()) ?? (await fromRef()).record };
-	const ref = await fromRef();
-	if (!ref.exists) return null;
-	return { labeled, record: ref.record ?? (await fromComments()) };
+		record = rec && rec.number === number ? rec : null;
+	}
+	return { labeled, record: record ?? (await fromComments()) };
 }
 
 // { kind: "unknown" } for a claim without a record, else { kind: "fresh" | "stale", branch, at, lastActivity }.

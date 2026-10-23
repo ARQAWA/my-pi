@@ -1398,14 +1398,16 @@ in the approved proposal (not stored in this repository). The loop reads only pu
   compare-and-set for labels, adding one succeeds whether or not it is there): the atomic step is the create-only ref
   `refs/qa-claims/<N>` (`POST git/refs` fails with 422 when it exists), made before the label, pointing at a commit
   whose message holds the record `qa-claim:v1 {"number","branch","at"}` (`scripts/qa-state.mjs`). The comment holds the
-  same record; status reads the comment first and the ref commit as fallback. A ref without the label (a lost label or
-  a half written claim) also counts as claimed. Status makes no global list: per open issue it reads the comments, the
-  ref only when needed, and the newest commit of the claimed branch on GitHub (the claim time counts as activity, so
+  same record. Status reads the current ref commit first; only without a readable ref record it uses the newest
+  valid claim comment, since comments of released claims stay in the issue. If the label write fails after the ref
+  was made, the helper deletes the ref again and says so; when that fails too, its error names the remaining lock and
+  `--release`. A ref without the label (a lost label or
+  a half written claim) also counts as claimed. Status makes no global list: per open issue it reads the ref, the comments only as fallback, and the newest commit of the claimed branch on GitHub (the claim time counts as activity, so
   an unpushed branch is fresh for 24 hours), at most four issues at a time. HTTP 404 and 422 on those reads mean a
   missing or malformed object and leave branch and time unknown; any other `gh` failure (auth, network) makes the
   status unavailable. Limits: a claim is advisory for agents that run the helper; between a dead agent's last push
-  and the 24-hour mark it still blocks others; the claim comment is read from the first 100 comments, then the ref
-  commit. `qa-inbox.yml` is unchanged: it keeps labels it does not compute and never comments. Reason: two agents
+  and the 24-hour mark it still blocks others; the fallback reads at most 500 comments (five pages of 100), so a newer claim comment beyond them
+  is not seen. `qa-inbox.yml` is unchanged: it keeps labels it does not compute and never comments. Reason: two agents
   triaging one failure waste work and may push conflicting fixes. Carrier: `scripts/qa-claim.mjs`,
   `scripts/qa-state.mjs`, `scripts/qa-status.mjs`, `test/qa-claim.test.ts`,
   [PROCESS.md](PROCESS.md#quality-control-loop). Since: the delivering commit of branch `qa-claim`.
