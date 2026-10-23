@@ -104,14 +104,18 @@ function lease(target: object, key: symbol, install: (mask: Mask) => () => void)
 	}];
 }
 
-/** Pi 1.4.0 gives extensions no session handle; borrow it for one synchronous call. */
+/**
+ * Pi 1.4.0 gives extensions no session handle; borrow it for one synchronous call. The probe is the prototype getter
+ * isIdle, which ctx.isIdle() reads as `this.isIdle`. Instance wrappers of getContextUsage (RQW-codex's compaction hook
+ * calls the stock method it captured) cannot hide the session from it. The exact prototype descriptor is restored in finally.
+ */
 function sessionOf(ctx: ExtensionContext): AgentSession | undefined {
 	const prototype = AgentSession.prototype;
-	const descriptor = Object.getOwnPropertyDescriptor(prototype, "getContextUsage");
-	if (typeof descriptor?.value !== "function" || !descriptor.configurable) return undefined;
+	const descriptor = Object.getOwnPropertyDescriptor(prototype, "isIdle");
+	if (typeof descriptor?.get !== "function" || !descriptor.configurable) return undefined;
 	let captured: unknown;
-	Object.defineProperty(prototype, "getContextUsage", { ...descriptor, value(this: unknown) { captured = this; return undefined; } });
-	try { ctx.getContextUsage(); } catch { captured = undefined; } finally { Object.defineProperty(prototype, "getContextUsage", descriptor); }
+	Object.defineProperty(prototype, "isIdle", { ...descriptor, get(this: unknown) { captured = this; return true; } });
+	try { ctx.isIdle(); } catch { captured = undefined; } finally { Object.defineProperty(prototype, "isIdle", descriptor); }
 	const session = captured as AgentSession | undefined;
 	return session && session.sessionManager === ctx.sessionManager && session.modelRuntime ? session : undefined;
 }

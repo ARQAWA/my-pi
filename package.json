@@ -30,11 +30,15 @@
       "./extensions/RQW-session/index.ts",
       "./extensions/RQW-send-now/index.ts",
       "./extensions/RQW-mouse/index.ts",
-      "./extensions/RQW-providers/index.ts"
+      "./extensions/RQW-providers/index.ts",
+      "./extensions/RQW-codex/index.ts"
     ]
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.4.0",
     "typebox": "1.3.27"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
   }
 }

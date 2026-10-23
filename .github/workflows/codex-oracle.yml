@@ -1,0 +1,175 @@
+name: codex-oracle
+
+# Stage 1: executes the pinned upstream codex-core tests (fake loopback servers, fake auth) on a temp copy and
+# captures the requests they build. Source-digest fixtures are checked separately (extensions/RQW-codex/test).
+on:
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'extensions/RQW-codex/**'
+      - '.github/workflows/codex-oracle.yml'
+  # Scheduled workflows run on main; use the normal oracle and its integrity/differential checks.
+  schedule:
+    - cron: '43 3 * * *'
+  workflow_dispatch:
+    inputs:
+      diagnostic_case:
+        description: 'Fixed diagnostic case (CI-only differential diagnostic; empty runs the normal oracle)'
+        type: string
+        default: ''
+      diagnostic_probe:
+        description: 'One-shot native loopback connect probe only; leave diagnostic_case empty'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  oracle:
+    name: upstream oracle (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 300
+    env:
+      CODEX_RELEASE: rust-v0.163.0
+      CODEX_PIN: 83086188ae0614bd882818ff1aa23f3194962012
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+
+      - name: Run the focused diagnostic regression tests (diagnostic dispatch only)
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.diagnostic_case != '' || inputs.diagnostic_probe) }}
+        run: node --test extensions/RQW-codex/test/oracle-diagnostic.test.ts
+
+      - name: Verify the release tag peels to the pinned commit (read-only)
+        run: |
+          set -euo pipefail
+          peeled="$(git ls-remote https://github.com/openai/codex.git "refs/tags/${CODEX_RELEASE}^{}" | cut -f1)"
+          if [ "$peeled" != "$CODEX_PIN" ]; then
+            echo "peeled ${CODEX_RELEASE} is ${peeled}, expected ${CODEX_PIN}"
+            exit 1
+          fi
+
+      - name: Fetch the pinned upstream commit to runner temp (read-only)
+        run: |
+          set -euo pipefail
+          up="${RUNNER_TEMP}/codex-upstream"
+          mkdir -p "$up"
+          cd "$up"
+          git init -q .
+          git remote add origin https://github.com/openai/codex.git
+          git fetch -q --depth 1 origin "$CODEX_PIN"
+          git checkout -q FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$CODEX_PIN"
+          echo "UPSTREAM_ROOT=$up" >> "$GITHUB_ENV"
+
+      - name: Key the Rust cache on the pinned lockfile
+        id: lock
+        run: |
+          set -euo pipefail
+          echo "sha=$(shasum -a 256 "$UPSTREAM_ROOT/codex-rs/Cargo.lock" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Rust registry and target cache
+        id: rust-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/cargo-target
+          key: codex-oracle-${{ env.CODEX_PIN }}-${{ steps.lock.outputs.sha }}-${{ runner.os }}
+
+      - name: Run the pinned upstream oracle tests on a temp copy
+        if: ${{ success() && !(github.event_name == 'workflow_dispatch' && (inputs.diagnostic_case != '' || inputs.diagnostic_probe)) }}
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/cargo-target
+          CARGO_TERM_COLOR: never
+        run: |
+          set -euo pipefail
+          out="$(node -p 'require("os").tmpdir()')/rqw-codex-oracle-out"
+          rm -rf "$out"
+          echo "ORACLE_OUT=$out" >> "$GITHUB_ENV"
+          node extensions/RQW-codex/scripts/capture-oracle.mjs run \
+            --source "$UPSTREAM_ROOT/codex-rs" \
+            --commit "$CODEX_PIN" \
+            --out "$out"
+
+      - name: Run the CI-only differential diagnostic (diagnostic dispatch only, not oracle acceptance)
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.diagnostic_case != '' || inputs.diagnostic_probe) }}
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/cargo-target
+          CARGO_TERM_COLOR: never
+          DIAG_CASE: ${{ inputs.diagnostic_case }}
+          DIAG_PROBE: ${{ inputs.diagnostic_probe }}
+        run: |
+          set -euo pipefail
+          out="${RUNNER_TEMP}/rqw-codex-oracle-diagnostic"
+          rm -rf "$out"
+          echo "ORACLE_DIAG_OUT=$out" >> "$GITHUB_ENV"
+          mode_args=(--case "$DIAG_CASE")
+          if [ "$DIAG_PROBE" = "true" ]; then
+            if [ -n "$DIAG_CASE" ]; then
+              echo 'diagnostic_probe and diagnostic_case are mutually exclusive'
+              exit 1
+            fi
+            mode_args=(--probe connect)
+          fi
+          node extensions/RQW-codex/scripts/oracle-diagnostic.mjs \
+            --source "$UPSTREAM_ROOT/codex-rs" \
+            --commit "$CODEX_PIN" \
+            --out "$out" \
+            "${mode_args[@]}"
+
+      - name: Save Rust registry and target cache
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ${{ runner.temp }}/cargo-target
+          key: codex-oracle-${{ env.CODEX_PIN }}-${{ steps.lock.outputs.sha }}-${{ runner.os }}
+
+      - name: Capture integrity assertions
+        if: ${{ success() && !(github.event_name == 'workflow_dispatch' && (inputs.diagnostic_case != '' || inputs.diagnostic_probe)) }}
+        run: node extensions/RQW-codex/scripts/capture-oracle.mjs check --out "$ORACLE_OUT" --commit "$CODEX_PIN"
+
+      - name: Native differential fixture matches this run's captures
+        if: ${{ success() && !(github.event_name == 'workflow_dispatch' && (inputs.diagnostic_case != '' || inputs.diagnostic_probe)) }}
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node extensions/RQW-codex/scripts/pin-native-differential.mjs \
+            --artifact "$ORACLE_OUT" \
+            --source "$UPSTREAM_ROOT/codex-rs" \
+            --run "$RUN_URL" \
+            --head "$GITHUB_SHA" \
+            --out "$RUNNER_TEMP/native-differential.json" \
+            --check extensions/RQW-codex/test/fixtures/native-differential.json
+
+      - name: Upload captures and test logs
+        if: ${{ always() && !(github.event_name == 'workflow_dispatch' && (inputs.diagnostic_case != '' || inputs.diagnostic_probe)) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-oracle-${{ env.CODEX_PIN }}
+          path: ${{ env.ORACLE_OUT }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload diagnostic artifacts (diagnostic dispatch only)
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && (inputs.diagnostic_case != '' || inputs.diagnostic_probe) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-oracle-diagnostic-${{ env.CODEX_PIN }}
+          path: ${{ env.ORACLE_DIAG_OUT }}
+          if-no-files-found: warn
+          retention-days: 14

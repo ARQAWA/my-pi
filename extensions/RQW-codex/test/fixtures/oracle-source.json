@@ -1,0 +1,524 @@
+{
+  "schema": "rqw-codex/oracle-source@1",
+  "kind": "source-extracted assertions from pinned upstream source text; NOT runtime wire captures; Rust code was not compiled or executed",
+  "pin": {
+    "release": "rust-v0.163.0",
+    "version": "0.163.0",
+    "commit": "83086188ae0614bd882818ff1aa23f3194962012",
+    "commitDate": "2026-10-15T18:57:07Z",
+    "sourceRoot": "codex-rs (evidence directory, git archive of the pinned commit)",
+    "sourceRootRelative": "codex-rs"
+  },
+  "pinEvidence": {
+    "file": "../source-audit.json",
+    "fields": {
+      "codex_stable_commit": "83086188ae0614bd882818ff1aa23f3194962012",
+      "codex_stable_commit_date": "2026-10-15T18:57:07Z"
+    }
+  },
+  "sourceFiles": [
+    {
+      "path": "Cargo.toml",
+      "role": "workspace package version pin",
+      "sha256": "b017f28f91f7506b730c247ffb3dab5250d9848514c194331fd774836d480f0b"
+    },
+    {
+      "path": "models-manager/models.json",
+      "role": "pinned model catalog",
+      "sha256": "943ca7fe1d19ed019054158303f0dbbd80b3bef43b3aa425a71aa7cb3fb52c2b"
+    },
+    {
+      "path": "model-provider-info/src/lib.rs",
+      "role": "provider endpoint, retry and timeout defaults",
+      "sha256": "93ce6cd0a65477dff89545b8b48853455da0654c4bcc5a1092596d88d9dfe25c"
+    },
+    {
+      "path": "features/src/lib.rs",
+      "role": "feature defaults and stages",
+      "sha256": "5317e79cb2f5a72044b15ef9c506e9906c295f5a4e43cc1f1f05b87455824542"
+    },
+    {
+      "path": "core/src/responses_retry.rs",
+      "role": "stream retry / unbounded connection retry",
+      "sha256": "8136a44f54b593cd9257658b1798418567e1e26928dc0ad1b3edf748e2a181fd"
+    },
+    {
+      "path": "core/src/client.rs",
+      "role": "request envelope, beta headers, prewarm, effort override",
+      "sha256": "934ac0856c95f11d554e692e7ccf975822de1c916c037c9beddfe26832854e13"
+    },
+    {
+      "path": "core/src/session/mod.rs",
+      "role": "x-codex-beta-features advertisement",
+      "sha256": "d9399180169ea30f01efc07279cd071bd14f4600129364020edf7e90df300be9"
+    },
+    {
+      "path": "core/src/session/session.rs",
+      "role": "startup prewarm scheduling",
+      "sha256": "e6f4b9f069343031a87bd2a862701f461d1aa9728272196f8a7376b610234806"
+    },
+    {
+      "path": "core/src/session/startup_prewarm.rs",
+      "role": "startup prewarm generate=false",
+      "sha256": "539659506976454262e2931fec0b5616ec990adac7e7423c6e73de28fbbe6fa7"
+    },
+    {
+      "path": "codex-api/src/common.rs",
+      "role": "request serialization order",
+      "sha256": "3ab2c9406e2e9b465b7b23756991bf7893bd884be9af3cff8c222bb26a8df4a0"
+    },
+    {
+      "path": "codex-api/src/endpoint/responses_websocket.rs",
+      "role": "websocket response.interrupt",
+      "sha256": "aad72bd914844d880acfdefe7b982b2da6fb8c4f315e724f55d52b4e49f53c37"
+    },
+    {
+      "path": "codex-api/src/sse/responses.rs",
+      "role": "SSE turn-state header",
+      "sha256": "c58b85803937e43eb66adf6148d8f8fcca8e7badf43c1e96a747c9e56ae4e618"
+    },
+    {
+      "path": "model-provider/src/capabilities.rs",
+      "role": "remote compaction capability",
+      "sha256": "dbfa922c61a2445082842c60a61599a7d14cda7068e9e9de3fe20ae5520181ac"
+    },
+    {
+      "path": "core/src/compact_remote_v2.rs",
+      "role": "remote compaction V2 retries",
+      "sha256": "cb81ae523a2d3674ffe0acd12a492431d773e1148a420bbd99850b9081277673"
+    },
+    {
+      "path": "protocol/src/models.rs",
+      "role": "compaction_trigger item type",
+      "sha256": "df9a3da250376d86203a8a1219b2e4b5353a62274d094bb36998560433bd58eb"
+    },
+    {
+      "path": "protocol/src/openai_models.rs",
+      "role": "effort update capability default",
+      "sha256": "4b080aeaf5c158104e27d8277f3bc03ee3ad55b55a41c30a788d831fb2e2a99f"
+    },
+    {
+      "path": "http-client/src/request.rs",
+      "role": "zstd request compression",
+      "sha256": "e909859af99adabad04daf3663ff77fae736e7587870a3dc3545c7d5f3ffe4a1"
+    },
+    {
+      "path": "codex-client/src/retry.rs",
+      "role": "HTTP retry backoff",
+      "sha256": "4e61c0e5e5037866706863c32780748ec82e114160ec759a582621de0aad4c06"
+    },
+    {
+      "path": "login/src/auth/default_client.rs",
+      "role": "originator and user agent identity",
+      "sha256": "174e02e439013bf75cccdcfd36b9c23e31d9ee84835a0cc0b1f9d7a33391a064"
+    },
+    {
+      "path": "login/src/device_code_auth.rs",
+      "role": "device-code login endpoints",
+      "sha256": "a66f531d5cc5257ba99ec796f69e02f78bab1812bbde57b5aa809237910b3829"
+    }
+  ],
+  "assertions": [
+    {
+      "id": "pin.version",
+      "kind": "contains",
+      "file": "Cargo.toml",
+      "line": 162,
+      "text": "version = \"0.163.0\"",
+      "claim": "Workspace package version is 0.163.0"
+    },
+    {
+      "id": "endpoint.base",
+      "kind": "contains",
+      "file": "model-provider-info/src/lib.rs",
+      "line": 80,
+      "text": "CHATGPT_CODEX_BASE_URL: &str = \"https://chatgpt.com/backend-api/codex\";",
+      "claim": "ChatGPT Codex base URL; responses path is appended by the client"
+    },
+    {
+      "id": "version.header",
+      "kind": "contains",
+      "file": "model-provider-info/src/lib.rs",
+      "line": 540,
+      "text": "env!(\"CARGO_PKG_VERSION\")",
+      "claim": "Default provider http_headers carry version from the package version"
+    },
+    {
+      "id": "timeout.stream_idle",
+      "kind": "contains",
+      "file": "model-provider-info/src/lib.rs",
+      "line": 66,
+      "text": "const DEFAULT_STREAM_IDLE_TIMEOUT_MS: u64 = 300_000;",
+      "claim": "Default stream idle timeout 300000 ms"
+    },
+    {
+      "id": "timeout.websocket_connect",
+      "kind": "contains",
+      "file": "model-provider-info/src/lib.rs",
+      "line": 71,
+      "text": "pub const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS: u64 = 15_000;",
+      "claim": "Default websocket connect timeout 15000 ms"
+    },
+    {
+      "id": "retry.stream_max",
+      "kind": "contains",
+      "file": "model-provider-info/src/lib.rs",
+      "line": 67,
+      "text": "const DEFAULT_STREAM_MAX_RETRIES: u64 = 5;",
+      "claim": "Default stream retries 5 per sampling request"
+    },
+    {
+      "id": "retry.request_max",
+      "kind": "contains",
+      "file": "model-provider-info/src/lib.rs",
+      "line": 68,
+      "text": "const DEFAULT_REQUEST_MAX_RETRIES: u64 = 4;",
+      "claim": "Default HTTP request retries 4 (loop bound yields up to 5 attempts)"
+    },
+    {
+      "id": "retry.request_base",
+      "kind": "contains",
+      "file": "model-provider-info/src/lib.rs",
+      "line": 456,
+      "text": "base_delay: Duration::from_millis(200),",
+      "claim": "HTTP request retry base delay 200 ms"
+    },
+    {
+      "id": "retry.request_429",
+      "kind": "contains",
+      "file": "model-provider-info/src/lib.rs",
+      "line": 457,
+      "text": "retry_429: false,",
+      "claim": "HTTP 429 is not retried by the request retry policy"
+    },
+    {
+      "id": "retry.request_5xx",
+      "kind": "contains",
+      "file": "model-provider-info/src/lib.rs",
+      "line": 458,
+      "text": "retry_5xx: true,",
+      "claim": "HTTP 5xx is retried by the request retry policy"
+    },
+    {
+      "id": "retry.backoff",
+      "kind": "contains",
+      "file": "codex-client/src/retry.rs",
+      "line": 50,
+      "text": "let jitter: f64 = rand::rng().random_range(0.9..1.1);",
+      "claim": "Request backoff uses +/-10% jitter"
+    },
+    {
+      "id": "retry.connection_initial",
+      "kind": "contains",
+      "file": "core/src/responses_retry.rs",
+      "line": 23,
+      "text": "const INITIAL_CONNECTION_RETRY_DELAY: Duration = Duration::from_secs(5);",
+      "claim": "Unbounded connection retry starts at 5 s"
+    },
+    {
+      "id": "retry.connection_max",
+      "kind": "contains",
+      "file": "core/src/responses_retry.rs",
+      "line": 24,
+      "text": "const MAX_CONNECTION_RETRY_DELAY: Duration = Duration::from_secs(60);",
+      "claim": "Unbounded connection retry delay is capped at 60 s"
+    },
+    {
+      "id": "retry.connection_sampling_only",
+      "kind": "contains",
+      "file": "core/src/responses_retry.rs",
+      "line": 97,
+      "text": "&& matches!(request, ResponsesStreamRequest::Sampling)",
+      "claim": "Unbounded connection retry applies to sampling requests only"
+    },
+    {
+      "id": "retry.connection_internal_excluded",
+      "kind": "contains",
+      "file": "core/src/responses_retry.rs",
+      "line": 99,
+      "text": "&& !turn_context.session_source.is_internal()",
+      "claim": "Internal sessions are excluded from unbounded connection retry"
+    },
+    {
+      "id": "feature.unbounded_retries",
+      "kind": "contains",
+      "file": "features/src/lib.rs",
+      "line": 1431,
+      "text": "key: \"unbounded_connection_retries\",",
+      "claim": "Feature unbounded_connection_retries",
+      "within": {
+        "text": "default_enabled: true,",
+        "line": 1433
+      }
+    },
+    {
+      "id": "feature.reasoning_effort_override_off",
+      "kind": "contains",
+      "file": "features/src/lib.rs",
+      "line": 1921,
+      "text": "key: \"reasoning_effort_override\",",
+      "claim": "Stable default: reasoning_effort_override is off",
+      "within": {
+        "text": "default_enabled: false,",
+        "line": 1923
+      }
+    },
+    {
+      "id": "feature.incremental_tools_off",
+      "kind": "contains",
+      "file": "features/src/lib.rs",
+      "line": 1591,
+      "text": "key: \"incremental_tools\",",
+      "claim": "Stable default: incremental_tools is off",
+      "within": {
+        "text": "default_enabled: false,",
+        "line": 1593
+      }
+    },
+    {
+      "id": "feature.request_compression_on",
+      "kind": "contains",
+      "file": "features/src/lib.rs",
+      "line": 1425,
+      "text": "key: \"enable_request_compression\",",
+      "claim": "Request compression is stable and on by default",
+      "within": {
+        "text": "default_enabled: true,",
+        "line": 1427
+      }
+    },
+    {
+      "id": "feature.remote_compaction_v2_removed",
+      "kind": "contains",
+      "file": "features/src/lib.rs",
+      "line": 2053,
+      "text": "key: \"remote_compaction_v2\",",
+      "claim": "remote_compaction_v2 has no ordinary feature toggle (stage Removed, default false)",
+      "within": {
+        "text": "default_enabled: false,",
+        "line": 2055
+      }
+    },
+    {
+      "id": "beta.remote_compaction_always",
+      "kind": "contains",
+      "file": "core/src/session/mod.rs",
+      "line": 1302,
+      "text": "spec.id == Feature::RemoteCompactionV2",
+      "claim": "x-codex-beta-features always advertises remote_compaction_v2"
+    },
+    {
+      "id": "capability.openai_remote_compaction_v2",
+      "kind": "contains",
+      "file": "model-provider/src/capabilities.rs",
+      "line": 36,
+      "text": "RemoteCompactionSupport::V2",
+      "claim": "Default OpenAI provider uses remote compaction V2"
+    },
+    {
+      "id": "compaction.v2_stream_retries",
+      "kind": "contains",
+      "file": "core/src/compact_remote_v2.rs",
+      "line": 91,
+      "text": "const MAX_REMOTE_COMPACTION_V2_STREAM_RETRIES: u64 = 2;",
+      "claim": "Foreground remote compaction V2 allows 2 stream retries"
+    },
+    {
+      "id": "compaction.trigger_item",
+      "kind": "contains",
+      "file": "protocol/src/models.rs",
+      "line": 1363,
+      "text": "Self::CompactionTrigger { .. } => \"compaction_trigger\",",
+      "claim": "Backend V2 compaction is requested with a compaction_trigger item"
+    },
+    {
+      "id": "beta.websocket_v2",
+      "kind": "contains",
+      "file": "core/src/client.rs",
+      "line": 175,
+      "text": "RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = \"responses_websockets=2026-02-06\";",
+      "claim": "WebSocket OpenAI-Beta value is responses_websockets=2026-02-06"
+    },
+    {
+      "id": "beta.header_name",
+      "kind": "contains",
+      "file": "core/src/client.rs",
+      "line": 160,
+      "text": "OPENAI_BETA_HEADER: &str = \"OpenAI-Beta\";",
+      "claim": "The beta header name is OpenAI-Beta"
+    },
+    {
+      "id": "beta.sse_no_responses_experimental",
+      "kind": "absent",
+      "file": "core/src/client.rs",
+      "text": "responses=experimental",
+      "claim": "Stable client never sends responses=experimental"
+    },
+    {
+      "id": "beta.sse_no_responses_experimental_api",
+      "kind": "absent",
+      "file": "codex-api/src/sse/responses.rs",
+      "text": "responses=experimental",
+      "claim": "SSE parser source never sends responses=experimental"
+    },
+    {
+      "id": "header.beta_features",
+      "kind": "contains",
+      "file": "core/src/client.rs",
+      "line": 2469,
+      "text": "headers.insert(\"x-codex-beta-features\", header_value);",
+      "claim": "x-codex-beta-features header is sent from the precomputed feature list"
+    },
+    {
+      "id": "header.turn_state",
+      "kind": "contains",
+      "file": "core/src/client.rs",
+      "line": 163,
+      "text": "X_CODEX_TURN_STATE_HEADER: &str = \"x-codex-turn-state\";",
+      "claim": "Sticky routing header name is x-codex-turn-state"
+    },
+    {
+      "id": "header.window_id",
+      "kind": "contains",
+      "file": "core/src/client.rs",
+      "line": 166,
+      "text": "X_CODEX_WINDOW_ID_HEADER: &str = \"x-codex-window-id\";",
+      "claim": "Compaction window header name is x-codex-window-id"
+    },
+    {
+      "id": "identity.originator",
+      "kind": "contains",
+      "file": "login/src/auth/default_client.rs",
+      "line": 42,
+      "text": "DEFAULT_ORIGINATOR: &str = \"codex_cli_rs\";",
+      "claim": "Default originator is codex_cli_rs"
+    },
+    {
+      "id": "identity.user_agent_version",
+      "kind": "contains",
+      "file": "login/src/auth/default_client.rs",
+      "line": 156,
+      "text": "let build_version = env!(\"CARGO_PKG_VERSION\");",
+      "claim": "User agent version comes from the package version"
+    },
+    {
+      "id": "envelope.tool_choice",
+      "kind": "contains",
+      "file": "core/src/client.rs",
+      "line": 1076,
+      "text": "tool_choice: \"auto\".to_string(),",
+      "claim": "Request envelope tool_choice is auto"
+    },
+    {
+      "id": "envelope.store_false",
+      "kind": "contains",
+      "file": "core/src/client.rs",
+      "line": 1079,
+      "text": "store: false,",
+      "claim": "Request envelope store is false"
+    },
+    {
+      "id": "envelope.parallel_rule",
+      "kind": "contains",
+      "file": "core/src/client.rs",
+      "line": 1077,
+      "text": "parallel_tool_calls: prompt.parallel_tool_calls && !model_info.use_responses_lite,",
+      "claim": "parallel_tool_calls is false for Lite models"
+    },
+    {
+      "id": "envelope.field_order",
+      "kind": "contains",
+      "file": "codex-api/src/common.rs",
+      "line": 280,
+      "text": "Keep routing fields first: serde serializes struct fields in declaration order",
+      "claim": "Routing fields (model, stream, service_tier) are serialized first"
+    },
+    {
+      "id": "effort_override.gate",
+      "kind": "contains",
+      "file": "core/src/client.rs",
+      "line": 967,
+      "text": "if !self.reasoning_effort_override_enabled(model_info) {",
+      "claim": "Effort override is gated by the feature flag"
+    },
+    {
+      "id": "prewarm.startup_base",
+      "kind": "contains",
+      "file": "core/src/session/session.rs",
+      "line": 1952,
+      "text": "sess.schedule_startup_prewarm(super::startup_prewarm::PrewarmInput::Base)",
+      "claim": "Session initialization schedules a base startup prewarm"
+    },
+    {
+      "id": "prewarm.generate_false",
+      "kind": "contains",
+      "file": "core/src/client.rs",
+      "line": 2152,
+      "text": "generate: if warmup { Some(false) } else { None },",
+      "claim": "Prewarm sends generate=false"
+    },
+    {
+      "id": "prewarm.generate_false_comment",
+      "kind": "contains",
+      "file": "core/src/session/startup_prewarm.rs",
+      "line": 373,
+      "text": "capturing tools for generate=false",
+      "claim": "Startup prewarm captures tools for generate=false"
+    },
+    {
+      "id": "compression.zstd_level3",
+      "kind": "contains",
+      "file": "http-client/src/request.rs",
+      "line": 209,
+      "text": "zstd::stream::encode_all(std::io::Cursor::new(body.as_bytes()), 3)",
+      "claim": "Compressed request bodies use zstd level 3"
+    },
+    {
+      "id": "websocket.interrupt",
+      "kind": "contains",
+      "file": "codex-api/src/endpoint/responses_websocket.rs",
+      "line": 754,
+      "text": "\"type\": \"response.interrupt\",",
+      "claim": "Cancellation sends response.interrupt over websocket"
+    },
+    {
+      "id": "auth.device_usercode",
+      "kind": "contains",
+      "file": "login/src/device_code_auth.rs",
+      "line": 68,
+      "text": "format!(\"{auth_base_url}/deviceauth/usercode\")",
+      "claim": "Device login requests a user code from /deviceauth/usercode"
+    },
+    {
+      "id": "auth.device_token",
+      "kind": "contains",
+      "file": "login/src/device_code_auth.rs",
+      "line": 107,
+      "text": "format!(\"{auth_base_url}/deviceauth/token\")",
+      "claim": "Device login polls /deviceauth/token"
+    },
+    {
+      "id": "auth.device_page",
+      "kind": "contains",
+      "file": "login/src/device_code_auth.rs",
+      "line": 175,
+      "text": "format!(\"{base_url}/codex/device\")",
+      "claim": "Device verification page is /codex/device"
+    },
+    {
+      "id": "models.reasoning_effort_updates_serde_default",
+      "kind": "contains",
+      "file": "protocol/src/openai_models.rs",
+      "line": 491,
+      "text": "pub supports_reasoning_effort_updates: bool,",
+      "claim": "supports_reasoning_effort_updates is a bool with serde default false when absent"
+    }
+  ],
+  "runtimeCaptures": [],
+  "notClaimed": [
+    "live backend acceptance",
+    "TLS/packet equality",
+    "subscription billing or quota behaviour",
+    "Rust wire captures produced by running upstream"
+  ]
+}

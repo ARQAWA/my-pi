@@ -1,0 +1,1735 @@
+{
+  "schema": "rqw-codex/native-differential@1",
+  "kind": "pinned native oracle captures (requests and scripted SSE bodies) projected by test/native-differential.mjs; non-SSE stimulus copied from the cited pinned test source",
+  "provenance": {
+    "oracleRun": "https://github.com/ARQAWA/my-pi/actions/runs/39956439677",
+    "myPiHead": "fe3e9ec554070811a76eb5403934b753825e67df",
+    "artifact": "codex-oracle-83086188ae0614bd882818ff1aa23f3194962012",
+    "codexRelease": "rust-v0.163.0",
+    "codexCommit": "83086188ae0614bd882818ff1aa23f3194962012",
+    "runStartedAt": "2026-10-23T12:53:22.510Z",
+    "os": {
+      "platform": "darwin",
+      "release": "25.6.0",
+      "arch": "arm64"
+    },
+    "sourceSha256": {
+      "core/tests/suite/turn_state.rs": "67d2c33f728f0522bd3856a1016f026c0401981f0042ca2949af6b24c1ec26bc",
+      "core/tests/suite/websocket_fallback.rs": "aedc50a7213bc918f771b371af8ec521f8c8e4d0834fe0cc4e1ed1a356acc42e",
+      "core/tests/suite/retry_after.rs": "2437e45336c5d3e811158aeb43963992860499cc1e9e66b939ad223d9e4d12af",
+      "core/tests/suite/request_compression.rs": "48a73718a8430098785a4a59f8c74d70b0ddda17c1880aef2174082e8725a9bb",
+      "core/tests/suite/compact_remote.rs": "4083a78aeb40752ea485cf9c97a3648796bb8d89604c91c198967c2d23e6df98"
+    }
+  },
+  "cases": [
+    {
+      "id": "transport-turn-state-sse",
+      "expectedSleeps": [],
+      "sleepSource": "the native case has no failed response, so no retry wait",
+      "area": "transport",
+      "capturePrefix": "turn_state-53eef0ad22b6",
+      "test": "suite::turn_state::responses_turn_state_persists_within_turn_and_resets_after",
+      "source": [
+        "core/tests/suite/turn_state.rs:23-81"
+      ],
+      "prompts": [
+        "run a shell command",
+        "second turn"
+      ],
+      "steps": [
+        "prompt:0",
+        "prompt:1"
+      ],
+      "upgrade": "none",
+      "responses": [
+        {
+          "script": 0,
+          "headers": {
+            "x-codex-turn-state": "ts-1"
+          }
+        },
+        {
+          "script": 1
+        },
+        {
+          "script": 2
+        }
+      ],
+      "nativeLog": "logs/cases/turn_state-53eef0ad22b6.log",
+      "captures": [
+        {
+          "file": "captures/turn_state-53eef0ad22b6-http-0003.json",
+          "sha256": "6f2350df489b858ef3f9da90784c76e29a556307302a68b23f3111ef0ce7be17",
+          "rawSha256": "2c03a0a8f2935008529e1ea2495df127b3419672a0036ffb03bfa55bc110abcb"
+        },
+        {
+          "file": "captures/turn_state-53eef0ad22b6-http-0004.json",
+          "sha256": "1c1a1a951b191ac19581f8f1e8666e620fb4f21a4b15a995f67d9a8ad833c2e3",
+          "rawSha256": "a40366db2951c9a47d3726804e15f001d1cbde2b2d6b735400c3e759887f832c"
+        },
+        {
+          "file": "captures/turn_state-53eef0ad22b6-http-0005.json",
+          "sha256": "9f8c3eedf87ffa12e7c78bddff80494b4888cda21beef54bc6de0792b8561d78",
+          "rawSha256": "23948b60f832f6a3412df029f2221a142cdb1274f6b64832f73891ac6f05d77d"
+        },
+        {
+          "file": "captures/turn_state-53eef0ad22b6-server-script-0000.json",
+          "sha256": "aca54442a224ef573efc5cb451ef04dd53fd13d1242ffc898d10df96b4e5c843",
+          "rawSha256": "886ea4ab0995424ec2790555f6f6d3fae10fbec995b58123ec4af320773f849e"
+        },
+        {
+          "file": "captures/turn_state-53eef0ad22b6-server-script-0001.json",
+          "sha256": "523ba5ad44d0eb72eb7ea151a8341aa2b1a31489a2245797c5806074f852bec8",
+          "rawSha256": "5de950bee800b7c1855c697c7247c38ce2b3d6e9890e032f60531ee54d12d6a2"
+        },
+        {
+          "file": "captures/turn_state-53eef0ad22b6-server-script-0002.json",
+          "sha256": "4f980b307b372ffe350995e9f9491e448145b449c40683f69bc6b761ba3863c1",
+          "rawSha256": "f0fb814fb4964a0f37ecd846d838900ea4c65abb42a9511fc5a44d6753ae8583"
+        }
+      ],
+      "scripts": [
+        [
+          {
+            "response": {
+              "id": "resp-1"
+            },
+            "type": "response.created"
+          },
+          {
+            "item": {
+              "encrypted_content": "YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYg==",
+              "id": "rsn-1",
+              "summary": [
+                {
+                  "text": "thinking",
+                  "type": "summary_text"
+                }
+              ],
+              "type": "reasoning"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "item": {
+              "arguments": "{\"cmd\":\"echo turn-state\"}",
+              "call_id": "shell-turn-state",
+              "name": "exec_command",
+              "type": "function_call"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "response": {
+              "id": "resp-1",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ],
+        [
+          {
+            "response": {
+              "id": "resp-2"
+            },
+            "type": "response.created"
+          },
+          {
+            "item": {
+              "content": [
+                {
+                  "text": "done",
+                  "type": "output_text"
+                }
+              ],
+              "id": "msg-1",
+              "role": "assistant",
+              "type": "message"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "response": {
+              "id": "resp-2",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ],
+        [
+          {
+            "response": {
+              "id": "resp-3"
+            },
+            "type": "response.created"
+          },
+          {
+            "item": {
+              "content": [
+                {
+                  "text": "done",
+                  "type": "output_text"
+                }
+              ],
+              "id": "msg-2",
+              "role": "assistant",
+              "type": "message"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "response": {
+              "id": "resp-3",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ]
+      ],
+      "native": [
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:run a shell command"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": "ts-1",
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:run a shell command",
+            "server:0.0",
+            "server:0.1",
+            "function_call_output:shell-turn-state"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 2,
+          "retryOf": null,
+          "conversation": [
+            "user:run a shell command",
+            "server:0.0",
+            "server:0.1",
+            "function_call_output:shell-turn-state",
+            "server:1.0",
+            "user:second turn"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "transport-upgrade-426-sse",
+      "expectedSleeps": [],
+      "sleepSource": "the native case has no failed response, so no retry wait",
+      "nativeTimeline": [
+        "upgrade",
+        "http"
+      ],
+      "timelineSource": "websocket_fallback.rs:66-79 (one startup upgrade answered 426, then HTTP with no further upgrade; comment :74-77)",
+      "area": "transport",
+      "capturePrefix": "websocket_fallback-c4feeca2c823",
+      "test": "suite::websocket_fallback::websocket_fallback_switches_to_http_on_upgrade_required_connect",
+      "source": [
+        "core/tests/suite/websocket_fallback.rs:34-81"
+      ],
+      "prompts": [
+        "hello"
+      ],
+      "steps": [
+        "prompt:0"
+      ],
+      "upgrade": 426,
+      "providerRetries": {
+        "requestMaxRetries": 0,
+        "streamMaxRetries": 2
+      },
+      "responses": [
+        {
+          "script": 0
+        }
+      ],
+      "nativeLog": "logs/cases/websocket_fallback-c4feeca2c823.log",
+      "captures": [
+        {
+          "file": "captures/websocket_fallback-c4feeca2c823-http-0001.json",
+          "sha256": "5283654dae3e2defd535e63214a4799c3fd85bf100958d11ef5949505a4e99d0",
+          "rawSha256": "a4540c151fae458ad46939e47366ff7d4e0e1bef3d123e132578a949842ed5ee"
+        },
+        {
+          "file": "captures/websocket_fallback-c4feeca2c823-server-script-0000.json",
+          "sha256": "d4c149accf08d5dd52d7822025652ce46ab4ea17c552fcbe68162fbe5200a8cc",
+          "rawSha256": "ab171960bf39e2fadfcdd6b06ff61f20c2c9fe92748bba1ea0124f0350036d25"
+        }
+      ],
+      "scripts": [
+        [
+          {
+            "response": {
+              "id": "resp-1"
+            },
+            "type": "response.created"
+          },
+          {
+            "response": {
+              "id": "resp-1",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ]
+      ],
+      "native": [
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:hello"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "transport-fallback-sticky",
+      "expectedSleeps": [
+        [
+          180,
+          220
+        ],
+        [
+          360,
+          440
+        ]
+      ],
+      "sleepSource": "native backoff 200ms*2^(n-1) +-10% (bounds retry_after.rs:49-52) for the two WebSocket stream retries (websocket_fallback.rs:248-251); not asserted by this native test",
+      "nativeTimeline": [
+        "upgrade",
+        "upgrade",
+        "upgrade",
+        "upgrade",
+        "http",
+        "http"
+      ],
+      "timelineSource": "websocket_fallback.rs:238-253 (startup prewarm plus 3 stream attempts, then HTTP; sticky second turn adds none)",
+      "area": "transport",
+      "capturePrefix": "websocket_fallback-3a1f2025ae35",
+      "test": "suite::websocket_fallback::websocket_fallback_is_sticky_across_turns",
+      "source": [
+        "core/tests/suite/websocket_fallback.rs:210-257",
+        "core/tests/suite/retry_after.rs:49-52"
+      ],
+      "prompts": [
+        "first",
+        "second"
+      ],
+      "steps": [
+        "prompt:0",
+        "prompt:1"
+      ],
+      "upgrade": 404,
+      "providerRetries": {
+        "requestMaxRetries": 0,
+        "streamMaxRetries": 2
+      },
+      "responses": [
+        {
+          "script": 0
+        },
+        {
+          "script": 1
+        }
+      ],
+      "nativeLog": "logs/cases/websocket_fallback-3a1f2025ae35.log",
+      "captures": [
+        {
+          "file": "captures/websocket_fallback-3a1f2025ae35-http-0002.json",
+          "sha256": "cda16f9400020ae3fb573cc096c7d103d4b61c835bc5f3448354a280ab50f29b",
+          "rawSha256": "17957a9143f1a7fefeb4d3b93aa40bc7538b68229fd1c0403f3262c5692a75e1"
+        },
+        {
+          "file": "captures/websocket_fallback-3a1f2025ae35-http-0003.json",
+          "sha256": "7343de4a830636da9a17e62634604d67a6ab0c81da01696eb67f18b2e53af1e2",
+          "rawSha256": "1c18dabaeca9795153445a64bdbc7c2e1496079964a978c5db0b780506186831"
+        },
+        {
+          "file": "captures/websocket_fallback-3a1f2025ae35-server-script-0000.json",
+          "sha256": "a79553d9078c0c1191eb1fde4532249c3ecd282f6a186d821fba020c1b41b940",
+          "rawSha256": "ab171960bf39e2fadfcdd6b06ff61f20c2c9fe92748bba1ea0124f0350036d25"
+        },
+        {
+          "file": "captures/websocket_fallback-3a1f2025ae35-server-script-0001.json",
+          "sha256": "dc182605cc43af63d7b5c0897c80aadbfa8076076e2baca8a4370c1f169aecdf",
+          "rawSha256": "da5e7f811c5982ad074be5b045a177fc7e6a1a1c29826376ae52f4b0007f0f0d"
+        }
+      ],
+      "scripts": [
+        [
+          {
+            "response": {
+              "id": "resp-1"
+            },
+            "type": "response.created"
+          },
+          {
+            "response": {
+              "id": "resp-1",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ],
+        [
+          {
+            "response": {
+              "id": "resp-2"
+            },
+            "type": "response.created"
+          },
+          {
+            "response": {
+              "id": "resp-2",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ]
+      ],
+      "native": [
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:first"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 1,
+          "retryOf": null,
+          "conversation": [
+            "user:first",
+            "user:second"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "transport-zstd-codex-backend",
+      "expectedSleeps": [],
+      "sleepSource": "the native case has no failed response, so no retry wait",
+      "area": "transport",
+      "capturePrefix": "request_body_is_zstd_compressed_for_codex_backend_when_enabled-0ac320448269",
+      "test": "suite::request_compression::request_body_is_zstd_compressed_for_codex_backend_when_enabled",
+      "source": [
+        "core/tests/suite/request_compression.rs:19-62"
+      ],
+      "prompts": [
+        "compress me"
+      ],
+      "steps": [
+        "prompt:0"
+      ],
+      "upgrade": "none",
+      "responses": [
+        {
+          "script": 0
+        }
+      ],
+      "nativeLog": "logs/cases/request_body_is_zstd_compressed_for_codex_backend_when_enabled-0ac320448269.log",
+      "captures": [
+        {
+          "file": "captures/request_body_is_zstd_compressed_for_codex_backend_when_enabled-0ac320448269-http-0001.json",
+          "sha256": "86df8d87e431b9e2eb11208cdc54ba5a9a437d51e2e39527cbb653fb8df06060",
+          "rawSha256": "000f4f8f0d47b087550109d93b94826e5d362aed9136dd57a98354811dca933f"
+        },
+        {
+          "file": "captures/request_body_is_zstd_compressed_for_codex_backend_when_enabled-0ac320448269-server-script-0000.json",
+          "sha256": "4b5b6874acf0e9d2ec5d7738a220fa41299c97cd50964e22927fc9c03b97e5bc",
+          "rawSha256": "ab171960bf39e2fadfcdd6b06ff61f20c2c9fe92748bba1ea0124f0350036d25"
+        }
+      ],
+      "scripts": [
+        [
+          {
+            "response": {
+              "id": "resp-1"
+            },
+            "type": "response.created"
+          },
+          {
+            "response": {
+              "id": "resp-1",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ]
+      ],
+      "native": [
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:compress me"
+          ]
+        }
+      ],
+      "nativeContentEncoding": [
+        "zstd"
+      ]
+    },
+    {
+      "id": "retry-http-503-retry-after",
+      "expectedSleeps": [
+        [
+          1000,
+          1001
+        ],
+        [
+          1000,
+          1001
+        ]
+      ],
+      "sleepSource": "Retry-After 1 (retry_after.rs:289, :292); each delay <= 1s and the wait >= 1s (retry_after.rs:311-333), so exactly 1000 ms on the injected clock",
+      "area": "retry",
+      "capturePrefix": "retry_after-e3e512df77d6",
+      "test": "suite::retry_after::responses_http_uses_retry_after",
+      "source": [
+        "core/tests/suite/retry_after.rs:279-343"
+      ],
+      "prompts": [
+        "retry the upstream overload"
+      ],
+      "steps": [
+        "prompt:0"
+      ],
+      "upgrade": "none",
+      "providerRetries": {
+        "requestMaxRetries": 1,
+        "streamMaxRetries": 1
+      },
+      "responses": [
+        {
+          "status": 503,
+          "headers": {
+            "retry-after": "1",
+            "content-type": "application/json"
+          },
+          "body": "{\"error\":{\"code\":\"server_is_overloaded\"}}"
+        },
+        {
+          "status": 503,
+          "headers": {
+            "retry-after": "1",
+            "content-type": "application/json"
+          },
+          "body": "{\"error\":{\"code\":\"server_is_overloaded\"}}"
+        },
+        {
+          "script": 0
+        }
+      ],
+      "nativeLog": "logs/cases/retry_after-e3e512df77d6.log",
+      "captures": [
+        {
+          "file": "captures/retry_after-e3e512df77d6-http-0001.json",
+          "sha256": "60523e2c42e45aaf3d07d5d124cebd34e8e302828a5ad63d7fe0286c2919903b",
+          "rawSha256": "9cd0e50065073a97039b4a9dd286ba7eb733089a02782e046b90623f1a9b1975"
+        },
+        {
+          "file": "captures/retry_after-e3e512df77d6-http-0002.json",
+          "sha256": "c3f9fdc56b741304d206105cacad8697f302b077ecb9c96e90c0979a918d9060",
+          "rawSha256": "9cd0e50065073a97039b4a9dd286ba7eb733089a02782e046b90623f1a9b1975"
+        },
+        {
+          "file": "captures/retry_after-e3e512df77d6-http-0003.json",
+          "sha256": "1169ed4eb3ec2eac550bda381b834cb69c06a5ddbd3f76d7a35b70b8a785a51d",
+          "rawSha256": "bfad422ddd1309a2b4683849418ce75c44b7c3714622fc880b03ec5cede79e6c"
+        },
+        {
+          "file": "captures/retry_after-e3e512df77d6-server-script-0000.json",
+          "sha256": "0ffa969d05d02afac98257902ce45eb726156d8668f70af856aef1c59de271a6",
+          "rawSha256": "95c64351b6217a333dbeb3f54d5f108a2914ea7149ae71e80e1713a6ad5acdb6"
+        }
+      ],
+      "scripts": [
+        [
+          {
+            "response": {
+              "id": "recovered"
+            },
+            "type": "response.created"
+          },
+          {
+            "response": {
+              "id": "recovered",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ]
+      ],
+      "native": [
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:retry the upstream overload"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": 0,
+          "conversation": [
+            "user:retry the upstream overload"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": 0,
+          "conversation": [
+            "user:retry the upstream overload"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "retry-http-429-retry-after",
+      "expectedSleeps": [
+        [
+          1000,
+          1001
+        ]
+      ],
+      "sleepSource": "Retry-After 1 (retry_after.rs:355); delay <= 1s and wait >= 1s (retry_after.rs:374-384), so exactly 1000 ms on the injected clock",
+      "area": "retry",
+      "capturePrefix": "retry_after-7116a5ab3831",
+      "test": "suite::retry_after::responses_http_429_uses_retry_after",
+      "source": [
+        "core/tests/suite/retry_after.rs:345-402"
+      ],
+      "prompts": [
+        "retry the rate-limited request"
+      ],
+      "steps": [
+        "prompt:0"
+      ],
+      "upgrade": "none",
+      "providerRetries": {
+        "requestMaxRetries": 0,
+        "streamMaxRetries": 1
+      },
+      "responses": [
+        {
+          "status": 429,
+          "headers": {
+            "retry-after": "1",
+            "content-type": "application/json"
+          },
+          "body": "{\"error\":{\"code\":\"rate_limit_exceeded\"}}"
+        },
+        {
+          "script": 0
+        }
+      ],
+      "nativeLog": "logs/cases/retry_after-7116a5ab3831.log",
+      "captures": [
+        {
+          "file": "captures/retry_after-7116a5ab3831-http-0001.json",
+          "sha256": "4bbdf3b1170c2719781780a0123aa67076c2249101f30ab141bf499e05915b34",
+          "rawSha256": "6b28745a8e0f4ac7e6b536d42725da63574c4e09cd7a9f09424e1e4ddea0bd5d"
+        },
+        {
+          "file": "captures/retry_after-7116a5ab3831-http-0002.json",
+          "sha256": "5b0b4d1d3b6c377e47afd32d6db7907c612c4e77f2a33a0f9969473d8833affd",
+          "rawSha256": "882f866e039b2551dc29c9c5a6c396642c054d8e18aa8bb813904f091098ec97"
+        },
+        {
+          "file": "captures/retry_after-7116a5ab3831-server-script-0000.json",
+          "sha256": "4c979297b5b5095ead98286a66a143396afa414e3d8529d83adf4ab0b2d9c6ff",
+          "rawSha256": "95c64351b6217a333dbeb3f54d5f108a2914ea7149ae71e80e1713a6ad5acdb6"
+        }
+      ],
+      "scripts": [
+        [
+          {
+            "response": {
+              "id": "recovered"
+            },
+            "type": "response.created"
+          },
+          {
+            "response": {
+              "id": "recovered",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ]
+      ],
+      "native": [
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:retry the rate-limited request"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": 0,
+          "conversation": [
+            "user:retry the rate-limited request"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "retry-sse-failed-exhausts-stream-budget",
+      "expectedSleeps": [
+        [
+          180,
+          220
+        ]
+      ],
+      "sleepSource": "first local backoff within FIRST_RETRY_MIN/MAX_DELAY (retry_after.rs:49-50, asserted at :1155-1157)",
+      "area": "retry",
+      "capturePrefix": "retry_after-bc509159a8fe",
+      "test": "suite::retry_after::sse_failure_without_retry_after_exhausts_stream_retries::rate_limit",
+      "source": [
+        "core/tests/suite/retry_after.rs:1121-1204"
+      ],
+      "prompts": [
+        "exhaust the headerless rate-limited stream"
+      ],
+      "steps": [
+        "prompt:0"
+      ],
+      "upgrade": "none",
+      "providerRetries": {
+        "requestMaxRetries": 0,
+        "streamMaxRetries": 1
+      },
+      "expectError": true,
+      "responses": [
+        {
+          "script": 0
+        },
+        {
+          "script": 1
+        }
+      ],
+      "nativeLog": "logs/cases/retry_after-bc509159a8fe.log",
+      "captures": [
+        {
+          "file": "captures/retry_after-bc509159a8fe-http-0002.json",
+          "sha256": "409f00e25a20da691bf6d507c2a1835313bff50e9d400789a3ab3cd3b397eefc",
+          "rawSha256": "5ab3d78a0073ab220230cdb00a646e0a1ee1ffd12716257bfa6f26f0824b99db"
+        },
+        {
+          "file": "captures/retry_after-bc509159a8fe-http-0003.json",
+          "sha256": "962580d5553b31ab0aed999fbd2bdf2fb44d483f7eebfa8396e6cbed7fb3e347",
+          "rawSha256": "89e1590dff71732753af413e8443f1bb80712d6cae0fe707f46d605fc5551ecc"
+        },
+        {
+          "file": "captures/retry_after-bc509159a8fe-server-script-0000.json",
+          "sha256": "4fdfb440ab71639a4fe153cc2bef798e45654f41ae1fb1bd12f1965b87e26b63",
+          "rawSha256": "3b4026db7e57f7d55e235059b8e51fe8ec96539c8bc32a4d5a7dda8bfb2ec7fe"
+        },
+        {
+          "file": "captures/retry_after-bc509159a8fe-server-script-0001.json",
+          "sha256": "932a4dfb74fe10c6e3783f169ce32016b4d96fb257a92d2df54aac1e430ff1c6",
+          "rawSha256": "635e8fb96d08cba094ac49b585ae28b20588bc3940f923feaf83873bdc6b875e"
+        }
+      ],
+      "scripts": [
+        [
+          {
+            "response": {
+              "error": {
+                "code": "rate_limit_exceeded",
+                "message": "Rate limit exceeded."
+              },
+              "id": "rate-limited"
+            },
+            "type": "response.failed"
+          }
+        ],
+        [
+          {
+            "response": {
+              "error": {
+                "code": "rate_limit_exceeded",
+                "message": "Rate limit exceeded."
+              },
+              "id": "still-rate-limited"
+            },
+            "type": "response.failed"
+          }
+        ]
+      ],
+      "native": [
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:exhaust the headerless rate-limited stream"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": 0,
+          "conversation": [
+            "user:exhaust the headerless rate-limited stream"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "compaction-manual-stream-retry-budget",
+      "expectedSleeps": [
+        [
+          180,
+          220
+        ],
+        [
+          360,
+          440
+        ]
+      ],
+      "sleepSource": "native backoff 200ms*2^(n-1) +-10% (bounds retry_after.rs:49-52) for the two compaction stream retries (budgets compact_remote.rs:1189-1192); not asserted by this native test",
+      "area": "compaction",
+      "capturePrefix": "compact_remote-fa6b7295c23b",
+      "test": "suite::compact_remote::remote_compact_v2_retries_failures_with_stream_retry_budget",
+      "source": [
+        "core/tests/suite/compact_remote.rs:1183-1286",
+        "core/tests/suite/retry_after.rs:49-52"
+      ],
+      "prompts": [
+        "hello remote compact",
+        "after compact"
+      ],
+      "steps": [
+        "prompt:0",
+        "compact",
+        "prompt:1"
+      ],
+      "upgrade": "none",
+      "providerRetries": {
+        "requestMaxRetries": 0,
+        "streamMaxRetries": 2
+      },
+      "responses": [
+        {
+          "script": 0
+        },
+        {
+          "status": 500,
+          "headers": {
+            "content-type": "text/plain"
+          },
+          "body": "first compact open failed"
+        },
+        {
+          "script": 1
+        },
+        {
+          "script": 2
+        },
+        {
+          "script": 3
+        }
+      ],
+      "nativeLog": "logs/cases/compact_remote-fa6b7295c23b.log",
+      "captures": [
+        {
+          "file": "captures/compact_remote-fa6b7295c23b-http-0004.json",
+          "sha256": "347416e1bfc8ca5d9eff5656830b467b7a32684cf77ed42d47863f3070d16abc",
+          "rawSha256": "1c18864d98ded11702d258501bb092bbd45c8526ad727f295e27dd2eaac61967"
+        },
+        {
+          "file": "captures/compact_remote-fa6b7295c23b-http-0005.json",
+          "sha256": "53289a1a8eb5b1031eaf20eaaee952f1544f964d64aedf71d002e5556ebc3821",
+          "rawSha256": "f0525b91b72df31b7016ead1a963567fb0a7341395814be595051d2306ae9417"
+        },
+        {
+          "file": "captures/compact_remote-fa6b7295c23b-http-0006.json",
+          "sha256": "87cc23127842619a5e2bee651b08fd1e032a90ed6d9efd731c438f46b46e0ddb",
+          "rawSha256": "12c92e99a0ea4d26891df2cd22fa3e6db802be35b9df86e8020172a8bd304533"
+        },
+        {
+          "file": "captures/compact_remote-fa6b7295c23b-http-0007.json",
+          "sha256": "504f456f81dd6365ff19200035cdb58d5de7c01353efc8690c0ad059e819664c",
+          "rawSha256": "85e986f85e5c9066704dd1d35bb325f1b14f5e067ec25df4f7dfe001f5974082"
+        },
+        {
+          "file": "captures/compact_remote-fa6b7295c23b-http-0008.json",
+          "sha256": "b3f6591cc2dd808ed38f03514ee0ebe7f24a69e1db9b7acb83cde45e6da69187",
+          "rawSha256": "50f92b0c81ae59c0f4ad703b65ef30265ee8c891d79f8b44a14131fb8ef43d62"
+        },
+        {
+          "file": "captures/compact_remote-fa6b7295c23b-server-script-0000.json",
+          "sha256": "56241296fb5f0ec167341caacf20e37b729a2e33d4b9cd23c4c9242852b2b51c",
+          "rawSha256": "8de84a2827cb9a1a62b8ce7fc2cf28b2054cd397c4988d685fb356015c625d77"
+        },
+        {
+          "file": "captures/compact_remote-fa6b7295c23b-server-script-0001.json",
+          "sha256": "e1c444ab2bfeef2a4051ef64e9dacd6899ba5bd382cc3401d66f421910190e7a",
+          "rawSha256": "39cc0dd0705fa37fdfb83fe9c5983d8b51b91232f4c42270de5fecda72cf36eb"
+        },
+        {
+          "file": "captures/compact_remote-fa6b7295c23b-server-script-0002.json",
+          "sha256": "168e61fd2be064ae570deb17d15ecd57b1e7fb71ac8273c1fccd9f3425acf1c8",
+          "rawSha256": "dd32828a3509453d5b200515b5b16ae7d953e2e52ac521800bf45948142cecfd"
+        },
+        {
+          "file": "captures/compact_remote-fa6b7295c23b-server-script-0003.json",
+          "sha256": "be3ece8d77a70f428cc6bce35462557b96b001e27e7db8a66212c43dda48c15b",
+          "rawSha256": "a1011867a6d2af13291fedb83c5f13988a31eb4ab60f8cf0a19bca9995dcf1f2"
+        }
+      ],
+      "scripts": [
+        [
+          {
+            "item": {
+              "content": [
+                {
+                  "text": "FIRST_REMOTE_REPLY",
+                  "type": "output_text"
+                }
+              ],
+              "id": "m1",
+              "role": "assistant",
+              "type": "message"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "response": {
+              "id": "resp-1",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ],
+        [
+          {
+            "item": {
+              "encrypted_content": "FAILED_COMPACT_SUMMARY",
+              "type": "compaction"
+            },
+            "type": "response.output_item.done"
+          }
+        ],
+        [
+          {
+            "item": {
+              "encrypted_content": "RETRIED_COMPACT_SUMMARY",
+              "type": "compaction"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "response": {
+              "id": "resp-compact-retry",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ],
+        [
+          {
+            "item": {
+              "content": [
+                {
+                  "text": "AFTER_COMPACT_REPLY",
+                  "type": "output_text"
+                }
+              ],
+              "id": "m2",
+              "role": "assistant",
+              "type": "message"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "response": {
+              "id": "resp-2",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ]
+      ],
+      "native": [
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:hello remote compact"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "compaction",
+          "compaction": {
+            "trigger": "manual",
+            "reason": "user_requested",
+            "implementation": "responses_compaction_v2",
+            "phase": "standalone_turn",
+            "strategy": "memento"
+          },
+          "turnGroup": 1,
+          "retryOf": null,
+          "conversation": [
+            "user:hello remote compact",
+            "server:0.0",
+            "compaction_trigger"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "compaction",
+          "compaction": {
+            "trigger": "manual",
+            "reason": "user_requested",
+            "implementation": "responses_compaction_v2",
+            "phase": "standalone_turn",
+            "strategy": "memento"
+          },
+          "turnGroup": 1,
+          "retryOf": 1,
+          "conversation": [
+            "user:hello remote compact",
+            "server:0.0",
+            "compaction_trigger"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "compaction",
+          "compaction": {
+            "trigger": "manual",
+            "reason": "user_requested",
+            "implementation": "responses_compaction_v2",
+            "phase": "standalone_turn",
+            "strategy": "memento"
+          },
+          "turnGroup": 1,
+          "retryOf": 1,
+          "conversation": [
+            "user:hello remote compact",
+            "server:0.0",
+            "compaction_trigger"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 4,
+          "retryOf": null,
+          "conversation": [
+            "user:hello remote compact",
+            "server:2.0",
+            "user:after compact"
+          ]
+        }
+      ],
+      "nativeContentEncoding": [
+        "zstd",
+        "zstd",
+        "zstd",
+        "zstd",
+        "zstd"
+      ]
+    },
+    {
+      "id": "compaction-manual-http-retry-after",
+      "expectedSleeps": [
+        [
+          1000,
+          1001
+        ]
+      ],
+      "sleepSource": "Retry-After 1 (retry_after.rs:633); delay <= 1s and wait >= 1s (retry_after.rs:660-670), so exactly 1000 ms on the injected clock",
+      "area": "compaction",
+      "capturePrefix": "retry_after-c66dc4150d8f",
+      "test": "suite::retry_after::compact_v2_uses_retry_after",
+      "source": [
+        "core/tests/suite/retry_after.rs:619-688"
+      ],
+      "prompts": [
+        "seed history for compaction"
+      ],
+      "steps": [
+        "prompt:0",
+        "compact"
+      ],
+      "upgrade": "none",
+      "providerRetries": {
+        "requestMaxRetries": 1,
+        "streamMaxRetries": 0
+      },
+      "responses": [
+        {
+          "script": 0
+        },
+        {
+          "status": 503,
+          "headers": {
+            "retry-after": "1",
+            "content-type": "application/json"
+          },
+          "body": "{\"error\":{\"code\":\"server_is_overloaded\"}}"
+        },
+        {
+          "script": 1
+        }
+      ],
+      "nativeLog": "logs/cases/retry_after-c66dc4150d8f.log",
+      "captures": [
+        {
+          "file": "captures/retry_after-c66dc4150d8f-http-0002.json",
+          "sha256": "057e39866fe96c7c6c402d19c24a590ac61a411706c083ea7335e2ca46a29130",
+          "rawSha256": "d02fbee880d874016745f0a51fa1065cc092ca8bc89abebc5b31b469e02f4b2d"
+        },
+        {
+          "file": "captures/retry_after-c66dc4150d8f-http-0003.json",
+          "sha256": "fc99c2bc3b410e366e9b1b1ac7d734996d7b5a15493f77f5e8254ac6f23b9609",
+          "rawSha256": "2be133cb94ef7c1ffc7f3a586a7f8e3f2cb378c2d72e9944b669975424ed1dcc"
+        },
+        {
+          "file": "captures/retry_after-c66dc4150d8f-http-0004.json",
+          "sha256": "2b21f581921d17bd8ef48f57f75c28062e1c5b1d819d6e0d4c5baa9844e40fef",
+          "rawSha256": "2be133cb94ef7c1ffc7f3a586a7f8e3f2cb378c2d72e9944b669975424ed1dcc"
+        },
+        {
+          "file": "captures/retry_after-c66dc4150d8f-server-script-0000.json",
+          "sha256": "49ae3c8fd13000ef08bc06d5a2bc138ea52c674121f70a880d4d96ae251176e0",
+          "rawSha256": "04d4e27eacc8c477013eda720aa63aeb3e6d80800b3f944c31ddeb71049e25e7"
+        },
+        {
+          "file": "captures/retry_after-c66dc4150d8f-server-script-0001.json",
+          "sha256": "377721cdc29a2036293694f119765b72008eebd5ce82f30f9e9191a0fd8e8fa4",
+          "rawSha256": "2fc87a9ac7cbc69d1a7926760963a4b5e856196f39e92e95ad836f0b9f0482df"
+        }
+      ],
+      "scripts": [
+        [
+          {
+            "response": {
+              "id": "seed"
+            },
+            "type": "response.created"
+          },
+          {
+            "response": {
+              "id": "seed",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ],
+        [
+          {
+            "item": {
+              "encrypted_content": "RETRIED_COMPACTION_SUMMARY",
+              "type": "compaction"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "response": {
+              "id": "compacted",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ]
+      ],
+      "native": [
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:seed history for compaction"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "compaction",
+          "compaction": {
+            "trigger": "manual",
+            "reason": "user_requested",
+            "implementation": "responses_compaction_v2",
+            "phase": "standalone_turn",
+            "strategy": "memento"
+          },
+          "turnGroup": 1,
+          "retryOf": null,
+          "conversation": [
+            "user:seed history for compaction",
+            "compaction_trigger"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "compaction",
+          "compaction": {
+            "trigger": "manual",
+            "reason": "user_requested",
+            "implementation": "responses_compaction_v2",
+            "phase": "standalone_turn",
+            "strategy": "memento"
+          },
+          "turnGroup": 1,
+          "retryOf": 1,
+          "conversation": [
+            "user:seed history for compaction",
+            "compaction_trigger"
+          ]
+        }
+      ],
+      "nativeContentEncoding": [
+        "zstd",
+        "zstd",
+        "zstd"
+      ]
+    },
+    {
+      "id": "compaction-mid-turn-turn-state",
+      "expectedSleeps": [],
+      "sleepSource": "the native case has no failed response, so no retry wait",
+      "area": "compaction",
+      "capturePrefix": "compact_remote-91e24d45dbc1",
+      "test": "suite::compact_remote::remote_mid_turn_compact_v2_sends_turn_state_over_http",
+      "source": [
+        "core/tests/suite/compact_remote.rs:1522-1620"
+      ],
+      "prompts": [
+        "RUN_WITH_MID_TURN_COMPACT_V2"
+      ],
+      "steps": [
+        "prompt:0"
+      ],
+      "upgrade": "none",
+      "autoCompactTokenLimit": 200,
+      "responses": [
+        {
+          "script": 0,
+          "headers": {
+            "x-codex-turn-state": "sampling-state"
+          }
+        },
+        {
+          "script": 1,
+          "headers": {
+            "x-codex-turn-state": "compact-state"
+          }
+        },
+        {
+          "script": 2,
+          "headers": {
+            "x-codex-turn-state": "continuation-state"
+          }
+        },
+        {
+          "script": 3
+        }
+      ],
+      "nativeLog": "logs/cases/compact_remote-91e24d45dbc1.log",
+      "captures": [
+        {
+          "file": "captures/compact_remote-91e24d45dbc1-http-0004.json",
+          "sha256": "1f96160fe505e2b642abd19949db3b113d3187e50614aec7075f7aa420166dc6",
+          "rawSha256": "604901057af799c050189ac0bac381c647b239a8e1dea354dc80437d5b0b3807"
+        },
+        {
+          "file": "captures/compact_remote-91e24d45dbc1-http-0005.json",
+          "sha256": "7e8d4bf25d5b0c65f21a64741e226a82bcf38d7d5b635d1889b85b9486803a39",
+          "rawSha256": "3527c2a1c985f53f9f56ae6d6cd8bdc05744ef9f12b6bf4416da69053d9742ed"
+        },
+        {
+          "file": "captures/compact_remote-91e24d45dbc1-http-0006.json",
+          "sha256": "5d7cacffab08a92fc516956b463aee60d8061ff744dfffc5fb8d4b0ea1093db5",
+          "rawSha256": "8b6483493299edddfda0cb69520bed8b1f1948a52d9a71bcd921e5b420504a16"
+        },
+        {
+          "file": "captures/compact_remote-91e24d45dbc1-http-0007.json",
+          "sha256": "98d0496db752b8293b715bd6ed7212e203860a11a397b3f4627eeecd8780e137",
+          "rawSha256": "f02452ba4b628bb5637ad17f99b19fe3510539cf41e91e3eb8909532c47b15af"
+        },
+        {
+          "file": "captures/compact_remote-91e24d45dbc1-server-script-0000.json",
+          "sha256": "a0486d32b43b22ecc0eec29978b8e7921a182196f05b62c0eaa3a825dd15943a",
+          "rawSha256": "385c1e89a834047d2ecb8471c7299168e1b5d236b9f66148cc9734cad6388be7"
+        },
+        {
+          "file": "captures/compact_remote-91e24d45dbc1-server-script-0001.json",
+          "sha256": "9807d996b1b708b318858993ecd125a9b353a9c753f48ecdd27f2867f8672fe6",
+          "rawSha256": "188eb9f6f2a721718c6be036cc8af0ecac76c05828891bd8c7d94eeba96008d3"
+        },
+        {
+          "file": "captures/compact_remote-91e24d45dbc1-server-script-0002.json",
+          "sha256": "eb4c70757654cd111915bc5283de651f02efb28720130712e3ab69067c0b4dcd",
+          "rawSha256": "64bced8af2eb7186568023eb4c978fe56f38bd909a89e98fb97553815c3d0d23"
+        },
+        {
+          "file": "captures/compact_remote-91e24d45dbc1-server-script-0003.json",
+          "sha256": "e68fb852372ffbaae5cc3fed595090b8d5d23f950e467c8b6730565d73bc02cf",
+          "rawSha256": "a6c4b2689921d305a326f9a020bd335ada1632bcde443eb3597c02f246f6cbf8"
+        }
+      ],
+      "scripts": [
+        [
+          {
+            "item": {
+              "arguments": "{}",
+              "call_id": "call-before-compact",
+              "name": "test_tool",
+              "type": "function_call"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "response": {
+              "id": "r1",
+              "usage": {
+                "input_tokens": 500,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 500
+              }
+            },
+            "type": "response.completed"
+          }
+        ],
+        [
+          {
+            "item": {
+              "encrypted_content": "V2_COMPACT_SUMMARY",
+              "type": "compaction"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "response": {
+              "id": "r-compact",
+              "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 0
+              }
+            },
+            "type": "response.completed"
+          }
+        ],
+        [
+          {
+            "item": {
+              "arguments": "{}",
+              "call_id": "call-after-compact",
+              "name": "test_tool",
+              "type": "function_call"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "response": {
+              "id": "r2",
+              "usage": {
+                "input_tokens": 80,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 80
+              }
+            },
+            "type": "response.completed"
+          }
+        ],
+        [
+          {
+            "item": {
+              "content": [
+                {
+                  "text": "FINAL_REPLY",
+                  "type": "output_text"
+                }
+              ],
+              "id": "m1",
+              "role": "assistant",
+              "type": "message"
+            },
+            "type": "response.output_item.done"
+          },
+          {
+            "response": {
+              "id": "r3",
+              "usage": {
+                "input_tokens": 80,
+                "input_tokens_details": null,
+                "output_tokens": 0,
+                "output_tokens_details": null,
+                "total_tokens": 80
+              }
+            },
+            "type": "response.completed"
+          }
+        ]
+      ],
+      "native": [
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": null,
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:RUN_WITH_MID_TURN_COMPACT_V2"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": "sampling-state",
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "compaction",
+          "compaction": {
+            "trigger": "auto",
+            "reason": "context_limit",
+            "implementation": "responses_compaction_v2",
+            "phase": "mid_turn",
+            "strategy": "memento"
+          },
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:RUN_WITH_MID_TURN_COMPACT_V2",
+            "server:0.0",
+            "function_call_output:call-before-compact",
+            "compaction_trigger"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": "sampling-state",
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:RUN_WITH_MID_TURN_COMPACT_V2",
+            "server:1.0"
+          ]
+        },
+        {
+          "transport": "http",
+          "endpoint": "responses",
+          "accept": "text/event-stream",
+          "turnState": "sampling-state",
+          "type": null,
+          "generate": null,
+          "previousResponseId": null,
+          "requestKind": "turn",
+          "compaction": null,
+          "turnGroup": 0,
+          "retryOf": null,
+          "conversation": [
+            "user:RUN_WITH_MID_TURN_COMPACT_V2",
+            "server:1.0",
+            "server:2.0",
+            "function_call_output:call-after-compact"
+          ]
+        }
+      ],
+      "nativeContentEncoding": [
+        "zstd",
+        "zstd",
+        "zstd",
+        "zstd"
+      ]
+    }
+  ]
+}

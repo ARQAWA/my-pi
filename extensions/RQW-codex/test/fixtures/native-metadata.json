@@ -1,0 +1,103 @@
+{
+  "schema": "rqw-codex/native-metadata-golden@1",
+  "label": "codec projection fixture; authMode omitted (native case uses ApiKey auth, so no guardian flag); not a subscription login proof",
+  "provenance": {
+    "pin": {
+      "release": "rust-v0.163.0",
+      "version": "0.163.0",
+      "commit": "83086188ae0614bd882818ff1aa23f3194962012"
+    },
+    "nativeSources": [
+      {
+        "file": "codex-rs/core/src/responses_metadata.rs",
+        "sha256": "e532cebcbbeec07469ddcb4e3355a98715146498fa16ef1bcb6245bbe440d376"
+      },
+      {
+        "file": "codex-rs/core/src/client.rs",
+        "sha256": "934ac0856c95f11d554e692e7ccf975822de1c916c037c9beddfe26832854e13"
+      }
+    ],
+    "fullTestName": "suite::responses_lite::base_instructions_use_input_items::responses_lite",
+    "scenario": "base_instructions_use_input_items",
+    "ciRunId": "39876559991",
+    "ciRunUrl": "https://github.com/ARQAWA/my-pi/actions/runs/39876559991",
+    "nativeCapture": {
+      "file": "captures/base_instructions_use_input_items-http-0000.json",
+      "sha256": "3223217e86c74641913e9c05e66bfb13ac139ba8e35b689afdd1aaa8e9719076"
+    },
+    "nativeRawBody": {
+      "file": "captures/base_instructions_use_input_items-http-0000.raw.bin",
+      "sha256": "c1f28155e577c1bcd6043713522063c4735638c563030c8009019a31af69d55b"
+    }
+  },
+  "input": {
+    "requestKind": "turn",
+    "transport": "sse",
+    "platform": {
+      "osType": "Mac OS",
+      "osVersion": "26.6.2",
+      "arch": "arm64",
+      "terminal": "unknown"
+    },
+    "identity": {
+      "installationId": "b14a7e34-58d5-4850-8c86-ca7a7c4f113d",
+      "windowId": "01a16626-5070-70a0-9d26-e04188b2db48:0",
+      "windowNumber": 0,
+      "contextWindowId": "01a16626-5071-78b0-9a59-2df55de652b3",
+      "rootSessionId": "01a16626-5070-70a0-9d26-e04188b2db48",
+      "threadId": "01a16626-5070-70a0-9d26-e04188b2db48",
+      "agentName": "/root",
+      "turnId": "01a16626-50eb-7002-a6e2-43c237cc55f7",
+      "rootTurnId": "01a16626-50eb-7002-a6e2-43c237cc55f7",
+      "historyInitialization": "new",
+      "sandbox": "none",
+      "sandboxMode": "danger-full-access",
+      "autoReviewEnabled": false,
+      "nodeReplAutoReviewRequired": false,
+      "nodeReplDisabled": false,
+      "turnStartedAtUnixMs": 1792715149563,
+      "analyticsEnabled": true,
+      "mcpAttribution": {
+        "status": "none"
+      },
+      "extra": {
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium"
+      }
+    }
+  },
+  "expected": {
+    "clientMetadata": {
+      "mcp_attribution": "{\"status\":\"none\"}",
+      "root_turn_id": "01a16626-50eb-7002-a6e2-43c237cc55f7",
+      "session_id": "01a16626-5070-70a0-9d26-e04188b2db48",
+      "thread_id": "01a16626-5070-70a0-9d26-e04188b2db48",
+      "turn_id": "01a16626-50eb-7002-a6e2-43c237cc55f7",
+      "x-codex-installation-id": "b14a7e34-58d5-4850-8c86-ca7a7c4f113d",
+      "x-codex-turn-metadata": "{\"installation_id\":\"b14a7e34-58d5-4850-8c86-ca7a7c4f113d\",\"session_id\":\"01a16626-5070-70a0-9d26-e04188b2db48\",\"thread_id\":\"01a16626-5070-70a0-9d26-e04188b2db48\",\"agent_name\":\"/root\",\"turn_id\":\"01a16626-50eb-7002-a6e2-43c237cc55f7\",\"window_id\":\"01a16626-5070-70a0-9d26-e04188b2db48:0\",\"window_number\":0,\"context_window_id\":\"01a16626-5071-78b0-9a59-2df55de652b3\",\"request_kind\":\"turn\",\"history_initialization\":\"new\",\"root_turn_id\":\"01a16626-50eb-7002-a6e2-43c237cc55f7\",\"sandbox\":\"none\",\"sandbox_mode\":\"danger-full-access\",\"auto_review_enabled\":false,\"node_repl_auto_review_required\":false,\"node_repl_disabled\":false,\"turn_started_at_unix_ms\":1792715149563,\"analytics_enabled\":true,\"model\":\"gpt-5.4\",\"reasoning_effort\":\"medium\"}",
+      "x-codex-window-id": "01a16626-5070-70a0-9d26-e04188b2db48:0"
+    },
+    "turnMetadataJson": "{\"installation_id\":\"b14a7e34-58d5-4850-8c86-ca7a7c4f113d\",\"session_id\":\"01a16626-5070-70a0-9d26-e04188b2db48\",\"thread_id\":\"01a16626-5070-70a0-9d26-e04188b2db48\",\"agent_name\":\"/root\",\"turn_id\":\"01a16626-50eb-7002-a6e2-43c237cc55f7\",\"window_id\":\"01a16626-5070-70a0-9d26-e04188b2db48:0\",\"window_number\":0,\"context_window_id\":\"01a16626-5071-78b0-9a59-2df55de652b3\",\"request_kind\":\"turn\",\"history_initialization\":\"new\",\"root_turn_id\":\"01a16626-50eb-7002-a6e2-43c237cc55f7\",\"sandbox\":\"none\",\"sandbox_mode\":\"danger-full-access\",\"auto_review_enabled\":false,\"node_repl_auto_review_required\":false,\"node_repl_disabled\":false,\"turn_started_at_unix_ms\":1792715149563,\"analytics_enabled\":true,\"model\":\"gpt-5.4\",\"reasoning_effort\":\"medium\"}",
+    "headers": {
+      "version": "0.163.0",
+      "x-codex-window-id": "01a16626-5070-70a0-9d26-e04188b2db48:0",
+      "x-codex-turn-metadata": "{\"installation_id\":\"b14a7e34-58d5-4850-8c86-ca7a7c4f113d\",\"session_id\":\"01a16626-5070-70a0-9d26-e04188b2db48\",\"thread_id\":\"01a16626-5070-70a0-9d26-e04188b2db48\",\"agent_name\":\"/root\",\"turn_id\":\"01a16626-50eb-7002-a6e2-43c237cc55f7\",\"window_id\":\"01a16626-5070-70a0-9d26-e04188b2db48:0\",\"window_number\":0,\"context_window_id\":\"01a16626-5071-78b0-9a59-2df55de652b3\",\"request_kind\":\"turn\",\"history_initialization\":\"new\",\"root_turn_id\":\"01a16626-50eb-7002-a6e2-43c237cc55f7\",\"sandbox\":\"none\",\"sandbox_mode\":\"danger-full-access\",\"auto_review_enabled\":false,\"node_repl_auto_review_required\":false,\"node_repl_disabled\":false,\"turn_started_at_unix_ms\":1792715149563,\"analytics_enabled\":true,\"model\":\"gpt-5.4\",\"reasoning_effort\":\"medium\"}",
+      "x-client-request-id": "01a16626-5070-70a0-9d26-e04188b2db48",
+      "session-id": "01a16626-5070-70a0-9d26-e04188b2db48",
+      "thread-id": "01a16626-5070-70a0-9d26-e04188b2db48",
+      "originator": "codex_cli_rs",
+      "user-agent": "codex_cli_rs/0.163.0 (Mac OS 26.6.2; arm64) unknown"
+    },
+    "identityHeaderNamesOutsideCodec": {
+      "x-codex-beta-features": "remote_compaction_v2",
+      "x-openai-internal-codex-responses-lite": "true"
+    },
+    "excludedTransportFields": [
+      "authorization",
+      "host",
+      "content-length",
+      "accept",
+      "content-type"
+    ]
+  }
+}

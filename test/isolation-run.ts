@@ -3,6 +3,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { networkAttempts } from "./no-network.mjs";
 
 // Test loading boundary: static Pi imports could initialize providers before the network guard.
@@ -62,6 +63,37 @@ await modelRuntime.refresh({ allowNetwork: false });
 const availableOpus = (await modelRuntime.getAvailable()).filter((model) => /claude-opus-5[.-]5/.test(model.id))
 	.map((model) => `${model.provider}/${model.id}`);
 
+// The faux provider is API "faux-iso", outside the owned Codex wire profile (openai-codex-responses). The real Codex
+// owner (RQW-codex, when loaded) replaces the openai-codex provider with its own transport at bind time. This inline
+// fixture re-installs only the faux registration after that bind, at session_start, and removes only its own faux
+// registration at session_shutdown, so a reload lets the owner rebind first. Its own focused tests cover the Codex wire.
+const FAUX_PROVIDER = "openai-codex";
+const FAUX_API = "faux-iso";
+const fauxConfig = {
+	api: FAUX_API,
+	apiKey: "fake-isolation-key",
+	streamSimple: faux.provider.streamSimple,
+	models: faux.models.map((model) => ({
+		id: model.id,
+		name: model.name,
+		api: FAUX_API,
+		baseUrl: model.baseUrl,
+		reasoning: model.reasoning,
+		input: model.input,
+		cost: model.cost,
+		contextWindow: model.contextWindow,
+		maxTokens: model.maxTokens,
+	})),
+} as unknown as Parameters<ExtensionAPI["registerProvider"]>[1];
+const fauxFixture = (pi: ExtensionAPI) => {
+	pi.on("session_start", () => {
+		pi.registerProvider(FAUX_PROVIDER, fauxConfig);
+	});
+	pi.on("session_shutdown", (_event, ctx) => {
+		if (ctx.modelRegistry.getRegisteredProviderConfig(FAUX_PROVIDER)?.api === FAUX_API) pi.unregisterProvider(FAUX_PROVIDER);
+	});
+};
+
 const errors: string[] = [];
 const resourceLoader = new DefaultResourceLoader({
 	cwd,
@@ -70,6 +102,7 @@ const resourceLoader = new DefaultResourceLoader({
 	extensionFactories: [
 		{ name: "codemode", factory: createCodemodeExtension(), replaceable: true, builtin: true as const },
 		{ name: "tool-search", factory: createToolSearchExtension(), replaceable: true, builtin: true as const },
+		{ name: "faux-iso", factory: fauxFixture },
 	],
 	noSkills: true,
 	noPromptTemplates: true,

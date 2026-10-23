@@ -1392,7 +1392,7 @@ describe("native creation and wait cleanup", () => {
 			return inMemory.apply(SessionManager, args);
 		});
 		const ctx = { mode: "print", cwd: root, signal: new AbortController().signal, isIdle: () => false,
-			sessionManager: { getEntries: () => [], getBranch: () => [] },
+			sessionManager: { getSessionId: () => "deadline-parent", getEntries: () => [], getBranch: () => [] },
 			modelRegistry: { find: () => reviewerFaux.getModel("claude-haiku-5-5"), hasConfiguredAuth: () => true, runtime: full },
 		} as unknown as ExtensionContext;
 		handlers.get("session_start")!({} as never, ctx as never);
@@ -1408,6 +1408,42 @@ describe("native creation and wait cleanup", () => {
 			assert.equal(messages.length, 1);
 			assert.equal(messages[0].content, failedWith("no verdict within 30 minutes"));
 		} finally { t.mock.timers.reset(); }
+	});
+
+	it("disposes a created session whose system prompt getter throws once, without prompting or masking the refusal", async (t) => {
+		const handlers = new Map<string, (event: never, ctx: never) => unknown>();
+		let definition: ToolDefinition | undefined;
+		const messages: { content: unknown }[] = [];
+		const reviews = scriptReviewer(() => fauxAssistantMessage(fauxText("CLEAN")));
+		const dispose = AgentSession.prototype.dispose;
+		let disposed = 0;
+		t.mock.method(AgentSession.prototype, "dispose", function (this: AgentSession) {
+			disposed++;
+			return dispose.call(this);
+		});
+		t.mock.getter(AgentSession.prototype, "systemPrompt", () => { throw new Error("prompt getter boom"); });
+		reviewExtension({
+			on: (n: string, h: (event: never, ctx: never) => unknown) => handlers.set(n, h),
+			registerTool: (d: ToolDefinition) => { definition = d; },
+			appendEntry: () => {},
+			sendMessage: (m: { content: unknown }) => messages.push(m),
+			events: { emit: () => {}, on: () => () => {} },
+			getSettings: () => ({}),
+			getActiveTools: () => [],
+		} as unknown as ExtensionAPI);
+		const ctx = { mode: "print", cwd: root, signal: new AbortController().signal, isIdle: () => false,
+			sessionManager: { getSessionId: () => "prompt-getter-parent", getEntries: () => [], getBranch: () => [] },
+			modelRegistry: { find: () => reviewerFaux.getModel("claude-haiku-5-5"), hasConfiguredAuth: () => true, runtime: full },
+		} as unknown as ExtensionContext;
+		handlers.get("session_start")!({} as never, ctx as never);
+		await definition!.execute("prompt-getter", ARGS as never, undefined, undefined, ctx);
+		await handlers.get("agent_end")!({} as never, ctx as never);
+		handlers.get("agent_before_settle")!({} as never, ctx as never);
+		await nextLoop();
+		assert.equal(disposed, 1);
+		assert.equal(reviews.length, 0);
+		assert.equal(messages.length, 1);
+		assert.equal(messages[0].content, failedWith("prompt getter boom"));
 	});
 
 	for (const abort of [false, true]) {

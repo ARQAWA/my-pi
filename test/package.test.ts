@@ -40,7 +40,9 @@ let root: string;
 let agentDir: string;
 let counter = 0;
 // A listed RQW-models ID: RQW-models refuses requests for any other model.
-const faux = fauxProvider({ provider: "openai-codex", models: [{ id: "gpt-6.1-sol" }] });
+// Explicitly foreign API under its own provider ID: RQW-codex's openai-codex registration shadows any faux row with the same ID
+// (Pi's registry refresh then swaps the session model for the Codex catalog row). RQW-models gates on the model family only.
+const faux = fauxProvider({ api: "package-faux-api", provider: "package-faux", models: [{ id: "gpt-6.1-sol" }] });
 const ORIGINAL_AGENT_DIR = process.env.PI_CODING_AGENT_DIR;
 const ORIGINAL_FETCH = globalThis.fetch;
 let modelRuntime: ModelRuntime;
@@ -54,7 +56,7 @@ before(async () => {
 	globalThis.fetch = async () => { throw new Error("Unexpected network request in package test"); };
 	faux.provider.auth.apiKey = { name: "Fake package key", resolve: async () => ({ auth: { apiKey: "fake-package-key" } }) };
 	modelRuntime.registerNativeProvider(faux.provider);
-	await modelRuntime.setRuntimeApiKey("openai-codex", "fake-package-key");
+	await modelRuntime.setRuntimeApiKey(faux.provider.id, "fake-package-key");
 	await modelRuntime.getAvailable();
 });
 
@@ -90,6 +92,8 @@ async function run(o: Options = {}): Promise<Run> {
 	try {
 		faux.setResponses([
 			(context) => {
+				// The faux provider gets Pi's raw Context: the request's tool schemas are in `context.tools`.
+				for (const tool of context.tools ?? []) out.declared.set(tool.name, tool.description);
 				for (const message of context.messages) {
 					if (message.role !== "system") continue;
 					for (const tool of message.toolsAdded ?? []) out.declared.set(tool.name, tool.description);

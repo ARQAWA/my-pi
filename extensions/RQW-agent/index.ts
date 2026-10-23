@@ -83,7 +83,7 @@ type Config = { system: string; base: string; custom?: string; role?: string; pr
 type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number; title?: string; prompt_file?: PromptFile };
 /** Control of a child's background jobs, carried by RQW-tools' offered `job` definition when it offers one. */
 type JobControl = { abortAll(): void; dispose(): void };
-type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle; activity: Activity; jobs?: JobControl };
+type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle; activity: Activity; jobs?: JobControl; release: () => void; captureRun: (callerThreadId?: string) => void };
 type Agent = Child & {
 	id: number;
 	/** The caller's optional short title, shown in status and result details. */
@@ -230,6 +230,41 @@ export function childSettings(own: OwnSettings) {
 
 /** An optional text counts as given only when it has non-blank content. */
 const given = (value: string | undefined): value is string => typeof value === "string" && value.trim() !== "";
+
+/**
+ * Optional channel where RQW-codex binds a child session to its Codex root. Nothing here imports it. The request is
+ * emitted right after the child's creation and before its first prompt. No listener: stock behaviour. A listener that
+ * sets `error` makes the start fail before any prompt. `release`, set by a listener, runs once on every stop, restart,
+ * error or cancel of the child.
+ */
+const SESSION_POLICY = "rqw-codex:session-policy";
+type SessionPolicyRequest = { session: AgentSession; parentThreadId: string; kind: "collab_spawn" | "review"; startupSystemPrompt?: string; startupSystemPromptForced?: boolean; childName?: string; captureRun?: (callerThreadId?: string) => void; release?: () => void; error?: string };
+
+/**
+ * Emits the request on the caller's bus. Returns the idempotent release and the per-operation capture (a no-op after release);
+ * a refused request disposes the session and throws. `childName` is the child's actual label, `kind#id`.
+ */
+function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession, parentThreadId: string, kind: SessionPolicyRequest["kind"], startupSystemPrompt: string, childName: string, startupSystemPromptForced: boolean): { release: () => void; capture: (callerThreadId?: string) => void } {
+	const request: SessionPolicyRequest = { session, parentThreadId, kind, startupSystemPrompt, startupSystemPromptForced, childName };
+	let released = false;
+	const release = () => {
+		if (released) return;
+		released = true;
+		request.captureRun = undefined;
+		request.release?.();
+	};
+	const capture = (callerThreadId?: string) => {
+		if (!released) request.captureRun?.(callerThreadId);
+	};
+	let failed = false;
+	let failure: unknown;
+	try { events.emit(SESSION_POLICY, request); } catch (error) { failed = true; failure = error; }
+	if (!failed && request.error === undefined) return { release, capture };
+	release();
+	session.dispose();
+	const reason = failed ? (failure instanceof Error ? failure.message : String(failure)) : String(request.error);
+	throw new Error(`Session policy refused: ${reason.split("\n")[0].slice(0, 200)}`);
+}
 
 const isAssistant = (m: { role: string }): m is AssistantMessage => m.role === "assistant";
 
@@ -420,7 +455,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		return codemode && !tools.some((d) => d.name === "codemode") ? [...tools, codemode] : tools;
 	}
 
-	async function createSession(config: Config, ctx: ExtensionContext, signal: AbortSignal, fast: { on: boolean }, label: string): Promise<Child> {
+	async function createSession(config: Config, ctx: ExtensionContext, signal: AbortSignal, fast: { on: boolean }, label: string, childName: string): Promise<Child> {
 		signal.throwIfAborted();
 		const controller = new AbortController();
 		const guard: Child["guard"] = {};
@@ -486,7 +521,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				customTools, resourceLoader,
 				sessionManager: SessionManager.inMemory(ctx.cwd), settingsManager,
 			}).then(({ session }) => {
-				if (signal.aborted) { jobs?.dispose(); session.dispose(); signal.throwIfAborted(); }
+				// Before any prompt. A late create after an abort is released here too.
+				let parent: string;
+				try { parent = ctx.sessionManager.getSessionId(); } catch (error) { session.dispose(); throw error; }
+				// The child's factory forces config.system as its prompt (before_agent_start returns it), so the prompt is forced.
+				const policy = bindSessionPolicy(toolEvents, session, parent, "collab_spawn", config.system, childName, true);
+				if (signal.aborted) { jobs?.dispose(); policy.release(); session.dispose(); signal.throwIfAborted(); }
 				// prompt() may finish auth after abort()/dispose(). Never let an abandoned preflight reach inference.
 				const stream = session.agent.streamFunction;
 				session.agent.streamFunction = (model, context, options) => {
@@ -495,13 +535,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 				};
 				activity = new Activity(session, () => { onRunning(); coordinator.notify(); }, { alert_after_ms: config.alert_after_ms });
-				return { session, controller, guard, workers, activity, jobs };
+				return { session, controller, guard, workers, activity, jobs, release: policy.release, captureRun: policy.capture };
 			});
 			return await untilAborted(creating, signal);
 		} catch (error) {
 			controller.abort();
 			jobs?.dispose();
-			void creating?.then(({ session }) => session.dispose()).catch(() => {});
+			void creating?.then(({ session, release }) => { release(); session.dispose(); }).catch(() => {});
 			throw error;
 		}
 	}
@@ -636,6 +676,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		a.next = undefined;
 		if (a.run) { a.run.quiet = true; a.run.controller.abort(); }
 		a.controller.abort();
+		a.release();
 		a.activity.close();
 		a.workers?.close();
 		a.jobs?.dispose();
@@ -767,10 +808,11 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const id = ++counter;
 				pi.appendEntry(name, { id });
 				const fast = { on: params.fast_gpt ?? callerFast() };
-				const child = await createSession(config, ctx, signal, fast, labelOf(id));
+				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`);
 				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, fast, ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };
 				try {
 					signal.throwIfAborted();
+					a.captureRun(ctx.sessionManager.getSessionId());
 					await startRun(a, task!, signal);
 					signal.throwIfAborted();
 					a.guard.signal = a.run?.controller.signal;
@@ -783,6 +825,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const a = find(params.id);
 				if (!params.task) throw new Error("task is required");
 				if (a.run?.quiet && !params.interrupt && !a.next) throw new Error(`${name}#${a.id}: cancellation pending; inspect status before send`);
+				a.captureRun(ctx.sessionManager.getSessionId());
 				if (params.fast_gpt !== undefined) a.fast.on = params.fast_gpt;
 				if (a.run && (params.interrupt || a.run.quiet)) {
 					// Abort now like `interrupt` and return at once: the task starts when the old run has stopped (the
@@ -832,11 +875,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				coordinator.change(`${name}#${old.id}`, "restart");
 				close(old);
 				const fast = { on: params.fast_gpt ?? old.fast.on };
-				const child = await createSession(config, ctx, signal, fast, labelOf(old.id));
+				const child = await createSession(config, ctx, signal, fast, labelOf(old.id), `${name}#${old.id}`);
 				const title = given(params.title) ? params.title.trim() : old.title;
 				const a: Agent = { id: old.id, config, epoch: randomUUID(), runNumber: 0, fast, ...(title ? { title } : {}), ...child };
 				try {
 					signal.throwIfAborted();
+					a.captureRun(ctx.sessionManager.getSessionId());
 					if (params.task) await startRun(a, task!, signal);
 					else coordinator.add(target(a));
 					signal.throwIfAborted();

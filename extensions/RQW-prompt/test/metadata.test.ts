@@ -13,7 +13,12 @@ const { buildSystemPrompt, buildSystemPromptSections, normalizeBuildSystemPrompt
 type Handler = (event: any, context: any) => void;
 function hooks() {
 	const handlers = new Map<string, Handler>();
-	prompt({ on(name: string, handler: Handler) { handlers.set(name, handler); } } as unknown as ExtensionAPI);
+	const channels = new Map<string, (payload: unknown) => void>();
+	const events = {
+		on(name: string, handler: (payload: unknown) => void) { channels.set(name, handler); return () => { channels.delete(name); }; },
+		emit(name: string, payload: unknown) { channels.get(name)?.(payload); },
+	};
+	prompt({ on(name: string, handler: Handler) { handlers.set(name, handler); }, events } as unknown as ExtensionAPI);
 	return {
 		prepare(options: NormalizedBuildSystemPromptOptions) { handlers.get("before_agent_start")!({ systemPromptOptions: options }, { model: { provider: "faux", id: "one" } }); },
 		select() { handlers.get("model_select")!({ model: { provider: "faux", id: "two" } }, {}); },

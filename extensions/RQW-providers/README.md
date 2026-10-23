@@ -24,12 +24,13 @@ runtime nobody owns, keeps Pi's own lists. In-process subagents and reviewers sh
 same lists; disposing such an unowned child changes nothing. An owner is dropped when its session shuts down, reloads
 or is disposed (Pi invalidates its extension API; the extension reads that). Pi 1.4.0 has no shutdown hook for an SDK
 `session.dispose()`, so the patch also wraps `AgentSession.dispose` and releases the instances bound to that session.
-The last owner restores Pi's methods.
+Each owner releases only its own lifecycle layers; after the last cooperating owner leaves, Pi's exact methods are restored.
 
-`RQW-anthropic`'s lifecycle wraps the same two methods (`_bindExtensionCore`, `dispose`) and, when its last owner
-leaves, puts Pi's own methods back, which removes this extension's wrapper from under it. So every time an instance
-loads, `installVisibility` checks that its wrapper is still the one in each slot and wraps again when it is not;
-a session bound after that is covered as before. `test/providers-anthropic.test.ts` loads both together.
+Session lifecycle methods cooperate with RQW-anthropic, RQW-settings and RQW-codex through the shared
+`rqw:method-chain/v1` lease contract, copied inside each extension without cross-folder imports. Wrappers read their
+inner link at call time; release removes only the departing owner's layers and preserves surviving owners. A layer
+that is still reachable is reused rather than wrapped again. Package-level integration tests are
+`test/providers-anthropic.test.ts` and `test/codex-providers.test.ts`.
 
 ## Independence
 
@@ -43,10 +44,10 @@ cache) works with all providers visible, and this extension hides providers with
 
 - The default model and `--models` patterns are resolved before the session is bound, so they still see all providers;
   the login and pickers do not.
-- Keep the manifest order (this extension after `RQW-anthropic`). Both extensions wrap the same session methods and a
-  wrapper can only be taken off from the top. In the manifest order every shutdown, reload and SDK dispose leaves Pi's own
-  methods back. In the other order (this extension loaded first) a normal shutdown or reload can leave an inert
-  pass-through wrapper of this extension on the class: it filters nothing and only passes calls on.
+- Keep the manifest order: RQW-anthropic, RQW-providers (extension 14), then RQW-codex (extension 15). Cooperating
+  lifecycle layers preserve surviving owners and restore stock after the last one leaves; Codex integration tests
+  cover both load orders. An unrelated extension without the shared inner links can prevent removing a layer below
+  it; an inactive pass-through may remain rather than clobbering that foreign wrapper.
 - Another extension that registers a provider other than the two allowed ones registers it, but it is not listed.
 
 Tests: `extensions/RQW-providers/test/providers.test.ts` (real Pi library and CLI bundle, fake credentials, no network, the

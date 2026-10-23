@@ -8,6 +8,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
+	type AgentSession,
 	createAgentSession,
 	createCodemodeExtension,
 	createFindToolDefinition,
@@ -598,8 +599,42 @@ async function pickReviewer(level: Level, ctx: ExtensionContext, signal: AbortSi
 	throw new Error(reasons.join("; "));
 }
 
+/**
+ * Optional channel where RQW-codex binds a child session to its Codex root. Nothing here imports it. The request is
+ * emitted right after the reviewer's creation and before its prompt. No listener: stock behaviour. A listener that
+ * sets `error` makes the review fail before any prompt. `release`, set by a listener, runs once when the reviewer ends.
+ */
+const SESSION_POLICY = "rqw-codex:session-policy";
+type SessionPolicyRequest = { session: AgentSession; parentThreadId: string; kind: "collab_spawn" | "review"; startupSystemPrompt?: string; childName?: string; captureRun?: (callerThreadId?: string) => void; release?: () => void; error?: string };
+
+/**
+ * Emits the request on the caller's bus. Returns the idempotent release and the per-operation capture (a no-op after release);
+ * a refused request disposes the session and throws. `childName` is the reviewer's actual label, `review#N`.
+ */
+function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession, parentThreadId: string, kind: SessionPolicyRequest["kind"], startupSystemPrompt: string, childName: string): { release: () => void; capture: (callerThreadId?: string) => void } {
+	const request: SessionPolicyRequest = { session, parentThreadId, kind, startupSystemPrompt, childName };
+	let released = false;
+	const release = () => {
+		if (released) return;
+		released = true;
+		request.captureRun = undefined;
+		request.release?.();
+	};
+	const capture = (callerThreadId?: string) => {
+		if (!released) request.captureRun?.(callerThreadId);
+	};
+	let failed = false;
+	let failure: unknown;
+	try { events.emit(SESSION_POLICY, request); } catch (error) { failed = true; failure = error; }
+	if (!failed && request.error === undefined) return { release, capture };
+	release();
+	session.dispose();
+	const reason = failed ? (failure instanceof Error ? failure.message : String(failure)) : String(request.error);
+	throw new Error(`Session policy refused: ${reason.split("\n")[0].slice(0, 200)}`);
+}
+
 /** One reviewer session from start to its last assistant text. Throws with the reason when there is no verdict. */
-async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, brief: string, ctx: ExtensionContext, signal: AbortSignal, used: { spec?: Spec }, fast?: boolean): Promise<string> {
+async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, brief: string, ctx: ExtensionContext, signal: AbortSignal, used: { spec?: Spec }, fast: boolean | undefined, label: string): Promise<string> {
 	signal.throwIfAborted();
 	const { spec, model, modelRuntime } = await pickReviewer(level, ctx, signal);
 	used.spec = spec;
@@ -664,23 +699,32 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 		sessionManager: SessionManager.inMemory(ctx.cwd),
 		settingsManager,
 	}).then((created) => {
-		// createAgentSession has no signal: dispose a session that materializes after cancellation.
+		// Before any prompt. createAgentSession has no signal: a session that materializes after cancellation is released too.
+		// A throwing parent-id or system-prompt read must not leak the created session.
+		let parentThreadId: string;
+		let startupSystemPrompt: string;
+		try {
+			parentThreadId = ctx.sessionManager.getSessionId();
+			startupSystemPrompt = created.session.systemPrompt;
+		} catch (error) { created.session.dispose(); throw error; }
+		const policy = bindSessionPolicy(host.events, created.session, parentThreadId, "review", startupSystemPrompt, label);
 		if (signal.aborted) {
 			jobs?.dispose();
+			policy.release();
 			created.session.dispose();
 			signal.throwIfAborted();
 		}
-		return created;
+		return { ...created, release: policy.release, capture: policy.capture };
 	});
 	let created: Awaited<typeof creating>;
 	try {
 		created = await untilAborted(creating, signal);
 	} catch (error) {
 		jobs?.dispose();
-		void creating.then(({ session }) => session.dispose()).catch(() => {});
+		void creating.then(({ session, release }) => { release(); session.dispose(); }).catch(() => {});
 		throw error;
 	}
-	const { session } = created;
+	const { session, release, capture } = created;
 	// Pi 1.4 prompt() awaits auth before an active run exists, so abort() alone cannot stop that preflight.
 	// This public request hook stays guarded even if the abandoned prompt resumes after dispose().
 	const stream = session.agent.streamFunction;
@@ -694,6 +738,8 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 	try {
 		signal.addEventListener("abort", stop, { once: true });
 		if (signal.aborted) throw new Error("aborted");
+		// This reviewer's own run starts now, while the caller's tool operation is still active.
+		capture(ctx.sessionManager.getSessionId());
 		await untilAborted(session.prompt(brief), signal);
 		if (signal.aborted) throw new Error("aborted");
 		const last = [...session.messages].reverse().find((m) => m.role === "assistant");
@@ -710,6 +756,7 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 		signal.removeEventListener("abort", stop);
 		// The review is over: no job of the reviewer outlives it.
 		jobs?.dispose();
+		release();
 		session.dispose();
 	}
 }
@@ -899,7 +946,7 @@ export function registerReview(pi: ExtensionAPI, host: ReviewHost) {
 		let failed = false;
 		const used: { spec?: Spec } = {};
 		try {
-			verdict = await runReviewer(pi, host, level, brief, ctx, controller.signal, used, fast);
+			verdict = await runReviewer(pi, host, level, brief, ctx, controller.signal, used, fast, `review#${n}`);
 		} catch (error) {
 			const reason =
 				controller.signal.reason === TIMEOUT

@@ -1,0 +1,60 @@
+{
+  "schema": "rqw-codex/retention-native@1",
+  "kind": "golden expectations derived from pinned upstream Rust/quick-xml source text; NOT produced by compaction.ts; Rust was not compiled or executed",
+  "pin": {
+    "release": "rust-v0.163.0",
+    "version": "0.163.0",
+    "commit": "83086188ae0614bd882818ff1aa23f3194962012",
+    "verifiedFile": {
+      "path": "codex-rs/core/src/compact_remote_v2.rs",
+      "sha256": "cb81ae523a2d3674ffe0acd12a492431d773e1148a420bbd99850b9081277673",
+      "note": "hash equals the pinned value in test/fixtures/oracle-source.json; the other files cited below were read from the same source tree, not individually hash-checked against the pin"
+    }
+  },
+  "sources": {
+    "hookPromptParse": "codex-rs/protocol/src/items.rs parse_hook_prompt_fragment (trim, quick_xml::de::from_str::<HookPromptXml>, reject empty hook_run_id)",
+    "hookPromptStruct": "codex-rs/protocol/src/items.rs HookPromptXml: #[serde(rename = \"hook_prompt\")], @hook_run_id attribute, $text text",
+    "quickXmlVersion": "workspace quick-xml = 0.41.0 (codex-rs/Cargo.toml), crate source de/mod.rs, de/map.rs, de/resolver.rs, events/attributes.rs",
+    "quickXmlRules": [
+      "de/mod.rs doc: 'The root tag name does not matter' (root name is not checked)",
+      "de/mod.rs deserialize_struct: root must be a start tag; text before it is an error; the deserializer does not check for trailing content after the root end (from_str returns after the struct)",
+      "de/mod.rs skip_uninterested: comments, processing instructions and declarations are skipped",
+      "de/mod.rs drain_text: consecutive Text, CData and GeneralRef events are merged into one text run",
+      "de/mod.rs Text::is_blank: content empty after XML whitespace trim; blank text is skipped before a key",
+      "de/map.rs next_key_seed: a second text run after $text was read is a duplicate field; child elements are skipped as unknown fields",
+      "de/resolver.rs PredefinedEntityResolver: lt gt amp apos quot and character references only",
+      "events/attributes.rs: duplicated attribute and attribute without '=' are errors (XML mode)",
+      "de/key.rs from_attr: attribute key is the local name except xmlns bindings and xml-prefixed names"
+    ]
+  },
+  "hookPrompt": [
+    { "id": "basic", "text": "<hook_prompt hook_run_id=\"run-1\">Retry with tests.</hook_prompt>", "expected": true, "why": "single attribute, one text run" },
+    { "id": "root-name-ignored", "text": "<other hook_run_id=\"run-1\">t</other>", "expected": true, "why": "root tag name does not matter (de/mod.rs doc)" },
+    { "id": "single-quoted-attribute", "text": "<hook_prompt hook_run_id='run-1'>t</hook_prompt>", "expected": true, "why": "XML allows single quotes" },
+    { "id": "missing-attribute", "text": "<hook_prompt>t</hook_prompt>", "expected": false, "why": "missing field @hook_run_id" },
+    { "id": "blank-hook-run-id", "text": "<hook_prompt hook_run_id=\"  \">t</hook_prompt>", "expected": false, "why": "parse_hook_prompt_fragment rejects trimmed-empty hook_run_id" },
+    { "id": "empty-body", "text": "<hook_prompt hook_run_id=\"a\"></hook_prompt>", "expected": false, "why": "no $text value: missing field" },
+    { "id": "whitespace-body", "text": "<hook_prompt hook_run_id=\"a\">   </hook_prompt>", "expected": false, "why": "blank text is skipped, so $text is missing" },
+    { "id": "text-split-by-child", "text": "<hook_prompt hook_run_id=\"a\">x<b/>y</hook_prompt>", "expected": false, "why": "second text run after a child is a duplicate $text field" },
+    { "id": "child-only-body", "text": "<hook_prompt hook_run_id=\"a\"><b>x</b></hook_prompt>", "expected": false, "why": "child text is ignored; $text missing" },
+    { "id": "cdata-merges-with-text", "text": "<hook_prompt hook_run_id=\"a\">t<![CDATA[ u ]]></hook_prompt>", "expected": true, "why": "Text and CData merge into one run" },
+    { "id": "blank-cdata-only", "text": "<hook_prompt hook_run_id=\"a\"><![CDATA[  ]]></hook_prompt>", "expected": false, "why": "merged run is XML-blank" },
+    { "id": "predefined-entity", "text": "<hook_prompt hook_run_id=\"a\">a &amp; b</hook_prompt>", "expected": true, "why": "PredefinedEntityResolver resolves amp" },
+    { "id": "unknown-entity", "text": "<hook_prompt hook_run_id=\"a\">a &nbsp; b</hook_prompt>", "expected": false, "why": "UnrecognizedEntity error" },
+    { "id": "bare-ampersand", "text": "<hook_prompt hook_run_id=\"a\">a & b</hook_prompt>", "expected": false, "why": "unescape of '&' without ';' is an error" },
+    { "id": "character-reference", "text": "<hook_prompt hook_run_id=\"a\">&#x41;</hook_prompt>", "expected": true, "why": "numeric character reference resolves" },
+    { "id": "attribute-reference-blank", "text": "<hook_prompt hook_run_id=\"&#32;\">t</hook_prompt>", "expected": false, "why": "attribute entity decodes to a blank id" },
+    { "id": "attribute-reference", "text": "<hook_prompt hook_run_id=\"&#97;\">t</hook_prompt>", "expected": true, "why": "attribute value is unescaped before the trim check" },
+    { "id": "comment-before-root", "text": "<!-- c --><hook_prompt hook_run_id=\"a\">t</hook_prompt>", "expected": true, "why": "comments are skipped before the root" },
+    { "id": "comment-inside-text", "text": "<hook_prompt hook_run_id=\"a\">x<!-- c -->y</hook_prompt>", "expected": true, "why": "a comment does not split a text run" },
+    { "id": "processing-instruction-inside", "text": "<hook_prompt hook_run_id=\"a\"><?x y?>t</hook_prompt>", "expected": true, "why": "processing instructions are skipped" },
+    { "id": "text-before-root", "text": "hi <hook_prompt hook_run_id=\"a\">t</hook_prompt>", "expected": false, "why": "text before the root start is an error" },
+    { "id": "mismatched-end-tag", "text": "<hook_prompt hook_run_id=\"a\">t</other>", "expected": false, "why": "reader end-name check" },
+    { "id": "unterminated-root", "text": "<hook_prompt hook_run_id=\"a\">t", "expected": false, "why": "EOF before the root end" },
+    { "id": "trailing-content-ignored", "text": "<hook_prompt hook_run_id=\"a\">t</hook_prompt> trailing", "expected": true, "why": "from_str does not check for content after the root; source-reasoned, not run" },
+    { "id": "namespace-prefixed-attribute", "text": "<h:hook_prompt xmlns:h=\"urn:x\" h:hook_run_id=\"a\">t</h:hook_prompt>", "expected": true, "why": "attribute key is the local name" },
+    { "id": "xml-prefixed-attribute", "text": "<hook_prompt xml:hook_run_id=\"a\">t</hook_prompt>", "expected": false, "why": "xml: prefixed names keep their full key" },
+    { "id": "duplicate-attribute", "text": "<hook_prompt hook_run_id=\"a\" hook_run_id=\"b\">t</hook_prompt>", "expected": false, "why": "duplicated attribute error" },
+    { "id": "attribute-without-value", "text": "<hook_prompt hook_run_id>t</hook_prompt>", "expected": false, "why": "ExpectedEq error in XML mode" }
+  ]
+}

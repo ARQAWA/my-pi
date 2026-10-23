@@ -69,3 +69,11 @@ excludes nothing.
   `-e builtin:codemode -e builtin:tool-search`.
 - Pi's built-in extensions are not part of the package. Switch one off with the top-level `extensions` setting:
   `"extensions": ["-builtin:codemode"]` (names: `codemode`, `tool-search`, `mcp`, `llama.cpp`).
+
+## Codex subscription transport
+
+RQW-codex targets stock Pi 1.4.0 and Codex CLI stable 0.163.0. Its native `generate:false` startup and automatic one-shot idle prewarm are the explicit Codex exception to the general no-cache-warming rule; no host event or extra setting is required, and no periodic keepalive is installed. Keep a valid existing `openai-codex` login; new `/login openai-codex` logins use device code only. Do not export tokens, import `~/.codex`, copy the different `openai` grant, or configure API-key billing. If another Codex adapter is enabled, stop and ask the owner to disable it in its installed scope before loading this overlay; preserve credentials and unrelated settings.
+
+Disable independently with `-extensions/RQW-codex/index.ts` using the package filter above; re-enable by removing that line, then reload/restart. Original pre-compaction history is retained: other providers and stock Pi get it, with Pi's own compaction only if it exceeds their window. RQW-context still owns the W/R trigger. Provider hiding belongs to the independent [RQW-providers](extensions/RQW-providers/README.md), not to either subscription transport; it is not a dependency of this adapter. GPT Fast remains `/fast-gpt`, default off, owned by RQW-settings, with existing child inheritance.
+
+No native `/models` requests: wire capabilities are pinned offline; unknown model capabilities fail clearly without changing the picker. Pin upgrades require manual protocol review. Full contract, support boundary and verification limits: [RQW-codex README](extensions/RQW-codex/README.md), [decision and exception ledger](DECISIONS.md#codex-subscription-transport).

@@ -26,6 +26,8 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   The outside-git walk enforces its whole-walk limit; scans report unreadable paths and git warnings. Footprint
   inference restores cwd after a subshell and holds the repository for `symbolic-ref` and `reflog` writes.
   Deletions are reported since the start, by comparing the exact pre-start and end states.
+  Own prompt sections also join the optional read-only startup projection without a prompt/provider dependency;
+  see `DECISIONS.md` Prompt/tools isolation.
   Tests: `npm test`.
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
   window W = min(contextWindow, 500000) and compacts above W - R, where R = round(W / 10). Tests: `npm test`.
@@ -88,6 +90,7 @@ The coordinator delegates all execution, waits and checks to subagents and may r
 - `extensions/RQW-providers/`: extension 14, provider visibility. Only `anthropic` and `openai-codex` remain visible in
   login, model pickers and `--list-models`, credentials stay. Independent of `RQW-anthropic` (either switches off alone).
   Mechanism and limits: `extensions/RQW-providers/README.md`; decision: `DECISIONS.md` section Providers. Tests: `npm test`.
+- `extensions/RQW-codex/`: extension 15, independent Codex subscription protocol overlay for `openai-codex`, pinned Codex CLI 0.163.0; device-only new login, valid grants retained. Native startup and automatic one-shot idle prewarm use `generate:false`, separate from the disabled generic warmer. Backend V2 compaction retains original portable history; RQW-context still owns W/R. Offline capabilities only, no `/models`; hiding is separate. Contract and exceptions: `DECISIONS.md` [Codex](DECISIONS.md#codex-subscription-transport), `extensions/RQW-codex/README.md`.
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.4.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.

@@ -14,6 +14,17 @@ const PROVIDERS = join(ROOT, "extensions/RQW-providers/index.ts");
 // Resolve Pi internals from its installed entrypoint; package exports do not expose this class.
 const { InteractiveMode } = await import(new URL("./modes/interactive/interactive-mode.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 
+// Fake ChatGPT subscription login (OAuth): an API key never unlocks openai-codex, so the authenticated case seeds this.
+const b64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const CODEX_ACCOUNT = "acct_anthropic_models_1";
+const validFAKECodexOAuth = () => ({
+	type: "oauth",
+	access: `${b64url({ alg: "none" })}.${b64url({ exp: Math.floor(Date.now() / 1000) + 3600, "https://api.openai.com/auth": { chatgpt_account_id: CODEX_ACCOUNT } })}.sig`,
+	refresh: "fake-refresh-codex",
+	expires: (Math.floor(Date.now() / 1000) + 3600) * 1000,
+	accountId: CODEX_ACCOUNT,
+});
+
 const PACKAGE: string[] = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8")).pi.extensions.map((path: string) => join(ROOT, path));
 
 for (const order of [[MODELS, ADAPTER, PROVIDERS], [PROVIDERS, ADAPTER, MODELS], PACKAGE]) {
@@ -33,7 +44,7 @@ for (const order of [[MODELS, ADAPTER, PROVIDERS], [PROVIDERS, ADAPTER, MODELS],
 				const authPath = join(dir, "auth.json");
 				await writeFile(authPath, JSON.stringify(authenticated ? {
 					anthropic: { type: "api_key", key: "fake-anthropic-key" },
-					"openai-codex": { type: "api_key", key: "fake-codex-key" },
+					"openai-codex": validFAKECodexOAuth(),
 					openrouter: { type: "api_key", key: "fake-hidden-key" },
 				} : {}));
 				const runtime = await ModelRuntime.create({ authPath, modelsPath: null, refreshOnCreate: false });

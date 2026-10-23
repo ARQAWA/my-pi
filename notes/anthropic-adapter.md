@@ -70,9 +70,10 @@ cannot hide builtins from both selectors.
 Use a narrow in-memory reversible shim, owned entirely by this extension: filter ModelRuntime's provider/model
 listing methods and AgentSession's scopedModels getter. Keep provider/auth stores and their contents untouched.
 The shim is installed while the extension is loaded and restored on session_shutdown, including reload, or
-public SDK dispose. Pi 1.4.0 has no native pre-dispose event: `lifecycle.ts` narrowly wraps checked
-`AgentSession.dispose` and performs synchronous idempotent cleanup before invalidation, without synthesizing
-shutdown events for other extensions. `_bindExtensionCore` associates cleanup with the exact owning session,
+public SDK dispose. Pi 1.4.0 has no native pre-dispose event: `RQW-providers/index.ts` and the transport lifecycle
+code wrap checked `AgentSession.dispose` and perform synchronous idempotent cleanup before invalidation, without
+synthesizing shutdown events. Shared lifecycle slots use self-contained `rqw:method-chain/v1` leases; the current
+contract and foreign-wrapper boundary are in `extensions/RQW-providers/README.md`. `_bindExtensionCore` associates cleanup with the exact owning session,
 even without session_start. Disposing an unowned reviewer or generic child sharing the runtime leaves the main
 adapter active. Reference-counted shared patch state preserves surviving owners and restores the original hooks
 after the last owner releases them. Check all patched descriptors before changing anything. No node_modules edits, no disk core patch. Tests must exercise

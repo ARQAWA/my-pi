@@ -3,14 +3,22 @@ import { bindSessionCache } from "./cache.ts";
 
 export const SESSION_BIND = "rqw-anthropic:session-bind";
 const PATCH = Symbol.for("rqw-anthropic/lifecycle");
+/** Shared method-lease contract `rqw:method-chain/v1` (self-contained copy, same shape as RQW-codex). */
+const CHAIN = Symbol.for("rqw:method-chain/v1");
+const INNER = Symbol.for("rqw:method-inner");
+const OWNER = Symbol.for("rqw:method-owner");
+const PATCHED_NAMES = ["dispose", "_bindExtensionCore"] as const;
 type Cleanup = () => void;
+type Fn = (this: unknown, ...args: unknown[]) => unknown;
+type Link = Fn & Record<symbol, unknown>;
+type Chain = { stock: PropertyDescriptor; owners: Set<object> };
 type Lease = { streamSimple: unknown; restore?: Cleanup };
 type PatchState = {
+	active: boolean;
 	count: number;
 	cacheBindings: Map<AgentSession, Cleanup>;
 	callbacks: WeakMap<object, Set<Cleanup>>;
 	leases: WeakMap<ModelRuntime, Map<Cleanup, Lease>>;
-	originals: [string, PropertyDescriptor][];
 };
 
 export type Lifecycle = {
@@ -20,38 +28,93 @@ export type Lifecycle = {
 	release(): void;
 };
 
+function chainsOf(target: object, create: boolean): Map<string, Chain> | undefined {
+	const registry = globalThis as unknown as Record<symbol, WeakMap<object, Map<string, Chain>> | undefined>;
+	if (!registry[CHAIN]) {
+		if (!create) return undefined;
+		registry[CHAIN] = new WeakMap();
+	}
+	const all = registry[CHAIN]!;
+	let chains = all.get(target);
+	if (!chains && create) all.set(target, chains = new Map());
+	return chains;
+}
+
+/** Puts `layer` on top of the current value. The layer's inner link is the value it replaces. */
+function joinChain(target: object, name: string, owner: object, layer: Link): void {
+	const current = Object.getOwnPropertyDescriptor(target, name)!;
+	const chains = chainsOf(target, true)!;
+	let chain = chains.get(name);
+	if (!chain) chains.set(name, chain = { stock: current, owners: new Set() });
+	chain.owners.add(owner);
+	Object.defineProperty(layer, INNER, { value: current.value, writable: true, configurable: true });
+	Object.defineProperty(layer, OWNER, { value: owner });
+	Object.defineProperty(target, name, { ...current, value: layer });
+}
+
+/**
+ * Removes this owner's layers that are reachable through cooperating links; a layer above another owner's layer
+ * is rebased, not clobbered. The exact stock descriptor is restored only when no owner is left and the chain is stock.
+ */
+function leaveChain(target: object, name: string, owner: object): void {
+	const chains = chainsOf(target, false);
+	const chain = chains?.get(name);
+	if (!chains || !chain) return;
+	chain.owners.delete(owner);
+	let parent: Link | undefined;
+	let node = Object.getOwnPropertyDescriptor(target, name)?.value as unknown;
+	for (let depth = 0; typeof node === "function" && depth < 64; depth++) {
+		const link = node as Link;
+		if (!(INNER in link)) break;
+		if (link[OWNER] === owner) {
+			const inner = link[INNER];
+			if (parent) parent[INNER] = inner;
+			else Object.defineProperty(target, name, { ...Object.getOwnPropertyDescriptor(target, name)!, value: inner });
+			node = inner;
+			continue;
+		}
+		parent = link;
+		node = link[INNER];
+	}
+	if (chain.owners.size === 0 && Object.getOwnPropertyDescriptor(target, name)?.value === chain.stock.value) {
+		Object.defineProperty(target, name, chain.stock);
+		chains.delete(name);
+	}
+}
+
 /** Pi 1.4.0 SDK dispose has no shutdown hook. Release only the disposing session's leases. */
 export function installLifecycle(cleanup: Cleanup, Session = AgentSession): Lifecycle {
 	const owner = Session as unknown as { [PATCH]?: PatchState };
 	let state = owner[PATCH];
 	if (!state) {
 		const prototype = Session.prototype;
-		const originals = ["dispose", "_bindExtensionCore"].map(name => [name, Object.getOwnPropertyDescriptor(prototype, name)] as const);
-		if (originals.some(([, descriptor]) => typeof descriptor?.value !== "function" || !descriptor.configurable)) {
+		const descriptors = PATCHED_NAMES.map(name => Object.getOwnPropertyDescriptor(prototype, name));
+		if (descriptors.some(descriptor => !descriptor || typeof descriptor.value !== "function" || !descriptor.configurable)) {
 			throw new Error("RQW-anthropic: incompatible Pi lifecycle; requires Pi 1.4.0. Nothing was patched.");
 		}
-		state = { count: 0, cacheBindings: new Map(), callbacks: new WeakMap(), leases: new WeakMap(), originals: originals as PatchState["originals"] };
-		const installed = state;
-		for (const [name, descriptor] of installed.originals) {
-			const original = descriptor.value;
-			const wrapped = name === "dispose" ? function(this: AgentSession) {
+		const installed: PatchState = { active: true, count: 0, cacheBindings: new Map(), callbacks: new WeakMap(), leases: new WeakMap() };
+		state = installed;
+		for (const name of PATCHED_NAMES) {
+			const wrapped: Link = name === "dispose" ? function(this: AgentSession) {
+				if (!installed.active) return (wrapped[INNER] as Fn).call(this);
 				try {
 					for (const release of [...(installed.callbacks.get(this) ?? [])]) release();
 				} finally {
 					installed.cacheBindings.get(this)?.();
 					installed.cacheBindings.delete(this);
-					original.call(this);
+					(wrapped[INNER] as Fn).call(this);
 				}
 			} : function(this: AgentSession, ...args: unknown[]) {
+				if (!installed.active) return (wrapped[INNER] as Fn).apply(this, args);
 				if (!installed.cacheBindings.has(this)) installed.cacheBindings.set(this, bindSessionCache(this));
 				// SDK callers may omit session_start. Bind the exact session before native registration.
 				const ctx = this.extensionRunner.createContext();
 				for (const extension of this.resourceLoader.getExtensions().extensions) {
 					for (const handler of extension.handlers.get(SESSION_BIND) ?? []) handler({ type: SESSION_BIND, session: this }, ctx);
 				}
-				return original.apply(this, args);
+				return (wrapped[INNER] as Fn).apply(this, args);
 			};
-			Object.defineProperty(prototype, name, { ...descriptor, value: wrapped });
+			joinChain(prototype, name, installed, wrapped);
 		}
 		owner[PATCH] = state;
 	}
@@ -107,7 +170,9 @@ export function installLifecycle(cleanup: Cleanup, Session = AgentSession): Life
 				if (--installed.count === 0) {
 					for (const restore of installed.cacheBindings.values()) restore();
 					installed.cacheBindings.clear();
-					for (const [name, descriptor] of installed.originals) Object.defineProperty(Session.prototype, name, descriptor);
+					installed.active = false;
+					// Rebase or remove only our own layers; a surviving competitor keeps its layer and its inner link.
+					for (const name of PATCHED_NAMES) leaveChain(Session.prototype, name, installed);
 					delete owner[PATCH];
 				}
 			}

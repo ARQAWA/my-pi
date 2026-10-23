@@ -58,23 +58,61 @@ function tail(model: string, options: NormalizedBuildSystemPromptOptions): strin
 	].join("\n");
 }
 
+/** Sets `options.customPrompt` to the RQW prefix for `modelName` and returns it. Assigns only after the text is built. */
+function applyPrefix(options: NormalizedBuildSystemPromptOptions, modelName: string): string {
+	const value = `${SYSTEM}\n\n${tail(modelName, options)}`;
+	options.customPrompt = value;
+	return value;
+}
+
+/**
+ * Channel on `pi.events` for the startup projection: a caller that has cloned its normalized prompt options emits
+ * `StartupProjectionRequest` synchronously and gets the same prefix that `before_agent_start` would set. Only
+ * `request.options.customPrompt` is written. No handler means the caller keeps Pi's stock prompt.
+ */
+export const STARTUP_PROJECTION = "rqw-prompt:startup-projection";
+
+export interface StartupProjectionRequest {
+	options: NormalizedBuildSystemPromptOptions;
+	model?: { provider: string; id: string };
+	/** Set (and nothing else written) when the projection could not be made; the caller must not use a stale answer. */
+	error?: string;
+}
+
+function projectStartup(request: unknown): void {
+	if (!request || typeof request !== "object") return;
+	const req = request as StartupProjectionRequest;
+	try {
+		const options = req.options;
+		if (!options || typeof options !== "object") throw new TypeError("startup projection needs normalized options");
+		// Same rule as before_agent_start: Pi's own custom or forced prompts are left alone.
+		if (options.customPrompt !== undefined || options.forceSystemPrompt !== undefined) return;
+		applyPrefix(options, req.model ? `${req.model.provider}/${req.model.id}` : "unknown");
+	} catch (error) {
+		req.error = `rqw-prompt startup projection failed: ${error instanceof Error ? error.message : String(error)}`;
+	}
+}
+
 export default function prompt(pi: ExtensionAPI) {
 	let prepared: { options: NormalizedBuildSystemPromptOptions; value: string } | undefined;
+	let unsubscribeProjection: (() => void) | undefined;
+	const subscribeProjection = () => { unsubscribeProjection ??= pi.events.on(STARTUP_PROJECTION, projectStartup); };
+	subscribeProjection();
+	pi.on("session_start", subscribeProjection);
+	pi.on("session_shutdown", () => { unsubscribeProjection?.(); unsubscribeProjection = undefined; });
+
 	pi.on("before_agent_start", (event, ctx) => {
 		prepared = undefined;
 		const options = event.systemPromptOptions;
 		// Pi creates fresh run options from the loader, not from our previous prefix.
 		if (options.customPrompt !== undefined || options.forceSystemPrompt !== undefined) return;
 		const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "unknown";
-		const value = `${SYSTEM}\n\n${tail(model, options)}`;
-		options.customPrompt = value;
-		prepared = { options, value };
+		prepared = { options, value: applyPrefix(options, model) };
 	});
 	pi.on("model_select", (event) => {
 		// A later before_agent_start handler can select the model or take over the prefix.
 		if (!prepared || prepared.options.forceSystemPrompt !== undefined || prepared.options.customPrompt !== prepared.value) return;
-		prepared.value = `${SYSTEM}\n\n${tail(`${event.model.provider}/${event.model.id}`, prepared.options)}`;
-		prepared.options.customPrompt = prepared.value;
+		prepared.value = applyPrefix(prepared.options, `${event.model.provider}/${event.model.id}`);
 	});
 	pi.on("agent_start", () => { prepared = undefined; });
 }

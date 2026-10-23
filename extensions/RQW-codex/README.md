@@ -1,0 +1,48 @@
+# RQW-codex
+
+Independent ChatGPT-subscription overlay of Pi 1.4.0's `openai-codex` / `openai-codex-responses`, targeting Codex CLI stable **0.163.0**, upstream **83086188ae0614bd882818ff1aa23f3194962012**. Not Pi's separate `openai` provider, an API-key transport, a Pi patch/fork or the entire Codex harness.
+
+## Use and credentials
+
+Keep an existing valid `openai-codex` OAuth credential in place. New `/login openai-codex` starts device code directly: open the displayed URL and approve the displayed code. No browser-login selector, callback listener, pasted authorization-code alternative or silent fallback. Failed/canceled login does not replace the existing grant. No automatic import from `openai`, another adapter's slot, `~/.codex`, keychain or browser cookies. Token rotation remains in Pi's credential-store transaction; diagnostics never include bearer/refresh tokens or upstream auth bodies.
+
+Run only one Codex adapter. Preserve credentials when disabling an old adapter. Disable RQW-codex independently with the package filter `-extensions/RQW-codex/index.ts` (see [INSTALL](../../INSTALL.md#switch-one-extension-off)); reload/restart. It does not own provider visibility or depend on [RQW-providers](../RQW-providers/README.md). RQW-providers is extension 14; RQW-codex follows it as extension 15 in `pi.extensions`.
+
+## Protocol contract
+
+- Own native request/metadata codec, WS-first/SSE, socket-local continuation and raw completed-item history. Application-level identity is `codex_cli_rs` 0.163.0 with actual host/terminal and sanitized truthful git/workspace facts, not imported Codex installation identity.
+- Native `generate:false` startup/prepared-idle prewarm, no periodic replay or synthetic assistant answer; RQW-settings' generic warmer remains off.
+- Native retry/error distinctions and cancel controls; connection-failed sampling retries without a count limit with 5–60 s backoff until canceled. Subscription exhaustion/policy/auth failure is not an infinite network retry. Own Codex failures do not get Pi's overlapping retry budget.
+- Stable effort override is **off**; capability-gated `configuration_update` is only for an explicitly enabled feature profile. Preserve actual RQW prompt/tools and requested effort, exact raw encrypted items, argument strings and phases.
+- No `/models` requests. The offline 0.163.0 snapshot covers only our listed GPT models; unknown capabilities fail clearly. Pi/RQW catalog, model picker and context limits stay authoritative. Upgrades are manual reviewed protocol migrations, never startup downloads.
+- RQW-settings alone owns `/fast-gpt`, default off; priority is taken from the final payload hook. Children keep their inherited/overridden Fast state, actual lineage and independent sockets/turn state while sharing root cache affinity.
+
+### Automatic idle prewarm
+
+RQW-codex itself observes the public session lifecycle. After a run really settles, or manual compaction finishes, one deferred check attempts native history prewarm only while the owned Codex session is idle. An already prepared healthy connection sends nothing. Duplicate completion signals are coalesced; there is no idle polling, periodic cache keepalive, synthetic assistant turn or user command. Aborted runs do not schedule it; a new busy operation or disposal cancels pending automatic work, and disposal removes the listener and deferred check.
+
+The host channel `rqw-codex:prewarm-with-history` remains optional, not the package producer: a host may emit an object `{ threadId? }` to target an owned root or child. `accepted: true` means recognized, not necessarily sent. Busy/prepared sessions skip sending; unknown or foreign threads do not acquire credentials or start a transport.
+
+Startup, including cold resume, stays cold: base prompt/tools and no history. Automatic and explicit history prewarm use the current effective full or compacted history, including Pi 1.4.0 pending system-section updates in their next-run position and the current visible tool catalog rather than obsolete replayed declarations. Prewarm and compaction respect codemode-only hidden declarations without disabling the executable tools behind codemode. An explicitly marked forced child prompt is projected as the caller actually forces it; soft reviewer prompts retain their SDK sections. These request-time projections do not rewrite the Pi transcript. RQW-prompt and RQW-tools contribute their own policies to the optional pure projection; no normal turn hook is synthetically invoked. The package-level carrier is `test/codex-prompt-tools.test.ts`. The first normal request joins pending setup within the remaining native budget. Prepared-response continuation is used only while the actual post-hook prefix still matches; later prompt/tool-loadout changes require a full request instead.
+
+## Compaction and portability
+
+Codex uses backend **V2**: append `compaction_trigger` to a native projected request on the same `/codex/responses` endpoint; accept exactly one opaque compaction item plus successful completion, then atomically persist the new window/history state. This is neither legacy `/responses/compact` nor a Pi text-summary request.
+
+**RQW-context still owns the trigger**, W = min(contextWindow, 500000), R = round(W/10), threshold W−R, with the existing explicit-reserve precedence. Backend compaction replaces the Codex summary mechanism, not that rule. Original pre-compaction entries remain alongside the opaque checkpoint. Non-Codex providers and a disabled adapter get the original history; stock Pi compacts only when needed to fit its window. There is no extra summary request otherwise, and no opaque-state blocking.
+
+## Independence and verification
+
+No imports outside this extension folder; optional event-bus session policies bind RQW-agent/RQW-review children without an import dependency. Missing adapter means stock child behavior. Disable/reload/dispose must not unregister another owner's live provider or leak a child's continuation into its parent. Reviewer safety policy and wall cap remain theirs.
+
+Source assertions and the pinned model snapshot: `test/fixtures/`. Compatibility spikes cover stock library/bundle seams, while fake-server tests cover owned mechanics. `.github/workflows/codex-oracle.yml` executes pinned upstream fake-server scenarios and saves captures/logs in CI. Source-derived fixtures are not runtime captures; reconstructed WS JSON is not raw WS control-frame evidence. Full suites, Rust fixture generation and macOS/Windows/Bun checks run in CI, not on the owner's laptop.
+
+On macOS the oracle applies one SHA-guarded socket-lifecycle cleanup only to its temporary upstream retry fixture and records it in `run.json` as `adaptedFixtures`. Native assertions, timeouts and `listen(128)` stay unchanged; original sources and runtime transport are untouched. The cause and coordinator technical decision are in [macOS oracle fixture](../../DECISIONS.md#macos-oracle-fixture). Diagnostic runs are not full oracle acceptance.
+
+### Deterministic native differential
+
+`test/fixtures/native-differential.json` pins captures from [normal oracle run 39956439677](https://github.com/ARQAWA/my-pi/actions/runs/39956439677), my-pi head `fe3e9ec554070811a76eb5403934b753825e67df`: 10 cases, transport 4, retry 3 and compaction 3. `scripts/pin-native-differential.mjs` records capture/source hashes, captured SSE scripts and source-cited non-SSE stimuli. `test/native-differential.test.ts` replays them through the real extension in a Pi `AgentSession`, with fake credentials and injected fetch/connect/sleep seams. The shared `test/native-differential.mjs` projection compares ordered transport/endpoint, turn-state replay, request kind, compaction phase, turn grouping, retry-body identity and conversation items; selected cases also check content encoding. The follow-up sampling compaction case requires `mid_turn` within the active user turn, while preflight remains `pre_turn`.
+
+The normal oracle workflow regenerates this projection from fresh captures and uses `--check` to reject fixture/source drift, including all stable replay configuration fields. Baseline capture hashes identify provenance, not byte equality across runs. Source-backed `Retry-After` sleeps are compared with a deterministic clock, without real waiting; explicit fallback cases check upgrade order/count. Actual WebSocket frame replay remains uncovered: upgrades are simulated and these requests use the HTTP/SSE path. The pinned native run does not itself prove that the new differential checks passed CI. See [Native differential checks](../../DECISIONS.md#native-differential-checks) for the coordinator technical decision.
+
+See the canonical [decision and exception ledger](../../DECISIONS.md#codex-subscription-transport) for all accepted deviations. No deterministic test establishes live subscription acceptance, equal answers, cache retention, subscription billing or free prewarm. Raw TLS/packet equivalence and optional managed/enterprise/Guardian/memory harness profiles are not claimed.

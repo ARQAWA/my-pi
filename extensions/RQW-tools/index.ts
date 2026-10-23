@@ -61,6 +61,37 @@ const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
 /** Tools whose calls go to the background after 12 s; `job` is on whenever one of them is. */
 const BACKGROUNDABLE = ["bash", "codemode", "read", "edit", "write", "grep", "find"];
 
+/** Startup projection channel of RQW-prompt (same literal; no import across folders). See RQW-prompt `STARTUP_PROJECTION`. */
+const STARTUP_PROJECTION = "rqw-prompt:startup-projection";
+
+/**
+ * The two tool sections of a prompt's options, from the selected and hidden tools of those options. Pure: it writes only
+ * `options.sections` and is the one rule for the normal turn (before_agent_start) and the startup projection.
+ */
+function applyToolSections(options: any): void {
+	const visible = (name: string) => options.selectedTools.includes(name) && !options.hiddenTools.includes(name);
+	if (["grep", "find", "read"].every(visible)) {
+		options.sections.search_method = "- Search with the grep and find tools and read files with read, following the method in the grep description.";
+	}
+	if (visible("bash")) {
+		options.sections.rqw_tools_execution = "- A shell command waits for the calls before it and holds the calls after it; one still running after 12 seconds continues in the background as a job, which holds the later calls of the same response and, from later responses, only calls that change what it names as held: a package folder it installs, the git index, files it writes.";
+	}
+}
+
+/** Startup projection handler: the same sections on the caller's clone; an invalid or failed request is reported, never guessed. */
+function projectToolSections(request: unknown): void {
+	if (!request || typeof request !== "object") return;
+	const req = request as { options?: unknown; error?: string };
+	if (req.error !== undefined) return;
+	try {
+		const options = req.options;
+		if (!options || typeof options !== "object") throw new TypeError("startup projection needs normalized options");
+		applyToolSections(options);
+	} catch (error) {
+		req.error = `rqw-tools startup projection failed: ${error instanceof Error ? error.message : String(error)}`;
+	}
+}
+
 export default function (pi: ExtensionAPI) {
 	const selectionShutdown = installSelectionIntent();
 	// One barrier per extension instance; every execute registers its scope synchronously before any await. The tool
@@ -80,16 +111,15 @@ export default function (pi: ExtensionAPI) {
 
 	// Custom sections survive customPrompt; tool promptGuidelines do not. Each turn starts from Pi's base
 	// options, so disabling this extension removes the sections on the next turn, including after reload.
-	pi.on("before_agent_start", (event) => {
-		const options = event.systemPromptOptions;
-		const visible = (name: string) => options.selectedTools.includes(name) && !options.hiddenTools.includes(name);
-		if (["grep", "find", "read"].every(visible)) {
-			options.sections.search_method = "- Search with the grep and find tools and read files with read, following the method in the grep description.";
-		}
-		if (visible("bash")) {
-			options.sections.rqw_tools_execution = "- A shell command waits for the calls before it and holds the calls after it; one still running after 12 seconds continues in the background as a job, which holds the later calls of the same response and, from later responses, only calls that change what it names as held: a package folder it installs, the git index, files it writes.";
-		}
-	});
+	pi.on("before_agent_start", (event) => applyToolSections(event.systemPromptOptions));
+
+	// The same sections for the startup projection of RQW-codex (idle and startup prewarm), so the cold request carries
+	// what the first normal turn carries. Subscribed like RQW-prompt: on load and session_start, dropped on shutdown.
+	let unsubscribeProjection: (() => void) | undefined;
+	const subscribeProjection = () => { unsubscribeProjection ??= pi.events.on(STARTUP_PROJECTION, projectToolSections); };
+	subscribeProjection();
+	pi.on("session_start", subscribeProjection);
+	pi.on("session_shutdown", () => { unsubscribeProjection?.(); unsubscribeProjection = undefined; });
 
 	// Pi calls the handler synchronously inside `emit`, and drops it when this instance goes stale (reload, dispose).
 	// The offer is `createTools` itself: a subagent calls it and gets six fresh tools with a barrier of their own, plus
