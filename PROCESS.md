@@ -106,6 +106,10 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
 5. Calibration, meaning fixing the system under test, happens on the strongest models. Weaker models are measured
    afterwards on the calibrated version; their failures are recorded as capability limits, not treated as defects
    to fix, unless they show a mechanics or checker bug.
+6. Measurement runs have no hard request or start caps as stop conditions; usage never stops a run. The measurer
+   supervises instead: a programmatic monitor checks the running wave every 1-5 minutes (not
+   continuous polling), the measurer reads the actual outputs it surfaces, and interrupts the run on real anomalies
+   (harness defect, stuck or looping reviewer, runaway repairs, unpinned sources, errors).
 
 ## Independent review
 

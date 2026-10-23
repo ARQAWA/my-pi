@@ -118,6 +118,9 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Calibration happens on the strongest models; weaker ones are measured afterwards on the calibrated version and their
   failures are recorded as capability limits, not defects, unless they show a mechanics or checker bug.
   Carried by [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks).
+- Measurement runs have no caps; the measurer supervises instead. Owner: «Нахуй ты вообще лимиты какие то ставишь? я разве говорил ставить? ты наблюдаешь за запусками следишь как себя агенты ведут и сам их прерываешь, но ты их не полишь, а опрашиваешь прграмно раз допустим в 1-3-5 минут. ну я имею ввиду не лично ты а тот кто делает замеры»
+  Reason: a pilot was stopped on a self-imposed 375-request cap after harness pauses consumed it; caps are not stop
+  conditions. Carried by [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks), rule 6.
 - Keep replies short unless expansion is needed: «Он отвечает не больше трех абзацев по максимум две строки
   в абзаце. Если это не требует расширения, конечно».
 - CI evidence for a test file that dies. Coordinator decision (technical), no owner quote: the `npm test` steps keep
