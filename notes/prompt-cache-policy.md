@@ -7,9 +7,10 @@ Approval: [DECISIONS.md, Anthropic subscription adapter](../DECISIONS.md#anthrop
 
 Owner: «Разберись, как это работает у основных. Разберись, как работает кэширование у саб-агентов.»
 
-## Current request path
+## Request path
 
-Pi 1.3.0, with RQW-anthropic active and an OAuth subscription:
+Researched on Pi 1.3.0 and kept as frozen evidence; the package now pins Pi 1.4.0. With RQW-anthropic active and an
+OAuth subscription:
 
 | Session | Default TTL | Warmer | Lifetime / reuse |
 | --- | --- | --- | --- |

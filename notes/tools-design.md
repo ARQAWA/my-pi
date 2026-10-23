@@ -1,5 +1,11 @@
 # RQW-tools: design (coordinator decisions)
 
+Status: frozen evidence, the original design of 2026-10-20 on Pi 1.3.0. Later work overrides parts of it: each tool
+now runs its own `execute` around the stock call, with the barrier, background jobs, shared resource claims and
+locks (`extensions/RQW-tools/index.ts`); grep and find are added only when the user made no tool selection; a
+seventh tool `job` is registered; a bash call still running after 12 seconds continues as a background job; CI runs
+on macOS and Windows only. Current contract: [DECISIONS.md, Tools](../DECISIONS.md#tools).
+
 Agreement: `notes/tools-requirements.md`. Evidence: `analysis-pi-tools.md`, `analysis-omplite-tools.md`,
 `analysis-races.md`, `analysis-windows.md`. Manifest: the simplest thing that is correct and fast.
 

@@ -1,5 +1,8 @@
 # omp-lite base tools: mechanics, Pi 1.3.0 gap, port verdict
 
+Status: frozen evidence on Pi 1.3.0; the package now pins Pi 1.4.0. Current contract:
+[DECISIONS.md, Tools](../DECISIONS.md#tools).
+
 Read-only analysis for the RQW-tools work (agreement: `notes/tools-requirements.md`). Path prefixes:
 
 - `OL/` = `/Users/arkadijcukavin/Documents/ChatGPT/my-omp-harness/`

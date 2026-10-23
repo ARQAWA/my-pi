@@ -1,5 +1,8 @@
 # Draft: `bash` tool description and the system-prompt change
 
+Status: frozen draft, not the current text; see `extensions/RQW-tools/descriptions/bash.md` and
+`extensions/RQW-prompt/SYSTEM.md`.
+
 Sources: `notes/tools-requirements.md` (items 1, 3, 4, 6, 7, 8, 9), `notes/analysis-pi-tools.md` 1.4 and 4,
 `notes/analysis-omplite-tools.md` bash and 4, `notes/analysis-windows.md` 1.2, 1.3, 1.5,
 omp-lite `extensions/tools/bash/description.md`, `extensions/RQW-prompt/SYSTEM.md`.

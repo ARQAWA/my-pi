@@ -1,5 +1,8 @@
 # Review 2: RQW-tools descriptions, parameter strings and SYSTEM.md lines 10-25
 
+Status: frozen evidence, a review of HEAD `9e13b55` on Pi 1.3.0. Its findings were fixed as wording
+([DECISIONS.md, Tools](../DECISIONS.md#tools)); the current descriptions are `extensions/RQW-tools/descriptions/*.md`.
+
 Object (HEAD `9e13b55`): `extensions/RQW-tools/descriptions/*.md`; parameter descriptions in
 `extensions/RQW-tools/{index,edit,write}.ts`; `extensions/RQW-prompt/SYSTEM.md` lines 10-25.
 Agreement: `notes/tools-requirements.md`. Design: `notes/tools-design.md`, `DECISIONS.md` section Tools.

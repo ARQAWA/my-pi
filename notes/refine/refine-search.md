@@ -1,9 +1,9 @@
 # Refining the grep and find descriptions by probes (2026-10-20)
 
 Stand: this copy. Probe: `/tmp/probe/probe.sh`, tasks T01, T03, T06, models gpt-6.1-sol medium and gpt-6-sol low,
-3 runs per model per task per variant (18 runs per variant), at most 4 at once. Runner: `notes/probe-runs/run.py`;
-logs `notes/probe-runs/*.log`; raw runs `/tmp/probe/out/search-<variant>-*.json(l)`; texts of every variant in
-`notes/probe-runs/texts/`; per-point scores in `notes/probe-runs/scores.json`. The `limit` parameter texts in
+3 runs per model per task per variant (18 runs per variant), at most 4 at once. Runner `run.py`, logs, texts of every
+variant and per-point scores were kept in a `notes/probe-runs/` folder of that stand that was never committed; they
+are not available. Raw runs were in `/tmp/probe/out/search-<variant>-*.json(l)`. The `limit` parameter texts in
 `index.ts` were not changed.
 
 Checklist coverage: the full final answer of each run graded against `bench41/checklists.py` by a model, twice;

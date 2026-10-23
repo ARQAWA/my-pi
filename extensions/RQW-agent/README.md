@@ -23,8 +23,8 @@ are leaves. This extension imports no other RQW extension. Optional RQW-tools de
   one schema field reuses the whole agent runtime and adds no tool to every request.
 - `title` (optional, 3-5 words; `agent`, `code_writer`, `shell_runner`, `start` and `restart`, kept on restart) is shown
   as `title` in `status`, in the wait result's display data (`results[i].display.title`) and in the message
-  `details.title`; the RQW-agent-ui result card shows it in its header after `<name>#<id>`. The delivered content keeps
-  its `[agent#N] ...` format.
+  `details.title`. Nothing on main draws a card from it: there is no `RQW-agent-ui` extension here, and a card renderer is
+  open work, [U05](../../BACKLOG.md#u05). The delivered content keeps its `[agent#N] ...` format.
 - The `agent` description carries only generic when/when-not advice adapted from Cursor (not for narrow questions,
   one or two known files or a single search; parallel starts for independent areas; full context and the exact
   return; trust the result; the user does not see it), no coordinator rules.
@@ -80,7 +80,12 @@ file re-reading and failed replacement, caller-branch inclusion and nested calle
   child gets in addition to its base tools; its definition carries `jobs.abortAll()`, called on `interrupt`, and
   `jobs.dispose()`, called when the child is closed (`stop`, `restart`, caller shutdown). The factory call passes
   `{ label: "agent#1" }` (or `code_writer#2`, ...) as its optional fourth argument, so RQW-tools names the child in
-  other sessions' notes and holds. Rule: [DECISIONS.md, Tools](../../DECISIONS.md#tools).
+  other sessions' notes and holds. Rule: [DECISIONS.md, Tools](../../DECISIONS.md#tools). `jobs.abortAll()` kills only
+  jobs that can be killed (shell and other process jobs, and queued ones); a running file-tool job finishes on its own
+  and `job kill` answers `cannot_kill` for it. This is an approved design caveat, not a defect. The same resource
+  and effects contract applies to child jobs: bounded walks report scan errors, subshell cwd changes stay scoped,
+  and `symbolic-ref` and `reflog` writes hold the repository. Deletions are reported since the start, by comparing
+  the exact pre-start and end states.
 - Workers keep their fixed role prompt and get a `<environment>` block with the working directory, OS and today's
   UTC date ([prompt.ts](prompt.ts)).
 
@@ -165,13 +170,17 @@ Offline proofs: `test/workers.test.ts`, `test/nested-workers.test.ts`, `test/wor
 
 ## GPT Fast
 
-A child (`agent`, `code_writer`, `shell_runner`) inherits its caller's GPT Fast state once, when it starts, and keeps it
-for its life, `send` and `restart` included; a nested child inherits from its direct caller. The state is answered by
-RQW-settings over `pi.events` (`rqw-settings:fast-gpt-query`); without it children stay on the standard tier. The optional
-boolean `fast_gpt` overrides the inherited state (`false` when the user forbids Fast for subagents; `send` and
-`restart` of `agent` may change it). `fast-gpt.ts` sets `service_tier: "priority"` on the child's openai-codex requests
+A child (`agent`, `code_writer`, `shell_runner`) inherits its caller's GPT Fast state when it starts; a nested child
+inherits from its direct caller. The state is answered by RQW-settings over `pi.events` (`rqw-settings:fast-gpt-query`);
+without it children stay on the standard tier. The optional boolean `fast_gpt` is accepted by all three tools on `start`,
+`send` and `restart` (`false` when the user forbids Fast for subagents). On `start` it replaces the inherited state. On
+`send` it changes the child's state for its next requests and stays; on `restart` it is used by the new session. Without
+`fast_gpt`, `send` keeps the child's state and `restart` carries the old state over; the child's own workers follow its
+state. `fast-gpt.ts` sets `service_tier: "priority"` on the child's openai-codex requests
 through `before_provider_request`; Anthropic requests are untouched. Default, rule and quotes:
-[DECISIONS.md, Settings](../../DECISIONS.md#settings). Proof: `test/fast-gpt.test.ts`.
+[DECISIONS.md, Settings](../../DECISIONS.md#settings). Proof: `test/fast-gpt.test.ts` covers `start`, `send` and
+`restart` of `agent` and `start` of both workers; worker `send` and `restart` use the same code path and have no test
+of their own.
 
 ## Wait, status and management
 
@@ -355,7 +364,7 @@ system prompt; exact caller `system` applies to task requests. Bare SDK `session
 shutdown: hosts must emit `session_shutdown` or use Pi's runtime lifecycle. Child sessions remain in-memory; reload
 restores issued ids, not child sessions. Accepted process-sharing and end-of-session delivery limits are unchanged.
 
-## UI metadata and running-count offer (P4)
+## Display metadata and running-count offer
 
 Delivered custom messages keep their original content byte-for-byte. Their `details` add
 `{ id, outcome: "finished" | "failed", model?, thinking?, seconds }` beside `delivery` and `run`.
@@ -369,9 +378,13 @@ For wait, the same metadata is at `result.details.results[i].display`. The exist
 must read display metadata from details, not parse it from the model-visible JSON text. A receipt is
 not another delivered answer and adds no duplicate tool-use count. Proof: `test/ui-metadata.test.ts`.
 
-### Contract for P6: `pi.events`, version 1
+<a id="contract-for-p6"></a>
 
-No cross-extension imports are needed. Each enabled producer offers one **source object per session
+### Running-count contract: `pi.events`, version 1
+
+The anchor `#contract-for-p6` is a stable alias of this section for existing references. No cross-extension imports are
+needed. The consumer is RQW-statusbar (`activity.ts`, `CountsWatch`), which spells the
+channel names itself. Each enabled producer offers one **source object per session
 lifetime**. RQW-agent owns agent/worker counts, including nested workers; RQW-review owns review counts
 inside its own folder. There is no generic native-job registry or invented job count.
 
@@ -395,14 +408,15 @@ inside its own folder. There is no generic native-job registry or invented job c
 
 Counts read existing Activity native state and the existing runtime ownership tree, not pending results
 or logical assignment IDs. A native-idle agent waiting for its worker contributes zero agents while the
-running worker contributes one worker. Review counts read RQW-review's own running-job set. P4 adds no
-statusbar consumer, timer, card or second child registry. Proof: `test/counts.test.ts` and the independent
-RQW-review `test/counts.test.ts`; full extension isolation remains `test/isolation.test.ts` in CI.
+running worker contributes one worker. Review counts read RQW-review's own running-job set. This extension adds no
+timer, card or second child registry. Proof: `test/counts.test.ts` and the independent RQW-review
+`test/counts.test.ts`; full extension isolation remains `test/isolation.test.ts` in CI.
 
-Authority: proposal «Дизайн согласован и зафиксирован. Следующая задача T16: передавать индикатору реальные счётчики работающих агентов, воркеров и ревью через pi.events. Существующий учёт в extensions/RQW-agent/activity.ts переиспользуем, без дублирования.»; owner «+».
+Provenance: the contract comes from a coordinator proposal. That proposal is coordinator text, not an owner
+quotation; no verbatim owner message for it is recorded.
 Reason: expose real background activity without coupling independently switchable extensions or changing
 execution/delivery. Carriers: `activity.ts`, `index.ts`, `workers.ts`, `counts.ts`, and RQW-review's own
-`counts.ts`/`index.ts`. Root decision/installation documentation is reserved for P10.
+`counts.ts`/`index.ts`.
 Public Pi 1.4.0 seams: root-exported `EventBus`/`createEventBus`, `pi.events.emit/on`,
 `AgentSession.subscribe`, `AgentSession.thinkingLevel`, and `session_start`/`session_shutdown`.
 No Pi patch, private-field access or method replacement is introduced by this producer work.

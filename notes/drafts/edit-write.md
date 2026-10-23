@@ -1,5 +1,8 @@
 # Draft: `edit` and `write` descriptions with multi-file calls
 
+Status: frozen draft, not the current text. The current descriptions are `extensions/RQW-tools/descriptions/edit.md`
+and `write.md`; the current `write` rejects duplicate paths in one call instead of letting the last one win.
+
 Sources: `notes/tools-requirements.md` (items 3, 5, 6, 7), `notes/analysis-pi-tools.md` (1.5-1.7, 5, facts 7 and 10),
 `notes/analysis-omplite-tools.md` (edit, write, bugs 3.2-3.5, section 4), omp-lite `edit/description.md`,
 `write/description.md`. With `customPrompt` set, the description and the parameter descriptions are the only tool

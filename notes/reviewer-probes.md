@@ -303,7 +303,7 @@ U12 is a finding with REQUIREMENT `NOT AGREED` (a debug print that mixes into th
 
 ## Main side
 
-Decision classes come from the tool calls and the final text: `fix`, `rebut`, `ask` (a question block or question mark with no edit and no review call), `report` (round 2w: no edit, tells the user about the reviewer's claim), "extra edits elsewhere" (an edit that does not touch the disputed finding; Sonnet high fixes other real defects after a CLEAN or withdrawn answer), `none`. [v2] = committed `NEXT`; [n1] = with the one added sentence. Opus medium is not allowed any more and was not used.
+Decision classes come from the tool calls and the final text: `fix`, `rebut`, `ask` (a question block or question mark with no edit and no review call), `report` (round 2w: no edit, tells the user about the reviewer's claim), "extra edits elsewhere" (an edit that does not touch the disputed finding; Sonnet high fixes other real defects after a CLEAN or withdrawn answer), `none`. [v2] = committed `NEXT`; [n1] = with the one added sentence. Opus medium was not used: the development worker rule of that time excluded it. The current table in `PROCESS.md` allows Opus 5.5 medium.
 
 ### Round 1
 
@@ -439,7 +439,7 @@ Per config: detection pooled over both Phase 1 runs; disputes with v3h (items ri
 | Claude | Haiku 5.5 medium | Sonnet 5.5 low, with tolerant verdict extraction (without it Haiku 5.5 medium again) |
 | GPT (quality recommendation of the first campaign; the owner chose GPT-5.6-Luna medium / high, see the next section) | GPT-6.1-Sol low | GPT-6.1-Sol medium |
 
-Recall of all usable configs is the same within noise (95.4-96.7%), so the choice rests on false findings, clean-case accuracy, dispute and format reliability, cost and speed; the two levels cannot be separated by quality, so the first campaign recommended that `high` keep the committed Sonnet for Claude and the medium thinking level for GPT. That is the superseded first-campaign recommendation for GPT: GPT `high` is now GPT-5.6-Luna high (owner's choice, `DECISIONS.md` section Review, and section "GPT match for the Claude slots" below); the Claude `high` slot is being re-measured.
+Recall of all usable configs is the same within noise (95.4-96.7%), so the choice rests on false findings, clean-case accuracy, dispute and format reliability, cost and speed; the two levels cannot be separated by quality, so the first campaign recommended that `high` keep the committed Sonnet for Claude and the medium thinking level for GPT. That is the superseded first-campaign recommendation for GPT: GPT `high` is now GPT-5.6-Luna high (owner's choice, `DECISIONS.md` section Review, and section "GPT match for the Claude slots" below); the Claude `high` slot stays Sonnet 5.5 low in `LEVELS`.
 
 - Haiku low suffices for disputes (165/165) but not for detection: pooled recall 93.7% against 96.3% for medium; it saves 3 s and 0.0003 USD per pass. Keep medium.
 - Sonnet low or medium instead of Haiku brings no recall (96.7% and 96.5% against 96.3%), about 4 times the false findings, about 10 times the cost and half the time; 3-7% of its dispute replies start with a remark and are lost unless the extension tolerates it. Its pluses: all 66 clean cases answered CLEAN and speed.
@@ -450,7 +450,7 @@ Recall of all usable configs is the same within noise (95.4-96.7%), so the choic
 
 ## GPT match for the Claude slots
 
-Question (owner, 2026-10-22): «Надо подобрать сопостовимую модель на gpt, попробоуй 5.6 luna и более сильные модели типа medium ризонинг 6 и 6.1 sol ... порядок должен быть типа haiku 5.5, luna 5.6, luna 6 так как luna 6 слабее 5.6 луны и потом будем думать». Goal: a GPT reviewer comparable to Haiku 5.5 medium (Claude `blind`) and Sonnet 5.5 low (Claude `high`). Owner's decision on the GPT row: «Давай тогда сделаем, что на blind review будет Luna Medium. На high review будет Luna High. Да» (`DECISIONS.md`, Review): `blind` GPT-5.6-Luna medium, `high` GPT-5.6-Luna high.
+Question (owner, 2026-10-22), summarized, not a verbatim quote: find a GPT reviewer comparable to the Claude slots, try GPT-5.6 Luna and stronger models such as GPT-6 and GPT-6.1 Sol at medium reasoning, and put Haiku 5.5 above GPT-5.6 Luna and GPT-6 Luna in the model order. Goal: a GPT reviewer comparable to Haiku 5.5 medium (Claude `blind`) and Sonnet 5.5 low (Claude `high`). Owner's decision on the GPT row: «Давай тогда сделаем, что на blind review будет Luna Medium. На high review будет Luna High. Да» (`DECISIONS.md`, Review): `blind` GPT-5.6-Luna medium, `high` GPT-5.6-Luna high.
 
 Source: `/Users/arkadijcukavin/ai-project/my-pi-evidence/reviewer-probes/bench/results/gpt-match.md` (generated tables `results/gpt-match.table.md`, `results/gpt-match.phase2-luna.md`, costs `results/gpt-match.costs.txt`; run logs `results/gm-*.log`). All measured with the v3h dispute text and concurrency of at most 4 sessions. Phase 1: 40 cases x 3 runs (270 defect chances, 33 clean-case runs), judged by Opus 5.5 medium with 3 votes. The GPT-5.6-Luna and GPT-6-Luna rows ran with v3h; the other rows are the Phase 1 rerun with v3f, which differs from v3h only inside the dispute paragraph that a brief without `<disputes>` does not trigger. Phase 2: v3h on 49 fixtures x 3 runs (165 items: U DECIDED + W/X withdrawn + N UNDECIDED; reply parsed strictly, so Sonnet's replies that start with a remark count as wrong) plus the 5 two-readings fixtures (C, expected UNDECIDED). Rows of Haiku, Sonnet, GPT-6.1-Sol and GPT-6-Sol are the existing cells, not rerun. sec and USD are per pass at Pi list prices.
 
@@ -504,18 +504,18 @@ Phase 1 recall standard error is about 1.2-1.5 points at 270 chances, so the gap
 - Weak points of GPT-5.6-Luna against the Claude configs: more false findings than Haiku medium (10 against 1 in the rerun), 28-31 of 33 clean cases answered CLEAN (Haiku 33, Sonnet 33), fewer two-readings fixtures put to the user (low 5/15, medium 7/15, high 10/15; Haiku medium 11/15).
 - One run set per cell, no repeat: a one- or two-item difference is noise. GPT-5.6-Luna high was added because medium looked promising; the other models were not run at high. The adopted `REVIEWER.md` has one sentence these runs did not see (see Limits).
 
-## Limits and open decisions
+## Limits
 
 1. Unagreed additions (U12): decided by the owner as `DECIDED` (Main removes the addition without asking). v2 gave DECIDED almost everywhere; the v3 `NOT AGREED` test gave UNDECIDED for GPT-6.1-Sol and a mix for the others. The adopted text drops the test clause and adds an explicit exception sentence (unmeasured), and has not been measured on this case.
 2. Tolerant extraction: 3-7% of Sonnet's dispute replies start with a remark. The extension starts the verdict at the first line that is exactly `FINDINGS:` (`verdictOf`), which recovers all of them in the rescore; this code is outside the tested wording and is covered by `review.test.ts`.
 3. A reviewer's wrong DECIDED is obeyed by GPT main almost always (round 2w); whether `NEXT` or the extension should keep Main from changing something the user explicitly forbade was not tested.
-4. `LEVELS` is family-dependent. The Claude row is the recommendation above; the Claude `high` slot is being re-measured (Haiku high and xhigh against Sonnet low) and may change. The GPT row is the owner's choice, GPT-5.6-Luna medium and high.
-5. The Phase 1 rerun used the same Opus 5.5 medium judge as the first run, to keep the two comparable. If the rule against Opus medium covers the judge, both runs need a rejudge.
+4. `LEVELS` is family-dependent. The Claude row is the recommendation above and is the current `LEVELS` value. The GPT row is the owner's choice, GPT-5.6-Luna medium and high. The reviewer model and prompt choice for reviewer v2 is open work: [BACKLOG.md, R01](../BACKLOG.md#r01).
+5. The Phase 1 rerun used the same Opus 5.5 medium judge as the first run, to keep the two comparable.
 6. Three runs per cell, 54 fixtures (12 undecided, 5 two-readings): a difference of one or two items between variants is noise (for example Sonnet low in v3d, v3e, v3f: 144, 149, 150 of 165). The conclusions rest on the large gaps: GPT undecided 24 to 36 of 36, Haiku and GPT 164-165 of 165 against Sonnet 154-161, two-readings 0-2 to 8-11 of 15, Main fixing 12-17 of 30 to 1-7.
 7. Fixtures are synthetic and the findings were written by hand in the committed finding format; C03 is a weak ambiguity; N06, N07 and N09 allow a removal fix, which counts for Main as a defensible alternative to asking.
 8. The Phase 1 harness still builds the old `rejected` brief (3 cases are obsolete for the pair contract).
 9. Not measured: reviewer levels above medium, a Luna rerun, a live run in the owner's Pi, cross-family independence beyond the union recall, a main-side wording for a wrong DECIDED.
-10. The runs used up to about 30 concurrent LLM sessions (10 per family chain, several chains in parallel). The owner's rule of 2026-10-22 allows at most 4 concurrent local sessions and keeps CPU-heavy work (full test suites, repeat loops, pressure runs) in GitHub Actions; a rerun of these probes uses `--concurrency 4` or less.
+10. The runs used up to about 30 concurrent LLM sessions (10 per family chain, several chains in parallel). Later measurements follow `PROCESS.md`, Measurements and benchmarks.
 
 ## Sources of the numbers
 

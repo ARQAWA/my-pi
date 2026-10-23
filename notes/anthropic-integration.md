@@ -1,15 +1,18 @@
 # RQW-anthropic integration into current main
 
+Status: frozen evidence, the report of one integration merge on Pi 1.3.0, before provider visibility moved to
+RQW-providers. Its test counts and review state cover that merge only. Current adapter contract:
+`extensions/RQW-anthropic/README.md`; provider visibility: `extensions/RQW-providers/README.md`.
+
 ## Scope and review boundary
 
 The coordinator's integration brief C:3376, not a direct owner message, selected a merge of main into
 `rqw-anthropic`, preservation of existing modules/docs and reporting semantic test changes for independent review.
-Underlying owner requests: adapter (C:3133), provider visibility (C:3171) and independent modules (C:3046).
-Owner (C:3133): «в нашем репозитории должен быть адаптер для подписок Anthropic».
-Owner (C:3171): «Это именно отключить»; «Когда мы заходим в логин, там должны быть только кодекс,
-авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё».
+Underlying owner requests in the omp session, summarized, not verbatim: an Anthropic subscription adapter (C:3133),
+only Codex and Anthropic in login (C:3171) and independent modules (C:3046).
 `C:<line>` uses the raw session reference in `DECISIONS.md`. Offline fixtures and the integration procedure
-are engineering choices, not additional owner requirements. The Claude benchmark/tuning pause C:3244 remains.
+are engineering choices, not additional owner requirements. The old Claude benchmark and tuning campaigns once
+paused at C:3244 are dead, superseded by the v3 benchmark ([BACKLOG.md, R02](../BACKLOG.md#r02)).
 
 The integration merges main `231b8ca9884baefaa8fae80ee80c7c40cc4fef31` into
 `rqw-anthropic` at `f5320a0212c17dca4cdd6b0449809c7a9fc95be7`.

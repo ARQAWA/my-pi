@@ -1,5 +1,7 @@
 # Draft: `grep` tool description
 
+Status: frozen draft, not the current text; see `extensions/RQW-tools/descriptions/grep.md`.
+
 Name and parameters stay exactly as in Pi: `pattern`, `path`, `glob`, `ignoreCase`, `literal`, `context`, `limit`.
 `{GREP_CHARS}` is the character budget the coordinator measures. Source keys: `OL` = omp-lite
 `extensions/tools/grep/description.md` (line N) or `glob/description.md`; `SM` = `extensions/RQW-prompt/SYSTEM.md`

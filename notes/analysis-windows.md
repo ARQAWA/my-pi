@@ -1,5 +1,8 @@
 # Windows analysis for RQW-tools (Pi 1.3.0, PowerShell -> Git Bash -> pi, no WSL, no admin)
 
+Status: frozen evidence, the original read-only analysis on Pi 1.3.0. The package now pins Pi 1.4.0; the current
+Windows behavior is in [DECISIONS.md, Tools](../DECISIONS.md#tools) and CI runs on `windows-latest`.
+
 Read-only analysis for requirement 9 of `notes/tools-requirements.md` ("Works on macOS and on Windows ... Proof without
 the owner's hands: GitHub Actions Windows runner and documentation").
 
@@ -465,9 +468,6 @@ the PortableGit release lookup uses the API with the workflow token to avoid the
    the profile path.
 7. His editor's locking behaviour and the TUI in his terminal (Windows Terminal key handling,
    `PI/docs/windows.md:65-67`).
-
-A one-command self-check for the owner (later, optional): `node probes/windows/run.mjs --quick` in his Git Bash,
-reporting W1, W4, W7, W12, W18, W22 only.
 
 ---
 

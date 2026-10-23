@@ -15,21 +15,24 @@ Claude; provider `openai` or `openai-codex` or a `gpt-*` id is GPT). One table, 
 | Claude | `anthropic/claude-haiku-5-5`, thinking medium | `anthropic/claude-sonnet-5-5`, thinking low |
 | GPT | `openai-codex/gpt-5.6-luna`, thinking medium | `openai-codex/gpt-5.6-luna`, thinking high |
 
-The GPT row is the owner's choice (`DECISIONS.md` section Review); `gpt-5.6-luna` stays in the RQW-models list because of it. The Claude `high` slot is being re-measured and may change.
+The GPT row is the owner's choice (`DECISIONS.md` section Review); `gpt-5.6-luna` stays in the RQW-models list because of it. The Claude row is the current choice, also one constant in `LEVELS`.
 
 A main model of neither family starts with the Claude row. When the first reviewer has no model or its provider has
 no credentials, the other family's reviewer of the same level takes over; the review fails only when neither can
 start, and the message names both reasons. A failed request or no verdict in 30 minutes fails the review with no
-automatic second attempt. This existing hang guard allows deeper reading and tests; replacing hang protection is
-separate later work. The verdict message's `details` carry the model that actually ran.
+automatic second attempt. This hang guard (`TIMEOUT_MS` in `index.ts`) allows deeper reading and tests; replacing it
+with wait and status control is open work, [R01](../../BACKLOG.md#r01). The verdict message's `details` carry the model that actually ran.
 
 ## Tools and working directory
 
 Each fresh session asks on `pi.events` channel `rqw-tools:subagent-tools` for a factory, using the RQW-agent
 handshake without importing it. When offered, its fresh definitions are filtered to `read`, `bash`, `grep`, `find`,
-plus RQW-tools' `job`: a reviewer call still running after 12 s goes to the background as in any session, the reviewer
-waits for or kills it, Esc of the review aborts its jobs and the end of the review (also the end of a subagent that
-asked for it) disposes them. The factory call passes `{ label: "review" }`. Otherwise Pi supplies stock tools (no
+plus RQW-tools' `job`: an eligible reviewer call still running after 12 s goes to the background as in any session;
+bash with its own timeout of 13 s or less stays in the foreground without a pre-start snapshot. The reviewer
+waits for it or kills it when it is a process job, Esc of the review aborts its killable jobs and the end of the review
+(also the end of a subagent that asked for it) disposes them. A running file-tool job cannot be killed and finishes on
+its own; this is an approved design caveat, not a defect. The factory call passes `{ label: "review" }`.
+Otherwise Pi supplies stock tools (no
 background). Both offered and stock grep/find drop empty optional arguments before chaining
 any existing `prepareArguments`; their execute functions stay unchanged. The caller's cwd is retained, and the
 reviewer session runs with the caller's owner settings that shape a session (`reviewerSettings` in `index.ts`):
@@ -73,7 +76,8 @@ through a `tool_call` hook; blocked commands return its reason as a tool error. 
   block with REQUIREMENT, MISMATCH, EVIDENCE and REQUIRED OUTCOME filled; anything else is incomplete and settles
   no dispute.
 - A rebuttal's source `user` proves a quote only from the user's own messages, not from a compaction or branch
-  summary; of two parallel rebuttals of one finding exactly one is accepted.
+  summary; of two parallel rebuttals of one finding exactly one is accepted. Any other source is a file path read
+  relative to the caller's cwd and confined to it after symlink resolution; see [Rebuttal file sources](#rebuttal-file-sources).
 - Each finding gets an id `<review number>.<position>`; disputes survive reload and resume (custom `review` entries).
 
 ## GPT Fast
@@ -89,11 +93,22 @@ tier. Rule and quotes: [DECISIONS.md, Settings](../../DECISIONS.md#settings). Pr
 - The bash git guard is a shell-syntax check, not a sandbox: it does not interpret scripts, aliases or computed
   command names. No file edits through bash and never running the delivered result are prompt rules, not runtime
   enforcement. Tests themselves may have filesystem side effects.
-- `REVIEWER.md` adopts the supplied `REVIEWER-DEEP.md` text. Earlier wording was measured with variant v3h;
-  those measurements do not establish the quality of this deep prompt/tool combination. No new live model
-  quality measurement is claimed.
+- `REVIEWER.md` is the whole prompt for both levels. Earlier wording was measured with variant v3h; those
+  measurements do not establish the quality of this deep prompt/tool combination. No live model quality measurement
+  of it is claimed.
 - The GPT row (GPT-5.6-Luna medium and high) is the owner's choice and one constant in `LEVELS`, with its model and
-  thinking pinned in `review.test.ts`. The Claude `high` slot is being re-measured and may change. GPT-5.6-Luna has
+  thinking pinned in `review.test.ts`. GPT-5.6-Luna has
   more false findings than Haiku medium and answers CLEAN on 30-31 of 33 clean cases (`notes/reviewer-probes.md`).
 - GPT main applies a reviewer's wrong `DECIDED` nearly always (`notes/reviewer-probes.md`, round 2w); nothing in
   the extension stops Main from changing something the user forbade when a reviewer wrongly says `DECIDED`.
+
+## Rebuttal file sources
+
+File sources must resolve under the session cwd, including after symlink resolution. Absolute paths within it
+are accepted; absolute paths, `../` paths and symlinks that resolve outside it are refused. `refusals` in `index.ts`
+uses `realpath` and checks the relative path before reading the file. Proof: `test/review.test.ts`.
+
+Background jobs use RQW-tools' registry and the same resource and effects contract as other callers. Bounded walks
+report scan errors, subshell cwd changes stay scoped, and `symbolic-ref` and `reflog` writes hold the repository.
+Deletions are reported since the start, by comparing exact pre-start and end states. Running file-tool jobs finishing
+on their own and the short-timeout bash snapshot exclusion described above are approved design caveats.

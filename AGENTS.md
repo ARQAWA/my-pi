@@ -17,9 +17,15 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   default prompt prefix and appends the workstation, critical, environment and date blocks.
 - `extensions/RQW-tools/`: extension 3, the base tools. Stock `read`, `bash`, `edit`, `write`, `grep`, `find` with our
   descriptions (`descriptions/*.md`), multi-file `edit` and `write`, and the ordered barrier (Pi's `codemode` is one call of it).
-  A call still running after 12 s returns as a background job `job#N`; the `job` tool waits for, checks or kills it.
-  A job keeps holding only what its command certainly changes (package folder, git index, exact files; `footprint.ts`,
-  process-wide in `ledger.ts`) and reports the files changed while it ran (`DECISIONS.md` Tools, «Background jobs»).
+  An eligible call still running after 12 s returns as a background job `job#N`; `job` waits for or checks it and
+  kills process or queued jobs. By approved design, a running file-tool job such as `read`, `grep` or `find` cannot
+  be killed: `job kill` reports `cannot_kill`, and it finishes on its own. A bash call with its own timeout of 13 s
+  or less stays in the foreground and takes no pre-start snapshot; eligible bash calls take an exact snapshot
+  before starting. The approved contract holds only what the command certainly changes and reports changes
+  while it ran (`footprint.ts`, process-wide `ledger.ts`; `DECISIONS.md` Tools, «Background jobs»).
+  The outside-git walk enforces its whole-walk limit; scans report unreadable paths and git warnings. Footprint
+  inference restores cwd after a subshell and holds the repository for `symbolic-ref` and `reflog` writes.
+  Deletions are reported since the start, by comparing the exact pre-start and end states.
   Tests: `npm test`.
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
   window W = min(contextWindow, 500000) and compacts above W - R, where R = round(W / 10). Tests: `npm test`.
@@ -32,13 +38,17 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   `review` when RQW-review offers it (`pi.events` `rqw-review:subagent-review`); workers also get cwd, OS and date.
   Details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-kinds-and-title). All three tools share caller-chosen mechanical wait and diagnostic status;
   results arrive once through wait or `[kind#N]` messages. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Workers retain history until stop for explicit follow-ups.
+  Agent start/restart supports `system_file`/`role_file` and `include: ["user_messages"]`; task text stays in `task`.
+  All three tools support `until: "all"`, `wake_on_alert`, read-only status `depth` and optional `alert_after_ms`
+  diagnostics without stopping work; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management).
   Worker briefs, nesting and delivery:
   [RQW-agent README](extensions/RQW-agent/README.md#workers); decisions: [Workers](DECISIONS.md#workers).
   Imports nothing from another extension folder: subagents get RQW-tools only when
   RQW-tools is loaded and offers them on `pi.events` channel `rqw-tools:subagent-tools`, otherwise Pi's stock
   tools. Child background cache warming is off; Anthropic prompt caching uses built-in 5m (`DECISIONS.md`, Agent).
   Children inherit the caller's GPT Fast at start; the optional `fast_gpt` parameter of `agent`, `code_writer` and
-  `shell_runner` overrides it (`false` when the user forbids Fast for subagents).
+  `shell_runner` overrides it (`false` when the user forbids Fast for subagents). An explicit `fast_gpt` on
+  `send` or `restart` updates the retained value.
   Tests: `npm test`.
 - `extensions/RQW-review/`: extension 6, the `review` tool with levels `blind` and `high`. Each call runs a fresh
   reviewer session in the same process and main agent's cwd (`createAgentSession`, `read`, `bash`, `grep`, `find`;
@@ -93,14 +103,22 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all.
 - `.agents/reviewers/test-integrity.md`: the read-only reviewer prompt for QA fixes and weakened tests, used through
   `agent` as the whole `system`.
-- Every `RQW-*` extension is self-contained and can be switched off alone (no import outside its folder, its tests load
-  only it); `test/isolation.test.ts` proves it, `INSTALL.md` shows the switch, `DECISIONS.md` section Isolation.
+- UI source folders `extensions/RQW-naming/`, `extensions/RQW-theme/`, `extensions/RQW-thinking/` and
+  `extensions/RQW-tool-ui/` exist on main but are not registered in the package until UI integration P10.
+  There is no `pi.themes` registration and no `extensions/RQW-agent-ui/` on main. Normal package loading does not
+  enable these UI sources; remaining integration is tracked in [BACKLOG.md](BACKLOG.md#u12).
+- Every registered package extension is self-contained and can be switched off alone (no import outside its folder,
+  its tests load only it); `test/isolation.test.ts` proves this for the entries in `pi.extensions`, not unregistered
+  source folders. `INSTALL.md` shows the switch; `DECISIONS.md` section Isolation carries the decision.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `notes/`: research notes, such as how the omp-lite prompt was built.
 - `WORKFLOW-MANIFEST.md`: the owner's personal working principles and aspirations, written in Russian for him.
 - `PROCESS.md`: the mandatory development procedure, from research and questions to autonomous squash delivery.
 - `scripts/deliver-check.mjs`: the pre-merge gate, `npm run deliver-check -- <branch> <message-file>`; see `PROCESS.md` Delivery.
 - `.agents/reviewers/code.md`: the separate read-only bug and code-quality reviewer prompt, used through `agent`.
-- `DECISIONS.md`: every accepted decision with its reason and the file that carries it.
+- `DECISIONS.md`: active accepted decisions with their reason, verbatim owner source and carrier.
+- `DECISIONS-ARCHIVE.md`: append-only verbatim superseded and obsolete decisions with replacement and commit
+  provenance. Read only when checking history.
+- `BACKLOG.md`: the canonical open and owner-deferred work list with source, status and branch; no done or dead tasks.
 
 Try it for one run: `pi -e ~/ai-project/my-pi`. No mentions of other products in the prompt.

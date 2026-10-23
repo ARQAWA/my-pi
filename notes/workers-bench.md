@@ -125,7 +125,7 @@ medium's and its judge mean is at most 0.5 below medium's; otherwise the qualify
 | anthropic/claude-haiku-5-5 | shell_runner | low (low 100.0%, judge 9.6; medium 100.0%, judge 9.6) |
 | openai-codex/gpt-6-luna | code_writer | low (low 100.0%, judge 9.9; medium 99.2%, judge 9.8) |
 | openai-codex/gpt-6-luna | shell_runner | medium (low qualifies but loses on pass rate or judge; medium 100.0%, judge 9.6) |
-| openai-codex/gpt-5.6-luna | code_writer | neither low nor medium qualifies: owner decides from the four-level table |
+| openai-codex/gpt-5.6-luna | code_writer | neither low nor medium qualifies; the owner declined this addition, it is not in the worker chain (coordinator summary; `DECISIONS.md` section Workers) |
 | openai-codex/gpt-5.6-luna | shell_runner | medium (low qualifies but loses on pass rate or judge; medium 99.2%, judge 9.6) |
 
 Haiku 5.5 and GPT-6 Luna: all 16 cells qualify. GPT-6 Luna shell_runner: low qualifies (121 of 125) but its pass
@@ -133,8 +133,9 @@ rate is below medium's (125 of 125), so medium. GPT-5.6 Luna shell_runner: low (
 of 125), so medium.
 
 GPT-5.6 Luna code_writer: no level qualifies (holdout below 95% at every level, tuning too except high). By TASKS.md B3 the
-owner chooses from this trade-off table (all four levels, tuning and holdout together; source
-`bench/logs/b3-final-3models-summary.md`):
+owner got this trade-off table (all four levels, tuning and holdout together; source
+`bench/logs/b3-final-3models-summary.md`). The owner declined this addition; it is not in the worker chain
+(coordinator summary, not a quote). The table:
 
 | level | pass rate | wall median s | wall p90 s | failed runs: fix small/medium/large | median changed lines of failed runs | median input / output tokens |
 |---|---|---|---|---|---|---|

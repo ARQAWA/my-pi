@@ -33,9 +33,17 @@ The model order and clamps are in the
 need no terminal setup: iTerm2, Terminal.app and the VS Code terminal send them as standard sequences, and Pi 1.4.0
 binds none of them itself.
 
+## Unregistered UI sources
+
+The source folders `extensions/RQW-naming/`, `extensions/RQW-theme/`, `extensions/RQW-thinking/` and
+`extensions/RQW-tool-ui/` are on main but not registered in `package.json` until UI integration P10.
+There is no `pi.themes` entry and no `extensions/RQW-agent-ui/` on main. Normal installation and `pi -e <dir>`
+do not enable these sources. See [remaining UI integration](BACKLOG.md#u12). Do not register them during installation.
+Package isolation checks cover the registered `pi.extensions` entries, not these source folders.
+
 ## Switch one extension off
 
-For the user, not part of the install. Every `RQW-*` extension can be switched off alone. In
+For the user, not part of the install. Every registered package extension can be switched off alone. In
 `~/.pi/agent/settings.json`, replace the string entry of the package with its object form and list one `-` line per
 extension to switch off. The `source` stays exactly as it was; the pattern must name the file `index.ts`, a folder
 excludes nothing.
@@ -54,7 +62,8 @@ excludes nothing.
 - It takes effect after `/reload` or a restart. To switch the extension on again, delete its line.
 - After `/reload` Pi keeps the active tool set, so tools of a switched-off extension stay active, now Pi's own,
   until `/new` or a restart.
-- `pi -e <dir>` ignores this filter and loads every extension. For one run without an extension pass the wanted
+- `pi -e <dir>` ignores this installed-package filter and loads the extensions listed in that directory's package
+  manifest, not every source folder. For one run without an extension pass the wanted
   files instead: `pi -e <dir>/extensions/RQW-settings/index.ts -e <dir>/extensions/RQW-prompt/index.ts`. Add `-ne`
   when the installed package must not load as well; it also drops Pi's built-ins, add them back with
   `-e builtin:codemode -e builtin:tool-search`.

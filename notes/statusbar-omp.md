@@ -1,7 +1,15 @@
 # RQW-statusbar: source evidence and contract
 
 The scope is the owner's **bottom status bar elements and placement**, not the rest of omp's composer,
-feed, title, task panel or action rows. Colors are deliberately not reproduced or tuned.
+feed, title, task panel or action rows. omp's theme colors are not reproduced. The bar maps its roles to Pi's
+semantic theme colors through `COLORS` and `themePaint` in `extensions/RQW-statusbar/index.ts`.
+The GPT Fast lightning is the exception: `fastMark` in `render.ts` uses fixed ANSI colors.
+
+Status: the top border and activity parts below describe the contract before the UI port P6 (`d84b541`) and are
+frozen evidence. Since P6 the top border is fully ours when the bar is on: `topBorder` in `render.ts`, called from
+`editor.ts`, draws the rule, the hint, the activity chrome from `activity.ts` (the main agent's planning or tool
+action, running background work by kind from the RQW-agent and RQW-review `pi.events` count offers, compaction) and
+the session ID; Pi's native working indicator is not drawn there. `sessionTopBorder` remains only for tests.
 `extensions/RQW-statusbar/{index,git,render}.ts` started as uncommitted predecessor files; this work builds on them.
 
 ## Read-only sources
@@ -146,8 +154,8 @@ already set by another extension is not replaced.
   estimate and no live value while a message streams. The last qualified value is held until the next qualified
   one, nothing is shown before the first, and it resets on session start, tree change and toggle. It does not
   reconstruct a rate from persisted history. This is explicitly **not omp's smoothed rate algorithm**.
-- Stock Pi has no matching Plan/Goal/Prewalk/Vibe/Loop state, collaboration, live stream/recording, running-agent/job
-  counters or PR metadata in this API. Their conditional omp badges are not fabricated. No `gh` call, network lookup,
+- Stock Pi has no matching Plan/Goal/Prewalk/Vibe/Loop state, collaboration, live stream/recording or PR metadata in
+  this API. Running background work counts come from RQW-agent and RQW-review offers, not from omp. Their conditional omp badges are not fabricated. No `gh` call, network lookup,
   cross-extension private import or new subsystem is added to synthesize them. Pi extension statuses occupy the
   corresponding status slot, sorted by key as in stock Pi. PR `#N` and file hyperlinks are not implemented.
 - omp's title/UUID/Worked row, current action, blocker and to-do panel live **above** its editor in `showTitle`,
@@ -203,7 +211,7 @@ regression starts outside git, runs `git init -b new-branch` in the same cwd, sw
 the repository, and checks tool/agent refresh, polling and shutdown cleanup without changing Pi's stale cache. `rate-toggle.test.ts` runs real SDK streams through the loaded extension: 44 tokens in 1 ms gives no value, a
 499 ms response is skipped, exactly 500 ms qualifies, an aborted or errored response keeps the previous value, a missing `durationMs` is skipped, the value is held between
 turns and reset by tree change, session start and toggle. These tests join existing `npm test`
-and the existing macOS/Linux/Windows CI matrix without adding a new dependency.
+and the existing macOS/Windows CI matrix without adding a new dependency.
 
 Real PTY smoke: `python3 extensions/RQW-statusbar/test/tui-smoke.py [node]` runs the actual CLI in an isolated agent
 directory with no credentials, a local `models.json` model (200k window, never called) and `PI_OFFLINE=1`, and sends

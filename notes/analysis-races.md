@@ -1,5 +1,13 @@
 # RQW-tools: race analysis and barrier design
 
+Status: sections 1-8 are frozen evidence, the original analysis and test plan on Pi 1.3.0 (2026-10-20). They stay
+as the rationale that `extensions/RQW-tools/barrier.ts`, `keys.ts` and their tests cite. Later work overrides parts of
+them: a call still running after 12 seconds now continues as a background job (`extensions/RQW-tools/jobs.ts`,
+`BACKGROUND_AFTER_MS`), so the "never return early" invariant of race #20 no longer holds as written; in-process
+subagents exist (`extensions/RQW-agent/`) and get their own barriers; CI runs on macOS and Windows only
+(`.github/workflows/tests.yml`). Section 9 describes the current background-job routing. Current contract:
+[DECISIONS.md, Tools](../DECISIONS.md#tools).
+
 Scope: the six base tools `read`, `bash`, `edit`, `write`, `grep`, `find` as wrapped by `extensions/RQW-tools/`, under
 Pi 1.3.0. Agreement: `notes/tools-requirements.md` items 5-7 ("many files per call", "everything independent in
 parallel", "no race of any kind ... bash must not read files before an earlier write or edit of the same response").
@@ -110,7 +118,7 @@ Fix column refers to the design in section 5 (ordered conflict barrier, "OCB").
 | 17 | B after R (`read f`, `bash sed -i f`) | Real WAR: read may see post-bash content | Medium | OCB: B waits for earlier R |
 | 18 | Two B in one message (`bash mkdir x`, `bash cp a x/`) | Real (stock runs them in parallel) | High when dependent | OCB: B conflicts with B (serialised in message order). See decision D1 |
 | 19 | Background processes started by B (`cmd &`, `nohup`, `setsid`, Windows `start`) | Real; they escape the process group or outlive the call and write at any time later | Medium | Out of reach for any in-process barrier. Document in the bash description; not fixable without process tracking |
-| 20 | Cross-message overlap | Not real: next request starts after all executes settled (point 6). Holds as long as no tool returns before its side effects settle | - | Invariant for our code: never return early; wait for in-flight fs ops and child exit |
+| 20 | Cross-message overlap | Not real: next request starts after all executes settled (point 6). Holds as long as no tool returns before its side effects settle | - | Original invariant: never return early; wait for in-flight fs ops and child exit. Superseded by background jobs (section 9) |
 | 21 | Partial failure mid-batch (one call fails, later dependent calls still run) | Not a race: deterministic, same as stock. Failure does not cancel siblings | Low | Keep; dependents run after the failed call settled; result says what failed |
 | 22 | Partial failure inside a multi-file call | Not a race | Low | Per-file status in the result (file-level all-or-nothing; no cross-file transaction) |
 | 23 | Abort while a call waits in the barrier | Would be a race if a waiter released its slot early: a later conflicting call could pass a still-running earlier one | High if done wrong | A call's "done" settles only after all its deps settled; an aborted waiter then skips its work. Proven by construction (`done = allSettled(deps).then(run)`) |
@@ -119,11 +127,11 @@ Fix column refers to the design in section 5 (ordered conflict barrier, "OCB").
 | 26 | Edit read-modify-write vs external writer (IDE autosave, background process) | Real, outside Pi | Low | Out of scope (#19 class) |
 | 27 | Concurrent `mkdir -p` of a shared new parent by two writes | Not real: recursive `mkdir` tolerates `EEXIST` | - | Covered by a probe |
 | 28 | Steering / follow-up messages | Not real (point 6) | - | - |
-| 29 | User `!cmd` while the agent runs tools | Real, user-initiated (point 10) | Low | Out of scope; optional later: route `user_bash` through the barrier as a B scope |
+| 29 | User `!cmd` while the agent runs tools | Real, user-initiated (point 10) | Low | Out of scope; not planned |
 | 30 | Nested calls (`codemode` scripts, any `ctx.executeTool`) | Real if enabled; order = script call order | Low | Register at entry like any call. Never put an orchestrating tool into the barrier (it would wait on its own children: deadlock) |
 | 31 | Calls of another extension's file tools | Not ours | - | Out of scope |
 | 32 | Two Pi sessions (two processes) on one repo | Real, same class as a human editing concurrently | Medium | **Out of scope**: needs cross-process locks on every call; not in the agreement |
-| 33 | Two agent sessions in one Pi process (future in-process subagents) | Possible later | Medium | Barrier state per session (factory closure). Stock `withFileMutationQueue` (module-global) still keeps same-file mutations atomic across sessions |
+| 33 | Two agent sessions in one Pi process (in-process subagents of RQW-agent) | Real | Medium | Barrier state per session (factory closure); children get their own barriers (section 9). Stock `withFileMutationQueue` (module-global) still keeps same-file mutations atomic across sessions |
 
 ---
 
@@ -246,7 +254,8 @@ Layer 1, barrier unit tests (fake ops = timers):
 - T4 nested calls: an orchestrator outside the barrier calls our tools via `Promise.all` and sequential `await`s;
   completes within the guard, checks ordering, and reports elapsed slack only as a diagnostic.
 
-Layer 2, key function (I3), real filesystem in a temp dir, run on macOS, Linux and Windows CI:
+Layer 2, key function (I3), real filesystem in a temp dir, planned for macOS, Linux and Windows CI (current CI: macOS
+and Windows):
 - relative/absolute/`./`/`../`/trailing separator; symlinked file; symlinked directory with a missing file below;
   case variants of existing and missing files; NFC vs NFD (darwin); `C:/x`, `/c/x`, `c:\X`, trailing dot, 8.3 short
   name of an existing parent (win32); `realpath` error path returns "everything".
@@ -271,8 +280,9 @@ temp repo as cwd, each scenario repeated 50 times:
 - S13 two writes into a new shared parent directory -> both succeed.
 - S14 timing evidence for the report: makespan of a mixed 12-call batch vs Pi sequential vs stock parallel.
 
-Layer 4, platforms: GitHub Actions matrix `macos-latest`, `ubuntu-latest`, `windows-latest` (PowerShell shell and Git
-Bash shell for `bash`) runs layers 1-3. Windows adds: S1 with Defender active (default runner), and a probe that holds
+Layer 4, platforms: the planned GitHub Actions matrix `macos-latest`, `ubuntu-latest`, `windows-latest` (PowerShell
+shell and Git Bash shell for `bash`) runs layers 1-3. The current `tests.yml` matrix is `macos-latest` and
+`windows-latest` only. Windows adds: S1 with Defender active (default runner), and a probe that holds
 a file open with `FileShare.ReadWrite` (no delete) while `write` overwrites it (documents D2: in-place succeeds,
 rename would fail).
 
@@ -288,7 +298,7 @@ rename would fail).
 
 ---
 
-## 9. Background jobs: races R16-R24 (FR-safe, `DECISIONS.md` Tools «Background jobs»)
+## 9. Background jobs: races R16-R24 (FR-safe, `DECISIONS.md` Tools entry `Background jobs`)
 
 R1-R15 of the background-job design are in `my-pi-evidence/bash-background/D4-ORDERING.md` section 3; the full table
 with the replay numbers is `my-pi-evidence/bash-background/routing/ROUTING.md` section 7.
@@ -307,3 +317,25 @@ with the replay numbers is `my-pi-evidence/bash-background/routing/ROUTING.md` s
 
 Residual: writes outside the scanned list (ignored folders, outside cwd) that no later file tool touches; which of two
 unknown commands running together wrote a file (both are named under `alongside`).
+
+Approved design caveats, not defects:
+
+- A running file-tool job such as `read`, `grep` or `find` cannot be killed: `job kill` returns `cannot_kill`, and it
+  finishes on its own (`jobs.ts` `killJob`). Caller abort kills only process jobs and queued jobs (`abortAll`).
+  R24 holds for killable predecessors. Sources: external `my-pi-evidence/bash-background/DESIGN.md` lines 110-112
+  and `my-pi-evidence/bash-background/routing/ROUTING.md` section 5.6.
+- An exact pre-start snapshot is required for bash calls eligible to become a job, even if they finish before
+  handoff. Bash with its own timeout of 13 seconds or less never becomes a job and takes no snapshot
+  (`jobs.ts:452-456`). External `my-pi-evidence/bash-background/SNAPSHOT-COST.md` preserves the measured snapshot
+  trade-off; its broad per-call wording is frozen evidence, not an override of this eligibility caveat.
+
+Current resource and effects behavior (`ledger.ts`, `jobs.ts`, `footprint.ts`):
+
+- The outside-git walk lists at most 20000 files across the whole walk, including within a wide directory.
+  Reaching the bound is reported; unreadable directories, file stat failures and git listing warnings appear in
+  the effects report, with errors distinguished before the start and at the end. An access error is not a deletion.
+- Deletions are reported since the start, by comparing exact pre-start and end states. This is approved behavior,
+  not a handoff-boundary defect. Source: external `my-pi-evidence/bash-background/routing/ROUTING.md` section 5.4
+  and the exact-state choice preserved in `my-pi-evidence/bash-background/SNAPSHOT-COST.md`.
+- Footprint inference restores the outer cwd after a subshell's `)`, including nested subshells. Mutating
+  `git symbolic-ref` and `git reflog` forms hold the repository; their read-only forms do not.

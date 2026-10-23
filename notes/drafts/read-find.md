@@ -1,5 +1,7 @@
 # Draft: `read` and `find` tool descriptions
 
+Status: frozen draft, not the current text; see `extensions/RQW-tools/descriptions/read.md` and `find.md`.
+
 Placeholders `{READ_LINES}`, `{READ_CHARS}`, `{FIND_CHARS}` are filled with the measured limits (agreement item 8).
 Names and parameters are Pi's exactly (agreement item 3). Sources: `PI` = `notes/analysis-pi-tools.md`,
 `OL` = `notes/analysis-omplite-tools.md`, `REQ` = `notes/tools-requirements.md`, `D:<n>` = omp-lite `DECISIONS.md`

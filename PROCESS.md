@@ -47,7 +47,8 @@ the accepted decisions and their reasons. New owner instructions take precedence
   No forks of Pi. If a fork seems necessary, discuss it before acting. Use Node.js for project tooling and Git Bash
   on Windows, not PowerShell or cmd for runtime tooling. Existing CI bootstrap and host setup are separate.
 - Temporary task files belong in the OS temporary directory. Do not put transcripts, credentials, archive copies,
-  historical cleanup notes or execution ledgers in the repository. History belongs in Git.
+  historical cleanup notes or execution ledgers in the repository. History belongs in Git, with one explicit exception:
+  root `DECISIONS-ARCHIVE.md` preserves superseded and obsolete decisions verbatim with their provenance.
 
 ## Worker models
 
@@ -161,23 +162,26 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
 - While RQW-review is disabled in the owner's settings, result review runs through an `agent` subagent whose
   whole system prompt is the new reviewer text (`extensions/RQW-review/REVIEWER.md` in `main`). Give it the
   owner's messages verbatim (the session file), plus agreement, object and criterion; record `Review: agent#N CLEAN`.
-- Review is proportional. Mechanical point corrections with no new decision need no review. Small work, at most
+- Every squash merge requires a clean result review, including mechanical corrections. Small work, at most
   five requirements and five changed files, uses `review` level `blind`; larger work uses `high`. An answer or report
   without changes needs no review. Explicit owner requirements for a review take precedence.
 - Workers first self-check their work and fix defects before independent review. Main checks their evidence and
   acceptance against the agreement, routing needed fixes to workers. The final independent result review checks agreed completeness,
   consistency, documentation and absence of unagreed additions. Give the reviewer the agreement verbatim, object,
   diff and sources, criterion and earlier rejected findings with reasons. Each pass returns all real findings at once.
-- When code changes, run a separate read-only code reviewer in parallel with result review. Read
-  `.agents/reviewers/code.md` and pass it as the complete `system` to an `agent` worker, choosing its model and
+- Run a separate read-only code reviewer in parallel with result review whenever a changed path falls outside
+  the `tests.yml` `paths-ignore` filters used by `scripts/deliver-check.mjs`, considering both base and head filters.
+  This includes extension READMEs even though their contents are prose. Root Markdown, `notes/**` and `.agents/**`
+  alone are excluded by the current filters. Workflow logic is executable configuration and needs code review too.
+  Read `.agents/reviewers/code.md` and pass it as the complete `system` to an `agent` worker, choosing its model and
   reasoning from the table above. Its task brief includes the changed files, diff, callers, relevant tests and evidence.
-  This role checks bugs, regressions and meaningful code quality, not a second requirements ritual. Do not spawn
-  a code reviewer for prose-only changes. Workflow logic is executable configuration and needs code review too.
+  This role checks bugs, regressions and meaningful code quality, not a second requirements ritual.
 - Admit real evidenced defects, not taste or unlikely hypotheticals. Check findings rather than accepting them
   just because a quote exists. Main validates real findings and routes admitted fixes to workers in one batch;
   explain rejected findings with evidence. Workers recheck affected parts and checks, not untouched parts.
 - A CLEAN covers only the commit it reviewed. Any commit after CLEAN sends the places it changed back to review:
-  result review, and code review for code. A conflict-free rebase onto `main` changes no task places: it needs new
+  result review, and code review when the path-based requirement above applies. A conflict-free rebase onto `main`
+  changes no task places: it needs new
   tests and CI on the new head, not new review; places changed while resolving conflicts go back to review.
   Otherwise reuse CLEAN only while its commit is unchanged. Stop when the required reviews are clean; do not
   invent either a one-pass cap that leaves known bugs or endless fresh passes for confidence.
@@ -251,9 +255,12 @@ raises a timeout, or leaves fewer assertions in a test file. A `QA: #N` line alw
 
 ## Delivery
 
-1. Update the affected documentation with the code. Record accepted decisions in `DECISIONS.md` with the owner's
-   quote, reason and carrier; keep each rule in one place and link to it elsewhere. Current docs describe current
-   facts, not a history ledger. Remove obsolete current instructions, retain deferred work as deferred.
+1. Update the affected documentation with the code. Record active accepted decisions in `DECISIONS.md` with the
+   owner's verbatim quote, source session, reason and carrier; keep each rule in one place and link elsewhere.
+   Superseded and obsolete decisions go verbatim into root `DECISIONS-ARCHIVE.md`, an append-only archive with
+   replacement and commit provenance, not routine agent reading. `BACKLOG.md` is the canonical list of open and
+   owner-deferred work with source, status and branch; remove done and dead tasks instead of keeping a second ledger.
+   Current docs describe current facts, not a history ledger.
 2. Push the task branch to start affected CI early; continue independent work while it runs. Before merging,
    require sufficient proof and the required clean reviews for the final head commit on current `main`.
    The "Mac tests" requirement is met by the `macos-latest` test jobs in `tests.yml` on that exact head
@@ -266,8 +273,11 @@ raises a timeout, or leaves fewer assertions in a test file. A `QA: #N` line alw
    succeeded, and likewise `pcli.yml` when its `paths` changed; the filters are `main`'s and the branch head's
    (a file counts if either version requires CI); the message carries the
    trailers `Review: review#N CLEAN` (or `Review: agent#N CLEAN` under the temporary
-   [disabled-review rule](#independent-review); at least one clean result review), `Code-review: CLEAN` (non-doc changes),
-   `CI: <run url>` (each required run) and `Unverified: <what was not verified live, or none>`. When the
+   [disabled-review rule](#independent-review); at least one clean result review), `Code-review: CLEAN` (any path outside
+   the workflow exclusions, including extension READMEs),
+   `CI: <run url>` (each required run) and `Unverified: <what was not verified live, or none>`. An optional
+   `Decision: D-<SECTION>-<NAME>` trailer links the squash to a stable decision ID; it is not a gate requirement.
+   When the
    test-integrity rule triggers it also requires `Test-change:` and `Test-review:`; a `QA: #N` line requires
    `Test-review:`, and `Test-change:` when test or workflow files changed, and issue N must carry the `qa-inbox`
    label ([Quality control loop](#quality-control-loop)). It lists the open `qa-inbox` issues as information:

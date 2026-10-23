@@ -1,5 +1,8 @@
 # Analysis: Pi 1.3.0 stock tools and how to replace them (for `extensions/RQW-tools/`)
 
+Status: frozen evidence on Pi 1.3.0; the package now pins Pi 1.4.0. Current contract:
+[DECISIONS.md, Tools](../DECISIONS.md#tools).
+
 Read-only analysis of the installed Pi 1.3.0 (`/Users/arkadijcukavin/stock-bench/pi/node_modules/@earendil-works/`,
 same version as the global `/opt/homebrew/bin/pi`, which runs `pi-coding-agent/dist/bundle/cli.js`).
 Agreement: `notes/tools-requirements.md`.

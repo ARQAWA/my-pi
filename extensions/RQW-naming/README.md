@@ -2,10 +2,11 @@
 
 Independent native session naming for stock Pi 1.4.0. No Pi patches, wrappers,
 private fields, cross-extension imports, settings changes, or display components.
-Package registration and root documentation belong to P10; this folder can be
-loaded explicitly with `pi -e /absolute/path/to/extensions/RQW-naming/index.ts`.
-After registration, use stock `pi config` resource filtering and `/reload` to
-switch it off. Native `/name` remains unchanged.
+This folder is on main but not registered in `package.json`, so a normal install
+does not load it. Load it explicitly with
+`pi -e /absolute/path/to/extensions/RQW-naming/index.ts`; without the flag it is off.
+Registration is open work, [U12](../../BACKLOG.md#u12). Native `/name`
+remains unchanged.
 
 ## Behavior
 
@@ -48,7 +49,8 @@ request path. No other extension needs to import this folder.
 
 ## Decisions / authority
 
-Owner (verbatim):
+Owner (verbatim, session `2026-10-21T18-16-12-433Z_01a15fad-8f91-7306-bd46-1528008fbdc6.jsonl`, user
+messages at lines 930, 944 and 971):
 
 > 1а самые низкие ризонинги пусть генерит 10 вариантов на основе контекста
 > 2а + после каждого компакшена на основе полного контекта
@@ -65,8 +67,8 @@ Reason: short meaningful native names without blocking the main agent, a manual
 candidate picker, or loss of a previous name on failure. Carriers: `core.ts`
 (candidate generation/validation/selection) and `index.ts` (triggers, cancellation,
 retries, notification, native persistence). The approved variant is four words
-AND 32 Unicode code points. Root decision/installation/agent docs are deliberately
-reserved for P10.
+AND 32 Unicode code points. DECISIONS.md has no entry for this extension; while it
+is unregistered, this README is its record.
 
 ## Verification
 

@@ -17,7 +17,8 @@ The candidate SHA256 covers the full UTF-8 source with canonical LF line endings
 | Evidence and output | Copy file text without escaping, diff markers or placeholders; one EVIDENCE field and one concrete REQUIRED OUTCOME | No line numbers, no `yield`; exactly `CLEAN` on checked clean work |
 | Unavailable source or runtime-only check | UNCHECKED names source or check and reason | An available in-scope file must be read |
 
-`buildBrief` passes user messages verbatim, optional `<agreement>`, `<object>`, `<criterion>` and, at measurement time, optional `<rejected_earlier>`, since replaced by `<disputes>` (`DECISIONS.md` section Review). The extension still loads only `REVIEWER.md` plus Pi's `<cwd>` for the reviewer, with read/grep/find; `DESCRIPTION` and verdict `NEXT` are the main-agent side of this plugin-only pair. `LEVELS` is a family table with a Claude row (Haiku 5.5 medium / Sonnet 5.5 low) and a GPT row (GPT-5.6-Luna medium / high, the owner's choice), chosen by the main agent's model family (`DECISIONS.md` section Review). No `SYSTEM.md` change and no Claude-model inference from these GPT runs.
+`buildBrief` passes user messages verbatim, optional `<agreement>`, `<object>`, `<criterion>` and, at measurement time, optional `<rejected_earlier>`, since replaced by `<disputes>` (`DECISIONS.md` section Review). At measurement time the reviewer got only `REVIEWER.md` plus Pi's `<cwd>`, with read/grep/find; the current
+reviewer tool set, which adds bash, is in `DECISIONS.md` section Review and these runs did not measure it; `DESCRIPTION` and verdict `NEXT` are the main-agent side of this plugin-only pair. `LEVELS` is a family table with a Claude row (Haiku 5.5 medium / Sonnet 5.5 low) and a GPT row (GPT-5.6-Luna medium / high, the owner's choice), chosen by the main agent's model family (`DECISIONS.md` section Review). No `SYSTEM.md` change and no Claude-model inference from these GPT runs.
 
 ## Paired result and limits
 

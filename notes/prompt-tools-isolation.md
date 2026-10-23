@@ -1,9 +1,14 @@
 # Prompt/tools isolation
 
+Status: frozen evidence of the isolation change in commit `04aa50f` on Pi 1.3.0. The diff below is the text that
+was measured. The current tools section text is in `extensions/RQW-tools/index.ts`; it later gained the
+background-job clause, and that addition was not part of this measurement.
+
 Scope: only ownership of RQW-tools-specific runtime instructions. No manifesto edits, tool execution changes,
 model calls, cross-extension imports or process patches. RQW-prompt/index.ts is unchanged.
 
-Owner: «Когда мы делаем эти отдельные модули, они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать и выключать, как feature флаги».
+Owner requirement, summarized, not a verbatim quote: separate modules must be fully isolated and self-contained, so
+they can be switched on and off like feature flags (`DECISIONS.md` section Isolation).
 
 ## Exact effective prompt diff, both extensions on with default tools
 
@@ -34,7 +39,7 @@ Appended after Pi's `<cwd>` section, in this order:
 </search_method>
 
 <rqw_tools_execution>
-- A shell command waits for the calls before it and holds the calls after it; one still running after 12 seconds continues in the background as a job, which holds the later calls of the same response and, from later responses, only calls that change what it names as held: a package folder it installs, the git index, files it writes.
+- A shell command waits for the calls before it and holds the calls after it.
 </rqw_tools_execution>
 ```
 
@@ -92,8 +97,8 @@ Windows/Linux runs and an independent review were not performed in this local im
 This proof boundary does not override the workflow's independent-review requirement.
 
 Position and repetition can affect a model even when the remaining instructions are identical. The search and
-barrier text now appears later; two partial-write reminders disappear. GPT benchmarks must measure that change
-separately from the four manifesto edits. This task does not claim measured model equivalence.
+barrier text now appears later; two partial-write reminders disappear. The GPT measurement of this change is
+[prompt-isolation-gpt.md](prompt-isolation-gpt.md): an accepted tradeoff, not a neutral change.
 
 Stock Pi preserves the active tool set across reload. Disabling RQW-tools can therefore leave stock grep/find active;
 this task removes our instructions, not Pi's retained selection. A fresh session has the stock four defaults.

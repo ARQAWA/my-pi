@@ -2,19 +2,19 @@
 
 ## Agreement
 
-Owner request (C:3133): «в нашем репозитории должен быть адаптер для подписок Anthropic»;
-«чтобы он был такой же, как в OMP, чтобы у него был self-healing»;
-«И чтобы можно было через него авторизоваться».
-Provider visibility (C:3171): «Это именно отключить»; «Когда мы заходим в логин, там должны быть только кодекс,
-авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё».
+Owner requests in the omp session (`C:<line>`), summarized here, not verbatim quotes: an Anthropic subscription
+adapter in this repository, the same as in omp, with self-healing, that can also be used to log in (C:3133);
+only Codex and Anthropic in login (C:3171, now carried by RQW-providers, `DECISIONS.md` section Providers).
 Module independence is required by C:3046; work only in my-pi by C:1653. `C:<line>` uses the raw session reference
 in `DECISIONS.md`. Credential preservation, reversible hooks and retry bounds are engineering choices implementing
 those requests, not English direct quotations of the owner. The authorized known-adapter replacement is recorded in
 `DECISIONS.md` and carried by `INSTALL.md`.
-The owner's Claude benchmark/tuning pause remains (C:3244): «Я тебе дам команду, когда их продолжать».
-Offline fixtures document only the proof they provide, not live acceptance or permission to resume Claude.
+The old Claude benchmark and tuning campaigns once paused at C:3244 are dead, superseded by the v3 benchmark
+([BACKLOG.md, R02](../BACKLOG.md#r02)). Offline fixtures document only the proof they provide, not live acceptance.
 
 ## Sources inspected
+
+Research snapshot: Pi 1.3.0 at the time; the package now pins Pi 1.4.0.
 
 - Pi 1.3.0 installed in this worktree, `@earendil-works/pi-coding-agent/dist/core/{model-runtime,model-registry,provider-composer,auth-storage,agent-session}.js`,
   `dist/modes/interactive/interactive-mode.js` and `components/model-selector.js`.
@@ -103,8 +103,9 @@ Pi 1.4.0 integration; a missing hook must produce an explicit load error, never 
    automatically. Unknown competing adapters must be disabled before installation continues. The registration guard
    reports a conflict through native Pi diagnostics in either load order; session binding may continue. It does not
    persist a quarantine, force early CLI failure or replace future refresh calls. Mixed-adapter operation is unsupported.
-6. Toggle: disable this package extension using Pi's package extension filter, then reload/restart. Restore default
-   visibility and provider composition, without restoring stale credential snapshots. The other RQW extensions stay.
+6. Toggle: disable this package extension using Pi's package extension filter, then reload/restart. Pi's stock
+   Anthropic transport and provider composition return, without restoring stale credential snapshots. Provider
+   visibility belongs to RQW-providers and stays filtered while that extension is enabled. The other RQW extensions stay.
 
 ## Risks and proof boundary
 
@@ -116,8 +117,8 @@ refresh, billing and auth recovery follow the inspected omp behavior. No account
 
 Offline coverage uses fake credentials, a mocked official Anthropic origin and faux providers. The adapter tests
 cover signing, API-key bypass, refresh persistence/concurrency and file-backed locking, transient versus permanent
-errors, retry bounds, abort and rotated-token persistence, invalid responses, provider visibility, native conflict
-diagnostics, reload and disposal. Exact owner cleanup includes shared-runtime child disposal and surviving owners.
+errors, retry bounds, abort and rotated-token persistence, invalid responses, native conflict diagnostics, reload and
+disposal. Provider visibility is covered separately by `extensions/RQW-providers/test/providers.test.ts`. Exact owner cleanup includes shared-runtime child disposal and surviving owners.
 These fixtures are not proof of live subscription acceptance or billing, nor a claim of execution on Windows/Linux.
 
 ## Recovery mechanisms and proof limits
@@ -139,4 +140,4 @@ Current coverage is in `extensions/RQW-anthropic/test/`, including native summar
 auth-boundary and shared-runtime lifecycle fixtures. Test definitions are coverage descriptions, not a report of
 execution on the assembled revision.
 No real-account login/refresh, live Claude acceptance, subscription billing or complete omp SDK/streaming parity is
-established by these offline fixtures. Claude model probes remain paused.
+established by these offline fixtures.

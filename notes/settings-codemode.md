@@ -5,7 +5,7 @@ settings. Config values cannot enable warming; switching the extension off resto
 mechanism live in [DECISIONS.md, Settings](../DECISIONS.md#settings); tests: `extensions/RQW-settings/test/cache-warming.test.ts`.
 
 Decision: `extensions/RQW-settings/index.ts` adds `codemode` and `tool_search` to the active tools at `session_start`
-when the user made no tool selection (owner: «Давай включим CodeMode и Tool Search»). Pi 1.4.0. Source paths and measurements below were taken on
+when the user made no tool selection (owner request, `DECISIONS.md` section Settings). Pi 1.4.0. Source paths and measurements below were taken on
 Pi 1.3.0; the 1.4.0 comparison found the tool factories, nested ids and `tool_search` unchanged, and the only changed
 codemode behavior is the worker admission, see Limits. Source paths are relative to
 `node_modules/@earendil-works/pi-coding-agent/dist/`.
@@ -195,8 +195,8 @@ real 1.3.0 binary printed `tool_execution_start c0 codemode`, `tool_execution_st
 Tests that prove the routing, on Node 22.19 and Node 26, and on Bun 1.3.14 (the runtime inside the Pi 1.4.0 binaries, read from the Windows release's `pi.exe`)
 and Bun 1.4.3:
 
-- `extensions/RQW-tools/test/bun/codemode-check.mjs` (`npm run test:bun`, CI job `bun-codemode` on Ubuntu and
-  Windows, both Bun versions): runs Pi's own CLI under Bun (`dist/bun/cli.js`, the entry of the release binary) with
+- `extensions/RQW-tools/test/bun/codemode-check.mjs` (`npm run test:bun`, CI job `bun-codemode` on Windows, both
+  Bun versions): runs Pi's own CLI under Bun (`dist/bun/cli.js`, the entry of the release binary) with
   this package and a faux model (`test/bun/faux-codemode.ts`). The script is
   `await tools.write({ path: "f.txt", content: "NEW\n" }); return await tools.read({ path: "f.txt" });`. It passes
   when the turn ends within 60 s, `c0/2 read` returns `NEW`, and f.txt is `NEW`. On the AsyncLocalStorage version

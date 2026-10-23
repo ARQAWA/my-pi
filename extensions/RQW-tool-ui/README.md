@@ -12,8 +12,10 @@ Compact display of tool calls in the TUI transcript. Concept approved by the own
 
 ## Current state
 
-The extension is wired to Pi: every tool call in the interactive transcript is drawn as described above. It is not
-listed in the package manifest yet (registration is a separate step), so it loads only when given explicitly.
+The extension is wired to Pi: every tool call in the interactive transcript is drawn as described above. It is on main
+but not registered: `package.json` lists it neither under `pi.extensions` nor with a theme, so a normal install does not
+load it. It loads only when given explicitly, for example `pi -e /absolute/path/to/extensions/RQW-tool-ui/index.ts`.
+Registering it together with the other UI folders is open work, [U12](../../BACKLOG.md#u12).
 
 ### Wiring (`index.ts`, `render.ts`)
 
@@ -54,15 +56,11 @@ listed in the package manifest yet (registration is a separate step), so it load
 - Accepted limit: every model step with thinking keeps Pi's own blank row and, while thinking is hidden, its label row;
   this extension cannot remove them.
 
-### Wait results and RQW-agent-ui
+### Wait results
 
 `agent`, `code_writer`, `shell_runner` and `review` calls with `action: "wait"` count as `waited for N agents` in the
-summary line; their original results show under Ctrl+O. RQW-agent-ui (a separate extension) draws cards for delivered
-wait results through its own resolver, replacing only `renderResult` of the renderers after it. Neither imports the
-other; Pi runs resolvers in extension load order, the first loaded outermost. RQW-agent-ui must load BEFORE
-RQW-tool-ui (earlier in `pi.extensions`): then its card is drawn for a folded wait call and everything else, including
-the original under Ctrl+O, comes from this extension. Loaded after it, its cards would be folded away like any other
-call's rows, though still reachable through Ctrl+O.
+summary line; their original results show under Ctrl+O. No card is drawn for wait results: there is no `RQW-agent-ui`
+extension on main, and agent cards are open work, [U05](../../BACKLOG.md#u05).
 
 ### Data and render functions
 
@@ -134,5 +132,5 @@ calls, in the stream as well as after a reload:
 - everything that depends on arguments Pi left out of the record: the target (path, pattern, command) and a write's
   line count; calls beyond the 256 Pi keeps are not counted at all.
 
-A possible alternative without a patch, offered to the owner as a later task and not built: RQW-tools could record
-the results of the nested calls it executes itself.
+Not built yet. Accepted remaining work after the UI integration, [U17](../../BACKLOG.md#u17): RQW-tools records
+the results of the nested calls it executes itself, which needs no Pi patch.
