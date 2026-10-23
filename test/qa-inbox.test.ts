@@ -143,6 +143,18 @@ describe("planner", () => {
 		assert.ok(b[0].labels.includes("qa:persistent"));
 	});
 
+	it("keeps a qa:claimed label when a recurring failure adds an occurrence", () => {
+		const runs = [run(90, "success", OLD), run(100, "failure")];
+		const f = failure();
+		const created = applyRun({ repo: REPO, workflow: "tests", failures: [{ failure: f, occurrence: occ(100) }], issues: [], runs, git: gitStub() })[0];
+		const claimed = { ...asIssue(7, created), labels: [...created.labels, "qa:claimed"] };
+		const b = applyRun({ repo: REPO, workflow: "tests", failures: [{ failure: f, occurrence: occ(110) }], issues: [claimed],
+			runs: [...runs, run(110, "failure")], git: gitStub() });
+		assert.equal(b.length, 1);
+		assert.equal(decodeState(b[0].body).occurrences.length, 2);
+		assert.ok(b[0].labels.includes("qa:claimed"));
+	});
+
 	it("recomputes the rate from the runs list on a pass without the signature (self-healing)", () => {
 		const runs = [run(90, "success", OLD), run(100, "failure"), run(110, "failure")];
 		const f = failure();
