@@ -3,6 +3,7 @@ import { createCodemodeExtension, type ExtensionAPI, type ToolDefinition } from 
 import { commandOf, type Jobs } from "./jobs.ts";
 import { codemodeInUse, codemodeLimit, codemodeSlot } from "./ledger.ts";
 import type { NestedBarrier } from "./nested.ts";
+import { withNestedDisplay } from "./nested-display.ts";
 
 /** Appended to the built-in description. */
 export const CODEMODE_BACKGROUND_LINE =
@@ -22,7 +23,7 @@ export function groupCodemode(definition: ToolDefinition<any, any, any>, nested:
   if (!jobs) {
     return {
       ...definition,
-      execute: (id, params, signal, onUpdate, ctx) => nested.group(id, () => definition.execute(id, params, signal, onUpdate, ctx)),
+      execute: (id, params, signal, onUpdate, ctx) => nested.group(id, () => definition.execute(id, params, signal, onUpdate, ctx), undefined, withNestedDisplay),
     };
   }
   // The whole script is one job: after 12 s the call returns and the script keeps running under the job's signal.
@@ -60,7 +61,7 @@ export function groupCodemode(definition: ToolDefinition<any, any, any>, nested:
             // The effects scan ends before the barrier releases the calls queued behind the script.
             await job.settle();
           }
-        }, job.barrier)).then((result: any) => withNote(result, jobs.piggyback())) as any,
+        }, job.barrier, withNestedDisplay)).then((result: any) => withNote(withNestedDisplay(result, nested.displayOf(id)), jobs.piggyback())) as any,
   };
 }
 

@@ -96,9 +96,10 @@ extension on main, and agent cards are open work, [U05](../../BACKLOG.md#u05).
   once, at its saved place (custom messages match by type, display and content). The live block follows a call whose
   arguments still stream, else the latest started call while one runs, else the next queued call; a call that has
   its saved result counts only through what Pi saved, so a reload gives the same current call.
-  Once the parent has its result, Pi's saved record of nested calls is the only source, in the stream as after a
-  reload (see Dropped below); a call left `unfinished` there is unconfirmed (no success, failure or counts). A nested
-  call's failure and a write's lines (from saved arguments) still count.
+  Once the parent has its result, Pi's saved nested record determines membership, status and arguments, in the
+  stream as after a reload. Matching compact RQW-tools metadata adds confirmed edit counts and bash exit codes
+  (see below); a call left `unfinished` stays unconfirmed even with metadata (no success, failure or counts).
+  A nested call's failure and a write's lines (from saved arguments) still count.
 - `test/harness.ts`: width sweep (`assertFits`, 0..160 columns), wide and styled samples, identity and colored theme
   painters, fixed clock. `test/transcript.ts`: saved messages in a public in-memory session and Pi's render context.
 - Tests: `test/render.test.ts` (the renderers), `test/original.test.ts` (the expanded original against Pi's own
@@ -120,17 +121,31 @@ Public Pi extension and TUI APIs only: no fork or edit of Pi, no replacing or wr
 fields, no deep imports. A feature that cannot be built that way is dropped and named as dropped. The one copy of Pi
 code is the expanded fallback formatting in `fallback.ts` (above), with the owner's approval.
 
-### Dropped: needs a Pi patch
+### Nested result metadata and remaining limits
 
-Pi 1.4.0 saves only a bounded record of the calls a tool makes itself (codemode nested calls, `nestedCalls` on the
-parent's result): name, status, duration and error, arguments only up to 8 KiB per call and 32 KiB per parent, at
-most 256 calls, and no result or details at all. Only a Pi patch could save more, so these are dropped for nested
-calls, in the stream as well as after a reload:
+RQW-tools supplies the approved workaround without patching Pi. A completed nested edit or bash result gets compact
+public `details.rqwToolsNestedCall` metadata: `version: 1`, `tool: "edit"` and
+`files: [{path, ok, outcome?, added?, removed?}]`, or `tool: "bash"` and `exitCode`. Edit counts come only from actual
+confirmed result diffs or patches, including per-file outcomes; no requested replacement text, output or diffs are
+copied into the metadata. The completed codemode parent retains `details.rqwToolsNested` with
+`{version: 1, calls: [{id, ...marker}]}`, bounded to 256 records. No settings or registration are changed.
 
-- an edit's `+A -R` counts;
-- a bash command's exit code;
-- everything that depends on arguments Pi left out of the record: the target (path, pattern, command) and a write's
-  line count; calls beyond the 256 Pi keeps are not counted at all.
+`groups.ts` consumes only version-1 markers matching the tool and exact Pi nested call ID. Before the parent finishes,
+completed events supply their individual marker; afterwards the saved parent record wins, including after reload.
+Only calls Pi records as completed are enriched. The extensions exchange public result data, not cross-folder imports;
+without RQW-tools metadata the previous Pi-only behavior remains.
 
-Not built yet. Accepted remaining work after the UI integration, [U17](../../BACKLOG.md#u17): RQW-tools records
-the results of the nested calls it executes itself, which needs no Pi patch.
+Pi 1.4.0's own `nestedCalls` record still controls membership, status, duration, error and saved arguments. It keeps at
+most 256 calls, arguments up to 8 KiB per call and 32 KiB per parent, and no nested results or details itself. Metadata
+does not restore calls Pi omitted or omitted arguments such as commands, search patterns or write content. An edit
+marker can supply its confirmed file paths even if Pi omitted arguments; a write's line count still depends on saved
+arguments. Calls outside RQW-tools, missing markers and old history have no additional edit counts or bash exit codes.
+
+At the 12-second background handoff, nested calls already completed retain their confirmed compact metadata in
+`details.rqwToolsNested`. Calls Pi records as `unfinished` remain unconfirmed: no success, failure or counts are claimed
+for them. After the real job finishes, its compact parent metadata is available in job wait
+`details.results[].details.rqwToolsNested`; it is not duplicated into the model-facing job text. This consumer does not
+use that later result to retrospectively confirm unfinished calls in the old codemode handoff.
+
+The consumer source is implemented but RQW-tool-ui remains unregistered in `package.json`: explicit loading is needed
+until P10 registration. This workaround does not enable the UI by itself.

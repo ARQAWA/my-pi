@@ -187,6 +187,93 @@ describe("groups", () => {
 			"the write's lines come from saved arguments; the nested edit has no confirmed +A -R in either path");
 	});
 
+	it("groups-nested-compact-live-saved-parity", () => {
+		const head = entries(user("go"), assistant(call("p", "codemode", { code: "x" })));
+		const files = [{ path: "actual.ts", ok: true, added: 3, removed: 2 }, { path: "noop.ts", ok: true, added: 0, removed: 0 },
+			{ path: "bad.ts", ok: false, added: 99, removed: 99 }, { path: "maybe.ts", ok: false, outcome: "possibly_changed" }];
+		const edit = { version: 1, tool: "edit", files };
+		const bash = { version: 1, tool: "bash", exitCode: 7 };
+		const executions: LiveExecution[] = [{ toolCallId: "p", toolName: "codemode" },
+			{ toolCallId: "p/1", toolName: "edit", parentToolCallId: "p", ended: true, isError: true,
+				result: { content: [text("private diff")], details: { rqwToolsNestedCall: edit, diff: "+1 secret" } } },
+			{ toolCallId: "p/2", toolName: "bash", args: { command: "false" }, parentToolCallId: "p", ended: true,
+				result: { content: [text("private output")], details: { rqwToolsNestedCall: bash }, structuredContent: { exit_code: 0 } } }];
+		const live = buildGroups(head, { executions }).get("p")!;
+		const final = result("p", "codemode", { nestedCalls: { calls: [
+			{ id: "p/1", name: "edit", status: "error", argumentsBytes: 9000 },
+			{ id: "p/2", name: "bash", status: "ok", arguments: { command: "false" } }] },
+			details: { rqwToolsNested: { version: 1, calls: [{ id: "p/1", ...edit }, { id: "p/2", ...bash }, { id: "p/extra", ...edit }] } } });
+		const saved = buildGroups([...head, ...entries(final)]).get("p")!;
+		assert.deepEqual(saved.members, live.members);
+		assert.deepEqual(saved.members[0].args, {}, "metadata never restores lost args");
+		const classified = classifyChange("edit", {}, saved.members[0].result, { isError: true }, "linux");
+		assert.deepEqual(classified.files, [
+			{ path: "actual.ts", countKey: "actual.ts", status: "done", added: 3, removed: 2 },
+			{ path: "noop.ts", countKey: "noop.ts", status: "done", added: 0, removed: 0 },
+			{ path: "bad.ts", countKey: "bad.ts", status: "error" }, { path: "maybe.ts", countKey: "maybe.ts", status: "possibly_changed" }]);
+		assert.deepEqual(saved.members[1].result, { content: [], structuredContent: { exit_code: 7 } });
+		assert.deepEqual(counts(saved.members), { edited: 4, read: 0, searched: 0, ran: 1, waited: 0, used: 0, added: 3, removed: 2, failed: 2 });
+		assert.deepEqual(counts(live.members), counts(saved.members));
+		assert.ok(!JSON.stringify(saved.members).includes("private"));
+		const stale: LiveExecution[] = executions.map((x) => ({ ...x, result: { content: [], details: { rqwToolsNestedCall: { version: 1, tool: "bash", exitCode: 0 } } } }));
+		stale.push({ toolCallId: "p/extra", toolName: "edit", parentToolCallId: "p", ended: true, result: { content: [], details: { rqwToolsNestedCall: edit } } });
+		assert.deepEqual(buildGroups([...head, ...entries(final)], { executions: stale }).get("p")!.members, saved.members, "saved metadata wins stale and extra live calls");
+		assert.deepEqual(saved.members.map((m) => m.id), ["p/1", "p/2"], "metadata cannot add calls absent from Pi's record");
+		const withoutCalls = result("p", "codemode", { details: record(final).details });
+		assert.deepEqual(buildGroups([...head, ...entries(withoutCalls)]).get("p")!.members.map((m) => m.id), ["p"]);
+	});
+
+	it("groups-background-handoff-keeps-completed-counts-and-leaves-pending-unknown", () => {
+		const head = entries(user("go"), assistant(call("p", "codemode")));
+		const first = { id: "p/1", version: 1, tool: "edit", files: [{ path: "first.ts", ok: true, added: 2, removed: 1 }] };
+		const handoff = result("p", "codemode", { nestedCalls: { complete: false, calls: [
+			{ id: "p/1", name: "edit", arguments: { path: "first.ts" }, status: "ok" },
+			{ id: "p/2", name: "bash", arguments: { command: "pending" }, status: "unfinished" },
+		] }, details: { rqwToolsNested: { version: 1, calls: [first] } } });
+		const saved = [...head, ...entries(handoff)];
+		const members = buildGroups(saved).get("p")!.members;
+		assert.deepEqual(members.map((m) => m.id), ["p/1", "p/2"]);
+		assert.deepEqual(members[1], { id: "p/2", toolName: "bash", args: { command: "pending" }, parentId: "p", unconfirmed: true, isPartial: false });
+		assert.deepEqual(counts(members), { edited: 1, read: 0, searched: 0, ran: 1, waited: 0, used: 0, added: 2, removed: 1, failed: 0 });
+		const late: LiveExecution = { toolCallId: "p/2", toolName: "bash", parentToolCallId: "p", ended: true,
+			result: { content: [], details: { rqwToolsNestedCall: { version: 1, tool: "bash", exitCode: 3 } } } };
+		assert.deepEqual(buildGroups(saved, { executions: [late] }).get("p")!.members, members, "late completion must not confirm the saved unfinished call");
+	});
+
+	it("groups-nested-markers-validate-and-fall-back", () => {
+		const head = entries(user("go"), assistant(call("p", "codemode")));
+		const edit = { version: 1, tool: "edit", files: [{ path: "actual.ts", ok: true, added: 2, removed: 1 }] };
+		for (const [toolName, marker] of [
+			["edit", { ...edit, version: 2 }], ["edit", { ...edit, tool: "write" }],
+			["edit", { ...edit, files: [{ path: "x", ok: true, added: -1 }] }],
+			["edit", { ...edit, files: [{ path: "x", ok: "true", added: 1 }] }],
+			["edit", { ...edit, files: [{ path: "x", ok: true, removed: 0.5 }] }],
+			["bash", { version: 1, tool: "bash", exitCode: "7" }], ["bash", { version: 1, tool: "bash", exitCode: Infinity }],
+			["bash", undefined], ["edit", undefined],
+		] as const) {
+			const extra = { details: { rqwToolsNestedCall: marker, files: edit.files, diff: "+1 secret", exitCode: 9 }, structuredContent: { exit_code: 9 } };
+			const run: LiveExecution = { toolCallId: "p/1", toolName, parentToolCallId: "p", ended: true, result: { content: [text("secret")], ...extra } };
+			const live = buildGroups(head, { executions: [run] }).get("p")!.members[0];
+			assert.deepEqual(live.result, { content: [] }, `${toolName}: ${JSON.stringify(marker)}`);
+			const final = result("p", "codemode", { nestedCalls: { calls: [{ id: "p/1", name: toolName, status: "ok" }] },
+				details: { rqwToolsNested: { version: 1, calls: [{ ...marker, id: "p/1" }] } } });
+			assert.deepEqual(buildGroups([...head, ...entries(final)]).get("p")!.members[0], live);
+		}
+		for (const metadata of [
+			{ version: 2, calls: [{ ...edit, id: "p/1" }] },
+			{ version: 1, calls: [{ ...edit, id: "p/10" }] },
+			{ version: 1, calls: [{ ...edit, id: "p/1/1" }] },
+		]) {
+			const final = result("p", "codemode", { nestedCalls: { calls: [{ id: "p/1", name: "edit", status: "ok" }] }, details: { rqwToolsNested: metadata } });
+			assert.deepEqual(buildGroups([...head, ...entries(final)]).get("p")!.members[0].result, { content: [] }, "version and exact ID must match");
+		}
+		const unfinished = result("p", "codemode", { nestedCalls: { calls: [{ id: "p/1", name: "edit", status: "unfinished" }] },
+			details: { rqwToolsNested: { version: 1, calls: [{ ...edit, id: "p/1" }] } } });
+		const member = buildGroups([...head, ...entries(unfinished)]).get("p")!.members[0];
+		assert.deepEqual(member, { id: "p/1", toolName: "edit", args: {}, parentId: "p", unconfirmed: true, isPartial: false });
+		assert.equal(counts([member]).added, undefined);
+	});
+
 	it("groups-current-after-parent-completes", () => {
 		// Pi kept p/1 and p/2 in its record; p/3 ran beyond what Pi persists. While p runs, p/3 is current; once p has
 		// its saved result the record alone decides, with the events still held and after a reload alike.

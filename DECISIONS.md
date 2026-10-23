@@ -289,6 +289,21 @@ Opus 5.5 Low — это слишком дорого»
 
 ## Tools
 
+- **Nested codemode display facts** `[D-TOOLS-NESTED-DISPLAY]`. Owner (`16-27-59:3117`): «3а».
+  Meaning: assistant question 3, option a at line 3116 proposed later saving nested edit counts and bash exit codes
+  through our tools instead of leaving the Pi limitation. Reason: keep confirmed display facts across replay without
+  patching Pi. RQW-tools adds compact public result `details.rqwToolsNestedCall` with `version: 1`, `tool: "edit"`
+  and `files: [{path, ok, outcome?, added?, removed?}]`, or `tool: "bash"` and `exitCode`; the parent's
+  `details.rqwToolsNested` has `version: 1` and `calls: [{id, ...marker}]`. Counts come from actual confirmed diff/patch
+  results; no requested replacement text, output or diffs are duplicated. RQW-tool-ui matches exact Pi nested IDs,
+  enriches only completed calls, and keeps saved membership/status and omitted-argument limits. An unfinished
+  background handoff stays unconfirmed; final metadata is available through job wait
+  `details.results[].details.rqwToolsNested`, not used to retrospectively confirm that old handoff.
+  Carriers: `extensions/RQW-tools/{nested-display.ts,nested.ts,codemode.ts,index.ts,jobs.ts}` and
+  `extensions/RQW-tool-ui/{groups.ts,changes.ts}`; limits: [tool UI README](extensions/RQW-tool-ui/README.md#nested-result-metadata-and-remaining-limits).
+  No settings or registration change: tool UI still needs explicit loading until P10 updates the package manifest.
+  Since: this nested-codemode-counts squash.
+
 - **Barrier eligibility tests** `[D-TOOLS-BARRIER-TESTS]`. Fixed and randomized barrier batches check maximal
   concurrency with held operations and an independent conflict oracle: after promise reactions drain, exactly the calls
   without unfinished earlier conflicts must have started. Seeded gate rejections check prompt release after failure and

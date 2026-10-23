@@ -156,7 +156,8 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 						if (signal?.aborted) throw new Error("Operation aborted");
 						const release = await claimFor(footprint, () => `a codemode script call of ${label}`, signal ?? new AbortController().signal);
 						try {
-							return await withFiles(name, dir, params, false, () => run(id, params, signal, onUpdate, ctx));
+							const result = await withFiles(name, dir, params, false, () => run(id, params, signal, onUpdate, ctx));
+							return nested.observe(id, name, params, result);
 						} finally {
 							release?.();
 						}

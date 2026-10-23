@@ -79,6 +79,22 @@ describe("classifyChange", () => {
 		assert.deepEqual(rqw.files.map((f) => [f.path, f.status, f.added, f.removed]), [["a.ts", "done", 3, 2], ["b.ts", "done", 2, 1]]);
 	});
 
+	it("edit-compact-nested-counts", () => {
+		const compact = (counts: object, ok = true) => ({ content: [], details: { files: [{ path: "actual.ts", ok, details: { rqwToolsNestedCounts: counts } }] } });
+		for (const counts of [{ added: 3, removed: 2 }, { added: 0, removed: 0 }, { added: 4 }, { removed: 1 }]) {
+			assert.deepEqual(classifyChange("edit", {}, compact(counts), ctx).files,
+				[{ path: "actual.ts", countKey: "actual.ts", status: "done", ...counts }], "compact counts work without restoring arguments or a diff");
+		}
+		assert.deepEqual(classifyChange("edit", {}, compact({ added: 99, removed: 99 }, false), ctx).files,
+			[{ path: "actual.ts", countKey: "actual.ts", status: "error" }], "only successful files confirm counts");
+		assert.deepEqual(classifyChange("edit", { path: "requested.ts" }, compact({ added: 3, removed: 2 }), { ...ctx, isPartial: true }).files,
+			[{ path: "requested.ts", countKey: "requested.ts", status: "running" }], "partial calls never confirm counts");
+		assert.deepEqual(classifyChange("edit", {}, compact({ added: -1, removed: NaN }), ctx).files,
+			[{ path: "actual.ts", countKey: "actual.ts", status: "done" }], "invalid compact counts are omitted");
+		assert.deepEqual(classifyChange("edit", { path: "a.ts" }, { content: [], details: { added: 90, removed: 90 } }, ctx).files,
+			[{ path: "a.ts", countKey: "a.ts", status: "done" }], "unmarked result counts remain unsupported");
+	});
+
 	it("edit-unknown-count-omitted", () => {
 		const args = { path: "a.ts", edits: [{ oldText: "a\nb\nc", newText: "d" }] };
 		for (const result of [{ content: text("ok"), details: undefined }, { content: text("ok"), details: { diff: "", patch: "garbage" } }, { content: text("ok"), details: { firstChangedLine: 3 } }]) {

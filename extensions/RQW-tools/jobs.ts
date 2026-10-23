@@ -9,6 +9,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { Detachable } from "./barrier.ts";
 import type { Footprint } from "./footprint.ts";
+import type { NestedDisplayRecord } from "./nested-display.ts";
 import { resolvePath } from "./keys.ts";
 import { changedAgainst, codemodeInUse, codemodeLimit, forgetOwner, gone, idOf as fileId, lastWrite, overwritten, ownWritesBetween, type RunningJob, same, servePorts, type Snapshot, snapshot, watchOwnWrites } from "./ledger.ts";
 
@@ -97,6 +98,8 @@ type Job = {
 	finish: () => void;
 	/** Final model-facing text of the call, once it ended. */
 	result?: string;
+	/** Display-only facts of the actual completed codemode result, not its earlier handoff. */
+	nestedDisplay?: { version: 1; calls: NestedDisplayRecord[] };
 	tail: string;
 	bytes: number;
 	latest: string;
@@ -205,7 +208,12 @@ export function createJobTool(jobs: Jobs, description: string): any {
 	// N1: a job that ended unseen with a non-empty effects report adds one line to the next result, this one included.
 	const json = (details: Record<string, unknown>) => {
 		const note = jobs.piggyback();
-		return { content: [{ type: "text" as const, text: JSON.stringify(details) }, ...(note ? [{ type: "text" as const, text: note }] : [])], details };
+		// Keep the model-facing job output unchanged; compact display facts live only in result details.
+		const shown = Array.isArray(details.results) ? { ...details, results: details.results.map((r: any) => {
+			const { details: _display, ...rest } = r;
+			return rest;
+		}) } : details;
+		return { content: [{ type: "text" as const, text: JSON.stringify(shown) }, ...(note ? [{ type: "text" as const, text: note }] : [])], details };
 	};
 	return {
 		name: "job",
@@ -566,6 +574,7 @@ export function createJobs(options: JobsOptions = {}) {
 			} else {
 				const value: any = outcome.value;
 				result = textOf(value);
+				if (value?.details?.rqwToolsNested?.version === 1) job.nestedDisplay = value.details.rqwToolsNested;
 				const exit = value?.structuredContent?.exit_code;
 				if (typeof exit === "number") exitCode = exit;
 				state = value?.isError && typeof exit !== "number" ? "failed" : "exited";
@@ -623,7 +632,8 @@ export function createJobs(options: JobsOptions = {}) {
 		return {
 			reason: "exit",
 			timed_out: false,
-			results: finished.map((j) => ({ ...shown(j, lines), result: j.result ?? "" })),
+			results: finished.map((j) => ({ ...shown(j, lines), result: j.result ?? "",
+				...(j.nestedDisplay ? { details: { rqwToolsNested: j.nestedDisplay } } : {}) })),
 			statuses: selected.filter((j) => !finished.includes(j)).map((j) => shown(j, lines)),
 		};
 	}

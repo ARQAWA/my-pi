@@ -89,10 +89,15 @@ export function countDiff(diff: string): { added: number; removed: number } | un
 	return lines > 0 ? { added, removed } : undefined;
 }
 
-/** Confirmed counts in one edit result's details: the patch, else the display diff; none when neither parses. */
-function editCounts(details: unknown): { added: number; removed: number } | undefined {
+/** Confirmed counts: a patch or display diff, or the compact nested counts synthesized by groups.ts. */
+function editCounts(details: unknown): { added?: number; removed?: number } | undefined {
 	const d = record(details);
-	return (typeof d.patch === "string" ? countPatch(d.patch) : undefined) ?? (typeof d.diff === "string" ? countDiff(d.diff) : undefined);
+	const parsed = (typeof d.patch === "string" ? countPatch(d.patch) : undefined) ?? (typeof d.diff === "string" ? countDiff(d.diff) : undefined);
+	if (parsed) return parsed;
+	const compact = record(d.rqwToolsNestedCounts);
+	const valid = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
+	const counts = { ...(valid(compact.added) ? { added: compact.added } : {}), ...(valid(compact.removed) ? { removed: compact.removed } : {}) };
+	return Object.keys(counts).length ? counts : undefined;
 }
 
 export function classifyChange(toolName: string, args: unknown, result: CallResult | undefined, context: CallContext = {}, platform: string = process.platform): ChangeClassified {
