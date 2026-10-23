@@ -2013,6 +2013,15 @@ Current accepted development policy (request summaries unless quoted); detailed 
   is not added. Reason: neither Anthropic nor Codex returns a tokens-per-second field, so the exact billed count over Pi's own clock is the closest provider-aligned
   number. Carrier: `extensions/RQW-statusbar/{render,index}.ts` `RateMeter`; contract and proof:
   `notes/statusbar-omp.md`.
+- Session branch mark: the whole interface is English, so row 3 shows `⑂ fork #N` (`⑂ fork #2`, `⑂ fork #3`) instead of
+  the Russian `⑂ ветка N`. Owner, three quotes in order:
+  1. «В интерфейсе надо поменять ветка два на branch two, как-нибудь её сделать типа BR2. У нас весь интерфейс должен быть английский.»
+  2. «Насчет BR2 я имею в виду, что должен сам придумать пиздатую аббревиатуру, которая будет подходить к нашему дизайну и вписываться в него органично. Допустим, это может быть не BR2, а просто значок ветки и написано V2, V3 или branch V2 написано, V3, что-нибудь такое»
+  3. «Мне нравится вариант Fork 2, только надо решетку сделать: fork #2, и все»
+
+  Final mark: `⑂ fork #N`; the glyph, colour role (`label`), the two-space gap and the hiding rules are unchanged, only
+  the text after the glyph is `fork #N`. Carrier: `placeRow` in `extensions/RQW-statusbar/render.ts`; proof:
+  `extensions/RQW-statusbar/test/chrome.test.ts`, `lifecycle.test.ts`.
 
 ## Anthropic package integration
 

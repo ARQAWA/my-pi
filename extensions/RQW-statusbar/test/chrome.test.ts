@@ -225,12 +225,14 @@ describe("branch mark on the place row", () => {
 
 	it("shows after the folder with two spaces only when off the original branch", () => {
 		assert.equal(state(undefined, 60), " \uf115 ~/ai-project/my-pi");
-		assert.equal(state(2, 60), " \uf115 ~/ai-project/my-pi  \u2442 ветка 2");
+		assert.equal(state(2, 60), " \uf115 ~/ai-project/my-pi  \u2442 fork #2");
 	});
 
 	it("drops the whole mark before the folder is cut", () => {
-		assert.equal(state(2, 26), state(undefined, 26));
-		assert.ok(state(2, 26).includes("~/ai-project/my-pi"));
+		// folder 21 cells + two spaces + "⑂ fork #2" 9 cells = 32: one column short drops the mark whole
+		assert.ok(state(2, 32).endsWith("\u2442 fork #2"));
+		assert.equal(state(2, 31), state(undefined, 31));
+		assert.ok(state(2, 31).includes("~/ai-project/my-pi"));
 	});
 });
 

@@ -47,7 +47,7 @@ export function singleLine(text: string): string {
 export type PlaceKind = "folder" | "scratch" | "worktree";
 
 export interface BarState {
-	/** The sibling number N of the branch the leaf is on (`⑂ ветка N`); undefined on the original first branch. */
+	/** The sibling number N of the branch the leaf is on (`⑂ fork #N`); undefined on the original first branch. */
 	branch?: number;
 	/** The session model; undefined shows "no-model", as omp. */
 	model?: { id: string; name?: string; reasoning?: boolean };
@@ -251,13 +251,13 @@ export function gitText(git: BarState["git"], paint: Paint = plain): string {
 }
 
 /**
- * Row 3: the working place on the left, git on the right. Off the original branch the `⑂ ветка N` mark follows the folder
+ * Row 3: the working place on the left, git on the right. Off the original branch the `⑂ fork #N` mark follows the folder
  * after two spaces; it is dropped whole, before the folder is cut, when folder, mark and git do not fit together.
  */
 export function placeRow(state: BarState, width: number, paint: Paint = plain): string {
 	const folder = ` ${paint("path", `${ICON[state.place.kind]} ${singleLine(state.place.text)}`)}`;
 	const git = gitText(state.git, paint);
-	const withMark = state.branch === undefined ? undefined : `${folder}  ${paint("label", `⑂ ветка ${state.branch}`)}`;
+	const withMark = state.branch === undefined ? undefined : `${folder}  ${paint("label", `⑂ fork #${state.branch}`)}`;
 	const fits = withMark !== undefined && visibleWidth(withMark) + (git ? 1 + visibleWidth(git) : 0) <= width;
 	return leftRight(fits ? (withMark as string) : folder, git, width);
 }

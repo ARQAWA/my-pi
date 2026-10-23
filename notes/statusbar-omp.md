@@ -53,6 +53,9 @@ Read on 2026-10-21; no source repository or agent configuration was modified.
    Right: `cmp N`, then ` · ` and nerd throughput glyph plus `R.R tok/s` once measured.
 3. Left: nerd folder, scratch or worktree glyph and working place. Right: nerd branch glyph and branch,
    then `*unstaged +staged ?untracked`, omitting zero counts.
+   Off the original session branch, the folder is followed after two spaces by the label-coloured mark `⑂ fork #N`
+   (the branch glyph and the sibling number, `⑂ fork #2`, `⑂ fork #3`); the mark is dropped whole when it does not fit.
+   The whole interface text is English (owner, see `DECISIONS.md` Status bar, «Session branch mark»).
 
 Above the input, the editor's top border ends with the full session ID (`ctx.sessionManager.getSessionId()`,
 a UUIDv7 in Pi 1.3.0, also with `--no-session`), framed by rule cells with one plain space on each side:

@@ -26,7 +26,6 @@ const OLD_SHIMMER_MS = 120;
 const STATUS_FRAME_MS = 160;
 const GIT_POLL_MS = 10_000;
 const MODEL = { provider: "anthropic", id: "claude-fixture", name: "Claude Fixture", reasoning: true, contextWindow: 200000 };
-const MARK = "⑂ ветка";
 
 const root = mkdtempSync(join(tmpdir(), "rqw-statusbar-lifecycle-"));
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -638,7 +637,7 @@ it("branch mark: absent on the original branch, the sibling number off it, gone 
 	assert.doesNotMatch(place(h), /⑂/);
 	const { u3, u4 } = branchTree(h);
 	h.fire("session_tree", { newLeafId: u4, oldLeafId: u3 });
-	assert.match(place(h), /\S {2}⑂ ветка 2$/, "two spaces after the folder, the sibling number");
+	assert.match(place(h), /\S {2}⑂ fork #2$/, "two spaces after the folder, the sibling number");
 	h.manager.branch(u3);
 	h.fire("session_tree", { newLeafId: u3, oldLeafId: u4 });
 	assert.doesNotMatch(place(h), /⑂/);
@@ -652,10 +651,10 @@ it("replacement first-user roots show the mark, reconstruct on reload/resume, an
 	h.manager.resetLeaf();
 	const replacement = h.manager.appendMessage(user("replacement first message"));
 	h.fire("session_tree", { newLeafId: replacement, oldLeafId: original });
-	assert.match(place(h), /⑂ ветка 2$/);
+	assert.match(place(h), /⑂ fork #2$/);
 	for (const reason of ["reload", "resume"]) {
 		h.fire("session_start", { reason });
-		assert.match(place(h), /⑂ ветка 2$/, reason);
+		assert.match(place(h), /⑂ fork #2$/, reason);
 	}
 	h.manager.branch(original);
 	h.fire("session_tree", { newLeafId: original, oldLeafId: replacement });
@@ -668,7 +667,7 @@ it("a new branch appended without a tree event shows its mark from the current l
 	const h = harness(t);
 	h.fire("session_start", { reason: "startup" });
 	branchTree(h);
-	assert.match(place(h), /⑂ ветка 2$/);
+	assert.match(place(h), /⑂ fork #2$/);
 });
 
 it("a fork made after navigating to an ancestor is numbered by creation order without another tree event", (t) => {
@@ -677,10 +676,10 @@ it("a fork made after navigating to an ancestor is numbered by creation order wi
 	const { u1 } = branchTree(h);
 	h.manager.branch(u1);
 	h.manager.appendMessage(user("ancestor fork"));
-	assert.match(place(h), /⑂ ветка 2$/);
+	assert.match(place(h), /⑂ fork #2$/);
 	h.manager.branch(u1);
 	h.manager.appendMessage(user("second ancestor fork"));
-	assert.match(place(h), /⑂ ветка 3$/);
+	assert.match(place(h), /⑂ fork #3$/);
 });
 
 it("session_start with reason resume and reload rebuilds the branch mark from the current leaf", (t) => {
@@ -688,7 +687,7 @@ it("session_start with reason resume and reload rebuilds the branch mark from th
 	h.fire("session_start", { reason: "startup" });
 	const { u3 } = branchTree(h);
 	h.fire("session_start", { reason: "resume" });
-	assert.match(place(h), /⑂ ветка 2$/);
+	assert.match(place(h), /⑂ fork #2$/);
 	h.manager.branch(u3);
 	h.fire("session_start", { reason: "reload" });
 	assert.doesNotMatch(place(h), /⑂/);
@@ -698,10 +697,10 @@ it("the branch mark is dropped whole on narrow widths, never cut", (t) => {
 	const h = harness(t);
 	h.fire("session_start", { reason: "startup" });
 	branchTree(h);
-	assert.match(place(h, 80), /⑂ ветка 2$/);
+	assert.match(place(h, 80), /⑂ fork #2$/);
 	for (let width = 1; width <= 80; width++) {
 		const row = place(h, width);
-		if (row.includes("⑂")) assert.match(row, /⑂ ветка 2$/, `width ${width}`);
+		if (row.includes("⑂")) assert.match(row, /⑂ fork #2$/, `width ${width}`);
 	}
 	assert.doesNotMatch(place(h, 12), /⑂/);
 });
