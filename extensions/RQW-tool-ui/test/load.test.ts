@@ -34,7 +34,11 @@ async function load(o: { settings?: object; paths?: string[]; factories?: pi.Inl
 
 const own = (ext: pi.Extension) => ({ handlers: ext.handlers.size, tools: ext.tools.size, messageRenderers: ext.messageRenderers.size, commands: ext.commands.size,
 	flags: ext.flags.size, shortcuts: ext.shortcuts.size, entryRenderers: ext.entryRenderers?.size ?? 0, markdown: ext.markdownTransformer === undefined, resolvers: ext.toolRenderers?.length ?? 0 });
-const ONLY_ONE_RESOLVER = { handlers: 0, tools: 0, messageRenderers: 0, commands: 0, flags: 0, shortcuts: 0, entryRenderers: 0, markdown: true, resolvers: 1 };
+// One resolver and the session and stream events of the wiring (index.ts); no tools, commands, renderers of
+// messages, flags, shortcuts or Markdown transformers.
+const EVENTS = ["session_start", "session_shutdown", "session_compact", "session_tree", "message_start", "message_update", "message_end",
+	"tool_execution_start", "tool_execution_update", "tool_execution_end", "agent_end"];
+const ONLY_ONE_RESOLVER = { handlers: EVENTS.length, tools: 0, messageRenderers: 0, commands: 0, flags: 0, shortcuts: 0, entryRenderers: 0, markdown: true, resolvers: 1 };
 
 function stockRenderers(cwd: string): Record<string, pi.ToolRenderers> {
 	const defs = { read: pi.createReadToolDefinition(cwd), bash: pi.createBashToolDefinition(cwd), edit: pi.createEditToolDefinition(cwd),
@@ -65,10 +69,13 @@ async function close(s: pi.AgentSession) {
 
 describe("RQW-tool-ui scaffold", () => {
 	it("load-default-delegates", async () => {
+		// Since the wiring (T08) the resolver draws every tool itself in a self shell and keeps what comes after it
+		// (`next()`, asked once) for the original under Ctrl+O; test/render.test.ts proves the original is drawn exactly.
 		const { cwd, loader } = await load();
 		assert.deepEqual(loader.getExtensions().errors, []);
 		const ext = loader.getExtensions().extensions.find((e) => e.path === EXTENSION)!;
-		assert.deepEqual(own(ext), ONLY_ONE_RESOLVER, "one resolver, nothing else registered");
+		assert.deepEqual(own(ext), ONLY_ONE_RESOLVER, "one resolver and the wiring's events, nothing else registered");
+		assert.deepEqual([...ext.handlers.keys()].sort(), [...EVENTS].sort());
 		const [resolver] = ext.toolRenderers!;
 		const stock = stockRenderers(cwd);
 		const cases: [string, pi.ToolRenderers | undefined][] = [...Object.entries(stock), ["codemode", { renderShell: "self" }], ["agent", {}],
@@ -77,14 +84,15 @@ describe("RQW-tool-ui scaffold", () => {
 			let calls = 0;
 			const next = () => { calls++; return renderers; };
 			const out = resolver(name, next);
-			assert.equal(out, renderers, `${name}: the very object next() returned`);
-			assert.deepEqual(out, next(), `${name}: deep-equal to next()`);
-			assert.equal(calls, 2, `${name}: next() asked once by the resolver`);
+			assert.equal(calls, 1, `${name}: next() asked once by the resolver`);
+			assert.equal(out?.renderShell, "self", `${name}: drawn in a self shell`);
+			assert.equal(typeof out?.renderCall, "function", name);
+			assert.equal(typeof out?.renderResult, "function", name);
 		}
 		// The same through Pi's resolver chain.
 		const { session: s } = await session({ ...fresh(), loader, mode: "rpc" });
 		try {
-			for (const [name, renderers] of cases) assert.equal(s.extensionRunner.resolveToolRenderers(name, () => renderers), renderers, name);
+			for (const [name, renderers] of cases) assert.equal(s.extensionRunner.resolveToolRenderers(name, () => renderers)?.renderShell, "self", name);
 		} finally { await close(s); }
 	});
 
@@ -120,7 +128,7 @@ describe("RQW-tool-ui scaffold", () => {
 				assert.deepEqual(errors, []);
 				assert.equal(resolutions, 0, "no renderer was resolved, so no component was created");
 				const ext = loader.getExtensions().extensions.find((e) => e.path === EXTENSION)!;
-				assert.deepEqual(own(ext), ONLY_ONE_RESOLVER, "no handlers, statuses, commands or subscriptions");
+				assert.deepEqual(own(ext), ONLY_ONE_RESOLVER, "no statuses, commands or other registrations");
 				s.extensionRunner.resolveToolRenderers("read", () => undefined);
 				assert.equal(resolutions, 1, "the probe does see a resolution");
 			} finally { await close(s); }

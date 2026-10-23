@@ -12,12 +12,60 @@ Compact display of tool calls in the TUI transcript. Concept approved by the own
 
 ## Current state
 
-The scaffold and pure data and render functions are in place; none is wired to Pi yet, so nothing is drawn
-differently from stock Pi.
+The extension is wired to Pi: every tool call in the interactive transcript is drawn as described above. It is not
+listed in the package manifest yet (registration is a separate step), so it loads only when given explicitly.
 
-- `index.ts` registers one tool renderer resolver that returns `next()` unchanged for every tool, so every call
-  renders exactly as stock Pi. It creates no components, statuses, timers or subscriptions. It is not listed in
-  the package manifest yet.
+### Wiring (`index.ts`, `render.ts`)
+
+- `index.ts` registers one tool renderer resolver and the public events the groups need: `session_start`,
+  `session_shutdown`, `session_compact`, `session_tree`, `message_start/update/end`, `tool_execution_start/update/end`
+  and `agent_end`. Only a session started in Pi's interactive TUI (`ctx.mode === "tui"`) keeps state; print, JSON and
+  RPC modes keep nothing and draw nothing (Pi resolves no tool renderers there).
+- The resolver gives every tool, known or not, `renderShell: "self"` renderers and keeps what comes after it
+  (`next()`: another extension's renderers, else the tool's own, else nothing) as the original. Pi's shell choice is
+  static per definition, so the original look is reproduced inside the self shell (below).
+- Collapsed: a call that does not lead its group draws no row at all (Pi's tool row takes zero rows). The leader, the
+  last call of the group, draws the summary line and, while the group is active, the live card of the current call
+  under it. Both are indented by Pi's `outputPad`, like the assistant text. The rows are drawn at render time from
+  the current groups, so a new call, a result or the start of the answer text shows on the next frame; the rows whose
+  look changes (old and new leader, the active leader) are asked to redraw through the `invalidate` callback Pi gives.
+- Expanded (Ctrl+O, or a click on the row): every call shows its original at its own place, exactly as Pi draws it
+  without this extension (owner decision after a visual comparison: the same look, not a simplified one). The row
+  rebuilds Pi's shell from public pi-tui components: a `Box` with Pi's padding (`outputPad`, one blank row above and
+  below) and its pending/success/error tool background, holding what the original renderers (`next()`) return for the
+  call and the result, with the row's own last components and Pi's renderer state; a bare `Container` for an original
+  that draws its own frame; Pi's padded text for a tool Pi has no definition for. Pi adds the leading blank row and the
+  images itself. Expanded rows show no summary line; Ctrl+O again folds back.
+- Pi's fallback formatting (a call without `renderCall`, a result without `renderResult` or whose renderer throws, a
+  tool without a definition, as RQW-agent's and RQW-review's tools or tools of a resumed session) is not exported by
+  Pi, so `fallback.ts` holds a small copy of it, approved by the owner, pinned to Pi 1.4.0 with its sources cited in
+  its header. Maintenance: on a Pi upgrade, `test/original.test.ts` fails on the version pin; compare `fallback.ts`
+  with the cited Pi sources, update it and the pin. The same test compares every case with Pi's own
+  `ToolExecutionComponent.render()` (whole rows, colours included), so a drift in the shell shows there too.
+- The original renderers are called where Pi calls this row's renderers: their call side from the start of execution
+  (so the bash clock starts when Pi's would), their result side from the first expansion on, and from then on with
+  every result, folded or not. A final or failed result therefore reaches them and they stop what they started
+  (Pi's bash renderer stops its one-second redraw timer); a call never expanded never runs them for results.
+- Images: Pi appends a result's images to the tool row itself, outside the renderers. These renderers draw no image
+  and change nothing of Pi's image output; a folded row with an image shows just Pi's image.
+- Groups come from `ctx.sessionManager.buildContextEntries()` plus the streaming state (`groups.ts`). The state is
+  reset on every `session_start` and dropped on `session_shutdown` (reload, session switch, quit); rows of the
+  transcript Pi rebuilds before `session_start` are redrawn once the session is known. No timers of its own.
+- Accepted limit: every model step with thinking keeps Pi's own blank row and, while thinking is hidden, its label row;
+  this extension cannot remove them.
+
+### Wait results and RQW-agent-ui
+
+`agent`, `code_writer`, `shell_runner` and `review` calls with `action: "wait"` count as `waited for N agents` in the
+summary line; their original results show under Ctrl+O. RQW-agent-ui (a separate extension) draws cards for delivered
+wait results through its own resolver, replacing only `renderResult` of the renderers after it. Neither imports the
+other; Pi runs resolvers in extension load order, the first loaded outermost. RQW-agent-ui must load BEFORE
+RQW-tool-ui (earlier in `pi.extensions`): then its card is drawn for a folded wait call and everything else, including
+the original under Ctrl+O, comes from this extension. Loaded after it, its cards would be folded away like any other
+call's rows, though still reachable through Ctrl+O.
+
+### Data and render functions
+
 - `classify.ts`: `classify(toolName, args, result, context)` turns one call into
   `{ kind, target, status, countKey, countKeys, outputText, exitCode? }` for `read`, `grep`/`find`, `bash`,
   `wait` of `agent`/`code_writer`/`shell_runner`/`review` (one count key per waited ID) and every other tool.
@@ -54,17 +102,25 @@ differently from stock Pi.
   reload (see Dropped below); a call left `unfinished` there is unconfirmed (no success, failure or counts). A nested
   call's failure and a write's lines (from saved arguments) still count.
 - `test/harness.ts`: width sweep (`assertFits`, 0..160 columns), wide and styled samples, identity and colored theme
-  painters, fixed clock.
+  painters, fixed clock. `test/transcript.ts`: saved messages in a public in-memory session and Pi's render context.
+- Tests: `test/render.test.ts` (the renderers), `test/original.test.ts` (the expanded original against Pi's own
+  component, the fallbacks and the bash timer), `test/host.test.ts` (a transcript of Pi's exported assistant and tool
+  components), `test/lifecycle.test.ts` (package filter and `/reload`, non-TUI modes, session switch); the terminal smoke
+  of the real Pi TUI at 80 columns is `test/tool-ui-smoke.test.ts` and, on a Mac, `python3 test/tool-ui-smoke.py`
+  at the repository root.
 
 ## On and off
 
 The extension is switched with Pi's package filter (`pi config`, or a `packages` entry with
-`-extensions/RQW-tool-ui/index.ts`) and `/reload`. It has no toggle or setting of its own.
+`-extensions/RQW-tool-ui/index.ts`) and `/reload`. It has no toggle or setting of its own. After `/reload` Pi draws
+the transcript anew without this extension's resolver, so old and new tool calls look exactly as stock Pi draws them;
+switching it on again the same way brings the compact display back for the whole transcript.
 
 ## No patch
 
 Public Pi extension and TUI APIs only: no fork or edit of Pi, no replacing or wrapping of Pi methods, no private
-fields, no deep imports. A feature that cannot be built that way is dropped and named as dropped.
+fields, no deep imports. A feature that cannot be built that way is dropped and named as dropped. The one copy of Pi
+code is the expanded fallback formatting in `fallback.ts` (above), with the owner's approval.
 
 ### Dropped: needs a Pi patch
 
