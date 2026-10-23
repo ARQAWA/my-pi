@@ -20,8 +20,13 @@ The coordinator delegates all execution, waits and checks to subagents and may r
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
   window W = min(contextWindow, 500000) and compacts above W - R, where R = round(W / 10). Tests: `npm test`.
 - `extensions/RQW-agent/`: extension 5, subagents and the fixed `code_writer` / `shell_runner` workers. `agent`
-  (start, wait, status, send, interrupt, stop, restart) runs in-process Pi sessions with a caller-supplied whole system prompt,
-  chosen model/thinking and base tools. All three tools share caller-chosen mechanical wait and diagnostic status;
+  (start, wait, status, send, interrupt, stop, restart) runs in-process Pi sessions whose default prompt is the main
+  agent's system prompt plus a subagent reminder and an optional `role` (`system` overrides the whole prompt), with
+  chosen model/thinking and base tools, and an optional `title` in status and result details. A subagent has `agent` itself,
+  recursively without a depth limit; `explore` starts a read-only search subagent on the caller's model; workers and
+  explorers are leaves. Children get codemode/tool_search as the caller has them, the caller's session settings, and
+  `review` when RQW-review offers it (`pi.events` `rqw-review:subagent-review`); workers also get cwd, OS and date.
+  Details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-kinds-and-title). All three tools share caller-chosen mechanical wait and diagnostic status;
   results arrive once through wait or `[kind#N]` messages. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Workers retain history until stop for explicit follow-ups.
   Worker briefs, nesting and delivery:
   [RQW-agent README](extensions/RQW-agent/README.md#workers); decisions: [Workers](DECISIONS.md#workers).
@@ -38,7 +43,9 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   back later as a `[review#N]` message. Main may rebut a finding once with proof; the next reviewer's answer is final (fix, or ask the user), kept by the extension: `DECISIONS.md`
   section Review. The reviewer model follows the main agent's family (Claude or GPT) with the other family as
   fallback: `extensions/RQW-review/README.md`. Background cache warming is off; Anthropic prompt caching uses
-  built-in 5m (`DECISIONS.md`, Review). A reviewer inherits the main chat's GPT Fast at its start; the `review` tool's optional `fast_gpt` overrides it. Tests: `npm test`.
+  built-in 5m (`DECISIONS.md`, Review). A reviewer inherits the main chat's GPT Fast at its start; the `review` tool's optional `fast_gpt` overrides it.
+  RQW-agent's general subagents get their own `review` through the `pi.events` offer `rqw-review:subagent-review`:
+  `extensions/RQW-review/README.md#review-in-subagents`. Tests: `npm test`.
 - `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout, with the context bar as
   the input editor's bottom border and the session ID at the right end of its top border. Shows the GPT Fast lightning after the model name (main chat, `openai-codex` model, shimmer while working). On by default; `/statusbar [on|off]` toggles it and restores the stock editor and
   footer when off. Elements, evidence and limits:

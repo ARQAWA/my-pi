@@ -52,8 +52,8 @@ test("nested workers wake their direct caller; main receives only the final answ
 		await until(() => f.workerRequests.length === 2 && f.subSession().isIdle, "subagent settled while workers run");
 		await tick();
 		assert.deepEqual(f.delivered(), [], "no intermediate answer to main");
-		assert.deepEqual(tools(f.requests.sub[0]), ["code_writer", "shell_runner"], "even a tools:[] subagent has workers but no agent");
-		assert.equal(f.subSession().getToolDefinition("agent"), undefined);
+		assert.deepEqual(tools(f.requests.sub[0]), ["agent", "code_writer", "shell_runner"], "even a tools:[] subagent has agent and workers");
+		assert.ok(f.subSession().getToolDefinition("agent"), "a subagent starts subagents of its own");
 		assert.deepEqual(f.workerRequests.map(tools), [["bash", "edit", "find", "grep", "read", "write"], ["bash", "find", "grep", "read"]]);
 		for (const worker of f.workerSessions()) {
 			assert.equal(worker.sessionManager.getCwd(), f.root);

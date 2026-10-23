@@ -6,33 +6,43 @@ import type { AgentSessionEvent, ExtensionAPI, ExtensionContext, ModelRuntime, S
 import {
 	type AgentSession,
 	createAgentSession,
+	createCodemodeExtension,
+	createToolSearchExtension,
 	DefaultResourceLoader,
 	getAgentDir,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
-import { registerWorkers, type RuntimeHandle, sumCounts, type WorkerProfile } from "./workers.ts";
+import { installGitGuard, registerWorkers, type RuntimeHandle, sumCounts, type WorkerProfile } from "./workers.ts";
+import { explorerRole, subagentPrompt, THOROUGHNESS, type Thoroughness, workerPrompt } from "./prompt.ts";
 import { Activity } from "./activity.ts";
 import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 import { Coordinator, type Result, waitTimeout, targetIds, messageCount, waitResult } from "./coordinator.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
+/** The tools of an explorer: read and search only; its bash is behind the git guard. */
+const EXPLORE_TOOLS = ["read", "bash", "grep", "find"] as const;
+/** Pi's built-in tools a child gets when its caller has them active (the main session has them through RQW-settings). */
+const BUILTIN_TOOLS = ["codemode", "tool_search"] as const;
 const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type Thinking = (typeof THINKING)[number];
 
 export const DESCRIPTION = [
-	"Run a subagent: you supply its whole system prompt; it has its own model/tools, code_writer and shell_runner, no agent.",
+	"Run a subagent in this process. By default its system prompt is yours plus a short subagent reminder and your optional role; system replaces the whole prompt. It has its own model and tools, and its own agent, code_writer and shell_runner (and review when available).",
+	"Use it for complex multi-step work that can run on its own, or for independent areas in parallel: start them all in one response. Do not use it for a narrow question, one or two known files or a single search: call the tools directly.",
+	"The child sees neither the user nor your history: give it the full context and say exactly what to return. Trust its result rather than redoing the work; the user does not see it, so pass on what matters.",
 	"Work in parallel while children run. When blocked, estimate their remaining duration and set timeout_ms somewhat longer on each wait; 300000 is only the omitted default, not an interval or maximum.",
 	"wait: ids (full IDs, may mix your direct agents and workers), optional timeout_ms; mechanically returns the first result without model turns. Timeout returns status only; children keep running. Re-estimate and wait again if needed.",
 	"status: ids, optional messages (5-10, default 8); last trimmed messages and in-flight tool calls. Decide whether to wait, send, interrupt, stop or restart. Do not busy-poll.",
 	"Results arrive once, through wait or a later [agent#N] message; already-delivered results give a receipt.",
-	"start: system (the whole system prompt), task, optional model (provider/id), thinking, tools; returns agent#N.",
+	"start: task, optional title (3-5 words), role, system (the whole system prompt), model (provider/id), thinking, tools; returns agent#N.",
+	"explore on start: a read-only search subagent (read, grep, find, guarded bash) on your model with a search role at thoroughness quick, medium or very thorough; it takes no system, role, tools or model.",
 	"send: id, task; reaches a running child after its current tool call, without aborting anything (a child parked in its own wait gets it after that call returns), or starts a new run with its history when idle; interrupt: true on send aborts a running child's turn and starts task as soon as it has stopped.",
 	"interrupt: id; requests cancellation, keeps history; inspect status while cancellation is pending. stop: id; closes it.",
-	"restart: id, optional task and new system/model/thinking/tools; a fresh session.",
-	"Defaults: this session's model and thinking, all tools.",
+	"restart: id, optional task, title and new role/system/model/thinking/tools; a fresh session (an explorer stays one).",
+	"Defaults: your system prompt with the reminder, this session's model and thinking, all tools.",
 	"By default children inherit GPT Fast; pass fast_gpt false when the user forbids Fast for subagents.",
 ].join(" ");
 
@@ -42,7 +52,10 @@ const PARAMETERS = Type.Object({
 	ids: Type.Optional(Type.Array(Type.String(), { description: "Full direct child IDs; wait/status may mix agents and workers" })),
 	timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Chosen wait duration, slightly longer than estimated remaining work; default 300000 only when omitted" })),
 	messages: Type.Optional(Type.Integer({ minimum: 5, maximum: 10, description: "Status peek length; default 8" })),
-	system: Type.Optional(Type.String({ description: "Whole system prompt; start, restart" })),
+	system: Type.Optional(Type.String({ description: "Whole system prompt, replacing the default (your prompt, the subagent reminder and role); start, restart" })),
+	role: Type.Optional(Type.String({ description: "Short role text added after the default prompt; start, restart" })),
+	title: Type.Optional(Type.String({ description: "Short title, 3-5 words, shown in status and result headers; start, restart" })),
+	explore: Type.Optional(StringEnum(THOROUGHNESS, { description: "start, restart: a read-only search subagent on your model at this thoroughness; no system, role, tools or model" })),
 	task: Type.Optional(Type.String({ description: "Message to the subagent" })),
 	model: Type.Optional(Type.String({ description: "provider/id" })),
 	thinking: Type.Optional(StringEnum(THINKING)),
@@ -52,12 +65,18 @@ const PARAMETERS = Type.Object({
 });
 type Params = Static<typeof PARAMETERS>;
 
-type Config = { system: string; model: Model<Api>; thinking: Thinking; tools: string[] };
+/**
+ * `system` is the whole prompt sent; `base` the main agent's prompt it was built from (handed down to nested callers);
+ * `custom` the caller's full override, `role` its role text, `explore` an explorer's thoroughness.
+ */
+type Config = { system: string; base: string; custom?: string; role?: string; explore?: Thoroughness; model: Model<Api>; thinking: Thinking; tools: string[] };
 /** Display details of a delivered result: flattened beside delivery and run in a message's details, and under `display` in a wait result. For cards only, never part of the delivered text. */
-type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number };
+type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number; title?: string };
 type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle; activity: Activity };
 type Agent = Child & {
 	id: number;
+	/** The caller's optional short title, shown in status and result details. */
+	title?: string;
 	/** GPT Fast of this child for its life: inherited at start, or the caller's `fast_gpt`. Its own workers inherit it. */
 	fast: { on: boolean };
 	config: Config;
@@ -76,7 +95,7 @@ export type RunMeta = { model?: string; stop?: string };
  * The display details of a run that ended: its executed model (only an actually executed one, if any), the session's
  * selected thinking (if any), monotonic seconds rounded to 0.1. A final aborted or length stop counts as failed.
  */
-export function resultDisplay(id: string, outcome: "completed" | "error", activity: Activity, meta: RunMeta, thinking?: string): Display {
+export function resultDisplay(id: string, outcome: "completed" | "error", activity: Activity, meta: RunMeta, thinking?: string, title?: string): Display {
 	const model = meta.model;
 	// A final aborted or length stop that was delivered counts as failed; a successful retry ends with stop.
 	const stop = meta.stop;
@@ -87,6 +106,7 @@ export function resultDisplay(id: string, outcome: "completed" | "error", activi
 		...(model ? { model } : {}),
 		...(thinking ? { thinking } : {}),
 		seconds: Math.round(activity.runElapsedMs() / 100) / 10,
+		...(title ? { title } : {}),
 	};
 }
 
@@ -144,6 +164,51 @@ function lastNumber(entries: readonly SessionEntry[], name: string): number {
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
 type ToolsFactory = (cwd: string, settings: () => unknown) => ToolDefinition[];
 
+/**
+ * Channel on `pi.events` where RQW-review, when it is loaded, offers its `review` tool for subagents: a request
+ * `{ offer(register) }` gets a function that registers the tool in one child's own API. `events` is the bus of the
+ * main session (RQW-tools offer, GPT Fast, running counts), `fast` the child's GPT Fast, `signal` ends with the child.
+ * Nothing here imports RQW-review.
+ */
+const SUBAGENT_REVIEW = "rqw-review:subagent-review";
+type ReviewRegistrar = (child: ExtensionAPI, options: { events: ExtensionAPI["events"]; fast: () => boolean; signal: AbortSignal }) => void;
+
+function offeredReview(events: ExtensionAPI["events"]): ReviewRegistrar | undefined {
+	let register: ReviewRegistrar | undefined;
+	// Synchronous like the RQW-tools offer: the handler has answered when emit returns.
+	events.emit(SUBAGENT_REVIEW, { offer: (r: ReviewRegistrar) => { register = r; } });
+	return register;
+}
+
+type OwnSettings = ReturnType<ExtensionAPI["getSettings"]>;
+
+/**
+ * The owner's settings a child session runs with, copied from the caller's effective settings: the shell (Git Bash on
+ * Windows), image handling, retries and provider timeouts, transport and its timeouts, compaction (reserve, kept
+ * tokens, per-model overrides), thinking budgets, steering and follow-up delivery, and codemode's mode and budget.
+ * Background cache warming stays off. UI, model selection, resources and telemetry are not session behaviour of a child.
+ */
+export function childSettings(own: OwnSettings) {
+	const copied = JSON.parse(JSON.stringify({
+		shellPath: own.shellPath,
+		shellCommandPrefix: own.shellCommandPrefix,
+		images: { autoResize: own.images?.autoResize, blockImages: own.images?.blockImages },
+		retry: own.retry,
+		transport: own.transport,
+		httpIdleTimeoutMs: own.httpIdleTimeoutMs,
+		websocketConnectTimeoutMs: own.websocketConnectTimeoutMs,
+		compaction: own.compaction,
+		thinkingBudgets: own.thinkingBudgets,
+		steeringMode: own.steeringMode,
+		followUpMode: own.followUpMode,
+		codemode: own.codemode,
+	})) as Partial<OwnSettings>;
+	return { ...copied, cacheWarming: "off" as const };
+}
+
+/** An optional text counts as given only when it has non-blank content. */
+const given = (value: string | undefined): value is string => typeof value === "string" && value.trim() !== "";
+
 const isAssistant = (m: { role: string }): m is AssistantMessage => m.role === "assistant";
 
 // The main session's runtime (a plain field of ModelRegistry): same credentials, OAuth refresh and providers.
@@ -153,18 +218,21 @@ export default function agent(pi: ExtensionAPI) {
 	registerCaller(pi, pi.events, false, true, () => inheritedFastGpt(pi.events));
 }
 
-/** `callerFast`: this caller's GPT Fast state at the moment it starts a child (the main chat's, or a child's own). */
-function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, general: boolean, callerFast: () => boolean, refresh: () => void = () => {}): RuntimeHandle {
+/**
+ * Registers `agent` and both workers for one caller: the main session (`top`) or a subagent, recursively, without a
+ * depth limit. `callerFast`: this caller's GPT Fast state at the moment it starts a child (the main chat's, or a
+ * child's own). `basePrompt`: the main agent's system prompt, read from the main context or handed down.
+ */
+function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, top: boolean, callerFast: () => boolean, refresh: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt()): RuntimeHandle {
 	const coordinator = new Coordinator(pi);
 	// Display details of delivered results, by run, until shutdown (see publishRun).
 	const displays = new Map<string, Display>();
-	let agentRuntime: RuntimeHandle | undefined;
 	// Running counts of the whole tree, offered by the top-level caller only (see counts.ts). Nested callers get its refresh.
-	const counts = general ? createCountsProducer(() => sumCounts(runtimes.map(runtime => runtime.runningCounts())), pi.events) : undefined;
+	const counts = top ? createCountsProducer(() => sumCounts(runtimes.map(runtime => runtime.runningCounts())), pi.events) : undefined;
 	const notify = counts ? () => counts.refresh() : refresh;
-	if (general) agentRuntime = registerSessionRuntime(pi, undefined, toolEvents, background, coordinator, callerFast, displays, notify);
+	const agentRuntime = registerSessionRuntime(pi, undefined, toolEvents, background, coordinator, callerFast, displays, notify, basePrompt);
 	const workers = registerWorkers(pi, (caller, profile) => registerSessionRuntime(caller, profile, toolEvents, background, coordinator, callerFast, displays, notify));
-	const runtimes: RuntimeHandle[] = agentRuntime ? [agentRuntime, workers] : [workers];
+	const runtimes: RuntimeHandle[] = [agentRuntime, workers];
 	if (counts) {
 		pi.events.on(COUNTS_REQUEST, (request) => {
 			const r = request as CountsRequest;
@@ -189,7 +257,7 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 }
 
 /** Caller-local state. Nested callers settle normally; startRun tracks their workers across background wakeups. */
-export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), displays = new Map<string, Display>(), onRunning: () => void = () => {}): RuntimeHandle {
+export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), displays = new Map<string, Display>(), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt()): RuntimeHandle {
 	const name = worker?.name ?? "agent";
 	const agents = new Map<number, Agent>();
 	const lifetime = new AbortController();
@@ -247,7 +315,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 
 	/** The display details of a run that ended, from its activity and this session's selected thinking. */
 	function displayOf(a: Agent, id: string, outcome: "completed" | "error", meta: RunMeta): Display {
-		return resultDisplay(id, outcome, a.activity, meta, a.session.thinkingLevel);
+		return resultDisplay(id, outcome, a.activity, meta, a.session.thinkingLevel, a.title);
 	}
 
 	/**
@@ -279,7 +347,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			// A queued `send` task is about to start: wait must not see an idle child in between.
 			active: () => !!a.run || !!a.next?.length,
 			checkpoint: () => a.activity.checkpoint(),
-			snapshot: (messages?: number, checkpoint?: Map<string, number>) => ({ ...a.activity.snapshot(messages, checkpoint),
+			snapshot: (messages?: number, checkpoint?: Map<string, number>) => ({ ...(a.title ? { title: a.title } : {}), ...a.activity.snapshot(messages, checkpoint),
 				...(a.run?.quiet ? { cancellation_requested: true } : {}),
 				...(a.next?.length ? { pending_sends: a.next.length } : {}),
 				...(a.workers?.pending() ? { pending_children: a.workers.ids() } : {}) }),
@@ -318,54 +386,65 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		const controller = new AbortController();
 		const guard: Child["guard"] = {};
 		const check = () => { controller.signal.throwIfAborted(); guard.signal?.throwIfAborted(); };
-		const own = pi.getSettings();
 		let workers: RuntimeHandle | undefined;
-		// Keep the main session's shell, including Git Bash on Windows, and read image settings.
-		const settingsManager = SettingsManager.inMemory({
-			cacheWarming: "off",
-			shellPath: own.shellPath,
-			shellCommandPrefix: own.shellCommandPrefix,
-			images: { autoResize: own.images?.autoResize },
-		});
+		// A general subagent delegates further (agent, workers, review); explorers and workers are leaves.
+		const general = !worker && !config.explore;
+		const review = general ? offeredReview(toolEvents) : undefined;
+		// codemode and tool_search as the caller has them: Pi's own built-in factories, active only when the caller's are.
+		const active = new Set(pi.getActiveTools());
+		const builtins = BUILTIN_TOOLS.filter(name => active.has(name));
+		const settingsManager = SettingsManager.inMemory(childSettings(pi.getSettings()));
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: ctx.cwd, agentDir: getAgentDir(), settingsManager,
 			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 			systemPromptOverride: () => config.system,
 			appendSystemPromptOverride: () => [],
 			// Only a forced prompt avoids Pi's appended sections, such as <cwd>.
-			extensionFactories: [(sub: ExtensionAPI) => {
-				fastGpt(sub, () => fast.on);
-				sub.on("before_agent_start", () => {
-					check();
-					return { systemPrompt: config.system };
-				});
-				if (worker) worker.configure(sub);
-				else workers = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning);
-			}],
+			extensionFactories: [
+				...(builtins.includes("codemode") ? [createCodemodeExtension()] : []),
+				...(builtins.includes("tool_search") ? [createToolSearchExtension()] : []),
+				(sub: ExtensionAPI) => {
+					fastGpt(sub, () => fast.on);
+					sub.on("before_agent_start", () => {
+						check();
+						return { systemPrompt: config.system };
+					});
+					if (worker) worker.configure(sub);
+					else if (config.explore) installGitGuard(sub);
+					else {
+						workers = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base);
+						review?.(sub, { events: toolEvents, fast: () => fast.on, signal: controller.signal });
+					}
+				},
+			],
 		});
-		await untilAborted(resourceLoader.reload(), signal);
-		const customTools = offeredTools(ctx.cwd, config.tools);
-		signal.throwIfAborted();
-		const creating = createAgentSession({
-			cwd: ctx.cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
-			tools: worker ? config.tools : [...config.tools, "code_writer", "shell_runner"], customTools, resourceLoader,
-			sessionManager: SessionManager.inMemory(ctx.cwd), settingsManager,
-		}).then(({ session }) => {
-			if (signal.aborted) { session.dispose(); signal.throwIfAborted(); }
-			// prompt() may finish auth after abort()/dispose(). Never let an abandoned preflight reach inference.
-			const stream = session.agent.streamFunction;
-			session.agent.streamFunction = (model, context, options) => {
-				check();
-				// Child Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
-				return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
-			};
-			return { session, controller, guard, workers, activity: new Activity(session, onRunning) };
-		});
+		// From reload on, the factory above may have run (a nested caller, an offered review with its counts source and
+		// listener on the main bus): any failure or cancellation aborts `controller`, which ends them.
+		let creating: Promise<Child> | undefined;
 		try {
+			await untilAborted(resourceLoader.reload(), signal);
+			const customTools = offeredTools(ctx.cwd, config.tools);
+			signal.throwIfAborted();
+			creating = createAgentSession({
+				cwd: ctx.cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
+				tools: [...config.tools, ...(general ? ["agent", "code_writer", "shell_runner", ...(review ? ["review"] : [])] : []), ...builtins],
+				customTools, resourceLoader,
+				sessionManager: SessionManager.inMemory(ctx.cwd), settingsManager,
+			}).then(({ session }) => {
+				if (signal.aborted) { session.dispose(); signal.throwIfAborted(); }
+				// prompt() may finish auth after abort()/dispose(). Never let an abandoned preflight reach inference.
+				const stream = session.agent.streamFunction;
+				session.agent.streamFunction = (model, context, options) => {
+					check();
+					// Child Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
+					return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
+				};
+				return { session, controller, guard, workers, activity: new Activity(session, onRunning) };
+			});
 			return await untilAborted(creating, signal);
 		} catch (error) {
 			controller.abort();
-			void creating.then(({ session }) => session.dispose()).catch(() => {});
+			void creating?.then(({ session }) => session.dispose()).catch(() => {});
 			throw error;
 		}
 	}
@@ -528,11 +607,20 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		signal.throwIfAborted();
 		if (worker) {
 			const selected = await untilAborted(worker.resolve(ctx), signal);
-			return { system: worker.system, tools: [...worker.tools], ...selected };
+			return { system: workerPrompt(worker.system, ctx.cwd), base: "", tools: [...worker.tools], ...selected };
 		}
-		const system = params.system ?? base?.system;
-		if (!system) throw new Error("system is required");
-		let model: Model<Api> | undefined = base?.model ?? ctx.model;
+		const explore = params.explore ?? base?.explore;
+		if (given(params.system) && given(params.role)) throw new Error("Give system (the whole prompt) or role (added to the default prompt), not both");
+		if (explore && (given(params.system) || given(params.role) || params.tools || params.model))
+			throw new Error("An explorer runs on your model with fixed read-only tools and its own role: omit system, role, tools and model");
+		// A restart keeps the old prompt choice unless a new one is given; role and system replace each other.
+		let custom = explore ? undefined : base?.custom;
+		let role = explore ? undefined : base?.role;
+		if (given(params.system)) { custom = params.system; role = undefined; }
+		if (given(params.role)) { role = params.role.trim(); custom = undefined; }
+		const root = basePrompt(ctx);
+		const system = custom ?? subagentPrompt(root, explore ? explorerRole(explore) : role);
+		let model: Model<Api> | undefined = explore ? ctx.model : base?.model ?? ctx.model;
 		if (params.model) {
 			const slash = params.model.indexOf("/");
 			model = slash > 0 ? ctx.modelRegistry.find(params.model.slice(0, slash), params.model.slice(slash + 1)) : undefined;
@@ -542,9 +630,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		if (!ctx.modelRegistry.hasConfiguredAuth(model) && !(await untilAborted(runtimeOf(ctx).checkAuth(model.provider, { signal }), signal)))
 			throw new Error(`No credentials for provider ${model.provider}`);
 		signal.throwIfAborted();
-		const tools = params.tools ?? base?.tools ?? [...TOOLS];
+		const tools = explore ? [...EXPLORE_TOOLS] : params.tools ?? base?.tools ?? [...TOOLS];
 		const thinking = params.thinking ?? base?.thinking ?? pi.getThinkingLevel();
-		return { system, model, thinking, tools };
+		return { system, base: root, ...(custom !== undefined ? { custom } : {}), ...(role ? { role } : {}), ...(explore ? { explore } : {}), model, thinking, tools };
 	}
 
 	const ok = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
@@ -557,7 +645,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			task: Type.Optional(Type.String({ minLength: 1 })),
 			id: Type.Optional(Type.String({ description: `${name}#N; management actions` })), ids: PARAMETERS.properties.ids,
 			timeout_ms: PARAMETERS.properties.timeout_ms, messages: PARAMETERS.properties.messages,
-			fast_gpt: PARAMETERS.properties.fast_gpt, interrupt: PARAMETERS.properties.interrupt,
+			fast_gpt: PARAMETERS.properties.fast_gpt, interrupt: PARAMETERS.properties.interrupt, title: PARAMETERS.properties.title,
 		}) : PARAMETERS,
 		execute: (toolCallId, raw, callerSignal, _onUpdate, ctx) => {
 			// Capture ctx.signal now: its getter can point at another run when the internal queue drains.
@@ -595,7 +683,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				pi.appendEntry(name, { id });
 				const fast = { on: params.fast_gpt ?? callerFast() };
 				const child = await createSession(config, ctx, signal, fast);
-				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, fast, ...child };
+				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, fast, ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };
 				try {
 					signal.throwIfAborted();
 					await startRun(a, params.task, signal);
@@ -659,7 +747,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				close(old);
 				const fast = { on: params.fast_gpt ?? old.fast.on };
 				const child = await createSession(config, ctx, signal, fast);
-				const a: Agent = { id: old.id, config, epoch: randomUUID(), runNumber: 0, fast, ...child };
+				const title = given(params.title) ? params.title.trim() : old.title;
+				const a: Agent = { id: old.id, config, epoch: randomUUID(), runNumber: 0, fast, ...(title ? { title } : {}), ...child };
 				try {
 					signal.throwIfAborted();
 					if (params.task) await startRun(a, params.task, signal);

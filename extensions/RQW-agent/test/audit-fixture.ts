@@ -63,7 +63,7 @@ export async function fixture(mode: "tui" | "rpc" | "print" | "json" = "tui", au
 	assert.deepEqual(loader.getExtensions().errors, []);
 	const { session } = await createAgentSession({ cwd: root, agentDir, modelRuntime: runtime, model: main.getModel("m"),
 		thinkingLevel: "low", resourceLoader: loader, sessionManager: SessionManager.inMemory(root),
-		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }) });
+		settingsManager: SettingsManager.inMemory({}) });
 	const errors: string[] = [];
 	await session.bindExtensions({ mode, onError: e => errors.push(`${e.event}: ${e.error}`) });
 	const call = async (params: Record<string, unknown>, signal?: AbortSignal, ctx = session.extensionRunner.createContext()) => {

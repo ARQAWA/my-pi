@@ -1,6 +1,7 @@
 // Real caller and worker sessions; only RQW-agent is loaded. All inference and credentials are faux/offline.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { arch, release } from "node:os";
 import { test, type TestContext } from "node:test";
 import { fauxProvider, fauxToolCall, getSystemMessageText, type TranscriptContext, type SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { AgentSession, createBashToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -84,12 +85,16 @@ test("main starts both workers immediately and receives their results as caller 
 				&& JSON.stringify(m.content).includes(role === "code_writer" ? "CODE_BRIEF" : "SHELL_BRIEF")))!;
 			assert.equal(request.provider, "anthropic");
 			assert.equal(request.options?.reasoning, "low");
-			assert.deepEqual(request.context.messages.filter(m => m.role === "system").map(getSystemMessageText),
-				[await readFile(new URL(`../roles/${role}.md`, import.meta.url), "utf8")]);
+			const systems = request.context.messages.filter(m => m.role === "system").map(getSystemMessageText);
+			assert.equal(systems.length, 1);
+			const roleText = (await readFile(new URL(`../roles/${role}.md`, import.meta.url), "utf8")).trimEnd();
+			// The fixed role file, then cwd, OS and today's date.
+			assert.equal(systems[0], `${roleText}\n\n<environment>\n- Working directory: ${f.root}\n- OS: ${process.platform} ${release()} (${arch()})\n- Today (UTC): ${systems[0].match(/Today \(UTC\): (\d{4}-\d{2}-\d{2})/)?.[1]}\n</environment>`);
+			assert.match(systems[0], /- Today \(UTC\): \d{4}-\d{2}-\d{2}\n<\/environment>$/);
 			assert.deepEqual(toolNames(request.context), role === "code_writer"
 				? ["bash", "edit", "find", "grep", "read", "write"] : ["bash", "find", "grep", "read"]);
 			const definition = f.session.getToolDefinition(role)!;
-			assert.deepEqual(Object.keys(definition.parameters.properties).sort(), ["action", "fast_gpt", "id", "ids", "interrupt", "messages", "task", "timeout_ms"]);
+			assert.deepEqual(Object.keys(definition.parameters.properties).sort(), ["action", "fast_gpt", "id", "ids", "interrupt", "messages", "task", "timeout_ms", "title"]);
 			assert.deepEqual(definition.parameters.required ?? [], []);
 			assert.equal(definition.parameters.properties.id.description, `${role}#N; management actions`);
 		}

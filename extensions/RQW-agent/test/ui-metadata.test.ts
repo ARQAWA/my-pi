@@ -69,7 +69,7 @@ async function workerSession(f: Awaited<ReturnType<typeof fixture>>, configure: 
 	await loader.reload();
 	const { session } = await createAgentSession({ cwd: f.root, agentDir, modelRuntime: f.runtime, model: f.main.getModel("m"), thinkingLevel: "low",
 		resourceLoader: loader, sessionManager: SessionManager.inMemory(f.root),
-		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }) });
+		settingsManager: SettingsManager.inMemory({}) });
 	await session.bindExtensions({ mode: "tui", onError: e => f.errors.push(`${e.event}: ${e.error}`) });
 	return session;
 }

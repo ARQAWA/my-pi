@@ -18,8 +18,10 @@ export default function (pi: ExtensionAPI) {
 			assert.equal(systems.length, 1);
 			assert.equal(getSystemMessageText(systems[0]), "AUDIT_EXACT_SYSTEM");
 			assert.equal(options?.reasoning, "high");
-			// tools:[] removes base tools, not the fixed worker tools available to every agent child.
-			assert.deepEqual((systems[0].toolsAdded ?? []).map(tool => tool.name).sort(), ["code_writer", "shell_runner"]);
+			// tools:[] removes base tools, not agent and the fixed worker tools available to every agent child; codemode
+			// comes as the main session has it (active in the nested scenario).
+			assert.deepEqual((systems[0].toolsAdded ?? []).map(tool => tool.name).sort(),
+				["agent", "code_writer", ...(scenario === "nested" ? ["codemode"] : []), "shell_runner"]);
 			options?.signal?.addEventListener("abort", () => release.resolve(), { once: true });
 			if (scenario !== "nested") await release.promise;
 			return answer(`CLI_CHILD_${n}`);

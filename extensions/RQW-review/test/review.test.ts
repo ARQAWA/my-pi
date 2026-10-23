@@ -1382,6 +1382,7 @@ describe("native creation and wait cleanup", () => {
 			sendMessage: (m: { content: unknown }) => messages.push(m),
 			events: { emit: () => {}, on: () => () => {} },
 			getSettings: () => ({}),
+			getActiveTools: () => [],
 		} as unknown as ExtensionAPI);
 		// The deadline fires as the session is being created (its in-memory manager is built just before the call), after
 		// the loader has reloaded: the session materializes after the deadline and must be disposed without a prompt.

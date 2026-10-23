@@ -44,13 +44,7 @@ export function registerWorkers(caller: ExtensionAPI, register: (caller: Extensi
 				if (typeof selected === "string") throw new Error(selected);
 				return selected;
 			},
-			configure(session) {
-				session.on("tool_call", event => {
-					if (event.toolName !== "bash" || typeof event.input.command !== "string") return;
-					const reason = blockedGit(event.input.command);
-					if (reason) return { block: true, reason };
-				});
-			},
+			configure: installGitGuard,
 		}));
 	}
 	return {
@@ -61,6 +55,15 @@ export function registerWorkers(caller: ExtensionAPI, register: (caller: Extensi
 		abortAll() { for (const runtime of runtimes) runtime.abortAll(); },
 		close() { for (const runtime of runtimes) runtime.close(); },
 	};
+}
+
+/** Blocks every git-state change in this session's bash calls (workers and explorers) before the shell runs. */
+export function installGitGuard(session: ExtensionAPI): void {
+	session.on("tool_call", event => {
+		if (event.toolName !== "bash" || typeof event.input.command !== "string") return;
+		const reason = blockedGit(event.input.command);
+		if (reason) return { block: true, reason };
+	});
 }
 
 /** Sums running counts of several runtimes, kind by kind. */

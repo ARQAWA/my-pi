@@ -1,16 +1,65 @@
 # Agent lifecycle and audit fixes
 
-`agent` starts in-process subagents with caller-selected prompt, model, thinking and base tools, plus the workers below.
-Subagents have no `agent` tool. This extension imports no other RQW extension. Optional RQW-tools definitions come
-exclusively from a fresh `rqw-tools:subagent-tools` factory offer on `pi.events`; with no offer, Pi supplies stock tools.
+`agent` starts in-process subagents with the default or a caller-selected prompt, model, thinking and base tools, plus
+the workers below. A general subagent has `agent` itself, recursively and without a depth limit; explorers and workers
+are leaves. This extension imports no other RQW extension. Optional RQW-tools definitions come exclusively from a fresh
+`rqw-tools:subagent-tools` factory offer on `pi.events`; with no offer, Pi supplies stock tools.
+
+## Prompt, kinds and title
+
+- Default prompt: the main agent's system prompt as Pi built it for the main run (RQW-prompt's text, project context
+  such as AGENTS.md, skills and `<cwd>` when they are loaded), read through the public `ctx.getSystemPrompt()` of Pi
+  1.4.0, then a short subagent reminder (`SUBAGENT_REMINDER` in [prompt.ts](prompt.ts): it is a subagent, its answer
+  goes to its caller, instructions addressed to the main agent or a coordinator do not apply to it), then the optional
+  `role` as `<role>...</role>`. A nested subagent gets the same main prompt (handed down, never its caller's prompt,
+  so nothing repeats). `system` stays the whole-prompt override: exactly that text, as before. `system` and `role` in
+  one call are an error; on `restart` a new one replaces the old choice, otherwise the old choice is kept. The prompt is
+  forced, so Pi appends nothing more.
+- `explore` (`quick`, `medium` or `very thorough`) on `start` makes an explorer: the same default prompt with a very
+  short file-search role at that thoroughness, the caller's current model, thinking as usual, tools `read`, `grep`,
+  `find` and `bash` behind the [git guard](#git-guard) (no `edit`, `write`, `agent`, workers or review). It takes no
+  `system`, `role`, `tools` or `model`; `restart` keeps it an explorer, optionally at another thoroughness. It is an
+  `agent#N` child with the same wait/status/send/interrupt/stop/restart. A start option rather than a fourth tool:
+  one schema field reuses the whole agent runtime and adds no tool to every request.
+- `title` (optional, 3-5 words; `agent`, `code_writer`, `shell_runner`, `start` and `restart`, kept on restart) is shown
+  as `title` in `status`, in the wait result's display data (`results[i].display.title`) and in the message
+  `details.title`; the RQW-agent-ui result card shows it in its header after `<name>#<id>`. The delivered content keeps
+  its `[agent#N] ...` format.
+- The `agent` description carries only generic when/when-not advice adapted from Cursor (not for narrow questions,
+  one or two known files or a single search; parallel starts for independent areas; full context and the exact
+  return; trust the result; the user does not see it), no coordinator rules.
+
+## Child tools and settings
+
+- `codemode` and `tool_search`: a child (subagent, explorer, worker) gets Pi's own built-in definitions
+  (`createCodemodeExtension`, `createToolSearchExtension`) when its caller has them active, as main has them through
+  RQW-settings. Child codemode is the stock definition, not RQW-tools' barrier-grouped one: its script calls are
+  ordered among themselves by the child's barrier, not as one call against the child's parallel calls.
+- `review`: a general subagent gets RQW-review's tool when RQW-review is loaded, through its own handshake
+  `rqw-review:subagent-review` on `pi.events` ([RQW-review README](../RQW-review/README.md#review-in-subagents)).
+- Settings: every child's in-memory `SettingsManager` copies the caller's effective `shellPath`, `shellCommandPrefix`,
+  `images.autoResize` and `images.blockImages`, `retry` (including provider timeout and retries), `transport`,
+  `httpIdleTimeoutMs`, `websocketConnectTimeoutMs`, `compaction` (enabled, reserve, kept tokens, per-model
+  overrides), `thinkingBudgets`, `steeringMode`, `followUpMode` and `codemode` (mode, inline budget); `childSettings`
+  in [index.ts](index.ts). These are the settings Pi's session reads for requests, retries, compaction, queues and
+  tools. `cacheWarming` stays off. Not copied: UI and terminal settings, default model/thinking and enabled models
+  (the child's model is explicit), default tools (explicit allowlist), packages, extensions, skills, prompts and themes
+  (children load no resources), branch summaries (no tree navigation), session storage, sharing and telemetry.
+- Workers keep their fixed role prompt and get a `<environment>` block with the working directory, OS and today's
+  UTC date ([prompt.ts](prompt.ts)).
+
+Proof: `test/agent.test.ts` ("subagent parity" and the default-prompt, role and error tests), `test/workers.test.ts`,
+`test/nested-workers.test.ts`, `test/cli.test.ts`. Decision: [DECISIONS.md, Agent](../../DECISIONS.md#agent).
 
 ## Workers
 
 Main and every `agent` subagent can call `code_writer` or `shell_runner`. Omitted action (or `start`) takes a required
 `task` brief and creates a fresh in-process session in the caller's cwd. The role prompt, model, reasoning and tool
-allowlist are fixed, not caller overrides. Explicit `send` continues that assignment with its history. Subagents retain both worker tools even
-with an empty base-tool subset; workers have no `agent`, `code_writer` or `shell_runner` tools. Maximum delegation
-depth is main -> subagent -> worker. These are product workers; [PROCESS.md](../../PROCESS.md) governs development.
+allowlist are fixed, not caller overrides. Explicit `send` continues that assignment with its history. Subagents retain `agent` and both worker tools even
+with an empty base-tool subset; workers and explorers have no `agent`, `code_writer` or `shell_runner` tools. Delegation
+is recursive without a depth limit (main -> subagent -> subagent ... -> worker); workers and explorers are always the
+last level, and there is no global limit on the count. A subagent's answer waits for its own subagents and workers like
+it waits for workers. These are product workers; [PROCESS.md](../../PROCESS.md) governs development.
 
 ### Briefs and reports
 
@@ -221,7 +270,8 @@ RQW_AGENT_BUN=1 node --import ./test/no-network.mjs --test extensions/RQW-agent/
 The second command requires an installed Bun. CLI children use a temporary HOME and agent directory, an allowlisted
 environment, offline flags and the same transport-denying preload before Pi loads. They cover normal text/JSON/RPC,
 main cancellation during text/JSON waiting, late-after-abort RPC, and actual builtin codemode nested ids. The CLI faux
-provider asserts that an empty base-tool subset declares exactly the worker tools, matching [Workers](#workers).
+provider asserts that an empty base-tool subset declares exactly `agent` and the worker tools (plus `codemode` in the
+scenario where main has it active), matching [Workers](#workers).
 `test/coordinator.test.ts` covers broker races, handoff, caller-chosen deadlines, implicit fallback and explicit-wait
 priority with virtual time. `test/activity.test.ts` covers live diagnostics, usage, trimming and argument growth.
 `test/wait.test.ts` uses real sessions for mixed waits, retention, history, cancellation-pending tools and hook failure.

@@ -709,33 +709,90 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Proof: `test/agent.test.ts` and package `test/prompt-cache.test.ts`; evidence: `notes/prompt-cache-policy.md`.
 - Children inherit GPT Fast at start and `fast_gpt` overrides it: rule, quotes and carrier in
   [Settings](#settings), «GPT Fast» (`extensions/RQW-agent/fast-gpt.ts`, `index.ts`).
+- Subagent parity, like Cursor (owner session 2026-10-23; agreement and Cursor/Codex/our evidence in
+  `my-pi-evidence/subagent-parity/`). This entry supersedes the earlier rules below that a subagent's prompt is
+  exactly the caller's `system` with no main prompt, and that a subagent has no `agent` tool (maximum depth main ->
+  subagent -> worker). Owner (verbatim): «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи
+  свои предложения».
+  - Prompt. Owner: «1 - про как в курсор не понял. я думал саб агент получает тот же систенмный промпт что и основной
+    агент ток чуть чуть подрезанный как это в курсоре сделано», then «1а. что бы тонко конфигурировать роль надо
+    добавить либо спец поле либо что бы промпт начинался с роли а потом уже сама задача, как то хитро надо сдлеть».
+    By default a subagent's prompt is the main agent's system prompt as Pi built it for the main run (read with the
+    public `ctx.getSystemPrompt()` of Pi 1.4.0; nothing is imported from RQW-prompt), then a short Cursor-style
+    reminder (it is a subagent, it answers its caller, instructions addressed to the main agent or a coordinator do
+    not apply to it), then the optional `role`. Coordinator decision (technical): `role` is a separate optional field,
+    not parsed from the start of `task`. `system` stays the full override, sent exactly. Nested subagents get the
+    main prompt handed down, not their caller's prompt. Reason: the child works under the same rules and project
+    context as main, and the caller tunes it with a few words instead of writing a whole prompt.
+  - Nesting. Owner: «1а» to "a subagent may start subagents without a level limit, as Codex V2. Workers stay the last
+    level. No global limits". General subagents get `agent` recursively; code_writer, shell_runner and explorers are
+    leaves; no depth, count or concurrency limit. Reason: a subagent can split its own work the way main does; the
+    existing caller-local runtime (delivery to the direct caller, a parent's answer waiting for its pending children,
+    interrupt/stop/restart cascading to descendants) already works per level.
+  - Coordinator rules. Owner: «Нет нет правила координатора это только для мейна ЭТОГО РЕПОЗИТОРИЯ, это наш локальный
+    режим тут в этой репо и он заложен через локальный агентс мд и через вложенные в него ссылки. Т.е. это не будет
+    работаь в других репо.» The product gets no coordinator rules: the `agent` description gets only Cursor's generic
+    when/when-not usage advice (not for narrow questions, a known file or two or one search; independent areas in
+    parallel; full context and the exact return; trust the result; the user does not see it).
+  - Child gaps. Owner: «2а (что значит когда ревьюер вернется? типа у нас он один что ли на всю систему?)» to "give
+    children codemode and tool_search, workers cwd/date/OS, all children the owner's settings; subagents may call
+    review". Every child (subagent, explorer, worker) gets Pi's built-in `codemode` and `tool_search` when its caller
+    has them active. General subagents get `review` when RQW-review is loaded, through RQW-review's own `pi.events`
+    offer `rqw-review:subagent-review`: each caller has its own reviews and numbering, and the verdict goes to the
+    caller that asked. Children run with the caller's session settings: shell path and prefix, image resize and
+    blocking, retries and provider timeouts, transport and its timeouts, compaction (reserve, kept tokens, per-model
+    overrides), thinking budgets, steering and follow-up modes, codemode mode and budget; warming stays off. The
+    reviewer is a child too (result review findings 1 and 2): it gets `codemode` and `tool_search` when its caller has
+    them active, and the same settings except the two queue modes (compaction included; the former forced
+    `compaction: { enabled: false }` is removed). Workers get cwd, OS and today's date after
+    their fixed role. Reason: a child is not weaker than main by accident; the evidence found these gaps without a
+    recorded reason (`ours/REPORT.md`).
+  - Rest of Codex. Owner: «3а»: durable resume, parent history fork, web search and MCP for children are deferred.
+  - Title. Owner: «2а» to an optional short title (3-5 words) shown in status and result headers: `title` on start and
+    restart of `agent`, `code_writer` and `shell_runner`. It shows as `title` in `status`, in the wait result's display
+    data (`results[i].display.title`) and in the message `details.title`, which the RQW-agent-ui card header shows after
+    `<name>#<id>` (branch p5-agent-ui); the delivered content keeps its `[agent#N] ...` format.
+  - Explore. Owner: «3 да давай сделаем эксплорера буквально как в курсоре там он как системный + очен коротка роль и он
+    запускается на модели родетиля а не на собой модели», then «2а» to "explore = the same system prompt + a very short
+    search role + thoroughness level (quick / medium / very thorough), runs on the parent's model, read and search only
+    (no edit/write, bash behind the git guard like the reviewer)". Engineering choice: the `explore` option of `agent`
+    `start` (not a fourth tool): one field reuses the agent runtime and adds no tool declaration to every request.
+  Carriers: `extensions/RQW-agent/index.ts`, `prompt.ts`, `workers.ts`; `extensions/RQW-review/index.ts`. Details:
+  [RQW-agent README](extensions/RQW-agent/README.md#prompt-kinds-and-title),
+  [RQW-review README](extensions/RQW-review/README.md#review-in-subagents). Proof: `extensions/RQW-agent/test/agent.test.ts`
+  ("subagent parity"), `test/workers.test.ts`, `test/nested-workers.test.ts`, `test/cli.test.ts`,
+  `extensions/RQW-review/test/subagent.test.ts`.
 - A general subagent for the main agent, the one the Scope section names as a separate task. The owner's words: «должна
   быть опция поднимать любых рандомных саб-агентов, которые являются саб-потоком основного агента. Можно за базу взять
   агента General Purpose из курсора и его воспроизвести»; «этот кастомный саб-агент, абстрактный саб-агент, должен
   подниматься без системного промпта, чтобы основной агент передавал ему весь системный промпт. Полностью промптил его
   от начала до конца»; «Чтобы он мог ему ставить задачу, прерывать, выключать, перезапускать. Он мог ему посылать
   сообщение follow-up»; «чтобы основной агент тратил минимум токенов»; «все решения должны быть максимально простые ...
-  без оверенджинеринга»; «всё должно быть доказано». Carried by `extensions/RQW-agent/index.ts`.
+  без оверенджинеринга»; «всё должно быть доказано». Carried by `extensions/RQW-agent/index.ts`. The prompt part
+  («без системного промпта ... весь системный промпт») is superseded by the parity entry above: the whole prompt is
+  now the optional `system` override, and the default is the main prompt with the reminder and `role`.
 - One tool `agent` with `action` `start`, `wait`, `status`, `send`, `interrupt`, `stop`, `restart` and the fields
-  `ids`, `timeout_ms`, `messages` (wait/status above), `id`, `system`, `task`,
+  `ids`, `timeout_ms`, `messages` (wait/status above), `id`, `system`, `role`, `title`, `explore` (parity entry above), `task`,
   `model` (`provider/id`), `thinking` (Pi's levels `off` to `max`), `tools` (a subset of `read`, `bash`, `edit`,
   `write`, `grep`, `find`). This selects base tools; delegation tools follow [Workers](#workers).
   The schema passes Pi's `makeStrictJsonSchema`; `null` in an optional field counts as omitted.
 - In process, no spawn (Windows-safe): `createAgentSession` with `SessionManager.inMemory`, `SettingsManager.inMemory`,
   and `DefaultResourceLoader` with `noExtensions`, `noSkills`, `noPromptTemplates`, `noThemes`, `noContextFiles`; cwd
-  is the main session's `ctx.cwd`. Neither RQW-prompt nor AGENTS.md reaches the subagent.
-- The system prompt is exactly `system`. Pi appends `<cwd>` and other sections to every custom prompt
+  is the main session's `ctx.cwd`. No extension, skill or context file is loaded into the subagent; by default the main
+  prompt (with RQW-prompt's text and AGENTS.md when main has them) reaches it as text through `ctx.getSystemPrompt()`.
+- The system prompt, `system` when given or the default of the parity entry above, is sent exactly. Pi appends `<cwd>` and other sections to every custom prompt
   (`buildSystemPromptSections` in Pi's `dist/core/system-prompt.js`); only a forced prompt goes out as it is. So the
   loader carries an inline `before_agent_start` handler returning `{ systemPrompt: system }`. Only our inline
   runtime hooks and the [worker tools](#workers) are loaded, not external extensions. A test checks that the request
-  has one system message equal to `system`.
+  has one system message equal to `system`, and another that the default is the main prompt plus the reminder.
 - The model runtime is the main session's, taken from `ctx.modelRegistry.runtime`, a plain field that is private only
   in the TypeScript types. Reason: one credential store and one OAuth refresh (risk 1 of
   `/tmp/pi-subagent-eval/report.md`), and providers that extensions register also serve the subagent, such as the
   `anthropic` overlay of the installed `pi-claude-auth`. If Pi renames the field, `start` fails and the tests show it.
-- Defaults follow Cursor's generalPurpose: all tools, the main model ("inherit"), no subagents of its own (Cursor
-  transcript 704ada44 in `cursor-like-harness/kb/sources/cursor-reverse-extra`). Here: the main session's model and
-  thinking level, all six base tools, the [worker tools](#workers), and no `agent` tool for the subagent.
+- Defaults follow Cursor's generalPurpose: all tools, the main model ("inherit") (Cursor transcript 704ada44 in
+  `cursor-like-harness/kb/sources/cursor-reverse-extra`). Here: the main session's model and thinking level, all six
+  base tools, `agent` and the [worker tools](#workers). The earlier "no subagents of its own" default is superseded by
+  the owner's «1а» (parity entry above).
 - No imports across extension folders: `extensions/RQW-agent/` loads and works with every other RQW-* switched off or
   absent, and switching RQW-tools off switches it off for subagents too (owner: «Когда мы делаем эти отдельные модули,
   они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать и выключать, как feature флаги»;
@@ -754,10 +811,11 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `dist/core/agent-session.js` lines 1007 and 2973). With no answer `customTools` is empty and Pi builds its stock
   tools. Reason: stock tools lose the barrier and multi-file `edit`/`write`, so with RQW-tools on the subagents keep
   them, and with it off they must not. RQW-tools works the same without RQW-agent.
-- The subagent's `SettingsManager.inMemory` carries the main session's `shellPath`, `shellCommandPrefix` and
+- The subagent's `SettingsManager.inMemory` carries the caller's `shellPath`, `shellCommandPrefix` and
   `images.autoResize`, the three settings Pi builds stock read and bash from (`_buildRuntime` in
-  `dist/core/agent-session.js` lines 2935-2946), so Git Bash on Windows applies to stock bash too. RQW-tools
-  definitions read the main session's settings per call instead.
+  `dist/core/agent-session.js` lines 2935-2946), so Git Bash on Windows applies to stock bash too, plus the other
+  session settings of the parity entry above (`childSettings` in `index.ts`). RQW-tools definitions read the main
+  session's settings per call instead.
 - Results are async. At the end of each run the direct caller gets the text through wait or `[agent#N] <text>`
   through `pi.sendMessage`, once, as the wait decision above specifies. The
   text is every final answer of the run, so a follow-up queued during the run does not hide the first answer (the brief
@@ -887,8 +945,9 @@ Current accepted development policy (request summaries unless quoted); detailed 
   саб-агент Opus или саб-агент Sonnet мог вызвать CodeWriter либо ShellRunner, которые будут выполнять шумную
   механическую работу, которая токены утилизирует.» The final answer goes «тому агенту, который его вызвал».
   Reason: the deciding agent at either caller level can delegate mechanical work without routing raw worker reports
-  through main. `extensions/RQW-agent/index.ts` binds workers to the direct caller's API, with no `agent` tool in
-  subagents and no delegation tools in workers. It keeps the subagent's logical assignment open across worker
+  through main. `extensions/RQW-agent/index.ts` binds workers to the direct caller's API, at every level of the
+  recursive subagent tree ([Agent](#agent), parity entry: subagents now have `agent` too), and no delegation tools in
+  workers. It keeps the subagent's logical assignment open across worker
   wakeups, withholding intermediate answers until no workers or unconsumed results remain. Carrier: `index.ts` and
   `workers.ts` in that folder; proof: `test/nested-workers.test.ts` and the worker-only declarations checked by
   `test/cli-provider.ts` through `test/cli.test.ts`. Current lifecycle and cancellation rules:
@@ -897,7 +956,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Reason: new assignments must not inherit unrelated tasks or old worker answers. `{task}`/`start` creates a fresh
   in-process session. Explicit `send` is a follow-up to the same assignment, not a new assignment; see the later
   owner-approved [wait and management decision](#agent). Completed workers remain idle until stop/caller shutdown;
-  retained history consumes memory and send input/cache/compaction costs. Idle retention never counts as pending. Role prompts, descriptions and
+  retained history consumes memory and send input/cache/compaction costs. Idle retention never counts as pending. Role prompts (followed by the
+  working directory, OS and date block of the [Agent](#agent) parity entry), descriptions and
   tool allowlists are fixed in `extensions/RQW-agent/workers.ts`, `roles/` and `descriptions/`; model/reasoning is
   fixed in `worker-model.ts` in that folder.
 - Owner: «Например, чтобы агент Main не использовал кодрайтер в той ситуации, где бриф будет длиннее, чем написать код
@@ -1169,11 +1229,16 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `criterion` and `<disputes>`. Reason: the main agent no longer retypes the user's words, the largest output cost of a
   call, and the words cannot drift.
 - Each call is a fresh session in the same process: `createAgentSession` with in-memory `SessionManager` and
-  `SettingsManager` (compaction off), in the main agent's `ctx.cwd`, retaining caller shell and image settings.
+  `SettingsManager`, in the caller's `ctx.cwd`, retaining the caller's session settings (shell, images, retries and
+  provider timeouts, transport and its timeouts, compaction, thinking budgets, codemode; owner «2а», [Agent](#agent) parity entry;
+  `reviewerSettings` in `extensions/RQW-review/index.ts`). A general subagent of RQW-agent gets its own `review` tool
+  through the `pi.events` offer `rqw-review:subagent-review`; its verdicts go to that subagent, its brief is that
+  subagent's own messages, and its running reviews end with the subagent (RQW-review README, Review in subagents).
   The resource loader loads no user extensions, skills, prompt templates, themes, context files or appended prompt;
   its sole inline extension installs the bash guard. `REVIEWER.md` is the prompt for both levels. Pi still adds its
   `<cwd>` block after the prompt, so relative paths in the brief resolve; nothing else is added.
-- Reviewer tools are exactly `read`, `bash`, `grep`, `find`, no `edit` or `write`. Each session requests fresh
+- Reviewer tools are exactly `read`, `bash`, `grep`, `find`, plus Pi's `codemode` and `tool_search` when the caller has
+  them active ([Agent](#agent) parity entry), no `edit` or `write`. Each session requests fresh
   RQW-tools definitions over `pi.events` channel `rqw-tools:subagent-tools` using RQW-agent's `{ offer(factory) }`
   handshake, calls the offered factory with cwd and a settings getter, then filters to those four names. No
   cross-extension import is added. Without an offer Pi supplies stock tools. Both offered and stock grep/find use

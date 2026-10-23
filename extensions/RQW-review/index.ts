@@ -9,9 +9,11 @@ import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
 	createAgentSession,
+	createCodemodeExtension,
 	createFindToolDefinition,
 	createGrepToolDefinition,
 	DefaultResourceLoader,
+	type EventBus,
 	type ExtensionAPI,
 	type ExtensionContext,
 	getAgentDir,
@@ -20,6 +22,7 @@ import {
 	SessionManager,
 	SettingsManager,
 	type ToolDefinition,
+	createToolSearchExtension,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { blockedGit } from "./git-guard.ts";
@@ -63,6 +66,8 @@ export function candidates(level: Level, main: { provider?: string; id?: string 
 
 /** The tools of the reviewer, by name: read, bash, grep and find. grep and find go in through `reviewerTools` when no RQW-tools offer is made. */
 export const REVIEWER_TOOLS = ["read", "bash", "grep", "find"];
+/** Pi's built-in tools a reviewer gets on top of REVIEWER_TOOLS when its caller has them active. */
+export const BUILTIN_TOOLS = ["codemode", "tool_search"] as const;
 export const TIMEOUT_MS = 30 * 60 * 1000;
 export const MESSAGE_TYPE = "review";
 
@@ -403,11 +408,21 @@ type Params = {
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
 type ToolsFactory = (cwd: string, settings: () => unknown) => ToolDefinition[];
 
+/**
+ * Channel on `pi.events` where RQW-agent, when it is loaded, asks for the `review` tool for each of its general
+ * subagents. The request is `{ offer(register) }`; the answer registers this tool in that child's own API, with the
+ * main session's bus for the RQW-tools offer, GPT Fast and running counts, the child's GPT Fast, and the child's
+ * lifetime. Nothing in RQW-review depends on RQW-agent.
+ */
+const SUBAGENT_REVIEW = "rqw-review:subagent-review";
+/** Where one `review` tool lives: the bus of the main session, the default GPT Fast, and, for a child, its lifetime. */
+export type ReviewHost = { events: EventBus; fast: () => boolean; signal?: AbortSignal };
+
 /** The offered RQW-tools definitions of the reviewer, filtered to its four names; undefined when none is offered. */
-function offeredTools(pi: ExtensionAPI, cwd: string): ToolDefinition[] | undefined {
+function offeredTools(pi: ExtensionAPI, events: EventBus, cwd: string): ToolDefinition[] | undefined {
 	let factory: ToolsFactory | undefined;
 	// Pi's event bus calls every handler synchronously inside emit, so an offer is in place when emit returns.
-	pi.events.emit(SUBAGENT_TOOLS, {
+	events.emit(SUBAGENT_TOOLS, {
 		offer: (f: ToolsFactory) => {
 			factory = f;
 		},
@@ -553,23 +568,20 @@ async function pickReviewer(level: Level, ctx: ExtensionContext, signal: AbortSi
 }
 
 /** One reviewer session from start to its last assistant text. Throws with the reason when there is no verdict. */
-async function runReviewer(pi: ExtensionAPI, level: Level, brief: string, ctx: ExtensionContext, signal: AbortSignal, used: { spec?: Spec }, fast?: boolean): Promise<string> {
+async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, brief: string, ctx: ExtensionContext, signal: AbortSignal, used: { spec?: Spec }, fast?: boolean): Promise<string> {
 	signal.throwIfAborted();
 	const { spec, model, modelRuntime } = await pickReviewer(level, ctx, signal);
 	used.spec = spec;
 
 	signal.throwIfAborted();
-	// The main session's shell, including Git Bash on Windows, and its image settings; no warmer, no compaction.
-	const own = pi.getSettings();
-	const settingsManager = SettingsManager.inMemory({
-		cacheWarming: "off",
-		compaction: { enabled: false },
-		shellPath: own.shellPath,
-		shellCommandPrefix: own.shellCommandPrefix,
-		images: { autoResize: own.images?.autoResize },
-	});
-	// GPT Fast: the caller's `fast_gpt`, else the main chat's state at the reviewer's start; kept for the session.
-	const inherited = fast ?? inheritedFastGpt(pi.events);
+	// The caller's owner settings: shell (Git Bash on Windows), images, retries and provider timeouts, transport and its
+	// timeouts, compaction, thinking budgets, codemode; no warmer.
+	const settingsManager = SettingsManager.inMemory(reviewerSettings(pi.getSettings()));
+	// GPT Fast: the caller's `fast_gpt`, else the caller's state at the reviewer's start; kept for the session.
+	const inherited = fast ?? host.fast();
+	// The reviewer is a child too: Pi's built-in codemode and tool_search as its caller has them active.
+	const active = new Set(pi.getActiveTools());
+	const builtins = BUILTIN_TOOLS.filter((name) => active.has(name));
 	// No extensions, skills, prompt templates, themes or context files; the prompt is REVIEWER.md, with Pi's <cwd> block.
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: ctx.cwd,
@@ -582,8 +594,9 @@ async function runReviewer(pi: ExtensionAPI, level: Level, brief: string, ctx: E
 		noContextFiles: true,
 		systemPromptOverride: () => REVIEWER,
 		appendSystemPromptOverride: () => [],
-		// The only extension of the reviewer: the git guard of every bash call, stock or offered.
-		extensionFactories: [(sub: ExtensionAPI) => {
+		// Pi's codemode and tool_search when the caller has them active, and the git guard of every bash call, stock or
+		// offered (a codemode script's bash calls pass the same hook).
+		extensionFactories: [...builtins.map((name) => (name === "codemode" ? createCodemodeExtension() : createToolSearchExtension())), (sub: ExtensionAPI) => {
 			fastGpt(sub, () => inherited);
 			sub.on("tool_call", (event) => {
 				if (event.toolName !== "bash" || typeof event.input.command !== "string") return;
@@ -594,7 +607,7 @@ async function runReviewer(pi: ExtensionAPI, level: Level, brief: string, ctx: E
 	});
 	await untilAborted(resourceLoader.reload(), signal);
 	signal.throwIfAborted();
-	const offered = offeredTools(pi, ctx.cwd);
+	const offered = offeredTools(pi, host.events, ctx.cwd);
 	signal.throwIfAborted();
 	const creating = createAgentSession({
 		cwd: ctx.cwd,
@@ -602,7 +615,7 @@ async function runReviewer(pi: ExtensionAPI, level: Level, brief: string, ctx: E
 		thinkingLevel: spec.thinking,
 		modelRuntime,
 		resourceLoader,
-		tools: [...REVIEWER_TOOLS],
+		tools: [...REVIEWER_TOOLS, ...builtins],
 		customTools: offered ?? reviewerTools(ctx.cwd),
 		sessionManager: SessionManager.inMemory(ctx.cwd),
 		settingsManager,
@@ -671,7 +684,35 @@ function lastNumber(entries: readonly SessionEntry[]): number {
 	return max;
 }
 
+/** The reviewer session's settings: the caller's owner settings that shape a session, with warming off. */
+export function reviewerSettings(own: ReturnType<ExtensionAPI["getSettings"]>) {
+	const copied = JSON.parse(JSON.stringify({
+		shellPath: own.shellPath,
+		shellCommandPrefix: own.shellCommandPrefix,
+		images: { autoResize: own.images?.autoResize, blockImages: own.images?.blockImages },
+		retry: own.retry,
+		transport: own.transport,
+		httpIdleTimeoutMs: own.httpIdleTimeoutMs,
+		websocketConnectTimeoutMs: own.websocketConnectTimeoutMs,
+		compaction: own.compaction,
+		thinkingBudgets: own.thinkingBudgets,
+		codemode: own.codemode,
+	})) as Partial<ReturnType<ExtensionAPI["getSettings"]>>;
+	return { ...copied, cacheWarming: "off" as const };
+}
+
 export default function review(pi: ExtensionAPI) {
+	registerReview(pi, { events: pi.events, fast: () => inheritedFastGpt(pi.events) });
+	// A subagent of RQW-agent asks for its own `review` tool; it reviews for that subagent, its caller.
+	pi.events.on(SUBAGENT_REVIEW, (request) =>
+		(request as { offer?: (register: (child: ExtensionAPI, host: ReviewHost) => void) => void })?.offer?.((child, host) => registerReview(child, host)));
+}
+
+/**
+ * The `review` tool of one caller: the main session, or (with `host.signal`) a subagent, whose session never emits
+ * session_start or session_shutdown: its counts start at once and its reviews end with the signal.
+ */
+export function registerReview(pi: ExtensionAPI, host: ReviewHost) {
 	let counter = 0;
 	let main: ExtensionContext | undefined;
 	let mainAborted = false;
@@ -679,11 +720,24 @@ export default function review(pi: ExtensionAPI) {
 	/** Every job until its verdict is sent; print and JSON modes wait for them. */
 	const jobs = new Set<Promise<void>>();
 	// Running reviews of this session, offered on pi.events (see counts.ts).
-	const counts = createCountsProducer(() => ({ agents: 0, workers: 0, reviews: running.size }), pi.events);
-	pi.events.on(COUNTS_REQUEST, (request) => {
+	const counts = createCountsProducer(() => ({ agents: 0, workers: 0, reviews: running.size }), host.events);
+	const offCounts = host.events.on(COUNTS_REQUEST, (request) => {
 		const r = request as CountsRequest;
 		if (r?.version === COUNTS_VERSION) counts.reply(r);
 	});
+	if (host.signal) {
+		const end = () => {
+			for (const job of running) job.abort(SHUTDOWN);
+			running.clear();
+			counts.stop();
+			offCounts();
+		};
+		if (host.signal.aborted) end();
+		else {
+			counts.start();
+			host.signal.addEventListener("abort", end, { once: true });
+		}
+	}
 	/** Verdicts sent while the main session was busy, by review number, until the main model answers after them. */
 	const unanswered = new Set<number>();
 
@@ -796,7 +850,7 @@ export default function review(pi: ExtensionAPI) {
 		let failed = false;
 		const used: { spec?: Spec } = {};
 		try {
-			verdict = await runReviewer(pi, level, brief, ctx, controller.signal, used, fast);
+			verdict = await runReviewer(pi, host, level, brief, ctx, controller.signal, used, fast);
 		} catch (error) {
 			const reason =
 				controller.signal.reason === TIMEOUT

@@ -28,8 +28,27 @@ separate later work. The verdict message's `details` carry the model that actual
 Each fresh session asks on `pi.events` channel `rqw-tools:subagent-tools` for a factory, using the RQW-agent
 handshake without importing it. When offered, its fresh definitions are filtered to `read`, `bash`, `grep`, `find`;
 otherwise Pi supplies stock tools. Both offered and stock grep/find drop empty optional arguments before chaining
-any existing `prepareArguments`; their execute functions stay unchanged. The caller's cwd, shell and image settings
-are retained. No `edit` or `write` is exposed.
+any existing `prepareArguments`; their execute functions stay unchanged. The caller's cwd is retained, and the
+reviewer session runs with the caller's owner settings that shape a session (`reviewerSettings` in `index.ts`):
+shell path and prefix, image auto-resize and blocking, retries with provider timeouts, transport with its HTTP idle
+and WebSocket connect timeouts, compaction (enabled, reserve, kept tokens, per-model overrides), thinking budgets and
+codemode's mode and budget. Background cache warming stays off. The reviewer is a child too: when its caller has Pi's
+built-in `codemode` and `tool_search` active, the reviewer gets them as well (Pi's own definitions, on top of the four
+tools; a codemode script's bash calls pass the same git guard). No `edit` or `write` is exposed.
+
+## Review in subagents
+
+RQW-agent's general subagents (not its explorers or workers) get a `review` tool of their own, offered over
+`pi.events` channel `rqw-review:subagent-review` without any import: RQW-agent emits `{ offer(register) }` for each
+such child, and RQW-review answers with a function that registers the tool in that child's own `ExtensionAPI`, with
+the main session's bus (RQW-tools offer, running counts), the child's GPT Fast and the child's lifetime signal. There
+is no single reviewer for the system: every caller has its own `review#N` numbering, its reviews run in parallel, and
+the verdict goes back to the caller that asked, never to main. The brief's user messages are that child's own
+messages, which come from its caller. A child session never emits `session_start`/`session_shutdown`, so its running
+reviews are offered as a counts source at once and end, without a verdict, when the child is stopped, restarted or
+shut down. A child waits for its running reviews before its run ends (Pi's SDK print mode), so its answer reflects
+the verdict. Without RQW-review loaded, no child gets the tool. Proof: `test/subagent.test.ts`; decision:
+[DECISIONS.md, Agent](../../DECISIONS.md#agent).
 
 The prompt sets no tool-count or reading limit: it requires reading whatever is needed to judge each in-scope
 requirement and change, including affected callers, tests and docs. Unagreed style or taste, minor inaccuracies
