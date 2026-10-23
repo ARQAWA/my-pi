@@ -205,6 +205,16 @@ Opus 5.5 Low — это слишком дорого»
   Carriers: `scripts/ci-npm-test.sh`, `.github/workflows/tests.yml` (artifact `test-evidence-*`, with
   `/Library/Logs/DiagnosticReports`), `.github/workflows/codemode-stress.yml` (input `runs`, `summary.tsv`).
   Since: `8547d59`.
+  Update: the stress workflow takes exact `node` values, compares Node 22.19.0, the affected 24.21.0 and 24.22.0 with
+  the relevant V8 baseline fix, and has a `no_sparkplug` input (a direct Node flag, never `NODE_OPTIONS`). Use the
+  explicit `name_pattern=.` for whole-file probes and verify the effective pattern in the job log; diagnostic
+  dispatches do not retry failures. CI floor, accepted by the owner and relayed by the coordinator (no verbatim owner
+  message exists in the session files, so no quote): `tests.yml` keeps Node 22.19.0 and moves the Node 24
+  jobs to a version spec that resolves to `>=24.22.0 <25`. The matrix labels `22.19.0` and `24` stay for artifact
+  names and the QA canary, and `actions/setup-node@v4` resolves the `24` label. Reason: require the shipped V8
+  baseline fix without allowing a runner-cached 24.21.0; the incident's exact cause remains unproven. Evidence
+  collection and failure handling stay unchanged, with no reruns. Captured signature, isolation, upstream candidates
+  and the CI policy: [notes/codemode-native-crash.md](notes/codemode-native-crash.md).
 
 ## Scope
 

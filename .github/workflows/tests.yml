@@ -39,7 +39,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          # Keep the matrix label stable for evidence artifacts and the QA canary.
+          node-version: ${{ matrix.node == '24' && '>=24.22.0 <25' || matrix.node }}
 
       - name: Facts
         run: |

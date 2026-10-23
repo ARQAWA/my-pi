@@ -33,6 +33,10 @@ on:
         description: Number of runs
         type: string
         default: "30"
+      no_sparkplug:
+        description: Disable Sparkplug with a direct Node argument
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -45,6 +49,7 @@ jobs:
   stress:
     name: repeat (${{ inputs.os || 'macos-latest' }}, node ${{ inputs.node || '24' }})
     runs-on: ${{ inputs.os || 'macos-latest' }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -53,9 +58,17 @@ jobs:
           node-version: ${{ inputs.node || '24' }}
 
       - name: Facts
+        env:
+          NO_SPARKPLUG: ${{ inputs.no_sparkplug || false }}
         run: |
           node --version
-          if [ "$RUNNER_OS" = macOS ]; then sysctl -n hw.memsize hw.ncpu; fi
+          node -p 'JSON.stringify(process.versions, null, 2)'
+          uname -a
+          if [ "$RUNNER_OS" = macOS ]; then
+            sw_vers
+            sysctl hw.memsize hw.ncpu hw.model machdep.cpu.brand_string
+          fi
+          printf 'GitHub SHA: %s\nNo Sparkplug: %s\n' "$GITHUB_SHA" "$NO_SPARKPLUG"
 
       - run: npm ci
 
@@ -65,12 +78,18 @@ jobs:
           RUNS: ${{ inputs.runs || '30' }}
           TEST_FILE: ${{ inputs.test || 'extensions/RQW-tools/test/codemode.test.ts' }}
           PATTERN: ${{ github.event_name == 'push' && '12 MB' || inputs.name_pattern }}
+          NO_SPARKPLUG: ${{ inputs.no_sparkplug || false }}
         run: |
-          case "$RUNS" in ''|*[!0-9]*) echo "::error::runs must be a number: $RUNS"; exit 1;; esac
+          if [[ ! "$RUNS" =~ ^[0-9]+$ || "$RUNS" =~ ^0+$ ]]; then
+            echo "::error::runs must be a positive integer: $RUNS"
+            exit 1
+          fi
           ev="$RUNNER_TEMP/evidence"
           mkdir -p "$ev"
           touch "$ev/.start"
           printf 'run\texit\tmax_rss_bytes\tseconds\n' > "$ev/summary.tsv"
+          node_args=()
+          if [ "$NO_SPARKPLUG" = true ]; then node_args+=(--no-sparkplug); fi
           args=()
           if [ -n "$PATTERN" ]; then args+=("--test-name-pattern=$PATTERN"); fi
           timer=()
@@ -79,7 +98,7 @@ jobs:
           for i in $(seq 1 "$RUNS"); do
             start=$(date +%s)
             set +e
-            "${timer[@]}" node --test "${args[@]}" \
+            "${timer[@]}" node "${node_args[@]}" --test "${args[@]}" \
               --test-reporter=spec --test-reporter-destination=stdout \
               --test-reporter=tap --test-reporter-destination="$ev/run-$i.tap" \
               "$TEST_FILE" > "$ev/run-$i.out" 2> "$ev/run-$i.err"
