@@ -33,11 +33,21 @@ type Shortcut = Parameters<ExtensionAPI["registerShortcut"]>[1];
 type Command = Parameters<ExtensionAPI["registerCommand"]>[1];
 type StartHandler = (event: SessionStartEvent, ctx: ExtensionContext) => void | Promise<void>;
 
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+const KEY_BYTES = {
+	up: "\x1b[A", down: "\x1b[B", right: "\x1b[C", left: "\x1b[D", enter: "\r", escape: "\x1b",
+	"shift+up": "\x1b[1;2A", "shift+down": "\x1b[1;2B", "shift+right": "\x1b[1;2C", "shift+left": "\x1b[1;2D",
+} as const;
+// Stub theme: roles are recorded, so tests can assert which token painted which text.
+const stubTheme = { fg: (color: string, text: string) => text, bold: (text: string) => text } as unknown as Parameters<NonNullable<Parameters<ExtensionUIContext["custom"]>[0]>>[1];
+
 function harness(initialModels = LISTED, initial = LISTED[0], initialLevel: ThinkingLevel = "medium", flags: string[] = []) {
 	let models = initialModels;
 	const shortcuts = new Map<KeyId, Shortcut>();
 	const commands = new Map<string, Command>();
 	const events = new Map<string, StartHandler>();
+	const listeners = new Map<string, ((event: { model: Model<string> }) => void)[]>();
+	let dialog: { component: { handleInput(data: string): void }; done: (result: unknown) => void } | undefined;
 	const selected: string[] = [];
 	const warnings: string[] = [];
 	const incompatible: string[] = [];
@@ -52,33 +62,58 @@ function harness(initialModels = LISTED, initial = LISTED[0], initialLevel: Thin
 		get model() { return current; }, get hasUI() { return hasUI; },
 		modelRegistry: { getAvailable: () => models }, sessionManager: { getBranch: () => branch },
 		// The test double has no AgentSession behind it, so the stock-picker masks report incompatibility.
-		ui: { notify: (text: string) => (text.startsWith("RQW-models cannot restrict") ? incompatible : warnings).push(text), select: async (_title: string, labels: string[]) => { offered = labels; return choice; } },
+		ui: {
+			notify: (text: string) => (text.startsWith("RQW-models cannot restrict") ? incompatible : warnings).push(text),
+			select: async (_title: string, labels: string[]) => { offered = labels; return choice; },
+			// Real component through the public custom callback: the test drives input, not the shortcut.
+			custom: (factory: (...args: unknown[]) => unknown) => new Promise((resolve) => {
+				const component = factory({ requestRender: () => {} }, stubTheme, undefined, (result: unknown) => { dialog = undefined; resolve(result); }) as { handleInput(data: string): void };
+				dialog = { component, done: (result) => resolve(result) };
+			}),
+		},
 	};
 	// Test double implements only the context and API surface used by this extension.
 	const ctx = context as unknown as ExtensionCommandContext;
 	const pi = {
 		registerShortcut: (key: KeyId, options: Shortcut) => shortcuts.set(key, options),
 		registerCommand: (key: string, options: Command) => commands.set(key, options),
-		on: (name: string, fn: StartHandler) => events.set(name, fn),
+		on: (name: string, fn: StartHandler | ((event: { model: Model<string> }) => void)) => {
+			if (name === "model_select") {
+				const list = listeners.get(name) ?? [];
+				list.push(fn as (event: { model: Model<string> }) => void);
+				listeners.set(name, list);
+				return () => listeners.set(name, (listeners.get(name) ?? []).filter((item) => item !== fn));
+			}
+			events.set(name, fn as StartHandler);
+			return () => {};
+		},
 		getThinkingLevel: () => thinking,
 		setThinkingLevel: (level: ThinkingLevel) => { thinking = level; },
 		setModel: async (next: Model<string>) => {
 			await Promise.resolve();
 			if (!allowSet) return false;
-			current = next; thinking = "low"; selected.push(`${next.provider}/${next.id}`); return true;
+			current = next; thinking = "low"; selected.push(`${next.provider}/${next.id}`);
+			for (const listener of listeners.get("model_select") ?? []) listener({ model: next });
+			return true;
 		},
 	};
 	process.argv = [...ORIGINAL_ARGV.slice(0, 2), ...flags];
 	extension(pi as unknown as ExtensionAPI);
 	// Pi supplies a lazy event context before it enables snapshot-based TUI shortcuts.
 	void events.get("session_start")!({ type: "session_start", reason: "reload" }, ctx);
+	const open = (key: KeyId) => shortcuts.get(key)!.handler({ ...context } as unknown as ExtensionContext);
 	return {
 		shortcuts, commands, selected, warnings, incompatible,
+		get dialogOpen() { return dialog !== undefined; },
+		// Real component input (arrows, Enter, Esc) while the chooser is open.
+		input: async (key: keyof typeof KEY_BYTES) => { dialog?.component.handleInput(KEY_BYTES[key]); await flush(); },
+		open: async (key: KeyId) => { void open(key); await flush(); },
 		set models(value: Model<string>[]) { models = value; },
 		get current() { return current; }, get thinking() { return thinking; }, get offered() { return offered; },
 		set branch(value: { type: string }[]) { branch = value; }, set choice(value: string | undefined) { choice = value; },
 		set hasUI(value: boolean) { hasUI = value; }, set allowSet(value: boolean) { allowSet = value; },
-		press: (key: KeyId) => shortcuts.get(key)!.handler({ ...context } as unknown as ExtensionContext),
+		// Opens the chooser with the Shift key, then confirms with Enter: one transition.
+		press: async (key: KeyId) => { const pending = open(key); await flush(); dialog?.component.handleInput(KEY_BYTES.enter); return pending; },
 		start: (reason: SessionStartEvent["reason"] = "startup") => events.get("session_start")!({ type: "session_start", reason }, ctx),
 		pick: () => commands.get("rqw-models")!.handler("", ctx),
 	};
@@ -150,14 +185,16 @@ describe("shortcuts and picker", () => {
 	});
 	it("serializes quick model presses and preserves the pre-switch thinking level", async () => {
 		const h = harness(LISTED, LISTED[0], "high");
-		await Promise.all([h.press("shift+down"), h.press("shift+down"), h.press("shift+down")]);
+		// One chooser: repeated Shift+Down navigates the open draft; a single Enter commits it once.
+		await h.open("shift+down"); await h.input("shift+down"); await h.input("down"); assert.equal(h.current, LISTED[0]); assert.equal(h.selected.length, 0);
+		await h.input("enter"); await h.input("enter");
 		assert.equal(h.current, LISTED[3]); assert.equal(h.thinking, "high");
-		assert.deepEqual(h.selected, LISTED.slice(1, 4).map((m) => `${m.provider}/${m.id}`));
+		assert.deepEqual(h.selected, [`${LISTED[3].provider}/${LISTED[3].id}`]);
 	});
 	it("queued reasoning reads the new model capabilities, not the keypress snapshot", async () => {
 		const limitedOpus = model("claude-opus-5-5", "anthropic", {});
 		const h = harness([limitedOpus, LISTED[1]], limitedOpus, "high");
-		await Promise.all([h.press("shift+down"), h.press("shift+right")]);
+		await h.open("shift+down"); await h.input("right"); await h.input("enter");
 		assert.equal(h.current, LISTED[1]); assert.equal(h.thinking, "xhigh");
 	});
 	it("switching lowers unsupported effort to nearest lower level, or lowest, not Pi's upward clamp", async () => {
@@ -178,7 +215,7 @@ describe("shortcuts and picker", () => {
 		const noThinking = harness(LISTED, { ...LISTED[0], reasoning: false }, "off"); await noThinking.press("shift+right"); assert.equal(noThinking.thinking, "off");
 	});
 	it("no models, auth lost and cancelled/headless pickers are harmless", async () => {
-		const empty = harness([]); await empty.press("shift+up"); await empty.pick(); assert.equal(empty.selected.length, 0); assert.equal(empty.warnings.length, 1);
+		const empty = harness([]); await empty.press("shift+up"); await empty.pick(); assert.equal(empty.selected.length, 0); assert.equal(empty.warnings.length, 2);
 		const lost = harness(); lost.allowSet = false; await lost.press("shift+down"); assert.equal(lost.current, LISTED[0]); assert.equal(lost.thinking, "medium"); assert.equal(lost.warnings.length, 1);
 		const h = harness(); await h.pick(); assert.deepEqual(h.offered, LISTED.map((m) => `${m.provider}/${m.id}`)); assert.equal(h.selected.length, 0);
 		h.choice = "openai-codex/gpt-6-sol"; await h.pick(); assert.equal(h.current, LISTED[3]);
@@ -306,14 +343,27 @@ async function realSession(options: SessionOptions = {}) {
 	const { session } = await createAgentSession({ cwd: root, agentDir: root, modelRuntime: options.modelRuntime ?? runtime, resourceLoader: loader, settingsManager: settings, sessionManager: options.manager ?? SessionManager.inMemory(root), model: options.model ?? (options.manager ? undefined : codex.getModel("gpt-6-sol")), thinkingLevel: options.thinking ?? (options.manager ? undefined : "high"), scopedModels: options.scopedModels, sessionStartEvent: { type: "session_start", reason: options.reason ?? "startup" }, noTools: "all" });
 	const errors: string[] = [];
 	// Only the dialog and notification methods used by RQW-models are needed.
-	await session.bindExtensions({ uiContext: options.ui as ExtensionUIContext | undefined, onError: (error) => errors.push(error.error) }); assert.deepEqual(errors, []);
+	await session.bindExtensions({ uiContext: { ...chooserUi(), ...options.ui } as ExtensionUIContext, onError: (error) => errors.push(error.error) }); assert.deepEqual(errors, []);
 	return session;
 }
-async function press(session: AgentSession, key: KeyId) {
+// The chooser is a real component reached through the public custom callback; the test sends its input.
+let sdkDialog: { handleInput(data: string): void } | undefined;
+function chooserUi(): Partial<ExtensionUIContext> {
+	return {
+		custom: ((factory: (...args: unknown[]) => unknown) => new Promise((resolve) => {
+			sdkDialog = factory({ requestRender: () => {} }, stubTheme, undefined, (result: unknown) => { sdkDialog = undefined; resolve(result); }) as { handleInput(data: string): void };
+		})) as ExtensionUIContext["custom"],
+	};
+}
+// Shift arrow opens with the draft stepped; Enter confirms. Pass enter=false to leave the chooser open.
+async function press(session: AgentSession, key: KeyId, enter = true) {
 	const runner = session.extensionRunner;
 	const shortcuts = runner.getShortcuts({});
 	assert.ok(shortcuts.has(key));
-	await shortcuts.get(key)!.handler({ ...runner.createContext() });
+	const pending = shortcuts.get(key)!.handler({ ...runner.createContext() });
+	await flush();
+	if (enter) sdkDialog?.handleInput(KEY_BYTES.enter);
+	await pending;
 }
 
 describe("real Pi SDK and faux providers only", () => {
@@ -345,12 +395,13 @@ describe("real Pi SDK and faux providers only", () => {
 			} finally { session.dispose(); }
 		}
 	});
-	it("rapid Shift+Down snapshot-context presses weaken Opus to Sonnet to GPT6.1 to GPT6", async () => {
+	it("Shift+Down then Down inside one chooser commits a single change, Opus to GPT6", async () => {
 		const session = await realSession();
 		try {
-			await Promise.all([press(session, "shift+down"), press(session, "shift+down"), press(session, "shift+down")]);
+			const pending = session.extensionRunner.getShortcuts({}).get("shift+down")!.handler({ ...session.extensionRunner.createContext() });
+			await flush(); sdkDialog?.handleInput(KEY_BYTES.down); sdkDialog?.handleInput(KEY_BYTES.down); sdkDialog?.handleInput(KEY_BYTES.enter); await pending;
 			const changes = session.sessionManager.getBranch().filter((entry) => entry.type === "model_change");
-			assert.deepEqual(changes.slice(-3).map((entry) => entry.modelId), FAMILIES.slice(1, 4));
+			assert.deepEqual(changes.slice(-1).map((entry) => entry.modelId), FAMILIES.slice(3, 4));
 			assert.equal(session.model?.id, "gpt-6-sol"); assert.equal(session.thinkingLevel, "medium");
 		} finally { session.dispose(); }
 	});

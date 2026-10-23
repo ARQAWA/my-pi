@@ -24,8 +24,11 @@ no unrelated packages, settings, credentials or files.
 
 ## Model and reasoning shortcuts
 
-For the user, not part of the install. Shift+Up / Shift+Down change the model (up to stronger, down to weaker);
-Shift+Right / Shift+Left raise / lower reasoning, as in oh-my-pi. The model order and clamps are in the
+For the user, not part of the install. The first Shift+arrow opens a draft chooser already advanced one step:
+Shift+Up / Shift+Down select a stronger / weaker model; Shift+Right / Shift+Left select higher / lower reasoning.
+Further ordinary or Shift arrows navigate the draft in the same directions. Enter applies both model and reasoning;
+Esc closes the chooser without changing the live selection. Opening and navigation also leave the live selection unchanged.
+The model order and clamps are in the
 [Models decision](DECISIONS.md#models), including the GPT 5.6 Luna addition (the GPT reviewers use it). The keys
 need no terminal setup: iTerm2, Terminal.app and the VS Code terminal send them as standard sequences, and Pi 1.4.0
 binds none of them itself.

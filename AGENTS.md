@@ -51,9 +51,12 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   footer when off. Elements, evidence and limits:
   `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
-  Shift+Up/Down: stronger/weaker model; Shift+Right/Left: reasoning up/down (the old omp keys).
-  Only its listed models can be selected or requested; Pi's stock model lists are empty (rule and limits:
-  `DECISIONS.md` section Models). Disable it separately in `pi config`. Tests: `extensions/RQW-models/test/`, `npm test`.
+  Shift+arrows open a model/effort draft chooser and take the first step before rendering: Up/Down stronger/weaker,
+  Right/Left effort up/down. Plain or Shift arrows navigate; Enter commits once, Esc closes without setters.
+  Two compact wheel columns use supplied theme/thinking roles. Commit uses public Pi APIs, not an atomic request lock;
+  scope and limitation: [RQW-models README](extensions/RQW-models/README.md). `/rqw-models` and stock picker restrictions stay.
+  Only listed models can be selected or requested; Pi's stock model lists are empty (`DECISIONS.md` Models, owner quotes/carriers).
+  Disable separately in `pi config`. Tests: `extensions/RQW-models/test/`, `test/model-effort-picker.test.ts`, `npm test`.
 - `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery, nothing else (no
   provider hiding: that is extension 14). Toggle, migration and limits:
   `extensions/RQW-anthropic/README.md`; research: `notes/anthropic-adapter.md`. Tests use fake credentials: `npm test`.

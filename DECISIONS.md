@@ -1513,6 +1513,28 @@ Current accepted development policy (request summaries unless quoted); detailed 
 
 ## Models
 
+- Owner's transactional picker request, verbatim: «Надо переделать picker модели effort таким образом, что когда я нажимаю Shift+стрелочку вверх, вниз или влево, вправо, у нас открывается визуальный интерфейс, в котором переключается модель визуально. Знаешь, как в iPhone, когда ты крутишь ползунки „минуты“, „секунды“, где-то открывается интерфейс, в котором предварительно меняется модель и effort, когда я нажимаю кнопочки, и там будет кнопочка „OK“. Enter — это принять, а Escape — это отмена. Escape — закрыть интерфейс. И получится так, что когда я меняю интерфейс, меняю effort, он сразу не меняется, не применяется. Нет такого, что я пока переключаю модель, он запросы под разными моделями улетает. У меня префаер — мини-интерфейс, где я выбираю модель effort, нажимаю Enter, и оно применяется. Эта хуйня должна быть в стилистике нашего UI из тех задач, которые были. Следичку подгони сам. Потом, если что, если мне не понравится, мы её переделаем.»
+  Clarification, verbatim: «когда ты нажимаешь первый раз Shift и стрелочку, у тебя открывается интерфейс уже с новой, будущей моделью измененной, чтобы я не делал дополнительные клики... Если я нажимаю Shift+Влево или Shift+Вправо, то он сразу открывает пикер с измененным состоянием, чтобы мне нажать, а потом Enter. Нажать и Enter, если нужен один переход. А если несколько, то я нажал, довел до нужного состояния, нажал Enter... строго в концепте Terminal UI Pi ... в цветовой гамме и в согласованности с нашим новым дизайном ... Решение остается за тобой конечное».
+  Reason: preview model and effort without changing the live session while choosing. Each initiating Shift+arrow
+  performs one draft step before the first render; one transition is Shift+arrow then Enter. Plain and Shift arrows
+  then share the same axes. Enter commits once; Esc closes with no setters or restoration. Model order, authenticated
+  availability and allowed efforts below are retained; a draft model switch clamps effort to the nearest lower allowed
+  level or the lowest. Dialog/key-repeat guards prevent stacked dialogs; actual session replacement/reload/shutdown
+  cancels the draft. No settings, dependencies, request fences or aborts are added.
+  Appearance is delegated: two compact terminal-native wheel columns, selected center, muted neighbours and visible
+  OK/Enter/Esc hints, supplied theme roles and thinking-level tokens (low ordinary, medium green, high gold, xhigh purple,
+  max red; highlighted effort bold). Narrow rendering fits rather than overflowing. Visual carriers:
+  `/var/folders/cf/2mk2lmy9087c_lw961rpfvz00000gn/T/ui-port/browser-preview/index.html` (native-menu/reasoning)
+  and sibling `EXECUTION-BRIEF.md` §0; this is not a literal web/iPhone component and does not activate a theme.
+  Runtime carriers: `extensions/RQW-models/{index,picker}.ts`; standalone state/rendering tests in its `test/`,
+  real Pi interactive composition with current RQW-prompt/statusbar hooks in `test/model-effort-picker.test.ts`.
+  The added strict no-intermediate-request-at-commit requirement was explicitly withdrawn by the coordinator as
+  an overreach, not an owner requirement. Unchanged-model commits use only the thinking setter; changed-model commits
+  use public `pi.setModel`, a scoped synchronous pending-effort `model_select` handler, fallback and cleanup.
+  Pi's setters are not atomic: earlier listeners/concurrent work may observe its intermediate switch effort;
+  already-prepared requests can retain their snapshot. This limitation is explicit in the extension README.
+  Existing `/rqw-models`, stock `/model` restrictions and unrelated controls are unchanged.
+
 - Engineering follow-up under the owner's flaky-test precedent: «Теперь по нестабильному тесту 1А»;
   1a: «Отдельной задачей разобрать, почему тест кодмода на Windows иногда не укладывается в 5 секунд, и исправить причину.»
   Startup reads provider-scoped availability and uses the owning session's async-auth `setModel`.
@@ -1525,8 +1547,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   будет Model Picker»; «То есть чисто модели Opus, Sonnet, GPT-6.1, GPT-6, Luna-6, Haiku».
   `extensions/RQW-models/index.ts` is independent,
   imports only Pi, and is listed separately in `package.json` under `pi.extensions`. Disable its resource in Pi's
-  `pi config`, then `/reload`; it writes no settings and registers no tool. Its only hooks are the instance-level
-  masks of the listed-models rule below, removed when it is switched off.
+  `pi config`, then `/reload`; it writes no settings and registers no tool. The listed-models rule below retains its
+  existing instance-level masks, removed when it is switched off; the draft chooser uses public UI/event APIs.
 - Owner: «Надо подобрать сопостовимую модель на gpt, попробоуй 5.6 luna и более сильные модели типа medium ризонинг 6 и 6.1 sol, на время замеров добавь 5.6 luna в список моделей наших сразу после хайку и вообще хайку надо поставить над всеми в слабых моделях ь.е. порядок должен быть типа haiku 5.5, luna 5.6, luna 6 так как luna 6 слабее 5.6 луны и потом будем думать»
   Reason: put Haiku above both Luna models and include GPT 5.6 Luna for the measurements. Owner, 2026-10-22:
   «Давай тогда сделаем, что на blind review будет Luna Medium. На high review будет Luna High. Да» - the GPT
@@ -1539,8 +1561,9 @@ Current accepted development policy (request summaries unless quoted); detailed 
   `filterModels` (for example GitHub Copilot's per-account list): the runtime's unmasked
   `getAvailableSnapshot` through its prototype while the listed-models masks (below) are set, otherwise
   `ctx.modelRegistry.getAvailable()`. Absent models, models a provider filters out and providers without
-  configured auth are skipped. The picker and the shortcuts resolve no credentials and make no requests; only the
-  startup choice waits for Pi's availability pass (below). `familyOf` matches the same
+  configured auth are skipped. Building and navigating the draft uses that snapshot, resolves no credentials and
+  makes no requests; commit uses Pi's normal authenticated setter. Only the startup choice waits for Pi's availability
+  pass (below). `familyOf` matches the same
   generation across provider paths, Claude dotted versions, dated aliases and Bedrock IDs. No old Claude generation,
   unlisted GPT generation, fast variant or invented model is substituted.
 - Engineering decisions for the model request C:3113, elaborated in the coordinator implementation brief C:3274:
@@ -1560,10 +1583,10 @@ Current accepted development policy (request summaries unless quoted); detailed 
   with an event type such as `1;2:1A`), so no Option/Meta setup is needed.
   Carrier: `extensions/RQW-models/index.ts`. `registerShortcut` binds `shift+up` (stronger model), `shift+down` (weaker
   model), `shift+right` (reasoning up) and `shift+left` (reasoning down). The first match handles a press once, as in
-  Pi's interactive editor. Shortcut actions are serialized so fast repeated presses do not race. Each queued action
-  reads the live `model` getter of the latest `session_start` event context, not the TUI shortcut snapshot; this includes
-  reasoning queued behind a model switch. The event context is refreshed even on resume and reload. Both model and
-  reasoning movement stop at either end, as omp does, rather than wrap.
+  Pi's interactive editor. The transactional chooser above replaces immediate shortcut mutation: one guarded dialog
+  owns the draft, so repeats do not queue additional dialogs or live switches. Opening reads the live model from the
+  latest `session_start` event context, not the TUI shortcut snapshot; the context is refreshed on resume and reload.
+  Both model and reasoning draft movement stop at either end, as omp does, rather than wrap.
   Engineering entry rule: from outside the list, Shift+Up enters at the strongest available model and Shift+Down at the
   weakest, so entry follows the stated strength direction. The picker stays strongest first. Tests:
   `extensions/RQW-models/test/models.test.ts` (byte sequences through Pi's key matcher, direction, limits).

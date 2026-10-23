@@ -1,5 +1,6 @@
 import { getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
 import { AgentSession, parseArgs, type ExtensionAPI, type ExtensionContext, type ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { ModelEffortPicker, sameModel, stepDraft, type Draft, type PickerSpec, type Step } from "./picker.ts";
 
 export const FAMILIES = [
 	"claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna",
@@ -49,6 +50,14 @@ function nearestLevel(model: ChatModel, current: Level): Level | undefined {
 	const levels = levelsFor(model);
 	return levels.filter((level) => ORDER.indexOf(level) <= ORDER.indexOf(current)).at(-1) ?? levels[0];
 }
+
+const pickerSpec = (models: ChatModel[]): PickerSpec => ({
+	models,
+	family: (model) => familyOf(model),
+	rank: (effort) => ORDER.indexOf(effort as Level),
+	levels: (model) => levelsFor(model),
+	nearest: (model, effort) => nearestLevel(model, effort as Level),
+});
 
 /** Any provider variant of the listed families may be selected or requested; nothing else. */
 export const isListed = (model: { id: string } | undefined) => !!model && familyOf(model as ChatModel) >= 0;
@@ -202,35 +211,98 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		const next = nearestLevel(model, level);
 		if (next) pi.setThinkingLevel(next);
 	};
-	const cycleModel = (ctx: ExtensionContext, direction: number) => enqueue(async () => {
-		const models = available(ctx);
-		const currentModel = liveContext.model;
-		const currentFamily = currentModel ? familyOf(currentModel) : -1;
-		const index = models.findIndex((model) => familyOf(model) === currentFamily);
-		// Display order is strongest first; positive direction increases strength.
-		const next = index < 0 ? (direction > 0 ? 0 : models.length - 1) : Math.max(0, Math.min(models.length - 1, index - direction));
-		if (next === index || !models[next]) return;
-		await select(ctx, models[next]);
-	});
-	const cycleThinking = (direction: number) => enqueue(async () => {
-		const levels = levelsFor(liveContext.model);
-		const current = ORDER.indexOf(pi.getThinkingLevel());
-		const next = direction > 0
-			? levels.find((level) => ORDER.indexOf(level) > current) ?? levels.at(-1)
-			: levels.findLast((level) => ORDER.indexOf(level) < current) ?? levels[0];
-		if (next) pi.setThinkingLevel(next);
-	});
-	// Shift+Left/Right change reasoning, Shift+Up/Down change the model; Up is stronger, Right is more effort.
-	for (const [key, direction] of [["shift+right", 1], ["shift+left", -1]] as const) {
-		pi.registerShortcut(key, {
-			description: direction > 0 ? "RQW: increase reasoning" : "RQW: decrease reasoning",
-			handler: () => cycleThinking(direction),
+	// Transactional chooser: a Shift arrow opens it with the draft already stepped; nothing live changes until Enter.
+	// generation invalidates async results across session_start/shutdown; busy holds the single dialog through commit.
+	let generation = 0;
+	let busy = false;
+	let dialog: { step: (step: Step) => void; cancel: () => void } | undefined;
+	let pendingEffort: { model: ChatModel; effort: string | undefined; applied: boolean; generation: number } | undefined;
+	const commit = async (ctx: ExtensionContext, draft: Draft, owner: number) => {
+		const model = draft.model;
+		if (!model) return;
+		// Queued behind /rqw-models: a session change may have happened since the chooser was confirmed.
+		if (owner !== generation) return;
+		if (sameModel(liveContext.model, model)) {
+			// Unchanged provider/id: only the thinking setter, and only when the effort differs.
+			if (draft.effort && draft.effort !== pi.getThinkingLevel()) pi.setThinkingLevel(draft.effort as Level);
+			return;
+		}
+		// Scoped to this exact model and session generation; runs synchronously inside pi.setModel, before later handlers.
+		const pending = { model, effort: draft.effort, applied: false, generation: owner };
+		pendingEffort = pending;
+		const unsubscribe = pi.on("model_select", (event) => {
+			if (pendingEffort !== pending || pending.applied || pending.generation !== generation) return;
+			if (!sameModel(liveContext.model, model) || !sameModel(event.model, model)) return;
+			if (pending.effort) pi.setThinkingLevel(pending.effort as Level);
+			pending.applied = true;
 		});
-	}
-	for (const [key, direction] of [["shift+up", 1], ["shift+down", -1]] as const) {
+		let switched = false;
+		try {
+			switched = await pi.setModel(model);
+			if (!switched) warn(ctx, `No authentication for ${model.provider}/${model.id}`);
+		} catch (error) {
+			warn(ctx, `Could not switch to ${model.provider}/${model.id}: ${error instanceof Error ? error.message : String(error)}`);
+		} finally {
+			unsubscribe();
+			if (pendingEffort === pending) pendingEffort = undefined;
+		}
+		if (!switched || pending.generation !== generation || !sameModel(liveContext.model, model)) return;
+		if (!pending.applied && pending.effort) pi.setThinkingLevel(pending.effort as Level);
+	};
+	const openPicker = (ctx: ExtensionContext, step: Step): Promise<void> => {
+		// A repeated shortcut navigates the open dialog; it never spawns or queues a second one.
+		if (dialog) { dialog.step(step); return Promise.resolve(); }
+		if (busy) return Promise.resolve();
+		if (!ctx.hasUI) {
+			process.stderr.write("Warning: RQW model/effort chooser needs the interactive UI\n");
+			return Promise.resolve();
+		}
+		const models = available(ctx);
+		if (!models.length) {
+			warn(ctx, "No authenticated RQW models available");
+			return Promise.resolve();
+		}
+		busy = true;
+		const owner = generation;
+		const spec = pickerSpec(models);
+		const initial = stepDraft(spec, { model: liveContext.model, effort: pi.getThinkingLevel() }, step);
+		return (async () => {
+			let outcome: Draft | undefined;
+			try {
+				outcome = await ctx.ui.custom<Draft | undefined>((tui, theme, _keybindings, done) => {
+					if (owner !== generation) {
+						queueMicrotask(() => done(undefined));
+						return { render: () => [], invalidate: () => {} };
+					}
+					const picker = new ModelEffortPicker(spec, initial, theme, done, tui);
+					dialog = { step: (next) => picker.step(next), cancel: () => picker.cancel() };
+					return picker;
+				}, {});
+			} catch {
+				outcome = undefined;
+			} finally {
+				dialog = undefined;
+			}
+			try {
+				if (outcome && owner === generation) await enqueue(() => commit(ctx, outcome!, owner));
+			} finally {
+				busy = false;
+			}
+		})();
+	};
+	const invalidateSession = () => {
+		generation++;
+		pendingEffort = undefined;
+		dialog?.cancel();
+	};
+	// Shift+Left/Right change reasoning, Shift+Up/Down change the model; Up is stronger, Right is more effort.
+	const descriptions: Record<Step, string> = {
+		up: "RQW: stronger model", down: "RQW: weaker model", right: "RQW: increase reasoning", left: "RQW: decrease reasoning",
+	};
+	for (const [key, step] of [["shift+up", "up"], ["shift+down", "down"], ["shift+right", "right"], ["shift+left", "left"]] as const) {
 		pi.registerShortcut(key, {
-			description: direction > 0 ? "RQW: stronger model" : "RQW: weaker model",
-			handler: (ctx) => cycleModel(ctx, direction),
+			description: descriptions[step],
+			handler: (ctx) => openPicker(ctx, step),
 		});
 	}
 	pi.registerCommand("rqw-models", {
@@ -276,6 +348,7 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		applyThinking(args.thinking);
 	};
 	pi.on("session_start", async (event, ctx) => {
+		invalidateSession();
 		liveContext = ctx;
 		bind(ctx);
 		const args = parseArgs(process.argv.slice(2));
@@ -294,5 +367,8 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		applyThinking(event.reason === "startup" || event.reason === "new" ? args.thinking : undefined);
 		warn(ctx, `${notListed(current)} Switched to ${name(fallback)} (${pi.getThinkingLevel()}).`, true);
 	});
-	pi.on("session_shutdown", () => unbind());
+	pi.on("session_shutdown", () => {
+		invalidateSession();
+		unbind();
+	});
 }
