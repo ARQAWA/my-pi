@@ -29,6 +29,9 @@ the accepted decisions and their reasons. New owner instructions take precedence
   Give each worker a self-contained brief: agreement, files and worktree, ownership, dependencies, expected result
   and sufficient proof. Include the relevant process rules in its system prompt or brief; do not assume a child
   inherits this file.
+- The owner addresses Main (the coordinator) as the executor. Main always acts within its assigned role and executes
+  through subagents, without exception. When the owner says "ты сам" or "you do it", Main still starts a subagent to
+  do the work; Main never does the work in its own thread.
 - Main never blocks its own thread on waiting, polling, CI watching, test runs or any other long work. It hands
   all of that to subagents and stays free to coordinate and talk to the owner.
 - Run independent research, implementation, probes and checks in parallel. Up to 10 first-level subagents (those
@@ -110,6 +113,8 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
    supervises instead: a programmatic monitor checks the running wave every 1-5 minutes (not
    continuous polling), the measurer reads the actual outputs it surfaces, and interrupts the run on real anomalies
    (harness defect, stuck or looping reviewer, runaway repairs, unpinned sources, errors).
+7. When two judges disagree, a third independent arbiter subagent verifies the disputed finding against the sources and
+   decides.
 
 ## Independent review
 

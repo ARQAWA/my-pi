@@ -118,6 +118,12 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Calibration happens on the strongest models; weaker ones are measured afterwards on the calibrated version and their
   failures are recorded as capability limits, not defects, unless they show a mechanics or checker bug.
   Carried by [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks).
+- Coordinator delegates even "do it yourself". Owner: «Когда я говорю, что ты должен что-то сделать буквально, это значит, что ты должен поднять саб-агента, который это сделает. Не забывай свою роль и запиши это, зафиксируй, чтобы больше так не наёбываться.» Owner, next: «Я всегда с тобой разговариваю так, как будто ты и есть мой исполнитель. Потому что для меня ты исполнитель, но ты сам работаешь в рамках роли, которая тебе назначена. И ты должен это помнить, и ты должен этому следовать всегда. Ты не должен никогда от этого отклоняться. Понял? Это супер важно.»
+  Reason: asked to arbitrate judge disputes himself, the coordinator started reading run files in its own thread. The owner
+  addresses Main as the executor; Main acts within its assigned role and executes through subagents, without exception.
+  Carried by [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution) (the owner-executor bullet).
+- Third arbiter for judge disputes. Owner: «Так, блядь, ты сам эти споры рассуди. Ты же, блядь, выше них. Ты сам спор можешь рассудить, у тебя есть все исходные материалы, ты знаешь, как именно должно всё это работать, и ты должен быть третьим независимым мнением от этих двух судей».
+  Reason: a disputed judge label needs an independent decision from the sources. Carried by [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks), rule 7.
 - Measurement runs have no caps; the measurer supervises instead. Owner: «Нахуй ты вообще лимиты какие то ставишь? я разве говорил ставить? ты наблюдаешь за запусками следишь как себя агенты ведут и сам их прерываешь, но ты их не полишь, а опрашиваешь прграмно раз допустим в 1-3-5 минут. ну я имею ввиду не лично ты а тот кто делает замеры»
   Reason: a pilot was stopped on a self-imposed 375-request cap after harness pauses consumed it; caps are not stop
   conditions. Carried by [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks), rule 6.
