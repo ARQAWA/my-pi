@@ -109,11 +109,14 @@ Current accepted development policy (request summaries unless quoted); detailed 
   question found it. Carried by [PROCESS.md, Delivery](PROCESS.md#delivery) step 5. Implementation choice: the
   reviewer is the existing `review` tool; its object is `main`'s git log since the session start plus in-progress
   branches/worktrees and owner-cancelled items.
-- Pilot batch and output reading for measurements. Owner: «Так блять надо фиксить ты шо гонишь мы нахуй прогоны эти делаем . Мы прогоны делаем не ради прогонов. Мы прогоны делаем для того, чтобы найти косяки, найти хуйню, её пофиксить и делать пиздато всё. ... Давай сейчас все прогоны останови, и мы обсудим дальнейшие шаги. Надо сейчас это все порефиксировать», then «1а» to the plan whose step 5 is this process rule (small batch first, an agent reads it for anomalies, stop at the first systemic defect).
+- Pilot batch and output reading for measurements. Owner: «Так блять надо фиксить ты шо гонишь мы нахуй прогоны эти делаем . Мы прогоны делаем не ради прогонов. Мы прогоны делаем для того, чтобы найти косяки, найти хуйню, её пофиксить и делать пиздато всё. ... Давай сейчас все прогоны останови, и мы обсудим дальнейшие шаги. Надо сейчас это все порефиксировать», then «1а» to the plan whose step 5 is this process rule (small batch first, an agent reads it for anomalies, stop at the first systemic defect). Later: «Смотри, я хочу, чтобы ты в процессе измерений прогонов сразу находил аномалии, сразу находил отклонения и сразу же останавливал прогоны и чинил. Если будут очевидные косяки жёсткие, надо их сразу чинить в моменте . Нет смысла ждать полных прогонов, если мы потом починим и будем заново перепрогонять. Ты на первых запусках, если видишь какую-то хуйню очевидную, надо её фиксить . И первые запуски делай на самых сильных моделях из того перечня, который у тебя есть, чтобы сразу получить отклонение на старте у сильных моделей». And: «Мы не учитываем, что слабые модели в принципе не смогут какие-то вещи делать. Нам главное откалибровать на сильных моделях, а потом посмотрим, как они будут себя вести на слабых».
   Reason: the reviewer-v2 benchmark burned a night on a quote-checker defect that was visible in its first outputs.
-  Rule: every measurement or benchmark with model calls runs a small pilot first; an agent reads the actual outputs
-  (repeated rounds, errors, format failures, loops, time outliers); the full run starts only after a clean pilot, its
-  outputs are inspected again at regular points, and at the first systemic defect it stops until the defect is fixed.
+  Rule: every measurement or benchmark with model calls runs in waves, never the whole matrix at once, the first
+  launches on the strongest models of the measured list; outputs are checked continuously during the run (an
+  automatic anomaly watcher after every run plus an agent reading the actual outputs), and at the first obvious defect
+  the run stops at once and the defect is fixed before anything else runs.
+  Calibration happens on the strongest models; weaker ones are measured afterwards on the calibrated version and their
+  failures are recorded as capability limits, not defects, unless they show a mechanics or checker bug.
   Carried by [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks).
 - Keep replies short unless expansion is needed: «Он отвечает не больше трех абзацев по максимум две строки
   в абзаце. Если это не требует расширения, конечно».
