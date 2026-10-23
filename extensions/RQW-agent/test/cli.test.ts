@@ -41,18 +41,22 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 		"--no-skills", "--no-prompt-templates", "--no-context-files", "--no-themes", "--no-mcp", "--no-session",
 		"--tools", scenario === "nested" ? "agent,codemode" : (WAIT[scenario]?.tools ?? "agent"), "--provider", "agent-audit-cli", "--model", "main", "--thinking", "low",
 		...(mode === "rpc" ? ["--mode", "rpc"] : mode === "json" ? ["--mode", "json", "--print", "GO"] : ["--print", "GO"])];
+	const startedAt = performance.now();
 	const child = spawn(executable, args, { cwd: work, env, stdio: ["pipe", "pipe", "pipe"] });
 	if (mode !== "rpc") child.stdin.end();
 	let stdout = "", stderr = "", partial = "", done = false, spawnError: Error | undefined;
+	let exitCode: number | null = null, exitSignal: NodeJS.Signals | null = null, deadlineReached = false;
+	let firstOutputMs: number | undefined;
 	const events: Event[] = [];
 	const waiters = new Set<() => void>();
 	const notify = () => { for (const wake of [...waiters]) wake(); };
 	const exit = new Promise<number | null>(resolveExit => {
 		child.on("error", error => { spawnError = error; });
-		child.on("close", code => { done = true; notify(); resolveExit(code); });
+		child.on("close", (code, signal) => { exitCode = code; exitSignal = signal; done = true; notify(); resolveExit(code); });
 	});
-	const timer = setTimeout(() => child.kill("SIGKILL"), 25000);
+	const timer = setTimeout(() => { deadlineReached = true; child.kill("SIGKILL"); }, 25000);
 	child.stdout.on("data", data => {
+		firstOutputMs ??= performance.now() - startedAt;
 		stdout += data;
 		partial += data;
 		const lines = partial.split("\n"); partial = lines.pop()!;
@@ -62,6 +66,7 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 	const send = (command: Event) => child.stdin.write(`${JSON.stringify(command)}\n`);
 	let abortSent = false;
 	child.stderr.on("data", data => {
+		firstOutputMs ??= performance.now() - startedAt;
 		stderr += data;
 		const abortMarker = scenario === "codemode-abort" ? "AUDIT_CODEMODE_WAIT_READY" : "AUDIT_MAIN_BUSY";
 		if ((scenario === "abort-rpc" || scenario === "abort-window" || scenario === "codemode-abort") && !abortSent && stderr.includes(abortMarker)) {
@@ -74,7 +79,7 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 			const wake = () => {
 				const found = events.find(check);
 				if (found) { waiters.delete(wake); resolveEvent(found); }
-				else if (done) { waiters.delete(wake); reject(new Error(`CLI exited before event: ${stdout.slice(-2000)}\n${stderr.slice(-2000)}`)); }
+				else if (done) { waiters.delete(wake); reject(new Error(`CLI exited before event (${mode}/${scenario}): ${JSON.stringify({ exitCode, exitSignal, deadlineReached, elapsedMs: performance.now() - startedAt, firstOutputMs, spawnError: spawnError?.message })}\n${stdout.slice(-2000)}\n${stderr.slice(-2000)}`)); }
 			};
 			waiters.add(wake); wake();
 		});
