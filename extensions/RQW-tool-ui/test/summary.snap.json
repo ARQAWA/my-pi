@@ -1,0 +1,26 @@
+{
+	"everything": {
+		"0": "",
+		"1": "…",
+		"8": "↳ Edite…",
+		"24": "↳ Edited 2 files +6 -3 …",
+		"48": "↳ Edited 2 files +6 -3 · read 2 files · searche…",
+		"80": "↳ Edited 2 files +6 -3 · read 2 files · searched 1 time · ran 2 commands · wait…"
+	},
+	"reads": {
+		"0": "",
+		"1": "…",
+		"8": "↳ Read …",
+		"24": "↳ Read 1 file",
+		"48": "↳ Read 1 file",
+		"80": "↳ Read 1 file"
+	},
+	"empty": {
+		"0": "",
+		"1": "…",
+		"8": "↳ ",
+		"24": "↳ ",
+		"48": "↳ ",
+		"80": "↳ "
+	}
+}

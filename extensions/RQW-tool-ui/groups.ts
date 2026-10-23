@@ -1,0 +1,272 @@
+// The group model: which tool calls form one run between two answers, which call leads it (draws the summary),
+// whether the run is still active (shows the live block) and which call is current. Pure, from the entries Pi draws
+// (`ctx.sessionManager.buildContextEntries()`) and the streaming state of public events only; order is history and
+// event order, never render order.
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { CallResult } from "./classify.ts";
+import { record } from "./classify.ts";
+
+/** One tool call of the stream as `tool_execution_start/update/end` report it, nested calls included. */
+export interface LiveExecution {
+	toolCallId: string;
+	toolName: string;
+	args?: unknown;
+	/** Set for calls another tool made (codemode). */
+	parentToolCallId?: string;
+	/** The last `tool_execution_update` partial result. */
+	partialResult?: CallResult;
+	/** Set by `tool_execution_end`. */
+	result?: CallResult;
+	isError?: boolean;
+	durationMs?: number;
+	ended?: boolean;
+}
+
+/** What public events say beyond the saved entries. */
+export interface LiveState {
+	/** Messages of the run not yet saved, in `message_start` order; the last may still be streaming. */
+	messages?: readonly unknown[];
+	/** True while the last of `messages` still streams (`message_start` seen, `message_end` not yet). */
+	streaming?: boolean;
+	/** Tool executions in `tool_execution_start` order, nested ones included. */
+	executions?: readonly LiveExecution[];
+}
+
+/** One counted call of a group: a top-level call without nested calls, or a nested call without nested calls. */
+export interface Member {
+	id: string;
+	toolName: string;
+	args: unknown;
+	/** The top-level call a nested call belongs to. */
+	parentId?: string;
+	result?: CallResult;
+	isError?: boolean;
+	/** True while the call has no final result. */
+	isPartial: boolean;
+	/** A nested call the saved record left `unfinished`: it stopped with its parent, its outcome is unknown. It has
+	 * no result; the wiring must not show it as running, succeeded or failed, nor count its changes. */
+	unconfirmed?: true;
+	durationMs?: number;
+}
+
+export interface Group {
+	/** The ID of the group's first top-level call: stable while the group grows. */
+	groupId: string;
+	/** The last top-level call: it draws the summary line. */
+	leaderId: string;
+	/** No break after the group yet: the live block of the current call shows. */
+	active: boolean;
+	/** The call the live block follows: a call still streaming its arguments, else the latest started, nested ones
+	 * included (see `current`). */
+	currentCallId: string;
+	/** Top-level call IDs in transcript order. */
+	callIds: string[];
+	/** The counted calls, nested calls in place of their parent. */
+	members: Member[];
+}
+
+/** Per top-level tool call ID. */
+export interface CallGroup {
+	groupId: string;
+	isLeader: boolean;
+	active: boolean;
+	currentCallId: string;
+	members: Member[];
+	group: Group;
+}
+
+interface Building {
+	group: Group;
+	/** Every started call in start order, parents and nested ones. */
+	started: string[];
+	/** Top-level calls without a final result, in transcript order. */
+	pending: string[];
+}
+
+/** Identity of a message across the saved branch and the stream. A custom message is saved as a `custom_message`
+ * entry with a new timestamp (Pi `appendCustomMessageEntry`), so it is matched by type, display and content. */
+function messageKey(m: unknown): string | undefined {
+	const r = record(m);
+	if (r.role === "custom") return `custom@${String(r.customType)}@${String(r.display)}@${JSON.stringify(r.content ?? null)}`;
+	if (typeof r.timestamp !== "number" && typeof r.timestamp !== "string") return undefined;
+	return `${String(r.role)}@${String(r.timestamp)}@${typeof r.toolCallId === "string" ? r.toolCallId : ""}`;
+}
+
+/** The messages of the branch and of the stream, as one ordered list; group breaks for non-message entries.
+ * A streamed message that is already saved counts once, at its saved place (each saved copy matches one streamed). */
+function timeline(entries: readonly SessionEntry[], live: LiveState): unknown[] {
+	const out: unknown[] = [];
+	const saved = new Map<string, number>();
+	const keep = (m: unknown) => {
+		const k = messageKey(m);
+		if (k) saved.set(k, (saved.get(k) ?? 0) + 1);
+	};
+	for (const e of entries) {
+		if (e.type === "message") {
+			out.push(e.message);
+			keep(e.message);
+		} else if (e.type === "custom_message") {
+			const m = { role: "custom", customType: e.customType, display: e.display, content: e.content };
+			if (e.display) out.push(m);
+			keep(m);
+		} else if (e.type === "compaction" || e.type === "branch_summary") out.push({ role: "break" });
+	}
+	for (const m of live.messages ?? []) {
+		const k = messageKey(m);
+		const n = k ? saved.get(k) ?? 0 : 0;
+		if (k && n > 0) saved.set(k, n - 1);
+		else out.push(m);
+	}
+	return out;
+}
+
+/** The result fields the classifiers read, the same whether they come from a saved message or an event. */
+function resultOf(value: unknown): CallResult | undefined {
+	if (value === undefined || value === null) return undefined;
+	const r = record(value);
+	return { content: Array.isArray(r.content) ? (r.content as CallResult["content"]) : [], ...(r.details !== undefined ? { details: r.details } : {}),
+		...(r.structuredContent !== undefined ? { structuredContent: r.structuredContent } : {}), ...(r.isError === true ? { isError: true } : {}) };
+}
+
+/**
+ * Groups of the tool calls Pi draws, keyed by top-level tool call ID. `contextEntries` is
+ * `ctx.sessionManager.buildContextEntries()` (public on Pi 1.4.0 `ReadonlySessionManager`), the list Pi's
+ * interactive mode renders: after a compaction it starts with the compaction entry, then the kept entries from
+ * `firstKeptEntryId` on and the entries after it; summarized entries are not drawn, so they are not counted here.
+ */
+export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveState = {}): Map<string, CallGroup> {
+	const executions = new Map<string, LiveExecution>();
+	for (const x of live.executions ?? []) if (!executions.has(x.toolCallId)) executions.set(x.toolCallId, x);
+	const results = new Map<string, Record<string, unknown>>();
+	const messages = timeline(contextEntries, live);
+	for (const m of messages) {
+		const r = record(m);
+		if (r.role === "toolResult" && typeof r.toolCallId === "string" && !results.has(r.toolCallId)) results.set(r.toolCallId, r);
+	}
+	// Top-level ancestor of each live nested call, through nested parents.
+	const topOf = (id: string): string => {
+		const seen = new Set<string>();
+		let at = id;
+		while (!seen.has(at)) {
+			seen.add(at);
+			const parent = executions.get(at)?.parentToolCallId;
+			if (!parent) return at;
+			at = parent;
+		}
+		return at;
+	};
+	const groups: Building[] = [];
+	let open: Building | undefined;
+	const seenCalls = new Set<string>();
+	const addCall = (call: Record<string, unknown>) => {
+		const id = call.id as string;
+		if (seenCalls.has(id)) return;
+		seenCalls.add(id);
+		if (!open) {
+			open = { group: { groupId: id, leaderId: id, active: true, currentCallId: id, callIds: [], members: [] }, started: [], pending: [] };
+			groups.push(open);
+		}
+		const g = open.group;
+		g.callIds.push(id);
+		g.leaderId = id;
+		const saved = results.get(id);
+		const run = executions.get(id);
+		const final = saved ?? (run?.ended ? { ...run.result, isError: run.isError } : undefined);
+		const nested = nestedOf(id, saved, executions, topOf);
+		open.started.push(id, ...nested.map((n) => n.id));
+		if (!final) open.pending.push(id);
+		if (nested.length === 0) {
+			const result = resultOf(final ?? run?.partialResult);
+			g.members.push({ id, toolName: String(call.name ?? ""), args: call.arguments ?? {}, ...(result ? { result } : {}),
+				...(final ? { isError: final.isError === true } : {}), isPartial: !final,
+				...(typeof saved?.durationMs === "number" ? { durationMs: saved.durationMs } : typeof run?.durationMs === "number" ? { durationMs: run.durationMs } : {}) });
+		} else g.members.push(...nested);
+	};
+	for (const m of messages) {
+		const r = record(m);
+		const role = r.role;
+		if (role === "assistant") {
+			for (const c of Array.isArray(r.content) ? r.content : []) {
+				const block = record(c);
+				if (block.type === "text" && typeof block.text === "string" && block.text.trim() !== "") open = undefined;
+				else if (block.type === "toolCall" && typeof block.id === "string" && block.id !== "") addCall(block);
+			}
+		} else if (role === "user" || role === "bashExecution" || role === "branchSummary" || role === "compactionSummary" || role === "break") open = undefined;
+		else if (role === "custom" && r.display === true) open = undefined;
+	}
+	// The open group (no break after it yet) is the only active one.
+	for (const b of groups) {
+		b.group.active = b === open;
+		b.group.currentCallId = current(b, live, topOf, results);
+	}
+	const out = new Map<string, CallGroup>();
+	for (const { group } of groups)
+		for (const id of group.callIds)
+			out.set(id, { groupId: group.groupId, isLeader: id === group.leaderId, active: group.active, currentCallId: group.currentCallId, members: group.members, group });
+	return out;
+}
+
+/** The current call of a group: a new call whose arguments still stream (in the streaming message, not started);
+ * otherwise the latest `tool_execution_start` among calls without a saved result, nested ones included, while one of
+ * them runs (a completed call counts only through its saved transcript place and nested record); when all
+ * started calls have ended (or none started), the first call still waiting for its turn; without events and waiting
+ * calls, the last in transcript order with nested calls after their parent. A queued call is never current while an
+ * earlier one runs. */
+function current(b: Building, live: LiveState, topOf: (id: string) => string, saved: ReadonlyMap<string, unknown>): string {
+	const calls = new Set(b.group.callIds);
+	const executions = live.executions ?? [];
+	// A call whose top-level call has its saved result is history: its events (kept or not, nested calls beyond Pi's
+	// record included) no longer decide, so the stream and a reload give the same current call.
+	const reported = executions.filter((x) => calls.has(topOf(x.toolCallId)) && !saved.has(topOf(x.toolCallId)));
+	const streaming = live.streaming ? record(live.messages?.at(-1)) : undefined;
+	if (streaming?.role === "assistant" && Array.isArray(streaming.content)) {
+		const ids = streaming.content.map(record).filter((c) => c.type === "toolCall").map((c) => c.id);
+		const fresh = [...ids].reverse().find((callId) => typeof callId === "string" && calls.has(callId) && !executions.some((x) => x.toolCallId === callId));
+		if (typeof fresh === "string") return fresh;
+	}
+	// A call without result or event waits for its turn; it runs next once everything started has ended.
+	const waiting = b.pending.filter((callId) => !executions.some((x) => x.toolCallId === callId));
+	if (reported.length > 0 && (waiting.length === 0 || reported.some((x) => !x.ended))) return reported.at(-1)!.toolCallId;
+	// A finished history ends with its last call.
+	return waiting[0] ?? b.started.at(-1) ?? b.group.leaderId;
+}
+
+/**
+ * The counted nested calls of top-level call `id`: leaves only (a nested call with its own nested calls is counted
+ * through them).
+ *
+ * No-patch limit: Pi 1.4.0 persists only a bounded record of nested calls on the parent's result (`nestedCalls`:
+ * name, status, duration, error, and arguments only within 8 KiB per call and 32 KiB per parent, at most 256 calls)
+ * and no result or details at all. So that the stream and a reload give the same groups, once the parent has its final
+ * result the saved record is the ONLY source: a call without saved arguments has `{}` (no target, no write lines),
+ * dropped calls are not counted. Before that, while the parent runs, live events are the source. A finished nested
+ * call's result is `{ content: [] }` plus its error flag either way: an edit's `+A -R` and a bash exit code are never
+ * known for nested calls. A record left `unfinished` (the parent finished first) is `unconfirmed`: not running, no
+ * result, so no success, failure or counts are claimed for it.
+ */
+function nestedOf(id: string, saved: Record<string, unknown> | undefined, executions: Map<string, LiveExecution>, topOf: (id: string) => string): Member[] {
+	const byId = new Map<string, Member>();
+	const parents = new Set<string>();
+	const finishedResult = (isError: boolean): CallResult => ({ content: [], ...(isError ? { isError: true } : {}) });
+	if (saved) {
+		for (const c of Array.isArray(record(saved.nestedCalls).calls) ? (record(saved.nestedCalls).calls as unknown[]) : []) {
+			const n = record(c);
+			if (typeof n.id !== "string" || byId.has(n.id)) continue;
+			const done = n.status === "ok" || n.status === "error";
+			byId.set(n.id, { id: n.id, toolName: String(n.name ?? ""), args: n.arguments ?? {}, parentId: id,
+				...(done ? { result: finishedResult(n.status === "error"), isError: n.status === "error" } : { unconfirmed: true }),
+				isPartial: false, ...(typeof n.durationMs === "number" ? { durationMs: n.durationMs } : {}) });
+		}
+		// Saved records name nested parents only through their IDs: `<parent>/<n>`.
+		for (const n of byId.keys()) for (const m of byId.keys()) if (m !== n && m.startsWith(`${n}/`)) parents.add(n);
+	} else {
+		for (const x of executions.values()) {
+			if (!x.parentToolCallId || topOf(x.toolCallId) !== id) continue;
+			parents.add(x.parentToolCallId);
+			const result = x.ended ? finishedResult(x.isError === true) : resultOf(x.partialResult);
+			byId.set(x.toolCallId, { id: x.toolCallId, toolName: x.toolName, args: x.args ?? {}, parentId: id, ...(result ? { result } : {}),
+				...(x.ended ? { isError: x.isError === true } : {}), isPartial: !x.ended, ...(typeof x.durationMs === "number" ? { durationMs: x.durationMs } : {}) });
+		}
+	}
+	return [...byId.values()].filter((m) => !parents.has(m.id));
+}
