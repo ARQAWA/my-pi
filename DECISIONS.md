@@ -109,6 +109,12 @@ Current accepted development policy (request summaries unless quoted); detailed 
   question found it. Carried by [PROCESS.md, Delivery](PROCESS.md#delivery) step 5. Implementation choice: the
   reviewer is the existing `review` tool; its object is `main`'s git log since the session start plus in-progress
   branches/worktrees and owner-cancelled items.
+- Pilot batch and output reading for measurements. Owner: «Так блять надо фиксить ты шо гонишь мы нахуй прогоны эти делаем . Мы прогоны делаем не ради прогонов. Мы прогоны делаем для того, чтобы найти косяки, найти хуйню, её пофиксить и делать пиздато всё. ... Давай сейчас все прогоны останови, и мы обсудим дальнейшие шаги. Надо сейчас это все порефиксировать», then «1а» to the plan whose step 5 is this process rule (small batch first, an agent reads it for anomalies, stop at the first systemic defect).
+  Reason: the reviewer-v2 benchmark burned a night on a quote-checker defect that was visible in its first outputs.
+  Rule: every measurement or benchmark with model calls runs a small pilot first; an agent reads the actual outputs
+  (repeated rounds, errors, format failures, loops, time outliers); the full run starts only after a clean pilot, its
+  outputs are inspected again at regular points, and at the first systemic defect it stops until the defect is fixed.
+  Carried by [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks).
 - Keep replies short unless expansion is needed: «Он отвечает не больше трех абзацев по максимум две строки
   в абзаце. Если это не требует расширения, конечно».
 

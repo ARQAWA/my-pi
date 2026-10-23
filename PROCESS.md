@@ -91,6 +91,17 @@ campaign only; it does not pause unrelated work or prohibit the currently author
 - For prompt/tool behavior performance claims, compare against the relevant baseline. The product goal remains
   my-pi better than stock Pi and Pi plus our prompt; do not launch a full benchmark for every unrelated edit.
 
+## Measurements and benchmarks
+
+Runs exist to find and fix defects, not to tick a box. Every measurement or benchmark with model calls follows:
+
+1. Pilot first: a small batch before the full run.
+2. An agent reads the pilot's actual outputs, not only counters, for anomalies: repeated rounds, errors, format
+   failures, loops, outliers in time.
+3. The full run starts only after the pilot is clean.
+4. During the full run an agent inspects the outputs again at regular points.
+5. At the first systemic defect the run stops, the defect is fixed, and only then the run continues.
+
 ## Independent review
 
 - While RQW-review is disabled in the owner's settings, result review runs through an `agent` subagent whose
