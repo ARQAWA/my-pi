@@ -112,7 +112,8 @@ describe("GPT Fast lightning in a real session", () => {
 			assert.ok(row().includes(sgr(FAST_YELLOW)), "GPT with fast on, idle: static bright yellow");
 			assert.equal(row(), row(), "idle render is stable");
 
-			t.mock.timers.enable({ apis: ["setInterval"] });
+			t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+			t.mock.method(performance, "now", () => Date.now());
 			const before = counter.renders;
 			await emit({ type: "agent_start" });
 			assert.ok(counter.renders > before, "agent_start redraws");
@@ -120,6 +121,11 @@ describe("GPT Fast lightning in a real session", () => {
 			const seen: string[] = [];
 			for (let i = 0; i < SHIMMER.length; i++) { t.mock.timers.tick(120); seen.push(row()); }
 			assert.deepEqual(seen.map((r) => SHIMMER.findIndex((c) => r.includes(sgr(c)))), [1, 2, 3, 2, 1, 0], "frames 1..6 by colour; the pale steps repeat their colour");
+			// The pulse keeps one colour step per 120 ms of elapsed time while the timer redraws every 20 ms.
+			t.mock.timers.tick(100);
+			assert.ok(row().includes(sgr(SHIMMER[0])), "100 ms later (5 ticks): still the same step");
+			t.mock.timers.tick(20);
+			assert.ok(row().includes(sgr(SHIMMER[1])), "at 120 ms: the next step");
 			assert.ok(counter.renders > before + SHIMMER.length, "every shimmer step asks for a redraw");
 			await emit({ type: "agent_end" });
 			await emit({ type: "agent_settled" });

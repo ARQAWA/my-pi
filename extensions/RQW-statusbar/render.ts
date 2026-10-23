@@ -434,15 +434,26 @@ export function shimmerText(text: string, startColumn: number, frame: number, st
 	}).join("");
 }
 
-/**
- * The compaction metallic at global column `x` of a `width`-cell row: a sheen run of six cells, the edge cell after it
- * and the last cell, and the gold gradient across the full width everywhere else. The run moves with the frame.
- */
-export function metallicColor(x: number, width: number, frame: number): string {
-	const d = (((x - Math.floor(frame)) % width) + width) % width;
+/** The metallic at a whole frame: the run starts at cell `frame` (mod width). */
+function metallicCell(x: number, width: number, frame: number): string {
+	const d = (((x - frame) % width) + width) % width;
 	if (d < 6) return GOLD_SHEEN;
 	if (d === 6 || d === width - 1) return GOLD_EDGE;
 	return mix(GOLD, width > 1 ? x / (width - 1) : 0.5);
+}
+
+/**
+ * The compaction metallic at global column `x` of a `width`-cell row: a sheen run of six cells, the edge cell after it
+ * and the last cell, and the gold gradient across the full width everywhere else. The run moves one cell per whole
+ * frame; between whole frames each cell blends linearly into its colour of the next frame, so the run glides.
+ */
+export function metallicColor(x: number, width: number, frame: number): string {
+	const base = Math.floor(frame);
+	const a = metallicCell(x, width, base);
+	const u = frame - base;
+	if (u === 0) return a;
+	const b = metallicCell(x, width, base + 1);
+	return a === b ? a : mix([a, b], u);
 }
 
 /** Compaction chrome text from global column `startColumn` of a `width`-cell row: every cell bold in its metallic colour. */
@@ -483,6 +494,7 @@ export function titleRow(name: string | undefined, width: number): string {
 export interface ActivityChrome {
 	text: string;
 	compacting: boolean;
+	/** The phase in frames, fractional: elapsed time over the frame length, not a tick count. */
 	frame: number;
 }
 

@@ -1916,6 +1916,27 @@ Current accepted development policy (request summaries unless quoted); detailed 
   (bold 93, 38;5;220/226/229, 97), not a theme role, so the yellow holds in every theme. The state is learned from
   RQW-settings over `pi.events` at every render (query) and redrawn on its change event; the extension imports nothing from it.
   Carrier: `extensions/RQW-statusbar/{render,index}.ts`; proof: `extensions/RQW-statusbar/test/fast-gpt.test.ts`.
+- The status animation (the busy letters, the compaction gold and sheen, the lightning) redraws every 20 ms, 50 nominal
+  frames per second, and its motion follows elapsed monotonic time, not the number of timer ticks. Owner: «Planning next
+  moves очень медленная, не плавная [...] Не ускорить, а сделать более плавной, в два раза плавнее. Здесь как будто
+  10 fps. Ее можно даже сделать еще помедленнее.» and «Я хочу, чтобы у нас всё было так же плавно ... как в UMP, и даже
+  лучше. Давай попробуем сделать 50 FPS для начала. [...] Даже можно скорость блика сделать медленнее, чтобы она шла
+  более медленно, более плавно.» Before, one 120 ms tick (8.33 Hz) advanced one phase frame; that interval came from the
+  lightning's colour step and had no recorded CPU reason. Rule: letters and sheen take one phase frame per 160 ms of
+  elapsed time, 0.75 of the former speed (letters 4.30 instead of 5.73 columns per second); between whole frames the
+  compaction sheen blends each cell toward its next colour instead of jumping a cell; the lightning keeps its accepted
+  one colour step per 120 ms. The phase is read at render time, so any of Pi's redraws shows the right position. The
+  static gold title, the input text and the effort colours do not animate. The timer runs only while an animated status
+  or the working lightning is shown, as before. While our editor owns the top border, Pi's working spinner, which that
+  border hides, gets no frames through the public `ctx.ui.setWorkingIndicator({ frames: [] })`, so its 80 ms timer stops
+  repainting; off, shutdown and reinstall restore Pi's default, and with a foreign editor it is not touched. Pi has no
+  event for another editor replacing ours, so the shimmer tick and every activity change (agent start included) check
+  the editor slot and restore Pi's default once it is not ours, hiding it again when ours returns. Pi 1.4
+  batches paints at most every 16 ms (`MIN_RENDER_INTERVAL_MS`), so 50 Hz passes through without a patch; omp, the
+  donor, runs this shimmer at 30 Hz with a 30 Hz paint cap. Cost: every paint re-renders Pi's whole component tree and
+  writes only the changed lines; CPU grows with the transcript length, and terminal, GPU, remote and visible frame rate
+  are not measured. Carrier: `extensions/RQW-statusbar/{index,render}.ts`; proof:
+  `extensions/RQW-statusbar/test/{lifecycle,chrome,fast-gpt}.test.ts`, numbers in `notes/statusbar-omp.md`.
 - Branch and counts use the extension's own repository discovery and asynchronous git refresh, not Pi's cached
   `getGitBranch()`. Engineering choice for the status-bar request C:3113/C:3133: discover the repository and refresh
   git asynchronously to handle repository replacement and branch checkout. Reason: Pi caches absent metadata when a session

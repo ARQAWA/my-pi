@@ -11,7 +11,14 @@ import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
 import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar, titleRow } from "./render.ts";
 
 const GIT_POLL_MS = 10_000;
-const SHIMMER_MS = 120;
+/** The animation timer: 50 nominal redraws per second (Pi 1.4 batches renders at most every 16 ms, so 20 ms passes through). */
+const SHIMMER_MS = 20;
+/** Letters and compaction sheen move one phase frame per 160 ms of elapsed time: 0.75 of the old one frame per 120 ms tick. */
+const STATUS_FRAME_MS = 160;
+/** The lightning keeps its owner-accepted pulse of one colour step per 120 ms of elapsed time. */
+const FAST_STEP_MS = 120;
+/** Monotonic milliseconds; the animation phase is read from it at render time, not counted per timer tick. */
+const now = () => performance.now();
 /** The title row above the input: one widget of this extension, removed when it is off. */
 const TITLE_KEY = "rqw-statusbar-title";
 // RQW-settings owns /fast-gpt. Its channels on pi.events are the only coupling; nobody answering means no lightning.
@@ -54,7 +61,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	const rate = new RateMeter();
 	let working = false;
 	let unsubscribeFast: (() => void) | undefined;
-	let frame = 0;
+	let animationStart = now();
 	let shimmer: ReturnType<typeof setInterval> | undefined;
 	let lightCtx: ExtensionContext | undefined;
 	// Activity mirrors of the main agent, its tools and the compaction; they follow public events whether or not the bar is up.
@@ -75,16 +82,19 @@ export default function statusbar(pi: ExtensionAPI) {
 	};
 	const chromeNow = (): ActivityChrome | undefined => {
 		const status = statusText({ compacting, running, action: [...tools.values()].at(-1), counts: jobs.get() });
-		return status && { text: status.text, compacting: status.compacting, frame };
+		return status && { text: status.text, compacting: status.compacting, frame: (now() - animationStart) / STATUS_FRAME_MS };
 	};
-	const fastState = (ctx: ExtensionContext): BarState["fast"] => lit(ctx) ? { frame: working ? frame : undefined } : undefined;
+	const fastState = (ctx: ExtensionContext): BarState["fast"] =>
+		lit(ctx) ? { frame: working ? Math.floor((now() - animationStart) / FAST_STEP_MS) : undefined } : undefined;
 	const stopShimmer = () => { if (shimmer) clearInterval(shimmer); shimmer = undefined; };
-	/** The shimmer runs while the status letters or the working lightning need it, the footer is up; re-checked on every tick. */
+	/** The shimmer timer only asks for redraws while the status letters or the working lightning need it and the footer is up;
+	 * re-checked on every tick. The phase comes from the elapsed time at render, so Pi's other redraws show it too. */
 	const wantsShimmer = () => active && (chromeNow() !== undefined || (working && lit(lightCtx)));
 	const syncShimmer = () => {
+		syncSpinner();
 		if (!wantsShimmer()) return stopShimmer();
 		if (shimmer) return;
-		shimmer = setInterval(() => { frame++; if (!wantsShimmer()) stopShimmer(); redraw?.(); }, SHIMMER_MS);
+		shimmer = setInterval(() => { syncSpinner(); if (!wantsShimmer()) stopShimmer(); redraw?.(); }, SHIMMER_MS);
 		shimmer.unref?.();
 	};
 	/** Read-only: the branch number of the leaf from the public tree, recomputed when the leaf or the entry count changes. */
@@ -104,8 +114,46 @@ export default function statusbar(pi: ExtensionAPI) {
 	const editorFactory: NonNullable<Parameters<ExtensionUIContext["setEditorComponent"]>[0]> =
 		(tui, theme, keybindings) => new ContextEditor(tui, theme, keybindings, () => border);
 
+	// The UI on which Pi's working spinner was set to no frames; released restores Pi's default.
+	let spinnerUi: ExtensionUIContext | undefined;
+	const hideNativeSpinner = (ctx: ExtensionContext): void => {
+		try {
+			ctx.ui.setWorkingIndicator({ frames: [] });
+			spinnerUi = ctx.ui;
+		} catch {
+			// Without the setter Pi's spinner keeps its own timer; the bar still works.
+		}
+	};
+	const showNativeSpinner = (): void => {
+		const ui = spinnerUi;
+		spinnerUi = undefined;
+		try {
+			ui?.setWorkingIndicator(undefined);
+		} catch {
+			// A UI that is gone keeps nothing to restore.
+		}
+	};
+	/**
+	 * Pi's spinner is hidden exactly while our editor is installed. Pi has no event for another extension taking the editor
+	 * slot, so this runs on install, on every activity change (`syncShimmer`) and on every shimmer tick, never inside a
+	 * render; the setter is called only when the state flips.
+	 */
+	const syncSpinner = (): void => {
+		const ctx = lightCtx;
+		if (!ctx) return;
+		let ours: boolean;
+		try {
+			ours = ctx.ui.getEditorComponent() === editorFactory;
+		} catch {
+			return;
+		}
+		if (ours && !spinnerUi) hideNativeSpinner(ctx);
+		else if (!ours && spinnerUi) showNativeSpinner();
+	};
+
 	/** Drops what this extension holds for the session: the GPT Fast subscription, the counts, timers, footer and border source. */
 	function release(): void {
+		showNativeSpinner();
 		unsubscribeFast?.();
 		unsubscribeFast = undefined;
 		dispose?.();
@@ -165,6 +213,9 @@ export default function statusbar(pi: ExtensionAPI) {
 			paint: () => themePaint(ctx.ui.theme), activity: () => chromeNow() };
 		// Another extension's editor is kept; the context row then stays in the footer.
 		if (ctx.ui.getEditorComponent() === undefined) ctx.ui.setEditorComponent(editorFactory);
+		// Our top border replaces the place where Pi draws its working spinner, so the spinner is invisible but its 80 ms timer
+		// would still repaint the screen. With our editor in place, the public empty-frames indicator stops that timer.
+		syncSpinner();
 		ctx.ui.setFooter((tui, theme, footer) => {
 			let disposed = false;
 			let cwd: string | undefined;
@@ -299,7 +350,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	});
 	pi.on("session_info_changed", (event) => { sessionName = event.name; redraw?.(); });
 	pi.on("model_select", () => { syncShimmer(); redraw?.(); });
-	pi.on("agent_start", () => { working = true; running = true; frame = 0; syncShimmer(); redraw?.(); });
+	pi.on("agent_start", () => { working = true; running = true; animationStart = now(); syncShimmer(); redraw?.(); });
 	pi.on("agent_end", () => { working = false; syncShimmer(); redraw?.(); });
 	pi.on("agent_settled", () => { running = false; working = false; tools.clear(); syncShimmer(); redraw?.(); });
 	pi.on("tool_execution_start", (event) => {

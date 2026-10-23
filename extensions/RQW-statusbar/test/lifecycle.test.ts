@@ -1,7 +1,7 @@
 // P6 lifecycle acceptance, deterministic: the statusbar is driven only through its public extension events and the
 // public ExtensionAPI/UI contract, with a fake UI that really builds Pi's CustomEditor-derived editor and the footer
 // and title factories. The running-counts producer is a stand-in that speaks the counts channel contract only; no
-// other extension is imported. Time is a mock clock (setInterval only), git is never touched (temp cwd outside any repo),
+// other extension is imported. Time is a mock clock (setInterval and Date, with performance.now following it), git is never touched (temp cwd outside any repo),
 // and session branches come from the public SessionManager (in memory).
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -12,12 +12,18 @@ import { stripVTControlCharacters } from "node:util";
 import { type ExtensionAPI, type ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import statusbar from "../index.ts";
+import { GOLD, metallicText, SILVER, shimmerText } from "../render.ts";
 
 const TITLE_KEY = "rqw-statusbar-title";
 // The running-counts contract (version 1) as the README of the producer states it; spelled here, nothing imported.
 const COUNTS_REQUEST = "rqw:running-counts:request";
 const COUNTS_OFFER = "rqw:running-counts:offer";
-const SHIMMER_MS = 120;
+/** The animation timer: 50 nominal redraws per second. */
+const SHIMMER_MS = 20;
+/** The former timer, one phase frame per tick: the travel speed the new time basis is compared with. */
+const OLD_SHIMMER_MS = 120;
+/** One phase frame of the letters and the sheen per 160 ms of elapsed time (0.75 of the old speed). */
+const STATUS_FRAME_MS = 160;
 const GIT_POLL_MS = 10_000;
 const MODEL = { provider: "anthropic", id: "claude-fixture", name: "Claude Fixture", reasoning: true, contextWindow: 200000 };
 const MARK = "⑂ ветка";
@@ -225,7 +231,8 @@ class FakeUi {
 
 	setWorkingVisible(_visible: boolean): void { this.calls.push("setWorkingVisible"); }
 	setWorkingMessage(_message?: string): void { this.calls.push("setWorkingMessage"); }
-	setWorkingIndicator(_options?: unknown): void { this.calls.push("setWorkingIndicator"); }
+	workingIndicator: unknown;
+	setWorkingIndicator(options?: unknown): void { this.calls.push("setWorkingIndicator"); this.workingIndicator = options; }
 	setStatus(_key: string, _text?: string): void { this.calls.push("setStatus"); }
 	notify(_message: string, _level?: string): void { this.calls.push("notify"); }
 }
@@ -247,7 +254,8 @@ const clocked = new WeakSet<TestContext>();
 /** One statusbar instance on the fake contract, on a mock clock; torn down after the test. */
 function harness(t: TestContext, options: { mode?: string; name?: string; manager?: unknown; widget?: "normal" | "throws" | "absent" } = {}): Harness {
 	if (!clocked.has(t)) {
-		t.mock.timers.enable({ apis: ["setInterval"] });
+		t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+		t.mock.method(performance, "now", () => Date.now());
 		clocked.add(t);
 	}
 	const bus = new Bus();
@@ -344,6 +352,41 @@ it("main planning, tool action phrases and the latest running tool drive the top
 	h.fire("tool_execution_end", { toolCallId: "t1", toolName: "bash", isError: false, result: {} });
 	assert.match(top(h), /── Planning next moves /, "tool end restores planning");
 	assert.doesNotMatch(top(h), /Running|Editing/);
+});
+
+it("the animation redraws 50 times a second, at least twice the old cadence, and its phase follows elapsed time, not ticks", (t) => {
+	const h = harness(t);
+	new Producer(h.bus, { agents: 0, workers: 0, reviews: 0 });
+	h.fire("session_start", { reason: "startup" });
+	h.fire("agent_start");
+	const raw = () => h.ui.editor!.render(80)[0];
+	assert.ok(raw().includes(shimmerText("Planning next moves", 3, 0, SILVER)), "agent_start is phase frame 0");
+	const start = h.ui.renders;
+	h.tick(1000);
+	const perSecond = h.ui.renders - start;
+	assert.equal(perSecond, 1000 / SHIMMER_MS, "one redraw request per 20 ms tick");
+	assert.ok(perSecond >= 2 * Math.floor(1000 / OLD_SHIMMER_MS), "at least twice the old 8 redraws per second");
+	// 1000 ms is 50 ticks but 6.25 phase frames: the letters moved by elapsed time, 0.75 of the old frame-per-120-ms speed.
+	const frame = 1000 / STATUS_FRAME_MS;
+	assert.ok(raw().includes(shimmerText("Planning next moves", 3, frame, SILVER)), "phase = elapsed / 160 ms");
+	assert.ok(!raw().includes(shimmerText("Planning next moves", 3, 50, SILVER)), "not one frame per tick");
+	assert.equal(frame / (1000 / OLD_SHIMMER_MS), 0.75, "travel is 0.75 of the old speed");
+	// Between ticks the phase still follows the clock: a render at any moment shows its own time.
+	h.tick(SHIMMER_MS * 4);
+	assert.ok(raw().includes(shimmerText("Planning next moves", 3, (1000 + SHIMMER_MS * 4) / STATUS_FRAME_MS, SILVER)));
+	// A redraw from elsewhere (Pi's own render) 7 ms after a tick: the same clock, so the same speed at any redraw rate.
+	h.tick(7);
+	assert.ok(raw().includes(shimmerText("Planning next moves", 3, 1087 / STATUS_FRAME_MS, SILVER)), "phase between ticks");
+	// The compaction gold and its metallic rule follow the same clock, with fractional (blended) frames.
+	h.fire("session_before_compact", before());
+	h.tick(13);
+	const gold = 1100 / STATUS_FRAME_MS;
+	assert.ok(raw().startsWith(`${metallicText("\u2500\u2500 ", 80, gold, 0)}${shimmerText("Compacting context", 3, gold, GOLD)}`));
+	h.fire("session_compact", { reason: "manual", willRetry: false, fromExtension: false, compactionEntry: {} });
+	h.fire("agent_settled", { aborted: false });
+	const idle = h.ui.renders;
+	h.tick(1000);
+	assert.equal(h.ui.renders, idle, "idle: no timer");
 });
 
 it("children count after the main reply: agent_settled shows Waiting until zero, then the idle rule is continuous", (t) => {
@@ -690,7 +733,57 @@ it("a foreign editor replacing ours is never taken over and survives /statusbar 
 	assert.equal(h.ui.calls.includes("setEditorComponent"), false);
 });
 
-it("the bar never calls setWorkingVisible or any global status setter", async (t) => {
+it("with our editor Pi's hidden spinner gets no frames (no 80 ms timer); off, shutdown and a foreign editor keep Pi's default", async (t) => {
+	const h = harness(t);
+	h.fire("session_start", { reason: "startup" });
+	assert.deepEqual(h.ui.workingIndicator, { frames: [] }, "installed with our editor: no spinner frames");
+	await h.command("off");
+	assert.equal(h.ui.workingIndicator, undefined, "off restores Pi's default spinner");
+	await h.command("on");
+	assert.deepEqual(h.ui.workingIndicator, { frames: [] });
+	h.fire("session_shutdown", { reason: "quit" });
+	assert.equal(h.ui.workingIndicator, undefined, "shutdown restores it");
+
+	const f = harness(t);
+	f.ui.setEditorComponent(() => ({ render: () => ["foreign"] }));
+	f.ui.calls.splice(0);
+	f.fire("session_start", { reason: "startup" });
+	assert.equal(f.ui.calls.includes("setWorkingIndicator"), false, "a foreign editor keeps Pi's spinner untouched");
+});
+
+it("a foreign editor replacing ours restores Pi's spinner on the next tick or agent_start, and ours coming back hides it again", (t) => {
+	const h = harness(t);
+	new Producer(h.bus, { agents: 0, workers: 0, reviews: 0 });
+	h.fire("session_start", { reason: "startup" });
+	const ours = h.ui.editorFactory;
+	const foreign = () => ({ render: () => ["foreign"] });
+	const setterCalls = () => h.ui.calls.filter((call) => call === "setWorkingIndicator").length;
+	h.fire("agent_start");
+	assert.deepEqual(h.ui.workingIndicator, { frames: [] }, "ours: hidden");
+
+	// Replaced mid-run: the shimmer tick notices it.
+	h.ui.setEditorComponent(foreign);
+	h.tick(SHIMMER_MS);
+	assert.equal(h.ui.workingIndicator, undefined, "foreign editor: Pi's spinner restored on the tick");
+	const restored = setterCalls();
+	h.tick(SHIMMER_MS * 10);
+	assert.equal(setterCalls(), restored, "the setter is called once per change, not per tick");
+
+	// Ours comes back: hidden again on the next tick.
+	h.ui.setEditorComponent(ours);
+	h.tick(SHIMMER_MS);
+	assert.deepEqual(h.ui.workingIndicator, { frames: [] }, "ours again: hidden");
+
+	// Replaced while idle (no timer): agent_start restores it before the next turn's spinner matters.
+	h.fire("agent_settled", { aborted: false });
+	h.ui.setEditorComponent(foreign);
+	h.tick(1000);
+	h.fire("agent_start");
+	assert.equal(h.ui.workingIndicator, undefined, "agent_start with a foreign editor restores it");
+	h.fire("agent_settled", { aborted: false });
+});
+
+it("the bar never calls setWorkingVisible or any global status setter besides the spinner frames", async (t) => {
 	const h = harness(t);
 	const p = new Producer(h.bus, { agents: 1, workers: 1, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
@@ -703,7 +796,7 @@ it("the bar never calls setWorkingVisible or any global status setter", async (t
 	await h.command("off");
 	await h.command("on");
 	h.fire("session_shutdown", { reason: "quit" });
-	const allowed = ["setWidget", "setFooter", "setEditorComponent", "getEditorComponent"];
+	const allowed = ["setWidget", "setFooter", "setEditorComponent", "getEditorComponent", "setWorkingIndicator"];
 	assert.deepEqual([...new Set(h.ui.calls)].filter((call) => !allowed.includes(call)), []);
 });
 

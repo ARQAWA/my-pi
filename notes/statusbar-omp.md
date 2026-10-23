@@ -154,6 +154,25 @@ loading rows and other widgets stay unchanged.
 - Theme colors and compaction color animation are intentionally not copied. Nerd icons require the same kind of
   Nerd Font as the owner's `symbolPreset: nerd` setup.
 
+## Animation cadence and cost
+
+Rule and owner quotes: [DECISIONS.md, Status bar](../DECISIONS.md#status-bar). Timer 20 ms (50 nominal redraws/s),
+phase = elapsed monotonic ms / 160 (letters 4.30 columns/s, period 4.57 s; formerly 120 ms ticks, 5.73 columns/s,
+3.43 s), lightning one colour step per 120 ms. Sources: Pi 1.4 `pi-tui/dist/tui.js` `MIN_RENDER_INTERVAL_MS = 16`,
+`components/loader.js` `DEFAULT_INTERVAL_MS = 80`; omp harness master f73cc873 `extensions/ui/status-bar.ts`
+`THINKING_FRAME_MS = 1000 / 30`, glow 60 ms; omp v18.8.9 `packages/tui/src/tui.ts` `#MIN_RENDER_INTERVAL_MS = 1000 / 30`,
+`theme/shimmer.ts` `SHIMMER_SPEED_CELLS_PER_S = 30` (time-based); the installed omp 18.12.2 binary embeds the same values.
+
+One short local pass (Apple M2, Node 26.7.0, 3 s per scenario, real `TuiMainScreen`/`TuiAltScreen` with our editor
+and footer on a scripted terminal; log `bench-3s.log` in `$TMPDIR/statusbar-animation-evidence/`, script `bench.ts`):
+main screen with a 5000-line transcript, process CPU per wall second (1000 ms/s = one core) was 0.1 idle, 71.5 with
+the former 120 ms timer plus Pi's hidden 80 ms spinner (19 paints/s), 146.2 at 20 ms plus the spinner (58 paints/s)
+and 126.6 at 20 ms alone (48 paints/s, the shipped setup: the hidden spinner gets no frames); about 0.7-0.8 KB is
+written per paint. With 200 lines: 27.2, 33.6 and 21.7 ms/s. Each paint re-renders the whole component tree, so the
+cost grows with the transcript. The pass is short and noisy; terminal emulator, GPU, battery, SSH/VDI and the visible
+frame rate are not measured. Streamed text (log `stream-2s.log`): paints follow chunk arrival up to the 16 ms cap;
+with the 20 ms timer a chunk can wait up to about one 16 ms slot (p95 about 15 ms instead of about 2.4 ms).
+
 ## Proof
 
 `extensions/RQW-statusbar/test/render.snap.json` is the fixed plain-text rendering at widths 80, 48, 24, 8, 1 and 0.

@@ -59,6 +59,16 @@ describe("metallic global column geometry", () => {
 		assert.equal(metallicColor(0, W, frame), metallicColor(0, W, frame + W), "the frame wraps at the width");
 	});
 
+	it("between whole frames each cell blends linearly toward its next-frame colour; unchanged cells stay exact", () => {
+		// x=10 is the edge at frame 4 and sheen at frame 5; x=3 is the edge at 4 and the gradient at 5.
+		assert.equal(metallicColor(10, W, frame + 0.5), mix([GOLD_EDGE, GOLD_SHEEN], 0.5));
+		assert.equal(metallicColor(10, W, frame + 0.25), mix([GOLD_EDGE, GOLD_SHEEN], 0.25));
+		assert.equal(metallicColor(3, W, frame + 0.5), mix([GOLD_EDGE, mix(GOLD, 3 / (W - 1))], 0.5));
+		assert.equal(metallicColor(6, W, frame + 0.5), GOLD_SHEEN, "inside the run at both frames");
+		assert.equal(metallicColor(30, W, frame + 0.5), mix(GOLD, 30 / (W - 1)), "the gradient at both frames");
+		assert.equal(metallicColor(10, W, frame + 0.999).length, 7, "a #rrggbb colour");
+	});
+
 	it("exact colour values: sheen #f2de8a, edge #d9b84a, base stops #8a6d1c/#c9a227/#e3c45a", () => {
 		assert.equal(GOLD_SHEEN, "#f2de8a");
 		assert.equal(GOLD_EDGE, "#d9b84a");
