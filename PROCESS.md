@@ -209,6 +209,19 @@ reasons: [Quality control](DECISIONS.md#quality-control).
   after it are green, where p is the failure rate of the signature. A signature that stops without a fix stays open;
   Main may close it only with a written explanation in the issue, such as a confirmed runner incident.
 
+**Claims.** Before triage or any other work on an inbox issue, an agent claims it:
+`npm run qa-claim -- <N> <branch>`. Decisions and reasons: [Claims](DECISIONS.md#quality-control).
+- Exit 0: claimed, or already claimed by this same branch. Exit 3: another agent holds a fresh claim or won the
+  race; do not start, report to the coordinator. Exit 1: error, nothing claimed.
+- A claim is a create-only GitHub ref `refs/qa-claims/<N>-<generation>` whose commit message carries branch and UTC
+  time, plus the label `qa:claimed` and a machine-readable comment. Only the ref is atomic: two concurrent claimers
+  cannot both create the same generation. The label and the comment are written afterwards; the ref decides.
+- `qa-status` shows a fresh claim as in progress with its branch, not red. A claim with no commit on its branch (and
+  no newer claim) for 24 hours is stale and red again; the next claim then takes over as the next generation.
+  Push the branch early so its commits count. An unclaimed issue is red.
+- Fix commits still carry `QA: #N`. `qa-inbox.yml` keeps working: a recurring failure on a claimed issue adds its
+  occurrence and keeps the label; the bot never edits comments or refs.
+
 **Digest.** `qa-digest.yml` mails the owner at 09:30 and 21:30 Moscow time, only about failures; no new or
 recurring failure since the previous digest, no mail. Its window starts at the previous successful scheduled digest
 run (at most 48 hours back, 12 hours when there is none), so no failure falls between two mails.
@@ -218,6 +231,7 @@ The owner relays them to Main. Main also checks the inbox when it is online.
 - At task start and when taking over a branch, Main reads the QA status: the `qa-status` message of the dev-only
   `.pi/extensions/qa-status` extension, `/qa` for the full view, or `npm run qa-status` (workers use this one).
 - A red scheduled `main` is mentioned to the owner in one line and triaged. Main never polls CI itself.
+  A claimed issue is in progress and not red until its claim goes stale ([Claims](#quality-control-loop)).
 - A red `main` does not block merges. `deliver-check` only lists the open inbox issues.
 
 **Triage.** Before any fix, a read-only worker classifies the failure and records the class with its evidence in the

@@ -1385,3 +1385,23 @@ in the approved proposal (not stored in this repository). The loop reads only pu
   `rqw-codex` branch, so no schedule hook is added now; `qa-state.mjs` and `qa-inbox.yml` already accept the workflow
   name `codex-oracle`. Deferred work: the `rqw-codex` task adds `schedule` (daily) when it lands on `main`.
   Since: `3bdac4f`.
+- **Claim an inbox issue before triage** `[D-QA-CLAIM]`. Owner, asking about parallel triage agents: «Нет агента, который сейчас уже этим занимается? У тебя нет никакой защиты от этого?» and, approving the coordinator's proposal: «По защите от гонки делаем, да». Approved proposal: before triage an agent claims the issue
+  (label `qa:claimed` plus a comment with its branch and UTC time) and does not start when it is already claimed;
+  `qa-status` shows claimed issues as in progress with the branch and only unclaimed ones as red; a claimed issue
+  with no commit on its branch for 24 hours is red again (stale claim); fix commits keep `QA: #N`; a recurring failure
+  on a claimed issue adds the occurrence and keeps the claim. Decision: `npm run qa-claim -- <N> <branch>`
+  (`scripts/qa-claim.mjs`). Engineering choice, since a label cannot be claimed atomically (GitHub has no
+  compare-and-set for labels, adding one succeeds whether or not it is there, and a bot that rewrites labels can drop
+  it): the atomic step is the create-only ref `refs/qa-claims/<N>-<generation>` (`POST git/refs` fails with 422 when
+  the ref exists), pointing at a commit whose message holds the record `qa-claim:v1 {"number","gen","branch","at"}`
+  (`scripts/qa-state.mjs`), so record and ref are one write. The label and the comment are written after the ref; a
+  failure there is a warning and the ref decides; running the helper again with the same branch re-applies the label.
+  Status reads the claims with one ref-list call and, per claimed open issue, the claim commit and the newest commit
+  of the claimed branch on GitHub (the claim time counts as activity, so an unpushed branch is fresh for 24 hours).
+  A stale or record-less claim is taken over as generation + 1, which is again a create-only race. Limits: a claim
+  is advisory for agents that run the helper, nothing stops a hand edit; the label alone (set by hand) never counts as
+  a claim; between an agent's last push and the 24-hour mark a dead agent still blocks others; the claim ref list is
+  bounded at 100 refs, like the issue list. `qa-inbox.yml` is unchanged: it keeps labels it does not compute and never
+  comments. Reason: two agents triaging one failure waste work and may push conflicting fixes.
+  Carrier: `scripts/qa-claim.mjs`, `scripts/qa-state.mjs`, `scripts/qa-status.mjs`, `test/qa-claim.test.ts`,
+  [PROCESS.md](PROCESS.md#quality-control-loop). Since: the delivering commit of branch `qa-claim`.
