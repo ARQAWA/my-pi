@@ -29,6 +29,10 @@ on:
         description: Node version
         type: string
         default: "24"
+      bun:
+        description: Optional Bun version; empty keeps Node only. The runner stays Node, tests that honour RQW_AGENT_BUN spawn Bun
+        type: string
+        default: ""
       runs:
         description: Number of runs
         type: string
@@ -47,7 +51,7 @@ defaults:
 
 jobs:
   stress:
-    name: repeat (${{ inputs.os || 'macos-latest' }}, node ${{ inputs.node || '24' }})
+    name: repeat (${{ inputs.os || 'macos-latest' }}, node ${{ inputs.node || '24' }}${{ inputs.bun && format(', bun {0}', inputs.bun) || '' }})
     runs-on: ${{ inputs.os || 'macos-latest' }}
     timeout-minutes: 90
     steps:
@@ -57,11 +61,17 @@ jobs:
         with:
           node-version: ${{ inputs.node || '24' }}
 
+      - uses: oven-sh/setup-bun@v2
+        if: inputs.bun != ''
+        with:
+          bun-version: ${{ inputs.bun }}
+
       - name: Facts
         env:
           NO_SPARKPLUG: ${{ inputs.no_sparkplug || false }}
         run: |
           node --version
+          if [ -n "${{ inputs.bun }}" ]; then bun --version; fi
           node -p 'JSON.stringify(process.versions, null, 2)'
           uname -a
           if [ "$RUNNER_OS" = macOS ]; then
@@ -79,6 +89,8 @@ jobs:
           TEST_FILE: ${{ inputs.test || 'extensions/RQW-tools/test/codemode.test.ts' }}
           PATTERN: ${{ github.event_name == 'push' && '12 MB' || inputs.name_pattern }}
           NO_SPARKPLUG: ${{ inputs.no_sparkplug || false }}
+          # Set only when a Bun version is chosen: the test runner stays Node, the CLI child it spawns uses Bun.
+          RQW_AGENT_BUN: ${{ inputs.bun && '1' || '' }}
         run: |
           if [[ ! "$RUNS" =~ ^[0-9]+$ || "$RUNS" =~ ^0+$ ]]; then
             echo "::error::runs must be a positive integer: $RUNS"
@@ -114,7 +126,9 @@ jobs:
               rm -f "$ev/run-$i.tap" "$ev/run-$i.out" "$ev/run-$i.err"
             fi
           done
-          { echo "$TEST_FILE, pattern '$PATTERN', $RUNNER_OS, node $(node --version)"; echo '```'; cat "$ev/summary.tsv"; echo '```'; echo "failed runs: $failed/$RUNS"; } >> "$GITHUB_STEP_SUMMARY"
+          bunfact=""
+          if [ "$RQW_AGENT_BUN" = 1 ]; then bunfact=", bun $(bun --version) (CLI child)"; fi
+          { echo "$TEST_FILE, pattern '$PATTERN', $RUNNER_OS, node $(node --version)$bunfact"; echo '```'; cat "$ev/summary.tsv"; echo '```'; echo "failed runs: $failed/$RUNS"; } >> "$GITHUB_STEP_SUMMARY"
           echo "failed runs: $failed/$RUNS"
           [ "$failed" = 0 ]
 
