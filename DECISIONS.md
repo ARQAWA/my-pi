@@ -16,14 +16,25 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Main is the coordinator, not an independent implementer: «Да, он как техлид/тимлид, координатор, но не исполнитель самостоятельный.»
   Reason: keep orchestration and acceptance with Main and actual execution with worker subagents. The procedure
   is carried by [PROCESS.md](PROCESS.md).
-- Development workers, including subagents, are authorized to use Sonnet medium/high/xhigh, Opus low only and
-  GPT-6.1-Sol low/medium/high. The main agent selects by task; difficult tasks use Sonnet xhigh, Opus low or
-  GPT-6.1-Sol high. This is development routing only, not a product model configuration or permission to add other
+- (Superseded, see the current rule below.) Development workers, including subagents, were authorized to use
+  Sonnet medium/high/xhigh, Opus low only and GPT-6.1-Sol low/medium/high. This is development routing only, not a product model configuration or permission to add other
   GPT models. Product review `LEVELS` remain Haiku 5.5 medium / Sonnet 5.5 low.
 - Owner: «Что-то подписка Cloud Code жёстко высаживается, поэтому давай пока уберём из работы саб-агентов Opus Low и Opus Medium. Давай оставим Sonnet Medium, Sonnet High, Sonnet Extra High. Для сложных задач будет Sonnet Extra High либо Opus Low. Opus Medium убираем вообще пока. Окей. Это надо скорректировать, отразить и сразу в работу внедрить»
   Reason: the Claude subscription limit is running out; the restriction is temporary ("for now"). The balance rule
-  between Anthropic and GPT stays. Opus low stays only for complex tasks, Opus medium is removed. Carried by
-  [PROCESS.md, Worker models](PROCESS.md#worker-models), which holds the table.
+  between Anthropic and GPT stays. Superseded by the next entry.
+- Development worker models and parallel limit, current rule. Owner, in order:
+  «ТАк вот все верно там написано давай не выдумывай хуйню»
+  «Одновременно до 10 первого уровня, вложенные похуй»
+  «модели - Соннет хай, и опус лоу / 6-1 лоу и медиум»
+  «опус и 6-1 лоу для обычной работы, для сложной хай соннет и медиум 6-1»
+  «вот так хочу переделать эту часть»
+  «блять не для сложных сделай опус медиум все таки»
+  Rule: ordinary work uses Opus 5.5 low or GPT-6.1-Sol low; complex work uses Sonnet 5.5 high, Opus 5.5 medium or
+  GPT-6.1-Sol medium; no other models or levels for development workers. At most 10 first-level subagents (started
+  by the coordinator) run in parallel; nested subagents do not count; a ceiling, not a quota. The even
+  Anthropic/GPT balance stays. Product review `LEVELS` are unchanged.
+  Reason: owner decision. Carried by [PROCESS.md, Worker models](PROCESS.md#worker-models) (the table),
+  [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution) and `AGENTS.md`.
 - Owner: «Смотри, надо скорректировать так, чтобы ты как координатор поровну поднимал модели из Anthropic и GPT, чтобы не было перевеса в другим, дисбаланса. Поднимай саб-агенты и те, и те, чтобы лимит расходовался равномерно. И зафиксирую это в процесс.nd файле, эту информацию на будущее»
   Reason: even use of both subscriptions' limits. Carried by [PROCESS.md, Worker models](PROCESS.md#worker-models).
 - The old paused Claude benchmark/tuning campaigns remain paused until explicitly resumed; saved results stay.
@@ -40,8 +51,8 @@ Current accepted development policy (request summaries unless quoted); detailed 
   in Git (owner: «История хранится в гиде.»), not a duplicate documentation ledger. See `PROCESS.md` for delivery details.
 - Owner: «И почему у тебя основной поток заблокирован, блядь? Почему у тебя основной поток исполнения заблокирован какой-то хуйнёй? Заблокирован какими-то запусками, тестами или что это такое, блядь, где ты по 20 секунд GitHub Review Run делаешь. Это что такое, нахуй? Ты не должен блокировать основной поток исполнения какой-то работой блокирующей. Ты всё делаешь через саб-агентов. Саб-агентов можешь поднимать до 40 штук параллельно.»
   Reason: Main must stay free to coordinate and talk to the owner. It never blocks its own thread on waits,
-  polling, CI watching, test runs or other long work; subagents do it. Up to 50 subagents in parallel when useful,
-  not as an artificial quota. Carried by
+  polling, CI watching, test runs or other long work; subagents do it. The parallel limit is now up to 10
+  first-level subagents (nested ones do not count), not as an artificial quota; see the worker models entry above. Carried by
   [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
   Later owner update of the limit, to be known to the agent at the prompt level: «Зафиксируй, пожалуйста, до 50 саб-агентов на уровне промта, на уровне Process MD, на уровне знания агента об этом, чтобы потом в будущем я это не напоминал опять и опять.»
   The limit is stated in `PROCESS.md` and, as a short line, in `AGENTS.md` (project instructions loaded into every

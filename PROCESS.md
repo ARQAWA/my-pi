@@ -31,8 +31,9 @@ the accepted decisions and their reasons. New owner instructions take precedence
   inherits this file.
 - Main never blocks its own thread on waiting, polling, CI watching, test runs or any other long work. It hands
   all of that to subagents and stays free to coordinate and talk to the owner.
-- Run independent research, implementation, probes and checks in parallel. Up to 50 subagents may run in parallel
-  when there are that many useful independent blocks; this is a ceiling, not a quota. Minimize sequential work
+- Run independent research, implementation, probes and checks in parallel. Up to 10 first-level subagents (those
+  Main starts itself) may run in parallel when there are that many useful independent blocks; nested subagents
+  they start do not count. This is a ceiling, not a quota. Minimize sequential work
   and avoid concurrent writes to the same files. Stop superseded workers.
 - Main drives the whole agreed task to completion autonomously through workers: they implement, inspect, make the
   needed probes and measurements, and fix obvious defects and relevant corner cases. Do not polish extremely
@@ -55,13 +56,12 @@ Choose model and reasoning for the work, not all workers at maximum reasoning:
 
 | Model | Allowed reasoning |
 | --- | --- |
-| Sonnet 5.5 | medium, high, xhigh |
-| Opus 5.5 | low |
-| GPT-6.1-Sol | low, medium, high |
+| Sonnet 5.5 | high |
+| Opus 5.5 | low, medium |
+| GPT-6.1-Sol | low, medium |
 
-GPT-6.1 low suits ordinary work; medium suits more difficult work. Complex tasks use Sonnet 5.5 xhigh or Opus 5.5
-low; GPT-6.1 high is also available for them. Opus 5.5 medium is removed for now to spare the Claude
-subscription limit. These are development workers,
+Ordinary work uses Opus 5.5 low or GPT-6.1-Sol low. Complex work uses Sonnet 5.5 high, Opus 5.5 medium or
+GPT-6.1-Sol medium. No other models or reasoning levels are used for these workers. These are development workers,
 not changes to the product reviewer models of `RQW-review`. A pause of a named benchmark campaign pauses that
 campaign only; it does not pause unrelated work or prohibit the currently authorized worker models.
 
