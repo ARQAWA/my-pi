@@ -1615,6 +1615,11 @@ Current accepted development policy (request summaries unless quoted); detailed 
   main carries the version that gets published, so `pcli-vscode/package.json` and its lockfile are at 0.0.2, one patch
   above the latest Marketplace version 0.0.1 (read-only query of the gallery, `/tmp/pi14-marketplace.json`). The
   branch does not publish; publishing stays a separate step on the owner's request.
+- PCLI user-visible text is English. Owner: «У нас весь интерфейс должен быть английский.» (from a longer message), and
+  to the list of Russian places found: «Да переводить на англ то что ты спрашивал все переводить)». The four messages of
+  `pcli-vscode/extension.js` are English: `[pi exited, code N]`, `node-pty not found in VS Code: ...`,
+  `Not found: <path>. Install Git for Windows.`, `Not found: <path>`. Russian code comments and the Cyrillic test paths
+  in `pcli-vscode/test/run.mjs` (a VDI profile path case) are not user-visible and stay.
 
 ## Anthropic subscription adapter
 

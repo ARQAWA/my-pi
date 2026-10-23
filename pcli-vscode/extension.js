@@ -103,7 +103,7 @@ function makePty(nodePty) {
     p.onExit(({ exitCode }) => {
       ptys.delete(p);
       if (proc === p) proc = null;
-      writeEmitter.fire('\r\n[pi завершился, код ' + exitCode + ']\r\n');
+      writeEmitter.fire('\r\n[pi exited, code ' + exitCode + ']\r\n');
     });
   }
 
@@ -138,14 +138,14 @@ function loadNodePty() {
     try {
       return require(path.join(vscode.env.appRoot, 'node_modules', 'node-pty'));
     } catch {
-      throw new Error('В VS Code не найден node-pty: ' + err.message);
+      throw new Error('node-pty not found in VS Code: ' + err.message);
     }
   }
 }
 
 function openTab(name) {
   if (!fs.existsSync(GIT_BASH)) {
-    vscode.window.showErrorMessage('Не найден ' + GIT_BASH + '. Установите Git for Windows.');
+    vscode.window.showErrorMessage('Not found: ' + GIT_BASH + '. Install Git for Windows.');
     return;
   }
   let nodePty;
@@ -156,7 +156,7 @@ function openTab(name) {
     return;
   }
   if (!fs.existsSync(piExe)) {
-    vscode.window.showErrorMessage('Не найден ' + piExe);
+    vscode.window.showErrorMessage('Not found: ' + piExe);
     return;
   }
   const terminal = vscode.window.createTerminal({
