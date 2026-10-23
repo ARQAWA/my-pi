@@ -16,8 +16,10 @@ are leaves. This extension imports no other RQW extension. Optional RQW-tools de
   one call are an error; on `restart` a new one replaces the old choice, otherwise the old choice is kept. The prompt is
   forced, so Pi appends nothing more.
 - `explore` (`quick`, `medium` or `very thorough`) on `start` makes an explorer: the same default prompt with a very
-  short file-search role at that thoroughness, the caller's current model, thinking as usual, tools `read`, `grep`,
-  `find` and `bash` behind the [git guard](#git-guard) (no `edit`, `write`, `agent`, workers or review). It takes no
+  short file-search role at that thoroughness, the caller's current model and active base tools (the active subset of
+  `read`, `bash`, `edit`, `write`, `grep`, `find`), thinking as usual. No `agent`, workers or review. Read-only is a
+  role instruction, not a mechanical restriction: only read operations, no file writes or edits, git state changes or
+  installs, including through shell and codemode. There is no explorer git guard or sandbox. It takes no
   `system`, `role`, `tools` or `model`; `restart` keeps it an explorer, optionally at another thoroughness. It is an
   `agent#N` child with the same wait/status/send/interrupt/stop/restart. A start option rather than a fourth tool:
   one schema field reuses the whole agent runtime and adds no tool to every request.
@@ -65,7 +67,9 @@ file re-reading and failed replacement, caller-branch inclusion and nested calle
 - Labels: the factory's `options.label` is the child's path from the main session (`agent#1`, `agent#1/agent#1`,
   `agent#1/code_writer#2`, a child's reviewer `agent#1/review`); it is shown only in RQW-tools' notes of other
   sessions. The ids the model sees stay `agent#N`, and each registry keeps its own unique owner.
-- Explorers get `job` only when RQW-tools offers it; edit and write never, even when offered.
+- Explorers inherit only the caller's active base tools, including `edit` and `write` when active; an offer cannot
+  add inactive base tools. They get `job` only when RQW-tools offers it. On restart, base tools and model are read
+  again from the current caller. `codemode` and `tool_search` follow the caller as described above.
 - `review`: a general subagent gets RQW-review's tool when RQW-review is loaded, through its own handshake
   `rqw-review:subagent-review` on `pi.events` ([RQW-review README](../RQW-review/README.md#review-in-subagents)).
 - Settings: every child's in-memory `SettingsManager` copies the caller's effective `shellPath`, `shellCommandPrefix`,

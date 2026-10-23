@@ -14,7 +14,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
-import { installGitGuard, registerWorkers, type RuntimeHandle, sumCounts, type WorkerProfile } from "./workers.ts";
+import { registerWorkers, type RuntimeHandle, sumCounts, type WorkerProfile } from "./workers.ts";
 import { explorerRole, subagentPrompt, THOROUGHNESS, type Thoroughness, workerPrompt } from "./prompt.ts";
 import { Activity } from "./activity.ts";
 import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-files.ts";
@@ -23,8 +23,6 @@ import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 import { Coordinator, type Result, waitTimeout, targetIds, messageCount, statusDepth, waitResult } from "./coordinator.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
-/** The tools of an explorer: read and search only; its bash is behind the git guard. */
-const EXPLORE_TOOLS = ["read", "bash", "grep", "find"] as const;
 /** Pi's built-in tools a child gets when its caller has them active (the main session has them through RQW-settings). */
 const BUILTIN_TOOLS = ["codemode", "tool_search"] as const;
 const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -42,7 +40,7 @@ export const DESCRIPTION = [
 	"start: task, optional title (3-5 words), role, system (the whole system prompt), model (provider/id), thinking, tools; returns agent#N.",
 	"start/restart: system_file or role_file loads exact UTF-8 text relative to the caller cwd instead of matching inline text; system and role choices are mutually exclusive. Restart inherits the file choice and re-reads it before replacing the child. Result details record prompt_file {kind, path (absolute), sha256 (file bytes)} beside delivery/run on push, and in results[].display on wait.",
 	"include: [user_messages] on start/restart appends caller-session user-role text verbatim in a <user_messages> block after the task, from the caller's current branch; images and non-user messages are omitted. It is not inherited on restart.",
-	"explore on start: a read-only search subagent (read, grep, find, guarded bash) on your model with a search role at thoroughness quick, medium or very thorough; it takes no system, role, tools or model.",
+	"explore on start: a search subagent on your model with your active base tools, including shell and edit/write when active, but no agent or workers; codemode/tool_search follow yours. Its role requires read-only operations, no writes, edits, git state changes or installs; there is no mechanical write guard. Thoroughness is quick, medium or very thorough; it takes no system, role, tools or model.",
 	"send: id, task; reaches a running child after its current tool call, without aborting anything (a child parked in its own wait gets it after that call returns), or starts a new run with its history when idle; interrupt: true on send aborts a running child's turn and starts task as soon as it has stopped.",
 	"interrupt: id; requests cancellation, keeps history; inspect status while cancellation is pending. stop: id; closes it.",
 	"restart: id, optional task, title and new role/system/model/thinking/tools; a fresh session (an explorer stays one).",
@@ -464,8 +462,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 						return { systemPrompt: config.system };
 					});
 					if (worker) worker.configure(sub, (id, reason) => activity?.observeRefusal(id, reason));
-					else if (config.explore) installGitGuard(sub);
-					else {
+					else if (general) {
 						workers = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`);
 						review?.(sub, { events: toolEvents, fast: () => fast.on, signal: controller.signal, label: `${label}/review` });
 					}
@@ -685,7 +682,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		const hasRole = params.role !== undefined || params.role_file !== undefined;
 		if (hasSystem && hasRole) throw new Error("Give system (the whole prompt) or role (added to the default prompt), not both; file variants follow the same rule");
 		if (explore && (given(params.system) || given(params.role) || params.system_file !== undefined || params.role_file !== undefined || params.tools || params.model))
-			throw new Error("An explorer runs on your model with fixed read-only tools and its own role: omit system, role, tools and model, including prompt files");
+			throw new Error("An explorer runs on your model with your active base tools and its own read-only role: omit system, role, tools and model, including prompt files");
 		// A restart keeps the old prompt choice unless a new one is given; role and system replace each other.
 		let custom = explore ? undefined : base?.custom;
 		let role = explore ? undefined : base?.role;
@@ -712,7 +709,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		if (!ctx.modelRegistry.hasConfiguredAuth(model) && !(await untilAborted(runtimeOf(ctx).checkAuth(model.provider, { signal }), signal)))
 			throw new Error(`No credentials for provider ${model.provider}`);
 		signal.throwIfAborted();
-		const tools = explore ? [...EXPLORE_TOOLS] : params.tools ?? base?.tools ?? [...TOOLS];
+		const tools = explore ? TOOLS.filter(name => pi.getActiveTools().includes(name)) : params.tools ?? base?.tools ?? [...TOOLS];
 		const thinking = params.thinking ?? base?.thinking ?? pi.getThinkingLevel();
 		return { system, base: root, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}), ...(promptFile ? { prompt_file: promptFile } : {}), ...(explore ? { explore } : {}), model, thinking, tools, ...alertOptions };
 	}

@@ -63,7 +63,7 @@ export function registerWorkers(caller: ExtensionAPI, register: (caller: Extensi
 	};
 }
 
-/** Blocks every git-state change in this session's bash calls (workers and explorers) before the shell runs. */
+/** Blocks every git-state change in this worker session's bash calls before the shell runs. */
 export function installGitGuard(session: ExtensionAPI, onRefusal?: RefusalObserver): void {
 	session.on("tool_call", event => {
 		if (event.toolName !== "bash" || typeof event.input.command !== "string") return;

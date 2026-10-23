@@ -3936,3 +3936,14 @@ Original DECISIONS.md lines 2179-2185 at `30952e6`, verbatim:
 >   last owner leaves, so each load of this extension checks its wrapper is still in the slots and wraps again if not
 >   (`test/providers-anthropic.test.ts`). Pi's restore is last-in-first-out, so the manifest keeps this extension after
 >   `RQW-anthropic`, and an inert wrapper may stay in the other order (limits: `extensions/RQW-providers/README.md`). Mechanism research: `notes/anthropic-adapter.md`.
+
+## A-0241 · archived 2026-10-23 · Agent · Title and explorer with git-guarded read-only tools
+Status: SUPERSEDED by `[D-AGENT-EXPLORE-TOOLS]` ([DECISIONS.md, Agent](DECISIONS.md#agent)); `[D-AGENT-TITLE-EXPLORE]` stays for `title` and now points to it.
+Introduced: `c86e9bb`, as `Since:` in the entry.
+Archived by: the explore-cursor change; the commit is `git log -S'A-0241' -- DECISIONS-ARCHIVE.md`.
+Original DECISIONS.md lines 585-588 at `3430f32`, verbatim:
+
+> - **Title and explorer** `[D-AGENT-TITLE-EXPLORE]`. Optional `title` on start/restart appears in status, `results[i].display.title` and message `details.title`; delivered text keeps its `[agent#N]` form. Card rendering in `RQW-agent-ui` belongs to a pending branch, not main; see [BACKLOG](BACKLOG.md). `explore` on agent start selects a read-only search leaf on the caller's model with the main prompt, a short role and thoroughness `quick`, `medium` or `very thorough`; it exposes read/grep/find and git-guarded bash, not edit/write, and takes no custom system/role/model/tools or prompt-file overrides.
+>   Coordinator text: the explorer option reuses the existing runtime rather than adding a tool.
+>   Reason: retain compact metadata and a read-only search mode without another lifecycle implementation.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`, `extensions/RQW-agent/git-guard.ts`. Since: `c86e9bb`.

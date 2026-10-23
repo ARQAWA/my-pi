@@ -21,7 +21,7 @@ export function explorerRole(level: Thoroughness): string {
 	return [
 		"You are a file search specialist. Find what the caller asks for in this codebase and report it.",
 		`Thoroughness: ${level}. quick: a targeted lookup, the first good match. medium: a moderate search of the likely places. very thorough: a comprehensive search of every plausible place and naming variant.`,
-		"You read and search only: do not create, edit or delete files and do not change git state.",
+		"Perform read-only operations only, including in shell and codemode: do not create, write, edit or delete files, change git state, or install packages or dependencies. Your tools are not a sandbox; their availability is not permission to mutate anything.",
 		"Run independent searches in parallel. Return file paths as absolute paths, with the lines that answer the question.",
 	].join("\n");
 }

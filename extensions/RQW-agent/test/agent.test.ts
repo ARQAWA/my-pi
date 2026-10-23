@@ -936,7 +936,7 @@ describe("subagent parity", () => {
 		await until(() => m.delivered().length === 2, "the explorer delivery");
 		const explorer = main.requests.filter(r => r.system[0]?.includes("<role>\nYou are a file search specialist."));
 		assert.equal(explorer.length, 1);
-		assert.deepEqual(explorer[0].tools.sort(), ["bash", "codemode", "find", "grep", "read", "tool_search"]);
+		assert.deepEqual(explorer[0].tools.sort(), ["bash", "codemode", "edit", "find", "grep", "read", "tool_search", "write"]);
 		await shutdown(m);
 	});
 
@@ -969,7 +969,7 @@ describe("subagent parity", () => {
 		};
 	}
 
-	it("with RQW-tools offering: a child's codemode is the offered one built from the child's own codemode; explorers get job, never edit or write", async t => {
+	it("with RQW-tools offering: a child's codemode is the offered one built from the child's own codemode; explorers inherit active edit/write and get job", async t => {
 		const sessions = captureSessions(t);
 		const seen: { label?: string; codemode?: ToolDefinition }[] = [];
 		const returned: ToolDefinition[] = [];
@@ -993,10 +993,11 @@ describe("subagent parity", () => {
 		await m.call({ action: "start", explore: "quick", task: "find" });
 		await until(() => m.delivered().length === 2, "the explorer delivery");
 		const explorer = main.requests.filter(r => r.system[0]?.includes("<role>\nYou are a file search specialist."));
-		assert.deepEqual(explorer[0].tools.sort(), ["bash", "codemode", "find", "grep", "job", "read", "tool_search"], "job only because it is offered; no edit or write though offered");
+		assert.deepEqual(explorer[0].tools.sort(), ["bash", "codemode", "edit", "find", "grep", "job", "read", "tool_search", "write"], "active base tools, plus job because it is offered");
 		assert.equal(seen[1].label, "agent#2");
 		const explorerSession = sessions.filter(s => s !== m.session)[1];
-		for (const name of ["edit", "write", "agent", "code_writer", "shell_runner"]) assert.equal(explorerSession.getToolDefinition(name), undefined, name);
+		for (const name of ["agent", "code_writer", "shell_runner"]) assert.equal(explorerSession.getToolDefinition(name), undefined, name);
+		for (const name of ["edit", "write"]) assert.equal(explorerSession.getToolDefinition(name)?.description, `OFFERED ${name}`);
 		assert.equal(explorerSession.getToolDefinition("codemode"), returned[1]);
 		await m.call({ action: "stop", id: "agent#2" });
 		assert.deepEqual(jobEvents, ["dispose agent#2"], "the explorer's jobs end with it");
@@ -1008,8 +1009,47 @@ describe("subagent parity", () => {
 		main.replies.push(fauxAssistantMessage("FOUND"));
 		await m.call({ action: "start", explore: "quick", task: "find" });
 		await until(() => m.delivered().length === 1, "the delivery");
-		assert.deepEqual(main.requests[0].tools.sort(), ["bash", "find", "grep", "read"]);
+		assert.deepEqual(main.requests[0].tools.sort(), ["bash", "edit", "read", "write"], "Pi's default caller has no active grep or find");
 		await shutdown(m);
+	});
+
+	it("explore inherits a restricted caller subset and refreshes it on restart; an offer cannot widen it", async () => {
+		const m = await startMain("tui", undefined, [], EXTENSION, {
+			factories: [createCodemodeExtension(), createToolSearchExtension(), toolsOffer([], [], [])],
+			tools: ["read", "bash", "edit", "write", "grep", "find", "agent", "code_writer", "shell_runner", "codemode", "tool_search"],
+		});
+		m.session.setActiveToolsByName(["read", "bash", "agent", "code_writer", "shell_runner"]);
+		try {
+			main.replies.push(fauxAssistantMessage("FOUND"));
+			await m.call({ action: "start", explore: "quick", task: "find" });
+			await until(() => m.delivered().length === 1, "the delivery");
+			assert.deepEqual(main.requests[0].tools.sort(), ["bash", "job", "read"]);
+			m.session.setActiveToolsByName(["grep", "agent", "codemode", "tool_search"]);
+			main.replies.push(fauxAssistantMessage("AGAIN"));
+			await m.call({ action: "restart", id: "agent#1", task: "find again" });
+			await until(() => m.delivered().length === 2, "the restarted delivery");
+			const explorer = main.requests.filter(r => r.system[0]?.includes("<role>\nYou are a file search specialist."));
+			assert.deepEqual(explorer[1].tools.sort(), ["codemode", "grep", "job", "tool_search"]);
+			assert.equal(explorer[1].model, "m");
+		} finally { await shutdown(m); }
+	});
+
+	it("a nested explorer inherits its direct caller's model and restricted tools, not main's", async () => {
+		const m = await startMain();
+		sub.replies.push(
+			fauxAssistantMessage([fauxToolCall("agent", { action: "start", explore: "quick", task: "find" })], { stopReason: "toolUse" }),
+			fauxAssistantMessage("WAITING"),
+			fauxAssistantMessage("FOUND"),
+			fauxAssistantMessage("TOP"),
+		);
+		try {
+			await m.call({ action: "start", task: "delegate", model: "sub/a", tools: ["read", "grep"] });
+			await until(() => m.delivered().length === 1, "the final delivery", 5000);
+			const explorer = sub.requests.filter(r => r.system[0]?.includes("<role>\nYou are a file search specialist."));
+			assert.equal(explorer.length, 1);
+			assert.equal(explorer[0].model, "a");
+			assert.deepEqual(explorer[0].tools.sort(), ["grep", "read"]);
+		} finally { await shutdown(m); }
 	});
 
 	it("labels for RQW-tools notes are paths from the main session: agent#1/agent#1", async () => {
@@ -1047,12 +1087,12 @@ describe("subagent parity", () => {
 		await shutdown(m);
 	});
 
-	it("explore: the main prompt, the reminder and the search role at its thoroughness; the main model; read and search only; bash behind the git guard; a leaf", async t => {
+	it("explore: the main prompt, reminder and read-only role; caller model and active base tools; no git guard; a leaf", async t => {
 		const sessions = captureSessions(t);
 		const m = await startMain();
 		const mainPrompt = m.session.systemPrompt.trimEnd();
 		main.replies.push(
-			fauxAssistantMessage([fauxToolCall("bash", { command: "git commit -m x" })], { stopReason: "toolUse" }),
+			fauxAssistantMessage([fauxToolCall("bash", { command: "git --version" })], { stopReason: "toolUse" }),
 			fauxAssistantMessage("FOUND"),
 		);
 		assert.equal(await m.call({ action: "start", explore: "very thorough", task: "where is X", thinking: "minimal", title: "Find X" }), "agent#1 started");
@@ -1063,11 +1103,14 @@ describe("subagent parity", () => {
 		assert.equal(first.reasoning, "minimal");
 		assert.deepEqual(first.system, [`${mainPrompt}\n\n${SUBAGENT_REMINDER}\n\n<role>\n${explorerRole("very thorough")}\n</role>`]);
 		assert.match(explorerRole("very thorough"), /Thoroughness: very thorough\./);
-		assert.match(explorerRole("quick"), /do not create, edit or delete files/);
-		assert.deepEqual(first.tools.sort(), ["bash", "find", "grep", "read"], "no edit, write, agent or workers");
-		assert.ok(second.texts.some(text => /Workers may not change git state/.test(text)), "git mutation blocked before the shell ran");
+		assert.match(explorerRole("quick"), /Perform read-only operations only, including in shell and codemode/);
+		assert.match(explorerRole("quick"), /do not create, write, edit or delete files, change git state, or install packages or dependencies/);
+		assert.deepEqual(first.tools.sort(), ["bash", "edit", "read", "write"], "Pi's default caller base tools, no agent or workers");
+		assert.ok(second.texts.some(text => /git version/.test(text)), "read-only shell command ran");
 		const child = sessions.find(s => s !== m.session)!;
-		for (const name of ["agent", "code_writer", "shell_runner", "edit", "write"]) assert.equal(child.getToolDefinition(name), undefined, name);
+		for (const name of ["agent", "code_writer", "shell_runner"]) assert.equal(child.getToolDefinition(name), undefined, name);
+		// Check the hook without executing a mutation: read-only is a role rule, not a runtime git guard.
+		assert.equal(await child.extensionRunner.emitToolCall({ type: "tool_call", toolName: "bash", toolCallId: "guard-probe", input: { command: "git commit -m x" } }), undefined);
 		// restart keeps the kind; an explorer takes no system, role, tools or model.
 		await assert.rejects(m.call({ action: "restart", id: "agent#1", tools: ["read"] }), /omit system, role, tools and model/);
 		main.replies.push(fauxAssistantMessage("AGAIN"));
