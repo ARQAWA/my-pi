@@ -1390,18 +1390,22 @@ in the approved proposal (not stored in this repository). The loop reads only pu
   `qa-status` shows claimed issues as in progress with the branch and only unclaimed ones as red; a claimed issue
   with no commit on its branch for 24 hours is red again (stale claim); fix commits keep `QA: #N`; a recurring failure
   on a claimed issue adds the occurrence and keeps the claim. Decision: `npm run qa-claim -- <N> <branch>`
-  (`scripts/qa-claim.mjs`). Engineering choice, since a label cannot be claimed atomically (GitHub has no
-  compare-and-set for labels, adding one succeeds whether or not it is there, and a bot that rewrites labels can drop
-  it): the atomic step is the create-only ref `refs/qa-claims/<N>-<generation>` (`POST git/refs` fails with 422 when
-  the ref exists), pointing at a commit whose message holds the record `qa-claim:v1 {"number","gen","branch","at"}`
-  (`scripts/qa-state.mjs`), so record and ref are one write. The label and the comment are written after the ref; a
-  failure there is a warning and the ref decides; running the helper again with the same branch re-applies the label.
-  Status reads the claims with one ref-list call and, per claimed open issue, the claim commit and the newest commit
-  of the claimed branch on GitHub (the claim time counts as activity, so an unpushed branch is fresh for 24 hours).
-  A stale or record-less claim is taken over as generation + 1, which is again a create-only race. Limits: a claim
-  is advisory for agents that run the helper, nothing stops a hand edit; the label alone (set by hand) never counts as
-  a claim; between an agent's last push and the 24-hour mark a dead agent still blocks others; the claim ref list is
-  bounded at 100 refs, like the issue list. `qa-inbox.yml` is unchanged: it keeps labels it does not compute and never
-  comments. Reason: two agents triaging one failure waste work and may push conflicting fixes.
-  Carrier: `scripts/qa-claim.mjs`, `scripts/qa-state.mjs`, `scripts/qa-status.mjs`, `test/qa-claim.test.ts`,
+  (`scripts/qa-claim.mjs`). The label is the contract: while `qa:claimed` is on the issue the helper never claims it
+  again, for another branch, the same branch or a stale claim, and exits 3; nothing takes a stale claim over, status
+  only shows it red and the coordinator frees it with `npm run qa-claim -- --release <N>` (lock ref first, then the
+  label). A label without a readable record is a claim with unknown branch and time, shown in progress, nothing
+  invented. Engineering choice for concurrent helpers, since a label cannot be claimed atomically (GitHub has no
+  compare-and-set for labels, adding one succeeds whether or not it is there): the atomic step is the create-only ref
+  `refs/qa-claims/<N>` (`POST git/refs` fails with 422 when it exists), made before the label, pointing at a commit
+  whose message holds the record `qa-claim:v1 {"number","branch","at"}` (`scripts/qa-state.mjs`). The comment holds the
+  same record; status reads the comment first and the ref commit as fallback. A ref without the label (a lost label or
+  a half written claim) also counts as claimed. Status makes no global list: per open issue it reads the comments, the
+  ref only when needed, and the newest commit of the claimed branch on GitHub (the claim time counts as activity, so
+  an unpushed branch is fresh for 24 hours), at most four issues at a time. HTTP 404 and 422 on those reads mean a
+  missing or malformed object and leave branch and time unknown; any other `gh` failure (auth, network) makes the
+  status unavailable. Limits: a claim is advisory for agents that run the helper; between a dead agent's last push
+  and the 24-hour mark it still blocks others; the claim comment is read from the first 100 comments, then the ref
+  commit. `qa-inbox.yml` is unchanged: it keeps labels it does not compute and never comments. Reason: two agents
+  triaging one failure waste work and may push conflicting fixes. Carrier: `scripts/qa-claim.mjs`,
+  `scripts/qa-state.mjs`, `scripts/qa-status.mjs`, `test/qa-claim.test.ts`,
   [PROCESS.md](PROCESS.md#quality-control-loop). Since: the delivering commit of branch `qa-claim`.

@@ -100,9 +100,10 @@ The coordinator delegates all execution, waits and checks to subagents and may r
 - `scripts/qa-status.mjs`, `npm run qa-status`: one bounded `gh` read of the inbox, latest `main` runs and the
   current branch's CI; workers and hosts without the extension use it. A claimed issue (below) shows as in progress,
   not red, until its claim is stale.
-- `scripts/qa-claim.mjs`, `npm run qa-claim -- <N> <branch>`: claims an open inbox issue before triage (create-only
-  ref `refs/qa-claims/<N>-<generation>`, label `qa:claimed`, a comment with branch and UTC); exit 3 means already
-  claimed, do not start. Claim format: `scripts/qa-state.mjs`; decision `DECISIONS.md` `[D-QA-CLAIM]`. Tests: `npm test`.
+- `scripts/qa-claim.mjs`, `npm run qa-claim -- <N> <branch>`: claims an open inbox issue before triage (label
+  `qa:claimed` is the contract, a comment with branch and UTC, a create-only lock ref `refs/qa-claims/<N>`); exit 3
+  means already claimed, do not start; never takes a stale claim over. `--release <N>` frees one. Claim format:
+  `scripts/qa-state.mjs`; decision `DECISIONS.md` `[D-QA-CLAIM]`. Tests: `npm test`.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all.
 - `.agents/reviewers/test-integrity.md`: the read-only reviewer prompt for QA fixes and weakened tests, used through

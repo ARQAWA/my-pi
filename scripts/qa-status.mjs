@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CLAIM_LABEL, CLAIM_REF_PREFIX, decodeState, INBOX_LABEL, readClaim, topClaimRefs } from "./qa-state.mjs";
+import { CLAIM_LABEL, claimState, decodeState, INBOX_LABEL, pool, readClaim } from "./qa-state.mjs";
 
 // All children share one deadline; no retries or persistent polling.
 export function run(command, args, options) {
@@ -54,32 +54,30 @@ export async function snapshot({ cwd = process.cwd(), repo, run: execute = run }
 			runs(workflow, `branch=main&event=${event}&per_page=3`))).then((groups) => groups.flat()
 			.filter((r) => r.head_branch === "main" && ["schedule", "workflow_dispatch"].includes(r.event)).sort(newest).slice(0, 3));
 		const checkBranch = branch !== "main" && branch !== "HEAD";
-		const [issues, claimRefs, tests, pcli, inbox, digest, branchRuns] = await Promise.all([
+		const [issues, tests, pcli, inbox, digest, branchRuns] = await Promise.all([
 			api(`issues?state=open&labels=${INBOX_LABEL}&per_page=100`),
-			api(`git/matching-refs/${CLAIM_REF_PREFIX}?per_page=100`),
 			mainRuns("tests.yml"), mainRuns("pcli.yml"),
 			runs("qa-inbox.yml", "per_page=1"), runs("qa-digest.yml", "per_page=1"),
 			checkBranch ? runs("tests.yml", `head_sha=${sha}&per_page=100`) : [],
 		]);
-		if (claimRefs.length === 100) throw new Error("claim ref list reached its 100-item bound; status is incomplete");
-		const tops = topClaimRefs(claimRefs);
-		const items = await Promise.all(issues.filter((i) => !i.pull_request).map(async (i) => {
+		// Claims (PROCESS.md, Quality control loop): per open issue, at most four reads in flight.
+		const items = await pool(issues.filter((i) => !i.pull_request), 4, async (i) => {
 			const state = decodeState(i.body);
 			const rate = state?.rate;
 			const lastSeen = state?.lastSeen ?? i.updated_at;
 			const labels = i.labels.map((l) => typeof l === "string" ? l : l.name);
 			const text = `#${i.number} ${i.title} [${labels.join(", ")}] rate ${rate ? `${rate.k}/${rate.n}` : "unknown"}; lastSeen ${lastSeen ?? "unknown"}; occurrences ${state?.occurrences?.length ?? 0}`;
 			const item = { id: `issue:${i.number}:${lastSeen}`, level: "red", url: i.html_url, text };
-			// A claim (PROCESS.md, Quality control loop) decides from its ref, not from the label: the label is only a copy.
-			const top = tops.get(i.number);
-			if (!top) return labels.includes(CLAIM_LABEL) ? { ...item, text: `${text}; ${CLAIM_LABEL} without a claim record, treated as unclaimed` } : item;
-			const claim = await readClaim({ api, number: i.number, top });
-			if (claim.kind === "fresh") return { ...item, id: `claim:${i.number}:${claim.gen}`, level: "pending",
-				text: `${text}; claimed, in progress: branch ${claim.branch} since ${claim.at}, last activity ${claim.lastActivity}` };
-			if (claim.kind === "stale") return { ...item, id: `issue:${i.number}:${lastSeen}:stale-claim:${claim.gen}`,
-				text: `${text}; stale claim: branch ${claim.branch} since ${claim.at} has no commit since ${claim.lastActivity} (over 24 h)` };
-			return { ...item, text: `${text}; ${claim.why}, treated as unclaimed` };
-		}));
+			const claim = await readClaim({ api, number: i.number, labeled: labels.includes(CLAIM_LABEL) });
+			if (!claim) return item;
+			const c = await claimState({ api, claim });
+			if (c.kind === "unknown") return { ...item, id: `claim:${i.number}:unknown`, level: "pending",
+				text: `${text}; claimed, in progress: branch and time unknown (no readable claim record)` };
+			if (c.kind === "fresh") return { ...item, id: `claim:${i.number}:${c.branch}`, level: "pending",
+				text: `${text}; claimed, in progress: branch ${c.branch} since ${c.at}, last activity ${c.lastActivity}` };
+			return { ...item, id: `issue:${i.number}:${lastSeen}:stale-claim`,
+				text: `${text}; stale claim: branch ${c.branch} since ${c.at} has no commit since ${c.lastActivity} (over 24 h); report to the coordinator, nothing takes it over automatically` };
+		});
 		if (issues.length === 100) throw new Error("open issue list reached its 100-item bound; status is incomplete");
 		for (const [name, workflow, list] of [["main tests", "tests.yml", tests], ["main pcli", "pcli.yml", pcli],
 			["qa-inbox", "qa-inbox.yml", inbox], ["qa-digest", "qa-digest.yml", digest]]) {

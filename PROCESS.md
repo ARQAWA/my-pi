@@ -210,15 +210,17 @@ reasons: [Quality control](DECISIONS.md#quality-control).
   Main may close it only with a written explanation in the issue, such as a confirmed runner incident.
 
 **Claims.** Before triage or any other work on an inbox issue, an agent claims it:
-`npm run qa-claim -- <N> <branch>`. Decisions and reasons: [Claims](DECISIONS.md#quality-control).
-- Exit 0: claimed, or already claimed by this same branch. Exit 3: another agent holds a fresh claim or won the
-  race; do not start, report to the coordinator. Exit 1: error, nothing claimed.
-- A claim is a create-only GitHub ref `refs/qa-claims/<N>-<generation>` whose commit message carries branch and UTC
-  time, plus the label `qa:claimed` and a machine-readable comment. Only the ref is atomic: two concurrent claimers
-  cannot both create the same generation. The label and the comment are written afterwards; the ref decides.
-- `qa-status` shows a fresh claim as in progress with its branch, not red. A claim with no commit on its branch (and
-  no newer claim) for 24 hours is stale and red again; the next claim then takes over as the next generation.
-  Push the branch early so its commits count. An unclaimed issue is red.
+`npm run qa-claim -- <N> <branch>`. Decisions and reasons: [Claim an inbox issue](DECISIONS.md#quality-control).
+- The label `qa:claimed` is the contract. While it is on the issue nobody claims it again, not even the same branch,
+  and a stale claim is never taken over automatically. Exit 0: claimed. Exit 3: already claimed, or another helper
+  won the race; do not start, report to the coordinator. Exit 1: error, nothing claimed.
+- A claim is the label, a machine-readable comment with branch and UTC time, and a create-only lock ref
+  `refs/qa-claims/<N>`. Only the ref is atomic: two concurrent helpers cannot both create it. The label and the
+  comment are written afterwards. A label without a readable record is still a claim, with branch and time unknown.
+- `qa-status` shows a claim as in progress with its branch, not red. A claim with no commit on its branch (and
+  no newer claim time) for 24 hours is stale and red again; report it to the coordinator, who frees it with
+  `npm run qa-claim -- --release <N>` when the work is dead. Push the branch early so its commits count.
+  An unclaimed issue is red.
 - Fix commits still carry `QA: #N`. `qa-inbox.yml` keeps working: a recurring failure on a claimed issue adds its
   occurrence and keeps the label; the bot never edits comments or refs.
 

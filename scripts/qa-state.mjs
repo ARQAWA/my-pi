@@ -79,68 +79,103 @@ export function needGreen({ k, n }) {
 
 // ---------------------------------------------------------------------------------------------------------------
 // Claims (PROCESS.md, Quality control loop): an agent claims an inbox issue before triage, so two agents never work
-// on one issue. The claim is a create-only git ref `refs/qa-claims/<issue>-<generation>` on GitHub; creating an
-// existing ref fails, so one claimer wins per generation. The ref points at an orphan-parented commit whose message
-// carries the claim (below), so ref and record are one atomic write. The label `qa:claimed` and a machine-readable
-// comment are only the visible copies; the qa-inbox bot never touches them (it keeps every label it does not compute).
-// A claim is stale when neither the claim nor a commit on its branch is younger than CLAIM_STALE_MS; the next claim
-// is then generation + 1.
+// on one issue. The label `qa:claimed` is the contract: while it is on the issue, nobody claims it again, not even
+// the same branch, and a stale claim is never taken over automatically (status shows it red; the coordinator decides).
+// The visible record is a machine-readable comment (`qa-claim:v1 {...}`). The only atomic step is the create-only
+// ref `refs/qa-claims/<issue>`: creating an existing ref fails, so concurrent helpers cannot both claim. The ref
+// points at a commit whose message repeats the record, the fallback when the comment is missing. A claim whose
+// record is missing or unreadable is still a claim: its branch and time are unknown and nothing is invented.
 
 export const CLAIM_LABEL = "qa:claimed";
 export const CLAIM_STALE_MS = 24 * 3600_000;
 export const CLAIM_REF_PREFIX = "qa-claims/";
 export const BRANCH_RE = /^(?!.*\.\.)[\w][\w./-]*$/;
-const CLAIM_REF_RE = /^refs\/qa-claims\/(\d+)-(\d+)$/;
 const CLAIM_MARK_RE = /qa-claim:v1 (\{[^\n<>]*\})/;
 
-export const claimRefName = (number, gen) => `${CLAIM_REF_PREFIX}${number}-${gen}`;
+export const claimRefName = (number) => `${CLAIM_REF_PREFIX}${number}`;
+// A missing or malformed object is HTTP 404 or 422; anything else (auth, network, rate limit) is a real failure.
+export const isMalformed = (e) => /\bHTTP (?:404|422)\b/.test(String(e?.message ?? e));
 
 // The machine-readable record, used in the claim commit message and the issue comment.
-export const encodeClaim = ({ number, gen, branch, at }) => `qa-claim:v1 ${JSON.stringify({ number, gen, branch, at })}`;
+export const encodeClaim = ({ number, branch, at }) => `qa-claim:v1 ${JSON.stringify({ number, branch, at })}`;
 
 export function decodeClaim(text) {
 	const m = CLAIM_MARK_RE.exec(text ?? "");
 	if (!m) return null;
 	try {
 		const c = JSON.parse(m[1]);
-		const ok = Number.isInteger(c.number) && Number.isInteger(c.gen) && c.gen > 0 && BRANCH_RE.test(c.branch ?? "") && Number.isFinite(Date.parse(c.at));
-		return ok ? { number: c.number, gen: c.gen, branch: c.branch, at: c.at } : null;
+		const ok = Number.isInteger(c.number) && BRANCH_RE.test(c.branch ?? "") && Number.isFinite(Date.parse(c.at));
+		return ok ? { number: c.number, branch: c.branch, at: c.at } : null;
 	} catch {
 		return null;
 	}
 }
 
-// matching-refs list -> Map(issue number -> { gen, sha, ref }) of the highest generation.
-export function topClaimRefs(refs) {
-	const top = new Map();
-	for (const r of refs) {
-		const m = CLAIM_REF_RE.exec(r.ref ?? "");
-		if (!m) continue;
-		const number = Number(m[1]), gen = Number(m[2]);
-		if (!top.has(number) || top.get(number).gen < gen) top.set(number, { gen, sha: r.object?.sha, ref: r.ref });
-	}
-	return top;
-}
-
-// Date of the newest commit on a branch of the repository, or null when the branch is not pushed (HTTP 404).
+// Date of the newest commit on a branch of the repository, or null when the branch is not pushed or unreadable.
 export async function branchCommitAt(api, branch) {
 	try {
 		const list = await api(`commits?sha=${encodeURIComponent(branch)}&per_page=1`);
 		return list[0]?.commit?.committer?.date ?? null;
 	} catch (e) {
-		if (/\bHTTP 404\b/.test(String(e?.message ?? e))) return null;
+		if (isMalformed(e)) return null;
 		throw e;
 	}
 }
 
-// State of the claim a ref records: { kind: "unrecorded", why } | { kind: "fresh" | "stale", gen, branch, at, lastActivity }.
-// api(endpoint): parsed JSON of repos/<repo>/<endpoint>. Freshness: the later of the claim time and the newest
-// commit on the claimed branch, so a branch that is not pushed yet is fresh for 24 hours after the claim.
-export async function readClaim({ api, number, top, now = Date.now() }) {
-	const commit = await api(`git/commits/${top.sha}`);
-	const rec = decodeClaim(commit.message);
-	if (!rec || rec.number !== number || rec.gen !== top.gen) return { kind: "unrecorded", why: `claim ref ${top.ref} carries no valid claim record` };
-	const pushed = await branchCommitAt(api, rec.branch);
-	const lastActivity = new Date(Math.max(Date.parse(rec.at), pushed ? Date.parse(pushed) : 0)).toISOString();
-	return { kind: now - Date.parse(lastActivity) > CLAIM_STALE_MS ? "stale" : "fresh", gen: rec.gen, branch: rec.branch, at: rec.at, lastActivity };
+// Reads one object, or null when GitHub says it is missing or malformed. Other failures are thrown.
+async function tryApi(api, endpoint) {
+	try {
+		return await api(endpoint);
+	} catch (e) {
+		if (isMalformed(e)) return null;
+		throw e;
+	}
+}
+
+// What is known about the claim of an open issue, or null when it is not claimed. api(endpoint): parsed JSON of
+// repos/<repo>/<endpoint>. Claimed means: the label is on the issue, or the claim ref exists (a lost label).
+// Returns { labeled, record: { number, branch, at } | null }. The record comes from the first valid claim comment,
+// else from the commit the ref points at; a missing, non-commit or malformed one leaves record null.
+export async function readClaim({ api, number, labeled }) {
+	const fromComments = async () => {
+		const comments = await tryApi(api, `issues/${number}/comments?per_page=100`);
+		for (const c of Array.isArray(comments) ? comments : []) {
+			const rec = decodeClaim(c.body);
+			if (rec && rec.number === number) return rec;
+		}
+		return null;
+	};
+	const fromRef = async () => {
+		const ref = await tryApi(api, `git/ref/${claimRefName(number)}`);
+		if (!ref || Array.isArray(ref)) return { exists: false, record: null };
+		const sha = ref.object?.type === "commit" ? ref.object.sha : null;
+		const commit = sha ? await tryApi(api, `git/commits/${sha}`) : null;
+		const rec = decodeClaim(commit?.message);
+		return { exists: true, record: rec && rec.number === number ? rec : null };
+	};
+	if (labeled) return { labeled, record: (await fromComments()) ?? (await fromRef()).record };
+	const ref = await fromRef();
+	if (!ref.exists) return null;
+	return { labeled, record: ref.record ?? (await fromComments()) };
+}
+
+// { kind: "unknown" } for a claim without a record, else { kind: "fresh" | "stale", branch, at, lastActivity }.
+// Freshness: the later of the claim time and the newest commit on the claimed branch, so a branch that is not
+// pushed yet is fresh for 24 hours after the claim.
+export async function claimState({ api, claim, now = Date.now() }) {
+	if (!claim.record) return { kind: "unknown" };
+	const { branch, at } = claim.record;
+	const pushed = await branchCommitAt(api, branch);
+	const lastActivity = new Date(Math.max(Date.parse(at), pushed ? Date.parse(pushed) : 0)).toISOString();
+	return { kind: now - Date.parse(lastActivity) > CLAIM_STALE_MS ? "stale" : "fresh", branch, at, lastActivity };
+}
+
+// Runs fn over items with at most `limit` calls in flight, keeping the order of the results.
+export async function pool(items, limit, fn) {
+	const out = new Array(items.length);
+	let next = 0;
+	await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+		while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); }
+	}));
+	return out;
 }

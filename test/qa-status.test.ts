@@ -29,7 +29,7 @@ appendFileSync(process.env.FAKE_QA_CALLS, JSON.stringify(endpoint) + "\\n");
 const data = JSON.parse(readFileSync(process.env.FAKE_QA_DATA, "utf8"));
 if (data.fail) { console.error("fake gh unavailable"); process.exit(1); }
 if (endpoint.includes("/issues?")) console.log(JSON.stringify(data.issues ?? []));
-else if (endpoint.includes("/git/matching-refs/")) console.log(JSON.stringify(data.refs ?? []));
+else if (endpoint.includes("/git/ref/") || endpoint.includes("/comments")) { console.error("gh: Not Found (HTTP 404)"); process.exit(1); }
 else {
  const workflow = endpoint.match(/workflows\\/([^/]+)\\/runs/)[1];
  if (data.workflowErrors?.[workflow]) { console.error(data.workflowErrors[workflow]); process.exit(1); }
