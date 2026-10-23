@@ -51,22 +51,62 @@ the accepted decisions and their reasons. New owner instructions take precedence
 
 ## Worker models
 
-Spread worker and reviewer subagents evenly between Anthropic models (Opus 5.5, Sonnet 5.5) and GPT-6.1-Sol
-so both subscriptions' limits are spent evenly. Balance over the run, not per single call; still choose model
-and reasoning by task within the allowed table below.
+These rules are for developing this repository with agents. They are not product settings: the models of
+`RQW-review` and the fixed models of `code_writer` and `shell_runner` stay as they are. The decision,
+the owner's messages and the history are in [DECISIONS.md, Work policy](DECISIONS.md#work-policy).
 
-Choose model and reasoning for the work, not all workers at maximum reasoning:
+Main picks one task class and starts an ordinary `agent` subagent with a model and reasoning pair of that class:
+`simple` for ordinary tasks, `complex` for complex tasks, `hardest` for the hardest and most important tasks.
+The block below is the only place that lists the pairs, and the source of truth for the dev guard. To change
+a rule, edit the block; no other file repeats it.
 
-| Model | Allowed reasoning |
-| --- | --- |
-| Sonnet 5.5 | high |
-| Opus 5.5 | medium |
-| GPT-6.1-Sol | low, medium |
+```json coordinator-rules
+{
+  "workerModels": {
+    "simple": [
+      ["anthropic/claude-sonnet-5-5", "medium"],
+      ["openai-codex/gpt-6.1-sol", "low"]
+    ],
+    "complex": [
+      ["anthropic/claude-sonnet-5-5", "high"],
+      ["openai-codex/gpt-6.1-sol", "medium"]
+    ],
+    "hardest": [
+      ["anthropic/claude-opus-5-5", "medium"],
+      ["openai-codex/gpt-6.1-sol", "high"]
+    ]
+  },
+  "fixedWorkers": "block"
+}
+```
 
-Simple work uses Sonnet 5.5 high or GPT-6.1-Sol low. Complex work uses Opus 5.5 medium or
-GPT-6.1-Sol medium. No other models or reasoning levels are used for these workers. These are development workers,
-not changes to the product reviewer models of `RQW-review`. A pause of a named benchmark campaign pauses that
-campaign only; it does not pause unrelated work or prohibit the currently authorized worker models.
+1. Every `start` and `restart` by Main names `model` and `thinking` explicitly from the chosen class. Nothing is
+   inherited from Main's own model or reasoning.
+2. Main starts only ordinary `agent` subagents. It never starts `code_writer` or `shell_runner`
+   (`"fixedWorkers": "block"`), and it never starts `explore`: the dev guard always blocks Main's explorer, with no
+   JSON key for it, since an explorer runs on its parent's model. The subagents Main starts may use workers,
+   explorers and `review` themselves.
+3. Choose the class by the task. Opus 5.5 medium (`hardest`) is far stronger than Sonnet 5.5 high (`complex`), and
+   Sol high (`hardest`) is stronger than Sol medium (`complex`). Keep `hardest` pairs for the hardest and most
+   important tasks and never give the stronger pair to the easier task.
+4. Spread subagents evenly between Anthropic (Opus 5.5, Sonnet 5.5) and GPT-6.1-Sol so both subscriptions' limits
+   are spent evenly. Balance over the run, not per single call.
+5. No other models or reasoning levels. A pause of a named benchmark campaign pauses that campaign only; it does
+   not pause unrelated work or prohibit the authorized worker models.
+6. Dev guard: the project extension `.pi/extensions/coordinator-guard/` reads this block on every call of Main's
+   `agent` tool and blocks a start or restart without `model` or `thinking`, with a pair outside the block, or of a
+   fixed worker or explorer; it also blocks an unreadable block. It is dev-only: it loads for this trusted checkout,
+   covers only Main's top-level session, and is not shipped or listed in `pi.extensions`. Subagents and benchmark
+   harnesses load no extensions, so for them these rules are written text only.
+   Details: [guard README](.pi/extensions/coordinator-guard/README.md).
+7. Owner quotes. In `DECISIONS.md` and `PROCESS.md` text inside guillemets (the angle quotation marks) is only the
+   owner's own words: one contiguous piece of a single owner message from a user entry of a session file. Insert no
+   ellipsis, cut, paraphrase or merge. The machine check compares after Unicode NFC and whitespace normalization, so
+   line breaks and list indent are formatting. The span need not be the whole message. Agent text and option texts
+   go outside guillemets, and this file shows no literal guillemet examples. Briefs to subagents follow the same rule.
+   Carrier: `scripts/deliver-check.mjs` checks only quote spans touching added lines of `DECISIONS.md` and
+   `PROCESS.md` against the owner sessions of this repository. `MY_PI_SESSIONS` overrides them with directories
+   joined by the path delimiter; no session files found fails closed.
 
 ## Sufficient proof, without idle reruns
 

@@ -4,6 +4,8 @@
 // <message-file> is the planned squash commit message. Every failed check prints one line; any failure exits 1.
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { findNonVerbatimQuotes, loadOwnerMessages, ownerSessionDirs } from "./owner-quotes.mjs";
 
 const [branch, messageFile] = process.argv.slice(2);
 if (!branch || !messageFile) {
@@ -235,6 +237,31 @@ if (qaIssues.length) {
 if (!reviews.length) fail('message: missing trailer "Review: review#N CLEAN" or "Review: agent#N CLEAN"');
 if (codeChanged && !has(/^Code-review: CLEAN$/)) fail('message: missing trailer "Code-review: CLEAN" (non-doc files changed)');
 if (!has(/^Unverified: \S/)) fail('message: missing trailer "Unverified: <text or none>"');
+
+// 5. Only head-version quote spans touching added lines need provenance. Historical quotes stay untouched.
+try {
+	const common = resolve(root, git("rev-parse", "--git-common-dir"));
+	const mainCheckout = dirname(common);
+	const checkouts = [mainCheckout, ...git("worktree", "list", "--porcelain", "-z").split("\0")
+		.filter((field) => field.startsWith("worktree ")).map((field) => field.slice(9))];
+	const messages = loadOwnerMessages(ownerSessionDirs(checkouts));
+	for (const file of ["DECISIONS.md", "PROCESS.md"]) {
+		const diff = git("diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "-U0",
+			`${main}...${head}`, "--", file);
+		const ranges = [...diff.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)]
+			.map((match) => ({ start: Number(match[1]), count: Number(match[2] ?? 1) }))
+			.filter((range) => range.count > 0);
+		if (!ranges.length) continue;
+		const text = execFileSync("git", ["show", `${head}:${file}`], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+		for (const span of findNonVerbatimQuotes(text, messages)) {
+			if (!ranges.some((range) => span.startLine < range.start + range.count && span.endLine >= range.start)) continue;
+			const quote = span.text.replace(/\s+/gu, " ").trim();
+			fail(`${file}:${span.startLine} ${span.malformed ? "malformed quote" : "quote is not verbatim in any owner message"}: «${quote}»`);
+		}
+	}
+} catch (error) {
+	fail(`owner quotes: ${error.message}`);
+}
 
 finish();
 console.log(`deliver-check PASS ${branch} ${short(head)}`);

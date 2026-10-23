@@ -48,10 +48,16 @@ function setup() {
 	const runsFile = join(tmp, "runs.json");
 	const issuesFile = join(tmp, "issues.json");
 	writeFileSync(issuesFile, JSON.stringify({ list: [], view: {} }));
+	const sessions = join(tmp, "sessions");
+	mkdirSync(sessions);
+	writeFileSync(join(sessions, "owner.jsonl"), JSON.stringify({ type: "message", message: {
+		role: "user", content: "Keep the owner's exact words. First line second line. Caf\u00e9 with spaces.",
+	} }) + "\n");
 	const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
 	const env = {
 		...process.env, [pathKey]: bin + delimiter + process.env[pathKey],
-		GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: gitconfig, FAKE_GH_RUNS: runsFile, FAKE_GH_ISSUES: issuesFile,
+		GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: gitconfig, FAKE_GH_RUNS: runsFile,
+		FAKE_GH_ISSUES: issuesFile, MY_PI_SESSIONS: sessions,
 	};
 	const repo = join(tmp, "checkout");
 	const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, env, encoding: "utf8" }).trim();
@@ -92,7 +98,7 @@ function setup() {
 		const r = spawnSync(process.execPath, [SCRIPT, "task", msg], { cwd, env, encoding: "utf8" });
 		return { code: r.status, out: r.stdout + r.stderr };
 	};
-	return { tmp, repo, env, git, commit, task, runs, issues, run };
+	return { tmp, repo, env, git, commit, task, runs, issues, run, sessions };
 }
 
 // Replaces the value of pcli.yml's `paths: [...]` filter, whatever the real filter lists.
@@ -102,6 +108,82 @@ const ok = (id: number, headSha: string, conclusion = "success", status = "compl
 	({ databaseId: id, headSha, status, conclusion, url: `https://github.com/o/r/actions/runs/${id}` });
 const MSG = (ci: number[]) => ["Task", "", "Review: review#7 CLEAN", "Code-review: CLEAN",
 	...ci.map((id) => `CI: https://github.com/o/r/actions/runs/${id}`), "Unverified: none", ""].join("\n");
+
+const DOC_MSG = "Docs\n\nReview: agent#7 CLEAN\nUnverified: none\n";
+describe("deliver-check owner quote gate", () => {
+	it("accepts NFC and whitespace-normalized owner quotes in both documents", () => {
+		const t = setup();
+		t.task({ "DECISIONS.md": "Owner: «Keep the owner's exact words.»\n",
+			"PROCESS.md": "Owner: «Cafe\u0301   with\nspaces.»\n" });
+		const result = t.run(DOC_MSG);
+		assert.equal(result.code, 0, result.out);
+	});
+
+	it("accepts authentic owner ellipses and balanced nested quotes", () => {
+		const t = setup();
+		const message = "Wait... wait… Use «...» shorthand and «nested «quotes» too».";
+		writeFileSync(join(t.sessions, "authentic.jsonl"), JSON.stringify({ type: "message",
+			message: { role: "user", content: message } }) + "\n");
+		t.task({ "DECISIONS.md": `Owner: «${message}»\n`, "PROCESS.md": "Owner: «Wait... wait…»\n" });
+		const result = t.run(DOC_MSG);
+		assert.equal(result.code, 0, result.out);
+	});
+
+	it("rejects fabricated cuts and nested quotes, empty and unbalanced guillemets", () => {
+		for (const quote of ["«Keep exact words.»", "«Keep ... words.»", "«Keep … words.»",
+			"«Keep «exact» words.»", "«»", "«Keep the owner's exact words.", "words.»"]) {
+			const t = setup();
+			t.task({ "DECISIONS.md": `Owner: ${quote}\n` });
+			const result = t.run(DOC_MSG);
+			assert.equal(result.code, 1, `${quote}\n${result.out}`);
+			assert.match(result.out, /FAIL DECISIONS\.md:1 (quote is not verbatim|malformed quote)/);
+		}
+	});
+
+	it("checks entire multiline spans when only an interior line is added", () => {
+		const t = setup();
+		t.commit("main", { "PROCESS.md": "  Owner: «First line\nsecond line.»\n" });
+		t.git("push", "--quiet", "origin", "main");
+		t.task({ "PROCESS.md": "  Owner: «First line\ninvented middle\nsecond line.»\n" });
+		const result = t.run(DOC_MSG);
+		assert.equal(result.code, 1, result.out);
+		assert.match(result.out, /FAIL PROCESS\.md:1 quote is not verbatim/);
+	});
+
+	it("ignores unchanged historical spans and deletion-only hunks", () => {
+		const t = setup();
+		t.commit("main", { "DECISIONS.md": "«historical invention»\nremove me\nuntouched\n" });
+		t.git("push", "--quiet", "origin", "main");
+		t.task({ "DECISIONS.md": "«historical invention»\nuntouched\nnew plain text\n" });
+		const result = t.run(DOC_MSG);
+		assert.equal(result.code, 0, result.out);
+	});
+
+	it("reads the branch head, not main's or the working tree's document", () => {
+		const t = setup();
+		t.commit("main", { "DECISIONS.md": "Owner: «Keep the owner's exact words.»\n" });
+		t.git("push", "--quiet", "origin", "main");
+		t.task({ "DECISIONS.md": "Owner: «invented quote»\n" });
+		assert.match(t.run(DOC_MSG).out, /FAIL DECISIONS\.md:1 quote is not verbatim/);
+	});
+
+	it("fails closed without session files even on a plain docs change", () => {
+		const t = setup();
+		t.task({ "README.md": "changed\n" });
+		rmSync(t.sessions, { recursive: true });
+		const result = t.run(DOC_MSG);
+		assert.equal(result.code, 1, result.out);
+		assert.match(result.out, /FAIL owner quotes: no session files found/);
+	});
+
+	it("uses the platform delimiter for multiple corpus directories", () => {
+		const t = setup();
+		t.env.MY_PI_SESSIONS = join(t.tmp, "missing") + delimiter + t.sessions;
+		t.task({ "DECISIONS.md": "«Keep the owner's exact words.»\n" });
+		const result = t.run(DOC_MSG);
+		assert.equal(result.code, 0, result.out);
+	});
+});
 
 describe("deliver-check", () => {
 	it("passes a branch on current main with green CI and all trailers", () => {

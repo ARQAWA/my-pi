@@ -16,34 +16,55 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Main is the coordinator, not an independent implementer: «Да, он как техлид/тимлид, координатор, но не исполнитель самостоятельный.»
   Reason: keep orchestration and acceptance with Main and actual execution with worker subagents. The procedure
   is carried by [PROCESS.md](PROCESS.md).
-- (Superseded, see the current rule below.) Development workers, including subagents, were authorized to use
-  Sonnet medium/high/xhigh, Opus low only and GPT-6.1-Sol low/medium/high. This is development routing only, not a product model configuration or permission to add other
-  GPT models. Product review `LEVELS` remain Haiku 5.5 medium / Sonnet 5.5 low.
-- Owner: «Что-то подписка Cloud Code жёстко высаживается, поэтому давай пока уберём из работы саб-агентов Opus Low и Opus Medium. Давай оставим Sonnet Medium, Sonnet High, Sonnet Extra High. Для сложных задач будет Sonnet Extra High либо Opus Low. Opus Medium убираем вообще пока. Окей. Это надо скорректировать, отразить и сразу в работу внедрить»
-  Reason: the Claude subscription limit is running out; the restriction is temporary ("for now"). The balance rule
-  between Anthropic and GPT stays. Superseded by the next entry.
-- Development worker models and parallel limit. The parallel limit below is current; the model assignment is
-  superseded by the next entry. Owner, in order:
-  «ТАк вот все верно там написано давай не выдумывай хуйню»
-  «Одновременно до 10 первого уровня, вложенные похуй»
-  «модели - Соннет хай, и опус лоу / 6-1 лоу и медиум»
-  «опус и 6-1 лоу для обычной работы, для сложной хай соннет и медиум 6-1»
-  «вот так хочу переделать эту часть»
-  «блять не для сложных сделай опус медиум все таки»
-  Rule at that time (model assignment superseded by the next entry): ordinary work uses Opus 5.5 low or GPT-6.1-Sol low;
-  complex work uses Sonnet 5.5 high, Opus 5.5 medium or GPT-6.1-Sol medium; no other models or levels for
-  development workers. Current: at most 10 first-level subagents (started
-  by the coordinator) run in parallel; nested subagents do not count; a ceiling, not a quota. The even
-  Anthropic/GPT balance stays. Product review `LEVELS` are unchanged.
-  Reason: owner decision. The limit is carried by [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution)
-  and `AGENTS.md`.
-- Development worker models, current rule, correcting the previous entry. Owner (verbatim, after the quotes above):
-  «сложная работа опус медиум простая работа сонет хай»
-  Coordinator interpretation (the owner may correct it): Claude side, simple work is Sonnet 5.5 high and complex work
-  is Opus 5.5 medium; GPT side unchanged, simple is GPT-6.1-Sol low and complex is GPT-6.1-Sol medium. Opus low,
-  Sonnet medium/xhigh and Sol high are not allowed for development workers; no other models or levels. The limit of 10
-  first-level subagents and the even Anthropic/GPT balance stay. Product review `LEVELS` are unchanged.
-  Reason: owner decision. Carried by [PROCESS.md, Worker models](PROCESS.md#worker-models) (the table).
+- **Development worker models** `[D-WORK-MODELS]`. Rule for developing this repository with agents only, as the
+  owner confirmed; it is not a product model setting and not a rule for the rest of Pi. Three task classes:
+  ordinary, complex, and the hardest and most important. The classes, their model and reasoning pairs and the
+  machine-readable settings live only in the `coordinator-rules` JSON block of
+  [PROCESS.md, Worker models](PROCESS.md#worker-models); this entry does not repeat the pairs. Main starts only
+  ordinary `agent` subagents, gives `model` and `thinking` explicitly on every start and restart, and never starts
+  `code_writer`, `shell_runner` or `explore` itself. Those workers, explorers and `review` are used by the
+  subagents Main starts. The even Anthropic/GPT balance stays (entry below). Product review `LEVELS` and the fixed
+  models of the workers are unchanged.
+  Owner's messages, each whole and unchanged, from the session file
+  `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`; the physical JSONL line is named before
+  each. The second message cancels the Opus 5.5 low part of the first; the last message is the final table.
+  Line 4162:
+«Короче, по моделям. Сейчас, смотри, как я тебе скажу. Новые модели сабоагентов используешь для сложных задач: Sol-6.1 High и Opus Medium. Для простых задач используешь Opus Low и Sonnet High. Смотри, самая тупая модель — Opus Low, потом идёт Sonnet High. Это для простых задач. Для сложных задач — Opus Medium. Теперь по чату GPT-6.1. Sol Low для простых задач, Sol Medium для простых задач. Нет, не так. Смотри, по-другому. Для простых задач Opus Low и Sol Low. Для сложных задач это Sol Medium, Sol High либо Sonnet High, Opus Medium. Как понял, подтверди, пожалуйста.»
+  Line 4179:
+«Не, нихуя отмена! Простые задачи не Opus 5.5 low, а Sonnet 5.5 medium. У тебя Sonnet 5.5 medium и Sol 6.1 low. Вот так.
+
+Opus 5.5 Low — это слишком дорого»
+  Line 4183, the scope:
+«Но это касается только нашего с тобой Process MD. Это не на весь наш Pi, а именно на нашу репозиторию текущую, по нашему Process MD. Ты же понимаешь это, да или нет?»
+  Line 4188:
+«Да, и надо ещё чётко сконфигурировать, записать, отразить в правилах работы агента, что сложные задачи OPUS 5.5 Medium, Sonnet High и Sol 6.1 Medium, Sol 6.1 High. Я не знаю, понятно тебе это или нет, но OPUS 5.5 Medium в разы сильнее, чем Sonnet High. Если сложные делить на простые и ещё более сложные, если делить сложные на задачи попроще и посложнее, то посложнее делает Medium, а Sonnet High делает попроще. Ты это понимаешь, надеюсь, или нет? Потому что с Sol 6.1 всё понятно: там Medium слабее, а High сильнее.
+
+Это очень важно, чтобы не было такого, что ты на сложные задачи захуяриваешь solve high, а на более простые solve medium, блядь.
+
+Мне важно в этом плане с тобой, чтобы у нас была согласованность полная»
+  Line 4203, the final answer:
+«Да, ты прав. Это противоречие очень жёсткое и важное. Давай так сделаем. Смотри: Opus Medium и Soul High работают с самыми сложными задачами, а просто со сложными задачами работает Sonnet High и Soul Medium. Давай сделаем.
+
+У нас есть обычные задачи, сложные задачи и очень сложные, очень важные задачи. Так яснее?
+Я решил конфликт или еще нет?
+
+А почему у тебя дети молча получают родительскую модель? Такого не должно быть. Ты детей назначаешь сам. У тебя единственный, кто получает родительскую модель — это Explorer. Explorer получает родительскую модель, но это в обычной работе. А ты координатор, ты работаешь отдельно, у тебя другой flow, свой собственный. Понимаешь разницу?
+
+Да, и эти worker, code writer, shell runner работают на Haiku 5.5 Low. Блядь, в твоих словах есть смысл. Runner остаются на тех ролях, на которых они заложены. Code writer, shell runner, explorer. Но ты как координатор эти модели не используешь сам, ты их не запускаешь. Ты запускаешь обычных сабо-агентов, а они уже пользуются code writer, shell runner, reviewer и прочим. Понимаешь, о чём я?
+
+Ответы на твои вопросы. Простые задачи: Sonnet Medium и Sol 6.1 Low. Сложные задачи: Sonnet 5.5 High, Sol 6.1 Medium. И самые тяжёлые и самые важные задачи: Opus 5.5 Medium и Sol 6.1 High. Всё, 1A, то, что я написал. Теперь рабочие на хайку в этом репозитории запретить. Да! Всё так. Всю работу делают обычные сабо-агенты в таблице, а они уже поднимают workerов»
+  Coordinator reading (agent text, not owner words): the final table is the last paragraph of the line 4203
+  message; it adds the third class, the hardest and most important tasks; the Opus 5.5 low of line 4162 is
+  cancelled; Main does not start `code_writer`, `shell_runner` or `explore`, while its subagents use them on
+  their existing fixed roles.
+  Reason: owner decision, and the rule must not be lost again, so it has one source and a mechanical guard.
+  Carriers: [PROCESS.md, Worker models](PROCESS.md#worker-models) (the JSON block and the rules); the dev-only
+  project extension `.pi/extensions/coordinator-guard/` (Main's top-level session in this checkout only).
+  Superseded earlier entries: `DECISIONS-ARCHIVE.md`, A-0001 to A-0004.
+- **Development parallel limit** `[D-WORK-PARALLEL]`. At most 10 first-level subagents (started by the
+  coordinator) run in parallel; nested subagents do not count; a ceiling, not a quota. The owner's words are in
+  `DECISIONS-ARCHIVE.md`, A-0003 (message of 2026-10-23, session line 2462). Reason: owner decision. Carried by
+  [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution) and `AGENTS.md`.
 - Owner: «Смотри, надо скорректировать так, чтобы ты как координатор поровну поднимал модели из Anthropic и GPT, чтобы не было перевеса в другим, дисбаланса. Поднимай саб-агенты и те, и те, чтобы лимит расходовался равномерно. И зафиксирую это в процесс.nd файле, эту информацию на будущее»
   Reason: even use of both subscriptions' limits. Carried by [PROCESS.md, Worker models](PROCESS.md#worker-models).
 - The old paused Claude benchmark/tuning campaigns remain paused until explicitly resumed; saved results stay.
