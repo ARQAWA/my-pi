@@ -590,7 +590,11 @@ describe("compact UI end to end in real Pi", { concurrency: false }, () => {
 		assert.ok(stored.includes("[agent#1] Первая строка A.\nВторая строка A."), "the stored message is untouched");
 	});
 
-	it("e2e-cards-wait-result: the wait results of agent, code_writer and shell_runner as cards, Ctrl+O original", async () => {
+	it("e2e-cards-wait-result: wait results fold as tool-ui draws them; Ctrl+O shows agent-ui's expanded cards", async () => {
+		// Owner's wait amendment: collapsed, a wait is the summary part `Waited for N agents` and tool-ui's live block
+		// (header `wait <ids>`); the card is not required there. Ctrl+O on the wait call shows agent-ui's card of each
+		// result in expanded form (header id, status, model, effort, seconds and the full answer text verbatim), once,
+		// not the raw JSON.
 		const w = gate(() => fauxAssistantMessage("Ответ через wait W.\nХвост W."));
 		const cw = gate(() => fauxAssistantMessage("Ответ через wait CW.\nХвост CW."));
 		const sr = gate(() => fauxAssistantMessage("Ответ через wait SR.\nХвост SR."));
@@ -609,31 +613,43 @@ describe("compact UI end to end in real Pi", { concurrency: false }, () => {
 			toolUse(fauxToolCall("shell_runner", { action: "wait", ids: ["shell_runner#2"], timeout_ms: 60000 }, { id: "q6" })),
 			afterRunner.reply,
 		]);
-		const steps: [string, Gate, Gate, RegExp, string][] = [
-			["agent#2", w, afterAgent, /agent#2 finished · gpt-6\.1-sol \w+ · [\d.]+s/, "W"],
-			["code_writer#2", cw, afterWriter, /code_writer#2 finished · gpt-6-luna low · [\d.]+s/, "CW"],
-			["shell_runner#2", sr, afterRunner, /shell_runner#2 finished · gpt-6-luna medium · [\d.]+s/, "SR"],
+		const steps: [string, Gate, Gate, RegExp, string, string][] = [
+			["agent#2", w, afterAgent, /agent#2 finished · gpt-6\.1-sol \w+ · [\d.]+s/, "W", "Waited for 1 agent"],
+			["code_writer#2", cw, afterWriter, /code_writer#2 finished · gpt-6-luna low · [\d.]+s/, "CW", "Waited for 2 agents"],
+			["shell_runner#2", sr, afterRunner, /shell_runner#2 finished · gpt-6-luna medium · [\d.]+s/, "SR", "Waited for 3 agents"],
 		];
+		const count = (test: (line: string) => boolean) => rows().filter(test).length;
 		send("cards-wait");
-		// The card checks of each live wait are collected and asserted after the turn ends, so a missing card does not
-		// leave the session busy for the scenes after this one.
+		// The checks of each held step are collected and asserted after the turn ends, so a failed one does not leave the
+		// session busy for the scenes after this one.
 		const problems: string[] = [];
-		for (const [id, child, next, card, tag] of steps) {
+		for (const [id, child, next, card, tag, waited] of steps) {
 			await until(`the wait for ${id}`, () => waitStarts.includes(id) && child.entered());
 			child.release();
 			await until(`the main request after the ${id} wait`, () => next.entered());
-			await until(`the ${id} wait result in the live block`, () => hasRow(`wait ${id}`) || hasRow(card));
-			if (!hasRow(card)) problems.push(`${id}: no collapsed card in the live block\n${dump()}`);
-			if (!hasRow(`Ответ через wait ${tag}.`)) problems.push(`${id}: no first answer line`);
-			if (hasRow(`Хвост ${tag}.`) || hasRow('"reason"')) problems.push(`${id}: the raw result instead of the card`);
-			if (tag === "SR") {
-				term!.key(CTRL_O);
-				// The original is Pi's JSON text of the result, wrapped at the width: the second answer line is inside it.
-				await until("the original wait result", () => hasRow('"reason":"result"') && hasRow("Хвост"));
-				assert.ok(!hasRow(card), "the expanded view is the original, not the card");
-				term!.key(CTRL_O);
-				await until("folded back", () => summaryRows().length > 0 && !hasRow("Хвост"));
+			// Collapsed: the summary part and tool-ui's live block of the wait call.
+			await until(`the ${id} live block`, () => count((line) => line.trim() === `wait ${id}`) === 1);
+			const summary = summaryRows().at(-1);
+			if (summary === undefined || !rows()[summary].includes(waited)) problems.push(`${id}: no summary part "${waited}"\n${dump()}`);
+			else if (summary > rows().findIndex((line) => line.trim() === `wait ${id}`)) problems.push(`${id}: the summary is not above the live block`);
+			if (hasRow(card)) problems.push(`${id}: a collapsed card where tool-ui draws the live block`);
+			// Ctrl+O: the expanded card of the result, once, with the full answer text verbatim and no raw JSON.
+			term!.key(CTRL_O);
+			await until(`the expanded view at ${id}`, () => summaryRows().length === 0);
+			try {
+				await until(`the expanded ${id} card`, () => hasRow(card), 5_000);
+			} catch {
+				problems.push(`${id}: no expanded card on Ctrl+O\n${dump()}`);
 			}
+			if (hasRow(card)) {
+				if (count((line) => card.test(line)) !== 1) problems.push(`${id}: the card is not shown once\n${dump()}`);
+				const head = rows().findIndex((line) => card.test(line));
+				const body = rows().slice(head + 1).map((line) => line.trim());
+				if (body[0] !== `Ответ через wait ${tag}.` || body[1] !== `Хвост ${tag}.`) problems.push(`${id}: the full text is not under the header verbatim\n${dump()}`);
+			}
+			if (hasRow('"reason"') || hasRow('"results"')) problems.push(`${id}: raw JSON on Ctrl+O\n${dump()}`);
+			term!.key(CTRL_O);
+			await until(`folded back at ${id}`, () => summaryRows().length > 0 && count((line) => line.trim() === `wait ${id}`) === 1 && !hasRow(`Хвост ${tag}.`));
 			next.release();
 		}
 		await until("the answer", () => hasRow("Waited."));
@@ -641,9 +657,9 @@ describe("compact UI end to end in real Pi", { concurrency: false }, () => {
 		const r = rows();
 		const answer = r.findIndex((line) => line.includes("Waited."));
 		const summary = summaryRows().filter((i) => i < answer).at(-1);
-		assert.deepEqual(problems, [], "the collapsed wait cards");
+		assert.deepEqual(problems, [], "the wait results collapsed and on Ctrl+O");
 		assert.ok(summary !== undefined && /Waited for 3 agents/.test(r[summary]), `the waits fold into the summary\n${dump()}`);
-		assert.ok(!steps.some(([, , , card]) => hasRow(card)), "no wait card after the answer");
+		assert.ok(!steps.some(([id, , , card]) => hasRow(card) || hasRow(`wait ${id}`)), "no live block or card after the answer");
 		const custom = runtime!.session.messages.filter((m) => m.role === "custom" && /#2\]/.test(String((m as { content: unknown }).content)));
 		assert.deepEqual(custom, [], "a waited result is not also delivered as a message");
 	});
