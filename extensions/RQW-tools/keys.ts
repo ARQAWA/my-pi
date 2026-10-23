@@ -293,3 +293,24 @@ export function scopeOf(tool: string, args: unknown, cwd: string): Scope {
     return all;
   }
 }
+
+/** The barrier key of one file named in a bash command (footprint.ts): the same key a write of it gets. */
+export function fileKey(p: string, cwd: string): string | undefined {
+  try { return scopeKey(resolvePath(p, cwd)); } catch { return undefined; }
+}
+
+/** The key of a directory (the git repository root or the package folder of a bash command). */
+export function dirKey(dir: string): string {
+  try { return scopeKey(dir) ?? dir; } catch { return dir; }
+}
+
+/**
+ * The ledger identity of a file (ledger.ts): the native real path, which resolves symlinks and, on case-insensitive
+ * file systems, gives the stored case and Unicode form of an existing file, so every alias of one file shares its
+ * records. No folding of our own: two distinct files never share records (a false P1 refusal), unlike the barrier key
+ * that may merge them on purpose. A missing file keys by its real parent and the name as given (it has no records yet).
+ * It stays the same when the file is replaced by a rename (a new inode); a hardlinked file keeps its own path.
+ */
+export function identityKey(abs: string): string {
+  try { return canonical(abs, path).key; } catch { return path.resolve(abs); }
+}

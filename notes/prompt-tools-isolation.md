@@ -34,7 +34,7 @@ Appended after Pi's `<cwd>` section, in this order:
 </search_method>
 
 <rqw_tools_execution>
-- A shell command waits for the calls before it and holds the calls after it.
+- A shell command waits for the calls before it and holds the calls after it; one still running after 12 seconds continues in the background as a job, which holds the later calls of the same response and, from later responses, only calls that change what it names as held: a package folder it installs, the git index, files it writes.
 </rqw_tools_execution>
 ```
 

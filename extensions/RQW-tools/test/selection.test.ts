@@ -235,7 +235,12 @@ for (const [name, sdk] of [["library", library], ["bundle", bundle]] as const) {
 			try { await session.bindExtensions({ onError: (error) => errors.push(error.error) }); }
 			catch (error) { await close(); throw error; }
 			assert.deepEqual(errors, []);
-			return { session, paths, errors, close, extensionsResult: loader.getExtensions(), names: () => session.getActiveToolNames().slice().sort() };
+			return { session, paths, errors, close, extensionsResult: loader.getExtensions(), names: () => {
+				// The job tool comes with any tool that goes to the background (index.ts); the rest is compared to stock.
+				const active = session.getActiveToolNames().slice().sort();
+				if (enabled && active.includes("job")) assert.ok(active.some((n) => ["bash", "codemode", "read", "edit", "write", "grep", "find"].includes(n)));
+				return active.filter((n) => n !== "job");
+			} };
 		}
 
 		for (const options of [
@@ -297,13 +302,13 @@ for (const [name, sdk] of [["library", library], ["bundle", bundle]] as const) {
 					lifecycle.session.setActiveToolsByName(FOUR);
 					await lifecycle.newSession();
 					assert.notEqual(lifecycle.session.sessionManager, initialManager);
-					assert.deepEqual(lifecycle.session.getActiveToolNames().sort(), expected);
+					assert.deepEqual(lifecycle.session.getActiveToolNames().filter((n) => n !== "job").sort(), expected);
 					const manager = lifecycle.session.sessionManager;
 					lifecycle.session.setActiveToolsByName(FOUR);
 					const entryId = manager.appendMessage({ role: "user", content: "fork", timestamp: Date.now() });
 					await lifecycle.fork(entryId, { position: "at" });
 					assert.equal(lifecycle.session.sessionManager, manager, "native in-memory fork reuses the manager");
-					assert.deepEqual(lifecycle.session.getActiveToolNames().sort(), expected);
+					assert.deepEqual(lifecycle.session.getActiveToolNames().filter((n) => n !== "job").sort(), expected);
 					assert.equal(intentMap(sdk.AgentSession).get(manager)?.selected, Object.keys(options).length > 0);
 				} finally { await lifecycle.dispose(); }
 				assert.deepEqual(Object.getOwnPropertyDescriptor(sdk.AgentSession.prototype, "bindExtensions"), descriptor);

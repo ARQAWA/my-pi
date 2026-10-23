@@ -285,3 +285,25 @@ rename would fail).
 - Hardlinks and writes through dangling symlinks (#7): different keys; accepted.
 - `codemode` ordering relative to its sibling top-level calls: the orchestrator is not in the barrier by design (#30).
 - Tool calls of other extensions that mutate files.
+
+---
+
+## 9. Background jobs: races R16-R24 (FR-safe, `DECISIONS.md` Tools «Background jobs»)
+
+R1-R15 of the background-job design are in `my-pi-evidence/bash-background/D4-ORDERING.md` section 3; the full table
+with the replay numbers is `my-pi-evidence/bash-background/routing/ROUTING.md` section 7.
+
+| # | Conflict | Handled by | Model must | Test |
+|---|---|---|---|---|
+| R16 | `npm ci` in the background, then `npm test` or `node` in that folder | prevented: `pkg:` hold; the test is a queued job behind the install | nothing | `background.test.ts` R16 |
+| R17 | background `git commit`/`rebase` vs a later git change, also from another session | prevented: `git:` hold, process-wide (`ledger.ts` `claim`) | nothing | `background.test.ts` R17, `ledger.test.ts` claims |
+| R18 | `git status`/`diff` while another session commits | not prevented (reads hold nothing) | re-run after the commit if needed | - |
+| R19 | server not ready when a check runs | `job wait` with `until` | wait for readiness, not `sleep` | `background.test.ts` W1 |
+| R20 | two servers on one port | note at start when a running job names the port | kill one or change the port | `background.test.ts` port note |
+| R21 | a command classified read-only that writes, inside a response | cannot happen: inside a response the classifier is not used | nothing | - |
+| R22 | a writer the classifier misses | no hold: D4 behaviour plus the effects report | as R3-R4 | `footprint.test.ts` doubt cases |
+| R23 | a file changed by the user's editor | write precondition; notes say "outside your tools" | re-read; never overwrite blindly | `background.test.ts` P1, `ledger.test.ts` |
+| R24 | kill of a predecessor with queued followers | followers cancelled and listed in `cancelled_followers` | re-issue | `background.test.ts` K1, `barrier-detach.test.ts` followers |
+
+Residual: writes outside the scanned list (ignored folders, outside cwd) that no later file tool touches; which of two
+unknown commands running together wrote a file (both are named under `alongside`).

@@ -950,6 +950,83 @@ describe("subagent parity", () => {
 		await shutdown(m);
 	});
 
+	/** A main-session extension answering the RQW-tools offer like RQW-tools: all six tools, `job`, and the child's codemode. */
+	function toolsOffer(seen: { label?: string; codemode?: ToolDefinition }[], returned: ToolDefinition[], jobEvents: string[]): ExtensionFactory {
+		return (pi: ExtensionAPI) => {
+			pi.events.on("rqw-tools:subagent-tools", (request) => (request as { offer(f: unknown): void }).offer(
+				(dir: string, _settings: unknown, _nested: unknown, options: { label?: string; codemode?: ToolDefinition } = {}) => {
+					seen.push(options);
+					const plain = ["read", "bash", "edit", "write", "grep", "find"].map((name) => ({
+						...createWriteToolDefinition(dir), name, label: name, description: `OFFERED ${name}`,
+					}));
+					const job = { name: "job", label: "job", description: "OFFERED job", parameters: Type.Object({}),
+						execute: async () => ({ content: [{ type: "text" as const, text: "{}" }], details: {} }),
+						jobs: { abortAll: () => jobEvents.push(`abortAll ${options.label}`), dispose: () => jobEvents.push(`dispose ${options.label}`) } };
+					const codemode = options.codemode ? [{ ...options.codemode, description: "OFFERED codemode" }] : [];
+					returned.push(...codemode);
+					return [...plain, ...codemode, job];
+				}));
+		};
+	}
+
+	it("with RQW-tools offering: a child's codemode is the offered one built from the child's own codemode; explorers get job, never edit or write", async t => {
+		const sessions = captureSessions(t);
+		const seen: { label?: string; codemode?: ToolDefinition }[] = [];
+		const returned: ToolDefinition[] = [];
+		const jobEvents: string[] = [];
+		const m = await startMain("tui", undefined, [], EXTENSION, {
+			factories: [createCodemodeExtension(), createToolSearchExtension(), toolsOffer(seen, returned, jobEvents)],
+			tools: ["read", "bash", "edit", "write", "grep", "find", "agent", "code_writer", "shell_runner", "codemode", "tool_search"],
+		});
+		const mainCodemode = m.session.getToolDefinition("codemode");
+		sub.replies.push(fauxAssistantMessage("one"));
+		await m.call({ action: "start", system: SYSTEM, task: "hi", model: "sub/a", tools: ["read"] });
+		await until(() => m.delivered().length === 1, "the delivery");
+		assert.deepEqual(sub.requests[0].tools.sort(), ["agent", "code_writer", "codemode", "job", "read", "shell_runner", "tool_search"]);
+		assert.equal(seen[0].label, "agent#1");
+		assert.equal(seen[0].codemode?.name, "codemode", "the child's own Pi codemode definition goes to the factory");
+		assert.notEqual(seen[0].codemode, mainCodemode, "built for the child, not the main session's");
+		const child = sessions.find(s => s !== m.session)!;
+		assert.equal(child.getToolDefinition("codemode"), returned[0], "the child runs the codemode the factory returned");
+
+		main.replies.push(fauxAssistantMessage("FOUND"));
+		await m.call({ action: "start", explore: "quick", task: "find" });
+		await until(() => m.delivered().length === 2, "the explorer delivery");
+		const explorer = main.requests.filter(r => r.system[0]?.includes("<role>\nYou are a file search specialist."));
+		assert.deepEqual(explorer[0].tools.sort(), ["bash", "codemode", "find", "grep", "job", "read", "tool_search"], "job only because it is offered; no edit or write though offered");
+		assert.equal(seen[1].label, "agent#2");
+		const explorerSession = sessions.filter(s => s !== m.session)[1];
+		for (const name of ["edit", "write", "agent", "code_writer", "shell_runner"]) assert.equal(explorerSession.getToolDefinition(name), undefined, name);
+		assert.equal(explorerSession.getToolDefinition("codemode"), returned[1]);
+		await m.call({ action: "stop", id: "agent#2" });
+		assert.deepEqual(jobEvents, ["dispose agent#2"], "the explorer's jobs end with it");
+		await shutdown(m);
+	});
+
+	it("without an RQW-tools offer an explorer has no job tool", async () => {
+		const m = await startMain();
+		main.replies.push(fauxAssistantMessage("FOUND"));
+		await m.call({ action: "start", explore: "quick", task: "find" });
+		await until(() => m.delivered().length === 1, "the delivery");
+		assert.deepEqual(main.requests[0].tools.sort(), ["bash", "find", "grep", "read"]);
+		await shutdown(m);
+	});
+
+	it("labels for RQW-tools notes are paths from the main session: agent#1/agent#1", async () => {
+		const seen: { label?: string; codemode?: ToolDefinition }[] = [];
+		const m = await startMain("tui", undefined, [], EXTENSION, { factories: [toolsOffer(seen, [], [])] });
+		sub.replies.push(
+			fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "go deeper", model: "deep/g" })], { stopReason: "toolUse" }),
+			fauxAssistantMessage("WAITING"),
+			fauxAssistantMessage("TOP"),
+		);
+		await m.call({ action: "start", task: "delegate", model: "sub/a" });
+		await until(() => m.delivered().length === 1, "the final delivery", 5000);
+		assert.deepEqual(seen.map(o => o.label), ["agent#1", "agent#1/agent#1"]);
+		assert.ok(sub.requests.at(-1)!.texts.includes("[agent#1] DEEP"), "the ids the model sees stay agent#N");
+		await shutdown(m);
+	});
+
 	it("recursion: a subagent starts its own subagent, which gets the main prompt once and agent again; the answer flows up", async () => {
 		const m = await startMain();
 		const mainPrompt = m.session.systemPrompt.trimEnd();

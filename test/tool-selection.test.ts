@@ -70,7 +70,8 @@ for (const [name, sdk] of [["library", library], ["bundle", bundle]] as const) {
 				assert.deepEqual(errors, []);
 				assert.deepEqual(process.argv, argv);
 			} catch (error) { await close(); throw error; }
-			return { session, close, errors, names: () => session.getActiveToolNames().slice().sort() };
+			// RQW-tools adds its job tool with any tool that goes to the background; the rest is compared.
+			return { session, close, errors, names: () => session.getActiveToolNames().filter((n) => n !== "job").sort() };
 		}
 
 		for (const ownLoader of [true, false]) {

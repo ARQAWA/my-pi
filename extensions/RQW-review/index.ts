@@ -406,7 +406,11 @@ type Params = {
  * gets a factory of fresh definitions. Nothing here imports RQW-tools; the same handshake as RQW-agent.
  */
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
-type ToolsFactory = (cwd: string, settings: () => unknown) => ToolDefinition[];
+/**
+ * `options.label` names the reviewer in RQW-tools' notes of other sessions; optional. `options.codemode`: the reviewer's
+ * own Pi `codemode` definition; the factory returns it as a call of the reviewer's barrier and a job of its registry.
+ */
+type ToolsFactory = (cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition }) => ToolDefinition[];
 
 /**
  * Channel on `pi.events` where RQW-agent, when it is loaded, asks for the `review` tool for each of its general
@@ -415,11 +419,17 @@ type ToolsFactory = (cwd: string, settings: () => unknown) => ToolDefinition[];
  * lifetime. Nothing in RQW-review depends on RQW-agent.
  */
 const SUBAGENT_REVIEW = "rqw-review:subagent-review";
-/** Where one `review` tool lives: the bus of the main session, the default GPT Fast, and, for a child, its lifetime. */
-export type ReviewHost = { events: EventBus; fast: () => boolean; signal?: AbortSignal };
+/**
+ * Where one `review` tool lives: the bus of the main session, the default GPT Fast, and, for a child, its lifetime and
+ * the reviewer's label in RQW-tools' notes ("agent#1/review"; "review" when absent).
+ */
+export type ReviewHost = { events: EventBus; fast: () => boolean; signal?: AbortSignal; label?: string };
 
-/** The offered RQW-tools definitions of the reviewer, filtered to its four names; undefined when none is offered. */
-function offeredTools(pi: ExtensionAPI, events: EventBus, cwd: string): ToolDefinition[] | undefined {
+/** The jobs of an offered `job` definition: Esc of a reviewer run aborts them, the end of the review disposes them. */
+type JobControl = { abortAll(): void; dispose(): void };
+
+/** The RQW-tools factory of reviewer tools when RQW-tools is loaded; undefined otherwise. */
+function offeredFactory(events: EventBus): ToolsFactory | undefined {
 	let factory: ToolsFactory | undefined;
 	// Pi's event bus calls every handler synchronously inside emit, so an offer is in place when emit returns.
 	events.emit(SUBAGENT_TOOLS, {
@@ -427,7 +437,18 @@ function offeredTools(pi: ExtensionAPI, events: EventBus, cwd: string): ToolDefi
 			factory = f;
 		},
 	});
-	return factory?.(cwd, () => pi.getSettings()).filter((d) => REVIEWER_TOOLS.includes(d.name)).map(normalizeSearchTool);
+	return factory;
+}
+
+/**
+ * The offered RQW-tools definitions of the reviewer, filtered to its four names plus `job` (a call still running after
+ * 12 s goes to the background; the reviewer waits for or kills it) and, when it has `codemode`, that one as a call of
+ * its barrier. Without a returned `codemode`, Pi's own definition stays.
+ */
+function offeredTools(pi: ExtensionAPI, factory: ToolsFactory, cwd: string, label: string, codemode?: ToolDefinition): ToolDefinition[] {
+	const tools = factory(cwd, () => pi.getSettings(), undefined, { label, ...(codemode ? { codemode } : {}) })
+		.filter((d) => REVIEWER_TOOLS.includes(d.name) || d.name === "job" || (codemode && d.name === "codemode")).map(normalizeSearchTool);
+	return codemode && !tools.some((d) => d.name === "codemode") ? [...tools, codemode] : tools;
 }
 
 function textOf(content: unknown): string {
@@ -582,6 +603,17 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 	// The reviewer is a child too: Pi's built-in codemode and tool_search as its caller has them active.
 	const active = new Set(pi.getActiveTools());
 	const builtins = BUILTIN_TOOLS.filter((name) => active.has(name));
+	// With RQW-tools, codemode is Pi's definition built from the reviewer's API and handed to the factory (a call of the
+	// reviewer's barrier and a job of its registry); without an offer it is registered exactly as Pi's factory does.
+	// The offer is asked for at that point of the reload when the reviewer has codemode, otherwise right after it.
+	let factory: ToolsFactory | undefined;
+	let codemode: ToolDefinition | undefined;
+	const withCodemode = (sub: ExtensionAPI) => {
+		factory = signal.aborted ? undefined : offeredFactory(host.events);
+		// The built-in factory only calls `registerTool`; the rest of the API stays the reviewer's for its callbacks.
+		if (factory) createCodemodeExtension()(Object.assign(Object.create(sub), { registerTool: (d: ToolDefinition) => void (codemode = d) }));
+		else createCodemodeExtension()(sub);
+	};
 	// No extensions, skills, prompt templates, themes or context files; the prompt is REVIEWER.md, with Pi's <cwd> block.
 	const resourceLoader = new DefaultResourceLoader({
 		cwd: ctx.cwd,
@@ -596,7 +628,7 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 		appendSystemPromptOverride: () => [],
 		// Pi's codemode and tool_search when the caller has them active, and the git guard of every bash call, stock or
 		// offered (a codemode script's bash calls pass the same hook).
-		extensionFactories: [...builtins.map((name) => (name === "codemode" ? createCodemodeExtension() : createToolSearchExtension())), (sub: ExtensionAPI) => {
+		extensionFactories: [...builtins.map((name) => (name === "codemode" ? withCodemode : createToolSearchExtension())), (sub: ExtensionAPI) => {
 			fastGpt(sub, () => inherited);
 			sub.on("tool_call", (event) => {
 				if (event.toolName !== "bash" || typeof event.input.command !== "string") return;
@@ -607,21 +639,24 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 	});
 	await untilAborted(resourceLoader.reload(), signal);
 	signal.throwIfAborted();
-	const offered = offeredTools(pi, host.events, ctx.cwd);
-	signal.throwIfAborted();
+	if (!builtins.includes("codemode")) factory = offeredFactory(host.events);
+	const offered = factory ? offeredTools(pi, factory, ctx.cwd, host.label ?? "review", codemode) : undefined;
+	const jobs = (offered?.find((d) => d.name === "job") as (ToolDefinition & { jobs?: JobControl }) | undefined)?.jobs;
+	if (signal.aborted) { jobs?.dispose(); signal.throwIfAborted(); }
 	const creating = createAgentSession({
 		cwd: ctx.cwd,
 		model,
 		thinkingLevel: spec.thinking,
 		modelRuntime,
 		resourceLoader,
-		tools: [...REVIEWER_TOOLS, ...builtins],
+		tools: [...REVIEWER_TOOLS, ...(jobs ? ["job"] : []), ...builtins],
 		customTools: offered ?? reviewerTools(ctx.cwd),
 		sessionManager: SessionManager.inMemory(ctx.cwd),
 		settingsManager,
 	}).then((created) => {
 		// createAgentSession has no signal: dispose a session that materializes after cancellation.
 		if (signal.aborted) {
+			jobs?.dispose();
 			created.session.dispose();
 			signal.throwIfAborted();
 		}
@@ -631,6 +666,7 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 	try {
 		created = await untilAborted(creating, signal);
 	} catch (error) {
+		jobs?.dispose();
 		void creating.then(({ session }) => session.dispose()).catch(() => {});
 		throw error;
 	}
@@ -643,7 +679,8 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 		// Reviewer Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
 		return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 	};
-	const stop = () => { void session.abort().catch(() => {}); };
+	// Esc of the review: its background jobs die with the run (as in the main session and subagents).
+	const stop = () => { jobs?.abortAll(); void session.abort().catch(() => {}); };
 	try {
 		signal.addEventListener("abort", stop, { once: true });
 		if (signal.aborted) throw new Error("aborted");
@@ -661,6 +698,8 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 		return verdictOf(text);
 	} finally {
 		signal.removeEventListener("abort", stop);
+		// The review is over: no job of the reviewer outlives it.
+		jobs?.dispose();
 		session.dispose();
 	}
 }

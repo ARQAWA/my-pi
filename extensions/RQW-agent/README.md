@@ -33,8 +33,16 @@ are leaves. This extension imports no other RQW extension. Optional RQW-tools de
 
 - `codemode` and `tool_search`: a child (subagent, explorer, worker) gets Pi's own built-in definitions
   (`createCodemodeExtension`, `createToolSearchExtension`) when its caller has them active, as main has them through
-  RQW-settings. Child codemode is the stock definition, not RQW-tools' barrier-grouped one: its script calls are
-  ordered among themselves by the child's barrier, not as one call against the child's parallel calls.
+  RQW-settings. With an RQW-tools offer, the child's codemode is Pi's definition built from the child's own API and
+  passed to the factory as `options.codemode`; the factory returns it as one call of the child's barrier and a job of
+  the child's registry (after 12 s it goes to the background as a whole script, like main's), and its scripts share
+  the process's codemode worker slots with main and every other child. Without an offer it is registered exactly as
+  Pi's built-in factory does. The offer is asked for during the child's loader reload when it has codemode, otherwise
+  right after the reload.
+- Labels: the factory's `options.label` is the child's path from the main session (`agent#1`, `agent#1/agent#1`,
+  `agent#1/code_writer#2`, a child's reviewer `agent#1/review`); it is shown only in RQW-tools' notes of other
+  sessions. The ids the model sees stay `agent#N`, and each registry keeps its own unique owner.
+- Explorers get `job` only when RQW-tools offers it; edit and write never, even when offered.
 - `review`: a general subagent gets RQW-review's tool when RQW-review is loaded, through its own handshake
   `rqw-review:subagent-review` on `pi.events` ([RQW-review README](../RQW-review/README.md#review-in-subagents)).
 - Settings: every child's in-memory `SettingsManager` copies the caller's effective `shellPath`, `shellCommandPrefix`,
@@ -45,6 +53,11 @@ are leaves. This extension imports no other RQW extension. Optional RQW-tools de
   tools. `cacheWarming` stays off. Not copied: UI and terminal settings, default model/thinking and enabled models
   (the child's model is explicit), default tools (explicit allowlist), packages, extensions, skills, prompts and themes
   (children load no resources), branch summaries (no tree navigation), session storage, sharing and telemetry.
+- `job`: an offered set always includes RQW-tools' `job` tool (background jobs of the child's own calls), which the
+  child gets in addition to its base tools; its definition carries `jobs.abortAll()`, called on `interrupt`, and
+  `jobs.dispose()`, called when the child is closed (`stop`, `restart`, caller shutdown). The factory call passes
+  `{ label: "agent#1" }` (or `code_writer#2`, ...) as its optional fourth argument, so RQW-tools names the child in
+  other sessions' notes and holds. Rule: [DECISIONS.md, Tools](../../DECISIONS.md#tools).
 - Workers keep their fixed role prompt and get a `<environment>` block with the working directory, OS and today's
   UTC date ([prompt.ts](prompt.ts)).
 

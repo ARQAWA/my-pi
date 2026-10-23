@@ -90,9 +90,11 @@ after(async () => {
 });
 
 describe("registration", () => {
-	it("registers the six tools with stock names and parameter names", () => {
+	it("registers the six tools with stock names and parameter names, and the job tool", () => {
 		const { tools } = load();
-		assert.deepEqual(Object.keys(tools).sort(), ["bash", "edit", "find", "grep", "read", "write"]);
+		assert.deepEqual(Object.keys(tools).sort(), ["bash", "edit", "find", "grep", "job", "read", "write"]);
+		assert.deepEqual(Object.keys(tools.job.parameters.properties).sort(), ["action", "id", "ids", "lines", "timeout_ms", "until"]);
+		assert.equal(tools.job.defaultActive, false, "job follows the selection (session_start)");
 		const cwd = process.cwd();
 		const stock: Record<string, any> = {
 			read: createReadToolDefinition(cwd),
@@ -160,25 +162,28 @@ describe("registration", () => {
 		assert.equal(sent.write.strict, true);
 	});
 
-	it("session_start adds grep and find on every reason but reload, only when the user made no tool selection", () => {
+	it("session_start adds grep and find on every reason but reload, only when the user made no tool selection; job with any of the tools", () => {
 		for (const reason of ["startup", "new", "resume", "fork"]) {
 			const fake = load(["read", "bash", "edit", "write"]);
 			fake.handlers.session_start({ reason }, fake.ctx);
-			assert.deepEqual(fake.setCalls, [["read", "bash", "edit", "write", "grep", "find"]], reason);
+			assert.deepEqual(fake.setCalls, [["read", "bash", "edit", "write", "grep", "find", "job"]], reason);
 		}
 		// Pi keeps the active set through a reload, tools the user switched off included
 		const reloaded = load(["read", "bash", "edit", "write"]);
 		reloaded.handlers.session_start({ reason: "reload" }, reloaded.ctx);
 		assert.deepEqual(reloaded.setCalls, [], "reload");
-		const full = load(["read", "grep", "find"]);
+		const full = load(["read", "grep", "find", "job"]);
 		full.handlers.session_start({ reason: "resume" }, full.ctx);
 		assert.deepEqual(full.setCalls, []);
 		const withSetting = load(["read", "bash"], { defaultTools: ["read", "bash"] });
 		withSetting.handlers.session_start({ reason: "startup" }, withSetting.ctx);
-		assert.deepEqual(withSetting.setCalls, [], "defaultTools set");
+		assert.deepEqual(withSetting.setCalls, [["read", "bash", "job"]], "defaultTools set: only job");
 		const noSettings = load(["read"], "throws");
 		noSettings.handlers.session_start({ reason: "startup" }, noSettings.ctx);
-		assert.deepEqual(noSettings.setCalls, [], "no settings: stock set stays");
+		assert.deepEqual(noSettings.setCalls, [["read", "job"]], "no settings: stock set plus job");
+		const none = load(["ls"], { defaultTools: ["ls"] });
+		none.handlers.session_start({ reason: "startup" }, none.ctx);
+		assert.deepEqual(none.setCalls, [], "no tool that goes to the background: no job");
 		const argv = process.argv;
 		try {
 			for (const flag of ["--tools", "-t", "--exclude-tools", "-xt", "--no-tools", "-nt", "--no-builtin-tools", "-nbt"]) {
@@ -186,7 +191,7 @@ describe("registration", () => {
 					process.argv = [...argv, ...args];
 					const fake = load(["read"]);
 					fake.handlers.session_start({ reason: "startup" }, fake.ctx);
-					assert.deepEqual(fake.setCalls, [], args.join(" "));
+					assert.deepEqual(fake.setCalls, [["read", "job"]], args.join(" "));
 				}
 			}
 		} finally {
@@ -194,14 +199,15 @@ describe("registration", () => {
 		}
 	});
 
-	it("offers createTools on rqw-tools:subagent-tools; each call gives six fresh definitions", () => {
+	it("offers createTools on rqw-tools:subagent-tools; each call gives six fresh definitions and a fresh job tool", () => {
 		const fake = load();
 		let offered: unknown;
 		fake.channels["rqw-tools:subagent-tools"]({ offer: (f: unknown) => (offered = f) });
 		assert.equal(offered, createTools);
 		const one = createTools(process.cwd(), () => ({}));
 		const two = createTools(process.cwd(), () => ({}));
-		assert.deepEqual(one.map((d) => d.name).sort(), ["bash", "edit", "find", "grep", "read", "write"]);
+		assert.deepEqual(one.map((d) => d.name).sort(), ["bash", "edit", "find", "grep", "job", "read", "write"]);
+		assert.equal(typeof (one.find((d) => d.name === "job") as any).jobs.dispose, "function");
 		for (const d of one) assert.notEqual(d, two.find((e) => e.name === d.name), d.name);
 		assert.deepEqual(Object.keys((one.find((d) => d.name === "write") as any).parameters.properties).sort(), ["content", "files", "path"]);
 		assert.doesNotThrow(() => fake.channels["rqw-tools:subagent-tools"](undefined), "a request without offer is ignored");

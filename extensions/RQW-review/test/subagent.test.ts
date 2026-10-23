@@ -18,7 +18,11 @@ import {
 import {
 	AgentSession,
 	createAgentSession,
+	createBashToolDefinition,
 	createCodemodeExtension,
+	createFindToolDefinition,
+	createGrepToolDefinition,
+	createReadToolDefinition,
 	createToolSearchExtension,
 	DefaultResourceLoader,
 	type ExtensionFactory,
@@ -27,6 +31,7 @@ import {
 	ModelRuntime,
 	SessionManager,
 	SettingsManager,
+	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { ReviewHost } from "../index.ts";
 
@@ -72,14 +77,14 @@ async function mainBus(options: { factories?: ExtensionFactory[]; tools?: string
 }
 
 /** A child session built like RQW-agent's: in memory, no extensions but the offered review registration. */
-async function child(register: (child: ExtensionAPI, host: ReviewHost) => void, host: ReviewHost) {
+async function child(register: (child: ExtensionAPI, host: ReviewHost) => void, host: ReviewHost, codemode = false) {
 	const settingsManager = SettingsManager.inMemory({ retry: { enabled: false } });
 	const loader = new DefaultResourceLoader({ cwd: root, agentDir: join(root, "agent"), settingsManager,
 		noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
-		extensionFactories: [(sub) => register(sub, host)] });
+		extensionFactories: [...(codemode ? [createCodemodeExtension()] : []), (sub) => register(sub, host)] });
 	await loader.reload();
 	const { session } = await createAgentSession({ cwd: root, model: childFaux.getModel(), modelRuntime: runtime, resourceLoader: loader,
-		tools: ["read", "review"], sessionManager: SessionManager.inMemory(root), settingsManager });
+		tools: ["read", "review", ...(codemode ? ["codemode"] : [])], sessionManager: SessionManager.inMemory(root), settingsManager });
 	return session;
 }
 
@@ -217,6 +222,69 @@ it("the reviewer is a child too: codemode and tool_search when its caller has th
 			await main.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 			main.dispose();
 		}
+	}
+});
+
+it("with RQW-tools offering: a child's reviewer gets the offered codemode built from its own, its label, and the child's end disposes its jobs", async (t) => {
+	const sessions: AgentSession[] = [];
+	const original = (AgentSession.prototype as any)._bindExtensionCore;
+	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function (this: AgentSession, ...args: unknown[]) {
+		sessions.push(this);
+		return original.apply(this, args);
+	});
+	const seen: { label?: string; codemode?: ToolDefinition }[] = [];
+	const returned: ToolDefinition[] = [];
+	const jobEvents: string[] = [];
+	const offerTools: ExtensionFactory = (pi) => {
+		pi.events.on("rqw-tools:subagent-tools", (request) => (request as { offer(f: unknown): void }).offer(
+			(dir: string, _settings: unknown, _nested: unknown, options: { label?: string; codemode?: ToolDefinition } = {}) => {
+				seen.push(options);
+				const plain = [createReadToolDefinition, createBashToolDefinition, createGrepToolDefinition, createFindToolDefinition].map((make) => make(dir));
+				const codemode = options.codemode ? [{ ...options.codemode, description: "OFFERED codemode" } as ToolDefinition] : [];
+				returned.push(...codemode);
+				return [...plain, ...codemode, {
+					name: "job", label: "job", description: "OFFERED job", parameters: { type: "object", properties: {} },
+					execute: async () => ({ content: [{ type: "text", text: "{}" }], details: {} }),
+					jobs: { abortAll: () => jobEvents.push("abortAll"), dispose: () => jobEvents.push("dispose") },
+				}];
+			}));
+	};
+	const { session: main, events } = await mainBus({ factories: [offerTools] });
+	const register = offer(events);
+	const controller = new AbortController();
+	const declared: string[][] = [];
+	reviewerFaux.setResponses([async (context: TranscriptContext, options) => {
+		const names = new Set<string>();
+		for (const m of context.messages) if (m.role === "system") for (const tool of m.toolsAdded ?? []) names.add(tool.name);
+		declared.push([...names].sort());
+		await new Promise<void>((r) => options?.signal?.addEventListener("abort", () => r(), { once: true }));
+		return fauxAssistantMessage(fauxText("CLEAN"));
+	}]);
+	childFaux.setResponses([
+		() => fauxAssistantMessage(fauxToolCall("review", { level: "blind", object: "a.ts", criterion: "c" }, { id: "r1" }), { stopReason: "toolUse" }),
+		() => fauxAssistantMessage(fauxText("waiting")),
+	]);
+	// The child has codemode active, as RQW-agent gives it when its caller has it.
+	const sub = await child(register, { events, fast: () => false, signal: controller.signal, label: "agent#1/review" }, true);
+	try {
+		const run = sub.prompt("TASK");
+		await until(() => declared.length === 1, "the reviewer request");
+		assert.deepEqual(declared[0], ["bash", "codemode", "find", "grep", "job", "read"]);
+		assert.equal(seen.length, 1);
+		assert.equal(seen[0].label, "agent#1/review", "the path label of a child's reviewer");
+		assert.equal(seen[0].codemode?.name, "codemode", "the reviewer's own Pi codemode goes to the factory");
+		const reviewer = sessions.find((s) => s !== main && s !== sub)!;
+		assert.equal(reviewer.getToolDefinition("codemode"), returned[0], "the reviewer runs the returned codemode");
+		assert.deepEqual(jobEvents, []);
+		controller.abort();
+		await until(() => jobEvents.includes("dispose"), "the child's end disposes the reviewer's jobs");
+		assert.deepEqual(jobEvents, ["abortAll", "dispose"]);
+		await sub.abort();
+		await run.catch(() => {});
+	} finally {
+		sub.dispose();
+		await main.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+		main.dispose();
 	}
 });
 

@@ -26,15 +26,20 @@ separate later work. The verdict message's `details` carry the model that actual
 ## Tools and working directory
 
 Each fresh session asks on `pi.events` channel `rqw-tools:subagent-tools` for a factory, using the RQW-agent
-handshake without importing it. When offered, its fresh definitions are filtered to `read`, `bash`, `grep`, `find`;
-otherwise Pi supplies stock tools. Both offered and stock grep/find drop empty optional arguments before chaining
+handshake without importing it. When offered, its fresh definitions are filtered to `read`, `bash`, `grep`, `find`,
+plus RQW-tools' `job`: a reviewer call still running after 12 s goes to the background as in any session, the reviewer
+waits for or kills it, Esc of the review aborts its jobs and the end of the review (also the end of a subagent that
+asked for it) disposes them. The factory call passes `{ label: "review" }`. Otherwise Pi supplies stock tools (no
+background). Both offered and stock grep/find drop empty optional arguments before chaining
 any existing `prepareArguments`; their execute functions stay unchanged. The caller's cwd is retained, and the
 reviewer session runs with the caller's owner settings that shape a session (`reviewerSettings` in `index.ts`):
 shell path and prefix, image auto-resize and blocking, retries with provider timeouts, transport with its HTTP idle
 and WebSocket connect timeouts, compaction (enabled, reserve, kept tokens, per-model overrides), thinking budgets and
 codemode's mode and budget. Background cache warming stays off. The reviewer is a child too: when its caller has Pi's
 built-in `codemode` and `tool_search` active, the reviewer gets them as well (Pi's own definitions, on top of the four
-tools; a codemode script's bash calls pass the same git guard). No `edit` or `write` is exposed.
+tools; a codemode script's bash calls pass the same git guard). With an RQW-tools offer, its codemode is Pi's
+definition built from the reviewer's API, passed to the factory as `options.codemode` and returned as a call of the
+reviewer's barrier and a job of its registry. No `edit` or `write` is exposed.
 
 ## Review in subagents
 

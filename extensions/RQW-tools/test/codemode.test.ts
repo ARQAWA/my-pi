@@ -23,6 +23,8 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
+import { CODEMODE_BACKGROUND_LINE } from "../codemode.ts";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOOLS = join(HERE, "..", "index.ts");
 const PROBE = join(HERE, "fixtures", "probe.ts");
@@ -403,13 +405,15 @@ describe("codemode: the codemode call is one call of the barrier, with scope all
 describe("codemode: the codemode that RQW-tools registers is Pi's own", () => {
 	const flags: Options = { calls: [] };
 
-	it("the definition equals the built-in one except for the closures that differ per load", async () => {
+	it("the definition equals the built-in one except for the closures that differ per load and the background line", async () => {
 		const stock = await run({ ...flags, paths: [] });
 		const ours = await run({ ...flags, paths: [TOOLS] });
 		assert.equal(stock.codemode?.source, "builtin", "without our extension the built-in is registered");
 		assert.notEqual(ours.codemode?.source, "builtin", "with RQW-tools the registered codemode is ours");
-		assert.deepEqual(ours.codemode?.definition, stock.codemode?.definition);
-		assert.equal(ours.declared.get("codemode"), stock.declared.get("codemode"), "the description the model reads");
+		const line = `\n\n${CODEMODE_BACKGROUND_LINE}`;
+		const stockDefinition: any = stock.codemode?.definition;
+		assert.deepEqual(ours.codemode?.definition, { ...stockDefinition, description: stockDefinition.description + line });
+		assert.equal(ours.declared.get("codemode"), stock.declared.get("codemode") + line, "the description the model reads");
 		assert.ok(ours.declared.get("codemode"));
 	});
 

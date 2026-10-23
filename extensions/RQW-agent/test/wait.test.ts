@@ -248,3 +248,20 @@ test("tool_result hook failure after wait reservation returns answer to normal d
 		assert.deepEqual(f.delivered(), ["[agent#1] RECOVERED"]);
 	} finally { held.release(); await f.cleanup(); }
 });
+
+test("an offered job tool comes with the child's tools; interrupt aborts and stop disposes the child's jobs", async t => {
+	const f = await setup(t), calls: string[] = [], held = gate("HELD"); f.replies.push(held.reply);
+	const off = f.bus.on("rqw-tools:subagent-tools", request => request.offer((() => [
+		createBashToolDefinition(f.root),
+		{ ...createBashToolDefinition(f.root), name: "job", label: "job", jobs: { abortAll: () => calls.push("abortAll"), dispose: () => calls.push("dispose") } },
+	]) as never));
+	try {
+		await f.tool("code_writer", { task: "WORK" });
+		await until(() => f.requests.length === 1, "child request");
+		assert.ok(f.sessions.at(-1)!.getActiveToolNames().includes("job"), "job is active in the child");
+		await f.tool("code_writer", { action: "interrupt", id: "code_writer#1" });
+		assert.deepEqual(calls, ["abortAll"]);
+		await f.tool("code_writer", { action: "stop", id: "code_writer#1" });
+		assert.deepEqual(calls, ["abortAll", "dispose"]);
+	} finally { held.release(); off(); await f.cleanup(); }
+});

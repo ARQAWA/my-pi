@@ -72,7 +72,9 @@ type Params = Static<typeof PARAMETERS>;
 type Config = { system: string; base: string; custom?: string; role?: string; explore?: Thoroughness; model: Model<Api>; thinking: Thinking; tools: string[] };
 /** Display details of a delivered result: flattened beside delivery and run in a message's details, and under `display` in a wait result. For cards only, never part of the delivered text. */
 type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number; title?: string };
-type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle; activity: Activity };
+/** Control of a child's background jobs, carried by RQW-tools' offered `job` definition when it offers one. */
+type JobControl = { abortAll(): void; dispose(): void };
+type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle; activity: Activity; jobs?: JobControl };
 type Agent = Child & {
 	id: number;
 	/** The caller's optional short title, shown in status and result details. */
@@ -162,16 +164,21 @@ function lastNumber(entries: readonly SessionEntry[], name: string): number {
  * `{ offer(factory) }` gets a factory of fresh definitions with a barrier of their own. Nothing here imports RQW-tools.
  */
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
-type ToolsFactory = (cwd: string, settings: () => unknown) => ToolDefinition[];
+/**
+ * `options.label` names the child in RQW-tools' notes of other sessions ("changed by agent#1/code_writer#2"); optional.
+ * `options.codemode`: the child's own Pi `codemode` definition; the factory returns it as a call of the child's barrier
+ * and a job of its registry (a factory that does not return it leaves the child Pi's definition as it is).
+ */
+type ToolsFactory = (cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition }) => ToolDefinition[];
 
 /**
  * Channel on `pi.events` where RQW-review, when it is loaded, offers its `review` tool for subagents: a request
  * `{ offer(register) }` gets a function that registers the tool in one child's own API. `events` is the bus of the
- * main session (RQW-tools offer, GPT Fast, running counts), `fast` the child's GPT Fast, `signal` ends with the child.
- * Nothing here imports RQW-review.
+ * main session (RQW-tools offer, GPT Fast, running counts), `fast` the child's GPT Fast, `signal` ends with the child,
+ * `label` names its reviewers in RQW-tools' notes ("agent#1/review"). Nothing here imports RQW-review.
  */
 const SUBAGENT_REVIEW = "rqw-review:subagent-review";
-type ReviewRegistrar = (child: ExtensionAPI, options: { events: ExtensionAPI["events"]; fast: () => boolean; signal: AbortSignal }) => void;
+type ReviewRegistrar = (child: ExtensionAPI, options: { events: ExtensionAPI["events"]; fast: () => boolean; signal: AbortSignal; label?: string }) => void;
 
 function offeredReview(events: ExtensionAPI["events"]): ReviewRegistrar | undefined {
 	let register: ReviewRegistrar | undefined;
@@ -223,15 +230,15 @@ export default function agent(pi: ExtensionAPI) {
  * depth limit. `callerFast`: this caller's GPT Fast state at the moment it starts a child (the main chat's, or a
  * child's own). `basePrompt`: the main agent's system prompt, read from the main context or handed down.
  */
-function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, top: boolean, callerFast: () => boolean, refresh: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt()): RuntimeHandle {
+function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, top: boolean, callerFast: () => boolean, refresh: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = ""): RuntimeHandle {
 	const coordinator = new Coordinator(pi);
 	// Display details of delivered results, by run, until shutdown (see publishRun).
 	const displays = new Map<string, Display>();
 	// Running counts of the whole tree, offered by the top-level caller only (see counts.ts). Nested callers get its refresh.
 	const counts = top ? createCountsProducer(() => sumCounts(runtimes.map(runtime => runtime.runningCounts())), pi.events) : undefined;
 	const notify = counts ? () => counts.refresh() : refresh;
-	const agentRuntime = registerSessionRuntime(pi, undefined, toolEvents, background, coordinator, callerFast, displays, notify, basePrompt);
-	const workers = registerWorkers(pi, (caller, profile) => registerSessionRuntime(caller, profile, toolEvents, background, coordinator, callerFast, displays, notify));
+	const agentRuntime = registerSessionRuntime(pi, undefined, toolEvents, background, coordinator, callerFast, displays, notify, basePrompt, labelPrefix);
+	const workers = registerWorkers(pi, (caller, profile) => registerSessionRuntime(caller, profile, toolEvents, background, coordinator, callerFast, displays, notify, undefined, labelPrefix));
 	const runtimes: RuntimeHandle[] = [agentRuntime, workers];
 	if (counts) {
 		pi.events.on(COUNTS_REQUEST, (request) => {
@@ -257,8 +264,10 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 }
 
 /** Caller-local state. Nested callers settle normally; startRun tracks their workers across background wakeups. */
-export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), displays = new Map<string, Display>(), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt()): RuntimeHandle {
+export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), displays = new Map<string, Display>(), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = ""): RuntimeHandle {
 	const name = worker?.name ?? "agent";
+	/** A child's display label in RQW-tools notes: the path from the main session, "agent#1/code_writer#2". */
+	const labelOf = (id: number) => `${labelPrefix}${name}#${id}`;
 	const agents = new Map<number, Agent>();
 	const lifetime = new AbortController();
 	let generation = new AbortController();
@@ -369,8 +378,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		return unanswered.size > 0;
 	}
 
-	/** RQW-tools definitions for one subagent session when RQW-tools is loaded; none (Pi's stock tools) otherwise. */
-	function offeredTools(cwd: string, names: string[]): ToolDefinition[] {
+	/** The RQW-tools factory of subagent tools when RQW-tools is loaded; none (Pi's stock tools) otherwise. */
+	function offeredFactory(): ToolsFactory | undefined {
 		let factory = undefined as ToolsFactory | undefined;
 		// Pi's event bus calls every handler synchronously inside emit, so an offer is in place when emit returns.
 		toolEvents.emit(SUBAGENT_TOOLS, {
@@ -378,10 +387,21 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				factory = f;
 			},
 		});
-		return factory ? factory(cwd, () => pi.getSettings()).filter((d) => names.includes(d.name)) : [];
+		return factory;
 	}
 
-	async function createSession(config: Config, ctx: ExtensionContext, signal: AbortSignal, fast: { on: boolean }): Promise<Child> {
+	/**
+	 * The offered definitions of one subagent: its base tools, `job` (background jobs of its own calls; with every
+	 * offered set) and, when it has `codemode`, that one as a call of its barrier. Without a returned `codemode`, Pi's
+	 * own definition of the child stays.
+	 */
+	function offeredTools(factory: ToolsFactory, cwd: string, names: string[], label: string, codemode?: ToolDefinition): ToolDefinition[] {
+		const tools = factory(cwd, () => pi.getSettings(), undefined, { label, ...(codemode ? { codemode } : {}) })
+			.filter((d) => names.includes(d.name) || d.name === "job" || (codemode && d.name === "codemode"));
+		return codemode && !tools.some((d) => d.name === "codemode") ? [...tools, codemode] : tools;
+	}
+
+	async function createSession(config: Config, ctx: ExtensionContext, signal: AbortSignal, fast: { on: boolean }, label: string): Promise<Child> {
 		signal.throwIfAborted();
 		const controller = new AbortController();
 		const guard: Child["guard"] = {};
@@ -394,6 +414,18 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		const active = new Set(pi.getActiveTools());
 		const builtins = BUILTIN_TOOLS.filter(name => active.has(name));
 		const settingsManager = SettingsManager.inMemory(childSettings(pi.getSettings()));
+		// With RQW-tools, the child's codemode is its barrier's and job registry's, like the main session's: Pi's own
+		// definition built from the child's API, handed to the factory instead of being registered as it is. Without an
+		// offer it is registered exactly as Pi's built-in factory does. The offer is asked for at that point of the reload
+		// when the child has codemode, otherwise right after it.
+		let factory: ToolsFactory | undefined;
+		let codemode: ToolDefinition | undefined;
+		const withCodemode = (sub: ExtensionAPI) => {
+			factory = controller.signal.aborted || signal.aborted ? undefined : offeredFactory();
+			// The built-in factory only calls `registerTool`; the rest of the API stays the child's for its callbacks.
+			if (factory) createCodemodeExtension()(Object.assign(Object.create(sub), { registerTool: (d: ToolDefinition) => void (codemode = d) }));
+			else createCodemodeExtension()(sub);
+		};
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: ctx.cwd, agentDir: getAgentDir(), settingsManager,
 			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
@@ -401,7 +433,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			appendSystemPromptOverride: () => [],
 			// Only a forced prompt avoids Pi's appended sections, such as <cwd>.
 			extensionFactories: [
-				...(builtins.includes("codemode") ? [createCodemodeExtension()] : []),
+				...(builtins.includes("codemode") ? [withCodemode] : []),
 				...(builtins.includes("tool_search") ? [createToolSearchExtension()] : []),
 				(sub: ExtensionAPI) => {
 					fastGpt(sub, () => fast.on);
@@ -412,8 +444,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					if (worker) worker.configure(sub);
 					else if (config.explore) installGitGuard(sub);
 					else {
-						workers = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base);
-						review?.(sub, { events: toolEvents, fast: () => fast.on, signal: controller.signal });
+						workers = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`);
+						review?.(sub, { events: toolEvents, fast: () => fast.on, signal: controller.signal, label: `${label}/review` });
 					}
 				},
 			],
@@ -421,17 +453,21 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		// From reload on, the factory above may have run (a nested caller, an offered review with its counts source and
 		// listener on the main bus): any failure or cancellation aborts `controller`, which ends them.
 		let creating: Promise<Child> | undefined;
+		let jobs: JobControl | undefined;
 		try {
 			await untilAborted(resourceLoader.reload(), signal);
-			const customTools = offeredTools(ctx.cwd, config.tools);
+			if (!builtins.includes("codemode")) factory = offeredFactory();
+			const customTools = factory ? offeredTools(factory, ctx.cwd, config.tools, label, codemode) : [];
+			const jobTool = customTools.find((d) => d.name === "job") as (ToolDefinition & { jobs?: JobControl }) | undefined;
+			jobs = jobTool?.jobs;
 			signal.throwIfAborted();
 			creating = createAgentSession({
 				cwd: ctx.cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
-				tools: [...config.tools, ...(general ? ["agent", "code_writer", "shell_runner", ...(review ? ["review"] : [])] : []), ...builtins],
+				tools: [...config.tools, ...(jobTool ? ["job"] : []), ...(general ? ["agent", "code_writer", "shell_runner", ...(review ? ["review"] : [])] : []), ...builtins],
 				customTools, resourceLoader,
 				sessionManager: SessionManager.inMemory(ctx.cwd), settingsManager,
 			}).then(({ session }) => {
-				if (signal.aborted) { session.dispose(); signal.throwIfAborted(); }
+				if (signal.aborted) { jobs?.dispose(); session.dispose(); signal.throwIfAborted(); }
 				// prompt() may finish auth after abort()/dispose(). Never let an abandoned preflight reach inference.
 				const stream = session.agent.streamFunction;
 				session.agent.streamFunction = (model, context, options) => {
@@ -439,11 +475,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					// Child Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
 					return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 				};
-				return { session, controller, guard, workers, activity: new Activity(session, onRunning) };
+				return { session, controller, guard, workers, activity: new Activity(session, onRunning), jobs };
 			});
 			return await untilAborted(creating, signal);
 		} catch (error) {
 			controller.abort();
+			jobs?.dispose();
 			void creating?.then(({ session }) => session.dispose()).catch(() => {});
 			throw error;
 		}
@@ -578,6 +615,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		a.controller.abort();
 		a.activity.close();
 		a.workers?.close();
+		a.jobs?.dispose();
 		a.session.clearQueue();
 		// abort first: dispose alone does not set Pi's abort flag for queued follow-ups or compaction.
 		void a.session.abort().catch(() => {}).finally(() => a.session.dispose());
@@ -587,6 +625,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 	/** Request cancellation of the current run: the shared body of `interrupt` and `send` with `interrupt: true`. */
 	function requestInterrupt(a: Agent, run: NonNullable<Agent["run"]>) {
 		a.workers?.abortAll();
+		a.jobs?.abortAll();
 		coordinator.change(`${name}#${a.id}`, "interrupt");
 		run.quiet = true;
 		run.controller.abort();
@@ -682,7 +721,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const id = ++counter;
 				pi.appendEntry(name, { id });
 				const fast = { on: params.fast_gpt ?? callerFast() };
-				const child = await createSession(config, ctx, signal, fast);
+				const child = await createSession(config, ctx, signal, fast, labelOf(id));
 				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, fast, ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };
 				try {
 					signal.throwIfAborted();
@@ -725,7 +764,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const snapshot = target(a).snapshot(8);
 				const run = a.run;
 				a.next = undefined; // an interrupt drops tasks still waiting for the stopping run
-				if (!run) { a.workers?.abortAll(); return ok(`${name}#${a.id} is idle`); }
+				// An interrupt is the caller's abort of the child: its background jobs die too, also when it is idle.
+				if (!run) { a.workers?.abortAll(); a.jobs?.abortAll(); return ok(`${name}#${a.id} is idle`); }
 				requestInterrupt(a, run);
 				return waitResult({ id: `${name}#${a.id}`, reason: "interruption_requested", cancellation_requested: true, snapshot });
 			}
@@ -746,7 +786,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				coordinator.change(`${name}#${old.id}`, "restart");
 				close(old);
 				const fast = { on: params.fast_gpt ?? old.fast.on };
-				const child = await createSession(config, ctx, signal, fast);
+				const child = await createSession(config, ctx, signal, fast, labelOf(old.id));
 				const title = given(params.title) ? params.title.trim() : old.title;
 				const a: Agent = { id: old.id, config, epoch: randomUUID(), runNumber: 0, fast, ...(title ? { title } : {}), ...child };
 				try {

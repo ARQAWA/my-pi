@@ -172,6 +172,7 @@ async function activeToolsFor(
 	settings: Record<string, unknown> = {},
 	withExtension = true,
 	flags?: string[],
+	withJob = false,
 ): Promise<string[]> {
 	const dir = await freshDir();
 	process.chdir(dir);
@@ -202,7 +203,16 @@ async function activeToolsFor(
 		try {
 			// session_start is emitted when extensions are bound.
 			await session.bindExtensions({});
-			return session.getActiveToolNames().slice().sort();
+			const active = session.getActiveToolNames().slice().sort();
+			// The job tool comes with any tool that goes to the background, whatever the selection; the comparisons
+			// below are of the rest of the set.
+			if (withExtension && !withJob) {
+				const others = active.filter((name) => name !== "job");
+				// Pi's allowlist (`--tools read,bash`, SDK `tools`) can keep it off; then nothing goes to the background.
+				if (active.includes("job")) assert.ok(others.some((name) => BACKGROUNDABLE.includes(name)), active.join(","));
+				return others;
+			}
+			return active;
 		} finally {
 			await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 			session.dispose();
@@ -212,10 +222,12 @@ async function activeToolsFor(
 		process.chdir(ORIGINAL_CWD);
 	}
 }
+const BACKGROUNDABLE = ["bash", "codemode", "read", "edit", "write", "grep", "find"];
 
 describe("pipeline: CLI flags and defaultTools", () => {
-	it("defaults give read, bash, edit, write, grep, find", async () => {
+	it("defaults give read, bash, edit, write, grep, find (and job)", async () => {
 		assert.deepEqual(await activeToolsFor({}), ["bash", "edit", "find", "grep", "read", "write"]);
+		assert.ok((await activeToolsFor({}, {}, true, undefined, true)).includes("job"));
 	});
 
 	const rows: [string, Parameters<typeof activeToolsFor>[0], Record<string, unknown>, string[]?][] = [
@@ -462,11 +474,11 @@ describe("pipeline: real agent loop, real tools, no model", () => {
 		assert.match(byId(run, 2).text, /two/);
 	});
 
-	it("S9 the model sees exactly read, bash, edit, write, grep, find with stock parameter names", async () => {
+	it("S9 the model sees exactly read, bash, edit, write, grep, find with stock parameter names, and job", async () => {
 		const run = await runBatch([["read", { path: "a.txt" }]], {
 			setup: (d) => writeFile(join(d, "a.txt"), "x\n"),
 		});
-		const expected = ["bash", "edit", "find", "grep", "read", "write"];
+		const expected = ["bash", "edit", "find", "grep", "job", "read", "write"];
 		assert.deepEqual(run.activeTools.slice().sort(), expected, "session active tools");
 		assert.deepEqual(run.modelTools.map((t) => t.name).sort(), expected, "tools in the model request");
 

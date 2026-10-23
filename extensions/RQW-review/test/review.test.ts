@@ -1829,20 +1829,25 @@ describe("reviewer bash guard and offered tools", () => {
 	const ECHO_CWD = `node -e "process.stdout.write(require('node:fs').readFileSync('review-cwd-marker.txt', 'utf8'))"`;
 	const DENIED = "git commit -m forbidden";
 	const ALLOWED = "git status --short";
-	type Probe = { factories: { cwd: string; getter: string; value: unknown }[]; executed: string[]; prepared: unknown[] };
+	type Probe = { factories: { cwd: string; getter: string; value: unknown; label?: string }[]; executed: string[]; prepared: unknown[]; jobEvents?: string[] };
 
 	/** A main-session extension that answers the offer with sentinel stock definitions of all six tools. */
 	const OFFER = `import { createBashToolDefinition, createEditToolDefinition, createFindToolDefinition, createGrepToolDefinition, createReadToolDefinition, createWriteToolDefinition } from "@earendil-works/pi-coding-agent";
 const probe = () => globalThis["${PROBE}"];
 export default function (pi) {
 	pi.events.on("rqw-tools:subagent-tools", (request) => {
-		request.offer((cwd, settings) => {
-			probe().factories.push({ cwd, getter: typeof settings, value: typeof settings === "function" ? settings() : undefined });
+		request.offer((cwd, settings, _nested, options) => {
+			probe().factories.push({ cwd, getter: typeof settings, value: typeof settings === "function" ? settings() : undefined, label: options?.label });
 			return [createReadToolDefinition, createBashToolDefinition, createEditToolDefinition, createWriteToolDefinition, createGrepToolDefinition, createFindToolDefinition].map((make) => {
 				const stock = make(cwd);
 				const prepare = stock.name === "grep" || stock.name === "find" ? { prepareArguments: (input) => { probe().prepared.push(input); return stock.prepareArguments ? stock.prepareArguments(input) : input; } } : {};
 				return { ...stock, ...prepare, description: "SENTINEL " + stock.name, execute: (...args) => { probe().executed.push(stock.name); return stock.execute(...args); } };
-			});
+			}).concat([{
+				// RQW-tools' job tool carries the jobs of this session (abortAll, dispose).
+				name: "job", label: "job", description: "SENTINEL job", parameters: { type: "object", properties: {} },
+				execute: async () => ({ content: [{ type: "text", text: "{}" }], details: {} }),
+				jobs: { abortAll: () => (probe().jobEvents ??= []).push("abortAll"), dispose: () => (probe().jobEvents ??= []).push("dispose") },
+			}]);
 		});
 	});
 }
@@ -1886,11 +1891,12 @@ export default function (pi) {
 	}
 
 	for (const withOffer of [false, true]) {
-		it(`${withOffer ? "offered" : "stock"} reviewer: four tools, bash in its cwd, git guard on every bash call`, async () => {
+		it(`${withOffer ? "offered" : "stock"} reviewer: four tools (plus job when offered), bash in its cwd, git guard on every bash call`, async () => {
 			const run = await guardedRun(withOffer);
 			assert.equal(run.requests.length, 4);
-			assert.deepEqual(run.requests[0].tools, ["bash", "find", "grep", "read"]);
-			assert.deepEqual(run.declared.map((t) => t.name).sort(), ["bash", "find", "grep", "read"]);
+			const names = withOffer ? ["bash", "find", "grep", "job", "read"] : ["bash", "find", "grep", "read"];
+			assert.deepEqual(run.requests[0].tools, names);
+			assert.deepEqual(run.declared.map((t) => t.name).sort(), names);
 			assert.equal(run.declared.find((t) => t.name === "bash")?.description.startsWith("SENTINEL bash"), withOffer);
 
 			assert.equal(run.results.length, 3);
@@ -1911,13 +1917,51 @@ export default function (pi) {
 				assert.equal(run.probe.factories[0].cwd, run.dir, "factory receives the main cwd");
 				assert.equal(run.probe.factories[0].getter, "function", "factory receives a settings getter");
 				assert.equal(typeof run.probe.factories[0].value, "object");
+				assert.equal(run.probe.factories[0].label, "review", "the reviewer's own session label for RQW-tools notes");
 				assert.deepEqual(run.probe.executed, ["bash", "bash"], "offered execute reached for allowed bash only, never for the blocked git");
+				assert.deepEqual(run.probe.jobEvents, ["dispose"], "the reviewer's jobs end with the review");
 			} else {
 				assert.deepEqual(run.probe.factories, [], "no offer: stock tools");
 				assert.deepEqual(run.probe.executed, []);
 			}
 		});
 	}
+
+	it("offered reviewer: an abort of the review aborts its background jobs, and the end of the review disposes them", async () => {
+		const fixture = await mkdtemp(join(dirname(EXTENSION), ".offer-test-"));
+		const started = Promise.withResolvers<void>();
+		const aborted = Promise.withResolvers<void>();
+		scriptReviewer((_context, options) => {
+			started.resolve();
+			const answer = Promise.withResolvers<AssistantMessage>();
+			options?.signal?.addEventListener("abort", () => {
+				aborted.resolve();
+				answer.resolve(fauxAssistantMessage(fauxText("late")));
+			});
+			return answer.promise;
+		});
+		const probe: Probe = { factories: [], executed: [], prepared: [] };
+		(globalThis as Record<string, unknown>)[PROBE] = probe;
+		try {
+			await writeFile(join(fixture, "index.ts"), OFFER);
+			const main = await openMain(full, ARGS, true, "print", [join(fixture, "index.ts")]);
+			try {
+				// Print mode holds the prompt until the verdict: start it, abort the review from outside.
+				const run = main.session.prompt(SECOND).catch(() => {});
+				await within(started.promise, 5000, "reviewer request");
+				await main.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+				await within(aborted.promise, 5000, "reviewer abort");
+				await until(() => (probe.jobEvents ?? []).includes("dispose"), "jobs disposed");
+				await within(run, 5000, "main run ends");
+				assert.deepEqual(probe.jobEvents, ["abortAll", "dispose"]);
+			} finally {
+				main.session.dispose();
+			}
+		} finally {
+			delete (globalThis as Record<string, unknown>)[PROBE];
+			await rm(fixture, { recursive: true, force: true });
+		}
+	});
 
 	it("offered grep and find: optional null, blank and undefined arguments are dropped before the offered prepare, and the session runs them", async () => {
 		const fixture = await mkdtemp(join(dirname(EXTENSION), ".offer-test-"));

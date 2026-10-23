@@ -12,7 +12,7 @@ const PACKAGE = dirname(dirname(fileURLToPath(import.meta.url)));
 const PROMPT = "extensions/RQW-prompt/index.ts";
 const TOOLS = "extensions/RQW-tools/index.ts";
 const SEARCH = "- Search with the grep and find tools and read files with read, following the method in the grep description.";
-const BARRIER = "- A shell command waits for the calls before it and holds the calls after it.";
+const BARRIER = "- A shell command waits for the calls before it and holds the calls after it; one still running after 12 seconds continues in the background as a job, which holds the later calls of the same response and, from later responses, only calls that change what it names as held: a package folder it installs, the git index, files it writes.";
 const faux = fauxProvider();
 let root: string;
 let runtime: ModelRuntime;

@@ -83,8 +83,10 @@ test("a nested result while the subagent is busy is consumed before its final an
 	const interim = gate("INTERMEDIATE"), code = gate("CODE_RESULT");
 	let executed = 0;
 	const cwd: string[] = [];
-	const off = f.bus.on("rqw-tools:subagent-tools", request => request.offer(((dir: string) => {
+	const labels: unknown[] = [];
+	const off = f.bus.on("rqw-tools:subagent-tools", request => request.offer(((dir: string, _settings: unknown, _nested: unknown, options?: { label?: string }) => {
 		cwd.push(dir);
+		labels.push(options?.label);
 		return [{ ...createBashToolDefinition(dir), execute: async () => {
 			executed++;
 			return { content: [{ type: "text", text: "NESTED_OFFERED_BASH" }], details: {} };
@@ -102,6 +104,7 @@ test("a nested result while the subagent is busy is consumed before its final an
 		assert.deepEqual(f.delivered(), []);
 		assert.equal(executed, 1, "only allowed bash reaches offered execute");
 		assert.deepEqual(cwd, [f.root, f.root], "a fresh tools factory is requested for subagent and nested worker");
+		assert.deepEqual(labels, ["agent#1", "agent#1/code_writer#1"], "each session's label for RQW-tools notes: the path from main");
 		const results = f.workerRequests[2].messages.filter(m => m.role === "toolResult");
 		assert.equal(results[0].isError, true);
 		assert.match(JSON.stringify(results[0].content), /Workers may not change git state/);

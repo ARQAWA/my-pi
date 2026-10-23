@@ -15,15 +15,15 @@
 // The id is the only signal used. AsyncLocalStorage was used before and is not: Bun, which runs the Pi release
 // binaries, drops its context in the `message` callback of a worker, where a script's tool call arrives. Proven on
 // Node and on Bun (see notes/settings-codemode.md).
-import { createBarrier, type Schedule, type Scope } from "./barrier.ts";
+import { createBarrier, type Detachable, type Schedule, type Scope } from "./barrier.ts";
 
 const ALL: Scope = { kind: "all", keys: [] };
 
 export type NestedBarrier = {
   /** Call synchronously at the top of a tool's `execute`, with the tool call id Pi passes to it. */
-  schedule<T>(id: string, scope: Scope, run: () => Promise<T>): Promise<T>;
+  schedule<T>(id: string, scope: Scope, run: () => Promise<T>, handle?: Detachable): Promise<T>;
   /** Runs the call `id` as a group: one "all" call where `schedule` puts it, with a barrier of its own for its calls. */
-  group<T>(id: string, run: () => Promise<T>): Promise<T>;
+  group<T>(id: string, run: () => Promise<T>, handle?: Detachable): Promise<T>;
   /** The barrier of the group that orders the call `id`, or undefined when no group does. */
   groupOf(id: string): Schedule | undefined;
 };
@@ -48,12 +48,12 @@ export function createNestedBarrier(): NestedBarrier {
     return undefined;
   };
 
-  function schedule<T>(id: string, scope: Scope, run: () => Promise<T>): Promise<T> {
+  function schedule<T>(id: string, scope: Scope, run: () => Promise<T>, handle?: Detachable): Promise<T> {
     const own = groupOf(id);
-    if (own) return own(scope, run);
+    if (own) return own(scope, run, handle);
     for (let p = parentOf(id); p !== undefined; p = parentOf(p)) if (inOuter.has(p)) return run();
     inOuter.add(id);
-    const done = outer(scope, run);
+    const done = outer(scope, run, handle);
     const leave = () => void inOuter.delete(id);
     done.then(leave, leave);
     return done;
@@ -61,10 +61,12 @@ export function createNestedBarrier(): NestedBarrier {
 
   return {
     schedule,
-    group<T>(id: string, run: () => Promise<T>): Promise<T> {
+    group<T>(id: string, run: () => Promise<T>, handle?: Detachable): Promise<T> {
       const own = createBarrier();
       // Registered before the group waits, so no call of its script can miss it.
       groups.set(id, own);
+      // A detached group (a script in the background) stops holding later outer calls; its own barrier still
+      // orders its script's calls until the script ends.
       const done = schedule(id, ALL, async () => {
         try {
           return await run();
@@ -73,7 +75,7 @@ export function createNestedBarrier(): NestedBarrier {
           // group: later calls wait for it too.
           await own(ALL, async () => undefined);
         }
-      });
+      }, handle);
       const forget = () => void (groups.get(id) === own && groups.delete(id));
       done.then(forget, forget);
       return done;

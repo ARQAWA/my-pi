@@ -73,7 +73,7 @@ try {
 				const pendingC = await prepare(paths, [], true);
 				const b = await create(paths);
 				await bind(b.session);
-				assert.deepEqual(b.session.getActiveToolNames().sort(), SIX);
+				assert.deepEqual(b.session.getActiveToolNames().filter((n) => n !== "job").sort(), SIX);
 				await close(b.session);
 				await new Promise<void>((resolve) => setImmediate(resolve));
 				gc();
@@ -83,10 +83,10 @@ try {
 				await close(c.session);
 				const a = await pendingA();
 				await bind(a.session);
-				assert.deepEqual(a.session.getActiveToolNames().sort(), SIX);
+				assert.deepEqual(a.session.getActiveToolNames().filter((n) => n !== "job").sort(), SIX);
 				a.session.setActiveToolsByName(FOUR);
 				await a.session.reload();
-				assert.deepEqual(a.session.getActiveToolNames().sort(), FOUR);
+				assert.deepEqual(a.session.getActiveToolNames().filter((n) => n !== "job").sort(), FOUR);
 				await close(a.session);
 
 				await assert.rejects(create(paths, ["read", "-grep"]), /Invalid tools option/);
@@ -102,7 +102,7 @@ try {
 				const fields = ["sessionManager", "_usesDefaultTools", "_defaultToolModifiers", "_excludedTools", "_allowedTools"];
 				const before = fields.map((field) => Object.getOwnPropertyDescriptor(native.session, field));
 				await bind(native.session);
-				assert.deepEqual(native.session.getActiveToolNames().sort(), FOUR);
+				assert.deepEqual(native.session.getActiveToolNames().filter((n) => n !== "job").sort(), FOUR);
 				assert.deepEqual(fields.map((field) => Object.getOwnPropertyDescriptor(native.session, field)), before);
 				await close(native.session);
 				assert.equal(foreignCalls, 1);

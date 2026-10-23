@@ -349,6 +349,160 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Accepted limit: Pi's compaction summary lists changed files from `args.path` only, so files given in `write.files[]`
   or in `edits[].path` are missing from that list. Fixing it needs a change in Pi itself; the files stay in the
   transcript and in the tool results.
+- Background jobs. Owner: «Да, и надо, чтобы основной агент. Нет, знаешь как? Надо, чтобы длительные shell процессы
+  сами уходили в фон. Если он работает больше 20 секунд, чтобы он превращался в фоновый процесс, а не оставался висячим
+  активным процессом. Надо, чтобы всё, что висит больше 20 секунд, любая операция, которая висит больше 20 секунд,
+  уходила в background, и можно было просто её пропинговать через какое-то время. Чтобы у агента был инструмент
+  проверки состояния.»; «только надо время сократить до 12 секунд, после 12 секунд уходит в фон.»; answers to the
+  design questions: «1а2а3а / 4 - надо разобраться с рейс кондишенами и найти самое интелектальное производительное и
+  эффективное решение марщрутизации и оркестрации тулколов / 5б / 6а с учетом 4 пункта добавочного».
+  Rule: a top-level call of `bash`, `codemode` (the whole script) or `read`, `edit`, `write`, `grep`, `find` that has
+  not settled 12 s after it started, barrier wait included, returns at once as `job#N` with the command, elapsed time,
+  the output so far and a log file in the OS temp dir, and keeps running; a call that settles sooner returns exactly
+  the stock result. Calls inside a codemode script never go to the background. The new `job` tool (`wait`, `status`,
+  `kill`; `ids`, `id`, `timeout_ms` default 300000 only when omitted, `lines` default 20) waits mechanically until
+  one selected job ends or the caller's deadline, shows state, exit code, elapsed time, tail and log path, and kills
+  a job with its process tree or cancels a queued one. Polling only, no pushed messages; the descriptions say to wait
+  for or kill one's jobs before the final answer. A job dies on Esc (an abort of any run of its caller), `job kill`,
+  its `timeout`, and the caller's shutdown or reload; jobs belong to the session whose call started them (one registry
+  per `createTools`, so each subagent and worker has its own; RQW-agent calls the offered `job` definition's
+  `jobs.abortAll()` on interrupt and `jobs.dispose()` on close). `job` is activated whenever one of these tools is
+  active, whatever the selection; when Pi's allowlist keeps it off, nothing goes to the background. Reason: the owner
+  wants long operations not to hold the agent and a tool to check them; Codex unified exec yields the same way
+  (`yield_time_ms`, session id, polling); the threshold is the owner's fixed value.
+  Ordering with background jobs, owner: «1a + живай проверка на хайку и луна хай ризонинга» (option 1a of the
+  ordering proposal, «ordered until handoff, free after»). Calls of the same response keep the order the barrier
+  gives them: a call after a job that went to the background waits for its real end and itself becomes a queued job
+  after 12 s. At the handoff a bash or codemode job is detached from the barrier (`detach` in `barrier.ts`, passed
+  through `nested.ts`): calls registered later, which are the calls of later responses, neither wait for it nor for
+  its scope resolution. A read, edit or write job keeps its paths, so a later call of the same file still follows it.
+  While a bash or codemode job of the caller runs, a top-level read, edit or write of a file whose mtime is not older
+  than the earliest running job's start and differs from the version the caller last read or wrote gets one line
+  (wording since FR-safe below): `note: <path> changed <n> s ago outside your tools while job#N (<command>) runs; wait
+  for job#N if it writes this file.` A dependency on a background
+  job is explicit: `job wait`, then the dependent call. Reason: Pi starts every call of a response before any can
+  reach 12 s and starts the next response only after all of them returned, so "registered before the handoff" means
+  "same response"; this keeps the measured same-response ordering (section Tools, ordered conflict barrier) and lets a
+  server or a long build stop blocking the agent; Codex 0.163.0 and oh-my-pi 18.8.9 do not order shell calls at all.
+  Race analysis, rejected alternatives and cost: `my-pi-evidence/bash-background/D4-ORDERING.md`; design:
+  `DESIGN.md` there. Carriers: `extensions/RQW-tools/jobs.ts`, `barrier.ts`, `nested.ts`, `index.ts`, `codemode.ts`,
+  `descriptions/bash.md`, `descriptions/job.md`; `extensions/RQW-agent/index.ts`, `roles/*.md`.
+  Proof: `extensions/RQW-tools/test/background.test.ts` (injected threshold, gate-file commands),
+  `test/barrier-detach.test.ts` in that folder (held operations, an independent oracle, randomized detach; it fails
+  with a no-op detach, and the queued-edit test fails when file jobs detach too),
+  `extensions/RQW-agent/test/wait.test.ts` (job tool in a child, interrupt and stop).
+  Two refinements from the first live probe (logs `my-pi-evidence/bash-background/probe/runs/`): `wait` keeps
+  collecting for 250 ms after the first selected job ends, because a call queued behind it ends milliseconds later
+  and returning without it cost the model one more response in 7 of 8 build runs; and a bash call whose own
+  `timeout` ends it within 1 s after the threshold stays in the foreground (as oh-my-pi bounds its wait by the
+  timeout), because `timeout: 12` reported a dying server as running.
+  Live probe (owner D6: Haiku 5.5 and GPT-6 Luna, both thinking high; 28 runs in two rounds): builds went to the
+  background, same-response calls ran after them, dependent calls followed a `job wait`, models batched calls, and
+  every job was waited for, killed or ended by its timeout before the final answer. Report and logs:
+  `my-pi-evidence/bash-background/probe/REPORT.md`.
+  Routing around background jobs (FR-safe), owner: «2а» (option 2a of the routing proposal: the full FR-safe design,
+  `my-pi-evidence/bash-background/routing/ROUTING.md` section 5). On top of the rule above:
+  holds (H1): at the handoff a bash job keeps what `footprint.ts` reads with certainty from its command text: the
+  package folder an install changes (`npm|pnpm|yarn|bun` `ci`, `install`, `add`, `remove`, ...), the git index and refs
+  of a repository a git command changes (every git subcommand except known reading ones), and the exact files it writes
+  (redirect targets, `tee`, `sed -i`, `curl -o`, `rm`, `mkdir`, `touch`, `cp`/`mv`/`ln` destinations). A later call
+  waits only for these: an edit or write of a held file, or a bash command that uses the same package folder (package
+  manager and JavaScript tool commands), changes the same repository, or writes the same file; reads never wait. Any
+  doubt (command substitution, variables or globs in a path, an unknown `cd`) holds nothing, so a missed writer falls
+  back to the rule above plus the effects report. The handoff text says `holds: ...`; a call queued behind a hold
+  shows `waiting for: job#N (holds ...)`. Package-folder and git holds are process-wide (`ledger.ts`): main,
+  subagents, workers and reviewers of one Pi process wait for each other's holds; files are not ordered across
+  sessions, they get attributed notes. Effects report (O1): a top-level bash or codemode call takes a snapshot of
+  the working tree (every file of `git ls-files -co --exclude-standard`, or outside git a walk of at most 20000 files
+  without .git, node_modules, .next, target, .venv, __pycache__, with mtime and size) right before its command starts,
+  and a job takes another when it ends. What changed is the difference of the two states, never a time cutoff: a file
+  written just before the start is not a change whatever the clocks say (the code review found the cutoff's false
+  reports; a test with the files aged had hidden it). A file the snapshot does not list (git-ignored, outside the
+  tree) falls back to its mtime against the start. Cost, paid by every top-level bash and codemode call (measured,
+  `$TMPDIR/bb-r3-snapshot-cost.log`): 8-12 ms for this repository (283 files), 17-18 ms for a 1420-file repository,
+  133-150 ms for a 20000-file walk outside git; each report states its own cost in `scanned`. Owner's cost decision
+  (option 1A of `my-pi-evidence/bash-background/SNAPSHOT-COST.md`: the exact snapshot before every call, against a
+  cheaper scan at the handoff with an uncertainty list): «Да, если это всего лишь 150 миллисекунд на 20 тыс. файлов,
+  конечно, блядь, надо делать снимок файлов точный. Это 1А.» Reason: only the exact states before and after give no
+  false attribution and no missed early change, and the price is small: about 8-22 ms in the git repositories measured
+  and about 150 ms for 20000 files outside git. The current exact pre-start snapshot of every top-level bash and
+  codemode call stays unchanged, no code change. Carriers: `snapshot` in `extensions/RQW-tools/ledger.ts`, taken in
+  `begin()` of `jobs.ts` before the command starts and compared with the end snapshot by the effects report. Proof:
+  `extensions/RQW-tools/test/ledger.test.ts` ("a snapshot compares states, not times") and
+  `extensions/RQW-tools/test/background.test.ts` (a file written just before the start or with a future mtime is not
+  reported; `scanned` names both snapshot costs). The report lists under
+  `effects` the files created and the files changed while it ran (with the RQW session and tool when another session wrote it), the
+  caller's own writes during the run (file tools, and the files a foreground bash command of the caller certainly
+  wrote by its footprint), own writes overwritten since, files deleted since the handoff, and the other jobs that ran
+  alongside. Every list is complete (Pi gives a custom tool's result text to the model whole). The scan has no
+  deadline of its own and runs also for a killed job; it is cancelled only when the caller's session ends. A failed or
+  cancelled scan, a git failure and a walk stopped at its limit are named in `effects.errors` or `scanned`, never
+  dropped. Write precondition (P1): a write over a file the session has read
+  or written, changed since by anyone else, is refused once with who changed it; the identical retry overwrites; a
+  file never seen is written without a check. The check, the stock tool and the ledger record of every RQW read, edit
+  and write run in one process-wide critical section per file (`withFileLock`, files locked in sorted order), so two
+  sessions that read one version cannot both pass the check and overwrite one after the other. Files are keyed by
+  their native real path (`identityKey` in keys.ts): symlink and case aliases share records, distinct files never do.
+  Records belong to a registry (`owner`, unique; the label "main", "code_writer#2" is only shown); a registry that ends
+  forgets what it saw, so a restarted session or a second session with the same label inherits nothing. A multi-file
+  edit or write records each written file even when a sibling failed; a file whose result says "Possibly changed" is
+  marked uncertain, and the next write of it is refused once until it is read. A read keys the spelling it will open
+  when it is about to run, after the calls it waited for (an earlier bash may have created the fallback spelling).
+  Own writes are kept per owner while a bash or codemode job of that owner runs (from its start until its report is
+  built, dropped when no job watches), so a later write by another session cannot erase them from `yours` and the
+  report shows the lost update under `overwritten`. A read whose file changed while it was read gets a note and does not
+  count as seen. Notes of a read, edit or write name the other session (`changed by code_writer#2 (edit, hh:mm:ss)
+  after you last saw it`). K1: `job kill` also cancels the queued calls of the same response that wait for the killed
+  job (transitively) and lists them in `cancelled_followers`; calls of later responses are not cancelled. A killed
+  queued call leaves the barrier at once and never runs (`withdraw` in barrier.ts), so a later call of the same file
+  does not wait for whatever the killed call was waiting for. N1: a job
+  that ended with a non-empty effects report the model has not seen (through `wait`, `status` or this note) adds one
+  line to the next top-level tool result of the caller, a codemode script's result included: `note: job#N (<command>) ended (exit 0); its report lists <n>
+  file changes: job status job#N.` (or `its effects report is incomplete (<reason>)`). W1: `job wait` takes `until`, a JavaScript regular expression on the output (a leading `(?i)` ignores case: GPT-6
+  Luna wrote it in the pilot and got an error); it returns as
+  soon as a job's output matches (`reason: "match"`, the matching line) while the job keeps running. S1: a codemode
+  script waits for a free worker of the process (an aborted waiter leaves the queue, so a released slot always reaches a
+  live waiter) (`PI_CODEMODE_MAX_WORKERS`, default 2, as Pi counts them) as a queued
+  job instead of failing after Pi's 60 s; the handoff of a script says how many workers are in use. A server command
+  that names a port a running job of any session serves gets a note. A bash call inside a codemode script never goes
+  to the background but takes the same process-wide git and package-folder claims, waiting inside the script. Each session's label comes through the optional
+  `options.label` of the offered factory: the path from the main session (RQW-agent passes `agent#1`,
+  `agent#1/agent#1`, `agent#1/code_writer#2`; RQW-review `review`, a child's reviewer `agent#1/review`; main is
+  `main`). It is shown only in notes; each registry keeps its unique owner. Children like main (coordinator's technical
+  decision at the rebase onto subagent parity, from the owner's «children like main» and the background of a whole
+  script): with an RQW-tools offer, a child's or reviewer's `codemode` is Pi's definition built from that session's API,
+  passed to the factory as the optional `options.codemode` and returned as one call of the child's barrier and a job of
+  its registry, so a child script goes to the background after 12 s like main's, and S1 slots count the scripts of main
+  and every child together. Without an offer the child keeps Pi's stock codemode as registered by Pi's factory.
+  Explorers get `job` only when offered and never edit or write. A child's review disposes its jobs when the child
+  ends (the child's lifetime signal ends the review run). The reviewer of RQW-review gets the offered `job` tool with its four tools when RQW-tools offers them (section
+  Review); Esc of a review aborts its jobs
+  (`abortAll`) and the end of the review disposes them, as RQW-agent does for subagents. The prompt section
+  `rqw_tools_execution` says that a background job holds the later calls of its response and, from later responses,
+  only calls that change what it names as held. Writes of file tools inside a codemode script are recorded as `<tool> in a codemode script` of the caller.
+  Reason: the replay of 131598 recorded tool calls left D4 with 4090 silent overlaps between background jobs and later
+  calls at the same wall time; FR-safe leaves none silent, makes 45 later calls wait for a held resource, and keeps the
+  same-response order; the owner chose it. Carriers: `extensions/RQW-tools/footprint.ts`, `ledger.ts`, `barrier.ts`
+  (held entries, followers), `jobs.ts`, `index.ts`, `codemode.ts`, `keys.ts`, `descriptions/job.md`,
+  `descriptions/write.md`; `extensions/RQW-agent/index.ts`, `extensions/RQW-review/index.ts` (labels, the reviewer's
+  `job`), `notes/prompt-tools-isolation.md` (section text); races R16-R24:
+  `notes/analysis-races.md` section 9. Pilot live probe (Haiku 5.5 and GPT-6 Luna, thinking high; logs
+  `my-pi-evidence/bash-background/probe-2/`) found six defects, fixed here: the footprint read a subshell's `)` as
+  part of a written path; an append by the caller's own bash was reported as a change of the build job; a write of a same-response follower, which starts the moment the job's work
+  ends and before its scan, was reported as the job's (the scan now runs before the barrier releases those calls); a
+  tracked file the job deleted was not reported (git lists index entries); and `waiting for` named the holds of a call
+  that a same-response follower waits for in full; a follower queued behind the job was listed as running alongside
+  it. The port note is computed before the server starts and also goes
+  into its handoff. The code review of 1ecb796 found the races fixed above (slot wakeups, a killed queued call still
+  holding its file, nested bash without claims, the P1 check outside the write's critical section, alias and owner
+  identity, the time cutoff); each has a test in `background.test.ts` (#3-#8) or `ledger.test.ts` that fails on the
+  code before the fix. Proof: `extensions/RQW-tools/test/footprint.test.ts`, `ledger.test.ts`,
+  `barrier-detach.test.ts` (held oracle, randomized; it fails when held entries are ignored),
+  `background.test.ts` (R16 and R17 fail when the classifier holds nothing), `extensions/RQW-agent/test/
+  nested-workers.test.ts` and `extensions/RQW-review/test/review.test.ts` (labels, reviewer `job` lifetime),
+  `extensions/RQW-agent/test/agent.test.ts` and `extensions/RQW-review/test/subagent.test.ts` (offered child codemode,
+  explorer `job`, path labels, a child reviewer's jobs on the child's end), `background.test.ts` ("S1 across sessions"),
+  `test/prompt-tools-isolation.test.ts` (section text).
 - Historical proof: `npm test` (`node --test`, no model) and `.github/workflows/tests.yml` on macOS, Linux and Windows, plus a job
   reproducing PowerShell, portable Git Bash without admin, then Node. Current verification policy is in [Work policy](#work-policy);
   this historical coverage is not a Linux requirement or PowerShell runtime authorization.
@@ -1237,11 +1391,20 @@ Current accepted development policy (request summaries unless quoted); detailed 
   The resource loader loads no user extensions, skills, prompt templates, themes, context files or appended prompt;
   its sole inline extension installs the bash guard. `REVIEWER.md` is the prompt for both levels. Pi still adds its
   `<cwd>` block after the prompt, so relative paths in the brief resolve; nothing else is added.
-- Reviewer tools are exactly `read`, `bash`, `grep`, `find`, plus Pi's `codemode` and `tool_search` when the caller has
-  them active ([Agent](#agent) parity entry), no `edit` or `write`. Each session requests fresh
-  RQW-tools definitions over `pi.events` channel `rqw-tools:subagent-tools` using RQW-agent's `{ offer(factory) }`
-  handshake, calls the offered factory with cwd and a settings getter, then filters to those four names. No
-  cross-extension import is added. Without an offer Pi supplies stock tools. Both offered and stock grep/find use
+- Reviewer tools are `read`, `bash`, `grep`, `find`, no `edit` or `write`, plus Pi's `codemode` and `tool_search` when
+  the caller (the main session or the subagent whose `review` it is) has them active ([Agent](#agent) parity entry),
+  plus RQW-tools' `job` when RQW-tools offers its definitions. Each session requests fresh RQW-tools definitions over
+  `pi.events` channel `rqw-tools:subagent-tools` using RQW-agent's `{ offer(factory) }` handshake (during the
+  reviewer's loader reload when it has codemode, otherwise right after it) and calls the offered factory with cwd, a
+  settings getter and options: `label` is `review` for the main session's reviewer and the caller's path plus
+  `/review` for a subagent's (`agent#1/review`); `codemode`, only when the reviewer has codemode, is Pi's definition
+  built from the reviewer's own API (it is then not registered as it is). Of the returned definitions it keeps those
+  four names, `job` and, when it passed one, the returned `codemode` (one call of the reviewer's barrier and a job of
+  its registry; a factory that returns none leaves the reviewer's own definition). Tools, «Background jobs»: a
+  reviewer call still running after 12 s goes to the background; Esc of the review aborts its jobs and the end of the
+  review, or of the subagent that asked for it, disposes them. No cross-extension import is added. Without an offer the
+  reviewer gets the four stock definitions (`reviewerTools`) and, when its caller has them active, `codemode` and
+  `tool_search` registered by Pi's own factories; nothing goes to the background. Both offered and stock grep/find use
   the same `dropEmptyOptional` wrapper: `prepareArguments` drops optional arguments equal to the string `"null"`,
   `"undefined"` or blank, then chains the definition's existing `prepareArguments` before Pi validates them.
   Execute and the other definition fields stay unchanged. Reason: grep otherwise passes `--glob null` to rg and

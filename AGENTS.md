@@ -16,7 +16,11 @@ The coordinator delegates all execution, waits and checks to subagents and may r
 - `extensions/RQW-prompt/`: extension 2, the system prompt. `SYSTEM.md` is the text; `index.ts` puts it in place of Pi's
   default prompt prefix and appends the workstation, critical, environment and date blocks.
 - `extensions/RQW-tools/`: extension 3, the base tools. Stock `read`, `bash`, `edit`, `write`, `grep`, `find` with our
-  descriptions (`descriptions/*.md`), multi-file `edit` and `write`, and the ordered barrier (Pi's `codemode` is one call of it). Tests: `npm test`.
+  descriptions (`descriptions/*.md`), multi-file `edit` and `write`, and the ordered barrier (Pi's `codemode` is one call of it).
+  A call still running after 12 s returns as a background job `job#N`; the `job` tool waits for, checks or kills it.
+  A job keeps holding only what its command certainly changes (package folder, git index, exact files; `footprint.ts`,
+  process-wide in `ledger.ts`) and reports the files changed while it ran (`DECISIONS.md` Tools, «Background jobs»).
+  Tests: `npm test`.
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
   window W = min(contextWindow, 500000) and compacts above W - R, where R = round(W / 10). Tests: `npm test`.
 - `extensions/RQW-agent/`: extension 5, subagents and the fixed `code_writer` / `shell_runner` workers. `agent`
@@ -24,7 +28,7 @@ The coordinator delegates all execution, waits and checks to subagents and may r
   agent's system prompt plus a subagent reminder and an optional `role` (`system` overrides the whole prompt), with
   chosen model/thinking and base tools, and an optional `title` in status and result details. A subagent has `agent` itself,
   recursively without a depth limit; `explore` starts a read-only search subagent on the caller's model; workers and
-  explorers are leaves. Children get codemode/tool_search as the caller has them, the caller's session settings, and
+  explorers are leaves. Children get codemode/tool_search as the caller has them (with RQW-tools, codemode as one call of the child's barrier and a background job, sharing main's codemode worker slots), the caller's session settings, and
   `review` when RQW-review offers it (`pi.events` `rqw-review:subagent-review`); workers also get cwd, OS and date.
   Details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-kinds-and-title). All three tools share caller-chosen mechanical wait and diagnostic status;
   results arrive once through wait or `[kind#N]` messages. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Workers retain history until stop for explicit follow-ups.
