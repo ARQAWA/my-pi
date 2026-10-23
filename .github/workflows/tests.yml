@@ -3,7 +3,8 @@ name: tests
 on:
   push:
     # Proof comes from the task branch head on current main; its squash has the same tree (PROCESS.md, Delivery).
-    branches-ignore: [main]
+    # `codemode-stress` only carries a head for codemode-stress.yml.
+    branches-ignore: [main, codemode-stress]
     # Docs-only pushes run no tests: root *.md, notes/ and .agents/ carry no code the tests load.
     paths-ignore: ['*.md', 'notes/**', '.agents/**']
   workflow_dispatch:
@@ -46,7 +47,13 @@ jobs:
 
       - run: npm ci
 
-      - run: npm test
+      # Crash reports newer than this mark belong to this job.
+      - name: Evidence mark
+        run: mkdir -p "$RUNNER_TEMP/evidence" && touch "$RUNNER_TEMP/evidence/.start"
+
+      # npm test with a TAP copy for the evidence (scripts/ci-npm-test.sh); the log output stays Node's default.
+      - name: npm test
+        run: bash scripts/ci-npm-test.sh "$RUNNER_TEMP/evidence/npm-test.tap"
 
       - name: Tests in a path with spaces and Cyrillic
         run: |
@@ -55,7 +62,25 @@ jobs:
           cp -R "$GITHUB_WORKSPACE" "$DIR/my-pi"
           cd "$DIR/my-pi"
           pwd
-          npm test
+          bash scripts/ci-npm-test.sh "$RUNNER_TEMP/evidence/npm-test-path-with-spaces.tap"
+
+      # A test file whose process died shows its exitCode and signal in the TAP copy; a native crash or a memory
+      # kill on macOS leaves a report in DiagnosticReports (JetsamEvent-*.ips for a memory kill).
+      - name: Collect crash reports (macOS)
+        if: failure() && runner.os == 'macOS'
+        run: |
+          for d in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+            find "$d" -name '*.ips' -newer "$RUNNER_TEMP/evidence/.start" -exec cp {} "$RUNNER_TEMP/evidence/" \; 2>/dev/null || true
+          done
+          ls -la "$RUNNER_TEMP/evidence"
+
+      - name: Upload evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-${{ matrix.os }}-node${{ matrix.node }}-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: ignore
 
   # Pi's release binaries (pi.exe of PCLI included) run on Bun, not Node. Bun drops the async context in a worker's
   # message callback, so the codemode routing must hold there too: Pi's own CLI under Bun, faux model, one script.
@@ -119,5 +144,13 @@ jobs:
           ${env:ProgramFiles(x86)} = "$env:RUNNER_TEMP\nowhere"
           $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notlike '*\Program Files\Git*' }) -join ';'
           $bash = "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe"
-          & $bash -lc 'command -v bash git node; cd "$GITHUB_WORKSPACE" && npm test'
+          & $bash -lc 'command -v bash git node; cd "$GITHUB_WORKSPACE" && bash scripts/ci-npm-test.sh "$RUNNER_TEMP/evidence/npm-test.tap"'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence-windows-portable-git-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: ignore

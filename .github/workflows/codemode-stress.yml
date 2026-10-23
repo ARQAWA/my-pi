@@ -1,0 +1,81 @@
+name: codemode-stress
+
+# Manual only: repeats the 12 MB codemode tests of extensions/RQW-tools/test/codemode.test.ts to reproduce a silent
+# death of that test file seen once on macOS Node 24. Each run records its exit code, its peak RSS and a TAP copy;
+# crash reports of the job are collected too. GitHub dispatches only workflows that exist on the default branch, so
+# until this file is on main it runs by a push to the branch `codemode-stress` (as pcli.yml with `pcli`).
+on:
+  push:
+    branches: [codemode-stress]
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Number of runs
+        default: "30"
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  stress:
+    name: codemode 12 MB stress (macos-latest, node 24)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Facts
+        run: |
+          node --version
+          sysctl -n hw.memsize hw.ncpu
+
+      - run: npm ci
+
+      - name: Runs
+        env:
+          RUNS: ${{ inputs.runs || '30' }}
+        run: |
+          ev="$RUNNER_TEMP/evidence"
+          mkdir -p "$ev"
+          touch "$ev/.start"
+          printf 'run\texit\tmax_rss_bytes\tseconds\n' > "$ev/summary.tsv"
+          failed=0
+          for i in $(seq 1 "$RUNS"); do
+            start=$(date +%s)
+            set +e
+            /usr/bin/time -l node --test --test-name-pattern="12 MB" \
+              --test-reporter=spec --test-reporter-destination=stdout \
+              --test-reporter=tap --test-reporter-destination="$ev/run-$i.tap" \
+              extensions/RQW-tools/test/codemode.test.ts > "$ev/run-$i.out" 2> "$ev/run-$i.err"
+            code=$?
+            set -e
+            rss=$(awk '/maximum resident set size/ { print $1 }' "$ev/run-$i.err")
+            printf '%s\t%s\t%s\t%s\n' "$i" "$code" "$rss" "$(( $(date +%s) - start ))" >> "$ev/summary.tsv"
+            echo "run $i: exit $code, max RSS $rss bytes"
+            if [ "$code" != 0 ]; then failed=$((failed + 1)); cat "$ev/run-$i.out" "$ev/run-$i.err"; fi
+          done
+          { echo '```'; cat "$ev/summary.tsv"; echo '```'; echo "failed runs: $failed of $RUNS"; } >> "$GITHUB_STEP_SUMMARY"
+          echo "failed runs: $failed of $RUNS"
+          [ "$failed" = 0 ]
+
+      - name: Collect crash reports
+        if: always()
+        run: |
+          for d in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+            find "$d" -name '*.ips' -newer "$RUNNER_TEMP/evidence/.start" -exec cp {} "$RUNNER_TEMP/evidence/" \; 2>/dev/null || true
+          done
+          ls -la "$RUNNER_TEMP/evidence"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codemode-stress-evidence-attempt${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence

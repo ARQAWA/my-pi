@@ -120,6 +120,17 @@ Current accepted development policy (request summaries unless quoted); detailed 
   Carried by [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks).
 - Keep replies short unless expansion is needed: «Он отвечает не больше трех абзацев по максимум две строки
   в абзаце. Если это не требует расширения, конечно».
+- CI evidence for a test file that dies. Coordinator decision (technical), no owner quote: the `npm test` steps keep
+  Node's default log output and also write a TAP copy, uploaded on failure with the job's macOS crash reports; a
+  manual stress workflow repeats the 12 MB codemode tests with exit code and peak RSS per run.
+  Reason: `codemode.test.ts` died silently once on macOS Node 24 (run 39948373095); on Node 24 the spec reporter
+  shows such a file only as 'test failed', so the root cause was not recoverable without its exit code or signal,
+  which the TAP copy carries. Carriers:
+  `scripts/ci-npm-test.sh` (Node's default log reporter plus a TAP copy), `.github/workflows/tests.yml` (artifact
+  `test-evidence-*`, also with `/Library/Logs/DiagnosticReports` for JetsamEvent memory kills) and
+  `.github/workflows/codemode-stress.yml` (input `runs`, `summary.tsv` with exit code and peak RSS per run).
+  Implementation choice: GitHub dispatches only workflows present on the default branch, so the stress workflow also
+  runs on a push to the branch `codemode-stress` (30 runs), like `pcli.yml` with `pcli`.
 
 ## Scope
 

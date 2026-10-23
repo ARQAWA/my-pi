@@ -458,11 +458,19 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 		const curly = "it\u2019s.txt";
 		await writeFile(join(dir, "source.txt"), "made by bash\n");
 		// The redirect is inside `sh -c '...'`: the footprint does not see the write, so only the read records the file.
-		const [, read] = await Promise.all([
-			call(tools.bash, { command: `sh -c 'cat source.txt > "$0"' "${curly}"` }, dir),
+		// The bash waits for the gate, so both calls pass the threshold on every host: the read is queued behind the
+		// bash whatever the host's speed, and its result comes through the job tool after the gate opens.
+		const [bash, queued] = await Promise.all([
+			call(tools.bash, { command: gated(`sh -c 'cat source.txt > "$0"' "${curly}"`) }, dir),
 			call(tools.read, { path: "it's.txt" }, dir),
 		]);
-		assert.match(text(read), /made by bash/, "stock read opened the curly spelling");
+		assert.match(text(bash), /^job#1 \(bash\) is still running/);
+		assert.match(text(queued), /^job#2 \(read\) is still queued behind earlier calls[^]*\nwaiting for: job#1\n/);
+		assert.ok(!existsSync(join(dir, curly)), "the bash has not created the file yet");
+		await open(dir);
+		const read = (await job(tools, dir, { action: "wait", ids: ["job#2"], timeout_ms: 20000 })).results[0];
+		assert.equal(read.state, "exited");
+		assert.match(read.result, /made by bash/, "stock read opened the curly spelling");
 		await call(other.edit, { path: curly, edits: [{ oldText: "made by bash", newText: "edited by the other session" }] }, dir);
 		await assert.rejects(call(tools.write, { path: curly, content: "main\n" }, dir), /changed after you last read it \(by code_writer#2 \(edit/);
 	});
