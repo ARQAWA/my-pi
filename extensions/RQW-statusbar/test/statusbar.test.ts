@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { type Component, visibleWidth } from "@earendil-works/pi-tui";
 import * as library from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext, ExtensionMode, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
@@ -47,6 +48,8 @@ function uiHarness(footer?: InstanceType<typeof FooterDataProvider>) {
 		},
 		getEditorComponent: () => editorFactory,
 		notify() {},
+		setWidget() {},
+		setWorkingVisible() {},
 		theme: plainTheme,
 	} as unknown as ExtensionUIContext;
 	return { ui, statuses, render: (width = 80) => component?.render(width),
@@ -87,11 +90,11 @@ for (const [label, pi] of [["library", library], ["bundle", bundle]] as const) {
 			// The full session ID ends the top border and follows the live session manager.
 			const firstId = session.sessionManager.getSessionId();
 			assert.match(firstId, /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-			assert.equal(h.top(), `${"\u2500".repeat(40)} ${firstId} \u2500\u2500`);
-			assert.equal(h.top(41), "\u2500".repeat(41), "too narrow: the ID is dropped, not cut");
+			assert.equal(stripVTControlCharacters(h.top()), `${"\u2500".repeat(40)} ${firstId} \u2500\u2500`);
+			assert.equal(stripVTControlCharacters(h.top(41)), "\u2500".repeat(41), "too narrow: the ID is dropped, not cut");
 			session.sessionManager.newSession();
 			assert.notEqual(session.sessionManager.getSessionId(), firstId);
-			assert.equal(h.top(), `${"\u2500".repeat(40)} ${session.sessionManager.getSessionId()} \u2500\u2500`);
+			assert.equal(stripVTControlCharacters(h.top()), `${"\u2500".repeat(40)} ${session.sessionManager.getSessionId()} \u2500\u2500`);
 			assert.equal((h.editor as unknown as { embedWorkingStatus: boolean }).embedWorkingStatus, true,
 				"the working status stays in the top border, as in Pi's default editor");
 			// Twenty input lines in a 40-row terminal show 12; with the cursor on the first, 8 are hidden below.
@@ -107,9 +110,12 @@ for (const [label, pi] of [["library", library], ["bundle", bundle]] as const) {
 			// Direct state replacement is deliberately not a model_select event: external sources must also work.
 			session.agent.state.model = { ...model, id: "other", name: "Other", contextWindow: 272000 } as never;
 			session.setThinkingLevel("high");
-			assert.match(h.render()![0], /Other hi/);
+			// The effort colour is an intentional SGR around `hi`: the visible text is matched plain, the colour placed exactly.
+			const high = h.render()![0];
+			assert.match(stripVTControlCharacters(high), /Other hi/);
+			assert.ok(high.includes(" \x1b[1;38;2;201;162;39mhi\x1b[22;39m"), JSON.stringify(high));
 			session.agent.state.thinkingLevel = "low";
-			assert.match(h.render()![0], /Other lo/);
+			assert.match(stripVTControlCharacters(h.render()![0]), /Other lo/);
 			assert.ok(h.border()!.endsWith("/222k"));
 			session.sessionManager.appendCompaction("fixture summary", "unused", 10000);
 			assert.match(h.render()![0], /cmp 1/);
@@ -173,19 +179,19 @@ it("refreshes branches after git init, checkout and repo replacement despite Pi'
 	const h = uiHarness(footer);
 	const handlers = new Map<string, Function>();
 	const git = (...args: string[]) => execFileSync("git", args, { cwd, stdio: "ignore" });
-	const ctx = { mode: "tui", cwd, ui: h.ui, model: undefined,
-		sessionManager: { getSessionId: () => "id", getLeafId: () => null, getEntryCount: () => 0, getEntries: () => [] },
+	const ctx = { mode: "tui", cwd, ui: h.ui, model: undefined, isIdle: () => true,
+		sessionManager: { getSessionId: () => "id", getLeafId: () => null, getEntryCount: () => 0, getEntries: () => [], getTree: () => [] },
 		getContextUsage: () => undefined };
 	statusbar({ on: (event: string, fn: Function) => handlers.set(event, fn), registerCommand() {},
-		events: { on: () => () => {}, emit() {} },
+		events: { on: () => () => {}, emit() {} }, getSessionName: () => undefined,
 		getSettings: () => ({}), getThinkingLevel: () => "off" } as unknown as ExtensionAPI);
-	async function refresh(action: () => void) {
-		const previous = h.renders;
+	/** Runs the action, then waits (bounded) until the git refresh it starts has rendered the state `ready` expects. */
+	async function refresh(action: () => void, ready: () => boolean) {
 		action();
-		for (let i = 0; h.renders === previous && i < 500; i++) {
+		for (let i = 0; !ready() && i < 500; i++) {
 			await new Promise(resolve => setTimeout(resolve, 10));
 		}
-		assert.ok(h.renders > previous, "async git refresh requested render");
+		assert.ok(ready(), "async git refresh rendered the expected branch");
 	}
 	try {
 		assert.equal(footer.getGitBranch(), null, "real Pi provider caches absent repo");
@@ -193,19 +199,19 @@ it("refreshes branches after git init, checkout and repo replacement despite Pi'
 		assert.doesNotMatch(h.render()![1], /new-branch/);
 		git("init", "-b", "new-branch");
 		writeFileSync(join(cwd, "new-file"), "x");
-		await refresh(() => handlers.get("tool_execution_end")!({}, ctx));
+		await refresh(() => handlers.get("tool_execution_end")!({}, ctx), () => /new-branch.*\?1/.test(h.render()![1]));
 		assert.match(h.render()![1], /new-branch.*\?1/);
 		git("checkout", "-b", "switched-branch");
-		await refresh(() => handlers.get("agent_end")!({}, ctx));
+		await refresh(() => handlers.get("agent_end")!({}, ctx), () => /switched-branch.*\?1/.test(h.render()![1]));
 		assert.match(h.render()![1], /switched-branch.*\?1/);
 		assert.doesNotMatch(h.render()![1], /new-branch/);
 		rmSync(join(cwd, ".git"), { recursive: true, force: true });
 		git("init", "-b", "replacement-branch");
-		await refresh(() => t.mock.timers.tick(10_000));
+		await refresh(() => t.mock.timers.tick(10_000), () => /replacement-branch.*\?1/.test(h.render()![1]));
 		assert.match(h.render()![1], /replacement-branch.*\?1/);
 		assert.doesNotMatch(h.render()![1], /switched-branch/);
 		rmSync(join(cwd, ".git"), { recursive: true, force: true });
-		await refresh(() => t.mock.timers.tick(10_000));
+		await refresh(() => t.mock.timers.tick(10_000), () => !/replacement-branch|\?1/.test(h.render()![1]));
 		assert.doesNotMatch(h.render()![1], /replacement-branch|\?1/);
 		assert.equal(footer.getGitBranch(), null, "Pi's stale cache was not mutated");
 		handlers.get("session_shutdown")!({}, ctx);

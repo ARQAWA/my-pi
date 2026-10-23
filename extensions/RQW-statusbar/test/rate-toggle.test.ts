@@ -46,6 +46,7 @@ import * as pi from "@earendil-works/pi-coding-agent";
 						{ getExtensionStatuses: () => new Map(), onBranchChange: () => () => {} } as never);
 				}, notify() {},
 				setEditorComponent(factory) { editor = factory; }, getEditorComponent: () => editor,
+				setWidget() {}, setWorkingVisible() {},
 			} as pi.ExtensionUIContext });
 			const toggle = (value: string) => session!.extensionRunner.getCommand("statusbar")!.handler(value,
 				session!.extensionRunner.createCommandContext());

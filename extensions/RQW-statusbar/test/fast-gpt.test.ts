@@ -21,7 +21,10 @@ const plain = (text: string) => stripVTControlCharacters(text);
 describe("GPT Fast lightning render", () => {
 	it("idle: the static bright yellow bolt right after the model name, before the level; no state: no bolt", () => {
 		const row = modelRow({ ...base, fast: {} }, 60);
-		assert.equal(row.startsWith(` ${ICON.model} GPT 6.1 Sol ${sgr(FAST_YELLOW)} hi`), true, JSON.stringify(row));
+		// The bolt's own colour sits right after the name; the high level's effort colour follows it, the visible text is plain.
+		assert.equal(row.startsWith(` ${ICON.model} GPT 6.1 Sol ${sgr(FAST_YELLOW)} `), true, JSON.stringify(row));
+		assert.equal(row.includes(` \x1b[1;38;2;201;162;39mhi\x1b[22;39m`), true, JSON.stringify(row));
+		assert.equal(plain(row).startsWith(` ${ICON.model} GPT 6.1 Sol ${ICON.fast} hi`), true, JSON.stringify(row));
 		const left = ` ${ICON.model} GPT 6.1 Sol ${ICON.fast} hi`;
 		assert.equal(plain(row), `${left}${" ".repeat(60 - left.length - "cmp 0".length)}cmp 0`);
 		assert.equal(FAST_YELLOW, "93", "SGR bright yellow");
@@ -29,7 +32,8 @@ describe("GPT Fast lightning render", () => {
 		assert.equal(plain(modelRow(base, 60)).startsWith(` ${ICON.model} GPT 6.1 Sol hi `), true, "the model glyph stays in front, as before");
 		// A model without reasoning has no level: the bolt ends the left part.
 		assert.equal(plain(modelRow({ ...base, model: { id: "x", name: "X" }, fast: {} }, 30)).startsWith(` ${ICON.model} X ${ICON.fast} `), true);
-		assert.ok(!renderBar(base, 60).join("\n").includes("\x1b"), "nothing but the bolt carries own colours");
+		assert.ok(!renderBar({ ...base, thinkingLevel: "low" }, 60).join("\n").includes("\x1b"), "no level colour and no bolt: plain");
+		assert.ok(renderBar({ ...base, fast: {} }, 60)[1].includes(sgr(FAST_YELLOW)), "the bolt carries its own colour");
 	});
 
 	it("working: one shimmer cycle goes yellow, paler yellow, white and back; frames wrap", () => {
@@ -70,14 +74,14 @@ async function mount() {
 	const counter = { renders: 0 };
 	let editor: Parameters<pi.ExtensionUIContext["setEditorComponent"]>[0];
 	const state = { fast: true as boolean | undefined };
+	const bus = pi.createEventBus();
 	const loader = new pi.DefaultResourceLoader({ cwd, agentDir, additionalExtensionPaths: [fileURLToPath(new URL("../index.ts", import.meta.url))],
-		noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+		noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, eventBus: bus,
 		extensionFactories: [(api) => {
 			api.events.on("rqw-settings:fast-gpt-query", (query) => { if (state.fast !== undefined) (query as { fastGpt?: boolean }).fastGpt = state.fast; });
 		}] });
 	await loader.reload();
 	assert.deepEqual(loader.getExtensions().errors, []);
-	const bus = (loader as unknown as { eventBus: { emit(channel: string, data: unknown): void } }).eventBus;
 	const runtime = await pi.ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
 	await runtime.refresh({ allowNetwork: false });
 	const codex = runtime.getModels("openai-codex").find((m) => m.id === "gpt-6.1-sol")!;
@@ -91,6 +95,7 @@ async function mount() {
 				{ getExtensionStatuses: () => new Map(), onBranchChange: () => () => {} } as never);
 		}, notify() {},
 		setEditorComponent(factory) { editor = factory; }, getEditorComponent: () => editor,
+		setWidget() {}, setWorkingVisible() {},
 	} as pi.ExtensionUIContext });
 	return { session, state, bus, codex, claude, counter,
 		row: () => component!.render(100)[0],
@@ -117,6 +122,7 @@ describe("GPT Fast lightning in a real session", () => {
 			assert.deepEqual(seen.map((r) => SHIMMER.findIndex((c) => r.includes(sgr(c)))), [1, 2, 3, 2, 1, 0], "frames 1..6 by colour; the pale steps repeat their colour");
 			assert.ok(counter.renders > before + SHIMMER.length, "every shimmer step asks for a redraw");
 			await emit({ type: "agent_end" });
+			await emit({ type: "agent_settled" });
 			const idle = row();
 			const count = counter.renders;
 			t.mock.timers.tick(1200);
@@ -145,55 +151,71 @@ describe("GPT Fast lightning in a real session", () => {
 			// Working while the footer is replaced by a new session start: the shimmer follows the new footer.
 			await emit({ type: "agent_start" });
 			await emit({ type: "session_start", reason: "new" });
-			assert.ok(row().includes(sgr(SHIMMER[0])), "a footer installed mid-run shimmers");
+			// The new session samples the real main state through ctx.isIdle(): nothing runs, so the bolt is static.
+			assert.ok(row().includes(sgr(FAST_YELLOW)), "a new session starts from the real idle state");
 			await emit({ type: "agent_end" });
 			await emit({ type: "session_shutdown", reason: "quit" });
 		} finally { t.mock.timers.reset(); m.close(); }
 	});
 
-	it("the shimmer timer runs only while working AND the lightning is shown, and follows /fast-gpt and model changes mid-run", async (t) => {
+	it("agent_settled without agent_end: the bolt goes static and no timer runs with zero children", async (t) => {
 		const m = await mount();
-		const { session, state, bus, codex, claude, row, emit, counter } = m;
+		const { row, emit, counter } = m;
+		t.mock.timers.enable({ apis: ["setInterval"] });
+		try {
+			await emit({ type: "agent_start" });
+			await emit({ type: "agent_settled" });
+			assert.ok(row().includes(sgr(FAST_YELLOW)), "settled without agent_end: static bright yellow");
+			const count = counter.renders;
+			t.mock.timers.tick(1200);
+			assert.equal(counter.renders, count, "settled without agent_end: no timer renders");
+			assert.ok(row().includes(sgr(FAST_YELLOW)), "still static bright yellow after the clock advanced");
+			await emit({ type: "session_shutdown", reason: "quit" });
+		} finally { t.mock.timers.reset(); m.close(); }
+	});
+
+	it("the status letters animate while the main chat works, with or without the lightning; the timer stops once settled", async (t) => {
+		const m = await mount();
+		const { session, state, bus, codex, claude, row, emit } = m;
 		t.mock.timers.enable({ apis: ["setInterval"] });
 		/** Redraws caused by 1.2 s of timer time: zero means no timer is running. */
-		const ticks = () => { const before = counter.renders; t.mock.timers.tick(1200); return counter.renders - before; };
+		const ticks = () => { const before = m.counter.renders; t.mock.timers.tick(1200); return m.counter.renders - before; };
 		try {
-			// Claude model: no lightning, so no timer, though the agent works.
+			// Claude model: no lightning, and the status letters still shimmer while the agent works.
 			await session.setModel(claude);
 			await emit({ type: "agent_start" });
-			assert.equal(ticks(), 0, "Claude: no timer");
+			assert.ok(ticks() >= 10, "Claude: the status letters animate");
 			await emit({ type: "agent_end" });
+			await emit({ type: "agent_settled" });
+			assert.equal(ticks(), 0, "settled: no timer");
 			await session.setModel(codex);
 
-			// GPT Fast off: no timer.
+			// GPT Fast off: the letters still animate, the bolt is gone.
 			state.fast = false; bus.emit("rqw-settings:fast-gpt", { on: false });
 			await emit({ type: "agent_start" });
-			assert.equal(ticks(), 0, "GPT Fast off: no timer");
-
-			// Switched on mid-run: the timer starts.
-			state.fast = true; bus.emit("rqw-settings:fast-gpt", { on: true });
-			assert.ok(ticks() >= 10, "on mid-run: the timer starts");
-			assert.ok(row().includes(ICON.fast));
-			// Switched off mid-run: it stops, and the bolt is gone.
-			state.fast = false; bus.emit("rqw-settings:fast-gpt", { on: false });
-			assert.equal(ticks(), 0, "off mid-run: the timer stops");
+			assert.ok(ticks() >= 10, "Fast off: the status letters animate");
 			assert.ok(!row().includes(ICON.fast));
+
+			// Switched on mid-run: the bolt shows and keeps shimmering.
 			state.fast = true; bus.emit("rqw-settings:fast-gpt", { on: true });
-			assert.ok(ticks() >= 10);
+			assert.ok(ticks() >= 10, "on mid-run: the timer runs");
+			assert.ok(row().includes(ICON.fast));
 
-			// Model change mid-run: Claude stops it, GPT starts it again.
+			// Model change mid-run: the letters keep animating.
 			await session.setModel(claude);
-			assert.equal(ticks(), 0, "switch to Claude mid-run: the timer stops");
+			assert.ok(ticks() >= 10, "switch to Claude mid-run: the letters animate");
 			await session.setModel(codex);
-			assert.ok(ticks() >= 10, "switch to GPT mid-run: the timer starts");
 
-			// The agent ends: the timer stops. RQW-settings absent: never starts.
+			// The agent ends and settles: the timer stops.
 			await emit({ type: "agent_end" });
+			await emit({ type: "agent_settled" });
 			assert.equal(ticks(), 0, "idle: no timer");
+
+			// RQW-settings absent: nobody answers for the bolt, the letters still animate while the agent works.
 			state.fast = undefined;
 			await emit({ type: "agent_start" });
-			assert.equal(ticks(), 0, "no RQW-settings: no timer");
-			await emit({ type: "agent_end" });
+			assert.ok(ticks() >= 10, "no RQW-settings: the letters animate");
+			await emit({ type: "agent_settled" });
 			await emit({ type: "session_shutdown", reason: "quit" });
 		} finally { t.mock.timers.reset(); m.close(); }
 	});

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { it } from "node:test";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import type { Component } from "@earendil-works/pi-tui";
 import * as library from "@earendil-works/pi-coding-agent";
 import type { ExtensionMode, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
@@ -16,18 +17,34 @@ const { FooterDataProvider } = await import(new URL("./core/footer-data-provider
 
 type EditorFactory = Parameters<ExtensionUIContext["setEditorComponent"]>[0];
 const plainTheme = { fg: (_role: string, text: string) => text };
+const TITLE_KEY = "rqw-statusbar-title";
+/** Pi's ANSI and APC cursor marks removed, so visible text is compared without terminal control bytes. */
+const plain = (line: string) => stripVTControlCharacters(line.replace(/\x1b_[^\x07]*\x07/g, ""));
 
-/** Pi's extension UI slots in miniature: footer and editor factories, as interactive mode calls them. */
+/** Pi's extension UI slots in miniature: widget, footer and editor factories, as interactive mode calls them. */
 function uiHarness(footer?: InstanceType<typeof FooterDataProvider>) {
 	let component: (Component & { dispose?(): void }) | undefined;
 	let editorFactory: EditorFactory;
 	let editor: ReturnType<NonNullable<EditorFactory>> | undefined;
 	let calls = 0, renders = 0, subscriptions = 0;
+	const order: string[] = [];
+	const widgets = new Map<string, Component & { dispose?(): void }>();
 	const statuses = new Map<string, string>();
 	const tui = { requestRender: () => renders++, terminal: { rows: 40 } } as never;
 	const ui = {
+		setWidget(key: string, content: unknown) {
+			calls++;
+			order.push("setWidget");
+			widgets.get(key)?.dispose?.();
+			if (content === undefined) {
+				widgets.delete(key);
+				return;
+			}
+			widgets.set(key, (content as (tui: unknown, theme: unknown) => Component)(tui, plainTheme));
+		},
 		setFooter(factory: Parameters<ExtensionUIContext["setFooter"]>[0]) {
 			calls++;
+			order.push("setFooter");
 			component?.dispose?.();
 			component = factory?.(tui, plainTheme as never,
 				footer ?? { getGitBranch: () => null, getExtensionStatuses: () => statuses,
@@ -36,6 +53,7 @@ function uiHarness(footer?: InstanceType<typeof FooterDataProvider>) {
 		},
 		setEditorComponent(factory: EditorFactory) {
 			calls++;
+			order.push("setEditorComponent");
 			const text = editor?.getText() ?? "";
 			editorFactory = factory;
 			editor = factory?.(tui, { borderColor: (text: string) => text, selectList: {} } as never,
@@ -46,7 +64,9 @@ function uiHarness(footer?: InstanceType<typeof FooterDataProvider>) {
 		notify() {},
 		theme: plainTheme,
 	} as unknown as ExtensionUIContext;
-	return { ui, statuses, render: (width = 80) => component?.render(width),
+	return { ui, statuses, order, render: (width = 80) => component?.render(width),
+		/** The title row rendered by the public widget factory; undefined when no widget is up. */
+		title: (width = 80) => widgets.get(TITLE_KEY)?.render(width),
 		/** The editor's bottom border, undefined for Pi's stock editor. */
 		border: (width = 80) => editor?.render(width).at(-1),
 		get editor() { return editor; },
@@ -74,20 +94,27 @@ for (const [label, pi] of [["library", library], ["bundle", bundle]] as const) {
 				settingsManager: pi.SettingsManager.inMemory({ compaction: {} }) }));
 			await session.bindExtensions({ uiContext: h.ui, mode: "tui" });
 			assert.equal(session.model?.contextWindow, 500000);
-			assert.match(h.render()![0], /Fixture no/);
+			// Normal Pi order: the title widget is registered before the footer, and the footer really draws.
+			assert.ok(h.order.indexOf("setWidget") >= 0, "the title widget is registered");
+			assert.ok(h.order.indexOf("setWidget") < h.order.indexOf("setFooter"), "title widget before footer");
+			assert.ok(h.render()!.length > 0, "the footer is installed and non-empty");
+			assert.match(plain(h.render()![0]), /Fixture no/);
 			assert.match(h.border()!, /\/450k$/);
 			// Direct state replacement is deliberately not a model_select event: external sources must also work.
 			session.agent.state.model = { ...model, id: "other", name: "Other", contextWindow: 272000 } as never;
 			session.setThinkingLevel("high");
-			assert.match(h.render()![0], /Other hi/);
+			assert.match(plain(h.render()![0]), /Other hi/);
 			session.agent.state.thinkingLevel = "low";
-			assert.match(h.render()![0], /Other lo/);
+			assert.match(plain(h.render()![0]), /Other lo/);
 			assert.ok(h.border()!.endsWith("/244.8k"));
 			session.sessionManager.appendCompaction("fixture summary", "unused", 10000);
-			assert.match(h.render()![0], /cmp 1/);
+			assert.match(plain(h.render()![0]), /cmp 1/);
 			assert.ok(h.border()!.endsWith("?/244.8k"));
 			h.statuses.set("z", "last"); h.statuses.set("a", "first\nsecond");
-			assert.match(h.render()![0], /first second · last/);
+			assert.match(plain(h.render()![0]), /first second · last/);
+			// The public session name reaches the title row through the session_info_changed event.
+			session.setSessionName("Capped title");
+			assert.match(plain(h.title()![0]), /Capped title/);
 			const command = session.extensionRunner.getCommand("statusbar")!;
 			await command.handler("off", session.extensionRunner.createCommandContext());
 			assert.equal(h.render(), undefined); assert.equal(h.subscriptions, 0);

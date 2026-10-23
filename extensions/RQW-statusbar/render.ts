@@ -47,6 +47,8 @@ export function singleLine(text: string): string {
 export type PlaceKind = "folder" | "scratch" | "worktree";
 
 export interface BarState {
+	/** The sibling number N of the branch the leaf is on (`⑂ ветка N`); undefined on the original first branch. */
+	branch?: number;
 	/** The session model; undefined shows "no-model", as omp. */
 	model?: { id: string; name?: string; reasoning?: boolean };
 	thinkingLevel?: string;
@@ -103,6 +105,16 @@ export function fit(line: string, width: number): string {
 	return truncateToWidth(line, width, "…");
 }
 
+/**
+ * Own plain chrome cut to width: the escape codes that Pi's cut may add are removed after the cut, so the text is plain
+ * cells that can be repainted per code point.
+ */
+export function fitPlain(text: string, width: number): string {
+	if (width <= 0) return "";
+	const cut = visibleWidth(text) <= width ? text : truncateToWidth(text, width, "…");
+	return stripVTControlCharacters(cut);
+}
+
 /** Left part at the start, right part flush with the edge; the left part gives way first (harness `rowLeftRight`). */
 export function leftRight(left: string, right: string, width: number): string {
 	if (!left && !right) return "";
@@ -117,15 +129,22 @@ export function leftRight(left: string, right: string, width: number): string {
 	return cut + " ".repeat(Math.max(0, width - visibleWidth(cut) - rw)) + right;
 }
 
+/** The context label after the bar: percent and tokens against the limit, `?/limit` while the tokens are unknown. */
+export function contextLabel(context: NonNullable<BarState["context"]>): string {
+	const known = context.tokens !== null;
+	const percent = known ? Math.min(100, Math.max(0, ((context.tokens as number) / context.limit) * 100)) : 0;
+	return known
+		? ` ${Math.round(percent)}% ${formatK(context.tokens as number)}/${formatK(context.limit)}`
+		: ` ?/${formatK(context.limit)}`;
+}
+
 /** Row 1: the full-width context bar. Percent of the compaction threshold, 100% at and above it. */
 export function contextRow(context: BarState["context"], width: number, paint: Paint = plain): string {
 	if (width <= 0) return "";
 	if (!context || !(context.limit > 0)) return paint("barEmpty", "─".repeat(width));
 	const known = context.tokens !== null;
 	const percent = known ? Math.min(100, Math.max(0, ((context.tokens as number) / context.limit) * 100)) : 0;
-	const label = known
-		? ` ${Math.round(percent)}% ${formatK(context.tokens as number)}/${formatK(context.limit)}`
-		: ` ?/${formatK(context.limit)}`;
+	const label = contextLabel(context);
 	const barWidth = Math.max(0, width - visibleWidth(label));
 	const filled = Math.round((barWidth * percent) / 100);
 	const line =
@@ -140,8 +159,10 @@ export function contextRow(context: BarState["context"], width: number, paint: P
  * (in `hint` color) comes first and the context row takes the rest; a width too narrow for both keeps the hint.
  */
 export function editorBorder(context: BarState["context"], hiddenLineCount: number, width: number,
-	paint: Paint = plain, hint: (text: string) => string = (text) => text): string {
+	paint: Paint = plain, hint: (text: string) => string = (text) => text, sheen?: number): string {
 	if (width <= 0) return "";
+	// Compaction: the whole row is the metallic gold, the hint included (see sheenRow).
+	if (sheen !== undefined) return sheenRow(context, width, sheen, hiddenLineCount);
 	if (!(hiddenLineCount > 0)) return contextRow(context, width, paint);
 	const text = `↓ ${hiddenLineCount} more `;
 	const rest = width - visibleWidth(text);
@@ -183,14 +204,29 @@ export function fastMark(frame: number | undefined): string {
 	return `\x1b[1;${color}m${ICON.fast}\x1b[22;39m`;
 }
 
+/** Effort colours of the footer: low plain, medium bold green, high bold gold, xhigh bold bright purple, max bold red. */
+const EFFORT: Record<string, (text: string) => string> = {
+	medium: (text) => `\x1b[1;32m${text}\x1b[22;39m`,
+	high: (text) => `\x1b[1;38;2;201;162;39m${text}\x1b[22;39m`,
+	xhigh: (text) => `\x1b[1;95m${text}\x1b[22;39m`,
+	max: (text) => `\x1b[1;91m${text}\x1b[22;39m`,
+};
+
+/** The thinking label in its effort colour; levels without one keep the model colour. */
+export function effortText(level: string | undefined, label: string, paint: Paint): string {
+	const style = level ? EFFORT[level] : undefined;
+	return style ? style(label) : paint("model", label);
+}
+
 /** Row 2: model and thinking level on the left (then other extensions' statuses), `cmp N · R tok/s` on the right. */
 export function modelRow(state: BarState, width: number, paint: Paint = plain): string {
 	const level = thinkingLabel(state.model, state.thinkingLevel);
+	const shownLevel = level ? ` ${effortText(state.thinkingLevel ?? "off", level, paint)}` : "";
 	// GPT Fast: the lightning sits right after the model name, before the thinking level; the model icon stays in front.
 	const name = `${ICON.model} ${modelName(state.model)}`;
 	let left = state.fast
-		? ` ${paint("model", name)} ${fastMark(state.fast.frame)}${level ? ` ${paint("model", level)}` : ""}`
-		: ` ${paint("model", `${name}${level ? ` ${level}` : ""}`)}`;
+		? ` ${paint("model", name)} ${fastMark(state.fast.frame)}${shownLevel}`
+		: ` ${paint("model", name)}${shownLevel}`;
 	const dot = ` ${paint("sep", "·")} `;
 	const statuses = state.statuses.map(singleLine).filter(Boolean);
 	if (statuses.length > 0) left += dot + statuses.join(dot);
@@ -214,10 +250,16 @@ export function gitText(git: BarState["git"], paint: Paint = plain): string {
 	return paint(dirty ? "gitDirty" : "gitClean", head) + (marks.length > 0 ? `${head ? " " : ""}${marks.join(" ")}` : "");
 }
 
-/** Row 3: the working place on the left, git on the right. */
+/**
+ * Row 3: the working place on the left, git on the right. Off the original branch the `⑂ ветка N` mark follows the folder
+ * after two spaces; it is dropped whole, before the folder is cut, when folder, mark and git do not fit together.
+ */
 export function placeRow(state: BarState, width: number, paint: Paint = plain): string {
-	const left = ` ${paint("path", `${ICON[state.place.kind]} ${singleLine(state.place.text)}`)}`;
-	return leftRight(left, gitText(state.git, paint), width);
+	const folder = ` ${paint("path", `${ICON[state.place.kind]} ${singleLine(state.place.text)}`)}`;
+	const git = gitText(state.git, paint);
+	const withMark = state.branch === undefined ? undefined : `${folder}  ${paint("label", `⑂ ветка ${state.branch}`)}`;
+	const fits = withMark !== undefined && visibleWidth(withMark) + (git ? 1 + visibleWidth(git) : 0) <= width;
+	return leftRight(fits ? (withMark as string) : folder, git, width);
 }
 
 /** The three rows of the bar at this width. */
@@ -350,4 +392,164 @@ export class RateMeter {
 	value(): number | undefined {
 		return this.last;
 	}
+}
+
+// ---- Activity: silver busy letters, gold compaction letters and chrome, the static gold session title.
+
+/** Gold of the compaction status: the source stops (not the browser calibration), then the sheen and the edge. */
+export const GOLD: readonly string[] = ["#8a6d1c", "#c9a227", "#e3c45a"];
+export const GOLD_SHEEN = "#f2de8a";
+export const GOLD_EDGE = "#d9b84a";
+/** Silver of the ordinary busy letters: dim, muted, then the foreground. */
+export const SILVER: readonly string[] = ["#5f5e5c", "#8d8d8c", "#e5efff"];
+/** The ordinary top rule: a fixed silver, independent of the editor's thinking colour. */
+export const RULE_SILVER = "#b6b6b4";
+
+const rgbOf = (hex: string): number[] => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+
+/** The colour at `t` (0..1) along the stops. */
+export function mix(stops: readonly string[], t: number): string {
+	const x = Math.min(1, Math.max(0, t)) * (stops.length - 1);
+	const i = Math.min(stops.length - 2, Math.floor(x));
+	const u = x - i;
+	const a = rgbOf(stops[i]);
+	const b = rgbOf(stops[i + 1]);
+	return `#${a.map((c, k) => Math.round(c + (b[k] - c) * u).toString(16).padStart(2, "0")).join("")}`;
+}
+
+const styled = (hex: string, bold: boolean, text: string) =>
+	`\x1b[${bold ? "1;" : ""}38;2;${rgbOf(hex).join(";")}m${text}\x1b[22;39m`;
+
+/** The shimmer phase of letter or global column `index` at `frame`: f = (.5 + .5 cos(i*.32 - frame*.22))**2. */
+export function shimmerPhase(index: number, frame: number): number {
+	return (0.5 + 0.5 * Math.cos(index * 0.32 - frame * 0.22)) ** 2;
+}
+
+/** Status letters by their global column: colour by phase along the stops, bold on the crest (phase above .85); spaces stay plain. */
+export function shimmerText(text: string, startColumn: number, frame: number, stops: readonly string[]): string {
+	return Array.from(stripVTControlCharacters(text)).map((ch, i) => {
+		if (ch === " ") return ch;
+		const f = shimmerPhase(startColumn + i, frame);
+		return styled(mix(stops, f), f > 0.85, ch);
+	}).join("");
+}
+
+/**
+ * The compaction metallic at global column `x` of a `width`-cell row: a sheen run of six cells, the edge cell after it
+ * and the last cell, and the gold gradient across the full width everywhere else. The run moves with the frame.
+ */
+export function metallicColor(x: number, width: number, frame: number): string {
+	const d = (((x - Math.floor(frame)) % width) + width) % width;
+	if (d < 6) return GOLD_SHEEN;
+	if (d === 6 || d === width - 1) return GOLD_EDGE;
+	return mix(GOLD, width > 1 ? x / (width - 1) : 0.5);
+}
+
+/** Compaction chrome text from global column `startColumn` of a `width`-cell row: every cell bold in its metallic colour. */
+export function metallicText(text: string, width: number, frame: number, startColumn = 0): string {
+	if (width <= 0) return "";
+	let x = startColumn;
+	let out = "";
+	for (const ch of Array.from(stripVTControlCharacters(text))) {
+		out += styled(metallicColor(x, width, frame), true, ch);
+		x += visibleWidth(ch);
+	}
+	return out;
+}
+
+/**
+ * The context row during compaction: the whole row in the metallic gold, the `↓ N more` hint first when lines are hidden,
+ * then a full meter (busy, not measured progress) with the label. Unknown tokens keep the full meter too.
+ */
+export function sheenRow(context: BarState["context"], width: number, frame: number, hiddenLineCount = 0): string {
+	if (width <= 0) return "";
+	const hint = hiddenLineCount > 0 ? `↓ ${hiddenLineCount} more ` : "";
+	const hintWidth = visibleWidth(hint);
+	if (hintWidth >= width) return metallicText(fitPlain(hint, width), width, frame);
+	const rest = width - hintWidth;
+	const label = context && context.limit > 0 ? fitPlain(contextLabel(context), rest) : "";
+	return metallicText(hint + "━".repeat(rest - visibleWidth(label)) + label, width, frame);
+}
+
+/** The session title above the input: static bold gold over the fitted title's own code points; empty until named. */
+export function titleRow(name: string | undefined, width: number): string {
+	const text = singleLine(name ?? "");
+	if (!text || width <= 0) return "";
+	const points = Array.from(fitPlain(text, width));
+	return points.map((ch, i) => styled(mix(GOLD, points.length > 1 ? i / (points.length - 1) : 0.5), true, ch)).join("");
+}
+
+/** What the top border shows of the activity: the status text and whether it is the compaction. */
+export interface ActivityChrome {
+	text: string;
+	compacting: boolean;
+	frame: number;
+}
+
+/** A run of the top border: a rule, the hint, the status letters or the session ID. */
+interface TopSegment {
+	text: string;
+	kind: "rule" | "hint" | "status" | "id";
+}
+
+const rule = (text: string): TopSegment => ({ text, kind: "rule" });
+
+/**
+ * The left part of the top border in `width` cells: the status after `── ` and the hint centred the way Pi centres it.
+ * `whole` is false when the status or the hint had to be cut; the session ID is then dropped, never the status cut for it.
+ */
+function topHead(width: number, hiddenLineCount: number, chrome: ActivityChrome | undefined):
+	{ segments: TopSegment[]; whole: boolean } {
+	if (width <= 0) return { segments: [], whole: true };
+	const hint = hiddenLineCount > 0 ? ` ↑ ${hiddenLineCount} more ` : "";
+	const hintWidth = visibleWidth(hint);
+	if (hint && hintWidth + 2 > width) {
+		// Too narrow to centre: Pi's narrow form of the hint, cut to the width.
+		const indicator = stripVTControlCharacters(truncateToWidth(`─── ↑ ${hiddenLineCount} more `, width, ""));
+		return { segments: [{ text: indicator, kind: "hint" }, rule("─".repeat(width - visibleWidth(indicator)))], whole: false };
+	}
+	const cells = hint ? Math.floor((width - hintWidth) / 2) : width;
+	const after: TopSegment[] = hint ? [{ text: hint, kind: "hint" }, rule("─".repeat(width - cells - hintWidth))] : [];
+	if (!chrome) return { segments: [rule("─".repeat(cells)), ...after], whole: true };
+	// Without a hint the status keeps two rule cells at its right end; before a hint it keeps one space.
+	const room = hint ? cells - 4 : width - 6;
+	if (room < 1) return { segments: [rule("─".repeat(cells)), ...after], whole: false };
+	const text = fitPlain(chrome.text, room);
+	const lw = visibleWidth(text);
+	return {
+		segments: [rule("── "), { text, kind: "status" }, rule(` ${"─".repeat(cells - 4 - lw)}`), ...after],
+		whole: text === chrome.text,
+	};
+}
+
+/** Paints the segments in global columns: ordinary rules silver, status letters shimmer silver, the ID muted; compaction all metallic. */
+function paintTop(segments: TopSegment[], width: number, chrome: ActivityChrome | undefined, paint: Paint): string {
+	let x = 0;
+	let out = "";
+	for (const segment of segments) {
+		if (segment.text) {
+			if (segment.kind === "status" && chrome) out += shimmerText(segment.text, x, chrome.frame, chrome.compacting ? GOLD : SILVER);
+			else if (chrome?.compacting) out += metallicText(segment.text, width, chrome.frame, x);
+			else if (segment.kind === "id") out += paint("label", segment.text);
+			else out += styled(RULE_SILVER, false, segment.text);
+		}
+		x += visibleWidth(segment.text);
+	}
+	return out;
+}
+
+/**
+ * The editor's top border in `width` cells: the rule with Pi's hint when lines are hidden above, the activity status after
+ * `── ` and the session ID whole at the right end. The ID is shown only when the whole status and hint fit beside it.
+ */
+export function topBorder(width: number, sessionId: string | undefined, chrome: ActivityChrome | undefined,
+	hiddenLineCount = 0, paint: Paint = plain): string {
+	if (width <= 0) return "";
+	const id = singleLine(sessionId ?? "");
+	const rest = width - visibleWidth(id) - 4;
+	if (id && !id.includes(" ") && rest >= 2) {
+		const head = topHead(rest, hiddenLineCount, chrome);
+		if (head.whole) return paintTop([...head.segments, rule(" "), { text: id, kind: "id" }, rule(" ──")], width, chrome, paint);
+	}
+	return paintTop(topHead(width, hiddenLineCount, chrome).segments, width, chrome, paint);
 }
