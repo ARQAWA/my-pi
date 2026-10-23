@@ -28,7 +28,8 @@ export type Footprint = {
 
 const EMPTY = (): Footprint => ({ held: { files: [], tags: [] }, explicit: { tags: [], writes: [] }, written: [], ports: [], server: false, holds: [] });
 
-type Seg = { words: string[]; bg: boolean; redirW: string[] };
+/** One simple command, or the opening or closing parenthesis of a subshell (`sub`). */
+type Seg = { words: string[]; bg: boolean; redirW: string[]; sub?: "open" | "close" };
 
 /** Quote-aware split into simple commands with their write redirects. Heredoc bodies are dropped. */
 function segments(cmd: string): { segs: Seg[]; subst: boolean } {
@@ -94,7 +95,11 @@ function segments(cmd: string): { segs: Seg[]; subst: boolean } {
         continue;
       }
       pending = "r";
-    } else if (c === "(" || c === ")") end(false); // a subshell: its commands are segments like any other
+    } else if (c === "(" || c === ")") {
+      // A subshell: its commands are segments like any other, and a `cd` inside it ends with its `)`.
+      end(false);
+      segs.push({ words: [], bg: false, redirW: [], sub: c === "(" ? "open" : "close" });
+    }
     else if (c === "{" || c === "}") { if (has) cur += c; }
     else { cur += c; has = true; }
   }
@@ -147,6 +152,8 @@ export function classifyBash(command: string, cwd0: string): Footprint {
     const writes = new Set<string>();
     const written = new Set<string>();
     let cwd = cwd0;
+    // The working folder outside each open subshell.
+    const outer: string[] = [];
     const write = (p: string) => {
       if (doubtful(p) || p.startsWith("/dev/")) return;
       const key = fileKey(p, cwd);
@@ -156,6 +163,13 @@ export function classifyBash(command: string, cwd0: string): Footprint {
       heldFiles.set(key, `file ${rel(cwd0, path.resolve(cwd, p))}`);
     };
     for (const seg of segs) {
+      if (seg.sub === "open") { outer.push(cwd); continue; }
+      if (seg.sub === "close") {
+        // A `)` without its `(` (a case pattern): the structure is unknown, so nothing is certain.
+        if (!outer.length) return EMPTY();
+        cwd = outer.pop()!;
+        continue;
+      }
       for (const t of seg.redirW) write(t);
       let k = 0;
       while (k < seg.words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(seg.words[k])) k++;
@@ -197,7 +211,13 @@ export function classifyBash(command: string, cwd0: string): Footprint {
         const listing = (["branch", "tag", "remote", "stash", "worktree", "config"].includes(sub) &&
           (a.length === 1 || a.slice(1).every((x) => /^(-a|-v|-vv|-r|--list|-l|--show-current|list|show|--all|--merged|--no-merged)$/.test(x) || x.startsWith("--format")))) ||
           (sub === "config" && a.slice(1).some((x) => /^(--get.*|--list|-l)$/.test(x)));
-        if (!dir || !sub || GIT_READ.has(sub) || listing || sub === "--version") continue;
+        // Reading subcommands with writing forms: `symbolic-ref <name> <ref>` and `-d` set or delete a ref; `reflog`
+        // `expire`, `delete`, `drop` and `write` change the reflog.
+        const rest = a.slice(1);
+        const changesRefs = (sub === "symbolic-ref" && (rest.some((x) => x === "-d" || x === "--delete") ||
+            rest.filter((x, i) => !x.startsWith("-") && rest[i - 1] !== "-m").length >= 2)) ||
+          (sub === "reflog" && /^(expire|delete|drop|write)$/.test(rest[0] ?? ""));
+        if (!dir || !sub || (GIT_READ.has(sub) && !changesRefs) || listing || sub === "--version") continue;
         const root = gitRoot(dir);
         const tag = "git:" + dirKey(root);
         tags.set(tag, `git index of ${rel(cwd0, root)}`);

@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -160,6 +160,68 @@ test("the file list has tracked and untracked files without ignored ones; a snap
   const missing = await listFiles(join(plain, "no-such-dir"));
   assert.match(missing.via, /git ls-files failed/);
   rmSync(d, { recursive: true, force: true });
+});
+
+test("the walk outside git stops at its limit inside a wide folder and says so", async () => {
+  const plain = dir();
+  mkdirSync(join(plain, "wide"));
+  for (let i = 0; i < 5; i++) writeFileSync(join(plain, "wide", `f${i}.txt`), "");
+  const limited = await listFiles(plain, undefined, 3);
+  assert.equal(limited.files.length, 3);
+  assert.equal(limited.complete, false);
+  assert.match(limited.via, /stopped at 3 files/);
+  const exact = await listFiles(plain, undefined, 5);
+  assert.equal(exact.files.length, 5);
+  assert.equal(exact.complete, true, "exactly the limit is a complete walk");
+  rmSync(plain, { recursive: true, force: true });
+});
+
+test("a folder the walk cannot read is named in the snapshot errors, never skipped silently", { skip: process.platform === "win32" || process.getuid?.() === 0 }, async () => {
+  const plain = dir();
+  mkdirSync(join(plain, "locked"));
+  writeFileSync(join(plain, "locked", "x.txt"), "");
+  writeFileSync(join(plain, "ok.txt"), "");
+  chmodSync(join(plain, "locked"), 0o000);
+  try {
+    const listed = await listFiles(plain);
+    assert.deepEqual(listed.files, [join(plain, "ok.txt")]);
+    assert.equal(listed.complete, false);
+    assert.equal(listed.errors.length, 1);
+    assert.match(listed.errors[0], /^could not read locked: EACCES/);
+    const s = await snapshot(plain);
+    assert.match(s.errors.join("\n"), /could not read locked/);
+  } finally {
+    chmodSync(join(plain, "locked"), 0o700);
+    rmSync(plain, { recursive: true, force: true });
+  }
+});
+
+test("inside git, a folder git cannot open and a listed file that cannot be checked are named, never dropped", { skip: process.platform === "win32" || process.getuid?.() === 0 }, async () => {
+  const d = dir();
+  const git = (...args: string[]) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: d });
+  git("init", "-q");
+  mkdirSync(join(d, "tracked"));
+  writeFileSync(join(d, "tracked", "t.txt"), "");
+  git("add", "tracked");
+  git("commit", "-qm", "t");
+  mkdirSync(join(d, "locked"));
+  writeFileSync(join(d, "locked", "x.txt"), "");
+  writeFileSync(join(d, "ok.txt"), "");
+  chmodSync(join(d, "locked"), 0o000);
+  chmodSync(join(d, "tracked"), 0o000);
+  try {
+    const listed = await listFiles(d);
+    assert.match(listed.via, /^git ls-files/);
+    assert.equal(listed.complete, false);
+    assert.ok(listed.errors.some((e) => /could not open directory 'locked\/'/.test(e)), JSON.stringify(listed.errors));
+    const s = await snapshot(d);
+    assert.ok(s.errors.some((e) => /could not stat tracked\/t\.txt: EACCES/.test(e)), JSON.stringify(s.errors));
+    assert.ok(s.files.has(join(d, "ok.txt")));
+  } finally {
+    chmodSync(join(d, "locked"), 0o700);
+    chmodSync(join(d, "tracked"), 0o700);
+    rmSync(d, { recursive: true, force: true });
+  }
 });
 
 test("claims across sessions: a hold waits for earlier holds and uses of its resource; uses wait only for holds", async () => {

@@ -10,7 +10,7 @@ import { Type } from "typebox";
 import type { Detachable } from "./barrier.ts";
 import type { Footprint } from "./footprint.ts";
 import { resolvePath } from "./keys.ts";
-import { changedAgainst, codemodeInUse, codemodeLimit, forgetOwner, idOf as fileId, lastWrite, overwritten, ownWritesBetween, type RunningJob, same, servePorts, type Snapshot, snapshot, stat, watchOwnWrites } from "./ledger.ts";
+import { changedAgainst, codemodeInUse, codemodeLimit, forgetOwner, gone, idOf as fileId, lastWrite, overwritten, ownWritesBetween, type RunningJob, same, servePorts, type Snapshot, snapshot, watchOwnWrites } from "./ledger.ts";
 
 /** The owner's threshold: «после 12 секунд уходит в фон». Tests inject a smaller one. */
 export const BACKGROUND_AFTER_MS = 12_000;
@@ -406,7 +406,8 @@ export function createJobs(options: JobsOptions = {}) {
 			return { created: [], changed: [], yours: [], overwritten: [], deleted: [], alongside: [], scanned: "no scan",
 				errors: [...errors, signal.aborted ? "effects scan cancelled: the session ended" : `effects scan failed: ${message(error)}`] };
 		}
-		if (start && !start.complete) errors.push(`the snapshot before the start stopped at ${start.files.size} files`);
+		if (start?.stopped) errors.push(`the snapshot before the start stopped at ${start.files.size} files`);
+		if (start) for (const e of start.errors) errors.push(`before the start: ${e}`);
 		const shown = (file: string) => {
 			const r = relative(end.base, file);
 			return r && !r.startsWith("..") ? r : display(job, file);
@@ -425,9 +426,10 @@ export function createJobs(options: JobsOptions = {}) {
 			const by = byWrite && byWrite.owner !== owner ? ` (by ${byWrite.label}, ${byWrite.tool})` : "";
 			(isNew ? created : changed).push(shown(file) + by);
 		}
-		const deleted = start ? [...start.files.keys()].filter((f) => !end.files.has(f) && !stat(f)).map(shown) : [];
+		const deleted = start ? [...start.files.keys()].filter((f) => !end.files.has(f) && gone(f)).map(shown) : [];
 		const alongside = [...jobs.values()].filter((o) => o !== job && o.spec.process && o.state !== "queued" && o.startedAt <= to && (o.ended === undefined || (o.endedAt ?? 0) >= from)).map(idOf);
-		if (!end.complete) errors.push(`the scan stopped at ${end.files.size} files; files beyond them are not checked`);
+		if (end.stopped) errors.push(`the scan stopped at ${end.files.size} files; files beyond them are not checked`);
+		for (const e of end.errors) errors.push(`at the end: ${e}; its files are not checked`);
 		return {
 			created,
 			changed,

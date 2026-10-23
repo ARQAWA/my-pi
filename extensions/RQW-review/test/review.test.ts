@@ -5,9 +5,9 @@ import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { setImmediate as nextLoop } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -1729,6 +1729,35 @@ describe("disputes: one finding, one rebuttal, one final answer", () => {
 			assert.equal(reviewData(main).filter((d) => "rebuttals" in (d as object)).length, 1, "one rebuttal persisted");
 			assert.deepEqual(reviewData(main).map((d) => (d as { n: number }).n).filter((n, i, all) => all.indexOf(n) === i), [1, 2], "the refused call took no number");
 		} finally { main.session.dispose(); }
+	});
+
+	it("a file source must be under the session cwd: absolute, ../ and symlinked paths outside it are refused", async () => {
+		const base = { id: "x", parentId: null, timestamp: "" };
+		const state = disputes([
+			{ ...base, type: "custom", customType: "review", data: { n: 1, findings: [{ id: "1.1", text: "A" }] } },
+		] as unknown as SessionEntry[]);
+		const cwd = await mkdtemp(join(tmpdir(), "rqw-review-cwd-"));
+		const outside = await mkdtemp(join(tmpdir(), "rqw-review-outside-"));
+		try {
+			await writeFile(join(cwd, "in.md"), "the quote");
+			await writeFile(join(outside, "out.md"), "the quote");
+			const rebut = (source: string) => refusals([{ finding: "1.1", quote: "the quote", source, explanation: "e" }], state, [], cwd);
+			assert.deepEqual(await rebut("in.md"), [], "a file under cwd counts");
+			assert.deepEqual(await rebut(join(cwd, "in.md")), [], "an absolute path under cwd counts");
+			const sources = [join(outside, "out.md"), relative(cwd, join(outside, "out.md"))];
+			try {
+				await symlink(join(outside, "out.md"), join(cwd, "link.md"));
+				sources.push("link.md");
+			} catch (error) {
+				// Windows without symlink rights: the two other forms still run.
+				if (process.platform !== "win32" || (error as NodeJS.ErrnoException).code !== "EPERM") throw error;
+			}
+			for (const source of sources)
+				assert.deepEqual(await rebut(source), [`the source of the rebuttal of 1.1, ${JSON.stringify(source)}, is not under the session cwd; give a file under it or "user".`], source);
+		} finally {
+			await rm(cwd, { recursive: true, force: true });
+			await rm(outside, { recursive: true, force: true });
+		}
 	});
 
 	it("source user proves a quote only from the user's own messages, not from a compaction or branch summary", async () => {

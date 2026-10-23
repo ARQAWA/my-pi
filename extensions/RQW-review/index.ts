@@ -3,8 +3,8 @@
 // and the verdict comes back later as a `[review#N]` message that the main model answers. Main may rebut a finding once
 // with proof; the extension keeps each dispute in the session and the next fresh reviewer's answer on it is final.
 import { readFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { readFile, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
@@ -354,7 +354,17 @@ export async function refusals(
 			let text: string | undefined;
 			// Only the user's own messages: a compaction or branch summary is Main's text, not the user's words.
 			if (USER_SOURCE.test(r.source.trim())) text = userMessages(entries, false);
-			else text = await readFile(resolve(cwd, r.source.trim()), "utf8").catch(() => undefined);
+			else {
+				// A file source must be under the session cwd, also after symlinks are resolved (DECISIONS.md, Review).
+				const file = await realpath(resolve(cwd, r.source.trim())).catch(() => undefined);
+				const base = await realpath(cwd).catch(() => resolve(cwd));
+				const inside = file !== undefined && ((p) => p !== "" && p.split(sep)[0] !== ".." && !isAbsolute(p))(relative(base, file));
+				if (file !== undefined && !inside) {
+					reasons.push(`the source of the rebuttal of ${id}, ${JSON.stringify(r.source)}, is not under the session cwd; give a file under it or "user".`);
+					continue;
+				}
+				text = file === undefined ? undefined : await readFile(file, "utf8").catch(() => undefined);
+			}
 			if (text === undefined) reasons.push(`the source of the rebuttal of ${id}, ${JSON.stringify(r.source)}, is not a readable file; give a file path or "user".`);
 			else if (!quoted(text, r.quote)) reasons.push(`the quote of the rebuttal of ${id} is not in ${JSON.stringify(r.source)}; quote it exactly, or fix the finding.`);
 		}

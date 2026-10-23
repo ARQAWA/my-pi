@@ -32,6 +32,11 @@ export function stat(file: string): Version | undefined {
   } catch { return undefined; }
 }
 
+/** The file is no longer a file there; false when it cannot be checked (an access error is not a deletion). */
+export function gone(file: string): boolean {
+  try { return !fs.statSync(file).isFile(); } catch (error) { return ["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException)?.code ?? ""); }
+}
+
 export const same = (a: Version | undefined, b: Version | undefined) => !!a && !!b && a.mtimeMs === b.mtimeMs && a.size === b.size;
 
 function hashOf(file: string): string | undefined {
@@ -203,33 +208,47 @@ export async function withFileLock<T>(files: string[], work: () => Promise<T>): 
 const IGNORED = new Set([".git", "node_modules", ".next", "target", ".venv", "__pycache__"]);
 const WALK_LIMIT = 20000;
 
-/** Existing files; `complete` is false when a walk stopped at its limit. */
-export type FileList = { files: string[]; via: string; complete: boolean };
+/**
+ * Existing files; `complete` is false when a walk stopped at its limit (`stopped`) or could not read a folder. `errors` names every
+ * folder or file the listing could not read: their files are not checked, and the report must say so.
+ */
+export type FileList = { files: string[]; via: string; complete: boolean; stopped: boolean; errors: string[] };
 
-function walk(root: string): FileList {
+const failure = (error: unknown) => (error as NodeJS.ErrnoException)?.code ?? (error instanceof Error ? error.message : String(error));
+
+function walk(root: string, limit: number): FileList {
   const out: string[] = [];
+  const errors: string[] = [];
   const stack = [root];
-  while (stack.length && out.length < WALK_LIMIT) {
+  let stopped = false;
+  while (stack.length && !stopped) {
     const dir = stack.pop()!;
     let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (error) {
+      // A folder removed during the walk is simply gone; any other failure leaves its files unchecked.
+      if (dir === root || failure(error) !== "ENOENT") errors.push(`could not read ${path.relative(root, dir) || "."}: ${failure(error)}`);
+      continue;
+    }
     for (const e of entries) {
       if (IGNORED.has(e.name)) continue;
       const p = path.join(dir, e.name);
       if (e.isDirectory()) stack.push(p);
-      else if (e.isFile()) out.push(p);
+      else if (e.isFile()) {
+        // The limit counts files, also inside one wide folder: the walk never lists more than `limit`.
+        if (out.length >= limit) { stopped = true; break; }
+        out.push(p);
+      }
     }
   }
-  const complete = !(stack.length || out.length >= WALK_LIMIT);
-  return { files: out, via: `a walk without node_modules and similar folders${complete ? "" : `, stopped at ${WALK_LIMIT} files`}`, complete };
+  return { files: out, via: `a walk without node_modules and similar folders${stopped ? `, stopped at ${limit} files` : ""}`, complete: !stopped && !errors.length, stopped, errors };
 }
 
 /**
  * The existing files of the working tree: `git ls-files -co --exclude-standard` (tracked and untracked, without
  * git-ignored ones; a tracked file deleted from the tree is left out), or outside git a walk of at most 20000 files
- * without .git, node_modules, .next, target, .venv and __pycache__.
+ * without .git, node_modules, .next, target, .venv and __pycache__. `limit` is the walk's bound (tests pass a small one).
  */
-export function listFiles(cwd: string, signal?: AbortSignal): Promise<FileList> {
+export function listFiles(cwd: string, signal?: AbortSignal, limit = WALK_LIMIT): Promise<FileList> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error("cancelled"));
     // No deadline: `signal` (the job's lifetime) cancels it.
@@ -239,11 +258,16 @@ export function listFiles(cwd: string, signal?: AbortSignal): Promise<FileList> 
       if (error) {
         // Outside a repository git fails at once; any other failure is named in `via`.
         const outside = /not a git repository/i.test(`${stderr}\n${error.message}`);
-        const listed = walk(cwd);
+        const listed = walk(cwd, limit);
         return resolve(outside ? listed : { ...listed, via: `${listed.via} (git ls-files failed: ${error.message.split("\n")[0]})` });
       }
-      const files = [...new Set(stdout.split("\0").filter(Boolean).map((f) => path.resolve(cwd, f)))].filter((f) => fs.existsSync(f));
-      resolve({ files, via: "git ls-files: tracked and untracked, without git-ignored ones", complete: true });
+      // A tracked file deleted from the tree is left out; one that cannot be checked stays, and its stat error is named.
+      const files = [...new Set(stdout.split("\0").filter(Boolean).map((f) => path.resolve(cwd, f)))].filter((f) => {
+        try { fs.lstatSync(f); return true; } catch (e) { return !["ENOENT", "ENOTDIR"].includes(failure(e)); }
+      });
+      // git exits 0 after a folder it could not open (`warning: could not open directory`): its files are not listed.
+      const errors = String(stderr).split(/\r?\n/).filter((l) => /^(warning|error|fatal):/.test(l)).map((l) => `git ls-files: ${l}`);
+      resolve({ files, via: "git ls-files: tracked and untracked, without git-ignored ones", complete: !errors.length, stopped: false, errors });
     });
   });
 }
@@ -252,7 +276,7 @@ export function listFiles(cwd: string, signal?: AbortSignal): Promise<FileList> 
  * The boundary state of a bash or codemode job: every listed file (see `listFiles`) with its mtime and size, keyed by
  * its real path. Taken before the command starts and when it ends; `ms` is what it cost.
  */
-export type Snapshot = { base: string; files: Map<string, Version>; via: string; complete: boolean; ms: number };
+export type Snapshot = { base: string; files: Map<string, Version>; via: string; complete: boolean; stopped: boolean; errors: string[]; ms: number };
 
 export async function snapshot(cwd: string, signal?: AbortSignal): Promise<Snapshot> {
   const started = performance.now();
@@ -260,11 +284,17 @@ export async function snapshot(cwd: string, signal?: AbortSignal): Promise<Snaps
   try { base = fs.realpathSync.native(cwd); } catch {}
   const listed = await listFiles(base, signal);
   const files = new Map<string, Version>();
+  const errors = [...listed.errors];
   for (const f of listed.files) {
-    const v = stat(f);
-    if (v) files.set(f, v);
+    try {
+      const s = fs.statSync(f);
+      if (s.isFile()) files.set(f, { mtimeMs: s.mtimeMs, size: s.size });
+    } catch (error) {
+      // A file deleted since the listing is simply absent; a file that cannot be read is named.
+      if (!["ENOENT", "ENOTDIR"].includes(failure(error))) errors.push(`could not stat ${path.relative(base, f)}: ${failure(error)}`);
+    }
   }
-  return { base, files, via: listed.via, complete: listed.complete, ms: Math.round(performance.now() - started) };
+  return { base, files, via: listed.via, complete: listed.complete && !errors.length, stopped: listed.stopped, errors, ms: Math.round(performance.now() - started) };
 }
 
 const realOf = (file: string) => { try { return fs.realpathSync.native(file); } catch { return undefined; } };

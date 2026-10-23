@@ -3,7 +3,7 @@
 // the product's 12 s); slow commands wait for a gate file, so nothing depends on how fast the host is.
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -583,6 +583,41 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 		assert.ok(listed.includes("by-job.txt"), JSON.stringify(first.effects));
 		assert.ok(!listed.includes("by-follower.txt"), JSON.stringify(first.effects));
 		assert.deepEqual(first.effects.alongside, [], "a follower queued behind it did not run alongside (live probe)");
+	});
+
+	it("O1: a folder the scan cannot read is named in effects.errors", { skip: WIN || process.getuid?.() === 0 }, async () => {
+		const { dir, tools } = await fresh();
+		await mkdir(join(dir, "locked"));
+		await writeFile(join(dir, "locked", "x.txt"), "");
+		await chmod(join(dir, "locked"), 0o000);
+		try {
+			await call(tools.bash, { command: gated("printf a > out.txt") }, dir);
+			await open(dir);
+			const done = await job(tools, dir, { action: "wait", ids: ["job#1"], timeout_ms: 20000 });
+			const errors: string[] = done.results[0].effects.errors ?? [];
+			assert.ok(errors.some((e) => /before the start: could not read locked/.test(e)), JSON.stringify(done.results[0].effects));
+			assert.ok(errors.some((e) => /at the end: could not read locked/.test(e)), JSON.stringify(done.results[0].effects));
+			assert.ok(done.results[0].effects.created.includes("out.txt"));
+		} finally {
+			await chmod(join(dir, "locked"), 0o700);
+		}
+	});
+
+	it("O1: a file the job made unreadable is a scan error, not a deletion", { skip: WIN || process.getuid?.() === 0 }, async () => {
+		const { dir, tools } = await fresh();
+		await mkdir(join(dir, "sub"));
+		await writeFile(join(dir, "sub", "x.txt"), "x");
+		await writeFile(join(dir, "gone.txt"), "x");
+		try {
+			await call(tools.bash, { command: gated("chmod 000 sub; rm gone.txt") }, dir);
+			await open(dir);
+			const done = await job(tools, dir, { action: "wait", ids: ["job#1"], timeout_ms: 20000 });
+			const e = done.results[0].effects;
+			assert.deepEqual(e.deleted, ["gone.txt"], JSON.stringify(e));
+			assert.ok(e.errors.some((x: string) => /at the end: could not read sub/.test(x)), JSON.stringify(e));
+		} finally {
+			await chmod(join(dir, "sub"), 0o700);
+		}
 	});
 
 	it("O1: the report lists every file, with no cap; a killed job is still scanned", async () => {

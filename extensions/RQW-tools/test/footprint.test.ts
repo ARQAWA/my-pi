@@ -49,6 +49,11 @@ test("git commands that change the repository hold its index and refs; reading o
   assert.deepEqual(fp("git commit -m x", sub).held.tags, [git()]);
   for (const c of ["git status", "git log --oneline", "git diff HEAD", "git branch", "git branch -a", "git stash list", "git config --get user.name", "git --version"]) nothing(c);
   assert.deepEqual(fp("git -C web commit -m x").held.tags, [git()]);
+  // symbolic-ref and reflog read in their plain forms and change refs in the others.
+  for (const c of ["git symbolic-ref HEAD refs/heads/x", "git symbolic-ref -m why HEAD refs/heads/x", "git symbolic-ref -d HEAD", "git symbolic-ref --delete HEAD",
+    "git reflog expire --expire=now --all", "git reflog delete HEAD@{1}", "git reflog drop main", "git reflog write main 0000 1111 msg"])
+    assert.deepEqual(fp(c).held.tags, [git()], c);
+  for (const c of ["git symbolic-ref HEAD", "git symbolic-ref --short HEAD", "git symbolic-ref -q HEAD", "git reflog", "git reflog show main", "git reflog -n 5", "git reflog list", "git reflog exists main"]) nothing(c);
   nothing("git -C $DIR commit -m x");
 });
 
@@ -106,6 +111,16 @@ test("servers: background `&`, dev/serve/watch scripts, http.server; ports only 
   assert.deepEqual(fp("PORT=3000 node app.js &").ports, [3000]);
   assert.equal(fp("npm test").server, false);
   assert.deepEqual(fp("curl localhost:3000").ports, []);
+});
+
+test("a cd inside a subshell ends with its closing parenthesis", () => {
+  const f = fp("(cd web && touch a); touch b");
+  assert.deepEqual(f.written.sort(), [join(sub, "a"), join(repo, "b")].sort());
+  assert.deepEqual(f.holds.sort(), ["file b", `file ${join("web", "a")}`].sort());
+  assert.deepEqual(fp("(cd web; (cd .. && touch c) && touch d) > e.log").written.sort(), [join(repo, "c"), join(sub, "d"), join(repo, "e.log")].sort());
+  assert.deepEqual(fp("(cd web && npm ci) && npm test").explicit.tags.sort(), [pkg(sub), pkg()].sort());
+  // A closing parenthesis without its opening one (a case pattern) is doubt: nothing held.
+  assert.deepEqual(fp("case x in a) touch b;; esac").held, { files: [], tags: [] });
 });
 
 test("property: random command strings never throw; any command substitution means nothing held", () => {
