@@ -4,7 +4,7 @@ name: codemode-stress
 # runs (k/n) and fails when any run failed. It measures an intermittent failure rate before and after a fix; the defaults
 # reproduce the 12 MB codemode case (extensions/RQW-tools/test/codemode.test.ts, pattern "12 MB", macOS, Node 24, 30
 # runs), a silent death of that test file seen once on macOS Node 24. Each run records its exit code and seconds (and the
-# peak RSS on macOS); the TAP copy and output of failed runs are kept as evidence, crash reports of the job are collected
+# peak RSS on macOS); the TAP copy of every run and the output of failed runs are kept as evidence, crash reports of the job are collected
 # too. GitHub dispatches only workflows that exist on the default branch, so a push to the branch `codemode-stress`
 # also starts it with the defaults (as pcli.yml with `pcli`).
 on:
@@ -123,7 +123,7 @@ jobs:
               failed=$((failed + 1))
               cat "$ev/run-$i.out" "$ev/run-$i.err"
             else
-              rm -f "$ev/run-$i.tap" "$ev/run-$i.out" "$ev/run-$i.err"
+              rm -f "$ev/run-$i.out" "$ev/run-$i.err"
             fi
           done
           bunfact=""
