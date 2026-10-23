@@ -1,0 +1,70 @@
+name: qa-inbox
+
+# The quality-control inbox (PROCESS.md, Quality control loop): every completed run of a QA workflow feeds
+# scripts/qa-inbox.mjs, which keeps one `qa-inbox` issue per failure signature and refreshes the open ones.
+# workflow_run (like schedule) fires only from the workflow file on the default branch, so this pass runs after
+# the file is on main; before that only workflow_dispatch from a branch works (dry_run proof).
+on:
+  workflow_run:
+    workflows: [tests, pcli, codex-oracle]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Run id of a tests, pcli or codex-oracle run
+        type: string
+        required: true
+      dry_run:
+        description: Print the planned actions and issue bodies, change nothing
+        type: boolean
+        default: false
+      force_any_branch:
+        description: Also read a run that is not a scheduled or dispatched main run (needs dry_run)
+        type: boolean
+        default: false
+
+permissions:
+  issues: write
+  actions: read
+  contents: read
+
+# One pass at a time: two passes on the same issue would overwrite each other's body. GitHub keeps only one
+# pending run per group, so a third completion during a pass cancels the pending pass and its run is not read
+# then. Each pass therefore also catches up: it reads every failed scheduled or dispatched main run of the QA
+# workflows of the last 48 h that no inbox issue records yet (scripts/qa-inbox.mjs, catch-up).
+concurrency:
+  group: qa-inbox
+  cancel-in-progress: false
+
+jobs:
+  inbox:
+    # Branch WIP failures stay with their task: only scheduled or dispatched main runs feed the inbox.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.head_branch == 'main' &&
+       (github.event.workflow_run.event == 'schedule' || github.event.workflow_run.event == 'workflow_dispatch'))
+    # Infrastructure job, not test coverage.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Full history: `QA: #N` fix detection and the last-green..first-red commit list use git log.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+
+      - name: Inbox pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          FORCE_ANY_BRANCH: ${{ inputs.force_any_branch }}
+        shell: bash
+        run: |
+          args=(--run "$RUN_ID" --repo "$GITHUB_REPOSITORY" --git-ref origin/main)
+          if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
+          if [[ "$FORCE_ANY_BRANCH" == true ]]; then args+=(--force-any-branch); fi
+          node scripts/qa-inbox.mjs "${args[@]}"

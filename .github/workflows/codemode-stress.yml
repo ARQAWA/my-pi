@@ -1,16 +1,37 @@
 name: codemode-stress
 
-# Manual only: repeats the 12 MB codemode tests of extensions/RQW-tools/test/codemode.test.ts to reproduce a silent
-# death of that test file seen once on macOS Node 24. Each run records its exit code, its peak RSS and a TAP copy;
-# crash reports of the job are collected too. GitHub dispatches only workflows that exist on the default branch, so
-# until this file is on main it runs by a push to the branch `codemode-stress` (as pcli.yml with `pcli`).
+# Manual repeat harness: runs one test file `runs` times on one OS and Node version, with no retries, counts the failed
+# runs (k/n) and fails when any run failed. It measures an intermittent failure rate before and after a fix; the defaults
+# reproduce the 12 MB codemode case (extensions/RQW-tools/test/codemode.test.ts, pattern "12 MB", macOS, Node 24, 30
+# runs), a silent death of that test file seen once on macOS Node 24. Each run records its exit code and seconds (and the
+# peak RSS on macOS); the TAP copy and output of failed runs are kept as evidence, crash reports of the job are collected
+# too. GitHub dispatches only workflows that exist on the default branch, so a push to the branch `codemode-stress`
+# also starts it with the defaults (as pcli.yml with `pcli`).
 on:
   push:
     branches: [codemode-stress]
   workflow_dispatch:
     inputs:
+      test:
+        description: Test file to repeat (repository path)
+        type: string
+        default: extensions/RQW-tools/test/codemode.test.ts
+      name_pattern:
+        description: Optional --test-name-pattern; empty runs the whole file
+        type: string
+        default: 12 MB
+      os:
+        description: Runner
+        type: choice
+        options: [macos-latest, windows-latest]
+        default: macos-latest
+      node:
+        description: Node version
+        type: string
+        default: "24"
       runs:
         description: Number of runs
+        type: string
         default: "30"
 
 permissions:
@@ -22,51 +43,64 @@ defaults:
 
 jobs:
   stress:
-    name: codemode 12 MB stress (macos-latest, node 24)
-    runs-on: macos-latest
+    name: repeat (${{ inputs.os || 'macos-latest' }}, node ${{ inputs.node || '24' }})
+    runs-on: ${{ inputs.os || 'macos-latest' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: ${{ inputs.node || '24' }}
 
       - name: Facts
         run: |
           node --version
-          sysctl -n hw.memsize hw.ncpu
+          if [ "$RUNNER_OS" = macOS ]; then sysctl -n hw.memsize hw.ncpu; fi
 
       - run: npm ci
 
       - name: Runs
         env:
+          # A push has no inputs: it runs the 12 MB defaults. On dispatch an empty pattern means no pattern.
           RUNS: ${{ inputs.runs || '30' }}
+          TEST_FILE: ${{ inputs.test || 'extensions/RQW-tools/test/codemode.test.ts' }}
+          PATTERN: ${{ github.event_name == 'push' && '12 MB' || inputs.name_pattern }}
         run: |
+          case "$RUNS" in ''|*[!0-9]*) echo "::error::runs must be a number: $RUNS"; exit 1;; esac
           ev="$RUNNER_TEMP/evidence"
           mkdir -p "$ev"
           touch "$ev/.start"
           printf 'run\texit\tmax_rss_bytes\tseconds\n' > "$ev/summary.tsv"
+          args=()
+          if [ -n "$PATTERN" ]; then args+=("--test-name-pattern=$PATTERN"); fi
+          timer=()
+          if [ "$RUNNER_OS" = macOS ]; then timer=(/usr/bin/time -l); fi
           failed=0
           for i in $(seq 1 "$RUNS"); do
             start=$(date +%s)
             set +e
-            /usr/bin/time -l node --test --test-name-pattern="12 MB" \
+            "${timer[@]}" node --test "${args[@]}" \
               --test-reporter=spec --test-reporter-destination=stdout \
               --test-reporter=tap --test-reporter-destination="$ev/run-$i.tap" \
-              extensions/RQW-tools/test/codemode.test.ts > "$ev/run-$i.out" 2> "$ev/run-$i.err"
+              "$TEST_FILE" > "$ev/run-$i.out" 2> "$ev/run-$i.err"
             code=$?
             set -e
             rss=$(awk '/maximum resident set size/ { print $1 }' "$ev/run-$i.err")
             printf '%s\t%s\t%s\t%s\n' "$i" "$code" "$rss" "$(( $(date +%s) - start ))" >> "$ev/summary.tsv"
-            echo "run $i: exit $code, max RSS $rss bytes"
-            if [ "$code" != 0 ]; then failed=$((failed + 1)); cat "$ev/run-$i.out" "$ev/run-$i.err"; fi
+            echo "run $i: exit $code, max RSS ${rss:-n/a} bytes"
+            if [ "$code" != 0 ]; then
+              failed=$((failed + 1))
+              cat "$ev/run-$i.out" "$ev/run-$i.err"
+            else
+              rm -f "$ev/run-$i.tap" "$ev/run-$i.out" "$ev/run-$i.err"
+            fi
           done
-          { echo '```'; cat "$ev/summary.tsv"; echo '```'; echo "failed runs: $failed of $RUNS"; } >> "$GITHUB_STEP_SUMMARY"
-          echo "failed runs: $failed of $RUNS"
+          { echo "$TEST_FILE, pattern '$PATTERN', $RUNNER_OS, node $(node --version)"; echo '```'; cat "$ev/summary.tsv"; echo '```'; echo "failed runs: $failed/$RUNS"; } >> "$GITHUB_STEP_SUMMARY"
+          echo "failed runs: $failed/$RUNS"
           [ "$failed" = 0 ]
 
       - name: Collect crash reports
-        if: always()
+        if: always() && runner.os == 'macOS'
         run: |
           for d in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
             find "$d" -name '*.ips' -newer "$RUNNER_TEMP/evidence/.start" -exec cp {} "$RUNNER_TEMP/evidence/" \; 2>/dev/null || true

@@ -1,0 +1,144 @@
+TAP version 13
+# Subtest: headTail keeps head and tail within the limit and never splits a surrogate pair
+ok 1 - headTail keeps head and tail within the limit and never splits a surrogate pair
+  ---
+  duration_ms: 1.052959
+  type: 'test'
+  ...
+# Subtest: partial invalid UTF-8 tool args: bytes counted incrementally, split surrogate pair counted once
+ok 2 - partial invalid UTF-8 tool args: bytes counted incrementally, split surrogate pair counted once
+  ---
+  duration_ms: 2.249083
+  type: 'test'
+  ...
+# Subtest: outer suite
+    # Subtest: inner suite
+        # Subtest: passes
+        ok 1 - passes
+          ---
+          duration_ms: 0.347
+          type: 'test'
+          ...
+        # Subtest: rejects a bad \# value
+        not ok 2 - rejects a bad \# value
+          ---
+          duration_ms: 1.161125
+          type: 'test'
+          location: '/Users/runner/work/_temp/проба с пробелом/my-pi/test/zz-nested.test.ts:6:3'
+          failureType: 'testCodeFailure'
+          error: |-
+            Expected values to be strictly deep-equal:
+            + actual - expected
+            
+              {
+            +   a: 1
+            -   a: 2
+              }
+            
+          code: 'ERR_ASSERTION'
+          name: 'AssertionError'
+          expected:
+            a: 2
+          actual:
+            a: 1
+          operator: 'deepStrictEqual'
+          stack: |-
+            TestContext.<anonymous> (file:///Users/runner/work/_temp/проба с пробелом/my-pi/test/zz-nested.test.ts:6:46)
+            Test.runInAsyncScope (node:async_hooks:226:14)
+            Test.run (node:internal/test_runner/test:1397:25)
+            Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+            Test.postRun (node:internal/test_runner/test:1537:19)
+            Test.run (node:internal/test_runner/test:1462:12)
+            async Promise.all (index 0)
+            async Suite.run (node:internal/test_runner/test:1889:7)
+            async Promise.all (index 0)
+            async Suite.run (node:internal/test_runner/test:1889:7)
+          ...
+        1..2
+    not ok 1 - inner suite
+      ---
+      duration_ms: 2.0115
+      type: 'suite'
+      location: '/Users/runner/work/_temp/проба с пробелом/my-pi/test/zz-nested.test.ts:4:2'
+      failureType: 'subtestsFailed'
+      error: '1 subtest failed'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        async Promise.all (index 0)
+      ...
+    # Subtest: throws a type error
+    not ok 2 - throws a type error
+      ---
+      duration_ms: 0.058125
+      type: 'test'
+      location: '/Users/runner/work/_temp/проба с пробелом/my-pi/test/zz-nested.test.ts:8:2'
+      failureType: 'testCodeFailure'
+      error: 'x is not a function'
+      code: 'ERR_TEST_FAILURE'
+      name: 'TypeError'
+      stack: |-
+        TestContext.<anonymous> (file:///Users/runner/work/_temp/проба с пробелом/my-pi/test/zz-nested.test.ts:8:42)
+        Test.runInAsyncScope (node:async_hooks:226:14)
+        Test.run (node:internal/test_runner/test:1397:25)
+        Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+        Suite.postRun (node:internal/test_runner/test:1537:19)
+        Suite.run (node:internal/test_runner/test:1905:10)
+        async Promise.all (index 0)
+        async Suite.run (node:internal/test_runner/test:1889:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+      ...
+    1..2
+not ok 752 - outer suite
+  ---
+  duration_ms: 2.340084
+  type: 'suite'
+  location: '/Users/runner/work/_temp/проба с пробелом/my-pi/test/zz-nested.test.ts:3:1'
+  failureType: 'subtestsFailed'
+  error: '2 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: evidence proof: a deliberately failing assertion
+not ok 753 - evidence proof: a deliberately failing assertion
+  ---
+  duration_ms: 0.814208
+  type: 'test'
+  location: '/Users/runner/work/_temp/проба с пробелом/my-pi/test/zz-evidence-fail.test.ts:4:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 2
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 2
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/runner/work/_temp/проба с пробелом/my-pi/test/zz-evidence-fail.test.ts:4:71)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: test/zz-evidence-kill.test.ts
+not ok 114 - test/zz-evidence-kill.test.ts
+  ---
+  duration_ms: 90.210167
+  type: 'test'
+  location: '/Users/runner/work/_temp/проба с пробелом/my-pi/test/zz-evidence-kill.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: ~
+  signal: 'SIGKILL'
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..754
+# tests 2060
+# suites 182
+# pass 2050
+# fail 2
+# cancelled 0
+# skipped 8
+# todo 0
+# duration_ms 252694.542667

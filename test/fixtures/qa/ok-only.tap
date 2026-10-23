@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: headTail keeps head and tail within the limit and never splits a surrogate pair
+ok 1 - headTail keeps head and tail within the limit and never splits a surrogate pair
+  ---
+  duration_ms: 1.052959
+  type: 'test'
+  ...
+# Subtest: partial invalid UTF-8 tool args: bytes counted incrementally, split surrogate pair counted once
+ok 2 - partial invalid UTF-8 tool args: bytes counted incrementally, split surrogate pair counted once
+  ---
+  duration_ms: 2.249083
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12.5

@@ -5,7 +5,8 @@
   "scripts": {
     "test": "node --test \"extensions/*/test/*.test.ts\" \"test/*.test.ts\"",
     "test:bun": "node extensions/RQW-tools/test/bun/codemode-check.mjs",
-    "deliver-check": "node scripts/deliver-check.mjs"
+    "deliver-check": "node scripts/deliver-check.mjs",
+    "qa-status": "node scripts/qa-status.mjs"
   },
   "keywords": [
     "pi-package"

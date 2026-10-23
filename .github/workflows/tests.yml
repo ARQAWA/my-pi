@@ -7,7 +7,16 @@ on:
     branches-ignore: [main, codemode-stress]
     # Docs-only pushes run no tests: root *.md, notes/ and .agents/ carry no code the tests load.
     paths-ignore: ['*.md', 'notes/**', '.agents/**']
+  # Full regression on main every 2 h. Minute 17 avoids the top-of-hour load where GitHub documents dropped
+  # schedule runs. A schedule runs only on the default branch.
+  schedule:
+    - cron: '17 */2 * * *'
   workflow_dispatch:
+    inputs:
+      qa_canary:
+        description: One macOS job also runs a deliberately failing test, to prove the failure inbox end to end
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -73,6 +82,12 @@ jobs:
             find "$d" -name '*.ips' -newer "$RUNNER_TEMP/evidence/.start" -exec cp {} "$RUNNER_TEMP/evidence/" \; 2>/dev/null || true
           done
           ls -la "$RUNNER_TEMP/evidence"
+
+      # Canary: test/fixtures/qa-canary/canary.test.mjs fails on purpose and is not in the npm test globs. The job then
+      # fails with TAP evidence and "Upload evidence" below ships it, so the inbox can be proven end to end.
+      - name: QA canary (deliberate failure)
+        if: ${{ inputs.qa_canary && matrix.os == 'macos-latest' && matrix.node == '24' }}
+        run: node --test --test-reporter=spec --test-reporter=tap --test-reporter-destination=stdout --test-reporter-destination="$RUNNER_TEMP/evidence/qa-canary.tap" test/fixtures/qa-canary/canary.test.mjs
 
       - name: Upload evidence
         if: failure()

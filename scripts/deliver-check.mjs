@@ -18,9 +18,31 @@ const short = (sha) => sha.slice(0, 7);
 const finish = () => {
 	if (!failures.length) return;
 	for (const line of failures) console.error(`FAIL ${line}`);
+	for (const line of qaOpenLines()) console.error(line);
 	console.error(`deliver-check: ${failures.length} failure(s), do not merge ${branch}`);
 	process.exit(1);
 };
+
+// Informational only: open failure-inbox issues (red main never blocks a merge, owner decision). gh runs in the cwd,
+// so it takes the repository from the checkout's remote. A gh failure is one line, never a check failure.
+const ghRun = (args) => {
+	const r = spawnSync("gh", args, { encoding: "utf8", shell: process.platform === "win32", timeout: 30000 });
+	if (r.status === 0) return { stdout: r.stdout };
+	const reason = String(r.stderr || r.error?.message || `exit ${r.status}`).trim().split(/\r?\n/)[0];
+	return { reason };
+};
+function qaOpenLines() {
+	const r = ghRun(["issue", "list", "--label", "qa-inbox", "--state", "open", "--json", "number,title,labels,url", "--limit", "50"]);
+	if (r.reason !== undefined) return [`  QA open: unavailable (${r.reason})`];
+	let issues;
+	try {
+		issues = JSON.parse(r.stdout);
+	} catch (e) {
+		return [`  QA open: unavailable (unreadable gh output: ${e.message})`];
+	}
+	if (!issues.length) return ["  QA open: none"];
+	return issues.map((i) => `  QA open: #${i.number} ${i.title} [${(i.labels ?? []).map((l) => l.name ?? l).join(", ")}] ${i.url}`);
+}
 
 const root = git("rev-parse", "--show-toplevel");
 
@@ -126,6 +148,90 @@ for (const workflow of required) {
 	if (run) passed.push(`${workflow} ${run.url}`);
 	if (!run && !ciIds.length) fail(`message: missing trailer "CI: <run url>" for ${workflow}`);
 }
+// 3b. Test integrity: a change that weakens tests or workflows needs a recorded reason and an independent
+// test-integrity review. `QA: #N` lines tie the squash to failure-inbox issues and carry the same requirement.
+const isTestFile = (f) => /(^|\/)test\//.test(f) || /(^|\/)[^/]*\.test\.[^/]*$/.test(f);
+const isWorkflowFile = (f) => f.startsWith(".github/workflows/");
+const SKIP_RES = [/\.(?:skip|todo)\s*\(/, /\{\s*(?:skip|todo)\s*:/, /\b(?:skip|todo)\s*:\s*(?:true|['"])/];
+const TIMEOUT_RE = /\b(timeout-minutes|timeout_ms|timeoutMs|timeout)["']?\s*[:=]\s*(\d[\d_]*)/g;
+const ASSERT_RE = /\bassert\b|\bexpect\(/;
+const timeouts = (texts) => {
+	const byKey = new Map();
+	for (const t of texts) for (const m of t.matchAll(TIMEOUT_RE)) {
+		byKey.set(m[1], [...(byKey.get(m[1]) ?? []), Number(m[2].replaceAll("_", ""))]);
+	}
+	return byKey;
+};
+// Rules the added and removed lines of one file break. Comment lines count for nothing.
+function weakeningRules(file) {
+	let diff;
+	try {
+		diff = execFileSync("git", ["diff", "--no-renames", "--no-color", "-U0", `${main}...${head}`, "--", file],
+			{ encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+	} catch (e) {
+		fail(`test integrity: cannot diff ${file}: ${String(e.stderr || e.message).trim()}`);
+		return [];
+	}
+	const comment = isWorkflowFile(file) ? /^\s*#/ : /^\s*(?:\/\/|\/\*|\*)/;
+	const added = [], removed = [];
+	let inHunk = false;
+	for (const raw of diff.split(/\r?\n/)) {
+		if (raw.startsWith("@@")) { inHunk = true; continue; }
+		if (!inHunk || (raw[0] !== "+" && raw[0] !== "-")) continue;
+		const text = raw.slice(1);
+		if (comment.test(text)) continue;
+		(raw[0] === "+" ? added : removed).push(text);
+	}
+	const rules = [];
+	if (added.some((l) => SKIP_RES.some((re) => re.test(l)))) rules.push("adds skip/todo");
+	if (added.some((l) => /--test-retry\b/.test(l))) rules.push("adds --test-retry");
+	if (added.some((l) => /\bcontinue-on-error\b(?!["']?\s*:\s*false\b)/.test(l))) rules.push("adds continue-on-error");
+	// Equal values on both sides are unchanged or moved lines; a remaining added value above a remaining removed one is a raise.
+	const was = timeouts(removed);
+	for (const [key, nows] of timeouts(added)) {
+		const olds = [...(was.get(key) ?? [])];
+		const fresh = nows.filter((n) => { const i = olds.indexOf(n); if (i < 0) return true; olds.splice(i, 1); return false; });
+		if (fresh.length && olds.length && Math.max(...fresh) > Math.min(...olds)) {
+			rules.push(`raises ${key} ${Math.min(...olds)} -> ${Math.max(...fresh)}`);
+		}
+	}
+	if (!isWorkflowFile(file)) {
+		const asserts = (ls) => ls.filter((l) => !/^\s*import\b/.test(l) && ASSERT_RE.test(l)).length;
+		if (asserts(removed) > asserts(added)) rules.push(`removes assertions (removed ${asserts(removed)}, added ${asserts(added)})`);
+	}
+	return rules;
+}
+const hasTestChange = has(/^Test-change: \S/);
+const hasTestReview = has(/^Test-review: (?:review|agent)#\d+ CLEAN$/);
+const weak = changed.filter((f) => isTestFile(f) || isWorkflowFile(f)).map((f) => ({ file: f, rules: weakeningRules(f) }))
+	.filter((w) => w.rules.length);
+for (const w of weak) {
+	const missing = [];
+	if (!hasTestChange) missing.push('"Test-change: <text>"');
+	if (!hasTestReview) missing.push('"Test-review: agent#N CLEAN"');
+	if (missing.length) fail(`test integrity: ${w.file} ${w.rules.join("; ")}: missing trailer ${missing.join(" and ")}`);
+}
+const qaIssues = [];
+for (const l of lines.filter((x) => x.startsWith("QA:"))) {
+	const n = /^QA: #(\d+)$/.exec(l)?.[1];
+	if (!n) fail(`message: malformed line "${l}", expected "QA: #<issue number>"`);
+	else if (!qaIssues.includes(n)) qaIssues.push(n);
+}
+if (qaIssues.length) {
+	if (!hasTestReview) fail('message: "QA: #N" requires trailer "Test-review: agent#N CLEAN"');
+	if (!hasTestChange && changed.some((f) => isTestFile(f) || isWorkflowFile(f))) {
+		fail('message: "QA: #N" with test or workflow files changed requires trailer "Test-change: <text>"');
+	}
+	for (const n of qaIssues) {
+		const r = ghRun(["issue", "view", n, "--json", "labels,state"]);
+		let issue;
+		try { issue = r.reason === undefined ? JSON.parse(r.stdout) : null; } catch { issue = null; }
+		if (r.reason !== undefined) fail(`message: "QA: #${n}": gh issue view failed: ${r.reason}`);
+		else if (!issue) fail(`message: "QA: #${n}": unreadable gh issue view output`);
+		else if (!(issue.labels ?? []).some((l) => (l.name ?? l) === "qa-inbox")) fail(`message: "QA: #${n}" is not a qa-inbox issue`);
+	}
+}
+
 if (!reviews.length) fail('message: missing trailer "Review: review#N CLEAN" or "Review: agent#N CLEAN"');
 if (codeChanged && !has(/^Code-review: CLEAN$/)) fail('message: missing trailer "Code-review: CLEAN" (non-doc files changed)');
 if (!has(/^Unverified: \S/)) fail('message: missing trailer "Unverified: <text or none>"');
@@ -135,3 +241,6 @@ console.log(`deliver-check PASS ${branch} ${short(head)}`);
 console.log(`  contains origin/main ${short(main)}; ${changed.length} changed file(s)`);
 console.log(`  CI: ${passed.length ? passed.join("; ") : "not required (docs-only)"}`);
 console.log(`  reviews: ${reviews.join(", ")}${codeChanged ? "; code review CLEAN" : ""}`);
+if (weak.length) console.log(`  test integrity: ${weak.length} weakening file(s) accepted with Test-change and Test-review`);
+if (qaIssues.length) console.log(`  QA: ${qaIssues.map((n) => `#${n}`).join(", ")} (qa-inbox issues, Test-review present)`);
+for (const line of qaOpenLines()) console.log(line);

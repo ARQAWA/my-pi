@@ -81,6 +81,18 @@ The coordinator delegates all execution, waits and checks to subagents and may r
 - `pcli-vscode/`: the one exception to "Everything is an extension": a VS Code extension `arqawa.pcli` (ARQAWA PCLI) that
   runs a bundled Pi 1.4.0 in a VS Code terminal tab on Windows. Not a Pi extension, not in `pi.extensions`. Decisions:
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.
+- Quality control loop: scheduled full regression on `main` (`tests.yml` every 2 h, `pcli.yml` daily), failures kept as
+  `qa-inbox` issues, a failures-only mail digest, and triage and test-integrity rules. Rules: `PROCESS.md` section
+  Quality control loop; decisions: `DECISIONS.md` section Quality control. Parts below.
+- `.github/workflows/qa-inbox.yml`: turns failed `main` runs into `qa-inbox` issues with `scripts/qa-inbox.mjs`.
+  `.github/workflows/qa-digest.yml`: mails the owner at 09:30 and 21:30 Moscow time, only about failures, with
+  `scripts/qa-digest.mjs`. Shared issue format: `scripts/qa-state.mjs`. Tests: `npm test`.
+- `scripts/qa-status.mjs`, `npm run qa-status`: one bounded `gh` read of the inbox, latest `main` runs and the
+  current branch's CI; workers and hosts without the extension use it.
+- `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
+  never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all.
+- `.agents/reviewers/test-integrity.md`: the read-only reviewer prompt for QA fixes and weakened tests, used through
+  `agent` as the whole `system`.
 - Every `RQW-*` extension is self-contained and can be switched off alone (no import outside its folder, its tests load
   only it); `test/isolation.test.ts` proves it, `INSTALL.md` shows the switch, `DECISIONS.md` section Isolation.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.

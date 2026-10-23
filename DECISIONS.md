@@ -2197,3 +2197,80 @@ Current accepted development policy (request summaries unless quoted); detailed 
   last owner leaves, so each load of this extension checks its wrapper is still in the slots and wraps again if not
   (`test/providers-anthropic.test.ts`). Pi's restore is last-in-first-out, so the manifest keeps this extension after
   `RQW-anthropic`, and an inert wrapper may stay in the other order (limits: `extensions/RQW-providers/README.md`). Mechanism research: `notes/anthropic-adapter.md`.
+
+## Quality control
+
+The rules for Main and workers are in [PROCESS.md](PROCESS.md#quality-control-loop); the design and its evidence are
+in the approved proposal (not stored in this repository). The loop reads only public GitHub state.
+
+- Scheduled full regression. Owner: «надо заебашить CI/CD, чтобы у нас тесты наши, полный regress запускался
+  постоянно, каждые три-четыре часа.» and «Может быть, эти тесты запускаются не четыре часа, а раз в два часа,
+  допустим.» Decision: `tests.yml` runs on `main` every 2 hours (cron `17 */2 * * *`, off the top of the hour because
+  GitHub drops queued scheduled jobs at high load), `pcli.yml` daily at 03:43 UTC. Task branches get no scheduled
+  reruns and nothing retries automatically: an unchanged head is not rerun
+  ([Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns)). Reason: `main` itself was never tested;
+  repeated runs of the same SHA give a free failure rate and catch drift in floating inputs (`macos-latest`,
+  `windows-latest`, Node 24, PortableGit). The repo is public, so standard runners bill nothing; the real cost is
+  macOS slot contention. Carrier: `.github/workflows/tests.yml`, `.github/workflows/pcli.yml`.
+- Failure inbox. Owner: «нужно сделать какую-то систему алертинга, какую-то копилку, куда приходят эти падения, и ты
+  проверяешь падения, их разбираешь потом и дорабатываешь в соответствии со всеми нашими требованиями» and «каждая
+  ветка, каждый commit, каждый push в себе хранит историю именно каждой отдельной задачи, и ты в соответствии с ней
+  сможешь всё это дело залайнить и пофиксить тесты». Decision: one GitHub issue per failure signature, label
+  `qa-inbox`, written by `qa-inbox.yml` after every completed `main` run (schedule or dispatch) of `tests`, `pcli`
+  and `codex-oracle`; every attempt of a run is read, so a manual rerun cannot hide the first failure. The bot owns the
+  body and rewrites it in place, never comments, so updates notify nobody. An issue closes only with a `QA: #N` fix
+  on `main` and max(6, ceil(3/p)) green scheduled runs after it; each pass also picks up failed `main` runs of the
+  last 48 hours that no issue records, so a dropped pass heals; a signature that stopped without a fix closes only
+  with a written explanation by Main. Reason: an issue per signature is the link target for `QA: #N`, dedupes one
+  bug on several jobs, and keeps state without a server; closing by silence would hide flakes. Carrier:
+  `scripts/qa-inbox.mjs`, `scripts/qa-state.mjs`, `.github/workflows/qa-inbox.yml`.
+- Public issues. Decision (engineering choice, from the proposal): the inbox lives as issues in the public repo.
+  Reason: test logs and artifacts are already public, and tests use fake credentials and no network
+  (`test/no-network.mjs`), so no secrets are expected in evidence. A private inbox would need a second repository.
+- Email digest, failures only. Owner: «И мне пусть приходит на почту оповещение о том, что тесты упали, допустим, раз
+  в сутки или два раза в сутки.» and «они будут запускаться, мне будут приходить отчеты о падениях, именно о падениях,
+  а я буду тебе об этом сообщать сам.» Owner answers «1а 2а 3а (но нужна инструкция) 4а» to the questions
+  1a «Адрес `chuark@gmail.com`, пароль приложения Gmail сохраняем в секреты репозитория.» and 2a «В 09:30 и 21:30 по
+  Москве.» Decision: `qa-digest.yml` runs at 09:30 and 21:30 Moscow time (cron `30 6 * * *` and `30 18 * * *` UTC)
+  and sends one mail through Gmail SMTP with `curl`, only when something failed in its window: a new or recurring
+  inbox issue, a failed `main` run, or a failed `qa-inbox.yml` run. The window starts at the previous successful
+  scheduled digest run (at most 48 hours back, 12 hours when there is none), so no failure falls between two mails.
+  Nothing failed: no mail. Secrets:
+  `QA_SMTP_USER`, `QA_SMTP_PASSWORD` (a Gmail app password), `QA_MAIL_TO`. Missing secrets fail the job loudly on
+  every scheduled run. Reason: SMTP from the workflow does not depend on GitHub notification settings; the owner
+  relays what he gets. Carrier: `scripts/qa-digest.mjs`, `.github/workflows/qa-digest.yml`. The owner's steps are in
+  a separate instruction outside the repository.
+- GitHub's own Actions emails. Owner: «1а 2а 3а (но нужна инструкция) 4а», where 3a is «Ты переключаешь уведомления
+  Actions на «только в GitHub», остаётся только наша сводка.» Decision: the owner switches Settings, Notifications,
+  Actions to "On GitHub" only. Reason: GitHub mails every completed scheduled run to the user who created the
+  workflow, with no digest, up to 12 mails a day at a 2-hour cadence; the setting also covers his branch runs.
+  Carrier: the owner's account setting, not a file; nothing in the repository can check it.
+- Red `main` does not block merges. Owner answer 4a: «Слияния не блокируются, проверка перед слиянием только
+  показывает открытые падения.» Decision: `deliver-check` lists open `qa-inbox` issues and never fails on them;
+  it does fail when a `QA: #N` line names an issue that is not in the inbox. Reason: a flaky or drifting `main` must
+  not freeze unrelated work, while Main still sees what is open. Carrier: `scripts/deliver-check.mjs`.
+- Awareness without a permanent process. Owner: «И ты периодически проверял в процессе работы, не типа отдельно
+  воркером проверял, а чтобы ты проверял в рамках работы над задачей. Новую задачу ставишь, и чтобы автоматически
+  тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам
+  тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть
+  постоянный, перманентно висящий процесс». Decision: no daemon,
+  timer or local cron. `scripts/qa-status.mjs` makes one bounded `gh` round (`npm run qa-status`, for workers); the
+  dev-only, repo-local `.pi/extensions/qa-status/` shows a message on session start and on a changed red state, and
+  `/qa` shows the full view. Main reads the status at task start, tells the owner in one line about a red scheduled
+  `main` and triages it. Reason: the extension is useless outside this repository and must not ship in the
+  package, so it is not an `RQW-*` extension and is not in `pi.extensions`; a failed `gh` call is reported as
+  unavailable, never as green. Carrier: `.pi/extensions/qa-status/index.ts`, `scripts/qa-status.mjs`,
+  [PROCESS.md](PROCESS.md#quality-control-loop).
+- Test integrity. Owner: «нужно именно обеспечивать качество, а не фальсифицировать работу, чтобы тесты были зелёные. Это супер
+  критически важно, потому что эти тесты и вся наша работа — это всё обеспечение контроля качества.» and «Можно даже
+  ревьюера поднимать, который перепроверяет тесты.» Decision: before any fix Main records a triage
+  class (product bug, test bug, infra, drift) with evidence; a fixed list of weakening changes is forbidden without
+  proof; a fix needs red-before/green-after in CI logs, and an intermittent one repeat runs with (1-p)^n < 0.05 (generic repeat harness `codemode-stress.yml`).
+  A reviewer subagent with `.agents/reviewers/test-integrity.md` as its whole `system` checks every QA fix and every
+  test or workflow change that weakens a check; `deliver-check` detects that case and requires the trailers
+  `Test-change:` and `Test-review: agent#N CLEAN` (exact conditions: [PROCESS.md](PROCESS.md#quality-control-loop)). Reason: the aim is a working
+  product, not a green badge; a weakened assertion turns a real failure into silence. Carrier: `PROCESS.md`,
+  `.agents/reviewers/test-integrity.md`, `scripts/deliver-check.mjs`.
+- `codex-oracle.yml` schedule is deferred. Accepted earlier: daily once on `main`. Its file exists only on the
+  `rqw-codex` branch, so no schedule hook is added now; `qa-state.mjs` and `qa-inbox.yml` already accept the workflow
+  name `codex-oracle`. Deferred work: the `rqw-codex` task adds `schedule` (daily) when it lands on `main`.
