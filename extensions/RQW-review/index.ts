@@ -23,6 +23,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { blockedGit } from "./git-guard.ts";
+import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 
 /**
@@ -677,16 +678,24 @@ export default function review(pi: ExtensionAPI) {
 	const running = new Set<AbortController>();
 	/** Every job until its verdict is sent; print and JSON modes wait for them. */
 	const jobs = new Set<Promise<void>>();
+	// Running reviews of this session, offered on pi.events (see counts.ts).
+	const counts = createCountsProducer(() => ({ agents: 0, workers: 0, reviews: running.size }), pi.events);
+	pi.events.on(COUNTS_REQUEST, (request) => {
+		const r = request as CountsRequest;
+		if (r?.version === COUNTS_VERSION) counts.reply(r);
+	});
 	/** Verdicts sent while the main session was busy, by review number, until the main model answers after them. */
 	const unanswered = new Set<number>();
 
 	pi.on("session_start", (_event, ctx) => {
 		main = ctx;
 		counter = lastNumber(ctx.sessionManager.getEntries());
+		counts.start();
 	});
 	pi.on("session_shutdown", () => {
 		for (const job of running) job.abort(SHUTDOWN);
 		running.clear();
+		counts.stop();
 	});
 
 	// Each review sends one verdict, so its number `n` in `details` is the delivery number.
@@ -778,6 +787,7 @@ export default function review(pi: ExtensionAPI) {
 	async function job(n: number, level: Level, brief: string, ctx: ExtensionContext, carried: readonly string[], fast?: boolean) {
 		const controller = new AbortController();
 		running.add(controller);
+		counts.refresh();
 		const startedAt = Date.now();
 		const timer = setTimeout(() => controller.abort(TIMEOUT), TIMEOUT_MS);
 		// A running review never keeps the process alive.
@@ -799,6 +809,7 @@ export default function review(pi: ExtensionAPI) {
 		} finally {
 			clearTimeout(timer);
 			running.delete(controller);
+			counts.refresh();
 		}
 		// The session that asked is gone; nobody is left to read the verdict.
 		if (controller.signal.reason === SHUTDOWN) return;

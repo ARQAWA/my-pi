@@ -235,3 +235,55 @@ real provider transports are not exercised by a local macOS run. Pi's separate c
 system prompt; exact caller `system` applies to task requests. Bare SDK `session.dispose()` does not emit lifecycle
 shutdown: hosts must emit `session_shutdown` or use Pi's runtime lifecycle. Child sessions remain in-memory; reload
 restores issued ids, not child sessions. Accepted process-sharing and end-of-session delivery limits are unchanged.
+
+## UI metadata and running-count offer (P4)
+
+Delivered custom messages keep their original content byte-for-byte. Their `details` add
+`{ id, outcome: "finished" | "failed", model?, thinking?, seconds }` beside `delivery` and `run`.
+`model` is the last assistant response's actual `provider/id`, omitted before any assistant response;
+`thinking` is the selected level when known. Runtime is monotonic, rounded to 0.1 seconds.
+Final errors, aborts and truncation are failed; a recovered retry is finished. Quiet cancellation still
+suppresses delivery as before. These fields do not change execution, steering or delivery ownership.
+
+For wait, the same metadata is at `result.details.results[i].display`. The existing result item's
+`outcome` remains `completed`/`error`, and the entire original wait `content` is unchanged. Consumers
+must read display metadata from details, not parse it from the model-visible JSON text. A receipt is
+not another delivered answer and adds no duplicate tool-use count. Proof: `test/ui-metadata.test.ts`.
+
+### Contract for P6: `pi.events`, version 1
+
+No cross-extension imports are needed. Each enabled producer offers one **source object per session
+lifetime**. RQW-agent owns agent/worker counts, including nested workers; RQW-review owns review counts
+inside its own folder. There is no generic native-job registry or invented job count.
+
+- Listen on `rqw:running-counts:offer` for `{ version: 1, source }` **before** requesting existing sources.
+- Emit `rqw:running-counts:request` with `{ version: 1, reply(source) }`. Every live producer replies
+  synchronously. This handshake supports either extension load order.
+- Deduplicate sources by object identity. Each source has `version: 1`, `snapshot()`,
+  `subscribe(listener)` and `dispose()`.
+- `snapshot()` returns a fresh `{ agents: number, workers: number, reviews: number }`. Sum the current
+  snapshots of distinct live sources by kind. Missing/disabled producers contribute zero.
+- `subscribe(listener)` returns an idempotent unsubscribe function. Subscribe, then take a snapshot;
+  a live subscription has no initial callback. Subsequent callbacks contain changed counts only.
+  A `null` callback means the source has been disposed: remove it, not merely its current counts.
+- `dispose()` belongs to the **producer lifecycle**, not consumers. Consumers call only their own
+  unsubscribe functions and the unsubscribe returned by `pi.events.on`. Disposal is idempotent,
+  clears subscribers, sends each `null`, and makes snapshots zero. A late subscriber gets `null`
+  immediately. A new `session_start` disposes the old source and offers a fresh one;
+  `session_shutdown` disposes it without a replacement. Never retain sources across reload/switch.
+- Consumer callbacks cannot interrupt producer execution. Offers and snapshots are presentation-only;
+  no operation on a source starts, cancels or delivers a child result.
+
+Counts read existing Activity native state and the existing runtime ownership tree, not pending results
+or logical assignment IDs. A native-idle agent waiting for its worker contributes zero agents while the
+running worker contributes one worker. Review counts read RQW-review's own running-job set. P4 adds no
+statusbar consumer, timer, card or second child registry. Proof: `test/counts.test.ts` and the independent
+RQW-review `test/counts.test.ts`; full extension isolation remains `test/isolation.test.ts` in CI.
+
+Authority: proposal «Дизайн согласован и зафиксирован. Следующая задача T16: передавать индикатору реальные счётчики работающих агентов, воркеров и ревью через pi.events. Существующий учёт в extensions/RQW-agent/activity.ts переиспользуем, без дублирования.»; owner «+».
+Reason: expose real background activity without coupling independently switchable extensions or changing
+execution/delivery. Carriers: `activity.ts`, `index.ts`, `workers.ts`, `counts.ts`, and RQW-review's own
+`counts.ts`/`index.ts`. Root decision/installation documentation is reserved for P10.
+Public Pi 1.4.0 seams: root-exported `EventBus`/`createEventBus`, `pi.events.emit/on`,
+`AgentSession.subscribe`, `AgentSession.thinkingLevel`, and `session_start`/`session_shutdown`.
+No Pi patch, private-field access or method replacement is introduced by this producer work.

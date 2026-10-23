@@ -1,6 +1,7 @@
 // Fixed-role profiles. The caller supplies the shared agent lifecycle runtime; no caller session is global.
 import { readFileSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { RunningCounts } from "./counts.ts";
 import { blockedGit } from "./git-guard.ts";
 import { pickWorkerModel, type WorkerModel, type WorkerRole } from "./worker-model.ts";
 
@@ -18,6 +19,8 @@ export type RuntimeHandle = {
 	pending(): boolean;
 	wait(signal: AbortSignal): Promise<void>;
 	ids(): string[];
+	/** Running children of this caller and of its nested callers, by kind. Pending results count zero. */
+	runningCounts(): RunningCounts;
 	abortAll(): void;
 	close(): void;
 };
@@ -54,7 +57,13 @@ export function registerWorkers(caller: ExtensionAPI, register: (caller: Extensi
 		pending: () => runtimes.some(runtime => runtime.pending()),
 		async wait(signal) { await Promise.all(runtimes.map(runtime => runtime.wait(signal))); },
 		ids: () => runtimes.flatMap(runtime => runtime.ids()),
+		runningCounts: () => sumCounts(runtimes.map(runtime => runtime.runningCounts())),
 		abortAll() { for (const runtime of runtimes) runtime.abortAll(); },
 		close() { for (const runtime of runtimes) runtime.close(); },
 	};
+}
+
+/** Sums running counts of several runtimes, kind by kind. */
+export function sumCounts(parts: RunningCounts[]): RunningCounts {
+	return parts.reduce((total, p) => ({ agents: total.agents + p.agents, workers: total.workers + p.workers, reviews: total.reviews + p.reviews }), { agents: 0, workers: 0, reviews: 0 });
 }

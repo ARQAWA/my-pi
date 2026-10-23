@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setImmediate } from "node:timers/promises";
 import { fauxAssistantMessage as answer, fauxProvider, type AssistantMessage, type TranscriptContext, type SimpleStreamOptions } from "@earendil-works/pi-ai";
-import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type EventBus } from "@earendil-works/pi-coding-agent";
 
 export { answer };
 export async function tick(turns = 20) { for (let i = 0; i < turns; i++) await setImmediate(); }
@@ -53,8 +53,11 @@ export async function fixture(mode: "tui" | "rpc" | "print" | "json" = "tui", au
 		return replies;
 	}
 	const mainReplies = frames(main, requests.main), subReplies = frames(sub, requests.sub);
+	// Fixture observer: a public inline factory that keeps the pi.events of this loader for fault injection.
+	const observed: { events?: EventBus } = {};
 	const loader = new DefaultResourceLoader({ cwd: root, agentDir,
 		additionalExtensionPaths: [...before, join(import.meta.dirname, "../index.ts"), ...after],
+		extensionFactories: [pi => { observed.events = pi.events; }],
 		noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
 	await loader.reload();
 	assert.deepEqual(loader.getExtensions().errors, []);
@@ -77,9 +80,14 @@ export async function fixture(mode: "tui" | "rpc" | "print" | "json" = "tui", au
 		await rm(root, { recursive: true, force: true });
 	};
 	// Fault injection at the actual optional-tools factory boundary, not a replacement SDK.
-	const bus = (loader as unknown as { eventBus: {
-		on(channel: string, handler: (request: { offer(factory: () => never[]): void }) => void): () => void;
-	} }).eventBus;
+	const captured = observed.events;
+	assert.ok(captured, "fixture observer captured pi.events");
+	const bus = {
+		on(channel: string, handler: (request: { offer(factory: () => never[]): void }) => void): () => void {
+			return captured.on(channel, data => handler(data as { offer(factory: () => never[]): void }));
+		},
+		emit(channel: string, data: unknown) { captured.emit(channel, data); },
+	};
 	return { root, session, runtime, sub, main, requests, mainReplies, subReplies, call, params, start, delivered, cleanup, errors, bus, authEntered: () => authEntered };
 }
 export function texts(context: TranscriptContext) {

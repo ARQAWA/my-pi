@@ -73,6 +73,8 @@ interface Mark {
 }
 
 const now = (): number => performance.now();
+// Native events that can change whether the session is running (see isRunning).
+const ACTIVITY_EVENTS = new Set<string>(["agent_start", "agent_end", "agent_settled", "tool_execution_start", "tool_execution_end", "compaction_start", "compaction_end", "auto_retry_start", "auto_retry_end"]);
 const jsonText = (value: unknown): string => {
 	try {
 		return JSON.stringify(value) ?? String(value);
@@ -189,9 +191,12 @@ export class Activity {
 	private fingerprints: Fingerprint[] = [];
 	private marks: Mark[] = [];
 	private readonly session: AgentSession;
+	private readonly onChange: (() => void) | undefined;
 
-	constructor(session: AgentSession) {
+	/** `onChange`, when given, is called on native activity changes; its throws are isolated and never reach Pi. */
+	constructor(session: AgentSession, onChange?: () => void) {
 		this.session = session;
+		this.onChange = onChange;
 		this.nativeBusy = session.isStreaming;
 		this.unsubscribe = session.subscribe(event => this.onEvent(event));
 	}
@@ -205,6 +210,17 @@ export class Activity {
 		this.runBaseline = this.tokens();
 		this.runSettled = false;
 		this.lastOutcome = null;
+		this.changed();
+	}
+
+	/** Whether Pi is running this session natively: a turn, a preflight, a compaction or a retry. Read-only. */
+	isRunning(): boolean {
+		return this.state() !== "idle";
+	}
+
+	/** Monotonic milliseconds of the current run, or of the last one once it has ended. */
+	runElapsedMs(): number {
+		return this.runActive ? now() - this.runStartedAt : (this.lastRunElapsed ?? 0);
 	}
 
 	endRun(outcome: string): void {
@@ -215,6 +231,7 @@ export class Activity {
 		this.runActive = false;
 		this.preflight = false;
 		this.lastOutcome = outcome;
+		this.changed();
 	}
 
 	// `messages` omitted: no peek. Callers validate 5-10 before passing it.
@@ -297,6 +314,16 @@ export class Activity {
 		this.execs.clear();
 		this.liveMessage = null;
 		this.liveUsage = null;
+		this.changed();
+	}
+
+	// Isolated: a caller's callback that throws must never break the session's events or the run.
+	private changed(): void {
+		try {
+			this.onChange?.();
+		} catch {
+			// isolated
+		}
 	}
 
 	private onEvent(event: AgentSessionEvent): void {
@@ -417,6 +444,8 @@ export class Activity {
 			default:
 				break;
 		}
+		// After the update, so the callback sees the new state. Only events that can change isRunning() notify.
+		if (ACTIVITY_EVENTS.has(event.type)) this.changed();
 	}
 
 	// Service mark for retry and compaction starts: only the last SERVICE_MARKS are kept.

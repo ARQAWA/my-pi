@@ -12,8 +12,9 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
-import { registerWorkers, type RuntimeHandle, type WorkerProfile } from "./workers.ts";
+import { registerWorkers, type RuntimeHandle, sumCounts, type WorkerProfile } from "./workers.ts";
 import { Activity } from "./activity.ts";
+import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 import { Coordinator, type Result, waitTimeout, targetIds, messageCount, waitResult } from "./coordinator.ts";
 
@@ -52,6 +53,8 @@ const PARAMETERS = Type.Object({
 type Params = Static<typeof PARAMETERS>;
 
 type Config = { system: string; model: Model<Api>; thinking: Thinking; tools: string[] };
+/** Display details of a delivered result: flattened beside delivery and run in a message's details, and under `display` in a wait result. For cards only, never part of the delivered text. */
+type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number };
 type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle; activity: Activity };
 type Agent = Child & {
 	id: number;
@@ -65,6 +68,33 @@ type Agent = Child & {
 	/** Tasks of `send` calls made while an interrupted run is still stopping; they start, in order, once it has. */
 	next?: string[];
 };
+
+/** The run's own record (startRun), from its assistant message_end events: last executed model and last stop reason. */
+export type RunMeta = { model?: string; stop?: string };
+
+/**
+ * The display details of a run that ended: its executed model (only an actually executed one, if any), the session's
+ * selected thinking (if any), monotonic seconds rounded to 0.1. A final aborted or length stop counts as failed.
+ */
+export function resultDisplay(id: string, outcome: "completed" | "error", activity: Activity, meta: RunMeta, thinking?: string): Display {
+	const model = meta.model;
+	// A final aborted or length stop that was delivered counts as failed; a successful retry ends with stop.
+	const stop = meta.stop;
+	const failed = outcome === "error" || stop === "aborted" || stop === "length";
+	return {
+		id,
+		outcome: failed ? "failed" : "finished",
+		...(model ? { model } : {}),
+		...(thinking ? { thinking } : {}),
+		seconds: Math.round(activity.runElapsedMs() / 100) / 10,
+	};
+}
+
+/** Records one assistant message_end into its run's record: the stop reason, and the executed model when given. The last one wins. */
+export function recordRunMessage(meta: RunMeta, message: Pick<AssistantMessage, "provider" | "model" | "stopReason">): void {
+	meta.stop = message.stopReason;
+	if (message.provider && message.model) meta.model = `${message.provider}/${message.model}`;
+}
 
 /** SDK auth and creation can ignore cancellation. Observe late failures without waiting for them. */
 async function untilAborted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -124,11 +154,25 @@ export default function agent(pi: ExtensionAPI) {
 }
 
 /** `callerFast`: this caller's GPT Fast state at the moment it starts a child (the main chat's, or a child's own). */
-function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, general: boolean, callerFast: () => boolean): RuntimeHandle {
+function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, general: boolean, callerFast: () => boolean, refresh: () => void = () => {}): RuntimeHandle {
 	const coordinator = new Coordinator(pi);
-	const runtimes: RuntimeHandle[] = [];
-	if (general) runtimes.push(registerSessionRuntime(pi, undefined, toolEvents, background, coordinator, callerFast));
-	runtimes.push(registerWorkers(pi, (caller, profile) => registerSessionRuntime(caller, profile, toolEvents, background, coordinator, callerFast)));
+	// Display details of delivered results, by run, until shutdown (see publishRun).
+	const displays = new Map<string, Display>();
+	let agentRuntime: RuntimeHandle | undefined;
+	// Running counts of the whole tree, offered by the top-level caller only (see counts.ts). Nested callers get its refresh.
+	const counts = general ? createCountsProducer(() => sumCounts(runtimes.map(runtime => runtime.runningCounts())), pi.events) : undefined;
+	const notify = counts ? () => counts.refresh() : refresh;
+	if (general) agentRuntime = registerSessionRuntime(pi, undefined, toolEvents, background, coordinator, callerFast, displays, notify);
+	const workers = registerWorkers(pi, (caller, profile) => registerSessionRuntime(caller, profile, toolEvents, background, coordinator, callerFast, displays, notify));
+	const runtimes: RuntimeHandle[] = agentRuntime ? [agentRuntime, workers] : [workers];
+	if (counts) {
+		pi.events.on(COUNTS_REQUEST, (request) => {
+			const r = request as CountsRequest;
+			if (r?.version === COUNTS_VERSION) counts.reply(r);
+		});
+		pi.on("session_start", () => counts.start());
+		pi.on("session_shutdown", () => counts.stop());
+	}
 	pi.on("agent_end", async (_event, ctx) => {
 		if (!background && (ctx.mode === "print" || ctx.mode === "json") && ctx.signal) {
 			try { await coordinator.observe(ctx.signal); } catch (error) { if (!ctx.signal.aborted) throw error; }
@@ -138,13 +182,14 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 		pending: () => runtimes.some(runtime => runtime.pending()),
 		wait: signal => coordinator.observe(signal, undefined, () => runtimes.some(runtime => runtime.pending())),
 		ids: () => runtimes.flatMap(runtime => runtime.ids()),
+		runningCounts: () => sumCounts(runtimes.map(runtime => runtime.runningCounts())),
 		abortAll() { for (const runtime of runtimes) runtime.abortAll(); },
 		close() { for (const runtime of runtimes) runtime.close(); },
 	};
 }
 
 /** Caller-local state. Nested callers settle normally; startRun tracks their workers across background wakeups. */
-export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents)): RuntimeHandle {
+export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), displays = new Map<string, Display>(), onRunning: () => void = () => {}): RuntimeHandle {
 	const name = worker?.name ?? "agent";
 	const agents = new Map<number, Agent>();
 	const lifetime = new AbortController();
@@ -158,6 +203,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 	let settlingSignal: AbortSignal | undefined;
 	const markAborted = () => { mainAborted = true; };
 	const late: Result[] = [];
+	/** Runs whose display details this runtime stored in `displays`; removed at shutdown. */
+	const ownRuns = new Set<string>();
 
 	function deliver(result: Result) {
 		if (lifetime.signal.aborted) return;
@@ -182,8 +229,49 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		pi.sendMessage(message, { triggerTurn: false });
 	}
 
+	// The message details: delivery and run as before, with the run's display fields flattened beside them (display only).
 	function resultMessage(result: Result) {
-		return { customType: name, content: `[${result.id}] ${result.text}`, display: true, details: { delivery: result.delivery, run: result.run } };
+		const display = displays.get(result.run);
+		return { customType: name, content: `[${result.id}] ${result.text}`, display: true, details: { delivery: result.delivery, run: result.run, ...display } };
+	}
+
+	/**
+	 * Stores this run's display details under its unique run before publish, which may reserve the result for a wait
+	 * synchronously and skip the push. Both paths look the details up by run; they stay until shutdown (failed-wait fallback).
+	 */
+	function publishRun(a: Agent, identity: { id: string; run: string }, text: string, outcome: "completed" | "error", meta: RunMeta) {
+		displays.set(identity.run, displayOf(a, identity.id, outcome, meta));
+		ownRuns.add(identity.run);
+		coordinator.publish(identity.id, identity.run, text, outcome, deliver);
+	}
+
+	/** The display details of a run that ended, from its activity and this session's selected thinking. */
+	function displayOf(a: Agent, id: string, outcome: "completed" | "error", meta: RunMeta): Display {
+		return resultDisplay(id, outcome, a.activity, meta, a.session.thinkingLevel);
+	}
+
+	/**
+	 * Adds each result's display details to a copy of the wait details. The content text and the original body are
+	 * kept byte for byte: the model never sees the display fields.
+	 */
+	function withDisplays<T extends { content: unknown; details: unknown }>(result: T): T {
+		const details = result.details as { results?: Record<string, unknown>[] };
+		if (!details.results?.length) return result;
+		const results = details.results.map(r => {
+			const display = displays.get(String(r.run));
+			return display ? { ...r, display } : { ...r };
+		});
+		return { ...result, details: { ...details, results } };
+	}
+
+	/** Running children of this runtime by kind, plus those of their nested callers. Native activity only; pending results count zero. */
+	function runningCounts(): RunningCounts {
+		let total: RunningCounts = { agents: 0, workers: 0, reviews: 0 };
+		for (const a of agents.values()) {
+			if (a.activity.isRunning()) total = sumCounts([total, { agents: worker ? 0 : 1, workers: worker ? 1 : 0, reviews: 0 }]);
+			if (a.workers) total = sumCounts([total, a.workers.runningCounts()]);
+		}
+		return total;
 	}
 
 	function target(a: Agent) {
@@ -252,7 +340,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					return { systemPrompt: config.system };
 				});
 				if (worker) worker.configure(sub);
-				else workers = registerCaller(sub, toolEvents, true, false, () => fast.on);
+				else workers = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning);
 			}],
 		});
 		await untilAborted(resourceLoader.reload(), signal);
@@ -271,7 +359,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				// Child Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
 				return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 			};
-			return { session, controller, guard, workers, activity: new Activity(session) };
+			return { session, controller, guard, workers, activity: new Activity(session, onRunning) };
 		});
 		try {
 			return await untilAborted(creating, signal);
@@ -292,6 +380,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		const identity = target(a);
 		coordinator.begin(identity);
 		const texts: string[] = [];
+		// This logical run's record: fresh here, updated by every assistant message_end below, retries and wakeups included.
+		const meta: RunMeta = {};
 		let lastPushed = 0;
 		let nativeRunStart = 0;
 		let workerRunStart: number | undefined;
@@ -324,6 +414,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			}
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
 			const m = event.message;
+			recordRunMessage(meta, m);
 			lastPushed = 0;
 			if (m.stopReason === "error") {
 				texts.push(`error: ${m.errorMessage ?? "unknown error"}`);
@@ -359,11 +450,14 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					}
 					else break;
 				}
-				if (!run.quiet && !a.guard.signal?.aborted) coordinator.publish(identity.id, identity.run, texts.join("\n\n") || "(no text)", texts.some(t => t.startsWith("error:")) ? "error" : "completed", deliver);
+				if (!run.quiet && !a.guard.signal?.aborted) {
+					const outcome = texts.some(t => t.startsWith("error:")) ? "error" : "completed";
+					publishRun(a, identity, texts.join("\n\n") || "(no text)", outcome, meta);
+				}
 			} catch (error) {
 				if (!run.quiet && !a.guard.signal?.aborted) {
 					texts.push(`error: ${error instanceof Error ? error.message : String(error)}`);
-					coordinator.publish(identity.id, identity.run, texts.join("\n\n"), "error", deliver);
+					publishRun(a, identity, texts.join("\n\n"), "error", meta);
 				}
 			} finally {
 				unsubscribe();
@@ -377,6 +471,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					// a.next keeps the child active until startRun has set the new a.run (synchronously), so wait and
 					// the caller's fallback never see it idle in between.
 					a.run = undefined;
+					onRunning();
 					const next = a.next;
 					if (next?.length && !a.controller.signal.aborted)
 						void startRun(a, next.join("\n\n"), a.controller.signal).then(() => { a.guard.signal = a.run?.controller.signal; }, () => {});
@@ -386,6 +481,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			}
 		})();
 		a.run = run;
+		onRunning();
 		try {
 			await untilAborted(started.promise, signal);
 		} catch (error) {
@@ -406,6 +502,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		a.session.clearQueue();
 		// abort first: dispose alone does not set Pi's abort flag for queued follow-ups or compaction.
 		void a.session.abort().catch(() => {}).finally(() => a.session.dispose());
+		onRunning();
 	}
 
 	/** Request cancellation of the current run: the shared body of `interrupt` and `send` with `interrupt: true`. */
@@ -475,7 +572,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					return { waiting: coordinator.wait(targetIds(params.ids), waitTimeout(params.timeout_ms), signal, toolCallId) };
 				});
 				coordinator.queue = registration.catch(() => {});
-				return registration.then(({ waiting }) => waiting);
+				return registration.then(({ waiting }) => waiting).then(withDisplays);
 			}
 			const next = coordinator.queue.then(() => { signal.throwIfAborted(); return act(params, ctx, signal); });
 			coordinator.queue = next.catch(() => {});
@@ -505,6 +602,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					signal.throwIfAborted();
 					a.guard.signal = a.run?.controller.signal;
 					agents.set(id, a);
+					onRunning();
 				} catch (error) { coordinator.change(`${name}#${id}`, "canceled_start"); close(a); throw error; }
 				return ok(`${name}#${id} started`);
 			}
@@ -546,6 +644,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			case "stop": {
 				const a = find(params.id);
 				agents.delete(a.id);
+				onRunning();
 				coordinator.change(`${name}#${a.id}`, "stop");
 				close(a);
 				return ok(`${name}#${a.id} stopped`);
@@ -555,6 +654,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const config = await resolveConfig(params, ctx, signal, old.config);
 				signal.throwIfAborted();
 				agents.delete(old.id);
+				onRunning();
 				coordinator.change(`${name}#${old.id}`, "restart");
 				close(old);
 				const fast = { on: params.fast_gpt ?? old.fast.on };
@@ -567,6 +667,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					signal.throwIfAborted();
 					a.guard.signal = a.run?.controller.signal;
 					agents.set(a.id, a);
+					onRunning();
 				} catch (error) { coordinator.change(`${name}#${a.id}`, "canceled_restart"); close(a); throw error; }
 				return ok(`${name}#${a.id} restarted${params.task ? "" : ", idle"}`);
 			}
@@ -617,18 +718,22 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		generation = new AbortController();
 		for (const a of agents.values()) { coordinator.change(`${name}#${a.id}`, "shutdown"); close(a); }
 		agents.clear();
+		onRunning();
 		late.length = 0;
 		unanswered.clear();
 	};
 	const shutdown = () => {
 		lifetime.abort(new Error("The caller session is shutting down"));
 		abortAll();
+		for (const run of ownRuns) displays.delete(run);
+		ownRuns.clear();
 	};
 	pi.on("session_shutdown", shutdown);
 	return {
 		pending: () => runs().length > 0 || late.some(result => result.state === "pending") || !!(main && needsTurn(main)),
 		wait: signal => coordinator.observe(signal),
 		ids: () => [...agents.values()].filter(a => a.run).map(a => `${name}#${a.id}`),
+		runningCounts,
 		abortAll,
 		close: shutdown,
 	};

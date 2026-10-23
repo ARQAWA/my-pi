@@ -27,6 +27,7 @@ import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import {
 	AgentSession,
 	createAgentSession,
+	createEventBus,
 	createGrepToolDefinition,
 	DefaultResourceLoader,
 	ModelRuntime,
@@ -245,6 +246,7 @@ describe("measured reviewer prompt contract", () => {
 			await writeFile(join(dir, "index.ts"), readFileSync(EXTENSION, "utf8"));
 			await writeFile(join(dir, "git-guard.ts"), readFileSync(join(dirname(EXTENSION), "git-guard.ts"), "utf8"));
 			await writeFile(join(dir, "fast-gpt.ts"), readFileSync(join(dirname(EXTENSION), "fast-gpt.ts"), "utf8"));
+			await writeFile(join(dir, "counts.ts"), readFileSync(join(dirname(EXTENSION), "counts.ts"), "utf8"));
 			const crlf = REVIEWER_SOURCE.replace(/\n/g, "\r\n");
 			assert.equal(createHash("sha256").update(crlf).digest("hex"),
 				"dd7eb761e6ac52d35f7b2e0dfa0a9c3d0d7c1f7a89567c9a22ddd59c3185a476");
@@ -994,6 +996,7 @@ describe("runtime regressions and controls", () => {
 			registerTool: (d: ToolDefinition) => { definition = d; },
 			sendMessage: (m: { content: unknown }) => messages.push(m),
 			appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
+			events: createEventBus(),
 		} as unknown as ExtensionAPI;
 		reviewExtension(pi);
 		const auth = Promise.withResolvers<unknown>();
@@ -1346,6 +1349,7 @@ describe("persisted review numbers", () => {
 				registerTool: (d: ToolDefinition) => { definition = d; },
 				appendEntry: (customType: string, data: unknown) => persisted.push({ customType, data }),
 				sendMessage: () => {},
+				events: createEventBus(),
 			} as unknown as ExtensionAPI);
 			const ctx = { cwd: root, isIdle: () => true, sessionManager: { getEntries: () => entries, getBranch: () => [] },
 				modelRegistry: { find: () => undefined } } as unknown as ExtensionContext;
@@ -1561,6 +1565,7 @@ describe("review number safety", () => {
 				on: (n: string, h: (event: never, ctx: never) => unknown) => handlers.set(n, h),
 				registerTool: (d: ToolDefinition) => { definition = d; },
 				appendEntry: (_type: string, data: unknown) => persisted.push(data), sendMessage: () => {},
+				events: createEventBus(),
 			} as unknown as ExtensionAPI);
 			let lookups = 0;
 			const ctx = { cwd: root, isIdle: () => true, sessionManager: { getEntries: () => entries, getBranch: () => [] },
