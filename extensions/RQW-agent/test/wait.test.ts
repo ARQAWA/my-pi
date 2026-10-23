@@ -90,7 +90,7 @@ test("gated terminal worker error is returned once by explicit wait and never co
 			});
 			const before = f.mainRequests.length;
 			f.mainReplies.push(answer([fauxToolCall(role, { task: "BAD_REQUEST_BRIEF" })], { stopReason: "toolUse" }),
-				answer([fauxToolCall(role, { action: "wait", ids: [`${role}#1`], timeout_ms: 900000 })], { stopReason: "toolUse" }),
+				answer([fauxToolCall(role, { action: "wait", ids: [`${role}#1`], timeout_ms: 900000, wake_on_alert: false })], { stopReason: "toolUse" }),
 				answer("CALLER_DONE"));
 			const run = f.session.prompt("GO");
 			await until(() => entered, `${role} worker entered`);

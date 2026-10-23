@@ -17,9 +17,10 @@ import { type Static, Type } from "typebox";
 import { installGitGuard, registerWorkers, type RuntimeHandle, sumCounts, type WorkerProfile } from "./workers.ts";
 import { explorerRole, subagentPrompt, THOROUGHNESS, type Thoroughness, workerPrompt } from "./prompt.ts";
 import { Activity } from "./activity.ts";
+import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-files.ts";
 import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
-import { Coordinator, type Result, waitTimeout, targetIds, messageCount, waitResult } from "./coordinator.ts";
+import { Coordinator, type Result, waitTimeout, targetIds, messageCount, statusDepth, waitResult } from "./coordinator.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
 /** The tools of an explorer: read and search only; its bash is behind the git guard. */
@@ -34,10 +35,13 @@ export const DESCRIPTION = [
 	"Use it for complex multi-step work that can run on its own, or for independent areas in parallel: start them all in one response. Do not use it for a narrow question, one or two known files or a single search: call the tools directly.",
 	"The child sees neither the user nor your history: give it the full context and say exactly what to return. Trust its result rather than redoing the work; the user does not see it, so pass on what matters.",
 	"Work in parallel while children run. When blocked, estimate their remaining duration and set timeout_ms somewhat longer on each wait; 300000 is only the omitted default, not an interval or maximum.",
-	"wait: ids (full IDs, may mix your direct agents and workers), optional timeout_ms; mechanically returns the first result without model turns. Timeout returns status only; children keep running. Re-estimate and wait again if needed.",
-	"status: ids, optional messages (5-10, default 8); last trimmed messages and in-flight tool calls. Decide whether to wait, send, interrupt, stop or restart. Do not busy-poll.",
+	"wait: ids (full IDs, may mix your direct agents and workers), optional timeout_ms, until first (default) or all, wake_on_alert (default true); mechanically waits without model turns. A new alert wakes without consuming a result; false waits for terminal delivery. until all holds completed results until every selected target is terminal. Timeout returns status only; children keep running. Re-estimate and wait again if needed.",
+	"status: ids, optional messages (5-10, default 8), depth (default 0); last trimmed messages, in-flight tool calls and structured alerts. Positive depth adds read-only descendant status; it grants no descendant control. Decide whether to wait, send, interrupt, stop or restart. Do not busy-poll.",
+	"start/restart: optional alert_after_ms, a positive safe integer, emits long_turn alerts for active turns after that duration; omitted means disabled, restart inherits the previous threshold. Alerts never stop work.",
 	"Results arrive once, through wait or a later [agent#N] message; already-delivered results give a receipt.",
 	"start: task, optional title (3-5 words), role, system (the whole system prompt), model (provider/id), thinking, tools; returns agent#N.",
+	"start/restart: system_file or role_file loads exact UTF-8 text relative to the caller cwd instead of matching inline text; system and role choices are mutually exclusive. Restart inherits the file choice and re-reads it before replacing the child. Result details record prompt_file {kind, path (absolute), sha256 (file bytes)} beside delivery/run on push, and in results[].display on wait.",
+	"include: [user_messages] on start/restart appends caller-session user-role text verbatim in a <user_messages> block after the task, from the caller's current branch; images and non-user messages are omitted. It is not inherited on restart.",
 	"explore on start: a read-only search subagent (read, grep, find, guarded bash) on your model with a search role at thoroughness quick, medium or very thorough; it takes no system, role, tools or model.",
 	"send: id, task; reaches a running child after its current tool call, without aborting anything (a child parked in its own wait gets it after that call returns), or starts a new run with its history when idle; interrupt: true on send aborts a running child's turn and starts task as soon as it has stopped.",
 	"interrupt: id; requests cancellation, keeps history; inspect status while cancellation is pending. stop: id; closes it.",
@@ -52,8 +56,15 @@ const PARAMETERS = Type.Object({
 	ids: Type.Optional(Type.Array(Type.String(), { description: "Full direct child IDs; wait/status may mix agents and workers" })),
 	timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Chosen wait duration, slightly longer than estimated remaining work; default 300000 only when omitted" })),
 	messages: Type.Optional(Type.Integer({ minimum: 5, maximum: 10, description: "Status peek length; default 8" })),
+	until: Type.Optional(StringEnum(["first", "all"], { description: "wait: first terminal result (default), or hold results until all selected targets are terminal" })),
+	wake_on_alert: Type.Optional(Type.Boolean({ description: "wait: return on a new structured alert without consuming a result; default true" })),
+	depth: Type.Optional(Type.Integer({ minimum: 0, description: "status: descendant generations to include, read-only; default 0" })),
+	alert_after_ms: Type.Optional(Type.Integer({ minimum: 1, description: "start/restart: long-turn alert threshold in milliseconds, positive safe integer; disabled by default, inherited on restart" })),
 	system: Type.Optional(Type.String({ description: "Whole system prompt, replacing the default (your prompt, the subagent reminder and role); start, restart" })),
 	role: Type.Optional(Type.String({ description: "Short role text added after the default prompt; start, restart" })),
+	system_file: Type.Optional(Type.String({ description: "start, restart: UTF-8 whole-prompt file, relative to caller cwd; conflicts with system and either role option; no explorers" })),
+	role_file: Type.Optional(Type.String({ description: "start, restart: UTF-8 role file, relative to caller cwd; conflicts with role and either system option; no explorers" })),
+	include: Type.Optional(Type.Array(StringEnum(["user_messages"]), { description: "start, restart: append verbatim user-role text from this caller's current session branch after the task" })),
 	title: Type.Optional(Type.String({ description: "Short title, 3-5 words, shown in status and result headers; start, restart" })),
 	explore: Type.Optional(StringEnum(THOROUGHNESS, { description: "start, restart: a read-only search subagent on your model at this thoroughness; no system, role, tools or model" })),
 	task: Type.Optional(Type.String({ description: "Message to the subagent" })),
@@ -69,9 +80,9 @@ type Params = Static<typeof PARAMETERS>;
  * `system` is the whole prompt sent; `base` the main agent's prompt it was built from (handed down to nested callers);
  * `custom` the caller's full override, `role` its role text, `explore` an explorer's thoroughness.
  */
-type Config = { system: string; base: string; custom?: string; role?: string; explore?: Thoroughness; model: Model<Api>; thinking: Thinking; tools: string[] };
+type Config = { system: string; base: string; custom?: string; role?: string; prompt_file?: PromptFile; explore?: Thoroughness; alert_after_ms?: number; model: Model<Api>; thinking: Thinking; tools: string[] };
 /** Display details of a delivered result: flattened beside delivery and run in a message's details, and under `display` in a wait result. For cards only, never part of the delivered text. */
-type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number; title?: string };
+type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number; title?: string; prompt_file?: PromptFile };
 /** Control of a child's background jobs, carried by RQW-tools' offered `job` definition when it offers one. */
 type JobControl = { abortAll(): void; dispose(): void };
 type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle; activity: Activity; jobs?: JobControl };
@@ -189,6 +200,12 @@ function offeredReview(events: ExtensionAPI["events"]): ReviewRegistrar | undefi
 
 type OwnSettings = ReturnType<ExtensionAPI["getSettings"]>;
 
+/** Descendant supervision stays compact: no message, argument or tool-output previews. */
+function compactStatus(status: Record<string, unknown>): Record<string, unknown> {
+	const keys = ["id", "run", "error", "title", "state", "activity", "run_active", "run_id", "elapsed_ms", "idle_for_ms", "last_activity_ago_ms", "model", "outcome", "alerts", "current_tools_total", "pending_children", "cancellation_requested", "pending_sends", "children"];
+	return Object.fromEntries(keys.filter(key => key in status).map(key => [key, status[key]]));
+}
+
 /**
  * The owner's settings a child session runs with, copied from the caller's effective settings: the shell (Git Bash on
  * Windows), image handling, retries and provider timeouts, transport and its timeouts, compaction (reserve, kept
@@ -257,6 +274,7 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 		pending: () => runtimes.some(runtime => runtime.pending()),
 		wait: signal => coordinator.observe(signal, undefined, () => runtimes.some(runtime => runtime.pending())),
 		ids: () => runtimes.flatMap(runtime => runtime.ids()),
+		status: depth => coordinator.status(coordinator.ids(), undefined, undefined, statusDepth(depth)).map(compactStatus),
 		runningCounts: () => sumCounts(runtimes.map(runtime => runtime.runningCounts())),
 		abortAll() { for (const runtime of runtimes) runtime.abortAll(); },
 		close() { for (const runtime of runtimes) runtime.close(); },
@@ -324,7 +342,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 
 	/** The display details of a run that ended, from its activity and this session's selected thinking. */
 	function displayOf(a: Agent, id: string, outcome: "completed" | "error", meta: RunMeta): Display {
-		return resultDisplay(id, outcome, a.activity, meta, a.session.thinkingLevel, a.title);
+		return { ...resultDisplay(id, outcome, a.activity, meta, a.session.thinkingLevel, a.title),
+			...(a.config.prompt_file ? { prompt_file: a.config.prompt_file } : {}) };
 	}
 
 	/**
@@ -356,10 +375,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			// A queued `send` task is about to start: wait must not see an idle child in between.
 			active: () => !!a.run || !!a.next?.length,
 			checkpoint: () => a.activity.checkpoint(),
-			snapshot: (messages?: number, checkpoint?: Map<string, number>) => ({ ...(a.title ? { title: a.title } : {}), ...a.activity.snapshot(messages, checkpoint),
+			alertVersion: () => a.activity.alertVersion(),
+			snapshot: (messages?: number, checkpoint?: Map<string, number>, depth = 0) => ({ ...(a.title ? { title: a.title } : {}), ...a.activity.snapshot(messages, checkpoint),
 				...(a.run?.quiet ? { cancellation_requested: true } : {}),
 				...(a.next?.length ? { pending_sends: a.next.length } : {}),
-				...(a.workers?.pending() ? { pending_children: a.workers.ids() } : {}) }),
+				...(a.workers?.pending() ? { pending_children: a.workers.ids() } : {}),
+				...(depth > 0 ? { children: a.workers?.status?.(depth - 1) ?? [] } : {}) }),
 		};
 	}
 
@@ -407,6 +428,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		const guard: Child["guard"] = {};
 		const check = () => { controller.signal.throwIfAborted(); guard.signal?.throwIfAborted(); };
 		let workers: RuntimeHandle | undefined;
+		let activity: Activity | undefined;
 		// A general subagent delegates further (agent, workers, review); explorers and workers are leaves.
 		const general = !worker && !config.explore;
 		const review = general ? offeredReview(toolEvents) : undefined;
@@ -441,7 +463,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 						check();
 						return { systemPrompt: config.system };
 					});
-					if (worker) worker.configure(sub);
+					if (worker) worker.configure(sub, (id, reason) => activity?.observeRefusal(id, reason));
 					else if (config.explore) installGitGuard(sub);
 					else {
 						workers = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`);
@@ -475,7 +497,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					// Child Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
 					return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 				};
-				return { session, controller, guard, workers, activity: new Activity(session, onRunning), jobs };
+				activity = new Activity(session, () => { onRunning(); coordinator.notify(); }, { alert_after_ms: config.alert_after_ms });
+				return { session, controller, guard, workers, activity, jobs };
 			});
 			return await untilAborted(creating, signal);
 		} catch (error) {
@@ -539,6 +562,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const text = textOf(m);
 				if (text) { texts.push(text); lastPushed++; }
 				if (m.stopReason === "length") {
+					a.activity.reportError("Response was truncated: the model reached its output token limit.");
 					texts.push("error: Response was truncated: the model reached its output token limit.");
 					lastPushed++;
 				}
@@ -572,7 +596,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				}
 			} catch (error) {
 				if (!run.quiet && !a.guard.signal?.aborted) {
-					texts.push(`error: ${error instanceof Error ? error.message : String(error)}`);
+					const detail = error instanceof Error ? error.message : String(error);
+					a.activity.reportError(detail);
+					texts.push(`error: ${detail}`);
 					publishRun(a, identity, texts.join("\n\n"), "error", meta);
 				}
 			} finally {
@@ -644,21 +670,38 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 
 	async function resolveConfig(params: Params, ctx: ExtensionContext, signal: AbortSignal, base?: Config): Promise<Config> {
 		signal.throwIfAborted();
+		const alertAfter = params.alert_after_ms ?? base?.alert_after_ms;
+		if (alertAfter !== undefined && (!Number.isSafeInteger(alertAfter) || alertAfter <= 0))
+			throw new Error("alert_after_ms must be a positive finite safe integer");
+		const alertOptions = alertAfter === undefined ? {} : { alert_after_ms: alertAfter };
 		if (worker) {
 			const selected = await untilAborted(worker.resolve(ctx), signal);
-			return { system: workerPrompt(worker.system, ctx.cwd), base: "", tools: [...worker.tools], ...selected };
+			return { system: workerPrompt(worker.system, ctx.cwd), base: "", tools: [...worker.tools], ...selected, ...alertOptions };
 		}
 		const explore = params.explore ?? base?.explore;
-		if (given(params.system) && given(params.role)) throw new Error("Give system (the whole prompt) or role (added to the default prompt), not both");
-		if (explore && (given(params.system) || given(params.role) || params.tools || params.model))
-			throw new Error("An explorer runs on your model with fixed read-only tools and its own role: omit system, role, tools and model");
+		if (params.system !== undefined && params.system_file !== undefined) throw new Error("Give system or system_file, not both");
+		if (params.role !== undefined && params.role_file !== undefined) throw new Error("Give role or role_file, not both");
+		const hasSystem = params.system !== undefined || params.system_file !== undefined;
+		const hasRole = params.role !== undefined || params.role_file !== undefined;
+		if (hasSystem && hasRole) throw new Error("Give system (the whole prompt) or role (added to the default prompt), not both; file variants follow the same rule");
+		if (explore && (given(params.system) || given(params.role) || params.system_file !== undefined || params.role_file !== undefined || params.tools || params.model))
+			throw new Error("An explorer runs on your model with fixed read-only tools and its own role: omit system, role, tools and model, including prompt files");
 		// A restart keeps the old prompt choice unless a new one is given; role and system replace each other.
 		let custom = explore ? undefined : base?.custom;
 		let role = explore ? undefined : base?.role;
-		if (given(params.system)) { custom = params.system; role = undefined; }
-		if (given(params.role)) { role = params.role.trim(); custom = undefined; }
+		let promptFile = explore ? undefined : base?.prompt_file;
+		if (given(params.system)) { custom = params.system; role = undefined; promptFile = undefined; }
+		if (given(params.role)) { role = params.role.trim(); custom = undefined; promptFile = undefined; }
+		const fileKind = params.system_file !== undefined ? "system" : params.role_file !== undefined ? "role" : promptFile?.kind;
+		const filePath = params.system_file ?? params.role_file ?? promptFile?.path;
+		if (fileKind !== undefined && filePath !== undefined) {
+			const loaded = await untilAborted(loadPromptFile(fileKind, filePath, ctx.cwd), signal);
+			promptFile = loaded.file;
+			custom = fileKind === "system" ? loaded.text : undefined;
+			role = fileKind === "role" ? loaded.text : undefined;
+		}
 		const root = basePrompt(ctx);
-		const system = custom ?? subagentPrompt(root, explore ? explorerRole(explore) : role);
+		const system = custom ?? subagentPrompt(root, explore ? explorerRole(explore) : role, promptFile?.kind === "role");
 		let model: Model<Api> | undefined = explore ? ctx.model : base?.model ?? ctx.model;
 		if (params.model) {
 			const slash = params.model.indexOf("/");
@@ -671,7 +714,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		signal.throwIfAborted();
 		const tools = explore ? [...EXPLORE_TOOLS] : params.tools ?? base?.tools ?? [...TOOLS];
 		const thinking = params.thinking ?? base?.thinking ?? pi.getThinkingLevel();
-		return { system, base: root, ...(custom !== undefined ? { custom } : {}), ...(role ? { role } : {}), ...(explore ? { explore } : {}), model, thinking, tools };
+		return { system, base: root, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}), ...(promptFile ? { prompt_file: promptFile } : {}), ...(explore ? { explore } : {}), model, thinking, tools, ...alertOptions };
 	}
 
 	const ok = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
@@ -684,6 +727,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			task: Type.Optional(Type.String({ minLength: 1 })),
 			id: Type.Optional(Type.String({ description: `${name}#N; management actions` })), ids: PARAMETERS.properties.ids,
 			timeout_ms: PARAMETERS.properties.timeout_ms, messages: PARAMETERS.properties.messages,
+			until: PARAMETERS.properties.until, wake_on_alert: PARAMETERS.properties.wake_on_alert,
+			depth: PARAMETERS.properties.depth, alert_after_ms: PARAMETERS.properties.alert_after_ms,
 			fast_gpt: PARAMETERS.properties.fast_gpt, interrupt: PARAMETERS.properties.interrupt, title: PARAMETERS.properties.title,
 		}) : PARAMETERS,
 		execute: (toolCallId, raw, callerSignal, _onUpdate, ctx) => {
@@ -696,7 +741,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			if (params.action === "wait") {
 				const registration = coordinator.queue.then(() => {
 					signal.throwIfAborted();
-					return { waiting: coordinator.wait(targetIds(params.ids), waitTimeout(params.timeout_ms), signal, toolCallId) };
+					return { waiting: coordinator.wait(targetIds(params.ids), waitTimeout(params.timeout_ms), signal, toolCallId, { until: params.until, wake_on_alert: params.wake_on_alert }) };
 				});
 				coordinator.queue = registration.catch(() => {});
 				return registration.then(({ waiting }) => waiting).then(withDisplays);
@@ -711,8 +756,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		// Strict-mode providers send null for omitted optional fields.
 		const params = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== null)) as Params;
 		signal.throwIfAborted();
+		if (!worker && (params.system_file !== undefined || params.role_file !== undefined || params.include !== undefined) && params.action !== "start" && params.action !== "restart")
+			throw new Error("system_file, role_file and include are only supported on start/restart");
+		const task = !worker && params.include?.includes("user_messages") && params.task !== undefined
+			? appendUserMessages(params.task, ctx.sessionManager.getBranch()) : params.task;
 		switch (params.action) {
-			case "status": return waitResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages)) });
+			case "status": return waitResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages), undefined, statusDepth(params.depth)) });
 			case "start": {
 				if (!params.task) throw new Error("task is required");
 				const config = await resolveConfig(params, ctx, signal);
@@ -725,7 +774,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, fast, ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };
 				try {
 					signal.throwIfAborted();
-					await startRun(a, params.task, signal);
+					await startRun(a, task!, signal);
 					signal.throwIfAborted();
 					a.guard.signal = a.run?.controller.signal;
 					agents.set(id, a);
@@ -791,7 +840,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const a: Agent = { id: old.id, config, epoch: randomUUID(), runNumber: 0, fast, ...(title ? { title } : {}), ...child };
 				try {
 					signal.throwIfAborted();
-					if (params.task) await startRun(a, params.task, signal);
+					if (params.task) await startRun(a, task!, signal);
 					else coordinator.add(target(a));
 					signal.throwIfAborted();
 					a.guard.signal = a.run?.controller.signal;
@@ -862,6 +911,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		pending: () => runs().length > 0 || late.some(result => result.state === "pending") || !!(main && needsTurn(main)),
 		wait: signal => coordinator.observe(signal),
 		ids: () => [...agents.values()].filter(a => a.run).map(a => `${name}#${a.id}`),
+		status: depth => coordinator.status([...agents.keys()].map(id => `${name}#${id}`), undefined, undefined, statusDepth(depth)).map(compactStatus),
 		runningCounts,
 		abortAll,
 		close: shutdown,

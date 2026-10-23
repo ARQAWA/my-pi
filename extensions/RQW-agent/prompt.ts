@@ -27,9 +27,11 @@ export function explorerRole(level: Thoroughness): string {
 }
 
 /** The default subagent prompt: the main agent's prompt, the reminder, then the role when given. */
-export function subagentPrompt(base: string, role?: string): string {
+export function subagentPrompt(base: string, role?: string, preserveRoleWhitespace = false): string {
 	const parts = [base.trimEnd(), SUBAGENT_REMINDER];
-	if (role?.trim()) parts.push(`<role>\n${role.trim()}\n</role>`);
+	// File roles preserve their decoded text, including an empty file; inline roles retain normalization.
+	if (preserveRoleWhitespace ? role !== undefined : role?.trim())
+		parts.push(`<role>\n${preserveRoleWhitespace ? role : role!.trim()}\n</role>`);
 	return parts.filter(Boolean).join("\n\n");
 }
 

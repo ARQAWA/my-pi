@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { RunningCounts } from "./counts.ts";
 import { blockedGit } from "./git-guard.ts";
+import { statusDepth } from "./coordinator.ts";
+
+export type RefusalObserver = (toolCallId: string, reason: string) => void;
 import { pickWorkerModel, type WorkerModel, type WorkerRole } from "./worker-model.ts";
 
 export type WorkerProfile = {
@@ -11,7 +14,7 @@ export type WorkerProfile = {
 	system: string;
 	tools: readonly string[];
 	resolve(caller: ExtensionContext): Promise<WorkerModel>;
-	configure(session: ExtensionAPI): void;
+	configure(session: ExtensionAPI, onRefusal?: RefusalObserver): void;
 };
 
 /** Caller-owned children and results, including a result not yet consumed by the caller model. */
@@ -19,6 +22,8 @@ export type RuntimeHandle = {
 	pending(): boolean;
 	wait(signal: AbortSignal): Promise<void>;
 	ids(): string[];
+	/** Compact read-only diagnostics; depth counts generations below these direct children. */
+	status?(depth: number): Record<string, unknown>[];
 	/** Running children of this caller and of its nested callers, by kind. Pending results count zero. */
 	runningCounts(): RunningCounts;
 	abortAll(): void;
@@ -51,6 +56,7 @@ export function registerWorkers(caller: ExtensionAPI, register: (caller: Extensi
 		pending: () => runtimes.some(runtime => runtime.pending()),
 		async wait(signal) { await Promise.all(runtimes.map(runtime => runtime.wait(signal))); },
 		ids: () => runtimes.flatMap(runtime => runtime.ids()),
+		status: depth => { statusDepth(depth); return runtimes.flatMap(runtime => runtime.status?.(depth) ?? []); },
 		runningCounts: () => sumCounts(runtimes.map(runtime => runtime.runningCounts())),
 		abortAll() { for (const runtime of runtimes) runtime.abortAll(); },
 		close() { for (const runtime of runtimes) runtime.close(); },
@@ -58,11 +64,14 @@ export function registerWorkers(caller: ExtensionAPI, register: (caller: Extensi
 }
 
 /** Blocks every git-state change in this session's bash calls (workers and explorers) before the shell runs. */
-export function installGitGuard(session: ExtensionAPI): void {
+export function installGitGuard(session: ExtensionAPI, onRefusal?: RefusalObserver): void {
 	session.on("tool_call", event => {
 		if (event.toolName !== "bash" || typeof event.input.command !== "string") return;
 		const reason = blockedGit(event.input.command);
-		if (reason) return { block: true, reason };
+		if (reason) {
+			onRefusal?.(event.toolCallId, reason);
+			return { block: true, reason };
+		}
 	});
 }
 

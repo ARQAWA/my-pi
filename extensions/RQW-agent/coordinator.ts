@@ -3,9 +3,10 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export const DEFAULT_WAIT_MS = 300000;
-export type Target = { id: string; run: string; active(): boolean; checkpoint?(): Map<string, number>; snapshot(messages?: number, checkpoint?: Map<string, number>): Record<string, unknown> };
+export type Target = { id: string; run: string; active(): boolean; checkpoint?(): Map<string, number>; alertVersion?(): number; snapshot(messages?: number, checkpoint?: Map<string, number>, depth?: number): Record<string, unknown> };
+export type WaitOptions = { until?: "first" | "all"; wake_on_alert?: boolean };
 export type Result = { id: string; run: string; delivery: string; text?: string; outcome: string;
-	state: "pending" | "reserved" | "message" | "wait"; claimed_by?: string; push(result: Result): void };
+	state: "pending" | "held" | "reserved" | "message" | "wait"; claimed_by?: string; push(result: Result): void };
 type Watch = { check(): void };
 type Reservation = { owner: string; call: string; results: Result[]; signal: AbortSignal };
 
@@ -22,6 +23,11 @@ export function targetIds(ids: unknown): string[] {
 export function messageCount(value?: number | null) {
 	if (value == null) return 8;
 	if (!Number.isInteger(value) || value < 5 || value > 10) throw new Error("messages must be an integer from 5 to 10");
+	return value;
+}
+export function statusDepth(value?: number | null): number {
+	if (value == null) return 0;
+	if (!Number.isSafeInteger(value) || value < 0) throw new Error("depth must be a nonnegative safe integer");
 	return value;
 }
 /** Absolute monotonic deadlines, chunked below Node's timer overflow boundary; no artificial wait maximum. */
@@ -45,6 +51,7 @@ export class Coordinator {
 	private results = new Map<string, Result>();
 	// Older runs can still have an unfinalized handoff when send starts the next run.
 	private uncommitted = new Set<Result>();
+	private offered = new WeakSet<Result>();
 	private watchers = new Set<Watch>();
 	private changes = new Map<string, { run: string; change: string }>();
 	private reservations = new Map<string, Reservation>();
@@ -112,7 +119,7 @@ export class Coordinator {
 			for (const result of reservation.results) {
 				if (result.state !== "reserved" || result.claimed_by !== owner) continue;
 				if (kept) { result.state = "wait"; result.text = undefined; this.uncommitted.delete(result); }
-				else { result.state = "pending"; delete result.claimed_by; result.push(result); }
+				else { result.state = "pending"; delete result.claimed_by; this.push(result); }
 			}
 		}
 		this.notify();
@@ -135,7 +142,12 @@ export class Coordinator {
 		this.results.set(id, result);
 		this.uncommitted.add(result);
 		this.notify(); // A registered waiter reserves synchronously before the message path can claim it.
-		if (result.state === "pending") push(result);
+		this.push(result);
+	}
+	private push(result: Result) {
+		if (result.state !== "pending" || this.offered.has(result)) return;
+		this.offered.add(result);
+		result.push(result);
 	}
 	/** Call immediately before pi.sendMessage; a deferred pending result is still claimable by wait. */
 	message(result: Result) {
@@ -146,55 +158,82 @@ export class Coordinator {
 	}
 	releaseMessage(result: Result) { if (result.state === "message") result.text = undefined; }
 	notify() { for (const watcher of [...this.watchers]) watcher.check(); }
-	status(ids: string[], messages?: number, checkpoints?: Map<string, Map<string, number> | undefined>) {
+	status(ids: string[], messages?: number, checkpoints?: Map<string, Map<string, number> | undefined>, depth = 0) {
+		depth = statusDepth(depth);
 		return ids.map(id => {
 			const target = this.targets.get(id);
-			return target ? { id, run: target.run, ...target.snapshot(messages, checkpoints?.get(id)) } : { id, error: "Unknown or closed child ID" };
+			return target ? { id, run: target.run, ...target.snapshot(messages, checkpoints?.get(id), depth) } : { id, error: "Unknown or closed child ID" };
 		});
 	}
 	ids() { return [...this.targets.keys()]; }
 	private receipt(result: Result) {
 		return { id: result.id, run: result.run, delivery: result.delivery, delivered_via: result.state === "message" ? "message" : "wait", claimed_by: result.claimed_by };
 	}
-	wait(ids: string[], timeout: number, signal: AbortSignal, call: string) {
+	wait(ids: string[], timeout: number, signal: AbortSignal, call: string, options: WaitOptions = {}) {
 		signal.throwIfAborted();
+		if (options.until != null && options.until !== "first" && options.until !== "all") throw new Error("until must be first or all");
+		if (options.wake_on_alert != null && typeof options.wake_on_alert !== "boolean") throw new Error("wake_on_alert must be a boolean");
+		const all = options.until === "all";
 		const selected = new Map(ids.map(id => [id, this.targets.get(id)?.run]));
 		const initialChanges = new Map(ids.map(id => [id, this.changes.get(id)]));
+		const alerts = new Map(ids.map(id => [id, this.targets.get(id)?.alertVersion?.() ?? 0]));
 		const checkpoints = new Map(ids.map(id => [id, this.targets.get(id)?.checkpoint?.()]));
 		const owner = randomUUID();
 		this.activeWaits++;
 		this.notify(); // Explicit caller-chosen waits supersede any implicit fallback deadline.
 		return new Promise<ReturnType<typeof json>>((resolve, reject) => {
 			let done = false, cancelTimer = () => {};
-			const finish = (reason: string, results: Record<string, unknown>[] = [], receipts: Record<string, unknown>[] = [], changed?: unknown) => {
+			const held = new Set<Result>();
+			const release = () => {
+				const released = [...held].filter(r => r.state === "held" && r.claimed_by === owner);
+				for (const r of released) { r.state = "pending"; delete r.claimed_by; }
+				held.clear();
+				this.notify();
+				for (const r of released) this.push(r);
+			};
+			const cleanup = () => { this.activeWaits--; this.watchers.delete(watcher); cancelTimer(); signal.removeEventListener("abort", abort); };
+			const fail = (error: unknown) => {
 				if (done) return;
 				done = true; cleanup();
-				resolve(json({ reason, timed_out: reason === "timeout", results, receipts, ...(changed ? { changed } : {}), statuses: this.status(ids, undefined, checkpoints) }));
+				try { release(); } finally { reject(error); }
+			};
+			const finish = (reason: string, pending: Result[] = [], receipts: Record<string, unknown>[] = [], changed?: unknown) => {
+				if (done) return;
+				try {
+					// Build the complete handoff before reserving: a snapshot/serialization failure must release holds.
+					const result = json({ reason, timed_out: reason === "timeout", results: pending.map(r => ({ id: r.id, run: r.run, delivery: r.delivery, text: r.text, outcome: r.outcome })), receipts, ...(changed ? { changed } : {}), statuses: this.status(ids, undefined, checkpoints) });
+					for (const r of pending) { this.offered.delete(r); r.state = "reserved"; r.claimed_by = owner; held.delete(r); }
+					if (pending.length) this.reservations.set(owner, { owner, call, results: pending, signal });
+					done = true; cleanup();
+					try { release(); resolve(result); } catch (error) { reject(error); }
+				} catch (error) { fail(error); }
 			};
 			const watcher: Watch = { check: () => {
 				if (done) return;
-				const changed = ids.flatMap(id => {
-					const run = selected.get(id), target = this.targets.get(id), change = this.changes.get(id);
-					return run && (target?.run !== run || change !== initialChanges.get(id)) ? [{ id, run, change: change?.run === run ? change.change : "replaced" }] : [];
-				});
-				if (changed.length) { finish("target_changed", [], [], changed); return; }
-				const available = ids.flatMap(id => { const r = this.results.get(id); return r && r.run === selected.get(id) ? [r] : []; });
-				const pending = available.filter(r => r.state === "pending");
-				const receipts = available.filter(r => r.state !== "pending").map(r => this.receipt(r));
-				if (pending.length) {
-					for (const r of pending) { r.state = "reserved"; r.claimed_by = owner; }
-					this.reservations.set(owner, { owner, call, results: pending, signal });
-					finish("result", pending.map(r => ({ id: r.id, run: r.run, delivery: r.delivery, text: r.text, outcome: r.outcome })), receipts);
-					return;
-				}
-				if (receipts.length) { finish("receipt", [], receipts); return; }
-				if (!ids.some(id => this.targets.get(id)?.active())) finish("idle");
+				try {
+					const changed = ids.flatMap(id => {
+						const run = selected.get(id), target = this.targets.get(id), change = this.changes.get(id);
+						return run && (target?.run !== run || change !== initialChanges.get(id)) ? [{ id, run, change: change?.run === run ? change.change : "replaced" }] : [];
+					});
+					if (changed.length) { finish("target_changed", [], [], changed); return; }
+					if (options.wake_on_alert !== false && ids.some(id => (this.targets.get(id)?.alertVersion?.() ?? 0) > alerts.get(id)!)) { finish("alert"); return; }
+					const available = ids.flatMap(id => { const r = this.results.get(id); return r && r.run === selected.get(id) ? [r] : []; });
+					const pending = available.filter(r => r.state === "pending" || (r.state === "held" && r.claimed_by === owner));
+					const receipts = available.filter(r => r.state !== "pending" && r.state !== "held").map(r => this.receipt(r));
+					if (all) {
+						for (const r of pending) { this.offered.delete(r); r.state = "held"; r.claimed_by = owner; held.add(r); }
+						const ready = ids.every(id => available.some(r => r.id === id && (r.state !== "held" || r.claimed_by === owner)) || !this.targets.get(id)?.active());
+						if (!ready || available.some(r => r.state === "held" && r.claimed_by !== owner)) return;
+					}
+					if (pending.length) { finish("result", pending, receipts); return; }
+					if (receipts.length) { finish("receipt", [], receipts); return; }
+					if (!available.some(r => r.state === "held") && !ids.some(id => this.targets.get(id)?.active())) finish("idle");
+				} catch (error) { fail(error); }
 			} };
-			const abort = () => { if (!done) { done = true; cleanup(); reject(signal.reason ?? new Error("aborted")); } };
-			const cleanup = () => { this.activeWaits--; this.watchers.delete(watcher); cancelTimer(); signal.removeEventListener("abort", abort); };
+			const abort = () => fail(signal.reason ?? new Error("aborted"));
 			this.watchers.add(watcher); signal.addEventListener("abort", abort, { once: true });
 			cancelTimer = deadlineTimer(timeout, () => finish("timeout"));
-			watcher.check();
+			if (signal.aborted) abort(); else watcher.check();
 		});
 	}
 	/** Non-consuming implicit fallback: normal message delivery still owns the result. */

@@ -874,6 +874,29 @@ Opus 5.5 Low — это слишком дорого»
 
 ## Agent
 
+- Native subagent supervision and prompt inputs, F1/F3. Owner request at `2026-10-23T13:01:47.145Z`, session
+  `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, physical JSONL line 3963:
+  «Всё должно быть нативно. Подумай, как можно максимально интеллектуально прокачать этот функционал.»
+  Reason: replace manually copied reviewer prompts and polling wrappers with native caller-controlled supervision.
+  Engineering contract: `system_file`/`role_file` load exact UTF-8 prompt text relative to the caller's cwd;
+  restart re-reads inherited files. Push and wait display details carry matching `prompt_file` provenance with
+  the absolute path and SHA-256 of loaded bytes. `include: ["user_messages"]` appends verbatim user-role text
+  from the caller's current branch after the task, not root-session text before it. Workers keep fixed configuration.
+  `wait` keeps `until: "first"` by default and adds `"all"`; `wake_on_alert` defaults to true for fresh alerts,
+  created after wait registration, without consuming results on an alert wake. All-target waits hold early results
+  until ready; alert, timeout and caller abort release them to the message path. `status depth` defaults to 0 and
+  adds compact read-only descendant snapshots without message previews, never grandchild management.
+  All three tools share F1 wait/status and start/restart threshold options; F3 remains general-agent configuration.
+  Opt-in `alert_after_ms` is inherited on restart and reports long native turns without stopping them;
+  turn end, logical run end and close cancel the timer, so no alert timers remain while idle. Other alerts report errors, repetition, detectable repeated argument
+  parsing/schema rejection and existing observed scope blocks. No F5 guards, `stalled_tool`, F2 manifest or F4
+  structured-output feature is introduced. Full API contract:
+  [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management) and
+  [prompt files](extensions/RQW-agent/README.md#prompt-files-and-caller-messages).
+  Carriers: `extensions/RQW-agent/index.ts`, `prompt-files.ts`, `prompt.ts`, `activity.ts`, `coordinator.ts`,
+  `workers.ts`, and that folder's descriptions. Proof: `extensions/RQW-agent/test/prompt-files.test.ts`,
+  `test/supervision-activity.test.ts`, `test/supervision-coordinator.test.ts`, `test/supervision.test.ts`.
+
 - Owner (verbatim): «основной агент запускает сабагента — воркера, shellrunner или codewriter. Пока они работают, он его либо ждёт, либо что-то делает параллельно, а потом ждёт. Когда shellrunner или codewriter отвечает, тот обрывает ожидание и дальше работает с его ответом. Если же он не ответил за время ожидания, то основной агент сам идёт и смотрит состояние codewriter или shellrunner, что там происходит, вычитывает его последние пять-десять сообщений и думает, что с ним делать дальше: interrupt его, давать ему какой-то follow-up, либо вырубать, либо перезапускать.»
   «Надо сделать интеллектуально, чтобы основной агент большой, который поднял runner, через время поглядывал за ним, через пять минут проверял статус. Только не тратить токены, а через механический wait.»
   «надо сделать интеллектуальное ожидание. Не пять минут, а чтобы большой агент сам решил, сколько он будет ждать.»
@@ -967,7 +990,9 @@ Opus 5.5 Low — это слишком дорого»
   («без системного промпта ... весь системный промпт») is superseded by the parity entry above: the whole prompt is
   now the optional `system` override, and the default is the main prompt with the reminder and `role`.
 - One tool `agent` with `action` `start`, `wait`, `status`, `send`, `interrupt`, `stop`, `restart` and the fields
-  `ids`, `timeout_ms`, `messages` (wait/status above), `id`, `system`, `role`, `title`, `explore` (parity entry above), `task`,
+  `ids`, `timeout_ms`, `until`, `wake_on_alert`, `messages`, `depth` (wait/status above),
+  `id`, `system`, `role`, `system_file`, `role_file`, `include`, `alert_after_ms` (native F1/F3 entry above),
+  `title`, `explore` (parity entry above), `task`,
   `model` (`provider/id`), `thinking` (Pi's levels `off` to `max`), `tools` (a subset of `read`, `bash`, `edit`,
   `write`, `grep`, `find`). This selects base tools; delegation tools follow [Workers](#workers).
   The schema passes Pi's `makeStrictJsonSchema`; `null` in an optional field counts as omitted.

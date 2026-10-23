@@ -29,6 +29,29 @@ are leaves. This extension imports no other RQW extension. Optional RQW-tools de
   one or two known files or a single search; parallel starts for independent areas; full context and the exact
   return; trust the result; the user does not see it), no coordinator rules.
 
+## Prompt files and caller messages
+
+General `agent` starts and restarts accept `system_file` or `role_file` instead of the matching inline prompt.
+Paths resolve relative to the caller's cwd. A regular UTF-8 file supplies its exact text, including whitespace and a
+literal BOM; invalid UTF-8 is rejected. `system_file` replaces the whole prompt; `role_file` supplies the role text
+without trimming inside the default prompt's role block. Inline roles keep their existing normalization.
+A matching inline and file option are an error, as is mixing any system option with any role option.
+
+Restart keeps the previous prompt choice unless a new one is supplied. An inherited file choice is re-read before
+the old child is replaced; a changed file therefore changes the new prompt and hash. Failed file/config validation
+leaves the old child intact. Push message `details.prompt_file` and wait `details.results[i].display.prompt_file`
+carry the same `{kind: "system" | "role", path, sha256}` provenance: the absolute resolved path and SHA-256 of the
+bytes actually loaded, not of a later file version. This is prompt-file provenance, not an F2 run manifest.
+
+`include: ["user_messages"]` on start/restart appends a `<user_messages>` block after the task. It contains verbatim
+user-role text from this caller's current session branch, including entries before compaction, in branch order.
+Text parts are joined with newlines; images and non-user messages are omitted. A nested caller supplies its own
+session's messages, not the root session's. The block is not prefixed to the task, and inclusion is not inherited on
+restart. Without a task, restart remains idle. These options do not override fixed worker configuration.
+
+Proof: `test/prompt-files.test.ts` covers exact system/role text and byte hashes, push/wait provenance,
+file re-reading and failed replacement, caller-branch inclusion and nested callers, and fixed worker schemas.
+
 ## Child tools and settings
 
 - `codemode` and `tool_search`: a child (subagent, explorer, worker) gets Pi's own built-in definitions
@@ -154,7 +177,8 @@ through `before_provider_request`; Anthropic requests are untouched. Default, ru
 
 All three tools accept `wait`, `status`, `send`, `interrupt`, `stop`, `restart`; workers also keep `{task}` for a fresh
 start. Management `id` belongs to that tool's kind (`agent` also accepts its legacy numeric string). `wait`/`status`
-accept nonempty `ids` of fully qualified IDs, mixing any direct agents/workers. No access to siblings/grandchildren.
+accept nonempty `ids` of fully qualified IDs, mixing any direct agents/workers. Management targets remain direct
+children only; `status depth` adds read-only descendant visibility, not access to manage grandchildren or siblings.
 
 ```js
 agent({action: "wait", ids: ["agent#1", "code_writer#1", "shell_runner#1"], timeout_ms: 90000})
@@ -169,9 +193,17 @@ safe integer is required; large waits use monotonic deadlines and platform-safe 
 child. Re-estimate and wait again, or inspect status before deciding management. No busy polling, model turn or network
 request comes from the timer; children continue their own work/tokens. No new execution limits/watchdogs are added.
 
+`wait` accepts `until: "first" | "all"`, default `"first"`. The default returns the first selected completion and
+any other already-ready results, including terminal errors. `"all"` holds early completions until every selected
+target has a result, a delivery receipt, or is inactive. It reserves those results for wait delivery only when the
+whole selection is ready. An alert, timeout or caller abort releases held completions to the message path without
+consuming them in the wait. Already-delivered answers remain receipts, not copies.
+`wake_on_alert` defaults to `true`: an alert created on a selected child after this wait registered returns early
+with `reason: "alert"` and statuses, without consuming results. Old alerts do not repeatedly wake later waits.
+Set `wake_on_alert: false` to wait for the selected completion condition or deadline instead.
+
 The tool returns text JSON mirrored in `details` (no outputSchema): `reason`, `timed_out`, `results`, `receipts`,
-`statuses`; `target_changed` also identifies the old run/change. `result` returns the first selected completion and
-any other already-ready results, including terminal errors. `timeout` returns every selected status without consuming
+`statuses`; `target_changed` also identifies the old run/change. `timeout` returns every selected status without consuming
 a future result. `idle` returns immediately if no selected run/result exists. Unknown/closed IDs are explicit status
 errors. Interrupt/stop/restart wake old waits; they never silently follow replacements. Management registration is
 ordered, but the wait Promise holds neither that queue nor the optional RQW-tools barrier.
@@ -184,7 +216,10 @@ error before saved handoff return the reservation to the message path. Nested ow
 events, not ID parsing or the bounded nestedCalls log. A successful script deliberately filtering its result owns that
 choice. In codemode use `text(result)` or return the result to read its JSON.
 
-`status` is a local snapshot, without invoking the child model or consuming a result. `messages` defaults to 8,
+`status` is a local snapshot, without invoking the child model or consuming a result. `depth` defaults to 0 and
+must be a nonnegative safe integer. Positive depth adds compact read-only snapshots of descendants under `children`,
+one generation per depth step. Descendant snapshots carry caller-local IDs nested under their parent and omit
+message previews; they do not grant management access. For selected direct children, `messages` defaults to 8,
 validated from 5 to 10: chronological role/time/tool IDs, trimmed head/tail previews, image/binary metadata only,
 thinking presence/size rather than raw reasoning, plus unfinished assistant/tool data. State distinguishes native
 running/preflight/model/retry/compaction, streaming tool arguments, running tools and idle; `pending_children` explains
@@ -192,6 +227,25 @@ a native-idle subagent still awaiting workers. Elapsed/idle/activity ages are mo
 call IDs, previews, argument byte growth, last updates and repetition suspicions (not stall verdicts). Known session
 token totals/run deltas and explicitly incomplete live usage are not token estimates derived from bytes. Preview budgets
 (1200 characters/message, 12000/ID) limit representation only, never execution/history.
+
+All three tools share these wait/status options and `alert_after_ms` on start/restart. Status `alerts` contains
+`{kind, at, detail}` items with an ISO timestamp and trimmed diagnostic text. `activity.ts` keeps the latest 32 for
+presentation only and resets the history on a new logical run; the alert version remains monotonic for wait wakeups.
+Kinds are `error`, `repetition`, `long_turn`, `schema_rejection_repeated` and `scope_block`.
+
+`error` reports provider/runtime failures and truncation. `repetition` reports the existing identical-call or live
+argument-fragment suspicion, not a proven loop. `alert_after_ms` is an optional positive finite safe integer,
+disabled by default and inherited on restart. It emits `long_turn` once for a native turn exceeding the threshold,
+never stops a child and does not time a native-idle parent awaiting descendants. Turn end, logical run end and
+close cancel the alert timer; no alert timers remain running while idle.
+
+`schema_rejection_repeated` reports the second matching detectable Pi 1.4 argument parsing/schema rejection.
+Detection requires an error event without `durationMs` and the exact Pi diagnostic prefix
+`Validation failed for tool "<name>":` or `Invalid arguments for tool "<name>": `.
+Schema diagnostics are compared before the `Received arguments` section, so different rejected arguments can share
+the same validation error. Arbitrary tool failures and semantic answer judgments do not count.
+`scope_block` observes actual refusals through the existing `installGitGuard` callback only, never error-text guesses.
+It adds no F5 access guard or sandbox. No `stalled_tool` alert is implemented.
 
 `send` to a running child is Pi steering (`session.steer`): the message reaches the child after its current tool call
 (Pi runs all calls of the current assistant turn first), before its next model request, and aborts nothing; a message
@@ -287,6 +341,8 @@ provider asserts that an empty base-tool subset declares exactly `agent` and the
 scenario where main has it active), matching [Workers](#workers).
 `test/coordinator.test.ts` covers broker races, handoff, caller-chosen deadlines, implicit fallback and explicit-wait
 priority with virtual time. `test/activity.test.ts` covers live diagnostics, usage, trimming and argument growth.
+`test/supervision-activity.test.ts` and `test/supervision-coordinator.test.ts` cover alert detection and timer cleanup,
+fresh-alert wakeups, all-target result holds and release. `test/supervision.test.ts` covers the native SDK integration.
 `test/wait.test.ts` uses real sessions for mixed waits, retention, history, cancellation-pending tools and hook failure.
 CLI scenarios cover direct/nested waits, mixed workers, codemode handoff and outer error/timeout/abort; the same focused
 CLI file runs under Bun in CI. SDK regressions cover auth/queue/loader/factory/creation/preflight cancellation, failed replacement, unrecovered

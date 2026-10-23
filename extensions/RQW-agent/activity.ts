@@ -3,6 +3,12 @@
 import { createHash } from "node:crypto";
 import type { AssistantMessage, AssistantMessageEvent, Usage } from "@earendil-works/pi-ai";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { deadlineTimer } from "./coordinator.ts";
+
+export type AlertKind = "error" | "repetition" | "long_turn" | "schema_rejection_repeated" | "scope_block";
+export type ActivityAlert = { kind: AlertKind; at: string; detail: string };
+export type ActivityOptions = { alert_after_ms?: number };
+const ALERTS = 32;
 
 // Presentation limits only. They never stop or time out the session.
 const MESSAGE_CHARS = 1200;
@@ -192,17 +198,61 @@ export class Activity {
 	private marks: Mark[] = [];
 	private readonly session: AgentSession;
 	private readonly onChange: (() => void) | undefined;
+	private readonly alertAfter: number | undefined;
+	private alerts: ActivityAlert[] = [];
+	private alertSerial = 0;
+	private cancelTurnTimer: (() => void) | undefined;
+	private rejectionCounts = new Map<string, number>();
+	private repeatedStreams = new Set<string>();
+	private lastError: string | undefined;
 
 	/** `onChange`, when given, is called on native activity changes; its throws are isolated and never reach Pi. */
-	constructor(session: AgentSession, onChange?: () => void) {
+	constructor(session: AgentSession, onChange?: () => void, options: ActivityOptions = {}) {
+		if (options.alert_after_ms != null && (!Number.isSafeInteger(options.alert_after_ms) || options.alert_after_ms <= 0))
+			throw new Error("alert_after_ms must be a positive finite safe integer");
+		this.alertAfter = options.alert_after_ms ?? undefined;
 		this.session = session;
 		this.onChange = onChange;
 		this.nativeBusy = session.isStreaming;
 		this.unsubscribe = session.subscribe(event => this.onEvent(event));
 	}
 
+	/** Monotonic across logical runs, even when the bounded alert history is reset. */
+	alertVersion(): number { return this.alertSerial; }
+
+	/** Runtime failures outside native message events, such as a rejected prompt(). */
+	reportError(detail: string): void {
+		const key = fingerprint("error", detail);
+		if (this.lastError === key) return;
+		this.lastError = key;
+		this.alert("error", detail);
+	}
+
+	/** Called only by a hook that actually refused the call; never guesses from tool error prose. */
+	observeRefusal(toolCallId: string, reason: string): void {
+		this.alert("scope_block", `${toolCallId}: ${reason}`);
+	}
+
+	private alert(kind: AlertKind, detail: string): void {
+		this.alertSerial++;
+		this.alerts.push({ kind, at: new Date().toISOString(), detail: headTail(detail, ERROR_CHARS).text });
+		if (this.alerts.length > ALERTS) this.alerts.shift();
+		this.changed();
+	}
+
+	private endTurn(): void {
+		this.cancelTurnTimer?.();
+		this.cancelTurnTimer = undefined;
+	}
+
 	// Caller-side run boundaries. Native activity still comes from Pi events.
 	startRun(): void {
+		this.endTurn();
+		this.alerts = [];
+		this.fingerprints = [];
+		this.rejectionCounts.clear();
+		this.repeatedStreams.clear();
+		this.lastError = undefined;
 		this.runActive = true;
 		this.preflight = true;
 		this.runId += 1;
@@ -224,6 +274,8 @@ export class Activity {
 	}
 
 	endRun(outcome: string): void {
+		this.endTurn();
+		if (outcome === "error" && !this.alerts.some(a => a.kind === "error")) this.reportError("Run ended with an error");
 		if (this.runActive) {
 			this.lastRunElapsed = now() - this.runStartedAt;
 			this.lastRunDelta = this.runBaseline ? diff(this.tokens(), this.runBaseline) : null;
@@ -250,6 +302,7 @@ export class Activity {
 			last_activity_ago_ms: this.lastActivityAt === null ? null : at - this.lastActivityAt,
 			model: this.session.model ? { provider: this.session.model.provider, id: this.session.model.id } : null,
 			outcome: this.lastOutcome,
+			alerts: this.alerts.map(a => ({ ...a })),
 			current_tools: tools.visible,
 			current_tools_total: tools.total,
 			current_tools_omitted: tools.total - tools.visible.length,
@@ -308,6 +361,7 @@ export class Activity {
 	}
 
 	close(): void {
+		this.endTurn();
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.streams.clear();
@@ -330,14 +384,29 @@ export class Activity {
 		const at = now();
 		this.lastActivityAt = at;
 		switch (event.type) {
+			case "turn_start":
+				this.endTurn();
+				if (this.alertAfter !== undefined) {
+					const started = at;
+					this.cancelTurnTimer = deadlineTimer(this.alertAfter, () => {
+						this.cancelTurnTimer = undefined;
+						this.alert("long_turn", `Active turn has lasted ${Math.round(now() - started)} ms`);
+					});
+				}
+				break;
+			case "turn_end":
+				this.endTurn();
+				break;
 			case "agent_start":
 				this.nativeBusy = true;
 				this.preflight = false;
 				break;
 			case "agent_end":
+				this.endTurn();
 				this.nativeBusy = false;
 				break;
 			case "agent_settled":
+				this.endTurn();
 				this.nativeBusy = false;
 				this.preflight = false;
 				this.runSettled = true;
@@ -357,6 +426,13 @@ export class Activity {
 				break;
 			case "message_end":
 				if (event.message.role === "assistant") {
+					if (event.message.stopReason === "error") {
+						const detail = event.message.errorMessage ?? "Unknown provider error";
+						this.lastError = fingerprint("error", detail);
+						this.alert("error", detail);
+					} else if (event.message.stopReason === "length") {
+						this.reportError("Response was truncated: the model reached its output token limit.");
+					}
 					this.liveMessage = null;
 					this.resetAssistant();
 				}
@@ -403,8 +479,25 @@ export class Activity {
 					lastUpdate: exec?.lastUpdate ?? null,
 				};
 				if (exec) {
+					const prior = this.fingerprints.filter(f => f.name === exec.name && f.fingerprint === exec.fingerprint).length;
 					this.fingerprints.push({ name: exec.name, fingerprint: exec.fingerprint, at });
 					if (this.fingerprints.length > FINGERPRINTS) this.fingerprints.shift();
+					if (prior === 1 && this.fingerprints.filter(f => f.name === exec.name && f.fingerprint === exec.fingerprint).length > 1)
+						this.alert("repetition", `Repeated identical ${exec.name} call among the last ${FINGERPRINTS} calls`);
+				}
+				if (event.isError) {
+					const detail = contentParts(event.result?.content).text;
+					const schemaPrefix = `Validation failed for tool "${event.toolName}":\n`;
+					const formatPrefix = `Invalid arguments for tool "${event.toolName}": `;
+					// Pi 1.4.0 validates before tool_call/tool_result hooks and exposes the refusal as this end event.
+					if (event.durationMs === undefined && (detail.startsWith(schemaPrefix) || detail.startsWith(formatPrefix))) {
+						const diagnostic = detail.startsWith(schemaPrefix) ? detail.split("\n\nReceived arguments:\n", 1)[0] : detail;
+						const key = fingerprint(event.toolName, diagnostic);
+						const count = (this.rejectionCounts.get(key) ?? 0) + 1;
+						this.rejectionCounts.set(key, count);
+						if (this.rejectionCounts.size > FINGERPRINTS) this.rejectionCounts.delete(this.rejectionCounts.keys().next().value!);
+						if (count === 2) this.alert("schema_rejection_repeated", diagnostic);
+					}
 				}
 				break;
 			}
@@ -415,6 +508,7 @@ export class Activity {
 				break;
 			case "compaction_end":
 				this.compacting = null;
+				if (event.errorMessage && !event.aborted) this.reportError(event.errorMessage);
 				break;
 			case "auto_retry_start": {
 				const error = headTail(event.errorMessage, ERROR_CHARS);
@@ -457,6 +551,7 @@ export class Activity {
 
 	private resetAssistant(): void {
 		this.streams.clear();
+		this.repeatedStreams.clear();
 		this.liveUsage = null;
 		this.thinking = false;
 	}
@@ -485,6 +580,11 @@ export class Activity {
 				s.lastGrowthAt = at;
 				if (s.head.length < ARG_CHARS) s.head += event.delta.slice(0, ARG_CHARS - s.head.length);
 				s.tail = (s.tail + event.delta).slice(-STREAM_TAIL_CHARS);
+				const probe = s.tail.slice(-16);
+				if (!this.repeatedStreams.has(s.key) && probe.length === 16 && s.tail.split(probe).length - 1 >= 3) {
+					this.repeatedStreams.add(s.key);
+					this.alert("repetition", `Repeated argument fragment in ${s.name ?? "unknown tool"} call ${s.id ?? s.key}`);
+				}
 				break;
 			}
 			case "toolcall_end": {
