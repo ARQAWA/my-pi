@@ -89,7 +89,7 @@ test("main starts both workers immediately and receives their results as caller 
 			assert.deepEqual(toolNames(request.context), role === "code_writer"
 				? ["bash", "edit", "find", "grep", "read", "write"] : ["bash", "find", "grep", "read"]);
 			const definition = f.session.getToolDefinition(role)!;
-			assert.deepEqual(Object.keys(definition.parameters.properties).sort(), ["action", "fast_gpt", "id", "ids", "messages", "task", "timeout_ms"]);
+			assert.deepEqual(Object.keys(definition.parameters.properties).sort(), ["action", "fast_gpt", "id", "ids", "interrupt", "messages", "task", "timeout_ms"]);
 			assert.deepEqual(definition.parameters.required ?? [], []);
 			assert.equal(definition.parameters.properties.id.description, `${role}#N; management actions`);
 		}

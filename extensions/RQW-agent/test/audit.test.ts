@@ -133,7 +133,7 @@ test("F1: pending SDK prompt auth is fenced after main cancellation; only the ne
 		await tick(150);
 		assert.equal(f.requests.sub.length, 1, "abandoned SDK prompt cannot infer after auth");
 		await assert.rejects(f.call({ action: "send", id: "2", task: "NO" }), /Unknown agent id/);
-		assert.equal(await f.call({ action: "send", id: "1", task: "FOLLOW" }), "agent#1: queued after the current run");
+		assert.equal(await f.call({ action: "send", id: "1", task: "FOLLOW" }), "agent#1: queued after the current tool call");
 		assert.equal(independent.aborted(), false);
 	} finally { hold.resolve(); registry.hasConfiguredAuth = configured; f.runtime.hasConfiguredAuth = runtimeConfigured; f.runtime.checkAuth = checkAuth; await f.cleanup(); }
 });

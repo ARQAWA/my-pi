@@ -205,3 +205,70 @@ for (const action of ["stop", "restart"] as const) test(`${action} of a subagent
 		assert.deepEqual(workerMessages(f.session), []);
 	} finally { code.release(); shell.release(); await f.cleanup(); }
 });
+
+test("send to a child parked on its own pending worker reaches it at once; the worker's later result still arrives once", async t => {
+	const f = await nested(t);
+	const code = gate("CODE_RESULT");
+	f.workerReplies.push(code.reply);
+	f.subReplies.push(answer([call("code_writer")], { stopReason: "toolUse" }), answer("INTERMEDIATE"), answer("STEERED_ANSWER"), answer("FINAL_AFTER_WORKER"));
+	try {
+		await f.start();
+		await until(() => f.requests.sub.length === 2 && f.subSession().isIdle && code.entered(), "child idle, parked on its worker");
+		await tick();
+		assert.deepEqual(f.delivered(), []);
+		assert.equal(await f.call({ action: "send", id: "1", task: "STEER_PARKED" }), "agent#1: sent");
+		await until(() => f.requests.sub.length === 3, "the steered request before the worker finished");
+		assert.ok(texts(f.requests.sub[2]).includes("STEER_PARKED"));
+		assert.equal(code.aborted(), false);
+		await until(() => f.subSession().isIdle, "child idle again");
+		await tick();
+		assert.deepEqual(f.delivered(), [], "the worker is still pending");
+		assert.equal(f.requests.sub.length, 3);
+		code.release();
+		await until(() => f.delivered().length === 1, "final answer after the worker result");
+		await f.session.waitForIdle();
+		await tick();
+		assert.deepEqual(f.delivered(), ["[agent#1] FINAL_AFTER_WORKER"]);
+		assert.equal(f.requests.sub.length, 4);
+		assert.equal(texts(f.requests.sub[3]).filter(x => x === "STEER_PARKED").length, 1, "the steering message is in the history once");
+		assert.deepEqual(workerMessages(f.subSession()), ["[code_writer#1] CODE_RESULT"]);
+		assert.deepEqual(f.errors, []);
+	} finally { code.release(); await f.cleanup(); }
+});
+
+test("send with interrupt to a worker-woken native run with a tool ignoring abort starts the new task once, after that run, with no error", async t => {
+	const f = await nested(t);
+	const code = gate("CODE_RESULT");
+	const release = Promise.withResolvers<void>();
+	let entered = false, aborted = false;
+	const off = f.bus.on("rqw-tools:subagent-tools", request => request.offer(((dir: string) => [{
+		...createBashToolDefinition(dir), execute: async (_id: string, _args: unknown, signal?: AbortSignal) => {
+			entered = true;
+			signal?.addEventListener("abort", () => { aborted = true; }, { once: true });
+			await release.promise;
+			return { content: [{ type: "text", text: "TOOL_DONE" }], details: {} };
+		},
+	}]) as never));
+	f.workerReplies.push(code.reply);
+	f.subReplies.push(answer([call("code_writer")], { stopReason: "toolUse" }), answer("INTERMEDIATE"),
+		answer([fauxToolCall("bash", { command: "held" }, { id: "b1" })], { stopReason: "toolUse" }), answer("NEW_ANSWER"));
+	try {
+		await f.call({ ...f.params("FIRST"), tools: ["bash"] });
+		await until(() => f.requests.sub.length === 2 && f.subSession().isIdle && code.entered(), "child idle, parked on its worker");
+		code.release();
+		await until(() => entered, "the worker-woken native run is in the held tool");
+		assert.equal(await f.call({ action: "send", id: "1", task: "NEW_TASK", interrupt: true }), "agent#1: interrupted, sent");
+		await until(() => aborted, "the tool saw the abort");
+		await tick(60);
+		assert.equal(f.requests.sub.length, 3, "nothing starts while the woken run still streams");
+		assert.equal(JSON.parse(await f.call({ action: "status", ids: ["agent#1"] })).statuses[0].pending_sends, 1);
+		release.resolve();
+		await until(() => f.delivered().length === 1, "delivery of the new run");
+		assert.deepEqual(f.delivered(), ["[agent#1] NEW_ANSWER"]);
+		assert.equal(f.requests.sub.length, 4, "exactly one new run");
+		assert.equal(texts(f.requests.sub[3]).filter(x => x === "NEW_TASK").length, 1);
+		await tick(60);
+		assert.equal(f.delivered().length, 1);
+		assert.deepEqual(f.errors, []);
+	} finally { off(); code.release(); release.resolve(); await f.cleanup(); }
+});

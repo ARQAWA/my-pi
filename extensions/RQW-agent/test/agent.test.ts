@@ -314,13 +314,13 @@ describe("agent tool", () => {
 		await shutdown(m);
 	});
 
-	it("send while running queues a follow-up; one message carries both answers", async () => {
+	it("send while running steers: it reaches the child before its next request; one message carries both answers", async () => {
 		const m = await startMain();
 		const g = gate("one");
 		sub.replies.push(g.reply, fauxAssistantMessage("two"));
 		await m.call({ action: "start", system: SYSTEM, task: "first", model: "sub/a" });
 		await until(() => sub.requests.length === 1, "the first request");
-		assert.equal(await m.call({ action: "send", id: "1", task: "also" }), "agent#1: queued after the current run");
+		assert.equal(await m.call({ action: "send", id: "1", task: "also" }), "agent#1: queued after the current tool call");
 		g.release();
 		await until(() => m.delivered().length === 1, "the delivery");
 		assert.equal(m.delivered()[0], "[agent#1] one\n\ntwo");
@@ -701,7 +701,8 @@ describe("agent tool", () => {
 	it("calls in one batch run in order: start, then send to the new id", async () => {
 		const m = await startMain();
 		const g = gate("one");
-		sub.replies.push(g.reply, fauxAssistantMessage("two"));
+		sub.replies.push(g.reply);
+		const before = sub.requests.length;
 		main.replies.push(
 			fauxAssistantMessage(
 				[
@@ -716,10 +717,13 @@ describe("agent tool", () => {
 		const results = m.session.messages.flatMap((x) =>
 			x.role === "toolResult" ? [x.content.map((c) => (c.type === "text" ? c.text : "")).join("")] : [],
 		);
-		assert.deepEqual(results, ["agent#1 started", "agent#1: queued after the current run"]);
+		assert.deepEqual(results, ["agent#1 started", "agent#1: queued after the current tool call"]);
 		g.release();
 		await until(() => m.delivered().length === 1, "the delivery");
-		assert.equal(m.delivered()[0], "[agent#1] one\n\ntwo");
+		assert.equal(m.delivered()[0], "[agent#1] one");
+		// The steering message reached the child before its first request, so that one request carries both tasks.
+		assert.equal(sub.requests.length, before + 1);
+		assert.deepEqual(sub.requests[before].texts, ["first", "second"]);
 		await shutdown(m);
 	});
 

@@ -22,7 +22,7 @@ The coordinator delegates all execution, waits and checks to subagents and may r
 - `extensions/RQW-agent/`: extension 5, subagents and the fixed `code_writer` / `shell_runner` workers. `agent`
   (start, wait, status, send, interrupt, stop, restart) runs in-process Pi sessions with a caller-supplied whole system prompt,
   chosen model/thinking and base tools. All three tools share caller-chosen mechanical wait and diagnostic status;
-  results arrive once through wait or `[kind#N]` messages. Workers retain history until stop for explicit follow-ups.
+  results arrive once through wait or `[kind#N]` messages. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Workers retain history until stop for explicit follow-ups.
   Worker briefs, nesting and delivery:
   [RQW-agent README](extensions/RQW-agent/README.md#workers); decisions: [Workers](DECISIONS.md#workers).
   Imports nothing from another extension folder: subagents get RQW-tools only when

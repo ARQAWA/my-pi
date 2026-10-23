@@ -74,7 +74,7 @@ test("F1/F2: cancellation during replacement preflight leaves the id invalid and
 		await tick(150);
 		assert.equal(f.requests.sub.length, 2, "late replacement does not infer");
 		await assert.rejects(f.call({ action: "send", id: "1", task: "NO" }), /Unknown agent id/);
-		assert.equal(await f.call({ action: "send", id: "2", task: "MORE" }), "agent#2: queued after the current run");
+		assert.equal(await f.call({ action: "send", id: "2", task: "MORE" }), "agent#2: queued after the current tool call");
 	} finally { auth.release(); auth.restore(); await f.cleanup(); }
 });
 

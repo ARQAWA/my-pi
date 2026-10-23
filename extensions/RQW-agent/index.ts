@@ -28,7 +28,7 @@ export const DESCRIPTION = [
 	"status: ids, optional messages (5-10, default 8); last trimmed messages and in-flight tool calls. Decide whether to wait, send, interrupt, stop or restart. Do not busy-poll.",
 	"Results arrive once, through wait or a later [agent#N] message; already-delivered results give a receipt.",
 	"start: system (the whole system prompt), task, optional model (provider/id), thinking, tools; returns agent#N.",
-	"send: id, task; queued after the current run, or a new run with its history when idle.",
+	"send: id, task; reaches a running child after its current tool call, without aborting anything (a child parked in its own wait gets it after that call returns), or starts a new run with its history when idle; interrupt: true on send aborts a running child's turn and starts task as soon as it has stopped.",
 	"interrupt: id; requests cancellation, keeps history; inspect status while cancellation is pending. stop: id; closes it.",
 	"restart: id, optional task and new system/model/thinking/tools; a fresh session.",
 	"Defaults: this session's model and thinking, all tools.",
@@ -47,6 +47,7 @@ const PARAMETERS = Type.Object({
 	thinking: Type.Optional(StringEnum(THINKING)),
 	tools: Type.Optional(Type.Array(StringEnum(TOOLS), { description: "Base subset; default all. Workers stay available." })),
 	fast_gpt: Type.Optional(Type.Boolean({ description: "GPT Fast for this child; default: inherit yours. false when the user forbids Fast for subagents; send and restart may change it" })),
+	interrupt: Type.Optional(Type.Boolean({ description: "send only: first interrupt a running child (drops its queued messages, aborts its current turn, keeps history), then start task as soon as it has stopped; a plain send when it is idle" })),
 });
 type Params = Static<typeof PARAMETERS>;
 
@@ -60,7 +61,9 @@ type Agent = Child & {
 	epoch: string;
 	runNumber: number;
 	/** The current run, undefined while idle. `quiet` ends it without a message. */
-	run?: { done: Promise<void>; quiet: boolean; controller: AbortController };
+	run?: { done: Promise<void>; quiet: boolean; controller: AbortController; parked?: AbortController };
+	/** Tasks of `send` calls made while an interrupted run is still stopping; they start, in order, once it has. */
+	next?: string[];
 };
 
 /** SDK auth and creation can ignore cancellation. Observe late failures without waiting for them. */
@@ -97,7 +100,7 @@ function lastNumber(entries: readonly SessionEntry[], name: string): number {
 			match = new RegExp(`^\\[${name}#(\\d+)\\](?:\\s|$)`).exec(e.content);
 		else if (e.type === "message" && e.message.role === "toolResult" && e.message.toolName === name) {
 			const text = e.message.content.map((c) => c.type === "text" ? c.text : "").join("");
-			match = new RegExp(`^${name}#(\\d+)(?: started| restarted| stopped| interrupted| is idle|: sent|: queued after the current run)(?:$|[\\s,])`).exec(text);
+			match = new RegExp(`^${name}#(\\d+)(?: started| restarted| stopped| interrupted| is idle|: sent|: interrupted, sent|: queued after the current run|: queued after the current tool call)(?:$|[\\s,])`).exec(text);
 		}
 		if (match) take(Number(match[1]));
 	}
@@ -185,10 +188,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 
 	function target(a: Agent) {
 		return { id: `${name}#${a.id}`, run: `${a.epoch}:${a.runNumber}`,
-			active: () => !!a.run,
+			// A queued `send` task is about to start: wait must not see an idle child in between.
+			active: () => !!a.run || !!a.next?.length,
 			checkpoint: () => a.activity.checkpoint(),
 			snapshot: (messages?: number, checkpoint?: Map<string, number>) => ({ ...a.activity.snapshot(messages, checkpoint),
 				...(a.run?.quiet ? { cancellation_requested: true } : {}),
+				...(a.next?.length ? { pending_sends: a.next.length } : {}),
 				...(a.workers?.pending() ? { pending_children: a.workers.ids() } : {}) }),
 		};
 	}
@@ -339,9 +344,19 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					const signal = a.guard.signal ?? a.controller.signal;
 					// A worker may have woken a new native run after the original prompt settled.
 					await untilAborted(session.waitForIdle(), signal);
-					if (session.getFollowUpMessages().length > 0)
-						await session.prompt(session.clearQueue().followUp.join("\n\n"));
-					else if (a.workers?.pending()) await untilAborted(a.workers.wait(signal), signal);
+					// A steering message that missed the agent loop's last poll waits here like a follow-up.
+					if (session.getSteeringMessages().length > 0 || session.getFollowUpMessages().length > 0) {
+						const queued = session.clearQueue();
+						await session.prompt([...queued.steering, ...queued.followUp].join("\n\n"));
+					}
+					else if (a.workers?.pending()) {
+						// Parked until a worker result: `send` aborts `parked` so a steering message is delivered at once.
+						const park = run.parked = new AbortController();
+						const parkedSignal = AbortSignal.any([signal, park.signal]);
+						try { await untilAborted(a.workers.wait(parkedSignal), parkedSignal); }
+						catch (error) { if (!park.signal.aborted || signal.aborted) throw error; }
+						finally { run.parked = undefined; }
+					}
 					else break;
 				}
 				if (!run.quiet && !a.guard.signal?.aborted) coordinator.publish(identity.id, identity.run, texts.join("\n\n") || "(no text)", texts.some(t => t.startsWith("error:")) ? "error" : "completed", deliver);
@@ -353,9 +368,19 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			} finally {
 				unsubscribe();
 				started.resolve();
+				// The abort can end this loop while a worker-woken native run still streams (a tool ignoring abort):
+				// Pi would reject a new prompt then, so pending sends wait for it. This run stays current meanwhile.
+				if (a.run === run && a.next?.length && !a.controller.signal.aborted) await session.waitForIdle().catch(() => {});
 				if (a.run === run) {
-					a.run = undefined;
 					a.activity.endRun(run.quiet ? "interrupted" : texts.some(t => t.startsWith("error:")) ? "error" : "completed");
+					// `send` with `interrupt` (and sends after it) made while this run was stopping: start them now, once.
+					// a.next keeps the child active until startRun has set the new a.run (synchronously), so wait and
+					// the caller's fallback never see it idle in between.
+					a.run = undefined;
+					const next = a.next;
+					if (next?.length && !a.controller.signal.aborted)
+						void startRun(a, next.join("\n\n"), a.controller.signal).then(() => { a.guard.signal = a.run?.controller.signal; }, () => {});
+					a.next = undefined;
 					coordinator.notify();
 				}
 			}
@@ -373,6 +398,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 	}
 
 	function close(a: Agent) {
+		a.next = undefined;
 		if (a.run) { a.run.quiet = true; a.run.controller.abort(); }
 		a.controller.abort();
 		a.activity.close();
@@ -380,6 +406,17 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		a.session.clearQueue();
 		// abort first: dispose alone does not set Pi's abort flag for queued follow-ups or compaction.
 		void a.session.abort().catch(() => {}).finally(() => a.session.dispose());
+	}
+
+	/** Request cancellation of the current run: the shared body of `interrupt` and `send` with `interrupt: true`. */
+	function requestInterrupt(a: Agent, run: NonNullable<Agent["run"]>) {
+		a.workers?.abortAll();
+		coordinator.change(`${name}#${a.id}`, "interrupt");
+		run.quiet = true;
+		run.controller.abort();
+		a.session.clearQueue();
+		void a.session.abort().catch(() => {});
+		coordinator.add(target(a));
 	}
 
 	function find(id: string | undefined): Agent {
@@ -423,7 +460,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			task: Type.Optional(Type.String({ minLength: 1 })),
 			id: Type.Optional(Type.String({ description: `${name}#N; management actions` })), ids: PARAMETERS.properties.ids,
 			timeout_ms: PARAMETERS.properties.timeout_ms, messages: PARAMETERS.properties.messages,
-			fast_gpt: PARAMETERS.properties.fast_gpt,
+			fast_gpt: PARAMETERS.properties.fast_gpt, interrupt: PARAMETERS.properties.interrupt,
 		}) : PARAMETERS,
 		execute: (toolCallId, raw, callerSignal, _onUpdate, ctx) => {
 			// Capture ctx.signal now: its getter can point at another run when the internal queue drains.
@@ -474,11 +511,23 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			case "send": {
 				const a = find(params.id);
 				if (!params.task) throw new Error("task is required");
-				if (a.run?.quiet) throw new Error(`${name}#${a.id}: cancellation pending; inspect status before send`);
+				if (a.run?.quiet && !params.interrupt && !a.next) throw new Error(`${name}#${a.id}: cancellation pending; inspect status before send`);
 				if (params.fast_gpt !== undefined) a.fast.on = params.fast_gpt;
+				if (a.run && (params.interrupt || a.run.quiet)) {
+					// Abort now like `interrupt` and return at once: the task starts when the old run has stopped (the
+					// finally of its run), after any earlier pending sends. No time limit: an uncooperative tool just delays it.
+					if (!a.run.quiet) requestInterrupt(a, a.run);
+					(a.next ??= []).push(params.task);
+					return ok(`${name}#${a.id}: ${params.interrupt ? "interrupted, sent" : "sent"}`);
+				}
 				if (a.run) {
-					await untilAborted(a.session.followUp(params.task), signal);
-					return ok(`${name}#${a.id}: queued after the current run`);
+					// Steering: delivered after the child's current tool call, before its next request; nothing is aborted.
+					const run = a.run;
+					await untilAborted(a.session.steer(params.task), signal);
+					// The native run ended and the loop waits for this child's own workers: nothing polls the queue, so wake it.
+					const parked = run.parked && !a.session.isStreaming;
+					run.parked?.abort();
+					return ok(`${name}#${a.id}: ${parked ? "sent" : "queued after the current tool call"}`);
 				}
 				await startRun(a, params.task, signal);
 				signal.throwIfAborted();
@@ -488,15 +537,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			case "interrupt": {
 				const a = find(params.id);
 				const snapshot = target(a).snapshot(8);
-				a.workers?.abortAll();
 				const run = a.run;
-				if (!run) return ok(`${name}#${a.id} is idle`);
-				coordinator.change(`${name}#${a.id}`, "interrupt");
-				run.quiet = true;
-				run.controller.abort();
-				a.session.clearQueue();
-				void a.session.abort().catch(() => {});
-				coordinator.add(target(a));
+				a.next = undefined; // an interrupt drops tasks still waiting for the stopping run
+				if (!run) { a.workers?.abortAll(); return ok(`${name}#${a.id} is idle`); }
+				requestInterrupt(a, run);
 				return waitResult({ id: `${name}#${a.id}`, reason: "interruption_requested", cancellation_requested: true, snapshot });
 			}
 			case "stop": {

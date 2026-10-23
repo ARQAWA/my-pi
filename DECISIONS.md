@@ -791,10 +791,31 @@ Current accepted development policy (request summaries unless quoted); detailed 
   the old task's and to which a `send agent#1` meant for the old, killed subagent would go (review D).
 - No execution timeout of our own: Pi's provider timeouts and retries apply, and the caller can interrupt.
   Caller-chosen wait deadlines return control/diagnostics, not a child cancellation (wait decision above).
-- `send` to a running subagent queues `session.followUp`; to an idle one it starts a new run with the history.
-  `interrupt` requests `session.abort()`, drops queued follow-ups, sends no result message and keeps history.
-  It returns the pre-interrupt snapshot and cancellation-requested state without waiting indefinitely; send is rejected
-  while cancellation remains pending.
+- `send` to a running subagent (and to a running `code_writer` / `shell_runner`) is Pi steering, `session.steer`; to
+  an idle one it starts a new run with the history. Coordinator proposal, accepted by the owner with «Да»: «сообщение
+  работающему субагенту будет доходить после его текущего вызова инструмента, а не после всей его работы, как в
+  основном чате». Reason: the earlier `session.followUp` waited for the child's whole run, and `interrupt` was the only
+  faster way, which aborts the in-flight tool calls and workers. Pi 1.4.0 delivers a steering message after the
+  current assistant turn has executed its tool calls (all calls of that turn) and before the next model request, with
+  no abort; a message sent before the first request goes into that request. Result text: `agent#N: queued after the
+  current tool call`; a child that is native-idle and waiting only for its own workers is woken at once (reply `agent#N: sent`, code review finding). Carriers: `extensions/RQW-agent/index.ts` (`send`; the run loop also drains steering that missed
+  the last poll), the tool descriptions, `extensions/RQW-agent/test/steer.test.ts`.
+  Interrupt and redirect in one call, like Cursor's Subagent `interrupt:true`; owner: «4 пункт мне нравится»: `send`
+  takes an optional boolean `interrupt` (agent, code_writer, shell_runner). On a running child it drops the queued
+  steering and follow-ups, aborts the current turn exactly like `interrupt` (same code path; session and history kept),
+  returns at once with the reply `<name>#N: interrupted, sent`. No time limit, by the owner's rule of no hard limits for agents (this entry: no execution
+  timeout of our own; coordinator relayed it as the reason for this change): the task is recorded as the child's next run and starts, once, when
+  the old run has stopped; a tool ignoring the abort signal just delays it and `status` shows `pending_sends`. Until then
+  the child counts as running, so `wait` never reports `idle` and ends with `target_changed` at the new run; a native run
+  woken by a worker result is waited out before the new prompt (code review findings: a premature `idle`, and Pi's
+  "Agent is already processing" losing the sends). A later
+  `send` before the start is appended in order (one prompt); `interrupt`, `stop` and `restart` drop pending tasks. On
+  an idle child it is a plain send; without the flag behavior is unchanged. Carriers:
+  `index.ts` (`requestInterrupt`, `Agent.next`), the schema and descriptions, `test/steer.test.ts`,
+  `test/nested-workers.test.ts`.
+  `interrupt` requests `session.abort()`, drops queued steering and follow-ups, sends no result message and keeps history.
+  It returns the pre-interrupt snapshot and cancellation-requested state without waiting indefinitely; a plain send is rejected
+  while cancellation remains pending, unless an interrupting `send` is already waiting (then it is appended).
   `stop` disposes the session and forgets the id. Closing a session (`stop`, `restart`, `session_shutdown`) clears its
   queue before `dispose()`: `dispose()` aborts without Pi's abort flag, so Pi would run a queued follow-up on the
   disposed session and bill a request after `stopped`. `restart` disposes and creates a fresh session with the same
@@ -824,7 +845,7 @@ Current accepted development policy (request summaries unless quoted); detailed 
 - Proof: `extensions/RQW-agent/test/agent.test.ts`, faux-provider tests (a copy of the RQW-agent folder in a
   folder with no other extension loads and delivers, and the source has no `../` import; without RQW-tools the
   subagent's `write` is the stock one, no `files`; exact system prompt, model,
-  thinking, tool subset, management actions, follow-up while running, the main turn, shutdown, errors, call order, print
+  thinking, tool subset, management actions, steering while running (`steer.test.ts`: a held tool call, `send` during it, the message in the next request after the tool result, nothing aborted), the main turn, shutdown, errors, call order, print
   mode; one request only after `stop`, `restart` or `session_shutdown` with a queued follow-up; a result arriving
   while the main agent streams continues its run once; after TUI Esc and after RPC abort the result is in the session
   once, no run starts, and the next prompt carries it once; in a continued session that already holds an `[agent#1]`

@@ -131,8 +131,24 @@ call IDs, previews, argument byte growth, last updates and repetition suspicions
 token totals/run deltas and explicitly incomplete live usage are not token estimates derived from bytes. Preview budgets
 (1200 characters/message, 12000/ID) limit representation only, never execution/history.
 
-`interrupt` returns the pre-interrupt snapshot and `interruption_requested`: it requests abort, clears follow-ups and
-preserves history. Cancellation may still be pending: send is rejected until settlement. `stop` closes and forgets the
+`send` to a running child is Pi steering (`session.steer`): the message reaches the child after its current tool call
+(Pi runs all calls of the current assistant turn first), before its next model request, and aborts nothing; a message
+sent before the child's first request goes into that request. To an idle child `send` starts a new run with its
+history. A child whose native run has ended and that only waits for its own pending workers gets the message at
+once (reply `: sent`, a new run starts; the worker result still arrives once). A child parked in its own `wait` tool
+call gets it after that call returns. `send` with `interrupt: true` redirects a running child in one call: it drops the child's queued steering and
+follow-ups and aborts the current turn exactly like `interrupt` (session and history kept, pending workers aborted),
+then returns at once with `<name>#N: interrupted, sent`, without waiting. The task is recorded as the child's next
+run and starts automatically, once, as soon as the old run has stopped; there is no time limit, so a tool that
+ignores the abort signal simply delays the start, and `status` shows `cancellation_requested` and `pending_sends`.
+Until the start the child counts as running: a `wait` on it is never `idle` and ends with `target_changed` when the
+new run begins; a native run that a worker result had woken is waited out first, so the new prompt never collides with it.
+A further `send` before the start is appended after it, in order, and all pending tasks go in one prompt joined by
+blank lines. A later `interrupt`, `stop` or `restart` drops them. On an idle child the flag makes a plain `send`.
+Without the flag nothing changes. Use plain `interrupt` only to cancel. Decision: [DECISIONS.md, Agent](../../DECISIONS.md#agent).
+
+`interrupt` returns the pre-interrupt snapshot and `interruption_requested`: it requests abort, clears queued steering and follow-ups and
+preserves history. Cancellation may still be pending: a plain send is rejected until settlement (`send` with `interrupt: true` is accepted and queued). `stop` closes and forgets the
 ID. `restart` fences the old generation and creates a fresh session with the same external ID; without task it is idle,
 not a replay. Workers cannot override fixed configuration. An in-process tool may ignore AbortSignal and still have
 side effects; controls do not wait indefinitely for it. No transaction or forced JavaScript kill is promised. Inspect
@@ -160,7 +176,7 @@ independent child. `send` to an idle child uses the same preflight fence but ret
 `restart` first validates its configuration, then removes the old id and closes the old session before creating its
 replacement. A failed or canceled replacement leaves that id invalid, not pointing at a disposed session. Configuration
 validation failure before replacement leaves the still-valid old child untouched. A successful replacement retains the
-same id and the old settings unless overrides were supplied. Queued old follow-ups are cleared before abort/disposal.
+same id and the old settings unless overrides were supplied. Queued old steering and follow-ups are cleared before abort/disposal.
 
 ## Results and main abort
 
@@ -187,7 +203,7 @@ reference RQW-review fix; no implementation is imported from that extension.
 Every issued positive safe integer is immediately persisted with `pi.appendEntry('agent', { id })`, before creating the
 child. This also covers calls nested in codemode, which have no outer `agent` tool-result entry, and failed/canceled starts.
 Reload/resume/fork reads this metadata plus compatible legacy owned outer prefixes: `[agent#N]` custom results and
-`agent#N started`, `restarted`, `stopped`, `interrupted`, `is idle`, `: sent` or `: queued after the current run` tool results.
+`agent#N started`, `restarted`, `stopped`, `interrupted`, `is idle`, `: sent`, `: queued after the current run` (older) or `: queued after the current tool call` tool results.
 Numbers mentioned inside result bodies or errors do not allocate ids. Unsafe integers are ignored. At
 `Number.MAX_SAFE_INTEGER` allocation fails before another child is constructed. A live map entry cannot be overwritten
 by a rounded duplicate id.
