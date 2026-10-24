@@ -1,9 +1,7 @@
-// scripts/deliver-check.mjs against throwaway git repos: a bare origin, a "main checkout" clone, and a fake `gh`
-// on PATH that answers `gh run list`, `gh issue view` and the REST `gh api` run metadata and job listings from JSON files
-// (`gh issue list` is a test failure). Global and system git config are ignored.
+// Throwaway repositories with fake npm and gh; never runs the real npm test.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -14,67 +12,37 @@ const SCRIPT = join(ROOT, "scripts", "deliver-check.mjs");
 const temps: string[] = [];
 after(() => { for (const t of temps) rmSync(t, { recursive: true, force: true }); });
 
-type RunRec = { databaseId: number; headSha: string; status: string; conclusion: string; url: string };
-type JobRec = { name: string; status?: string; conclusion?: string | null; run_id?: number; head_sha?: string; run_attempt?: number; html_url?: string };
-
 function setup() {
 	const tmp = mkdtempSync(join(tmpdir(), "deliver-check-"));
 	temps.push(tmp);
 	const bin = join(tmp, "bin");
 	mkdirSync(bin);
-	writeFileSync(join(bin, "gh.mjs"), [
-		'import { appendFileSync, readFileSync, writeFileSync } from "node:fs";',
-		"const a = process.argv.slice(2);",
-		'appendFileSync(process.env.FAKE_GH_LOG, a.join(" ") + "\\n");',
-		'if (a[0] === "issue") {',
-		'\tif (process.env.FAKE_GH_ISSUE_FAIL === "1") { process.stderr.write("HTTP 502: bad gateway\\nsecond line\\n"); process.exit(1); }',
-		'\tconst data = JSON.parse(readFileSync(process.env.FAKE_GH_ISSUES, "utf8"));',
-		'\tif (a[1] === "list") { process.stderr.write("unexpected gh issue list\\n"); process.exit(1); }',
-		'\tconst one = data.view[a[2]];',
-		'\tif (!one) { process.stderr.write("GraphQL: Could not resolve to an Issue\\n"); process.exit(1); }',
-		'\tprocess.stdout.write(JSON.stringify(one)); process.exit(0);',
-		"}",
-		'if (a[0] === "api") {',
-		'	const path = a.find((x) => x.startsWith("repos/")) ?? "";',
-		'	const m = /actions\\/runs\\/(\\d+)(?:\\/attempts\\/(\\d+)\\/jobs)?/.exec(path);',
-		'	const all = Object.values(JSON.parse(readFileSync(process.env.FAKE_GH_RUNS, "utf8"))).flat();',
-		'	const rec = m && all.find((r) => String(r.databaseId) === m[1]);',
-		'	if (!rec) { process.stderr.write("HTTP 404: Not Found\\n"); process.exit(1); }',
-		'	const over = JSON.parse(readFileSync(process.env.FAKE_GH_API, "utf8"));',
-		"	if (!m[2]) {",
-		'		let ov = over.metadata[m[1]];',
-		'		if (Array.isArray(ov)) { // successive GETs of the same run answer successive entries, the last one repeats',
-		'			const counter = process.env.FAKE_GH_API + ".count" + m[1];',
-		'			let n = 0; try { n = Number(readFileSync(counter, "utf8")); } catch {}',
-		'			writeFileSync(counter, String(n + 1)); ov = ov[Math.min(n, ov.length - 1)];',
-		"		}",
-		'		process.stdout.write(JSON.stringify({ id: rec.databaseId, head_sha: rec.headSha, run_attempt: 1,',
-		'			status: rec.status, conclusion: rec.conclusion || null, ...ov })); process.exit(0);',
-		"	}",
-		'	// Jobs default to the run\'s own state; a green run has green jobs, a red or unfinished one has none green.',
-		'	const done = rec.status === "completed";',
-		'	const names = ["test (macos-latest, node 22.19.0)", "test (macos-latest, node 24)", "test (windows-latest, node 22.19.0)",',
-		'		"test (windows-latest, node 24)", "windows-portable-git (node 22.19.0)"];',
-		'	const ov = over.jobs[m[1]];',
-		'	const jobs = (ov?.jobs ?? names.map((name) => ({ name }))).map((j, i) => ({ id: rec.databaseId * 100 + i, run_id: rec.databaseId,',
-		'		run_attempt: Number(m[2]), head_sha: rec.headSha, status: rec.status, conclusion: done ? rec.conclusion : null,',
-		'		html_url: rec.url + "/job/" + (rec.databaseId * 100 + i), ...j }));',
-		'	process.stdout.write(JSON.stringify({ total_count: ov?.total_count ?? jobs.length, jobs })); process.exit(0);',
-		"}",
-		'const wf = a[a.indexOf("--workflow") + 1], sha = a[a.indexOf("--commit") + 1];',
-		'const runs = JSON.parse(readFileSync(process.env.FAKE_GH_RUNS, "utf8"))[wf] ?? [];',
-		"const ignoreCommit = process.env.FAKE_GH_IGNORE_COMMIT === '1'; // a gh that does not filter by --commit",
-		"process.stdout.write(JSON.stringify(ignoreCommit ? runs : runs.filter((r) => r.headSha === sha)));",
-	].join("\n"));
-	if (process.platform === "win32") {
-		writeFileSync(join(bin, "gh.cmd"), `@"${process.execPath}" "%~dp0gh.mjs" %*\r\n`);
-	} else {
-		writeFileSync(join(bin, "gh"), `#!/bin/sh\nexec "${process.execPath}" "${join(bin, "gh.mjs")}" "$@"\n`);
-		chmodSync(join(bin, "gh"), 0o755);
+	writeFileSync(join(bin, "gh.mjs"), `
+import { appendFileSync, readFileSync } from "node:fs";
+const a = process.argv.slice(2);
+appendFileSync(process.env.FAKE_GH_LOG, a.join(" ") + "\\n");
+if (a[0] !== "issue" || a[1] !== "view") throw new Error("unexpected gh call");
+if (process.env.FAKE_GH_ISSUE_FAIL === "1") { process.stderr.write("HTTP 502: bad gateway\\nsecond line\\n"); process.exit(1); }
+const one = JSON.parse(readFileSync(process.env.FAKE_GH_ISSUES, "utf8")).view[a[2]];
+if (!one) { process.stderr.write("GraphQL: Could not resolve to an Issue\\n"); process.exit(1); }
+process.stdout.write(JSON.stringify(one));
+`);
+	writeFileSync(join(bin, "npm.mjs"), `
+import { appendFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+const git = (...a) => execFileSync("git", a, { encoding: "utf8" }).trim();
+appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), head: git("rev-parse", "HEAD") }) + "\\n");
+if (process.env.FAKE_NPM_MODE === "dirty") writeFileSync("stray.txt", "test output");
+if (process.env.FAKE_NPM_MODE === "head") git("commit", "--quiet", "--allow-empty", "-m", "changed during tests");
+if (process.env.FAKE_NPM_MODE === "detach") git("checkout", "--quiet", "--detach");
+process.exit(process.env.FAKE_NPM_MODE === "fail" ? 23 : 0);
+`);
+	for (const name of ["npm", "gh"]) {
+		writeFileSync(join(bin, name), `#!/bin/sh\nexec "${process.execPath}" "${join(bin, name + ".mjs")}" "$@"\n`);
+		chmodSync(join(bin, name), 0o755);
 	}
 	const gitconfig = join(tmp, "gitconfig");
 	writeFileSync(gitconfig, "[user]\n\tname = t\n\temail = t@example.com\n[commit]\n\tgpgsign = false\n[core]\n\tautocrlf = false\n");
-	const runsFile = join(tmp, "runs.json");
 	const issuesFile = join(tmp, "issues.json");
 	writeFileSync(issuesFile, JSON.stringify({ view: {} }));
 	const sessions = join(tmp, "sessions");
@@ -85,8 +53,8 @@ function setup() {
 	const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
 	const env = {
 		...process.env, [pathKey]: bin + delimiter + process.env[pathKey],
-		GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: gitconfig, FAKE_GH_RUNS: runsFile,
-		FAKE_GH_ISSUES: issuesFile, MY_PI_SESSIONS: sessions, FAKE_GH_LOG: join(tmp, "gh.log"), FAKE_GH_API: join(tmp, "api.json"),
+		GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: gitconfig,
+		FAKE_GH_ISSUES: issuesFile, MY_PI_SESSIONS: sessions, FAKE_GH_LOG: join(tmp, "gh.log"), FAKE_NPM_LOG: join(tmp, "npm.log"), FAKE_NPM_MODE: "",
 	};
 	const repo = join(tmp, "checkout");
 	const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, env, encoding: "utf8" }).trim();
@@ -94,41 +62,32 @@ function setup() {
 	execFileSync("git", ["clone", "--quiet", join(tmp, "origin.git"), repo], { env, stdio: "ignore" });
 	git("symbolic-ref", "HEAD", "refs/heads/main");
 	mkdirSync(join(repo, ".github", "workflows"), { recursive: true });
-	for (const f of ["tests.yml", "pcli.yml"]) copyFileSync(join(ROOT, ".github", "workflows", f), join(repo, ".github", "workflows", f));
+	copyFileSync(join(ROOT, ".github", "workflows", "tests.yml"), join(repo, ".github", "workflows", "tests.yml"));
 	writeFileSync(join(repo, "README.md"), "x\n");
 	git("add", ".");
 	git("commit", "--quiet", "-m", "base");
 	git("push", "--quiet", "origin", "main");
 
-	const commit = (on: string, files: Record<string, string | null>) => { // null deletes the file
-		git("checkout", "--quiet", on);
-		for (const [f, text] of Object.entries(files)) {
-			if (text === null) { git("rm", "--quiet", f); continue; }
-			mkdirSync(dirname(join(repo, f)), { recursive: true });
-			writeFileSync(join(repo, f), text);
-			git("add", f);
+	const worktree = join(tmp, "task-worktree");
+	const commit = (on: string, files: Record<string, string | null>) => {
+		if (on !== "main" && !git("worktree", "list", "--porcelain").includes(`branch refs/heads/${on}\n`)) {
+			git("worktree", "add", "--quiet", worktree, on);
 		}
-		git("commit", "--quiet", "-m", `change ${Object.keys(files).join(" ")}`);
-		const sha = git("rev-parse", "HEAD");
-		git("checkout", "--quiet", "main");
-		return sha;
+		const cwd = on === "main" ? repo : worktree;
+		const localGit = (...args: string[]) => execFileSync("git", args, { cwd, env, encoding: "utf8" }).trim();
+		for (const [f, text] of Object.entries(files)) {
+			if (text === null) { localGit("rm", "--quiet", f); continue; }
+			mkdirSync(dirname(join(cwd, f)), { recursive: true });
+			writeFileSync(join(cwd, f), text);
+			localGit("add", f);
+		}
+		localGit("commit", "--quiet", "-m", `change ${Object.keys(files).join(" ")}`);
+		return localGit("rev-parse", "HEAD");
 	};
 	const task = (files: Record<string, string | null>) => {
 		git("branch", "task", "main");
 		return commit("task", files);
 	};
-	const runs = (r: Record<string, RunRec[]>) => writeFileSync(runsFile, JSON.stringify(r));
-	runs({});
-	// REST overrides for the fake `gh api`: defaults are synthesized from the RunRec, so a run listed as red or unfinished
-	// gets jobs in that state and a green run gets green jobs.
-	const api: { metadata: Record<number, object | object[]>; jobs: Record<number, { jobs?: JobRec[]; total_count?: number }> } = { metadata: {}, jobs: {} };
-	const writeApi = () => writeFileSync(join(tmp, "api.json"), JSON.stringify(api));
-	writeApi();
-	const jobs = (runId: number, list: JobRec[] | undefined, total_count?: number) => {
-		api.jobs[runId] = { ...(list ? { jobs: list } : {}), ...(total_count === undefined ? {} : { total_count }) };
-		writeApi();
-	};
-	const metadata = (runId: number, override: object | object[]) => { api.metadata[runId] = override; writeApi(); };
 	const issues = (data: { view?: Record<string, { labels: { name: string }[]; state: string }> }) =>
 		writeFileSync(issuesFile, JSON.stringify({ view: data.view ?? {} }));
 	// The local ci-watch files that deliver-check reads for its informational lines: status.json and the sidecar inbox.json.
@@ -149,22 +108,11 @@ function setup() {
 		return { code: r.status, out: r.stdout + r.stderr };
 	};
 	const ghCalls = () => { try { return readFileSync(join(tmp, "gh.log"), "utf8"); } catch { return ""; } };
-	return { tmp, repo, env, git, commit, task, runs, jobs, metadata, issues, cache, inbox, ghCalls, run, sessions };
+	const npmCalls = () => { try { return readFileSync(env.FAKE_NPM_LOG, "utf8").trim().split("\n").map((l) => JSON.parse(l)); } catch { return []; } };
+	return { tmp, repo, worktree, bin, env, git, commit, task, issues, cache, inbox, ghCalls, npmCalls, run, sessions };
 }
 
-// Replaces the value of pcli.yml's `paths: [...]` filter, whatever the real filter lists.
-const setPcliPaths = (text: string, list: string) => text.replace(/^(\s*paths:\s*)\[[^\]]*\]/m, `$1${list}`);
-
-const ok = (id: number, headSha: string, conclusion = "success", status = "completed"): RunRec =>
-	({ databaseId: id, headSha, status, conclusion, url: `https://github.com/o/r/actions/runs/${id}` });
-const MAC22 = "test (macos-latest, node 22.19.0)";
-const MAC24 = "test (macos-latest, node 24)";
-const WIN24 = "test (windows-latest, node 24)";
-// A job in one state: queued and in_progress are unfinished (no conclusion), anything else is completed with it.
-const job = (name: string, state = "success", extra: Partial<JobRec> = {}): JobRec => ({ name, ...(
-	["queued", "in_progress", "pending", "waiting"].includes(state) ? { status: state, conclusion: null } : { status: "completed", conclusion: state }), ...extra });
-const MSG = (ci: number[]) => ["Task", "", "Review: review#7 CLEAN", "Code-review: CLEAN",
-	...ci.map((id) => `CI: https://github.com/o/r/actions/runs/${id}`), "Unverified: none", ""].join("\n");
+const MSG = () => "Task\n\nReview: review#7 CLEAN\nCode-review: CLEAN\nUnverified: none\n";
 
 const DOC_MSG = "Docs\n\nReview: agent#7 CLEAN\nUnverified: none\n";
 describe("deliver-check owner quote gate", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
@@ -243,31 +191,32 @@ describe("deliver-check owner quote gate", { skip: process.platform !== "darwin"
 });
 
 describe("deliver-check", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
-	it("passes a branch on current main with green CI and all trailers", () => {
+	it("passes a branch on current main with local tests and review trailers", () => {
 		const t = setup();
 		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const r = t.run(MSG([11]));
+		const r = t.run(MSG());
 		assert.equal(r.code, 0, r.out);
 		assert.match(r.out, /deliver-check PASS task/);
-		assert.match(r.out, /tests\.yml https:\/\/github\.com\/o\/r\/actions\/runs\/11/);
+		assert.match(r.out, /local npm test: PASS/);
+		assert.equal(t.ghCalls(), "");
+		assert.deepEqual(t.npmCalls(), [{ args: ["test"], cwd: realpathSync(t.worktree), head }]);
+		assert.equal(t.run(MSG()).code, 0);
+		assert.equal(t.npmCalls().length, 2);
 	});
 
 	it("passes an agent result-review trailer", () => {
 		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const r = t.run(MSG([11]).replace("review#7", "agent#7"));
+		t.task({ "src/a.js": "1\n" });
+		const r = t.run(MSG().replace("review#7", "agent#7"));
 		assert.equal(r.code, 0, r.out);
 		assert.match(r.out, /reviews: agent#7; code review CLEAN/);
 	});
 
 	it("fails malformed or absent result-review trailers", () => {
 		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
+		t.task({ "src/a.js": "1\n" });
 		for (const trailer of ["Review: agent#N CLEAN", "Review: agent7 CLEAN", "Review: agent#7 found issues", ""]) {
-			const r = t.run(MSG([11]).replace("Review: review#7 CLEAN", trailer));
+			const r = t.run(MSG().replace("Review: review#7 CLEAN", trailer));
 			assert.equal(r.code, 1, r.out);
 			assert.match(r.out, /FAIL message: missing trailer "Review: review#N CLEAN" or "Review: agent#N CLEAN"/);
 		}
@@ -275,21 +224,19 @@ describe("deliver-check", { skip: process.platform !== "darwin" && "Local develo
 
 	it("fails a branch that does not contain the current origin/main", () => {
 		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
+		t.task({ "src/a.js": "1\n" });
 		t.commit("main", { "src/b.js": "2\n" });
 		t.git("push", "--quiet", "origin", "main");
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const r = t.run(MSG([11]));
+		const r = t.run(MSG());
 		assert.equal(r.code, 1);
 		assert.match(r.out, /FAIL task \(\w+\) does not contain origin\/main/);
 	});
 
 	it("fails when the local main has an unpushed commit the branch does not contain", () => {
 		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
+		t.task({ "src/a.js": "1\n" });
 		t.commit("main", { "src/b.js": "2\n" }); // advanced locally, not pushed
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const r = t.run(MSG([11]));
+		const r = t.run(MSG());
 		assert.equal(r.code, 1);
 		assert.match(r.out, /FAIL main checkout HEAD \(\w+\) is not origin\/main \(\w+\) and not contained in task/);
 		assert.doesNotMatch(r.out, /does not contain origin\/main/);
@@ -302,124 +249,41 @@ describe("deliver-check", { skip: process.platform !== "darwin" && "Local develo
 		t.git("reset", "--quiet", "--hard", "HEAD~1");
 		t.commit("main", { "src/c.js": "3\n" }); // local main: base + c; origin/main: base + b
 		t.git("branch", "task", "origin/main");
-		const head = t.commit("task", { "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const r = t.run(MSG([11]));
+		t.commit("task", { "src/a.js": "1\n" });
+		const r = t.run(MSG());
 		assert.equal(r.code, 1);
 		assert.match(r.out, /FAIL main checkout HEAD .* not contained in task/);
 	});
 
-	it("fails on missing, failed or unfinished CI for the head SHA", () => {
-		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(10, "0".repeat(40))] });
-		assert.match(t.run(MSG([10])).out, /FAIL tests\.yml: no run for/);
-		t.runs({ "tests.yml": [ok(12, head, "failure"), ok(11, head)] });
-		const failed = t.run(MSG([11]));
-		assert.equal(failed.code, 1);
-		assert.match(failed.out, /FAIL tests\.yml: [^\n]*macos-latest/);
-		t.runs({ "tests.yml": [ok(13, head, "", "in_progress")] });
-		assert.match(t.run(MSG([13])).out, /FAIL tests\.yml: [^\n]*macos-latest/);
-	});
-
-	it("applies its own headSha filter when gh ignores --commit", () => {
-		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
-		t.env.FAKE_GH_IGNORE_COMMIT = "1";
-		t.runs({ "tests.yml": [ok(12, "0".repeat(40)), ok(11, head, "failure")] }); // newest run is for another SHA
-		const wrong = t.run(MSG([12]));
-		assert.equal(wrong.code, 1);
-		assert.match(wrong.out, /FAIL tests\.yml: [^\n]*macos-latest/);
-		assert.doesNotMatch(wrong.out, /PASS/);
-		t.runs({ "tests.yml": [ok(12, "0".repeat(40))] });
-		assert.match(t.run(MSG([12])).out, /FAIL tests\.yml: no run for/);
-	});
 
 	it("fails unless the checkout it runs in has main checked out", () => {
 		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const worktree = join(t.tmp, "task-worktree");
-		t.git("worktree", "add", "--quiet", worktree, "task");
-		const inTask = t.run(MSG([11]), worktree);
+		t.task({ "src/a.js": "1\n" });
+		const worktree = t.worktree;
+		const inTask = t.run(MSG(), worktree);
 		assert.equal(inTask.code, 1);
 		assert.match(inTask.out, /FAIL .*task-worktree does not have refs\/heads\/main checked out/);
 		assert.doesNotMatch(inTask.out, /PASS/);
 		t.git("checkout", "--quiet", "--detach", "main");
-		const detached = t.run(MSG([11]));
+		const detached = t.run(MSG());
 		assert.equal(detached.code, 1);
 		assert.match(detached.out, /FAIL .* does not have refs\/heads\/main checked out/);
 		t.git("checkout", "--quiet", "main");
-		assert.equal(t.run(MSG([11])).code, 0);
+		assert.equal(t.run(MSG()).code, 0);
 	});
 
-	it("narrowing the pcli filter in the same change still requires the pcli run", () => {
-		const t = setup();
-		const pcli = readFileSync(join(ROOT, ".github", "workflows", "pcli.yml"), "utf8");
-		const narrowed = setPcliPaths(pcli, "['extra/**']");
-		assert.notEqual(narrowed, pcli);
-		// The head's filter matches neither pcli-vscode/** nor pcli.yml; main's filter matches both.
-		const head = t.task({ ".github/workflows/pcli.yml": narrowed, "pcli-vscode/x.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const r = t.run(MSG([11]));
-		assert.equal(r.code, 1);
-		assert.match(r.out, /FAIL pcli\.yml: no run for/);
-		t.runs({ "tests.yml": [ok(11, head)], "pcli.yml": [ok(21, head)] });
-		assert.equal(t.run(MSG([11, 21])).code, 0);
-	});
 
-	it("widening a filter at the head adds the requirement", () => {
-		const t = setup();
-		const pcli = readFileSync(join(ROOT, ".github", "workflows", "pcli.yml"), "utf8");
-		const base = setPcliPaths(pcli, "['pcli-vscode/**']");
-		assert.notEqual(base, pcli);
-		t.commit("main", { ".github/workflows/pcli.yml": base }); // main's filter matches neither extra/** nor pcli.yml
-		t.git("push", "--quiet", "origin", "main");
-		const widened = setPcliPaths(base, "['pcli-vscode/**', 'extra/**']");
-		const head = t.task({ ".github/workflows/pcli.yml": widened, "extra/x.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const r = t.run(MSG([11]));
-		assert.equal(r.code, 1);
-		assert.match(r.out, /FAIL pcli\.yml: no run for/);
-	});
 
-	it("fails clearly when a workflow file or filter is missing in main or at the head", () => {
-		const t = setup();
-		t.task({ ".github/workflows/pcli.yml": null, "src/a.js": "1\n" });
-		const r = t.run(MSG([11]));
-		assert.equal(r.code, 1);
-		assert.match(r.out, /FAIL cannot read \.github\/workflows\/pcli\.yml at \w+/);
-		const u = setup();
-		u.commit("main", { ".github/workflows/pcli.yml": "name: pcli\n" }); // main has no paths filter
-		u.git("push", "--quiet", "origin", "main");
-		u.task({ "src/a.js": "1\n" });
-		const m = u.run(MSG([11]));
-		assert.equal(m.code, 1);
-		assert.match(m.out, /FAIL cannot read paths from \.github\/workflows\/pcli\.yml at \w+/);
-	});
-
-	it("needs no CI or code review for a docs-only change", () => {
+	it("runs local tests but needs no code review for a docs-only change", () => {
 		const t = setup();
 		t.task({ "README.md": "y\n", "notes/n.md": "n\n", ".agents/reviewers/x.md": "r\n" });
 		const r = t.run("Docs\n\nReview: review#3 CLEAN\nUnverified: none\n");
 		assert.equal(r.code, 0, r.out);
-		assert.match(r.out, /CI: not required/);
+		assert.match(r.out, /local npm test: PASS/);
+		assert.equal(t.npmCalls().length, 1);
 	});
 
-	it("requires a green pcli.yml run when pcli-vscode changes", () => {
-		const t = setup();
-		const head = t.task({ "pcli-vscode/x.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const missing = t.run(MSG([11]));
-		assert.equal(missing.code, 1);
-		assert.match(missing.out, /FAIL pcli\.yml: no run for/);
-		t.runs({ "tests.yml": [ok(11, head)], "pcli.yml": [ok(21, head)] });
-		assert.match(t.run(MSG([11])).out, /FAIL message: missing trailer "CI: https:\/\/github\.com\/o\/r\/actions\/runs\/21"/);
-		const r = t.run(MSG([11, 21]));
-		assert.equal(r.code, 0, r.out);
-	});
-
-	it("counts both sides of a move: code into notes/ needs CI and code review", () => {
+	it("counts both sides of a move: code into notes/ needs code review", () => {
 		const t = setup();
 		const code = "export const a = 1;\nexport const b = 2;\n";
 		t.commit("main", { "src/a.js": code });
@@ -427,197 +291,106 @@ describe("deliver-check", { skip: process.platform !== "darwin" && "Local develo
 		t.task({ "src/a.js": null, "notes/a.js": code });
 		const r = t.run("Move\n\nReview: review#3 CLEAN\nUnverified: none\n");
 		assert.equal(r.code, 1);
-		assert.match(r.out, /FAIL tests\.yml: no run for/);
 		assert.match(r.out, /"Code-review: CLEAN"/);
-	});
-
-	it("requires pcli.yml when a file moves out of pcli-vscode", () => {
-		const t = setup();
-		const code = "export const x = 1;\nexport const y = 2;\n";
-		t.commit("main", { "pcli-vscode/x.js": code });
-		t.git("push", "--quiet", "origin", "main");
-		const head = t.task({ "pcli-vscode/x.js": null, "src/x.js": code });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const r = t.run(MSG([11]));
-		assert.equal(r.code, 1);
-		assert.match(r.out, /FAIL pcli\.yml: no run for/);
 	});
 
 	it("lists every missing trailer", () => {
 		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
+		t.task({ "src/a.js": "1\n" });
 		const r = t.run("Task\n\nReview: review#7 found issues\n");
 		assert.equal(r.code, 1);
-		for (const re of [/"CI: https:\/\/github\.com\/o\/r\/actions\/runs\/11"/, /"Review: review#N CLEAN"/,
+		for (const re of [/"Review: review#N CLEAN"/,
 			/"Code-review: CLEAN"/, /"Unverified: <text or none>"/]) assert.match(r.out, re);
 	});
 
 	it("fails when the main checkout has uncommitted changes", () => {
 		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
+		t.task({ "src/a.js": "1\n" });
 		writeFileSync(join(t.repo, "stray.txt"), "x\n");
-		const r = t.run(MSG([11]));
+		const r = t.run(MSG());
 		assert.equal(r.code, 1);
 		assert.match(r.out, /FAIL main checkout .* has uncommitted or untracked changes/);
 	});
 });
 
-describe("deliver-check macOS gate", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
-	const setupGreenMacs = (overall: { conclusion: string; status?: string } = { conclusion: "failure" }) => {
+describe("deliver-check local npm test", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
+	it("fails closed without an existing task worktree", () => {
 		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head, overall.conclusion, overall.status ?? "completed")] });
-		return { t, head };
-	};
-	const WIN_URL = "https://github.com/o/r/actions/runs/11/job/901";
-	const metadataGets = (t: ReturnType<typeof setup>) => t.ghCalls().split("\n").filter((l) => /^api \S*actions\/runs\/11(\s|$)/.test(l)).length;
-	const jobsGets = (t: ReturnType<typeof setup>) => t.ghCalls().split("\n").filter((l) => /actions\/runs\/11\/attempts\/1\/jobs\?per_page=100/.test(l)).length;
-
-	it("passes when both required Mac jobs are green although the workflow failed on Windows, and prints an advisory", () => {
-		const { t } = setupGreenMacs();
-		t.jobs(11, [job(MAC22), job(MAC24), job(WIN24, "failure", { html_url: WIN_URL }), job("windows-portable-git (node 22.19.0)")]);
-		const r = t.run(MSG([11]));
-		assert.equal(r.code, 0, r.out);
-		assert.match(r.out, /deliver-check PASS task/);
-		assert.match(r.out, /Windows advisory: test \(windows-latest, node 24\): failure https:\/\/github\.com\/o\/r\/actions\/runs\/11\/job\/901\n[^\n]*no automatic code fix/);
-		assert.equal(metadataGets(t), 2, t.ghCalls()); // metadata, jobs, then the same metadata again
-		assert.equal(jobsGets(t), 1, t.ghCalls());
-		assert.ok(t.ghCalls().indexOf("attempts/1/jobs") > t.ghCalls().indexOf("actions/runs/11\n"));
-	});
-
-	it("passes with the overall run in progress and Windows jobs pending when both Mac jobs are green", () => {
-		const { t } = setupGreenMacs({ conclusion: "", status: "in_progress" });
-		t.jobs(11, [job(MAC22), job(MAC24), job(WIN24, "in_progress", { html_url: WIN_URL }), job("test (windows-latest, node 22.19.0)", "queued")]);
-		const r = t.run(MSG([11]));
-		assert.equal(r.code, 0, r.out);
-		assert.match(r.out, /Windows advisory: test \(windows-latest, node 24\): in_progress https:\/\/github\.com\/o\/r\/actions\/runs\/11\/job\/901/);
-		assert.match(r.out, /Windows advisory: test \(windows-latest, node 22\.19\.0\): queued /);
-	});
-
-	it("requires every returned macos-latest job to be green, including extra jobs", () => {
-		const name = "extra-check (macos-latest)";
-		for (const status of ["failure", "in_progress", "success"]) {
-			const { t } = setupGreenMacs();
-			t.jobs(11, [job(MAC22), job(MAC24), job(name, status)]);
-			const result = t.run(MSG([11]));
-			assert.equal(result.code, status === "success" ? 0 : 1, result.out);
-			if (status === "success") assert.match(result.out, /deliver-check PASS task/);
-			else assert.ok(result.out.includes(`required macOS job ${name} is ${status}`), result.out);
-		}
-	});
-
-	const esc = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-	it("rejects a missing, duplicated, failed, pending, queued, cancelled or skipped Mac job", () => {
-		const missing = (name: string) => new RegExp(`FAIL tests\\.yml: required macOS job missing or duplicated: ${esc(name)}`);
-		const state = (name: string, st: string) => new RegExp(`FAIL tests\\.yml: required macOS job ${esc(name)} is ${st}`);
-		const cases: [string, JobRec[], RegExp][] = [
-			["missing node 24", [job(MAC22), job(WIN24)], missing(MAC24)],
-			["missing both", [job(WIN24)], missing(MAC22)],
-			["duplicated", [job(MAC22), job(MAC24), job(MAC24)], missing(MAC24)],
-			["failed", [job(MAC22), job(MAC24, "failure")], state(MAC24, "failure")],
-			["in progress", [job(MAC22, "in_progress"), job(MAC24)], state(MAC22, "in_progress")],
-			["queued", [job(MAC22), job(MAC24, "queued")], state(MAC24, "queued")],
-			["cancelled", [job(MAC22, "cancelled"), job(MAC24)], state(MAC22, "cancelled")],
-			["skipped", [job(MAC22), job(MAC24, "skipped")], state(MAC24, "skipped")],
-			["renamed", [job(MAC22), job("test (macos-latest, node 24.1)")], missing(MAC24)],
-		];
-		for (const [name, list, re] of cases) {
-			const { t } = setupGreenMacs();
-			t.jobs(11, list);
-			const r = t.run(MSG([11]));
-			assert.equal(r.code, 1, `${name}\n${r.out}`);
-			assert.match(r.out, re, name);
-			assert.doesNotMatch(r.out, /PASS/, name);
-		}
-	});
-
-	it("rejects any job of another run, head or attempt, and incomplete pagination", () => {
-		const jobMismatch = /FAIL tests\.yml: job data does not match the exact head\/run\/attempt/;
-		const cases: [string, JobRec[], number | undefined, RegExp][] = [
-			["Mac job of another run", [job(MAC22), job(MAC24, "success", { run_id: 99 })], undefined, jobMismatch],
-			["Mac job of another head", [job(MAC22, "success", { head_sha: "0".repeat(40) }), job(MAC24)], undefined, jobMismatch],
-			["Mac job of another attempt", [job(MAC22), job(MAC24, "success", { run_attempt: 2 })], undefined, jobMismatch],
-			["Windows job of another run", [job(MAC22), job(MAC24), job(WIN24, "success", { run_id: 99 })], undefined, jobMismatch],
-			["total_count larger than jobs", [job(MAC22), job(MAC24)], 3, /FAIL tests\.yml: job list is incomplete or invalid/],
-			["total_count smaller than jobs", [job(MAC22), job(MAC24)], 1, /FAIL tests\.yml: job list is incomplete or invalid/],
-		];
-		for (const [name, list, total, re] of cases) {
-			const { t } = setupGreenMacs({ conclusion: "success" });
-			t.jobs(11, list, total);
-			const r = t.run(MSG([11]));
-			assert.equal(r.code, 1, `${name}\n${r.out}`);
-			assert.match(r.out, re, name);
-			assert.doesNotMatch(r.out, /PASS/, name);
-		}
-	});
-
-	it("rejects metadata of another head or run, and a rerun detected by the second metadata GET", () => {
-		const first = /FAIL tests\.yml: run metadata does not match the exact head\/run\/attempt/;
-		const changed = /FAIL tests\.yml: run head\/attempt changed during the fresh macOS check; check again/;
-		const cases: [string, object | object[], RegExp][] = [
-			["other head in the first GET", { head_sha: "0".repeat(40) }, first],
-			["other id in the first GET", { id: 12 }, first],
-			["invalid attempt in the first GET", { run_attempt: 0 }, first],
-			["attempt changes", [{ run_attempt: 1 }, { run_attempt: 2 }], changed],
-			["head changes", [{}, { head_sha: "0".repeat(40) }], changed],
-			["id changes", [{}, { id: 12 }], changed],
-		];
-		for (const [name, override, re] of cases) {
-			const { t } = setupGreenMacs({ conclusion: "success" });
-			t.metadata(11, override);
-			const r = t.run(MSG([11]));
-			assert.equal(r.code, 1, `${name}\n${r.out}`);
-			assert.match(r.out, re, name);
-			assert.doesNotMatch(r.out, /PASS/, name);
-		}
-	});
-
-	it("uses jobs of the attempt the metadata names", () => {
-		const { t } = setupGreenMacs({ conclusion: "success" });
-		t.metadata(11, { run_attempt: 2 });
-		const r = t.run(MSG([11]));
-		assert.equal(r.code, 0, r.out);
-		assert.match(t.ghCalls(), /actions\/runs\/11\/attempts\/2\/jobs\?per_page=100/);
-	});
-
-	it("does not take an older green run as proof when the newest run for the head is not green on Mac", () => {
-		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(12, head, "", "in_progress"), ok(11, head)] }); // gh lists the newest first
-		t.jobs(12, [job(MAC22), job(MAC24, "in_progress")]);
-		const r = t.run(MSG([11]));
+		t.task({ "src/a.js": "1\n" });
+		t.git("worktree", "remove", t.worktree);
+		const r = t.run(MSG());
 		assert.equal(r.code, 1, r.out);
-		assert.match(r.out, /FAIL tests\.yml: required macOS job test \(macos-latest, node 24\) is in_progress/);
-		assert.doesNotMatch(t.ghCalls(), /actions\/runs\/11(\/|\s|$)/); // the older run is never fetched
+		assert.match(r.out, /FAIL no existing worktree for task/);
+		assert.deepEqual(t.npmCalls(), []);
 	});
 
-	it("requires the CI trailer to name the exact run even when its Macs are green", () => {
-		const { t } = setupGreenMacs({ conclusion: "success" });
-		const r = t.run(MSG([10]));
-		assert.equal(r.code, 1, r.out);
-		assert.match(r.out, /FAIL message: missing trailer "CI: https:\/\/github\.com\/o\/r\/actions\/runs\/11"/);
-	});
-
-	it("keeps requiring the whole pcli.yml run: a failed or pending Windows pcli job is not excused", () => {
-		const t = setup();
-		const head = t.task({ "pcli-vscode/x.js": "1\n" });
-		const msg = MSG([11, 21]);
-		for (const [pcli, re] of [
-			[ok(21, head, "failure"), /FAIL pcli\.yml: latest run for \w+ concluded failure/],
-			[ok(21, head, "", "in_progress"), /FAIL pcli\.yml: latest run for \w+ is in_progress/],
-			[ok(21, head, "cancelled"), /FAIL pcli\.yml: latest run for \w+ concluded cancelled/],
-		] as [RunRec, RegExp][]) {
-			t.runs({ "tests.yml": [ok(11, head)], "pcli.yml": [pcli] });
-			const r = t.run(msg);
+	it("rejects staged, unstaged and untracked task changes before npm starts", () => {
+		for (const mode of ["staged", "unstaged", "untracked"]) {
+			const t = setup();
+			t.task({ "src/a.js": "1\n" });
+			writeFileSync(join(t.worktree, mode === "untracked" ? "stray.txt" : "src/a.js"), "dirty\n");
+			if (mode === "staged") t.git("-C", t.worktree, "add", "src/a.js");
+			const r = t.run(MSG());
 			assert.equal(r.code, 1, r.out);
-			assert.match(r.out, re);
+			assert.match(r.out, /FAIL task checkout .* has uncommitted or untracked changes before tests/);
+			assert.deepEqual(t.npmCalls(), []);
 		}
-		t.runs({ "tests.yml": [ok(11, head, "failure")], "pcli.yml": [ok(21, head)] });
-		t.jobs(11, [job(MAC22), job(MAC24), job(WIN24, "failure")]);
-		assert.equal(t.run(msg).code, 0); // only tests.yml gets the Mac-only rule
+	});
+
+	it("fails closed on nonzero npm test", () => {
+		const t = setup();
+		t.task({ "src/a.js": "1\n" });
+		t.env.FAKE_NPM_MODE = "fail";
+		const r = t.run(MSG());
+		assert.equal(r.code, 1, r.out);
+		assert.match(r.out, /FAIL local npm test failed: exit 23/);
+		assert.equal(t.npmCalls().length, 1);
+	});
+
+	it("rejects dirty output, a changed head and a detached task after successful npm test", () => {
+		for (const mode of ["dirty", "head", "detach"] as const) {
+			const t = setup();
+			const head = t.task({ "src/a.js": "1\n" });
+			t.env.FAKE_NPM_MODE = mode;
+			const r = t.run(MSG());
+			assert.equal(r.code, 1, r.out);
+			const error = { dirty: /uncommitted or untracked changes after tests/, head: /head changed after tests/,
+				detach: /cannot verify task checkout after tests:.*symbolic-ref -q HEAD/ }[mode];
+			assert.match(r.out, error);
+			assert.doesNotMatch(r.out, /deliver-check PASS/);
+			assert.deepEqual(t.npmCalls(), [{ args: ["test"], cwd: realpathSync(t.worktree), head }]);
+			assert.equal(t.ghCalls(), "");
+		}
+	});
+
+	it("always tests pcli changes without reading pcli filters or querying Actions", () => {
+		const t = setup();
+		const head = t.task({ "pcli-vscode/x.js": "1\n", ".github/workflows/pcli.yml": "no filter\n" });
+		const r = t.run(MSG());
+		assert.equal(r.code, 0, r.out);
+		assert.deepEqual(t.npmCalls(), [{ args: ["test"], cwd: realpathSync(t.worktree), head }]);
+		assert.equal(t.ghCalls(), "");
+	});
+
+	it("keeps both versions of tests.yml exclusions for code-review classification", () => {
+		const t = setup();
+		const tests = readFileSync(join(ROOT, ".github/workflows/tests.yml"), "utf8");
+		t.task({ ".github/workflows/tests.yml": tests.replace(/paths-ignore:\s*\[[^\]]*\]/g, "paths-ignore: ['**']"), "src/a.js": "1\n" });
+		const r = t.run(DOC_MSG);
+		assert.equal(r.code, 1, r.out);
+		assert.match(r.out, /missing trailer "Code-review: CLEAN"/);
+		assert.equal(t.ghCalls(), "");
+	});
+
+	it("fails closed when tests.yml or its exclusions cannot be read", () => {
+		for (const text of [null, "name: tests\n"]) {
+			const t = setup();
+			t.task({ ".github/workflows/tests.yml": text });
+			const r = t.run(MSG());
+			assert.equal(r.code, 1, r.out);
+			assert.match(r.out, /FAIL cannot read (?:paths-ignore from )?\.github\/workflows\/tests\.yml/);
+			assert.deepEqual(t.npmCalls(), []);
+		}
 	});
 });
 
@@ -625,32 +398,31 @@ describe("deliver-check QA cache lines", { skip: process.platform !== "darwin" &
 	const redRun = { id: 5, name: "tests", path: ".github/workflows/tests.yml@refs/heads/main", head_branch: "main", status: "completed",
 		conclusion: "failure", created_at: "2026-10-23T10:00:00Z", html_url: "https://github.com/o/r/actions/runs/5" };
 	const passing = (t: ReturnType<typeof setup>) => {
-		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
+		t.task({ "src/a.js": "1\n" });
 	};
 
 	it("reports the sidecar inbox snapshot with its date as local cached, after PASS, with no gh issue list", () => {
 		const t = setup();
 		passing(t);
 		t.inbox({ items: [{ id: "i1", level: "red", text: "#12 [qa] tests: a.test.ts failing", url: "https://github.com/o/r/issues/12" }] });
-		const r = t.run(MSG([11]));
+		const r = t.run(MSG());
 		assert.equal(r.code, 0, r.out);
 		assert.match(r.out, /  QA inbox: local cached snapshot from 2026-10-23T09:00:00\.000Z; not refreshed by ci-watch, not the current state/);
 		assert.match(r.out, /  QA inbox: RED #12 \[qa\] tests: a\.test\.ts failing https:\/\/github\.com\/o\/r\/issues\/12/);
 		assert.ok(r.out.indexOf("PASS") < r.out.indexOf("QA inbox"));
 		assert.doesNotMatch(t.ghCalls(), /issue list/);
-		assert.match(t.ghCalls(), /run list/); // the exact-head CI check still uses gh
+		assert.equal(t.ghCalls(), "");
 	});
 
 	it("never says the inbox is empty or open without a snapshot; an empty snapshot says so with its date", () => {
 		const t = setup();
 		passing(t);
-		const none = t.run(MSG([11]));
+		const none = t.run(MSG());
 		assert.equal(none.code, 0, none.out);
 		assert.match(none.out, /QA inbox: no local snapshot \(ENOENT\); run npm run ci-watch -- --refresh-inbox/);
 		assert.doesNotMatch(none.out, /no items|QA open/);
 		t.inbox({ items: [] });
-		const empty = t.run(MSG([11]));
+		const empty = t.run(MSG());
 		assert.match(empty.out, /QA inbox: local cached snapshot from 2026-10-23T09:00:00\.000Z/);
 		assert.match(empty.out, /QA inbox: no items in that snapshot/);
 	});
@@ -659,12 +431,12 @@ describe("deliver-check QA cache lines", { skip: process.platform !== "darwin" &
 		const t = setup();
 		passing(t);
 		t.cache({ inboxItems: [{ id: "x", level: "red", text: "old shim item", url: "" }] });
-		const old = t.run(MSG([11]));
+		const old = t.run(MSG());
 		assert.doesNotMatch(old.out, /old shim item/);
 		assert.match(old.out, /QA inbox: no local snapshot/);
 		for (const bad of [{ version: 2 }, { items: "x" }, { fetchedAt: "not a date" }]) {
 			t.inbox(bad);
-			const r = t.run(MSG([11]));
+			const r = t.run(MSG());
 			assert.equal(r.code, 0, r.out);
 			assert.match(r.out, /QA inbox: local snapshot invalid/);
 		}
@@ -673,13 +445,13 @@ describe("deliver-check QA cache lines", { skip: process.platform !== "darwin" &
 	it("reports an absent, stale or failed status cache as one unavailable line and still passes", () => {
 		const t = setup();
 		passing(t);
-		const absent = t.run(MSG([11]));
+		const absent = t.run(MSG());
 		assert.equal(absent.code, 0, absent.out);
 		assert.match(absent.out, /main runs: unavailable \(no readable ci-watch cache: ENOENT\)/);
 		t.cache({}, 181_000);
-		assert.match(t.run(MSG([11])).out, /main runs: unavailable \(ci-watch cache stale or invalid\)/);
+		assert.match(t.run(MSG()).out, /main runs: unavailable \(ci-watch cache stale or invalid\)/);
 		t.cache({ error: "HTTP 502: bad gateway\nsecond line" });
-		const failed = t.run(MSG([11]));
+		const failed = t.run(MSG());
 		assert.equal(failed.code, 0, failed.out);
 		assert.match(failed.out, /main runs: unavailable \(ci-watch fetch failed: HTTP 502: bad gateway\)/);
 		assert.doesNotMatch(failed.out, /second line/);
@@ -689,20 +461,19 @@ describe("deliver-check QA cache lines", { skip: process.platform !== "darwin" &
 		const t = setup();
 		t.task({ "src/a.js": "1\n" });
 		t.cache({ runs: [redRun, { ...redRun, id: 6, head_branch: "task", html_url: "https://x/6" }] });
-		const r = t.run(MSG([11]));
+		const r = t.run("Task\n\nUnverified: none\n");
 		assert.equal(r.code, 1);
-		assert.match(r.out, /FAIL tests\.yml: no run for/);
 		assert.match(r.out, /  main red \(cached\): tests failure https:\/\/github\.com\/o\/r\/actions\/runs\/5/);
 		assert.doesNotMatch(r.out, /x\/6/);
 	});
 
-	it("keeps the exact-head CI gate even when the cache lists a green run for the head", () => {
+	it("does not substitute a green cached run for local tests", () => {
 		const t = setup();
 		const head = t.task({ "src/a.js": "1\n" });
 		t.cache({ runs: [{ ...redRun, conclusion: "success", head_sha: head, head_branch: "task" }] });
-		const r = t.run(MSG([11]));
+		t.env.FAKE_NPM_MODE = "fail";
+		const r = t.run(MSG());
 		assert.equal(r.code, 1);
-		assert.match(r.out, /FAIL tests\.yml: no run for/);
 	});
 });
 
@@ -797,13 +568,12 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 
 	const EXT = "extensions/RQW-x";
 	const lines = (n: number, tag = "n") => Array.from({ length: n }, (_, i) => `${tag}${i}\n`).join(""); // distinct lines, so a rewrite counts both sides
-	const COMBINED = (extra = "") => `Task\n\nCombined-review: agent#7 CLEAN\nCI: https://github.com/o/r/actions/runs/11\n${extra}Unverified: none\n`;
+	const COMBINED = (extra = "") => `Task\n\nCombined-review: agent#7 CLEAN\n${extra}Unverified: none\n`;
 	// Runs one combined-review change; `base` files are first committed to main.
 	const combined = (files: Record<string, string | null>, base: Record<string, string> = {}, extra = "") => {
 		const t = setup();
 		if (Object.keys(base).length) { t.commit("main", base); t.git("push", "--quiet", "origin", "main"); }
-		const head = t.task(files);
-		t.runs({ "tests.yml": [ok(11, head)] });
+		t.task(files);
 		t.issues({ view: { "6": { labels: [{ name: "qa-inbox" }], state: "OPEN" } } });
 		return t.run(COMBINED(extra));
 	};
@@ -813,8 +583,7 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 		assert.equal(r.code, 0, r.out);
 		assert.match(r.out, /reviews: combined agent#7 \(result and code review\)/);
 		const t = setup();
-		const head = t.task({ [`${EXT}/a.js`]: "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
+		t.task({ [`${EXT}/a.js`]: "1\n" });
 		for (const bad of ["Combined-review: agent#N CLEAN", "Combined-review: agent#7 found issues"]) {
 			assert.match(t.run(COMBINED().replace("Combined-review: agent#7 CLEAN", bad)).out, /missing trailer "Review: review#N CLEAN"/);
 		}
@@ -872,9 +641,8 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 
 	it("ignores an ineligible Combined-review when separate review trailers are present", () => {
 		const t = setup();
-		const head = t.task({ "src/a.js": "1\n", [`${EXT}/b.js`]: "1\n" }); // outside one extension: combined is ineligible
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const r = t.run(MSG([11]) + "Combined-review: agent#9 CLEAN\n");
+		t.task({ "src/a.js": "1\n", [`${EXT}/b.js`]: "1\n" }); // outside one extension: combined is ineligible
+		const r = t.run(MSG() + "Combined-review: agent#9 CLEAN\n");
 		assert.equal(r.code, 0, r.out);
 	});
 });
@@ -890,14 +658,13 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 	it("fails an added skip without trailers and passes with both", () => {
 		const t = setup();
 		withMain(t, { "test/a.test.ts": BASE_TEST });
-		const head = t.task({ "test/a.test.ts": BASE_TEST.replace('it("a"', 'it.skip("a"') });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const bad = t.run(MSG([11]));
+		t.task({ "test/a.test.ts": BASE_TEST.replace('it("a"', 'it.skip("a"') });
+		const bad = t.run(MSG());
 		assert.equal(bad.code, 1, bad.out);
 		assert.match(bad.out, /FAIL test integrity: test\/a\.test\.ts adds skip\/todo: missing trailer "Test-change: <text>" and "Test-review: agent#N CLEAN"/);
-		const partial = t.run(MSG([11]) + "Test-change: why\n");
+		const partial = t.run(MSG() + "Test-change: why\n");
 		assert.match(partial.out, /FAIL test integrity: test\/a\.test\.ts adds skip\/todo: missing trailer "Test-review: agent#N CLEAN"/);
-		const good = t.run(MSG([11]) + TRAILERS);
+		const good = t.run(MSG() + TRAILERS);
 		assert.equal(good.code, 0, good.out);
 		assert.match(good.out, /test integrity: 1 weakening file\(s\) accepted/);
 	});
@@ -911,9 +678,8 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 			[".github/workflows/x.yml", "    continue-on-error: true\n", "adds continue-on-error"],
 		]) {
 			const t = setup();
-			const head = t.task({ [file]: text });
-			t.runs({ "tests.yml": [ok(11, head)] });
-			const r = t.run(MSG([11]));
+			t.task({ [file]: text });
+			const r = t.run(MSG());
 			assert.equal(r.code, 1, `${file} ${rule}\n${r.out}`);
 			assert.ok(r.out.includes(`FAIL test integrity: ${file} ${rule}`), r.out);
 		}
@@ -921,11 +687,10 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 
 	it("ignores comments, continue-on-error false and non-test files", () => {
 		const t = setup();
-		const head = t.task({ "test/c.test.ts": "// it.skip(\"later\")\nit(\"c\", () => {});\n",
+		t.task({ "test/c.test.ts": "// it.skip(\"later\")\nit(\"c\", () => {});\n",
 			".github/workflows/x.yml": "# continue-on-error: true is forbidden\njobs:\n  a:\n    continue-on-error: false\n",
 			"src/skip.js": "it.skip('x');\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const r = t.run(MSG([11]));
+		const r = t.run(MSG());
 		assert.equal(r.code, 0, r.out);
 	});
 
@@ -935,86 +700,77 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 		const key = /timeout-minutes: (\d+)/.exec(tests);
 		assert.ok(key, "tests.yml has a timeout-minutes line");
 		const raised = tests.replace(/timeout-minutes: \d+/, `timeout-minutes: ${Number(key[1]) + 20}`);
-		const head = t.task({ ".github/workflows/tests.yml": raised });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const bad = t.run(MSG([11]));
+		t.task({ ".github/workflows/tests.yml": raised });
+		const bad = t.run(MSG());
 		assert.equal(bad.code, 1, bad.out);
 		assert.match(bad.out, new RegExp(`FAIL test integrity: \\.github/workflows/tests\\.yml raises timeout-minutes ${key[1]} -> ${Number(key[1]) + 20}: missing trailer`));
-		assert.equal(t.run(MSG([11]) + TRAILERS).code, 0);
+		assert.equal(t.run(MSG() + TRAILERS).code, 0);
 
 		const u = setup();
 		const lowered = tests.replace(/timeout-minutes: \d+/, "timeout-minutes: 5");
-		const uhead = u.task({ ".github/workflows/tests.yml": lowered });
-		u.runs({ "tests.yml": [ok(11, uhead)] });
-		assert.equal(u.run(MSG([11])).code, 0);
+		u.task({ ".github/workflows/tests.yml": lowered });
+		assert.equal(u.run(MSG()).code, 0);
 	});
 
 	it("fails a raised timeout in a test file but not a moved or new one", () => {
 		const t = setup();
 		withMain(t, { "test/d.test.ts": "it(\"d\", { timeout: 5000 }, () => {});\nconst timeoutMs = 100;\n" });
-		const head = t.task({ "test/d.test.ts": "const timeoutMs = 100;\nit(\"d\", { timeout: 60_000 }, () => {});\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const r = t.run(MSG([11]));
+		t.task({ "test/d.test.ts": "const timeoutMs = 100;\nit(\"d\", { timeout: 60_000 }, () => {});\n" });
+		const r = t.run(MSG());
 		assert.equal(r.code, 1, r.out);
 		assert.match(r.out, /FAIL test integrity: test\/d\.test\.ts raises timeout 5000 -> 60000/);
 		assert.doesNotMatch(r.out, /timeoutMs/);
 
 		const u = setup();
 		withMain(u, { "test/d.test.ts": "it(\"d\", { timeout: 5000 }, () => {});\nconst timeoutMs = 100;\n" });
-		const uhead = u.task({ "test/d.test.ts": "const timeoutMs = 100;\nit(\"d\", { timeout: 5000 }, () => {});\nit(\"e\", { timeout: 90000 }, () => {});\n" });
-		u.runs({ "tests.yml": [ok(11, uhead)] });
-		assert.equal(u.run(MSG([11])).code, 0);
+		u.task({ "test/d.test.ts": "const timeoutMs = 100;\nit(\"d\", { timeout: 5000 }, () => {});\nit(\"e\", { timeout: 90000 }, () => {});\n" });
+		assert.equal(u.run(MSG()).code, 0);
 	});
 
 	it("fails when a test file loses assertions and passes when the count holds", () => {
 		const t = setup();
 		withMain(t, { "test/a.test.ts": BASE_TEST });
-		const head = t.task({ "test/a.test.ts": 'import assert from "node:assert/strict";\nit("a", () => {\n\tassert.equal(1, 1);\n});\n' });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		const bad = t.run(MSG([11]));
+		t.task({ "test/a.test.ts": 'import assert from "node:assert/strict";\nit("a", () => {\n\tassert.equal(1, 1);\n});\n' });
+		const bad = t.run(MSG());
 		assert.equal(bad.code, 1, bad.out);
 		assert.match(bad.out, /FAIL test integrity: test\/a\.test\.ts removes assertions \(removed 1, added 0\): missing trailer/);
-		assert.equal(t.run(MSG([11]) + TRAILERS).code, 0);
+		assert.equal(t.run(MSG() + TRAILERS).code, 0);
 
 		const u = setup();
 		withMain(u, { "test/a.test.ts": BASE_TEST });
-		const uhead = u.task({ "test/a.test.ts": BASE_TEST.replace("assert.equal(2, 2)", "assert.deepEqual([2], [2])") });
-		u.runs({ "tests.yml": [ok(11, uhead)] });
-		assert.equal(u.run(MSG([11])).code, 0);
+		u.task({ "test/a.test.ts": BASE_TEST.replace("assert.equal(2, 2)", "assert.deepEqual([2], [2])") });
+		assert.equal(u.run(MSG()).code, 0);
 
 		const d = setup();
 		withMain(d, { "test/a.test.ts": BASE_TEST });
-		const dhead = d.task({ "test/a.test.ts": null });
-		d.runs({ "tests.yml": [ok(11, dhead)] });
-		assert.match(d.run(MSG([11])).out, /FAIL test integrity: test\/a\.test\.ts removes assertions \(removed 2, added 0\)/);
+		d.task({ "test/a.test.ts": null });
+		assert.match(d.run(MSG()).out, /FAIL test integrity: test\/a\.test\.ts removes assertions \(removed 2, added 0\)/);
 	});
 
 	const inbox = { labels: [{ name: "qa-inbox" }], state: "OPEN" };
 
 	it("QA: #N needs a qa-inbox issue", () => {
 		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
+		t.task({ "src/a.js": "1\n" });
 		t.issues({ view: { "5": { labels: [{ name: "bug" }], state: "OPEN" }, "6": inbox } });
-		const wrong = t.run(MSG([11]) + "QA: #5\nTest-review: agent#8 CLEAN\n");
+		const wrong = t.run(MSG() + "QA: #5\nTest-review: agent#8 CLEAN\n");
 		assert.equal(wrong.code, 1, wrong.out);
 		assert.match(wrong.out, /FAIL message: "QA: #5" is not a qa-inbox issue/);
-		const missing = t.run(MSG([11]) + "QA: #99\nTest-review: agent#8 CLEAN\n");
+		const missing = t.run(MSG() + "QA: #99\nTest-review: agent#8 CLEAN\n");
 		assert.match(missing.out, /FAIL message: "QA: #99": gh issue view failed: GraphQL: Could not resolve to an Issue/);
 		t.env.FAKE_GH_ISSUE_FAIL = "1";
-		assert.match(t.run(MSG([11]) + "QA: #6\nTest-review: agent#8 CLEAN\n").out, /FAIL message: "QA: #6": gh issue view failed: HTTP 502/);
+		assert.match(t.run(MSG() + "QA: #6\nTest-review: agent#8 CLEAN\n").out, /FAIL message: "QA: #6": gh issue view failed: HTTP 502/);
 	});
 
 	it("QA: #N without weakening needs neither integrity trailer but still rejects malformed QA lines", () => {
 		const t = setup();
-		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
+		t.task({ "src/a.js": "1\n" });
 		t.issues({ view: { "6": inbox } });
-		const good = t.run(MSG([11]) + "QA: #6\n");
+		const good = t.run(MSG() + "QA: #6\n");
 		assert.equal(good.code, 0, good.out);
 		assert.match(good.out, /QA: #6 \(qa-inbox issues\)/);
 		assert.doesNotMatch(good.out, /Test-review present|test integrity:/);
-		const malformed = t.run(MSG([11]) + "QA: 6\n");
+		const malformed = t.run(MSG() + "QA: 6\n");
 		assert.equal(malformed.code, 1, malformed.out);
 		assert.match(malformed.out, /FAIL message: malformed line "QA: 6"/);
 	});
@@ -1025,10 +781,9 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 			{ ".github/workflows/extra.yml": "name: extra\non: workflow_dispatch\njobs: {}\n" },
 		]) {
 			const t = setup();
-			const head = t.task(files);
-			t.runs({ "tests.yml": [ok(11, head)] });
+			t.task(files);
 			t.issues({ view: { "6": inbox } });
-			const msg = MSG([11]) + "QA: #6\n";
+			const msg = MSG() + "QA: #6\n";
 			const missingReason = t.run(msg);
 			assert.equal(missingReason.code, 1, missingReason.out);
 			assert.match(missingReason.out, /"QA: #N" with test or workflow files changed requires trailer "Test-change: <text>"/);
@@ -1042,18 +797,17 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 	it("detected weakening requires both integrity trailers with or without a QA flag", () => {
 		const t = setup();
 		withMain(t, { "test/a.test.ts": BASE_TEST });
-		const head = t.task({ "test/a.test.ts": BASE_TEST.replace('it("a"', 'it.skip("a"') });
-		t.runs({ "tests.yml": [ok(11, head)] });
+		t.task({ "test/a.test.ts": BASE_TEST.replace('it("a"', 'it.skip("a"') });
 		t.issues({ view: { "6": inbox } });
 		for (const qa of ["", "QA: #6\n"]) {
 			for (const trailer of ["", "Test-change: approved reason\n", "Test-review: agent#8 CLEAN\n"]) {
-				const result = t.run(MSG([11]) + qa + trailer);
+				const result = t.run(MSG() + qa + trailer);
 				assert.equal(result.code, 1, result.out);
 				assert.match(result.out, /FAIL test integrity: test\/a\.test\.ts adds skip\/todo: missing trailer/);
 				if (!trailer.startsWith("Test-change:")) assert.ok(result.out.includes('"Test-change: <text>"'), result.out);
 				if (!trailer.startsWith("Test-review:")) assert.ok(result.out.includes('"Test-review: agent#N CLEAN"'), result.out);
 			}
-			const good = t.run(MSG([11]) + qa + TRAILERS);
+			const good = t.run(MSG() + qa + TRAILERS);
 			assert.equal(good.code, 0, good.out);
 			assert.match(good.out, /test integrity: 1 weakening file\(s\) accepted/);
 		}

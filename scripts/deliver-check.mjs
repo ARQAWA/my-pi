@@ -25,7 +25,7 @@ const finish = () => {
 	process.exit(1);
 };
 
-// gh serves only the checks that need live GitHub data (`QA: #N` labels, the exact-head CI runs below).
+// Only QA issue labels need live GitHub data.
 const ghRun = (args) => {
 	const r = spawnSync("gh", args, { encoding: "utf8", shell: process.platform === "win32", timeout: 30000 });
 	if (r.status === 0) return { stdout: r.stdout };
@@ -34,8 +34,8 @@ const ghRun = (args) => {
 };
 
 // Informational only (red main never blocks a merge, owner decision): local ci-watch files in
-// `<git-common-dir>/ci-watch/`, read synchronously with no gh call. Never merge proof; the exact head CI run is
-// checked live below. `status.json` carries the bounded run list, the sidecar `inbox.json` the issue snapshot that
+// `<git-common-dir>/ci-watch/`, read synchronously with no gh call. Never merge proof.
+// `status.json` carries the bounded run list, the sidecar `inbox.json` the issue snapshot that
 // `npm run ci-watch -- --refresh-inbox` wrote on demand: it says when it was fetched, never that issues are open now.
 const CACHE_STALE_MS = 180_000;
 const RED = ["failure", "timed_out", "startup_failure", "action_required"];
@@ -78,6 +78,11 @@ function mainRunLines() {
 }
 const qaOpenLines = () => [...inboxLines(), ...mainRunLines()];
 
+if (process.platform !== "darwin") {
+	console.error("deliver-check requires the owner's macOS laptop");
+	process.exit(1);
+}
+
 const root = git("rev-parse", "--show-toplevel");
 
 // The script gates a merge into main: it must run in the checkout that has main checked out, never in the task worktree.
@@ -115,9 +120,7 @@ if (local !== main && !contains(local)) {
 		+ "push or drop the local commits, then rebase and retest");
 }
 
-// 2. Required CI: the workflows' own path filters decide whether the change needs them. Both versions of each
-// filter count, origin/main's and the branch head's, so a branch cannot narrow a filter in the change it gates.
-// A workflow file or filter missing in either version is a failure, not a guess.
+// Both versions of tests.yml's exclusions classify changes for code review, not for test execution.
 function workflowPaths(rev, file, key) {
 	let text;
 	try {
@@ -141,72 +144,9 @@ const matchesAny = (file, globs) => globs.some((g) => globRe(g).test(file));
 // --no-renames: a move lists both its source and its destination, so moving code into notes/ is not docs-only.
 const changed = git("diff", "-z", "--no-renames", "--name-only", `${main}...${head}`).split("\0").filter(Boolean);
 const ignoredBy = [main, head].map((rev) => workflowPaths(rev, "tests.yml", "paths-ignore"));
-const pcliPaths = [main, head].map((rev) => workflowPaths(rev, "pcli.yml", "paths"));
-const codeChanged = changed.some((f) => !ignoredBy.every((globs) => matchesAny(f, globs))); // docs-only if both ignore it
-const required = [];
-if (codeChanged) required.push("tests.yml");
-if (changed.some((f) => pcliPaths.some((globs) => matchesAny(f, globs)))) required.push("pcli.yml");
+const codeChanged = changed.some((f) => !ignoredBy.every((globs) => matchesAny(f, globs)));
 
-// Job names follow tests.yml's macos-latest Node matrix. Windows jobs remain advisory.
-const REQUIRED_MAC_JOBS = ["test (macos-latest, node 22.19.0)", "test (macos-latest, node 24)"];
-function liveJson(args) {
-	const result = ghRun(args);
-	if (result.reason !== undefined) throw new Error(result.reason);
-	return JSON.parse(result.stdout);
-}
-function macJobsGreen(run) {
-	const endpoint = `repos/{owner}/{repo}/actions/runs/${run.databaseId}`;
-	const before = liveJson(["api", endpoint]);
-	if (before.id !== run.databaseId || before.head_sha !== head || !Number.isSafeInteger(before.run_attempt) || before.run_attempt < 1) {
-		throw new Error("run metadata does not match the exact head/run/attempt");
-	}
-	const data = liveJson(["api", `${endpoint}/attempts/${before.run_attempt}/jobs?per_page=100`]);
-	if (!Array.isArray(data.jobs) || !Number.isSafeInteger(data.total_count) || data.total_count !== data.jobs.length) {
-		throw new Error("job list is incomplete or invalid; cannot verify all required macOS jobs");
-	}
-	if (data.jobs.some((job) => job.run_id !== before.id || job.run_attempt !== before.run_attempt || job.head_sha !== head)) {
-		throw new Error("job data does not match the exact head/run/attempt");
-	}
-	for (const job of data.jobs.filter((job) => /windows/i.test(job.name))) {
-		if (job.status !== "completed" || job.conclusion !== "success") {
-			console.log(`  Windows advisory: ${job.name}: ${job.status === "completed" ? job.conclusion : job.status} ${job.html_url ?? run.url}`);
-			console.log("    Triage via scheduled main qa-inbox or an explicit issue; no automatic code fix.");
-		}
-	}
-	for (const name of REQUIRED_MAC_JOBS) {
-		const matches = data.jobs.filter((job) => job.name === name);
-		if (matches.length !== 1) throw new Error(`required macOS job missing or duplicated: ${name}`);
-	}
-	for (const job of data.jobs.filter((job) => job.name.includes("macos-latest"))) {
-		if (job.status !== "completed" || job.conclusion !== "success") {
-			throw new Error(`required macOS job ${job.name} is ${job.status === "completed" ? job.conclusion : job.status}: ${job.html_url ?? run.url}`);
-		}
-	}
-	// A rerun may start while jobs are fetched. Never accept jobs from an earlier attempt.
-	const after = liveJson(["api", endpoint]);
-	if (after.id !== before.id || after.head_sha !== head || after.run_attempt !== before.run_attempt) {
-		throw new Error("run head/attempt changed during the fresh macOS check; check again");
-	}
-}
-
-// gh is gh.exe on Windows; the shell there also finds a .cmd shim. Arguments are fixed words and a hex SHA.
-function latestRun(workflow) {
-	try {
-		const runs = liveJson(["run", "list", "--workflow", workflow, "--commit", head, "--limit", "20",
-			"--json", "databaseId,headSha,status,conclusion,url"]);
-		const run = runs.find((item) => item.headSha === head); // gh lists the newest run first
-		if (!run) throw new Error(`no run for ${short(head)}; push the branch and wait for CI`);
-		if (workflow === "tests.yml") macJobsGreen(run);
-		else if (run.status !== "completed") throw new Error(`latest run for ${short(head)} is ${run.status}: ${run.url}`);
-		else if (run.conclusion !== "success") throw new Error(`latest run for ${short(head)} concluded ${run.conclusion}: ${run.url}`);
-		return run;
-	} catch (error) {
-		fail(`${workflow}: ${error.message}`);
-		return null;
-	}
-}
-
-// 3. The squash message records clean reviews, the CI runs and what was not verified live.
+// 3. The squash message records clean reviews and what was not verified live.
 let lines = [];
 try {
 	lines = readFileSync(messageFile, "utf8").split(/\r?\n/).map((l) => l.trimEnd());
@@ -215,15 +155,7 @@ try {
 }
 const has = (re) => lines.some((l) => re.test(l));
 const reviews = lines.filter((l) => /^Review: (?:review|agent)#\d+ CLEAN$/.test(l)).map((l) => l.slice(8, -6));
-const ciIds = lines.map((l) => /^CI: \S*\/actions\/runs\/(\d+)/.exec(l)?.[1]).filter(Boolean);
 
-const passed = [];
-for (const workflow of required) {
-	const run = latestRun(workflow);
-	if (run && !ciIds.includes(String(run.databaseId))) fail(`message: missing trailer "CI: ${run.url}"`);
-	if (run) passed.push(`${workflow} ${run.url}`);
-	if (!run && !ciIds.length) fail(`message: missing trailer "CI: <run url>" for ${workflow}`);
-}
 // 3b. Detected test/workflow weakening needs both a reason and an independent test-integrity review.
 // `QA: #N` also needs a reason for test/workflow edits, but is not itself an integrity-review trigger.
 const isTestFile = (f) => /(^|\/)test\//.test(f) || /(^|\/)[^/]*\.test\.[^/]*$/.test(f);
@@ -339,7 +271,7 @@ function proofreadingProblems() {
 	if (changed.includes("PROCESS.md") && (rulesBlock(main) === undefined || rulesBlock(main) !== rulesBlock(head))) {
 		problems.push("PROCESS.md coordinator-rules block changed or unreadable");
 	}
-	if (codeChanged || required.length) problems.push("CI is required for this change");
+	if (codeChanged) problems.push("code review is required for this change");
 	if (qaIssues.length) problems.push('"QA: #N" is not proofreading');
 	return problems;
 }
@@ -407,10 +339,39 @@ try {
 	fail(`owner quotes: ${error.message}`);
 }
 
+// Use the existing task checkout, never create a worktree or install dependencies.
+finish();
+const branchRef = git("rev-parse", "--symbolic-full-name", branch);
+let taskWorktree;
+let worktree;
+for (const field of git("worktree", "list", "--porcelain", "-z").split("\0")) {
+	if (field.startsWith("worktree ")) worktree = field.slice(9);
+	if (field === `branch ${branchRef}`) taskWorktree = worktree;
+}
+if (!taskWorktree) fail(`no existing worktree for ${branch}`);
+finish();
+const taskGit = (...args) => git("-C", taskWorktree, ...args);
+function checkTaskHead(when) {
+	try {
+		if (taskGit("rev-parse", "HEAD") !== head || git("rev-parse", branchRef) !== head
+			|| taskGit("symbolic-ref", "-q", "HEAD") !== branchRef) {
+			fail(`local npm test: ${branch} head changed ${when}; expected ${head}`);
+		}
+		if (taskGit("status", "--porcelain")) fail(`task checkout ${taskWorktree} has uncommitted or untracked changes ${when}`);
+	} catch (error) {
+		fail(`local npm test: cannot verify task checkout ${when}: ${error.message}`);
+	}
+}
+checkTaskHead("before tests");
+finish();
+console.log(`  running local npm test at ${head} in ${taskWorktree}`);
+const tests = spawnSync("npm", ["test"], { cwd: taskWorktree, stdio: "inherit" });
+if (tests.status !== 0) fail(`local npm test failed: ${tests.error?.message ?? tests.signal ?? `exit ${tests.status}`}`);
+checkTaskHead("after tests");
 finish();
 console.log(`deliver-check PASS ${branch} ${short(head)}`);
 console.log(`  contains origin/main ${short(main)}; ${changed.length} changed file(s)`);
-console.log(`  CI: ${passed.length ? passed.join("; ") : "not required (docs-only)"}`);
+console.log(`  local npm test: PASS ${head} in ${taskWorktree}`);
 if (proofreading) console.log(`  reviews: exempt (proofreading, Doc-check ${docChecks[0]})`);
 else if (combined && !reviews.length) console.log(`  reviews: combined ${combinedLines.join(", ")} (result and code review)`);
 else console.log(`  reviews: ${reviews.join(", ")}${codeChanged ? "; code review CLEAN" : ""}`);

@@ -93,32 +93,30 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](DECISION
 - A task is active or waiting. Only active execution holds one of the three slots: a worker implementing,
   researching, fixing or measuring. Waiting for CI, a reviewer, the merge queue or the owner holds no slot. Main
   fills each free slot from the owner's queue and keeps every waiting task in the current session queue and state with what it waits for, in no file.
-- When a task's local checks are clean, its branch is pushed, CI and the required reviews start in the background and
+- When a task's local checks are clean, its branch is pushed and the required reviews start in the background;
   the task becomes waiting. Its agent finishes its turn or is paused, keeps its session and history, and frees the slot;
-  Main's coordination is never blocked. Only the merge agent and the CI watcher follow the CI run, in the background.
+  Main's coordination is never blocked. The merge agent and CI watcher follow any CI runs in the background.
 - One merge agent, an ordinary agent started by Main, owns integration. Main fixes the train order in the current
-  session queue, from the owner's queue. The agent takes waiting branches in that order, rebases each onto current `main` and pushes
-  it, so CI runs in the background and holds no slot. It merges a branch only when the `macos-latest` jobs of `tests.yml` are green on the exact head, the
-  required reviews are clean and `deliver-check` passes. When `main` moves, the remaining branches rebase and rerun
-  CI in the background. No head is merged into `main` unless every returned `macos-latest` job of `tests.yml` on that exact head is green and the
-  expected macOS matrix is fully present; a missing or pending macOS job is not green.
+  session queue, from the owner's queue. The agent takes waiting branches in that order, rebases each onto current
+  `main` and pushes it. It merges only when the required reviews are clean and `deliver-check` passes, including
+  full local `npm test` on the exact committed branch head on the owner's macOS. When `main` moves, remaining
+  branches rebase and pass the gate on their new heads. No green GitHub run is required, including for `pcli-vscode`.
 - Windows jobs keep running and are not cancelled in the final run, but they are advisory. A red Windows job is
   not fixed before the merge and does not block delivery. An agent explicitly creates or triages a `qa-inbox` issue for
   it, or a failed scheduled or dispatched `main` run is picked up by `qa-inbox.yml`; nothing here creates issues
   automatically. `ci-watch -- --refresh-inbox` only reads the existing issues into the local snapshot, after the
   issue exists. Every ignored Windows failure is recorded before the delivery closes, as a tail item of `BACKLOG.md` or a
   `main` `qa-inbox` issue linked from it; none is silently deferred or abandoned, so Windows support is finished
-  later. If Windows jobs still run when the macOS jobs are green and the merge happens, the merge agent keeps that run
+  later. If Windows jobs still run when the merge happens, the merge agent keeps that run
   tracked in the background through the watcher cache or a notification, holding no active slot and spending no model
   polling turns. A later Windows failure then gets its tail `BACKLOG.md` item or linked issue and is not lost when
-  the branch is deleted. Delivery never waits for Windows. The workflow's overall result need not be green. The one exception is
-  `pcli-vscode`, a Windows-only product: its change still needs a green `pcli.yml` run on the exact head.
+  the branch is deleted. Delivery never waits for Windows or green macOS CI; no workflow result gates a merge.
 - Test lane. Besides the three main work lanes, a fourth lane for tests only, outside the three active slots, owns all
   test work: ordinary `agent`s on the simple pairs of the [worker table](#worker-models), with
   `.agents/roles/test-fixer.md` as the `role`. It starts only after this pipeline change is delivered and follows all
   pipeline agreements. Decisions: [DECISIONS.md](DECISIONS.md#task-pipeline).
-- A red required CI, meaning a red `macos-latest` job of `tests.yml` or, for `pcli-vscode`, a red `pcli.yml`, or a
-  conflicting rebase sends the task back to the top of the queue. A red advisory Windows job does not. At the next free active slot,
+- A failed local delivery test or a conflicting rebase sends the task back to the top of the queue. GitHub CI does
+  not gate delivery. At the next free active slot,
   ahead of tasks not yet started, resume its existing agent; start another only if its session no longer exists.
 - Pause and resume. Pausing a task is an `agent` `interrupt` of its agent, which keeps the session and history.
   Resuming is the `resume` action of the same agent, which retries the cut-off request with its full history and no new
@@ -130,10 +128,9 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](DECISION
   `<git common dir>/ci-watch/status.json` atomically, so every worktree sees it. Agents read that file (with
   `fetchedAt`, head SHA, run id, attempt and conclusion) instead of polling `gh`. A file older than 3 minutes means
   the watcher is dead or backing off: restart it with `npm run ci-watch -- --restart` in the background. Job lists and
-  logs are fetched with `gh` only for a failed or finished run that needs them, and once fresh before a merge to verify
-  the macOS jobs of the exact head even while Windows jobs still run; this is no ordinary polling. The watcher is a repo-local macOS
-  development tool, never shipped and never merge evidence: `deliver-check` still reads the run of the exact head
-  fresh before every merge.
+  logs are fetched with `gh` only for a failed or finished run that needs them; this is no ordinary polling.
+  The watcher is a repo-local macOS development tool, never shipped and never merge evidence. `deliver-check`
+  verifies the local test condition, not GitHub runs.
 - QA inbox snapshot. The watcher's minute poll reads workflow runs only. `npm run ci-watch -- --refresh-inbox` is a
   separate explicit read of the open `qa-inbox` issues into `<git common dir>/ci-watch/inbox.json`. Run it once at
   triage, when taking over a task, and after changing an inbox issue, never as per-agent polling. `qa-status` shows
@@ -267,21 +264,21 @@ Owner's principle and source: [DECISIONS.md, Work policy](DECISIONS.md#work-poli
   Do not burn tokens on live compaction when the owner requests documentation-only proof.
 - Run existing relevant checks once, in the background where possible. Repeat after a relevant fix or a changed
   tested input, not merely for confidence, staging, a commit ID or a squash merge. Reuse valid evidence while the
-  tested code, configuration and document contracts remain unchanged.
-- CPU-heavy work (full suites, repeat loops, pressure runs and load probes) runs in GitHub Actions, never on the
-  owner's MacBook Air. Locally run only the focused test files of the change. Windows checks run in CI too,
+  tested code, configuration and document contracts remain unchanged, except for the mandatory local delivery run below.
+- CPU-heavy work (repeat loops, pressure runs and load probes) runs in GitHub Actions, not on the owner's MacBook
+  Air. The delivery exception is full local `npm test` on the exact committed branch head, run by `deliver-check`.
+  Other local checks stay focused on the change. Windows checks run in CI too,
   including relevant Node, Bun and PortableGit coverage, but they are advisory and do not gate a merge
   ([Task pipeline](#task-pipeline)). Linux is out of scope.
 - Run `npm run test:bun` in CI when Bun/codemode behavior is affected. Test extension isolation when affected.
 - Workers save their check and probe logs. Every number in a report or documentation must point to a CI run URL
   or a named saved log file; never report counts from memory. Save local logs in OS temporary storage.
 - Test exactly what gets merged. If `main` moved since the branch was created, the worker rebases the branch onto
-  current `main`; the `macos-latest` jobs of `tests.yml` must pass on that final head commit, whose squash has the same tree; the
-  Windows jobs stay advisory.
-  If the push started no `tests.yml` run (path filter), dispatch it: `gh workflow run tests.yml --ref <branch>`.
-- Root documentation, notes and development instructions alone do not justify application tests or model runs.
-  A workflow change does require validating its triggers and affected Windows jobs. Do not claim a queued or
-  incomplete run passed.
+  current `main`; `deliver-check` runs full local `npm test` on that final committed head, whose squash has the same
+  tree. This is the only delivery test condition; no GitHub run needs to be triggered or awaited for a merge.
+- Root documentation, notes and development instructions alone do not justify extra application tests or model runs;
+  the full local delivery run still applies. A workflow change does require validating its triggers and affected
+  Windows jobs. Do not claim a queued or incomplete run passed.
 - Everyone who writes, generates or fixes tests, a worker, a reviewer or the test-fix lane, has one purpose: to check
   that the behavior matches the requirements, never to turn the run green. The bound is the reviewer's: no
   fanaticism, perfectionism, polishing or taste.
@@ -388,8 +385,8 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
   `CHECKED:` rules above, and the prompt formats they name, do not apply to these reviewers.
 - A CLEAN covers only the commit it reviewed. Any commit after CLEAN sends the places it changed back to review:
   result review, and code review when the path-based requirement above applies. A conflict-free rebase onto `main`
-  changes no task places: it needs new
-  tests and CI on the new head, not new review; places changed while resolving conflicts go back to review.
+  changes no task places: it needs the full local delivery test on the new head, not new review; places changed
+  while resolving conflicts go back to review.
   Otherwise reuse CLEAN only while its commit is unchanged. Stop when the required reviews are clean; do not
   invent either a one-pass cap that leaves known bugs or endless fresh passes for confidence.
 - A finished substage handed over separately gets its own blind independent check. Internal draft/stage commits
@@ -474,7 +471,7 @@ For an agreed third-party library or Pi extension, first install it into the own
 then add it to the `my-pi` package. At first use, consult Pi's documentation to decide how one Pi package bundles
 another; do not preselect a packaging mechanism. Preserve credentials and unrelated settings.
 Self-review the config and exact diff for unintended additions, commit and push to `main`. This narrow path
-replaces the full Delivery pipeline, including the CI gate and independent reviews, for third-party installation
+replaces the full Delivery pipeline, including the local test gate and independent reviews, for third-party installation
 and package configuration only. It does not apply to building our own features or mechanisms or to this process
 and guard change. Record the accepted choice in `DECISIONS.md`.
 
@@ -486,25 +483,24 @@ and guard change. Record the accepted choice in `DECISIONS.md`.
    replacement and commit provenance, not routine agent reading. `BACKLOG.md` is the canonical list of open and
    owner-deferred work with source, status and branch; remove done and dead tasks instead of keeping a second ledger.
    Current docs describe current facts, not a history ledger.
-2. Push the task branch to start affected CI early; continue independent work while it runs. Before merging,
-   require sufficient proof and the required clean reviews for the final head commit on current `main`.
-   The "Mac tests" requirement is met by the `macos-latest` test jobs in `tests.yml` on that exact head
-   (see [Sufficient proof](#sufficient-proof-without-idle-reruns) and [Independent review](#independent-review)).
+2. Push the task branch; continue independent work during required reviews. Before merging, require sufficient
+   proof and the required clean reviews for the final head commit on current `main`. The only delivery test
+   condition is full local `npm test` on that exact committed head on the owner's macOS, run by `deliver-check`.
+   No green GitHub Actions run is required, including `pcli.yml`; CI evidence trailers are not required.
 3. Before every squash merge, the merge agent ([Task pipeline](#task-pipeline)) writes the planned squash message
    and runs, from the clean main checkout,
    `npm run deliver-check -- <branch> <message-file>` (`scripts/deliver-check.mjs`; it fails in any checkout
    without `main` checked out). It requires: the branch
-   contains current `origin/main` and the main checkout's HEAD, the merge destination; for changes (both sides
-   of a move) outside the `tests.yml` `paths-ignore` filter, every returned `macos-latest` job of the latest `tests.yml` run on the exact head SHA
-   succeeded and the expected macOS matrix is present, whatever the Windows jobs or the workflow's overall result say, and `pcli.yml` succeeded when its `paths`
-   changed; the filters are `main`'s and the branch head's
-   (a file counts if either version requires CI); the message carries the
+   contains current `origin/main` and the main checkout's HEAD, the merge destination. It runs full `npm test`
+   in the branch's existing clean task worktree on the owner's macOS, at the exact committed branch head, and
+   checks worktree cleanliness and the head before and after the run. No receipt or extra worktree is needed.
+   The message carries the
    trailers `Review: review#N CLEAN` (or `Review: agent#N CLEAN` under the temporary
    [disabled-review rule](#independent-review); at least one clean result review), `Code-review: CLEAN` (any path outside
    the workflow exclusions, including extension READMEs),
    or instead of both for small work `Combined-review: agent#N CLEAN`, or for proofreading no review trailer and
    `Change-class: proofreading` with `Doc-check: <absolute log path>` ([Independent review](#independent-review)),
-   `CI: <run url>` (each required run) and `Unverified: <what was not verified live, or none>`. An optional
+   and `Unverified: <what was not verified live, or none>`. An optional
    `Decision: D-<SECTION>-<NAME>` trailer links the squash to a stable decision ID; it is not a gate requirement.
    When the
    test-integrity rule triggers it also requires `Test-change:` and `Test-review:`; a `QA: #N` line requires

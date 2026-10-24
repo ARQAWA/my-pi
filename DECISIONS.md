@@ -135,7 +135,7 @@ Provenance:
 - **Third-party installation fast path** `[D-WORK-THIRD-PARTY]`. Install agreed third-party libraries/extensions
   into the owner's Pi immediately, then add them to the my-pi package; this alone authorizes the needed ~/.pi
   changes. Light self-review for unintended additions, commit and push main replace the full delivery pipeline,
-  CI gate and independent reviews for this narrow configuration path, not our own implementations.
+  local test gate and independent reviews for this narrow configuration path, not our own implementations.
   Owner (`16-27-59:4782`, entry `f73155f0`):
   «Я хочу, чтобы ты так же, как мы работаем над нашими задачами по этому репозиторию, мог ставить в этот репозиторий, в нашу сборку MyPy сторонние библиотеки, сторонние экстеншены. И мне надо, чтобы ты делал это суперреактивно: чтобы ты сначала ставил локально, чтобы оно локально уже работало прямо сейчас, а потом чтобы ты уже её парковал именно в репозитории, добавлял в сетап. И там не надо делать какой-то жёсткий pipeline всяких проверок, тестов и прочей хуйни. Надо просто добавить config, сделать commit push и лёгким саморевьюром проверить, что всё заебись, что нет никакой хуйни лишней.»
   Coordinator text, question answered by the owner's approval: "1a: put the extension in the my-pi package,
@@ -258,12 +258,14 @@ Opus 5.5 Low — это слишком дорого»
   «Ты запускаешь тесты или что? Ты не можешь проверить это? Это что за хуйня? Почему так, блядь?»
   «Если ты делаешь какие-то тесты, пробы, нагрузки тяжёлые, именно процессорные, то их лучше прогонять в CI/CD, чтобы наш MacBook Air не охуевал. Не лучше, а надо их прогонять в CI/CD.»
   «Нет нихуя не надо это была корректировка именно процесса на будущеее и того что что бы у тебя сохранялись логи»
-  Reason: CPU-heavy verification stays off the owner's MacBook Air and every reported number has an auditable log; a
+  The full local delivery `npm test` is the exception under [D-PIPELINE-LOCAL-GATE].
+  Reason: other CPU-heavy verification stays off the owner's MacBook Air and every reported number has an auditable log; a
   future work policy, not a measurement request. Carriers:
   [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns), [Delivery](PROCESS.md#delivery),
   `.github/workflows/tests.yml`. Since: `fb322d9`.
 - **Checks once** `[D-WORK-CHECKS-ONCE]`. Relevant checks run once and their evidence is reused while inputs are
-  unchanged; no Linux requirement; docs-only work needs no tests; a squash of the tested head is not retested. Windows
+  unchanged, except for the full local delivery run under [D-PIPELINE-LOCAL-GATE]; no Linux requirement;
+  docs-only work needs no extra tests; a squash of the tested head is not retested. Windows
   Node tooling runs through Git Bash; the existing CI `pwsh` bootstrap is allowed infrastructure. Reason: no idle
   reruns. Carrier: [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns). Since: `8f2ea64`.
 - **Final checks and code reviewer** `[D-WORK-FINAL-CHECK]`. Work ends with an independent completeness-and-consistency
@@ -275,12 +277,11 @@ Opus 5.5 Low — это слишком дорого»
   «Теперь смотри насчет выполнения задач и пробелов, которые ты нашел. Я же не буду всегда тебя переспрашивать. Если бы я не спросил, ты бы об этом не узнал. Надо поэтому сделать какой-то процесс, как детерминированно эту проблему решить на постоянке, чтобы мне не надо было тебя постоянно переспрашивать, чтобы ты сам следил за качеством. Надо твое предложение по тому, как мы этот пробел будем закрывать.»
   «Правила по Process MD я одобряю»
   Coordinator text, the approved proposal in short (the verbatim text is in `DECISIONS-ARCHIVE.md`, A-0246): 1. test exactly
-  what is merged, rebased onto a fresh `main`, with the tests on the final commit (the Windows part is replaced by
-  [D-PIPELINE-MAC-GATE]); 2. a review covers only the commit it checked; 3. before every merge `deliver-check` checks the
-  branch contains current `main`, the CI of that exact commit (the macOS jobs, see [D-PIPELINE-MAC-GATE]), the review
+  what is merged, rebased onto a fresh `main`, with full local `npm test` on the final commit ([D-PIPELINE-LOCAL-GATE]); 2. a review covers only the commit it checked; 3. before every merge `deliver-check` checks the
+  branch contains current `main`, full local `npm test` on that exact commit, the review
   numbers with CLEAN and the list of what was not verified live; 4. every report carries an evidence table and an honest
   "not verified live" section.
-  Coordinator text, interpretation of rule 2: a conflict-free rebase onto `main` needs new tests and CI on the new head
+  Coordinator text, interpretation of rule 2: a conflict-free rebase onto `main` needs the full local delivery test on the new head
   but no new review; places changed while resolving conflicts go back to review.
   Reason: branches tested alone were squashed onto a moved `main`, and a code-review CLEAN once covered an earlier commit
   while two later fixes landed unreviewed. Carriers: [PROCESS.md](PROCESS.md) (Sufficient proof, Independent review,
@@ -350,13 +351,11 @@ only the slot summary of [D-PIPELINE-SLOTS]; the other points of that coordinato
 numbered answers and are coordinator text. The owner answered items 2 and 3 with «2а 3а».
 
 - **Active slots and waiting tasks** `[D-PIPELINE-SLOTS]`. Only active execution holds one of the three slots. A task
-  that waits for CI, a reviewer, the merge queue or the owner holds none. A red required CI (a red macOS job of `tests.yml`, or
-  `pcli.yml` for `pcli-vscode`; not an advisory Windows job) sends the task to the top of the
+  that waits for CI, a reviewer, the merge queue or the owner holds none. A failed local delivery test under [D-PIPELINE-LOCAL-GATE] sends the task to the top of the
   queue; at the next free active slot its existing agent is resumed, and another is started only if its
   session no longer exists. Owner (`16-27-59:5060`): «7 надо чет пиздатое придумать, по типу пятого пункта или же делать всегда но не делать из этого блокер, т.е. не ждать, свичиться на след задачу и переключаться интелекетуально как релаьный прогер»
   «Работа должна быть суперконвейерная, суперэффективная, производительная, супербыстрая, без дрочи.»
   Owner (`16-27-59:5068`) answered the quoted coordinator text with: «Делаем, да»
-  Coordinator text, the pipeline proposal (`16-27-59:5061`, formatting marks removed): "Про CI предлагаю конвейер, как у живого программиста, но без красного `main`. Агент доделал задачу, проверки чистые, ветка ушла в CI. Задача переходит в ожидание и место в тройке не занимает. Агенты сразу берут следующую задачу. Ожидающие задачи держит агент слияний. Зелёный CI он вливает сам. После сдвига `main` он заново гоняет CI тоже в фоне, никого не держа. Если CI красный, задача возвращается в начало очереди, и следующий освободившийся агент её чинит. Отличие от твоего варианта одно: вливаем после зелёного CI, а не до. Скорость та же, потому что никто не ждёт, а в `main` не попадает непроверенный код."
   Coordinator text, the slot summary the owner quoted: "Получается так: три места только для активной работы. Задачи, которые ждут CI, проверку или тебя, места не занимают. Агент слияний и скрипт CI идут сбоку."
   Reason: waits for CI, review and the owner idled slots; the analysis found CI and queue waits to be the largest
   removable delay. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and
@@ -364,16 +363,14 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   same time" wording of [D-WORK-PARALLEL].
   Since: process-pipeline squash.
 - **One merge agent, fixed order** `[D-PIPELINE-MERGE-TRAIN]`. One agent integrates branches in an order fixed in
-  the current session queue. It rebases onto current `main`, lets CI run in the background, and merges only when the macOS jobs on the exact
-  head are green and `deliver-check` passes ([D-PIPELINE-MAC-GATE]). Owner: «2а 3а» (item 3 a). Coordinator text, option 3a: "Слияниями занимается один агент в заранее заданном порядке. Повторов меньше, каждая итоговая версия проверяется."
-  Reason: moved `main` forced repeated final CI on ready branches. The exact-head gate stays for the macOS jobs: nothing untested is
-  merged. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and [Delivery](PROCESS.md#delivery).
+  the current session queue. It rebases onto current `main`, merges only when required reviews are clean and
+  `deliver-check` passes, including full local `npm test` on the exact committed head ([D-PIPELINE-LOCAL-GATE]). Owner: «2а 3а» (item 3 a). Coordinator text, option 3a: "Слияниями занимается один агент в заранее заданном порядке. Повторов меньше, каждая итоговая версия проверяется."
+  Reason: moved `main` forced repeated final CI on ready branches. The exact-head local test gate keeps untested code out of `main`. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and [Delivery](PROCESS.md#delivery).
   Since: process-pipeline squash.
 - **Shared CI watcher** `[D-PIPELINE-CI-WATCHER]`. Owner (`16-27-59:5060`): «Окей, насчёт одного скрипта раз в минуту я согласен.»
   One repo-local script, `npm run ci-watch`, reads all recent runs once a minute and atomically writes
   `<git common dir>/ci-watch/status.json`. Agents read the file instead of calling `gh`; a file older than 3 minutes
-  is restarted with `npm run ci-watch -- --restart`; a fresh exact-head check before every merge stays in
-  `deliver-check`. The minute poll reads runs only; the open `qa-inbox` issues are an explicit separate read, `npm run ci-watch -- --refresh-inbox`
+  is restarted with `npm run ci-watch -- --restart`. GitHub runs are not a merge gate ([D-PIPELINE-LOCAL-GATE]). The minute poll reads runs only; the open `qa-inbox` issues are an explicit separate read, `npm run ci-watch -- --refresh-inbox`
   (`inbox.json`), run at triage, task takeover or after an issue change, not per agent. It replaces independent per-agent `gh` polling and the 10-minute per-process status cache of the
   `qa-status` extension. Coordinator text, the explanation of how it works (`16-27-59:5061`): "Да, скрипт только для этого репозитория и только на твоём Mac, в наш продукт он не попадает. Помогает он так. Сейчас каждый агент сам спрашивает GitHub о своём прогоне, и десяток агентов съедают лимит. Скрипт одним запросом раз в минуту получает статус всех свежих прогонов репозитория и пишет его в файл, а агенты читают файл и в GitHub больше не ходят. Гонок не будет: скрипт запускается в одном экземпляре через метку, как координатор; файл он пишет целиком через переименование; если скрипт упал, файл устаревает, и следующий агент перезапускает скрипт."
   Reason: independent pollers hit the GitHub limit and stopped every agent for at least 13 minutes (report). The file is
@@ -381,10 +378,10 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `scripts/deliver-check.mjs`, `.pi/extensions/qa-status/`, [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline).
   Since: process-pipeline squash.
 - **Three classes of text change** `[D-PIPELINE-TEXT-CLASSES]`. Proofreading is checked locally with no independent
-  review and no application CI; a change of meaning gets review; runtime prompts are checked by agent behavior. Owner:
+  review; the full local delivery test still applies ([D-PIPELINE-LOCAL-GATE]); a change of meaning gets review; runtime prompts are checked by agent behavior. Owner:
   «2а 3а» (item 2 a). Coordinator text, option 2a: "Опечатки и правки формулировок проверяются локально. Изменения смысла идут на проверку. Рабочие промпты проверяются по поведению агента. Быстрее, а контроль остаётся."
   The report's extra idea of dropping extension READMEs from application CI was not part of the chat option and is not
-  adopted; READMEs still need CI and code review. Reason: the 39-file documentation cleanup spent at least 50 minutes
+  adopted; READMEs still need code review. GitHub CI is not a delivery gate ([D-PIPELINE-LOCAL-GATE]). Reason: the 39-file documentation cleanup spent at least 50 minutes
   of CI and found 9 real inconsistencies by review, so meaning review stays. Carrier:
   [PROCESS.md, Independent review](PROCESS.md#independent-review), `scripts/deliver-check.mjs` (`Change-class:`,
   `Doc-check:`). Since: process-pipeline squash.
@@ -457,26 +454,24 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Reason: the reviewer work cost a day and many tokens on tests with no result. Carrier:
   [PROCESS.md, Task timebox](PROCESS.md#task-timebox) and `AGENTS.md`. Since: process-pipeline squash.
 
-- **macOS gates the merge, Windows is advisory** `[D-PIPELINE-MAC-GATE]`. A merge needs every returned `macos-latest` job
-  of `tests.yml` green on the exact head and the expected macOS matrix fully present. The Windows jobs keep running, are not cancelled in the final run and are advisory:
-  a red Windows job neither has to be fixed before the merge nor blocks delivery. An agent explicitly creates or triages a
-  `qa-inbox` issue for it, or a failed scheduled or dispatched `main` run is picked up by `qa-inbox.yml`; no issue is
-  created automatically, and `ci-watch -- --refresh-inbox` only reads existing issues into the local snapshot. The workflow's overall result is not required green. Owner
-  (`16-27-59:5269`, entry `e3ac659f`): «надо обойти эти ошибки подумай»
-  Owner (`16-27-59:5273`, entry `815dd5b0`), about the Windows CI failures: «они не должны блокировать нас»
-  Coordinator text (`16-27-59:5277`, entry `1e8c825d`), formatting marks removed: "Принял: падения на Windows больше не блокируют слияния. Для слияния нужен зелёный CI на Mac. Windows-проверки продолжают запускаться, но только для информации. Каждое их падение уходит в копилку задачей и встаёт в очередь. Одно исключение: правки плагина для VS Code, который работает только на Windows, по-прежнему ждут его собственной проверки. Это идёт в правку конвейера. Веб-поиск сольётся уже по этому правилу."
-  Owner (`16-27-59:5309`, entry `1bbe27c1`), what happens to the ignored failures: «нужно все косяки Windows-тестов в конец бэклога засунуть, чтобы он их потом фиксил, чтобы они не были заброшены, чтобы Windows тоже поддерживалась, доводилась до конца.»
-  Coordinator text (`16-27-59:5312`, entry `4cf73f93`), formatting marks removed: "Да, все падения Windows будут уходить в конец бэклога, ни одно не потеряется. Это часть правила: агент слияний записывает каждое такое падение задачей со ссылкой на прогон. В бэклоге появится общий пункт 'Падения тестов на Windows' со всем известным сейчас: 1. нестабильные тесты фоновых задач;"
-  Obligation, the same for every ignored failure and no new automation: before the delivery closes, the merge agent
-  records each ignored Windows failure as a tail `BACKLOG.md` item (umbrella `WINDOWS-TEST-FAILURES`) or a linked
-  `qa-inbox` issue. If Windows jobs still run at the merge, it keeps tracking the run in the background without an
-  active slot and without model polling turns, and records a later failure the same way, so branch deletion loses nothing.
-  Coordinator narrow exception, coordinator text and not an owner quote: the `pcli-vscode` change, a product that runs only
-  on Windows, still waits for a green `pcli.yml` run on the exact head.
-  Supersedes the Windows part of [D-WORK-DELIVER-CHECK] (original in `DECISIONS-ARCHIVE.md`, A-0246) and the Windows
-  wording of [D-WORK-CI-LOGS] and [D-WORK-CHECKS-ONCE]. Reason: Windows timing failures blocked unrelated work; they are
-  tracked in the inbox ([D-PIPELINE-FLAKE-SKIP]) instead. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and
-  [Delivery](PROCESS.md#delivery), `scripts/deliver-check.mjs`. Since: process-pipeline squash.
+- **Local delivery test gate** `[D-PIPELINE-LOCAL-GATE]`. The only delivery test condition is full local `npm test`
+  passing on the exact committed branch head on the owner's macOS. `deliver-check` runs it in the existing clean
+  task worktree, checking cleanliness and the head before and after the run; no receipt or new mechanism.
+  No green GitHub Actions run is required before a merge, including `pcli.yml` for `pcli-vscode`; no `CI:` evidence
+  trailer is required. Required reviews and the other delivery checks remain.
+  Owner, urgent order in the current conversation, 2026-10-24:
+  «Если у нас всё на нашем macOS работает, нахуй мы ещё на каком-то macOS проверки делаем?»
+  «Так, блядь, надо удалить нахуй это. Это какой-то overhead, это просто двойная работа»
+  «Ты должен только delivery то, что я заказываю. Ничего сверх этого»
+  Scheduled workflows, the watcher, QA inbox and digest are unchanged. Windows failures remain advisory and are
+  recorded before delivery closes as tail `BACKLOG.md` items or linked `qa-inbox` issues. Still-running Windows
+  jobs stay tracked in the background without active slots or model polling turns, and later failures are recorded
+  the same way. Delivery waits for neither Windows nor green macOS CI.
+  Reason: remove duplicate pre-merge GitHub checks, not ongoing quality control. Supersedes [D-PIPELINE-MAC-GATE]
+  and the pre-merge CI requirements of the related entries; verbatim originals at `a85b810` are in
+  `DECISIONS-ARCHIVE.md`, A-0268 through A-0276. Carriers: [PROCESS.md, Delivery](PROCESS.md#delivery),
+  [Task pipeline](PROCESS.md#task-pipeline), `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`.
+  Since: local-delivery-gate squash.
 
 - **Test lane** `[D-PIPELINE-TEST-LANE]`. Three main work lanes and a fourth lane for tests only, usable for nothing else and
   outside the three active slots. Its agents are ordinary `agent`s on the simple pairs of the worker table, Sonnet 5.5
