@@ -335,7 +335,7 @@ test("agent-ui before tool-ui keeps the exact folded summary and expands every w
 			const untouched = JSON.stringify(result);
 			const host = resultHost(f, kind, args, result, "composed-wait");
 			const collapsed = plain(host.render(160));
-			assert.equal(collapsed, "\n \u21b3 Waited for 1 agent", "exact tool-ui summary, including Pi's blank row and padding");
+			assert.equal(collapsed, "\n Waited for 1 agent", "exact tool-ui summary, including Pi's blank row and padding");
 			assert.equal(collapsed.split("Waited for 1 agent").length - 1, 1, "only one group summary");
 			assert.doesNotMatch(collapsed, /COMPOSE_FIRST|COMPOSE_TAIL|finished|"reason"/, "no result card appended outside the tool-ui group");
 			let firstExpanded: string | undefined;
@@ -398,7 +398,7 @@ test("agent-ui before tool-ui expands mixed results in leader and nonleader call
 			["shell_runner#1", "SHELL_FIRST\nSHELL_TAIL", "Named mixed shell"],
 		]);
 		const folded = hosts.map(item => plain(item.host.render(160)));
-		assert.deepEqual(folded, ["", "\n \u21b3 Waited for 3 agents"], "only the last call leads the tool-ui group");
+		assert.deepEqual(folded, ["", "\n Waited for 3 agents"], "only the last call leads the tool-ui group");
 		for (let cycle = 0; cycle < 3; cycle++) {
 			for (const item of hosts) {
 				item.host.setExpanded(true);
@@ -435,7 +435,7 @@ test("agent-ui before tool-ui leaves a no-results receipt diagnostic stock-ident
 		const host = resultHost(f, "agent", args, result, "receipt-wait");
 		const stock = resultHost(f, "agent", args, result, "receipt-stock", true);
 		const collapsed = plain(host.render(160));
-		assert.equal(collapsed, "\n \u21b3 Waited for 1 agent");
+		assert.equal(collapsed, "\n Waited for 1 agent");
 		for (let cycle = 0; cycle < 3; cycle++) {
 			host.setExpanded(true); stock.setExpanded(true);
 			const expanded = plain(host.render(160));

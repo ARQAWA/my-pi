@@ -77,9 +77,9 @@ describe("RQW-tool-ui in Pi's transcript components", () => {
 
 	it("host-leader-rows (one Pi blank row, the summary, the live block while active)", () => {
 		const done = transcript(FULL, ours(FULL)).rows(80).find((r) => r.kind === "c3")!.rows;
-		assert.deepEqual(done, ["", " ↳ Read 2 files · ran 1 command"]);
+		assert.deepEqual(done, ["", " Read 2 files · ran 1 command"]);
 		const running = transcript(RUNNING, ours(RUNNING)).rows(80).find((r) => r.kind === "c3")!.rows;
-		assert.deepEqual(running.map((l) => l.trim()), ["", "↳ Read 2 files · ran 1 command", "$ npm test", "ok 2", "ok 3", "ok 4", "ok 5", "✓ 2.3s"]);
+		assert.deepEqual(running.map((l) => l.trim()), ["", "Read 2 files · ran 1 command", "$ npm test", "ok 2", "ok 3", "ok 4", "ok 5", "✓ 2.3s"]);
 	});
 
 	it("host-thinking-steps-blank-rows (only RQW-tool-ui: Pi's blank row and label row per thinking step, nothing more)", () => {
@@ -87,12 +87,12 @@ describe("RQW-tool-ui in Pi's transcript components", () => {
 		assert.deepEqual(hidden.flatMap((r) => r.rows), [
 			"", " Thinking...", // step 1: Pi's blank row and its hidden-thinking label; its two reads draw nothing
 			"", " Thinking...", // step 2
-			"", " ↳ Read 2 files · ran 1 command", // the leader: Pi's blank row and the summary
+			"", " Read 2 files · ran 1 command", // the leader: Pi's blank row and the summary
 			"", " Thinking...", "", " All green.", // the answer step
 		]);
 		// Shown thinking: the label row becomes the thinking text, the blank rows stay the same.
 		const shown = transcript(FULL, ours(FULL), { hideThinking: false }).rows(80).flatMap((r) => r.rows);
-		assert.deepEqual(shown, ["", " look first", "", " now test", "", " ↳ Read 2 files · ran 1 command", "", " done", "", " All green."]);
+		assert.deepEqual(shown, ["", " look first", "", " now test", "", " Read 2 files · ran 1 command", "", " done", "", " All green."]);
 	});
 
 	it("host-expanded-original (Ctrl+O shows every call as Pi draws it, and back)", () => {

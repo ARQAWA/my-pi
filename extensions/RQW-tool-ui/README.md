@@ -80,7 +80,7 @@ agent-ui renders its collapsed wait cards.
   live-block header, `edit <path>` or `write <path>`, for several files the first path plus ` +N more`; a renderer
   shows it as is, without adding the tool name.
 - `summary.ts`: `renderSummary(calls, width, theme)`, the summary line of one group in the accepted design:
-  `↳ Edited 2 files +24 -8 · read 6 files · searched 1 time · ran 2 commands · waited for 1 agent · used 1 tool ·
+  `Edited 2 files +24 -8 · read 6 files · searched 1 time · ran 2 commands · waited for 1 agent · used 1 tool ·
   1 failed`. Parts in this order, zero parts omitted, the first capitalized; distinct files and waited IDs; `+A -R`
   only from confirmed counts; muted line, diff and error colors from the supplied Pi theme; cut at the end.
 - `live.ts`: `renderLive(call, width, theme)`, the live card of the current call under the line, indented three

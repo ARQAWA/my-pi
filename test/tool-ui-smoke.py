@@ -25,8 +25,8 @@ REPO = Path(__file__).resolve().parents[1]
 CLI = REPO / "node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
 PI_AI = REPO / "node_modules/@earendil-works/pi-ai/dist/index.js"
 TOOL_UI = REPO / "extensions/RQW-tool-ui"
-SUMMARY = "\u21b3 Edited 1 file +1 -1 \u00b7 read 2 files \u00b7 ran 1 command"
-SUMMARY_MARK = "\u21b3 "
+SUMMARY = "Edited 1 file +1 -1 \u00b7 read 2 files \u00b7 ran 1 command"
+SUMMARY_MARK = "Edited 1 file"
 STATUS_MARKS = ("running", "\u2713", "\u2717")
 # Stock Pi rows of the calls (expanded view); refined from the observed Ctrl+O screen.
 STOCK_READ_A = "read a.txt"
@@ -279,7 +279,7 @@ def main():
                     fail(name, "timed out", screen)
 
         def summary_rows():
-            return [i for i, line in enumerate(lines()) if line.lstrip().startswith(SUMMARY_MARK.strip())]
+            return [i for i, line in enumerate(lines()) if line.lstrip().startswith(SUMMARY_MARK)]
 
         def card():
             """(header row, status row, body rows) of the live card, or None."""

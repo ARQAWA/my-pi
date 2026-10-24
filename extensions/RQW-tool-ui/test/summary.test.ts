@@ -5,7 +5,7 @@ import { describe, it } from "node:test";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { classifyChange } from "../changes.ts";
 import { classify } from "../classify.ts";
-import { renderSummary, SUMMARY_GLYPH } from "../summary.ts";
+import { renderSummary } from "../summary.ts";
 import { assertFits, coloredTheme, deepFreeze, identityTheme, SAMPLES } from "./harness.ts";
 
 const SNAP = new URL("./summary.snap.json", import.meta.url);
@@ -42,45 +42,45 @@ describe("summary", () => {
 
 	it("summary-order-and-plural", () => {
 		assert.equal(renderSummary(everything(), 200, identityTheme),
-			"↳ Edited 2 files +6 -3 · read 2 files · searched 1 time · ran 2 commands · waited for 2 agents · used 1 tool · 1 failed");
+			"Edited 2 files +6 -3 · read 2 files · searched 1 time · ran 2 commands · waited for 2 agents · used 1 tool · 1 failed");
 		const one = [edit("e", "a.ts", 1, 0), read("r", "a.ts"), grep("g"), bash("b"), wait("w", ["agent#3"]), other("o")];
 		assert.equal(renderSummary(one, 200, identityTheme),
-			"↳ Edited 1 file +1 -0 · read 1 file · searched 1 time · ran 1 command · waited for 1 agent · used 1 tool");
-		assert.equal(renderSummary([grep("g1"), grep("g2"), grep("g3")], 200, identityTheme), "↳ Searched 3 times");
-		assert.equal(renderSummary([wait("w", ["agent#1", "review#2", "shell_runner#3"])], 200, identityTheme), "↳ Waited for 3 agents");
+			"Edited 1 file +1 -0 · read 1 file · searched 1 time · ran 1 command · waited for 1 agent · used 1 tool");
+		assert.equal(renderSummary([grep("g1"), grep("g2"), grep("g3")], 200, identityTheme), "Searched 3 times");
+		assert.equal(renderSummary([wait("w", ["agent#1", "review#2", "shell_runner#3"])], 200, identityTheme), "Waited for 3 agents");
 		// Zero parts are omitted; the first remaining part is capitalized.
-		assert.equal(renderSummary([bash("b", 2)], 200, identityTheme), "↳ Ran 1 command · 1 failed");
-		assert.equal(renderSummary([], 200, identityTheme), "↳ ");
+		assert.equal(renderSummary([bash("b", 2)], 200, identityTheme), "Ran 1 command · 1 failed");
+		assert.equal(renderSummary([], 200, identityTheme), "");
 	});
 
-	it("summary-icon-choice", () => {
-		// The accepted design replaces the per-category icon with one glyph for every mix of calls.
+	it("summary-no-glyph", () => {
+		// The line is the colored text only: no leading arrow or other glyph for any mix of calls.
 		for (const calls of [[edit("e", "a", 1, 1)], [write("w", "a", "x")], [bash("b")], [read("r", "a"), grep("g")], [other("o")], [wait("w", ["agent#1"])]])
-			assert.ok(renderSummary(calls, 80, identityTheme).startsWith(`${SUMMARY_GLYPH} `));
+			assert.match(renderSummary(calls, 80, identityTheme), /^[A-Z]/);
 	});
 
 	it("summary-counts", () => {
 		// The same path through several spellings and tools counts once; +A -R sum confirmed counts only.
-		assert.equal(renderSummary([edit("e1", "a.ts", 2, 1), edit("e2", "/w/a.ts", 3, 4)], 80, identityTheme), "↳ Edited 1 file +5 -5");
+		assert.equal(renderSummary([edit("e1", "a.ts", 2, 1), edit("e2", "/w/a.ts", 3, 4)], 80, identityTheme), "Edited 1 file +5 -5");
 		// A write confirms only added lines: no minus without a confirmed removal.
-		assert.equal(renderSummary([write("w", "a.ts", "1\n2\n3\n")], 80, identityTheme), "↳ Edited 1 file +3");
+		assert.equal(renderSummary([write("w", "a.ts", "1\n2\n3\n")], 80, identityTheme), "Edited 1 file +3");
 		// Unknown counts (still running, failed, possibly changed) are not invented.
 		const running = classifyChange("edit", { path: "a.ts" }, undefined, ctx("e", { isPartial: true }), "linux");
-		assert.equal(renderSummary([running], 80, identityTheme), "↳ Edited 1 file");
+		assert.equal(renderSummary([running], 80, identityTheme), "Edited 1 file");
 		const failed = classifyChange("edit", { path: "a.ts" }, fail(), ctx("e", { isError: true }), "linux");
-		assert.equal(renderSummary([failed], 80, identityTheme), "↳ Edited 1 file · 1 failed");
+		assert.equal(renderSummary([failed], 80, identityTheme), "Edited 1 file · 1 failed");
 		// RQW multi-file edit: each file its own outcome; a failed sibling does not taint the others.
 		const multi = classifyChange("edit", { edits: [{ path: "a.ts" }, { path: "b.ts" }, { path: "c.ts" }] }, ok("", { files: [
 			{ path: "a.ts", ok: true, details: { diff: diff(2, 1) } },
 			{ path: "b.ts", ok: false, error: "no match" },
 			{ path: "c.ts", ok: false, outcome: "possibly_changed" },
 		] }), ctx("m"), "linux");
-		assert.equal(renderSummary([multi], 80, identityTheme), "↳ Edited 3 files +2 -1 · 1 failed");
+		assert.equal(renderSummary([multi], 80, identityTheme), "Edited 3 files +2 -1 · 1 failed");
 		// Reads: distinct files; failures count per failed call.
 		assert.equal(renderSummary([read("r1", "a"), read("r2", "a"), classify("read", { path: "b" }, fail(), ctx("r3", { isError: true }), "linux")], 80, identityTheme),
-			"↳ Read 2 files · 1 failed");
+			"Read 2 files · 1 failed");
 		// Waits: distinct waited IDs across calls.
-		assert.equal(renderSummary([wait("w1", ["agent#1", "agent#2"]), wait("w2", ["agent#2", "review#4"])], 80, identityTheme), "↳ Waited for 3 agents");
+		assert.equal(renderSummary([wait("w1", ["agent#1", "agent#2"]), wait("w2", ["agent#2", "review#4"])], 80, identityTheme), "Waited for 3 agents");
 	});
 
 	it("summary-width-fit", () => {
@@ -93,7 +93,7 @@ describe("summary", () => {
 			assertFits((w) => renderSummary(long, w, theme));
 			assertFits((w) => renderSummary(everything(), w, theme));
 		}
-		assert.equal(renderSummary(everything(), 24, identityTheme), "↳ Edited 2 files +6 -3 …");
+		assert.equal(renderSummary(everything(), 24, identityTheme), "Edited 2 files +6 -3 · …");
 		assert.equal(renderSummary(everything(), 1, identityTheme), "…");
 		assert.equal(renderSummary(everything(), 0, identityTheme), "");
 	});
@@ -107,6 +107,6 @@ describe("summary", () => {
 		assert.equal(renderSummary(calls, 200, coloredTheme(0)), a, "the same theme paints the same; no state kept between calls");
 		const t = coloredTheme(0);
 		assert.ok(a.includes(t.fg("toolDiffAdded", "+6")) && a.includes(t.fg("toolDiffRemoved", "-3")) && a.includes(t.fg("error", "1 failed")));
-		assert.ok(a.startsWith(t.fg("muted", "↳ ")));
+		assert.ok(a.startsWith(t.fg("muted", "Edited 2 files")));
 	});
 });

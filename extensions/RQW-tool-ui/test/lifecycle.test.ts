@@ -129,7 +129,7 @@ describe("RQW-tool-ui lifecycle", () => {
 		const { cwd, agentDir, session: s, errors } = await open("tui");
 		try {
 			await run(s, "first");
-			assert.deepEqual(rows(s, cwd), [["", " ↳ Read 1 file"]], "on: the summary line");
+			assert.deepEqual(rows(s, cwd), [["", " Read 1 file"]], "on: the summary line");
 			settings(agentDir, false);
 			await s.reload();
 			assert.deepEqual(rows(s, cwd), stockRows(s, cwd), "off: the old call is stock");
@@ -137,7 +137,7 @@ describe("RQW-tool-ui lifecycle", () => {
 			const after = rows(s, cwd);
 			assert.equal(after.length, 2);
 			assert.deepEqual(after, stockRows(s, cwd), "off: old and new calls are stock");
-			assert.ok(after.every((r) => r.length > 2 && !r.some((l) => l.includes("↳"))));
+			assert.ok(after.every((r) => r.length > 2 && !r.some((l) => l.includes("Read 1 file"))));
 			assert.deepEqual(rows(s, cwd, true), stockRows(s, cwd, true), "expanded too");
 			assert.deepEqual(errors, []);
 		} finally { await close(s); }
@@ -181,7 +181,7 @@ describe("RQW-tool-ui lifecycle", () => {
 			const oldCall = (first.messages.find((m) => m.role === "assistant") as { content: { type: string; id: string }[] }).content.find((c) => c.type === "toolCall")!;
 			const oldRow = new pi.ToolExecutionComponent("read", oldCall.id, { path: "a.txt" }, {}, oldRenderers, tui as never, cwd);
 			const draw = () => oldRow.render(80).map((l) => stripTerminalSequences(l).trimEnd());
-			assert.deepEqual(draw(), ["", " ↳ Read 1 file"]);
+			assert.deepEqual(draw(), ["", " Read 1 file"]);
 			await runtime.newSession();
 			await bind();
 			assert.notEqual(runtime.session, first);
@@ -190,7 +190,7 @@ describe("RQW-tool-ui lifecycle", () => {
 			await run(runtime.session, "again");
 			oldRow.invalidate();
 			assert.deepEqual(draw(), [], "and is not rebuilt by the new session's events");
-			assert.deepEqual(rows(runtime.session, cwd), [["", " ↳ Read 1 file"]], "the new session draws its own calls");
+			assert.deepEqual(rows(runtime.session, cwd), [["", " Read 1 file"]], "the new session draws its own calls");
 			assert.equal(tui.renders, 0, "the old row was never asked to redraw after the switch");
 			assert.deepEqual(errors, []);
 		} finally {
@@ -206,7 +206,7 @@ describe("RQW-tool-ui lifecycle", () => {
 			assert.deepEqual(loader.getExtensions().extensions.map((e) => e.path), [join(pkg, "extensions", "RQW-tool-ui", "index.ts")]);
 			await run(s, "go");
 			assert.deepEqual(errors, []);
-			assert.deepEqual(rows(s, cwd), [["", " ↳ Read 1 file"]]);
+			assert.deepEqual(rows(s, cwd), [["", " Read 1 file"]]);
 			assert.equal((s.messages.at(-1) as { stopReason?: string }).stopReason, "stop");
 		} finally { await close(s); }
 	});

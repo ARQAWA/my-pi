@@ -51,11 +51,11 @@ describe("RQW-tool-ui wiring", () => {
 	it("render-leader-summary-and-live", () => {
 		// Answer given: the group is over, only the summary line.
 		const done = row(finished(true), "bash", "c2", { command: "npm test" }, { result: "ok 5" });
-		assert.deepEqual(done.render(80), [" ↳ Read 1 file · ran 1 command"]);
+		assert.deepEqual(done.render(80), [" Read 1 file · ran 1 command"]);
 		// No answer yet: the group is active and the live card of the current call (the last started) follows.
 		const active = row(finished(false), "bash", "c2", { command: "npm test" }, { result: "ok 5" });
 		const rows = active.render(80);
-		assert.equal(rows[0], " ↳ Read 1 file · ran 1 command");
+		assert.equal(rows[0], " Read 1 file · ran 1 command");
 		assert.deepEqual(rows.slice(1).map((l) => l.trim()), ["$ npm test", "ok 2", "ok 3", "ok 4", "ok 5", "✓ 1.2s"]);
 		for (const l of rows.slice(1)) assert.ok(l.startsWith("    "), "live rows: output padding plus the three-column indent");
 	});
@@ -68,14 +68,14 @@ describe("RQW-tool-ui wiring", () => {
 		ui.messageStart(streamed);
 		const redraws: string[] = [];
 		const first = row(ui, "read", "c1", { path: "a.ts" }, { invalidate: () => redraws.push("c1"), isPartial: true });
-		assert.equal(first.render(80)[0], " ↳ Read 1 file", "the only call leads");
+		assert.equal(first.render(80)[0], " Read 1 file", "the only call leads");
 		// The same step streams a second call: it leads now.
 		ui.messageUpdate({ ...streamed, content: [...streamed.content, call("c2", "bash", { command: "ls" })] });
 		assert.ok(redraws.includes("c1"), "the old leader was asked to redraw");
 		assert.deepEqual(first.render(80), [], "the old leader draws nothing");
 		const second = row(ui, "bash", "c2", { command: "ls" }, { isPartial: true });
 		const rows = second.render(80);
-		assert.equal(rows[0], " ↳ Read 1 file · ran 1 command");
+		assert.equal(rows[0], " Read 1 file · ran 1 command");
 		assert.equal(rows[1].trim(), "$ ls", "the live card follows the new call");
 		assert.equal(rows.at(-1)!.trim(), "running");
 	});
@@ -94,13 +94,13 @@ describe("RQW-tool-ui wiring", () => {
 		assert.equal(leader.render(80).length, 4, "an empty text block is not an answer yet");
 		ui.messageUpdate({ ...answer, content: [text("Here")] });
 		assert.ok(redraws > 0);
-		assert.deepEqual(leader.render(80), [" ↳ Ran 1 command"]);
+		assert.deepEqual(leader.render(80), [" Ran 1 command"]);
 		// Pi saves the message, then reports its end; the run ends after that.
 		const saved = { ...answer, content: [text("Here it is.")] };
 		sm.appendMessage(saved as never);
 		ui.messageEnd(saved);
 		ui.agentEnd();
-		assert.deepEqual(leader.render(80), [" ↳ Ran 1 command"]);
+		assert.deepEqual(leader.render(80), [" Ran 1 command"]);
 	});
 
 	it("render-expanded-original (Ctrl+O on and off)", () => {
@@ -131,7 +131,7 @@ describe("RQW-tool-ui wiring", () => {
 				if (expanded) {
 					// Pi's component starts with its blank row, which Pi also puts before a self-drawn row.
 					assert.deepEqual(view.render(80), original.render(80).slice(1), `${name}: the original, exactly as Pi draws it`);
-				} else assert.deepEqual(view.render(80), id === "c2" ? [" ↳ Read 1 file · ran 1 command"] : [], `${name}: folded again`);
+				} else assert.deepEqual(view.render(80), id === "c2" ? [" Read 1 file · ran 1 command"] : [], `${name}: folded again`);
 			}
 		}
 	});

@@ -27,8 +27,9 @@ import {
 
 const REPO = dirname(dirname(fileURLToPath(import.meta.url)));
 const TOOL_UI = join(REPO, "extensions", "RQW-tool-ui");
-const SUMMARY = "\u21b3 Edited 1 file +1 -1 \u00b7 read 2 files \u00b7 ran 1 command";
-const SUMMARY_MARK = "\u21b3 ";
+const SUMMARY = "Edited 1 file +1 -1 \u00b7 read 2 files \u00b7 ran 1 command";
+/** The start of the summary line that survives the narrowest width tested. */
+const SUMMARY_MARK = "Edited 1 file";
 const STATUS_MARKS = ["running", "\u2713", "\u2717"];
 const STOCK_READ_B = "read b.txt";
 const STOCK_BASH = "$ printf";
@@ -290,7 +291,7 @@ function dump(): string {
 
 const screen = () => term!.screen;
 const rows = () => screen().lines();
-const summaryRows = () => rows().flatMap((line, i) => (line.trimStart().startsWith(SUMMARY_MARK.trim()) ? [i] : []));
+const summaryRows = () => rows().flatMap((line, i) => (line.trimStart().startsWith(SUMMARY_MARK) ? [i] : []));
 const hasRow = (text: string) => rows().some((line) => line.includes(text));
 
 /** Pi's interactive mode on the scripted terminal, with the package (unless `off`) and the codemode tools on. */

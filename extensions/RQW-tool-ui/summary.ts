@@ -1,12 +1,10 @@
-// The summary line of one group of tool calls: `↳ Edited 2 files +24 -8 · read 6 files · ran 2 commands`.
+// The summary line of one group of tool calls: `Edited 2 files +24 -8 · read 6 files · ran 2 commands`.
 // Pure: counts come from classified calls (classify.ts, changes.ts), colors from the theme Pi supplies.
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { ChangeClassified } from "./changes.ts";
 import type { Classified } from "./classify.ts";
 
-/** The glyph of the accepted design: one per summary line, whatever the calls are. */
-export const SUMMARY_GLYPH = "↳";
 const SEPARATOR = " · ";
 
 /** A piece of one display row and the supplied-theme paint for it. */
@@ -94,7 +92,7 @@ export function renderSummary(calls: readonly Call[], width: number, theme: Them
 	if (c.used > 0) parts.push([{ text: `used ${plural(c.used, "tool", "tools")}`, paint: muted }]);
 	if (c.failed > 0) parts.push([{ text: `${c.failed} failed`, paint: (t) => theme.fg("error", t) }]);
 	if (parts.length > 0) parts[0][0] = { ...parts[0][0], text: parts[0][0].text[0].toUpperCase() + parts[0][0].text.slice(1) };
-	const spans: Span[] = [{ text: `${SUMMARY_GLYPH} `, paint: muted }];
+	const spans: Span[] = [];
 	parts.forEach((part, i) => spans.push(...(i > 0 ? [{ text: SEPARATOR, paint: muted }] : []), ...part));
 	return fitSpans(spans, width);
 }
