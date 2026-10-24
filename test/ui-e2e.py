@@ -240,9 +240,11 @@ def main():
             (agent / "bin").mkdir()
             shutil.copy2(cached_fd, agent / "bin/fd")
         # The package as a user installs it: the repository folder, read through its manifest; the theme chosen by name.
+        # RQW-codex owns the openai-codex provider with its real network transport; the faux provider of the driver
+        # takes that place, so it is the one extension of the package that is switched off.
         (agent / "settings.json").write_text(json.dumps({
             "quietStartup": True, "checkForUpdates": False, "lastChangelogVersion": "1.4.0", "theme": "RQW-theme",
-            "retry": {"enabled": False}, "packages": [str(REPO)]}))
+            "retry": {"enabled": False}, "packages": [{"source": str(REPO), "extensions": ["-extensions/RQW-codex/index.ts"]}]}))
 
         env = {**os.environ, "PI_CODING_AGENT_DIR": str(agent), "PI_SKIP_VERSION_CHECK": "1", "PI_OFFLINE": "1",
                "TERM": "xterm-256color", "COLORTERM": "truecolor"}

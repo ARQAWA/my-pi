@@ -36,6 +36,9 @@ const MANIFEST = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).pi
 const ext = (name: string) => `./extensions/${name}/index.ts`;
 /** The UI extensions the owner switches off with the package filter to get Pi's stock interface back. */
 const UI_OFF = ["RQW-agent-ui", "RQW-tool-ui", "RQW-statusbar", "RQW-thinking"].map((name) => `-${ext(name).slice(2)}`);
+/** RQW-codex owns the openai-codex provider with its real network transport; the faux provider takes that place, so it
+ * is the one extension of the package this test switches off. */
+const CODEX_OFF = `-${ext("RQW-codex").slice(2)}`;
 const THEME = "RQW-theme";
 const ENTER = "\r";
 const ESC = "\x1b";
@@ -104,7 +107,7 @@ async function route(context: TranscriptContext, options?: SimpleStreamOptions):
 		requests.push("summary");
 		return run(summaryReply);
 	}
-	if (system.includes("You are a blind reviewer")) {
+	if (system.includes("You are a read-only blind reviewer")) {
 		requests.push("reviewer");
 		return run(reviewerReply);
 	}
@@ -130,11 +133,11 @@ async function route(context: TranscriptContext, options?: SimpleStreamOptions):
 	return fauxAssistantMessage("Noted.");
 }
 
-// A listed RQW-models ID for the main agent; gpt-6-luna is the worker and naming fallback without Anthropic
-// credentials, gpt-5.6-luna the blind reviewer of a GPT main agent.
+// A listed RQW-models ID for the main agent (the review tool's blind level is gpt-6.1-sol too); gpt-6-luna is the
+// worker and naming fallback without Anthropic credentials.
 const faux = fauxProvider({
 	api: "faux-ui-e2e", provider: "openai-codex",
-	models: [{ id: "gpt-6.1-sol", reasoning: true }, { id: "gpt-6-luna", reasoning: true }, { id: "gpt-5.6-luna", reasoning: true }],
+	models: [{ id: "gpt-6.1-sol", reasoning: true }, { id: "gpt-6-luna", reasoning: true }],
 });
 faux.setResponses(Array.from({ length: 1000 }, () => route));
 faux.provider.auth.apiKey = { name: "Fake key", resolve: async () => ({ auth: { apiKey: "fake-ui-e2e" } }) };
@@ -340,7 +343,7 @@ before(() => {
 	writeFileSync(join(work, "b.txt"), "one\ntwo\n");
 	writeFileSync(join(work, "wait-flag.sh"), WAIT_SCRIPT);
 	// The package as a user installs it: the repository folder, read through its own manifest.
-	writeSettings([REPO]);
+	writeSettings([{ source: REPO, extensions: [CODEX_OFF] }]);
 	for (const key of Object.keys(process.env)) if (/(?:_API_KEY|_TOKEN|_SECRET|AUTH_TOKEN)$/.test(key)) delete process.env[key];
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	process.env.PI_OFFLINE = "1";
@@ -664,21 +667,65 @@ describe("compact UI end to end in real Pi", { concurrency: false }, () => {
 		assert.deepEqual(custom, [], "a waited result is not also delivered as a message");
 	});
 
-	it("e2e-review-stock: a [review#N] result renders as Pi's stock custom message (the review card is deferred)", async () => {
-		const reviewer = gate(() => fauxAssistantMessage("CLEAN"));
+	// The real review tool answers with a start acknowledgement; the verdict of the reviewer (the merged REVIEWER.md
+	// format) arrives later as the `[review#N]` custom message of RQW-review: the verdict, a blank line and the advice
+	// of `verdictMessage`. agent-ui draws it as a card: collapsed the ID, the verdict (or the count of findings) and the
+	// first body line, Ctrl+O the whole original text, a second Ctrl+O folds it back.
+	const reviewCard = async (name: string, n: number, verdict: AssistantMessage, card: { header: string; first: string; full: string[] }) => {
+		const reviewer = gate(() => verdict);
 		reviewerReply = reviewer.reply;
-		mainScripts.set("review-turn", [
-			toolUse(fauxToolCall("review", { level: "blind", object: "a.txt, stage pre-completion", criterion: "a.txt says ALPHA" }, { id: "v1" })),
-			fauxAssistantMessage("Review requested."),
+		mainScripts.set(name, [
+			toolUse(fauxToolCall("review", { level: "blind", object: "a.txt, stage pre-completion", criterion: "a.txt says ALPHA" }, { id: `v${n}` })),
+			fauxAssistantMessage(`Review ${n} requested.`),
 		]);
-		send("review-turn");
-		await until("the reviewer request", () => reviewer.entered());
+		send(name);
 		await until("Waiting for 1 review", () => topStatus() === "Waiting for 1 review");
 		reviewer.release();
-		await until("the review verdict", () => hasRow("[review#1] CLEAN"));
+		const headerRow = () => rows().findIndex((line) => line.trim() === `review#${n} ${card.header}`);
+		await until(`the review#${n} card`, () => headerRow() >= 0);
 		await until("idle", () => topStatus() === "" && runtime!.session.isIdle);
-		assert.ok(rows().some((line) => line.trim() === "[review]"), `Pi's default label box\n${dump()}`);
-		assert.ok(!hasRow(/review#1 (finished|clean|CLEAN ·)/), "no review card");
+		assert.ok(!rows().some((line) => line.trim() === "[review]"), `not Pi's default label box\n${dump()}`);
+		assert.ok(!hasRow(`[review#${n}]`), "the outer prefix is not shown");
+		// Collapsed: the header and the first body line only.
+		assert.equal(rows()[headerRow() + 1]?.trim(), card.first, `the first body line under the header\n${dump()}`);
+		for (const text of card.full) assert.ok(!hasRow(text), `collapsed: ${text} is folded\n${dump()}`);
+		// Ctrl+O: the whole original text of the message, including the advice of verdictMessage.
+		term!.key(CTRL_O);
+		await until(`the full review#${n} text`, () => card.full.every((text) => hasRow(text)));
+		term!.key(CTRL_O);
+		await until(`review#${n} folded again`, () => card.full.every((text) => !hasRow(text)) && headerRow() >= 0);
+		assert.equal(rows()[headerRow() + 1]?.trim(), card.first);
+		const stored = runtime!.session.messages.filter((m) => m.role === "custom").map((m) => String((m as { content: unknown }).content));
+		assert.ok(stored.some((content) => content.startsWith(`[review#${n}] `)), "the stored message keeps the [review#N] prefix");
+	};
+
+	it("e2e-review-card-clean: CLEAN with CHECKED is a card; Ctrl+O shows the full text and the advice", async () => {
+		await reviewCard("review-clean", 1, fauxAssistantMessage("CLEAN\nCHECKED:\n- a.txt says ALPHA (a.txt:1)"), {
+			header: "CLEAN", first: "CLEAN",
+			full: ["- a.txt says ALPHA (a.txt:1)", "The check passed only with complete CHECKED evidence"],
+		});
+	});
+
+	it("e2e-review-card-findings: FINDINGS shows the count of findings, Ctrl+O every field", async () => {
+		const finding = (n: number) => `FINDING ${n}\nREQUIREMENT: "a.txt says ALPHA" (criterion)\nMISMATCH: Field ${n} says alpha in lower case.\nEVIDENCE: "alpha" (a.txt)\nREQUIRED OUTCOME: a.txt says ALPHA.`;
+		await reviewCard("review-findings", 2, fauxAssistantMessage(`FINDINGS:\n${finding(1)}\n${finding(2)}\nCHECKED:\n- b.txt read`), {
+			header: "2 findings", first: "FINDINGS:",
+			full: ["FINDING 2", "MISMATCH: Field 2 says alpha in lower case.", "REQUIRED OUTCOME: a.txt says ALPHA.", "Fix all admitted findings in one batch"],
+		});
+	});
+
+	it("e2e-review-card-unchecked: CLEAN with UNCHECKED carries the unchecked count", async () => {
+		await reviewCard("review-unchecked", 3, fauxAssistantMessage("CLEAN\nCHECKED:\n- a.txt line 1\nUNCHECKED:\n- c.txt - not readable\n- d.txt - not readable"), {
+			header: "CLEAN \u00b7 2 unchecked", first: "CLEAN",
+			full: ["- d.txt - not readable", "The check is incomplete regardless of its leading verdict"],
+		});
+	});
+
+	it("e2e-review-card-failed: a reviewer that failed is a Review failed card", async () => {
+		await reviewCard("review-failed", 4, fauxAssistantMessage("", { stopReason: "error", errorMessage: "faux reviewer failure" }), {
+			header: "Review failed:", first: "Review failed: faux reviewer failure",
+			full: ["The check has not passed, and no self-check replaces it"],
+		});
 	});
 
 	it("e2e-compaction-cancel: gold Compacting context, Esc cancels, the border is silver again", async () => {
@@ -767,7 +814,7 @@ describe("compact UI end to end in real Pi", { concurrency: false }, () => {
 	});
 
 	it("e2e-off-reload-stock: the package filter switches the UI extensions off, /reload gives Pi's stock interface", async () => {
-		writeSettings([{ source: REPO, extensions: UI_OFF }]);
+		writeSettings([{ source: REPO, extensions: [CODEX_OFF, ...UI_OFF] }]);
 		command("/reload");
 		await until("the stock editor after /reload", () => hasRow("Reloaded") && topRow() < 0);
 		assert.equal(summaryRows().length, 0, "no summary after switching off");
