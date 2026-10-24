@@ -69,9 +69,10 @@ jobs:
       - name: Facts
         env:
           NO_SPARKPLUG: ${{ inputs.no_sparkplug || false }}
+          BUN_VERSION: ${{ inputs.bun }}
         run: |
           node --version
-          if [ -n "${{ inputs.bun }}" ]; then bun --version; fi
+          if [ -n "$BUN_VERSION" ]; then bun --version; fi
           node -p 'JSON.stringify(process.versions, null, 2)'
           uname -a
           if [ "$RUNNER_OS" = macOS ]; then
