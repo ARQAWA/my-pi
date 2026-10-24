@@ -20,7 +20,7 @@ function message(body: string, details: unknown = { n: 2, level: "high", model: 
 	return { role: "custom", customType: "review", content: `[review#2] ${body}`, display: true, details, timestamp: 0 } as Message;
 }
 function render(body: string, width = 160, expanded = false, theme = identity) {
-	return createReviewCard(message(body), { expanded, outputPad: 1 }, theme as never)!.render(width);
+	return createReviewCard(message(body), { expanded, outputPad: 0 }, theme as never)!.render(width);
 }
 
 it("review-clean: exact CLEAN line is success even with merged CHECKED evidence and advice", () => {
@@ -98,7 +98,7 @@ it("review-full-body: all real fields, Russian, NEXT and legacy rulings remain v
 	assert.deepEqual(render("[review#3] [x]", 80, true), ["review#2 [review#3] [x]", "  [review#3] [x]"]);
 	assert.deepEqual(render("\n\nfirst [inner]\nsecond", 80), ["review#2 first [inner]", "  first [inner]"]);
 	const noPrefix = { ...message(""), content: "plain [review#3]", details: { n: 7 } };
-	assert.deepEqual(createReviewCard(noPrefix, { expanded: true, outputPad: 1 }, identity as never)!.render(80), ["review#7 plain [review#3]", "  plain [review#3]"]);
+	assert.deepEqual(createReviewCard(noPrefix, { expanded: true, outputPad: 0 }, identity as never)!.render(80), ["review#7 plain [review#3]", "  plain [review#3]"]);
 	assert.equal(createReviewCard({ ...message(""), customType: "agent" }, { expanded: false, outputPad: 1 }, identity as never), undefined);
 });
 
@@ -124,10 +124,15 @@ it("review-pure: frozen input and details remain unchanged, repeatable after inv
 	Object.freeze(input.details);
 	Object.freeze(input);
 	for (const expanded of [false, true]) {
-		const card = createReviewCard(input, { expanded, outputPad: 1 }, identity as never)!;
+		const card = createReviewCard(input, { expanded, outputPad: 0 }, identity as never)!;
 		const rows = card.render(40);
 		card.invalidate();
 		assert.deepEqual(card.render(40), rows);
 	}
 	assert.deepEqual(input, before);
+});
+
+it("review-padding: the card keeps one free cell at both sides", () => {
+	const rows = createReviewCard(message("CLEAN\nCHECKED: all"), { expanded: true, outputPad: 1 }, identity as never)!.render(40);
+	assert.ok(rows[0].startsWith(" review#") && rows.every((row) => visibleWidth(row) <= 39), JSON.stringify(rows));
 });

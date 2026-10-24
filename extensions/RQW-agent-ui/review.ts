@@ -1,7 +1,7 @@
 // Display only: the merged reviewer delivers a custom message, not a wait tool result.
 import type { MessageRenderer } from "@earendil-works/pi-coding-agent";
 import { messageText, splitPrefix } from "./card.ts";
-import { clean, fit, wrap } from "./fit.ts";
+import { clean, fit, padded, wrap } from "./fit.ts";
 
 /** Ignore protocol-looking text inside verbatim source quotes and fenced examples. */
 class SourceQuote {
@@ -96,7 +96,7 @@ export const createReviewCard: MessageRenderer<{ n?: number }> = (message, optio
 	const color = failed ? "error" : firstLine === "CLEAN" ? "success" : "muted";
 	const verdict = first === "FINDINGS:" ? `${findings} findings` : failed ? "Review failed:" : first;
 	return {
-		render(width) {
+		render: padded((width) => {
 			if (width <= 0) return [];
 			const suffix = unchecked ? theme.fg("warning", ` · ${unchecked} unchecked`) : "";
 			const header = theme.fg("muted", id) + (verdict ? " " + theme.fg(color, verdict) : "") + suffix;
@@ -107,7 +107,7 @@ export const createReviewCard: MessageRenderer<{ n?: number }> = (message, optio
 				for (const row of wrap(body, width - indent.length)) rows.push(row ? indent + theme.fg(bodyColor, row) : "");
 			} else if (first) rows.push(fit(indent + theme.fg(bodyColor, first), width));
 			return rows;
-		},
+		}, options.outputPad),
 		invalidate() {},
 	};
 };

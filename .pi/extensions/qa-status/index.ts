@@ -1,4 +1,6 @@
+import type { MessageRenderer } from "@earendil-works/pi-coding-agent";
 import { snapshot, render } from "../../../scripts/qa-status.mjs";
+import { createQaCard } from "./card.ts";
 
 type Snapshot = { ok: boolean; at: string; items: { id: string; level: string; text: string; url: string }[]; error?: string };
 type Context = { cwd: string; ui: { notify(text: string, level?: "info" | "warning" | "error"): void } };
@@ -68,4 +70,7 @@ export function createQaStatus({ pi, getSnapshot = snapshot, now = Date.now }: {
 	return { refresh };
 }
 
-export default function (pi: Pi) { createQaStatus({ pi }); }
+export default function (pi: Pi & { registerMessageRenderer(type: string, renderer: MessageRenderer): void }) {
+	pi.registerMessageRenderer("qa-status", createQaCard);
+	createQaStatus({ pi });
+}

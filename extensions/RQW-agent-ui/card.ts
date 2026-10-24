@@ -1,9 +1,9 @@
 // The agent / worker result card: a pure component factory for the custom messages `agent`, `code_writer` and
 // `shell_runner` that RQW-agent delivers (content `[<name>#<id>] <text>`). Registration and wiring are not here.
-import type { MessageRenderer, Theme } from "@earendil-works/pi-coding-agent";
+import type { MessageRenderer, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import { clean, fit, wrap } from "./fit.ts";
+import { Markdown, type MarkdownTheme, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { clean, fit, padded, wrap } from "./fit.ts";
 
 export const CARD_TYPES = ["agent", "code_writer", "shell_runner"] as const;
 
@@ -19,7 +19,7 @@ export interface CardDetails {
 }
 
 /** What the cards use of Pi's theme: semantic colors only. */
-export type CardTheme = Pick<Theme, "fg" | "bold">;
+export type CardTheme = Pick<Theme, "fg" | "bold"> & Partial<Pick<Theme, "italic" | "underline" | "strikethrough">>;
 
 export interface ParsedCard {
 	/** `<name>#<id>`, from the outer prefix, else from details, else the message type. */
@@ -129,7 +129,45 @@ function header(card: ParsedCard, theme: CardTheme, width: number): string {
 	return fit(id + title + rest, width);
 }
 
-/** Rows of the card at `width`: a header, then the first nonempty answer line (collapsed) or the whole text. */
+/** Pi's markdown roles, painted from the card's own theme (the tokens Pi's own markdown theme uses). */
+function markdownTheme(theme: CardTheme): MarkdownTheme {
+	const role = (color: ThemeColor) => (text: string) => theme.fg(color, text);
+	// The theme may lack a text style (a minimal test theme); Pi's own Theme has all of them.
+	const style = (name: "italic" | "underline" | "strikethrough") => (text: string) => theme[name]?.(text) ?? text;
+	return {
+		heading: role("mdHeading"), link: role("mdLink"), linkUrl: role("mdLinkUrl"), code: role("mdCode"), codeBlock: role("mdCodeBlock"),
+		codeBlockBorder: role("mdCodeBlockBorder"), quote: role("mdQuote"), quoteBorder: role("mdQuoteBorder"), hr: role("mdHr"),
+		listBullet: role("mdListBullet"), bold: (text) => theme.bold(text), italic: style("italic"), strikethrough: style("strikethrough"), underline: style("underline"),
+	};
+}
+
+/** Rendered rows of a text at no width limit (Markdown pads every row to the width, so the padding is dropped again). */
+function markdownRows(text: string, color: "error" | "muted", theme: CardTheme, width: number): string[] {
+	const markdown = new Markdown(text, 0, 0, markdownTheme(theme), { color: (part) => theme.fg(color, part) },
+		{ preserveOrderedListMarkers: true, preserveBackslashEscapes: true });
+	const widest = Math.max(...text.split("\n").map((line) => visibleWidth(line)));
+	// Never narrower than the card: Markdown can render more text than the source has (a reference link shows its URL),
+	// and a row wrapped earlier than the card's edge would lose its end without an ellipsis.
+	return markdown.render(Math.max(widest * 2 + 16, width)).map((row) => row.replace(/ +$/, "")).filter((row) => stripTerminalSequences(row).trim());
+}
+
+/** How much of the answer the collapsed line reads: its first block, so a construct over several lines is seen whole. */
+const PREVIEW_CHARS = 2000;
+
+/**
+ * The collapsed answer line: the first block of the answer as Pi's Markdown renders it, so wrappers such as `**` and
+ * backticks become styling instead of showing as characters, and the first rendered row is used. A first line that
+ * Markdown renders as nothing, such as a reference definition, stays as its source text.
+ */
+function previewRow(body: string, color: "error" | "muted", theme: CardTheme, width: number): string | undefined {
+	const block = body.trim().split(/\n\s*\n/)[0].slice(0, PREVIEW_CHARS);
+	const first = block.split("\n").map((line) => line.trim()).find(Boolean);
+	if (!first) return undefined;
+	const rendered = markdownRows(block, color, theme, width);
+	return markdownRows(first, color, theme, width).length && rendered.length ? rendered[0] : theme.fg(color, first);
+}
+
+/** Rows of the card at `width`: a header, then the first answer block rendered as Markdown (collapsed) or the whole original text. */
 export function cardLines(card: ParsedCard, expanded: boolean, theme: CardTheme, width: number): string[] {
 	if (width <= 0) return [];
 	const rows = [header(card, theme, width)];
@@ -138,8 +176,8 @@ export function cardLines(card: ParsedCard, expanded: boolean, theme: CardTheme,
 	if (expanded) {
 		for (const row of wrap(card.body, width - indent.length)) rows.push(row ? indent + theme.fg(color, row) : "");
 	} else {
-		const first = card.body.split("\n").map((line) => line.trim()).find(Boolean);
-		if (first) rows.push(fit(indent + theme.fg(color, first), width));
+		const preview = previewRow(card.body, color, theme, width);
+		if (preview) rows.push(fit(indent + preview, width));
 	}
 	return rows;
 }
@@ -150,7 +188,7 @@ export const createAgentCard: MessageRenderer<CardDetails> = (message, options, 
 	const card = parseCard(message);
 	const expanded = options.expanded;
 	const component: Component = {
-		render: (width) => cardLines(card, expanded, theme, width),
+		render: padded((width) => cardLines(card, expanded, theme, width), options.outputPad),
 		invalidate() {},
 	};
 	return component;

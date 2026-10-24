@@ -135,7 +135,7 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   signature is an occurrence in a closed inbox issue shows as info (acknowledged), else red (`DECISIONS.md` `[D-QA-ACK]`);
   `--refresh-inbox` computes that with `scripts/qa-inbox-snapshot.mjs`.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
-  never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all.
+  never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all. Its `qa-status` message has a compact card (`card.ts`); Ctrl+O shows every line with its link.
 - `.agents/reviewers/test-integrity.md`: the read-only reviewer prompt for mechanically detected weakened tests, used
   through `agent` as the whole `system`.
 - `.agents/roles/test-fixer.md`: the short role of the test-fix lane agents, passed as the `role` of an `agent`, not as
@@ -151,7 +151,7 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   `/name` stays unchanged. RQW-statusbar displays the native name as a static gold title.
   Details: [Naming and thinking](DECISIONS.md#naming-and-thinking); tests: `extensions/RQW-naming/test/`.
 - `extensions/RQW-agent-ui/`: extension 18, compact delivered result cards for `agent`, `code_writer` and
-  `shell_runner` and for `[review#N]` results (the review card matches the new reviewer's output), full originals
+  `shell_runner`, for delivered `child_wait` results and for `[review#N]` results (the review card matches the new reviewer's output), full originals
   through Ctrl+O. Loaded before tool-ui. With both loaded, a collapsed wait result is tool-ui's (`Waited for N agents`,
   live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards; with tool-ui off, agent-ui shows its
   collapsed wait cards. No activity-count producer, statusbar indicator or agent list here.

@@ -37,6 +37,11 @@ const WAIT_DETAILS = {
 	reason: "result", timed_out: false, receipts: [], statuses: [],
 	results: [{ id: "agent#3", run: "1:1", delivery: "d-2", text: WAIT_ANSWER, outcome: "completed", display: DISPLAY }],
 };
+/** RQW-agent's `child_wait` notification: the wait details, and the same object as JSON content. */
+const WAITED = { reason: "result", timed_out: false, receipts: [], statuses: [], wait_id: "w-1" };
+const DONE = { id: "agent#3", run: "1:1", delivery: "d-3", outcome: "completed", text: "Проверил отступы.\nВторая строка ответа." };
+const BROKEN = { id: "code_writer#9", run: "1:2", delivery: "d-4", outcome: "error", text: "error: правка отклонена\nфайл изменился после чтения" };
+const notification = (details: object) => ({ customType: "child_wait", content: JSON.stringify(details), display: true, details });
 const WAIT_TEXT = JSON.stringify({ ...WAIT_DETAILS, results: WAIT_DETAILS.results.map(({ display: _display, ...rest }) => rest) });
 
 let root: string;
@@ -255,7 +260,7 @@ it("wire-reload-and-switch: reload and a new session register the cards again, t
 		assert.ok(own, "the extension is loaded");
 		assert.equal(own.handlers.size, 0, "no event handler");
 		assert.equal(own.tools.size, 0, "no tool");
-		assert.deepEqual([...own.messageRenderers.keys()].sort(), ["agent", "code_writer", "review", "shell_runner"]);
+		assert.deepEqual([...own.messageRenderers.keys()].sort(), ["agent", "child_wait", "code_writer", "review", "shell_runner"]);
 		assert.equal(own.toolRenderers?.length, 1);
 
 		// /reload: a fresh extension instance, the old one is stale, the cards still draw.
@@ -287,7 +292,59 @@ it("wire-reload-and-switch: reload and a new session register the cards again, t
 	}
 });
 
-it("wire-stock-diagnostics: child_wait stays stock while review messages get cards", async () => {
+it("wire-child-wait: delivered results show cards, Ctrl+O the full answers, errors stay evident, the stored message is unchanged", async () => {
+	const h = await start("child-wait");
+	try {
+		const single = notification({ ...WAITED, results: [DONE] });
+		const several = notification({ ...WAITED, wait_id: "w-2", results: [DONE, BROKEN] });
+		for (const message of [single, several]) h.pi().sendMessage(message, { triggerTurn: false });
+		await until("both notifications", () => h.runtime.session.messages.filter((m) => m.role === "custom").length === 2);
+		await settle();
+		const collapsed = await h.screen();
+		assert.match(collapsed, /child_wait · agent#3 finished/);
+		assert.match(collapsed, /child_wait · 2 results · 1 failed/);
+		assert.match(collapsed, /code_writer#9 failed/);
+		assert.match(collapsed, /error: правка отклонена/);
+		assert.doesNotMatch(collapsed, /\[child_wait\]|"reason"|"wait_id"/, "no raw JSON in the collapsed view");
+		assert.doesNotMatch(collapsed, /файл изменился/, "collapsed shows only the first answer line");
+
+		h.terminal.key(CTRL_O);
+		await settle();
+		const expanded = await h.screen();
+		assert.match(expanded, /Вторая строка ответа\./);
+		assert.match(expanded, /файл изменился после чтения/);
+		assert.doesNotMatch(expanded, /"reason"/);
+
+		h.terminal.key(CTRL_O);
+		await settle();
+		const folded = await h.screen();
+		assert.match(folded, /child_wait · 2 results · 1 failed/);
+		assert.doesNotMatch(folded, /файл изменился/, "folded again");
+
+		const stored = h.runtime.session.messages.filter((m) => m.role === "custom") as { content: string; details: unknown }[];
+		assert.deepEqual(stored.map((m) => m.content), [single.content, several.content], "stored content is unchanged");
+		assert.deepEqual(stored.map((m) => m.details), [single.details, several.details]);
+	} finally {
+		await h.dispose();
+	}
+});
+
+it("wire-child-wait-off: without the extension a delivered child_wait is Pi's default box with the raw JSON", async () => {
+	const h = await start("child-wait-off", { off: true });
+	try {
+		h.pi().sendMessage(notification({ ...WAITED, results: [DONE] }), { triggerTurn: false });
+		await until("the notification", () => h.runtime.session.messages.some((m) => m.role === "custom"));
+		await settle();
+		const drawn = await h.screen();
+		assert.match(drawn, /\[child_wait\]/);
+		assert.match(drawn, /"reason":"result"/);
+		assert.doesNotMatch(drawn, /child_wait · /);
+	} finally {
+		await h.dispose();
+	}
+});
+
+it("wire-stock-diagnostics: child_wait without results stays stock while review messages get cards", async () => {
 	const h = await start("diagnostics");
 	try {
 		for (const [customType, content] of [["child_wait", '{"reason":"timeout","statuses":[]}'], ["review", "[review#1] CLEAN"]]) {
@@ -307,7 +364,7 @@ it("wire-stock-diagnostics: child_wait stays stock while review messages get car
 });
 
 it("wire-no-subscriptions: the entrypoint source subscribes to nothing and starts no timer or process", () => {
-	for (const file of ["index.ts", "wait.ts", "card.ts", "fit.ts", "self.ts", "review.ts"]) {
+	for (const file of ["index.ts", "wait.ts", "card.ts", "child-wait.ts", "fit.ts", "self.ts", "review.ts"]) {
 		const source = readFileSync(join(FOLDER, file), "utf8");
 		assert.doesNotMatch(source, /\bpi\.(on|events)\b|setInterval|setTimeout|child_process|requestAnimationFrame/, file);
 	}

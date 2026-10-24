@@ -96,3 +96,68 @@ describe("RQW-theme strict native schema", () => {
 		assert.equal(resolve("warning"), "#ffb347");
 	});
 });
+
+// The owner's OMP theme `titanium-arq` (~/.omp/agent/themes/titanium-arq.json, sha256
+// 90dc449809ef97389ec7ffec56ac00f758d4311aa7696f13c2eba3aa062beb43, identical to settings/titanium-arq.json on master of the
+// OMP harness): every colour Pi's schema can carry, as the source resolves it. The only deliberate differences are the
+// four agreed card backgrounds and the five accepted effort colours; they are pinned in the tests above.
+describe("RQW-theme fidelity to the OMP source theme", () => {
+	const SOURCE: Record<string, string> = {
+		"accent": "",
+		"border": "#2c2b2a",
+		"borderAccent": "#5f5e5c",
+		"borderMuted": "#222120",
+		"success": "#00ff88",
+		"error": "#ff4757",
+		"warning": "#ffb347",
+		"muted": "#8d8d8c",
+		"dim": "#5f5e5c",
+		"text": "",
+		"thinkingText": "#8d8d8c",
+		"selectedBg": "#2a2826",
+		"userMessageBg": "#232120",
+		"userMessageText": "",
+		"customMessageText": "",
+		"customMessageLabel": "#b6b6b5",
+		"toolTitle": "",
+		"toolOutput": "#8d8d8c",
+		"mdHeading": "#f0f0f0",
+		"mdLink": "#d6d6dd",
+		"mdLinkUrl": "#8d8d8c",
+		"mdCode": "#b6b6b5",
+		"mdCodeBlock": "#d6d6dd",
+		"mdCodeBlockBorder": "#2c2b2a",
+		"mdQuote": "#8d8d8c",
+		"mdQuoteBorder": "#3a3836",
+		"mdHr": "#2c2b2a",
+		"mdListBullet": "#8d8d8c",
+		"toolDiffAdded": "#00ff88",
+		"toolDiffRemoved": "#ff4757",
+		"toolDiffContext": "#8d8d8c",
+		"syntaxComment": "#5f5e5c",
+		"syntaxKeyword": "#b6b6b5",
+		"syntaxFunction": "#f0f0f0",
+		"syntaxVariable": "#d6d6dd",
+		"syntaxString": "#8d8d8c",
+		"syntaxNumber": "#b6b6b5",
+		"syntaxType": "#d6d6dd",
+		"syntaxOperator": "#b6b6b5",
+		"syntaxPunctuation": "#8d8d8c",
+		"thinkingOff": "#3a3836",
+		"thinkingMinimal": "#4a4846",
+		"thinkingLow": "#5f5e5c",
+		"bashMode": "#00ff88"
+	};
+	const resolve = (key: string) => (theme.colors[key] === "" ? "" : theme.vars[theme.colors[key]] ?? theme.colors[key]);
+
+	it("every non-overridden colour is the source value, userMessageBg included", () => {
+		for (const [key, value] of Object.entries(SOURCE)) assert.equal(resolve(key), value, key);
+		assert.equal(resolve("userMessageBg"), "#232120");
+		assert.equal(resolve("userMessageText"), "", "empty: the terminal default, as in the source");
+	});
+
+	it("no colour outside the source set and the agreed overrides appears", () => {
+		const agreed = ["customMessageBg", "toolPendingBg", "toolSuccessBg", "toolErrorBg", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "thinkingMax"];
+		assert.deepEqual(Object.keys(theme.colors).filter((key) => !(key in SOURCE) && !agreed.includes(key)), []);
+	});
+});

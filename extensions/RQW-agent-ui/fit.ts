@@ -11,6 +11,18 @@ export function clean(text: string): string {
 		.replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, "");
 }
 
+/**
+ * Draws a card inside Pi's output padding: `pad` cells stay free at both sides, so the card lines up with the text of
+ * the blocks around it. A width too small for the padding is drawn as it is, down to zero (nothing).
+ */
+export function padded(render: (width: number) => string[], pad: number): (width: number) => string[] {
+	return (width) => {
+		const inset = width > 2 * pad ? pad : 0;
+		const left = " ".repeat(inset);
+		return render(width - 2 * inset).map((row) => (row ? left + row : row));
+	};
+}
+
 /** One styled line cut at the end with "…" so it never exceeds width. */
 export function fit(line: string, width: number): string {
 	if (width <= 0) return "";

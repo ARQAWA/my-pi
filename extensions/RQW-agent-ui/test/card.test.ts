@@ -17,7 +17,7 @@ function message(customType: string, content: unknown, details?: unknown): Messa
 	return { role: "custom", customType, content: content as string, display: true, details, timestamp: 0 } as Message;
 }
 function render(m: Message, width: number, expanded = false, theme: CardTheme = identity): string[] {
-	const component = createAgentCard(m, { expanded, outputPad: 1 }, theme as never);
+	const component = createAgentCard(m, { expanded, outputPad: 0 }, theme as never);
 	assert.ok(component, `${m.customType} gets a card`);
 	return component.render(width);
 }
@@ -172,7 +172,7 @@ it("card-pure: the stored message is not changed and rendering is repeatable", (
 	const before = structuredClone(input);
 	const frozen = deepFreeze(structuredClone(input));
 	for (const expanded of [false, true]) {
-		const component = createAgentCard(frozen, { expanded, outputPad: 1 }, tagged as never)!;
+		const component = createAgentCard(frozen, { expanded, outputPad: 0 }, tagged as never)!;
 		const first = component.render(40);
 		assert.deepEqual(component.render(40), first);
 		component.invalidate();
@@ -203,4 +203,68 @@ it("card-title: details.title follows the id, fitted to the width before the sta
 	}
 	assert.deepEqual(render(message("shell_runner", "[shell_runner#1] ok", { title: "Run tests" }), 80), ["shell_runner#1 Run tests", "  ok"]);
 	assert.deepEqual(render(message("agent", "[agent#3] Done", { ...titled, title: "\x1b[31mred\x1b[0m title" }), 80)[0], "agent#3 red title finished · opus medium · 42s", "terminal sequences removed");
+});
+
+/** Pi's output padding is one cell: the card sits inside it, the same as the text blocks around it. */
+function padded(m: Message, width: number, expanded: boolean): string[] {
+	const component = createAgentCard(m, { expanded, outputPad: 1 }, identity as never);
+	assert.ok(component);
+	return component.render(width);
+}
+
+it("card-padding: header and body keep one free cell at both sides, collapsed and expanded", () => {
+	const long = `${"очень длинный ответ ".repeat(8)}конец`;
+	for (const expanded of [false, true]) {
+		const rows = padded(message("agent", `[agent#3] ${long}\nвторая строка`, details), 60, expanded);
+		assert.ok(rows[0].startsWith(" agent#3 finished") && !rows[0].startsWith("  "), `header: one space, ${JSON.stringify(rows[0])}`);
+		assert.ok(rows[1].startsWith("   ") && !rows[1].startsWith("    "), `body: the pad plus the two-cell indent, ${JSON.stringify(rows[1])}`);
+		for (const row of rows) assert.ok(visibleWidth(row) <= 59, `a free cell stays at the right edge: ${visibleWidth(row)} ${row}`);
+	}
+	// The wrapping works on the narrower width and still rejoins to the original text.
+	const rows = padded(message("agent", `[agent#3] ${long}`, details), 40, true);
+	assert.equal(rows.slice(1).map((row) => row.slice(3)).join(""), long);
+	// The same layout, shifted by the padding.
+	assert.deepEqual(padded(message("agent", "[agent#3] Done", details), 80, false), [" agent#3 finished · opus medium · 42s", "   Done"]);
+});
+
+it("card-padding-narrow: widths at or below the padding draw as before, down to zero", () => {
+	for (const width of [0, 1, 2, 3, 4]) {
+		const rows = padded(message("agent", "[agent#3] Done", details), width, true);
+		for (const row of rows) assert.ok(visibleWidth(row) <= width, `${width}: ${row}`);
+		if (width === 0) assert.deepEqual(rows, []);
+	}
+});
+
+it("card-markdown-snippet: the collapsed line shows no ** or backtick wrappers, the expanded text is the original", () => {
+	const answer = "**Микрофикс доставлен в `main`: `ddc6b9e`.**\nВторая строка с `кодом`.";
+	assert.deepEqual(render(message("agent", `[agent#3] ${answer}`, details), 80), ["agent#3 finished · opus medium · 42s", "  Микрофикс доставлен в main: ddc6b9e."]);
+	const expanded = render(message("agent", `[agent#3] ${answer}`, details), 80, true).slice(1).map((row) => row.trim());
+	assert.deepEqual(expanded, answer.split("\n"), "the original source is kept in full");
+	// Meaningful source characters that are not wrappers stay, and a list marker stays.
+	assert.equal(render(message("agent", "[agent#3] 1. путь [a] <b> snake_case_name 2 * 3", details), 80)[1], "  1. путь [a] <b> snake_case_name 2 * 3");
+	// The colour of the line is kept, a failed answer stays an error.
+	const failed = render(message("agent", "[agent#3] **error: `x` не найден**", { ...details, outcome: "failed" }), 80, false, tagged);
+	assert.match(failed[1], /<error>error: <\/error>/);
+	assert.doesNotMatch(failed[1], /\*\*|`/);
+	assert.ok(visibleWidth(stripVTControlCharacters(render(message("agent", `[agent#3] **${"ш".repeat(200)}**`, details), 30)[1])) <= 30);
+});
+
+it("card-markdown-constructs: a construct over several lines is seen whole, nothing is silently dropped, styles are kept", () => {
+	const row = (answer: string, theme: CardTheme = identity) => render(message("agent", `[agent#3] ${answer}`, details), 200, false, theme)[1];
+	assert.equal(row("**первая\nвторая**"), "  первая", "bold over two lines: its first row, no leftover wrapper");
+	assert.equal(row("[result]: /tmp/report.json"), "  [result]: /tmp/report.json", "a line Markdown would swallow stays as its source");
+	assert.equal(row("   \n\n  [result]: /tmp/report.json\n\nвторой блок"), "  [result]: /tmp/report.json");
+	// Real styling for strikethrough and italic when the theme has it; the real Pi Theme does.
+	const styled = { ...identity, strikethrough: (text: string) => `\x1b[9m${text}\x1b[29m`, italic: (text: string) => `\x1b[3m${text}\x1b[23m` };
+	const line = row("~~old~~ *new*", styled);
+	assert.ok(line.includes("\x1b[9mold\x1b[29m") && line.includes("\x1b[3mnew\x1b[23m"), JSON.stringify(line));
+	assert.equal(stripVTControlCharacters(line), "  old new");
+	// Markdown can render more or less text than the source has (a reference link may show its URL): the row is complete
+	// or cut by the card with an ellipsis, never wrapped early and silently shortened.
+	const links = `${"[x][r] ".repeat(10)}\n[r]: https://example.com/report.json`;
+	const linkRow = stripVTControlCharacters(row(links));
+	assert.ok(linkRow.trim() === "[x][r] ".repeat(10).trim() || linkRow.endsWith("…") || linkRow.includes("report.json"), linkRow);
+	assert.ok(visibleWidth(linkRow) <= 200);
+	// A long first block is cut by the card, not by the renderer.
+	assert.ok(visibleWidth(stripVTControlCharacters(row(`**${"ш ".repeat(3000)}**`))) <= 200);
 });

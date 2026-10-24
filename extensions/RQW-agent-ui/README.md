@@ -28,7 +28,15 @@ only: stored messages, tool results, their details and what the model sees are n
   items, so each delivered answer gets a card. The call row, the tool shell and every other call (`start`, `status`,
   `send`, timeouts and receipts without results, errors, partial updates) are left to the next renderer. `reason:
   "alert"` and `target_changed` are diagnostics and stay stock, including `statuses[].alerts` and `long_turn` alerts.
-  RQW-agent's `child_wait` timeout custom messages also stay stock.
+- **`child_wait` notification** (`child-wait.ts`): when a `wait` ends through a notification, RQW-agent delivers the
+  result as a custom message `child_wait` whose `details` are the wait result and whose content is the same object as
+  JSON text. `index.ts` registers `createChildWaitCard` for it. With `reason: "result"` and at least one
+  `results[i]` (`id`, `text`, `outcome`) it shows cards like the other paths: a single result is one card named
+  `child_wait · <id>`; several get a summary row `child_wait · N results` (plus `· K failed` in the error color) and one
+  indented card per result. The coordinator `outcome` maps `completed` to `finished` and `error` to `failed`; any other
+  value shows no status. The notification carries no model or seconds (`display`), so the cards show none. Timeouts,
+  alerts, receipts, `idle` and anything without a delivered result, or unreadable JSON, return `undefined` and stay
+  Pi's stock box. Ctrl+O shows the whole answer of every result.
 - **Ctrl+O** (expanded tools): custom messages show the full card body. With tool-ui, each wait result shows its
   expanded cards once inside a stock-look box, with the full answer text instead of the raw result JSON. Without
   tool-ui, the existing standalone behaviour stays: expanded waits show the original result text through the next
@@ -49,6 +57,16 @@ only: stored messages, tool results, their details and what the model sees are n
   and `/reload`: both paths are then Pi's stock view. In `pi config`, exclude
   `extensions/RQW-agent-ui/index.ts` from this package's extension resources, then run `/reload`. Include it again
   and `/reload` to enable it. There is no private toggle or settings write.
+
+## Layout and Markdown (`fit.ts`, `card.ts`)
+
+The cards drawn as custom messages (`agent`, `code_writer`, `shell_runner`, `child_wait`, `review`, and the dev `qa-status`) keep
+Pi's output padding: `padded` in `fit.ts` leaves `options.outputPad` cells free at both sides, so a header and its body line up
+with the text blocks around the card, collapsed and expanded, and the wrapping uses the narrower width. A width at or below
+the padding is drawn without it. Cards inside a tool result are already inside Pi's own box and are not padded again.
+The collapsed answer line is rendered by Pi's own `Markdown` component with the card's theme roles, so wrappers such as `**` and
+backticks become styling instead of showing as characters; other source characters stay, and the expanded card shows the
+original text unchanged.
 
 ## The card (`card.ts`)
 
@@ -121,6 +139,7 @@ and ANSI); at width 0 nothing is rendered.
 
 - `node --test extensions/RQW-agent-ui/test/card.test.ts`: the card (pure).
 - `node --test extensions/RQW-agent-ui/test/review.test.ts`: review verdicts, source-aware counts, full body, width and purity.
+- `node --test extensions/RQW-agent-ui/test/child-wait.test.ts`: the `child_wait` card rows (pure).
 - `node --test extensions/RQW-agent-ui/test/wait.test.ts`: the wait cards, the stock view parity, layering, width, purity.
 - `node --test extensions/RQW-agent-ui/test/self.test.ts`: a tool-ui-like self shell, exact folded delegation, full
   expanded cards, native box parity, output padding, diagnostics, invalidation and repeated expansion.

@@ -137,7 +137,7 @@ it("wait-layering: over another extension's renderers the collapsed wait is the 
 	// Other tools and unknown renderers pass through untouched.
 	assert.equal(resolve("read", () => inner as never), inner);
 	assert.equal(resolve("agent", () => undefined), undefined);
-	assert.deepEqual(captured.messages, ["agent", "code_writer", "shell_runner", "review"]);
+	assert.deepEqual(captured.messages, ["agent", "code_writer", "shell_runner", "child_wait", "review"]);
 	const self = { ...inner, renderShell: "self" as const };
 	assert.equal(resolve("agent", () => self as never)?.renderShell, "self", "a self-shell owner keeps its static shell choice");
 });
