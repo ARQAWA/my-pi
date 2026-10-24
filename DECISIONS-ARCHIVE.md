@@ -4288,3 +4288,153 @@ Introduced: `2304f7e`. Superseded: the `codex-compaction-fix` change (squash has
 Verbatim text as it was in DECISIONS.md at `b0b3672`, line 1569 (this block is a single source line; the table row or paragraph is not wrapped):
 
 > | Original history retained for other providers/disabled adapter | Explicit 1a; opaque Codex state cannot be decoded by Claude/stock Pi; a Pi summary request occurs only on window overflow | RQW-codex history/compaction |
+
+## A-0263 · archived 2026-10-24 · Task pipeline · Pause is interrupt, resume is send (shipped API, planned resume, one checkpoint before a Pi restart)
+
+Status: SUPERSEDED by the updated `[D-PIPELINE-PAUSE-RESUME]` (DECISIONS.md#task-pipeline): `resume` is delivered, the planned-restart checkpoint exception is gone.
+Introduced: process-pipeline squash. Source tree: `main` (`2171049`), the whole entry, verbatim.
+Archived by: the agent-async change (stages 1 and 2, branch `agent-async`; stage 1 head `dd93a40`); the commit is `git log -S'A-0263' -- DECISIONS-ARCHIVE.md`.
+
+> - **Pause is interrupt, resume is send** `[D-PIPELINE-PAUSE-RESUME]`. Pausing a task is an `agent` `interrupt` of its agent:
+>   the session and its full history stay. Resuming it is an `agent` `send` of the next message to the same agent, which
+>   continues with its full history. No checkpoint, continuation or handoff file is written for a pause or a resume, and
+>   an agent is `stop`ped only when its task is finished or cancelled. Until child sessions survive a Pi restart, one
+>   short checkpoint is written only immediately before a planned Pi restart. The current session queue stays the source
+>   of the task order, not a file. Owner (`16-27-59:5087`, entry `ddd0ce47`): «Нет. Агент на паузе. Не надо писать никакой файл продолжения, надо просто уметь его возобновить. У нас же есть всё от него для того, чтобы его возобновить. У нас есть его сессия, есть его ID, есть всё от него. Надо просто, чтобы наш функционал саб-агентов мог возобновлять агентов и всё. Не надо никаких хендоффов делать.»
+>   «И да, интерфейс должен разключать, когда агент стоит, когда он AFK, когда он работает.»
+>   Owner (`16-27-59:5092`, entry `3c2122c8`), restart of the whole Pi process: «Я могу зайти в P, сделать resume и сказать: "Продолжай". И он должен уметь возобновить вообще всё: текущий чат возобновится, и агент основной текущего чата возобновит все предыдущие процессы.»
+>   «В Kushore отдельная кнопка есть: можно основной чат не возобновлять, а возобновить только саб-агентов. И потом, когда они ответят, они сами дадут нотификацию основному чату, и основной чат сам продолжит работу.»
+>   «основной чат не должен ни висеть, ни пулить, ничего. Он должен просто быть AFK, пока не придёт notification.»
+>   Owner (`16-27-59:5103`, entry `8bb70dcd`), what resume means: «возобновить, значит просто retry тот запрос, на котором он был оборван. Вот и всё.»
+>   Coordinator design text (not an owner quote; the future `resume` action of AGENT-SESSION-PERSIST): a paused or
+>   interrupted agent resumes by retrying the interrupted model request without a new message, and the same `resume`
+>   action works from a saved session after a Pi restart. A model request that was cut off is retried. A tool call that
+>   was interrupted and may have side effects is never replayed blindly: the model sees it as interrupted and decides.
+>   The shipped `agent` API stays as it is, `interrupt` then `send`, until the `resume` action is delivered; it is
+>   not implemented by this entry.
+>   Coordinator text (`16-27-59:5090`, entry `d044f551`, formatting marks removed): "Чего не хватает в самом функционале: 1. Сессии субагентов живут только в памяти, поэтому при перезапуске Pi они теряются. Их надо сохранять на диск со связью с родительской сессией. Тогда агента можно будет продолжить по номеру и после перезапуска, а `/remove` будет удалять их вместе с родителем. 2. В списке агентов будут видны три разных состояния: 'работает', 'ждёт' и 'простаивает'."
+>   Coordinator text, scope of this entry: it records the rule only; disk-persisted subagent sessions and the three-state
+>   agent list are queued in [BACKLOG.md](BACKLOG.md#agent-session-persist) and
+>   [BACKLOG.md](BACKLOG.md#agent-states-ui) and are not implemented by it; AGENT-SESSION-PERSIST also carries the restart, subagents-only resume and notification wake-up above, linked to NONBLOCKING-WAITS and ASYNC-TOOL-CALLING.
+>   Reason: closing paused agents lost their history and left only files they had written themselves; one Pi run
+>   already resumes an interrupted agent with `send`. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline).
+>   Since: process-pipeline squash.
+
+## A-0264 · archived 2026-10-24 · Tools · Background jobs (Esc kills jobs, polling only)
+
+Status: SUPERSEDED in part by the updated `[D-TOOLS-BG]` and the new `[D-TOOLS-NOTIFY]` (DECISIONS.md#tools): a handed-off job survives Esc and new owner messages, and waits may be notifications instead of polling.
+Introduced: `e5440f2`; scan and footprint safeguards `e1cca48`. Source tree: `main` (`2171049`), the whole entry, verbatim.
+Archived by: the agent-async change (stages 1 and 2, branch `agent-async`; stage 1 head `dd93a40`); the commit is `git log -S'A-0264' -- DECISIONS-ARCHIVE.md`.
+
+> - **Background jobs** `[D-TOOLS-BG]`. Owner (`16-27-59:2561`, `16-27-59:2574`, design answers `16-27-59:2598`):
+>   «Да, и надо, чтобы основной агент. Нет, знаешь как? Надо, чтобы длительные shell процессы сами уходили в фон. Если он работает больше 20 секунд, чтобы он превращался в фоновый процесс, а не оставался висячим активным процессом. Надо, чтобы всё, что висит больше 20 секунд, любая операция, которая висит больше 20 секунд, уходила в background, и можно было просто её пропинговать через какое-то время. Чтобы у агента был инструмент проверки состояния.»
+>   «только надо время сократить до 12 секунд, после 12 секунд уходит в фон.»
+>   «1а2а3а»
+>   «4 - надо разобраться с рейс кондишенами и найти самое интелектальное производительное и эффективное решение марщрутизации и оркестрации тулколов»
+>   «5б»
+>   «6а с учетом 4 пункта добавочного»
+>   Rule: a top-level call of `bash`, `codemode` (the whole script) or `read`, `edit`, `write`, `grep`, `find` that has
+>   not settled 12 s after it started, barrier wait included, returns at once as `job#N` with the command, elapsed time,
+>   the output so far and a log file in the OS temp dir, and keeps running; a call that settles sooner returns exactly the
+>   stock result. Calls inside a codemode script never go to the background. The `job` tool (`wait`, `status`, `kill`; `ids`, `id`,
+>   `timeout_ms` default 300000 when omitted, `lines` default 20) waits mechanically until one selected job ends or the
+>   caller's deadline, keeps collecting for 250 ms after the first one ends, shows state, exit code, elapsed time, tail
+>   and log path, and kills a process job with its process tree or cancels a queued one. Approved caveat: a running
+>   file-tool job (`read`, `edit`, `write`, `grep`, `find`) cannot be interrupted safely; `job kill` reports
+>   `cannot_kill` and it finishes on its own. This is a design limit, not a defect; queued file-tool jobs can be
+>   cancelled. Polling only; the descriptions say to wait for or kill one's jobs before the final answer. A process job
+>   dies on Esc, `job kill`, its `timeout`, and the caller's shutdown or reload; jobs belong to the session whose call started them (one registry per `createTools`; RQW-agent
+>   calls the offered `job` definition's `jobs.abortAll()` on interrupt and `jobs.dispose()` on close). `job` is active
+>   whenever one of these tools is; when Pi's allowlist keeps it off, nothing goes to the background. Reason: long
+>   operations must not hold the agent, and the agent needs a tool to check them; Codex unified exec yields the same way;
+>   the threshold is the owner's value.
+>   Ordering (D4). Owner (`16-27-59:2705`): «1a + живай проверка на хайку и луна хай ризонинга»; option 1a of the ordering
+>   proposal is named in coordinator text "ordered until handoff, free after". Calls of the same response keep the barrier
+>   order: a call after a backgrounded job waits for its real end and itself becomes a queued job after 12 s. At the
+>   handoff a bash or codemode job is detached from the barrier (`detach` in `barrier.ts`, through `nested.ts`); calls of
+>   later responses wait for it only for the resources it holds (H1). A read, edit or write job keeps its paths. A
+>   dependency on a background job is explicit: `job wait`, then the dependent call. While a bash or codemode job of the
+>   caller runs, a read, edit or write of a file changed outside the caller's tools since that job started gets one note
+>   naming the job.
+>   Routing (FR-safe). Owner (`16-27-59:3117`, the answer to the routing question): «2а». Holds (H1): at the handoff a
+>   bash job keeps what `footprint.ts` reads with certainty from its command text: the package folder an install changes,
+>   the git index and refs of a repository a git command changes (every subcommand except known reading ones), and the
+>   exact files it writes (redirects, `tee`, `sed -i`, `curl -o`, `rm`, `mkdir`, `touch`, `cp`/`mv`/`ln` destinations).
+>   `footprint.ts` restores the outer working directory when a subshell closes. Mutating `git symbolic-ref` and
+>   `git reflog` forms hold the repository; their read-only forms remain reads.
+>   A later call waits only for these; reads never wait; any doubt holds nothing. Package-folder and git holds are
+>   process-wide (`ledger.ts`) across main, subagents, workers and reviewers; files are not ordered across sessions, they
+>   get attributed notes. Effects report (O1): a top-level bash call that can become a job, or a top-level codemode call,
+>   takes a snapshot of the working tree
+>   (`git ls-files -co --exclude-standard`, or outside git a walk with one global limit of 20000 files, including
+>   within a single wide directory, without .git, node_modules,
+>   .next, target, .venv, __pycache__) right before its command starts, and a job takes another when it ends; what
+>   changed is the difference of the two states, never a time cutoff. Approved caveat: a bash call with its own
+>   positive `timeout` of 13 s or less never goes to the background, so it takes no pre-start snapshot. Calls with a
+>   longer or absent timeout take the snapshot even if they finish before handoff; this is not a snapshot defect. Owner (`16-27-59:3621`), on the cost:
+>   «Да, если это всего лишь 150 миллисекунд на 20 тыс. файлов, конечно, блядь, надо делать снимок файлов точный. Это 1А.»
+>   The report lists files created and changed while the job ran (with the other session and tool), the caller's own
+>   writes, own writes overwritten since, files deleted since the start, and the other jobs that ran alongside.
+>   Unreadable directories, file-stat failures and git warnings recorded by either snapshot appear in `effects.errors`,
+>   labelled before the start or at the end; failed or cancelled scans, git listing failures and the global walk bound
+>   are reported in `effects.errors` or `scanned`. Unchecked paths are explicit, and an inaccessible file is not
+>   classified as deleted. Write precondition (P1): a write over a file the session has read or written, changed
+>   since by anyone else, is refused once with who changed it; the identical retry overwrites; a file never seen is
+>   written without a check. Check, stock tool and ledger record run in one process-wide critical section per file
+>   (`withFileLock`); files are keyed by native real path (`identityKey` in `keys.ts`); records belong to a registry
+>   `owner`, the label is only shown. K1: `job kill` also cancels the queued same-response calls that wait for the killed
+>   job and lists them in `cancelled_followers`; a killed queued call leaves the barrier at once (`withdraw`). N1: a job
+>   that ended with an unseen non-empty effects report adds one note line to the caller's next top-level tool result.
+>   W1: `job wait` takes `until`, a JavaScript regular expression on the output (a leading `(?i)` ignores case). S1: a
+>   codemode script waits as a queued job for a free worker of the process (`PI_CODEMODE_MAX_WORKERS`, default 2). A
+>   bash call inside a codemode script takes the same process-wide claims. Each session's label comes through the
+>   optional `options.label` of the offered factory (`main`, `agent#1`, `agent#1/code_writer#2`, `review`, ...).
+>   Children like main. Coordinator text, technical decision at the rebase onto subagent parity; the parity request,
+>   owner (`16-27-59:2608`): «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи свои предложения».
+>   With an RQW-tools offer, a child's or reviewer's `codemode` is Pi's definition built from that session's API, passed
+>   as `options.codemode` and returned as one call of the child's barrier and a job of its registry, so a child script goes
+>   to the background after 12 s like main's and S1 slots count main and every child together; without an offer the child
+>   keeps Pi's stock codemode. Explorers inherit the caller's active base tools (`[D-AGENT-EXPLORE-TOOLS]`) and get `job` only when offered. The reviewer of RQW-review gets the offered `job`
+>   tool; Esc of a review aborts its jobs and its end disposes them. The prompt section `rqw_tools_execution` says that a
+>   background job holds the later calls of its response and, from later responses, only calls that change what it holds.
+>   Reason: a replay of recorded tool calls left D4 alone with silent overlaps between jobs and later calls; FR-safe
+>   leaves none silent and keeps the same-response order; the owner chose it. Probes, replay, snapshot cost, pilot defects
+>   and code-review fixes: [notes/decisions-evidence.md](notes/decisions-evidence.md#background-jobs-evidence); races
+>   R16-R24: `notes/analysis-races.md` section 9.
+>   Carriers: `extensions/RQW-tools/jobs.ts`, `barrier.ts`, `nested.ts`, `footprint.ts`, `ledger.ts`, `keys.ts`,
+>   `index.ts`, `codemode.ts`, `descriptions/bash.md`, `descriptions/job.md`, `descriptions/write.md`;
+>   `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/roles/*.md`; `extensions/RQW-review/index.ts`;
+>   `notes/prompt-tools-isolation.md`. Proof: `extensions/RQW-tools/test/background.test.ts`, `barrier-detach.test.ts`,
+>   `footprint.test.ts`, `ledger.test.ts`; `extensions/RQW-agent/test/wait.test.ts`, `nested-workers.test.ts`,
+>   `agent.test.ts`; `extensions/RQW-review/test/review.test.ts`, `subagent.test.ts`;
+>   `test/prompt-tools-isolation.test.ts`. Since: `e5440f2`; scan and footprint safeguards since `e1cca48`.
+
+## A-0265 · archived 2026-10-24 · Agent · API and in-process runtime (seven actions, in-memory history)
+
+Status: SUPERSEDED by the updated `[D-AGENT-API]` (DECISIONS.md#agent): `resume` and `blocking` exist and persisted callers keep child histories on disk.
+Introduced: `7a9f505`; inherited defaults `c86e9bb`. Source tree: `main` (`2171049`), the whole entry, verbatim.
+Archived by: the agent-async change (stages 1 and 2, branch `agent-async`; stage 1 head `dd93a40`); the commit is `git log -S'A-0265' -- DECISIONS-ARCHIVE.md`.
+
+> - **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `explore`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus the delegation tools allowed by [Workers](#workers). Sessions run in-process at caller cwd with in-memory settings/history, using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
+>   Coordinator text. Reason: reuse Pi sessions and the caller's provider runtime without subprocesses or duplicate resource loading.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/test/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`.
+
+## A-0266 · archived 2026-10-24 · Agent · Accepted limits (sessions only in memory)
+
+Status: SUPERSEDED by the updated `[D-AGENT-LIMITS]` (DECISIONS.md#agent): persisted children survive a Pi restart; the other limits stay.
+Introduced: `7a9f505`. Source tree: `main` (`2171049`), the whole entry, verbatim.
+Archived by: the agent-async change (stages 1 and 2, branch `agent-async`; stage 1 head `dd93a40`); the commit is `git log -S'A-0266' -- DECISIONS-ARCHIVE.md`.
+
+> - **Accepted limits** `[D-AGENT-LIMITS]`. Results arriving after the caller session ended are lost. Children share the TUI process and may read files the main agent is editing; in-process cancellation cannot forcibly end an uncooperative tool. The process-wide [Context](#context) rule applies while an RQW-context owner exists. GPT Fast inheritance and overrides are defined once under [Settings](#settings).
+>   Coordinator text. Reason: these are boundaries of the in-process session design, not unimplemented promises.
+>   Carrier: `extensions/RQW-agent/index.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management). Since: `7a9f505`.
+
+## A-0267 · archived 2026-10-24 · Agent · Ordered management and shutdown (bounded fallback for native-idle children)
+
+Status: SUPERSEDED in part by the updated `[D-AGENT-MANAGEMENT]` (DECISIONS.md#agent): a native-idle child waits for its active workers by their completion events with no implicit timeout; the bounded fallback stays for external print/json hosts.
+Introduced: `fe0e375`. Source tree: `main` (`11b0fe2`), the whole entry, verbatim.
+Archived by: the agent-async change; the commit is `git log -S'A-0267' -- DECISIONS-ARCHIVE.md`.
+
+> - **Ordered management and shutdown** `[D-AGENT-MANAGEMENT]`. Management calls across all three tools register in call order; wait releases that queue after subscription. Start, idle send and restart with task return once prompt preflight starts the run or `compaction_start` makes cancellation effective. Closing clears queues, calls abort and only then disposes, preventing requests after stop or shutdown. Print/JSON use a caller-wide non-consuming fallback wait in `agent_end`, subordinate to explicit waits; native-idle children use the same bounded fallback for their workers. TUI/RPC retain push wakeups. `session_shutdown` closes all descendants without result messages.
+>   Coordinator text. Reason: parallel tool batches, pre-run compaction and disposal must not leave unowned requests.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `extensions/RQW-agent/test/agent.test.ts`; [historical proof](notes/decisions-evidence.md#agent-proof). Since: `fe0e375`.

@@ -26,6 +26,10 @@ export type RuntimeHandle = {
 	status?(depth: number): Record<string, unknown>[];
 	/** Running children of this caller and of its nested callers, by kind. Pending results count zero. */
 	runningCounts(): RunningCounts;
+	/** Restore unfinished children without adding caller messages. */
+	resume?(signal: AbortSignal, recoveredOnly?: boolean): Promise<number>;
+	/** Core continuations have no SDK settlement boundary. */
+	settle?(aborted: boolean): void;
 	abortAll(): void;
 	close(): void;
 };
@@ -58,6 +62,8 @@ export function registerWorkers(caller: ExtensionAPI, register: (caller: Extensi
 		ids: () => runtimes.flatMap(runtime => runtime.ids()),
 		status: depth => { statusDepth(depth); return runtimes.flatMap(runtime => runtime.status?.(depth) ?? []); },
 		runningCounts: () => sumCounts(runtimes.map(runtime => runtime.runningCounts())),
+		async resume(signal, recoveredOnly) { return (await Promise.all(runtimes.map(runtime => runtime.resume?.(signal, recoveredOnly) ?? 0))).reduce((a, b) => a + b, 0); },
+		settle(aborted) { for (const runtime of runtimes) runtime.settle?.(aborted); },
 		abortAll() { for (const runtime of runtimes) runtime.abortAll(); },
 		close() { for (const runtime of runtimes) runtime.close(); },
 	};

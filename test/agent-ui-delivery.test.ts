@@ -86,7 +86,7 @@ test("agent-ui on real deliveries: custom message and wait result, agent / code_
 			if (kind === "agent") await f.start("TWO");
 			else await call(f, kind, { task: "WAIT_BRIEF" });
 			await until(() => g.entered(), `the second ${kind} running`);
-			const waiting = call(f, kind, { action: "wait", ids: [`${kind}#2`], timeout_ms: 60000 });
+			const waiting = call(f, kind, { action: "wait", blocking: true, ids: [`${kind}#2`], timeout_ms: 60000 });
 			await tick(20);
 			g.release();
 			const result = await waiting;
@@ -130,7 +130,7 @@ test("agent-ui renders every real mixed-child until all result with title and pr
 		await call(f, "agent", { ...params, system_file: promptPath, title: "Named research child" });
 		await call(f, "code_writer", { task: "MIXED_WORKER", title: "Named worker child" });
 		await until(() => agent.entered() && worker.entered(), "both mixed children running");
-		const args = { action: "wait", ids: ["agent#1", "code_writer#1"], until: "all", wake_on_alert: false, timeout_ms: 60000 };
+		const args = { action: "wait", blocking: true, ids: ["agent#1", "code_writer#1"], until: "all", wake_on_alert: false, timeout_ms: 60000 };
 		let settled = false;
 		const waiting = call(f, "agent", args).then(result => { settled = true; return result; });
 		await tick();
@@ -186,7 +186,7 @@ test("agent-ui leaves real alert and status results identical to stock across ho
 	try {
 		await f.start();
 		await until(held.entered, "alert child running");
-		const args = { action: "wait", ids: ["agent#1"], timeout_ms: 60000 };
+		const args = { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60000 };
 		const waiting = call(f, "agent", args);
 		await tick(); held.release();
 		const alert = await waiting;
@@ -312,7 +312,7 @@ test("agent-ui before tool-ui keeps the exact folded summary and expands every w
 	for (const kind of KINDS) {
 		const f = await fixture("tui", undefined, [], [AGENT_UI, TOOL_UI]);
 		const held = gate("COMPOSE_FIRST\nCOMPOSE_MIDDLE\nCOMPOSE_TAIL");
-		const args = { action: "wait", ids: [`${kind}#1`], timeout_ms: 60000, wake_on_alert: false };
+		const args = { action: "wait", blocking: true, ids: [`${kind}#1`], timeout_ms: 60000, wake_on_alert: false };
 		try {
 			if (kind === "agent") {
 				f.subReplies.push(held.reply);
@@ -374,8 +374,8 @@ test("agent-ui before tool-ui expands mixed results in leader and nonleader call
 		await call(f, "shell_runner", { task: "MIXED_SHELL", title: "Named mixed shell" });
 		await until(() => gates.every(held => held.entered()), "all mixed children running");
 		const calls = [
-			{ kind: "agent", id: "mixed-wait", args: { action: "wait", ids: ["agent#1", "code_writer#1"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
-			{ kind: "shell_runner", id: "shell-wait", args: { action: "wait", ids: ["shell_runner#1"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
+			{ kind: "agent", id: "mixed-wait", args: { action: "wait", blocking: true, ids: ["agent#1", "code_writer#1"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
+			{ kind: "shell_runner", id: "shell-wait", args: { action: "wait", blocking: true, ids: ["shell_runner#1"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
 		];
 		f.mainReplies.push(answer(calls.map(item => fauxToolCall(item.kind, item.args, { id: item.id })), { stopReason: "toolUse" }), answer("MIXED_COMPOSITION_DONE"));
 		const run = f.session.prompt("Collect all three children");
@@ -423,7 +423,7 @@ test("agent-ui before tool-ui leaves a no-results receipt diagnostic stock-ident
 		await f.start();
 		await until(() => f.delivered().length === 1, "the result already delivered as a custom message");
 		await f.session.waitForIdle();
-		const args = { action: "wait", ids: ["agent#1"], timeout_ms: 1 };
+		const args = { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1 };
 		f.mainReplies.push(answer([fauxToolCall("agent", args, { id: "receipt-wait" })], { stopReason: "toolUse" }), answer("DIAGNOSTIC_DONE"));
 		await f.session.prompt("Check the delivery receipt");
 		const result = f.session.messages.find(message => message.role === "toolResult" && message.toolCallId === "receipt-wait");

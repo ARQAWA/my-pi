@@ -82,7 +82,15 @@ file re-reading and failed replacement, caller-branch inclusion and nested calle
   (children load no resources), branch summaries (no tree navigation), session storage, sharing and telemetry.
 - `job`: an offered set always includes RQW-tools' `job` tool (background jobs of the child's own calls), which the
   child gets in addition to its base tools; its definition carries `jobs.abortAll()`, called on `interrupt`, and
-  `jobs.dispose()`, called when the child is closed (`stop`, `restart`, caller shutdown). The factory call passes
+  `jobs.dispose()`, called when the child is closed (`stop`, `restart`, caller shutdown). Background jobs of a child survive its
+  caller's Esc and new owner messages; the child's management `interrupt`, `stop`, `restart` and shutdown end them.
+  The factory's `options` also carry two optional hooks for notification waits: `notify?: (n: { id, text, details }) => void`
+  delivers a finished job wait into the child's session, and `retain?: () => () => void` is acquired only while a
+  notification subscription is pending and released after its handoff or cancel, so the child's logical assignment stays
+  pending without a result. Both are optional: without them `job wait` blocks as before, and nothing here imports another
+  extension. RQW-review's own tool factory still passes only `label` and `codemode`, so a `job wait` inside a reviewer session
+  blocks (no notification callback). RQW-review's optional `host.continuation` (`deliver`, `retain`) is a different thing: it
+  delivers a finished review verdict to a resumed calling child; native review hosts are unchanged. The factory call passes
   `{ label: "agent#1" }` (or `code_writer#2`, ...) as its optional fourth argument, so RQW-tools names the child in
   other sessions' notes and holds. Rule: [DECISIONS.md, Tools](../../DECISIONS.md#tools). `jobs.abortAll()` kills only
   jobs that can be killed (shell and other process jobs, and queued ones); a running file-tool job finishes on its own
@@ -127,9 +135,10 @@ or `shell_runner#N started` without waiting for completion. Its final result arr
 allocation metadata, abortable creation, result delivery, caller-abort latching and shutdown are shared, not copied.
 Registration takes the direct caller's API explicitly; there is no global caller session. Completed workers stay idle
 with history until `stop` or caller shutdown. Idle retained sessions do not keep the parent assignment pending.
-Each `start` is clean; only explicit `send` reuses history. Retained history costs memory; send pays its input tokens
-and may trigger Pi compaction or a new cache write after expiry. There is no automatic eviction/cap. Caller shutdown
-aborts and disposes active and retained sessions and drops their results. Caller Esc leaves accepted workers
+Each `start` is clean; explicit `send` reuses history, and `resume` retries an interrupted request without adding a
+message. Retained history costs memory; send pays its input tokens and may trigger Pi compaction or a new cache
+write after expiry. There is no automatic eviction/cap. Caller shutdown aborts and disposes live sessions while
+preserving durable child histories and recovery metadata for persisted parents. Caller Esc leaves accepted workers
 running and keeps late answers without waking the aborted caller; see [Results and main abort](#results-and-main-abort).
 
 A subagent's native run can settle while workers are pending. Their messages wake it normally; its parent keeps the
@@ -188,7 +197,7 @@ of their own.
 
 ## Wait, status and management
 
-All three tools accept `wait`, `status`, `send`, `interrupt`, `stop`, `restart`; workers also keep `{task}` for a fresh
+All three tools accept `wait`, `status`, `send`, `resume`, `interrupt`, `stop`, `restart`; workers also keep `{task}` for a fresh
 start. Management `id` belongs to that tool's kind (`agent` also accepts its legacy numeric string). `wait`/`status`
 accept nonempty `ids` of fully qualified IDs, mixing any direct agents/workers. Management targets remain direct
 children only; `status depth` adds read-only descendant visibility, not access to manage grandchildren or siblings.
@@ -205,6 +214,23 @@ Work in parallel when useful. When blocked, estimate remaining duration and choo
 safe integer is required; large waits use monotonic deadlines and platform-safe timer chunks. Timeout never stops a
 child. Re-estimate and wait again, or inspect status before deciding management. No busy polling, model turn or network
 request comes from the timer; children continue their own work/tokens. No new execution limits/watchdogs are added.
+
+### Notification waits
+
+Where the caller can receive notifications (TUI, RPC, a nested subagent, an offered job registry), `wait` does not
+hold the call by default. It registers its subscription and takes a snapshot in one synchronous step. A result that is
+ready now returns at once as before. Otherwise it returns `reason: "waiting"` with the statuses and `terminate: true`,
+so the caller's turn ends with no further model request. The one later notification (the first or all selected results,
+an alert, or the `timeout_ms` deadline) is delivered once through the existing broker as the usual `[kind#N]` message and
+wakes an idle caller; a busy caller gets it at its settlement boundary. No model request, timer poll or network request
+is made merely to wait. The notification is a `child_wait` message. A persisted child that waits for its own children keeps it as an `rqw-agent-inbox` entry of its own session, acknowledged by that persisted message and not by a clearable steering queue. Owner messages, Esc and send-now reach the caller without cancelling accepted children.
+`blocking: true` keeps the held wait for hosts and scripts that need the result in the same call. A wait inside a
+codemode script stays blocking because the outer script owns its result. The blocking fallback for print and json is only
+for external hosts: a root session that Pi itself runs in print or json mode ends with its run, so no notification can wake
+it. An in-process child agent whose offered factory got the `notify`/`retain` bridge gets notifications whatever mode its SDK
+reports, print included. A caller without a `notify` callback, such as a reviewer's own tool session, keeps the blocking wait. A new wait on the same targets replaces the older notification, so a result is never
+announced twice. `job wait` of RQW-tools follows the same rule through the same callback; see
+[DECISIONS.md, Tools](../../DECISIONS.md#tools). Decision: `[D-AGENT-NOTIFY]` in [Agent](../../DECISIONS.md#agent).
 
 `wait` accepts `until: "first" | "all"`, default `"first"`. The default returns the first selected completion and
 any other already-ready results, including terminal errors. `"all"` holds early completions until every selected
@@ -281,7 +307,8 @@ preserves history. Cancellation may still be pending: a plain send is rejected u
 ID. `restart` fences the old generation and creates a fresh session with the same external ID; without task it is idle,
 not a replay. Workers cannot override fixed configuration. An in-process tool may ignore AbortSignal and still have
 side effects; controls do not wait indefinitely for it. No transaction or forced JavaScript kill is promised. Inspect
-files/commands before retrying. Reload/resume restores ID high-water marks, never live children.
+files/commands before retrying. Reload/resume restores owned durable child histories as described below; it does
+not restore operating-system processes.
 
 ## Prompt cache
 
@@ -315,10 +342,12 @@ A final `compaction_end.errorMessage` without `willRetry` is delivered as `error
 drops only the provisional assistant attempt, including its truncation marker. Genuine final answers and errors remain
 in order across follow-ups.
 
-Print/JSON use one caller-wide non-consuming fallback wait at `agent_end`, not serial waits per profile. It uses the
-omitted default; completion follows normal message continuation, and timeout adds compact status so the caller can
-decide. A native-idle subagent uses the same bounded fallback for its own workers, never forwarding an intermediate
-timeout as its final answer to main. Explicit wait takes priority. TUI/RPC idle callers keep normal push wakeups.
+An external print/json host uses one caller-wide non-consuming fallback wait at `agent_end`, not serial waits per profile.
+It is bounded by the omitted default `timeout_ms` (300000); completion follows normal message continuation, and a timeout
+adds compact status so the caller can decide. A native-idle subagent that only waits for its own workers is not bounded
+that way: it parks on its active runs by their completion events with no implicit timeout, and a worker result wakes it
+through the normal message path. Only when no run is active does it use the bounded wait, and it never forwards an
+intermediate timeout as its final answer to main. Explicit wait takes priority. TUI/RPC idle callers keep normal push wakeups.
 Caller abort ends only its wait, leaving accepted children running; late results do not wake the aborted caller.
 `agent_before_settle` checks continuation and late-result flow.
 
@@ -336,6 +365,53 @@ Reload/resume/fork reads this metadata plus compatible legacy owned outer prefix
 Numbers mentioned inside result bodies or errors do not allocate ids. Unsafe integers are ignored. At
 `Number.MAX_SAFE_INTEGER` allocation fails before another child is constructed. A live map entry cannot be overwritten
 by a rounded duplicate id.
+
+## Persistence and resume
+
+A persisted caller owns child Pi JSONL files in the exact adjacent directory
+`<parent.jsonl>.children/{agent,code_writer,shell_runner}-N/`. Descendants recursively use the same layout.
+In-memory callers keep in-memory children. Children do not appear as unrelated top-level session files.
+Durability applies only to children created after the updated extension is loaded: a child started by the earlier
+in-memory build has no saved history and cannot be recovered retroactively, and a running Pi must be reloaded before its
+new agents are saved.
+Versioned `rqw-agent-child` entries in the parent's selected branch store the local id, generation, child file,
+run state, exact prompt/configuration, model, thinking, tools, settings, Fast and title. Restoring the parent makes
+the same caller-local ids available. Stopped mappings are tombstoned; restart creates a new history rather than
+resurrecting the old generation. Old child files remain inside the owned tree until parent removal.
+
+`agent({action:"resume", id:"agent#1"})` retries an interrupted request without a new task message. The worker
+tools accept the same action with their own full ids. Active or cancellation-pending children cannot be resumed;
+completed children stay idle and require `send` for a new task. A child paused by hand with `interrupt` gets a durable
+`paused` state with its reason. It stays paused after reload, session switch and Pi restart until an explicit `resume` or
+`/resume-agents`. The parent's continuation restores only unfinished children that were active or interrupted by a shutdown.
+A fork or clone copies the parent transcript but not the children's files: it does not claim the original `.children` tree,
+so a saved child entry that points into another session's tree is unavailable with a clear diagnostic. That never blocks a new
+`agent` start or the main chat, and one broken or lost child never blocks the recovery of the others. Children are not
+copied on fork. `/resume-agents` resumes unfinished children
+without calling the main model first. Their final result wakes the main chat normally. Continuing a restored
+parent mechanically recovers its unfinished children; merely opening an old session does not start work.
+
+Before tool execution, `rqw-agent-tool-intent` records the call through Pi's public `tool_call` hook. Recovery
+keeps completed tool results and fills missing results with an explicit interrupted/error result warning that
+side effects may already exist. It omits only a failed assistant attempt through append-only context edits.
+No old tool call is automatically executed again. The model decides whether another action is safe after seeing
+the interrupted result. Recovery is fail-closed: a missing or empty JSONL of an established or unknown history is a `recovery_error` of that
+child alone, never a new history. Only a saved state of `idle`, `runNumber` 0 and no task, as a task-less `restart` writes
+it, may restore an empty retained or new session under the same id, with no task message. The saved task and configuration are provenance only and are never turned into a task
+message, a rebuilt history or an inferred transcript. A start with a saved task whose history Pi had not flushed when
+the whole Pi process ended is not recoverable after the restart; start that child again. The other children are still
+recovered.
+
+Pi 1.4.0 exposes no `AgentSession.continue`. Resume reconstructs a child session, uses public `agent.continue()`
+and owns its core-run busy, abort, idle and settlement fences. Prompt/provider hooks still apply. This path does
+not inherit Session's post-run automatic retry and overflow-recovery loop; errors are delivered for an explicit
+retry instead. Persisted settings and ordinary threshold compaction remain available. Session files are appended
+synchronously without fsync: this is restart recovery, not a power-loss or external-effect transaction guarantee.
+Operating-system jobs are not restored after the Pi process ends. Disabling RQW-agent leaves the saved files intact;
+RQW-session independently removes the exact owned child tree with the confirmed parent `/remove` command.
+
+Proof: `test/persistence.test.ts` and the persistence integration tests plus session cleanup tests use temporary
+directories and real Pi SDK sessions with faux providers. No owner session is used or deleted.
 
 ## Offline proof
 
@@ -365,8 +441,8 @@ compaction, settings inheritance, exact system prompt and optional-tools integra
 SDK TUI-mode Esc proof exercises `clearQueue()` plus `abort()`, not a keyboard/renderer test. Native Windows/Linux and
 real provider transports are not exercised by a local macOS run. Pi's separate compaction summarizer retains Pi's own
 system prompt; exact caller `system` applies to task requests. Bare SDK `session.dispose()` does not emit lifecycle
-shutdown: hosts must emit `session_shutdown` or use Pi's runtime lifecycle. Child sessions remain in-memory; reload
-restores issued ids, not child sessions. Accepted process-sharing and end-of-session delivery limits are unchanged.
+shutdown: hosts must emit `session_shutdown` or use Pi's runtime lifecycle. Persisted parents keep child histories
+and local ids across restart; in-memory parents do not. Accepted process-sharing limits are unchanged.
 
 ## Display metadata and running-count offer
 

@@ -90,7 +90,7 @@ test("gated terminal worker error is returned once by explicit wait and never co
 			});
 			const before = f.mainRequests.length;
 			f.mainReplies.push(answer([fauxToolCall(role, { task: "BAD_REQUEST_BRIEF" })], { stopReason: "toolUse" }),
-				answer([fauxToolCall(role, { action: "wait", ids: [`${role}#1`], timeout_ms: 900000, wake_on_alert: false })], { stopReason: "toolUse" }),
+				answer([fauxToolCall(role, { action: "wait", blocking: true, ids: [`${role}#1`], timeout_ms: 900000, wake_on_alert: false })], { stopReason: "toolUse" }),
 				answer("CALLER_DONE"));
 			const run = f.session.prompt("GO");
 			await until(() => entered, `${role} worker entered`);
@@ -108,7 +108,7 @@ test("gated terminal worker error is returned once by explicit wait and never co
 			assert.ok(body.results[0].text.includes(MARK));
 			await f.session.waitForIdle(); await tick();
 			assert.equal(delivered(), false, "no custom message copy after the caller settles");
-			const again = JSON.parse(await f.tool(role, { action: "wait", ids: [`${role}#1`], timeout_ms: 1 }));
+			const again = JSON.parse(await f.tool(role, { action: "wait", blocking: true, ids: [`${role}#1`], timeout_ms: 1 }));
 			assert.equal(again.reason, "receipt");
 			assert.deepEqual(again.results, []);
 			assert.equal(again.receipts[0].delivered_via, "wait");
@@ -126,7 +126,7 @@ test("mixed explicit wait returns first result once, while caller makes no model
 	f.replies.push(code.reply, shell.reply); f.subReplies.push(child.reply);
 	f.mainReplies.push(answer([
 		fauxToolCall("agent", f.params()), fauxToolCall("code_writer", { task: "CODE" }), fauxToolCall("shell_runner", { task: "SHELL" }),
-	], { stopReason: "toolUse" }), answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1", "code_writer#1", "shell_runner#1"], timeout_ms: 900000 })], { stopReason: "toolUse" }), answer("GOT_FIRST"));
+	], { stopReason: "toolUse" }), answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1", "code_writer#1", "shell_runner#1"], timeout_ms: 900000 })], { stopReason: "toolUse" }), answer("GOT_FIRST"));
 	try {
 		const run = f.session.prompt("GO");
 		await until(() => f.session.messages.some(m => m.role === "assistant" && m.content.some(c => c.type === "toolCall" && c.arguments.action === "wait")), "caller wait started");
@@ -140,7 +140,7 @@ test("mixed explicit wait returns first result once, while caller makes no model
 		assert.equal(body.reason, "result"); assert.equal(body.results[0].id, "code_writer#1");
 		assert.equal(body.results[0].text, "CODE_FIRST");
 		assert.equal(f.session.messages.some(m => m.role === "custom" && m.customType === "code_writer"), false);
-		const receipt = JSON.parse(await f.tool("shell_runner", { action: "wait", ids: ["code_writer#1"], timeout_ms: 1 }));
+		const receipt = JSON.parse(await f.tool("shell_runner", { action: "wait", blocking: true, ids: ["code_writer#1"], timeout_ms: 1 }));
 		assert.equal(receipt.reason, "receipt"); assert.equal(receipt.receipts[0].delivered_via, "wait");
 		assert.deepEqual(receipt.results, []);
 	} finally { code.release(); shell.release(); child.release(); await f.cleanup(); }
@@ -151,13 +151,13 @@ test("timeout affects only caller; repeated wait chooses a new duration, status 
 	try {
 		await f.tool("code_writer", { task: "FIRST_BRIEF" });
 		await until(held.entered, "worker entered");
-		const first = JSON.parse(await f.tool("shell_runner", { action: "wait", ids: ["code_writer#1", "shell_runner#999"], timeout_ms: 1 }));
+		const first = JSON.parse(await f.tool("shell_runner", { action: "wait", blocking: true, ids: ["code_writer#1", "shell_runner#999"], timeout_ms: 1 }));
 		assert.equal(first.reason, "timeout"); assert.equal(first.statuses.length, 2); assert.equal(held.aborted(), false);
 		const before = f.requests.length;
 		const [snapshot] = await f.status(["code_writer#1"]);
 		assert.ok(snapshot.messages.some((m: any) => m.text?.includes("FIRST_BRIEF")));
 		assert.equal(snapshot.state, "running"); assert.equal(f.requests.length, before);
-		const again = f.tool("code_writer", { action: "wait", ids: ["code_writer#1"], timeout_ms: 900000 });
+		const again = f.tool("code_writer", { action: "wait", blocking: true, ids: ["code_writer#1"], timeout_ms: 900000 });
 		await tick(); held.release();
 		assert.equal(JSON.parse(await again).results[0].text, "LONG_WORK");
 	} finally { held.release(); await f.cleanup(); }
@@ -197,7 +197,7 @@ test("wait does not hold management queue: interrupt snapshots live tool, reject
 	f.replies.push(answer([fauxToolCall("bash", { command: "ignored signal" })], { stopReason: "toolUse" }));
 	try {
 		await f.tool("code_writer", { task: "UNCOOPERATIVE" }); await until(() => toolEntered, "tool entered");
-		const waiting = f.tool("agent", { action: "wait", ids: ["code_writer#1"], timeout_ms: 1000000 }); await tick();
+		const waiting = f.tool("agent", { action: "wait", blocking: true, ids: ["code_writer#1"], timeout_ms: 1000000 }); await tick();
 		const interrupted = JSON.parse(await f.tool("code_writer", { action: "interrupt", id: "code_writer#1" }));
 		assert.equal(interrupted.reason, "interruption_requested");
 		assert.equal(interrupted.snapshot.state, "running_tool");
@@ -215,7 +215,7 @@ test("wait does not hold management queue: interrupt snapshots live tool, reject
 test("caller abort cancels only wait; late answer persists once without an extra caller turn", async t => {
 	const f = await setup(t), held = gate("AFTER_ABORT"); f.replies.push(held.reply);
 	f.mainReplies.push(answer([fauxToolCall("shell_runner", { task: "LONG" })], { stopReason: "toolUse" }),
-		answer([fauxToolCall("shell_runner", { action: "wait", ids: ["shell_runner#1"], timeout_ms: 900000 })], { stopReason: "toolUse" }));
+		answer([fauxToolCall("shell_runner", { action: "wait", blocking: true, ids: ["shell_runner#1"], timeout_ms: 900000 })], { stopReason: "toolUse" }));
 	try {
 		const run = f.session.prompt("GO");
 		await until(() => f.mainRequests.length === 2, "caller waiting"); await tick();
@@ -241,7 +241,7 @@ test("tool_result hook failure after wait reservation returns answer to normal d
 		return changed;
 	});
 	f.mainReplies.push(answer([fauxToolCall("agent", f.params())], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 900000 })], { stopReason: "toolUse" }), answer("FINISHED"));
+		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 900000 })], { stopReason: "toolUse" }), answer("FINISHED"));
 	try {
 		const run = f.session.prompt("GO"); await until(() => f.mainRequests.length === 2, "wait before hook"); await tick();
 		held.release(); await run; await f.session.waitForIdle();

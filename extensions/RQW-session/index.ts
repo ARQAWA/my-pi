@@ -34,8 +34,9 @@ export function registerSessionCommands(pi: ExtensionAPI, copy = copyToClipboard
 			// Never reuse ctx/pi after replacement: old extension contexts become stale, even on partial failure.
 			await ctx.newSession({ withSession: async fresh => {
 				try {
-					const count = await removeFiles(plan);
-					fresh.ui.notify(`Session removed: ${id} (${count} artifact files deleted)`, "info");
+					const { artifacts, children } = await removeFiles(plan);
+					const extra = children ? `, ${children} child sessions deleted` : "";
+					fresh.ui.notify(`Session removed: ${id} (${artifacts} artifact files deleted${extra})`, "info");
 				} catch (error) {
 					fresh.ui.notify(`Session removal incomplete: ${error instanceof Error ? error.message : String(error)}. Old session file: ${file ?? "(in memory)"}`, "error");
 				}

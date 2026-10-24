@@ -51,6 +51,7 @@ let counter = 0;
 const wire: { url: string; body: Record<string, any> }[] = [];
 const realFetch = globalThis.fetch;
 const realWebSocket = globalThis.WebSocket;
+let heldCodexInstructions: string | undefined;
 /**
  * Pi's openai-codex provider defaults to the "auto" transport, which tries a WebSocket first: this fake socket keeps
  * the test offline and records each frame (`{ type: "response.create", ...body }`, the body `onPayload` returned) as a
@@ -68,6 +69,7 @@ class FakeWebSocket extends EventTarget {
 	send(data: string) {
 		const { type: _type, ...body } = JSON.parse(data);
 		wire.push({ url: this.url, body });
+		if (body.instructions === heldCodexInstructions) return;
 		queueMicrotask(() => { for (const event of eventsOf(codexReply(body))) this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(event) })); });
 	}
 	close() { this.readyState = 3; }
@@ -80,6 +82,13 @@ before(async () => {
 			? zlib.zstdDecompressSync(init!.body as Uint8Array).toString() : String(init?.body);
 		wire.push({ url: String(input), body: JSON.parse(raw) });
 		const anthropic = String(input).includes("anthropic");
+		if (!anthropic && wire.at(-1)!.body.instructions === heldCodexInstructions) {
+			return new Promise<Response>((_resolve, reject) => {
+				const abort = () => reject(new DOMException("Interrupted fake request", "AbortError"));
+				if (init?.signal?.aborted) abort();
+				else init?.signal?.addEventListener("abort", abort, { once: true });
+			});
+		}
 		return new Response(anthropic ? claudeAnswer : codexReply(wire.at(-1)!.body), { headers: { "content-type": "text/event-stream" } });
 	};
 });
@@ -175,6 +184,31 @@ describe("GPT Fast, RQW-agent children", () => {
 			await until(() => f.delivered().length === 5, "off child send answer");
 			assert.deepEqual(tiers().slice(3), [undefined, undefined]);
 		} finally { await f.close(); }
+	});
+
+	it("core resume keeps the child's Fast snapshot and exact prompt without another user message", async () => {
+		wire.length = 0;
+		const f = await open(["openai-codex"]);
+		const prompt = "EXACT CORE RESUME PROMPT";
+		heldCodexInstructions = prompt;
+		try {
+			assert.equal(await f.call("agent", { action: "start", system: prompt, task: "original task", model, tools: [] }), "agent#1 started");
+			await until(() => wire.length === 1, "held Codex request");
+			assert.equal(f.delivered().length, 0);
+			assert.equal(wire[0].body.service_tier, PRIORITY);
+			await f.call("agent", { action: "interrupt", id: "agent#1" });
+			await f.call("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 5000, blocking: true });
+			f.state.fast = false;
+			heldCodexInstructions = undefined;
+			assert.equal(await f.call("agent", { action: "resume", id: "agent#1" }), "agent#1 resumed");
+			await until(() => f.delivered().length === 1, "resumed answer");
+			assert.equal(wire.length, 2);
+			assert.deepEqual(tiers(), [PRIORITY, PRIORITY], "before_provider_request still injects the saved Fast state despite main being off");
+			assert.deepEqual(wire.map(({ body }) => body.instructions), [prompt, prompt]);
+			const userInput = (body: Record<string, any>) => body.input.filter((item: Record<string, any>) => item.role === "user");
+			assert.equal(userInput(wire[0].body).length, 1);
+			assert.deepEqual(userInput(wire[1].body), userInput(wire[0].body), "resume retries the saved request without adding user input");
+		} finally { heldCodexInstructions = undefined; await f.close(); }
 	});
 
 	it("fast_gpt overrides inheritance at start, and send or restart may change it", async () => {

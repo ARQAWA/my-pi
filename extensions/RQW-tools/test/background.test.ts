@@ -265,7 +265,7 @@ describe("background jobs", () => {
 		assert.match(waited.results[0].result, /Command timed out after 2 seconds/);
 	});
 
-	it("Esc before the threshold aborts as now; Esc after the handoff, in this run or a later one, kills the jobs", async (t) => {
+	it("Esc before the threshold aborts as now; after the handoff the job survives Esc of its run and of a later one", async (t) => {
 		const { dir, tools } = await fresh();
 		// Before the threshold by construction: the kill of the shell may take longer than the threshold on a slow host.
 		const unfreeze = freezeThreshold(t);
@@ -279,16 +279,13 @@ describe("background jobs", () => {
 		const run1 = new AbortController();
 		await call(tools.bash, { command: "sleep 30" }, dir, run1.signal);
 		run1.abort();
-		const first = await job(tools, dir, { action: "wait", ids: ["job#1"], timeout_ms: 20000 });
-		assert.equal(first.results[0].state, "killed");
-
-		// A job of an earlier run dies when a later run that used a tool is aborted.
-		await call(tools.bash, { command: "sleep 30" }, dir, new AbortController().signal);
-		const run3 = new AbortController();
-		await call(tools.read, { path: "nothing-here" }, dir, run3.signal).catch(() => {});
-		run3.abort();
-		const second = await job(tools, dir, { action: "wait", ids: ["job#2"], timeout_ms: 20000 });
-		assert.equal(second.results[0].state, "killed");
+		// A later run that used a tool and was aborted leaves it alone too.
+		const run2 = new AbortController();
+		await call(tools.read, { path: "nothing-here" }, dir, run2.signal).catch(() => {});
+		run2.abort();
+		await new Promise((r) => setTimeout(r, 100));
+		assert.equal((await job(tools, dir, { action: "status", ids: ["job#1"] })).statuses[0].state, "running");
+		assert.equal((await job(tools, dir, { action: "kill", id: "job#1" })).state, "killed");
 	});
 
 	it("calls of one response keep their order: the next one becomes a queued job and runs after the first ends", async () => {
@@ -354,15 +351,15 @@ describe("background jobs", () => {
 		assert.equal((await job(tools, dir, { action: "wait", ids: ["job#2"], timeout_ms: 20000 })).results[0].result, "started\ntwo");
 	});
 
-	it("Esc during wait ends the wait and, as the caller abort, kills the jobs (D5)", async () => {
+	it("Esc during a blocking wait ends the wait; the job it waited for keeps running", async () => {
 		const { dir, tools } = await fresh();
 		await call(tools.bash, { command: "sleep 30" }, dir);
 		const esc = new AbortController();
 		const waiting = call(tools.job, { action: "wait", ids: ["job#1"], timeout_ms: 20000 }, dir, esc.signal);
 		esc.abort();
 		await assert.rejects(waiting);
-		const after = await job(tools, dir, { action: "wait", ids: ["job#1"], timeout_ms: 20000 });
-		assert.equal(after.results[0].state, "killed");
+		assert.equal((await job(tools, dir, { action: "status", ids: ["job#1"] })).statuses[0].state, "running");
+		assert.equal((await job(tools, dir, { action: "kill", id: "job#1" })).state, "killed");
 	});
 
 	it("a call inside a codemode script never goes to the background", async () => {

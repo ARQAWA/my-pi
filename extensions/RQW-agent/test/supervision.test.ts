@@ -30,7 +30,7 @@ test("default error alert wakes without consuming terminal result; its later pus
 	});
 	f.mainReplies.push(
 		answer([fauxToolCall("agent", f.params())], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 10000 })], { stopReason: "toolUse" }),
+		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 10000 })], { stopReason: "toolUse" }),
 		answer("ALERT_ACKNOWLEDGED"),
 	);
 	try {
@@ -44,7 +44,7 @@ test("default error alert wakes without consuming terminal result; its later pus
 		assert.ok(alert.statuses[0].alerts.some((a: any) => a.kind === "error" && a.detail === failure));
 		await until(() => f.delivered().length === 1, "terminal error delivery after alert");
 		assert.deepEqual(f.delivered(), [`[agent#1] error: ${failure}`]);
-		const receipt = JSON.parse(await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 1 }));
+		const receipt = JSON.parse(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1 }));
 		assert.equal(receipt.reason, "receipt");
 		assert.equal(receipt.receipts[0].delivered_via, "message");
 		assert.deepEqual(receipt.results, []);
@@ -60,7 +60,7 @@ test("wake_on_alert false retains terminal wait delivery and makes no duplicate 
 	});
 	f.mainReplies.push(
 		answer([fauxToolCall("agent", f.params())], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 10000, wake_on_alert: false })], { stopReason: "toolUse" }),
+		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 10000, wake_on_alert: false })], { stopReason: "toolUse" }),
 		answer("GOT_TERMINAL"),
 	);
 	try {
@@ -85,7 +85,7 @@ test("until all holds mixed agent/worker completions without pushing the first r
 			fauxToolCall("agent", f.params(), { id: "start-agent" }),
 			fauxToolCall("code_writer", { task: "WORKER_TASK" }, { id: "start-worker" }),
 		], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1", "code_writer#1"], timeout_ms: 10000, until: "all", wake_on_alert: false })], { stopReason: "toolUse" }),
+		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1", "code_writer#1"], timeout_ms: 10000, until: "all", wake_on_alert: false })], { stopReason: "toolUse" }),
 		answer("GOT_BOTH"),
 	);
 	try {
@@ -140,21 +140,21 @@ test("long-turn alerts are opt-in, wake wait, reset on restart and inherited thr
 	f.subReplies.push(first.reply, second.reply, unconfigured.reply);
 	try {
 		await f.call({ ...f.params(), alert_after_ms: 10 });
-		const alert = JSON.parse(await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 1000 }));
+		const alert = JSON.parse(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1000 }));
 		assert.equal(alert.reason, "alert");
 		assert.ok(alert.statuses[0].alerts.some((a: any) => a.kind === "long_turn"));
 		assert.equal(first.aborted(), false, "alert is observational only");
 		await assert.rejects(f.call({ action: "restart", id: "agent#1", alert_after_ms: 0 }), /positive finite safe integer/);
 		assert.equal(first.aborted(), false, "invalid threshold cannot destroy existing child");
 		await f.call({ action: "restart", id: "agent#1", task: "FRESH" });
-		const inherited = JSON.parse(await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 1000 }));
+		const inherited = JSON.parse(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1000 }));
 		assert.equal(inherited.reason, "alert");
 		assert.equal(inherited.statuses[0].alerts.filter((a: any) => a.kind === "long_turn").length, 1);
 		assert.equal(second.aborted(), false);
 		await f.call({ action: "stop", id: "agent#1" });
 		await f.call(f.params("NO_THRESHOLD"));
 		await until(unconfigured.entered, "default child");
-		const timeout = JSON.parse(await f.call({ action: "wait", ids: ["agent#2"], timeout_ms: 25 }));
+		const timeout = JSON.parse(await f.call({ action: "wait", blocking: true, ids: ["agent#2"], timeout_ms: 25 }));
 		assert.equal(timeout.reason, "timeout");
 		assert.deepEqual(timeout.statuses[0].alerts, []);
 		assert.equal(unconfigured.aborted(), false);
@@ -174,7 +174,7 @@ test("workers share supervision schema and long-turn threshold, and guard refusa
 	f.runtime.registerNativeProvider(provider.provider);
 	f.mainReplies.push(
 		answer([fauxToolCall("code_writer", { task: "GUARD_TASK", alert_after_ms: 10 })], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", ids: ["code_writer#1"], timeout_ms: 1000 })], { stopReason: "toolUse" }),
+		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["code_writer#1"], timeout_ms: 1000 })], { stopReason: "toolUse" }),
 		answer("LONG_ALERT_ACK"),
 	);
 	try {
@@ -215,7 +215,7 @@ test("actual SDK schema rejections alert on the second rejection before tool_cal
 	);
 	f.mainReplies.push(
 		answer([fauxToolCall("agent", { ...f.params(), tools: ["read"] })], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 1000 })], { stopReason: "toolUse" }),
+		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1000 })], { stopReason: "toolUse" }),
 		answer("SCHEMA_ALERT_ACK"),
 	);
 	try {

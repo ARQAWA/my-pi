@@ -214,14 +214,14 @@ test("wait after send with interrupt does not see an idle child before the new r
 		await until(() => tool.entered(), "tool running");
 		assert.equal(await f.call({ action: "send", id: "1", task: "NEW_TASK", interrupt: true }), "agent#1: interrupted, sent");
 		let first: Record<string, unknown> | undefined;
-		const waiting = f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 10000 }).then(text => { first = JSON.parse(text); });
+		const waiting = f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 10000 }).then(text => { first = JSON.parse(text); });
 		await tick(60);
 		assert.equal(first, undefined, "the wait keeps waiting while the old run stops");
 		tool.release();
 		await waiting;
 		assert.notEqual(first!.reason, "idle");
 		assert.equal(first!.reason, "target_changed", "the wait follows the new run");
-		const second = JSON.parse(await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 10000 }));
+		const second = JSON.parse(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 10000 }));
 		if (second.reason === "result") assert.equal(second.results[0].text, "NEW_ANSWER");
 		else await until(() => f.delivered().includes("[agent#1] NEW_ANSWER"), "the new run's result as a message");
 		assert.equal(f.requests.sub.length, 2, "exactly one new run");
@@ -244,7 +244,7 @@ for (const drop of ["interrupt", "stop", "restart"] as const) {
 			assert.equal(f.requests.sub.length, 1, "the pending task never starts");
 			assert.deepEqual(f.delivered(), []);
 			if (drop === "interrupt") {
-				assert.equal(JSON.parse(await f.call({ action: "status", ids: ["agent#1"] })).statuses[0].state, "idle");
+				assert.equal(JSON.parse(await f.call({ action: "status", ids: ["agent#1"] })).statuses[0].state, "paused");
 				assert.equal(await f.call({ action: "send", id: "1", task: "LATER" }), "agent#1: sent");
 				await until(() => f.delivered().length === 1, "later delivery");
 				assert.ok(!texts(f.requests.sub.at(-1)!).includes("DROPPED_NEW"));

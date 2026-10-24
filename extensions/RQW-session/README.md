@@ -7,7 +7,7 @@ Independent session commands for Pi 1.4.0. No tool, UI replacement, other-extens
 - `/remove`: ask `Delete this session permanently?` in one Pi selection dialog: `1. No` first (selected by
   default), then `2. Yes`. Enter on the default, Escape or cancellation deletes nothing. Down then Enter chooses
   Yes. After Yes, switch to a fresh empty session using Pi's `/new` runtime path, then permanently unlink the old
-  JSONL and its unshared referenced artifact files (no trash). Cancelling the session switch deletes nothing.
+  JSONL, its exact adjacent `.children` session tree and their unshared referenced artifact files (no trash). Cancelling the session switch deletes nothing.
   Without dialog-capable UI it refuses; RPC may select via its UI bridge. An empty/in-memory session simply becomes
   a new empty session. No custom keyboard handling is installed.
 
@@ -21,10 +21,12 @@ Pi discovers recent sessions from JSONL timestamps/mtimes; there is no last-sess
 Only Pi-generated artifact basenames are eligible: `pi-bash`, `pi-powershell`, `pi-output`, `pi-codemode`, or
 `pi-mcp`, followed by `-`, exactly 16 hex digits and an extension; clipboard files use `pi-clipboard-<UUIDv4>` plus
 an extension. References may occur in any JSONL string, but a `fullOutputPath` key grants no extra permission:
-credentials, settings and arbitrary temp files are not artifacts. Cleanup never removes directories or other session
-JSONLs. Before switching sessions it scans all JSONLs recursively below the agent's `sessions` directory and the
-current session's directory; artifacts referenced by another session are retained. User-created forks and other
-sessions remain unchanged, including shared artifact files.
+credentials, settings and arbitrary temp files are not artifacts. The only removable directory tree is the exact
+`<current-session.jsonl>.children` sibling, including nested descendants and regular sidecar files. A symlink,
+special entry or non-directory at that tree root refuses removal before switching. Before switching sessions it
+scans all JSONLs recursively below the agent's `sessions` directory and the current session's directory; artifacts
+referenced by a surviving session are retained. Descendant sessions being removed do not count as surviving
+references. User-created forks, unrelated sessions and similarly named trees remain unchanged.
 
 Only regular artifact files lexically and physically inside the OS temp directory are eligible. The agent directory
 is used to validate/discover session JSONLs, not as an additional artifact root. Traversal components and symlink
@@ -34,14 +36,16 @@ truncated tails, do not block removal: raw line text is scanned conservatively w
 references on Windows remain protected. Reads are streamed asynchronously; each string/line is normalized once,
 with one combined reference search and canonical-path sets rather than rescanning transcripts per artifact/alias.
 Long scans periodically yield to the event loop. File read handles close before deletion, including on Windows.
-The outgoing JSONL is reread after shutdown to include final output references. If cleanup fails after switching,
-the new session remains active and the error identifies the old session file. Cleanup is not atomic: an error
-partway through may leave some artifacts deleted and the old JSONL present.
+The outgoing JSONL and descendant tree are reread after shutdown to include final output references. Descendant
+files and their empty directories are removed before the parent JSONL. If cleanup fails after switching, the new
+session remains active and the error identifies the old session file. Cleanup is not atomic: an error partway
+through may leave some artifacts or descendants deleted and the old JSONL present.
 
 **Limit:** Pi 1.4.0 names temp artifacts randomly, without session ownership metadata. Unreferenced temp files,
-including spills from RQW-agent's in-memory subagents and RQW-review's in-memory reviewers, cannot safely be
-attributed and are left for OS temp cleanup. Their in-memory sessions are cancelled/disposed by their own native
-shutdown handlers; RQW-session adds no tracking or cross-extension dependency. RQW-anthropic's installation ID,
+including spills from in-memory children and RQW-review's in-memory reviewers, cannot safely be attributed and
+are left for OS temp cleanup. Persisted child JSONLs inside the owned tree do contribute artifact references.
+Child runtimes are cancelled/disposed by their own native shutdown handlers; RQW-session adds no runtime tracking
+or cross-extension dependency. RQW-anthropic's installation ID,
 credentials, settings and other shared configuration are not session artifacts. User exports and remote/provider
 copies are not erased. This is local permanent deletion, not forensic secure erasure.
 

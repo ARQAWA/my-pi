@@ -9,6 +9,8 @@ export type Result = { id: string; run: string; delivery: string; text?: string;
 	state: "pending" | "held" | "reserved" | "message" | "wait"; claimed_by?: string; push(result: Result): void };
 type Watch = { check(): void };
 type Reservation = { owner: string; call: string; results: Result[]; signal: AbortSignal };
+type WaitOutcome = { reason: string; pending: Result[]; receipts: Record<string, unknown>[]; changed?: unknown };
+type NotificationWait = { call: string; key: string; ready(): boolean; confirm(kept: boolean): void; cancel(uncommittedOnly?: boolean): void; flush(triggerTurn: boolean): void };
 
 export function waitTimeout(value?: number | null) {
 	if (value == null) return DEFAULT_WAIT_MS;
@@ -45,6 +47,7 @@ export function deadlineTimer(ms: number, wake: () => void) {
 	return () => { canceled = true; clearTimeout(timer); };
 }
 const json = (details: Record<string, unknown>) => ({ content: [{ type: "text" as const, text: JSON.stringify(details) }], details });
+const targetKey = (ids: string[]) => JSON.stringify([...new Set(ids)].sort());
 
 export class Coordinator {
 	readonly targets = new Map<string, Target>();
@@ -55,6 +58,7 @@ export class Coordinator {
 	private watchers = new Set<Watch>();
 	private changes = new Map<string, { run: string; change: string }>();
 	private reservations = new Map<string, Reservation>();
+	private notificationWaits = new Map<string, NotificationWait>();
 	private parents = new Map<string, string>();
 	private completed = new Map<string, boolean>();
 	private activeWaits = 0;
@@ -63,11 +67,11 @@ export class Coordinator {
 	private callerAborted = false;
 	private endSignal?: AbortSignal;
 	private diagnostics: { customType: string; content: string; display: boolean }[] = [];
-	private markAborted = () => { this.callerAborted = true; };
+	private markAborted = () => { this.callerAborted = true; this.cancelNotificationWaits(true); };
 	queue: Promise<unknown> = Promise.resolve();
-	private pi: ExtensionAPI;
-	constructor(pi: ExtensionAPI) {
-		this.pi = pi;
+	private send: ExtensionAPI["sendMessage"];
+	constructor(pi: ExtensionAPI, send: ExtensionAPI["sendMessage"] = (message, options) => pi.sendMessage(message, options)) {
+		this.send = send;
 		// Real parentToolCallId links, independent of nestedCalls' bounded presentation log and ID spelling.
 		pi.on("tool_call", event => { if (event.parentToolCallId) this.parents.set(event.toolCallId, event.parentToolCallId); });
 		pi.on("tool_execution_end", event => {
@@ -77,27 +81,54 @@ export class Coordinator {
 		pi.on("agent_start", () => { this.callerAborted = false; this.nativeStarts++; this.notify(); });
 		pi.on("turn_start", () => { this.settling = false; });
 		pi.on("agent_end", (_event, ctx) => {
-			this.finalize(ctx); this.settling = true;
+			this.settling = true;
+			if (ctx.signal?.aborted) this.markAborted();
+			this.finalize(ctx);
 			this.endSignal?.removeEventListener("abort", this.markAborted);
 			this.endSignal = ctx.signal;
 			if (ctx.signal?.aborted) this.callerAborted = true;
 			else ctx.signal?.addEventListener("abort", this.markAborted, { once: true });
 		});
 		pi.on("agent_before_settle", () => {
+			const notifications = this.flushNotifications(false);
 			const messages = this.diagnostics.splice(0);
-			for (const message of messages) this.pi.sendMessage(message, { triggerTurn: false });
-			if (messages.length && !this.callerAborted) return { continue: true };
+			for (const message of messages) this.send(message, { triggerTurn: false });
+			if ((notifications || messages.length) && !this.callerAborted) return { continue: true };
 			this.settling = true;
 		});
-		pi.on("agent_settled", (event, ctx) => {
-			this.finalize(ctx, true); this.parents.clear(); this.completed.clear();
-			this.endSignal?.removeEventListener("abort", this.markAborted); this.endSignal = undefined;
-			this.callerAborted = event.aborted; this.settling = false;
-			const messages = this.diagnostics.splice(0);
-			messages.forEach((message, i) => this.pi.sendMessage(message, { triggerTurn: !event.aborted && i === messages.length - 1 }));
-			this.notify();
+		pi.on("agent_settled", (event, ctx) => this.settleCore(ctx, event.aborted));
+		pi.on("session_shutdown", () => {
+			this.callerAborted = true; this.cancelNotificationWaits();
+			this.diagnostics.length = 0; this.endSignal?.removeEventListener("abort", this.markAborted);
 		});
-		pi.on("session_shutdown", () => { this.diagnostics.length = 0; this.endSignal?.removeEventListener("abort", this.markAborted); });
+	}
+	/** The public core continuation bypasses AgentSession's final settlement event. */
+	settleCore(ctx: ExtensionContext, aborted: boolean) {
+		this.callerAborted = aborted;
+		if (aborted) this.cancelNotificationWaits(true);
+		// Commit queued receipts while still settling; only the final flush may wake the caller.
+		this.settling = true;
+		this.finalize(ctx, true);
+		this.parents.clear(); this.completed.clear();
+		this.endSignal?.removeEventListener("abort", this.markAborted); this.endSignal = undefined;
+		this.callerAborted = aborted; this.settling = false;
+		const messages = this.diagnostics.splice(0);
+		const notifications = [...this.notificationWaits.values()].some(wait => wait.ready());
+		messages.forEach((message, i) => this.send(message, { triggerTurn: !aborted && !notifications && i === messages.length - 1 }));
+		this.flushNotifications(!aborted);
+		this.notify();
+	}
+	private cancelNotificationWaits(uncommittedOnly = false) {
+		for (const wait of [...this.notificationWaits.values()]) wait.cancel(uncommittedOnly);
+	}
+	private replaceNotifications(key: string, replacement?: NotificationWait) {
+		for (const wait of [...this.notificationWaits.values()])
+			if (wait !== replacement && wait.key === key) wait.cancel();
+	}
+	private flushNotifications(triggerTurn: boolean) {
+		const ready = [...this.notificationWaits.values()].filter(wait => wait.ready());
+		ready.forEach((wait, i) => wait.flush(triggerTurn && i === ready.length - 1));
+		return ready.length;
 	}
 	private root(call: string) {
 		const seen = new Set<string>();
@@ -122,7 +153,16 @@ export class Coordinator {
 				else { result.state = "pending"; delete result.claimed_by; this.push(result); }
 			}
 		}
+		for (const [id, wait] of [...this.notificationWaits]) {
+			const root = this.root(wait.call);
+			const entry = ctx.sessionManager.getBranch().findLast(e => e.type === "message" && e.message.role === "toolResult" && e.message.toolCallId === root);
+			const message = entry?.type === "message" && entry.message.role === "toolResult" ? entry.message : undefined;
+			if (!message && !settled) continue;
+			wait.confirm(!!message && !message.isError && this.completed.get(wait.call) !== false
+				&& (root !== wait.call || JSON.stringify(message.content).includes(id)));
+		}
 		this.notify();
+		if (!this.settling) this.flushNotifications(!this.callerAborted);
 	}
 	add(target: Target) { this.targets.set(target.id, target); this.notify(); }
 	change(id: string, change: string) {
@@ -169,72 +209,167 @@ export class Coordinator {
 	private receipt(result: Result) {
 		return { id: result.id, run: result.run, delivery: result.delivery, delivered_via: result.state === "message" ? "message" : "wait", claimed_by: result.claimed_by };
 	}
-	wait(ids: string[], timeout: number, signal: AbortSignal, call: string, options: WaitOptions = {}) {
-		signal.throwIfAborted();
+	private selection(ids: string[], options: WaitOptions, owner: string, confirmedOnly = false) {
 		if (options.until != null && options.until !== "first" && options.until !== "all") throw new Error("until must be first or all");
 		if (options.wake_on_alert != null && typeof options.wake_on_alert !== "boolean") throw new Error("wake_on_alert must be a boolean");
-		const all = options.until === "all";
 		const selected = new Map(ids.map(id => [id, this.targets.get(id)?.run]));
-		const initialChanges = new Map(ids.map(id => [id, this.changes.get(id)]));
+		const changes = new Map(ids.map(id => [id, this.changes.get(id)]));
 		const alerts = new Map(ids.map(id => [id, this.targets.get(id)?.alertVersion?.() ?? 0]));
 		const checkpoints = new Map(ids.map(id => [id, this.targets.get(id)?.checkpoint?.()]));
-		const owner = randomUUID();
+		const held = new Set<Result>();
+		const hold = (pending: Result[]) => {
+			for (const r of pending) { this.offered.delete(r); r.state = "held"; r.claimed_by = owner; held.add(r); }
+		};
+		const release = () => {
+			const released = [...held].filter(r => r.state === "held" && r.claimed_by === owner);
+			for (const r of released) { r.state = "pending"; delete r.claimed_by; }
+			held.clear(); this.notify();
+			for (const r of released) this.push(r);
+		};
+		const check = (): WaitOutcome | undefined => {
+			const changed = ids.flatMap(id => {
+				const run = selected.get(id), target = this.targets.get(id), change = this.changes.get(id);
+				return run && (target?.run !== run || change !== changes.get(id)) ? [{ id, run, change: change?.run === run ? change.change : "replaced" }] : [];
+			});
+			if (changed.length) return { reason: "target_changed", pending: [], receipts: [], changed };
+			if (options.wake_on_alert !== false && ids.some(id => (this.targets.get(id)?.alertVersion?.() ?? 0) > alerts.get(id)!))
+				return { reason: "alert", pending: [], receipts: [] };
+			const available = ids.flatMap(id => { const r = this.results.get(id); return r && r.run === selected.get(id) ? [r] : []; });
+			const pending = available.filter(r => r.state === "pending" || (r.state === "held" && r.claimed_by === owner));
+			const receipts = available.filter(r => r.state !== "pending" && r.state !== "held" && (!confirmedOnly || r.state !== "reserved")).map(r => this.receipt(r));
+			const ownedElsewhere = available.some(r => (r.state === "held" && r.claimed_by !== owner) || (confirmedOnly && r.state === "reserved"));
+			if (options.until === "all") {
+				hold(pending);
+				if (ownedElsewhere || !ids.every(id => available.some(r => r.id === id) || !this.targets.get(id)?.active())) return;
+			}
+			if (pending.length) return { reason: "result", pending, receipts };
+			if (receipts.length) return { reason: "receipt", pending: [], receipts };
+			if (!ownedElsewhere && !ids.some(id => this.targets.get(id)?.active())) return { reason: "idle", pending: [], receipts: [] };
+		};
+		const output = ({ reason, pending, receipts, changed }: WaitOutcome) => json({ reason, timed_out: reason === "timeout",
+			results: pending.map(r => ({ id: r.id, run: r.run, delivery: r.delivery, text: r.text, outcome: r.outcome })), receipts,
+			...(changed ? { changed } : {}), statuses: this.status(ids, undefined, checkpoints) });
+		return { held, hold, release, check, output };
+	}
+	wait(ids: string[], timeout: number, signal: AbortSignal, call: string, options: WaitOptions = {}) {
+		signal.throwIfAborted();
+		const owner = randomUUID(), selection = this.selection(ids, options, owner);
 		this.activeWaits++;
 		this.notify(); // Explicit caller-chosen waits supersede any implicit fallback deadline.
 		return new Promise<ReturnType<typeof json>>((resolve, reject) => {
 			let done = false, cancelTimer = () => {};
-			const held = new Set<Result>();
-			const release = () => {
-				const released = [...held].filter(r => r.state === "held" && r.claimed_by === owner);
-				for (const r of released) { r.state = "pending"; delete r.claimed_by; }
-				held.clear();
-				this.notify();
-				for (const r of released) this.push(r);
-			};
 			const cleanup = () => { this.activeWaits--; this.watchers.delete(watcher); cancelTimer(); signal.removeEventListener("abort", abort); };
 			const fail = (error: unknown) => {
 				if (done) return;
 				done = true; cleanup();
-				try { release(); } finally { reject(error); }
+				try { selection.release(); } finally { reject(error); }
 			};
-			const finish = (reason: string, pending: Result[] = [], receipts: Record<string, unknown>[] = [], changed?: unknown) => {
+			const finish = (outcome: WaitOutcome) => {
 				if (done) return;
 				try {
-					// Build the complete handoff before reserving: a snapshot/serialization failure must release holds.
-					const result = json({ reason, timed_out: reason === "timeout", results: pending.map(r => ({ id: r.id, run: r.run, delivery: r.delivery, text: r.text, outcome: r.outcome })), receipts, ...(changed ? { changed } : {}), statuses: this.status(ids, undefined, checkpoints) });
-					for (const r of pending) { this.offered.delete(r); r.state = "reserved"; r.claimed_by = owner; held.delete(r); }
-					if (pending.length) this.reservations.set(owner, { owner, call, results: pending, signal });
+					const result = selection.output(outcome);
+					for (const r of outcome.pending) { this.offered.delete(r); r.state = "reserved"; r.claimed_by = owner; selection.held.delete(r); }
+					if (outcome.pending.length) this.reservations.set(owner, { owner, call, results: outcome.pending, signal });
 					done = true; cleanup();
-					try { release(); resolve(result); } catch (error) { reject(error); }
+					try { selection.release(); resolve(result); } catch (error) { reject(error); }
 				} catch (error) { fail(error); }
 			};
 			const watcher: Watch = { check: () => {
 				if (done) return;
-				try {
-					const changed = ids.flatMap(id => {
-						const run = selected.get(id), target = this.targets.get(id), change = this.changes.get(id);
-						return run && (target?.run !== run || change !== initialChanges.get(id)) ? [{ id, run, change: change?.run === run ? change.change : "replaced" }] : [];
-					});
-					if (changed.length) { finish("target_changed", [], [], changed); return; }
-					if (options.wake_on_alert !== false && ids.some(id => (this.targets.get(id)?.alertVersion?.() ?? 0) > alerts.get(id)!)) { finish("alert"); return; }
-					const available = ids.flatMap(id => { const r = this.results.get(id); return r && r.run === selected.get(id) ? [r] : []; });
-					const pending = available.filter(r => r.state === "pending" || (r.state === "held" && r.claimed_by === owner));
-					const receipts = available.filter(r => r.state !== "pending" && r.state !== "held").map(r => this.receipt(r));
-					if (all) {
-						for (const r of pending) { this.offered.delete(r); r.state = "held"; r.claimed_by = owner; held.add(r); }
-						const ready = ids.every(id => available.some(r => r.id === id && (r.state !== "held" || r.claimed_by === owner)) || !this.targets.get(id)?.active());
-						if (!ready || available.some(r => r.state === "held" && r.claimed_by !== owner)) return;
-					}
-					if (pending.length) { finish("result", pending, receipts); return; }
-					if (receipts.length) { finish("receipt", [], receipts); return; }
-					if (!available.some(r => r.state === "held") && !ids.some(id => this.targets.get(id)?.active())) finish("idle");
-				} catch (error) { fail(error); }
+				try { const outcome = selection.check(); if (outcome) finish(outcome); } catch (error) { fail(error); }
 			} };
 			const abort = () => fail(signal.reason ?? new Error("aborted"));
 			this.watchers.add(watcher); signal.addEventListener("abort", abort, { once: true });
-			cancelTimer = deadlineTimer(timeout, () => finish("timeout"));
-			if (signal.aborted) abort(); else watcher.check();
+			cancelTimer = deadlineTimer(timeout, () => finish({ reason: "timeout", pending: [], receipts: [] }));
+			if (signal.aborted) abort();
+			else {
+				// Release old holds only after the replacement can claim them before normal push.
+				this.replaceNotifications(targetKey(ids));
+				watcher.check();
+			}
 		});
+	}
+	/** The receipt must persist before its subscription may deliver through the caller's safe sender. */
+	notificationWait(ids: string[], timeout: number, signal: AbortSignal, call: string, options: WaitOptions = {}): ReturnType<typeof json> & { terminate?: true } {
+		signal.throwIfAborted();
+		const owner = randomUUID(), selection = this.selection(ids, options, owner, true);
+		let initial: WaitOutcome | undefined;
+		try {
+			initial = selection.check();
+			if (initial && initial.reason !== "result") {
+				const result = selection.output(initial);
+				this.replaceNotifications(targetKey(ids));
+				return result;
+			}
+		} catch (error) { selection.release(); throw error; }
+		let armed = false, closed = false, outcome: WaitOutcome | undefined, cancelTimer = () => {};
+		const cleanup = () => {
+			closed = true; this.notificationWaits.delete(owner); this.watchers.delete(watcher); this.activeWaits--;
+			cancelTimer(); signal.removeEventListener("abort", abort);
+		};
+		const cancel = (uncommittedOnly = false) => {
+			if (!closed && (!uncommittedOnly || !armed)) { cleanup(); selection.release(); }
+		};
+		const abort = () => cancel(true);
+		const finish = (value: WaitOutcome) => {
+			if (closed || outcome) return;
+			selection.hold(value.pending);
+			outcome = value; this.watchers.delete(watcher); cancelTimer();
+			if (armed && !this.settling) this.flushNotifications(!this.callerAborted);
+		};
+		const watcher: Watch = { check: () => {
+			if (closed || outcome) return;
+			try { const value = selection.check(); if (value) finish(value); }
+			catch { cancel(); }
+		} };
+		const wait: NotificationWait = {
+			call, key: targetKey(ids),
+			ready: () => armed && !!outcome && !closed,
+			confirm: kept => {
+				if (closed || armed) return;
+				if (!kept) { cancel(); return; }
+				armed = true;
+				// A persisted observation belongs to the caller session, not its originating turn.
+				signal.removeEventListener("abort", abort);
+			},
+			cancel,
+			flush: triggerTurn => {
+				if (!wait.ready()) return;
+				let result: ReturnType<typeof json>;
+				try {
+					// Explicit management may invalidate a held completion before its receipt commits.
+					if (outcome!.pending.some(r => r.state !== "held" || r.claimed_by !== owner))
+						outcome = selection.check() ?? { reason: "target_changed", pending: [], receipts: [] };
+					result = selection.output(outcome!);
+				} catch { cancel(); return; }
+				const message = { customType: "child_wait", content: JSON.stringify({ ...result.details, wait_id: owner }), display: true,
+					details: { ...result.details, wait_id: owner } };
+				// Claim before sending: triggerTurn may synchronously re-enter the broker.
+				const claimed = outcome!.pending.filter(r => r.state === "held" && r.claimed_by === owner);
+				for (const r of claimed) { r.state = "message"; this.uncommitted.delete(r); selection.held.delete(r); }
+				cleanup();
+				try { this.send(message, { triggerTurn }); }
+				catch {
+					for (const r of claimed) { r.state = "held"; this.uncommitted.add(r); selection.held.add(r); }
+					selection.release(); return;
+				}
+				for (const r of claimed) this.releaseMessage(r);
+				selection.release();
+			},
+		};
+		let receipt: ReturnType<typeof json>;
+		try { receipt = json({ reason: "waiting", wait_id: owner, timed_out: false, results: [], receipts: [], statuses: this.status(ids) }); }
+		catch (error) { selection.release(); throw error; }
+		this.activeWaits++; this.notificationWaits.set(owner, wait); this.watchers.add(watcher);
+		signal.addEventListener("abort", abort, { once: true });
+		cancelTimer = deadlineTimer(timeout, () => finish({ reason: "timeout", pending: [], receipts: [] }));
+		if (signal.aborted) cancel();
+		else {
+			this.replaceNotifications(wait.key, wait);
+			if (initial) finish(initial); else watcher.check();
+		}
+		this.notify();
+		return { ...receipt, terminate: true as const };
 	}
 	/** Non-consuming implicit fallback: normal message delivery still owns the result. */
 	async observe(signal: AbortSignal, timeout = DEFAULT_WAIT_MS, pending?: () => boolean) {
@@ -256,7 +391,7 @@ export class Coordinator {
 			cancelTimer = deadlineTimer(timeout, () => {
 				const diagnostic = { customType: "child_wait", content: JSON.stringify({ reason: "timeout", timed_out: true, results: [], statuses: this.status([...selected.keys()]) }), display: true };
 				if (this.settling) this.diagnostics.push(diagnostic);
-				else this.pi.sendMessage(diagnostic, { triggerTurn: !this.callerAborted });
+				else this.send(diagnostic, { triggerTurn: !this.callerAborted });
 				finish();
 			});
 			if (signal.aborted) abort(); else watcher.check();

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { relative } from "node:path";
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	SettingsManager,
 	createBashToolDefinition,
@@ -14,7 +14,7 @@ import {
 import { groupCodemode, takeOverBuiltinCodemode } from "./codemode.ts";
 import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { classifyBash, type Footprint } from "./footprint.ts";
-import { commandOf, createJobs, createJobTool, filePaths, type JobHandle, type Jobs, type JobsOptions } from "./jobs.ts";
+import { commandOf, createJobs, createJobTool, filePaths, type JobHandle, type JobNotification, type Jobs, type JobsOptions } from "./jobs.ts";
 import { changeNote, claim, recordSeen, recordUncertain, recordWrite, servedBy, stat, withFileLock, writeConflict } from "./ledger.ts";
 import { readSpellings, scopeOf } from "./keys.ts";
 import { createNestedBarrier } from "./nested.ts";
@@ -96,22 +96,32 @@ function projectToolSections(request: unknown): void {
 	}
 }
 
+export type { JobNotification } from "./jobs.ts";
+
+/** Customtype of the message that carries a finished notification wait into the main chat. */
+const JOB_MESSAGE = "job";
+
 export default function (pi: ExtensionAPI) {
+	installRqwTools(pi);
+}
+
+/** The extension; `backgroundAfterMs` is for tests (the product's threshold is 12 s). */
+export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?: number } = {}) {
 	const selectionShutdown = installSelectionIntent();
 	// One barrier per extension instance; every execute registers its scope synchronously before any await. The tool
 	// calls of a `codemode` script use the barrier of that script, found by the tool call id (nested.ts); the
 	// `codemode` call itself is one call with scope "all" in the outer one.
 	const nested = createNestedBarrier();
 	// One job registry for the main session: its bash, codemode and file tool calls, and its `job` tool.
-	const jobs = createJobs({ enabled: () => pi.getActiveTools().includes("job") });
+	const jobs = createJobs({ enabled: () => pi.getActiveTools().includes("job"), backgroundAfterMs: options.backgroundAfterMs });
 	for (const tool of createTools(process.cwd(), () => pi.getSettings(), nested, { jobs })) pi.registerTool(tool);
-	// Background jobs die with the caller (owner D5): Esc of any run, and the end of the session.
-	pi.on("turn_start", (_event, ctx) => jobs.linkAbort(ctx.signal));
-	pi.on("agent_settled", (event) => { if (event.aborted) jobs.abortAll(); });
+	// A background job belongs to the session, not to a run: Esc and new owner messages leave it alone. It dies on
+	// `job kill` and with the session. Foreground calls still abort with their run (jobs.ts `run`).
 	pi.on("session_shutdown", () => {
 		jobs.dispose();
 		selectionShutdown();
 	});
+	installNotifications(pi, jobs);
 
 	// Custom sections survive customPrompt; tool promptGuidelines do not. Each turn starts from Pi's base
 	// options, so disabling this extension removes the sections on the next turn, including after reload.
@@ -153,6 +163,41 @@ export default function (pi: ExtensionAPI) {
 		}
 		takeOverBuiltinCodemode(pi, nested, jobs);
 	});
+}
+
+/**
+ * Delivers finished notification waits into the main chat. Idle: a custom message that starts a turn. Busy: held here,
+ * outside Pi's steering queue (Esc and send-now clear that into the editor), and added at the settlement boundary,
+ * which continues the run; after an aborted run it is only appended. Print and json end with the run, so there waits block.
+ */
+function installNotifications(pi: ExtensionAPI, jobs: Jobs) {
+	let main: ExtensionContext | undefined;
+	let aborted = false;
+	const held: JobNotification[] = [];
+	const message = (n: JobNotification) => ({ customType: JOB_MESSAGE, content: `[job] ${n.text}`, display: true, details: { delivery: n.id, ...n.details } });
+	const deliver = (n: JobNotification) => {
+		if (main?.isIdle() === false) held.push(n);
+		else pi.sendMessage(message(n), { triggerTurn: true });
+	};
+	pi.on("session_start", (_event, ctx) => {
+		main = ctx;
+		jobs.setNotify(ctx.mode === "print" || ctx.mode === "json" ? undefined : deliver);
+	});
+	pi.on("agent_start", () => { aborted = false; });
+	pi.on("agent_end", (_event, ctx) => {
+		if (ctx.signal?.aborted) aborted = true;
+		else ctx.signal?.addEventListener("abort", () => { aborted = true; }, { once: true });
+	});
+	pi.on("agent_before_settle", () => {
+		if (aborted || !held.length) return;
+		for (const n of held.splice(0)) pi.sendMessage(message(n), { triggerTurn: false });
+		return { continue: true };
+	});
+	pi.on("agent_settled", (event) => {
+		const rest = held.splice(0);
+		rest.forEach((n, i) => pi.sendMessage(message(n), { triggerTurn: !event.aborted && i === rest.length - 1 }));
+	});
+	pi.on("session_shutdown", () => { held.length = 0; });
 }
 
 /**

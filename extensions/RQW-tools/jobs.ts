@@ -29,8 +29,21 @@ const SETTLE_MS = 250;
 
 export type JobState = "queued" | "running" | "exited" | "failed" | "killed" | "timed_out";
 
+/**
+ * A finished notification wait, delivered once to the caller's `notify` callback: `id` is unique per notification,
+ * `text` is the model-facing JSON a blocking wait would have returned, `details` the same result as an object.
+ */
+export type JobNotification = { id: string; text: string; details: Record<string, unknown> };
+
 export type JobsOptions = {
 	backgroundAfterMs?: number;
+	/**
+	 * Where a notification wait sends its result. Called at most once per wait, synchronously, never after `dispose`;
+	 * it must not throw. Without it (or when `setNotify(undefined)`) `job wait` blocks as it always did.
+	 */
+	notify?: (notification: JobNotification) => void;
+	/** Keep a child's logical assignment open until the notification is handed off or its subscription is cancelled. */
+	retain?: () => () => void;
 	/** Whether the caller can see the job tool now; without it calls run in the foreground as stock Pi runs them. */
 	enabled?: () => boolean;
 	/** The caller session in notes of other sessions: "main", "code_writer#2". */
@@ -117,6 +130,10 @@ type Job = {
 	effects?: Effects;
 	/** The model saw its end (wait, status, or the piggyback note N1). */
 	endSeen?: boolean;
+	/** The model got its full result (wait, status, kill, notification); the piggyback note alone does not count. */
+	delivered?: boolean;
+	/** A `job kill` is waiting for this job's end and will show it itself: no notification announces it meanwhile. */
+	reporting?: boolean;
 	listeners: Set<() => void>;
 	releasePorts?: () => void;
 	/** Stops keeping the owner's writes for this job's report (ledger history); idempotent. */
@@ -201,19 +218,40 @@ function sleep(ms: number, stop: Promise<unknown>): Promise<void> {
 	});
 }
 
+/** One timer for any safe `ms` (setTimeout caps near 24.8 days); returns its cancel. */
+function runAfter(ms: number, run: () => void): () => void {
+	const deadline = performance.now() + ms;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const step = () => {
+		const left = deadline - performance.now();
+		if (left <= 0) return run();
+		timer = setTimeout(step, Math.min(left, MAX_TIMER_MS));
+	};
+	step();
+	return () => clearTimeout(timer);
+}
+
+/** A registered notification wait (see `watch`). */
+type Waiter = { selected: Job[]; cancel(): void };
+
 export type Jobs = ReturnType<typeof createJobs>;
+
+/** The model-facing JSON of a wait result; compact display facts live only in the result details. */
+function modelJson(details: Record<string, unknown>): string {
+	const shown = Array.isArray(details.results) ? { ...details, results: details.results.map((r: any) => {
+		const { details: _display, ...rest } = r;
+		return rest;
+	}) } : details;
+	return JSON.stringify(shown);
+}
 
 /** The `job` tool of one registry. Outside the barrier and never a job itself. */
 export function createJobTool(jobs: Jobs, description: string): any {
 	// N1: a job that ended unseen with a non-empty effects report adds one line to the next result, this one included.
-	const json = (details: Record<string, unknown>) => {
+	// `terminate` ends the caller's native turn (a pending notification wait needs no model request).
+	const json = (details: Record<string, unknown>, terminate = false) => {
 		const note = jobs.piggyback();
-		// Keep the model-facing job output unchanged; compact display facts live only in result details.
-		const shown = Array.isArray(details.results) ? { ...details, results: details.results.map((r: any) => {
-			const { details: _display, ...rest } = r;
-			return rest;
-		}) } : details;
-		return { content: [{ type: "text" as const, text: JSON.stringify(shown) }, ...(note ? [{ type: "text" as const, text: note }] : [])], details };
+		return { content: [{ type: "text" as const, text: modelJson(details) }, ...(note ? [{ type: "text" as const, text: note }] : [])], details, ...(terminate ? { terminate: true } : {}) };
 	};
 	return {
 		name: "job",
@@ -226,10 +264,10 @@ export function createJobTool(jobs: Jobs, description: string): any {
 			timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Chosen wait duration, slightly longer than the estimated remaining work; default 300000 only when omitted" })),
 			lines: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "Output lines shown per job; default 20" })),
 			until: Type.Optional(Type.String({ description: "wait: also return when a job's output matches this JavaScript regular expression (readiness); a leading (?i) ignores case" })),
+			blocking: Type.Optional(Type.Boolean({ description: "wait: true holds this call until a job ends, the deadline or readiness. Default: a wait returns reason waiting at once, your turn ends, and the result arrives later as a notification message (always blocking where notifications are unavailable)" })),
 		}),
-		// Pi's codemode and Esc semantics are the caller's: a wait ends on abort, the jobs die with it (linkAbort).
+		// A blocking wait ends on abort; background jobs are independent of the caller's abort (they die on `kill`, shutdown).
 		async execute(id: string, raw: any, signal: AbortSignal | undefined) {
-			if (!id.includes("/")) jobs.linkAbort(signal);
 			const params = Object.fromEntries(Object.entries(raw ?? {}).filter(([, v]) => v !== null)) as any;
 			const lines = lineCount(params.lines);
 			const ids = (value: unknown, required: boolean): string[] | undefined => {
@@ -246,7 +284,12 @@ export function createJobTool(jobs: Jobs, description: string): any {
 						const insensitive = /^\(\?i\)/.test(params.until);
 						try { until = new RegExp(insensitive ? params.until.slice(4) : params.until, insensitive ? "mi" : "m"); } catch (error) { throw new Error(`until is not a valid regular expression: ${(error as Error).message}`); }
 					}
-					return json(await jobs.wait(ids(params.ids, true)!, waitTimeout(params.timeout_ms), lines, signal, until));
+					const waitIds = ids(params.ids, true)!;
+					const timeout = waitTimeout(params.timeout_ms);
+					// A script's own call (id with "/") and an explicit `blocking` hold the call; so does a caller with no notify.
+					if (params.blocking === true || id.includes("/") || !jobs.canNotify()) return json(await jobs.wait(waitIds, timeout, lines, signal, until));
+					const watched = jobs.watch(waitIds, timeout, lines, until);
+					return json(watched.result, watched.waiting);
 				}
 				case "status": return json({ statuses: jobs.status(ids(params.ids, false), lines) });
 				case "kill": {
@@ -271,7 +314,9 @@ export function createJobs(options: JobsOptions = {}) {
 	let disposed = false;
 	// The session's lifetime: dispose cancels effects scans.
 	const life = new AbortController();
-	const linked = new WeakSet<AbortSignal>();
+	let notifyTo = options.notify;
+	/** Pending notification waits; each cancels itself when it fires, and `dispose` cancels all. */
+	const waiters = new Set<Waiter>();
 
 	function openLog(job: Job) {
 		if (job.stream) return;
@@ -327,7 +372,7 @@ export function createJobs(options: JobsOptions = {}) {
 
 	/** Status of jobs the model is shown now: an ended one counts as seen (N1). */
 	function shown(job: Job, lines?: number) {
-		if (job.ended !== undefined) job.endSeen = true;
+		if (job.ended !== undefined) { job.endSeen = true; job.delivered = true; }
 		return status(job, lines);
 	}
 
@@ -349,14 +394,6 @@ export function createJobs(options: JobsOptions = {}) {
 
 	function abortAll() {
 		for (const job of jobs.values()) if (job.killable || job.state === "queued") kill(job);
-	}
-
-	/** Esc of a run of this caller kills its jobs (owner D5). Each run signal is linked once. */
-	function linkAbort(signal?: AbortSignal) {
-		if (!signal || linked.has(signal)) return;
-		linked.add(signal);
-		if (signal.aborted) return abortAll();
-		signal.addEventListener("abort", abortAll, { once: true });
 	}
 
 	function find(id: string): Job {
@@ -465,7 +502,6 @@ export function createJobs(options: JobsOptions = {}) {
 			return work({ signal: signal ?? new AbortController().signal, onUpdate: (u) => onUpdate?.(u), data() {}, begin: async () => {}, barrier: plain,
 				waitingOn() {}, describe: () => `a call of ${session}`, backgrounded: () => false, note() {}, settle: async () => {} });
 		}
-		linkAbort(signal);
 		const controller = new AbortController();
 		const onAbort = () => controller.abort();
 		if (signal?.aborted) controller.abort();
@@ -546,7 +582,10 @@ export function createJobs(options: JobsOptions = {}) {
 			if ("error" in first) throw first.error;
 			return first.value;
 		}
+		// From the handoff the job belongs to the session, not to the call: Esc of this call or any later run no longer
+		// kills it. `job kill`, `abortAll` and `dispose` do.
 		attached = false;
+		signal?.removeEventListener("abort", onAbort);
 		handle.barrier.handedOffAt = performance.now();
 		job.number = ++counter;
 		jobs.set(job.number, job);
@@ -595,10 +634,36 @@ export function createJobs(options: JobsOptions = {}) {
 		return { content: [{ type: "text", text: handoffText(job) }], details: { job: status(job) } };
 	}
 
+	/** The result of a wait over `selected`: `finished` ended (shown now), a readiness match, or a timeout. */
+	function report(selected: Job[], lines: number, until: RegExp | undefined, finished: Job[]) {
+		const hits = until ? selected.filter((j) => j.ended === undefined && until.test(j.tail || j.latest)) : [];
+		if (!finished.length && hits.length) {
+			return {
+				reason: "match",
+				timed_out: false,
+				matched: hits.map((j) => ({ id: idOf(j), line: (j.tail || j.latest).split("\n").reverse().find((l) => until!.test(l)) ?? "" })),
+				statuses: selected.map((j) => shown(j, lines)),
+			};
+		}
+		if (!finished.length) return { reason: "timeout", timed_out: true, statuses: selected.map((j) => shown(j, lines)) };
+		return {
+			reason: "exit",
+			timed_out: false,
+			results: finished.map((j) => ({ ...shown(j, lines), result: j.result ?? "",
+				...(j.nestedDisplay ? { details: { rqwToolsNested: j.nestedDisplay } } : {}) })),
+			statuses: selected.filter((j) => !finished.includes(j)).map((j) => shown(j, lines)),
+		};
+	}
+
+	const endedOf = (selected: Job[]) => selected.filter((j) => j.ended !== undefined);
+	const matchingOf = (selected: Job[], until?: RegExp) => until ? selected.filter((j) => j.ended === undefined && until.test(j.tail || j.latest)) : [];
+
 	async function wait(ids: string[], timeoutMs: number, lines: number, signal?: AbortSignal, until?: RegExp) {
 		const selected = ids.map(find);
-		const ended = () => selected.filter((j) => j.ended !== undefined);
-		const matching = () => until ? selected.filter((j) => j.ended === undefined && until.test(j.tail || j.latest)) : [];
+		// This call returns the result itself; an older notification wait on the same jobs must not announce it again.
+		for (const other of [...waiters]) if (other.selected.some((j) => selected.includes(j))) other.cancel();
+		const ended = () => endedOf(selected);
+		const matching = () => matchingOf(selected, until);
 		if (!ended().length && !matching().length) {
 			const aborted = new Promise<void>((resolve) => {
 				if (signal?.aborted) resolve();
@@ -618,24 +683,63 @@ export function createJobs(options: JobsOptions = {}) {
 				for (const j of selected) j.listeners.delete(check);
 			}
 		}
-		const finished = ended();
-		const hits = matching();
-		if (!finished.length && hits.length) {
-			return {
-				reason: "match",
-				timed_out: false,
-				matched: hits.map((j) => ({ id: idOf(j), line: (j.tail || j.latest).split("\n").reverse().find((l) => until!.test(l)) ?? "" })),
-				statuses: selected.map((j) => shown(j, lines)),
-			};
+		return report(selected, lines, until, ended());
+	}
+
+	/**
+	 * A notification wait. A result that is ready now (a selected job ended, `until` matched) comes back at once like a
+	 * blocking wait's. Otherwise the wait is registered and returns `waiting`; the one notification is sent by events
+	 * only: a job ending (the others ending within SETTLE_MS join it), readiness, or the deadline. No polling.
+	 * Registration and snapshot happen in one synchronous section, so no end falls between them.
+	 */
+	function watch(ids: string[], timeoutMs: number, lines: number, until?: RegExp): { result: Record<string, unknown>; waiting: boolean } {
+		const selected = ids.map(find);
+		// One wait per job: a newer wait on the same job replaces the older one, so a result is never announced twice.
+		// This holds for a wait that answers at once too: it hands the result over itself.
+		for (const other of [...waiters]) if (other.selected.some((j) => selected.includes(j))) other.cancel();
+		if (endedOf(selected).length || matchingOf(selected, until).length) return { result: report(selected, lines, until, endedOf(selected)), waiting: false };
+		const release = options.retain?.() ?? (() => {});
+		let done = false;
+		let settle: ReturnType<typeof setTimeout> | undefined;
+		const stopDeadline = runAfter(timeoutMs, () => fire(true));
+		// An ended job the model has not been given yet; one it saw through status, wait or kill is not announced.
+		const fresh = () => selected.filter((j) => j.ended !== undefined && !j.delivered && !j.reporting);
+		const allEnded = () => selected.every((j) => j.ended !== undefined);
+		const waiter: Waiter = { selected, cancel };
+		function cancel(releaseHold = true) {
+			if (done) return;
+			done = true;
+			stopDeadline();
+			clearTimeout(settle);
+			for (const j of selected) j.listeners.delete(check);
+			waiters.delete(waiter);
+			if (releaseHold) release();
 		}
-		if (!finished.length) return { reason: "timeout", timed_out: true, statuses: selected.map((j) => shown(j, lines)) };
-		return {
-			reason: "exit",
-			timed_out: false,
-			results: finished.map((j) => ({ ...shown(j, lines), result: j.result ?? "",
-				...(j.nestedDisplay ? { details: { rqwToolsNested: j.nestedDisplay } } : {}) })),
-			statuses: selected.filter((j) => !finished.includes(j)).map((j) => shown(j, lines)),
-		};
+		function fire(deadline: boolean) {
+			settle = undefined;
+			if (done) return;
+			const finished = fresh();
+			if (!finished.length && !matchingOf(selected, until).length && !deadline) {
+				// Everything that ended was already shown to the model: nothing to announce.
+				if (allEnded()) cancel();
+				return;
+			}
+			cancel(false);
+			try {
+				const details = report(selected, lines, until, finished);
+				notifyTo?.({ id: randomUUID(), text: modelJson(details), details });
+			} finally { release(); }
+		}
+		function check() {
+			if (done) return;
+			if (fresh().length) {
+				if (allEnded()) { clearTimeout(settle); fire(false); }
+				else settle ??= setTimeout(() => fire(false), SETTLE_MS);
+			} else if (matchingOf(selected, until).length) fire(false);
+		}
+		for (const j of selected) { j.listeners.add(check); void j.done.then(check); }
+		waiters.add(waiter);
+		return { result: { reason: "waiting", timed_out: false, deadline_ms: timeoutMs, statuses: selected.map((j) => shown(j, lines)) }, waiting: true };
 	}
 
 	async function killJob(id: string) {
@@ -652,9 +756,10 @@ export function createJobs(options: JobsOptions = {}) {
 			const other = [...jobs.values()].find((j) => j.handle?.barrier === f);
 			cancelled.push(other ? `${label.split(" ")[0]} (${other.tool} ${other.command})` : label);
 		}
+		job.reporting = true;
 		kill(job);
 		// The process tree is killed on abort; give the shell a moment to report its end.
-		await sleep(5000, job.done);
+		try { await sleep(5000, job.done); } finally { job.reporting = false; }
 		return { ...shown(job), ...(cancelled.length ? { cancelled_followers: cancelled } : {}) };
 	}
 
@@ -681,6 +786,11 @@ export function createJobs(options: JobsOptions = {}) {
 	return {
 		run,
 		wait,
+		watch,
+		/** Whether a wait can end in a notification (a `notify` callback is set). */
+		canNotify: () => notifyTo !== undefined,
+		/** The root session learns its mode at session start: print and json end with the run, so there waits block. */
+		setNotify(notify: JobsOptions["notify"]) { notifyTo = notify; },
 		runningJobs,
 		piggyback,
 		session,
@@ -688,11 +798,10 @@ export function createJobs(options: JobsOptions = {}) {
 		owner,
 		kill: killJob,
 		status: (ids: string[] | undefined, lines: number) => (ids ? ids.map(find) : [...jobs.values()]).map((j) => shown(j, lines)),
-		linkAbort,
-		/** Kills every running job and cancels queued ones (Esc of a later run, an interrupt of a subagent). */
+		/** Kills every running job and cancels queued ones (an interrupt of a subagent; never an owner's Esc). */
 		abortAll,
-		/** The caller session ends: kill everything; new calls start aborted. */
-		dispose() { disposed = true; life.abort(); abortAll(); forgetOwner(owner); },
+		/** The caller session ends: no more notifications; kill everything; new calls start aborted. */
+		dispose() { disposed = true; for (const w of [...waiters]) w.cancel(); life.abort(); abortAll(); forgetOwner(owner); },
 		/** Ids continue above the highest `job#N` an earlier instance of this session reported. */
 		seen(n: number) { if (Number.isSafeInteger(n) && n > counter) counter = n; },
 		get size() { return jobs.size; },

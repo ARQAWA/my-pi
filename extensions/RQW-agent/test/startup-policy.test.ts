@@ -121,7 +121,7 @@ describe("RQW-agent: startup prompt of a child against the prompt the provider r
 		wire.length = 0;
 		const f = await open();
 		try {
-			const [started, waited] = await f.call({ action: "start", task: "go", model: "anthropic/claude-opus-5-5", tools: [] }, { action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
+			const [started, waited] = await f.call({ action: "start", task: "go", model: "anthropic/claude-opus-5-5", tools: [] }, { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
 			assert.equal(started, "agent#1 started");
 			assert.match(waited, /ok/);
 			assert.equal(wire.length, 1);
@@ -140,7 +140,7 @@ describe("RQW-agent: startup prompt of a child against the prompt the provider r
 		wire.length = 0;
 		const f = await open();
 		try {
-			const [started, waited] = await f.call({ action: "start", task: "go", role: "You test.", model: "anthropic/claude-opus-5-5", tools: [] }, { action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
+			const [started, waited] = await f.call({ action: "start", task: "go", role: "You test.", model: "anthropic/claude-opus-5-5", tools: [] }, { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
 			assert.equal(started, "agent#1 started");
 			assert.match(waited, /ok/);
 			const expected = `${MAIN_FORCED}\n\n${SUBAGENT_REMINDER}\n\n<role>\nYou test.\n</role>`;
@@ -154,7 +154,7 @@ describe("RQW-agent: startup prompt of a child against the prompt the provider r
 		wire.length = 0;
 		const f = await open();
 		try {
-			const [started, waited] = await f.call({ action: "start", task: "go", model: "anthropic/claude-opus-5-5", tools: [] }, { action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
+			const [started, waited] = await f.call({ action: "start", task: "go", model: "anthropic/claude-opus-5-5", tools: [] }, { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
 			assert.equal(started, "agent#1 started");
 			assert.match(waited, /ok/);
 			assert.equal(f.offers.length, 1, "one general child is offered review");

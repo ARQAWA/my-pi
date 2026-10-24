@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { lstat, readdir, realpath, unlink } from "node:fs/promises";
+import { lstat, readdir, realpath, rmdir, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
@@ -119,6 +119,37 @@ export async function validateSessionFile(file: string | undefined, agentDir: st
 	} catch (error) { if (!missing(error)) throw error; }
 }
 
+const CHILDREN_SUFFIX = ".children";
+export type ChildTree = { root: string; files: string[]; dirs: string[] };
+
+/**
+ * Exact owned tree of a session: `<file>.children/`, nested descendants use the same suffix next to their own JSONL.
+ * Only regular files and real directories are accepted; anything else refuses removal (fail closed, no traversal).
+ */
+export async function childTree(file: string | undefined, agentDir: string): Promise<ChildTree | undefined> {
+	if (!file) return;
+	const root = resolve(file + CHILDREN_SUFFIX);
+	let info;
+	try { info = await lstat(root); }
+	catch (error) { if (missing(error)) return; throw new Error(`Cannot inspect child session tree ${root}: ${error instanceof Error ? error.message : String(error)}`); }
+	if (info.isSymbolicLink() || !info.isDirectory()) throw new Error(`Child session tree is not a real directory: ${root}`);
+	if (!inside(await realpath(agentDir), await realpath(root))) throw new Error(`Child session tree escapes Pi's agent directory: ${root}`);
+	const tree: ChildTree = { root, files: [], dirs: [root] };
+	const walk = async (dir: string): Promise<void> => {
+		let entries;
+		try { entries = await readdir(dir, { withFileTypes: true }); }
+		catch (error) { throw new Error(`Cannot scan child session tree at ${dir}: ${error instanceof Error ? error.message : String(error)}`); }
+		for (const entry of entries) {
+			const path = join(dir, entry.name);
+			if (entry.isDirectory()) { tree.dirs.push(path); await walk(path); }
+			else if (entry.isFile()) tree.files.push(path);
+			else throw new Error(`Cannot safely remove child session tree entry (symlink or special file): ${path}`);
+		}
+	};
+	await walk(root);
+	return tree;
+}
+
 export type RemovalPlan = {
 	file: string | undefined;
 	agentDir: string;
@@ -134,6 +165,7 @@ export async function prepareRemoval(file: string | undefined, agentDir: string)
 	const plan: RemovalPlan = { file, agentDir, roots, shared: new Set(), sessionPaths: new Set() };
 	if (!file) return plan;
 	const scan = referenceScanner(roots);
+	const tree = await childTree(file, agentDir); // fail closed before newSession
 	const files = new Set([...await sessionFiles(join(agentDir, "sessions")), ...await sessionFiles(dirname(file))]);
 	const currentPhysical = await regular(file, [agentDir]);
 	const refs = new Set<string>();
@@ -141,6 +173,7 @@ export async function prepareRemoval(file: string | undefined, agentDir: string)
 		const physical = await regular(other, [agentDir]);
 		if (physical) plan.sessionPaths.add(referenceText(physical));
 		if (resolve(other) === resolve(file) || physical && physical === currentPhysical) continue;
+		if (tree && inside(tree.root, resolve(other))) continue; // removed descendants do not "share" anything
 		for (const ref of await readReferences(other, scan)) refs.add(ref);
 	}
 	// A set of canonical identities replaces the old artifacts x aliases x transcript-bytes substring loop.
@@ -155,11 +188,16 @@ export async function prepareRemoval(file: string | undefined, agentDir: string)
 }
 
 /** Called after the old runtime shuts down. Read its final JSONL, including shutdown-hook output references. */
-export async function removeFiles(plan: RemovalPlan): Promise<number> {
+export async function removeFiles(plan: RemovalPlan): Promise<{ artifacts: number; children: number }> {
 	const { file, agentDir, roots, shared, sessionPaths } = plan;
-	if (!file) return 0;
+	if (!file) return { artifacts: 0, children: 0 };
 	await validateSessionFile(file, agentDir);
-	const candidates = await readReferences(file, referenceScanner(roots));
+	// Rescan the tree: descendants may have written final entries or sidecars since discovery.
+	const tree = await childTree(file, agentDir);
+	const scan = referenceScanner(roots);
+	const candidates = await readReferences(file, scan);
+	const descendants = tree ? tree.files.filter(path => path.endsWith(".jsonl")) : [];
+	for (const path of descendants) for (const ref of await readReferences(path, scan)) candidates.add(ref);
 	let removed = 0;
 	for (const path of candidates) {
 		const physical = await regular(path, roots);
@@ -167,7 +205,16 @@ export async function removeFiles(plan: RemovalPlan): Promise<number> {
 		try { await unlink(physical); removed++; }
 		catch (error) { if (!missing(error)) throw error; }
 	}
+	if (tree) {
+		for (const path of tree.files) {
+			try { await unlink(path); } catch (error) { if (!missing(error)) throw error; }
+		}
+		for (const dir of [...tree.dirs].reverse()) { // children before parents
+			try { await rmdir(dir); } catch (error) { if (!missing(error)) throw error; }
+		}
+	}
+	// The parent JSONL goes last: if the tree fails, it stays as the marker of unfinished removal.
 	try { await unlink(file); }
 	catch (error) { if (!missing(error)) throw error; }
-	return removed;
+	return { artifacts: removed, children: descendants.length };
 }

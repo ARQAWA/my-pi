@@ -95,7 +95,7 @@ function waitScenarios(pi: ExtensionAPI, scenario: string) {
 	const count = (value: string, needle: string) => value.split(needle).length - 1;
 	const ticks = async (n: number) => { for (let i = 0; i < n; i++) await new Promise<void>(resolve => setImmediate(resolve)); };
 	const start = (task: string) => ({ action: "start", system: "AUDIT_EXACT_SYSTEM", task, model: "agent-audit-cli/child", thinking: "high", tools: [] });
-	const wait = { action: "wait", ids: ["agent#1"], timeout_ms: 60000 };
+	const wait = { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60000 };
 	const CHILD: Record<string, string> = { WAIT_CHILD: "CLI_WAIT_CHILD", CODEMODE_WAIT_CHILD: "CLI_CODEMODE_CHILD", ERROR_CHILD: "CLI_ERROR_CHILD", TIMEOUT_CHILD: "CLI_TIMEOUT_CHILD", MIXED_AGENT: "CHILD_MIXED_DONE", ABORT_CHILD: "CLI_ABORT_CHILD" };
 	const SCRIPT: Record<string, string> = {
 		"codemode-abort": `await tools.agent(${JSON.stringify(start("ABORT_CHILD"))});\nreturn await tools.agent(${JSON.stringify({ ...wait, timeout_ms: 900000 })});`,
@@ -109,7 +109,7 @@ function waitScenarios(pi: ExtensionAPI, scenario: string) {
 			`await tools.shell_runner({ task: "SHELL_MIXED" });`,
 			`const got = [], seen = new Set();`,
 			`while (seen.size < 3) {`,
-			`  const r = JSON.parse(await tools.agent({ action: "wait", ids: ids.filter(id => !seen.has(id)), timeout_ms: 60000 }));`,
+			`  const r = JSON.parse(await tools.agent({ action: "wait", blocking: true, ids: ids.filter(id => !seen.has(id)), timeout_ms: 60000 }));`,
 			`  if (r.reason !== "result" && r.reason !== "receipt") break;`,
 			`  for (const x of r.results) { got.push(x.text); seen.add(x.id); }`,
 			`  for (const x of r.receipts) seen.add(x.id);`,
@@ -127,7 +127,7 @@ function waitScenarios(pi: ExtensionAPI, scenario: string) {
 		if (code.length === 1) {
 			// The worker's reply waits a few ticks after this gate, so its result arrives after the nested wait registers.
 			workerGate.resolve();
-			return answer([fauxToolCall("code_writer", { action: "wait", ids: ["code_writer#1"], timeout_ms: 60000 })], { stopReason: "toolUse" });
+			return answer([fauxToolCall("code_writer", { action: "wait", blocking: true, ids: ["code_writer#1"], timeout_ms: 60000 })], { stopReason: "toolUse" });
 		}
 		assert.match(code[1], /"reason":"result"/);
 		assert.equal(count(code[1], "WORKER_RAW"), 1, "the subagent receives the raw worker result once");

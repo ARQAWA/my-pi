@@ -284,7 +284,24 @@ const SUBAGENT_REVIEW = "rqw-review:subagent-review";
  * Where one `review` tool lives: the bus of the main session, the default GPT Fast, and, for a child, its lifetime and
  * the reviewer's label in RQW-tools' notes ("agent#1/review"; "review" when absent).
  */
-export type ReviewHost = { events: EventBus; fast: () => boolean; signal?: AbortSignal; label?: string };
+export type ReviewHost = { events: EventBus; fast: () => boolean; signal?: AbortSignal; label?: string; continuation?: ReviewContinuation };
+
+/**
+ * Supplied only by a caller whose run is driven by its own adapter instead of Pi's session loop (a child resumed on
+ * Pi's core agent): the adapter owns the settlement of its runs, so this review registers no agent_end,
+ * agent_before_settle, turn_start or agent_settled hook and hands each verdict to `deliver`.
+ * - `retain` is called once per started review, before its job starts; the returned release is called once after the
+ *   verdict was delivered, or when the review ended without one (the caller was shut down). The adapter keeps its
+ *   logical assignment pending in between.
+ * - `deliver` gets the verdict message only, called once per review; whether and when it wakes the caller is the
+ *   adapter's choice. It must also persist the message as a `custom_message` entry of the caller's session, which
+ *   numbers later reviews.
+ * Neither may throw.
+ */
+export type ReviewContinuation = {
+	deliver: ExtensionAPI["sendMessage"];
+	retain(): () => void;
+};
 
 /** Reviewer jobs abort when its caller session shuts down or its asking child ends; review completion disposes them. */
 type JobControl = { abortAll(): void; dispose(): void };
@@ -710,6 +727,9 @@ export function registerReview(pi: ExtensionAPI, host: ReviewHost) {
 		return unanswered.size > 0;
 	}
 
+	// A continuation caller settles its own runs: none of the native delivery hooks below apply to it.
+	if (!host.continuation) installNativeDelivery();
+	function installNativeDelivery() {
 	// Print and JSON modes exit when the main run settles, so there the main run waits for running reviews. A verdict
 	// sent during the run continues it here; an idle main session gets a verdict as a new turn. After an abort the
 	// verdict stays in the session without a turn, and the model sees it on the next one.
@@ -753,6 +773,7 @@ export function registerReview(pi: ExtensionAPI, host: ReviewHost) {
 		const held = late.splice(0);
 		held.forEach((message, i) => pi.sendMessage(message, { triggerTurn: !event.aborted && i === held.length - 1 }));
 	});
+	}
 
 	async function job(n: number, level: Level, brief: string, ctx: ExtensionContext, fast?: boolean) {
 		const controller = new AbortController();
@@ -775,7 +796,7 @@ export function registerReview(pi: ExtensionAPI, host: ReviewHost) {
 		// The session that asked is gone; nobody is left to read the verdict.
 		if (controller.signal.reason === SHUTDOWN) return;
 		try {
-			deliver({
+			const message = {
 				customType: MESSAGE_TYPE,
 				content: verdictMessage(n, verdict, failed),
 				display: true,
@@ -786,7 +807,9 @@ export function registerReview(pi: ExtensionAPI, host: ReviewHost) {
 					...(used.spec ? { model: `${used.spec.provider}/${used.spec.model}`, thinking: used.spec.thinking } : {}),
 					seconds: Math.round((Date.now() - startedAt) / 100) / 10,
 				},
-			});
+			};
+			if (host.continuation) host.continuation.deliver(message);
+			else deliver(message);
 		} catch {
 			// The session ended between the verdict and its delivery.
 		}
@@ -812,9 +835,13 @@ export function registerReview(pi: ExtensionAPI, host: ReviewHost) {
 			pi.appendEntry(MESSAGE_TYPE, rejected.length
 				? { n, level: p.level, object: p.object, criterion: p.criterion, rejected_earlier: rejected }
 				: { n });
+			// A continuation caller keeps its assignment pending from here until the verdict is delivered (or lost).
+			const retained = host.continuation?.retain();
+			let released = false;
+			const release = () => { if (!released) { released = true; retained?.(); } };
 			const pending = job(n, p.level, brief, ctx, typeof p.fast_gpt === "boolean" ? p.fast_gpt : undefined);
 			jobs.add(pending);
-			void pending.finally(() => jobs.delete(pending));
+			void pending.finally(() => { jobs.delete(pending); release(); });
 			return {
 				content: [{ type: "text", text: startedText(n) }],
 				details: { n, level: p.level },

@@ -408,30 +408,33 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `extensions/RQW-tools/test/background.test.ts`. Since: process-pipeline squash.
   Retired: the causal fix landed as `2b9c088` and no skip exists in the tests; the exception is not in force.
 
-- **Pause is interrupt, resume is send** `[D-PIPELINE-PAUSE-RESUME]`. Pausing a task is an `agent` `interrupt` of its agent:
-  the session and its full history stay. Resuming it is an `agent` `send` of the next message to the same agent, which
-  continues with its full history. No checkpoint, continuation or handoff file is written for a pause or a resume, and
-  an agent is `stop`ped only when its task is finished or cancelled. Until child sessions survive a Pi restart, one
-  short checkpoint is written only immediately before a planned Pi restart. The current session queue stays the source
-  of the task order, not a file. Owner (`16-27-59:5087`, entry `ddd0ce47`): «Нет. Агент на паузе. Не надо писать никакой файл продолжения, надо просто уметь его возобновить. У нас же есть всё от него для того, чтобы его возобновить. У нас есть его сессия, есть его ID, есть всё от него. Надо просто, чтобы наш функционал саб-агентов мог возобновлять агентов и всё. Не надо никаких хендоффов делать.»
+- **Pause is interrupt, resume is `resume`** `[D-PIPELINE-PAUSE-RESUME]`. Pausing a task is an `agent` `interrupt` of its agent:
+  the session and its full history stay, on disk too for a persisted parent. Resuming it is the `resume` action of the same
+  agent (`code_writer` and `shell_runner` have it too): it retries the cut-off model request with no new message, and after a
+  Pi restart the same ids resume from the saved child sessions. `send` stays for a new message. No checkpoint, continuation or
+  handoff file is written for a pause or a resume, and an agent is `stop`ped only when its task is finished or cancelled.
+  The earlier exception, one short checkpoint right before a planned Pi restart, is removed because child sessions now
+  survive a restart. The current session queue stays the source of the task order, not a file.
+  Owner (`16-27-59:5087`, entry `ddd0ce47`): «Нет. Агент на паузе. Не надо писать никакой файл продолжения, надо просто уметь его возобновить. У нас же есть всё от него для того, чтобы его возобновить. У нас есть его сессия, есть его ID, есть всё от него. Надо просто, чтобы наш функционал саб-агентов мог возобновлять агентов и всё. Не надо никаких хендоффов делать.»
   «И да, интерфейс должен разключать, когда агент стоит, когда он AFK, когда он работает.»
   Owner (`16-27-59:5092`, entry `3c2122c8`), restart of the whole Pi process: «Я могу зайти в P, сделать resume и сказать: "Продолжай". И он должен уметь возобновить вообще всё: текущий чат возобновится, и агент основной текущего чата возобновит все предыдущие процессы.»
   «В Kushore отдельная кнопка есть: можно основной чат не возобновлять, а возобновить только саб-агентов. И потом, когда они ответят, они сами дадут нотификацию основному чату, и основной чат сам продолжит работу.»
   «основной чат не должен ни висеть, ни пулить, ничего. Он должен просто быть AFK, пока не придёт notification.»
   Owner (`16-27-59:5103`, entry `8bb70dcd`), what resume means: «возобновить, значит просто retry тот запрос, на котором он был оборван. Вот и всё.»
-  Coordinator design text (not an owner quote; the future `resume` action of AGENT-SESSION-PERSIST): a paused or
-  interrupted agent resumes by retrying the interrupted model request without a new message, and the same `resume`
-  action works from a saved session after a Pi restart. A model request that was cut off is retried. A tool call that
-  was interrupted and may have side effects is never replayed blindly: the model sees it as interrupted and decides.
-  The shipped `agent` API stays as it is, `interrupt` then `send`, until the `resume` action is delivered; it is
-  not implemented by this entry.
   Coordinator text (`16-27-59:5090`, entry `d044f551`, formatting marks removed): "Чего не хватает в самом функционале: 1. Сессии субагентов живут только в памяти, поэтому при перезапуске Pi они теряются. Их надо сохранять на диск со связью с родительской сессией. Тогда агента можно будет продолжить по номеру и после перезапуска, а `/remove` будет удалять их вместе с родителем. 2. В списке агентов будут видны три разных состояния: 'работает', 'ждёт' и 'простаивает'."
-  Coordinator text, scope of this entry: it records the rule only; disk-persisted subagent sessions and the three-state
-  agent list are queued in [BACKLOG.md](BACKLOG.md#agent-session-persist) and
-  [BACKLOG.md](BACKLOG.md#agent-states-ui) and are not implemented by it; AGENT-SESSION-PERSIST also carries the restart, subagents-only resume and notification wake-up above, linked to NONBLOCKING-WAITS and ASYNC-TOOL-CALLING.
-  Reason: closing paused agents lost their history and left only files they had written themselves; one Pi run
-  already resumes an interrupted agent with `send`. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline).
-  Since: process-pipeline squash.
+  Coordinator design text, taken by default and not an owner quote (the delivered `resume`): a paused
+  or interrupted agent resumes by retrying the interrupted model request without a new message, also from a saved session
+  after a Pi restart. A cut-off model request is retried; a tool call that was interrupted and may have side effects is
+  never replayed blindly, the model sees it as interrupted and decides. `/resume-agents` resumes the children only,
+  without a main-model request; their results wake the main chat. Continuing a restored parent recovers its unfinished children that were active or interrupted by a shutdown; a child paused
+  by hand has a durable paused state and stays paused until an explicit `resume` or `/resume-agents`, also after reload. Contract: [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume).
+  Provenance of the stage plan: the coordinator delegated the task in the main session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`
+  (line 5356, assistant entry `7ce715fd`, tool call `task`): a 20-minute design note, then stages persistence/resume first and
+  notification waits second, reviews per PROCESS, a pause at the 2-hour limit. This is coordinator delegation, not an owner quotation;
+  the owner's own statements are the quotes above and those in `[D-TOOLS-NOTIFY]` (`16-27-59:4876`, `16-27-59:4937`).
+  Reason: closing paused agents lost their history; the owner wanted a resume from the saved session, not a handoff file.
+  Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline); `extensions/RQW-agent/persistence.ts`, `extensions/RQW-agent/index.ts`.
+  Since: process-pipeline squash; this wording since `dd93a40` and the final squash of branch `agent-async`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0263.
 
 - **Two hours of substantive work per task** `[D-PIPELINE-TIMEBOX]`. Each development task gets at most 2 hours of
   substantive work, then a safe pause and a report; the freed active slot goes at once to the highest-priority runnable
@@ -933,8 +936,9 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   and log path, and kills a process job with its process tree or cancels a queued one. Approved caveat: a running
   file-tool job (`read`, `edit`, `write`, `grep`, `find`) cannot be interrupted safely; `job kill` reports
   `cannot_kill` and it finishes on its own. This is a design limit, not a defect; queued file-tool jobs can be
-  cancelled. Polling only; the descriptions say to wait for or kill one's jobs before the final answer. A process job
-  dies on Esc, `job kill`, its `timeout`, and the caller's shutdown or reload; jobs belong to the session whose call started them (one registry per `createTools`; RQW-agent
+  cancelled. A wait may be a notification instead of a held call (`[D-TOOLS-NOTIFY]`); the descriptions say to kill jobs
+  one no longer needs before the final answer. A process job dies on `job kill`, its `timeout`, a child's management
+  interrupt and the caller's shutdown or reload, and after the handoff not on Esc or a new owner message; jobs belong to the session whose call started them (one registry per `createTools`; RQW-agent
   calls the offered `job` definition's `jobs.abortAll()` on interrupt and `jobs.dispose()` on close). `job` is active
   whenever one of these tools is; when Pi's allowlist keeps it off, nothing goes to the background. Reason: long
   operations must not hold the agent, and the agent needs a tool to check them; Codex unified exec yields the same way;
@@ -998,7 +1002,34 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `notes/prompt-tools-isolation.md`. Proof: `extensions/RQW-tools/test/background.test.ts`, `barrier-detach.test.ts`,
   `footprint.test.ts`, `ledger.test.ts`; `extensions/RQW-agent/test/wait.test.ts`, `nested-workers.test.ts`,
   `agent.test.ts`; `extensions/RQW-review/test/review.test.ts`, `subagent.test.ts`;
-  `test/prompt-tools-isolation.test.ts`. Since: `e5440f2`; scan and footprint safeguards since `e1cca48`.
+  `test/prompt-tools-isolation.test.ts`. Since: `e5440f2`; scan and footprint safeguards since `e1cca48`; handoff independence and notification waits since the final squash of branch `agent-async`. Earlier wording (Esc killed jobs, polling only): [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0264.
+
+- **Notification waits and independent jobs** `[D-TOOLS-NOTIFY]`. Owner (`16-27-59:4876`, entry `85357ce9`) and (`16-27-59:4937`, entry `a8684155`):
+  Entry `16-27-59:4876` asked that waits wake the agent by notification and that owner steering stay possible without aborting
+  waits, children or jobs; its exact text is not kept in this repository, only the entry id and that summary. Entry
+  `16-27-59:4937` (the same spans are kept in [BACKLOG.md](BACKLOG.md#asynchronous-tool-research-sources)):
+  «Также добавь в список задач, что нам нужно сделать реализацию асинхронного tool calling, как в Codecs CLI, чтобы агент мог вызывать tool call и при этом асинхронно полностью работать, принимать от меня сообщения и не обрываться на этом.»
+  Rule, taken by default (coordinator text, not an owner quote): `job wait` registers its subscription and snapshot in one
+  synchronous step. A result that is ready now returns at once as before. Otherwise the call returns `reason: "waiting"`
+  with `terminate: true`, so the caller's turn ends with no further model request, and one notification (a job ended, an
+  `until` match, or the `timeout_ms` deadline; ends within 250 ms join one notification) later arrives as a `[job]`
+  message that wakes an idle caller. A busy caller gets it at the settlement boundary, held outside Pi's steering queue so
+  Esc and send-now do not drop it. A newer wait on the same job replaces the older one; a result already shown by
+  `status`, `wait` or `kill` is not announced again. `blocking: true` keeps the old held wait. Calls inside a codemode
+  script stay blocking. The print/json fallback is for external hosts only: a root session run by Pi in print or json mode ends
+  with its run, so its waits block; an in-process child agent with the `notify`/`retain` bridge keeps notifications even when its SDK mode reads print.
+  Any caller without a `notify` callback, including a reviewer's own tool session, keeps the blocking wait. The `notify` callback
+  of the job registry is the same one subagent waits use, so no second delivery registry exists. A child's offered factory also
+  gets the optional `retain` hook, taken only while a notification subscription is pending, so the child's assignment stays open;
+  both hooks are optional and keep the extensions independent.
+  A job that went to the background belongs to the session: Esc, abort of the run, a new owner message and send-now
+  do not kill it. `job kill`, a child's management interrupt (`jobs.abortAll()`), `stop`/`restart` and session shutdown
+  do. A foreground call still aborts with its run. This supersedes owner decision D5 (Esc kills all background jobs) of
+  `[D-TOOLS-BG]`; no owner quote for D5 is repeated here.
+  Reason: the owner wants a waiting agent not to hold a call and owner messages not to kill background work.
+  Carrier: `extensions/RQW-tools/jobs.ts` (`watch`, `notify`), `extensions/RQW-tools/index.ts` (`installNotifications`),
+  `extensions/RQW-tools/descriptions/job.md`. Proof: `extensions/RQW-tools/test/notify.test.ts`, `notify-sdk.test.ts`, `background.test.ts`.
+  Since: the final squash of branch `agent-async`.
 
 ## Context
 
@@ -1097,7 +1128,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner: «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи свои предложения» Source: the same session, USER entry at line 2608.
   Reason: share main's rules and context while allowing short role configuration and independent decomposition.
   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`, `extensions/RQW-agent/test/agent.test.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-kinds-and-title). Since: `c86e9bb`.
-- **Child settings and offered review** `[D-AGENT-CHILD-SETTINGS]`. Children inherit session shell, image handling, retries, provider and transport timeouts, compaction, thinking budgets, queue modes and codemode settings, except warming stays off. Stock tools use the child's copied shell/image settings; offered RQW-tools read the caller's effective settings per call. Children get built-in codemode/tool_search when active for their caller; general subagents get caller-local review through `rqw-review:subagent-review` when offered. Reviewers inherit the same settings except queue modes. Workers receive cwd, OS and date after their fixed role. Durable resume, parent-history fork, web search and MCP for children are deferred in [BACKLOG](BACKLOG.md), not present features.
+- **Child settings and offered review** `[D-AGENT-CHILD-SETTINGS]`. Children inherit session shell, image handling, retries, provider and transport timeouts, compaction, thinking budgets, queue modes and codemode settings, except warming stays off. Stock tools use the child's copied shell/image settings; offered RQW-tools read the caller's effective settings per call. Children get built-in codemode/tool_search when active for their caller; general subagents get caller-local review through `rqw-review:subagent-review` when offered. Reviewers inherit the same settings except queue modes. Workers receive cwd, OS and date after their fixed role. Parent-history fork, web search and MCP for children are deferred in [BACKLOG](BACKLOG.md), not present features; durable resume is delivered (`[D-AGENT-PERSIST]`).
   Coordinator text: technical realization of the parity agreement.
   Reason: children must not silently lose relevant caller capabilities.
   Carrier: `extensions/RQW-agent/index.ts` (`childSettings`), `extensions/RQW-agent/prompt.ts`, `extensions/RQW-review/index.ts`; `extensions/RQW-review/test/subagent.test.ts`. Since: `c86e9bb`.
@@ -1120,9 +1151,9 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Coordinator text: the owner trusts the caller's model to obey the read-only instruction and explicitly rejects mechanical write protection. Cursor evidence: `my-pi-evidence/subagent-parity/cursor/REPORT.md:49`, explore has no tools override and inherits the caller's tools minus Task; the model inheritance and the read-only instruction are the owner's requirements, not a claim that Cursor enforces read-only.
   Reason: a caller-model explorer with the caller's tools searches like a parent would, and the owner chose an instruction over protection code.
   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`, `extensions/RQW-agent/workers.ts` (worker guard unchanged); details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-kinds-and-title); proof: `extensions/RQW-agent/test/agent.test.ts`. Supersedes the git-guarded read/grep/find/bash allowlist of `[D-AGENT-TITLE-EXPLORE]` (A-0241). Since: the explore-cursor change.
-- **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `explore`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus the delegation tools allowed by [Workers](#workers). Sessions run in-process at caller cwd with in-memory settings/history, using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
+- **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `resume`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `blocking`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `explore`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus the delegation tools allowed by [Workers](#workers). Sessions run in-process at caller cwd with in-memory settings; the history is in memory for an in-memory caller and in the owned `<parent.jsonl>.children/` tree for a persisted one (`[D-AGENT-PERSIST]`), using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
   Coordinator text. Reason: reuse Pi sessions and the caller's provider runtime without subprocesses or duplicate resource loading.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/test/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/test/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`; `blocking` since the final squash of branch `agent-async`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0265.
 - **Optional RQW-tools offer** `[D-AGENT-TOOLS-OFFER]`. At start/restart RQW-agent emits `rqw-tools:subagent-tools` with `{ offer(factory) }` on the shared synchronous `pi.events` bus; loaded RQW-tools answers with fresh definitions and a child-local barrier/job registry, otherwise stock tools are used. The consumer type is `(cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition }) => ToolDefinition[]`; the provider's exact function is `createTools(cwd: string, settings: () => any, nested = createNestedBarrier(), options: JobsOptions & { jobs?: Jobs; codemode?: ToolDefinition<any, any, any> } = {}): ToolDefinition[]`. The factory provides seven tools, six base tools plus job, and optionally a grouped child codemode; the consumer filters the base subset but retains job and offered codemode. Child codemode shares process-wide Pi worker slots. No cross-extension import or mandatory dependency is added; reload/dispose invalidates stale handlers.
   Coordinator text. Reason: children follow the RQW-tools switch while retaining their own ordering and job ownership.
   Carrier: `extensions/RQW-agent/index.ts` (`ToolsFactory`, `offeredTools`), `extensions/RQW-tools/index.ts` (`createTools`), `test/agent-tools.test.ts`. Pi 1.4.0 event API: `docs/extensions.md:186`, `dist/core/extensions/types.d.ts:1406`; invalidation: `dist/core/extensions/loader.js:144-152`, `dist/core/agent-session.js:1022,3002`; stock tool settings: `dist/core/agent-session.js:2964-2974`. Since: `90700ad`.
@@ -1133,12 +1164,45 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Coordinator text: the steering proposal was accepted by the owner; the quoted proposal is not an owner quotation.
   Reason: follow-ups should steer promptly without forcing cancellation, while redirection remains explicit.
   Carrier: `extensions/RQW-agent/index.ts` (`requestInterrupt`, `Agent.next`), `extensions/RQW-agent/test/steer.test.ts`, `extensions/RQW-agent/test/nested-workers.test.ts`. Since: `029160d`.
-- **Ordered management and shutdown** `[D-AGENT-MANAGEMENT]`. Management calls across all three tools register in call order; wait releases that queue after subscription. Start, idle send and restart with task return once prompt preflight starts the run or `compaction_start` makes cancellation effective. Closing clears queues, calls abort and only then disposes, preventing requests after stop or shutdown. Print/JSON use a caller-wide non-consuming fallback wait in `agent_end`, subordinate to explicit waits; native-idle children use the same bounded fallback for their workers. TUI/RPC retain push wakeups. `session_shutdown` closes all descendants without result messages.
+- **Ordered management and shutdown** `[D-AGENT-MANAGEMENT]`. Management calls across all three tools register in call order; wait releases that queue after subscription. Start, idle send and restart with task return once prompt preflight starts the run or `compaction_start` makes cancellation effective. Closing clears queues, calls abort and only then disposes, preventing requests after stop or shutdown. External print/json hosts use a caller-wide non-consuming fallback wait in `agent_end`, bounded by the default `timeout_ms` and subordinate to explicit waits. A native-idle child waits for its active workers by their completion events with no implicit timeout, and only when no run is active does it use the bounded wait. TUI/RPC retain push wakeups. `session_shutdown` closes all descendants without result messages.
   Coordinator text. Reason: parallel tool batches, pre-run compaction and disposal must not leave unowned requests.
   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `extensions/RQW-agent/test/agent.test.ts`; [historical proof](notes/decisions-evidence.md#agent-proof). Since: `fe0e375`.
-- **Accepted limits** `[D-AGENT-LIMITS]`. Results arriving after the caller session ended are lost. Children share the TUI process and may read files the main agent is editing; in-process cancellation cannot forcibly end an uncooperative tool. The process-wide [Context](#context) rule applies while an RQW-context owner exists. GPT Fast inheritance and overrides are defined once under [Settings](#settings).
+- **Accepted limits** `[D-AGENT-LIMITS]`. Results arriving after the caller session ended are lost; a persisted child keeps its history and the same id after a restart, but a running operating-system process, tool call or provider request is not restored, and a power loss can lose unflushed history (no fsync). Children share the TUI process and may read files the main agent is editing; in-process cancellation cannot forcibly end an uncooperative tool. The process-wide [Context](#context) rule applies while an RQW-context owner exists. GPT Fast inheritance and overrides are defined once under [Settings](#settings).
   Coordinator text. Reason: these are boundaries of the in-process session design, not unimplemented promises.
-  Carrier: `extensions/RQW-agent/index.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management). Since: `7a9f505`.
+  Carrier: `extensions/RQW-agent/index.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management). Since: `7a9f505`; restart persistence since `dd93a40`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0266.
+
+- **Durable children and resume** `[D-AGENT-PERSIST]`. Owner quotes: `[D-PIPELINE-PAUSE-RESUME]`
+  (`16-27-59:5087`, `5092`, `5103`). Taken by default (coordinator text, not an owner quote): a persisted caller stores each child's
+  Pi JSONL in the adjacent `<parent.jsonl>.children/{agent,code_writer,shell_runner}-N/`, nested children recursively; the parent
+  branch carries versioned `rqw-agent-child` entries (id, generation, file, state, configuration, model, tools, thinking,
+  Fast, title) and `rqw-agent-tool-intent` entries written through the public `tool_call` hook. Stop tombstones a mapping and
+  restart creates a new history. `resume` builds a fresh `AgentSession` from the saved history and calls the public
+  `agent.continue()` with no new message, under its own busy, abort and settlement fences; the cut-off assistant attempt is
+  hidden by append-only context edits, and a tool call without a result gets an explicit interrupted/error result, never a
+  replay. No post-run automatic retry is promised for a resumed run. Continuing a restored parent recovers its loaded,
+  unfinished children; `/resume-agents` resumes the children only and their result wakes the main chat; merely opening an old
+  session starts nothing, and children paused by hand are not restarted by the parent's continuation. Taken by default to protect
+  the 2-hour pause, not an owner quote. A fork or clone copies the parent transcript but not its child files and takes none
+  over: such a child is unavailable with a diagnostic, without blocking new starts, the main chat or other children.
+  Recovery is fail-closed, taken by default as the safe choice (coordinator text, not an owner quote): a missing or empty child
+  JSONL of an established or unknown history is a `recovery_error` of that child alone; a saved state of idle, run number 0 and no
+  task (a task-less restart) may restore an empty session under the same id, with no task message; the saved task and configuration are provenance, never re-executed, and no
+  history is rebuilt or inferred, so a start with a saved task whose history Pi had not flushed before a full Pi restart is not recoverable. Children
+  created by the earlier in-memory build cannot be recovered retroactively; only children created after the updated extension
+  loads are durable.
+  Chosen over a global registry or a handoff file: the adjacent tree needs no shared state and lets RQW-session recognize it by name.
+  Reason: the owner wants an agent resumed by its id after a Pi restart with its full history.
+  Carrier: `extensions/RQW-agent/persistence.ts`, `index.ts`, `coordinator.ts`, `workers.ts`; contract: [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume);
+  proof: `extensions/RQW-agent/test/persistence.test.ts`, `resume.test.ts`. Since: `dd93a40`.
+
+- **Notification waits for children** `[D-AGENT-NOTIFY]`. Owner quotes: `[D-TOOLS-NOTIFY]` (`16-27-59:4876`, `16-27-59:4937`). Taken by default (coordinator text, not an owner quote): where the caller can
+  receive notifications, `wait` on `agent`, `code_writer` and `shell_runner` returns a `waiting` receipt at once with
+  `terminate: true` and the result later wakes the caller once through the existing delivery broker; `blocking: true`
+  keeps the held wait, and a wait inside a codemode script stays blocking, as does an external root print/json host and any caller without a `notify` callback (an in-process child agent with the bridge
+  is not affected by its SDK mode). A timeout or alert
+  is one notification, not periodic polling, and no model request is made merely to wait. Owner messages reach the agent
+  without cancelling accepted children. Same callback as `[D-TOOLS-NOTIFY]`. Reason: a waiting agent must not hold a call.
+  Carrier: `extensions/RQW-agent/index.ts`, `coordinator.ts`, `descriptions/*.md`. Since: the final squash of branch `agent-async`.
 
 ## Workers
 
@@ -1805,6 +1869,14 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   streamed asynchronous scan; the final JSONL is read after shutdown. Rules and failure behaviour:
   `extensions/RQW-session/README.md`. Research notes: [decisions evidence](notes/decisions-evidence.md#session-research).
   Since: `db5ab64`.
+- **Child session tree** `[D-SESSION-CHILDREN]`. Basis: `[D-SESSION-COMMANDS]` (`/remove` deletes the whole session with everything tied to it) and the
+  coordinator text (`16-27-59:5090`) quoted in `[D-PIPELINE-PAUSE-RESUME]`: `/remove` removes the child sessions with their parent.
+  Taken by default (coordinator text, not an owner quote): after the confirmed Yes, `/remove` also deletes the exact sibling
+  `<session.jsonl>.children` tree, its nested descendants and regular sidecar files. RQW-session infers only that suffix and
+  imports nothing from RQW-agent. A symlink, special entry or non-directory at the tree refuses removal before the session switch;
+  descendant artifact references join the removal candidates, removed children do not count as sharing, and artifacts of surviving
+  sessions stay. Descendants go before the parent JSONL, so a failure leaves the parent as marker. Reason: removal must not leave
+  orphan child histories. Carrier: `extensions/RQW-session/artifacts.ts` (`childTree`), `index.ts`; proof: `test/session.test.ts`. Since: `dd93a40`.
 - **Proof** `[D-SESSION-TESTS]`. `extensions/RQW-session/test/session.test.ts`: temp agent directories, a stub clipboard,
   refusal paths, artifact and fork preservation, path safety, a real Pi runtime replaced before its JSONL is deleted.
   Mechanics only, not VDI clipboard redirection, forensic erasure or remote deletion. Since: `db5ab64`.

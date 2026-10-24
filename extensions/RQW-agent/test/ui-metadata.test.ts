@@ -46,7 +46,7 @@ const call = (f: Awaited<ReturnType<typeof fixture>>, name: string, params: Reco
 	f.session.getToolDefinition(name)!.execute("meta", params, undefined, undefined, f.session.extensionRunner.createContext());
 
 const waitFor = (f: Awaited<ReturnType<typeof fixture>>, ids: string[]) =>
-	call(f, "agent", { action: "wait", ids, timeout_ms: 60000 });
+	call(f, "agent", { action: "wait", blocking: true, ids, timeout_ms: 60000 });
 
 /**
  * A small SDK caller session in fixture f's isolated home, loading only this runtime through its exported
@@ -205,7 +205,7 @@ test("meta-workers: code_writer and shell_runner, message and wait paths carry t
 			replies.push(g.reply);
 			await call(f, role, { task: "WAIT_BRIEF" });
 			await until(() => g.entered(), `the ${role} running`);
-			const waiting = call(f, role, { action: "wait", ids: [`${role}#2`], timeout_ms: 60000 });
+			const waiting = call(f, role, { action: "wait", blocking: true, ids: [`${role}#2`], timeout_ms: 60000 });
 			await tick(20);
 			c.now += 2500;
 			g.release();
@@ -270,7 +270,7 @@ test("delivery-unchanged: content, delivery token, quiet, queued and retry deliv
 			assert.deepEqual(Object.keys(message.details).sort(), ["delivery", "id", "model", "outcome", "run", "seconds", "thinking"]);
 			assert.equal(message.details.outcome, "finished");
 			// A public wait after the pushed delivery: a receipt carrying the same delivery token, with no second copy.
-			const receipt = JSON.parse(await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 1 }));
+			const receipt = JSON.parse(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1 }));
 			assert.equal(receipt.reason, "receipt");
 			assert.equal(receipt.receipts.length, 1);
 			assert.equal(receipt.receipts[0].delivered_via, "message");

@@ -121,10 +121,10 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](DECISION
   conflicting rebase sends the task back to the top of the queue. A red advisory Windows job does not. At the next free active slot,
   ahead of tasks not yet started, resume its existing agent; start another only if its session no longer exists.
 - Pause and resume. Pausing a task is an `agent` `interrupt` of its agent, which keeps the session and history.
-  Resuming is an `agent` `send` of the next message to the same agent, with its full history. This is the shipped API;
-  a `resume` action that retries the cut-off request is planned in AGENT-SESSION-PERSIST and not delivered yet. Write no checkpoint,
-  continuation or handoff file for a pause or resume. `stop` only a finished or cancelled task's agent. Until child
-  sessions survive a Pi restart, write one short checkpoint only immediately before a planned Pi restart.
+  Resuming is the `resume` action of the same agent, which retries the cut-off request with its full history and no new
+  message; `send` is only for a new message. Child sessions are saved with the parent, so ids also resume after a Pi
+  restart. Write no checkpoint, continuation or handoff file for a pause or resume. `stop` only a finished or cancelled
+  task's agent.
 - CI watcher. `npm run ci-watch` starts one shared watcher per repository; a second start finds the lock and exits.
   It reads all recent workflow runs once a minute and writes the shared file
   `<git common dir>/ci-watch/status.json` atomically, so every worktree sees it. Agents read that file (with

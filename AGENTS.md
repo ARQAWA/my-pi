@@ -9,7 +9,7 @@ rules in their briefs. The owner's personal manifesto is a separate memory docum
 Coordinator personal-work objections and explicit overrides: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
 Coordinator rules bind only the session that holds the repository's `coordinator.lock`; every other session is a normal direct agent.
 At most three tasks in active execution follow the owner's priority queue; tasks waiting for CI, review, the merge queue or
-the owner hold no slot, and a fourth lane for tests only is outside the limit; pause is `agent` `interrupt`, resume is `agent` `send`, with no pause files:
+the owner hold no slot, and a fourth lane for tests only is outside the limit; pause is `agent` `interrupt`, resume of the interrupted request is `agent` `resume` (`send` only carries a new message), with no pause files:
 [PROCESS.md](PROCESS.md#task-pipeline).
 Golden rule, no avoidable token spending and simplest engineered solutions: [PROCESS.md](PROCESS.md#golden-rule).
 Task timebox, at most 2 hours of substantive work, then a pause and a report: [PROCESS.md](PROCESS.md#task-timebox).
@@ -29,7 +29,7 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   `read` answers an identical repeat of an unchanged range with a one-line note unless `force: true`, under strict
   turn and token limits (`unchanged.ts`, `DECISIONS.md` Tools, Unchanged-read note).
   An eligible call still running after 12 s returns as a background job `job#N`; `job` waits for or checks it and
-  kills process or queued jobs. By approved design, a running file-tool job such as `read`, `grep` or `find` cannot
+  kills process or queued jobs. A `job wait` returns `waiting` at once and ends the turn; its result comes later as a notification (`blocking: true` holds the call), and a handed-off job survives Esc and new owner messages (`DECISIONS.md` Tools, `D-TOOLS-NOTIFY`). By approved design, a running file-tool job such as `read`, `grep` or `find` cannot
   be killed: `job kill` reports `cannot_kill`, and it finishes on its own. A bash call with its own timeout of 13 s
   or less stays in the foreground and takes no pre-start snapshot; eligible bash calls take an exact snapshot
   before starting. The approved contract holds only what the command certainly changes and reports changes
@@ -43,7 +43,7 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
   window W = min(contextWindow, 500000) and compacts above W - R, where R = round(W / 10). Tests: `npm test`.
 - `extensions/RQW-agent/`: extension 5, subagents and the fixed `code_writer` / `shell_runner` workers. `agent`
-  (start, wait, status, send, interrupt, stop, restart) runs in-process Pi sessions whose default prompt is the main
+  (start, wait, status, send, resume, interrupt, stop, restart) runs in-process Pi sessions whose default prompt is the main
   agent's system prompt plus a subagent reminder and an optional `role` (`system` overrides the whole prompt), with
   chosen model/thinking and base tools, and an optional `title` in status and result details. A subagent has `agent` itself,
   recursively without a depth limit; `explore` starts a read-only search subagent on the caller's model; workers and
@@ -51,6 +51,7 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   `review` when RQW-review offers it (`pi.events` `rqw-review:subagent-review`); workers also get cwd, OS and date.
   Details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-kinds-and-title). All three tools share caller-chosen mechanical wait and diagnostic status;
   results arrive once through wait or `[kind#N]` messages. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Workers retain history until stop for explicit follow-ups.
+  A persisted parent stores child sessions in `<parent.jsonl>.children/`; `resume` retries the interrupted request with no new message, also after a Pi restart, and `/resume-agents` resumes the children only. Where notifications work, `wait` returns `waiting` at once and ends the turn, the result wakes the caller later (`blocking: true` holds); see [persistence](extensions/RQW-agent/README.md#persistence-and-resume) and `DECISIONS.md` Agent.
   Agent start/restart supports `system_file`/`role_file` and `include: ["user_messages"]`; task text stays in `task`.
   All three tools support `until: "all"`, `wake_on_alert`, read-only status `depth` and optional `alert_after_ms`
   diagnostics without stopping work; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management).
@@ -90,7 +91,7 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   `extensions/RQW-anthropic/README.md`; research: `notes/anthropic-adapter.md`. Tests use fake credentials: `npm test`.
 - `extensions/RQW-scroll/`: extension 10, Escape in the fullscreen view returns a scrolled-up transcript to the latest
   message; elsewhere Escape stays stock. Contract and limits: `DECISIONS.md` section Scroll. Tests: `npm test`.
-- `extensions/RQW-session/`: extension 11, independent `/copy-session` and confirmed permanent `/remove` commands.
+- `extensions/RQW-session/`: extension 11, independent `/copy-session` and confirmed permanent `/remove` commands; `/remove` also deletes the exact `<session.jsonl>.children` tree.
   Cleanup boundaries and limitations: `extensions/RQW-session/README.md`. Tests: `npm test`.
 - `extensions/RQW-send-now/`: extension 12, Enter on an empty editor while steering is queued interrupts the turn and
   sends the queue at once, as in oh-my-pi. Public Pi API only, no custom editor. Behavior and limits:

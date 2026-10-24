@@ -81,6 +81,13 @@ shut down. A child waits for its running reviews before its run ends (Pi's SDK p
 the verdict. Without RQW-review loaded, no child gets the tool. Proof: `test/subagent.test.ts`; decision:
 [DECISIONS.md, Agent](../../DECISIONS.md#agent).
 
+A child resumed on Pi's core agent settles its own runs, so its host may add the optional `ReviewHost.continuation`
+(`deliver`, `retain`; the types in `index.ts` carry the contract). Then the review registers none of the native
+settlement hooks above: it calls `retain()` before each review starts and its release after the verdict was handed to
+`deliver`, or when the review ended without one, and the caller's adapter decides when the verdict wakes the child.
+The caller's session, not RQW-review, persists the delivered message as a `custom_message` entry; later review numbers
+read it. A host without `continuation` behaves exactly as described above. Proof: `test/continuation.test.ts`.
+
 ## The cycle on Main's side
 
 Main runs a review only when the owner asks for a review or a checked result, or a procedure he approved requires it

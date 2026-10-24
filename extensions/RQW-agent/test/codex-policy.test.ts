@@ -120,7 +120,7 @@ describe("RQW-agent: optional rqw-codex:session-policy request", () => {
 		const f = await open(true);
 		try {
 			await f.call(f.child());
-			await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
+			await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
 			assert.equal(f.hookInstalls.length, 1);
 			const child = f.seen[0].request.session;
 			assert.equal(f.hookInstalls[0].session, child);
@@ -159,7 +159,7 @@ describe("RQW-agent: optional rqw-codex:session-policy request", () => {
 			assert.notEqual(request.session, f.session, "the request carries the child, not the main session");
 			assert.equal(wireAtEmit, 0, "no request reached the provider when the binder saw it");
 			assert.equal(messagesAtEmit, 0, "no child prompt had been recorded");
-			assert.match(await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 60_000 }), /ok/);
+			assert.match(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 }), /ok/);
 			assert.equal(wire.length, 1);
 			assert.deepEqual(systemOf(wire[0].body), ["EXACT"], "the request carries exactly the caller's prompt");
 			assert.equal(f.policy.releases, 0, "a live child is not released before stop");
@@ -179,7 +179,7 @@ describe("RQW-agent: optional rqw-codex:session-policy request", () => {
 			assert.equal(outer.childName, "agent#1");
 			assert.equal(inner.childName, "code_writer#1", "Codex gets only the local kind#id, not the tools' parent path");
 			assert.notEqual(inner.session, outer.session);
-			await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
+			await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
 			await outer.session.getToolDefinition("code_writer")!.execute("nested-restart", {
 				action: "restart", id: "code_writer#1", task: "fresh nested run",
 			} as never, undefined, undefined, outer.session.extensionRunner.createContext());
@@ -193,7 +193,7 @@ describe("RQW-agent: optional rqw-codex:session-policy request", () => {
 		const f = await open(false);
 		try {
 			assert.equal(await f.call(f.child()), "agent#1 started");
-			assert.match(await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 60_000 }), /ok/);
+			assert.match(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 }), /ok/);
 			assert.equal(wire.length, 1);
 		} finally { await f.close(); }
 	});
@@ -255,7 +255,7 @@ describe("RQW-agent: optional rqw-codex:session-policy request", () => {
 			assert.equal(f.seen[0].request.childName, "agent#1");
 			assert.deepEqual(f.captures.map((c) => c.callerThreadId), [f.mainId()]);
 			assert.equal(f.captures[0].wireAtCapture, 0, "the capture precedes the first request");
-			await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
+			await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
 			const before = wire.length;
 			await f.call({ action: "send", id: "agent#1", task: "next" });
 			assert.equal(f.captures.length, 2);

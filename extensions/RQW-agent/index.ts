@@ -1,7 +1,7 @@
 // Extension 5: asynchronous subagents and fixed-role workers, sharing one session lifecycle implementation.
 import { randomUUID } from "node:crypto";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
-import { StringEnum } from "@earendil-works/pi-ai";
+import { getCurrentTools, StringEnum } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, ExtensionAPI, ExtensionContext, ModelRuntime, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	type AgentSession,
@@ -12,6 +12,7 @@ import {
 	getAgentDir,
 	SessionManager,
 	SettingsManager,
+	shouldCompact,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { registerWorkers, type RuntimeHandle, sumCounts, type WorkerProfile } from "./workers.ts";
@@ -21,6 +22,7 @@ import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-fi
 import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 import { Coordinator, type Result, waitTimeout, targetIds, messageCount, statusDepth, waitResult } from "./coordinator.ts";
+import { CHILD_ENTRY, createChildManager, openChildManager, retainedChildManager, repairInterrupted, installExecutionIntent } from "./persistence.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
 /** Pi's built-in tools a child gets when its caller has them active (the main session has them through RQW-settings). */
@@ -33,7 +35,7 @@ export const DESCRIPTION = [
 	"Use it for complex multi-step work that can run on its own, or for independent areas in parallel: start them all in one response. Do not use it for a narrow question, one or two known files or a single search: call the tools directly.",
 	"The child sees neither the user nor your history: give it the full context and say exactly what to return. Trust its result rather than redoing the work; the user does not see it, so pass on what matters.",
 	"Work in parallel while children run. When blocked, estimate their remaining duration and set timeout_ms somewhat longer on each wait; 300000 is only the omitted default, not an interval or maximum.",
-	"wait: ids (full IDs, may mix your direct agents and workers), optional timeout_ms, until first (default) or all, wake_on_alert (default true); mechanically waits without model turns. A new alert wakes without consuming a result; false waits for terminal delivery. until all holds completed results until every selected target is terminal. Timeout returns status only; children keep running. Re-estimate and wait again if needed.",
+	"wait: ids (full IDs, may mix your direct agents and workers), optional timeout_ms, until first (default) or all, wake_on_alert (default true). By default returns a waiting receipt, ends this turn, and wakes you later with a child_wait notification. Do not poll or spend a turn only to wait. Children keep running while you receive owner messages. blocking:true keeps the call open; nested codemode calls and external print/json hosts always block. A new alert wakes without consuming a result; false waits for terminal delivery. until all waits until every selected target is terminal.",
 	"status: ids, optional messages (5-10, default 8), depth (default 0); last trimmed messages, in-flight tool calls and structured alerts. Positive depth adds read-only descendant status; it grants no descendant control. Decide whether to wait, send, interrupt, stop or restart. Do not busy-poll.",
 	"start/restart: optional alert_after_ms, a positive safe integer, emits long_turn alerts for active turns after that duration; omitted means disabled, restart inherits the previous threshold. Alerts never stop work.",
 	"Results arrive once, through wait or a later [agent#N] message; already-delivered results give a receipt.",
@@ -42,6 +44,7 @@ export const DESCRIPTION = [
 	"include: [user_messages] on start/restart appends caller-session user-role text verbatim in a <user_messages> block after the task, from the caller's current branch; images and non-user messages are omitted. It is not inherited on restart.",
 	"explore on start: a search subagent on your model with your active base tools, including shell and edit/write when active, but no agent or workers; codemode/tool_search follow yours. Its role requires read-only operations, no writes, edits, git state changes or installs; there is no mechanical write guard. Thoroughness is quick, medium or very thorough; it takes no system, role, tools or model.",
 	"send: id, task; reaches a running child after its current tool call, without aborting anything (a child parked in its own wait gets it after that call returns), or starts a new run with its history when idle; interrupt: true on send aborts a running child's turn and starts task as soon as it has stopped.",
+	"resume: id; retry an interrupted request from saved history without adding a task message. Active or cancellation-pending children cannot be resumed. Completed children stay idle. Child sessions survive Pi restarts with the same caller-local id.",
 	"interrupt: id; requests cancellation, keeps history; inspect status while cancellation is pending. stop: id; closes it.",
 	"restart: id, optional task, title and new role/system/model/thinking/tools; a fresh session (an explorer stays one).",
 	"Defaults: your system prompt with the reminder, this session's model and thinking, all tools.",
@@ -49,10 +52,11 @@ export const DESCRIPTION = [
 ].join(" ");
 
 const PARAMETERS = Type.Object({
-	action: StringEnum(["start", "wait", "status", "send", "interrupt", "stop", "restart"]),
+	action: StringEnum(["start", "wait", "status", "send", "resume", "interrupt", "stop", "restart"]),
 	id: Type.Optional(Type.String({ description: "agent#N or N; management actions" })),
 	ids: Type.Optional(Type.Array(Type.String(), { description: "Full direct child IDs; wait/status may mix agents and workers" })),
 	timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Chosen wait duration, slightly longer than estimated remaining work; default 300000 only when omitted" })),
+	blocking: Type.Optional(Type.Boolean({ description: "wait: keep the call open instead of ending this turn and notifying later; nested codemode and external print/json hosts always block" })),
 	messages: Type.Optional(Type.Integer({ minimum: 5, maximum: 10, description: "Status peek length; default 8" })),
 	until: Type.Optional(StringEnum(["first", "all"], { description: "wait: first terminal result (default), or hold results until all selected targets are terminal" })),
 	wake_on_alert: Type.Optional(Type.Boolean({ description: "wait: return on a new structured alert without consuming a result; default true" })),
@@ -78,12 +82,80 @@ type Params = Static<typeof PARAMETERS>;
  * `system` is the whole prompt sent; `base` the main agent's prompt it was built from (handed down to nested callers);
  * `custom` the caller's full override, `role` its role text, `explore` an explorer's thoroughness.
  */
-type Config = { system: string; base: string; custom?: string; role?: string; prompt_file?: PromptFile; explore?: Thoroughness; alert_after_ms?: number; model: Model<Api>; thinking: Thinking; tools: string[] };
+type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; prompt_file?: PromptFile; explore?: Thoroughness; alert_after_ms?: number; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
+type SavedResult = { run: string; text: string; outcome: "completed" | "error"; meta: RunMeta };
+type SavedChild = { version: 1; kind: string; id: number; epoch: string; sessionFile?: string; runNumber: number; state: "idle" | "running" | "interrupted" | "paused" | "completed" | "stopped"; config: Omit<Config, "model"> & { model: { provider: string; id: string } }; fast: boolean; title?: string; task?: string; result?: SavedResult };
+type CallerHost = { busy(): boolean; send: ExtensionAPI["sendMessage"] };
+type ReviewContinuation = { deliver: ExtensionAPI["sendMessage"]; retain(): () => void };
+type JobNotification = { id: string; text: string; details: Record<string, unknown> };
+type InboxMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
+const INBOX_ENTRY = "rqw-agent-inbox";
+
+/** Durable notifications are acknowledged by their persisted custom message, never by a clearable core queue. */
+class NotificationBridge {
+	readonly lifetime = new AbortController();
+	wake?: () => void;
+	private manager: SessionManager;
+	private inbox = new Map<string, InboxMessage>();
+	private leases = 0;
+	private watchers = new Set<() => void>();
+
+	constructor(manager: SessionManager) {
+		this.manager = manager;
+		for (const entry of manager.getBranch()) {
+			if (entry.type !== "custom" || entry.customType !== INBOX_ENTRY) continue;
+			const data = entry.data as { version?: number; id?: string; message?: InboxMessage } | undefined;
+			if (data?.version === 1 && typeof data.id === "string" && data.message) this.inbox.set(data.id, data.message);
+		}
+		this.reconcile();
+	}
+	readonly deliver: ExtensionAPI["sendMessage"] = (message) => {
+		if (this.lifetime.signal.aborted) return;
+		const id = randomUUID();
+		this.manager.appendCustomEntry(INBOX_ENTRY, { version: 1, id, message });
+		this.inbox.set(id, message);
+		this.changed();
+	};
+	retain(): () => void {
+		if (this.lifetime.signal.aborted) return () => {};
+		this.leases++;
+		let released = false;
+		return () => { if (!released) { released = true; this.leases--; this.changed(); } };
+	}
+	retained(): boolean { return this.leases > 0; }
+	pending(): boolean { this.reconcile(); return this.leases > 0 || this.inbox.size > 0; }
+	messages(): InboxMessage[] {
+		this.reconcile();
+		return [...this.inbox].map(([id, message]) => ({
+			...message, details: { ...(message.details as Record<string, unknown> | undefined), rqw_agent_inbox: id },
+		}));
+	}
+	reconcile(): void {
+		if (!this.inbox.size) return;
+		for (const entry of this.manager.getBranch()) {
+			if (entry.type !== "custom_message") continue;
+			const id = (entry.details as { rqw_agent_inbox?: string } | undefined)?.rqw_agent_inbox;
+			if (id) this.inbox.delete(id);
+		}
+	}
+	wait(signal: AbortSignal): Promise<void> {
+		signal.throwIfAborted();
+		if (!this.pending()) return Promise.resolve();
+		return new Promise((resolve, reject) => {
+			const cleanup = () => { this.watchers.delete(done); signal.removeEventListener("abort", abort); };
+			const done = () => { cleanup(); resolve(); };
+			const abort = () => { cleanup(); reject(signal.reason ?? new Error("aborted")); };
+			this.watchers.add(done); signal.addEventListener("abort", abort, { once: true });
+		});
+	}
+	close(): void { this.lifetime.abort(); this.changed(); }
+	private changed(): void { for (const watcher of [...this.watchers]) watcher(); this.wake?.(); }
+}
 /** Display details of a delivered result: flattened beside delivery and run in a message's details, and under `display` in a wait result. For cards only, never part of the delivered text. */
 type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number; title?: string; prompt_file?: PromptFile };
 /** Control of a child's background jobs, carried by RQW-tools' offered `job` definition when it offers one. */
 type JobControl = { abortAll(): void; dispose(): void };
-type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle; activity: Activity; jobs?: JobControl; release: () => void; captureRun: (callerThreadId?: string) => void };
+type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle; activity: Activity; jobs?: JobControl; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean; wake?: () => void } };
 type Agent = Child & {
 	id: number;
 	/** The caller's optional short title, shown in status and result details. */
@@ -93,6 +165,10 @@ type Agent = Child & {
 	config: Config;
 	epoch: string;
 	runNumber: number;
+	state: SavedChild["state"];
+	/** Last accepted task for provenance, never authority to reconstruct missing durable history. */
+	task?: string;
+	result?: SavedResult;
 	/** The current run, undefined while idle. `quiet` ends it without a message. */
 	run?: { done: Promise<void>; quiet: boolean; controller: AbortController; parked?: AbortController };
 	/** Tasks of `send` calls made while an interrupted run is still stopping; they start, in order, once it has. */
@@ -178,7 +254,7 @@ const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
  * `options.codemode`: the child's own Pi `codemode` definition; the factory returns it as a call of the child's barrier
  * and a job of its registry (a factory that does not return it leaves the child Pi's definition as it is).
  */
-type ToolsFactory = (cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition }) => ToolDefinition[];
+type ToolsFactory = (cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition; notify?: (notification: JobNotification) => void; retain?: () => () => void }) => ToolDefinition[];
 
 /**
  * Channel on `pi.events` where RQW-review, when it is loaded, offers its `review` tool for subagents: a request
@@ -187,7 +263,7 @@ type ToolsFactory = (cwd: string, settings: () => unknown, nested?: undefined, o
  * `label` names its reviewers in RQW-tools' notes ("agent#1/review"). Nothing here imports RQW-review.
  */
 const SUBAGENT_REVIEW = "rqw-review:subagent-review";
-type ReviewRegistrar = (child: ExtensionAPI, options: { events: ExtensionAPI["events"]; fast: () => boolean; signal: AbortSignal; label?: string }) => void;
+type ReviewRegistrar = (child: ExtensionAPI, options: { events: ExtensionAPI["events"]; fast: () => boolean; signal: AbortSignal; label?: string; continuation?: ReviewContinuation }) => void;
 
 function offeredReview(events: ExtensionAPI["events"]): ReviewRegistrar | undefined {
 	let register: ReviewRegistrar | undefined;
@@ -200,7 +276,7 @@ type OwnSettings = ReturnType<ExtensionAPI["getSettings"]>;
 
 /** Descendant supervision stays compact: no message, argument or tool-output previews. */
 function compactStatus(status: Record<string, unknown>): Record<string, unknown> {
-	const keys = ["id", "run", "error", "title", "state", "activity", "run_active", "run_id", "elapsed_ms", "idle_for_ms", "last_activity_ago_ms", "model", "outcome", "alerts", "current_tools_total", "pending_children", "cancellation_requested", "pending_sends", "children"];
+	const keys = ["id", "run", "error", "recovery_error", "title", "state", "activity", "run_active", "run_id", "elapsed_ms", "idle_for_ms", "last_activity_ago_ms", "model", "outcome", "alerts", "current_tools_total", "pending_children", "cancellation_requested", "pending_sends", "children"];
 	return Object.fromEntries(keys.filter(key => key in status).map(key => [key, status[key]]));
 }
 
@@ -283,16 +359,25 @@ export default function agent(pi: ExtensionAPI) {
  * depth limit. `callerFast`: this caller's GPT Fast state at the moment it starts a child (the main chat's, or a
  * child's own). `basePrompt`: the main agent's system prompt, read from the main context or handed down.
  */
-function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, top: boolean, callerFast: () => boolean, refresh: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = ""): RuntimeHandle {
-	const coordinator = new Coordinator(pi);
+function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], background: boolean, top: boolean, callerFast: () => boolean, refresh: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost): RuntimeHandle {
+	const coordinator = new Coordinator(pi, host?.send);
 	// Display details of delivered results, by run, until shutdown (see publishRun).
 	const displays = new Map<string, Display>();
 	// Running counts of the whole tree, offered by the top-level caller only (see counts.ts). Nested callers get its refresh.
 	const counts = top ? createCountsProducer(() => sumCounts(runtimes.map(runtime => runtime.runningCounts())), pi.events) : undefined;
 	const notify = counts ? () => counts.refresh() : refresh;
-	const agentRuntime = registerSessionRuntime(pi, undefined, toolEvents, background, coordinator, callerFast, displays, notify, basePrompt, labelPrefix);
-	const workers = registerWorkers(pi, (caller, profile) => registerSessionRuntime(caller, profile, toolEvents, background, coordinator, callerFast, displays, notify, undefined, labelPrefix));
+	const agentRuntime = registerSessionRuntime(pi, undefined, toolEvents, background, coordinator, callerFast, displays, notify, basePrompt, labelPrefix, host);
+	const workers = registerWorkers(pi, (caller, profile) => registerSessionRuntime(caller, profile, toolEvents, background, coordinator, callerFast, displays, notify, undefined, labelPrefix, host));
 	const runtimes: RuntimeHandle[] = [agentRuntime, workers];
+	const resume = async (signal: AbortSignal, recoveredOnly = false) => {
+		let total = 0;
+		for (const runtime of runtimes) total += await runtime.resume?.(signal, recoveredOnly) ?? 0;
+		return total;
+	};
+	if (top) pi.registerCommand("resume-agents", {
+		description: "Resume unfinished children without sending a message to the main model",
+		handler: async (_args, ctx) => { const count = await resume(ctx.signal ?? new AbortController().signal); ctx.ui.notify(`Resumed ${count} child session(s)`, "info"); },
+	});
 	if (counts) {
 		pi.events.on(COUNTS_REQUEST, (request) => {
 			const r = request as CountsRequest;
@@ -308,17 +393,19 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 	});
 	return {
 		pending: () => runtimes.some(runtime => runtime.pending()),
-		wait: signal => coordinator.observe(signal, undefined, () => runtimes.some(runtime => runtime.pending())),
+		async wait(signal) { await Promise.all(runtimes.filter(runtime => runtime.pending()).map(runtime => runtime.wait(signal))); },
 		ids: () => runtimes.flatMap(runtime => runtime.ids()),
 		status: depth => coordinator.status(coordinator.ids(), undefined, undefined, statusDepth(depth)).map(compactStatus),
 		runningCounts: () => sumCounts(runtimes.map(runtime => runtime.runningCounts())),
+		resume,
+		settle(aborted) { for (const runtime of runtimes) runtime.settle?.(aborted); },
 		abortAll() { for (const runtime of runtimes) runtime.abortAll(); },
 		close() { for (const runtime of runtimes) runtime.close(); },
 	};
 }
 
 /** Caller-local state. Nested callers settle normally; startRun tracks their workers across background wakeups. */
-export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), displays = new Map<string, Display>(), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = ""): RuntimeHandle {
+export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), displays = new Map<string, Display>(), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost): RuntimeHandle {
 	const name = worker?.name ?? "agent";
 	/** A child's display label in RQW-tools notes: the path from the main session, "agent#1/code_writer#2". */
 	const labelOf = (id: number) => `${labelPrefix}${name}#${id}`;
@@ -327,6 +414,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 	let generation = new AbortController();
 	let counter = 0;
 	let main: ExtensionContext | undefined;
+	let hydrated = false;
+	let initialRecovery = true;
+	const recoveryPending = new Set<number>();
+	const recoveryErrors = new Map<number, { data?: SavedChild; error: string }>();
+	const send: ExtensionAPI["sendMessage"] = host?.send ?? ((message, options) => pi.sendMessage(message, options));
+	const callerIdle = () => host ? !host.busy() : main?.isIdle() !== false;
 	let mainAborted = false;
 	/** UUIDs survive reload/resume without matching an earlier delivery. */
 	const unanswered = new Set<string>();
@@ -347,17 +440,17 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		const message = resultMessage(result);
 		coordinator.releaseMessage(result);
 		// A previous abort pauses idle delivery only; a new busy run may still be in an earlier start hook.
-		if (mainAborted && main?.isIdle() !== false) {
-			pi.sendMessage(message, { triggerTurn: false });
+		if (mainAborted && callerIdle()) {
+			send(message, { triggerTurn: false });
 			return;
 		}
-		if (main?.isIdle() !== false) {
-			pi.sendMessage(message, { triggerTurn: true });
+		if (callerIdle()) {
+			send(message, { triggerTurn: true });
 			return;
 		}
 		// Busy: keep the result outside Pi's follow-up queue, which Esc clears.
 		unanswered.add(message.details.delivery);
-		pi.sendMessage(message, { triggerTurn: false });
+		send(message, { triggerTurn: false });
 	}
 
 	// The message details: delivery and run as before, with the run's display fields flattened beside them (display only).
@@ -371,6 +464,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 	 * synchronously and skip the push. Both paths look the details up by run; they stay until shutdown (failed-wait fallback).
 	 */
 	function publishRun(a: Agent, identity: { id: string; run: string }, text: string, outcome: "completed" | "error", meta: RunMeta) {
+		a.state = "completed";
+		a.result = { run: identity.run, text, outcome, meta: { ...meta } };
+		persist(a);
 		displays.set(identity.run, displayOf(a, identity.id, outcome, meta));
 		ownRuns.add(identity.run);
 		coordinator.publish(identity.id, identity.run, text, outcome, deliver);
@@ -406,6 +502,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		return total;
 	}
 
+	function recoveryFailure(id: number, error: unknown, data?: SavedChild) {
+		const detail = error instanceof Error ? error.message : String(error);
+		recoveryErrors.set(id, { data, error: detail });
+		if (!agents.has(id)) coordinator.add({ id: `${name}#${id}`, run: "unavailable", active: () => false,
+			snapshot: () => ({ state: "unavailable", error: detail }) });
+	}
+
 	function target(a: Agent) {
 		return { id: `${name}#${a.id}`, run: `${a.epoch}:${a.runNumber}`,
 			// A queued `send` task is about to start: wait must not see an idle child in between.
@@ -413,6 +516,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			checkpoint: () => a.activity.checkpoint(),
 			alertVersion: () => a.activity.alertVersion(),
 			snapshot: (messages?: number, checkpoint?: Map<string, number>, depth = 0) => ({ ...(a.title ? { title: a.title } : {}), ...a.activity.snapshot(messages, checkpoint),
+				...(a.state === "paused" && !a.run ? { state: "paused" } : {}),
+				...(recoveryErrors.has(a.id) ? { recovery_error: recoveryErrors.get(a.id)!.error } : {}),
 				...(a.run?.quiet ? { cancellation_requested: true } : {}),
 				...(a.next?.length ? { pending_sends: a.next.length } : {}),
 				...(a.workers?.pending() ? { pending_children: a.workers.ids() } : {}),
@@ -452,26 +557,199 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 	 * offered set) and, when it has `codemode`, that one as a call of its barrier. Without a returned `codemode`, Pi's
 	 * own definition of the child stays.
 	 */
-	function offeredTools(factory: ToolsFactory, cwd: string, names: string[], label: string, codemode?: ToolDefinition): ToolDefinition[] {
-		const tools = factory(cwd, () => pi.getSettings(), undefined, { label, ...(codemode ? { codemode } : {}) })
+	function offeredTools(factory: ToolsFactory, cwd: string, names: string[], label: string, codemode?: ToolDefinition, bridge?: NotificationBridge): ToolDefinition[] {
+		const tools = factory(cwd, () => pi.getSettings(), undefined, { label, ...(codemode ? { codemode } : {}), ...(bridge ? {
+			notify: (n: JobNotification) => bridge.deliver({ customType: "job", content: `[job] ${n.text}`, display: true, details: { delivery: n.id, ...n.details } }),
+			retain: () => bridge.retain(),
+		} : {}) })
 			.filter((d) => names.includes(d.name) || d.name === "job" || (codemode && d.name === "codemode"));
 		return codemode && !tools.some((d) => d.name === "codemode") ? [...tools, codemode] : tools;
 	}
 
-	async function createSession(config: Config, ctx: ExtensionContext, signal: AbortSignal, fast: { on: boolean }, label: string, childName: string): Promise<Child> {
+	function persist(a: Agent) {
+		const { model, ...config } = a.config;
+		const data: SavedChild = {
+			version: 1, kind: name, id: a.id, epoch: a.epoch,
+			sessionFile: a.session.sessionManager.getSessionFile(), runNumber: a.runNumber, state: a.state,
+			config: { ...config, model: { provider: model.provider, id: model.id } },
+			fast: a.fast.on, ...(a.title ? { title: a.title } : {}), ...(a.task !== undefined ? { task: a.task } : {}),
+			...(a.result ? { result: a.result } : {}),
+		};
+		pi.appendEntry(CHILD_ENTRY, data);
+	}
+
+	async function hydrate(ctx: ExtensionContext, signal: AbortSignal, onlyId?: number) {
+		if (hydrated && onlyId === undefined) return;
+		main = ctx;
+		const saved = new Map<number, SavedChild>();
+		// Session mappings are branch-local; allocation high-water marks remain session-wide.
+		for (const entry of ctx.sessionManager.getBranch()) {
+			if (entry.type !== "custom" || entry.customType !== CHILD_ENTRY) continue;
+			const data = entry.data as SavedChild | undefined;
+			if (data?.version !== 1 || data.kind !== name) continue;
+			if (!Number.isSafeInteger(data.id) || data.id < 1) continue;
+			counter = Math.max(counter, data.id);
+			saved.set(data.id, data);
+		}
+		for (const data of saved.values()) {
+			if (onlyId !== undefined && data.id !== onlyId) continue;
+			if (data.state === "stopped") { recoveryErrors.delete(data.id); continue; }
+			if (agents.has(data.id)) continue;
+			try {
+			if (!data.sessionFile && !retainedChildManager(ctx.sessionManager, name, data.id)) continue;
+			const c = data.config;
+			if (!c || typeof c.system !== "string" || typeof c.base !== "string" || !Array.isArray(c.tools)
+				|| c.tools.some(tool => !TOOLS.includes(tool as typeof TOOLS[number])) || !THINKING.includes(c.thinking)
+				|| (c.builtins !== undefined && (!Array.isArray(c.builtins) || c.builtins.some(tool => !BUILTIN_TOOLS.includes(tool as typeof BUILTIN_TOOLS[number]))))
+				|| (c.settings !== undefined && (!c.settings || typeof c.settings !== "object" || Array.isArray(c.settings)))
+				|| (c.cwd !== undefined && typeof c.cwd !== "string")
+				|| (c.explore !== undefined && !THOROUGHNESS.includes(c.explore))
+				|| (data.task !== undefined && typeof data.task !== "string") || (data.title !== undefined && typeof data.title !== "string")
+				|| (data.sessionFile !== undefined && typeof data.sessionFile !== "string")
+				|| (data.result !== undefined && (!data.result || typeof data.result.run !== "string" || typeof data.result.text !== "string"
+					|| !["completed", "error"].includes(data.result.outcome) || !data.result.meta || typeof data.result.meta !== "object"))
+				|| !c.model || typeof c.model.provider !== "string" || typeof c.model.id !== "string"
+				|| typeof data.fast !== "boolean" || typeof data.epoch !== "string" || !Number.isSafeInteger(data.runNumber)
+				|| !["idle", "running", "interrupted", "paused", "completed"].includes(data.state))
+				throw new Error(`Invalid persisted configuration for ${name}#${data.id}`);
+			const model = ctx.modelRegistry.find(c.model.provider, c.model.id);
+			if (!model) throw new Error(`Cannot restore ${name}#${data.id}: model ${c.model.provider}/${c.model.id} is unavailable`);
+			const neverRunIdle = data.state === "idle" && data.runNumber === 0 && data.task === undefined;
+			let manager = retainedChildManager(ctx.sessionManager, name, data.id);
+			try {
+				if (data.sessionFile) manager = openChildManager(ctx.sessionManager, data.sessionFile, c.cwd ?? ctx.cwd, name, data.id);
+			} catch (error) {
+				// openChildManager checks ownership before an absent file may take this exception.
+				if (!neverRunIdle || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+				manager ??= createChildManager(ctx.sessionManager, c.cwd ?? ctx.cwd, name, data.id);
+			}
+			if (!manager) throw new Error(`Cannot restore ${name}#${data.id}: missing child session`);
+			// Only a never-run idle generation can legitimately have no transcript; saved tasks never authorize replay.
+			if (data.sessionFile && !neverRunIdle && !manager.buildSessionProjection().messages.some(m => m.role !== "system"))
+				throw new Error(`Cannot restore ${name}#${data.id}: saved child history is empty; refusing to rebuild it from task metadata`);
+			const config: Config = { ...c, model };
+			const fast = { on: data.fast };
+			const child = await createSession(config, ctx, signal, fast, labelOf(data.id), `${name}#${data.id}`, manager, true);
+			const a: Agent = { ...child, id: data.id, config, fast, epoch: data.epoch, runNumber: data.runNumber,
+				state: data.state === "running" ? "interrupted" : data.state, title: data.title, task: data.task, result: data.result };
+			agents.set(a.id, a);
+			if (initialRecovery && ctx.sessionManager.getSessionFile() && a.state === "interrupted") recoveryPending.add(a.id);
+			recoveryErrors.delete(a.id);
+			coordinator.add(target(a));
+			} catch (error) {
+				if (signal.aborted) throw error;
+				recoveryPending.delete(data.id);
+				recoveryFailure(data.id, error, data);
+			}
+		}
+		hydrated = true;
+		initialRecovery = false;
+		for (const a of agents.values()) {
+			const result = a.result;
+			if (a.state !== "completed" || !result) continue;
+			const seen = ctx.sessionManager.getBranch().some(entry => {
+				const details = (entry.type === "custom_message" ? entry.details
+					: entry.type === "message" && entry.message.role === "toolResult" ? entry.message.details : undefined) as
+					{ run?: string; results?: { run?: string }[] } | undefined;
+				return details?.run === result.run || details?.results?.some(r => r.run === result.run);
+			});
+			if (!seen) {
+				displays.set(result.run, displayOf(a, `${name}#${a.id}`, result.outcome, result.meta));
+				ownRuns.add(result.run);
+				coordinator.publish(`${name}#${a.id}`, result.run, result.text, result.outcome, deliver);
+			}
+		}
+	}
+
+	async function resumeOne(old: Agent, ctx: ExtensionContext, signal: AbortSignal, recoveredOnly = false): Promise<boolean> {
+		if (old.run || old.session.agent.state.isStreaming) throw new Error(`${name}#${old.id}: active or cancellation pending; cannot resume`);
+		if (!["interrupted", "running", "paused"].includes(old.state)) throw new Error(`${name}#${old.id}: not interrupted; use send for a new message`);
+		const manager = old.session.sessionManager;
+		let replacement: Agent | undefined;
+		try {
+			const child = await createSession(old.config, ctx, signal, old.fast, labelOf(old.id), `${name}#${old.id}`, manager, true, old.bridge);
+			const a: Agent = { ...old, ...child, next: undefined, run: undefined };
+			replacement = a;
+			if (!manager.buildSessionProjection().messages.some(m => m.role !== "system") && a.task !== undefined)
+				manager.appendMessage({ role: "user", content: [{ type: "text", text: a.task }], timestamp: Date.now() });
+			const canContinue = repairInterrupted(a.session);
+			const resumedChildren = await a.workers?.resume?.(signal, recoveredOnly) ?? 0;
+			const completed = !canContinue && !resumedChildren && !a.session.agent.hasQueuedMessages() && !a.bridge.pending();
+			const last = a.session.messages.at(-1);
+			const waitingForChildren = last?.role === "toolResult" && ["agent", "code_writer", "shell_runner"].includes(last.toolName)
+				&& (last.details as { reason?: string; wait_id?: string } | undefined)?.reason === "waiting"
+				&& typeof (last.details as { wait_id?: string }).wait_id === "string"
+				&& (resumedChildren > 0 || a.workers?.pending());
+			if (completed && (!last || !isAssistant(last))) throw new Error(`${name}#${a.id}: no saved request to resume`);
+			if (!completed) {
+				a.captureRun(ctx.sessionManager.getSessionId());
+				await startRun(a, undefined, signal, !canContinue || !!waitingForChildren);
+				signal.throwIfAborted();
+				a.guard.signal = a.run?.controller.signal;
+			}
+			// Keep the old SDK session usable until the replacement has accepted its request.
+			close(old, true);
+			agents.set(a.id, a);
+			recoveryPending.delete(a.id); recoveryErrors.delete(a.id);
+			if (completed && last && isAssistant(last)) {
+				coordinator.add(target(a));
+				publishRun(a, target(a), textOf(last) || "(no text)", last.stopReason === "error" ? "error" : "completed", { model: `${last.provider}/${last.model}`, stop: last.stopReason });
+			}
+			return !completed;
+		} catch (error) {
+			if (replacement) close(replacement, true);
+			persist(old);
+			coordinator.add(target(old));
+			recoveryFailure(old.id, error);
+			throw error;
+		}
+	}
+
+	async function resumeAll(signal: AbortSignal, recoveredOnly = false): Promise<number> {
+		if (!main) return 0;
+		await hydrate(main, signal);
+		let count = 0;
+		for (const a of [...agents.values()]) {
+			if (recoveredOnly && !recoveryPending.has(a.id)) continue;
+			if (a.run || !["interrupted", "running", "paused"].includes(a.state)) continue;
+			try { count += Number(await resumeOne(a, main, signal, recoveredOnly)); }
+			catch (error) {
+				if (signal.aborted) throw error;
+				recoveryPending.delete(a.id);
+				recoveryFailure(a.id, error);
+			}
+		}
+		return count;
+	}
+
+	async function createSession(config: Config, ctx: ExtensionContext, signal: AbortSignal, fast: { on: boolean }, label: string, childName: string, manager: SessionManager, coreMode = false, retainedBridge?: NotificationBridge): Promise<Child> {
 		signal.throwIfAborted();
+		const bridge = retainedBridge ?? new NotificationBridge(manager);
+		const cwd = config.cwd ?? ctx.cwd;
 		const controller = new AbortController();
 		const guard: Child["guard"] = {};
+		const core: Child["core"] = { on: coreMode, active: false };
+		let childSession: AgentSession | undefined;
+		const childHost: CallerHost = {
+			busy: () => core.on ? core.active || !!childSession?.agent.state.isStreaming : childSession?.isStreaming ?? false,
+			send: (message, options) => {
+				if (bridge.lifetime.signal.aborted) return;
+				if (!childSession) throw new Error("Child session is not bound");
+				if (!core.on) { void childSession.sendCustomMessage(message, options).catch(error => activity?.reportError(String(error))); return; }
+				bridge.deliver(message, options);
+			},
+		};
 		const check = () => { controller.signal.throwIfAborted(); guard.signal?.throwIfAborted(); };
 		let workers: RuntimeHandle | undefined;
 		let activity: Activity | undefined;
 		// A general subagent delegates further (agent, workers, review); explorers and workers are leaves.
 		const general = !worker && !config.explore;
 		const review = general ? offeredReview(toolEvents) : undefined;
+		const continuation: ReviewContinuation = { deliver: bridge.deliver, retain: () => bridge.retain() };
 		// codemode and tool_search as the caller has them: Pi's own built-in factories, active only when the caller's are.
 		const active = new Set(pi.getActiveTools());
-		const builtins = BUILTIN_TOOLS.filter(name => active.has(name));
-		const settingsManager = SettingsManager.inMemory(childSettings(pi.getSettings()));
+		const builtins = config.builtins ?? BUILTIN_TOOLS.filter(name => active.has(name));
+		const settingsManager = SettingsManager.inMemory(config.settings ?? childSettings(pi.getSettings()));
 		// With RQW-tools, the child's codemode is its barrier's and job registry's, like the main session's: Pi's own
 		// definition built from the child's API, handed to the factory instead of being registered as it is. Without an
 		// offer it is registered exactly as Pi's built-in factory does. The offer is asked for at that point of the reload
@@ -486,7 +764,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			else createCodemodeExtension()(sub);
 		};
 		const resourceLoader = new DefaultResourceLoader({
-			cwd: ctx.cwd, agentDir: getAgentDir(), settingsManager,
+			cwd, agentDir: getAgentDir(), settingsManager,
 			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 			systemPromptOverride: () => config.system,
 			appendSystemPromptOverride: () => [],
@@ -497,14 +775,20 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				(sub: ExtensionAPI) => {
 					childApi = sub;
 					fastGpt(sub, () => fast.on);
+					installExecutionIntent(sub, manager);
+					sub.on("context_with_system", event => {
+						if (!core.on) return;
+						const tools = getCurrentTools(event.messages.filter(m => m.role === "system"));
+						return { messages: [{ role: "system", content: config.system, toolsAdded: tools, timestamp: Date.now() }, ...event.messages.filter(m => m.role !== "system")] };
+					});
 					sub.on("before_agent_start", () => {
 						check();
 						return { systemPrompt: config.system };
 					});
 					if (worker) worker.configure(sub, (id, reason) => activity?.observeRefusal(id, reason));
 					else if (general) {
-						workers = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`);
-						review?.(sub, { events: toolEvents, fast: () => fast.on, signal: controller.signal, label: `${label}/review` });
+						workers = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost);
+						review?.(sub, { events: toolEvents, fast: () => fast.on, signal: bridge.lifetime.signal, label: `${label}/review`, continuation });
 					}
 				},
 			],
@@ -516,16 +800,18 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		try {
 			await untilAborted(resourceLoader.reload(), signal);
 			if (!builtins.includes("codemode")) factory = offeredFactory();
-			const customTools = factory ? offeredTools(factory, ctx.cwd, config.tools, label, codemode) : [];
+			const customTools = factory ? offeredTools(factory, cwd, config.tools, label, codemode, bridge) : [];
 			const jobTool = customTools.find((d) => d.name === "job") as (ToolDefinition & { jobs?: JobControl }) | undefined;
 			jobs = jobTool?.jobs;
 			signal.throwIfAborted();
 			creating = createAgentSession({
-				cwd: ctx.cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
+				cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
 				tools: [...config.tools, ...(jobTool ? ["job"] : []), ...(general ? ["agent", "code_writer", "shell_runner", ...(review ? ["review"] : [])] : []), ...builtins],
 				customTools, resourceLoader,
-				sessionManager: SessionManager.inMemory(ctx.cwd), settingsManager,
-			}).then(({ session }) => {
+				sessionManager: manager, settingsManager,
+			}).then(async ({ session }) => {
+				childSession = session;
+				if (core.on) await session.bindExtensions({ mode: "tui" });
 				// Before any prompt. A late create after an abort is released here too.
 				let parent: string;
 				try { parent = ctx.sessionManager.getSessionId(); } catch (error) { session.dispose(); throw error; }
@@ -540,11 +826,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 				};
 				activity = new Activity(session, () => { onRunning(); coordinator.notify(); }, { alert_after_ms: config.alert_after_ms });
-				return { session, controller, guard, workers, activity, jobs, release: policy.release, captureRun: policy.capture };
+				return { session, controller, guard, workers, activity, jobs, release: policy.release, captureRun: policy.capture, core, bridge };
 			});
 			return await untilAborted(creating, signal);
 		} catch (error) {
 			controller.abort();
+			if (!retainedBridge) bridge.close();
 			jobs?.dispose();
 			void creating?.then(({ session, release }) => { release(); session.dispose(); }).catch(() => {});
 			throw error;
@@ -552,11 +839,19 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 	}
 
 	/** Wait only for an active SDK run, not its answer. Caller cancellation ends only an unaccepted run. */
-	async function startRun(a: Agent, task: string, signal: AbortSignal): Promise<void> {
+	async function startRun(a: Agent, task: string | undefined, signal: AbortSignal, skipRequest = false): Promise<void> {
 		signal.throwIfAborted();
 		const started = Promise.withResolvers<void>();
 		const session = a.session;
 		a.runNumber++;
+		a.state = "running";
+		recoveryErrors.delete(a.id);
+		a.result = undefined;
+		if (task !== undefined) a.task = task;
+		persist(a);
+		a.core.active = true;
+		a.core.wake = () => a.run?.parked?.abort();
+		a.bridge.wake = a.core.wake;
 		a.activity.startRun();
 		const identity = target(a);
 		coordinator.begin(identity);
@@ -574,7 +869,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				if (workerRunStart !== undefined) { texts.splice(workerRunStart); lastPushed = 0; }
 				nativeRunStart = texts.length;
 			}
-			if (event.type === "agent_end" && a.workers?.pending()) {
+			if (event.type === "agent_end" && (a.workers?.pending() || a.bridge.pending())) {
 				// This native run ended before all delegated results were consumed. It is not a final answer to main.
 				workerRunStart ??= nativeRunStart;
 				texts.splice(nativeRunStart);
@@ -612,23 +907,63 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		});
 		run.done = (async () => {
 			try {
-				await session.prompt(task, { preflightResult: () => started.resolve() });
+				if (skipRequest) started.resolve();
+				else if (a.core.on) {
+					const usage = session.getContextUsage();
+					const settings = session.settingsManager.getCompactionSettings(session.model);
+					if (usage?.tokens != null && shouldCompact(usage.tokens, usage.contextWindow, settings)) {
+						await session.compact();
+						a.guard.signal?.throwIfAborted();
+					}
+					const notifications = a.bridge.messages();
+					const pending = task !== undefined ? session.agent.prompt(task)
+						: notifications.length ? session.agent.prompt(notifications.map(message => ({ role: "custom", ...message, timestamp: Date.now() })))
+						: session.agent.continue();
+					started.resolve();
+					await pending;
+					a.bridge.reconcile();
+					a.workers?.settle?.(a.guard.signal?.aborted ?? false);
+				} else await session.prompt(task!, { preflightResult: () => started.resolve() });
 				while (!run.quiet && !a.guard.signal?.aborted) {
 					const signal = a.guard.signal ?? a.controller.signal;
 					// A worker may have woken a new native run after the original prompt settled.
-					await untilAborted(session.waitForIdle(), signal);
+					await untilAborted(a.core.on ? session.agent.waitForIdle() : session.waitForIdle(), signal);
+					const notifications = a.bridge.messages();
+					if (notifications.length) {
+						if (a.core.on) {
+							// continue() from a terminating tool result requests before draining follow-ups.
+							// These are the real incoming notifications, not a synthetic resume message.
+							await session.agent.prompt(notifications.map(message => ({ role: "custom", ...message, timestamp: Date.now() })));
+							a.workers?.settle?.(signal.aborted);
+						} else {
+							for (const message of notifications.slice(0, -1)) await session.sendCustomMessage(message, { triggerTurn: false });
+							await session.sendCustomMessage(notifications.at(-1)!, { triggerTurn: true });
+						}
+						a.bridge.reconcile();
+						continue;
+					}
+					if (a.core.on && session.agent.hasQueuedMessages()) {
+						await session.agent.continue();
+						a.workers?.settle?.(signal.aborted);
+						continue;
+					}
 					// A steering message that missed the agent loop's last poll waits here like a follow-up.
-					if (session.getSteeringMessages().length > 0 || session.getFollowUpMessages().length > 0) {
+					if (!a.core.on && (session.getSteeringMessages().length > 0 || session.getFollowUpMessages().length > 0)) {
 						const queued = session.clearQueue();
 						await session.prompt([...queued.steering, ...queued.followUp].join("\n\n"));
 					}
-					else if (a.workers?.pending()) {
+					else if (a.workers?.pending() || a.bridge.pending()) {
 						// Parked until a worker result: `send` aborts `parked` so a steering message is delivered at once.
 						const park = run.parked = new AbortController();
 						const parkedSignal = AbortSignal.any([signal, park.signal]);
-						try { await untilAborted(a.workers.wait(parkedSignal), parkedSignal); }
+						try {
+							const observations: Promise<void>[] = [];
+							if (a.workers?.pending()) observations.push(a.workers.wait(parkedSignal));
+							if (a.bridge.pending()) observations.push(a.bridge.wait(parkedSignal));
+							await untilAborted(Promise.race(observations), parkedSignal);
+						}
 						catch (error) { if (!park.signal.aborted || signal.aborted) throw error; }
-						finally { run.parked = undefined; }
+						finally { park.abort(); run.parked = undefined; }
 					}
 					else break;
 				}
@@ -648,13 +983,16 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				started.resolve();
 				// The abort can end this loop while a worker-woken native run still streams (a tool ignoring abort):
 				// Pi would reject a new prompt then, so pending sends wait for it. This run stays current meanwhile.
-				if (a.run === run && a.next?.length && !a.controller.signal.aborted) await session.waitForIdle().catch(() => {});
+				if (a.run === run && a.next?.length && !a.controller.signal.aborted) await (a.core.on ? session.agent.waitForIdle() : session.waitForIdle()).catch(() => {});
 				if (a.run === run) {
 					a.activity.endRun(run.quiet ? "interrupted" : texts.some(t => t.startsWith("error:")) ? "error" : "completed");
 					// `send` with `interrupt` (and sends after it) made while this run was stopping: start them now, once.
 					// a.next keeps the child active until startRun has set the new a.run (synchronously), so wait and
 					// the caller's fallback never see it idle in between.
 					a.run = undefined;
+					a.core.active = false;
+					a.state = run.quiet || a.guard.signal?.aborted ? (a.state === "paused" ? "paused" : "interrupted") : "completed";
+					if (agents.get(a.id) === a) persist(a);
 					onRunning();
 					const next = a.next;
 					if (next?.length && !a.controller.signal.aborted)
@@ -677,7 +1015,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		}
 	}
 
-	function close(a: Agent) {
+	function close(a: Agent, preserveBridge = false) {
+		if (!preserveBridge) a.bridge.close();
 		a.next = undefined;
 		if (a.run) { a.run.quiet = true; a.run.controller.abort(); }
 		a.controller.abort();
@@ -687,26 +1026,44 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		a.jobs?.dispose();
 		a.session.clearQueue();
 		// abort first: dispose alone does not set Pi's abort flag for queued follow-ups or compaction.
-		void a.session.abort().catch(() => {}).finally(() => a.session.dispose());
+		a.session.agent.abort();
+		void (async () => {
+			await Promise.all([a.session.abort().catch(() => {}), a.session.agent.waitForIdle()]);
+			// A retained reviewer still uses its original public extension API to persist findings.
+			if (preserveBridge) {
+				try { while (a.bridge.retained()) await a.bridge.wait(a.bridge.lifetime.signal); }
+				catch { /* Explicit stop ends retained work too. */ }
+			}
+			a.session.dispose();
+		})();
 		onRunning();
 	}
 
 	/** Request cancellation of the current run: the shared body of `interrupt` and `send` with `interrupt: true`. */
 	function requestInterrupt(a: Agent, run: NonNullable<Agent["run"]>) {
+		recoveryPending.delete(a.id);
 		a.workers?.abortAll();
 		a.jobs?.abortAll();
 		coordinator.change(`${name}#${a.id}`, "interrupt");
 		run.quiet = true;
+		a.state = "paused";
+		persist(a);
 		run.controller.abort();
 		a.session.clearQueue();
 		void a.session.abort().catch(() => {});
 		coordinator.add(target(a));
 	}
 
-	function find(id: string | undefined): Agent {
+	function localNumber(id: string | undefined): number | undefined {
 		const local = id?.startsWith(`${name}#`) ? id.slice(name.length + 1) : id;
-		const a = local && (!worker || id?.startsWith(`${name}#`)) && /^[1-9]\d*$/.test(local) && Number.isSafeInteger(Number(local)) ? agents.get(Number(local)) : undefined;
+		return local && (!worker || id?.startsWith(`${name}#`)) && /^[1-9]\d*$/.test(local) && Number.isSafeInteger(Number(local)) ? Number(local) : undefined;
+	}
+	function find(id: string | undefined): Agent {
+		const number = localNumber(id);
+		const a = number === undefined ? undefined : agents.get(number);
 		if (a) return a;
+		const failed = number === undefined ? undefined : recoveryErrors.get(number);
+		if (failed) throw new Error(`${name}#${number} unavailable: ${failed.error}`);
 		const known = [...agents.keys()].map((k) => `${name}#${k}`).join(", ") || "none";
 		throw new Error(`Unknown ${name} id: ${id ?? "(none)"}. Known: ${known}`);
 	}
@@ -719,7 +1076,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		const alertOptions = alertAfter === undefined ? {} : { alert_after_ms: alertAfter };
 		if (worker) {
 			const selected = await untilAborted(worker.resolve(ctx), signal);
-			return { system: workerPrompt(worker.system, ctx.cwd), base: "", tools: [...worker.tools], ...selected, ...alertOptions };
+			return { system: workerPrompt(worker.system, ctx.cwd), base: "", cwd: ctx.cwd, tools: [...worker.tools], ...selected, ...alertOptions };
 		}
 		const explore = params.explore ?? base?.explore;
 		if (params.system !== undefined && params.system_file !== undefined) throw new Error("Give system or system_file, not both");
@@ -757,7 +1114,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		signal.throwIfAborted();
 		const tools = explore ? TOOLS.filter(name => pi.getActiveTools().includes(name)) : params.tools ?? base?.tools ?? [...TOOLS];
 		const thinking = params.thinking ?? base?.thinking ?? pi.getThinkingLevel();
-		return { system, base: root, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}), ...(promptFile ? { prompt_file: promptFile } : {}), ...(explore ? { explore } : {}), model, thinking, tools, ...alertOptions };
+		return { system, base: root, cwd: ctx.cwd, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}), ...(promptFile ? { prompt_file: promptFile } : {}), ...(explore ? { explore } : {}), model, thinking, tools, ...alertOptions };
 	}
 
 	const ok = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
@@ -766,10 +1123,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		label: worker?.name ?? "Agent",
 		description: worker?.description ?? DESCRIPTION,
 		parameters: worker ? Type.Object({
-			action: Type.Optional(StringEnum(["start", "wait", "status", "send", "interrupt", "stop", "restart"])),
+			action: Type.Optional(StringEnum(["start", "wait", "status", "send", "resume", "interrupt", "stop", "restart"])),
 			task: Type.Optional(Type.String({ minLength: 1 })),
 			id: Type.Optional(Type.String({ description: `${name}#N; management actions` })), ids: PARAMETERS.properties.ids,
-			timeout_ms: PARAMETERS.properties.timeout_ms, messages: PARAMETERS.properties.messages,
+			timeout_ms: PARAMETERS.properties.timeout_ms, messages: PARAMETERS.properties.messages, blocking: PARAMETERS.properties.blocking,
 			until: PARAMETERS.properties.until, wake_on_alert: PARAMETERS.properties.wake_on_alert,
 			depth: PARAMETERS.properties.depth, alert_after_ms: PARAMETERS.properties.alert_after_ms,
 			fast_gpt: PARAMETERS.properties.fast_gpt, interrupt: PARAMETERS.properties.interrupt, title: PARAMETERS.properties.title,
@@ -782,9 +1139,14 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			if (worker) params.action ??= "start";
 			// Queue only registration/snapshot, never the waiting Promise or a tool that ignores abort.
 			if (params.action === "wait") {
-				const registration = coordinator.queue.then(() => {
+				const registration = coordinator.queue.then(async () => {
 					signal.throwIfAborted();
-					return { waiting: coordinator.wait(targetIds(params.ids), waitTimeout(params.timeout_ms), signal, toolCallId, { until: params.until, wake_on_alert: params.wake_on_alert }) };
+					await hydrate(ctx, signal);
+					const ids = targetIds(params.ids), timeout = waitTimeout(params.timeout_ms);
+					const options = { until: params.until, wake_on_alert: params.wake_on_alert };
+					const blocking = params.blocking === true || toolCallId.includes("/") || (!backgroundCaller && (ctx.mode === "print" || ctx.mode === "json"));
+					return { waiting: blocking ? coordinator.wait(ids, timeout, signal, toolCallId, options)
+						: coordinator.notificationWait(ids, timeout, signal, toolCallId, options) };
 				});
 				coordinator.queue = registration.catch(() => {});
 				return registration.then(({ waiting }) => waiting).then(withDisplays);
@@ -799,6 +1161,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		// Strict-mode providers send null for omitted optional fields.
 		const params = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== null)) as Params;
 		signal.throwIfAborted();
+		await hydrate(ctx, signal);
 		if (!worker && (params.system_file !== undefined || params.role_file !== undefined || params.include !== undefined) && params.action !== "start" && params.action !== "restart")
 			throw new Error("system_file, role_file and include are only supported on start/restart");
 		const task = !worker && params.include?.includes("user_messages") && params.task !== undefined
@@ -813,8 +1176,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const id = ++counter;
 				pi.appendEntry(name, { id });
 				const fast = { on: params.fast_gpt ?? callerFast() };
-				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`);
-				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, fast, ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };
+				config.settings = childSettings(pi.getSettings());
+				config.builtins = BUILTIN_TOOLS.filter(name => pi.getActiveTools().includes(name));
+				const manager = createChildManager(ctx.sessionManager, ctx.cwd, name, id);
+				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`, manager);
+				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, state: "idle", fast, ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };
+				agents.set(id, a);
 				try {
 					signal.throwIfAborted();
 					a.captureRun(ctx.sessionManager.getSessionId());
@@ -823,15 +1190,23 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					a.guard.signal = a.run?.controller.signal;
 					agents.set(id, a);
 					onRunning();
-				} catch (error) { coordinator.change(`${name}#${id}`, "canceled_start"); close(a); throw error; }
+				} catch (error) { agents.delete(id); a.state = "stopped"; persist(a); coordinator.change(`${name}#${id}`, "canceled_start"); close(a); throw error; }
 				return ok(`${name}#${id} started`);
+			}
+			case "resume": {
+				const id = localNumber(params.id);
+				if (id !== undefined && !agents.has(id) && recoveryErrors.has(id)) await hydrate(ctx, signal, id);
+				const a = find(params.id);
+				if (params.task !== undefined) throw new Error("resume does not accept task; use send for a new message");
+				await resumeOne(a, ctx, signal);
+				return ok(`${name}#${a.id} resumed`);
 			}
 			case "send": {
 				const a = find(params.id);
 				if (!params.task) throw new Error("task is required");
 				if (a.run?.quiet && !params.interrupt && !a.next) throw new Error(`${name}#${a.id}: cancellation pending; inspect status before send`);
 				a.captureRun(ctx.sessionManager.getSessionId());
-				if (params.fast_gpt !== undefined) a.fast.on = params.fast_gpt;
+				if (params.fast_gpt !== undefined) { a.fast.on = params.fast_gpt; persist(a); }
 				if (a.run && (params.interrupt || a.run.quiet)) {
 					// Abort now like `interrupt` and return at once: the task starts when the old run has stopped (the
 					// finally of its run), after any earlier pending sends. No time limit: an uncooperative tool just delays it.
@@ -842,9 +1217,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				if (a.run) {
 					// Steering: delivered after the child's current tool call, before its next request; nothing is aborted.
 					const run = a.run;
-					await untilAborted(a.session.steer(params.task), signal);
+					if (a.core.on) a.session.agent.steer({ role: "user", content: [{ type: "text", text: params.task }], timestamp: Date.now() });
+					else await untilAborted(a.session.steer(params.task), signal);
 					// The native run ended and the loop waits for this child's own workers: nothing polls the queue, so wake it.
-					const parked = run.parked && !a.session.isStreaming;
+					const parked = run.parked && !a.session.agent.state.isStreaming;
 					run.parked?.abort();
 					return ok(`${name}#${a.id}: ${parked ? "sent" : "queued after the current tool call"}`);
 				}
@@ -864,7 +1240,17 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				return waitResult({ id: `${name}#${a.id}`, reason: "interruption_requested", cancellation_requested: true, snapshot });
 			}
 			case "stop": {
+				const id = localNumber(params.id);
+				const failed = id === undefined ? undefined : recoveryErrors.get(id);
+				if (id !== undefined && !agents.has(id) && failed?.data) {
+					pi.appendEntry(CHILD_ENTRY, { ...failed.data, state: "stopped" });
+					recoveryErrors.delete(id); recoveryPending.delete(id);
+					coordinator.change(`${name}#${id}`, "stop");
+					return ok(`${name}#${id} stopped`);
+				}
 				const a = find(params.id);
+				recoveryErrors.delete(a.id);
+				a.state = "stopped"; persist(a);
 				agents.delete(a.id);
 				onRunning();
 				coordinator.change(`${name}#${a.id}`, "stop");
@@ -875,14 +1261,20 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const old = find(params.id);
 				const config = await resolveConfig(params, ctx, signal, old.config);
 				signal.throwIfAborted();
+				old.state = "stopped"; persist(old);
 				agents.delete(old.id);
 				onRunning();
 				coordinator.change(`${name}#${old.id}`, "restart");
 				close(old);
 				const fast = { on: params.fast_gpt ?? old.fast.on };
-				const child = await createSession(config, ctx, signal, fast, labelOf(old.id), `${name}#${old.id}`);
+				config.settings = childSettings(pi.getSettings());
+				config.builtins = BUILTIN_TOOLS.filter(name => pi.getActiveTools().includes(name));
+				const manager = createChildManager(ctx.sessionManager, ctx.cwd, name, old.id);
+				const child = await createSession(config, ctx, signal, fast, labelOf(old.id), `${name}#${old.id}`, manager);
 				const title = given(params.title) ? params.title.trim() : old.title;
-				const a: Agent = { id: old.id, config, epoch: randomUUID(), runNumber: 0, fast, ...(title ? { title } : {}), ...child };
+				const a: Agent = { id: old.id, config, epoch: randomUUID(), runNumber: 0, state: "idle", fast, ...(title ? { title } : {}), ...child };
+				agents.set(a.id, a);
+				persist(a);
 				try {
 					signal.throwIfAborted();
 					a.captureRun(ctx.sessionManager.getSessionId());
@@ -892,16 +1284,28 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					a.guard.signal = a.run?.controller.signal;
 					agents.set(a.id, a);
 					onRunning();
-				} catch (error) { coordinator.change(`${name}#${a.id}`, "canceled_restart"); close(a); throw error; }
+				} catch (error) { agents.delete(a.id); a.state = "stopped"; persist(a); coordinator.change(`${name}#${a.id}`, "canceled_restart"); close(a); throw error; }
 				return ok(`${name}#${a.id} restarted${params.task ? "" : ", idle"}`);
 			}
 			default: throw new Error(`Unknown action: ${params.action}`);
 		}
 	}
 
+	pi.on("before_agent_start", async (_event, ctx) => {
+		main = ctx;
+		await resumeAll(ctx.signal ?? new AbortController().signal, true);
+	});
 	pi.on("session_start", (_event, ctx) => {
 		main = ctx;
 		counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries(), name));
+	});
+	pi.on("session_tree", (_event, ctx) => {
+		generation.abort(new Error("The caller changed its session branch"));
+		generation = new AbortController();
+		for (const a of agents.values()) { coordinator.change(`${name}#${a.id}`, "branch_changed"); close(a); }
+		for (const id of recoveryErrors.keys()) coordinator.change(`${name}#${id}`, "branch_changed");
+		agents.clear(); recoveryPending.clear(); recoveryErrors.clear(); hydrated = false; main = ctx;
+		late.length = 0; unanswered.clear();
 	});
 	// agent_end still has the native run's live abort signal. before_settle no longer does.
 	pi.on("agent_end", (_event, ctx) => {
@@ -916,7 +1320,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		for (const result of late.splice(0)) {
 			if (!coordinator.message(result)) continue;
 			unanswered.add(result.delivery);
-			pi.sendMessage(resultMessage(result), { triggerTurn: false });
+			send(resultMessage(result), { triggerTurn: false });
 			coordinator.releaseMessage(result);
 		}
 		if (!mainAborted && needsTurn(ctx)) return { continue: true };
@@ -931,7 +1335,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		settling = false;
 		const held = late.splice(0).filter(result => coordinator.message(result));
 		held.forEach((result, i) => {
-			pi.sendMessage(resultMessage(result), { triggerTurn: !event.aborted && i === held.length - 1 });
+			send(resultMessage(result), { triggerTurn: !event.aborted && i === held.length - 1 });
 			coordinator.releaseMessage(result);
 		});
 	});
@@ -940,8 +1344,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		// Fence queued/preflight starts as well as accepted children, but allow later assignments.
 		generation.abort(new Error("The caller interrupted its children"));
 		generation = new AbortController();
-		for (const a of agents.values()) { coordinator.change(`${name}#${a.id}`, "shutdown"); close(a); }
+		for (const a of agents.values()) {
+			if (a.state !== "paused" && (a.run || a.state === "running")) a.state = "interrupted";
+			persist(a);
+			coordinator.change(`${name}#${a.id}`, "shutdown"); close(a);
+		}
 		agents.clear();
+		hydrated = false;
 		onRunning();
 		late.length = 0;
 		unanswered.clear();
@@ -955,10 +1364,22 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 	pi.on("session_shutdown", shutdown);
 	return {
 		pending: () => runs().length > 0 || late.some(result => result.state === "pending") || !!(main && needsTurn(main)),
-		wait: signal => coordinator.observe(signal),
+		async wait(signal) {
+			const active = runs();
+			// Notification subscriptions are not active SDK calls; observe() deliberately yields to them.
+			if (active.length) await untilAborted(Promise.all(active).then(() => {}), signal);
+			else await coordinator.observe(signal);
+		},
 		ids: () => [...agents.values()].filter(a => a.run).map(a => `${name}#${a.id}`),
-		status: depth => coordinator.status([...agents.keys()].map(id => `${name}#${id}`), undefined, undefined, statusDepth(depth)).map(compactStatus),
+		status: depth => coordinator.status([...new Set([...agents.keys(), ...recoveryErrors.keys()])].map(id => `${name}#${id}`), undefined, undefined, statusDepth(depth)).map(compactStatus),
 		runningCounts,
+		resume: resumeAll,
+		settle(aborted) {
+			if (main) coordinator.settleCore(main, aborted);
+			settling = false; mainAborted = aborted;
+			const held = late.splice(0).filter(result => coordinator.message(result));
+			for (const result of held) { send(resultMessage(result), { triggerTurn: !aborted }); coordinator.releaseMessage(result); }
+		},
 		abortAll,
 		close: shutdown,
 	};

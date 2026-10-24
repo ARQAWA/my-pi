@@ -287,3 +287,69 @@ test("real Pi runtime replacement closes the outgoing session, deletes its JSONL
 		assert.equal(runtime.session.sessionManager.getEntries().some(e => e.type === "message"), false);
 	} finally { await runtime.dispose(); await f.close(); }
 });
+
+test("remove deletes the exact `<file>.children` tree, nested descendants, sidecars and their unshared artifacts", async () => {
+	const f = await fixture();
+	try {
+		const art = (n: string) => join(f.root, `pi-bash-${n.padStart(16, "0")}.log`);
+		const [own, byChild, byGrand, both, kept, survivor] = ["1", "2", "3", "4", "5", "6"].map(art);
+		for (const p of [own, byChild, byGrand, both, kept, survivor]) await writeFile(p, "x");
+		const tree = `${f.file}.children`;
+		const child = join(tree, "agent-1", "session.jsonl");
+		const grandDir = `${child}.children`;
+		const grand = join(grandDir, "code_writer-2", "session.jsonl");
+		const sidecar = join(tree, "agent-1", "meta.json");
+		await mkdir(dirname(grand), { recursive: true });
+		await f.save(f.file, [f.header, { details: { fullOutputPath: own } }, { details: { fullOutputPath: both } }]);
+		await f.save(child, [{ ...f.header, id: "child" }, { details: { fullOutputPath: byChild } }, { details: { fullOutputPath: both } }]);
+		await f.save(grand, [{ ...f.header, id: "grand" }, { details: { fullOutputPath: byGrand } }, { details: { fullOutputPath: kept } }]);
+		await writeFile(sidecar, JSON.stringify({ id: "child" }));
+		// Surviving sessions: an unrelated session, and a sibling tree that only looks similar.
+		const other = join(f.dir, "other.jsonl");
+		const lookalike = join(f.dir, "current.jsonl.children-x", "c.jsonl");
+		const otherTree = join(f.dir, "other.jsonl.children", "c.jsonl");
+		await mkdir(dirname(lookalike), { recursive: true }); await mkdir(dirname(otherTree), { recursive: true });
+		await f.save(other, [{ ...f.header, id: "other" }, { text: kept }]);
+		await f.save(lookalike, [{ ...f.header, id: "look" }, { text: survivor }]);
+		await f.save(otherTree, [{ ...f.header, id: "oc" }, { text: survivor }]);
+		const h = harness(f.agent, f.file); await h.call("remove");
+		for (const p of [f.file, tree, own, byChild, byGrand, both]) assert.equal(existsSync(p), false, p);
+		for (const p of [kept, survivor, other, lookalike, otherTree]) assert.ok(existsSync(p), p);
+		assert.match(h.notices[0], /Session removed: current-id \(4 artifact files deleted, 2 child sessions deleted\)/);
+	} finally { await f.close(); }
+});
+
+test("a symlink inside or as the child tree refuses removal before switching and deletes nothing", async () => {
+	for (const where of ["root", "inside"]) {
+		const f = await fixture();
+		const outside = await mkdtemp(join(tmpdir(), "rqw-outside-"));
+		try {
+			const secret = join(outside, "secret.jsonl"); await writeFile(secret, "keep");
+			const tree = `${f.file}.children`;
+			const art = join(f.root, "pi-bash-00000000000000aa.log"); await writeFile(art, "x");
+			await f.save(f.file, [f.header, { text: art }]);
+			const type = process.platform === "win32" ? "junction" : "dir";
+			let link: string;
+			if (where === "root") { link = tree; await symlink(outside, tree, type); }
+			else { await mkdir(tree); link = join(tree, "evil"); await symlink(outside, link, type); await f.save(join(tree, "c.jsonl"), [f.header]); }
+			const h = harness(f.agent, f.file); await h.call("remove");
+			assert.equal(h.switches, 0); assert.match(h.notices[0], /Session removal refused/); assert.ok(h.notices[0].includes(link));
+			assert.ok(existsSync(f.file)); assert.ok(existsSync(secret)); assert.ok(existsSync(art));
+			if (where === "inside") assert.ok(existsSync(join(tree, "c.jsonl")));
+		} finally { await f.close(); await rm(outside, { recursive: true, force: true }); }
+	}
+});
+
+test("a regular file named like the child tree is refused, a missing JSONL still removes its tree", async () => {
+	const f = await fixture();
+	try {
+		const tree = `${f.file}.children`;
+		await writeFile(tree, "not a directory");
+		const h = harness(f.agent, f.file); await h.call("remove");
+		assert.equal(h.switches, 0); assert.ok(existsSync(f.file)); assert.ok(existsSync(tree));
+		await rm(tree); await mkdir(tree); await f.save(join(tree, "c.jsonl"), [f.header]);
+		await rm(f.file);
+		const h2 = harness(f.agent, f.file); await h2.call("remove");
+		assert.equal(h2.switches, 1); assert.equal(existsSync(tree), false);
+	} finally { await f.close(); }
+});

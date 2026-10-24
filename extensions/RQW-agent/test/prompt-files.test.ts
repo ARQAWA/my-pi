@@ -97,7 +97,7 @@ test("prompt-file provenance appears under results[].display on explicit wait, w
 		const { system: _inline, ...params } = f.params();
 		f.mainReplies.push(
 			answer([fauxToolCall("agent", { ...params, role_file: "role.txt" })], { stopReason: "toolUse" }),
-			answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 10000 })], { stopReason: "toolUse" }),
+			answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 10000 })], { stopReason: "toolUse" }),
 			answer("DONE"),
 		);
 		const run = f.session.prompt("GO");
