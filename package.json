@@ -7,7 +7,8 @@
     "test:bun": "node extensions/RQW-tools/test/bun/codemode-check.mjs",
     "deliver-check": "node scripts/deliver-check.mjs",
     "qa-status": "node scripts/qa-status.mjs",
-    "ci-watch": "node scripts/ci-watch.mjs"
+    "ci-watch": "node scripts/ci-watch.mjs",
+    "tasks": "node scripts/tasks-view.mjs"
   },
   "keywords": [
     "pi-package"
@@ -44,6 +45,7 @@
     "@earendil-works/pi-ai": "1.4.0",
     "@earendil-works/pi-coding-agent": "1.4.0",
     "jiti": "2.7.0",
+    "marked": "18.0.11",
     "typebox": "1.3.27"
   },
   "dependencies": {

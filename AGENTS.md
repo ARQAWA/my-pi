@@ -134,6 +134,13 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   the current branch's CI; workers and hosts without the extension use it. A failed `main` run whose every failure
   signature is an occurrence in a closed inbox issue shows as info (acknowledged), else red (`DECISIONS.md` `[D-QA-ACK]`);
   `--refresh-inbox` computes that with `scripts/qa-inbox-snapshot.mjs`.
+- `scripts/tasks-view.mjs`, `npm run tasks`: repo-local macOS dev tool. Renders the working-tree `BACKLOG.md` (or
+  `--source <file>`) into one standalone dark, mobile-first, view-only HTML page in a fresh `os.tmpdir()` directory
+  and opens it; `--no-open` only prints the path. Deterministic, no model calls, no network, no server. Tables become
+  expandable task cards with the source text as written, other prose and code blocks are shown too, and the full
+  source is kept escaped on the page. It uses `marked` (a direct exact devDependency) with raw HTML, images and
+  non-http links neutralised. Limitation: a static snapshot of that one file, not live agent or session state, and the
+  file can lag behind the real queue. Tests: `test/tasks-view.test.ts`.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all. Its `qa-status` message has a compact card (`card.ts`); Ctrl+O shows every line with its link.
 - `.agents/reviewers/test-integrity.md`: the read-only reviewer prompt for mechanically detected weakened tests, used
