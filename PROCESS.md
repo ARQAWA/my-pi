@@ -482,7 +482,7 @@ and guard change. Record the accepted choice in `DECISIONS.md`.
    owner's verbatim quote, source session, reason and carrier; keep each rule in one place and link elsewhere.
    Superseded and obsolete decisions go verbatim into root `DECISIONS-ARCHIVE.md`, an append-only archive with
    replacement and commit provenance, not routine agent reading. `BACKLOG.md` is the canonical list of open and
-   owner-deferred work with source, status and branch; remove done and dead tasks instead of keeping a second ledger.
+   owner-deferred work with source, status and branch; remove done and dead tasks instead of keeping a second ledger; owner-discarded tasks move to `BACKLOG.md` Discarded.
    Current docs describe current facts, not a history ledger.
 2. Push the task branch to start affected CI early; continue independent work while it runs. Before merging,
    require sufficient proof and the required clean reviews for the final head commit on current `main`.
