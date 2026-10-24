@@ -318,7 +318,7 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
 
 - While RQW-review is disabled in the owner's settings, result review runs through an `agent` subagent whose
   whole system prompt is the reviewer text (`extensions/RQW-review/REVIEWER.md` in `main`), on `openai-codex/gpt-6.1-sol`
-  with thinking low for `blind` and medium for `high`. Give it the brief sections of the cycle below, with the owner's
+  with thinking low for `blind` and medium for `high`. Follow the canonical cycle linked below, with the owner's
   messages verbatim (the session file) as `<user_messages>`; record `Review: agent#N CLEAN`.
 - Main names the change class in the task brief and in the squash message. Reasons and the owner's words:
   [DECISIONS.md, Task pipeline](DECISIONS.md#task-pipeline).
@@ -352,16 +352,13 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
   if only waiting remains, end the turn silently for automatic delivery, without polling or filler turns. Owner
   messages and interrupts remain allowed. This is an instruction, not a mechanical completion guarantee; failed or
   incomplete reviews do not pass the check.
-- The review cycle, ported from the owner's Codex CLI reviewer skills (`DECISIONS.md`, [Review](DECISIONS.md#review)).
-  It runs when the owner asks for a review or a checked result, or when this section requires it, such as before
-  a squash merge; never on Main's own initiative. The brief has these sections in this order: `<user_messages>`,
-  every owner message of the conversation verbatim and in order (the `review` tool assembles it from the branch, an
-  `agent` reviewer gets the session file text), `<agreement>` only when there are accepted proposals and decisions
-  that are not the owner's own messages, `<object>` (exact paths or readable references, primary requirements,
-  governing rules, source evidence, the diff as a file path, and the stage `pre-action` or `pre-completion`),
-  `<criterion>` (what the check confirms and which deliverable must fulfil each obligation; an exclusion cannot
-  silently waive a governing requirement of this pass) and, from the second pass on, `<rejected_earlier>`. Set no
-  file, search, tool-call or turn quotas, and leave the reviewed files unchanged until the verdict.
+- Execute result review by the canonical [review cycle](extensions/RQW-review/skills/review-cycle.md), ported from
+  the owner's Codex CLI skills. It owns the brief, waiting, verdict admission, batch fixes and fresh passes.
+  It runs only when the owner requests a review or checked result, or this procedure requires it, such as before
+  a squash merge; never on Main's own initiative. With RQW-review loaded, use native `/skill:blindreview` or
+  `/skill:highreview`; these skills invoke the specialised `review` transport, which starts a fresh reviewer child
+  through `runReviewer` and `createAgentSession`, without an RQW-agent dependency or a second runner.
+  The disabled-review route above follows the same cycle with its stated transport and user-message adaptation.
 - For large work, run a separate read-only code reviewer in parallel with result review whenever a changed path falls outside
   the `tests.yml` `paths-ignore` filters used by `scripts/deliver-check.mjs`, considering both base and head filters.
   This includes extension READMEs even though their contents are prose. Root Markdown, `notes/**` and `.agents/**`
@@ -369,28 +366,16 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
   Read `.agents/reviewers/code.md` and pass it as the complete `system` to an `agent` worker, choosing its model and
   reasoning from the table above. Its task brief includes the changed files, diff, callers, relevant tests and evidence.
   This role checks bugs, regressions and meaningful code quality, not a second requirements ritual.
-- Result-review verdicts and admission, for the `review` tool or the `REVIEWER.md` agent only; the code and
-  test-integrity reviewers follow the next bullet. `CLEAN` with a complete `CHECKED:` and no `UNCHECKED:` passes the pass; run no extra pass for confidence,
-  but keep every independent pass and its order that this section requires. `FINDINGS:` are the teammate's findings:
-  Main finds each quote by searching for it. A finding whose two quotes stand verbatim in their sources is admitted;
-  for an omission, verify the quoted requirement and the complete inspected file or section instead of demanding
-  nonexistent text. Fix an admitted finding exactly to its REQUIRED OUTCOME and no further; do not reject it, argue
-  with it or put it to the owner. Reject a finding only when a quote is not verbatim, the allegedly missing content is
-  present in the cited object, or a NOT AGREED element is covered by a verbatim quote of the agreement, and give that
-  reason with the quote. Main routes all admitted fixes to workers in one batch, and workers recheck the affected parts
-  and checks, not untouched parts. Then a fresh reviewer runs with the same level, object and criterion and every
-  rejection so far in `<rejected_earlier>`, until `CLEAN`. `UNCHECKED:` or missing `CHECKED:` evidence makes the pass
-  incomplete whatever the leading verdict: resolve the missing sources or evidence, or retry malformed output; never
-  record it as acceptance. No verdict, an error or a reviewer that could not start means the check has not passed and
-  no self-check replaces it: launch it once more on the unchanged object, and if it fails again tell the owner and wait.
-  When this review contract changes, validate it against known defective, corrected and missing-source examples before
-  claiming improved detection; these checks are not extra rounds in ordinary task reviews.
+- The canonical cycle's result-review admission and `CHECKED:` rules apply only to the `review` transport or the
+  `REVIEWER.md` agent, not code, test-integrity or combined reviewers. Preserve every independent pass and its order
+  required here. Main routes admitted fixes to workers in one batch; workers recheck affected parts and checks,
+  not untouched parts. The cycle's contract-change validation requirement remains applicable.
 - Code-review, test-integrity and `Combined-review` findings (`.agents/reviewers/code.md`,
   `.agents/reviewers/test-integrity.md`; the combined reviewer also uses `code.md`): admit
   real evidenced defects, not taste or unlikely hypotheticals. Check findings rather than accepting them just because a
   quote exists. Main validates real findings and routes admitted fixes to workers in one batch; explain rejected
   findings with evidence. Workers recheck affected parts and checks, not untouched parts. The result-review quote and
-  `CHECKED:` rules above, and the prompt formats they name, do not apply to these reviewers.
+  `CHECKED:` rules of the canonical cycle, and the prompt formats they name, do not apply to these reviewers.
 - A CLEAN covers only the commit it reviewed. Any commit after CLEAN sends the places it changed back to review:
   result review, and code review when the path-based requirement above applies. A conflict-free rebase onto `main`
   changes no task places: it needs new

@@ -64,14 +64,15 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   `shell_runner` overrides it (`false` when the user forbids Fast for subagents). An explicit `fast_gpt` on
   `send` or `restart` updates the retained value.
   Tests: `npm test`.
-- `extensions/RQW-review/`: extension 6, the `review` tool with levels `blind` and `high`. Each call runs a fresh
-  reviewer session in the same process and main agent's cwd (`createAgentSession`, `read`, `bash`, `grep`, `find`;
-  RQW-tools definitions when offered, otherwise Pi's stock tools) with `REVIEWER.md` as its prompt; a bash git-state
-  guard blocks mutations, while no file edits is a prompt rule. The verdict comes
-  back later as a `[review#N]` message. It is the owner's Codex CLI reviewer ported to Pi: `REVIEWER.md` is the Smarty
-  text with three harness changes, `blind` is Smarty and `high` is Bossy, both `openai-codex/gpt-6.1-sol` (low, medium),
-  with no Claude fallback; Main fixes admitted findings in one batch and calls a fresh reviewer with its rejections
-  until CLEAN (`DECISIONS.md` section Review, `extensions/RQW-review/README.md`). Background cache warming is off. A reviewer inherits the main chat's GPT Fast at its start; the `review` tool's optional `fast_gpt` overrides it.
+- `extensions/RQW-review/`: extension 6, native `/skill:blindreview` and `/skill:highreview` entry skills and the
+  specialised `review` transport. Skills load the canonical `extensions/RQW-review/skills/review-cycle.md`;
+  `runReviewer` starts a fresh reviewer child through `createAgentSession`, without an RQW-agent dependency.
+  Native skill paths are offered through public `resources_discover` only while this extension is loaded, not
+  package `pi.skills`. `REVIEWER.md` is the owner's Smarty prompt with three harness changes; `LEVELS` fixes
+  `blind` to Smarty, `openai-codex/gpt-6.1-sol` low, and `high` to Bossy, the same model medium, without fallback.
+  Verdicts arrive later as `[review#N]`; the shared cycle owns their handling. Pending-review completion is an
+  instruction, not a mechanical barrier. Details: `DECISIONS.md` Review and `extensions/RQW-review/README.md`.
+  Background cache warming is off. Reviewers inherit GPT Fast at start; optional `fast_gpt` overrides it.
   RQW-agent's general subagents get their own `review` through the `pi.events` offer `rqw-review:subagent-review`:
   `extensions/RQW-review/README.md#review-in-subagents`. Tests: `npm test`.
 - `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout, with the context bar as

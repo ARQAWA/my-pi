@@ -43,6 +43,9 @@ export const MESSAGE_TYPE = "review";
 
 export const REVIEWER = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "REVIEWER.md"), "utf8").replace(/\r\n/g, "\n").trimEnd();
 
+export const CYCLE_PATH = join(dirname(fileURLToPath(import.meta.url)), "skills", "review-cycle.md");
+const SKILL_PATHS = ["highreview", "blindreview"].map((name) => join(dirname(CYCLE_PATH), name));
+
 const PENDING_REVIEW =
 	"Do not declare the task complete before this review's verdict is received and handled. " +
 	"If no other work remains, end this turn silently and wait for the automatic verdict notification; " +
@@ -50,7 +53,8 @@ const PENDING_REVIEW =
 	"A failed or incomplete verdict is not acceptance.";
 
 export const DESCRIPTION =
-	"Blind review by a separate read-only model on your team, with the user's own messages assembled verbatim. " +
+	"Transport to a fresh reviewer subagent: a separate read-only model on your team, with the user's own messages assembled verbatim. " +
+	`Start through /skill:blindreview or /skill:highreview; follow the complete cycle in ${CYCLE_PATH}. ` +
 	"Use only when the user asks for review or a checked result, or an invoked skill requires it; never on your own initiative. " +
 	"blind uses Smarty (GPT-6.1-Sol low), high uses Bossy (GPT-6.1-Sol medium), only when requested. " +
 	"The call returns at once; the verdict arrives as a [review#N] message. Keep working, but leave reviewed files unchanged until it arrives. " +
@@ -60,23 +64,10 @@ export const DESCRIPTION =
 	"By default a reviewer inherits GPT Fast; pass fast_gpt false when the user forbids Fast for subagents.";
 
 export const NEXT = {
-	clean:
-		"The check passed only with complete CHECKED evidence and no UNCHECKED. Run no extra pass for confidence, " +
-		"but preserve every independent pass and its order required by the invoking procedure.",
-	findings:
-		"Your teammate's findings. Find each quote by searching for it. A finding whose two quotes stand verbatim in " +
-		"their sources is admitted; for an omission, verify the quoted requirement and the complete inspected file or " +
-		"section instead of demanding nonexistent text. Fix it exactly to its REQUIRED OUTCOME and no further; do not " +
-		"reject it, argue with it or put it to the user. Reject a finding only when a quote is not verbatim, the allegedly " +
-		"missing content is present in the cited object, or a NOT AGREED element is covered by a verbatim quote of the " +
-		"agreement, and give that reason with the quote. Fix all admitted findings in one batch, then call review with " +
-		"the same level, object and criterion and every rejection so far in rejected_earlier, until CLEAN.",
-	incomplete:
-		"The check is incomplete regardless of its leading verdict. Resolve missing sources or evidence or retry malformed " +
-		"output; never record it as acceptance.",
-	failed:
-		"The check has not passed, and no self-check replaces it. Call review again once on the unchanged object; " +
-		"if it fails again, tell the user and wait.",
+	clean: `Structurally CLEAN: verify complete CHECKED coverage and no UNCHECKED. Follow ${CYCLE_PATH}.`,
+	findings: `Findings received. Follow ${CYCLE_PATH} for quote checks, batch fixes and a fresh pass.`,
+	incomplete: `The check is incomplete regardless of its leading verdict; never record it as acceptance. Follow ${CYCLE_PATH}.`,
+	failed: `The check has not passed, and no self-check replaces it. Follow ${CYCLE_PATH}.`,
 } as const;
 
 type Kind = "clean" | "incomplete" | "findings" | "failed";
@@ -643,6 +634,7 @@ export function reviewerSettings(own: ReturnType<ExtensionAPI["getSettings"]>) {
 }
 
 export default function review(pi: ExtensionAPI) {
+	pi.on("resources_discover", () => ({ skillPaths: SKILL_PATHS }));
 	registerReview(pi, { events: pi.events, fast: () => inheritedFastGpt(pi.events) });
 	// A subagent of RQW-agent asks for its own `review` tool; it reviews for that subagent, its caller.
 	pi.events.on(SUBAGENT_REVIEW, (request) =>

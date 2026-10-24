@@ -1,7 +1,7 @@
 # RQW-review
 
-The `review` tool with levels `blind` and `high`: the owner's working Codex CLI reviewer ported to Pi, not a newly
-invented workflow. Each call runs a fresh reviewer session in the same process and main agent's cwd (`read`, `bash`,
+Native `/skill:blindreview` and `/skill:highreview` run the owner's Codex CLI review cycle through a fresh reviewer
+subagent. The `review` tool with levels `blind` and `high` is their specialised transport, not itself a skill. Each call runs a fresh reviewer session in the same process and main agent's cwd (`read`, `bash`,
 `grep`, `find`) from zero, never a fork of the chat. `REVIEWER.md` is the whole prompt for both levels. The verdict comes
 back later as a `[review#N]` message. Self-contained: no import from another extension folder.
 Rules, quotes and reasons: `DECISIONS.md` section Review. Tests: `npm test`.
@@ -88,44 +88,25 @@ settlement hooks above: it calls `retain()` before each review starts and its re
 The caller's session, not RQW-review, persists the delivered message as a `custom_message` entry; later review numbers
 read it. A host without `continuation` behaves exactly as described above. Proof: `test/continuation.test.ts`.
 
-## The cycle on Main's side
+## Native skills and cycle
 
-Main runs a review only when the owner asks for a review or a checked result, or a procedure he approved requires it
-(the squash-merge rule of `PROCESS.md`); never on its own initiative. `blind` unless the owner or that procedure asks
-for `high`. Main keeps working but leaves the reviewed files unchanged until the verdict.
-Main must not declare the task complete before a requested review's verdict is received and handled. If no other work
-remains, Main ends the turn silently and waits for the automatic notification, without polling or filler turns.
-Owner messages and interrupts remain allowed. Failed and incomplete verdicts are not acceptance. This is an
-instruction, not a mechanical completion guarantee; terminal delivery stays nonblocking. Ending an idle turn is not
-completing the task. Rule and approval: [D-REVIEW-COMPLETION](../../DECISIONS.md#review).
+Use `/skill:highreview` for Bossy or `/skill:blindreview` for Smarty. Both entry skills load the canonical
+[review cycle](skills/review-cycle.md), which owns the complete brief, waiting, admission, batch-fix and fresh-pass
+workflow. Repository development gates remain in [PROCESS.md, Independent review](../../PROCESS.md#independent-review).
 
-- Brief: the tool assembles `<user_messages>` (the branch's user messages, verbatim and in order; a compaction or branch
-  summary is labelled as not the user's words). Main supplies `agreement` only when there is any: accepted proposals and decisions that are not in the user's own
-  messages, verbatim. It also supplies `object` (exact paths or
-  readable references, primary requirements, governing rules, source evidence, the diff as a file path, the stage
-  `pre-action` or `pre-completion`), `criterion` (what the check confirms and which deliverable must fulfil each
-  obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second pass on, `rejected_earlier` (`finding` and `reason`). No quotas on files, searches,
-  tool calls or turns.
-- `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` passes. Run no extra pass for confidence, but keep every
-  independent pass the invoking procedure requires.
-- `FINDINGS:` are the teammate's findings. Main finds each quote by searching for it. A finding whose two quotes stand
-  verbatim in their sources is admitted; for an omission Main checks the quoted requirement and the complete inspected
-  file or section. Main fixes it exactly to its REQUIRED OUTCOME and no further, without rejecting, arguing or asking
-  the owner. Main rejects a finding only when a quote is not verbatim, the allegedly missing content is present in
-  the cited object, or a NOT AGREED element is covered by a verbatim quote of the agreement, and says why with the quote.
-- All admitted fixes go in one batch. Then Main calls `review` again with the same level, object and criterion and every
-  rejection so far in `rejected_earlier`; the extension saves each call's rejections with the level, object and
-  criterion and carries them into later briefs of the same three. A fresh reviewer follows, until `CLEAN`.
-- `UNCHECKED:` or missing `CHECKED:` evidence is an incomplete check whatever the leading verdict: resolve the missing
-  sources or evidence, or retry malformed output; never record it as acceptance. `kindOf` in `index.ts` sorts a verdict
-  as `clean`, `findings`, `incomplete` or `failed`; it cannot prove coverage, so Main still reads `CHECKED:`.
-- No verdict, an error or a reviewer that could not start: the check has not passed and no self-check replaces it. Main
-  launches it once more on the unchanged object; if it fails again, Main tells the owner and waits.
-- When this review contract changes, validate it against known defective, corrected and missing-source examples before
-  claiming improved detection. These checks are not extra rounds in ordinary task reviews.
+The original Codex skills launch a pinned profile with generic `spawn_agent` and `fork_turns: "none"`. Here the
+skills call the existing specialised `review` transport: `runReviewer` creates the actual fresh reviewer child with
+`createAgentSession`. There is no RQW-agent dependency, cross-extension import or second runner.
 
-The carriers are `DESCRIPTION`, `NEXT` and `startedText` in `index.ts`; the owner-facing rule is
-[PROCESS.md, Independent review](../../PROCESS.md#independent-review).
+`index.ts` publishes the absolute `skills/highreview` and `skills/blindreview` directories through public
+`resources_discover` `skillPaths` only when RQW-review is loaded. They are not registered in package `pi.skills`, so
+switching off the extension removes its native skill entries too. `LEVELS` still owns the fixed profiles and
+`REVIEWER.md` is unchanged.
+
+`DESCRIPTION` and `startedText` describe the transport and instruct the caller not to declare completion while a
+requested review is pending. `NEXT` supplies concise verdict status and the canonical cycle's absolute path, not
+a duplicated workflow. Pending completion is an instruction, not a mechanical barrier; owner messages and
+interrupts remain allowed and terminal delivery stays nonblocking. Rule: [D-REVIEW-COMPLETION](../../DECISIONS.md#review).
 
 ## GPT Fast
 

@@ -1318,38 +1318,20 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Carrier: `index.ts` (`LEVELS`, `pickReviewer`). Proof: `test/levels.test.ts`, `test/codex-policy.test.ts`,
   `test/startup-policy.test.ts`. Since: this port.
 - **Review cycle on Main's side** `[D-REVIEW-CYCLE]`. Carried over from the skill `subagents` of the Codex plugin; it
-  lives in `DESCRIPTION`, `NEXT` and `startedText` of `index.ts`, so switching RQW-review off removes it, and in
-  [PROCESS.md, Independent review](PROCESS.md#independent-review).
-  - When: the review runs only when the owner asks for a review or a checked result, or a procedure he approved requires
-    it, such as the squash-merge rule of PROCESS; never on Main's own initiative or as an automatic step of other work.
-    `blind` unless the owner or that procedure asks for `high`. Main keeps working meanwhile but leaves the reviewed files unchanged until the verdict.
-  - Brief: `<user_messages>` is assembled by the tool from the branch, verbatim and in order, with compaction and branch
-    summaries labelled as not the user's words. Main gives `agreement` when there is any (accepted proposals and decisions
-    that are not the user's own messages, verbatim), `object` (exact paths or readable references to the object, the
-    primary requirements, applicable governing rules and source evidence, the diff as a file path, and the stage
-    `pre-action` or `pre-completion`), `criterion` (what the check confirms and which deliverable must fulfil each
-    obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second pass on,
-    `rejected_earlier` (each rejected finding with its reason). No file, search, tool-call or turn quotas.
-  - `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` passes: no extra pass for confidence, but every independent pass
-    and its order that the invoking procedure requires stays.
-  - `FINDINGS:` are the teammate's findings. Main finds each quote by searching for it. A finding whose two quotes stand
-    verbatim in their sources is admitted; for an omission Main verifies the quoted requirement and the complete
-    inspected file or section instead of demanding nonexistent text. Main fixes an admitted finding exactly to its
-    REQUIRED OUTCOME and no further, and does not reject it, argue with it or put it to the owner. Main rejects a finding
-    only when a quote is not verbatim, the allegedly missing content is present in the cited object, or a NOT AGREED
-    element is covered by a verbatim quote of the agreement, and gives that reason with the quote.
-  - All admitted fixes go in one batch. Then a fresh reviewer runs with the same level, object and criterion and every
-    rejection so far in `rejected_earlier`, until `CLEAN`.
-  - `UNCHECKED:` or missing `CHECKED:` evidence makes the check incomplete whatever the leading verdict is: resolve the
-    missing sources or evidence, or retry malformed output; never record it as acceptance.
-  - No verdict, an error or a reviewer that could not start: the check has not passed and no self-check replaces it.
-    Main launches it once more on the unchanged object; if it fails again, Main tells the owner and waits.
-  - When this review contract changes, validate it against known defective, corrected and missing-source examples before
-    claiming improved detection. These checks are not extra rounds in ordinary task reviews. The tests check mechanics,
-    such as a malformed verdict or a missing `CHECKED:`, and make no claim about detection quality.
+  lives in the canonical [review cycle](extensions/RQW-review/skills/review-cycle.md), invoked by native
+  `highreview` and `blindreview` skills. [PROCESS.md, Independent review](PROCESS.md#independent-review) keeps the
+  repository's development gates and refers to that cycle for execution. The unchanged contract covers invocation
+  only when requested or required, the primary-source brief, unchanged reviewed files while waiting, quote-based
+  admission, one batch of fixes and fresh passes until CLEAN. Incomplete or failed reviews never pass; no extra
+  confidence passes or quotas are added. The canonical skill carries the full rules, including failure handling
+  and contract-change validation, rather than duplicating the execution procedure here. Mechanical tests make
+  no detection-quality claim.
   Owner (`16-27-59:5210`): «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
   Reason: one complete pass, one batch of fixes and a fresh pass is the cycle the owner's reviewer already runs.
-  Carriers: `index.ts` (`DESCRIPTION`, `NEXT`, `startedText`, `verdictMessage`, `kindOf`). Since: this port.
+  Carrier: `extensions/RQW-review/skills/review-cycle.md`; native entry skills select the level. `index.ts`
+  (`DESCRIPTION`, `startedText`) describes the transport and pending-completion instruction; `NEXT` gives concise
+  verdict status and the canonical cycle's absolute path, not a second full workflow. `verdictMessage` and `kindOf`
+  retain verdict delivery and structural classification. Since: this port.
 - **Pending requested review** `[D-REVIEW-COMPLETION]`. Main must not declare the task complete before a requested
   review's verdict is received and handled. If no other work remains, Main ends the turn silently and waits for the
   automatic verdict notification, without polling or filler turns. Owner messages and interrupts remain allowed;
@@ -1360,7 +1342,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner (`16-27-59:6002`, 2026-10-24): «да давай», accepting the coordinator's instruction-based adaptation proposed
   at `16-27-59:5997`, with its explicit distinction from a programmatic guarantee.
   Reason: carry over the source skill's prohibition on premature completion without blocking the owner or spending
-  model turns on waiting. Carriers: `index.ts` (`DESCRIPTION`, `startedText`), the caller workflow in
+  model turns on waiting. Carriers: `index.ts` (`DESCRIPTION`, `startedText`), the canonical caller workflow in
+  `extensions/RQW-review/skills/review-cycle.md`, referenced by
   [PROCESS.md, Independent review](PROCESS.md#independent-review). Proof: `test/terminal.test.ts` checks terminal wiring
   and delivery mechanics, not guaranteed model compliance.
 - **No warming** `[D-REVIEW-CACHE]`. `extensions/RQW-review/index.ts` sets `cacheWarming: "off"` in each reviewer's
@@ -1371,6 +1354,20 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Reviewer GPT Fast** `[D-REVIEW-FAST]`. A reviewer inherits the main chat's GPT Fast state when it starts; the
   optional `fast_gpt` of `review` overrides it for that reviewer. Rule, quotes and carrier: [Settings](#settings),
   "GPT Fast" (`extensions/RQW-review/fast-gpt.ts`, `index.ts`). Since: `fa05edf`.
+- **Native skill and reviewer child** `[D-REVIEW-LAUNCH]`. Native `/skill:highreview` and `/skill:blindreview`
+  load the shared cycle and invoke `review` at the selected level. `review` is a specialised transport, not itself
+  a skill: `runReviewer` starts an actual fresh child through `createAgentSession`. The original Codex skills use
+  generic `spawn_agent` with pinned Smarty/Bossy profiles and `fork_turns: "none"`; Pi retains the fresh-child
+  semantics through its existing specialised transport, without RQW-agent, cross-extension imports or a second runner.
+  Owner (`16-27-59:6012`, message `15282e33`, 2026-10-24):
+  «Не, ревьюер должен работать как в кодексе через сабагента + скилл
+
+  high review»
+  Source: `/Users/arkadijcukavin/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`.
+  Reason: restore the original skill-plus-subagent launch while retaining the independent extension's existing runner.
+  Carriers: `extensions/RQW-review/skills/{highreview,blindreview}/SKILL.md`, `skills/review-cycle.md` and `index.ts`.
+  Its public `resources_discover` hook publishes absolute skill directories through `skillPaths` only while RQW-review
+  is loaded; no `package.json` `pi.skills` entry exposes them when it is disabled. `LEVELS` and `REVIEWER.md` are unchanged.
 - **One tool, two levels** `[D-REVIEW-TOOL]`. `extensions/RQW-review/` registers one tool `review` with `level`
   `blind` or `high`, held to the existing contract and nothing more.
   Coordinator text (owner quotes not found in the Pi sessions): "То, что ты предложил по ревьюерам — it's OK, я принимаю"; "Smart не нужен ... будет Blind и High"; "эти три саб-агента должны быть забиты за тем контрактом, который есть, и всё" (the last one also appears in the task text the owner pasted, session
@@ -1423,7 +1420,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   into `clean` (`CLEAN`, a non-empty `CHECKED:` and no `UNCHECKED:`), `findings` (an exact `FINDINGS:` line and complete
   blocks), `incomplete` (anything else, including any `UNCHECKED:`, which is never acceptance) or `failed`. The text
   stays as the reviewer wrote it, a preamble included. Structure cannot prove coverage: Main still assesses every required
-  obligation against `CHECKED:`. The message is `[review#N] <verdict>` and one `NEXT` paragraph for the kind.
+  obligation against `CHECKED:`. The message is `[review#N] <verdict>` and concise `NEXT` status for the kind,
+  pointing to the canonical cycle's absolute path.
   Carrier: `index.ts`, `REVIEWER.md`. Proof: `test/review.test.ts`. Since: this port.
 - **Async verdicts** `[D-REVIEW-ASYNC]`. The call returns `review#N started. ...` at once. The verdict, the reviewer's
   last assistant text, arrives as `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>\n\n<next step>",

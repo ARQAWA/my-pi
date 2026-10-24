@@ -36,7 +36,7 @@ import {
 	SettingsManager,
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { buildBrief, DESCRIPTION, findingBlocks, kindOf, LEVELS, NEXT, rejectedEarlier, REVIEWER as PRODUCTION_REVIEWER, REVIEWER_TOOLS, reviewerTools, startedText, verdictMessage, verdictOf } from "../index.ts";
+import { buildBrief, CYCLE_PATH, DESCRIPTION, findingBlocks, kindOf, LEVELS, NEXT, rejectedEarlier, REVIEWER as PRODUCTION_REVIEWER, REVIEWER_TOOLS, reviewerTools, startedText, verdictMessage, verdictOf } from "../index.ts";
 import { blockedGit } from "../git-guard.ts";
 
 const kindOfMessage = (verdict: string) => verdictMessage(1, verdict, false).split("\n\n").at(-1);
@@ -262,7 +262,13 @@ describe("reviewer prompt and verdict contract", () => {
 		}
 	});
 
-	it("keeps the source skill's invocation, evidence and rejection rules", () => {
+	it("keeps the source cycle in the canonical skill and points every verdict to it", () => {
+		const cycle = readFileSync(CYCLE_PATH, "utf8").replace(/\s+/g, " ");
+		for (const next of Object.values(NEXT)) assert.ok(next.includes(CYCLE_PATH));
+		assert.ok(DESCRIPTION.includes("/skill:blindreview or /skill:highreview"));
+		const sections = ["<user_messages>", "<agreement>", "<object>", "<criterion>", "<rejected_earlier>"];
+		const positions = sections.map(section => cycle.indexOf(section));
+		assert.ok(positions.every((at, i) => at >= 0 && (i === 0 || at > positions[i - 1])));
 		for (const rule of [
 			"Use only when the user asks for review or a checked result, or an invoked skill requires it; never on your own initiative.",
 			"blind uses Smarty (GPT-6.1-Sol low), high uses Bossy (GPT-6.1-Sol medium), only when requested.",
@@ -274,7 +280,7 @@ describe("reviewer prompt and verdict contract", () => {
 		for (const rule of [
 			"complete CHECKED evidence and no UNCHECKED",
 			"preserve every independent pass and its order required by the invoking procedure",
-		]) assert.ok(NEXT.clean.includes(rule), rule);
+		]) assert.ok(cycle.includes(rule), rule);
 		for (const rule of [
 			"Find each quote by searching for it.",
 			"for an omission, verify the quoted requirement and the complete inspected file or section",
@@ -285,10 +291,10 @@ describe("reviewer prompt and verdict contract", () => {
 			"a NOT AGREED element is covered by a verbatim quote of the agreement",
 			"give that reason with the quote",
 			"same level, object and criterion and every rejection so far in rejected_earlier, until CLEAN",
-		]) assert.ok(NEXT.findings.includes(rule), rule);
-		assert.ok(NEXT.incomplete.includes("incomplete regardless of its leading verdict"));
-		assert.ok(NEXT.incomplete.includes("never record it as acceptance"));
-		assert.ok(NEXT.failed.includes("Call review again once on the unchanged object; if it fails again, tell the user and wait."));
+		]) assert.ok(cycle.includes(rule), rule);
+		assert.ok(cycle.includes("incomplete regardless of its leading verdict"));
+		assert.ok(cycle.includes("never record it as acceptance"));
+		assert.ok(cycle.includes("Call review again once on the unchanged object; if it fails again, tell the user and wait."));
 		assert.deepEqual(REVIEWER_TOOLS, ["read", "bash", "grep", "find"]);
 	});
 });
