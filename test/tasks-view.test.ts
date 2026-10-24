@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
-import { render } from "../scripts/tasks-view.mjs";
+import { branchNames, readRefs, render } from "../scripts/tasks-view.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts", "tasks-view.mjs");
@@ -91,6 +91,16 @@ describe("tasks viewer rendering", () => {
 		assert.match(html, /default-src 'none'/);
 	});
 
+	it("escapes raw-tag regions and keeps reference links in cells and headings", () => {
+		const src = "# Head [spec][s]\n\n| ID | Work |\n| --- | --- |\n| <a id=\"r1\"></a>R1 | See [spec][s] and [other][s] |\n\nIntro <script><img/src=https://evil.example/x onerror=alert(1)></script> <pre><i/onclick=1></pre> <kbd><svg/onload=1></kbd> a & b\n\n[s]: https://example.com/spec\n";
+		const page = render(src, META).split('<details id="full-source">')[0];
+		assert.doesNotMatch(page, /<img|<i\/|<svg|onerror=alert\(1\)>/);
+		assert.match(page, /&lt;img\/src=<a href="https:\/\/evil\.example\/x"[^>]*>https:\/\/evil\.example\/x<\/a> onerror=alert\(1\)&gt;/);
+		assert.match(page, /a &amp; b/);
+		assert.equal((page.match(/<a href="https:\/\/example\.com\/spec" rel="noreferrer noopener">/g) ?? []).length, 3);
+		assert.match(page, /<strong>R1<\/strong>/);
+	});
+
 	it("escapes interpolated metadata", () => {
 		const evil = render("# H", { ...META, sourcePath: '"><script>x</script>', head: "<h>" });
 		assert.equal((evil.match(/<script/g) ?? []).length, 1);
@@ -106,37 +116,41 @@ describe("tasks viewer CLI", { skip: process.platform !== "darwin" }, () => {
 		const log = join(dir, "open.log");
 		writeFileSync(join(bin, "open"), `#!/bin/sh\necho "$@" >> "${log}"\n`);
 		chmodSync(join(bin, "open"), 0o755);
-		const tmp = join(dir, "tmp");
-		mkdirSync(tmp);
-		const env = { ...process.env, TMPDIR: tmp, PATH: `${bin}${delimiter}${process.env.PATH}` };
-		return { dir, log, tmp, env };
+		const tmp = join(dir, "out");
+		const home = join(dir, "home");
+		mkdirSync(home);
+		const env = { ...process.env, HOME: home, PATH: `${bin}${delimiter}${process.env.PATH}` };
+		return { dir, log, tmp, home, env };
 	}
 	const run = (args: string[], env: NodeJS.ProcessEnv) => spawnSync(process.execPath, [SCRIPT, ...args], { env, encoding: "utf8" });
 
-	it("--no-open writes a unique HTML under the OS temp dir and opens nothing", () => {
+	it("--no-open writes unique task-report files under --out-dir and opens nothing", () => {
 		const { dir, log, tmp, env } = setup();
 		const source = join(dir, "src.md");
 		writeFileSync(source, SRC);
-		const a = run(["--no-open", "--source", source], env);
-		const b = run(["--no-open", "--source", source], env);
+		const a = run(["--no-open", "--source", source, "--out-dir", tmp], env);
+		const b = run(["--no-open", "--source", source, "--out-dir", tmp], env);
 		assert.equal(a.status, 0, a.stderr);
 		const [pa, pb] = [a.stdout.trim(), b.stdout.trim()];
 		assert.notEqual(pa, pb);
 		for (const p of [pa, pb]) {
-			assert.ok(p.startsWith(tmp) || p.startsWith(join("/private", tmp)), p);
+			assert.equal(dirname(p), tmp);
+			assert.match(p, /task-report-\d{8}T\d{9}Z\.html$/);
 			assert.ok(existsSync(p));
 		}
 		assert.equal(sourceOf(readFileSync(pa, "utf8")), SRC);
 		assert.equal(existsSync(log), false);
 	});
 
-	it("opens the generated file exactly once without --no-open", () => {
-		const { dir, log, env } = setup();
+	it("defaults to <home>/Downloads and opens the generated file exactly once", () => {
+		const { dir, log, home, env } = setup();
 		const source = join(dir, "src.md");
 		writeFileSync(source, "# H\n");
 		const r = run(["--source", source], env);
 		assert.equal(r.status, 0, r.stderr);
-		assert.equal(readFileSync(log, "utf8").trim(), r.stdout.trim());
+		const file = r.stdout.trim();
+		assert.equal(dirname(file), join(home, "Downloads"));
+		assert.equal(readFileSync(log, "utf8").trim(), file);
 	});
 
 	it("rejects unknown arguments and missing sources", () => {
@@ -147,12 +161,53 @@ describe("tasks viewer CLI", { skip: process.platform !== "darwin" }, () => {
 
 	it("generates the actual repository backlog without losing a byte of it", () => {
 		const { tmp, env } = setup();
-		const r = run(["--no-open"], env);
+		const r = run(["--no-open", "--out-dir", tmp], env);
 		assert.equal(r.status, 0, r.stderr);
 		const html = readFileSync(r.stdout.trim(), "utf8");
 		assert.equal(sourceOf(html), readFileSync(join(ROOT, "BACKLOG.md"), "utf8"));
 		assert.match(html, /<strong>U13<\/strong>/);
 		assert.match(html, /Repository HEAD: <code>[0-9a-f]{40}<\/code>/);
-		assert.ok(tmp);
+		assert.match(html, /Branches \(git refs snapshot\)/);
+		assert.match(html, /Explicit branch names: \d+, found: \d+, not found: \d+\. Tasks with no branch recorded: \d+\./);
+	});
+});
+
+describe("branch linkage", { skip: process.platform !== "darwin" }, () => {
+	it("extracts only explicitly named branches", () => {
+		assert.deepEqual(branchNames("IN PROGRESS, branch `tasks-view`; leave the `qa-claim` branch; Branch `a/b.c` head `62bb752`"), ["tasks-view", "a/b.c", "qa-claim"]);
+		assert.deepEqual(branchNames("no branch; after `reviewer-codex-port` is delivered; snapshot at `30952e6`"), []);
+	});
+
+	it("matches named branches against a temp git fixture without touching the repository", () => {
+		const repo = temp();
+		const git = (...a: string[]) => execFileSync("git", a, { cwd: repo, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } }).trim();
+		git("init", "--quiet", "-b", "main");
+		git("-c", "user.name=t", "-c", "user.email=t@e", "-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "one");
+		const first = git("rev-parse", "HEAD");
+		git("-c", "user.name=t", "-c", "user.email=t@e", "-c", "commit.gpgsign=false", "commit", "--quiet", "--allow-empty", "-m", "two");
+		const second = git("rev-parse", "HEAD");
+		git("branch", "feat-local", first);
+		git("branch", "feat-both", first);
+		git("update-ref", "refs/remotes/origin/feat-both", second);
+		git("update-ref", "refs/remotes/origin/feat-remote", second);
+		git("update-ref", "refs/remotes/origin/HEAD", second);
+
+		const refs = readRefs(repo);
+		assert.deepEqual({ ...refs["feat-local"] }, { local: first });
+		assert.deepEqual({ ...refs["feat-both"] }, { local: first, origin: second });
+		assert.deepEqual({ ...refs["feat-remote"] }, { origin: second });
+		assert.equal(refs.HEAD, undefined);
+
+		const src = "## Open\n\n| ID | Work | Status/branch |\n| --- | --- | --- |\n| A | a | OPEN, branch `feat-local` |\n| B | b | branch `feat-both` and branch `feat-remote` |\n| C | c | branch `gone-branch` |\n| D | d | no branch assigned; mentions `feat-local` without saying branch |\n";
+		const html = render(src, { ...META, refs });
+		const card = (id: string) => new RegExp(`<strong>${id}</strong>[\\s\\S]*?</details>`).exec(html)![0];
+		assert.match(card("A"), new RegExp(`<code>feat-local</code>: local <code>${first.slice(0, 9)}</code></li>`));
+		assert.match(card("B"), /feat-both<\/code>: local <code>\w+<\/code>, origin <code>\w+<\/code> \(local and origin point to different commits\)/);
+		assert.match(card("B"), new RegExp(`feat-remote</code>: origin <code>${second.slice(0, 9)}</code></li>`));
+		assert.match(card("C"), /<code>gone-branch<\/code>: not found in local or origin refs/);
+		assert.match(card("D"), /<dt>Branches \(git refs snapshot\)<\/dt><dd>not recorded<\/dd>/);
+		assert.match(html, /Explicit branch names: 4, found: 3, not found: 1\. Tasks with no branch recorded: 1\./);
+		assert.match(html, /No fetch was done/);
+		assert.equal(git("for-each-ref", "--format=%(refname)").split("\n").length, 6);
 	});
 });
