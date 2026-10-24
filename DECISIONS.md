@@ -2076,7 +2076,7 @@ Carriers under `extensions/RQW-codex/`: `scripts/pin-native-differential.mjs`, `
 | Rust vs JS networking, TLS/ALPN/packet timing, transport-generated ordering and zstd library bytes | A TypeScript overlay is not a Rust networking implementation; compare decoded body plus documented application-level normalization, never claim packet indistinguishability | WS/SSE/compression connectors and oracle captures |
 | Stronger cross-process credential-store locking | Preserve Pi's native transaction and rotation persistence; never write auth JSON directly | Auth boundary/lifecycle |
 | Optional managed workspace discovery, Agent Identity, enterprise FedRAMP, signed attestation, private Guardian, memory/hosted-tool modes | Not the ordinary stable bearer profile; never advertise invented entitlements or silently route unsupported accounts | Auth/metadata validation; ordinary profile only |
-| Reviewer wall cap and explicit compaction-off policy | RQW-review keeps its existing safety and caller contract; native reconnect remains cancelable | RQW-review lifecycle |
+| Reviewer session lifecycle | RQW-review has no independent deadline and inherits the caller's compaction settings; see `[D-REVIEW-PROFILES]` and `[D-REVIEW-SESSION]` | RQW-review `reviewerSettings` and lifecycle |
 
 Deterministic fixtures and fake-server tests prove mechanics, not live backend acceptance, identical answers, cache retention, quota billing, or zero-cost prewarm. Any remaining implementation/verification gap must be reported rather than silently added to this exception ledger as permission to narrow scope.
 
