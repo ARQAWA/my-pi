@@ -123,7 +123,7 @@ Blocked by: none; the phase 1 macOS repo-local WEB-SEARCH CLI is delivered into 
 ### New UI and small near-ready merges
 
 Blocked by: none beyond the prerequisites below.
-New UI still includes the end-to-end tests U13. Small near-ready merges are the
+Small near-ready merges are the
 existing task branches named in the handoff, not permission to invent new work.
 
 ### EXTENSION-STRUCTURE and REPO-KNOWLEDGE-INDEX
