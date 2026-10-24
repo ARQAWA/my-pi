@@ -590,7 +590,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `runner.js` `resolveToolRenderers` calls resolvers in load order with `next()` delegating to later resolvers.
   Thus agent-ui is the outer resolver. With both agent-ui and tool-ui loaded, a collapsed wait result is
   tool-ui's: the summary part `Waited for N agents` and the live block `wait <ids>`, per the owner's wait amendment
-  «1а 2а». agent-ui delegates to `next()` while collapsed. On Ctrl+O it draws its own box with the expanded wait
+  "1а 2а". Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default). agent-ui delegates to `next()` while collapsed. On Ctrl+O it draws its own box with the expanded wait
   cards: header with id, status, model, effort and seconds, then the full answer verbatim. With tool-ui off,
   agent-ui shows its collapsed wait cards. The order is explicit and tested, not a claim that reversing it
   gives the same result.
@@ -652,7 +652,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 ## Native theme
 
-- **Named resource, native selection** `[D-UI-NATIVE-THEME]`. Owner: «да».
+- **Named resource, native selection** `[D-UI-NATIVE-THEME]`. Owner: "да".
   Source: the `18-16-12` session file, USER entry `a6718225`, line 815, accepting coordinator proposal
   `74a328d8`, line 814. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default). Coordinator text: an ordinary named Pi theme, selected once, persisted by Pi across
   reload/restart, switched back through native theme selection rather than disabling an extension.
@@ -692,7 +692,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   native name as a static gold title, empty before a name exists, with its rule retained.
   Reason: meaningful short names without blocking main work or a user candidate picker. Carriers:
   `extensions/RQW-naming/{index,core}.ts`, `extensions/RQW-statusbar/index.ts`, `package.json`, `INSTALL.md`.
-- **Hide reasoning text only** `[D-UI-THINKING]`. Owner: «+».
+- **Hide reasoning text only** `[D-UI-THINKING]`. Owner: "+".
   Source: the `18-16-12` session file, USER entry `b3584b94`, line 886, accepting coordinator proposal
   `227e51b7`, line 884 to hide reasoning text while retaining accepted native blank rows. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
   `registerMarkdownTransformer` empties `assistant-thinking`; `setHiddenThinkingLabel("")` empties the hidden label.
