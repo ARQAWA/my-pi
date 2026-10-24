@@ -162,6 +162,7 @@ already set by another extension is not replaced.
   not in its bottom status bar. They are not copied; the session ID in the top border is the owner's own request
   (DECISIONS.md, Status bar). Apart from its borders, the Pi editor stays stock;
 loading rows and other widgets stay unchanged.
+- The compaction sheen is the busy-letter shimmer (`shimmerText`, same 160 ms phase, width and gradient) in gold stops; no separate metallic run.
 - Theme colors and compaction color animation are intentionally not copied. Nerd icons require the same kind of
   Nerd Font as the owner's `symbolPreset: nerd` setup.
 

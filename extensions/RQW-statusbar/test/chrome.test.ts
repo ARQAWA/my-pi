@@ -1,10 +1,10 @@
-// Upper border, compaction metallic, status letters, title row, branch mark and effort colours: pure renders at fixed frames and widths.
+// Upper border, compaction sheen, status letters, title row, branch mark and effort colours: pure renders at fixed frames and widths.
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import {
-	contextLabel, effortText, GOLD, GOLD_EDGE, GOLD_SHEEN, metallicColor, metallicText, mix, placeRow, RULE_SILVER,
+	contextLabel, effortText, GOLD, mix, placeRow, RULE_SILVER,
 	SILVER, shimmerPhase, shimmerText, sheenRow, titleRow, topBorder,
 } from "../render.ts";
 
@@ -40,52 +40,29 @@ describe("status letters", () => {
 	});
 });
 
-describe("metallic global column geometry", () => {
-	const W = 60;
-	const frame = 4;
+describe("compaction sheen is the busy shimmer in gold", () => {
+	const text = "\u2500".repeat(10) + "A B";
 
-	it("the base is the full-width gold gradient at x/(W-1); the midpoint is a stop, a singleton uses the midpoint", () => {
-		assert.equal(metallicColor(0, W, frame), GOLD[0], "x=0 at d=56 is the first gold stop");
-		assert.equal(metallicColor(W - 1 - 4, W, frame), mix(GOLD, (W - 5) / (W - 1)), "x=55 at d=51 along the gradient");
-		assert.equal(metallicColor(59, W, frame), GOLD[2], "the last column before the edge run gets the gradient end (d=55)");
-		assert.equal(mix(GOLD, 0.5), GOLD[1], "the midpoint is the middle stop");
+	it("rows use shimmerText with GOLD at the global column and frame; spaces stay plain", () => {
+		assert.equal(sheenRow({ tokens: 13000, limit: 450000 }, 60, 4, 8),
+			shimmerText("\u2193 8 more " + "\u2501".repeat(60 - 9 - contextLabel({ tokens: 13000, limit: 450000 }).length) + contextLabel({ tokens: 13000, limit: 450000 }), 0, 4, GOLD));
+		assert.equal(topBorder(80, id, chrome("Compacting context", true, 4), 0, plain).startsWith(shimmerText("\u2500\u2500 ", 0, 4, GOLD)), true);
 	});
 
-	it("the sheen is six cells from d=0, the edge is d=6 and the last cell, the offset wraps with the frame", () => {
-		for (let x = 4; x <= 9; x++) assert.equal(metallicColor(x, W, frame), GOLD_SHEEN, `sheen at ${x}`);
-		assert.equal(metallicColor(10, W, frame), GOLD_EDGE, "d=6 is the edge");
-		assert.equal(metallicColor(3, W, frame), GOLD_EDGE, "d=59 is the last cell: the edge");
-		assert.notEqual(metallicColor(4, W, frame), metallicColor(4, W, frame + 1), "the sheen moves with the frame");
-		assert.equal(metallicColor(0, W, frame), metallicColor(0, W, frame + W), "the frame wraps at the width");
+	it("same phase as silver: only the colours differ, the crest cells match", () => {
+		const gold = shimmerText(text, 5, 7.5, GOLD);
+		const silver = shimmerText(text, 5, 7.5, SILVER);
+		assert.notEqual(gold, silver);
+		assert.equal(gold.split(`${ESC}1;`).length, silver.split(`${ESC}1;`).length);
 	});
 
-	it("between whole frames each cell blends linearly toward its next-frame colour; unchanged cells stay exact", () => {
-		// x=10 is the edge at frame 4 and sheen at frame 5; x=3 is the edge at 4 and the gradient at 5.
-		assert.equal(metallicColor(10, W, frame + 0.5), mix([GOLD_EDGE, GOLD_SHEEN], 0.5));
-		assert.equal(metallicColor(10, W, frame + 0.25), mix([GOLD_EDGE, GOLD_SHEEN], 0.25));
-		assert.equal(metallicColor(3, W, frame + 0.5), mix([GOLD_EDGE, mix(GOLD, 3 / (W - 1))], 0.5));
-		assert.equal(metallicColor(6, W, frame + 0.5), GOLD_SHEEN, "inside the run at both frames");
-		assert.equal(metallicColor(30, W, frame + 0.5), mix(GOLD, 30 / (W - 1)), "the gradient at both frames");
-		assert.equal(metallicColor(10, W, frame + 0.999).length, 7, "a #rrggbb colour");
-	});
-
-	it("exact colour values: sheen #f2de8a, edge #d9b84a, base stops #8a6d1c/#c9a227/#e3c45a", () => {
-		assert.equal(GOLD_SHEEN, "#f2de8a");
-		assert.equal(GOLD_EDGE, "#d9b84a");
+	it("a segment does not restart the phase: the same global column gets the same colour in every row", () => {
+		assert.equal(shimmerText("x".repeat(20), 0, 2, GOLD), shimmerText("x".repeat(8), 0, 2, GOLD) + shimmerText("x".repeat(12), 8, 2, GOLD));
 		assert.deepEqual(GOLD, ["#8a6d1c", "#c9a227", "#e3c45a"]);
-		assert.equal(metallicText("\u2501", 1, 0), hexSgr(GOLD_SHEEN, true, "\u2501"), "one cell is the sheen");
-		assert.equal(metallicText("\u2501", 7, 1, 0), hexSgr(GOLD_EDGE, true, "\u2501"), "d=6 at width 7 is the edge");
 	});
 
-	it("the same global column gets the same colour in every row, a segment does not restart the geometry", () => {
-		const whole = metallicText("x".repeat(20), 40, 2);
-		const cut = metallicText("x".repeat(8), 40, 2, 0) + metallicText("x".repeat(12), 40, 2, 8);
-		assert.equal(whole, cut);
-	});
-
-	it("every width 0..160 renders exactly its width in metallic cells", () => {
+	it("every width 0..160 renders exactly its width", () => {
 		for (let width = 0; width <= 160; width++) {
-			assert.equal(visibleWidth(metallicText(rule(width), width, 3)), width, `${width}`);
 			assert.equal(visibleWidth(sheenRow({ tokens: 13000, limit: 450000 }, width, 3, 8)), width, `${width}`);
 			assert.equal(visibleWidth(sheenRow({ tokens: null, limit: 450000 }, width, 3)), width, `${width}`);
 		}
@@ -135,20 +112,20 @@ describe("top border", () => {
 		assert.ok(line.startsWith(`${hexSgr(RULE_SILVER, false, "\u2500\u2500 ")}${shimmerText("Planning next moves", 3, 2, SILVER)}`));
 	});
 
-	it("compaction: status letters gold by the cosine, the rest and the ID metallic by global column", () => {
+	it("compaction: status letters gold by the cosine, the rest and the ID shimmer gold by global column", () => {
 		const frame = 4;
 		const line = topBorder(80, id, chrome("Compacting context", true, frame), 0, plain);
-		assert.ok(line.startsWith(`${metallicText("\u2500\u2500 ", 80, frame, 0)}${shimmerText("Compacting context", 3, frame, GOLD)}`));
-		assert.ok(line.includes(metallicText(id, 80, frame, 80 - 40 + 1)), "the ID is metallic at its global columns");
+		assert.ok(line.startsWith(`${shimmerText("\u2500\u2500 ", 0, frame, GOLD)}${shimmerText("Compacting context", 3, frame, GOLD)}`));
+		assert.ok(line.includes(shimmerText(id, 80 - 40 + 1, frame, GOLD)), "the ID shimmers gold at its global columns");
 		assert.equal(stripVTControlCharacters(line), `\u2500\u2500 Compacting context ${rule(18)} ${id} \u2500\u2500`);
 	});
 
-	it("the hint is centred in the head as Pi centres it, in metallic cells while compacting", () => {
+	it("the hint is centred in the head as Pi centres it, in gold shimmer while compacting", () => {
 		assert.equal(stripVTControlCharacters(topBorder(80, id, undefined, 8, plain)),
 			`${rule(15)} \u2191 8 more ${rule(15)} ${id} \u2500\u2500`);
 		// At 120 the head is 80 cells: the hint starts at cell 35, the status (18) fits before it, so the ID stays.
 		const compacting = topBorder(120, id, chrome("Compacting context", true, 0), 8, plain);
-		assert.ok(compacting.includes(metallicText(" \u2191 8 more ", 120, 0, 35)));
+		assert.ok(compacting.includes(shimmerText(" \u2191 8 more ", 35, 0, GOLD)));
 		assert.equal(stripVTControlCharacters(compacting),
 			`\u2500\u2500 Compacting context ${rule(13)} \u2191 8 more ${rule(35)} ${id} \u2500\u2500`);
 	});

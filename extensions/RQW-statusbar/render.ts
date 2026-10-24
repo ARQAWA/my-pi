@@ -161,7 +161,7 @@ export function contextRow(context: BarState["context"], width: number, paint: P
 export function editorBorder(context: BarState["context"], hiddenLineCount: number, width: number,
 	paint: Paint = plain, hint: (text: string) => string = (text) => text, sheen?: number): string {
 	if (width <= 0) return "";
-	// Compaction: the whole row is the metallic gold, the hint included (see sheenRow).
+	// Compaction: the whole row is the gold shimmer, the hint included (see sheenRow).
 	if (sheen !== undefined) return sheenRow(context, width, sheen, hiddenLineCount);
 	if (!(hiddenLineCount > 0)) return contextRow(context, width, paint);
 	const text = `↓ ${hiddenLineCount} more `;
@@ -396,10 +396,8 @@ export class RateMeter {
 
 // ---- Activity: silver busy letters, gold compaction letters and chrome, the static gold session title.
 
-/** Gold of the compaction status: the source stops (not the browser calibration), then the sheen and the edge. */
+/** Gold of the compaction status: the source stops (not the browser calibration); its sheen is the busy-letter shimmer in these colours. */
 export const GOLD: readonly string[] = ["#8a6d1c", "#c9a227", "#e3c45a"];
-export const GOLD_SHEEN = "#f2de8a";
-export const GOLD_EDGE = "#d9b84a";
 /** Silver of the ordinary busy letters: dim, muted, then the foreground. */
 export const SILVER: readonly string[] = ["#5f5e5c", "#8d8d8c", "#e5efff"];
 /** The ordinary top rule: a fixed silver, independent of the editor's thinking colour. */
@@ -434,52 +432,18 @@ export function shimmerText(text: string, startColumn: number, frame: number, st
 	}).join("");
 }
 
-/** The metallic at a whole frame: the run starts at cell `frame` (mod width). */
-function metallicCell(x: number, width: number, frame: number): string {
-	const d = (((x - frame) % width) + width) % width;
-	if (d < 6) return GOLD_SHEEN;
-	if (d === 6 || d === width - 1) return GOLD_EDGE;
-	return mix(GOLD, width > 1 ? x / (width - 1) : 0.5);
-}
-
 /**
- * The compaction metallic at global column `x` of a `width`-cell row: a sheen run of six cells, the edge cell after it
- * and the last cell, and the gold gradient across the full width everywhere else. The run moves one cell per whole
- * frame; between whole frames each cell blends linearly into its colour of the next frame, so the run glides.
- */
-export function metallicColor(x: number, width: number, frame: number): string {
-	const base = Math.floor(frame);
-	const a = metallicCell(x, width, base);
-	const u = frame - base;
-	if (u === 0) return a;
-	const b = metallicCell(x, width, base + 1);
-	return a === b ? a : mix([a, b], u);
-}
-
-/** Compaction chrome text from global column `startColumn` of a `width`-cell row: every cell bold in its metallic colour. */
-export function metallicText(text: string, width: number, frame: number, startColumn = 0): string {
-	if (width <= 0) return "";
-	let x = startColumn;
-	let out = "";
-	for (const ch of Array.from(stripVTControlCharacters(text))) {
-		out += styled(metallicColor(x, width, frame), true, ch);
-		x += visibleWidth(ch);
-	}
-	return out;
-}
-
-/**
- * The context row during compaction: the whole row in the metallic gold, the `↓ N more` hint first when lines are hidden,
+ * The context row during compaction: the whole row in the gold shimmer of the busy letters, the `↓ N more` hint first when lines are hidden,
  * then a full meter (busy, not measured progress) with the label. Unknown tokens keep the full meter too.
  */
 export function sheenRow(context: BarState["context"], width: number, frame: number, hiddenLineCount = 0): string {
 	if (width <= 0) return "";
 	const hint = hiddenLineCount > 0 ? `↓ ${hiddenLineCount} more ` : "";
 	const hintWidth = visibleWidth(hint);
-	if (hintWidth >= width) return metallicText(fitPlain(hint, width), width, frame);
+	if (hintWidth >= width) return shimmerText(fitPlain(hint, width), 0, frame, GOLD);
 	const rest = width - hintWidth;
 	const label = context && context.limit > 0 ? fitPlain(contextLabel(context), rest) : "";
-	return metallicText(hint + "━".repeat(rest - visibleWidth(label)) + label, width, frame);
+	return shimmerText(hint + "━".repeat(rest - visibleWidth(label)) + label, 0, frame, GOLD);
 }
 
 /** The session title above the input: static bold gold over the fitted title's own code points; empty until named. */
@@ -534,14 +498,14 @@ function topHead(width: number, hiddenLineCount: number, chrome: ActivityChrome 
 	};
 }
 
-/** Paints the segments in global columns: ordinary rules silver, status letters shimmer silver, the ID muted; compaction all metallic. */
-function paintTop(segments: TopSegment[], width: number, chrome: ActivityChrome | undefined, paint: Paint): string {
+/** Paints the segments in global columns: ordinary rules silver, status letters shimmer silver, the ID muted; compaction all gold shimmer, the same phase as the busy letters. */
+function paintTop(segments: TopSegment[], chrome: ActivityChrome | undefined, paint: Paint): string {
 	let x = 0;
 	let out = "";
 	for (const segment of segments) {
 		if (segment.text) {
 			if (segment.kind === "status" && chrome) out += shimmerText(segment.text, x, chrome.frame, chrome.compacting ? GOLD : SILVER);
-			else if (chrome?.compacting) out += metallicText(segment.text, width, chrome.frame, x);
+			else if (chrome?.compacting) out += shimmerText(segment.text, x, chrome.frame, GOLD);
 			else if (segment.kind === "id") out += paint("label", segment.text);
 			else out += styled(RULE_SILVER, false, segment.text);
 		}
@@ -561,7 +525,7 @@ export function topBorder(width: number, sessionId: string | undefined, chrome: 
 	const rest = width - visibleWidth(id) - 4;
 	if (id && !id.includes(" ") && rest >= 2) {
 		const head = topHead(rest, hiddenLineCount, chrome);
-		if (head.whole) return paintTop([...head.segments, rule(" "), { text: id, kind: "id" }, rule(" ──")], width, chrome, paint);
+		if (head.whole) return paintTop([...head.segments, rule(" "), { text: id, kind: "id" }, rule(" ──")], chrome, paint);
 	}
-	return paintTop(topHead(width, hiddenLineCount, chrome).segments, width, chrome, paint);
+	return paintTop(topHead(width, hiddenLineCount, chrome).segments, chrome, paint);
 }

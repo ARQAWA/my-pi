@@ -1655,8 +1655,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `── `: the running tool's action (`Running <command>`, `Editing <file>`, `Searching files`) or `Planning next moves`,
   then running counts (`2 agents, 1 worker, 1 review`) from the `rqw:running-counts:request`/`offer` channels, or
   `Waiting for <counts>` when only background work runs, and `Compacting context` in gold during compaction; idle it is
-  the plain rule. Ordinary rules are silver, busy letters shimmer silver, compaction letters, chrome and context row are
-  metallic gold. A static bold gold session title widget (`rqw-statusbar-title`) shows the session name above the
+  the plain rule. Ordinary rules are silver, busy letters shimmer silver, compaction letters, chrome and context row shimmer
+  gold with the busy-letter mechanics (`[D-STATUSBAR-SHEEN]`). A static bold gold session title widget (`rqw-statusbar-title`) shows the session name above the
   input. Off the original first branch the place row shows the English `⑂ fork #N` marker from the public session
   tree, as defined in `[D-STATUSBAR-BRANCH-MARK]`. Footer effort colours: low plain, medium bold green, high bold
   gold, xhigh bold bright purple, max bold red. Carrier: `extensions/RQW-statusbar/{activity,branch,render,editor,index}.ts`.
@@ -1673,10 +1673,14 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «Нет, лучше значок молнии пририсовывать после имени модели между моделью и резонингом.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 2175) The shimmer while
   working and the steady yellow idle follow the coordinator description the owner accepted. Carrier:
   `extensions/RQW-statusbar/{render,index}.ts`. Proof: `test/fast-gpt.test.ts`. Since: `fa05edf`.
-- **Animation cadence** `[D-STATUSBAR-ANIMATION]`. The status animation (busy letters, compaction gold and sheen, the
+- **Compaction sheen** `[D-STATUSBAR-SHEEN]`. The compaction sheen uses exactly the mechanics of the working-status
+  sheen: `shimmerText` and `shimmerPhase` (global column, the 160 ms elapsed-time phase, the same width and gradient),
+  only with the gold stops `GOLD` instead of silver. The separate six-cell metallic run is removed. The lightning pulse and
+  everything else are unchanged. Owner: «Смотри, как у нас идёт анимация блика подсветки в статусе. Надо с такой же скоростью сделать, чтобы был блик в compaction, потому что сейчас в compaction блик выглядит по-ублюдски.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, last user message)
+  Carrier: `extensions/RQW-statusbar/render.ts`. Proof: `test/{chrome,lifecycle}.test.ts`.
+- **Animation cadence** `[D-STATUSBAR-ANIMATION]`. The status animation (busy letters, compaction gold shimmer, the
   lightning) redraws every 20 ms, 50 nominal frames per second, and follows elapsed monotonic time, not tick counts.
-  Letters and sheen take one phase frame per 160 ms of elapsed time; between frames the compaction sheen blends each
-  cell toward its next colour; the lightning keeps one colour step per 120 ms. The phase is read at render time. The
+  Letters and compaction shimmer take one phase frame per 160 ms of elapsed time; the lightning keeps one colour step per 120 ms. The phase is read at render time. The
   static gold title, the input text and the effort colours do not animate. The timer runs only while an animated status
   or the working lightning is shown. While our editor owns the top border, Pi's hidden working spinner gets no frames
   (`ctx.ui.setWorkingIndicator({ frames: [] })`); off, shutdown, reinstall and a foreign editor restore Pi's default,

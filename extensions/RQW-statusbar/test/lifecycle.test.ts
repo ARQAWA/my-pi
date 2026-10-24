@@ -12,7 +12,7 @@ import { stripVTControlCharacters } from "node:util";
 import { type ExtensionAPI, type ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import statusbar from "../index.ts";
-import { GOLD, metallicText, SILVER, shimmerText } from "../render.ts";
+import { GOLD, SILVER, shimmerText } from "../render.ts";
 
 const TITLE_KEY = "rqw-statusbar-title";
 // The running-counts contract (version 1) as the README of the producer states it; spelled here, nothing imported.
@@ -376,11 +376,11 @@ it("the animation redraws 50 times a second, at least twice the old cadence, and
 	// A redraw from elsewhere (Pi's own render) 7 ms after a tick: the same clock, so the same speed at any redraw rate.
 	h.tick(7);
 	assert.ok(raw().includes(shimmerText("Planning next moves", 3, 1087 / STATUS_FRAME_MS, SILVER)), "phase between ticks");
-	// The compaction gold and its metallic rule follow the same clock, with fractional (blended) frames.
+	// The compaction gold and its rule follow the same clock, with fractional frames.
 	h.fire("session_before_compact", before());
 	h.tick(13);
 	const gold = 1100 / STATUS_FRAME_MS;
-	assert.ok(raw().startsWith(`${metallicText("\u2500\u2500 ", 80, gold, 0)}${shimmerText("Compacting context", 3, gold, GOLD)}`));
+	assert.ok(raw().startsWith(`${shimmerText("\u2500\u2500 ", 0, gold, GOLD)}${shimmerText("Compacting context", 3, gold, GOLD)}`));
 	h.fire("session_compact", { reason: "manual", willRetry: false, fromExtension: false, compactionEntry: {} });
 	h.fire("agent_settled", { aborted: false });
 	const idle = h.ui.renders;
