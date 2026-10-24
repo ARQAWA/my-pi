@@ -519,7 +519,8 @@ and guard change. Record the accepted choice in `DECISIONS.md`.
 6. Update the locally installed Pi when a runtime/package change requires it, preserving auth and other settings;
    restart when process-wide patches require it. Documentation-only work needs no package update or restart.
 7. After successful delivery, and after every ignored Windows failure is recorded and any still-running Windows run is
-   handed to background tracking ([Task pipeline](#task-pipeline)), remove this task's worktree and branch. Do not clean up other tasks' worktrees.
+   handed to background tracking ([Task pipeline](#task-pipeline)), remove this task's worktree, its local branch and
+   its branch on `origin`. Do not remove other tasks' worktrees or branches.
    Publishing a release or Marketplace version requires the owner's direct request.
 8. Report the result once, unprompted with an evidence table (claim, check, result or run link) and an honest
    "not verified live" section, plus any real limitation and manual commands only when useful.
