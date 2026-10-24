@@ -144,9 +144,16 @@ Ready tasks, simplest to most complex; one-line ordering rationale uses source s
 9. `pcli-vscode`: small source, but packaging, bundled Pi and the VS Code terminal cross system boundaries.
 10. `RQW-models`: a medium-sized picker and effort state machine using Pi's session setters.
 11. `RQW-statusbar`: larger rendering code, editor/footer replacement and settings integration.
-12. `RQW-anthropic`: multi-module OAuth/network transport with retries and session binding.
+12. `RQW-anthropic`: multi-module OAuth/network transport with retries and session binding; assess the [retained auth branches](#retained-anthropic-auth-branches) against current `main`.
 13. `RQW-tools`: large base-tool wrappers, background jobs and ordering barrier used by agent/review.
 14. `RQW-agent`: large recursive-session lifecycle with settings/tools/review event contracts.
+
+### Retained Anthropic auth branches
+
+These unmerged branches are on hold for the `RQW-anthropic` audit. Their relevance to current `main` is unknown; the audit decides.
+
+- On hold: [`branchfix/auth-recovery`](https://github.com/ARQAWA/my-pi/tree/branchfix/auth-recovery), head `f9b953fd5fe8ba682584f4c18eecf5f69ec77370`, 4 commits ahead of main: protect native summary retry and scoped OAuth handoff.
+- On hold: [`fix/auth-lifecycle`](https://github.com/ARQAWA/my-pi/tree/fix/auth-lifecycle), head `33752d7b2a67c4c70f5bf2fe045bf4eb76091757`, 2 commits ahead of main: exact session disposal and rejected services registration rollback.
 
 Conditional tasks join the same simplest-first queue only after their prerequisites, reassessed against delivered code:
 
