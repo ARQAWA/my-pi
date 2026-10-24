@@ -227,7 +227,7 @@ def main():
         work.mkdir()
         (work / "a.txt").write_text("alpha\nbeta\n")
         (work / "b.txt").write_text("one\ntwo\n")
-        (work / "wait-flag.sh").write_text("while [ ! -f go.flag ]; do sleep 0.05; done\nprintf 'l1\\nl2\\nl3\\nl4\\nl5\\n'\n")
+        (work / "wait-flag.sh").write_text("while [ -d \"$PWD\" ] && [ ! -f go.flag ]; do sleep 0.05; done\nprintf 'l1\\nl2\\nl3\\nl4\\nl5\\n'\n")
         driver_dir = tmp / "driver"
         driver_dir.mkdir()
         driver = driver_dir / "faux-driver.ts"
@@ -403,6 +403,8 @@ def main():
                 fail("pty-clean-exit", "a network attempt was blocked", screen)
             print("PASS pty-clean-exit")
         finally:
+            # The held bash tool runs in a process group of its own, which killing Pi does not reach: release it first.
+            (work / "go.flag").touch()
             if proc.poll() is None:
                 proc.kill()
                 proc.wait()

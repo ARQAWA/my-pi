@@ -50,7 +50,8 @@ const SILVER_RULE = "182;182;180";
 const SECRET = "SECRET-REASONING";
 const FLAG = "go.flag";
 // The bash call blocks until the test creates the flag file, so the running state is held by an event, not a sleep.
-const WAIT_SCRIPT = `while [ ! -f ${FLAG} ]; do sleep 0.05; done\nprintf 'l1\\nl2\\nl3\\nl4\\nl5\\n'\n`;
+// The folder check ends the loop when the test folder is gone, so no shell outlives a failed run.
+const WAIT_SCRIPT = `while [ -d "$PWD" ] && [ ! -f ${FLAG} ]; do sleep 0.05; done\nprintf 'l1\\nl2\\nl3\\nl4\\nl5\\n'\n`;
 const BASH = "bash wait-flag.sh";
 const ROWS = 60;
 const COLS = 100;
