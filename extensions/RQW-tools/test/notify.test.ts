@@ -15,8 +15,11 @@ let root: string;
 let counter = 0;
 before(async () => { root = await mkdtemp(join(tmpdir(), "rqw-notify-")); });
 const registries: { dispose(): void }[] = [];
+const completions: Promise<void>[] = [];
 after(async () => {
 	for (const jobs of registries) jobs.dispose();
+	// Disposal signals abort; wait for the processes to release their working directories.
+	await Promise.all(completions);
 	await rm(root, { recursive: true, force: true });
 });
 
@@ -46,7 +49,9 @@ async function until(what: string, ok: () => boolean) {
 	}
 }
 async function background(f: Awaited<ReturnType<typeof fresh>>, command: string) {
-	return (await call(f.tools.bash, { command }, f.dir)).details.job.id as string;
+	const id = (await call(f.tools.bash, { command }, f.dir)).details.job.id as string;
+	completions.push(f.jobs.settled(id));
+	return id;
 }
 
 describe("notification wait", () => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { Type } from "typebox";
 import { Agent } from "@earendil-works/pi-agent-core";
@@ -98,7 +98,7 @@ test("owned files, directories and ancestors cannot be symlinks", t => {
 	const sibling = join(`${parent.getSessionFile()}.children`, "agent-2");
 	symlinkSync(child.getSessionDir(), sibling, "dir");
 	assert.throws(() => createChildManager(parent, cwd, "agent", 2), /Unsafe/);
-	assert.throws(() => openChildManager(parent, join(sibling, child.getSessionFile()!.split("/").at(-1)!), cwd, "agent", 2), /Unsafe/);
+	assert.throws(() => openChildManager(parent, join(sibling, basename(child.getSessionFile()!)), cwd, "agent", 2), /Unsafe/);
 });
 
 test("failed assistant attempts are omitted append-only and completed assistants remain", t => {
