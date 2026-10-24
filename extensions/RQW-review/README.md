@@ -93,6 +93,11 @@ read it. A host without `continuation` behaves exactly as described above. Proof
 Main runs a review only when the owner asks for a review or a checked result, or a procedure he approved requires it
 (the squash-merge rule of `PROCESS.md`); never on its own initiative. `blind` unless the owner or that procedure asks
 for `high`. Main keeps working but leaves the reviewed files unchanged until the verdict.
+Main must not declare the task complete before a requested review's verdict is received and handled. If no other work
+remains, Main ends the turn silently and waits for the automatic notification, without polling or filler turns.
+Owner messages and interrupts remain allowed. Failed and incomplete verdicts are not acceptance. This is an
+instruction, not a mechanical completion guarantee; terminal delivery stays nonblocking. Ending an idle turn is not
+completing the task. Rule and approval: [D-REVIEW-COMPLETION](../../DECISIONS.md#review).
 
 - Brief: the tool assembles `<user_messages>` (the branch's user messages, verbatim and in order; a compaction or branch
   summary is labelled as not the user's words). Main supplies `agreement` only when there is any: accepted proposals and decisions that are not in the user's own

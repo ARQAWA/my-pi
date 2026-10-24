@@ -1350,6 +1350,19 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner (`16-27-59:5210`): «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
   Reason: one complete pass, one batch of fixes and a fresh pass is the cycle the owner's reviewer already runs.
   Carriers: `index.ts` (`DESCRIPTION`, `NEXT`, `startedText`, `verdictMessage`, `kindOf`). Since: this port.
+- **Pending requested review** `[D-REVIEW-COMPLETION]`. Main must not declare the task complete before a requested
+  review's verdict is received and handled. If no other work remains, Main ends the turn silently and waits for the
+  automatic verdict notification, without polling or filler turns. Owner messages and interrupts remain allowed;
+  failed and incomplete verdicts are not acceptance under `[D-REVIEW-CYCLE]`.
+  This is an instruction to Main, not a mechanical completion guarantee. Pi 1.4.0 has no separate public task-completion
+  veto: `agent_before_settle` can request another model turn, while waiting in a lifecycle handler delays owner messages.
+  Nonblocking terminal delivery stays unchanged; ending an idle turn is not declaring the task complete.
+  Owner (`16-27-59:6002`, 2026-10-24): «да давай», accepting the coordinator's instruction-based adaptation proposed
+  at `16-27-59:5997`, with its explicit distinction from a programmatic guarantee.
+  Reason: carry over the source skill's prohibition on premature completion without blocking the owner or spending
+  model turns on waiting. Carriers: `index.ts` (`DESCRIPTION`, `startedText`), the caller workflow in
+  [PROCESS.md, Independent review](PROCESS.md#independent-review). Proof: `test/terminal.test.ts` checks terminal wiring
+  and delivery mechanics, not guaranteed model compliance.
 - **No warming** `[D-REVIEW-CACHE]`. `extensions/RQW-review/index.ts` sets `cacheWarming: "off"` in each reviewer's
   in-memory SettingsManager, independently of RQW-settings and the main user's mode; prompt caching stays on. The
   reviewer runs only Codex models, so it has no Anthropic cache policy of its own.

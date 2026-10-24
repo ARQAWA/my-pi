@@ -347,6 +347,11 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
   acceptance against the agreement, routing needed fixes to workers. The final independent result review checks agreed completeness,
   consistency, documentation and absence of unagreed additions. Each pass is a complete review and returns every
   finding at once.
+- A pending requested review is not a completed task. Follow `[D-REVIEW-COMPLETION]` in
+  [DECISIONS.md, Review](DECISIONS.md#review): do not declare completion before its verdict is received and handled;
+  if only waiting remains, end the turn silently for automatic delivery, without polling or filler turns. Owner
+  messages and interrupts remain allowed. This is an instruction, not a mechanical completion guarantee; failed or
+  incomplete reviews do not pass the check.
 - The review cycle, ported from the owner's Codex CLI reviewer skills (`DECISIONS.md`, [Review](DECISIONS.md#review)).
   It runs when the owner asks for a review or a checked result, or when this section requires it, such as before
   a squash merge; never on Main's own initiative. The brief has these sections in this order: `<user_messages>`,

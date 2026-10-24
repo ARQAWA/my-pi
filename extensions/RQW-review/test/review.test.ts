@@ -250,6 +250,18 @@ describe("reviewer prompt and verdict contract", () => {
 		} finally { await rm(dir, { recursive: true, force: true }); }
 	});
 
+	it("carries the pending-review caller instruction in both discovery and the started receipt", () => {
+		for (const rule of [
+			"Do not declare the task complete before this review's verdict is received and handled.",
+			"If no other work remains, end this turn silently and wait for the automatic verdict notification; do not poll or take filler turns.",
+			"Owner messages and interrupts remain allowed.",
+			"A failed or incomplete verdict is not acceptance.",
+		]) {
+			assert.ok(DESCRIPTION.includes(rule), rule);
+			assert.ok(startedText(1).includes(rule), rule);
+		}
+	});
+
 	it("keeps the source skill's invocation, evidence and rejection rules", () => {
 		for (const rule of [
 			"Use only when the user asks for review or a checked result, or an invoked skill requires it; never on your own initiative.",
@@ -403,7 +415,12 @@ describe("review tool", () => {
 			);
 			const result = main.session.messages.find((m) => m.role === "toolResult" && m.toolName === "review");
 			assert.equal(result?.role === "toolResult" ? textOf(result.content) : "", startedText(1));
-			assert.equal(startedText(1), "review#1 started. Keep working, but leave the reviewed files unchanged until its verdict.");
+			assert.equal(startedText(1),
+				"review#1 started. Keep working, but leave the reviewed files unchanged until its verdict. " +
+				"Do not declare the task complete before this review's verdict is received and handled. " +
+				"If no other work remains, end this turn silently and wait for the automatic verdict notification; " +
+				"do not poll or take filler turns. Owner messages and interrupts remain allowed. " +
+				"A failed or incomplete verdict is not acceptance.");
 		} finally {
 			main.session.dispose();
 		}

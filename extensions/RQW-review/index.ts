@@ -43,11 +43,18 @@ export const MESSAGE_TYPE = "review";
 
 export const REVIEWER = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "REVIEWER.md"), "utf8").replace(/\r\n/g, "\n").trimEnd();
 
+const PENDING_REVIEW =
+	"Do not declare the task complete before this review's verdict is received and handled. " +
+	"If no other work remains, end this turn silently and wait for the automatic verdict notification; " +
+	"do not poll or take filler turns. Owner messages and interrupts remain allowed. " +
+	"A failed or incomplete verdict is not acceptance.";
+
 export const DESCRIPTION =
 	"Blind review by a separate read-only model on your team, with the user's own messages assembled verbatim. " +
 	"Use only when the user asks for review or a checked result, or an invoked skill requires it; never on your own initiative. " +
 	"blind uses Smarty (GPT-6.1-Sol low), high uses Bossy (GPT-6.1-Sol medium), only when requested. " +
 	"The call returns at once; the verdict arrives as a [review#N] message. Keep working, but leave reviewed files unchanged until it arrives. " +
+	PENDING_REVIEW + " " +
 	"Supply primary requirements, governing rules and evidence, not only your summary; use absolute paths for work in another directory. " +
 	"Do not impose file, search, tool-call or turn quotas. " +
 	"By default a reviewer inherits GPT Fast; pass fast_gpt false when the user forbids Fast for subagents.";
@@ -228,7 +235,7 @@ export function rejectedEarlier(entries: readonly SessionEntry[], params: Params
 
 /** The tool result of a call. */
 export const startedText = (n: number) =>
-	`review#${n} started. Keep working, but leave the reviewed files unchanged until its verdict.`;
+	`review#${n} started. Keep working, but leave the reviewed files unchanged until its verdict. ${PENDING_REVIEW}`;
 
 const parameters = Type.Object({
 	level: StringEnum(["blind", "high"] as const, { description: "blind by default; high when the user asks for it." }),
