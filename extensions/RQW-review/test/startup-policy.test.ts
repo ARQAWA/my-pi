@@ -13,34 +13,19 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import { REVIEWER } from "../index.ts";
+import { codexAuth, installCodexWire } from "./codex-wire.ts";
 
 const EXTENSION = join(import.meta.dirname, "..", "index.ts");
-const sse = (events: object[]) => events.map((e) => `event: ${(e as { type: string }).type}\ndata: ${JSON.stringify(e)}\n\n`).join("");
-const claudeAnswer = sse([
-	{ type: "message_start", message: { id: "a", model: "claude", usage: { input_tokens: 5, output_tokens: 0 } } },
-	{ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
-	{ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "CLEAN" } },
-	{ type: "content_block_stop", index: 0 },
-	{ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } },
-	{ type: "message_stop" },
-]);
-
 let root: string;
 let counter = 0;
-const wire: { url: string; body: Record<string, any> }[] = [];
-const realFetch = globalThis.fetch;
+const codex = installCodexWire();
+const { wire } = codex;
 
-before(async () => {
-	root = await mkdtemp(join(tmpdir(), "rqw-review-startup-"));
-	globalThis.fetch = async (input, init) => {
-		wire.push({ url: String(input), body: JSON.parse(String(init?.body)) });
-		return new Response(claudeAnswer, { headers: { "content-type": "text/event-stream" } });
-	};
-});
-after(async () => { globalThis.fetch = realFetch; await rm(root, { recursive: true, force: true }); });
+before(async () => { root = await mkdtemp(join(tmpdir(), "rqw-review-startup-")); });
+after(async () => { codex.restore(); await rm(root, { recursive: true, force: true }); });
 
-/** The system text of an Anthropic request as the provider received it, one entry per system block. */
-const systemOf = (body: Record<string, any>): string[] => (typeof body.system === "string" ? [body.system] : (body.system ?? []).map((b: { text: string }) => b.text));
+/** The system text of a Codex request as the provider received it. */
+const systemOf = (body: Record<string, any>): string => body.instructions;
 
 const until = async (check: () => boolean, what: string) => {
 	const deadline = Date.now() + 60_000;
@@ -56,7 +41,7 @@ type Request = { session: { sessionManager: { getSessionId(): string } } & objec
 async function openMain() {
 	const dir = join(root, `w${counter++}`);
 	await mkdir(dir, { recursive: true });
-	await writeFile(join(dir, "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "sk-ant-api03-fake" } }));
+	await writeFile(join(dir, "auth.json"), JSON.stringify(codexAuth()));
 	const runtime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: null, refreshOnCreate: false });
 	await runtime.refresh({ allowNetwork: false });
 	const main = fauxProvider({ provider: `startup-review-${counter}`, api: `startup-review-${counter}`, models: [{ id: "claude-main", reasoning: true }] });
@@ -116,7 +101,7 @@ describe("RQW-review: the offered review of a subagent binds to the parent's bus
 			assert.equal(request.childName, "review#1");
 			assert.equal(request.parentThreadId, child.session.sessionManager.getSessionId(), "the caller is the child session");
 			assert.notEqual(request.parentThreadId, m.session.sessionManager.getSessionId(), "not the main session");
-			assert.equal(request.startupSystemPrompt, systemOf(wire[0].body).join(""), "the startup prompt is exactly what the provider received");
+			assert.equal(request.startupSystemPrompt, systemOf(wire[0].body), "the startup prompt is exactly what the provider received");
 			assert.ok(request.startupSystemPrompt?.startsWith(REVIEWER), "the startup prompt starts with REVIEWER");
 			assert.equal(request.startupSystemPrompt!.split(REVIEWER).length - 1, 1, "REVIEWER appears once");
 			child.session.dispose();

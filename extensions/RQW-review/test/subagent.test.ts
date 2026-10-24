@@ -34,11 +34,12 @@ import {
 	type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import type { ReviewHost } from "../index.ts";
+import { CLEAN_VERDICT } from "./codex-wire.ts";
 
 const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
 const mainFaux = fauxProvider({ provider: "main", api: "review-sub-main", models: [{ id: "main" }] });
 const childFaux = fauxProvider({ provider: "child", api: "review-sub-child", models: [{ id: "child" }] });
-const reviewerFaux = fauxProvider({ provider: "anthropic", api: "review-sub-reviewer", models: [{ id: "claude-haiku-5-5", reasoning: true }, { id: "claude-sonnet-5-5", reasoning: true }] });
+const reviewerFaux = fauxProvider({ provider: "openai-codex", api: "review-sub-reviewer", models: [{ id: "gpt-6.1-sol", reasoning: true }] });
 
 let root: string;
 let runtime: ModelRuntime;
@@ -111,7 +112,7 @@ it("a subagent's review: registered in its own session, its own messages as the 
 	reviewerFaux.setResponses([async (context: TranscriptContext) => {
 		reviewerTexts.push(context.messages.filter((m) => m.role === "user").map(textOf).join("\n"));
 		await new Promise<void>((r) => { releaseReviewer = r; });
-		return fauxAssistantMessage(fauxText("CLEAN"));
+		return fauxAssistantMessage(fauxText(CLEAN_VERDICT));
 	}]);
 	const childReplies: ((context: TranscriptContext) => AssistantMessage)[] = [
 		() => fauxAssistantMessage(fauxToolCall("review", { level: "blind", object: "a.ts", criterion: "the rename" }, { id: "r1" }), { stopReason: "toolUse" }),
@@ -149,7 +150,7 @@ it("the child's lifetime ends its running reviews: no verdict afterwards, its co
 	reviewerFaux.setResponses([async (_context: TranscriptContext, options) => {
 		entered = true;
 		await new Promise<void>((r) => options?.signal?.addEventListener("abort", () => r(), { once: true }));
-		return fauxAssistantMessage(fauxText("CLEAN"));
+		return fauxAssistantMessage(fauxText(CLEAN_VERDICT));
 	}]);
 	childFaux.setResponses([
 		() => fauxAssistantMessage(fauxToolCall("review", { level: "blind", object: "a.ts", criterion: "c" }, { id: "r1" }), { stopReason: "toolUse" }),
@@ -207,7 +208,7 @@ it("the reviewer is a child too: codemode and tool_search when its caller has th
 			const names = new Set<string>();
 			for (const m of context.messages) if (m.role === "system") for (const tool of m.toolsAdded ?? []) names.add(tool.name);
 			declared.push([...names].sort());
-			return fauxAssistantMessage(fauxText("CLEAN"));
+			return fauxAssistantMessage(fauxText(CLEAN_VERDICT));
 		}]);
 		try {
 			sessions.length = 0;
@@ -258,7 +259,7 @@ it("with RQW-tools offering: a child's reviewer gets the offered codemode built 
 		for (const m of context.messages) if (m.role === "system") for (const tool of m.toolsAdded ?? []) names.add(tool.name);
 		declared.push([...names].sort());
 		await new Promise<void>((r) => options?.signal?.addEventListener("abort", () => r(), { once: true }));
-		return fauxAssistantMessage(fauxText("CLEAN"));
+		return fauxAssistantMessage(fauxText(CLEAN_VERDICT));
 	}]);
 	childFaux.setResponses([
 		() => fauxAssistantMessage(fauxToolCall("review", { level: "blind", object: "a.ts", criterion: "c" }, { id: "r1" }), { stopReason: "toolUse" }),

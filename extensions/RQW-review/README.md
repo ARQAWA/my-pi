@@ -1,27 +1,45 @@
 # RQW-review
 
-The `review` tool with levels `blind` and `high`. Each call runs a fresh reviewer session in the same process
-and main agent's cwd (`read`, `bash`, `grep`, `find`; the same deep `REVIEWER.md` is the whole prompt for both levels).
-The verdict comes back later as a `[review#N]` message. Self-contained: no import from another extension folder.
-Rules, quotes and reasons: `DECISIONS.md` section Review. Measurements: `notes/reviewer-probes.md`. Tests: `npm test`.
+The `review` tool with levels `blind` and `high`: the owner's working Codex CLI reviewer ported to Pi, not a newly
+invented workflow. Each call runs a fresh reviewer session in the same process and main agent's cwd (`read`, `bash`,
+`grep`, `find`) from zero, never a fork of the chat. `REVIEWER.md` is the whole prompt for both levels. The verdict comes
+back later as a `[review#N]` message. Self-contained: no import from another extension folder.
+Rules, quotes and reasons: `DECISIONS.md` section Review. Tests: `npm test`.
+
+## Origin and prompt
+
+The base is the owner's Codex CLI plugin `scope-focus` (developer `A. Chukavin` in its `plugin.json`; the source supplies
+no licence text): the profiles `smarty` and `bossy` and the skills `subagents`, `blindreview` and `highreview`.
+`REVIEWER.md` is the `developer_instructions` of `smarty.toml`, identical in `bossy.toml`, with three changes for this
+harness and nothing else:
+
+1. The allowed tools are the `read`, `grep` and `find` tools and read-only `bash` commands, not "read-only inspection
+   tools and commands".
+2. One sentence names the sections of the brief that the tool assembles: `<user_messages>`, `<agreement>`, `<object>`,
+   `<criterion>` and `<rejected_earlier>`.
+3. The note that ends a truncated `read` result (`Use offset=N to continue`) is not file content, where Codex says "the
+   reader's continuation line".
+
+Codex starts the profile with `fork_turns: "none"`. Here that needs no setting: every call of the tool is a fresh
+`createAgentSession` that sees only its brief. The prompt has no rule about running tests. Decisions:
+[DECISIONS.md, Review](../../DECISIONS.md#review).
 
 ## Which model reviews
 
-The reviewer depends on the family of the main agent's model (`ctx.model`: provider `anthropic` or a `claude*` id is
-Claude; provider `openai` or `openai-codex` or a `gpt-*` id is GPT). One table, `LEVELS` at the top of `index.ts`:
+One table, `LEVELS` at the top of `index.ts`, independent of the main agent's model:
 
-| main agent | `blind` | `high` |
+| level | profile | model |
 |---|---|---|
-| Claude | `anthropic/claude-haiku-5-5`, thinking medium | `anthropic/claude-sonnet-5-5`, thinking low |
-| GPT | `openai-codex/gpt-5.6-luna`, thinking medium | `openai-codex/gpt-5.6-luna`, thinking high |
+| `blind` | Smarty | `openai-codex/gpt-6.1-sol`, thinking low |
+| `high` | Bossy | `openai-codex/gpt-6.1-sol`, thinking medium |
 
-The GPT row is the owner's choice (`DECISIONS.md` section Review); `gpt-5.6-luna` stays in the RQW-models list because of it. The Claude row is the current choice, also one constant in `LEVELS`.
-
-A main model of neither family starts with the Claude row. When the first reviewer has no model or its provider has
-no credentials, the other family's reviewer of the same level takes over; the review fails only when neither can
-start, and the message names both reasons. A failed request or no verdict in 30 minutes fails the review with no
-automatic second attempt. This hang guard (`TIMEOUT_MS` in `index.ts`) allows deeper reading and tests; replacing it
-with wait and status control is open work, [R01](../../BACKLOG.md#r01). The verdict message's `details` carry the model that actually ran.
+There is no Claude reviewer and no fallback to another provider: a missing model or missing `openai-codex` credentials
+fail the review with `no credentials for openai-codex (model openai-codex/gpt-6.1-sol); review requires Codex
+credentials, no fallback`. A failed request fails the review with no automatic retry by the extension; Pi's own inherited request retries apply.
+The review has no deadline of its own. Only session shutdown, or the end of the subagent that asked for it, aborts a
+running review. An abort of the caller's run (Esc or RPC) only interrupts the wait of print and json mode and leaves
+the reviewer running; its verdict is then saved without starting a turn. The verdict message's `details` carry the model that actually ran. Measuring a
+Claude reviewer is deferred: [BACKLOG.md](../../BACKLOG.md#claude-reviewer).
 
 ## Tools and working directory
 
@@ -29,8 +47,8 @@ Each fresh session asks on `pi.events` channel `rqw-tools:subagent-tools` for a 
 handshake without importing it. When offered, its fresh definitions are filtered to `read`, `bash`, `grep`, `find`,
 plus RQW-tools' `job`: an eligible reviewer call still running after 12 s goes to the background as in any session;
 bash with its own timeout of 13 s or less stays in the foreground without a pre-start snapshot. The reviewer
-waits for it or kills it when it is a process job, Esc of the review aborts its killable jobs and the end of the review
-(also the end of a subagent that asked for it) disposes them. A running file-tool job cannot be killed and finishes on
+waits for it or kills it when it is a process job, an abort of the review (session shutdown or the end of the subagent that asked for it) aborts its killable jobs and
+the end of the review disposes them. A running file-tool job cannot be killed and finishes on
 its own; this is an approved design caveat, not a defect. The factory call passes `{ label: "review" }`.
 Otherwise Pi supplies stock tools (no
 background). Both offered and stock grep/find drop empty optional arguments before chaining
@@ -43,6 +61,11 @@ built-in `codemode` and `tool_search` active, the reviewer gets them as well (Pi
 tools; a codemode script's bash calls pass the same git guard). With an RQW-tools offer, its codemode is Pi's
 definition built from the reviewer's API, passed to the factory as `options.codemode` and returned as a call of the
 reviewer's barrier and a job of its registry. No `edit` or `write` is exposed.
+
+Background jobs use RQW-tools' registry and the same resource and effects contract as other callers. Bounded walks
+report scan errors, subshell cwd changes stay scoped, and `symbolic-ref` and `reflog` writes hold the repository.
+Deletions are reported since the start, by comparing exact pre-start and end states. Running file-tool jobs finishing
+on their own and the short-timeout bash snapshot exclusion described above are approved design caveats.
 
 ## Review in subagents
 
@@ -58,27 +81,39 @@ shut down. A child waits for its running reviews before its run ends (Pi's SDK p
 the verdict. Without RQW-review loaded, no child gets the tool. Proof: `test/subagent.test.ts`; decision:
 [DECISIONS.md, Agent](../../DECISIONS.md#agent).
 
-The prompt sets no tool-count or reading limit: it requires reading whatever is needed to judge each in-scope
-requirement and change, including affected callers, tests and docs. Unagreed style or taste, minor inaccuracies
-that do not affect the result, and rare hypotheticals are not findings.
-For ordinary code the reviewer may run repository tests; it never runs the delivered result itself (including
-not running autotests when autotests are the deliverable). Every bash call passes the copied `git-guard.ts`
-through a `tool_call` hook; blocked commands return its reason as a tool error. See limits below.
+## The cycle on Main's side
 
-## Pair contract in short
+Main runs a review only when the owner asks for a review or a checked result, or a procedure he approved requires it
+(the squash-merge rule of `PROCESS.md`); never on its own initiative. `blind` unless the owner or that procedure asks
+for `high`. Main keeps working but leaves the reviewed files unchanged until the verdict.
 
-- Main may rebut a finding once, with a quote that stands in its source; the next fresh reviewer's answer on it is
-  final (`RULING: DECIDED`: Main fixes; `UNDECIDED`: Main asks the user). A finding that rests on a value, rule or
-  choice the user never gave goes to the user, not to another choice of Main's own. An unagreed addition that Main
-  defends is `DECIDED`: Main removes it without asking.
-- The verdict starts at the first line that is exactly `FINDINGS:` when a reviewer wrote prose before it; prose
-  before `CLEAN` is still an incomplete check. A findings verdict needs that exact header line and every `FINDING`
-  block with REQUIREMENT, MISMATCH, EVIDENCE and REQUIRED OUTCOME filled; anything else is incomplete and settles
-  no dispute.
-- A rebuttal's source `user` proves a quote only from the user's own messages, not from a compaction or branch
-  summary; of two parallel rebuttals of one finding exactly one is accepted. Any other source is a file path read
-  relative to the caller's cwd and confined to it after symlink resolution; see [Rebuttal file sources](#rebuttal-file-sources).
-- Each finding gets an id `<review number>.<position>`; disputes survive reload and resume (custom `review` entries).
+- Brief: the tool assembles `<user_messages>` (the branch's user messages, verbatim and in order; a compaction or branch
+  summary is labelled as not the user's words). Main supplies `agreement` only when there is any: accepted proposals and decisions that are not in the user's own
+  messages, verbatim. It also supplies `object` (exact paths or
+  readable references, primary requirements, governing rules, source evidence, the diff as a file path, the stage
+  `pre-action` or `pre-completion`), `criterion` (what the check confirms and which deliverable must fulfil each
+  obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second pass on, `rejected_earlier` (`finding` and `reason`). No quotas on files, searches,
+  tool calls or turns.
+- `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` passes. Run no extra pass for confidence, but keep every
+  independent pass the invoking procedure requires.
+- `FINDINGS:` are the teammate's findings. Main finds each quote by searching for it. A finding whose two quotes stand
+  verbatim in their sources is admitted; for an omission Main checks the quoted requirement and the complete inspected
+  file or section. Main fixes it exactly to its REQUIRED OUTCOME and no further, without rejecting, arguing or asking
+  the owner. Main rejects a finding only when a quote is not verbatim, the allegedly missing content is present in
+  the cited object, or a NOT AGREED element is covered by a verbatim quote of the agreement, and says why with the quote.
+- All admitted fixes go in one batch. Then Main calls `review` again with the same level, object and criterion and every
+  rejection so far in `rejected_earlier`; the extension saves each call's rejections with the level, object and
+  criterion and carries them into later briefs of the same three. A fresh reviewer follows, until `CLEAN`.
+- `UNCHECKED:` or missing `CHECKED:` evidence is an incomplete check whatever the leading verdict: resolve the missing
+  sources or evidence, or retry malformed output; never record it as acceptance. `kindOf` in `index.ts` sorts a verdict
+  as `clean`, `findings`, `incomplete` or `failed`; it cannot prove coverage, so Main still reads `CHECKED:`.
+- No verdict, an error or a reviewer that could not start: the check has not passed and no self-check replaces it. Main
+  launches it once more on the unchanged object; if it fails again, Main tells the owner and waits.
+- When this review contract changes, validate it against known defective, corrected and missing-source examples before
+  claiming improved detection. These checks are not extra rounds in ordinary task reviews.
+
+The carriers are `DESCRIPTION`, `NEXT` and `startedText` in `index.ts`; the owner-facing rule is
+[PROCESS.md, Independent review](../../PROCESS.md#independent-review).
 
 ## GPT Fast
 
@@ -91,24 +126,9 @@ tier. Rule and quotes: [DECISIONS.md, Settings](../../DECISIONS.md#settings). Pr
 ## Limits
 
 - The bash git guard is a shell-syntax check, not a sandbox: it does not interpret scripts, aliases or computed
-  command names. No file edits through bash and never running the delivered result are prompt rules, not runtime
-  enforcement. Tests themselves may have filesystem side effects.
-- `REVIEWER.md` is the whole prompt for both levels. Earlier wording was measured with variant v3h; those
-  measurements do not establish the quality of this deep prompt/tool combination. No live model quality measurement
-  of it is claimed.
-- The GPT row (GPT-5.6-Luna medium and high) is the owner's choice and one constant in `LEVELS`, with its model and
-  thinking pinned in `review.test.ts`. GPT-5.6-Luna has
-  more false findings than Haiku medium and answers CLEAN on 30-31 of 33 clean cases (`notes/reviewer-probes.md`).
-- GPT main applies a reviewer's wrong `DECIDED` nearly always (`notes/reviewer-probes.md`, round 2w); nothing in
-  the extension stops Main from changing something the user forbade when a reviewer wrongly says `DECIDED`.
-
-## Rebuttal file sources
-
-File sources must resolve under the session cwd, including after symlink resolution. Absolute paths within it
-are accepted; absolute paths, `../` paths and symlinks that resolve outside it are refused. `refusals` in `index.ts`
-uses `realpath` and checks the relative path before reading the file. Proof: `test/review.test.ts`.
-
-Background jobs use RQW-tools' registry and the same resource and effects contract as other callers. Bounded walks
-report scan errors, subshell cwd changes stay scoped, and `symbolic-ref` and `reflog` writes hold the repository.
-Deletions are reported since the start, by comparing exact pre-start and end states. Running file-tool jobs finishing
-on their own and the short-timeout bash snapshot exclusion described above are approved design caveats.
+  command names. "Do not edit files, perform state-changing actions or spawn agents" is a prompt rule, not runtime
+  enforcement.
+- The tests check mechanics (malformed verdicts, missing `CHECKED:`, `UNCHECKED:`) and make no detection-quality claim.
+- `REVIEWER.md` is the owner's working Codex prompt, ported as described above. No live model quality measurement of this
+  port is claimed; the comparison with the original plugin is queued after delivery
+  ([BACKLOG.md](../../BACKLOG.md#codex-reviewer-comparison)).

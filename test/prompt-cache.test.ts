@@ -1,4 +1,5 @@
 // Package integration: each child extension owns its TTL; the adapter only supplies the main OAuth fallback.
+// The reviewer is always Codex GPT-6.1-Sol (no Anthropic request, so no TTL), answered by the fake network below.
 import "./no-network.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -8,6 +9,8 @@ import { setImmediate } from "node:timers/promises";
 import { it } from "node:test";
 import { fileURLToPath } from "node:url";
 import * as library from "@earendil-works/pi-coding-agent";
+import zlib from "node:zlib";
+import { CLEAN_VERDICT, codexAnswer, codexAuth } from "../extensions/RQW-review/test/codex-wire.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
@@ -27,7 +30,7 @@ async function until(check: () => boolean) {
 for (const [label, sdk] of [["library", library], ["bundle", bundle]] as const) {
 	for (const adapter of [true, false]) {
 		for (const retention of [undefined, "long"]) {
-			it(`${label}: child/reviewer 5m, adapter ${adapter ? "on" : "off"}, env ${retention ?? "unset"}`, async () => {
+			it(`${label}: child 5m and Codex reviewer, adapter ${adapter ? "on" : "off"}, env ${retention ?? "unset"}`, async () => {
 				const dir = await mkdtemp(join(tmpdir(), "rqw-prompt-cache-"));
 				const env = { ...process.env };
 				const originalFetch = globalThis.fetch;
@@ -38,10 +41,13 @@ for (const [label, sdk] of [["library", library], ["bundle", bundle]] as const) 
 				delete process.env.PI_CACHE_RETENTION;
 				if (retention) process.env.PI_CACHE_RETENTION = retention;
 				let session: library.AgentSession | undefined;
-				const captures: { model: string; markers: Record<string, unknown>[] }[] = [];
-				globalThis.fetch = async (_url, init) => {
-					const body = JSON.parse(String(init?.body));
-					captures.push({ model: body.model, markers: markers(body) });
+				const captures: { model: string; codex: boolean; body: Record<string, any>; markers: Record<string, unknown>[] }[] = [];
+				globalThis.fetch = async (url, init) => {
+					const zstd = new Headers(init?.headers).get("content-encoding") === "zstd";
+					const body = JSON.parse(zstd ? zlib.zstdDecompressSync(init!.body as Uint8Array).toString() : String(init?.body));
+					const codex = !String(url).includes("anthropic");
+					captures.push({ model: body.model, codex, body, markers: markers(body) });
+					if (codex) return new Response(codexAnswer(CLEAN_VERDICT), { headers: { "content-type": "text/event-stream" } });
 					const events = [
 						{ type: "message_start", message: { id: "fake-cache-message", model: body.model, usage: { input_tokens: 4, output_tokens: 0 } } },
 						{ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
@@ -54,11 +60,11 @@ for (const [label, sdk] of [["library", library], ["bundle", bundle]] as const) 
 						{ headers: { "content-type": "text/event-stream" } });
 				};
 				try {
-					const credentials = AuthStorage.inMemory({ anthropic: { type: "oauth", access: "sk-ant-oat01-fake-cache-probe",
+					const credentials = AuthStorage.inMemory({ ...codexAuth(), anthropic: { type: "oauth", access: "sk-ant-oat01-fake-cache-probe",
 						refresh: "fake-refresh", expires: Date.now() + 3_600_000 } });
 					const runtime = await sdk.ModelRuntime.create({ credentials, modelsPath: null, refreshOnCreate: false });
 					await runtime.refresh({ allowNetwork: false });
-					const manager = sdk.SettingsManager.inMemory({ cacheWarming: "off", compaction: { enabled: false }, retry: { enabled: false } });
+					const manager = sdk.SettingsManager.inMemory({ cacheWarming: "off", compaction: { enabled: false }, retry: { enabled: false }, transport: "sse" });
 					const loader = new sdk.DefaultResourceLoader({ cwd: dir, agentDir: dir, settingsManager: manager,
 						extensionPathsOverride: [], additionalExtensionPaths: ["RQW-agent", "RQW-review", ...(adapter ? ["RQW-anthropic"] : [])]
 							.map(name => join(ROOT, "extensions", name, "index.ts")),
@@ -89,9 +95,9 @@ for (const [label, sdk] of [["library", library], ["bundle", bundle]] as const) 
 					await session.waitForIdle();
 					assert.deepEqual(errors, []);
 					assert.ok(delivered("agent").every(m => typeof m.content === "string" && m.content.includes("CLEAN")));
-					assert.ok(delivered("review").every(m => typeof m.content === "string" && m.content.startsWith("[review#1] CLEAN")));
-					for (const model of ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]) {
-						const requests = captures.filter(c => c.model === model);
+					assert.ok(delivered("review").every(m => typeof m.content === "string" && m.content.startsWith("[review#1] CLEAN\nCHECKED:")));
+					for (const model of ["claude-opus-5-5", "claude-sonnet-5-5"]) {
+						const requests = captures.filter(c => !c.codex && c.model === model);
 						assert.ok(requests.length >= (model === "claude-sonnet-5-5" ? 2 : 1), model);
 						for (const request of requests) {
 							assert.ok(request.markers.length > 0, `${model}: caching stays enabled`);
@@ -100,6 +106,13 @@ for (const [label, sdk] of [["library", library], ["bundle", bundle]] as const) 
 								(long ? marker.ttl === "1h" : marker.ttl === undefined || marker.ttl === "5m")), `${model}: role TTL`);
 						}
 					}
+					assert.deepEqual(captures.filter(c => !c.codex).map(c => c.model).filter(m => !["claude-opus-5-5", "claude-sonnet-5-5"].includes(m)), [],
+						"no other Anthropic model is requested: the reviewer never falls back to one");
+					const reviewer = captures.filter(c => c.codex);
+					assert.equal(reviewer.length, 1, "the blind reviewer made one Codex request");
+					assert.equal(reviewer[0].model, "gpt-6.1-sol");
+					assert.equal(reviewer[0].body.reasoning?.effort, "low");
+					assert.equal(reviewer[0].markers.length, 0, "Anthropic cache markers do not apply to the Codex reviewer");
 				} finally {
 					if (session) { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); session.dispose(); }
 					globalThis.fetch = originalFetch;

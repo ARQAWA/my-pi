@@ -2,12 +2,11 @@
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { CLEAN_VERDICT } from "./codex-wire.ts";
+
 export default function (pi: ExtensionAPI) {
 	const main = fauxProvider({ provider: "review-cli", models: [{ id: "main" }] });
-	const reviewer = fauxProvider({ provider: "anthropic", models: [
-		{ id: "claude-haiku-5-5", reasoning: true },
-		{ id: "claude-sonnet-5-5", reasoning: true },
-	] });
+	const reviewer = fauxProvider({ provider: "openai-codex", models: [{ id: "gpt-6.1-sol", reasoning: true }] });
 	const mainReplied = Promise.withResolvers<void>();
 	main.setResponses([
 		fauxAssistantMessage(fauxToolCall("review", { level: "blind", object: "fixture", criterion: "c" }, { id: "r1" }), { stopReason: "toolUse" }),
@@ -23,7 +22,7 @@ export default function (pi: ExtensionAPI) {
 	]);
 	reviewer.setResponses([async () => {
 		await mainReplied.promise;
-		return fauxAssistantMessage(fauxText("CLEAN"));
+		return fauxAssistantMessage(fauxText(CLEAN_VERDICT));
 	}]);
 	pi.registerProvider(main.provider as any);
 	pi.registerProvider(reviewer.provider as any);

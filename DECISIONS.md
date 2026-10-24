@@ -118,7 +118,7 @@ Provenance:
   Owner (`16-27-59:4789`, entry `de383e38`):
   «Да, и временно нужно до конца недели из subagent убрать Opus, использовать только Sonnet. Надо зафиксировать это до вечера среды. Сейчас у нас 11:25 p.m. пятницы, и мы до следующей среды, до 19:00, не используем Opus модели с subagent в этой связке координатора, именно в этом проекте, в работе над проектом.»
   Reason: limit Opus usage during project development. Carrier: PROCESS coordinator-rules and the dev guard.
-  The reviewer finalisation task alone carries its task-specific exception; this is not general worker permission.
+  The arbiter title allowance in PROCESS is not general worker permission.
   Since: process-rules-oct23 squash.
 - **Ready-made solutions first** `[D-WORK-READY-MADE]`. Search Pi packages, npm, GitHub and other agents before
   building new features or mechanisms; report license, maintenance, size and dependency risk. Build our own only
@@ -284,7 +284,7 @@ Opus 5.5 Low — это слишком дорого»
   «1а»
   «Смотри, я хочу, чтобы ты в процессе измерений прогонов сразу находил аномалии, сразу находил отклонения и сразу же останавливал прогоны и чинил. Если будут очевидные косяки жёсткие, надо их сразу чинить в моменте . Нет смысла ждать полных прогонов, если мы потом починим и будем заново перепрогонять. Ты на первых запусках, если видишь какую-то хуйню очевидную, надо её фиксить . И первые запуски делай на самых сильных моделях из того перечня, который у тебя есть, чтобы сразу получить отклонение на старте у сильных моделей»
   «Мы не учитываем, что слабые модели в принципе не смогут какие-то вещи делать. Нам главное откалибровать на сильных моделях, а потом посмотрим, как они будут себя вести на слабых»
-  Reason: the reviewer-v2 benchmark burned a night on a checker defect visible in its first outputs. Carrier:
+  Reason: a measurement run once burned a night on a checker defect visible in its first outputs. Carrier:
   [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks), rules 1-5. Since: `ba1c273`.
 - **Third arbiter** `[D-WORK-ARBITER]`. Owner (`16-27-59:4012`):
   «Так, блядь, ты сам эти споры рассуди. Ты же, блядь, выше них. Ты сам спор можешь рассудить, у тебя есть все исходные материалы, ты знаешь, как именно должно всё это работать, и ты должен быть третьим независимым мнением от этих двух судей»
@@ -1041,28 +1041,90 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 ## Review
 
-- **Deep reviewer** `[D-REVIEW-DEEP]`. `extensions/RQW-review/REVIEWER.md` is the deep reviewer prompt, shared by both
-  levels: judge quality, completeness and absence of unagreed additions, not perfectionism, reading and checking as much
-  as needed with no economy or tool-call budget, in the main agent's folder. It may run repository tests, never the
-  delivered result itself (for autotest work, not the autotests). Tools are in `[D-REVIEW-TOOLS]`. `TIMEOUT_MS` is
-  30 minutes: hang protection, not an economic budget; its replacement is open work, item R01 in
-  [BACKLOG.md](BACKLOG.md#open).
-  Owner: «Он не должен быть супердушным, супердотошным, проверять на 1000%, быть перфекционистом. Он должен просто контролировать качество работы: всё сделано качественно, всё сделано, что было заказано, ничего лишнего не было сделано.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1693);
-  «никакой экономии нахуй. Агент должен делать столько, сколько ему необходимо, чтобы достичь качественного результата, качественной оценки, качественной проверки. Никаких не должно быть экономических ограничений.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1695);
-  «У него не должно быть ограничения по tool call, по инструментам, по прочему. Он должен работать в рамках того, как работают все большие агенты. У него должен быть тот же самый инструментарий» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1700);
-  «Прямо в рабочей папке, в которой работает основной агент.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1598);
-  «для кода он запускает тесты, не запускает сам код для обычного кода, а для автотестов он не запускает автотесты, блядь. В этом же суть, что сам результат работы он не запускает» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1610).
-  Reason: the owner's review standard. Carrier: `REVIEWER.md`, `index.ts` (`TIMEOUT_MS`). Proof: prompt hash pin in
-  `test/review.test.ts`. No live model quality claim is made for this prompt. Since: `a04a9c0`.
-- **No warming, five-minute cache** `[D-REVIEW-CACHE]`. `extensions/RQW-review/index.ts` sets `cacheWarming: "off"`
-  in each reviewer's in-memory SettingsManager, independently of RQW-settings and the main user's mode; prompt caching
-  stays on. Each reviewer's guarded stream wrapper sets `cacheRetention: "short"` on Anthropic Messages requests before
-  the adapter's OAuth default, a built-in 5m policy with no config knob; other APIs are unchanged.
-  Owner: «Да, давайте мы исполнителям, ревьюерам кэш выключай.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 440); TTL approval
-  «Если это замеренная цифра и 5 минут будет заебись в большинстве случаев, то пусть будет 5 минут.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 583)
-  ([Anthropic subscription adapter](#anthropic-subscription-adapter)). Reason: review gaps are short, so 1h writes
-  rarely pay off. Proof: `test/review.test.ts`, package `test/prompt-cache.test.ts`. Evidence:
-  `notes/prompt-cache-policy.md`. Since: `b91f832`.
+- **Codex reviewer port** `[D-REVIEW-PORT]`. `RQW-review` carries the owner's working Codex CLI reviewer over to Pi, adapted
+  to this harness. The base is his existing cycle, not a newly invented workflow: the profiles `smarty` and `bossy`
+  (`agents/*.toml`) and the Main-side skills `subagents`, `blindreview` and `highreview` of his Codex CLI plugin
+  `scope-focus`, whose `.codex-plugin/plugin.json` names the developer `A. Chukavin` and supplies no licence text or other
+  attribution. The earlier reviewer flow, its dispute rules and its benchmark campaign are cancelled; their entries are
+  in [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md) (A-0248 to A-0256). Pi's `read`, `bash`, `grep` and `find` replace the
+  Codex tools.
+  Owner (`16-27-59:5195`, `16-27-59:5210`, `16-27-59:5286`, `16-27-59:5291`):
+  «этот малой на Sol 6.1 Low очень хорошо защищает агента от ошибок»
+  «Мы отменяем текущий flow работы над reviewer и переобуваемся в новый прекрасный flow.»
+  «давай мы пойдём от того, что мы возьмём текущего ревьюера, рабочего уже, пиздатого, и его немножко прокачаем, подтюним, оптимизируем. Не будем смотреть на старого ревьюера.»
+  «Надо его перенести, адаптировав к нашему harness, потому что у них свой harness, у нас свой harness. Надо адаптацию сделать полную, чтобы по смыслу работало так же»
+  Reason: the Codex reviewer already works in practice, and the old reviewer missed errors. Carriers: `REVIEWER.md`,
+  `index.ts`, [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md, Independent review](PROCESS.md#independent-review).
+  The whole-cycle comparison with the original plugin (five identical tasks, one run each, start to CLEAN including
+  repairs) waits until this port is delivered: [BACKLOG.md](BACKLOG.md#codex-reviewer-comparison).
+- **Reviewer prompt** `[D-REVIEW-PROMPT]`. `extensions/RQW-review/REVIEWER.md` is the `developer_instructions` text of
+  `smarty.toml`, which is identical in `bossy.toml`, and the whole prompt of both levels; Pi adds only its `<cwd>` block.
+  Three changes, all harness differences: 1. the allowed tools are the `read`, `grep` and `find` tools and read-only
+  `bash` commands (Codex: "read-only inspection tools and commands"); 2. one sentence names the sections of the brief
+  that the tool assembles, `<user_messages>`, `<agreement>`, `<object>`, `<criterion>` and `<rejected_earlier>`; 3. the note
+  that ends a truncated `read` result, such as `Use offset=N to continue`, is not file content (Codex: "the reader's
+  continuation line"). Codex `fork_turns` has no counterpart: every pass is a fresh session from zero
+  (`[D-REVIEW-SESSION]`). The prompt has no rule about running tests, for or against, and no measured claim of quality is made.
+  Owner (`16-27-59:5210`, `16-27-59:5219`):
+  «reviewer должен делать полное review и находить все расхождения, а не по одному.»
+  «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
+  «Я бы хотел его минимально улучшить, минимально усилить и без замеров просто использовать его.»
+  «Его промпт вообще никак не подвигает его к запуску тестов изначально. То, что ты придумал про запрет запуска тестов — это overengineering очевидный»
+  Reason: the owner's reviewer works as written; the three changes only fit it to this harness.
+  Carrier: `REVIEWER.md`. Proof: `test/review.test.ts` (loaded byte for byte) and `test/codex-policy.test.ts` (the request
+  starts with it). Since: this port.
+- **Reviewer profiles** `[D-REVIEW-PROFILES]`. One table, `LEVELS` in `index.ts`, independent of the main agent's model:
+  `blind` is Smarty, `openai-codex/gpt-6.1-sol` thinking low; `high` is Bossy, `openai-codex/gpt-6.1-sol` thinking
+  medium. When the model is missing or `openai-codex` has no credentials, the review fails with an explicit error
+  (`review requires Codex credentials, no fallback`) and no other provider runs. A failed request gives
+  `Review failed: <reason>` and no automatic retry by the extension; Pi's own inherited request retries apply. The
+  review has no deadline of its own: only session shutdown, or the end of the subagent that asked, aborts a running
+  review, while an abort of the caller's run (Esc or RPC) leaves it running. Verdict `details` carry the model that ran.
+  Owner (`16-27-59:5291`):
+  «Для Claude надо будет замерить. Пока все review будет делать ChatGPT, потом как обновятся лимиты, и Claude померяем, выберем модель из того, что есть»
+  Coordinator text: Bossy medium is the `model_reasoning_effort` of `agents/bossy.toml`, which the source skill maps to
+  the `high` level. The Claude measurement is deferred: [BACKLOG.md](BACKLOG.md#claude-reviewer).
+  Reason: the owner's working reviewer runs on Sol; the Claude choice needs a measurement first.
+  Carrier: `index.ts` (`LEVELS`, `pickReviewer`). Proof: `test/levels.test.ts`, `test/codex-policy.test.ts`,
+  `test/startup-policy.test.ts`. Since: this port.
+- **Review cycle on Main's side** `[D-REVIEW-CYCLE]`. Carried over from the skill `subagents` of the Codex plugin; it
+  lives in `DESCRIPTION`, `NEXT` and `startedText` of `index.ts`, so switching RQW-review off removes it, and in
+  [PROCESS.md, Independent review](PROCESS.md#independent-review).
+  - When: the review runs only when the owner asks for a review or a checked result, or a procedure he approved requires
+    it, such as the squash-merge rule of PROCESS; never on Main's own initiative or as an automatic step of other work.
+    `blind` unless the owner or that procedure asks for `high`. Main keeps working meanwhile but leaves the reviewed files unchanged until the verdict.
+  - Brief: `<user_messages>` is assembled by the tool from the branch, verbatim and in order, with compaction and branch
+    summaries labelled as not the user's words. Main gives `agreement` when there is any (accepted proposals and decisions
+    that are not the user's own messages, verbatim), `object` (exact paths or readable references to the object, the
+    primary requirements, applicable governing rules and source evidence, the diff as a file path, and the stage
+    `pre-action` or `pre-completion`), `criterion` (what the check confirms and which deliverable must fulfil each
+    obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second pass on,
+    `rejected_earlier` (each rejected finding with its reason). No file, search, tool-call or turn quotas.
+  - `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` passes: no extra pass for confidence, but every independent pass
+    and its order that the invoking procedure requires stays.
+  - `FINDINGS:` are the teammate's findings. Main finds each quote by searching for it. A finding whose two quotes stand
+    verbatim in their sources is admitted; for an omission Main verifies the quoted requirement and the complete
+    inspected file or section instead of demanding nonexistent text. Main fixes an admitted finding exactly to its
+    REQUIRED OUTCOME and no further, and does not reject it, argue with it or put it to the owner. Main rejects a finding
+    only when a quote is not verbatim, the allegedly missing content is present in the cited object, or a NOT AGREED
+    element is covered by a verbatim quote of the agreement, and gives that reason with the quote.
+  - All admitted fixes go in one batch. Then a fresh reviewer runs with the same level, object and criterion and every
+    rejection so far in `rejected_earlier`, until `CLEAN`.
+  - `UNCHECKED:` or missing `CHECKED:` evidence makes the check incomplete whatever the leading verdict is: resolve the
+    missing sources or evidence, or retry malformed output; never record it as acceptance.
+  - No verdict, an error or a reviewer that could not start: the check has not passed and no self-check replaces it.
+    Main launches it once more on the unchanged object; if it fails again, Main tells the owner and waits.
+  - When this review contract changes, validate it against known defective, corrected and missing-source examples before
+    claiming improved detection. These checks are not extra rounds in ordinary task reviews. The tests check mechanics,
+    such as a malformed verdict or a missing `CHECKED:`, and make no claim about detection quality.
+  Owner (`16-27-59:5210`): «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
+  Reason: one complete pass, one batch of fixes and a fresh pass is the cycle the owner's reviewer already runs.
+  Carriers: `index.ts` (`DESCRIPTION`, `NEXT`, `startedText`, `verdictMessage`, `kindOf`). Since: this port.
+- **No warming** `[D-REVIEW-CACHE]`. `extensions/RQW-review/index.ts` sets `cacheWarming: "off"` in each reviewer's
+  in-memory SettingsManager, independently of RQW-settings and the main user's mode; prompt caching stays on. The
+  reviewer runs only Codex models, so it has no Anthropic cache policy of its own.
+  Owner: «Да, давайте мы исполнителям, ревьюерам кэш выключай.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 440)
+  ([Anthropic subscription adapter](#anthropic-subscription-adapter)). Reason: review gaps are short. Proof: `test/review.test.ts`. Since: `b91f832`.
 - **Reviewer GPT Fast** `[D-REVIEW-FAST]`. A reviewer inherits the main chat's GPT Fast state when it starts; the
   optional `fast_gpt` of `review` overrides it for that reviewer. Rule, quotes and carrier: [Settings](#settings),
   "GPT Fast" (`extensions/RQW-review/fast-gpt.ts`, `index.ts`). Since: `fa05edf`.
@@ -1070,72 +1132,17 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `blind` or `high`, held to the existing contract and nothing more.
   Coordinator text (owner quotes not found in the Pi sessions): "То, что ты предложил по ревьюерам — it's OK, я принимаю"; "Smart не нужен ... будет Blind и High"; "эти три саб-агента должны быть забиты за тем контрактом, который есть, и всё" (the last one also appears in the task text the owner pasted, session
   `2026-10-21T16-27-59-062Z_01a15f4a`, line 367). Carrier: `index.ts`, `package.json`. Since: `3389347`.
-- **Reviewer models** `[D-REVIEW-MODELS]`. One table, `LEVELS` at the top of `index.ts`, chosen by the family of the
-  main agent's model. Claude main: `blind` `anthropic/claude-haiku-5-5` thinking medium, `high`
-  `anthropic/claude-sonnet-5-5` thinking low. GPT main: `blind` `openai-codex/gpt-5.6-luna` medium, `high`
-  `openai-codex/gpt-5.6-luna` high. Family from `ctx.model`: provider `anthropic` or a `claude*` id is Claude; provider
-  `openai` or `openai-codex` or a `gpt-*` id is GPT; anything else, or none, uses the Claude table. Fallback: when the
-  family's reviewer has no model or no credentials, the other family's reviewer of the same level runs; when neither can
-  start, `[review#N] Review failed: <reason>` names both reasons. A failed request or no verdict in 30 minutes gives
-  `Review failed: <reason>` with no automatic retry. Verdict `details` carry the model that ran.
-  Owner: «2а 3а» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1162) (answer to three coordinator questions; the unanswered first question took its recommended
-  option 1a, reviewer model by the main agent's family); «Да» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1425).
-  Reason: the gpt-match probes found GPT-5.6 Luna medium and high comparable to the Claude slots; GPT-6 Luna unusable.
-  Evidence: `notes/reviewer-probes.md`, section "GPT match for the Claude slots"; numbers in
-  [decisions evidence](notes/decisions-evidence.md#review-gpt-match). Proof: `test/review.test.ts` ("the family
-  table", "GPT main, blind", "GPT main, high", the fallback and failure tests). Since: `3389347`.
 - **Parameters** `[D-REVIEW-PARAMS]`. `level`, `object` (paths, the diff as a file path rather than a command, so the
-  reviewer reads it whole beside the named sources, the stage), `criterion`, optional `agreement` (accepted proposals
-  and decisions not in the user's own messages), optional `rebuttals` (`[D-REVIEW-DISPUTES]`) and optional boolean
-  `fast_gpt`. Empty strings, a null or empty `rebuttals` and a null `fast_gpt` count as not given, since strict mode
-  fills every field. The description stays within 600 characters, enforced by its test. Carrier: `index.ts`.
-  Proof: `test/review.test.ts`. Since: `3389347`.
-- **Main and reviewer as a pair** `[D-REVIEW-PAIR]`. The pair rules live only in the plugin, so switching RQW-review off
-  removes them. Reviewer side: `REVIEWER.md` ("on Main's team"). Main side, three carriers in `index.ts`:
-  `DESCRIPTION` (every request while on: who the reviewer is, "works with you as one team for the user's agreement", how to call it); the tool result `startedText`: `review#N started. Keep working, but leave the reviewed files unchanged until its verdict.`; and the verdict wrapper `verdictMessage`: `[review#N]`, the verdict verbatim, finding ids and dispute outcomes, then one `NEXT` paragraph by kind. `clean`: the trimmed verdict is exactly `CLEAN` after a normal `stop`; passed, no further pass for confidence. A `length`, `error`, `aborted` or other abnormal stop is a failed review. `incomplete` (`CLEAN` with extra text, prose before `CLEAN`, `FINDINGS:` with text on its header line, a `FINDING` block missing a required field, any other text): resolve UNCHECKED or retry, never a pass, no finding id, answers no dispute. `findings` (a line exactly `FINDINGS:`, then `FINDING n` blocks with REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME filled; one structural check in `findingBlocks`, used by `kindOf` and `settle`): find each quote; fix each new finding exactly to its REQUIRED OUTCOME, or rebut it once with proof of a misreading; a finding resting on a value or choice the user never gave goes to the user, not fixed with another choice of Main's own ([Reviewer probes](notes/reviewer-probes.md), variant n1); fix the rest in one batch, then call `review` again with the same level, object, criterion and the new rebuttals until CLEAN. `failed` (the catch branch): no pass, no self-check replaces it; retry once on the unchanged object, then tell the user and wait. Not `promptSnippet` or `promptGuidelines`: RQW-prompt sets `customPrompt`, and Pi builds that section only without one. Not `SYSTEM.md`. Owner: «Правила пары остаются внутри плагина (DESCRIPTION, NEXT, REVIEWER.md), а не в SYSTEM.md.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 367) (task text the owner pasted). Coordinator text (earlier owner quotes, found only as copies in that pasted task): "чтобы они действовали в одной команде ... либо принимает правку, либо её отклоняет и пишет, почему" (2026-10-09); "он с ним действует в унисон, в паре ... их синергия должна идти в рамках плагина. Это не должно размазываться" (2026-10-20).
-  Since: `c4aaad4`.
-- **Disputes: the three-message rule** `[D-REVIEW-DISPUTES]`. Enforced by the extension, not only by prompts
-  (`NEXT`, `DESCRIPTION`, schema, `findingBlocks`, `disputes`, `settle`, `refusals`, `buildBrief` in `index.ts`, and
-  `REVIEWER.md`):
-  - Ids: each finding of a parsed `FINDINGS:` verdict gets a stable id `<review number>.<position>` (`3.2`), listed after
-    the verdict; a finding repeated with `DISPUTE: <id>` keeps that id.
-  - Message 2: Main fixes a finding or rebuts it once in `rebuttals` (`finding`, `quote`, `source`, `explanation`). The
-    whole call is refused, with no review started and no number taken, when a rebuttal names an unknown finding, lacks a
-    quote, source or explanation, quotes text not in its source (`user`: the user's own messages of the branch only, not
-    a compaction or branch summary; or a file under the session cwd; whitespace runs and one pair of surrounding quotation
-    marks are ignored), repeats a finding in one call, or rebuts a finding that already has a rebuttal or a final answer.
-    The state check and persisting accepted rebuttals run with no await between them, so of two parallel rebuttals of one
-    finding exactly one is accepted. The refusal says what to do instead.
-    File-source containment is enforced after `realpath` resolves the source and session cwd. Relative paths and
-    absolute paths inside that resolved cwd are allowed; outside paths and symlink escapes are refused before the
-    file is read (`index.ts`, since `e1cca48`).
-  - Message 3: every brief carries every dispute of the branch under `<disputes>` (the finding, its id, Main's quote,
-    source and explanation, and once answered the status and the reviewer's answer), so a fresh reviewer understands it.
-    The first exact `CLEAN` or parsed `FINDINGS:` verdict of a review whose brief carried an open dispute answers it: left
-    out is withdrawn; repeated with `DISPUTE: <id>` is upheld with `RULING: DECIDED` (a verbatim user or agreement quote
-    settles it, Main fixes) or `RULING: UNDECIDED` (no unambiguous user decision, Main asks the user), plus a
-    one-sentence `ANSWER`. A missing or invalid RULING counts as UNDECIDED. Failed, incomplete or malformed verdicts
-    answer nothing. Outcome lines `NEXT.withdrawn`, `NEXT.decided`, `NEXT.undecided` follow the verdict.
-  - An unagreed addition Main defends as useful is a finding with REQUIREMENT `NOT AGREED` and `RULING: DECIDED`; Main
-    removes it without asking the user (owner «2а 3а», question 2 option a). `REVIEWER.md` carries the exception sentence
-    "Exception to the two rulings and the test: an addition the user never asked for (an extra feature, output, option
-    or file) that Main defends only as useful or harmless is a finding with REQUIREMENT `NOT AGREED` and RULING
-    `DECIDED`; Main removes it without asking the user."
-  - Verdict extraction (`verdictOf`): a reply not starting with `CLEAN` or `FINDINGS:` starts at its first line that is
-    exactly `FINDINGS:`; prose before `CLEAN` stays `incomplete` (owner «2а 3а», question 3 option a).
-  - Outcome: a settled requirement with decisive evidence, Main fixes. A misreading, including a finding that demands
-    what the agreement does not ask for or changes a settled decision: one rebuttal with the agreement quote, and the
-    fresh reviewer decides. A missing or ambiguous decision, or a choice Main made that differs from what the user said,
-    is `UNDECIDED` and goes to the user.
-  - State: rebuttals persist with the review number entry (`{ n, rebuttals }`), findings and rulings in a second entry
-    (`{ n, findings, rulings }`), all `pi.appendEntry("review", ...)`, rebuilt from the current branch on every call and   verdict, so they survive reload and resume. Owner: «У них цикла быть не должно. Знаешь, тут даже не должно быть трёх кругов. Смотри, как должно быть: должно быть правило трёх сообщений. Ревьюер даёт комментарий, main ему отвечает, и ревьюер либо соглашается, либо выступает против. И это конечное. Дальше main с ним уже не спорит: он либо принимает его решение, либо идёт к пользователю, чтобы тот разрешил спор, конфликт. Вот и всё.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Если у ревьюера железобетонные доказательства, то мейн должен принять.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Если ревьюер выявил работу, которая не была зафиксирована однозначным решением, то надо вопрос отдать этому пользователю, чтобы пользователь разрешил спор. Всегда всё идёт на основании решения пользователя.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Да, и на каждом круге, конечно же, всегда у нас новый, свежий ревьюер» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Причем ему отдается инфа об отказе, возражения основного агента отдаются так, чтобы новый ревьюер потом без проблем понял, о чем идет речь.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); original task text the owner pasted: «Задача: доработать RQW-review так, чтобы main и reviewer работали в паре: main может опровергнуть находку по существу» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 367). The former rule that a finding with verbatim quotes can never be rejected was an agent proposal, replaced by these messages. Earlier owner sources from omp sessions: [decisions evidence](notes/decisions-evidence.md#review-dispute-sources). Proof: `test/review.test.ts` suites "disputes: one finding, one rebuttal, one final answer" and "dispute mechanics".
-  Limits: a reviewer that upholds a dispute without the DISPUTE field creates a new finding id, which Main could rebut
-  once more. Probe evidence: `notes/reviewer-probes.md`, [decisions evidence](notes/decisions-evidence.md#review-dispute-probes).
-  Since: `30c633f`.
+  reviewer reads it whole beside the named sources, the stage), `criterion`, optional `agreement`, optional
+  `rejected_earlier` (a list of `finding`, the rejected finding verbatim, and `reason`, why it was rejected, with the supporting quote)
+  and optional boolean `fast_gpt`. The extension saves each call's `rejected_earlier` with its level, object and criterion
+  in the session and carries every rejection of the same level, object and criterion into the next brief. Empty
+  strings, a null or empty `rejected_earlier` and a null `fast_gpt` count as not given, since strict mode fills every
+  field. Carrier: `index.ts`. Proof: `test/review.test.ts`. Since: `3389347`.
 - **Brief from the branch** `[D-REVIEW-BRIEF]`. `buildBrief` writes the user's messages of the current branch, verbatim,
   numbered and in order, with compaction and branch summaries labelled as not the user's words, then `agreement`,
-  `object`, `criterion` and `<disputes>`; images are `[image]`. Reason: Main no longer retypes the user's words, the
-  largest output cost of a call, and they cannot drift. Since: `3389347`.
+  `object`, `criterion` and `<rejected_earlier>`; images are `[image]`. Reason: Main no longer retypes the user's words,
+  the largest output cost of a call, and they cannot drift. Since: `3389347`.
 - **Fresh reviewer session** `[D-REVIEW-SESSION]`. Each call is a fresh in-process session: `createAgentSession` with
   in-memory `SessionManager` and `SettingsManager`, in the caller's `ctx.cwd`, keeping the caller's session settings
   (shell, images, retries and provider timeouts, transport and its timeouts, compaction, thinking budgets, codemode;
@@ -1152,8 +1159,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `{ offer(factory) }` handshake, passing cwd, a settings getter and options: `label` `review` for the main session's
   reviewer, the caller's path plus `/review` for a subagent's (`agent#1/review`), and `codemode`, only when the reviewer
   has codemode, as Pi's definition built from the reviewer's own API. It keeps the four names, `job` and the returned
-  `codemode`. Tools "Background jobs": a reviewer call still running after 12 s goes to the background; Esc of the review
-  aborts its jobs, and the end of the review or of its subagent disposes them. Without an offer: the four stock
+  `codemode`. Tools "Background jobs": a reviewer call still running after 12 s goes to the background; an abort of the review
+  (session shutdown or the end of its subagent) aborts its jobs, and the end of the review disposes them. Without an offer: the four stock
   definitions (`reviewerTools`) and Pi's own `codemode`/`tool_search` when active; nothing goes to the background. Offered
   and stock grep/find share `dropEmptyOptional`: `prepareArguments` drops optional arguments equal to `"null"`,
   `"undefined"` or blank, then chains the existing `prepareArguments`. Reason: grep otherwise passes `--glob null` to rg,
@@ -1161,26 +1168,27 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Reviewer git guard** `[D-REVIEW-GITGUARD]`. `extensions/RQW-review/git-guard.ts` is a byte-equal self-contained copy
   of `extensions/RQW-agent/git-guard.ts`; root `test/copies.test.ts` asserts it without importing either extension.
   Every child bash `tool_call`, offered or stock, checks `blockedGit` and returns its reason as the tool error. Limit: a
-  shell-syntax guard, not a sandbox. No file edits through bash and never running the delivered result are prompt rules,
-  not runtime enforcement; repository tests may have filesystem side effects. Carrier: `index.ts`, `git-guard.ts`,
+  shell-syntax guard, not a sandbox. No file edits through bash is a prompt rule ("Do not edit files, perform
+  state-changing actions or spawn agents"), not runtime enforcement. Carrier: `index.ts`, `git-guard.ts`,
   `REVIEWER.md`. Since: `a04a9c0`.
 - **Session model runtime** `[D-REVIEW-RUNTIME]`. The reviewer uses the session's own `ctx.modelRegistry.runtime`,
   private to TypeScript only. Reason: providers and logins registered by extensions reach the reviewer (with this
   package, RQW-anthropic's `anthropic` provider), and no second runtime refreshes the same OAuth login. Since: `3389347`.
-- **Verdict format** `[D-REVIEW-FORMAT]`. `REVIEWER.md` carries the deep adaptation of the Spotty body: named paths are
-  read whole and truncated files resume at the reported offset; the final answer is the last message, not `yield`.
-  Verdict: `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME;
-  DISPUTE, RULING and ANSWER only on a repeated disputed finding) and an optional `UNCHECKED:` section. REQUIRED OUTCOME
-  states one concrete end state; `<criterion>` sets the scope. Proof: `test/review.test.ts` format pins.
-  Earlier GPT prompt measurements: `notes/reviewer-prompt-gpt.md`, not proof for the deep prompt. Since: `e76994a`.
+- **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by `CHECKED:`, or `FINDINGS:` with
+  numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME, each once) followed by `CHECKED:` and
+  `UNCHECKED:` sections when they apply; `REVIEWER.md` carries the exact format. `kindOf` in `index.ts` sorts a verdict
+  into `clean` (`CLEAN`, a non-empty `CHECKED:` and no `UNCHECKED:`), `findings` (an exact `FINDINGS:` line and complete
+  blocks), `incomplete` (anything else, including any `UNCHECKED:`, which is never acceptance) or `failed`. The text
+  stays as the reviewer wrote it, a preamble included. Structure cannot prove coverage: Main still assesses every required
+  obligation against `CHECKED:`. The message is `[review#N] <verdict>` and one `NEXT` paragraph for the kind.
+  Carrier: `index.ts`, `REVIEWER.md`. Proof: `test/review.test.ts`. Since: this port.
 - **Async verdicts** `[D-REVIEW-ASYNC]`. The call returns `review#N started. ...` at once. The verdict, the reviewer's
   last assistant text, arrives as `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>\n\n<next step>",
   display: true }, ...)`; `details` carry `n`, level, model, thinking and seconds. Numbers count per session and continue
   after resume; each issued number is persisted with `pi.appendEntry("review", { n })` before any asynchronous work.
   Recovery also accepts old direct review tool results and verdicts, not arbitrary tool text; this covers nested
   `ctx.executeTool` callers. Without `session_start` after an SDK reload, the first execution restores context and
-  counter. `session_shutdown` aborts running reviews and delivers nothing; the 30-minute timer does not keep the process
-  alive. Since: `3389347`.
+  counter. `session_shutdown` aborts running reviews and delivers nothing. Since: `3389347`.
 - **Exactly-once delivery** `[D-REVIEW-DELIVERY]`. A verdict never waits in the agent's queue and gets exactly one main
   turn unless the run was aborted. Idle (`ctx.isIdle()`): sent with `triggerTurn: true, deliverAs: "followUp"` unless the
   last main run was aborted. Busy: sent with `triggerTurn: false`; Pi appends it at the end of the current turn or run,
@@ -1212,7 +1220,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   [decisions evidence](notes/decisions-evidence.md#review-live-smoke). Since: `b4b23cf`.
 - **Known limits** `[D-REVIEW-LIMITS]`. `ctx.modelRegistry.runtime` may be renamed by a Pi update, then every review
   fails with "the model runtime of the session is not reachable"; a verdict finishing after the session ended (quit,
-  `/new`, `/resume`, reload) is dropped; print and json mode may wait up to 30 minutes for a slow review; a verdict
+  `/new`, `/resume`, reload) is dropped; print and json mode wait for a slow review as long as it runs, and an abort of the caller's run only ends that wait, leaving the review running and its verdict saved without a turn; a verdict
   arriving during a manual `/compact` with no run is appended and seen on the next turn; the reviewer may read a file
   Main is still editing (`startedText` asks Main not to). The main agent's own RQW-tools grep still passes a string
   `"null"` glob to rg: item GREP-NULL in [BACKLOG.md](BACKLOG.md#open). Since: `3389347`.
@@ -1303,7 +1311,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 ## Anthropic subscription adapter
 
 - **Main 1h, children 5m** `[D-ANTHROPIC-TTL]`. Anthropic offers 5m and 1h, not 10m or 15m. The main OAuth default stays
-  1h; the independent child extensions own their 5m request policy ([Agent](#agent), [Review](#review)). Their explicit
+  1h; the independent Agent extension owns its 5m request policy ([Agent](#agent)); the reviewer runs no Anthropic model ([Review](#review)). Its explicit
   `short` wins in `cache.ts` and `transport.ts`, so cache markers stay on without `ttl: "1h"`, with or without this
   adapter. No new config knobs or process env changes.
   Owner: «По поводу кэшей вопрос-ответ A: основному агенту час А под основным 5 минут ещё какие-то варианты есть? Может, 10 минут? Или это замеренная цифра? Если это замеренная цифра и 5 минут будет заебись в большинстве случаев, то пусть будет 5 минут. Если можно больше и это будет более эффективно, то можно 10 минут поставить или 15. Я не знаю.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 583)
@@ -1382,7 +1390,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   instance-level masks are removed when it is off. Coordinator text (owner quotes C:3113, an omp session, not found in the
   Pi sessions): "Надо, чтобы они работали как в нашем OMP"; "Один мод будет статус бара, а второй мод будет Model Picker"; "То есть чисто модели Opus, Sonnet, GPT-6.1, GPT-6, Luna-6, Haiku". Since: `071df1e`.
 - **GPT 5.6 Luna and Haiku order** `[D-MODELS-LUNA]`. Haiku stands above both Luna models; `openai-codex/gpt-5.6-luna` is
-  a permanent list entry because the GPT reviewers use it ([Review](#review)); its low to max efforts are selectable,
+  a permanent list entry, kept from the reviewer measurements (no reviewer uses it now, see [Review](#review)); its low to max efforts are selectable,
   intersected with Pi support.
   Owner: «Надо подобрать сопостовимую модель на gpt, попробоуй 5.6 luna и более сильные модели типа medium ризонинг 6 и 6.1 sol, на время замеров добавь 5.6 luna в список моделей наших сразу после хайку и вообще хайку надо поставить над всеми в слабых моделях ь.е. порядок должен быть типа haiku 5.5, luna 5.6, luna 6» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1167); «Да» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1425)
   Carrier: `extensions/RQW-models/index.ts` (`FAMILIES`, `FAMILY_LEVELS`). Since: `7d6fdbf`.
@@ -1423,7 +1431,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
     listed model, at medium or the startup/`/new` `--thinking`, with a warning. With no authenticated listed model the
     model stays and the warning says its requests are refused. The wait before this choice is `[D-MODELS-STARTUP]`.
   - Requests: the owning runtime's `prepareRequest` refuses chat requests for an unlisted model with `RQW-models refused
-    the request: <the same text>`, covering in-process subagents; the reviewer models (Haiku, Sonnet, GPT-5.6 Luna) are
+    the request: <the same text>`, covering in-process subagents; the reviewer model (GPT-6.1 Sol) is
     listed. Pi's own requests use the session's model; image and classifier models pass.
   - Masks call Pi's current prototype methods, so RQW-anthropic and RQW-context patches keep working; they are
     reference-counted and removed on `session_shutdown` or `session.dispose()`.

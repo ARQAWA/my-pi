@@ -65,11 +65,11 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
 - `extensions/RQW-review/`: extension 6, the `review` tool with levels `blind` and `high`. Each call runs a fresh
   reviewer session in the same process and main agent's cwd (`createAgentSession`, `read`, `bash`, `grep`, `find`;
   RQW-tools definitions when offered, otherwise Pi's stock tools) with `REVIEWER.md` as its prompt; a bash git-state
-  guard blocks mutations, while no file edits or running the delivered result are prompt rules. The verdict comes
-  back later as a `[review#N]` message. Main may rebut a finding once with proof; the next reviewer's answer is final (fix, or ask the user), kept by the extension: `DECISIONS.md`
-  section Review. The reviewer model follows the main agent's family (Claude or GPT) with the other family as
-  fallback: `extensions/RQW-review/README.md`. Background cache warming is off; Anthropic prompt caching uses
-  built-in 5m (`DECISIONS.md`, Review). A reviewer inherits the main chat's GPT Fast at its start; the `review` tool's optional `fast_gpt` overrides it.
+  guard blocks mutations, while no file edits is a prompt rule. The verdict comes
+  back later as a `[review#N]` message. It is the owner's Codex CLI reviewer ported to Pi: `REVIEWER.md` is the Smarty
+  text with three harness changes, `blind` is Smarty and `high` is Bossy, both `openai-codex/gpt-6.1-sol` (low, medium),
+  with no Claude fallback; Main fixes admitted findings in one batch and calls a fresh reviewer with its rejections
+  until CLEAN (`DECISIONS.md` section Review, `extensions/RQW-review/README.md`). Background cache warming is off. A reviewer inherits the main chat's GPT Fast at its start; the `review` tool's optional `fast_gpt` overrides it.
   RQW-agent's general subagents get their own `review` through the `pi.events` offer `rqw-review:subagent-review`:
   `extensions/RQW-review/README.md#review-in-subagents`. Tests: `npm test`.
 - `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout, with the context bar as

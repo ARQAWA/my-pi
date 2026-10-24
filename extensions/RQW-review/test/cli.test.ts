@@ -42,7 +42,7 @@ describe(`${bun ? "Bun" : "Node"} CLI review delivery`, () => {
 				assert.equal(await exited.promise, 0, stderr);
 				assert.ok(stdout.includes("VERDICT_RECEIVED"), stdout);
 				assert.ok(!stderr.includes("network blocked"), stderr);
-				if (mode === "json") assert.ok(stdout.includes("[review#1] CLEAN"), stdout);
+				if (mode === "json") assert.ok(stdout.includes("[review#1] CLEAN\\nCHECKED:\\n- criterion (source) fulfilled (object)"), stdout);
 			} finally {
 				clearTimeout(timeout);
 				child.kill("SIGKILL");
@@ -53,7 +53,7 @@ describe(`${bun ? "Bun" : "Node"} CLI review delivery`, () => {
 });
 
 it(`${bun ? "Bun" : "Node"} CLI RPC: two verdicts in earlier aborted agent_settled never auto-wake`, { timeout: 30000 }, async () => {
-	const dir = await mkdtemp(join(tmpdir(), "rqw-review-settle-cli-"));
+	const dir = await mkdtemp(join(tmpdir(), "rqw-review-abort-delivery-cli-"));
 	const home = join(dir, "agent");
 	await mkdir(home);
 	const env: Record<string, string> = {};
@@ -61,9 +61,9 @@ it(`${bun ? "Bun" : "Node"} CLI RPC: two verdicts in earlier aborted agent_settl
 	Object.assign(env, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1" });
 	const child = spawn(runtime, [bun ? "--preload" : "--import", preload,
 		join(repo, `node_modules/@earendil-works/pi-coding-agent/dist/${bun ? "bun/" : ""}cli.js`),
-		"--no-extensions", "-e", join(here, "settle-cli-faux.ts"), "-e", join(here, "../index.ts"),
+		"--no-extensions", "-e", join(here, "abort-delivery-cli-faux.ts"), "-e", join(here, "../index.ts"),
 		"--no-skills", "--no-prompt-templates", "--no-context-files", "--no-themes", "--no-mcp", "--no-session",
-		"--tools", "review", "--provider", "review-settle-cli", "--model", "main", "--mode", "rpc"],
+		"--tools", "review", "--provider", "review-abort-delivery-cli", "--model", "main", "--mode", "rpc"],
 		{ cwd: dir, env, stdio: ["pipe", "pipe", "pipe"] });
 	let stdout = "", stderr = "", partial = "", done = false, abortSent = false;
 	type Event = Record<string, any>;

@@ -8,6 +8,7 @@ import { setImmediate as nextLoop } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, type SimpleStreamOptions, type TranscriptContext } from "@earendil-works/pi-ai";
 import { createAgentSession, createEventBus, DefaultResourceLoader, type EventBus, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { CLEAN_VERDICT } from "./codex-wire.ts";
 import { COUNTS_OFFER, COUNTS_REQUEST, type CountsOffer, type CountsRequest, type CountsSource, createCountsProducer, type RunningCounts } from "../counts.ts";
 
 const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
@@ -61,7 +62,7 @@ test("review-ownership: the review producer imports nothing from another extensi
 	}
 });
 
-// Only RQW-review is loaded. The reviewer is a gated faux anthropic model: each review holds until the test releases it.
+// Only RQW-review is loaded. The reviewer is a gated faux openai-codex model: each review holds until the test releases it.
 let root: string;
 let agentDir: string;
 before(async () => {
@@ -75,7 +76,7 @@ after(async () => {
 
 test("review-session-counts: a running review counts from its job start until its verdict, and ends at shutdown", async () => {
 	const main = fauxProvider({ provider: "main", models: [{ id: "main" }] });
-	const reviewer = fauxProvider({ provider: "anthropic", models: [{ id: "claude-haiku-5-5", reasoning: true }, { id: "claude-sonnet-5-5", reasoning: true }] });
+	const reviewer = fauxProvider({ provider: "openai-codex", models: [{ id: "gpt-6.1-sol", reasoning: true }] });
 	const reviewerGates: { entered: boolean; release: () => void }[] = [];
 	const gatedReviewer = (context: TranscriptContext, options?: SimpleStreamOptions) => {
 		const gate = { entered: false, release: () => {} };
@@ -84,7 +85,7 @@ test("review-session-counts: a running review counts from its job start until it
 		reviewerGates.push(gate);
 		gate.entered = true;
 		options?.signal?.addEventListener("abort", () => released.resolve(), { once: true });
-		return released.promise.then(() => fauxAssistantMessage(fauxText("CLEAN")));
+		return released.promise.then(() => fauxAssistantMessage(fauxText(CLEAN_VERDICT)));
 	};
 	reviewer.setResponses(Array.from({ length: 4 }, () => gatedReviewer));
 	main.setResponses([
@@ -101,7 +102,7 @@ test("review-session-counts: a running review counts from its job start until it
 	const runtime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
 	runtime.registerNativeProvider(main.provider);
 	runtime.registerNativeProvider(reviewer.provider);
-	await runtime.setRuntimeApiKey("anthropic", "fake-review-counts-key");
+	await runtime.setRuntimeApiKey("openai-codex", "fake-review-counts-key");
 	await runtime.getAvailable();
 	// Public observer: an inline factory keeps the pi.events the loader gives its extensions.
 	const observed: { events?: EventBus } = {};

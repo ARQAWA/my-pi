@@ -6,10 +6,8 @@ import { fauxAssistantMessage as answer, fauxProvider, fauxToolCall } from "@ear
 export default function (pi: ExtensionAPI) {
 	const release = Promise.withResolvers<void>();
 	const busy = Promise.withResolvers<void>();
-	const main = fauxProvider({ provider: "review-settle-cli", models: [{ id: "main" }] });
-	const reviewer = fauxProvider({ provider: "anthropic", models: [
-		{ id: "claude-haiku-5-5", reasoning: true }, { id: "claude-sonnet-5-5", reasoning: true },
-	] });
+	const main = fauxProvider({ provider: "review-abort-delivery-cli", models: [{ id: "main" }] });
+	const reviewer = fauxProvider({ provider: "openai-codex", models: [{ id: "gpt-6.1-sol", reasoning: true }] });
 	let mainCount = 0, reviewCount = 0;
 	const args = { level: "blind", object: "fixture", criterion: "c" };
 	main.setResponses(Array.from({ length: 20 }, () => async (context, options) => {

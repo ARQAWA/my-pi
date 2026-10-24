@@ -4041,3 +4041,218 @@ Archived by: the process-pipeline change; the commit is `git log -S'A-0247' -- D
 >   product, not a green badge; a weakened assertion turns a real failure into silence. Carrier: `PROCESS.md`,
 >   `.agents/reviewers/test-integrity.md`, `scripts/deliver-check.mjs`.
 >   Since: `3bdac4f`.
+
+
+## A-0248 · archived 2026-10-24 · Review · Deep reviewer prompt
+
+Status: SUPERSEDED by `[D-REVIEW-PROMPT]` (DECISIONS.md#review).
+Source tree: `b0b3672`; introducing commit is the `Since:` of the entry.
+Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0248' -- DECISIONS-ARCHIVE.md`).
+Original DECISIONS.md lines 823-835 at `b0b3672`, verbatim:
+
+> - **Deep reviewer** `[D-REVIEW-DEEP]`. `extensions/RQW-review/REVIEWER.md` is the deep reviewer prompt, shared by both
+>   levels: judge quality, completeness and absence of unagreed additions, not perfectionism, reading and checking as much
+>   as needed with no economy or tool-call budget, in the main agent's folder. It may run repository tests, never the
+>   delivered result itself (for autotest work, not the autotests). Tools are in `[D-REVIEW-TOOLS]`. `TIMEOUT_MS` is
+>   30 minutes: hang protection, not an economic budget; its replacement is open work, item R01 in
+>   [BACKLOG.md](BACKLOG.md#open).
+>   Owner: «Он не должен быть супердушным, супердотошным, проверять на 1000%, быть перфекционистом. Он должен просто контролировать качество работы: всё сделано качественно, всё сделано, что было заказано, ничего лишнего не было сделано.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1693);
+>   «никакой экономии нахуй. Агент должен делать столько, сколько ему необходимо, чтобы достичь качественного результата, качественной оценки, качественной проверки. Никаких не должно быть экономических ограничений.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1695);
+>   «У него не должно быть ограничения по tool call, по инструментам, по прочему. Он должен работать в рамках того, как работают все большие агенты. У него должен быть тот же самый инструментарий» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1700);
+>   «Прямо в рабочей папке, в которой работает основной агент.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1598);
+>   «для кода он запускает тесты, не запускает сам код для обычного кода, а для автотестов он не запускает автотесты, блядь. В этом же суть, что сам результат работы он не запускает» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1610).
+>   Reason: the owner's review standard. Carrier: `REVIEWER.md`, `index.ts` (`TIMEOUT_MS`). Proof: prompt hash pin in
+>   `test/review.test.ts`. No live model quality claim is made for this prompt. Since: `a04a9c0`.
+
+
+## A-0249 · archived 2026-10-24 · Review · No warming, five-minute cache
+
+Status: SUPERSEDED by `[D-REVIEW-CACHE]` (the warming half continues; the Anthropic five-minute cache no longer applies) (DECISIONS.md#review).
+Source tree: `b0b3672`; introducing commit is the `Since:` of the entry.
+Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0249' -- DECISIONS-ARCHIVE.md`).
+Original DECISIONS.md lines 836-844 at `b0b3672`, verbatim:
+
+> - **No warming, five-minute cache** `[D-REVIEW-CACHE]`. `extensions/RQW-review/index.ts` sets `cacheWarming: "off"`
+>   in each reviewer's in-memory SettingsManager, independently of RQW-settings and the main user's mode; prompt caching
+>   stays on. Each reviewer's guarded stream wrapper sets `cacheRetention: "short"` on Anthropic Messages requests before
+>   the adapter's OAuth default, a built-in 5m policy with no config knob; other APIs are unchanged.
+>   Owner: «Да, давайте мы исполнителям, ревьюерам кэш выключай.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 440); TTL approval
+>   «Если это замеренная цифра и 5 минут будет заебись в большинстве случаев, то пусть будет 5 минут.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 583)
+>   ([Anthropic subscription adapter](#anthropic-subscription-adapter)). Reason: review gaps are short, so 1h writes
+>   rarely pay off. Proof: `test/review.test.ts`, package `test/prompt-cache.test.ts`. Evidence:
+>   `notes/prompt-cache-policy.md`. Since: `b91f832`.
+
+
+## A-0250 · archived 2026-10-24 · Review · Reviewer models by the main agent's family
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` (DECISIONS.md#review).
+Source tree: `b0b3672`; introducing commit is the `Since:` of the entry.
+Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0250' -- DECISIONS-ARCHIVE.md`).
+Original DECISIONS.md lines 852-865 at `b0b3672`, verbatim:
+
+> - **Reviewer models** `[D-REVIEW-MODELS]`. One table, `LEVELS` at the top of `index.ts`, chosen by the family of the
+>   main agent's model. Claude main: `blind` `anthropic/claude-haiku-5-5` thinking medium, `high`
+>   `anthropic/claude-sonnet-5-5` thinking low. GPT main: `blind` `openai-codex/gpt-5.6-luna` medium, `high`
+>   `openai-codex/gpt-5.6-luna` high. Family from `ctx.model`: provider `anthropic` or a `claude*` id is Claude; provider
+>   `openai` or `openai-codex` or a `gpt-*` id is GPT; anything else, or none, uses the Claude table. Fallback: when the
+>   family's reviewer has no model or no credentials, the other family's reviewer of the same level runs; when neither can
+>   start, `[review#N] Review failed: <reason>` names both reasons. A failed request or no verdict in 30 minutes gives
+>   `Review failed: <reason>` with no automatic retry. Verdict `details` carry the model that ran.
+>   Owner: «2а 3а» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1162) (answer to three coordinator questions; the unanswered first question took its recommended
+>   option 1a, reviewer model by the main agent's family); «Да» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1425).
+>   Reason: the gpt-match probes found GPT-5.6 Luna medium and high comparable to the Claude slots; GPT-6 Luna unusable.
+>   Evidence: `notes/reviewer-probes.md`, section "GPT match for the Claude slots"; numbers in
+>   [decisions evidence](notes/decisions-evidence.md#review-gpt-match). Proof: `test/review.test.ts` ("the family
+>   table", "GPT main, blind", "GPT main, high", the fallback and failure tests). Since: `3389347`.
+
+
+## A-0251 · archived 2026-10-24 · Review · Parameters with rebuttals
+
+Status: SUPERSEDED by `[D-REVIEW-PARAMS]` (DECISIONS.md#review).
+Source tree: `b0b3672`; introducing commit is the `Since:` of the entry.
+Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0251' -- DECISIONS-ARCHIVE.md`).
+Original DECISIONS.md lines 866-871 at `b0b3672`, verbatim:
+
+> - **Parameters** `[D-REVIEW-PARAMS]`. `level`, `object` (paths, the diff as a file path rather than a command, so the
+>   reviewer reads it whole beside the named sources, the stage), `criterion`, optional `agreement` (accepted proposals
+>   and decisions not in the user's own messages), optional `rebuttals` (`[D-REVIEW-DISPUTES]`) and optional boolean
+>   `fast_gpt`. Empty strings, a null or empty `rebuttals` and a null `fast_gpt` count as not given, since strict mode
+>   fills every field. The description stays within 600 characters, enforced by its test. Carrier: `index.ts`.
+>   Proof: `test/review.test.ts`. Since: `3389347`.
+
+
+## A-0252 · archived 2026-10-24 · Review · Main and reviewer as a pair
+
+Status: SUPERSEDED by `[D-REVIEW-CYCLE]` (DECISIONS.md#review).
+Source tree: `b0b3672`; introducing commit is the `Since:` of the entry.
+Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0252' -- DECISIONS-ARCHIVE.md`).
+Original DECISIONS.md lines 872-875 at `b0b3672`, verbatim:
+
+> - **Main and reviewer as a pair** `[D-REVIEW-PAIR]`. The pair rules live only in the plugin, so switching RQW-review off
+>   removes them. Reviewer side: `REVIEWER.md` ("on Main's team"). Main side, three carriers in `index.ts`:
+>   `DESCRIPTION` (every request while on: who the reviewer is, "works with you as one team for the user's agreement", how to call it); the tool result `startedText`: `review#N started. Keep working, but leave the reviewed files unchanged until its verdict.`; and the verdict wrapper `verdictMessage`: `[review#N]`, the verdict verbatim, finding ids and dispute outcomes, then one `NEXT` paragraph by kind. `clean`: the trimmed verdict is exactly `CLEAN` after a normal `stop`; passed, no further pass for confidence. A `length`, `error`, `aborted` or other abnormal stop is a failed review. `incomplete` (`CLEAN` with extra text, prose before `CLEAN`, `FINDINGS:` with text on its header line, a `FINDING` block missing a required field, any other text): resolve UNCHECKED or retry, never a pass, no finding id, answers no dispute. `findings` (a line exactly `FINDINGS:`, then `FINDING n` blocks with REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME filled; one structural check in `findingBlocks`, used by `kindOf` and `settle`): find each quote; fix each new finding exactly to its REQUIRED OUTCOME, or rebut it once with proof of a misreading; a finding resting on a value or choice the user never gave goes to the user, not fixed with another choice of Main's own ([Reviewer probes](notes/reviewer-probes.md), variant n1); fix the rest in one batch, then call `review` again with the same level, object, criterion and the new rebuttals until CLEAN. `failed` (the catch branch): no pass, no self-check replaces it; retry once on the unchanged object, then tell the user and wait. Not `promptSnippet` or `promptGuidelines`: RQW-prompt sets `customPrompt`, and Pi builds that section only without one. Not `SYSTEM.md`. Owner: «Правила пары остаются внутри плагина (DESCRIPTION, NEXT, REVIEWER.md), а не в SYSTEM.md.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 367) (task text the owner pasted). Coordinator text (earlier owner quotes, found only as copies in that pasted task): "чтобы они действовали в одной команде ... либо принимает правку, либо её отклоняет и пишет, почему" (2026-10-09); "он с ним действует в унисон, в паре ... их синергия должна идти в рамках плагина. Это не должно размазываться" (2026-10-20).
+>   Since: `c4aaad4`.
+
+
+## A-0253 · archived 2026-10-24 · Review · Disputes: the three-message rule
+
+Status: SUPERSEDED by `[D-REVIEW-CYCLE]` (the dispute rules are removed with no replacement) (DECISIONS.md#review).
+Source tree: `b0b3672`; introducing commit is the `Since:` of the entry.
+Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0253' -- DECISIONS-ARCHIVE.md`).
+Original DECISIONS.md lines 876-913 at `b0b3672`, verbatim:
+
+> - **Disputes: the three-message rule** `[D-REVIEW-DISPUTES]`. Enforced by the extension, not only by prompts
+>   (`NEXT`, `DESCRIPTION`, schema, `findingBlocks`, `disputes`, `settle`, `refusals`, `buildBrief` in `index.ts`, and
+>   `REVIEWER.md`):
+>   - Ids: each finding of a parsed `FINDINGS:` verdict gets a stable id `<review number>.<position>` (`3.2`), listed after
+>     the verdict; a finding repeated with `DISPUTE: <id>` keeps that id.
+>   - Message 2: Main fixes a finding or rebuts it once in `rebuttals` (`finding`, `quote`, `source`, `explanation`). The
+>     whole call is refused, with no review started and no number taken, when a rebuttal names an unknown finding, lacks a
+>     quote, source or explanation, quotes text not in its source (`user`: the user's own messages of the branch only, not
+>     a compaction or branch summary; or a file under the session cwd; whitespace runs and one pair of surrounding quotation
+>     marks are ignored), repeats a finding in one call, or rebuts a finding that already has a rebuttal or a final answer.
+>     The state check and persisting accepted rebuttals run with no await between them, so of two parallel rebuttals of one
+>     finding exactly one is accepted. The refusal says what to do instead.
+>     File-source containment is enforced after `realpath` resolves the source and session cwd. Relative paths and
+>     absolute paths inside that resolved cwd are allowed; outside paths and symlink escapes are refused before the
+>     file is read (`index.ts`, since `e1cca48`).
+>   - Message 3: every brief carries every dispute of the branch under `<disputes>` (the finding, its id, Main's quote,
+>     source and explanation, and once answered the status and the reviewer's answer), so a fresh reviewer understands it.
+>     The first exact `CLEAN` or parsed `FINDINGS:` verdict of a review whose brief carried an open dispute answers it: left
+>     out is withdrawn; repeated with `DISPUTE: <id>` is upheld with `RULING: DECIDED` (a verbatim user or agreement quote
+>     settles it, Main fixes) or `RULING: UNDECIDED` (no unambiguous user decision, Main asks the user), plus a
+>     one-sentence `ANSWER`. A missing or invalid RULING counts as UNDECIDED. Failed, incomplete or malformed verdicts
+>     answer nothing. Outcome lines `NEXT.withdrawn`, `NEXT.decided`, `NEXT.undecided` follow the verdict.
+>   - An unagreed addition Main defends as useful is a finding with REQUIREMENT `NOT AGREED` and `RULING: DECIDED`; Main
+>     removes it without asking the user (owner «2а 3а», question 2 option a). `REVIEWER.md` carries the exception sentence
+>     "Exception to the two rulings and the test: an addition the user never asked for (an extra feature, output, option
+>     or file) that Main defends only as useful or harmless is a finding with REQUIREMENT `NOT AGREED` and RULING
+>     `DECIDED`; Main removes it without asking the user."
+>   - Verdict extraction (`verdictOf`): a reply not starting with `CLEAN` or `FINDINGS:` starts at its first line that is
+>     exactly `FINDINGS:`; prose before `CLEAN` stays `incomplete` (owner «2а 3а», question 3 option a).
+>   - Outcome: a settled requirement with decisive evidence, Main fixes. A misreading, including a finding that demands
+>     what the agreement does not ask for or changes a settled decision: one rebuttal with the agreement quote, and the
+>     fresh reviewer decides. A missing or ambiguous decision, or a choice Main made that differs from what the user said,
+>     is `UNDECIDED` and goes to the user.
+>   - State: rebuttals persist with the review number entry (`{ n, rebuttals }`), findings and rulings in a second entry
+>     (`{ n, findings, rulings }`), all `pi.appendEntry("review", ...)`, rebuilt from the current branch on every call and   verdict, so they survive reload and resume. Owner: «У них цикла быть не должно. Знаешь, тут даже не должно быть трёх кругов. Смотри, как должно быть: должно быть правило трёх сообщений. Ревьюер даёт комментарий, main ему отвечает, и ревьюер либо соглашается, либо выступает против. И это конечное. Дальше main с ним уже не спорит: он либо принимает его решение, либо идёт к пользователю, чтобы тот разрешил спор, конфликт. Вот и всё.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Если у ревьюера железобетонные доказательства, то мейн должен принять.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Если ревьюер выявил работу, которая не была зафиксирована однозначным решением, то надо вопрос отдать этому пользователю, чтобы пользователь разрешил спор. Всегда всё идёт на основании решения пользователя.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Да, и на каждом круге, конечно же, всегда у нас новый, свежий ревьюер» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Причем ему отдается инфа об отказе, возражения основного агента отдаются так, чтобы новый ревьюер потом без проблем понял, о чем идет речь.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); original task text the owner pasted: «Задача: доработать RQW-review так, чтобы main и reviewer работали в паре: main может опровергнуть находку по существу» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 367). The former rule that a finding with verbatim quotes can never be rejected was an agent proposal, replaced by these messages. Earlier owner sources from omp sessions: [decisions evidence](notes/decisions-evidence.md#review-dispute-sources). Proof: `test/review.test.ts` suites "disputes: one finding, one rebuttal, one final answer" and "dispute mechanics".
+>   Limits: a reviewer that upholds a dispute without the DISPUTE field creates a new finding id, which Main could rebut
+>   once more. Probe evidence: `notes/reviewer-probes.md`, [decisions evidence](notes/decisions-evidence.md#review-dispute-probes).
+>   Since: `30c633f`.
+
+
+## A-0254 · archived 2026-10-24 · Review · Brief from the branch with disputes
+
+Status: SUPERSEDED by `[D-REVIEW-BRIEF]` (DECISIONS.md#review).
+Source tree: `b0b3672`; introducing commit is the `Since:` of the entry.
+Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0254' -- DECISIONS-ARCHIVE.md`).
+Original DECISIONS.md lines 914-917 at `b0b3672`, verbatim:
+
+> - **Brief from the branch** `[D-REVIEW-BRIEF]`. `buildBrief` writes the user's messages of the current branch, verbatim,
+>   numbered and in order, with compaction and branch summaries labelled as not the user's words, then `agreement`,
+>   `object`, `criterion` and `<disputes>`; images are `[image]`. Reason: Main no longer retypes the user's words, the
+>   largest output cost of a call, and they cannot drift. Since: `3389347`.
+
+
+## A-0255 · archived 2026-10-24 · Review · Reviewer git guard, wording about running the delivered result
+
+Status: SUPERSEDED by `[D-REVIEW-GITGUARD]` (DECISIONS.md#review).
+Source tree: `b0b3672`; introducing commit is the `Since:` of the entry.
+Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0255' -- DECISIONS-ARCHIVE.md`).
+Original DECISIONS.md lines 940-945 at `b0b3672`, verbatim:
+
+> - **Reviewer git guard** `[D-REVIEW-GITGUARD]`. `extensions/RQW-review/git-guard.ts` is a byte-equal self-contained copy
+>   of `extensions/RQW-agent/git-guard.ts`; root `test/copies.test.ts` asserts it without importing either extension.
+>   Every child bash `tool_call`, offered or stock, checks `blockedGit` and returns its reason as the tool error. Limit: a
+>   shell-syntax guard, not a sandbox. No file edits through bash and never running the delivered result are prompt rules,
+>   not runtime enforcement; repository tests may have filesystem side effects. Carrier: `index.ts`, `git-guard.ts`,
+>   `REVIEWER.md`. Since: `a04a9c0`.
+
+
+## A-0256 · archived 2026-10-24 · Review · Verdict format of the earlier deep prompt
+
+Status: SUPERSEDED by `[D-REVIEW-VERDICT]` (DECISIONS.md#review).
+Source tree: `b0b3672`; introducing commit is the `Since:` of the entry.
+Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0256' -- DECISIONS-ARCHIVE.md`).
+Original DECISIONS.md lines 949-954 at `b0b3672`, verbatim:
+
+> - **Verdict format** `[D-REVIEW-FORMAT]`. `REVIEWER.md` carries the deep adaptation of the Spotty body: named paths are
+>   read whole and truncated files resume at the reported offset; the final answer is the last message, not `yield`.
+>   Verdict: `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME;
+>   DISPUTE, RULING and ANSWER only on a repeated disputed finding) and an optional `UNCHECKED:` section. REQUIRED OUTCOME
+>   states one concrete end state; `<criterion>` sets the scope. Proof: `test/review.test.ts` format pins.
+>   Earlier GPT prompt measurements: `notes/reviewer-prompt-gpt.md`, not proof for the deep prompt. Since: `e76994a`.
+
+## A-0257 · archived 2026-10-24 · Work policy · Measurements in waves, reason naming the reviewer-v2 benchmark
+
+Status: SUPERSEDED by `[D-WORK-MEASURE-WAVES]` (same rule, reason reworded) (DECISIONS.md#work-policy).
+Source tree: `b0b3672`; introducing commit is the `Since:` of the entry.
+Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0257' -- DECISIONS-ARCHIVE.md`).
+Original DECISIONS.md lines 257-266 at `b0b3672`, verbatim:
+
+> - **Measurements in waves** `[D-WORK-MEASURE-WAVES]`. Owner (`16-27-59:3044`; `16-27-59:3059` to the five-step plan
+>   whose step 5 is this rule; `16-27-59:3197`; `16-27-59:3202`):
+>   «Так блять надо фиксить ты шо гонишь мы нахуй прогоны эти делаем . Мы прогоны делаем не ради прогонов. Мы прогоны делаем для того, чтобы найти косяки, найти хуйню, её пофиксить и делать пиздато всё. А ты, получается, просто всю ночь гоняешь прогоны и жгёшь лимиты. Для чего? Просто чтобы поставить галочку, что мы сделали прогоны нахуй?»
+>   «Это нихуя не интеллектуально, нахуй. Что-то с этим делать надо.»
+>   «Давай сейчас все прогоны останови, и мы обсудим дальнейшие шаги. Надо сейчас это все порефиксировать»
+>   «1а»
+>   «Смотри, я хочу, чтобы ты в процессе измерений прогонов сразу находил аномалии, сразу находил отклонения и сразу же останавливал прогоны и чинил. Если будут очевидные косяки жёсткие, надо их сразу чинить в моменте . Нет смысла ждать полных прогонов, если мы потом починим и будем заново перепрогонять. Ты на первых запусках, если видишь какую-то хуйню очевидную, надо её фиксить . И первые запуски делай на самых сильных моделях из того перечня, который у тебя есть, чтобы сразу получить отклонение на старте у сильных моделей»
+>   «Мы не учитываем, что слабые модели в принципе не смогут какие-то вещи делать. Нам главное откалибровать на сильных моделях, а потом посмотрим, как они будут себя вести на слабых»
+>   Reason: the reviewer-v2 benchmark burned a night on a checker defect visible in its first outputs. Carrier:
+>   [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks), rules 1-5. Since: `ba1c273`.
+
+
+## A-0258 · archived 2026-10-24 · Work policy · Temporary Sonnet-only subagents, wording about the reviewer finalisation task
+
+Status: SUPERSEDED by `[D-WORK-TEMP-SONNET]` (same rule, wording reduced) (DECISIONS.md#work-policy).
+Source tree: `b0b3672`; introducing commit is the `Since:` of the entry.
+Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0258' -- DECISIONS-ARCHIVE.md`).
+Original DECISIONS.md lines 90-96 at `b0b3672`, verbatim:
+
+> - **Temporary Sonnet-only Anthropic subagents** `[D-WORK-TEMP-SONNET]`. The temporary restriction and its explicit
+>   expiry live in [PROCESS.md, Worker models](PROCESS.md#worker-models). After expiry the normal table applies.
+>   Owner (`16-27-59:4789`, entry `de383e38`):
+>   «Да, и временно нужно до конца недели из subagent убрать Opus, использовать только Sonnet. Надо зафиксировать это до вечера среды. Сейчас у нас 11:25 p.m. пятницы, и мы до следующей среды, до 19:00, не используем Opus модели с subagent в этой связке координатора, именно в этом проекте, в работе над проектом.»
+>   Reason: limit Opus usage during project development. Carrier: PROCESS coordinator-rules and the dev guard.
+>   The reviewer finalisation task alone carries its task-specific exception; this is not general worker permission.
+>   Since: process-rules-oct23 squash.
