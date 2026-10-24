@@ -538,9 +538,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   (historical unverified attribution, not found in the session files above): "Мы делаем просто обвес вокруг
   оригинального Pi."; "Нет, никаких форков." Ported UI: `RQW-models`, `RQW-statusbar` and `RQW-send-now`
   ([Models](#models), [Status bar](#status-bar), [Send now](#send-now)); `RQW-scroll` adds one key behavior
-  ([Scroll](#scroll)). The UI-port folders `RQW-tool-ui`, `RQW-thinking`, `RQW-theme` and `RQW-naming` are on `main` but
-  not registered in `package.json` `pi.extensions` until UI port stage P10 ([BACKLOG.md](BACKLOG.md#open)); Pi does not
-  load them from this package. omp-lite's own tool implementations are not carried over; RQW-tools wraps Pi's stock
+  ([Scroll](#scroll)). Compact tools, agent cards, thinking hiding and naming are registered in `pi.extensions`;
+  the native `RQW-theme` resource is registered separately in `pi.themes` ([UI activation](#ui-activation)). omp-lite's own tool implementations are not carried over; RQW-tools wraps Pi's stock
   tools ([Tools](#tools)). Reason: keep Pi's own behavior and add only agreed extensions. Carriers: `package.json`,
   `extensions/`. Since: `9ef1519`.
 - **Public repository** `[D-SCOPE-PUBLIC]`. [ARQAWA/my-pi](https://github.com/ARQAWA/my-pi) is public. Coordinator text
@@ -571,6 +570,136 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   promise every rare filesystem or long-path case. Process side: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
   Since: `9ef1519`.
 
+## UI activation
+
+- **Enable the ready interface now** `[D-UI-ENABLE-NOW]`. Owner: «1а».
+  Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry
+  `4035f0a6`, `2026-10-23T19:05:12Z`, under the repository session directory named in Provenance.
+  Coordinator text, option a, assistant entry `60ca78d9`, `2026-10-23T19:03:52Z`:
+  Включить сейчас всё готовое вместе с карточками агентов, а карточку ревьюера добавить позже, когда будет новый ревьюер. Ты получишь интерфейс в ближайшие часы.
+  Register thinking, naming, agent-ui and tool-ui now; statusbar is already registered.
+  Change of circumstances, coordinator text, not an owner answer: the owner answered 1а while the new reviewer was
+  still open. Since then the new reviewer has landed on `main` (`11b0fe2`), so the review card T14 is no longer
+  deferred. It is part of the same switch-on and is delivered with `RQW-agent-ui`: cards for `agent`, `code_writer`
+  and `shell_runner` and for `[review#N]` results, matched to the new reviewer's output.
+  Reason: deliver the ready interface at once; the one deferred part became ready before delivery.
+  Carriers: `package.json`, `extensions/RQW-agent-ui/`.
+- **Renderer order** `[D-UI-RENDERER-ORDER]`. Technical decision under the activation approval above:
+  preserve the existing extension order, then append `RQW-thinking`, `RQW-naming`, `RQW-agent-ui`, `RQW-tool-ui`.
+  Pi 1.4.0 `dist/core/extensions/loader.js` `loadExtensionsInternal` initializes paths in order;
+  `runner.js` `resolveToolRenderers` calls resolvers in load order with `next()` delegating to later resolvers.
+  Thus agent-ui is the outer resolver. With both agent-ui and tool-ui loaded, a collapsed wait result is
+  tool-ui's: the summary part `Waited for N agents` and the live block `wait <ids>`, per the owner's wait amendment
+  «1а 2а». agent-ui delegates to `next()` while collapsed. On Ctrl+O it draws its own box with the expanded wait
+  cards: header with id, status, model, effort and seconds, then the full answer verbatim. With tool-ui off,
+  agent-ui shows its collapsed wait cards. The order is explicit and tested, not a claim that reversing it
+  gives the same result.
+  `getMessageRenderer` returns the first matching extension renderer; agent-ui owns agent/code_writer/shell_runner
+  and `[review#N]` results. Thinking and naming register no competing tool/message renderer and keep the existing producers first.
+  Reason: preserve independent cards and compact tools without changing execution. Carrier: `package.json`.
+
+## Compact tool display
+
+- **Between-answer summaries** `[D-UI-TOOL-DISPLAY]`. Owner sources below name entries of
+  `2026-10-21T18-16-12-433Z_01a15fad-8f91-7306-bd46-1528008fbdc6.jsonl`, under the repository session directory.
+  Q3, entry `dcd5070f`, line 120:
+  > fork и patching pI недопустим. То, что мы делаем, это должно быть extension, расширение, всё, что угодно поверх PI. Мы не изменяем сам PI. Это, блядь, критически важно. Если мы что-то не можем реализовать без патча, это мы выбрасываем. Но надо пометить, что мы выбрасываем тогда из-за того, что мы не можем пропатчить, чтобы я, может, нашёл какую-то альтернативу этому.
+
+  Q5, entry `8b4929e4`, line 160, three separate spans around the owner's screenshot paths:
+  > Смотри я хочу что бы это было еще более компактно т.е. как сейчас в чате гпт, он пишет в строку что то типа
+  >
+  > Я хочу так же только со счетчиком чтений, записей и запусков
+  >
+  > И что бы последний ран висел раскрытым пока не начнется следующий, но он должен быть компактным, отображать только 4 строки вывода + статус строку, заголовк в первой строке, т.е. первая строка будет и название команды и первая строка я не знаю, короче подумай как это замутить.
+
+  Q6, entry `8f4a46a9`, line 170:
+  > Я не хочу скроить эти ебучие простыни вызовово файлов вот в чем концепт, я бы вообще все вызовы между ответами сворачивал в одну строку и хотел бы возможность развернуть оригинал
+
+  Concept/spacing approval and the latest fold choice (entries `7f3d2603` and `55287376`, lines 174 and 176),
+  recorded in the ledger as one line, the ellipsis is the ledger's:
+  > Насчет пустых строки между шагами. Терплю, делаем так. Да, концепт в целом одобряю. ... Третий вариант "А"
+
+  Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
+
+  All tool calls between assistant answers share a muted summary with confirmed edit/read/search/run/wait/other
+  counts. Latest top-level call leads; current call shows its header, last four output rows and status. The next
+  call folds the previous; answer text immediately folds the live block. Ctrl+O shows every original at its place
+  and toggles back. Native thinking spacer rows remain; stock Pi image output is unchanged. Public APIs only,
+  no Pi patch, private fields or method replacement. Unsupported nested-result details remain omitted, not invented.
+  Reason: compact progress without losing original calls. Carriers: `extensions/RQW-tool-ui/{index,groups,render,summary,live}.ts`,
+  its README, `package.json`, `test/isolation.test.ts` and `test/tool-ui-smoke.test.ts`.
+  Accepted appearance: owner entry `f7d11547`, line 702: "Бля, заебись, вообще кайф нахуй" (owner words as recorded in the ledger);
+  carrier `/tmp/my-pi-ui.html` and UI-port `browser-preview/index.html`. Visual approval is not runtime proof.
+
+## Agent cards
+
+- **Delivered results, not an agent board** `[D-UI-AGENT-CARDS]`. Owner: "Да с сабагентами +".
+  Source: the `18-16-12` session file named above, USER entry `96231cbd`, line 243. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
+  Agent/code_writer/shell_runner custom results show compact cards: ID, outcome, available actual
+  model/effort/duration, then the first nonempty answer line. Missing metadata stays omitted. The review card
+  (T14) is delivered with `RQW-agent-ui`: `[review#N]` results show a card matched to the new reviewer's output.
+  Delivered wait results: with both agent-ui and tool-ui loaded, the collapsed result is tool-ui's (summary part
+  `Waited for N agents`, live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards, each with
+  id, status, model, effort, seconds and the full answer verbatim; with tool-ui off, agent-ui shows its
+  collapsed wait cards. Stored content, execution and delivery do not change. A card shows one delivered
+  result as finished or failed, never a live agent state. There is no agent list, board or child-log view.
+  T17 cards belong to agent-ui, T18 indicator to statusbar: actual running counts by agents/workers/reviews come
+  from the existing activity producer, not a second registry in the cards. Ordinary busy letters shimmer silver;
+  compaction status and synchronized chrome shimmer gold; fully idle is a continuous rule. Title stays static gold.
+  The indicator's existing decision is [D-STATUSBAR-ACTIVITY](#status-bar).
+  Reason: readable delivered answers, independently switchable from activity. Carriers: `extensions/RQW-agent-ui/`,
+  `extensions/RQW-agent/activity.ts`, `extensions/RQW-statusbar/`, `package.json`, `INSTALL.md`.
+
+## Native theme
+
+- **Named resource, native selection** `[D-UI-NATIVE-THEME]`. Owner: «да».
+  Source: the `18-16-12` session file, USER entry `a6718225`, line 815, accepting coordinator proposal
+  `74a328d8`, line 814. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default). Coordinator text: an ordinary named Pi theme, selected once, persisted by Pi across
+  reload/restart, switched back through native theme selection rather than disabling an extension.
+  `pi.themes` distributes `./extensions/RQW-theme/theme.json`, named `RQW-theme`. Select through `/settings` -> Theme.
+  Pi may persist only the theme choice; auth and unrelated settings stay untouched. Native menus keep their structure
+  and behavior; supported roles and terminal-default delegation only, no universal terminal-canvas promise.
+  No `pi.extensions` entry, activation code, transient override or automatic restore-on-disable.
+  Reason: native persistence without unsupported lifecycle hooks. Carriers: `package.json`,
+  `extensions/RQW-theme/theme.json`, `INSTALL.md`; native resource coverage: `test/isolation.test.ts`.
+
+## Naming and thinking
+
+- **Automatic native session names** `[D-UI-NAMING]`. Owner sources in the `18-16-12` session file:
+  entry `67c70729`, line 930:
+  > 1а самые низкие ризонинги пусть генерит 10 вариантов на основе контекста
+  > 2а + после каждого компакшена на основе полного контекта
+  > 3 ручное не надо, токлько перегенрация и автовыбор лучшего по смыслу из вариантов внутри /rename-gen команда
+  > 4а
+
+  entry `8ae348b0`, line 971:
+  > враиант а
+  >
+  > RQW-statusbar +
+
+  entry `bb1bbcbb`, line 944: "Если упала генерация до 3х ретраев и потом варнинг если сдохло в итоге".
+  Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
+  Coordinator text: option a in entry `b4093268`, line 970 means at most four whitespace-separated words AND
+  32 Unicode code points. Prompt and validation enforce both; overlong candidates are rejected, never truncated.
+  Background generation runs once after first user input and after every successful compaction, using all available
+  projected context including summary and kept messages. Generate ten candidates and automatically select the best
+  valid candidate by meaning. Prefer `anthropic/claude-haiku-5-5`, otherwise authenticated `openai-codex/gpt-6-luna`,
+  at the model's lowest supported reasoning. No valid candidate is a failed attempt. Initial attempt plus up to
+  three retries; final warning through public `ctx.ui.notify` preserves the old name. `/rename-gen` uses the same
+  pipeline. New triggers/session switch cancel old generation; a native name change cancels the pending old trigger.
+  Public `pi.setSessionName` persists the name in native history and `/resume`. Native `/name` stays unchanged;
+  only the next automatic trigger or `/rename-gen` may overwrite a manual name. RQW-statusbar displays the current
+  native name as a static gold title, empty before a name exists, with its rule retained.
+  Reason: meaningful short names without blocking main work or a user candidate picker. Carriers:
+  `extensions/RQW-naming/{index,core}.ts`, `extensions/RQW-statusbar/index.ts`, `package.json`, `INSTALL.md`.
+- **Hide reasoning text only** `[D-UI-THINKING]`. Owner: «+».
+  Source: the `18-16-12` session file, USER entry `b3584b94`, line 886, accepting coordinator proposal
+  `227e51b7`, line 884 to hide reasoning text while retaining accepted native blank rows. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
+  `registerMarkdownTransformer` empties `assistant-thinking`; `setHiddenThinkingLabel("")` empties the hidden label.
+  Stored messages, history and model context remain unchanged; native spacer/click-region rows remain.
+  Reason: hide transcript reasoning without a Pi patch. Carriers: `extensions/RQW-thinking/index.ts`,
+  `package.json`, `INSTALL.md`; independently switchable through Pi's package filter and `/reload`.
+
 ## Structure
 
 - **Code-layout research night defaults** `[D-STRUCT-NIGHT-DEFAULTS]`. Coordinator record, not an owner quotation:
@@ -592,9 +721,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Carrier: this decision records choices for later implementation; it does not claim those changes are implemented.
 
 - **Everything is an extension** `[D-STRUCT-EXTENSIONS]`. One folder per extension under `extensions/`; a shipped
-  extension is listed in `package.json` `pi.extensions`, first `RQW-settings`, second `RQW-prompt`. Fifteen are listed.
-  `RQW-tool-ui`, `RQW-thinking`, `RQW-theme` and `RQW-naming` are on `main` but unregistered until UI port stage P10
-  ([BACKLOG.md](BACKLOG.md#open)). `pcli-vscode/` is the one non-Pi exception (`AGENTS.md`, [PCLI](#pcli)).
+  extension is listed in `package.json` `pi.extensions`, first `RQW-settings`, second `RQW-prompt`.
+  `RQW-theme` is data, distributed through `pi.themes`, not an extension. `pcli-vscode/` is the one non-Pi exception (`AGENTS.md`, [PCLI](#pcli)).
   Coordinator text (historical unverified attribution): "в этом репозитории мы всё будем делать extension... Первый
   extension — это будут настройки, второй — промты, настройки промта". Carriers: `package.json`, `extensions/`.
   Since: `10a864c`.
@@ -666,7 +794,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `details.results[].details.rqwToolsNested`, not used to retrospectively confirm that old handoff.
   Carriers: `extensions/RQW-tools/{nested-display.ts,nested.ts,codemode.ts,index.ts,jobs.ts}` and
   `extensions/RQW-tool-ui/{groups.ts,changes.ts}`; limits: [tool UI README](extensions/RQW-tool-ui/README.md#nested-result-metadata-and-remaining-limits).
-  No settings or registration change: tool UI still needs explicit loading until P10 updates the package manifest.
+  No settings change; registration of tool UI in the package manifest is in [UI activation](#ui-activation).
   Since: this nested-codemode-counts squash.
 
 - **Barrier eligibility tests** `[D-TOOLS-BARRIER-TESTS]`. Fixed and randomized barrier batches check maximal
@@ -934,8 +1062,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Coordinator text: the historical isolation quote is not verified in the permitted Pi USER sources.
   Reason: one feature flag must not require another extension to exist.
   Carrier: `extensions/`, `test/isolation.test.ts`, `test/isolation-run.ts`, `test/copies.test.ts`. Since: `81cafe3`.
-- **Registered coverage and pending UI registration** `[D-ISOLATION-COVERAGE]`. `test/isolation.test.ts` derives its tested extension list from `package.json` `pi.extensions`, checking local imports, independent loading, tool behavior and package-filter reload. On main, `RQW-naming`, `RQW-theme`, `RQW-thinking` and `RQW-tool-ui` exist but are not registered until P10 and are not covered by that registration-driven test; `RQW-agent-ui` is not on main. Registration work is tracked in [BACKLOG](BACKLOG.md).
-  Coordinator text. Reason: test coverage must not be implied for unregistered folders.
+- **Registered resource coverage** `[D-ISOLATION-COVERAGE]`. `test/isolation.test.ts` derives its tested extension list from `package.json` `pi.extensions`, checking local imports, independent loading, tool behavior and package-filter reload, including naming, thinking, agent-ui and tool-ui. It also checks unique resource registration, agent-ui before tool-ui and native package-loader discovery of `RQW-theme` with extensions disabled.
+  Coordinator text. Reason: registration and independent resource delivery need manifest-driven coverage; this is not a claim of physical-terminal or end-to-end proof.
   Carrier: `package.json`, `test/isolation.test.ts`, `test/isolation-run.ts`; [historical coverage](notes/decisions-evidence.md#isolation-coverage-history); `test/tool-ui-smoke.test.ts` separately tests tool UI. Since: `81cafe3`.
 - **Package switch and native limits** `[D-ISOLATION-SWITCH]`. Switch one extension off with the object-form package entry and the exact file exclusion `"extensions": ["-extensions/RQW-<name>/index.ts"]`, keeping the same source `git:github.com/ARQAWA/my-pi`; a directory-only exclusion does not match the file. The filter takes effect after reload or restart. `pi -e <dir>` bypasses package filters; choose individual entrypoint files and use `-ne` to avoid an installed copy. Built-ins use `-builtin:<name>`, not package filters. Pi preserves active tools on reload, so stock grep/find or codemode/tool_search may remain active after their RQW extension is disabled until a new session or restart.
   Coordinator text. Reason: use Pi's package controls without inventing a second switch mechanism.
@@ -972,7 +1100,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Coordinator text: technical realization of the parity agreement.
   Reason: children must not silently lose relevant caller capabilities.
   Carrier: `extensions/RQW-agent/index.ts` (`childSettings`), `extensions/RQW-agent/prompt.ts`, `extensions/RQW-review/index.ts`; `extensions/RQW-review/test/subagent.test.ts`. Since: `c86e9bb`.
-- **Title and explorer** `[D-AGENT-TITLE-EXPLORE]`. Optional `title` on start/restart appears in status, `results[i].display.title` and message `details.title`; delivered text keeps its `[agent#N]` form. Card rendering in `RQW-agent-ui` belongs to a pending branch, not main; see [BACKLOG](BACKLOG.md). `explore` on agent start selects a search leaf as defined by `[D-AGENT-EXPLORE-TOOLS]`.
+- **Title and explorer** `[D-AGENT-TITLE-EXPLORE]`. Optional `title` on start/restart appears in status, `results[i].display.title` and message `details.title`; delivered text keeps its `[agent#N]` form. Card rendering is `RQW-agent-ui`, see [Agent cards](#agent-cards). `explore` on agent start selects a search leaf as defined by `[D-AGENT-EXPLORE-TOOLS]`.
   Coordinator text: the explorer option reuses the existing runtime rather than adding a tool.
   Reason: retain compact metadata and a search mode without another lifecycle implementation.
   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`. Since: `c86e9bb`; explorer part reworded by `[D-AGENT-EXPLORE-TOOLS]` (earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0241).
@@ -1726,7 +1854,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner, keep grey and red, find analogues: «А когда запущено то, что было зелёное и фиолетовое, надо придумать им какие-то аналоги.» Source: `16-27-59:4544`.
   Owner, the choice: «По дизайню - бирюза сланец вибираю ответ C» Source: `16-27-59:4654`.
   Reason: option C of the comparison page gave the coolest pair with the least decoration; every text pair on the four cards meets WCAG AA 4.5:1 (minimum 4.56:1).
-  Carrier: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/test/schema.test.ts` (`approved-surfaces-exact`), `extensions/RQW-theme/README.md`. The theme is registered in `package.json` only in UI step P10 ([BACKLOG](BACKLOG.md) U12), so the owner sees the colours after P10.
+  Carrier: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/test/schema.test.ts` (`approved-surfaces-exact`), `extensions/RQW-theme/README.md`. The theme is registered in `package.json` `pi.themes` ([Native theme](#native-theme)); the owner selects it once through `/settings` -> Theme.
 
 ## Quality control
 

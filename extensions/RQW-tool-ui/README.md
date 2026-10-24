@@ -12,10 +12,9 @@ Compact display of tool calls in the TUI transcript. Concept approved by the own
 
 ## Current state
 
-The extension is wired to Pi: every tool call in the interactive transcript is drawn as described above. It is on main
-but not registered: `package.json` lists it neither under `pi.extensions` nor with a theme, so a normal install does not
-load it. It loads only when given explicitly, for example `pi -e /absolute/path/to/extensions/RQW-tool-ui/index.ts`.
-Registering it together with the other UI folders is open work, [U12](../../BACKLOG.md#u12).
+The extension is wired to Pi: every tool call in the interactive transcript is drawn as described above.
+`package.json` registers it in `pi.extensions`, after RQW-agent-ui, so normal package loading enables it.
+The theme is distributed separately through `pi.themes`, not as an extension.
 
 ### Wiring (`index.ts`, `render.ts`)
 
@@ -59,8 +58,9 @@ Registering it together with the other UI folders is open work, [U12](../../BACK
 ### Wait results
 
 `agent`, `code_writer`, `shell_runner` and `review` calls with `action: "wait"` count as `waited for N agents` in the
-summary line; their original results show under Ctrl+O. No card is drawn for wait results: there is no `RQW-agent-ui`
-extension on main, and agent cards are open work, [U05](../../BACKLOG.md#u05).
+summary line and the live block shows `wait <ids>`. RQW-agent-ui is registered before tool-ui; while collapsed it
+delegates to tool-ui, and Ctrl+O shows agent-ui's expanded wait cards with the full answers. Without tool-ui,
+agent-ui renders its collapsed wait cards.
 
 ### Data and render functions
 
@@ -147,5 +147,4 @@ for them. After the real job finishes, its compact parent metadata is available 
 `details.results[].details.rqwToolsNested`; it is not duplicated into the model-facing job text. This consumer does not
 use that later result to retrospectively confirm unfinished calls in the old codemode handoff.
 
-The consumer source is implemented but RQW-tool-ui remains unregistered in `package.json`: explicit loading is needed
-until P10 registration. This workaround does not enable the UI by itself.
+RQW-tool-ui is registered in `package.json` `pi.extensions`, after RQW-agent-ui.

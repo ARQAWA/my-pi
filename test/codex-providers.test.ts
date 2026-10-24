@@ -161,9 +161,11 @@ async function turn(session: AgentSession) {
 }
 
 describe("RQW-providers with RQW-codex", () => {
-	it("package manifest loads RQW-providers right before RQW-codex, as the last two extensions", () => {
+	it("package manifest loads RQW-providers right before RQW-codex", () => {
 		const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { pi: { extensions: string[] } };
-		assert.deepEqual(manifest.pi.extensions.slice(-2), ["./extensions/RQW-providers/index.ts", "./extensions/RQW-codex/index.ts"]);
+		const at = manifest.pi.extensions.indexOf("./extensions/RQW-providers/index.ts");
+		assert.ok(at >= 0, "RQW-providers is registered");
+		assert.deepEqual(manifest.pi.extensions.slice(at, at + 2), ["./extensions/RQW-providers/index.ts", "./extensions/RQW-codex/index.ts"]);
 	});
 
 	for (const order of ["providers-first", "codex-first"] as const) {

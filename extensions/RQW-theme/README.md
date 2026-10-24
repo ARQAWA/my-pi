@@ -3,9 +3,8 @@
 The `RQW-theme` colour theme for Pi 1.4.0, one asset: `theme.json`. It uses only Pi's native theme tokens.
 The owner's decisions are recorded in [Theme](../../DECISIONS.md#theme).
 
-**Registration.** The folder is on `main`, but `package.json` does not list the theme yet (`pi.themes`). It is
-registered in the UI integration step P10 (`BACKLOG.md` U12). Until then the owner does not see these colours;
-they appear after P10.
+**Registration.** `package.json` lists the theme in `pi.themes`. Select `RQW-theme` once through `/settings` ->
+Theme; Pi persists the choice across reload and restart, and the same selector switches back.
 
 ## Card backgrounds
 

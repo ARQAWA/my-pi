@@ -33,13 +33,27 @@ The model order and clamps are in the
 need no terminal setup: iTerm2, Terminal.app and the VS Code terminal send them as standard sequences, and Pi 1.4.0
 binds none of them itself.
 
-## Unregistered UI sources
+## Compact interface and theme
 
-The source folders `extensions/RQW-naming/`, `extensions/RQW-theme/`, `extensions/RQW-thinking/` and
-`extensions/RQW-tool-ui/` are on main but not registered in `package.json` until UI integration P10.
-There is no `pi.themes` entry and no `extensions/RQW-agent-ui/` on main. Normal installation and `pi -e <dir>`
-do not enable these sources. See [remaining UI integration](BACKLOG.md#u12). Do not register them during installation.
-Package isolation checks cover the registered `pi.extensions` entries, not these source folders.
+Normal package loading enables compact tool display, agent/worker cards, thinking-text hiding and automatic
+session naming. Agent, worker and review results (`[review#N]`) show cards. With both agent-ui and tool-ui loaded,
+a collapsed wait result is tool-ui's (`Waited for N agents` in the summary, `wait <ids>` in the live block);
+with tool-ui off, agent-ui shows its collapsed wait cards. Ctrl+O shows full original tool and agent results,
+including agent-ui's expanded wait cards, and folds back. Native thinking spacer rows remain and stock image
+output is unchanged.
+
+Naming runs in the background after the first user message and each successful compaction, using all available
+context. It generates ten candidates and automatically chooses the best by meaning. Generated names have at most
+four words and 32 Unicode code points; invalid names are rejected, not shortened. The model is
+`anthropic/claude-haiku-5-5`, falling back to authenticated `openai-codex/gpt-6-luna`, at its lowest supported reasoning.
+An initial failed attempt gets up to three retries, then a warning preserves the old name. `/rename-gen` regenerates.
+Native `/name` still works; only the next automatic trigger or `/rename-gen` may replace a manual name.
+RQW-statusbar shows the current native name as a static gold title above the input.
+
+For the user, not an automatic install step: open `/settings` -> Theme and choose `RQW-theme` once.
+Pi saves only the theme choice and reapplies it after `/reload` and restart. To switch back, choose another theme
+in the same native selector. Disabling a UI extension does not restore a previous theme. The theme is an independent
+`pi.themes` resource, with no activation extension. Preserve auth and all unrelated settings.
 
 ## Switch one extension off
 
@@ -60,6 +74,15 @@ excludes nothing.
 ```
 
 - It takes effect after `/reload` or a restart. To switch the extension on again, delete its line.
+- The compact UI switches independently with `-extensions/RQW-tool-ui/index.ts`,
+  `-extensions/RQW-agent-ui/index.ts`, `-extensions/RQW-thinking/index.ts` and
+  `-extensions/RQW-naming/index.ts`, one exclusion per extension. Tool-ui off restores stock old and new tool
+  calls, except that agent-ui then shows its collapsed wait cards; agent-ui off restores stock agent, worker and review results; thinking off restores native reasoning display;
+  naming off stops automatic generation and removes `/rename-gen`, leaving the persisted native name and `/name`.
+  The separate activity indicator and static title belong to RQW-statusbar, switched with
+  `-extensions/RQW-statusbar/index.ts` or `/statusbar off`; cards do not own that indicator. It shows the actual
+  running counts by agents, workers and reviews; ordinary busy letters shimmer silver, compaction shimmers gold, and a
+  fully idle rule is continuous.
 - After `/reload` Pi keeps the active tool set, so tools of a switched-off extension stay active, now Pi's own,
   until `/new` or a restart.
 - `pi -e <dir>` ignores this installed-package filter and loads the extensions listed in that directory's package

@@ -75,8 +75,9 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   `extensions/RQW-review/README.md#review-in-subagents`. Tests: `npm test`.
 - `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout, with the context bar as
   the input editor's bottom border and the session ID at the right end of its top border. Shows the GPT Fast lightning after the model name (main chat, `openai-codex` model, shimmer while working). On by default; `/statusbar [on|off]` toggles it and restores the stock editor and
-  footer when off. Elements, evidence and limits:
-  `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
+  footer when off. Its upper border shows the actual running counts by agents, workers and reviews from the activity
+  producer: ordinary busy letters shimmer silver, compaction shimmers gold, a fully idle rule is continuous.
+  Elements, evidence and limits: `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
   Shift+arrows open a model/effort draft chooser and take the first step before rendering: Up/Down stronger/weaker,
   Right/Left effort up/down. Plain or Shift arrows navigate; Enter commits once, Esc closes without setters.
@@ -136,13 +137,32 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   through `agent` as the whole `system`.
 - `.agents/roles/test-fixer.md`: the short role of the test-fix lane agents, passed as the `role` of an `agent`, not as
   the whole `system` ([PROCESS.md](PROCESS.md#task-pipeline)).
-- UI source folders `extensions/RQW-naming/`, `extensions/RQW-theme/`, `extensions/RQW-thinking/` and
-  `extensions/RQW-tool-ui/` exist on main but are not registered in the package until UI integration P10.
-  There is no `pi.themes` registration and no `extensions/RQW-agent-ui/` on main. Normal package loading does not
-  enable these UI sources; remaining integration is tracked in [BACKLOG.md](BACKLOG.md#u12).
+- `extensions/RQW-thinking/`: extension 16, hides main-transcript thinking text and the hidden-thinking label,
+  without changing stored messages or model context. Native blank rows remain. Independent package filter and
+  `/reload`; tests: `extensions/RQW-thinking/test/`.
+- `extensions/RQW-naming/`: extension 17, background native session names after first input and each successful
+  compaction, from all available context. Ten candidates, semantic auto-selection by `anthropic/claude-haiku-5-5`,
+  else authenticated `openai-codex/gpt-6-luna`, at the lowest supported reasoning. At most four words and 32 Unicode
+  code points, overlong names rejected, never truncated; initial attempt plus up to three retries, then a warning
+  preserving the old name. `/rename-gen` regenerates; native
+  `/name` stays unchanged. RQW-statusbar displays the native name as a static gold title.
+  Details: [Naming and thinking](DECISIONS.md#naming-and-thinking); tests: `extensions/RQW-naming/test/`.
+- `extensions/RQW-agent-ui/`: extension 18, compact delivered result cards for `agent`, `code_writer` and
+  `shell_runner` and for `[review#N]` results (the review card matches the new reviewer's output), full originals
+  through Ctrl+O. Loaded before tool-ui. With both loaded, a collapsed wait result is tool-ui's (`Waited for N agents`,
+  live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards; with tool-ui off, agent-ui shows its
+  collapsed wait cards. No activity-count producer, statusbar indicator or agent list here.
+  Tests: `extensions/RQW-agent-ui/test/`; independent package filter and `/reload`.
+- `extensions/RQW-tool-ui/`: extension 19, between-answer tool summaries, current call header plus last four output
+  rows and status, immediate folding on answer text, Ctrl+O originals. Native thinking spacing and stock image output
+  remain. Details: [Compact tool display](DECISIONS.md#compact-tool-display); tests: its `test/` and root
+  `test/tool-ui-smoke.test.ts`. Independent package filter and `/reload`.
+- `extensions/RQW-theme/theme.json`: native theme resource named `RQW-theme`, registered only in `pi.themes`, not
+  an extension. Select once through `/settings` -> Theme; Pi persists the choice across reload and restart.
+  Switch back through the same native selector. No activation code or unrelated settings writes.
 - Every registered package extension is self-contained and can be switched off alone (no import outside its folder,
-  its tests load only it); `test/isolation.test.ts` proves this for the entries in `pi.extensions`, not unregistered
-  source folders. `INSTALL.md` shows the switch; `DECISIONS.md` section Isolation carries the decision.
+  its tests load only it); `test/isolation.test.ts` proves this for the entries in `pi.extensions`
+  (`RQW-theme` is data in `pi.themes`, not an extension). `INSTALL.md` shows the switch; `DECISIONS.md` section Isolation carries the decision.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `notes/`: research notes, such as how the omp-lite prompt was built.
 - `WORKFLOW-MANIFEST.md`: the owner's personal working principles and aspirations, written in Russian for him.

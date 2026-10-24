@@ -2,11 +2,9 @@
 
 Independent native session naming for stock Pi 1.4.0. No Pi patches, wrappers,
 private fields, cross-extension imports, settings changes, or display components.
-This folder is on main but not registered in `package.json`, so a normal install
-does not load it. Load it explicitly with
-`pi -e /absolute/path/to/extensions/RQW-naming/index.ts`; without the flag it is off.
-Registration is open work, [U12](../../BACKLOG.md#u12). Native `/name`
-remains unchanged.
+Registered in `package.json` under `pi.extensions`, so normal package loading
+enables it. Switch it independently through Pi's package filter and `/reload`.
+Native `/name` remains unchanged.
 
 ## Behavior
 
@@ -67,8 +65,8 @@ Reason: short meaningful native names without blocking the main agent, a manual
 candidate picker, or loss of a previous name on failure. Carriers: `core.ts`
 (candidate generation/validation/selection) and `index.ts` (triggers, cancellation,
 retries, notification, native persistence). The approved variant is four words
-AND 32 Unicode code points. DECISIONS.md has no entry for this extension; while it
-is unregistered, this README is its record.
+AND 32 Unicode code points. The root [naming decision](../../DECISIONS.md#naming-and-thinking)
+records the accepted contract and package registration.
 
 ## Verification
 

@@ -32,8 +32,13 @@
       "./extensions/RQW-send-now/index.ts",
       "./extensions/RQW-mouse/index.ts",
       "./extensions/RQW-providers/index.ts",
-      "./extensions/RQW-codex/index.ts"
-    ]
+      "./extensions/RQW-codex/index.ts",
+      "./extensions/RQW-thinking/index.ts",
+      "./extensions/RQW-naming/index.ts",
+      "./extensions/RQW-agent-ui/index.ts",
+      "./extensions/RQW-tool-ui/index.ts"
+    ],
+    "themes": ["./extensions/RQW-theme/theme.json"]
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.4.0",

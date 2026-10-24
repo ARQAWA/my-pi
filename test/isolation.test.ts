@@ -4,7 +4,9 @@
 // (isolation-run.ts), because an extension may patch Pi's classes for the life of the process.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { dirname, join, resolve, sep } from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -12,12 +14,41 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
 const RUN = join(HERE, "isolation-run.ts");
-const NAMES: string[] = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).pi.extensions.map(
+const MANIFEST = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+const NAMES: string[] = MANIFEST.pi.extensions.map(
 	(p: string) => /extensions\/([^/]+)\//.exec(p)![1],
 );
 
+it("isolation: manifest resources are unique and agent cards precede compact tool rendering", () => {
+	assert.equal(new Set(MANIFEST.pi.extensions).size, MANIFEST.pi.extensions.length);
+	assert.deepEqual(NAMES.slice(-4), ["RQW-thinking", "RQW-naming", "RQW-agent-ui", "RQW-tool-ui"]);
+	assert.ok(NAMES.indexOf("RQW-agent-ui") < NAMES.indexOf("RQW-tool-ui"));
+	assert.deepEqual(MANIFEST.pi.themes, ["./extensions/RQW-theme/theme.json"]);
+	assert.ok(!NAMES.includes("RQW-theme"));
+});
+
+it("isolation: the native package loader discovers the manifest theme without extensions", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "rqw-theme-resource-"));
+	const agentDir = join(dir, "agent");
+	const cwd = join(dir, "work");
+	mkdirSync(agentDir);
+	mkdirSync(cwd);
+	writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ packages: [ROOT] }));
+	try {
+		const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: SettingsManager.create(cwd, agentDir),
+			noExtensions: true, noSkills: true, noPromptTemplates: true, noContextFiles: true });
+		await loader.reload();
+		assert.deepEqual(loader.getExtensions().extensions, []);
+		assert.deepEqual(loader.getThemes().diagnostics, []);
+		assert.deepEqual(loader.getThemes().themes.map(theme => theme.name), ["RQW-theme"]);
+		assert.equal(loader.getThemes().themes[0].sourcePath, join(ROOT, MANIFEST.pi.themes[0]));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 // Deliberately inherit apparently configured providers, not real keys. No owner configuration is changed.
-const POISON = { ANTHROPIC_API_KEY: "isolation-not-a-real-key", OPENROUTER_API_KEY: "isolation-not-a-real-key" };
+const POISON = { OPENROUTER_API_KEY: "isolation-not-a-real-key" };
 type Tool = { name: string; by: string; description: string };
 type Run = {
 	loaded: string[]; errors: string[]; tools: Tool[]; turn: string[]; finished: boolean;

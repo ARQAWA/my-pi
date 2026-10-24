@@ -9,7 +9,6 @@ model context keep every thinking block unchanged.
 - Pi's own spacer and click-region rows around a thinking block remain; one or two blank rows per model step with
   thinking are an accepted native limit, not a zero-row promise. No Pi patch, no private state.
 
-Status: on main but not registered in `package.json`, so a normal install does not load it. Load it explicitly with
-`pi -e /absolute/path/to/extensions/RQW-thinking/index.ts`; without the flag it is off. Registration is open work,
-[U12](../../BACKLOG.md#u12). Tests: `node --test extensions/RQW-thinking/test/`
+Registered in `package.json` under `pi.extensions`, so normal package loading enables it. Switch it independently
+through Pi's package filter and `/reload`. Tests: `node --test extensions/RQW-thinking/test/`
 (real interactive mode, scripted faux model, isolated temporary folders).

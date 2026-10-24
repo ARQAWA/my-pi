@@ -25,8 +25,8 @@ are leaves. This extension imports no other RQW extension. Optional RQW-tools de
   one schema field reuses the whole agent runtime and adds no tool to every request.
 - `title` (optional, 3-5 words; `agent`, `code_writer`, `shell_runner`, `start` and `restart`, kept on restart) is shown
   as `title` in `status`, in the wait result's display data (`results[i].display.title`) and in the message
-  `details.title`. Nothing on main draws a card from it: there is no `RQW-agent-ui` extension here, and a card renderer is
-  open work, [U05](../../BACKLOG.md#u05). The delivered content keeps its `[agent#N] ...` format.
+  `details.title`. The package registers RQW-agent-ui before RQW-tool-ui for delivered-message cards and wait-result
+  cards: collapsed waits are tool-ui's when it is loaded, Ctrl+O shows agent-ui's expanded wait cards. The delivered content keeps its `[agent#N] ...` format.
 - The `agent` description carries only generic when/when-not advice adapted from Cursor (not for narrow questions,
   one or two known files or a single search; parallel starts for independent areas; full context and the exact
   return; trust the result; the user does not see it), no coordinator rules.

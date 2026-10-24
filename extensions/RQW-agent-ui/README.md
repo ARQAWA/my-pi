@@ -7,8 +7,8 @@ No Pi patches, method replacement or wrapping, private fields, component-tree sp
 are allowed. Only public extension and TUI APIs are used.
 
 Current state: the agent/worker card (`card.ts`, `fit.ts`) and its wiring to both ways a result arrives (`index.ts`,
-`wait.ts` and `self.ts`, below), plus the review custom-message card (`review.ts`). Package registration belongs to
-the integration task and is not changed here. The upper-input activity indicator is not here (RQW-statusbar).
+`wait.ts` and `self.ts`, below), plus the review custom-message card (`review.ts`). The package registers it in
+`pi.extensions` before RQW-tool-ui. The upper-input activity indicator is not here (RQW-statusbar).
 
 ## Wiring (`index.ts`, `wait.ts`, `self.ts`)
 

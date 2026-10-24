@@ -44,7 +44,8 @@ writeFileSync(settingsFile, JSON.stringify({ packages: [entry(off)] }));
 process.chdir(cwd);
 process.env.PI_CODING_AGENT_DIR = agentDir;
 for (const key of Object.keys(process.env)) if (/(?:_API_KEY|_TOKEN|_SECRET)$/.test(key)) delete process.env[key];
-process.env.ANTHROPIC_API_KEY = "isolation-not-a-real-key";
+// Keep the unrelated-provider poison, but no authenticated naming model: this tool-isolation fixture
+// scripts only the main Sol model, not Haiku/Luna. The network guard remains active for every call.
 process.env.OPENROUTER_API_KEY = "isolation-not-a-real-key";
 
 // A 1M model, so the session window shows whether RQW-context acts. A listed RQW-models ID, since
