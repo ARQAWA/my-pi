@@ -25,6 +25,8 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   default prompt prefix and appends the workstation, critical, environment and date blocks.
 - `extensions/RQW-tools/`: extension 3, the base tools. Stock `read`, `bash`, `edit`, `write`, `grep`, `find` with our
   descriptions (`descriptions/*.md`), multi-file `edit` and `write`, and the ordered barrier (Pi's `codemode` is one call of it).
+  `read` answers an identical repeat of an unchanged range with a one-line note unless `force: true`, under strict
+  turn and token limits (`unchanged.ts`, `DECISIONS.md` Tools, Unchanged-read note).
   An eligible call still running after 12 s returns as a background job `job#N`; `job` waits for or checks it and
   kills process or queued jobs. By approved design, a running file-tool job such as `read`, `grep` or `find` cannot
   be killed: `job kill` reports `cannot_kill`, and it finishes on its own. A bash call with its own timeout of 13 s

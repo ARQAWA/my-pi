@@ -20,9 +20,13 @@ import { readSpellings, scopeOf } from "./keys.ts";
 import { createNestedBarrier } from "./nested.ts";
 import { editRenderers, writeRenderers } from "./render.ts";
 import { installSelectionIntent, noToolSelection } from "./selection.ts";
+import { createReadSchema, createUnchangedReads } from "./unchanged.ts";
 import { createWriteSchema, executeWrite, prepareWriteArguments } from "./write.ts";
 
 const NO_LIMIT = 100000;
+
+/** The top-level call a read runs in: what the unchanged-read note needs to find the model's copy of the content. */
+type ReadCall = { id: string; ctx: any; job: JobHandle };
 
 /** Adds note lines to a tool result as one more text block; undefined entries are skipped. */
 function appendNotes(result: any, notes: (string | undefined)[]): any {
@@ -209,7 +213,7 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 						for (const n of portNotes) job.note(n);
 						try {
 							await job.begin();
-							const result = await withFiles(name, dir, params, true, () => run(id, params, job.signal, job.onUpdate, ctx, job));
+							const result = await withFiles(name, dir, params, true, () => run(id, params, job.signal, job.onUpdate, ctx, job), { id, ctx, job });
 							// The files a foreground bash command certainly wrote are the caller's own writes (effects reports of
 							// its running jobs list them under `yours`); a background job's writes are its own effects.
 							if (footprint && !job.backgrounded()) for (const f of footprint.written) recordWrite(owner, label, "bash", f);
@@ -229,6 +233,8 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 	const label = jobs.session;
 	// Last refused write per session (P1): repeating the identical call overwrites.
 	let refused: string | undefined;
+	// What this session's reads showed, for the unchanged-read note (unchanged.ts).
+	const unchanged = createUnchangedReads();
 
 	/**
 	 * The process-wide `git:`/`pkg:` claim of a bash call (H1), or nothing for other calls. Resolves when the call may
@@ -249,7 +255,7 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 	 * someone else changed since this session last saw it (once; the identical retry passes), the torn-read check and
 	 * the record of what this session saw or wrote. Notes go only into top-level results: a script gets stock values.
 	 */
-	async function withFiles(name: string, dir: string, params: any, top: boolean, work: () => Promise<any>): Promise<any> {
+	async function withFiles(name: string, dir: string, params: any, top: boolean, work: () => Promise<any>, call?: ReadCall): Promise<any> {
 		// Chosen when the call is about to run, after the calls it waited for: an earlier bash of the same response may
 		// have created the spelling stock read will open. Read opens the first existing spelling stock read tries (AM/PM,
 		// NFD, curly quote); the lock and the ledger key that one.
@@ -258,10 +264,10 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 			: ["edit", "write"].includes(name) ? filePaths(params, dir) : [];
 		if (!files.length) return work();
 		// One critical section per file across all sessions: the check, the stock tool and the record (P1).
-		return withFileLock(files, () => checkedFiles(name, files, dir, params, top, work));
+		return withFileLock(files, () => checkedFiles(name, files, dir, params, top, work, call));
 	}
 
-	async function checkedFiles(name: string, files: string[], dir: string, params: any, top: boolean, work: () => Promise<any>): Promise<any> {
+	async function checkedFiles(name: string, files: string[], dir: string, params: any, top: boolean, work: () => Promise<any>, call?: ReadCall): Promise<any> {
 		const shownPath = (f: string) => { const r = relative(dir, f); return r && !r.startsWith("..") ? r : f; };
 		const running = jobs.runningJobs();
 		if (name === "write") {
@@ -275,6 +281,13 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 		}
 		const notes = top ? files.map((f) => changeNote(owner, f, shownPath(f), running)) : [];
 		const before = name === "read" ? stat(files[0]) : undefined;
+		// Top-level reads only: a codemode script gets the content it asked for, never a note. Any ledger note means
+		// something else touched the file, so the content comes back too.
+		const skippable = name === "read" && top && !!call && !params?.force;
+		if (skippable && notes.every((n) => !n)) {
+			const note = await unchanged.check(call.ctx, files[0], params);
+			if (note) return { content: [{ type: "text", text: note }] };
+		}
 		let result: any;
 		try {
 			result = await work();
@@ -287,7 +300,11 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 			const after = stat(files[0]);
 			if (before && after && (before.mtimeMs !== after.mtimeMs || before.size !== after.size)) {
 				if (top) notes.push(`note: ${shownPath(files[0])} changed while it was being read; read it again.`);
-			} else recordSeen(owner, files[0], after);
+			} else {
+				recordSeen(owner, files[0], after);
+				// A read that went to the background hands the model a job placeholder, not this content.
+				if (top && call && !call.job?.backgrounded()) await unchanged.remember(call.ctx, files[0], params, call.id, result);
+			}
 		} else {
 			const tool = top ? name : `${name} in a codemode script`;
 			const perFile = result?.details?.files;
@@ -319,11 +336,12 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 	// The factory-time definitions only carry registration metadata (parameters, renderers, prepareArguments);
 	// execution builds a definition with the session's settings.
 	const read: any = createReadToolDefinition(cwd);
-	register("read", read, { ...notDefault, description: description("read") }, (id, params, signal, onUpdate, ctx) => {
+	register("read", read, { ...notDefault, description: description("read"), parameters: createReadSchema(read.parameters) }, (id, params, signal, onUpdate, ctx) => {
+		const { force: _force, ...stockParams } = params ?? {};
 		const s = sessionSettings();
 		const options = s ? { autoResizeImages: s.images?.autoResize ?? true } : undefined;
 		const def: any = createReadToolDefinition(ctx?.cwd || process.cwd(), options);
-		return def.execute(id, params, signal, onUpdate, ctx);
+		return def.execute(id, stockParams, signal, onUpdate, ctx);
 	});
 
 	const bash: any = createBashToolDefinition(cwd);

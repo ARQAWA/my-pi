@@ -104,8 +104,10 @@ describe("registration", () => {
 			grep: createGrepToolDefinition(cwd),
 			find: createFindToolDefinition(cwd),
 		};
+		// read is the stock parameters plus the deliberate optional `force` (unchanged-read note)
 		for (const name of ["read", "bash", "grep", "find"]) {
-			assert.deepEqual(Object.keys(tools[name].parameters.properties), Object.keys(stock[name].parameters.properties), name);
+			const expected = Object.keys(stock[name].parameters.properties);
+			assert.deepEqual(Object.keys(tools[name].parameters.properties), name === "read" ? [...expected, "force"] : expected, name);
 			assert.deepEqual(tools[name].parameters.required, stock[name].parameters.required, name);
 		}
 		const edit = tools.edit.parameters;

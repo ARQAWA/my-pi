@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { it } from "node:test";
 import type { ExtensionAPI, NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
 import prompt from "../index.ts";
@@ -157,4 +158,9 @@ it("bash metadata follows selectedTools minus hiddenTools while path facts stay"
 		assert.equal(input.customPrompt!.includes("the bash tool runs bash"), visible);
 		assert.match(input.customPrompt!, /paths: absolute like .*programs on PATH:/);
 	}
+});
+
+it("SYSTEM.md carries the rule against rereading a file just to verify your own change", () => {
+	const system = readFileSync(new URL("../SYSTEM.md", import.meta.url), "utf-8");
+	assert.ok(system.includes("never reread a file just to verify your own change"));
 });

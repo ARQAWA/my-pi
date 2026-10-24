@@ -83,8 +83,8 @@ Provenance:
   Owner (`16-27-59:5119`, entry `f6282fe9`), no reread to verify an own successful edit: «Когда мы правки делаем, мы знаем, в каких строках что должно быть написано. И если справка легла правильно, то мы знаем о том, что у нас там всё исправлено и всё. Не надо вообще читать файл для этого.»
   This ships as one line in the `edit` and `write` descriptions and in `extensions/RQW-prompt/SYSTEM.md`: a successful
   edit or write means the file holds the new text; do not reread it only to verify.
-  Follow-up read cache, approved and built directly after WEB-SEARCH with no pre-build measurement or trial:
-  [BACKLOG.md](BACKLOG.md#token-efficiency), reviewed at merge plus 3 days in
+  Follow-up read cache, approved and built directly with no pre-build measurement or trial:
+  [D-TOOLS-UNCHANGED-READ](#tools), reviewed at merge plus 3 days in
   [BACKLOG.md](BACKLOG.md#token-efficiency-review). Coordinator question (`16-27-59:5122`): "Его делаем после веб-поиска?"
   Owner (`16-27-59:5123`, entry `d0a9a090`): «да» Owner (`16-27-59:5131`, entry `1b3abc69`) on the mechanism: «Эта механика должна быть абсолютно полностью инженерной.»
   Owner (`16-27-59:5135`, entry `171f4d82`), no trials: «через три дня после merge надо будет сделать review всех старых сессий на предмет того, помогло нам это или нет. И всё. Не будем никаких делать испытаний и прочей хуйни.»
@@ -575,6 +575,47 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   step 4. Since: `34abcd5`.
 
 ## Tools
+
+- **Unchanged-read note** `[D-TOOLS-UNCHANGED-READ]`. `read` of RQW-tools answers an identical repeat of an unchanged range
+  with one line instead of the text, as one engineered, deterministic rule with no prompt-dependent behavior. Approved
+  by the owner and built directly, with no measurement and no trial before the build. Coordinator question
+  (`16-27-59:5122`): "Его делаем после веб-поиска?" Owner (`16-27-59:5123`, entry `d0a9a090`): «да»
+  Owner (`16-27-59:5131`, entry `1b3abc69`): «Эта механика должна быть абсолютно полностью инженерной.»
+  Owner (`16-27-59:5135`, entry `171f4d82`): «через три дня после merge надо будет сделать review всех старых сессий на предмет того, помогло нам это или нет. И всё. Не будем никаких делать испытаний и прочей хуйни.»
+  Owner (`16-27-59:5139`, entry `e7d58c49`): «У агента должна быть возможность зафорсить чтение.»
+  Owner (`16-27-59:5111`, entry `8295a6f4`): «И там уже агент сам разберётся, перечитывать ему заново или нет.»
+  Owner (`16-27-59:5119`, entry `f6282fe9`), no reread to verify an own successful edit: «Не надо вообще читать файл для этого.»
+  At the owner's explicit request, passed on by the coordinator, it is built now, ahead of the WEB-SEARCH
+  prerequisite; that message is not quoted here.
+  Coordinator text (`16-27-59:5138`, `5140`): the numbers and that the note names the flag. The rule, in
+  `extensions/RQW-tools/unchanged.ts` and `index.ts` (`checkedFiles`):
+  1. Per session and tool set, a full top-level text read is remembered by resolved file, `offset` and `limit`, with the
+     file's mtime, the sha256 of its bytes and the id of the tool call that returned it.
+  2. An identical repeat returns the note `unchanged since your last read of this range; its text is earlier in this
+     conversation. To get the content again, call read with force: true.` only when that tool result is still in the
+     session branch, no compaction entry follows it, no `context_edit` entry changed or removed that result (Pi
+     drops or replaces it in the model context then), at most 10 assistant messages (turns, the one making the call included) and at most
+     30000 tokens (Pi's `estimateTokens` over the message, `custom_message` and `branch_summary` entries after it) came
+     since, and the mtime and the hash are both unchanged. The latest `context_edit` of a later entry counts at the larger
+     of its raw and replacement tokens; an omitting edit counts the raw entry, which is only too high. Any other case, an external change included, returns the
+     normal content.
+  3. `force: true` always returns the normal content and counts as a full read. The stock tool never sees `force`.
+  4. Images, errors and a file that changed while it was read are never remembered. An image is what Pi's own
+     `detectSupportedImageMimeTypeFromFile` says it is, the detector the stock `read` uses, so an image the stock tool
+     could not process and answered with text only is never remembered either and the next read retries it. A truncated text read is remembered
+     like any text; its identical repeat shows the same truncated text, and the continuation `offset=N` is a different range.
+  5. Subagents are independent: each tool set has its own memory and its own session entries.
+  6. A read inside a codemode script (call id with `/`) always returns the content and is not remembered: the script
+     is a program that needs the data, the model never saw it. A context with no session entries gets the content.
+  7. A ledger note on the file (someone else changed it) also means content.
+  Taken by default, reversible by the owner: rules 4 to 7 and whole-file hashing were not asked for; they are the
+  conservative choice. The state lives in session entries Pi already keeps, so no extension event hook is needed and
+  compaction, branch changes and `/resume` need no extra handling. Reason: the model often rereads an unchanged file
+  within a few turns; the repeat costs the file's tokens again and the first copy is still in context.
+  The review of the effect is [TOKEN-EFFICIENCY-REVIEW](BACKLOG.md#token-efficiency-review).
+  The one-line prompt rule for a successful edit or write already ships ([D-WORK-GOLDEN-RULE](#work-policy)).
+  Carriers: `extensions/RQW-tools/{unchanged.ts,index.ts,descriptions/read.md}`, tests
+  `extensions/RQW-tools/test/unchanged-read.test.ts`.
 
 - **Nested codemode display facts** `[D-TOOLS-NESTED-DISPLAY]`. Owner (`16-27-59:3117`): «3а».
   Meaning: assistant question 3, option a at line 3116 proposed later saving nested edit counts and bash exit codes

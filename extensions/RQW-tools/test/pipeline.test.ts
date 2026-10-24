@@ -483,7 +483,7 @@ describe("pipeline: real agent loop, real tools, no model", () => {
 		assert.deepEqual(run.modelTools.map((t) => t.name).sort(), expected, "tools in the model request");
 
 		const props = (name: string) => run.modelTools.find((t) => t.name === name)!.parameters.properties;
-		assert.deepEqual(Object.keys(props("read")).sort(), ["limit", "offset", "path"]);
+		assert.deepEqual(Object.keys(props("read")).sort(), ["force", "limit", "offset", "path"]);
 		assert.deepEqual(Object.keys(props("bash")).sort(), ["command", "timeout"]);
 		assert.deepEqual(Object.keys(props("grep")).sort(), ["context", "glob", "ignoreCase", "limit", "literal", "path", "pattern"]);
 		assert.deepEqual(Object.keys(props("find")).sort(), ["limit", "path", "pattern"]);
