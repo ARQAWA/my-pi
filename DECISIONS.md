@@ -87,7 +87,7 @@ Provenance:
   and at most 30000 context tokens ago, otherwise full content.
   Reason: tokens are a cost the owner wants spent only where nothing simpler works. Carriers:
   [PROCESS.md, Golden rule](PROCESS.md#golden-rule), the owner's own record in
-  [WORKFLOW-MANIFEST.md](WORKFLOW-MANIFEST.md#золотое-правило), the code reviewer `.agents/reviewers/code.md`, the
+  [WORKFLOW-MANIFEST.md](WORKFLOW-MANIFEST.md#золотое-правило), the code reviewer `.pi/agents/code-reviewer.toml`, the
   review criterion line of every brief (the reviewer profiles in `extensions/RQW-review/profiles/` check custom criteria), and the
   product line in `extensions/RQW-prompt/SYSTEM.md` (a separate agent edits it with its prompt test).
   Since: process-pipeline squash.
@@ -258,10 +258,17 @@ Opus 5.5 Low — это слишком дорого»
   docs-only work needs no extra tests; a squash of the tested head is not retested. Windows
   Node tooling runs through Git Bash; the existing CI `pwsh` bootstrap is allowed infrastructure. Reason: no idle
   reruns. Carrier: [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns). Since: `8f2ea64`.
+- **Bounded code-review profile** `[D-WORK-CODE-PROFILE]`. Owner, current code-review prompt task:
+  «они должны быть на Sol 6.1 Low, должны работать супербыстро и суперчётко»
+  The project-native `code-reviewer` profile replaces the Markdown role. Its instructions carry the read-only,
+  line-by-line bounded review standard; [PROCESS.md](PROCESS.md#independent-review) defines invocation.
+  Reason: one discoverable role and one source for its instructions and model defaults.
+  Carrier: `.pi/agents/code-reviewer.toml`; source: the owner's messages supplied with this task.
 - **Final checks and code reviewer** `[D-WORK-FINAL-CHECK]`. Work ends with an independent completeness-and-consistency
-  check; large code changes also get a separate bug/quality reviewer through `agent` with `.agents/reviewers/code.md` as its
-  system prompt, small ones one combined review ([D-PIPELINE-COMBINED-REVIEW]). Installed Pi is updated only for relevant runtime changes. Reason: independent proof without new
-  product tools. Carriers: [PROCESS.md, Independent review](PROCESS.md#independent-review), `.agents/reviewers/code.md`.
+  check; large code changes also get a separate bug/quality reviewer through `agent_type: "code-reviewer"`,
+  small ones one combined review ([D-PIPELINE-COMBINED-REVIEW]). Installed Pi is updated only for relevant runtime changes.
+  Reason: independent proof without new product tools. Carriers:
+  [PROCESS.md, Independent review](PROCESS.md#independent-review), `.pi/agents/code-reviewer.toml`.
   Since: `8f2ea64`.
 - **Deterministic delivery quality** `[D-WORK-DELIVER-CHECK]`. Owner (`16-27-59:440`, approval `16-27-59:450`):
   «Теперь смотри насчет выполнения задач и пробелов, которые ты нашел. Я же не буду всегда тебя переспрашивать. Если бы я не спросил, ты бы об этом не узнал. Надо поэтому сделать какой-то процесс, как детерминированно эту проблему решить на постоянке, чтобы мне не надо было тебя постоянно переспрашивать, чтобы ты сам следил за качеством. Надо твое предложение по тому, как мы этот пробел будем закрывать.»

@@ -170,7 +170,7 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
 - `WORKFLOW-MANIFEST.md`: the owner's personal working principles and aspirations, written in Russian for him.
 - `PROCESS.md`: the mandatory development procedure, from research and questions to autonomous squash delivery.
 - `scripts/deliver-check.mjs`: the pre-merge gate, `npm run deliver-check -- <branch> <message-file>`; see `PROCESS.md` Delivery.
-- `.agents/reviewers/code.md`: the separate read-only bug and code-quality reviewer prompt, used through `agent`.
+- `.pi/agents/code-reviewer.toml`: the read-only bug and code-quality profile, used through `agent_type: "code-reviewer"`.
 - `DECISIONS.md`: active accepted decisions with their reason, verbatim owner source and carrier.
 - `DECISIONS-ARCHIVE.md`: append-only verbatim superseded and obsolete decisions with replacement and commit
   provenance. Read only when checking history.

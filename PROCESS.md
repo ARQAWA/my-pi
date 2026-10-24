@@ -329,7 +329,7 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
   for small work and `highreview` with `agent_type: "bossy"` for large work. An answer or report without changes
   needs no review. Explicit owner requirements for a review take precedence.
 - Small work is at most 100 added plus deleted lines, all inside one extension, with no owner-visible behavior change.
-  One combined result and code review covers it: one `agent` reviewer given the result criteria and `.agents/reviewers/code.md`,
+  One combined result and code review covers it: one `agent` with `agent_type: "code-reviewer"` given the result criteria,
   recorded as `Combined-review: agent#N CLEAN`. Large work and any owner-visible behavior change get the separate
   result review and code review below. A QA fix, a workflow change and a test-integrity trigger are never small.
   `deliver-check` enforces the line limit and the single extension; that reviewer verifies that no owner-visible
@@ -356,8 +356,9 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
   the `tests.yml` `paths-ignore` filters used by `scripts/deliver-check.mjs`, considering both base and head filters.
   This includes extension READMEs even though their contents are prose. Root Markdown, `notes/**` and `.agents/**`
   alone are excluded by the current filters. Workflow logic is executable configuration and needs code review too.
-  Read `.agents/reviewers/code.md` and pass it as the complete `system` to an `agent` subagent, choosing its model and
-  reasoning from the table above. Its task brief includes the changed files, diff, callers, relevant tests and evidence.
+  Start an `agent` with `agent_type: "code-reviewer"`; its profile supplies the model, effort and review instructions.
+  Its task brief defines the exact review scope and permitted supporting context, changed files, diff, callers,
+  relevant tests and evidence.
   This role checks bugs, regressions and meaningful code quality, not a second requirements ritual.
 - Result-review verdicts and admission, for the `spotty` and `bossy` profile agents only; the code and
   test-integrity reviewers follow the next bullet. `CLEAN` with a complete `CHECKED:` and no `UNCHECKED:` passes the pass; run no extra pass for confidence,
@@ -375,8 +376,8 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
   no self-check replaces it: launch it once more on the unchanged object, and if it fails again tell the owner and wait.
   When this review contract changes, validate it against known defective, corrected and missing-source examples before
   claiming improved detection; these checks are not extra rounds in ordinary task reviews.
-- Code-review, test-integrity and `Combined-review` findings (`.agents/reviewers/code.md`,
-  `agent_type: "test-reviewer"`; the combined reviewer also uses `code.md`): admit
+- Code-review, test-integrity and `Combined-review` findings (`agent_type: "code-reviewer"`,
+  `agent_type: "test-reviewer"`; the combined reviewer uses the same code profile): admit
   real evidenced defects, not taste or unlikely hypotheticals. Check findings rather than accepting them just because a
   quote exists. Main validates real findings and routes admitted fixes to subagents in one batch; explain rejected
   findings with evidence. Subagents recheck affected parts and checks, not untouched parts. The result-review quote and
