@@ -56,9 +56,17 @@ describe("RQW-theme strict native schema", () => {
 	});
 
 	it("approved-surfaces-exact", () => {
-		assert.equal(theme.vars.coal, "#181818");
-		assert.equal(theme.colors.toolPendingBg, "coal");
-		assert.equal(theme.colors.toolSuccessBg, "coal");
+		// Card colours, option C of the comparison page (DECISIONS.md Theme): grey running, turquoise success,
+		// dark red error, slate agent answer. All four are direct hex values, no shared variable.
+		assert.equal(theme.colors.toolPendingBg, "#222222");
+		assert.equal(theme.colors.toolSuccessBg, "#062b29");
+		assert.equal(theme.colors.toolErrorBg, "#351c22");
+		assert.equal(theme.colors.customMessageBg, "#192538");
+		assert.equal("coal" in theme.vars, false);
+		// Neighbouring surfaces stay as they were: the export info panel keeps `panel`, selected rows keep `cardHi`.
+		assert.equal(theme.vars.panel, "#1c1b1a");
+		assert.equal(theme.export.infoBg, "panel");
+		assert.equal(theme.colors.selectedBg, "cardHi");
 		assert.equal(theme.vars.card, "#232120");
 		assert.equal(theme.colors.userMessageBg, "card");
 	});

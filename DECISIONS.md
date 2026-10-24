@@ -1633,6 +1633,15 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   remains RQW-providers 14 followed by RQW-codex 15. Limits for foreign non-cooperating wrappers:
   `extensions/RQW-providers/README.md`; research: `notes/anthropic-adapter.md`. Since: `2bf5eac`.
 
+## Theme
+
+- **Card background colours** `[D-THEME-CARD-COLORS]`. The four card surfaces of `RQW-theme` are `toolPendingBg` `#222222` (running, dark grey), `toolSuccessBg` `#062b29` (finished, turquoise), `toolErrorBg` `#351c22` (failed, dark red) and `customMessageBg` `#192538` (agent answer, slate). Grey and red keep the owner's choice; turquoise and slate are the analogues of the old green and purple, shifted from green toward blue and tied to the cool text of the source layout. All four have equal OKLCH lightness of about 26 %. They are direct hex values, so no other token changes: `infoBg` keeps `panel`, `selectedBg` keeps `cardHi`, `userMessageBg` keeps `card`; the unused variable `coal` is removed.
+  Owner, what he liked: «Мне нравится, что когда ты запускаешь карточки рабочие, у них есть цвета: зелёные — это какие-то команды, фиолетовые — ответы от агентов, серые — это запуски, красные — это отказы.» Source: `16-27-59:4251` (see Provenance above).
+  Owner, keep grey and red, find analogues: «А когда запущено то, что было зелёное и фиолетовое, надо придумать им какие-то аналоги.» Source: `16-27-59:4544`.
+  Owner, the choice: «По дизайню - бирюза сланец вибираю ответ C» Source: `16-27-59:4654`.
+  Reason: option C of the comparison page gave the coolest pair with the least decoration; every text pair on the four cards meets WCAG AA 4.5:1 (minimum 4.56:1).
+  Carrier: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/test/schema.test.ts` (`approved-surfaces-exact`), `extensions/RQW-theme/README.md`. The theme is registered in `package.json` only in UI step P10 ([BACKLOG](BACKLOG.md) U12), so the owner sees the colours after P10.
+
 ## Quality control
 
 The rules for Main and workers are in [PROCESS.md](PROCESS.md#quality-control-loop); the design and its evidence are
