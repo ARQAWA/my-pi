@@ -29,15 +29,16 @@ Shift+Up / Shift+Down select a stronger / weaker model; Shift+Right / Shift+Left
 Further ordinary or Shift arrows navigate the draft in the same directions. Enter applies both model and reasoning;
 Esc closes the chooser without changing the live selection. Opening and navigation also leave the live selection unchanged.
 The model order and clamps are in the
-[Models decision](DECISIONS.md#models), including the GPT 5.6 Luna addition (the GPT reviewers use it). The keys
+[Models decision](DECISIONS.md#models), including the GPT 5.6 Luna addition. The keys
 need no terminal setup: iTerm2, Terminal.app and the VS Code terminal send them as standard sequences, and Pi 1.4.0
 binds none of them itself.
 
 ## Compact interface and theme
 
-Normal package loading enables compact tool display, agent/worker cards, thinking-text hiding and automatic
-session naming. Agent, worker and review results (`[review#N]`) show cards. With both agent-ui and tool-ui loaded,
-a collapsed wait result is tool-ui's (`Waited for N agents` in the summary, `wait <ids>` in the live block);
+Normal package loading enables compact tool display, agent cards, thinking-text hiding and automatic
+session naming. Reviewer profiles `spotty` and `bossy` deliver ordinary `agent#N` results and use the same agent
+cards and agent count category as other subagents. Standalone `[review#N]` cards remain only for legacy session
+history, not current reviewer delivery. With both agent-ui and tool-ui loaded, a collapsed wait result is tool-ui's (`Waited for N agents` in the summary, `wait <ids>` in the live block);
 with tool-ui off, agent-ui shows its collapsed wait cards. Ctrl+O shows full original tool and agent results,
 including agent-ui's expanded wait cards, and folds back. Native thinking spacer rows remain and stock image
 output is unchanged.
@@ -77,11 +78,13 @@ excludes nothing.
 - The compact UI switches independently with `-extensions/RQW-tool-ui/index.ts`,
   `-extensions/RQW-agent-ui/index.ts`, `-extensions/RQW-thinking/index.ts` and
   `-extensions/RQW-naming/index.ts`, one exclusion per extension. Tool-ui off restores stock old and new tool
-  calls, except that agent-ui then shows its collapsed wait cards; agent-ui off restores stock agent, worker and review results; thinking off restores native reasoning display;
+  calls, except that agent-ui then shows its collapsed wait cards; agent-ui off restores stock agent results, including
+  reviewer-profile results, and stock rendering of legacy review history; thinking off restores native reasoning display;
   naming off stops automatic generation and removes `/rename-gen`, leaving the persisted native name and `/name`.
   The separate activity indicator and static title belong to RQW-statusbar, switched with
   `-extensions/RQW-statusbar/index.ts` or `/statusbar off`; cards do not own that indicator. It shows the actual
-  running counts by agents, workers and reviews; ordinary busy letters shimmer silver, compaction shimmers gold, and a
+  running agent counts, including reviewer profiles, with no separate review category; ordinary busy letters shimmer
+  silver, compaction shimmers gold, and a
   fully idle rule is continuous.
 - After `/reload` Pi keeps the active tool set, so tools of a switched-off extension stay active, now Pi's own,
   until `/new` or a restart.

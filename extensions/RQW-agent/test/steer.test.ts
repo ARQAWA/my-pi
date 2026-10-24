@@ -1,9 +1,9 @@
 // send to a running child is Pi steering: it reaches the child after its current tool call, aborts nothing, and
 // an idle child still starts a new run. Real Pi sessions, faux providers, a held bash tool.
 import assert from "node:assert/strict";
-import { test, type TestContext } from "node:test";
-import { fauxProvider, fauxToolCall, type TranscriptContext } from "@earendil-works/pi-ai";
-import { AgentSession, createBashToolDefinition } from "@earendil-works/pi-coding-agent";
+import { test } from "node:test";
+import { fauxToolCall, type TranscriptContext } from "@earendil-works/pi-ai";
+import { createBashToolDefinition } from "@earendil-works/pi-coding-agent";
 import { answer, fixture, tick, texts, until } from "./audit-fixture.ts";
 
 const bash = (id: string) => answer([fauxToolCall("bash", { command: "held" }, { id })], { stopReason: "toolUse" });
@@ -85,49 +85,30 @@ test("interrupt after a steering send clears it and still aborts the run", async
 	} finally { tool.release(); tool.off(); await f.cleanup(); }
 });
 
-/** Real code_writer / shell_runner children on an `anthropic` faux provider; every worker request is recorded. */
-function workers(f: Awaited<ReturnType<typeof fixture>>, t: TestContext) {
-	const prompt = AgentSession.prototype.prompt;
-	t.mock.method(AgentSession.prototype, "prompt", function(this: AgentSession, ...args: Parameters<typeof prompt>) { return prompt.apply(this, args); });
-	t.mock.method(f.session.extensionRunner.createContext().modelRegistry, "hasConfiguredAuth", () => true);
-	const worker = fauxProvider({ provider: "anthropic", api: "steer-worker", models: [{ id: "claude-haiku-5-5", reasoning: true }] });
-	const replies: ReturnType<typeof answer>[] = [], requests: TranscriptContext[] = [];
-	worker.setResponses(Array.from({ length: 20 }, () => async (context: TranscriptContext) => {
-		requests.push(structuredClone(context));
-		return replies.shift() ?? answer("WORKER_OK");
-	}));
-	f.runtime.registerNativeProvider(worker.provider);
-	const run = async (name: string, args: Record<string, unknown>) => {
-		const result = await f.session.getToolDefinition(name)!.execute(`steer-${name}`, args, undefined, undefined, f.session.extensionRunner.createContext());
-		return result.content.map(c => c.type === "text" ? c.text : "").join("");
-	};
-	return { replies, requests, run };
-}
-
-test("code_writer and shell_runner: send during a long tool call is steering, nothing aborted", async (t: TestContext) => {
+test("sibling agents: steering during a long tool call stays in the target history without aborting", async () => {
 	const f = await fixture();
-	const { replies, requests, run } = workers(f, t);
 	let tool = heldBash(f);
 	try {
-		for (const name of ["code_writer", "shell_runner"]) {
-			const before = requests.length;
-			if (name === "shell_runner") { tool.off(); tool = heldBash(f); }
-			replies.push(bash(`${name}-b`), answer(`${name}_FINAL`));
-			assert.equal(await run(name, { task: `${name}_TASK` }), `${name}#1 started`);
-			await until(() => tool.entered(), `${name} tool running`);
-			assert.equal(await run(name, { action: "send", id: `${name}#1`, task: `${name}_STEER` }), `${name}#1: queued after the current tool call`);
+		for (const id of ["agent#1", "agent#2"]) {
+			const before = f.requests.sub.length;
+			if (id === "agent#2") { tool.off(); tool = heldBash(f); }
+			f.subReplies.push(bash(`${id}-b`), answer(`${id}_FINAL`));
+			assert.equal(await f.call({ ...f.params(`${id}_TASK`), tools: ["bash"] }), `${id} started`);
+			await until(() => tool.entered(), `${id} tool running`);
+			assert.equal(await f.call({ action: "send", id, task: `${id}_STEER` }), `${id}: queued after the current tool call`);
 			await tick();
-			assert.equal(requests.length, before + 1, "no request before the tool call completes");
+			assert.equal(f.requests.sub.length, before + 1, "no request before the tool call completes");
 			tool.release();
-			await until(() => f.session.messages.some(m => m.role === "custom" && m.customType === name), `${name} delivery`);
-			await until(() => requests.length === before + 2, `${name} next request`);
+			await until(() => f.delivered().includes(`[${id}] ${id}_FINAL`), `${id} delivery`);
+			await until(() => f.requests.sub.length === before + 2, `${id} next request`);
 			assert.equal(tool.aborted(), false);
-			const next = requests[before + 1];
+			const next = f.requests.sub[before + 1];
 			assert.match(results(next)[0], /TOOL_DONE/);
-			assert.ok(texts(next).includes(`${name}_STEER`));
+			assert.ok(texts(next).includes(`${id}_STEER`));
+			assert.ok(!texts(next).includes(`${id === "agent#1" ? "agent#2" : "agent#1"}_STEER`));
 			await tick();
-			assert.equal(requests.length, before + 2);
-			await run(name, { action: "stop", id: `${name}#1` });
+			assert.equal(f.requests.sub.length, before + 2);
+			await f.call({ action: "stop", id });
 			await tick();
 		}
 		assert.deepEqual(f.errors, []);
@@ -253,28 +234,27 @@ for (const drop of ["interrupt", "stop", "restart"] as const) {
 	});
 }
 
-test("code_writer and shell_runner: send with interrupt aborts the held tool call, drops steering, runs the new task once", async (t: TestContext) => {
+test("sibling agents: interrupting sends abort the tool, drop steering and run each new task once", async () => {
 	const f = await fixture();
-	const { replies, requests, run } = workers(f, t);
 	let tool = heldBash(f, true);
 	try {
-		for (const name of ["code_writer", "shell_runner"]) {
-			const before = requests.length;
-			if (name === "shell_runner") { tool.off(); tool = heldBash(f, true); }
-			replies.push(bash(`${name}-b`), answer(`${name}_NEW_ANSWER`));
-			assert.equal(await run(name, { task: `${name}_FIRST` }), `${name}#1 started`);
-			await until(() => tool.entered(), `${name} tool running`);
-			await run(name, { action: "send", id: `${name}#1`, task: `${name}_DROPPED` });
-			assert.equal(await run(name, { action: "send", id: `${name}#1`, task: `${name}_NEW`, interrupt: true }), `${name}#1: interrupted, sent`);
+		for (const id of ["agent#1", "agent#2"]) {
+			const before = f.requests.sub.length;
+			if (id === "agent#2") { tool.off(); tool = heldBash(f, true); }
+			f.subReplies.push(bash(`${id}-b`), answer(`${id}_NEW_ANSWER`));
+			assert.equal(await f.call({ ...f.params(`${id}_FIRST`), tools: ["bash"] }), `${id} started`);
+			await until(() => tool.entered(), `${id} tool running`);
+			await f.call({ action: "send", id, task: `${id}_DROPPED` });
+			assert.equal(await f.call({ action: "send", id, task: `${id}_NEW`, interrupt: true }), `${id}: interrupted, sent`);
 			assert.ok(tool.aborted());
-			await until(() => f.session.messages.some(m => m.role === "custom" && m.customType === name && JSON.stringify(m.content).includes(`${name}_NEW_ANSWER`)), `${name} delivery`);
-			assert.equal(requests.length, before + 2, "one request for the first run, one for the new run");
-			const next = texts(requests[before + 1]);
-			assert.ok(next.includes(`${name}_FIRST`) && next.includes(`${name}_NEW`));
-			assert.ok(!next.includes(`${name}_DROPPED`));
+			await until(() => f.delivered().includes(`[${id}] ${id}_NEW_ANSWER`), `${id} delivery`);
+			assert.equal(f.requests.sub.length, before + 2, "one request for the first run, one for the new run");
+			const next = texts(f.requests.sub[before + 1]);
+			assert.ok(next.includes(`${id}_FIRST`) && next.includes(`${id}_NEW`));
+			assert.ok(!next.includes(`${id}_DROPPED`));
 			await tick(60);
-			assert.equal(requests.length, before + 2);
-			await run(name, { action: "stop", id: `${name}#1` });
+			assert.equal(f.requests.sub.length, before + 2);
+			await f.call({ action: "stop", id });
 			await tick();
 		}
 		assert.deepEqual(f.errors, []);

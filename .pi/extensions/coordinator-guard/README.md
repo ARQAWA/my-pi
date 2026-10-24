@@ -14,7 +14,7 @@ A dev-only Pi project extension of this repository. It enforces mechanically the
   on the next event without a reload: the guard reads `PROCESS.md` fresh every time.
 - The guard's root is the checkout that holds this file (three folders up), not the cwd. It reads that
   checkout's `PROCESS.md`.
-- RQW-agent children, RQW-review reviewers and the benchmark harnesses build their sessions with
+- RQW-agent children, including reviewer profiles, and the benchmark harnesses build their sessions with
   `noExtensions: true`, so they never load the guard. Only Main is guarded.
 
 ## Exclusive coordinator
@@ -66,35 +66,31 @@ bound by the rules, and the owner could not ask a plain question there.
 
 ## Source of rules
 
-The fenced block `json coordinator-rules` in `PROCESS.md`, section "Worker models": `workerModels` (classes of
-exact `[model, thinking]` pairs) and `fixedWorkers` (`"block"` or `"allow"`). A missing block, several blocks,
-bad JSON or a bad schema is an error state: the guard then blocks every `agent` start and restart and every
-`code_writer` / `shell_runner` call, and shows the error in Main's prompt and status.
+The fenced block `json coordinator-rules` in `PROCESS.md`, section [Subagent models](../../../PROCESS.md#subagent-models):
+`agentModels` holds classes of exact `[model, thinking]` pairs. A missing block, several blocks,
+bad JSON or a bad schema is an error state: the guard then blocks every `agent` start and restart
+and shows the error in Main's prompt and status.
 
-## Temporary Opus restriction
+## Temporary GPT-only override
 
-The optional key `temporaryOpusRestriction` of the rules block, `{"until": "2026-10-28T16:00:00Z", "arbiterTitlePrefix": "Арбитр замера"}`,
-bans `anthropic/claude-opus-5-5` for every `agent` start and restart while the clock is before `until`:
+The optional key `temporaryGptOnly` of the rules block, `{"until": "2026-10-28T16:00:00Z"}`, permits only
+the table's `openai-codex/gpt-6.1-sol` pairs for every `agent` start and restart before `until`.
+All Anthropic models are blocked, including named benchmark arbiters. Product profiles are unchanged.
 
-- `until` is a UTC time with seconds and a `Z`. The ban ends at that exact instant: at `until` and later the
-  normal table applies again. The clock is read on every call, so expiry needs no reload and no edit of `PROCESS.md`.
-- Exception: a start or restart whose `title` begins with `arbiterTitlePrefix` (case-sensitive, from the first
-  character) may use the Opus pair that the table already lists, so the reviewer benchmark arbiter keeps working. The
-  exception adds no thinking level and no model; Sonnet and Sol are not affected by the ban.
-- While the ban is active, the prompt section and the line appended to every allowed task state the rule, the
-  expiry and the exception, and the allowed list in refusals hides Opus. After expiry that text disappears.
-- An absent key means no temporary restriction. A key that is present but malformed (not an object, `until` not a
-  real UTC time, empty `arbiterTitlePrefix`) is an error state like any other bad block: everything fails closed.
+- `until` is a real UTC time with seconds and a `Z`. At that exact instant the normal table applies again.
+  The clock is read on every call, so expiry needs no reload or edit of `PROCESS.md`.
+- While active, Main's prompt, the line appended to every allowed task and refusal reasons state the restriction
+  and expiry. Their allowed lists show only GPT pairs. After expiry the temporary text disappears.
+- An absent key means no temporary restriction. A present malformed key or deadline fails closed:
+  every start and restart is blocked, even after the intended expiry.
 
 ## What it does for Main
 
 - `tool_call` on `agent` `start` and `restart` (a missing `action` counts as `start`): `model` and
-  `thinking` are required and must be one exact allowed pair. Every `explore` start or restart is blocked,
-  since an explorer runs on Main's own model. An allowed call with a `task` gets one generated line
-  appended: ordinary nested `agent` starts need an explicit allowed pair, and the child may use `code_writer`,
-  `shell_runner`, `explore` and `review` itself.
-- `code_writer` and `shell_runner`: with `"fixedWorkers": "block"` every action is blocked.
-- Quotes: on `agent`, `code_writer` and `shell_runner` `start`, `restart` and `send`, every guillemet span in
+  `thinking` are required and must be one exact allowed pair. A profile call supplies matching explicit values too.
+  An allowed call with a `task` gets one generated line appended: ordinary nested `agent` starts need an explicit
+  allowed pair.
+- Quotes: on `agent` `start`, `restart` and `send`, every guillemet span in
   `task`, `role` and `system` must be one exact contiguous span of one user message of the current session
   (`ctx.sessionManager.getEntries()`), after Unicode NFC and whitespace normalisation. Unbalanced guillemets and
   empty spans fail. The check is `scripts/owner-quotes.mjs`, shared with `deliver-check`.

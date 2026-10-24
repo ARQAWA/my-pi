@@ -8,7 +8,7 @@ the accepted decisions and their reasons. New owner instructions take precedence
 ## Research and agreement
 
 1. While the owner discusses or plans, change nothing. A proposal or question is not permission to implement it.
-2. Delegate initial research of the request and relevant source code to worker subagents, in parallel where useful.
+2. Delegate initial research of the request and relevant source code to subagents, in parallel where useful.
    Main compiles all requirements across the conversation and accepted proposals, retaining the owner's exact words.
    Keep agreed work intact: do not lose, silently drop, reinterpret or invent requirements.
 3. Before a new feature or mechanism, search for ready-made solutions in Pi packages, npm, GitHub and other
@@ -16,7 +16,7 @@ the accepted decisions and their reasons. New owner instructions take precedence
    Build our own only with the owner's consent, recorded in `DECISIONS.md`. Keep the no-fork/no-Pi-patch and
    independent-extension boundaries. Small changes, bug fixes and test fixes do not require this search.
 4. Bring all material ambiguities, conflicts and missing outcome decisions to the owner in one question batch.
-   Do not decide for the customer without permission. Delegated technical choices, including worker model selection,
+   Do not decide for the customer without permission. Delegated technical choices, including subagent model selection,
    remain the agent's responsibility within the agreed outcome; they are not permission to widen or shrink it.
 5. The owner's answers or approval start the agreed work without another go question. If nothing is open and the
    owner has explicitly requested execution, start. Keep the minimal necessary agreed scope, not a smaller scope.
@@ -26,11 +26,11 @@ the accepted decisions and their reasons. New owner instructions take precedence
 - Start each change task from up-to-date `main` in its own branch and git worktree:
   `git worktree add -b <task> ../my-pi-worktrees/<task> main`. Make all task edits there, never in the main checkout.
 - Main is the coordinator, not an independent implementer: it owns requirement compilation, owner questions,
-  task decomposition, worker model selection, scheduling, acceptance and integration of results, review organization,
+  task decomposition, subagent model selection, scheduling, acceptance and integration of results, review organization,
   delivery/git and reports. Main may read sources and results to coordinate and accept work, but must delegate actual
-  research, implementation (including documentation/config edits), probes/measurements, test runs and fixes to worker
-  subagents, regardless of task size, unless the owner explicitly overrides as described below. The existing generic `agent` tool suffices; no fixed named worker roles are needed.
-  Give each worker a self-contained brief: agreement, files and worktree, ownership, dependencies, expected result
+  research, implementation (including documentation/config edits), probes/measurements, test runs and fixes to
+  subagents, regardless of task size, unless the owner explicitly overrides as described below.
+  Give each subagent a self-contained brief: agreement, files and worktree, ownership, dependencies, expected result
   and sufficient proof. Include the relevant process rules in its system prompt or brief; do not assume a child
   inherits this file.
 - The owner addresses Main (the coordinator) as the executor. If the owner assigns personal execution to Main,
@@ -44,9 +44,9 @@ the accepted decisions and their reasons. New owner instructions take precedence
 - At most three tasks are in active execution at the same time, in the priority queue set by the owner. Fill a free
   slot from that queue, not from Main's preferred order; a priority change from the owner steers the queue. This is
   a task limit, not a count of first-level subagents. A task that waits for CI, a reviewer, the merge queue or the
-  owner holds no slot, and the test lane is outside the limit ([Task pipeline](#task-pipeline)). Parallel workers inside an active task do not create extra
+  owner holds no slot, and the test lane is outside the limit ([Task pipeline](#task-pipeline)). Parallel subagents inside an active task do not create extra
   task slots. Run useful independent work within those tasks in parallel, avoid concurrent writes to the same files
-  and stop superseded workers. Keep the current queue in the handoff, not as a permanent rule here.
+  and stop superseded subagents. Keep the current queue in the handoff, not as a permanent rule here.
 - Main identifies task dependencies itself, links them and blocks dependent work before scheduling. The graph's
   source of truth is the `Blocked by:` lines in `BACKLOG.md` plus the handoff. Main shows the owner the execution
   order as a plain-text dependency tree in terminal output, not a Mermaid diagram. A dependency becomes runnable
@@ -67,7 +67,7 @@ the accepted decisions and their reasons. New owner instructions take precedence
   installing third-party extensions, or spend limits beyond the reviewer measurement. These exceptions stay
   blocked rather than being approved by default. Resuming a task paused by its 2-hour timebox is one more such
   exception ([Task timebox](#task-timebox)).
-- Main drives the whole agreed task to completion autonomously through workers: they implement, inspect, make the
+- Main drives the whole agreed task to completion autonomously through subagents: they implement, inspect, make the
   needed probes and measurements, and fix obvious defects and relevant corner cases. Do not polish extremely
   unlikely scenarios or expand the task.
 - Commit completed stages promptly to the task branch, staging exact task paths. Stage commits require no review
@@ -90,7 +90,7 @@ used by GitHub Actions keep supporting their runners. Do not refactor existing d
 
 Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](DECISIONS.md#task-pipeline).
 
-- A task is active or waiting. Only active execution holds one of the three slots: a worker implementing,
+- A task is active or waiting. Only active execution holds one of the three slots: a subagent implementing,
   researching, fixing or measuring. Waiting for CI, a reviewer, the merge queue or the owner holds no slot. Main
   fills each free slot from the owner's queue and keeps every waiting task in the current session queue and state with what it waits for, in no file.
 - When a task's local checks are clean, its branch is pushed and the required reviews start in the background;
@@ -112,7 +112,7 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](DECISION
   polling turns. A later Windows failure then gets its tail `BACKLOG.md` item or linked issue and is not lost when
   the branch is deleted. Delivery never waits for Windows or green macOS CI; no workflow result gates a merge.
 - Test lane. Besides the three main work lanes, a fourth lane for tests only, outside the three active slots, owns all
-  test work: ordinary `agent`s on the simple pairs of the [worker table](#worker-models), with
+  test work: ordinary `agent`s on the simple pairs of the [subagent table](#subagent-models), with
   `.agents/roles/test-fixer.md` as the `role`. It starts only after this pipeline change is delivered and follows all
   pipeline agreements. Decisions: [DECISIONS.md](DECISIONS.md#task-pipeline).
 - A failed local delivery test or a conflicting rebase sends the task back to the top of the queue. GitHub CI does
@@ -158,10 +158,10 @@ Owner's words and reasons: [DECISIONS.md, Task pipeline](DECISIONS.md#task-pipel
   task, interrupting a lower-priority active task if needed, with its history kept.
 - This is a control checkpoint, not a promise that any task is done in 2 hours.
 
-## Worker models
+## Subagent models
 
-These rules are for developing this repository with agents. They are not product settings: the models of
-`RQW-review` and the fixed models of `code_writer` and `shell_runner` stay as they are. The decision,
+These rules are for developing this repository with agents. They are not product settings: the reviewer
+profiles supplied by `RQW-review` keep their own models. The decision,
 the owner's messages and the history are in [DECISIONS.md, Work policy](DECISIONS.md#work-policy).
 
 Main picks one task class and starts an ordinary `agent` subagent with a model and reasoning pair of that class:
@@ -171,7 +171,7 @@ a rule, edit the block; no other file repeats it.
 
 ```json coordinator-rules
 {
-  "workerModels": {
+  "agentModels": {
     "simple": [
       ["anthropic/claude-sonnet-5-5", "medium"],
       ["openai-codex/gpt-6.1-sol", "low"]
@@ -185,36 +185,31 @@ a rule, edit the block; no other file repeats it.
       ["openai-codex/gpt-6.1-sol", "high"]
     ]
   },
-  "fixedWorkers": "block",
-  "temporaryOpusRestriction": {
-    "until": "2026-10-28T16:00:00Z",
-    "arbiterTitlePrefix": "Арбитр замера"
+  "temporaryGptOnly": {
+    "until": "2026-10-28T16:00:00Z"
   }
 }
 ```
 
 Temporary override: until 2026-10-28 19:00 Moscow time, `2026-10-28T16:00:00Z`, no subagent working on this
-project uses Opus; Anthropic subagents use Sonnet 5.5. At the timestamp the normal table applies again.
-The guard enforces the deadline on Main's starts/restarts and passes the restriction into child briefs.
-Its narrow mechanical allowance for `anthropic/claude-opus-5-5` is a start/restart title beginning with
-`Арбитр замера`, still using an allowed model/thinking pair. This is not permission for ordinary workers.
+project uses Anthropic. Only the GPT pairs of the task-class table are allowed, including for benchmark arbiters.
+At the timestamp the normal table applies again automatically. The guard checks the clock on every Main
+start/restart and passes the restriction into child briefs. This development override does not change product profiles.
 
 1. Every `start` and `restart` by Main names `model` and `thinking` explicitly from the chosen class. Nothing is
    inherited from Main's own model or reasoning.
-2. Main starts only ordinary `agent` subagents. It never starts `code_writer` or `shell_runner`
-   (`"fixedWorkers": "block"`), and it never starts `explore`: the dev guard always blocks Main's explorer, with no
-   JSON key for it, since an explorer runs on its parent's model. The subagents Main starts may use workers,
-   explorers and `review` themselves.
+2. Main starts ordinary `agent` subagents. Specialized roles, including reviewers, use the same tool with
+   `agent_type`; profiles do not add a separate execution lifecycle.
 3. Choose the class by the task. Opus 5.5 medium (`hardest`) is far stronger than Sonnet 5.5 high (`complex`), and
    Sol high (`hardest`) is stronger than Sol medium (`complex`). Keep `hardest` pairs for the hardest and most
    important tasks and never give the stronger pair to the easier task.
-4. Spread subagents evenly between Anthropic (Opus 5.5, Sonnet 5.5) and GPT-6.1-Sol so both subscriptions' limits
-   are spent evenly. Balance over the run, not per single call.
+4. Outside the temporary GPT-only override, spread subagents evenly between Anthropic (Opus 5.5, Sonnet 5.5)
+   and GPT-6.1-Sol so both subscriptions' limits are spent evenly. Balance over the run, not per single call.
 5. No other models or reasoning levels. A pause of a named benchmark campaign pauses that campaign only; it does
-   not pause unrelated work or prohibit the authorized worker models.
+   not pause unrelated work or prohibit the authorized subagent models.
 6. Dev guard: the project extension `.pi/extensions/coordinator-guard/` reads this block on every call of Main's
-   `agent` tool and blocks a start or restart without `model` or `thinking`, with a pair outside the block, or of a
-   fixed worker or explorer; it also blocks an unreadable block. It is dev-only: it loads for this trusted checkout,
+   `agent` tool and blocks a start or restart without `model` or `thinking`, with a pair outside the block;
+   it also blocks an unreadable block. It is dev-only: it loads for this trusted checkout,
    covers only Main's top-level session, and is not shipped or listed in `pi.extensions`. Subagents and benchmark
    harnesses load no extensions, so for them these rules are written text only.
    Details: [guard README](.pi/extensions/coordinator-guard/README.md).
@@ -258,8 +253,8 @@ Owner's principle and source: [DECISIONS.md, Work policy](DECISIONS.md#work-poli
 
 ## Sufficient proof, without idle reruns
 
-- Main ensures workers choose and perform checks for the changed behavior and claim under the rules below.
-  Workers inspect documentation and Pi sources where needed.
+- Main ensures subagents choose and perform checks for the changed behavior and claim under the rules below.
+  Subagents inspect documentation and Pi sources where needed.
   Use deterministic tests for mechanics and actual model probes when the claim concerns model behavior.
   Do not burn tokens on live compaction when the owner requests documentation-only proof.
 - Run existing relevant checks once, in the background where possible. Repeat after a relevant fix or a changed
@@ -271,15 +266,15 @@ Owner's principle and source: [DECISIONS.md, Work policy](DECISIONS.md#work-poli
   including relevant Node, Bun and PortableGit coverage, but they are advisory and do not gate a merge
   ([Task pipeline](#task-pipeline)). Linux is out of scope.
 - Run `npm run test:bun` in CI when Bun/codemode behavior is affected. Test extension isolation when affected.
-- Workers save their check and probe logs. Every number in a report or documentation must point to a CI run URL
+- Subagents save their check and probe logs. Every number in a report or documentation must point to a CI run URL
   or a named saved log file; never report counts from memory. Save local logs in OS temporary storage.
-- Test exactly what gets merged. If `main` moved since the branch was created, the worker rebases the branch onto
+- Test exactly what gets merged. If `main` moved since the branch was created, the subagent rebases the branch onto
   current `main`; `deliver-check` runs full local `npm test` on that final committed head, whose squash has the same
   tree. This is the only delivery test condition; no GitHub run needs to be triggered or awaited for a merge.
 - Root documentation, notes and development instructions alone do not justify extra application tests or model runs;
   the full local delivery run still applies. A workflow change does require validating its triggers and affected
   Windows jobs. Do not claim a queued or incomplete run passed.
-- Everyone who writes, generates or fixes tests, a worker, a reviewer or the test-fix lane, has one purpose: to check
+- Everyone who writes, generates or fixes tests, a subagent, a reviewer or the test-fix lane, has one purpose: to check
   that the behavior matches the requirements, never to turn the run green. The bound is the reviewer's: no
   fanaticism, perfectionism, polishing or taste.
 - Fix failures caused by the task, including assertions for deliberately changed behavior. Report unrelated failures
@@ -313,10 +308,12 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
 
 ## Independent review
 
-- While RQW-review is disabled in the owner's settings, result review runs through an `agent` subagent whose
-  whole system prompt is the reviewer text (`extensions/RQW-review/REVIEWER.md` in `main`), on `openai-codex/gpt-6.1-sol`
-  with thinking low for `blind` and medium for `high`. Give it the brief sections of the cycle below, with the owner's
-  messages verbatim (the session file) as `<user_messages>`; record `Review: agent#N CLEAN`.
+- Result review follows the native `reviewer` skill supplied by `RQW-review`. `blindreview` selects `spotty`,
+  `highreview` selects `bossy`; launch each pass as a fresh ordinary `agent` with `agent_type` and
+  `include: ["user_messages"]`. The profiles default to `openai-codex/gpt-6.1-sol` low and medium respectively and append
+  the reviewer role to the main prompt and subagent reminder. Read-only is an instruction, not a git guard or sandbox.
+  Record `Review: agent#N CLEAN`. If the required skill, profile or `agent` is unavailable, the check cannot run;
+  report the blocker rather than substituting a separate runtime or copied whole-system prompt.
 - Main names the change class in the task brief and in the squash message. Reasons and the owner's words:
   [DECISIONS.md, Task pipeline](DECISIONS.md#task-pipeline).
   1. Proofreading: typos, wording, quote spans, links and formatting of passive documents, with no change of meaning
@@ -327,41 +324,43 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
      changed rule or a `QA: #N` fix.
   2. Meaning change of process or documents: one clean result review, plus a code review where the path rule below
      applies.
-  3. Runtime prompts (`extensions/RQW-prompt/SYSTEM.md`, `extensions/RQW-agent/roles/*.md`,
-     `extensions/RQW-review/REVIEWER.md`, `extensions/RQW-tools/descriptions/*.md`): mechanical checks and a model
+  3. Runtime prompts (`extensions/RQW-prompt/SYSTEM.md`, agent role profiles,
+     `extensions/RQW-review/profiles/*.toml`, `extensions/RQW-review/skills/**/SKILL.md`,
+     `extensions/RQW-tools/descriptions/*.md`): mechanical checks and a model
      probe of the claimed behavior, plus the reviews of class 2.
 - Except for proofreading and the [third-party installation fast path](#third-party-installation-fast-path), every
-  squash merge requires a clean result review. Result review uses `review` level `blind` for small work and `high`
-  for large work. An answer or report without changes needs no review. Explicit owner requirements for a review
-  take precedence.
+  squash merge requires a clean result review. Result review invokes `blindreview` with `agent_type: "spotty"`
+  for small work and `highreview` with `agent_type: "bossy"` for large work. An answer or report without changes
+  needs no review. Explicit owner requirements for a review take precedence.
 - Small work is at most 100 added plus deleted lines, all inside one extension, with no owner-visible behavior change.
   One combined result and code review covers it: one `agent` reviewer given the result criteria and `.agents/reviewers/code.md`,
   recorded as `Combined-review: agent#N CLEAN`. Large work and any owner-visible behavior change get the separate
   result review and code review below. A QA fix, a workflow change and a test-integrity trigger are never small.
   `deliver-check` enforces the line limit and the single extension; that reviewer verifies that no owner-visible
   behavior changes.
-- Workers first self-check their work and fix defects before independent review. Main checks their evidence and
-  acceptance against the agreement, routing needed fixes to workers. The final independent result review checks agreed completeness,
+- Subagents first self-check their work and fix defects before independent review. Main checks their evidence and
+  acceptance against the agreement, routing needed fixes to subagents. The final independent result review checks agreed completeness,
   consistency, documentation and absence of unagreed additions. Each pass is a complete review and returns every
   finding at once.
 - The review cycle, ported from the owner's Codex CLI reviewer skills (`DECISIONS.md`, [Review](DECISIONS.md#review)).
   It runs when the owner asks for a review or a checked result, or when this section requires it, such as before
-  a squash merge; never on Main's own initiative. The brief has these sections in this order: `<user_messages>`,
-  every owner message of the conversation verbatim and in order (the `review` tool assembles it from the branch, an
-  `agent` reviewer gets the session file text), `<agreement>` only when there are accepted proposals and decisions
-  that are not the owner's own messages, `<object>` (exact paths or readable references, primary requirements,
-  governing rules, source evidence, the diff as a file path, and the stage `pre-action` or `pre-completion`),
-  `<criterion>` (what the check confirms and which deliverable must fulfil each obligation; an exclusion cannot
-  silently waive a governing requirement of this pass) and, from the second pass on, `<rejected_earlier>`. Set no
-  file, search, tool-call or turn quotas, and leave the reviewed files unchanged until the verdict.
+  a squash merge; never on Main's own initiative. The task has these sections in this order: `<agreement>` only
+  when there are accepted proposals and decisions that are not the owner's own messages, `<object>` (exact paths
+  or readable references, primary requirements, governing rules, source evidence, the diff as a file path, and the
+  stage `pre-action` or `pre-completion`), `<criterion>` (what the check confirms and which deliverable must fulfil
+  each obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second
+  pass on, `<rejected_earlier>`. `include: ["user_messages"]` mechanically appends `<user_messages>` after the task:
+  every user-role text of the caller's selected branch, verbatim and in order, including entries before compaction.
+  Images and non-user messages are omitted; nested callers contribute their own messages. Do not retype the messages.
+  Set no file, search, tool-call or turn quotas, and leave the reviewed files unchanged until the verdict.
 - For large work, run a separate read-only code reviewer in parallel with result review whenever a changed path falls outside
   the `tests.yml` `paths-ignore` filters used by `scripts/deliver-check.mjs`, considering both base and head filters.
   This includes extension READMEs even though their contents are prose. Root Markdown, `notes/**` and `.agents/**`
   alone are excluded by the current filters. Workflow logic is executable configuration and needs code review too.
-  Read `.agents/reviewers/code.md` and pass it as the complete `system` to an `agent` worker, choosing its model and
+  Read `.agents/reviewers/code.md` and pass it as the complete `system` to an `agent` subagent, choosing its model and
   reasoning from the table above. Its task brief includes the changed files, diff, callers, relevant tests and evidence.
   This role checks bugs, regressions and meaningful code quality, not a second requirements ritual.
-- Result-review verdicts and admission, for the `review` tool or the `REVIEWER.md` agent only; the code and
+- Result-review verdicts and admission, for the `spotty` and `bossy` profile agents only; the code and
   test-integrity reviewers follow the next bullet. `CLEAN` with a complete `CHECKED:` and no `UNCHECKED:` passes the pass; run no extra pass for confidence,
   but keep every independent pass and its order that this section requires. `FINDINGS:` are the teammate's findings:
   Main finds each quote by searching for it. A finding whose two quotes stand verbatim in their sources is admitted;
@@ -369,7 +368,7 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
   nonexistent text. Fix an admitted finding exactly to its REQUIRED OUTCOME and no further; do not reject it, argue
   with it or put it to the owner. Reject a finding only when a quote is not verbatim, the allegedly missing content is
   present in the cited object, or a NOT AGREED element is covered by a verbatim quote of the agreement, and give that
-  reason with the quote. Main routes all admitted fixes to workers in one batch, and workers recheck the affected parts
+  reason with the quote. Main routes all admitted fixes to subagents in one batch, and subagents recheck the affected parts
   and checks, not untouched parts. Then a fresh reviewer runs with the same level, object and criterion and every
   rejection so far in `<rejected_earlier>`, until `CLEAN`. `UNCHECKED:` or missing `CHECKED:` evidence makes the pass
   incomplete whatever the leading verdict: resolve the missing sources or evidence, or retry malformed output; never
@@ -380,8 +379,8 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
 - Code-review, test-integrity and `Combined-review` findings (`.agents/reviewers/code.md`,
   `.agents/reviewers/test-integrity.md`; the combined reviewer also uses `code.md`): admit
   real evidenced defects, not taste or unlikely hypotheticals. Check findings rather than accepting them just because a
-  quote exists. Main validates real findings and routes admitted fixes to workers in one batch; explain rejected
-  findings with evidence. Workers recheck affected parts and checks, not untouched parts. The result-review quote and
+  quote exists. Main validates real findings and routes admitted fixes to subagents in one batch; explain rejected
+  findings with evidence. Subagents recheck affected parts and checks, not untouched parts. The result-review quote and
   `CHECKED:` rules above, and the prompt formats they name, do not apply to these reviewers.
 - A CLEAN covers only the commit it reviewed. Any commit after CLEAN sends the places it changed back to review:
   result review, and code review when the path-based requirement above applies. A conflict-free rebase onto `main`
@@ -420,14 +419,14 @@ The owner relays them to Main. Main also checks the inbox when it is online.
 
 **Awareness.**
 - At task start and when taking over a branch, Main reads the QA status: the `qa-status` message of the dev-only
-  `.pi/extensions/qa-status` extension, `/qa` for the full view, or `npm run qa-status` (workers use this one).
+  `.pi/extensions/qa-status` extension, `/qa` for the full view, or `npm run qa-status` (subagents use this one).
   All three read the shared [CI watcher](#task-pipeline) file instead of calling `gh` themselves.
 - A red scheduled `main` is mentioned to the owner in one line and triaged. Main never polls CI itself.
   A failed `main` run whose every failure signature is recorded in a closed inbox issue is shown as info
   (acknowledged); a run with any other failure, or one only an open issue records, stays red.
 - A red `main` does not block merges. `deliver-check` only lists the open inbox issues.
 
-**Triage.** Before any fix, a read-only worker classifies the failure and records the class with its evidence in the
+**Triage.** Before any fix, a read-only subagent classifies the failure and records the class with its evidence in the
 issue:
 
 | Class | Evidence required |
@@ -456,7 +455,7 @@ needs a fresh owner decision ([D-PIPELINE-FLAKE-SKIP](DECISIONS.md#task-pipeline
 **Test-integrity review.** For every test or workflow change that weakens a check, as `deliver-check` mechanically
 detects it (`skip`, `todo`, retry, raised timeout, `continue-on-error`, fewer assertions), and not for every QA fix, a
 reviewer subagent runs with `.agents/reviewers/test-integrity.md` as its whole
-`system`, model and reasoning from the [worker table](#worker-models), in parallel with the result and code reviews.
+`system`, model and reasoning from the [subagent table](#subagent-models), in parallel with the result and code reviews.
 Its brief has the issue, the triage claim, the diff and the red/green and repeat evidence.
 
 **Trailers** of the squash message. `QA: #N` marks a fix of inbox issue N. `deliver-check` requires
@@ -481,7 +480,7 @@ and guard change. Record the accepted choice in `DECISIONS.md`.
    owner's verbatim quote, source session, reason and carrier; keep each rule in one place and link elsewhere.
    Superseded and obsolete decisions go verbatim into root `DECISIONS-ARCHIVE.md`, an append-only archive with
    replacement and commit provenance, not routine agent reading. `BACKLOG.md` is the canonical list of open and
-   owner-deferred work with source, status and branch; remove done and dead tasks instead of keeping a second ledger.
+   owner-deferred work with source, status and branch; remove done and dead tasks instead of keeping a second ledger; owner-discarded tasks move to `BACKLOG.md` Discarded.
    Current docs describe current facts, not a history ledger.
 2. Push the task branch; continue independent work during required reviews. Before merging, require sufficient
    proof and the required clean reviews for the final head commit on current `main`. The only delivery test
@@ -495,8 +494,8 @@ and guard change. Record the accepted choice in `DECISIONS.md`.
    in the branch's existing clean task worktree on the owner's macOS, at the exact committed branch head, and
    checks worktree cleanliness and the head before and after the run. No receipt or extra worktree is needed.
    The message carries the
-   trailers `Review: review#N CLEAN` (or `Review: agent#N CLEAN` under the temporary
-   [disabled-review rule](#independent-review); at least one clean result review), `Code-review: CLEAN` (any path outside
+   trailers `Review: agent#N CLEAN` (at least one clean profile-based result review under
+   [Independent review](#independent-review)), `Code-review: CLEAN` (any path outside
    the workflow exclusions, including extension READMEs),
    or instead of both for small work `Combined-review: agent#N CLEAN`, or for proofreading no review trailer and
    `Change-class: proofreading` with `Doc-check: <absolute log path>` ([Independent review](#independent-review)),
@@ -510,9 +509,9 @@ and guard change. Record the accepted choice in `DECISIONS.md`.
 4. Squash merge into `main`: one task, one commit, with that message. Never merge the task's stage commits into main
    as a merge commit. Push main autonomously; the squash tree equals the tested head, so it is not retested.
 5. Run a completeness check for the session once after 7 merges or 120 minutes, whichever comes first, counted from
-   the previous check or the session start, and always before the final report: a fresh independent
-   `review` (the tool already receives all the owner's messages verbatim), or an `agent` subagent running the same
-   way under the [disabled-review rule](#independent-review) while RQW-review is disabled. Object: `main`'s git log since the session
+   the previous check or the session start, and always before the final report: a fresh independent profile reviewer
+   through `agent`, following the `reviewer` skill and [Independent review](#independent-review), with
+   `include: ["user_messages"]`. Object: `main`'s git log since the session
    start, plus the in-progress branches and worktrees and the items the owner cancelled. Criterion: every owner
    request is marked done (by which commit), in progress (by which branch) or cancelled by the owner. A request
    with no mark is a finding: do it, or ask the owner.
@@ -530,7 +529,7 @@ and guard change. Record the accepted choice in `DECISIONS.md`.
 Always answer in Russian, with the main point first. At most three paragraphs of at most two lines each unless
 content genuinely requires expansion. No repeated waiting messages or lists of unfinished work. During execution,
 ask only about a real blocker needing the owner; answer direct questions and requested status, then continue.
-Reports and questions do not stop independent background workers or checks.
+Reports and questions do not stop independent background subagents or checks.
 
 After compaction, a model switch or a handoff, reload this procedure and recover the actual agreement and evidence
 from their sources before continuing. Do not substitute an unaccepted agent plan for the owner's words.

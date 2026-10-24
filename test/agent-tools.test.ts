@@ -83,6 +83,7 @@ it("package: agent gets fresh RQW-tools, then stock tools after RQW-tools is fil
 	try {
 		await session.bindExtensions({ mode: "tui", onError: (e) => errors.push(`${e.event}: ${e.error}`) });
 		assert.equal(resourceLoader.getExtensions().extensions.length, 2);
+		assert.deepEqual(session.getActiveToolNames().sort(), ["agent", "bash", "edit", "find", "grep", "job", "read", "write"], "the generic agent is the only active delegation tool");
 		const bash = session.getToolDefinition("bash") as ToolDefinition;
 		let bashDone = false;
 		// Exercise the real shell and barrier together; fake JS time cannot hold a platform process.

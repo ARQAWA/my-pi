@@ -1,5 +1,5 @@
-// Process-wide state shared by every set of RQW-tools tools in one Pi process: the main session, its subagents and
-// workers get `createTools` from this same module instance (DECISIONS.md, Tools «Background jobs»: O1, P1, H1, S1).
+// Process-wide state shared by every set of RQW-tools tools in one Pi process: the main session and its subagents
+// get `createTools` from this same module instance (DECISIONS.md, Tools «Background jobs»: O1, P1, H1, S1).
 //
 // - The write ledger: who last wrote each file through an RQW tool, when, and the content hash after the write.
 // - Last-seen versions per owner: what each session (one job registry) last read or wrote of a file.
@@ -10,7 +10,7 @@
 // - Ports served by running jobs.
 //
 // Files are keyed by `identityKey` (keys.ts): symlink and case aliases of one file share records. Owners are unique
-// per registry (`owner`); `label` ("main", "code_writer#2") is only what notes show.
+// per registry (`owner`); `label` ("main", "agent#2") is only what notes show.
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";

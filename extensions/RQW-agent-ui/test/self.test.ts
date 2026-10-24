@@ -17,12 +17,12 @@ before(() => {
 });
 
 const EMPTY: Component = { render: () => [], invalidate() {} };
-const args = { action: "wait", ids: ["agent#3", "shell_runner#4"], until: "all" };
+const args = { action: "wait", ids: ["agent#3", "agent#4"], until: "all" };
 const result = {
 	content: [{ type: "text" as const, text: "ORIGINAL JSON" }],
 	details: { reason: "result", results: [
 		{ id: "agent#3", text: "FIRST\nFULL TAIL [inside]", display: { title: "Check sources", outcome: "finished", model: "anthropic/claude-opus-5-5", thinking: "medium", seconds: 42 } },
-		{ id: "shell_runner#4", text: "WORKER FIRST\nWORKER TAIL", display: { outcome: "failed", seconds: 3 } },
+		{ id: "agent#4", text: "SECOND FIRST\nSECOND TAIL", display: { outcome: "failed", seconds: 3 } },
 	] },
 };
 const plain = (rows: string[]) => rows.map(stripVTControlCharacters).join("\n");
@@ -82,8 +82,8 @@ it("self-expanded-cards: full answers appear once, Ctrl+O back restores leader a
 			if (!expanded) { assert.deepEqual(wrapped.render(100), collapsed); continue; }
 			const text = plain(wrapped.render(100));
 			assert.match(text, /agent#3 Check sources finished · opus medium · 42s/);
-			assert.match(text, /shell_runner#4 failed · 3s/);
-			for (const part of ["FULL TAIL [inside]", "WORKER TAIL"]) assert.equal(text.split(part).length - 1, 1);
+			assert.match(text, /agent#4 failed · 3s/);
+			for (const part of ["FULL TAIL [inside]", "SECOND TAIL"]) assert.equal(text.split(part).length - 1, 1);
 			assert.doesNotMatch(text, /ORIGINAL JSON|INNER ORIGINAL|GROUP SUMMARY/);
 		}
 	}

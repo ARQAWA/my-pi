@@ -43,6 +43,8 @@ const settingsFile = join(agentDir, "settings.json");
 writeFileSync(settingsFile, JSON.stringify({ packages: [entry(off)] }));
 process.chdir(cwd);
 process.env.PI_CODING_AGENT_DIR = agentDir;
+// Profile discovery must not read or override package fixtures with the owner's ~/.codex/agents.
+process.env.CODEX_HOME = join(tmp, "codex");
 for (const key of Object.keys(process.env)) if (/(?:_API_KEY|_TOKEN|_SECRET)$/.test(key)) delete process.env[key];
 // Keep the unrelated-provider poison, but no authenticated naming model: this tool-isolation fixture
 // scripts only the main Sol model, not Haiku/Luna. The network guard remains active for every call.

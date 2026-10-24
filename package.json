@@ -38,7 +38,9 @@
       "./extensions/RQW-agent-ui/index.ts",
       "./extensions/RQW-tool-ui/index.ts"
     ],
-    "themes": ["./extensions/RQW-theme/theme.json"]
+    "themes": [
+      "./extensions/RQW-theme/theme.json"
+    ]
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.4.0",
@@ -47,6 +49,7 @@
     "typebox": "1.3.27"
   },
   "dependencies": {
+    "smol-toml": "1.9.1",
     "ws": "8.22.0"
   }
 }

@@ -4,16 +4,13 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fauxAssistantMessage, fauxText } from "@earendil-works/pi-ai";
-import { type AgentSession, createAgentSession, DefaultResourceLoader, type ExtensionAPI, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { AgentSession, createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Activity } from "../activity.ts";
 import { recordRunMessage, registerSessionRuntime, resultDisplay, type RunMeta } from "../index.ts";
-import type { WorkerModel } from "../worker-model.ts";
-import type { WorkerProfile } from "../workers.ts";
 import { answer, fixture, gate, tick, until } from "./audit-fixture.ts";
-import { withWorkers } from "./metadata-fixture.ts";
+import { withAgents } from "./metadata-fixture.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const ROLES = ["code_writer", "shell_runner"] as const;
 type Delivered = { content: string; details: Record<string, any> };
 
 /** Fake monotonic clock: replaces performance.now for this test only. */
@@ -48,24 +45,11 @@ const call = (f: Awaited<ReturnType<typeof fixture>>, name: string, params: Reco
 const waitFor = (f: Awaited<ReturnType<typeof fixture>>, ids: string[]) =>
 	call(f, "agent", { action: "wait", blocking: true, ids, timeout_ms: 60000 });
 
-/**
- * A small SDK caller session in fixture f's isolated home, loading only this runtime through its exported
- * registerSessionRuntime with a code_writer profile. `configure` receives the child's own ExtensionAPI.
- */
-async function workerSession(f: Awaited<ReturnType<typeof fixture>>, configure: (child: ExtensionAPI) => void): Promise<AgentSession> {
-	const profile: WorkerProfile = {
-		name: "code_writer",
-		description: "metadata test worker",
-		system: "EXACT",
-		tools: [],
-		async resolve() {
-			return { model: f.sub.getModel("s"), thinking: "low" } as WorkerModel;
-		},
-		configure,
-	};
+/** A separate SDK caller in the fixture's isolated home, loading only the ordinary agent runtime. */
+async function callerSession(f: Awaited<ReturnType<typeof fixture>>): Promise<AgentSession> {
 	const agentDir = join(f.root, "home");
 	const loader = new DefaultResourceLoader({ cwd: f.root, agentDir, noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
-		extensionFactories: [pi => { registerSessionRuntime(pi, profile); }] });
+		extensionFactories: [pi => { registerSessionRuntime(pi); }] });
 	await loader.reload();
 	const { session } = await createAgentSession({ cwd: f.root, agentDir, modelRuntime: f.runtime, model: f.main.getModel("m"), thinkingLevel: "low",
 		resourceLoader: loader, sessionManager: SessionManager.inMemory(f.root),
@@ -182,19 +166,21 @@ test("meta-both-paths: the custom message and the wait result carry the same dis
 	}
 });
 
-test("meta-workers: code_writer and shell_runner, message and wait paths carry the same display details", async (t) => {
-	for (const role of ROLES) {
+test("meta-models: ordinary agents on distinct models preserve display details through message and wait paths", async (t) => {
+	for (const separateModel of [false, true]) {
+		const role = "agent";
 		const c = clock(t);
 		const f = await fixture();
 		try {
-			const replies = await withWorkers(f);
-			const model = "anthropic/claude-haiku-5-5";
+			const replies = separateModel ? await withAgents(f) : f.subReplies;
+			const model = separateModel ? "anthropic/metadata-agent" : `${f.sub.provider.id}/s`;
+			const start = (task: string) => call(f, role, { ...f.params(task), model });
 			// Message path: the result is pushed to the caller as a custom message.
 			replies.push(async () => {
 				c.now += 7000;
 				return answer("CODED");
 			});
-			assert.equal(await call(f, role, { task: "CODE_BRIEF" }).then(r => r.content[0].type === "text" ? r.content[0].text : ""), `${role}#1 started`);
+			assert.equal(await start("FIRST_BRIEF").then(r => r.content[0].type === "text" ? r.content[0].text : ""), `${role}#1 started`);
 			await until(() => delivered(f.session, role).length === 1, `the ${role} message`);
 			const [message] = delivered(f.session, role);
 			assert.equal(message.content, `[${role}#1] CODED`);
@@ -203,7 +189,7 @@ test("meta-workers: code_writer and shell_runner, message and wait paths carry t
 			// Wait path: the same run's details come on the wait result, and the body keeps its text.
 			const g = gate("WAITED");
 			replies.push(g.reply);
-			await call(f, role, { task: "WAIT_BRIEF" });
+			await start("WAIT_BRIEF");
 			await until(() => g.entered(), `the ${role} running`);
 			const waiting = call(f, role, { action: "wait", blocking: true, ids: [`${role}#2`], timeout_ms: 60000 });
 			await tick(20);
@@ -307,33 +293,39 @@ test("delivery-unchanged: content, delivery token, quiet, queued and retry deliv
 		}
 	});
 
-	await t.test("native follow-up: a queued follow-up joins the child's run, delivered once after its last answer", async () => {
+	await t.test("native follow-up: a queued follow-up joins the child's run, delivered once after its last answer", async childTest => {
 		const f = await fixture();
 		let extra: AgentSession | undefined;
 		try {
-			const childApi: { pi?: ExtensionAPI } = {};
-			extra = await workerSession(f, (child) => { childApi.pi = child; });
+			extra = await callerSession(f);
+			let child: AgentSession | undefined;
+			const prompt = AgentSession.prototype.prompt;
+			childTest.mock.method(AgentSession.prototype, "prompt", function(this: AgentSession, ...args: Parameters<typeof prompt>) {
+				if (this !== extra && this !== f.session) child = this;
+				return prompt.apply(this, args);
+			});
 			const first = gate("FIRST"), second = gate("SECOND");
 			f.subReplies.push(first.reply, second.reply);
-			const started = await extra.getToolDefinition("code_writer")!.execute("native", { task: "ONE" }, undefined, undefined, extra.extensionRunner.createContext());
-			assert.equal(started.content[0].type === "text" ? started.content[0].text : "", "code_writer#1 started");
+			const started = await extra.getToolDefinition("agent")!.execute("native", f.params("ONE"), undefined, undefined, extra.extensionRunner.createContext());
+			assert.equal(started.content[0].type === "text" ? started.content[0].text : "", "agent#1 started");
 			await until(() => first.entered(), "the first child reply");
 			const mainRequests = f.requests.main.length;
-			await childApi.pi!.sendUserMessage("TWO", { deliverAs: "followUp" });
+			assert.ok(child, "the runtime created a real child session");
+			await child.followUp("TWO");
 			await tick(50);
-			assert.deepEqual(delivered(extra, "code_writer"), [], "no message before the first release");
+			assert.deepEqual(delivered(extra, "agent"), [], "no message before the first release");
 			first.release();
 			await until(() => second.entered(), "the follow-up reply");
 			await tick(50);
-			assert.deepEqual(delivered(extra, "code_writer"), [], "no message while the follow-up's reply is pending");
+			assert.deepEqual(delivered(extra, "agent"), [], "no message while the follow-up's reply is pending");
 			assert.equal(f.requests.main.length, mainRequests, "the caller is not woken while the follow-up runs");
 			second.release();
-			await until(() => delivered(extra, "code_writer").length === 1, "the delivery");
+			await until(() => delivered(extra, "agent").length === 1, "the delivery");
 			await until(() => f.requests.main.length === mainRequests + 1, "the one caller wake");
 			await tick(50);
-			const messages = delivered(extra, "code_writer");
+			const messages = delivered(extra, "agent");
 			assert.equal(messages.length, 1, "exactly one message after the follow-up completes");
-			assert.equal(messages[0].content, "[code_writer#1] FIRST\n\nSECOND");
+			assert.equal(messages[0].content, "[agent#1] FIRST\n\nSECOND");
 			assert.equal(messages[0].details.outcome, "finished");
 			assert.equal(f.requests.main.length, mainRequests + 1, "the caller is woken once");
 			assert.deepEqual(f.errors, []);

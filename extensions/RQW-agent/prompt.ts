@@ -1,8 +1,6 @@
 // System prompts of the children. A subagent gets the main agent's system prompt (as Pi built it for the main run,
 // read through the public `ctx.getSystemPrompt()`), then the subagent reminder, then the caller's optional role.
-// An explorer gets the same prompt with the search role. Workers keep their role file and get cwd, OS and date.
-// DECISIONS.md, sections Agent and Workers.
-import { arch, release } from "node:os";
+// DECISIONS.md, section Agent.
 
 /** Cursor-style reminder: the child answers its caller; rules addressed to the main agent or a coordinator are not its own. */
 export const SUBAGENT_REMINDER = [
@@ -13,19 +11,6 @@ export const SUBAGENT_REMINDER = [
 	"</subagent>",
 ].join("\n");
 
-export const THOROUGHNESS = ["quick", "medium", "very thorough"] as const;
-export type Thoroughness = (typeof THOROUGHNESS)[number];
-
-/** The very short search role of an explorer, at one thoroughness level. */
-export function explorerRole(level: Thoroughness): string {
-	return [
-		"You are a file search specialist. Find what the caller asks for in this codebase and report it.",
-		`Thoroughness: ${level}. quick: a targeted lookup, the first good match. medium: a moderate search of the likely places. very thorough: a comprehensive search of every plausible place and naming variant.`,
-		"Perform read-only operations only, including in shell and codemode: do not create, write, edit or delete files, change git state, or install packages or dependencies. Your tools are not a sandbox; their availability is not permission to mutate anything.",
-		"Run independent searches in parallel. Return file paths as absolute paths, with the lines that answer the question.",
-	].join("\n");
-}
-
 /** The default subagent prompt: the main agent's prompt, the reminder, then the role when given. */
 export function subagentPrompt(base: string, role?: string, preserveRoleWhitespace = false): string {
 	const parts = [base.trimEnd(), SUBAGENT_REMINDER];
@@ -33,20 +18,4 @@ export function subagentPrompt(base: string, role?: string, preserveRoleWhitespa
 	if (preserveRoleWhitespace ? role !== undefined : role?.trim())
 		parts.push(`<role>\n${preserveRoleWhitespace ? role : role!.trim()}\n</role>`);
 	return parts.filter(Boolean).join("\n\n");
-}
-
-/** The block appended to a worker's role prompt: working directory, OS and today's date. */
-export function workerEnvironment(cwd: string, now = new Date()): string {
-	return [
-		"<environment>",
-		`- Working directory: ${cwd}`,
-		`- OS: ${process.platform} ${release()} (${arch()})`,
-		`- Today (UTC): ${now.toISOString().slice(0, 10)}`,
-		"</environment>",
-	].join("\n");
-}
-
-/** A worker's whole prompt: its fixed role file, then the environment block. */
-export function workerPrompt(role: string, cwd: string, now = new Date()): string {
-	return `${role.trimEnd()}\n\n${workerEnvironment(cwd, now)}`;
 }

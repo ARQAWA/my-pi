@@ -28,14 +28,14 @@ const bare = (name: string) => ({ name, label: name, description: "fixture", par
 
 const waitText = JSON.stringify({ reason: "result", timed_out: false, results: [{ id: "agent#3", run: 1, delivery: "wait",
 	text: "Готово: найдено 2 места, где drawOriginal читает children[1]; см. render.ts:286 и README.", outcome: "finished" }], receipts: [],
-	statuses: [{ id: "code_writer#5", state: "running", turns: 4 }] });
+	statuses: [{ id: "agent#5", state: "running", turns: 4 }] });
 
-/** The five cases of the owner's preview, with the same arguments and results. */
+/** Expanded waits, failed agent starts, unknown tools and commands against Pi's originals. */
 const PREVIEW: { key: string; name: string; definition: pi.ToolRenderers | undefined; args: Record<string, unknown>; result: Result }[] = [
-	{ key: "wait", name: "agent", definition: bare("agent"), args: { action: "wait", ids: ["agent#3", "code_writer#5"], timeout_ms: 600000 },
+	{ key: "wait", name: "agent", definition: bare("agent"), args: { action: "wait", ids: ["agent#3", "agent#5"], timeout_ms: 600000 },
 		result: { content: [{ type: "text", text: waitText }], durationMs: 41250 } },
-	{ key: "cw-error", name: "code_writer", definition: bare("code_writer"), args: { task: "goal: fix render.ts\nfiles: extensions/RQW-tool-ui/render.ts", title: "fix render" },
-		result: { content: [{ type: "text", text: "Error: brief is ambiguous (blocked)\nmissing: exact decided change" }], isError: true, durationMs: 900 } },
+	{ key: "agent-error", name: "agent", definition: bare("agent"), args: { action: "start", task: "Inspect expanded rendering in render.ts", title: "inspect render", model: "unavailable/model", thinking: "low" },
+		result: { content: [{ type: "text", text: "Error: model unavailable/model is not available\nAgent session could not start" }], isError: true, durationMs: 900 } },
 	{ key: "unknown", name: "mcp_lookup", definition: undefined, args: { query: "expanded original", filters: { kind: ["tool", "agent"], limit: 3 }, verbose: true },
 		result: { content: [{ type: "text", text: "match 1\tToolExecutionComponent.render(width) adds a leading spacer row before the shell and then images\nmatch 2\tformatToolCallWithArgs is private to render-utils.js\nmatch 3\tgetTextOutput strips ANSI and binary control characters" }], durationMs: 300 } },
 	{ key: "unknown-error", name: "mcp_lookup", definition: undefined, args: { query: "x" },

@@ -312,8 +312,7 @@ describe("coordinator-guard: exclusive coordinator", { skip: SKIP }, () => {
 			const start = { ...BAD_START };
 			assert.equal(g.call("agent", start), undefined);
 			assert.equal(start.task, "x");
-			assert.equal(g.call("agent", { action: "start", explore: "quick", task: "y" }), undefined);
-			assert.equal(g.call("code_writer", { task: "x" }), undefined);
+			assert.equal(g.call("agent", { action: "start", agent_type: "spotty", task: "y" }), undefined);
 			assert.equal(g.call("write", { path: join(root, "x.md"), content: "" }), undefined);
 			assert.equal(g.call("edit", { path: join(root, "x.md"), edits: [] }), undefined);
 			const sections = g.prompt();

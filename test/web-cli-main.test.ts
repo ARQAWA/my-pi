@@ -136,7 +136,7 @@ describe("rqw-web repository development dependencies", () => {
 		assert.equal(MANIFEST.devDependencies["@earendil-works/pi-ai"], "1.4.0");
 		assert.equal(MANIFEST.devDependencies.jiti, "2.7.0");
 		assert.equal(MANIFEST.peerDependencies["@earendil-works/pi-coding-agent"], "1.4.0");
-		assert.deepEqual(MANIFEST.dependencies, { ws: "8.22.0" });
+		assert.deepEqual(MANIFEST.dependencies, { "smol-toml": "1.9.1", ws: "8.22.0" });
 		assert.deepEqual(LOCK.packages[""].dependencies, MANIFEST.dependencies);
 		assert.deepEqual(LOCK.packages[""].devDependencies, MANIFEST.devDependencies);
 		assert.equal(MANIFEST.bin, undefined);

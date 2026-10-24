@@ -1,5 +1,5 @@
 // Root integration test: the cards of RQW-agent-ui on what the real RQW-agent delivers (a custom `[<name>#<id>]` message
-// and a `wait` result, with the T15 display details), for agent, code_writer and shell_runner. Real Pi sessions, faux
+// and a `wait` result, with the T15 display details), for generic agents. Real Pi sessions, faux
 // providers, isolated agent directory; Pi's exported host components draw the transcript. RQW-agent-ui's own tests load
 // only that extension; this one composes the two.
 import assert from "node:assert/strict";
@@ -12,12 +12,10 @@ import { stripVTControlCharacters } from "node:util";
 import { CustomMessageComponent, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { fauxToolCall } from "@earendil-works/pi-ai";
 import { answer, fixture, gate, tick, until } from "../extensions/RQW-agent/test/audit-fixture.ts";
-import { withWorkers } from "../extensions/RQW-agent/test/metadata-fixture.ts";
-import { NEXT, verdictMessage } from "../extensions/RQW-review/index.ts";
 
 const AGENT_UI = join(import.meta.dirname, "../extensions/RQW-agent-ui/index.ts");
 const TOOL_UI = join(import.meta.dirname, "../extensions/RQW-tool-ui/index.ts");
-const KINDS = ["agent", "code_writer", "shell_runner"] as const;
+const KINDS = ["agent"] as const;
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 const ui = { requestRender() {} } as never;
 const plain = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line).trimEnd()).join("\n");
@@ -41,31 +39,17 @@ function waitRows(f: Fixture, kind: string, result: { content: unknown; details:
 	return plain(component.render(100));
 }
 
-test("agent-ui on real deliveries: custom message and wait result, agent / code_writer / shell_runner, collapsed and Ctrl+O", async () => {
+test("agent-ui on real deliveries: agent custom message and wait result, collapsed and Ctrl+O", async () => {
 	// Pi reads keybindings and settings from here, never from the owner's ~/.pi.
 	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-delivery-"));
 	initTheme("dark", false);
 	for (const kind of KINDS) {
 		const f = await fixture("tui", undefined, [], [AGENT_UI]);
 		try {
-			let model: string;
-			let first: () => string[];
-			let workerReplies: Awaited<ReturnType<typeof withWorkers>> | undefined;
-			if (kind === "agent") {
-				model = `${f.sub.provider.id}/s`;
-				f.subReplies.push(answer("Первый ответ.\nВторая строка."));
-				assert.equal(await f.start("ONE"), "agent#1 started");
-				first = () => f.delivered();
-				await until(() => first().length === 1, "the agent message");
-			} else {
-				model = "anthropic/claude-haiku-5-5";
-				const replies = await withWorkers(f);
-				replies.push(answer("Первый ответ.\nВторая строка."));
-				await call(f, kind, { task: "BRIEF" });
-				first = () => f.session.messages.flatMap((m) => (m.role === "custom" && m.customType === kind && typeof m.content === "string" ? [m.content] : []));
-				await until(() => first().length === 1, `the ${kind} message`);
-				workerReplies = replies;
-			}
+			const model = `${f.sub.provider.id}/s`;
+			f.subReplies.push(answer("Первый ответ.\nВторая строка."));
+			assert.equal(await f.start("ONE"), "agent#1 started");
+			await until(() => f.delivered().length === 1, "the agent message");
 			const short = model.slice(model.lastIndexOf("/") + 1).replace(/^claude-([a-z]+).*/, "$1");
 
 			// Delivery path 1: the custom message.
@@ -81,10 +65,8 @@ test("agent-ui on real deliveries: custom message and wait result, agent / code_
 
 			// Delivery path 2: the wait result of a second run.
 			const g = gate("Ответ через wait.\nХвост.");
-			if (workerReplies) workerReplies.push(g.reply);
-			else f.subReplies.push(g.reply);
-			if (kind === "agent") await f.start("TWO");
-			else await call(f, kind, { task: "WAIT_BRIEF" });
+			f.subReplies.push(g.reply);
+			await f.start("TWO");
 			await until(() => g.entered(), `the second ${kind} running`);
 			const waiting = call(f, kind, { action: "wait", blocking: true, ids: [`${kind}#2`], timeout_ms: 60000 });
 			await tick(20);
@@ -106,6 +88,46 @@ test("agent-ui on real deliveries: custom message and wait result, agent / code_
 	}
 });
 
+test("profile agent deliveries keep stored provenance and ordinary message and wait cards without a separate review runtime", async () => {
+	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-profile-"));
+	initTheme("dark", false);
+	const f = await fixture("tui", undefined, [], [AGENT_UI, TOOL_UI]);
+	const path = join(f.root, "ui-checker.toml");
+	const source = 'name = "ui-checker"\ndescription = "UI fixture"\ndeveloper_instructions = "Return the scripted answer."\n';
+	writeFileSync(path, source);
+	const profile = { name: "ui-checker", path, sha256: createHash("sha256").update(source).digest("hex") };
+	const off = f.bus.on("rqw-agent:profiles", request => {
+		(request as unknown as { offer(paths: string[]): void }).offer([path]);
+	});
+	const held = gate("PROFILE_WAIT\nPROFILE_TAIL");
+	try {
+		const { system: _system, ...params } = f.params("PROFILE_MESSAGE");
+		f.subReplies.push(answer("PROFILE_MESSAGE"));
+		await call(f, "agent", { ...params, agent_type: profile.name });
+		await until(() => f.delivered().length === 1, "profile message delivered");
+		const stored = f.session.messages.find(m => m.role === "custom" && m.customType === "agent")!;
+		assert.deepEqual((stored as { details: { profile: unknown } }).details.profile, profile);
+		assert.match(messageRows(f, "agent", stored, false), /agent#1 finished · s low · \d+(\.\d)?s/);
+		f.subReplies.push(held.reply);
+		await call(f, "agent", { ...params, agent_type: profile.name, task: "PROFILE_WAIT" });
+		await until(held.entered, "profile child held");
+		const args = { action: "wait", blocking: true, ids: ["agent#2"], wake_on_alert: false };
+		const waiting = call(f, "agent", args);
+		await tick(); held.release();
+		const result = await waiting;
+		const details = result.details as { results: { display: { profile: unknown } }[] };
+		assert.deepEqual(details.results[0].display.profile, profile);
+		const host = resultHost(f, "agent", args, result);
+		host.setExpanded(true);
+		const expanded = plain(host.render(160));
+		assert.match(expanded, /agent#2 finished · s low · \d+(\.\d)?s/);
+		assert.match(expanded, /PROFILE_TAIL/);
+		assert.doesNotMatch(expanded, /ui-checker\.toml|sha256/);
+		assert.equal(f.session.getToolDefinition("review"), undefined);
+		assert.deepEqual(f.errors, []);
+	} finally { off(); held.release(); await f.cleanup(); }
+});
+
 function resultHost(f: Fixture, kind: string, args: Record<string, unknown>, result: { content: unknown; details: unknown }, toolCallId = "wait-host", stock = false) {
 	const base = f.session.getToolDefinition(kind)!;
 	const definition = stock ? base : f.session.extensionRunner.resolveToolRenderers(kind, () => base);
@@ -114,23 +136,22 @@ function resultHost(f: Fixture, kind: string, args: Record<string, unknown>, res
 	return component;
 }
 
-test("agent-ui renders every real mixed-child until all result with title and prompt-file metadata", async () => {
+test("agent-ui renders every real multi-agent until all result with title and prompt-file metadata", async () => {
 	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-all-"));
 	initTheme("dark", false);
 	const f = await fixture("tui", undefined, [], [AGENT_UI]);
-	const agent = gate("AGENT_FIRST\nAGENT_TAIL"), worker = gate("WORKER_FIRST\nWORKER_TAIL");
+	const agent = gate("AGENT_FIRST\nAGENT_TAIL"), second = gate("SECOND_FIRST\nSECOND_TAIL");
 	const prompt = "A temporary exact system prompt.\n";
 	const promptPath = join(f.root, "system.md");
 	writeFileSync(promptPath, prompt);
 	try {
-		f.subReplies.push(agent.reply);
-		const replies = await withWorkers(f);
-		replies.push(worker.reply);
+		f.subReplies.push(agent.reply, second.reply);
 		const { system: _system, ...params } = f.params("MIXED_AGENT");
 		await call(f, "agent", { ...params, system_file: promptPath, title: "Named research child" });
-		await call(f, "code_writer", { task: "MIXED_WORKER", title: "Named worker child" });
-		await until(() => agent.entered() && worker.entered(), "both mixed children running");
-		const args = { action: "wait", blocking: true, ids: ["agent#1", "code_writer#1"], until: "all", wake_on_alert: false, timeout_ms: 60000 };
+		await until(agent.entered, "first agent reply assigned");
+		await call(f, "agent", { ...f.params("SECOND_AGENT"), title: "Named second child" });
+		await until(() => agent.entered() && second.entered(), "both agents running");
+		const args = { action: "wait", blocking: true, ids: ["agent#1", "agent#2"], until: "all", wake_on_alert: false, timeout_ms: 60000 };
 		let settled = false;
 		const waiting = call(f, "agent", args).then(result => { settled = true; return result; });
 		await tick();
@@ -140,27 +161,27 @@ test("agent-ui renders every real mixed-child until all result with title and pr
 		assert.equal(firstStatus.state, "idle", "the first child has completed");
 		assert.equal(settled, false, "until all stays parked after the first child");
 		assert.deepEqual(f.delivered(), [], "the held agent result is not pushed");
-		worker.release();
+		second.release();
 		const result = await waiting;
 		const details = result.details as { reason: string; results: { id: string; text: string; display: Record<string, unknown> }[] };
 		assert.equal(details.reason, "result");
-		assert.deepEqual(details.results.map(item => [item.id, item.text]), [["agent#1", "AGENT_FIRST\nAGENT_TAIL"], ["code_writer#1", "WORKER_FIRST\nWORKER_TAIL"]]);
+		assert.deepEqual(details.results.map(item => [item.id, item.text]), [["agent#1", "AGENT_FIRST\nAGENT_TAIL"], ["agent#2", "SECOND_FIRST\nSECOND_TAIL"]]);
 		assert.equal(details.results[0].display.title, "Named research child");
-		assert.equal(details.results[1].display.title, "Named worker child");
+		assert.equal(details.results[1].display.title, "Named second child");
 		assert.deepEqual(details.results[0].display.prompt_file, { kind: "system", path: promptPath, sha256: createHash("sha256").update(prompt).digest("hex") });
 		const original = JSON.stringify(result);
 		const host = resultHost(f, "agent", args, result);
 		const collapsed = plain(host.render(160));
-		for (const [id, title, first] of [["agent#1", "Named research child", "AGENT_FIRST"], ["code_writer#1", "Named worker child", "WORKER_FIRST"]]) {
+		for (const [id, title, first] of [["agent#1", "Named research child", "AGENT_FIRST"], ["agent#2", "Named second child", "SECOND_FIRST"]]) {
 			assert.match(collapsed, new RegExp(`${id} ${title} finished`));
 			assert.match(collapsed, new RegExp(first));
 		}
-		assert.doesNotMatch(collapsed, /AGENT_TAIL|WORKER_TAIL|"reason"|sha256/);
+		assert.doesNotMatch(collapsed, /AGENT_TAIL|SECOND_TAIL|"reason"|sha256/);
 		host.setExpanded(true);
 		const expanded = plain(host.render(160));
 		assert.match(expanded, /"reason":"result"/);
 		assert.match(expanded, /AGENT_TAIL/);
-		assert.match(expanded, /WORKER_TAIL/);
+		assert.match(expanded, /SECOND_TAIL/);
 		const stock = resultHost(f, "agent", args, result, "stock-all", true);
 		stock.setExpanded(true);
 		assert.equal(expanded, plain(stock.render(160)), "expanded content is the original, not display-only metadata");
@@ -170,7 +191,7 @@ test("agent-ui renders every real mixed-child until all result with title and pr
 		assert.equal(JSON.stringify(result), original, "rendering never mutates delivery metadata");
 		assert.equal(f.session.messages.some(message => message.role === "custom" && KINDS.includes(message.customType as typeof KINDS[number])), false);
 		assert.deepEqual(f.errors, []);
-	} finally { agent.release(); worker.release(); await f.cleanup(); }
+	} finally { agent.release(); second.release(); await f.cleanup(); }
 });
 
 test("agent-ui leaves real alert and status results identical to stock across host expansion", async () => {
@@ -213,9 +234,9 @@ test("agent-ui leaves real alert and status results identical to stock across ho
 	} finally { held.release(); await f.cleanup(); }
 });
 
-// Reviews arrive only as custom messages, never through the agent wait-result path.
-// Use the production delivery envelope and REVIEWER.md's complete verdict fields.
-test("review custom messages use runner-registered cards independently of tool-ui and preserve the original delivery", async () => {
+// Stored standalone review messages remain readable after reviewers become profiled agents.
+// These fixtures describe persisted data, not a current review producer.
+test("legacy review custom messages keep cards independently of tool-ui and preserve stored data", async () => {
 	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-review-ui-delivery-"));
 	initTheme("dark", false);
 	const finding = (n: number) => [
@@ -228,9 +249,9 @@ test("review custom messages use runner-registered cards independently of tool-u
 	const checked = "CHECKED:\n- response.ts: inspected [checked-source] against the criterion.";
 	const findings = `FINDINGS:\n${finding(1)}\n${finding(2)}\n${checked}`;
 	const cases = [
-		{ n: 41, verdict: `CLEAN\n${checked}`, next: NEXT.clean, findings: 0, unchecked: 0 },
-		{ n: 42, verdict: findings, next: NEXT.findings, findings: 2, unchecked: 0 },
-		{ n: 43, verdict: `${findings}\nUNCHECKED:\n- missing.ts: [unread-source] was unavailable.`, next: NEXT.incomplete, findings: 2, unchecked: 1 },
+		{ n: 41, verdict: `CLEAN\n${checked}`, next: "NEXT: The check passed only for the checked sources.", findings: 0, unchecked: 0 },
+		{ n: 42, verdict: findings, next: "NEXT: Find each quote and fix the admitted findings.", findings: 2, unchecked: 0 },
+		{ n: 43, verdict: `${findings}\nUNCHECKED:\n- missing.ts: [unread-source] was unavailable.`, next: "NEXT: Resolve the missing sources before acceptance.", findings: 2, unchecked: 1 },
 	];
 	const normalized = (text: string) => text.replace(/\s+/g, " ").trim();
 	for (const agentUi of [false, true]) for (const toolUi of [false, true]) {
@@ -239,8 +260,8 @@ test("review custom messages use runner-registered cards independently of tool-u
 			const renderer = f.session.extensionRunner.getMessageRenderer("review");
 			assert.equal(typeof renderer, agentUi ? "function" : "undefined", "only agent-ui registers the review message renderer");
 			for (const item of cases) {
-				const content = verdictMessage(item.n, item.verdict, false);
-				assert.ok(content.endsWith(`\n\n${item.next}`), "production NEXT matches this REVIEWER-format verdict");
+				const content = `[review#${item.n}] ${item.verdict}\n\n${item.next}`;
+				assert.ok(content.endsWith(`\n\n${item.next}`), "legacy follow-up text stays in the stored envelope");
 				f.session.sendCustomMessage({ customType: "review", content, display: true, details: { n: item.n } }, { triggerTurn: false });
 				const stored = f.session.messages.find(message => message.role === "custom" && message.customType === "review" && (message.details as { n?: number } | undefined)?.n === item.n);
 				assert.ok(stored && stored.role === "custom");
@@ -260,7 +281,7 @@ test("review custom messages use runner-registered cards independently of tool-u
 					assert.doesNotMatch(rendered, /\[review\]|\[review#(?:41|42|43)\]/, "only the outer delivery brackets are removed");
 					if (expanded) {
 						assert.ok(normalized(rendered).includes(normalized(item.verdict)), "expanded verdict retains every finding field, verification section and inner bracket");
-						assert.ok(normalized(rendered).includes(normalized(item.next)), "expanded message retains the complete production NEXT paragraph");
+						assert.ok(normalized(rendered).includes(normalized(item.next)), "expanded message retains the complete stored NEXT paragraph");
 					} else {
 						if (item.findings === 0) assert.match(header, /CLEAN/);
 						else assert.match(header, new RegExp(`${item.findings} findings?`));
@@ -306,7 +327,7 @@ function assertExpandedCards(rendered: string, cards: DeliveredCard[]) {
 	assert.doesNotMatch(rendered, /Waited for|"reason"|"results"|"display"|"prompt_file"|sha256/, "expanded cards replace JSON without exposing metadata");
 }
 
-test("agent-ui before tool-ui keeps the exact folded summary and expands every worker kind to full cards repeatedly", async () => {
+test("agent-ui before tool-ui keeps the exact folded summary and expands an agent to full cards repeatedly", async () => {
 	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-compose-"));
 	initTheme("dark", false);
 	for (const kind of KINDS) {
@@ -314,14 +335,8 @@ test("agent-ui before tool-ui keeps the exact folded summary and expands every w
 		const held = gate("COMPOSE_FIRST\nCOMPOSE_MIDDLE\nCOMPOSE_TAIL");
 		const args = { action: "wait", blocking: true, ids: [`${kind}#1`], timeout_ms: 60000, wake_on_alert: false };
 		try {
-			if (kind === "agent") {
-				f.subReplies.push(held.reply);
-				await call(f, kind, { ...f.params(), title: "Named composition child" });
-			} else {
-				const replies = await withWorkers(f);
-				replies.push(held.reply);
-				await call(f, kind, { task: "COMPOSE_WORKER", title: "Named composition child" });
-			}
+			f.subReplies.push(held.reply);
+			await call(f, kind, { ...f.params(), title: "Named composition child" });
 			await until(held.entered, "composition child running");
 			f.mainReplies.push(answer([fauxToolCall(kind, args, { id: "composed-wait" })], { stopReason: "toolUse" }), answer("COMPOSITION_DONE"));
 			const run = f.session.prompt("Wait for the child");
@@ -365,17 +380,16 @@ test("agent-ui before tool-ui expands mixed results in leader and nonleader call
 		if (event.type === "tool_execution_end" && event.toolCallId === "mixed-wait") mixedFinished = true;
 	});
 	try {
-		f.subReplies.push(gates[0].reply);
-		const replies = await withWorkers(f);
-		replies.push(gates[1].reply, gates[2].reply);
+		f.subReplies.push(...gates.map(held => held.reply));
 		await call(f, "agent", { ...f.params(), title: "Named mixed agent" });
-		await call(f, "code_writer", { task: "MIXED_WRITER", title: "Named mixed writer" });
-		await until(gates[1].entered, "writer reply assigned before starting shell worker");
-		await call(f, "shell_runner", { task: "MIXED_SHELL", title: "Named mixed shell" });
+		await until(gates[0].entered, "first agent reply assigned");
+		await call(f, "agent", { ...f.params("MIXED_WRITER"), title: "Named mixed writer" });
+		await until(gates[1].entered, "second agent reply assigned");
+		await call(f, "agent", { ...f.params("MIXED_SHELL"), title: "Named mixed shell" });
 		await until(() => gates.every(held => held.entered()), "all mixed children running");
 		const calls = [
-			{ kind: "agent", id: "mixed-wait", args: { action: "wait", blocking: true, ids: ["agent#1", "code_writer#1"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
-			{ kind: "shell_runner", id: "shell-wait", args: { action: "wait", blocking: true, ids: ["shell_runner#1"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
+			{ kind: "agent", id: "mixed-wait", args: { action: "wait", blocking: true, ids: ["agent#1", "agent#2"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
+			{ kind: "agent", id: "shell-wait", args: { action: "wait", blocking: true, ids: ["agent#3"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
 		];
 		f.mainReplies.push(answer(calls.map(item => fauxToolCall(item.kind, item.args, { id: item.id })), { stopReason: "toolUse" }), answer("MIXED_COMPOSITION_DONE"));
 		const run = f.session.prompt("Collect all three children");
@@ -394,8 +408,8 @@ test("agent-ui before tool-ui expands mixed results in leader and nonleader call
 		});
 		assert.deepEqual(hosts.flatMap(item => item.cards.map(card => [card.id, card.text, card.display.title])), [
 			["agent#1", "AGENT_FIRST\nAGENT_TAIL", "Named mixed agent"],
-			["code_writer#1", "WRITER_FIRST\nWRITER_TAIL", "Named mixed writer"],
-			["shell_runner#1", "SHELL_FIRST\nSHELL_TAIL", "Named mixed shell"],
+			["agent#2", "WRITER_FIRST\nWRITER_TAIL", "Named mixed writer"],
+			["agent#3", "SHELL_FIRST\nSHELL_TAIL", "Named mixed shell"],
 		]);
 		const folded = hosts.map(item => plain(item.host.render(160)));
 		assert.deepEqual(folded, ["", "\n Waited for 3 agents"], "only the last call leads the tool-ui group");

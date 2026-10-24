@@ -297,7 +297,7 @@ test("remove deletes the exact `<file>.children` tree, nested descendants, sidec
 		const tree = `${f.file}.children`;
 		const child = join(tree, "agent-1", "session.jsonl");
 		const grandDir = `${child}.children`;
-		const grand = join(grandDir, "code_writer-2", "session.jsonl");
+		const grand = join(grandDir, "agent-2", "session.jsonl");
 		const sidecar = join(tree, "agent-1", "meta.json");
 		await mkdir(dirname(grand), { recursive: true });
 		await f.save(f.file, [f.header, { details: { fullOutputPath: own } }, { details: { fullOutputPath: both } }]);

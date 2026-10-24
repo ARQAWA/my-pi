@@ -28,9 +28,10 @@ export function childWaitCards(message: { content: unknown; details?: unknown })
 	const cards: ParsedCard[] = [];
 	for (const item of details.results) {
 		if (!item || typeof item !== "object") continue;
-		const { id, text, outcome } = item as { id?: unknown; text?: unknown; outcome?: unknown };
+		const { id, text, outcome, display } = item as { id?: unknown; text?: unknown; outcome?: unknown; display?: unknown };
 		const status = typeof outcome === "string" ? OUTCOMES[outcome] : undefined;
-		cards.push(cardParts(id, { outcome: status }, typeof text === "string" ? text : "", TYPE));
+		const metadata = display && typeof display === "object" ? display : { outcome: status };
+		cards.push(cardParts(id, metadata, typeof text === "string" ? text : "", TYPE));
 	}
 	return cards.length ? cards : undefined;
 }

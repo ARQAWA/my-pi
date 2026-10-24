@@ -145,7 +145,7 @@ it("[lineage] child request: name, parent thread, parent turn, subagent header a
 			const sse = sseScript([textEvents("resp_c1", "ok")]);
 			const child = createSessionController({
 				session: childSession, installationId: "inst-1", store: await seededStore(),
-				parentThreadId: parent.threadId, rootSessionId: parent.rootSessionId, subagentKind: "collab_spawn", agentName: "/root/worker#1",
+				parentThreadId: parent.threadId, rootSessionId: parent.rootSessionId, subagentKind: "collab_spawn", agentName: "/root/agent#1",
 				parentTurnId: parentTurn, rootTurnId: parentTurn,
 				dependencies: { ...timing, connect: upgradeRequired, postEvents: sse.fn },
 			} as never);
@@ -160,7 +160,7 @@ it("[lineage] child request: name, parent thread, parent turn, subagent header a
 			assert.equal(meta["x-codex-parent-thread-id"], parent.threadId, "body: parent thread");
 			assert.equal(meta.parent_turn_id, parentTurn, "body: creation parent turn");
 			assert.equal(meta.root_turn_id, parentTurn, "body: captured root turn");
-			assert.equal(turn.agent_name, "/root/worker#1", "turn metadata: actual label");
+			assert.equal(turn.agent_name, "/root/agent#1", "turn metadata: actual label");
 			assert.equal(turn.parent_thread_id, parent.threadId);
 			assert.equal(turn.parent_turn_id, parentTurn);
 			assert.equal(turn.root_turn_id, parentTurn);
@@ -224,7 +224,7 @@ it("[lineage] nested child: the grandchild's root is the ancestor's root, not th
 			const childSse = sseScript([]);
 			const child = createSessionController({
 				session: await create(fileManager(dir, "child")), installationId: "inst-1", store: await seededStore(),
-				parentThreadId: root.threadId, rootSessionId: root.rootSessionId, subagentKind: "collab_spawn", agentName: "/root/worker#1",
+				parentThreadId: root.threadId, rootSessionId: root.rootSessionId, subagentKind: "collab_spawn", agentName: "/root/agent#1",
 				parentTurnId: rootTurn, rootTurnId: rootTurn,
 				dependencies: { ...timing, connect: upgradeRequired, postEvents: childSse.fn },
 			} as never);
@@ -234,7 +234,7 @@ it("[lineage] nested child: the grandchild's root is the ancestor's root, not th
 			const sse = sseScript([textEvents("resp_g", "ok")]);
 			const grandchild = createSessionController({
 				session: await create(fileManager(dir, "grandchild")), installationId: "inst-1", store: await seededStore(),
-				parentThreadId: child.threadId, rootSessionId: root.rootSessionId, subagentKind: "review", agentName: "/root/worker#1/reviewer#1",
+				parentThreadId: child.threadId, rootSessionId: root.rootSessionId, subagentKind: "review", agentName: "/root/agent#1/reviewer#1",
 				parentTurnId: childTurn, rootTurnId: child.lineageSnapshot.rootTurnId,
 				dependencies: { ...timing, connect: upgradeRequired, postEvents: sse.fn },
 			} as never);
@@ -260,7 +260,7 @@ it("[lineage] unknown origin: a child with no captured or birth root sends no ro
 			const sse = sseScript([textEvents("resp_1", "ok"), textEvents("resp_2", "ok")]);
 			const child = createSessionController({
 				session: await create(fileManager(dir, "child")), installationId: "inst-1", store: await seededStore(),
-				parentThreadId: "parent-fake", rootSessionId: "root-fake", subagentKind: "collab_spawn", agentName: "/root/worker#1",
+				parentThreadId: "parent-fake", rootSessionId: "root-fake", subagentKind: "collab_spawn", agentName: "/root/agent#1",
 				dependencies: { ...timing, connect: upgradeRequired, postEvents: sse.fn },
 			} as never);
 			child.policy.beginRun({ kind: "run" });

@@ -101,9 +101,9 @@ for (const failure of ["missing", "error", "filtered", "execution_error"]) {
 }
 
 test("all holds early results and delivers one aggregate including prior receipts", () => {
-	const f = fixture(), a = f.child("agent#1"), b = f.child("agent#2"), c = f.child("shell_runner#1");
+	const f = fixture(), a = f.child("agent#1"), b = f.child("agent#2"), c = f.child("agent#3");
 	a.finish("already"); assert.equal(f.coordinator.message(f.pushes[0]), true);
-	const receipt = f.wait(["agent#1", "agent#2", "shell_runner#1"], { until: "all" });
+	const receipt = f.wait(["agent#1", "agent#2", "agent#3"], { until: "all" });
 	assert.equal(receipt.terminate, true);
 	f.save(receipt); f.emit("turn_end");
 	b.finish("second"); assert.equal(f.sent.length, 0); assert.equal(f.pushes.length, 1);

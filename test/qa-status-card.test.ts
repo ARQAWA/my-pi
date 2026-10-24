@@ -22,7 +22,7 @@ const URL3 = "https://github.com/ARQAWA/my-pi/issues/3";
 const URL2 = "https://github.com/ARQAWA/my-pi/issues/2";
 const CONTENT = [
 	`RED #3 [qa] RQW-tools background.test.ts: port-note fixture race (test bug) [qa-inbox, qa:claimed] ${URL3}`,
-	`RED #2 [qa] RQW-agent Windows Bun 1.4.3 RPC mixed workers: CLI exited before event ${URL2}`,
+	`RED #2 [qa] RQW-agent Windows Bun 1.4.3 RPC mixed agents: CLI exited before event ${URL2}`,
 	"Triage per PROCESS.md Quality control loop.",
 ].join("\n");
 
@@ -32,7 +32,7 @@ describe("qa-status card rows", { skip }, () => {
 		assert.deepEqual(rows, [
 			"qa-status · 2 red",
 			"  #3 [qa] RQW-tools background.test.ts: port-note fixture race (test bug) [qa-inbox, qa:claimed]",
-			"  #2 [qa] RQW-agent Windows Bun 1.4.3 RPC mixed workers: CLI exited before event",
+			"  #2 [qa] RQW-agent Windows Bun 1.4.3 RPC mixed agents: CLI exited before event",
 		]);
 		assert.match(qaLines(CONTENT, false, tagged, 200).join("\n"), /<error>2 red<\/error>/);
 	});
@@ -42,7 +42,7 @@ describe("qa-status card rows", { skip }, () => {
 		assert.deepEqual(rows, [
 			"qa-status · 2 red",
 			"RED #3 [qa] RQW-tools background.test.ts: port-note fixture race (test bug) [qa-inbox, qa:claimed]", URL3,
-			"RED #2 [qa] RQW-agent Windows Bun 1.4.3 RPC mixed workers: CLI exited before event", URL2,
+			"RED #2 [qa] RQW-agent Windows Bun 1.4.3 RPC mixed agents: CLI exited before event", URL2,
 			"Triage per PROCESS.md Quality control loop.",
 		]);
 	});

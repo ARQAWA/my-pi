@@ -3,7 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 // GPT Fast: OpenAI priority processing (Codex CLI maps Fast to service_tier "priority"). While it is on, every
 // openai-codex request of the MAIN chat gets body.service_tier = "priority"; Anthropic requests are never touched.
 // RQW-settings owns the main chat's rule and /fast-gpt because it is the harness-settings extension: a request-level
-// default that holds regardless of user config. Children (RQW-agent's subagents and workers, RQW-review's reviewers)
+// default that holds regardless of user config. Children (RQW-agent's subagents, RQW-review's reviewers)
 // do not follow this switch live: each reads the caller's state once, when it starts, through the query channel
 // below, and applies its own rule in its own extension (they cannot import this file).
 // DECISIONS.md, section Settings, "GPT Fast".

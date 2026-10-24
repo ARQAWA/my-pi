@@ -27,7 +27,7 @@ const other = (id: string) => classify("web_fetch", { url: "https://x" }, ok(), 
 const everything = () => [
 	edit("e1", "src/a.ts", 3, 2), edit("e2", "src/a.ts", 1, 1), write("w1", "src/b.ts", "x\ny\n"),
 	read("r1", "src/a.ts"), read("r2", "./src/a.ts"), read("r3", "README.md"),
-	grep("g1"), bash("b1"), bash("b2", 1), wait("a1", ["agent#1", "code_writer#2"]), wait("a2", ["agent#1"]), other("o1"),
+	grep("g1"), bash("b1"), bash("b2", 1), wait("a1", ["agent#1", "agent#2"]), wait("a2", ["agent#1"]), other("o1"),
 ];
 
 describe("summary", () => {
@@ -47,7 +47,7 @@ describe("summary", () => {
 		assert.equal(renderSummary(one, 200, identityTheme),
 			"Edited 1 file +1 -0 · read 1 file · searched 1 time · ran 1 command · waited for 1 agent · used 1 tool");
 		assert.equal(renderSummary([grep("g1"), grep("g2"), grep("g3")], 200, identityTheme), "Searched 3 times");
-		assert.equal(renderSummary([wait("w", ["agent#1", "review#2", "shell_runner#3"])], 200, identityTheme), "Waited for 3 agents");
+		assert.equal(renderSummary([wait("w", ["agent#1", "review#2", "agent#3"])], 200, identityTheme), "Waited for 3 agents");
 		// Zero parts are omitted; the first remaining part is capitalized.
 		assert.equal(renderSummary([bash("b", 2)], 200, identityTheme), "Ran 1 command · 1 failed");
 		assert.equal(renderSummary([], 200, identityTheme), "");

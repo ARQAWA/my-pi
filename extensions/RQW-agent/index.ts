@@ -1,7 +1,7 @@
-// Extension 5: asynchronous subagents and fixed-role workers, sharing one session lifecycle implementation.
+// Extension 5: asynchronous subagents with caller-local lifecycle and recursive delegation.
 import { randomUUID } from "node:crypto";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
-import { getCurrentTools, StringEnum } from "@earendil-works/pi-ai";
+import { getCurrentTools, getSupportedThinkingLevels, StringEnum } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, ExtensionAPI, ExtensionContext, ModelRuntime, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	type AgentSession,
@@ -15,13 +15,13 @@ import {
 	shouldCompact,
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
-import { registerWorkers, type RuntimeHandle, sumCounts, type WorkerProfile } from "./workers.ts";
-import { explorerRole, subagentPrompt, THOROUGHNESS, type Thoroughness, workerPrompt } from "./prompt.ts";
+import { subagentPrompt } from "./prompt.ts";
+import { ProfileCatalogue, type ProfileRef } from "./profiles.ts";
 import { Activity } from "./activity.ts";
 import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-files.ts";
 import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
-import { Coordinator, type Result, waitTimeout, targetIds, messageCount, statusDepth, waitResult } from "./coordinator.ts";
+import { Coordinator, type Result, type RuntimeHandle, waitTimeout, targetIds, messageCount, statusDepth, waitResult } from "./coordinator.ts";
 import { CHILD_ENTRY, createChildManager, openChildManager, retainedChildManager, repairInterrupted, installExecutionIntent } from "./persistence.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
@@ -31,22 +31,22 @@ const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as 
 type Thinking = (typeof THINKING)[number];
 
 export const DESCRIPTION = [
-	"Run a subagent in this process. By default its system prompt is yours plus a short subagent reminder and your optional role; system replaces the whole prompt. It has its own model and tools, and its own agent, code_writer and shell_runner (and review when available).",
+	"Run a subagent in this process. By default its system prompt is yours plus a short subagent reminder and your optional role; system replaces the whole prompt. It has its own model and tools, and its own recursive agent tool.",
 	"Use it for complex multi-step work that can run on its own, or for independent areas in parallel: start them all in one response. Do not use it for a narrow question, one or two known files or a single search: call the tools directly.",
 	"The child sees neither the user nor your history: give it the full context and say exactly what to return. Trust its result rather than redoing the work; the user does not see it, so pass on what matters.",
 	"Work in parallel while children run. When blocked, estimate their remaining duration and set timeout_ms somewhat longer on each wait; 300000 is only the omitted default, not an interval or maximum.",
-	"wait: ids (full IDs, may mix your direct agents and workers), optional timeout_ms, until first (default) or all, wake_on_alert (default true). By default returns a waiting receipt, ends this turn, and wakes you later with a child_wait notification. Do not poll or spend a turn only to wait. Children keep running while you receive owner messages. blocking:true keeps the call open; nested codemode calls and external print/json hosts always block. A new alert wakes without consuming a result; false waits for terminal delivery. until all waits until every selected target is terminal.",
+	"wait: ids (full IDs of your direct agents), optional timeout_ms, until first (default) or all, wake_on_alert (default true). By default returns a waiting receipt, ends this turn, and wakes you later with a child_wait notification. Do not poll or spend a turn only to wait. Children keep running while you receive owner messages. blocking:true keeps the call open; nested codemode calls and external print/json hosts always block. A new alert wakes without consuming a result; false waits for terminal delivery. until all waits until every selected target is terminal.",
 	"status: ids, optional messages (5-10, default 8), depth (default 0); last trimmed messages, in-flight tool calls and structured alerts. Positive depth adds read-only descendant status; it grants no descendant control. Decide whether to wait, send, interrupt, stop or restart. Do not busy-poll.",
 	"start/restart: optional alert_after_ms, a positive safe integer, emits long_turn alerts for active turns after that duration; omitted means disabled, restart inherits the previous threshold. Alerts never stop work.",
 	"Results arrive once, through wait or a later [agent#N] message; already-delivered results give a receipt.",
 	"start: task, optional title (3-5 words), role, system (the whole system prompt), model (provider/id), thinking, tools; returns agent#N.",
 	"start/restart: system_file or role_file loads exact UTF-8 text relative to the caller cwd instead of matching inline text; system and role choices are mutually exclusive. Restart inherits the file choice and re-reads it before replacing the child. Result details record prompt_file {kind, path (absolute), sha256 (file bytes)} beside delivery/run on push, and in results[].display on wait.",
 	"include: [user_messages] on start/restart appends caller-session user-role text verbatim in a <user_messages> block after the task, from the caller's current branch; images and non-user messages are omitted. It is not inherited on restart.",
-	"explore on start: a search subagent on your model with your active base tools, including shell and edit/write when active, but no agent or workers; codemode/tool_search follow yours. Its role requires read-only operations, no writes, edits, git state changes or installs; there is no mechanical write guard. Thoroughness is quick, medium or very thorough; it takes no system, role, tools or model.",
+	"agent_type on start/restart selects a named Codex TOML profile from the catalogue below. Its developer_instructions are a role after the root prompt and reminder, not a sandbox. Profile model, effort and instructions are defaults; explicit model, thinking, role, role_file, system and system_file use ordinary API semantics. Unset fields use ordinary defaults. Profiles keep the same tools and recursive delegation as generic agents.",
 	"send: id, task; reaches a running child after its current tool call, without aborting anything (a child parked in its own wait gets it after that call returns), or starts a new run with its history when idle; interrupt: true on send aborts a running child's turn and starts task as soon as it has stopped.",
 	"resume: id; retry an interrupted request from saved history without adding a task message. Active or cancellation-pending children cannot be resumed. Completed children stay idle. Child sessions survive Pi restarts with the same caller-local id.",
 	"interrupt: id; requests cancellation, keeps history; inspect status while cancellation is pending. stop: id; closes it.",
-	"restart: id, optional task, title and new role/system/model/thinking/tools; a fresh session (an explorer stays one).",
+	"restart: id, optional task, title and new role/system/model/thinking/tools; a fresh session; a selected agent_type is inherited and re-read unless changed.",
 	"Defaults: your system prompt with the reminder, this session's model and thinking, all tools.",
 	"By default children inherit GPT Fast; pass fast_gpt false when the user forbids Fast for subagents.",
 ].join(" ");
@@ -54,7 +54,7 @@ export const DESCRIPTION = [
 const PARAMETERS = Type.Object({
 	action: StringEnum(["start", "wait", "status", "send", "resume", "interrupt", "stop", "restart"]),
 	id: Type.Optional(Type.String({ description: "agent#N or N; management actions" })),
-	ids: Type.Optional(Type.Array(Type.String(), { description: "Full direct child IDs; wait/status may mix agents and workers" })),
+	ids: Type.Optional(Type.Array(Type.String(), { description: "Full direct child IDs for wait/status: agent#N" })),
 	timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Chosen wait duration, slightly longer than estimated remaining work; default 300000 only when omitted" })),
 	blocking: Type.Optional(Type.Boolean({ description: "wait: keep the call open instead of ending this turn and notifying later; nested codemode and external print/json hosts always block" })),
 	messages: Type.Optional(Type.Integer({ minimum: 5, maximum: 10, description: "Status peek length; default 8" })),
@@ -64,15 +64,15 @@ const PARAMETERS = Type.Object({
 	alert_after_ms: Type.Optional(Type.Integer({ minimum: 1, description: "start/restart: long-turn alert threshold in milliseconds, positive safe integer; disabled by default, inherited on restart" })),
 	system: Type.Optional(Type.String({ description: "Whole system prompt, replacing the default (your prompt, the subagent reminder and role); start, restart" })),
 	role: Type.Optional(Type.String({ description: "Short role text added after the default prompt; start, restart" })),
-	system_file: Type.Optional(Type.String({ description: "start, restart: UTF-8 whole-prompt file, relative to caller cwd; conflicts with system and either role option; no explorers" })),
-	role_file: Type.Optional(Type.String({ description: "start, restart: UTF-8 role file, relative to caller cwd; conflicts with role and either system option; no explorers" })),
+	system_file: Type.Optional(Type.String({ description: "start, restart: UTF-8 whole-prompt file, relative to caller cwd; conflicts with system and either role option" })),
+	role_file: Type.Optional(Type.String({ description: "start, restart: UTF-8 role file, relative to caller cwd; conflicts with role and either system option" })),
 	include: Type.Optional(Type.Array(StringEnum(["user_messages"]), { description: "start, restart: append verbatim user-role text from this caller's current session branch after the task" })),
 	title: Type.Optional(Type.String({ description: "Short title, 3-5 words, shown in status and result headers; start, restart" })),
-	explore: Type.Optional(StringEnum(THOROUGHNESS, { description: "start, restart: a read-only search subagent on your model at this thoroughness; no system, role, tools or model" })),
+	agent_type: Type.Optional(Type.String({ description: "start, restart: named Codex TOML profile from the catalogue; inherited and revalidated on restart" })),
 	task: Type.Optional(Type.String({ description: "Message to the subagent" })),
 	model: Type.Optional(Type.String({ description: "provider/id" })),
 	thinking: Type.Optional(StringEnum(THINKING)),
-	tools: Type.Optional(Type.Array(StringEnum(TOOLS), { description: "Base subset; default all. Workers stay available." })),
+	tools: Type.Optional(Type.Array(StringEnum(TOOLS), { description: "Base subset; default all. Recursive agent delegation stays available." })),
 	fast_gpt: Type.Optional(Type.Boolean({ description: "GPT Fast for this child; default: inherit yours. false when the user forbids Fast for subagents; send and restart may change it" })),
 	interrupt: Type.Optional(Type.Boolean({ description: "send only: first interrupt a running child (drops its queued messages, aborts its current turn, keeps history), then start task as soon as it has stopped; a plain send when it is idle" })),
 });
@@ -80,13 +80,12 @@ type Params = Static<typeof PARAMETERS>;
 
 /**
  * `system` is the whole prompt sent; `base` the main agent's prompt it was built from (handed down to nested callers);
- * `custom` the caller's full override, `role` its role text, `explore` an explorer's thoroughness.
+ * `custom` the caller's full override, `role` its resolved role text, `profile` the loaded profile's provenance.
  */
-type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; prompt_file?: PromptFile; explore?: Thoroughness; alert_after_ms?: number; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
+type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; prompt_file?: PromptFile; profile?: ProfileRef; profile_defaults?: { model: boolean; thinking: boolean; role: boolean }; alert_after_ms?: number; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
 type SavedResult = { run: string; text: string; outcome: "completed" | "error"; meta: RunMeta };
 type SavedChild = { version: 1; kind: string; id: number; epoch: string; sessionFile?: string; runNumber: number; state: "idle" | "running" | "interrupted" | "paused" | "completed" | "stopped"; config: Omit<Config, "model"> & { model: { provider: string; id: string } }; fast: boolean; title?: string; task?: string; result?: SavedResult };
 type CallerHost = { busy(): boolean; send: ExtensionAPI["sendMessage"] };
-type ReviewContinuation = { deliver: ExtensionAPI["sendMessage"]; retain(): () => void };
 type JobNotification = { id: string; text: string; details: Record<string, unknown> };
 type InboxMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
 const INBOX_ENTRY = "rqw-agent-inbox";
@@ -152,15 +151,15 @@ class NotificationBridge {
 	private changed(): void { for (const watcher of [...this.watchers]) watcher(); this.wake?.(); }
 }
 /** Display details of a delivered result: flattened beside delivery and run in a message's details, and under `display` in a wait result. For cards only, never part of the delivered text. */
-type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number; title?: string; prompt_file?: PromptFile };
+type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number; title?: string; prompt_file?: PromptFile; profile?: ProfileRef };
 /** Control of a child's background jobs, carried by RQW-tools' offered `job` definition when it offers one. */
 type JobControl = { abortAll(): void; dispose(): void };
-type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; workers?: RuntimeHandle; activity: Activity; jobs?: JobControl; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean; wake?: () => void } };
+type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; children?: RuntimeHandle; activity: Activity; jobs?: JobControl; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean; wake?: () => void } };
 type Agent = Child & {
 	id: number;
 	/** The caller's optional short title, shown in status and result details. */
 	title?: string;
-	/** GPT Fast of this child for its life: inherited at start, or the caller's `fast_gpt`. Its own workers inherit it. */
+	/** GPT Fast of this child for its life: inherited at start, or the caller's `fast_gpt`. Its own children inherit it. */
 	fast: { on: boolean };
 	config: Config;
 	epoch: string;
@@ -250,33 +249,19 @@ function lastNumber(entries: readonly SessionEntry[], name: string): number {
  */
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
 /**
- * `options.label` names the child in RQW-tools' notes of other sessions ("changed by agent#1/code_writer#2"); optional.
+ * `options.label` names the child in RQW-tools' notes of other sessions ("changed by agent#1/agent#2"); optional.
  * `options.codemode`: the child's own Pi `codemode` definition; the factory returns it as a call of the child's barrier
  * and a job of its registry (a factory that does not return it leaves the child Pi's definition as it is).
  */
 type ToolsFactory = (cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition; notify?: (notification: JobNotification) => void; retain?: () => () => void }) => ToolDefinition[];
 
-/**
- * Channel on `pi.events` where RQW-review, when it is loaded, offers its `review` tool for subagents: a request
- * `{ offer(register) }` gets a function that registers the tool in one child's own API. `events` is the bus of the
- * main session (RQW-tools offer, GPT Fast, running counts), `fast` the child's GPT Fast, `signal` ends with the child,
- * `label` names its reviewers in RQW-tools' notes ("agent#1/review"). Nothing here imports RQW-review.
- */
-const SUBAGENT_REVIEW = "rqw-review:subagent-review";
-type ReviewRegistrar = (child: ExtensionAPI, options: { events: ExtensionAPI["events"]; fast: () => boolean; signal: AbortSignal; label?: string; continuation?: ReviewContinuation }) => void;
-
-function offeredReview(events: ExtensionAPI["events"]): ReviewRegistrar | undefined {
-	let register: ReviewRegistrar | undefined;
-	// Synchronous like the RQW-tools offer: the handler has answered when emit returns.
-	events.emit(SUBAGENT_REVIEW, { offer: (r: ReviewRegistrar) => { register = r; } });
-	return register;
-}
+const PROFILES = "rqw-agent:profiles";
 
 type OwnSettings = ReturnType<ExtensionAPI["getSettings"]>;
 
 /** Descendant supervision stays compact: no message, argument or tool-output previews. */
 function compactStatus(status: Record<string, unknown>): Record<string, unknown> {
-	const keys = ["id", "run", "error", "recovery_error", "title", "state", "activity", "run_active", "run_id", "elapsed_ms", "idle_for_ms", "last_activity_ago_ms", "model", "outcome", "alerts", "current_tools_total", "pending_children", "cancellation_requested", "pending_sends", "children"];
+	const keys = ["id", "run", "error", "recovery_error", "title", "profile", "state", "activity", "run_active", "run_id", "elapsed_ms", "idle_for_ms", "last_activity_ago_ms", "model", "outcome", "alerts", "current_tools_total", "pending_children", "cancellation_requested", "pending_sends", "children"];
 	return Object.fromEntries(keys.filter(key => key in status).map(key => [key, status[key]]));
 }
 
@@ -314,7 +299,7 @@ const given = (value: string | undefined): value is string => typeof value === "
  * error or cancel of the child.
  */
 const SESSION_POLICY = "rqw-codex:session-policy";
-type SessionPolicyRequest = { session: AgentSession; parentThreadId: string; kind: "collab_spawn" | "review"; startupSystemPrompt?: string; startupSystemPromptForced?: boolean; childName?: string; captureRun?: (callerThreadId?: string) => void; installCompactionHooks?: (api: ExtensionAPI) => void; release?: () => void; error?: string };
+type SessionPolicyRequest = { session: AgentSession; parentThreadId: string; kind: "collab_spawn"; startupSystemPrompt?: string; startupSystemPromptForced?: boolean; childName?: string; captureRun?: (callerThreadId?: string) => void; installCompactionHooks?: (api: ExtensionAPI) => void; release?: () => void; error?: string };
 
 /**
  * Emits the request on the caller's bus. Returns the idempotent release and the per-operation capture (a no-op after release);
@@ -355,7 +340,7 @@ export default function agent(pi: ExtensionAPI) {
 }
 
 /**
- * Registers `agent` and both workers for one caller: the main session (`top`) or a subagent, recursively, without a
+ * Registers `agent` for one caller: the main session (`top`) or a subagent, recursively, without a
  * depth limit. `callerFast`: this caller's GPT Fast state at the moment it starts a child (the main chat's, or a
  * child's own). `basePrompt`: the main agent's system prompt, read from the main context or handed down.
  */
@@ -364,19 +349,12 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 	// Display details of delivered results, by run, until shutdown (see publishRun).
 	const displays = new Map<string, Display>();
 	// Running counts of the whole tree, offered by the top-level caller only (see counts.ts). Nested callers get its refresh.
-	const counts = top ? createCountsProducer(() => sumCounts(runtimes.map(runtime => runtime.runningCounts())), pi.events) : undefined;
+	const counts = top ? createCountsProducer(() => runtime.runningCounts(), pi.events) : undefined;
 	const notify = counts ? () => counts.refresh() : refresh;
-	const agentRuntime = registerSessionRuntime(pi, undefined, toolEvents, background, coordinator, callerFast, displays, notify, basePrompt, labelPrefix, host);
-	const workers = registerWorkers(pi, (caller, profile) => registerSessionRuntime(caller, profile, toolEvents, background, coordinator, callerFast, displays, notify, undefined, labelPrefix, host));
-	const runtimes: RuntimeHandle[] = [agentRuntime, workers];
-	const resume = async (signal: AbortSignal, recoveredOnly = false) => {
-		let total = 0;
-		for (const runtime of runtimes) total += await runtime.resume?.(signal, recoveredOnly) ?? 0;
-		return total;
-	};
+	const runtime = registerSessionRuntime(pi, toolEvents, background, coordinator, callerFast, displays, notify, basePrompt, labelPrefix, host);
 	if (top) pi.registerCommand("resume-agents", {
 		description: "Resume unfinished children without sending a message to the main model",
-		handler: async (_args, ctx) => { const count = await resume(ctx.signal ?? new AbortController().signal); ctx.ui.notify(`Resumed ${count} child session(s)`, "info"); },
+		handler: async (_args, ctx) => { const count = await runtime.resume?.(ctx.signal ?? new AbortController().signal) ?? 0; ctx.ui.notify(`Resumed ${count} child session(s)`, "info"); },
 	});
 	if (counts) {
 		pi.events.on(COUNTS_REQUEST, (request) => {
@@ -391,23 +369,13 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 			try { await coordinator.observe(ctx.signal); } catch (error) { if (!ctx.signal.aborted) throw error; }
 		}
 	});
-	return {
-		pending: () => runtimes.some(runtime => runtime.pending()),
-		async wait(signal) { await Promise.all(runtimes.filter(runtime => runtime.pending()).map(runtime => runtime.wait(signal))); },
-		ids: () => runtimes.flatMap(runtime => runtime.ids()),
-		status: depth => coordinator.status(coordinator.ids(), undefined, undefined, statusDepth(depth)).map(compactStatus),
-		runningCounts: () => sumCounts(runtimes.map(runtime => runtime.runningCounts())),
-		resume,
-		settle(aborted) { for (const runtime of runtimes) runtime.settle?.(aborted); },
-		abortAll() { for (const runtime of runtimes) runtime.abortAll(); },
-		close() { for (const runtime of runtimes) runtime.close(); },
-	};
+	return runtime;
 }
 
-/** Caller-local state. Nested callers settle normally; startRun tracks their workers across background wakeups. */
-export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), displays = new Map<string, Display>(), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost): RuntimeHandle {
-	const name = worker?.name ?? "agent";
-	/** A child's display label in RQW-tools notes: the path from the main session, "agent#1/code_writer#2". */
+/** Caller-local state. Nested callers settle normally; startRun tracks their children across background wakeups. */
+export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), displays = new Map<string, Display>(), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost): RuntimeHandle {
+	const name = "agent";
+	/** A child's display label in RQW-tools notes: the path from the main session, "agent#1/agent#2". */
 	const labelOf = (id: number) => `${labelPrefix}${name}#${id}`;
 	const agents = new Map<number, Agent>();
 	const lifetime = new AbortController();
@@ -429,6 +397,20 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 	const late: Result[] = [];
 	/** Runs whose display details this runtime stored in `displays`; removed at shutdown. */
 	const ownRuns = new Set<string>();
+	const catalogue = new ProfileCatalogue();
+
+	async function refreshProfiles(ctx: ExtensionContext) {
+		const extensionPaths: string[] = [];
+		toolEvents.emit(PROFILES, { offer: (paths: string[]) => { if (Array.isArray(paths)) extensionPaths.push(...paths); } });
+		const profiles = await catalogue.refresh({ cwd: ctx.cwd, agentDir: getAgentDir(), extensionPaths });
+		const lines = profiles.map(profile => {
+			const model = profile.model ?? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "caller default");
+			const effort = profile.model_reasoning_effort === "none" ? "off" : profile.model_reasoning_effort ?? pi.getThinkingLevel();
+			return `${profile.name}: ${profile.description}; model=${model}; effort=${effort}; source=${profile.path}${profile.error ? "; invalid profile" : ""}`;
+		});
+		const description = `${DESCRIPTION}\n\nAgent types:\n${lines.join("\n") || "No profiles discovered."}`;
+		if (definition.description !== description) { definition.description = description; pi.registerTool(definition); }
+	}
 
 	function deliver(result: Result) {
 		if (lifetime.signal.aborted) return;
@@ -475,7 +457,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 	/** The display details of a run that ended, from its activity and this session's selected thinking. */
 	function displayOf(a: Agent, id: string, outcome: "completed" | "error", meta: RunMeta): Display {
 		return { ...resultDisplay(id, outcome, a.activity, meta, a.session.thinkingLevel, a.title),
-			...(a.config.prompt_file ? { prompt_file: a.config.prompt_file } : {}) };
+			...(a.config.prompt_file ? { prompt_file: a.config.prompt_file } : {}),
+			...(a.config.profile ? { profile: a.config.profile } : {}) };
 	}
 
 	/**
@@ -494,12 +477,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 
 	/** Running children of this runtime by kind, plus those of their nested callers. Native activity only; pending results count zero. */
 	function runningCounts(): RunningCounts {
-		let total: RunningCounts = { agents: 0, workers: 0, reviews: 0 };
+		let running = 0;
 		for (const a of agents.values()) {
-			if (a.activity.isRunning()) total = sumCounts([total, { agents: worker ? 0 : 1, workers: worker ? 1 : 0, reviews: 0 }]);
-			if (a.workers) total = sumCounts([total, a.workers.runningCounts()]);
+			if (a.activity.isRunning()) running++;
+			running += a.children?.runningCounts().agents ?? 0;
 		}
-		return total;
+		return { agents: running, reviews: 0 };
 	}
 
 	function recoveryFailure(id: number, error: unknown, data?: SavedChild) {
@@ -515,13 +498,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			active: () => !!a.run || !!a.next?.length,
 			checkpoint: () => a.activity.checkpoint(),
 			alertVersion: () => a.activity.alertVersion(),
-			snapshot: (messages?: number, checkpoint?: Map<string, number>, depth = 0) => ({ ...(a.title ? { title: a.title } : {}), ...a.activity.snapshot(messages, checkpoint),
+			snapshot: (messages?: number, checkpoint?: Map<string, number>, depth = 0) => ({ ...(a.title ? { title: a.title } : {}), ...(a.config.profile ? { profile: a.config.profile } : {}), ...a.activity.snapshot(messages, checkpoint),
 				...(a.state === "paused" && !a.run ? { state: "paused" } : {}),
 				...(recoveryErrors.has(a.id) ? { recovery_error: recoveryErrors.get(a.id)!.error } : {}),
 				...(a.run?.quiet ? { cancellation_requested: true } : {}),
 				...(a.next?.length ? { pending_sends: a.next.length } : {}),
-				...(a.workers?.pending() ? { pending_children: a.workers.ids() } : {}),
-				...(depth > 0 ? { children: a.workers?.status?.(depth - 1) ?? [] } : {}) }),
+				...(a.children?.pending() ? { pending_children: a.children.ids() } : {}),
+				...(depth > 0 ? { children: a.children?.status?.(depth - 1) ?? [] } : {}) }),
 		};
 	}
 
@@ -603,7 +586,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				|| (c.builtins !== undefined && (!Array.isArray(c.builtins) || c.builtins.some(tool => !BUILTIN_TOOLS.includes(tool as typeof BUILTIN_TOOLS[number]))))
 				|| (c.settings !== undefined && (!c.settings || typeof c.settings !== "object" || Array.isArray(c.settings)))
 				|| (c.cwd !== undefined && typeof c.cwd !== "string")
-				|| (c.explore !== undefined && !THOROUGHNESS.includes(c.explore))
+				|| (c.profile !== undefined && (!c.profile || typeof c.profile.name !== "string" || typeof c.profile.path !== "string" || typeof c.profile.sha256 !== "string"))
 				|| (data.task !== undefined && typeof data.task !== "string") || (data.title !== undefined && typeof data.title !== "string")
 				|| (data.sessionFile !== undefined && typeof data.sessionFile !== "string")
 				|| (data.result !== undefined && (!data.result || typeof data.result.run !== "string" || typeof data.result.text !== "string"
@@ -673,13 +656,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			if (!manager.buildSessionProjection().messages.some(m => m.role !== "system") && a.task !== undefined)
 				manager.appendMessage({ role: "user", content: [{ type: "text", text: a.task }], timestamp: Date.now() });
 			const canContinue = repairInterrupted(a.session);
-			const resumedChildren = await a.workers?.resume?.(signal, recoveredOnly) ?? 0;
+			const resumedChildren = await a.children?.resume?.(signal, recoveredOnly) ?? 0;
 			const completed = !canContinue && !resumedChildren && !a.session.agent.hasQueuedMessages() && !a.bridge.pending();
 			const last = a.session.messages.at(-1);
-			const waitingForChildren = last?.role === "toolResult" && ["agent", "code_writer", "shell_runner"].includes(last.toolName)
+			const waitingForChildren = last?.role === "toolResult" && last.toolName === "agent"
 				&& (last.details as { reason?: string; wait_id?: string } | undefined)?.reason === "waiting"
 				&& typeof (last.details as { wait_id?: string }).wait_id === "string"
-				&& (resumedChildren > 0 || a.workers?.pending());
+				&& (resumedChildren > 0 || a.children?.pending());
 			if (completed && (!last || !isAssistant(last))) throw new Error(`${name}#${a.id}: no saved request to resume`);
 			if (!completed) {
 				a.captureRun(ctx.sessionManager.getSessionId());
@@ -740,16 +723,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			},
 		};
 		const check = () => { controller.signal.throwIfAborted(); guard.signal?.throwIfAborted(); };
-		let workers: RuntimeHandle | undefined;
+		let children: RuntimeHandle | undefined;
 		let activity: Activity | undefined;
-		// A general subagent delegates further (agent, workers, review); explorers and workers are leaves.
-		const general = !worker && !config.explore;
-		const review = general ? offeredReview(toolEvents) : undefined;
-		const continuation: ReviewContinuation = { deliver: bridge.deliver, retain: () => bridge.retain() };
 		// codemode and tool_search as the caller has them: Pi's own built-in factories, active only when the caller's are.
 		const active = new Set(pi.getActiveTools());
 		const builtins = config.builtins ?? BUILTIN_TOOLS.filter(name => active.has(name));
 		const settingsManager = SettingsManager.inMemory(config.settings ?? childSettings(pi.getSettings()));
+		settingsManager.setProjectTrusted(ctx.isProjectTrusted());
 		// With RQW-tools, the child's codemode is its barrier's and job registry's, like the main session's: Pi's own
 		// definition built from the child's API, handed to the factory instead of being registered as it is. Without an
 		// offer it is registered exactly as Pi's built-in factory does. The offer is asked for at that point of the reload
@@ -785,16 +765,11 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 						check();
 						return { systemPrompt: config.system };
 					});
-					if (worker) worker.configure(sub, (id, reason) => activity?.observeRefusal(id, reason));
-					else if (general) {
-						workers = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost);
-						review?.(sub, { events: toolEvents, fast: () => fast.on, signal: bridge.lifetime.signal, label: `${label}/review`, continuation });
-					}
+					children = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost);
 				},
 			],
 		});
-		// From reload on, the factory above may have run (a nested caller, an offered review with its counts source and
-		// listener on the main bus): any failure or cancellation aborts `controller`, which ends them.
+		// Reload can create a nested caller; failure or cancellation ends its lifetime too.
 		let creating: Promise<Child> | undefined;
 		let jobs: JobControl | undefined;
 		try {
@@ -806,7 +781,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			signal.throwIfAborted();
 			creating = createAgentSession({
 				cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
-				tools: [...config.tools, ...(jobTool ? ["job"] : []), ...(general ? ["agent", "code_writer", "shell_runner", ...(review ? ["review"] : [])] : []), ...builtins],
+				tools: [...config.tools, ...(jobTool ? ["job"] : []), "agent", ...builtins],
 				customTools, resourceLoader,
 				sessionManager: manager, settingsManager,
 			}).then(async ({ session }) => {
@@ -826,7 +801,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 				};
 				activity = new Activity(session, () => { onRunning(); coordinator.notify(); }, { alert_after_ms: config.alert_after_ms });
-				return { session, controller, guard, workers, activity, jobs, release: policy.release, captureRun: policy.capture, core, bridge };
+				return { session, controller, guard, children, activity, jobs, release: policy.release, captureRun: policy.capture, core, bridge };
 			});
 			return await untilAborted(creating, signal);
 		} catch (error) {
@@ -860,18 +835,18 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		const meta: RunMeta = {};
 		let lastPushed = 0;
 		let nativeRunStart = 0;
-		let workerRunStart: number | undefined;
+		let delegatedRunStart: number | undefined;
 		const run: NonNullable<Agent["run"]> = { done: Promise.resolve(), quiet: false, controller: new AbortController() };
 		a.guard.signal = AbortSignal.any([run.controller.signal, signal]);
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
 			if (event.type === "agent_start") {
 				// Multiple background wakeups may be deferred at settlement. Keep only their final native run's answer.
-				if (workerRunStart !== undefined) { texts.splice(workerRunStart); lastPushed = 0; }
+				if (delegatedRunStart !== undefined) { texts.splice(delegatedRunStart); lastPushed = 0; }
 				nativeRunStart = texts.length;
 			}
-			if (event.type === "agent_end" && (a.workers?.pending() || a.bridge.pending())) {
+			if (event.type === "agent_end" && (a.children?.pending() || a.bridge.pending())) {
 				// This native run ended before all delegated results were consumed. It is not a final answer to main.
-				workerRunStart ??= nativeRunStart;
+				delegatedRunStart ??= nativeRunStart;
 				texts.splice(nativeRunStart);
 				lastPushed = 0;
 			}
@@ -922,11 +897,11 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					started.resolve();
 					await pending;
 					a.bridge.reconcile();
-					a.workers?.settle?.(a.guard.signal?.aborted ?? false);
+					a.children?.settle?.(a.guard.signal?.aborted ?? false);
 				} else await session.prompt(task!, { preflightResult: () => started.resolve() });
 				while (!run.quiet && !a.guard.signal?.aborted) {
 					const signal = a.guard.signal ?? a.controller.signal;
-					// A worker may have woken a new native run after the original prompt settled.
+					// A child may have woken a new native run after the original prompt settled.
 					await untilAborted(a.core.on ? session.agent.waitForIdle() : session.waitForIdle(), signal);
 					const notifications = a.bridge.messages();
 					if (notifications.length) {
@@ -934,7 +909,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 							// continue() from a terminating tool result requests before draining follow-ups.
 							// These are the real incoming notifications, not a synthetic resume message.
 							await session.agent.prompt(notifications.map(message => ({ role: "custom", ...message, timestamp: Date.now() })));
-							a.workers?.settle?.(signal.aborted);
+							a.children?.settle?.(signal.aborted);
 						} else {
 							for (const message of notifications.slice(0, -1)) await session.sendCustomMessage(message, { triggerTurn: false });
 							await session.sendCustomMessage(notifications.at(-1)!, { triggerTurn: true });
@@ -944,7 +919,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					}
 					if (a.core.on && session.agent.hasQueuedMessages()) {
 						await session.agent.continue();
-						a.workers?.settle?.(signal.aborted);
+						a.children?.settle?.(signal.aborted);
 						continue;
 					}
 					// A steering message that missed the agent loop's last poll waits here like a follow-up.
@@ -952,13 +927,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 						const queued = session.clearQueue();
 						await session.prompt([...queued.steering, ...queued.followUp].join("\n\n"));
 					}
-					else if (a.workers?.pending() || a.bridge.pending()) {
-						// Parked until a worker result: `send` aborts `parked` so a steering message is delivered at once.
+					else if (a.children?.pending() || a.bridge.pending()) {
+						// Parked until a child result: `send` aborts `parked` so a steering message is delivered at once.
 						const park = run.parked = new AbortController();
 						const parkedSignal = AbortSignal.any([signal, park.signal]);
 						try {
 							const observations: Promise<void>[] = [];
-							if (a.workers?.pending()) observations.push(a.workers.wait(parkedSignal));
+							if (a.children?.pending()) observations.push(a.children.wait(parkedSignal));
 							if (a.bridge.pending()) observations.push(a.bridge.wait(parkedSignal));
 							await untilAborted(Promise.race(observations), parkedSignal);
 						}
@@ -981,7 +956,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			} finally {
 				unsubscribe();
 				started.resolve();
-				// The abort can end this loop while a worker-woken native run still streams (a tool ignoring abort):
+				// The abort can end this loop while a child-woken native run still streams (a tool ignoring abort):
 				// Pi would reject a new prompt then, so pending sends wait for it. This run stays current meanwhile.
 				if (a.run === run && a.next?.length && !a.controller.signal.aborted) await (a.core.on ? session.agent.waitForIdle() : session.waitForIdle()).catch(() => {});
 				if (a.run === run) {
@@ -1022,14 +997,14 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		a.controller.abort();
 		a.release();
 		a.activity.close();
-		a.workers?.close();
+		a.children?.close();
 		a.jobs?.dispose();
 		a.session.clearQueue();
 		// abort first: dispose alone does not set Pi's abort flag for queued follow-ups or compaction.
 		a.session.agent.abort();
 		void (async () => {
 			await Promise.all([a.session.abort().catch(() => {}), a.session.agent.waitForIdle()]);
-			// A retained reviewer still uses its original public extension API to persist findings.
+			// Retained background jobs may still use their original API to persist results.
 			if (preserveBridge) {
 				try { while (a.bridge.retained()) await a.bridge.wait(a.bridge.lifetime.signal); }
 				catch { /* Explicit stop ends retained work too. */ }
@@ -1042,7 +1017,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 	/** Request cancellation of the current run: the shared body of `interrupt` and `send` with `interrupt: true`. */
 	function requestInterrupt(a: Agent, run: NonNullable<Agent["run"]>) {
 		recoveryPending.delete(a.id);
-		a.workers?.abortAll();
+		a.children?.abortAll();
 		a.jobs?.abortAll();
 		coordinator.change(`${name}#${a.id}`, "interrupt");
 		run.quiet = true;
@@ -1056,7 +1031,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 
 	function localNumber(id: string | undefined): number | undefined {
 		const local = id?.startsWith(`${name}#`) ? id.slice(name.length + 1) : id;
-		return local && (!worker || id?.startsWith(`${name}#`)) && /^[1-9]\d*$/.test(local) && Number.isSafeInteger(Number(local)) ? Number(local) : undefined;
+		return local && /^[1-9]\d*$/.test(local) && Number.isSafeInteger(Number(local)) ? Number(local) : undefined;
 	}
 	function find(id: string | undefined): Agent {
 		const number = localNumber(id);
@@ -1068,30 +1043,43 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		throw new Error(`Unknown ${name} id: ${id ?? "(none)"}. Known: ${known}`);
 	}
 
+	function modelFor(value: string, ctx: ExtensionContext, bare = false): Model<Api> {
+		const canonical = bare && !value.includes("/") && /^gpt-/.test(value) ? `openai-codex/${value}` : value;
+		const slash = canonical.indexOf("/");
+		const matches = slash > 0 ? [ctx.modelRegistry.find(canonical.slice(0, slash), canonical.slice(slash + 1))].filter(Boolean)
+			: bare ? ctx.modelRegistry.getAll().filter(model => model.id === canonical) : [];
+		if (matches.length !== 1) throw new Error(`${matches.length > 1 ? "Ambiguous" : "Unknown"} model: ${value}. Use provider/id from the model registry.`);
+		return matches[0]!;
+	}
+
 	async function resolveConfig(params: Params, ctx: ExtensionContext, signal: AbortSignal, base?: Config): Promise<Config> {
 		signal.throwIfAborted();
-		const alertAfter = params.alert_after_ms ?? base?.alert_after_ms;
+		const profileName = params.agent_type ?? base?.profile?.name;
+		const profile = profileName === undefined ? undefined : catalogue.get(profileName);
+		if (profileName !== undefined && !profile) throw new Error(`Unknown agent_type: ${profileName}`);
+		if (profile?.error) throw new Error(`Invalid agent_type ${profile.name}: ${profile.error}`);
+		// Reload profile defaults on restart, retaining the caller's explicit choices.
+		const fallback: Partial<Config> | undefined = base && {
+			...base,
+			...(base.profile_defaults?.model ? { model: undefined } : {}),
+			...(base.profile_defaults?.thinking ? { thinking: undefined } : {}),
+			...(base.profile_defaults?.role ? { role: undefined } : {}),
+		};
+		const alertAfter = params.alert_after_ms ?? fallback?.alert_after_ms;
 		if (alertAfter !== undefined && (!Number.isSafeInteger(alertAfter) || alertAfter <= 0))
 			throw new Error("alert_after_ms must be a positive finite safe integer");
-		const alertOptions = alertAfter === undefined ? {} : { alert_after_ms: alertAfter };
-		if (worker) {
-			const selected = await untilAborted(worker.resolve(ctx), signal);
-			return { system: workerPrompt(worker.system, ctx.cwd), base: "", cwd: ctx.cwd, tools: [...worker.tools], ...selected, ...alertOptions };
-		}
-		const explore = params.explore ?? base?.explore;
 		if (params.system !== undefined && params.system_file !== undefined) throw new Error("Give system or system_file, not both");
 		if (params.role !== undefined && params.role_file !== undefined) throw new Error("Give role or role_file, not both");
 		const hasSystem = params.system !== undefined || params.system_file !== undefined;
 		const hasRole = params.role !== undefined || params.role_file !== undefined;
 		if (hasSystem && hasRole) throw new Error("Give system (the whole prompt) or role (added to the default prompt), not both; file variants follow the same rule");
-		if (explore && (given(params.system) || given(params.role) || params.system_file !== undefined || params.role_file !== undefined || params.tools || params.model))
-			throw new Error("An explorer runs on your model with your active base tools and its own read-only role: omit system, role, tools and model, including prompt files");
-		// A restart keeps the old prompt choice unless a new one is given; role and system replace each other.
-		let custom = explore ? undefined : base?.custom;
-		let role = explore ? undefined : base?.role;
-		let promptFile = explore ? undefined : base?.prompt_file;
+		let custom = fallback?.custom;
+		let role = fallback?.role;
+		let promptFile = fallback?.prompt_file;
 		if (given(params.system)) { custom = params.system; role = undefined; promptFile = undefined; }
 		if (given(params.role)) { role = params.role.trim(); custom = undefined; promptFile = undefined; }
+		const profileRole = !hasSystem && !hasRole && custom === undefined && role === undefined && promptFile === undefined && profile?.developer_instructions !== undefined;
+		if (profileRole) role = profile.developer_instructions;
 		const fileKind = params.system_file !== undefined ? "system" : params.role_file !== undefined ? "role" : promptFile?.kind;
 		const filePath = params.system_file ?? params.role_file ?? promptFile?.path;
 		if (fileKind !== undefined && filePath !== undefined) {
@@ -1101,42 +1089,39 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			role = fileKind === "role" ? loaded.text : undefined;
 		}
 		const root = basePrompt(ctx);
-		const system = custom ?? subagentPrompt(root, explore ? explorerRole(explore) : role, promptFile?.kind === "role");
-		let model: Model<Api> | undefined = explore ? ctx.model : base?.model ?? ctx.model;
-		if (params.model) {
-			const slash = params.model.indexOf("/");
-			model = slash > 0 ? ctx.modelRegistry.find(params.model.slice(0, slash), params.model.slice(slash + 1)) : undefined;
-			if (!model) throw new Error(`Unknown model: ${params.model}. Use provider/id from the model registry.`);
-		}
+		const system = custom ?? subagentPrompt(root, role, promptFile?.kind === "role" || profileRole);
+		const profileModel = !params.model && !fallback?.model && profile?.model !== undefined;
+		const model = params.model ? modelFor(params.model, ctx) : fallback?.model ?? (profileModel ? modelFor(profile.model!, ctx, true) : ctx.model);
 		if (!model) throw new Error("No model: give model as provider/id");
+		let thinking = params.thinking ?? fallback?.thinking ?? pi.getThinkingLevel();
+		const profileThinking = params.thinking === undefined && fallback?.thinking === undefined && profile?.model_reasoning_effort !== undefined;
+		if (profileThinking) {
+			const effort = profile.model_reasoning_effort === "none" ? "off" : profile.model_reasoning_effort;
+			if (!THINKING.includes(effort as Thinking) || !getSupportedThinkingLevels(model).includes(effort as Thinking))
+				throw new Error(`Unsupported model_reasoning_effort for agent_type ${profile.name}; no effort lowering is allowed`);
+			thinking = effort as Thinking;
+		}
 		if (!ctx.modelRegistry.hasConfiguredAuth(model) && !(await untilAborted(runtimeOf(ctx).checkAuth(model.provider, { signal }), signal)))
 			throw new Error(`No credentials for provider ${model.provider}`);
 		signal.throwIfAborted();
-		const tools = explore ? TOOLS.filter(name => pi.getActiveTools().includes(name)) : params.tools ?? base?.tools ?? [...TOOLS];
-		const thinking = params.thinking ?? base?.thinking ?? pi.getThinkingLevel();
-		return { system, base: root, cwd: ctx.cwd, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}), ...(promptFile ? { prompt_file: promptFile } : {}), ...(explore ? { explore } : {}), model, thinking, tools, ...alertOptions };
+		return { system, base: root, cwd: ctx.cwd, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}),
+			...(promptFile ? { prompt_file: promptFile } : {}), ...(profile ? { profile: { name: profile.name, path: profile.path, sha256: profile.sha256 },
+				profile_defaults: { model: profileModel, thinking: profileThinking, role: profileRole } } : {}),
+			model, thinking, tools: params.tools ?? fallback?.tools ?? [...TOOLS],
+			...(alertAfter === undefined ? {} : { alert_after_ms: alertAfter }) };
 	}
 
 	const ok = (text: string) => ({ content: [{ type: "text" as const, text }], details: {} });
-	pi.registerTool({
+	const definition: ToolDefinition<typeof PARAMETERS> = {
 		name,
-		label: worker?.name ?? "Agent",
-		description: worker?.description ?? DESCRIPTION,
-		parameters: worker ? Type.Object({
-			action: Type.Optional(StringEnum(["start", "wait", "status", "send", "resume", "interrupt", "stop", "restart"])),
-			task: Type.Optional(Type.String({ minLength: 1 })),
-			id: Type.Optional(Type.String({ description: `${name}#N; management actions` })), ids: PARAMETERS.properties.ids,
-			timeout_ms: PARAMETERS.properties.timeout_ms, messages: PARAMETERS.properties.messages, blocking: PARAMETERS.properties.blocking,
-			until: PARAMETERS.properties.until, wake_on_alert: PARAMETERS.properties.wake_on_alert,
-			depth: PARAMETERS.properties.depth, alert_after_ms: PARAMETERS.properties.alert_after_ms,
-			fast_gpt: PARAMETERS.properties.fast_gpt, interrupt: PARAMETERS.properties.interrupt, title: PARAMETERS.properties.title,
-		}) : PARAMETERS,
+		label: "Agent",
+		description: DESCRIPTION,
+		parameters: PARAMETERS,
 		execute: (toolCallId, raw, callerSignal, _onUpdate, ctx) => {
 			// Capture ctx.signal now: its getter can point at another run when the internal queue drains.
 			const signal = AbortSignal.any([lifetime.signal, generation.signal, callerSignal, ctx.signal].filter((s): s is AbortSignal => !!s));
 			if (!main) { main = ctx; counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries(), name)); }
 			const params = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== null)) as Params;
-			if (worker) params.action ??= "start";
 			// Queue only registration/snapshot, never the waiting Promise or a tool that ignores abort.
 			if (params.action === "wait") {
 				const registration = coordinator.queue.then(async () => {
@@ -1155,16 +1140,18 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 			coordinator.queue = next.catch(() => {});
 			return untilAborted(next, signal);
 		},
-	});
+	};
+	pi.registerTool(definition);
 
 	async function act(raw: Params, ctx: ExtensionContext, signal: AbortSignal) {
 		// Strict-mode providers send null for omitted optional fields.
 		const params = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== null)) as Params;
 		signal.throwIfAborted();
 		await hydrate(ctx, signal);
-		if (!worker && (params.system_file !== undefined || params.role_file !== undefined || params.include !== undefined) && params.action !== "start" && params.action !== "restart")
-			throw new Error("system_file, role_file and include are only supported on start/restart");
-		const task = !worker && params.include?.includes("user_messages") && params.task !== undefined
+		if ((params.system_file !== undefined || params.role_file !== undefined || params.include !== undefined || params.agent_type !== undefined) && params.action !== "start" && params.action !== "restart")
+			throw new Error("system_file, role_file, include and agent_type are only supported on start/restart");
+		if (params.agent_type !== undefined || (params.action === "restart" && find(params.id).config.profile)) await refreshProfiles(ctx);
+		const task = params.include?.includes("user_messages") && params.task !== undefined
 			? appendUserMessages(params.task, ctx.sessionManager.getBranch()) : params.task;
 		switch (params.action) {
 			case "status": return waitResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages), undefined, statusDepth(params.depth)) });
@@ -1219,7 +1206,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 					const run = a.run;
 					if (a.core.on) a.session.agent.steer({ role: "user", content: [{ type: "text", text: params.task }], timestamp: Date.now() });
 					else await untilAborted(a.session.steer(params.task), signal);
-					// The native run ended and the loop waits for this child's own workers: nothing polls the queue, so wake it.
+					// The native run ended and the loop waits for this child's own children: wake it for steering.
 					const parked = run.parked && !a.session.agent.state.isStreaming;
 					run.parked?.abort();
 					return ok(`${name}#${a.id}: ${parked ? "sent" : "queued after the current tool call"}`);
@@ -1235,7 +1222,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				const run = a.run;
 				a.next = undefined; // an interrupt drops tasks still waiting for the stopping run
 				// An interrupt is the caller's abort of the child: its background jobs die too, also when it is idle.
-				if (!run) { a.workers?.abortAll(); a.jobs?.abortAll(); return ok(`${name}#${a.id} is idle`); }
+				if (!run) { a.children?.abortAll(); a.jobs?.abortAll(); return ok(`${name}#${a.id} is idle`); }
 				requestInterrupt(a, run);
 				return waitResult({ id: `${name}#${a.id}`, reason: "interruption_requested", cancellation_requested: true, snapshot });
 			}
@@ -1293,11 +1280,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 
 	pi.on("before_agent_start", async (_event, ctx) => {
 		main = ctx;
+		await refreshProfiles(ctx);
 		await resumeAll(ctx.signal ?? new AbortController().signal, true);
 	});
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
 		main = ctx;
 		counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries(), name));
+		await refreshProfiles(ctx);
 	});
 	pi.on("session_tree", (_event, ctx) => {
 		generation.abort(new Error("The caller changed its session branch"));

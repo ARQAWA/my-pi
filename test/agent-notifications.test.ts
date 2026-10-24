@@ -103,24 +103,21 @@ const toolUse = (name: string, args: Record<string, unknown>, id: string) => ans
 type Run = { session: AgentSession; errors: string[]; file: string; closed: boolean; delivered(): string[]; customs(type?: string): string[];
 	execute(params: Record<string, unknown>, toolCallId?: string): Promise<{ text: string; details: any; terminate?: boolean }> };
 
-async function world(options: { review?: boolean } = {}) {
+async function world() {
 	const root = await mkdtemp(join(tmpdir(), "rqw-agent-notify-"));
 	const agentDir = join(root, "home"), cwd = join(root, "work"), sessions = join(root, "sessions");
 	await Promise.all([agentDir, cwd, sessions].map(dir => mkdir(dir)));
 	const hub = new Hub();
 	const main = scripted(hub, "main", "m"), sub = scripted(hub, "sub", "s"), deep = scripted(hub, "deep", "g");
-	// The current RQW-review profile is fixed to Codex; its provider and credentials are fake here.
-	const reviewer = scripted(hub, "reviewer", "gpt-6.1-sol", "openai-codex");
 	const runtime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
-	for (const p of [main, sub, deep, reviewer]) runtime.registerNativeProvider(p.faux.provider);
-	await runtime.setRuntimeApiKey("openai-codex", "fake-key");
+	for (const p of [main, sub, deep]) runtime.registerNativeProvider(p.faux.provider);
 	const open = new Set<Run>();
 	const offered: { factory?: (...args: any[]) => unknown[] } = {};
 	const modelOf = (p: typeof sub, id: string) => `${p.faux.provider.id}/${id}`;
 
 	async function launch(file?: string, mode: Mode = "tui"): Promise<Run> {
 		const manager = file ? SessionManager.open(file, sessions, cwd) : SessionManager.create(cwd, sessions);
-		const loader = new DefaultResourceLoader({ cwd, agentDir, additionalExtensionPaths: options.review ? [EXTENSION, REVIEW] : [EXTENSION],
+		const loader = new DefaultResourceLoader({ cwd, agentDir, additionalExtensionPaths: [EXTENSION, REVIEW],
 			// The public tools offer: the test hands children its own factory, built on RQW-tools' real Jobs.
 			extensionFactories: [pi => { pi.events.on("rqw-tools:subagent-tools", request => {
 				if (offered.factory) (request as { offer(factory: unknown): void }).offer(offered.factory);
@@ -161,7 +158,7 @@ async function world(options: { review?: boolean } = {}) {
 	}
 	const startParams = (task: string, extra: Record<string, unknown> = {}) => ({ action: "start", system: SYSTEM, task, model: modelOf(sub, "s"), thinking: "high", tools: [], ...extra });
 	return {
-		hub, main, sub, deep, reviewer, offered, launch, close, launchPersisted, modelOf, startParams,
+		hub, main, sub, deep, offered, launch, close, launchPersisted, modelOf, startParams,
 		cleanup: async () => { for (const run of open) await close(run); await rm(root, { recursive: true, force: true }); },
 	};
 }
@@ -409,7 +406,6 @@ async function childEntries(parentFile: string) {
 }
 const userTexts = (request: Request) => request.messages.filter(m => m.role === "user").map(m => JSON.stringify(m.content));
 const noEmptyResult = (run: Run) => !run.session.messages.some(m => m.role === "custom" && JSON.stringify(m.content).includes("(no text)"));
-const reviewCall = toolUse("review", { level: "blind", object: "a.ts", criterion: "the rename" }, "r1");
 
 test("a FRESH nested child's notification wait ends its turn; a parent send reaches a new child request before the grandchild ends", async () => {
 	const w = await world();
@@ -454,96 +450,6 @@ test("a FRESH nested child's notification wait ends its turn; a parent send reac
 	} finally { await w.cleanup(); }
 });
 
-test("real RQW-review in a resumed core child: its turn ends while the reviewer is held; the verdict wakes it once", async () => {
-	const w = await world({ review: true });
-	try {
-		const first = await w.launchPersisted();
-		const interrupted = hold(w.hub, "NEVER");
-		w.sub.queue.push(interrupted.reply);
-		await first.execute(w.startParams("FIRST"));
-		await w.hub.until(interrupted.entered, "child request pending");
-		await w.close(first);
-
-		const verdict = hold(w.hub, "CLEAN\nCHECKED:\n- criterion (source) fulfilled (object)");
-		w.reviewer.queue.push(verdict.reply);
-		w.sub.rule = request => {
-			if (userTexts(request).some(t => t.includes("[review#1]"))) return answer("FINAL");
-			return request.roles.includes("toolResult") ? answer("") : reviewCall;
-		};
-		const parent = await w.launch(first.file);
-		const mainBefore = w.main.requests.length;
-		await parent.execute({ action: "resume", id: "agent#1" });
-		await w.hub.until(() => w.sub.requests.length === 3 && w.reviewer.requests.length === 1, "review started and the child's native turn ended");
-		await settle();
-		assert.equal(w.sub.requests.length, 3, "no request after the empty end of the turn");
-		assert.deepEqual(parent.delivered(), [], "no intermediate completion");
-		assert.ok(noEmptyResult(parent), "no (no text) result");
-		assert.equal(w.main.requests.length, mainBefore);
-
-		verdict.release();
-		await w.hub.until(() => w.sub.requests.length === 4, "the child woken by the verdict");
-		assert.ok(userTexts(w.sub.requests[3]).some(t => t.includes("[review#1]") && t.includes("CLEAN")));
-		await w.hub.until(() => parent.delivered().some(t => t.includes("FINAL")), "the final answer");
-		await settle();
-		assert.equal(parent.delivered().filter(t => t.includes("FINAL")).length, 1, "FINAL exactly once");
-		assert.equal(w.sub.requests.length, 4);
-		assert.equal(w.reviewer.requests.length, 1, "one reviewer request");
-		const reviews = (await childEntries(first.file)).filter(e => e.type === "custom_message" && e.customType === "review");
-		assert.equal(reviews.length, 1, "the verdict is persisted once in the child's history");
-		assert.equal(reviews[0].details?.n, 1);
-		assert.ok(noEmptyResult(parent));
-		assert.deepEqual(parent.errors, []);
-	} finally { await w.cleanup(); }
-});
-
-test("interrupting a child while its reviewer is pending, then resuming, keeps the same reviewer and delivers the verdict once", async () => {
-	const w = await world({ review: true });
-	try {
-		const parent = await w.launchPersisted();
-		const FINDINGS = "FINDINGS:\nFINDING 1\nREQUIREMENT: x\nMISMATCH: y\nEVIDENCE: z (a.ts)\nREQUIRED OUTCOME: w";
-		const verdict = hold(w.hub, FINDINGS), childRequest = hold(w.hub, "NEVER");
-		w.reviewer.queue.push(verdict.reply);
-		let pendingTurns = 0;
-		w.sub.rule = request => {
-			if (userTexts(request).some(t => t.includes("[review#1]"))) return answer("FINAL");
-			if (!request.roles.includes("toolResult")) return reviewCall;
-			// First request after the review started is held and interrupted; the resumed one ends its turn.
-			return pendingTurns++ === 0 ? childRequest.reply : answer("");
-		};
-		await parent.execute(w.startParams("FIRST"), "start-1");
-		await w.hub.until(() => childRequest.entered() && verdict.entered(), "child request and reviewer both pending");
-		assert.equal(JSON.parse((await parent.execute({ action: "interrupt", id: "agent#1" })).text).cancellation_requested, true);
-		await w.hub.until(childRequest.aborted, "the child request aborted");
-		await settle();
-		assert.equal(w.reviewer.requests.length, 1);
-		assert.equal(verdict.aborted(), false, "the interrupt did not abort the reviewer");
-
-		await parent.execute({ action: "resume", id: "agent#1" });
-		await w.hub.until(() => w.sub.requests.length === 3, "the resumed request");
-		await settle();
-		assert.equal(w.sub.requests.length, 3, "the resumed turn ended while the reviewer is pending");
-		assert.deepEqual(parent.delivered(), [], "no intermediate completion");
-		assert.ok(noEmptyResult(parent));
-
-		verdict.release();
-		await w.hub.until(() => parent.delivered().some(t => t.includes("FINAL")), "the final answer");
-		await settle();
-		assert.equal(parent.delivered().filter(t => t.includes("FINAL")).length, 1);
-		assert.equal(w.reviewer.requests.length, 1, "the same reviewer request, not restarted");
-		assert.equal(userTexts(w.sub.requests.at(-1)!).filter(t => t.includes("[review#1]")).length, 1, "the verdict appears once");
-		const entries = (await childEntries(parent.file)).filter(e => e.customType === "review");
-		const messages = entries.filter(e => e.type === "custom_message"), states = entries.filter(e => e.type === "custom");
-		assert.equal(messages.length, 1, "one review message in the child's history");
-		assert.equal(messages[0].details?.n, 1);
-		assert.match(JSON.stringify(messages[0].content), /FINDING 1/);
-		assert.equal(states.length, 1, "the current review policy persists one start marker, not a separate dispute state");
-		assert.equal(states[0].data.n, 1);
-		assert.ok(messages[0].content.startsWith(`[review#1] ${FINDINGS}\n\n`), "the complete finding survives unchanged in the persisted verdict");
-		assert.ok(noEmptyResult(parent));
-		assert.deepEqual(parent.errors, []);
-	} finally { await w.cleanup(); }
-});
-
 test("a child's job wait by notification keeps the assignment open; the job's end wakes the child once", async () => {
 	const w = await world();
 	try {
@@ -584,65 +490,6 @@ test("a child's job wait by notification keeps the assignment open; the job's en
 		await settle();
 		assert.equal(parent.delivered().length, 1, "one parent result");
 		assert.equal(w.sub.requests.length, 3, "the job woke the child once");
-		assert.ok(noEmptyResult(parent));
-		assert.deepEqual(parent.errors, []);
-	} finally { await w.cleanup(); }
-});
-
-test("a verdict that completes while the child is paused is kept durably and reaches the first resumed request once", async () => {
-	const w = await world({ review: true });
-	try {
-		const parent = await w.launchPersisted();
-		const FINDINGS = "FINDINGS:\nFINDING 1\nREQUIREMENT: x\nMISMATCH: y\nEVIDENCE: z (a.ts)\nREQUIRED OUTCOME: w";
-		const verdict = hold(w.hub, FINDINGS), childRequest = hold(w.hub, "NEVER");
-		w.reviewer.queue.push(verdict.reply);
-		let heldOnce = false;
-		w.sub.rule = request => {
-			if (userTexts(request).some(t => t.includes("[review#1]"))) return answer("FINAL");
-			if (!request.roles.includes("toolResult")) return reviewCall;
-			if (!heldOnce) { heldOnce = true; return childRequest.reply; }
-			return answer("STALE RETRY WITHOUT VERDICT");
-		};
-		await parent.execute(w.startParams("FIRST"), "start-1");
-		await w.hub.until(() => childRequest.entered() && verdict.entered(), "child request and reviewer both pending");
-		await parent.execute({ action: "interrupt", id: "agent#1" });
-		await w.hub.until(childRequest.aborted, "the child request aborted");
-		await settle();
-		const mainBefore = w.main.requests.length, subBefore = w.sub.requests.length;
-
-		// The verdict arrives while the child is paused.
-		verdict.release();
-		let inbox: any[] = [];
-		for (let i = 0; i < 10 && !inbox.length; i++) {
-			await settle();
-			inbox = (await childEntries(parent.file)).filter(e => e.type === "custom" && e.customType === "rqw-agent-inbox");
-		}
-		assert.equal(inbox.length, 1, "the verdict is persisted in the child's inbox");
-		assert.match(JSON.stringify(inbox[0].data.message), /FINDING 1/);
-		assert.equal(w.sub.requests.length, subBefore, "the paused child made no request");
-		assert.equal(w.main.requests.length, mainBefore, "main was not woken");
-		assert.deepEqual(parent.delivered(), []);
-		w.main.queue.push(answer("UNRELATED ACK"));
-		await parent.session.prompt("unrelated");
-		await settle();
-		assert.equal(w.main.requests.length, mainBefore + 1, "only the owner's prompt asked main");
-		assert.equal(w.sub.requests.length, subBefore, "the parent turn did not wake the paused child");
-
-		await parent.execute({ action: "resume", id: "agent#1" });
-		await w.hub.until(() => parent.delivered().some(t => t.includes("FINAL")), "the final answer");
-		await settle();
-		const first = w.sub.requests[subBefore];
-		assert.equal(userTexts(first).filter(t => t.includes("[review#1]")).length, 1, "the first resumed request already carries the verdict once");
-		assert.equal(userTexts(first).filter(t => t.includes("FIRST")).length, 1);
-		assert.equal(w.sub.requests.length, subBefore + 1, "no stale request before the verdict");
-		assert.equal(parent.delivered().length, 1, "one FINAL");
-		assert.ok(!parent.delivered().some(t => t.includes("STALE")));
-		assert.equal(w.reviewer.requests.length, 1);
-		const entries = (await childEntries(parent.file)).filter(e => e.customType === "review");
-		assert.equal(entries.filter(e => e.type === "custom_message").length, 1, "one review message in the child's history");
-		assert.equal(entries.find(e => e.type === "custom_message").details?.n, 1);
-		assert.equal(entries.filter(e => e.type === "custom" && e.data.n === 1).length, 1, "the review start marker was persisted once");
-		assert.ok(entries.find(e => e.type === "custom_message").content.startsWith(`[review#1] ${FINDINGS}\n\n`), "the complete finding was persisted in the verdict");
 		assert.ok(noEmptyResult(parent));
 		assert.deepEqual(parent.errors, []);
 	} finally { await w.cleanup(); }

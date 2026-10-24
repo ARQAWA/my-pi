@@ -75,6 +75,8 @@ export async function fixture(mode: "tui" | "rpc" | "print" | "json" = "tui", au
 	const delivered = () => session.messages.flatMap(m => m.role === "custom" && m.customType === "agent" && typeof m.content === "string" ? [m.content] : []);
 	const cleanup = async () => {
 		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+		// dispose() aborts without joining auth preflight; drain it before deleting its temporary storage.
+		await session.abort();
 		session.dispose();
 		await tick();
 		await rm(root, { recursive: true, force: true });

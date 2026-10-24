@@ -2152,147 +2152,6 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >   `[agent#2] Q: The bug is in add ...`).
 >
 
-## A-0134 · archived 2026-10-23 · Workers · Recursive workers and caller-local delivery
-Status: SUPERSEDED by `[D-WORKERS-NESTED]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'Owner: «Я хочу сделать такие два саб-агента сейчас для моего' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0134' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1117-1128 at `30952e6`, verbatim:
-
-> - Owner: «Я хочу сделать такие два саб-агента сейчас для моего My Pi. ... чтобы и основной агент мог вызывать этих
->   саб-агентов для этих задач, и саб-агенты могли их тоже вызывать. Чтобы были вложенные саб-агенты, чтобы, допустим,
->   саб-агент Opus или саб-агент Sonnet мог вызвать CodeWriter либо ShellRunner, которые будут выполнять шумную
->   механическую работу, которая токены утилизирует.» The final answer goes «тому агенту, который его вызвал».
->   Reason: the deciding agent at either caller level can delegate mechanical work without routing raw worker reports
->   through main. `extensions/RQW-agent/index.ts` binds workers to the direct caller's API, at every level of the
->   recursive subagent tree ([Agent](#agent), parity entry: subagents now have `agent` too), and no delegation tools in
->   workers. It keeps the subagent's logical assignment open across worker
->   wakeups, withholding intermediate answers until no workers or unconsumed results remain. Carrier: `index.ts` and
->   `workers.ts` in that folder; proof: `test/nested-workers.test.ts` and the worker-only declarations checked by
->   `test/cli-provider.ts` through `test/cli.test.ts`. Current lifecycle and cancellation rules:
->   [RQW-agent README, Workers](extensions/RQW-agent/README.md#runtime-and-delivery).
-
-## A-0135 · archived 2026-10-23 · Workers · Fresh assignments and explicit follow-ups
-Status: SUPERSEDED by `[D-WORKERS-FRESH]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'Owner: «И каждый раз, когда ты даешь ему новое задание, сбра' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0135' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1129-1136 at `30952e6`, verbatim:
-
-> - Owner: «И каждый раз, когда ты даешь ему новое задание, сбрасываешь ему контекстное окно».
->   Reason: new assignments must not inherit unrelated tasks or old worker answers. `{task}`/`start` creates a fresh
->   in-process session. Explicit `send` is a follow-up to the same assignment, not a new assignment; see the later
->   owner-approved [wait and management decision](#agent). Completed workers remain idle until stop/caller shutdown;
->   retained history consumes memory and send input/cache/compaction costs. Idle retention never counts as pending. Role prompts (followed by the
->   working directory, OS and date block of the [Agent](#agent) parity entry), descriptions and
->   tool allowlists are fixed in `extensions/RQW-agent/workers.ts`, `roles/` and `descriptions/`; model/reasoning is
->   fixed in `worker-model.ts` in that folder.
-
-## A-0136 · archived 2026-10-23 · Workers · Complete briefs and trusted results
-Status: SUPERSEDED by `[D-WORKERS-BRIEFS]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'Owner: «Например, чтобы агент Main не использовал кодрайтер ' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0136' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1137-1142 at `30952e6`, verbatim:
-
-> - Owner: «Например, чтобы агент Main не использовал кодрайтер в той ситуации, где бриф будет длиннее, чем написать код
->   самостоятельно.»; «Идея в том, что саб-агент ускоряет main-агента. Main-агент должен доверять саб-агенту.»
->   Reason: delegation must accelerate the caller rather than create briefing and repeated-work overhead. Caller
->   descriptions require complete decided briefs, trusting results, no busy polling and parallel calls only when
->   independent, never two code_writers on the same file. Carriers:
->   `extensions/RQW-agent/descriptions/code_writer.md` and `descriptions/shell_runner.md` in that folder.
-
-## A-0137 · archived 2026-10-23 · Workers · D2: code and config only
-Status: SUPERSEDED by `[D-WORKERS-SCOPE]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'D2: code_writer has bash and may run a focused check of its ' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0137' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1143-1150 at `30952e6`, verbatim:
-
-> - D2: code_writer has bash and may run a focused check of its own change. Owner's scope:
->   «только код. не документацию, не промпты, а только код и какие-то конфиги. и всё».
->   Reason: checking the decided code/config change belongs with its mechanical execution, but documentation,
->   prompts and product decisions do not. RQW-tools' existing [ordered barrier](#tools) orders edits and checks when
->   loaded; without an offer, workers use stock tools, as [Agent](#agent) describes. Carriers:
->   `extensions/RQW-agent/roles/code_writer.md`, `workers.ts` and `index.ts`; shell_runner's exact-command/no-fixes
->   contract and report format are carried by `roles/shell_runner.md` in that folder. Briefs, reports and tool sets:
->   [RQW-agent README](extensions/RQW-agent/README.md#briefs-and-reports).
-
-## A-0138 · archived 2026-10-23 · Workers · D3: no git mutations
-Status: SUPERSEDED by `[D-WORKERS-GIT]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'D3: neither worker changes git state; supported read-only gi' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0138' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1151-1158 at `30952e6`, verbatim:
-
-> - D3: neither worker changes git state; supported read-only git queries are allowed. Reason: commits, staging,
->   branches, merges and pushes belong to the caller and [PROCESS.md](PROCESS.md); such a command is shorter than
->   a brief, and a cheap low-reasoning model must not own destructive git commands. Enforcement is code, not just
->   role text: `extensions/RQW-agent/workers.ts` installs `git-guard.ts` in each worker's `tool_call` hook before bash
->   executes. The syntax guard blocks obvious launcher/config-injection bypasses without rejecting ordinary
->   listings; it is not a sandbox. Supported queries, execution-override rules and limits have one description:
->   [RQW-agent README, Git guard](extensions/RQW-agent/README.md#git-guard).
->   Proof: `extensions/RQW-agent/test/git-guard.test.ts` and `test/workers.test.ts` in that folder.
-
-## A-0139 · archived 2026-10-23 · Workers · D1: worker models
-Status: SUPERSEDED by `[D-WORKERS-MODEL]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of ``git log -S'D1: `anthropic/claude-haiku-5-5` is primary; `openai-codex/g' -- DECISIONS.md``.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0139' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1159-1168 at `30952e6`, verbatim:
-
-> - D1: `anthropic/claude-haiku-5-5` is primary; `openai-codex/gpt-6-luna` is the credential fallback. If neither
->   is available with credentials, the call fails with a clear error. Missing candidates and rejected provider auth
->   checks do not disable the remaining fallback. Owner:
->   «Я бы хотел, чтобы мы прогнали этих малышей на каких-то нижних reasoning. Например, Haiku 5.5 medium либо low и
->   GPT-6 Luna medium либо low. Для нас предпочтительно утилизировать шумную работу внутри Haiku и внутри Luna, потому
->   что они полностью бесплатны для наших подписок. ... Я бы хотел это сделать для обоих моделей, но надо сделать
->   честные замеры.»; «Протестировали этих workers с max reasoning — полная хуета.»
->   Reason: put noisy work on the preferred subscription models at measured lower reasoning, rather than inheriting
->   the caller's expensive model/level or assuming max is better. Carrier: `extensions/RQW-agent/worker-model.ts`;
->   proof: `test/worker-model.test.ts` and `test/workers.test.ts` in that folder.
-
-## A-0140 · archived 2026-10-23 · Workers · B4: qualification and chosen reasoning
-Status: SUPERSEDED by `[D-WORKERS-REASONING]` ([DECISIONS.md, Workers](DECISIONS.md#workers)). Results table moved to notes/decisions-evidence.md#workers-b4-results.
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'B4: only levels meeting the owner'\''s bar independently on tun' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0140' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1169-1194 at `30952e6`, verbatim:
-
-> - B4: only levels meeting the owner's bar independently on tuning and holdout qualify. Owner:
->   «Даже 4% не было ошибок»; «Поставь 95, хоть помягче
->   чуть-чуть». The bar is 95%, not lowered by the coordinator. Low is chosen when it qualifies, its combined
->   tuning/holdout pass rate is not below medium's and its judge mean is at most 0.5 below medium's; otherwise use
->   qualifying medium. Reason: lower reasoning must retain reliable execution and report quality. Owner on honest
->   repeated measurements: «замеры можно делать бесконечно, потому что хайку и Luna бесплатные».
->   If neither low nor medium qualifies, the owner chooses the trade-off rather than the coordinator raising the
->   level or lowering the bar: «Гораздо проще, если там будет высокий процент успеха, допустим,
->   70-80, то пусть лучше он в один проход напишет большую часть, потом его основной агент подправит. Чем
->   он будет сидеть по пять минут писать код».
->   Source: [workers benchmark, Results and B4](notes/workers-bench.md#b4-chosen-levels), saved log
->   `logs/b3-final-3models-summary.md` under the benchmark directory named in that report. Each pair below is
->   low vs medium; judge means cover all runs.
->
->   | Model | Role | Tuning pass: low vs medium | Holdout pass: low vs medium | Judge mean: low vs medium | Chosen |
->   | --- | --- | --- | --- | --- | --- |
->   | anthropic/claude-haiku-5-5 | code_writer | 75/75 vs 75/75 | 50/50 vs 50/50 | 9.7 vs 9.7 | low |
->   | anthropic/claude-haiku-5-5 | shell_runner | 75/75 vs 75/75 | 50/50 vs 50/50 | 9.6 vs 9.6 | low |
->   | openai-codex/gpt-6-luna | code_writer | 75/75 vs 75/75 | 50/50 vs 49/50 | 9.9 vs 9.8 | low |
->   | openai-codex/gpt-6-luna | shell_runner | 72/75 vs 75/75 | 49/50 vs 50/50 | 9.5 vs 9.6 | medium |
->
->   GPT-6 Luna shell_runner low qualifies but loses to medium on pass rate, so medium is selected. The separately
->   measured GPT-5.6 Luna is not in this model chain and is not used. Its code_writer met the bar at no level:
->   holdout pass rates were 84.0%, 82.0%, 86.0% and 92.0% for low, medium, high and xhigh, with runaway writes hitting
->   the 15-minute cut. Those measurements do not add a model or change the accepted primary/fallback chain.
->   Carrier: `extensions/RQW-agent/worker-model.ts` (`WORKER_REASONING`); proof is shared with D1 above.
-
-## A-0141 · archived 2026-10-23 · Workers · Shared lifecycle
-Status: SUPERSEDED by `[D-WORKERS-LIFECYCLE]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'Engineering choice: worker profiles parameterize the existin' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0141' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1195-1201 at `30952e6`, verbatim:
-
-> - Engineering choice: worker profiles parameterize the existing session runtime in `extensions/RQW-agent/index.ts`,
->   rather than copying id allocation/persistence, cancellation, delivery and late-after-abort rules. `workers.ts`
->   groups caller-local handles; completed sessions are retained for explicit follow-ups and caller shutdown closes
->   active and retained workers, as the owner's [Agent wait decision](#agent) requires.
->   Reason: keep one lifecycle implementation and prevent worker results from leaking into another caller's session.
->   Offline proof: `extensions/RQW-agent/test/workers.test.ts`; [Isolation](#isolation) remains covered by
->   `test/isolation.test.ts` and the extension-local standalone import scan. No other extension is imported.
-
 ## A-0142 · archived 2026-10-23 · Review · Deep reviewer and hang guard
 Status: SUPERSEDED by `[D-REVIEW-DEEP]` ([DECISIONS.md, Review](DECISIONS.md#review)). Absolute evidence path dropped; hang-guard replacement is BACKLOG.md item R01.
 Introduced: `a04a9c0`, the oldest hit of `git log -S'Owner (verbatim): «Он не должен быть супердушным, супердотош' -- DECISIONS.md`.
@@ -4439,7 +4298,6 @@ Archived by: the agent-async change; the commit is `git log -S'A-0267' -- DECISI
 >   Coordinator text. Reason: parallel tool batches, pre-run compaction and disposal must not leave unowned requests.
 >   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `extensions/RQW-agent/test/agent.test.ts`; [historical proof](notes/decisions-evidence.md#agent-proof). Since: `fe0e375`.
 
-
 ## A-0268 · archived 2026-10-24 · Local delivery gate · D-WORK-THIRD-PARTY
 
 Status: SUPERSEDED in its delivery-test requirements by `[D-PIPELINE-LOCAL-GATE]` (DECISIONS.md#task-pipeline).
@@ -4594,3 +4452,962 @@ Provenance: verbatim DECISIONS.md entry at base commit `a85b810`; replaced by th
 >   wording of [D-WORK-CI-LOGS] and [D-WORK-CHECKS-ONCE]. Reason: Windows timing failures blocked unrelated work; they are
 >   tracked in the inbox ([D-PIPELINE-FLAKE-SKIP]) instead. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and
 >   [Delivery](PROCESS.md#delivery), `scripts/deliver-check.mjs`. Since: process-pipeline squash.
+
+## A-0277 · archived 2026-10-24 · Golden rule: no avoidable token spending
+
+Status: SUPERSEDED by `[D-WORK-GOLDEN-RULE]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 75-98, whole entry verbatim.
+Original provenance: process-pipeline squash.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0277' -- DECISIONS-ARCHIVE.md`.
+
+> - **Golden rule: no avoidable token spending** `[D-WORK-GOLDEN-RULE]`. A standing design and review requirement for the
+>   harness and for the development workflow: spend no tokens where they can be avoided (no polling, no model turns
+>   spent only waiting, no repeated reads or reviews without new input); every solution is engineered, thought through,
+>   efficient, optimal and as simple as possible, with its trade-offs weighed and balanced to reach the right decision.
+>   Owner (`16-27-59:5096`, entry `4a276e33`): «Мы вообще не должны тратить токены там, где мы токены можем не тратить. Это золотое правило нашего workflow разработки этого майпи харнеса.»
+>   «Все должно быть суперинженерно, суперпродуманно, эффективно, оптимально и самым простым способом. Мы ищем баланс и разбираем трейд-оффы в реализации для того, чтобы принять правильное решение.»
+>   Owner (`16-27-59:5107`, entry `5f6049b7`), where to record it: «Это еще можно зафиксировать в системном промте про золотое правило: не тратить токены там, где их можно не тратить, чтобы работать максимально эффективно и инженерно.»
+>   Owner (`16-27-59:5111`, entry `8295a6f4`), on designing the first optimisation: «Короче, надо подумать, как следует сделать всё пиздато, максимально в соответствии с нашим манифестом workflow, с нашими стандартами качества и работы»
+>   Owner (`16-27-59:5119`, entry `f6282fe9`), no reread to verify an own successful edit: «Когда мы правки делаем, мы знаем, в каких строках что должно быть написано. И если справка легла правильно, то мы знаем о том, что у нас там всё исправлено и всё. Не надо вообще читать файл для этого.»
+>   This ships as one line in the `edit` and `write` descriptions and in `extensions/RQW-prompt/SYSTEM.md`: a successful
+>   edit or write means the file holds the new text; do not reread it only to verify.
+>   Follow-up read cache, approved and built directly with no pre-build measurement or trial:
+>   [D-TOOLS-UNCHANGED-READ](#tools), reviewed at merge plus 3 days in
+>   [BACKLOG.md](BACKLOG.md#token-efficiency-review). Coordinator question (`16-27-59:5122`): "Его делаем после веб-поиска?"
+>   Owner (`16-27-59:5123`, entry `d0a9a090`): «да» Owner (`16-27-59:5131`, entry `1b3abc69`) on the mechanism: «Эта механика должна быть абсолютно полностью инженерной.»
+>   Owner (`16-27-59:5135`, entry `171f4d82`), no trials: «через три дня после merge надо будет сделать review всех старых сессий на предмет того, помогло нам это или нет. И всё. Не будем никаких делать испытаний и прочей хуйни.»
+>   Coordinator text (`16-27-59:5138`): the unchanged note only if the last read of the same range was at most 10 turns
+>   and at most 30000 context tokens ago, otherwise full content.
+>   Reason: tokens are a cost the owner wants spent only where nothing simpler works. Carriers:
+>   [PROCESS.md, Golden rule](PROCESS.md#golden-rule), the owner's own record in
+>   [WORKFLOW-MANIFEST.md](WORKFLOW-MANIFEST.md#золотое-правило), the code reviewer `.agents/reviewers/code.md`, the
+>   review criterion line of every brief (`extensions/RQW-review/REVIEWER.md` already checks custom criteria), and the
+>   product line in `extensions/RQW-prompt/SYSTEM.md` (a separate agent edits it with its prompt test).
+>   Since: process-pipeline squash.
+
+## A-0278 · archived 2026-10-24 · Temporary Sonnet-only Anthropic subagents
+
+Status: SUPERSEDED by `[D-WORK-TEMP-GPT]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 116-122, whole entry verbatim.
+Original provenance: process-rules-oct23 squash.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0278' -- DECISIONS-ARCHIVE.md`.
+
+> - **Temporary Sonnet-only Anthropic subagents** `[D-WORK-TEMP-SONNET]`. The temporary restriction and its explicit
+>   expiry live in [PROCESS.md, Subagent models](PROCESS.md#subagent-models). After expiry the normal table applies.
+>   Owner (`16-27-59:4789`, entry `de383e38`):
+>   «Да, и временно нужно до конца недели из subagent убрать Opus, использовать только Sonnet. Надо зафиксировать это до вечера среды. Сейчас у нас 11:25 p.m. пятницы, и мы до следующей среды, до 19:00, не используем Opus модели с subagent в этой связке координатора, именно в этом проекте, в работе над проектом.»
+>   Reason: limit Opus usage during project development. Carrier: PROCESS coordinator-rules and the dev guard.
+>   The arbiter title allowance in PROCESS is not general subagent permission.
+>   Since: process-rules-oct23 squash.
+
+## A-0279 · archived 2026-10-24 · Development subagent models
+
+Status: SUPERSEDED by `[D-WORK-MODELS]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 185-225, whole entry verbatim.
+Original provenance: see the verbatim entry below
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0279' -- DECISIONS-ARCHIVE.md`.
+
+> - **Development subagent models** `[D-WORK-MODELS]`. Rule for developing this repository with agents only, as the
+>   owner confirmed; it is not a product model setting and not a rule for the rest of Pi. Three task classes:
+>   ordinary, complex, and the hardest and most important. The classes, their model and reasoning pairs and the
+>   machine-readable settings live only in the `coordinator-rules` JSON block of
+>   [PROCESS.md, Subagent models](PROCESS.md#subagent-models); this entry does not repeat the pairs. Main starts only
+>   ordinary `agent` subagents, gives `model` and `thinking` explicitly on every start and restart, and never starts
+>   `explore` itself. Explorers and `review` are used by the subagents Main starts. The even Anthropic/GPT balance stays
+>   (entry below). Product review `LEVELS` is unchanged.
+>   Owner's messages or contiguous spans from the session file
+>   `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`; the physical JSONL line is named before
+>   each. The second message cancels the Opus 5.5 low part of the first; the last message is the final table.
+>   Line 4162:
+> «Короче, по моделям. Сейчас, смотри, как я тебе скажу. Новые модели сабоагентов используешь для сложных задач: Sol-6.1 High и Opus Medium. Для простых задач используешь Opus Low и Sonnet High. Смотри, самая тупая модель — Opus Low, потом идёт Sonnet High. Это для простых задач. Для сложных задач — Opus Medium. Теперь по чату GPT-6.1. Sol Low для простых задач, Sol Medium для простых задач. Нет, не так. Смотри, по-другому. Для простых задач Opus Low и Sol Low. Для сложных задач это Sol Medium, Sol High либо Sonnet High, Opus Medium. Как понял, подтверди, пожалуйста.»
+>   Line 4179:
+> «Не, нихуя отмена! Простые задачи не Opus 5.5 low, а Sonnet 5.5 medium. У тебя Sonnet 5.5 medium и Sol 6.1 low. Вот так.
+>
+> Opus 5.5 Low — это слишком дорого»
+>   Line 4183, the scope:
+> «Но это касается только нашего с тобой Process MD. Это не на весь наш Pi, а именно на нашу репозиторию текущую, по нашему Process MD. Ты же понимаешь это, да или нет?»
+>   Line 4188:
+> «Да, и надо ещё чётко сконфигурировать, записать, отразить в правилах работы агента, что сложные задачи OPUS 5.5 Medium, Sonnet High и Sol 6.1 Medium, Sol 6.1 High. Я не знаю, понятно тебе это или нет, но OPUS 5.5 Medium в разы сильнее, чем Sonnet High. Если сложные делить на простые и ещё более сложные, если делить сложные на задачи попроще и посложнее, то посложнее делает Medium, а Sonnet High делает попроще. Ты это понимаешь, надеюсь, или нет? Потому что с Sol 6.1 всё понятно: там Medium слабее, а High сильнее.
+>
+> Это очень важно, чтобы не было такого, что ты на сложные задачи захуяриваешь solve high, а на более простые solve medium, блядь.
+>
+> Мне важно в этом плане с тобой, чтобы у нас была согласованность полная»
+>   Line 4203, the final answer:
+> «Да, ты прав. Это противоречие очень жёсткое и важное. Давай так сделаем. Смотри: Opus Medium и Soul High работают с самыми сложными задачами, а просто со сложными задачами работает Sonnet High и Soul Medium. Давай сделаем.
+>
+> У нас есть обычные задачи, сложные задачи и очень сложные, очень важные задачи. Так яснее?
+> Я решил конфликт или еще нет?
+>
+> А почему у тебя дети молча получают родительскую модель? Такого не должно быть. Ты детей назначаешь сам. У тебя единственный, кто получает родительскую модель — это Explorer. Explorer получает родительскую модель, но это в обычной работе. А ты координатор, ты работаешь отдельно, у тебя другой flow, свой собственный. Понимаешь разницу?»
+>   Final table, a separate contiguous span of the same message:
+> «Ответы на твои вопросы. Простые задачи: Sonnet Medium и Sol 6.1 Low. Сложные задачи: Sonnet 5.5 High, Sol 6.1 Medium. И самые тяжёлые и самые важные задачи: Opus 5.5 Medium и Sol 6.1 High.»
+>   Coordinator reading (agent text, not owner words): the final table is in the line 4203 message; it adds the third
+>   class, the hardest and most important tasks; the Opus 5.5 low of line 4162 is cancelled. Main does not start
+>   `explore`, while its subagents may use it.
+>   Reason: owner decision, and the rule must not be lost again, so it has one source and a mechanical guard.
+>   Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models) (the JSON block and the rules); the dev-only
+>   project extension `.pi/extensions/coordinator-guard/` (Main's top-level session in this checkout only).
+>   Superseded earlier entries: `DECISIONS-ARCHIVE.md`, A-0001 to A-0004.
+
+## A-0280 · archived 2026-10-24 · Temporary result-review route
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 284-293, whole entry verbatim.
+Original provenance: `9b93931`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0280' -- DECISIONS-ARCHIVE.md`.
+
+> - **Temporary result-review route** `[D-WORK-TEMP-REVIEW]`. While RQW-review is disabled, result review runs through an
+>   `agent` subagent with the new reviewer text and the trailer `Review: agent#N CLEAN`. Coordinator text, the question
+>   (`16-27-59`, before line 2042): "Слияния, пока ревьюер выключен ... a) Маленькой правкой научить проверку перед слиянием принимать ревью субагентом с текстом ревьюера, с честной отметкой agent#N. В процессе записать, что так делаем, пока ревьюер выключен."
+>   Owner (`16-27-59:2042`, `16-27-59:2049`, and earlier `16-27-59:1849`):
+>   «1а»
+>   «только с текстом нового ревьюера»
+>   «Сейчас ревьюеров надо отключить, пока мы их не дотюнили.»
+>   Reason: the gate needs an honest result-review trailer while the reviewer is off. Carriers:
+>   [PROCESS.md, Independent review](PROCESS.md#independent-review), `scripts/deliver-check.mjs`,
+>   `test/deliver-check.test.ts`. Since: `9b93931`.
+
+## A-0281 · archived 2026-10-24 · Postponed features
+
+Status: SUPERSEDED by `[D-SCOPE-POSTPONED]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 551-555, whole entry verbatim.
+Original provenance: `d28ae41`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0281' -- DECISIONS-ARCHIVE.md`.
+
+> - **Postponed features** `[D-SCOPE-POSTPONED]`. Postponed, not dropped: `codebase_explorer`, `custom`, the
+>   `define-goal` skill and work orders, and the task list with the check before stopping (later switched on by a skill).
+>   Coordinator text (historical unverified attribution): "мы их не упраздняем, а откладываем". Status of each item:
+>   [BACKLOG.md](BACKLOG.md). The `agent` and `review` tools are separate decisions:
+>   [Agent](#agent), [Review](#review). Since: `d28ae41`.
+
+## A-0282 · archived 2026-10-24 · Reviewers
+
+Status: SUPERSEDED by `[D-SCOPE-REVIEWERS]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 556-559, whole entry verbatim.
+Original provenance: `3dce6fa`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0282' -- DECISIONS-ARCHIVE.md`.
+
+> - **Reviewers** `[D-SCOPE-REVIEWERS]`. Review is our own extension `RQW-review` on `createAgentSession`, not a ready
+>   package; its contract, levels and models are in [Review](#review). Coordinator text (historical unverified attribution): "То, что ты предложил по ревьюерам — it's OK, я принимаю". Reason: the ready package was too large and failed
+>   strict schemas ([notes/decisions-evidence.md](notes/decisions-evidence.md#scope-reviewer-package-sizing)). Carrier:
+>   `extensions/RQW-review/`. Since: `3dce6fa`.
+
+## A-0283 · archived 2026-10-24 · Enable the ready interface now
+
+Status: SUPERSEDED by `[D-UI-ENABLE-NOW]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 575-586, whole entry verbatim.
+Original provenance: see the verbatim entry below
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0283' -- DECISIONS-ARCHIVE.md`.
+
+> - **Enable the ready interface now** `[D-UI-ENABLE-NOW]`. Owner: «1а».
+>   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry
+>   `4035f0a6`, `2026-10-23T19:05:12Z`, under the repository session directory named in Provenance.
+>   Coordinator text, option a, assistant entry `60ca78d9`, `2026-10-23T19:03:52Z`:
+>   Включить сейчас всё готовое вместе с карточками агентов, а карточку ревьюера добавить позже, когда будет новый ревьюер. Ты получишь интерфейс в ближайшие часы.
+>   Register thinking, naming, agent-ui and tool-ui now; statusbar is already registered.
+>   Change of circumstances, coordinator text, not an owner answer: the owner answered 1а while the new reviewer was
+>   still open. Since then the new reviewer has landed on `main` (`11b0fe2`), so the review card T14 is no longer
+>   deferred. It is part of the same switch-on and is delivered with `RQW-agent-ui`: cards for `agent`
+>   and for `[review#N]` results, matched to the new reviewer's output.
+>   Reason: deliver the ready interface at once; the one deferred part became ready before delivery.
+>   Carriers: `package.json`, `extensions/RQW-agent-ui/`.
+
+## A-0284 · archived 2026-10-24 · Renderer order
+
+Status: SUPERSEDED by `[D-UI-RENDERER-ORDER]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 587-599, whole entry verbatim.
+Original provenance: see the verbatim entry below
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0284' -- DECISIONS-ARCHIVE.md`.
+
+> - **Renderer order** `[D-UI-RENDERER-ORDER]`. Technical decision under the activation approval above:
+>   preserve the existing extension order, then append `RQW-thinking`, `RQW-naming`, `RQW-agent-ui`, `RQW-tool-ui`.
+>   Pi 1.4.0 `dist/core/extensions/loader.js` `loadExtensionsInternal` initializes paths in order;
+>   `runner.js` `resolveToolRenderers` calls resolvers in load order with `next()` delegating to later resolvers.
+>   Thus agent-ui is the outer resolver. With both agent-ui and tool-ui loaded, a collapsed wait result is
+>   tool-ui's: the summary part `Waited for N agents` and the live block `wait <ids>`, per the owner's wait amendment
+>   "1а 2а". Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default). agent-ui delegates to `next()` while collapsed. On Ctrl+O it draws its own box with the expanded wait
+>   cards: header with id, status, model, effort and seconds, then the full answer verbatim. With tool-ui off,
+>   agent-ui shows its collapsed wait cards. The order is explicit and tested, not a claim that reversing it
+>   gives the same result.
+>   `getMessageRenderer` returns the first matching extension renderer; agent-ui owns `agent`
+>   and `[review#N]` results. Thinking and naming register no competing tool/message renderer and keep the existing producers first.
+>   Reason: preserve independent cards and compact tools without changing execution. Carrier: `package.json`.
+
+## A-0285 · archived 2026-10-24 · Delivered results, not an agent board
+
+Status: SUPERSEDED by `[D-UI-AGENT-CARDS]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 636-651, whole entry verbatim.
+Original provenance: see the verbatim entry below
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0285' -- DECISIONS-ARCHIVE.md`.
+
+> - **Delivered results, not an agent board** `[D-UI-AGENT-CARDS]`. Owner: "Да с сабагентами +".
+>   Source: the `18-16-12` session file named above, USER entry `96231cbd`, line 243. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
+>   Agent custom results show compact cards: ID, outcome, available actual
+>   model/effort/duration, then the first nonempty answer line. Missing metadata stays omitted. The review card
+>   (T14) is delivered with `RQW-agent-ui`: `[review#N]` results show a card matched to the new reviewer's output.
+>   Delivered wait results: with both agent-ui and tool-ui loaded, the collapsed result is tool-ui's (summary part
+>   `Waited for N agents`, live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards, each with
+>   id, status, model, effort, seconds and the full answer verbatim; with tool-ui off, agent-ui shows its
+>   collapsed wait cards. Stored content, execution and delivery do not change. A card shows one delivered
+>   result as finished or failed, never a live agent state. There is no agent list, board or child-log view.
+>   T17 cards belong to agent-ui, T18 indicator to statusbar: actual running counts by agents/reviews come
+>   from the existing activity producer, not a second registry in the cards. Ordinary busy letters shimmer silver;
+>   compaction status and synchronized chrome shimmer gold; fully idle is a continuous rule. Title stays static gold.
+>   The indicator's existing decision is [D-STATUSBAR-ACTIVITY](#status-bar).
+>   Reason: readable delivered answers, independently switchable from activity. Carriers: `extensions/RQW-agent-ui/`,
+>   `extensions/RQW-agent/activity.ts`, `extensions/RQW-statusbar/`, `package.json`, `INSTALL.md`.
+
+## A-0286 · archived 2026-10-24 · Background jobs
+
+Status: SUPERSEDED by `[D-TOOLS-BG]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 919-1001, whole entry verbatim.
+Original provenance: `e5440f2`; scan and footprint safeguards since `e1cca48`; handoff independence and notification waits since the final squash of branch `agent-async`. Earlier wording (Esc killed jobs, polling only): [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0264.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0286' -- DECISIONS-ARCHIVE.md`.
+
+> - **Background jobs** `[D-TOOLS-BG]`. Owner (`16-27-59:2561`, `16-27-59:2574`, design answers `16-27-59:2598`):
+>   «Да, и надо, чтобы основной агент. Нет, знаешь как? Надо, чтобы длительные shell процессы сами уходили в фон. Если он работает больше 20 секунд, чтобы он превращался в фоновый процесс, а не оставался висячим активным процессом. Надо, чтобы всё, что висит больше 20 секунд, любая операция, которая висит больше 20 секунд, уходила в background, и можно было просто её пропинговать через какое-то время. Чтобы у агента был инструмент проверки состояния.»
+>   «только надо время сократить до 12 секунд, после 12 секунд уходит в фон.»
+>   «1а2а3а»
+>   «4 - надо разобраться с рейс кондишенами и найти самое интелектальное производительное и эффективное решение марщрутизации и оркестрации тулколов»
+>   «5б»
+>   «6а с учетом 4 пункта добавочного»
+>   Rule: a top-level call of `bash`, `codemode` (the whole script) or `read`, `edit`, `write`, `grep`, `find` that has
+>   not settled 12 s after it started, barrier wait included, returns at once as `job#N` with the command, elapsed time,
+>   the output so far and a log file in the OS temp dir, and keeps running; a call that settles sooner returns exactly the
+>   stock result. Calls inside a codemode script never go to the background. The `job` tool (`wait`, `status`, `kill`; `ids`, `id`,
+>   `timeout_ms` default 300000 when omitted, `lines` default 20) waits mechanically until one selected job ends or the
+>   caller's deadline, keeps collecting for 250 ms after the first one ends, shows state, exit code, elapsed time, tail
+>   and log path, and kills a process job with its process tree or cancels a queued one. Approved caveat: a running
+>   file-tool job (`read`, `edit`, `write`, `grep`, `find`) cannot be interrupted safely; `job kill` reports
+>   `cannot_kill` and it finishes on its own. This is a design limit, not a defect; queued file-tool jobs can be
+>   cancelled. A wait may be a notification instead of a held call (`[D-TOOLS-NOTIFY]`); the descriptions say to kill jobs
+>   one no longer needs before the final answer. A process job dies on `job kill`, its `timeout`, a child's management
+>   interrupt and the caller's shutdown or reload, and after the handoff not on Esc or a new owner message; jobs belong to the session whose call started them (one registry per `createTools`; RQW-agent
+>   calls the offered `job` definition's `jobs.abortAll()` on interrupt and `jobs.dispose()` on close). `job` is active
+>   whenever one of these tools is; when Pi's allowlist keeps it off, nothing goes to the background. Reason: long
+>   operations must not hold the agent, and the agent needs a tool to check them; Codex unified exec yields the same way;
+>   the threshold is the owner's value.
+>   Ordering (D4). Owner (`16-27-59:2705`): «1a + живай проверка на хайку и луна хай ризонинга»; option 1a of the ordering
+>   proposal is named in coordinator text "ordered until handoff, free after". Calls of the same response keep the barrier
+>   order: a call after a backgrounded job waits for its real end and itself becomes a queued job after 12 s. At the
+>   handoff a bash or codemode job is detached from the barrier (`detach` in `barrier.ts`, through `nested.ts`); calls of
+>   later responses wait for it only for the resources it holds (H1). A read, edit or write job keeps its paths. A
+>   dependency on a background job is explicit: `job wait`, then the dependent call. While a bash or codemode job of the
+>   caller runs, a read, edit or write of a file changed outside the caller's tools since that job started gets one note
+>   naming the job.
+>   Routing (FR-safe). Owner (`16-27-59:3117`, the answer to the routing question): «2а». Holds (H1): at the handoff a
+>   bash job keeps what `footprint.ts` reads with certainty from its command text: the package folder an install changes,
+>   the git index and refs of a repository a git command changes (every subcommand except known reading ones), and the
+>   exact files it writes (redirects, `tee`, `sed -i`, `curl -o`, `rm`, `mkdir`, `touch`, `cp`/`mv`/`ln` destinations).
+>   `footprint.ts` restores the outer working directory when a subshell closes. Mutating `git symbolic-ref` and
+>   `git reflog` forms hold the repository; their read-only forms remain reads.
+>   A later call waits only for these; reads never wait; any doubt holds nothing. Package-folder and git holds are
+>   process-wide (`ledger.ts`) across main, subagents and reviewers; files are not ordered across sessions, they
+>   get attributed notes. Effects report (O1): a top-level bash call that can become a job, or a top-level codemode call,
+>   takes a snapshot of the working tree
+>   (`git ls-files -co --exclude-standard`, or outside git a walk with one global limit of 20000 files, including
+>   within a single wide directory, without .git, node_modules,
+>   .next, target, .venv, __pycache__) right before its command starts, and a job takes another when it ends; what
+>   changed is the difference of the two states, never a time cutoff. Approved caveat: a bash call with its own
+>   positive `timeout` of 13 s or less never goes to the background, so it takes no pre-start snapshot. Calls with a
+>   longer or absent timeout take the snapshot even if they finish before handoff; this is not a snapshot defect. Owner (`16-27-59:3621`), on the cost:
+>   «Да, если это всего лишь 150 миллисекунд на 20 тыс. файлов, конечно, блядь, надо делать снимок файлов точный. Это 1А.»
+>   The report lists files created and changed while the job ran (with the other session and tool), the caller's own
+>   writes, own writes overwritten since, files deleted since the start, and the other jobs that ran alongside.
+>   Unreadable directories, file-stat failures and git warnings recorded by either snapshot appear in `effects.errors`,
+>   labelled before the start or at the end; failed or cancelled scans, git listing failures and the global walk bound
+>   are reported in `effects.errors` or `scanned`. Unchecked paths are explicit, and an inaccessible file is not
+>   classified as deleted. Write precondition (P1): a write over a file the session has read or written, changed
+>   since by anyone else, is refused once with who changed it; the identical retry overwrites; a file never seen is
+>   written without a check. Check, stock tool and ledger record run in one process-wide critical section per file
+>   (`withFileLock`); files are keyed by native real path (`identityKey` in `keys.ts`); records belong to a registry
+>   `owner`, the label is only shown. K1: `job kill` also cancels the queued same-response calls that wait for the killed
+>   job and lists them in `cancelled_followers`; a killed queued call leaves the barrier at once (`withdraw`). N1: a job
+>   that ended with an unseen non-empty effects report adds one note line to the caller's next top-level tool result.
+>   W1: `job wait` takes `until`, a JavaScript regular expression on the output (a leading `(?i)` ignores case). S1: a
+>   codemode script waits as a queued job for a free worker of the process (`PI_CODEMODE_MAX_WORKERS`, default 2). A
+>   bash call inside a codemode script takes the same process-wide claims. Each session's label comes through the
+>   optional `options.label` of the offered factory (`main`, `agent#1`, `agent#1/agent#2`, `review`, ...).
+>   Children like main. Coordinator text, technical decision at the rebase onto subagent parity; the parity request,
+>   owner (`16-27-59:2608`): «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи свои предложения».
+>   With an RQW-tools offer, a child's or reviewer's `codemode` is Pi's definition built from that session's API, passed
+>   as `options.codemode` and returned as one call of the child's barrier and a job of its registry, so a child script goes
+>   to the background after 12 s like main's and S1 slots count main and every child together; without an offer the child
+>   keeps Pi's stock codemode. Explorers inherit the caller's active base tools (`[D-AGENT-EXPLORE-TOOLS]`) and get `job` only when offered. The reviewer of RQW-review gets the offered `job`
+>   tool; Esc of a review aborts its jobs and its end disposes them. The prompt section `rqw_tools_execution` says that a
+>   background job holds the later calls of its response and, from later responses, only calls that change what it holds.
+>   Reason: a replay of recorded tool calls left D4 alone with silent overlaps between jobs and later calls; FR-safe
+>   leaves none silent and keeps the same-response order; the owner chose it. Probes, replay, snapshot cost, pilot defects
+>   and code-review fixes: [notes/decisions-evidence.md](notes/decisions-evidence.md#background-jobs-evidence); races
+>   R16-R24: `notes/analysis-races.md` section 9.
+>   Carriers: `extensions/RQW-tools/jobs.ts`, `barrier.ts`, `nested.ts`, `footprint.ts`, `ledger.ts`, `keys.ts`,
+>   `index.ts`, `codemode.ts`, `descriptions/bash.md`, `descriptions/job.md`, `descriptions/write.md`;
+>   `extensions/RQW-agent/index.ts`; `extensions/RQW-review/index.ts`;
+>   `notes/prompt-tools-isolation.md`. Proof: `extensions/RQW-tools/test/background.test.ts`, `barrier-detach.test.ts`,
+>   `footprint.test.ts`, `ledger.test.ts`; `extensions/RQW-agent/test/wait.test.ts`,
+>   `agent.test.ts`; `extensions/RQW-review/test/review.test.ts`, `subagent.test.ts`;
+>   `test/prompt-tools-isolation.test.ts`. Since: `e5440f2`; scan and footprint safeguards since `e1cca48`; handoff independence and notification waits since the final squash of branch `agent-async`. Earlier wording (Esc killed jobs, polling only): [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0264.
+
+## A-0287 · archived 2026-10-24 · Notification waits and independent jobs
+
+Status: SUPERSEDED by `[D-TOOLS-NOTIFY]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1003-1028, whole entry verbatim.
+Original provenance: the final squash of branch `agent-async`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0287' -- DECISIONS-ARCHIVE.md`.
+
+> - **Notification waits and independent jobs** `[D-TOOLS-NOTIFY]`. Owner (`16-27-59:4876`, entry `85357ce9`) and (`16-27-59:4937`, entry `a8684155`):
+>   Entry `16-27-59:4876` asked that waits wake the agent by notification and that owner steering stay possible without aborting
+>   waits, children or jobs; its exact text is not kept in this repository, only the entry id and that summary. Entry
+>   `16-27-59:4937` (the same spans are kept in [BACKLOG.md](BACKLOG.md#asynchronous-tool-research-sources)):
+>   «Также добавь в список задач, что нам нужно сделать реализацию асинхронного tool calling, как в Codecs CLI, чтобы агент мог вызывать tool call и при этом асинхронно полностью работать, принимать от меня сообщения и не обрываться на этом.»
+>   Rule, taken by default (coordinator text, not an owner quote): `job wait` registers its subscription and snapshot in one
+>   synchronous step. A result that is ready now returns at once as before. Otherwise the call returns `reason: "waiting"`
+>   with `terminate: true`, so the caller's turn ends with no further model request, and one notification (a job ended, an
+>   `until` match, or the `timeout_ms` deadline; ends within 250 ms join one notification) later arrives as a `[job]`
+>   message that wakes an idle caller. A busy caller gets it at the settlement boundary, held outside Pi's steering queue so
+>   Esc and send-now do not drop it. A newer wait on the same job replaces the older one; a result already shown by
+>   `status`, `wait` or `kill` is not announced again. `blocking: true` keeps the old held wait. Calls inside a codemode
+>   script stay blocking. The print/json fallback is for external hosts only: a root session run by Pi in print or json mode ends
+>   with its run, so its waits block; an in-process child agent with the `notify`/`retain` bridge keeps notifications even when its SDK mode reads print.
+>   Any caller without a `notify` callback, including a reviewer's own tool session, keeps the blocking wait. The `notify` callback
+>   of the job registry is the same one subagent waits use, so no second delivery registry exists. A child's offered factory also
+>   gets the optional `retain` hook, taken only while a notification subscription is pending, so the child's assignment stays open;
+>   both hooks are optional and keep the extensions independent.
+>   A job that went to the background belongs to the session: Esc, abort of the run, a new owner message and send-now
+>   do not kill it. `job kill`, a child's management interrupt (`jobs.abortAll()`), `stop`/`restart` and session shutdown
+>   do. A foreground call still aborts with its run. This supersedes owner decision D5 (Esc kills all background jobs) of
+>   `[D-TOOLS-BG]`; no owner quote for D5 is repeated here.
+>   Reason: the owner wants a waiting agent not to hold a call and owner messages not to kill background work.
+>   Carrier: `extensions/RQW-tools/jobs.ts` (`watch`, `notify`), `extensions/RQW-tools/index.ts` (`installNotifications`),
+>   `extensions/RQW-tools/descriptions/job.md`. Proof: `extensions/RQW-tools/test/notify.test.ts`, `notify-sdk.test.ts`, `background.test.ts`.
+>   Since: the final squash of branch `agent-async`.
+
+## A-0288 · archived 2026-10-24 · GPT Fast inheritance
+
+Status: SUPERSEDED by `[D-SETTINGS-GPT-FAST-CHILDREN]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1082-1085, whole entry verbatim.
+Original provenance: `fa05edf`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0288' -- DECISIONS-ARCHIVE.md`.
+
+> - **GPT Fast inheritance** `[D-SETTINGS-GPT-FAST-CHILDREN]`. Subagents and reviewers inherit their caller's GPT Fast state at start; nested children inherit from their direct caller. Later main-chat toggles do not update running children. Optional boolean `fast_gpt` overrides inheritance, and agent `send` or `restart` may explicitly change a child's state; omitted restart keeps it. A strict-schema null means omitted. Tool descriptions tell callers to pass `fast_gpt: false` when the user forbids Fast; `review` correctly says a reviewer inherits, not that every tool has identical wording. Independent extension-local `fast-gpt.ts` implementations query `rqw-settings:fast-gpt-query` synchronously; `rqw-settings:fast-gpt` notifies changes. Without a settings responder, inherited main-chat Fast is off.
+>   Owner: the exact inheritance instruction is recorded in GPT Fast above.
+>   Reason: child tier follows the caller's choice without live coupling or cross-extension imports.
+>   Carrier: `extensions/RQW-agent/fast-gpt.ts`, `extensions/RQW-review/fast-gpt.ts`, their `index.ts` and `test/fast-gpt.test.ts`. Since: `fa05edf`.
+
+## A-0289 · archived 2026-10-24 · Native prompt files
+
+Status: SUPERSEDED by `[D-AGENT-PROMPT-FILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1102-1105, whole entry verbatim.
+Original provenance: `dc4f32e`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0289' -- DECISIONS-ARCHIVE.md`.
+
+> - **Native prompt files** `[D-AGENT-PROMPT-FILES]`. Agent start/restart accepts `system_file` or `role_file` instead of the corresponding inline prompt; paths resolve relative to the caller's cwd. A regular file supplies exact UTF-8 text, including whitespace and a literal BOM; invalid UTF-8, matching inline/file options, or mixing any system option with any role option is rejected. Restart inherits the prompt choice and re-reads a file before replacing the child, so failed validation leaves the old child intact. Push `details.prompt_file` and wait `details.results[i].display.prompt_file` carry the same `{kind, path, sha256}` for the absolute resolved path and bytes actually loaded. Explorers reject prompt-file overrides.
+>   Owner: «Всё должно быть нативно. Подумай, как можно максимально интеллектуально прокачать этот функционал.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at physical line 3963, requested at 2026-10-23T13:01:47.145Z.
+>   Reason: native prompt inputs replace manually copied prompt text without losing byte provenance.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts`, `extensions/RQW-agent/prompt.ts`; proof: `extensions/RQW-agent/test/prompt-files.test.ts`; [file contract](extensions/RQW-agent/README.md#prompt-files-and-caller-messages). Since: `dc4f32e`.
+
+## A-0290 · archived 2026-10-24 · Native supervision
+
+Status: SUPERSEDED by `[D-AGENT-SUPERVISION]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1110-1113, whole entry verbatim.
+Original provenance: `dc4f32e`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0290' -- DECISIONS-ARCHIVE.md`.
+
+> - **Native supervision** `[D-AGENT-SUPERVISION]`. The `agent` tool supports native wait/status options and optional `alert_after_ms` on start/restart; prompt-file and caller-message options remain agent configuration. Status alerts are `{kind, at, detail}`: `error`, `repetition`, `long_turn`, `schema_rejection_repeated` and `scope_block`; the latest 32 are presentation history, not an execution limit. The optional positive finite safe-integer threshold is disabled by default and inherited on restart; it reports a long native turn without stopping it, and turn end, logical run end and close cancel the timer, leaving none while idle. Repetition is diagnostic suspicion; schema alerts require a second matching detectable Pi argument-parsing/schema rejection, and scope alerts observe actual existing git-guard refusals. This F1/F3 work adds no F5 guard or sandbox, `stalled_tool` alert, F2 run manifest or F4 structured-output feature.
+>   Coordinator text: technical realization of the native-supervision agreement in `[D-AGENT-PROMPT-FILES]`.
+>   Reason: make supervision caller-controlled without polling wrappers or automatic cancellation.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/activity.ts`, `extensions/RQW-agent/coordinator.ts` and descriptions; proof: `extensions/RQW-agent/test/supervision-activity.test.ts`, `extensions/RQW-agent/test/supervision-coordinator.test.ts`, `extensions/RQW-agent/test/supervision.test.ts`; [supervision contract](extensions/RQW-agent/README.md#wait-status-and-management). Since: `dc4f32e`.
+
+## A-0291 · archived 2026-10-24 · Subagent parity
+
+Status: SUPERSEDED by `[D-AGENT-PARITY]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1123-1126, whole entry verbatim.
+Original provenance: `c86e9bb`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0291' -- DECISIONS-ARCHIVE.md`.
+
+> - **Subagent parity** `[D-AGENT-PARITY]`. General subagents use the main run's built prompt from public `ctx.getSystemPrompt()`, followed by a short subagent reminder and optional `role`; nested subagents receive the main prompt handed down, not their parent's role. Optional `system` or `system_file` replaces that whole prompt exactly; file alternatives and validation are defined in `[D-AGENT-PROMPT-FILES]`. General subagents get `agent` recursively with no depth or concurrency limit; explorers are leaves. Repository coordinator rules are not product policy, and the reminder excludes instructions addressed to the main agent or coordinator.
+>   Owner: «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи свои предложения» Source: the same session, USER entry at line 2608.
+>   Reason: share main's rules and context while allowing short role configuration and independent decomposition.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`, `extensions/RQW-agent/test/agent.test.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-kinds-and-title). Since: `c86e9bb`.
+
+## A-0292 · archived 2026-10-24 · Child settings and offered review
+
+Status: SUPERSEDED by `[D-AGENT-CHILD-SETTINGS]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1127-1130, whole entry verbatim.
+Original provenance: `c86e9bb`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0292' -- DECISIONS-ARCHIVE.md`.
+
+> - **Child settings and offered review** `[D-AGENT-CHILD-SETTINGS]`. Children inherit session shell, image handling, retries, provider and transport timeouts, compaction, thinking budgets, queue modes and codemode settings, except warming stays off. Stock tools use the child's copied shell/image settings; offered RQW-tools read the caller's effective settings per call. Children get built-in codemode/tool_search when active for their caller; general subagents get caller-local review through `rqw-review:subagent-review` when offered. Reviewers inherit the same settings except queue modes. Parent-history fork, web search and MCP for children are deferred in [BACKLOG](BACKLOG.md), not present features; durable resume is delivered (`[D-AGENT-PERSIST]`).
+>   Coordinator text: technical realization of the parity agreement.
+>   Reason: children must not silently lose relevant caller capabilities.
+>   Carrier: `extensions/RQW-agent/index.ts` (`childSettings`), `extensions/RQW-agent/prompt.ts`, `extensions/RQW-review/index.ts`; `extensions/RQW-review/test/subagent.test.ts`. Since: `c86e9bb`.
+
+## A-0293 · archived 2026-10-24 · Title and explorer
+
+Status: SUPERSEDED by `[D-AGENT-TITLE]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1131-1134, whole entry verbatim.
+Original provenance: `c86e9bb`; explorer part reworded by `[D-AGENT-EXPLORE-TOOLS]` (earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0241).
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0293' -- DECISIONS-ARCHIVE.md`.
+
+> - **Title and explorer** `[D-AGENT-TITLE-EXPLORE]`. Optional `title` on start/restart appears in status, `results[i].display.title` and message `details.title`; delivered text keeps its `[agent#N]` form. Card rendering is `RQW-agent-ui`, see [Agent cards](#agent-cards). `explore` on agent start selects a search leaf as defined by `[D-AGENT-EXPLORE-TOOLS]`.
+>   Coordinator text: the explorer option reuses the existing runtime rather than adding a tool.
+>   Reason: retain compact metadata and a search mode without another lifecycle implementation.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`. Since: `c86e9bb`; explorer part reworded by `[D-AGENT-EXPLORE-TOOLS]` (earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0241).
+
+## A-0294 · archived 2026-10-24 · Explorer tools and read-only
+
+Status: SUPERSEDED by `[D-AGENT-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1135-1149, whole entry verbatim.
+Original provenance: the explore-cursor change.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0294' -- DECISIONS-ARCHIVE.md`.
+
+> - **Explorer tools and read-only** `[D-AGENT-EXPLORE-TOOLS]`. `explore` keeps the main system prompt, the subagent reminder, a short search role and thoroughness `quick`, `medium` or `very thorough`, and takes no custom system/role/model/tools or prompt-file overrides. It runs on the current caller's model with the caller's active subset of the base tools `read`, `bash`, `edit`, `write`, `grep`, `find`, without `agent` or review; `codemode` and `tool_search` follow the caller's active tools, and `job` stays available when RQW-tools offers it. `restart` reads the caller's current model and active tools again. Read-only is an instruction of the role, not a mechanism: no file writes, edits or deletion, git state changes or installs, including through shell and codemode. No git guard or sandbox is installed for explorers. The separate `grep` and `find` tools stay for every agent next to `bash`, and no tool registration is added or removed. Reviewer read-only policy is a separate decision under [Review](#review), and this change modifies no RQW-review files.
+>   Owner, session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, `16-27-59:4416`, message `f3830a52`: «давай сделаем разведчика как в курсоре т.е. те же инструменты и шел
+>
+> баг бот и секьюрити ревью вообще не понял к чему ты их преплел
+> Песочницы у нас нет»
+>   Owner, `16-27-59:4424`, message `698dcebc`: «Смотри, у нас Explorer работает на той же модели, что и основной агент, поэтому его защита будет от записи просто инструкцией о том, что ему запрещено делать операции записи. Только чтение. Только редовые операции и всё. Этого будет достаточно, потому что если это будет тупая модель, то похуй. Я не видел таких ошибок вообще никогда, поэтому об этом даже не надо париться, о механической защите от записи.
+>
+> Я гоняю кодекс. Мой кодекс CLI никогда не работает в песочнице, он всегда работает на боевой, там песочница отключена. И ни разу не было такого, что reviewer что-нибудь напишет либо explorer что-нибудь напишет.»
+>   Owner correction, `16-27-59:4429`, message `7690ba13`: «только read-only я хотел написать а не редовые»
+>   Owner, `16-27-59:4433`, message `30ae092f`: «Тогда я думаю, отдельные инструменты типа grep и find не надо выносить в отдельные инструменты, пусть они будут в рамках шелла. И всё так же, как и раньше. Мы не будем ничего усложнять»
+>   Owner, `16-27-59:4435`, message `331ce08c`: «И у ревьюера везде, где есть Read Only, просто будет Read Only на уровне инструкции, и всё»
+>   Owner, `16-27-59:4451`, message `b1c5700f`: «Ну всё, тогда мы это оставляем и не трогаем. Это заебись!»
+>   Coordinator text: the owner trusts the caller's model to obey the read-only instruction and explicitly rejects mechanical write protection. Cursor evidence: `my-pi-evidence/subagent-parity/cursor/REPORT.md:49`, explore has no tools override and inherits the caller's tools minus Task; the model inheritance and the read-only instruction are the owner's requirements, not a claim that Cursor enforces read-only.
+>   Reason: a caller-model explorer with the caller's tools searches like a parent would, and the owner chose an instruction over protection code.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-kinds-and-title); proof: `extensions/RQW-agent/test/agent.test.ts`. Supersedes the git-guarded read/grep/find/bash allowlist of `[D-AGENT-TITLE-EXPLORE]` (A-0241). Since: the explore-cursor change.
+
+## A-0295 · archived 2026-10-24 · API and in-process runtime
+
+Status: SUPERSEDED by `[D-AGENT-API]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1150-1152, whole entry verbatim.
+Original provenance: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`; `blocking` since the final squash of branch `agent-async`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0265.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0295' -- DECISIONS-ARCHIVE.md`.
+
+> - **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `resume`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `blocking`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `explore`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus recursive `agent` delegation for general subagents. Sessions run in-process at caller cwd with in-memory settings; the history is in memory for an in-memory caller and in the owned `<parent.jsonl>.children/` tree for a persisted one (`[D-AGENT-PERSIST]`), using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
+>   Coordinator text. Reason: reuse Pi sessions and the caller's provider runtime without subprocesses or duplicate resource loading.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/test/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`; `blocking` since the final squash of branch `agent-async`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0265.
+
+## A-0296 · archived 2026-10-24 · Codex reviewer port
+
+Status: SUPERSEDED by `[D-REVIEW-PORT]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1205-1220, whole entry verbatim.
+Original provenance: see the verbatim entry below
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0296' -- DECISIONS-ARCHIVE.md`.
+
+> - **Codex reviewer port** `[D-REVIEW-PORT]`. `RQW-review` carries the owner's working Codex CLI reviewer over to Pi, adapted
+>   to this harness. The base is his existing cycle, not a newly invented workflow: the profiles `smarty` and `bossy`
+>   (`agents/*.toml`) and the Main-side skills `subagents`, `blindreview` and `highreview` of his Codex CLI plugin
+>   `scope-focus`, whose `.codex-plugin/plugin.json` names the developer `A. Chukavin` and supplies no licence text or other
+>   attribution. The earlier reviewer flow, its dispute rules and its benchmark campaign are cancelled; their entries are
+>   in [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md) (A-0248 to A-0256). Pi's `read`, `bash`, `grep` and `find` replace the
+>   Codex tools.
+>   Owner (`16-27-59:5195`, `16-27-59:5210`, `16-27-59:5286`, `16-27-59:5291`):
+>   «этот малой на Sol 6.1 Low очень хорошо защищает агента от ошибок»
+>   «Мы отменяем текущий flow работы над reviewer и переобуваемся в новый прекрасный flow.»
+>   «давай мы пойдём от того, что мы возьмём текущего ревьюера, рабочего уже, пиздатого, и его немножко прокачаем, подтюним, оптимизируем. Не будем смотреть на старого ревьюера.»
+>   «Надо его перенести, адаптировав к нашему harness, потому что у них свой harness, у нас свой harness. Надо адаптацию сделать полную, чтобы по смыслу работало так же»
+>   Reason: the Codex reviewer already works in practice, and the old reviewer missed errors. Carriers: `REVIEWER.md`,
+>   `index.ts`, [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md, Independent review](PROCESS.md#independent-review).
+>   The whole-cycle comparison with the original plugin (five identical tasks, one run each, start to CLEAN including
+>   repairs) waits until this port is delivered: [BACKLOG.md](BACKLOG.md#codex-reviewer-comparison).
+
+## A-0297 · archived 2026-10-24 · Reviewer prompt
+
+Status: SUPERSEDED by `[D-REVIEW-PROMPT]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1221-1236, whole entry verbatim.
+Original provenance: this port.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0297' -- DECISIONS-ARCHIVE.md`.
+
+> - **Reviewer prompt** `[D-REVIEW-PROMPT]`. `extensions/RQW-review/REVIEWER.md` is the `developer_instructions` text of
+>   `smarty.toml`, which is identical in `bossy.toml`, and the whole prompt of both levels; Pi adds only its `<cwd>` block.
+>   Three changes, all harness differences: 1. the allowed tools are the `read`, `grep` and `find` tools and read-only
+>   `bash` commands (Codex: "read-only inspection tools and commands"); 2. one sentence names the sections of the brief
+>   that the tool assembles, `<user_messages>`, `<agreement>`, `<object>`, `<criterion>` and `<rejected_earlier>`; 3. the note
+>   that ends a truncated `read` result, such as `Use offset=N to continue`, is not file content (Codex: "the reader's
+>   continuation line"). Codex `fork_turns` has no counterpart: every pass is a fresh session from zero
+>   (`[D-REVIEW-SESSION]`). The prompt has no rule about running tests, for or against, and no measured claim of quality is made.
+>   Owner (`16-27-59:5210`, `16-27-59:5219`):
+>   «reviewer должен делать полное review и находить все расхождения, а не по одному.»
+>   «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
+>   «Я бы хотел его минимально улучшить, минимально усилить и без замеров просто использовать его.»
+>   «Его промпт вообще никак не подвигает его к запуску тестов изначально. То, что ты придумал про запрет запуска тестов — это overengineering очевидный»
+>   Reason: the owner's reviewer works as written; the three changes only fit it to this harness.
+>   Carrier: `REVIEWER.md`. Proof: `test/review.test.ts` (loaded byte for byte) and `test/codex-policy.test.ts` (the request
+>   starts with it). Since: this port.
+
+## A-0298 · archived 2026-10-24 · Reviewer profiles
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1237-1250, whole entry verbatim.
+Original provenance: this port.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0298' -- DECISIONS-ARCHIVE.md`.
+
+> - **Reviewer profiles** `[D-REVIEW-PROFILES]`. One table, `LEVELS` in `index.ts`, independent of the main agent's model:
+>   `blind` is Smarty, `openai-codex/gpt-6.1-sol` thinking low; `high` is Bossy, `openai-codex/gpt-6.1-sol` thinking
+>   medium. When the model is missing or `openai-codex` has no credentials, the review fails with an explicit error
+>   (`review requires Codex credentials, no fallback`) and no other provider runs. A failed request gives
+>   `Review failed: <reason>` and no automatic retry by the extension; Pi's own inherited request retries apply. The
+>   review has no deadline of its own: only session shutdown, or the end of the subagent that asked, aborts a running
+>   review, while an abort of the caller's run (Esc or RPC) leaves it running. Verdict `details` carry the model that ran.
+>   Owner (`16-27-59:5291`):
+>   «Для Claude надо будет замерить. Пока все review будет делать ChatGPT, потом как обновятся лимиты, и Claude померяем, выберем модель из того, что есть»
+>   Coordinator text: Bossy medium is the `model_reasoning_effort` of `agents/bossy.toml`, which the source skill maps to
+>   the `high` level. The Claude measurement is deferred: [BACKLOG.md](BACKLOG.md#claude-reviewer).
+>   Reason: the owner's working reviewer runs on Sol; the Claude choice needs a measurement first.
+>   Carrier: `index.ts` (`LEVELS`, `pickReviewer`). Proof: `test/levels.test.ts`, `test/codex-policy.test.ts`,
+>   `test/startup-policy.test.ts`. Since: this port.
+
+## A-0299 · archived 2026-10-24 · Review cycle on Main's side
+
+Status: SUPERSEDED by `[D-REVIEW-CYCLE]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1251-1283, whole entry verbatim.
+Original provenance: this port.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0299' -- DECISIONS-ARCHIVE.md`.
+
+> - **Review cycle on Main's side** `[D-REVIEW-CYCLE]`. Carried over from the skill `subagents` of the Codex plugin; it
+>   lives in `DESCRIPTION`, `NEXT` and `startedText` of `index.ts`, so switching RQW-review off removes it, and in
+>   [PROCESS.md, Independent review](PROCESS.md#independent-review).
+>   - When: the review runs only when the owner asks for a review or a checked result, or a procedure he approved requires
+>     it, such as the squash-merge rule of PROCESS; never on Main's own initiative or as an automatic step of other work.
+>     `blind` unless the owner or that procedure asks for `high`. Main keeps working meanwhile but leaves the reviewed files unchanged until the verdict.
+>   - Brief: `<user_messages>` is assembled by the tool from the branch, verbatim and in order, with compaction and branch
+>     summaries labelled as not the user's words. Main gives `agreement` when there is any (accepted proposals and decisions
+>     that are not the user's own messages, verbatim), `object` (exact paths or readable references to the object, the
+>     primary requirements, applicable governing rules and source evidence, the diff as a file path, and the stage
+>     `pre-action` or `pre-completion`), `criterion` (what the check confirms and which deliverable must fulfil each
+>     obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second pass on,
+>     `rejected_earlier` (each rejected finding with its reason). No file, search, tool-call or turn quotas.
+>   - `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` passes: no extra pass for confidence, but every independent pass
+>     and its order that the invoking procedure requires stays.
+>   - `FINDINGS:` are the teammate's findings. Main finds each quote by searching for it. A finding whose two quotes stand
+>     verbatim in their sources is admitted; for an omission Main verifies the quoted requirement and the complete
+>     inspected file or section instead of demanding nonexistent text. Main fixes an admitted finding exactly to its
+>     REQUIRED OUTCOME and no further, and does not reject it, argue with it or put it to the owner. Main rejects a finding
+>     only when a quote is not verbatim, the allegedly missing content is present in the cited object, or a NOT AGREED
+>     element is covered by a verbatim quote of the agreement, and gives that reason with the quote.
+>   - All admitted fixes go in one batch. Then a fresh reviewer runs with the same level, object and criterion and every
+>     rejection so far in `rejected_earlier`, until `CLEAN`.
+>   - `UNCHECKED:` or missing `CHECKED:` evidence makes the check incomplete whatever the leading verdict is: resolve the
+>     missing sources or evidence, or retry malformed output; never record it as acceptance.
+>   - No verdict, an error or a reviewer that could not start: the check has not passed and no self-check replaces it.
+>     Main launches it once more on the unchanged object; if it fails again, Main tells the owner and waits.
+>   - When this review contract changes, validate it against known defective, corrected and missing-source examples before
+>     claiming improved detection. These checks are not extra rounds in ordinary task reviews. The tests check mechanics,
+>     such as a malformed verdict or a missing `CHECKED:`, and make no claim about detection quality.
+>   Owner (`16-27-59:5210`): «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
+>   Reason: one complete pass, one batch of fixes and a fresh pass is the cycle the owner's reviewer already runs.
+>   Carriers: `index.ts` (`DESCRIPTION`, `NEXT`, `startedText`, `verdictMessage`, `kindOf`). Since: this port.
+
+## A-0300 · archived 2026-10-24 · No warming
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1284-1288, whole entry verbatim.
+Original provenance: `b91f832`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0300' -- DECISIONS-ARCHIVE.md`.
+
+> - **No warming** `[D-REVIEW-CACHE]`. `extensions/RQW-review/index.ts` sets `cacheWarming: "off"` in each reviewer's
+>   in-memory SettingsManager, independently of RQW-settings and the main user's mode; prompt caching stays on. The
+>   reviewer runs only Codex models, so it has no Anthropic cache policy of its own.
+>   Owner: «Да, давайте мы исполнителям, ревьюерам кэш выключай.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 440)
+>   ([Anthropic subscription adapter](#anthropic-subscription-adapter)). Reason: review gaps are short. Proof: `test/review.test.ts`. Since: `b91f832`.
+
+## A-0301 · archived 2026-10-24 · Reviewer GPT Fast
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1289-1291, whole entry verbatim.
+Original provenance: `fa05edf`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0301' -- DECISIONS-ARCHIVE.md`.
+
+> - **Reviewer GPT Fast** `[D-REVIEW-FAST]`. A reviewer inherits the main chat's GPT Fast state when it starts; the
+>   optional `fast_gpt` of `review` overrides it for that reviewer. Rule, quotes and carrier: [Settings](#settings),
+>   "GPT Fast" (`extensions/RQW-review/fast-gpt.ts`, `index.ts`). Since: `fa05edf`.
+
+## A-0302 · archived 2026-10-24 · One tool, two levels
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1292-1295, whole entry verbatim.
+Original provenance: `3389347`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0302' -- DECISIONS-ARCHIVE.md`.
+
+> - **One tool, two levels** `[D-REVIEW-TOOL]`. `extensions/RQW-review/` registers one tool `review` with `level`
+>   `blind` or `high`, held to the existing contract and nothing more.
+>   Coordinator text (owner quotes not found in the Pi sessions): "То, что ты предложил по ревьюерам — it's OK, я принимаю"; "Smart не нужен ... будет Blind и High"; "эти три саб-агента должны быть забиты за тем контрактом, который есть, и всё" (the last one also appears in the task text the owner pasted, session
+>   `2026-10-21T16-27-59-062Z_01a15f4a`, line 367). Carrier: `index.ts`, `package.json`. Since: `3389347`.
+
+## A-0303 · archived 2026-10-24 · Parameters
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1296-1302, whole entry verbatim.
+Original provenance: `3389347`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0303' -- DECISIONS-ARCHIVE.md`.
+
+> - **Parameters** `[D-REVIEW-PARAMS]`. `level`, `object` (paths, the diff as a file path rather than a command, so the
+>   reviewer reads it whole beside the named sources, the stage), `criterion`, optional `agreement`, optional
+>   `rejected_earlier` (a list of `finding`, the rejected finding verbatim, and `reason`, why it was rejected, with the supporting quote)
+>   and optional boolean `fast_gpt`. The extension saves each call's `rejected_earlier` with its level, object and criterion
+>   in the session and carries every rejection of the same level, object and criterion into the next brief. Empty
+>   strings, a null or empty `rejected_earlier` and a null `fast_gpt` count as not given, since strict mode fills every
+>   field. Carrier: `index.ts`. Proof: `test/review.test.ts`. Since: `3389347`.
+
+## A-0304 · archived 2026-10-24 · Brief from the branch
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1303-1306, whole entry verbatim.
+Original provenance: `3389347`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0304' -- DECISIONS-ARCHIVE.md`.
+
+> - **Brief from the branch** `[D-REVIEW-BRIEF]`. `buildBrief` writes the user's messages of the current branch, verbatim,
+>   numbered and in order, with compaction and branch summaries labelled as not the user's words, then `agreement`,
+>   `object`, `criterion` and `<rejected_earlier>`; images are `[image]`. Reason: Main no longer retypes the user's words,
+>   the largest output cost of a call, and they cannot drift. Since: `3389347`.
+
+## A-0305 · archived 2026-10-24 · Fresh reviewer session
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1307-1316, whole entry verbatim.
+Original provenance: `3389347`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0305' -- DECISIONS-ARCHIVE.md`.
+
+> - **Fresh reviewer session** `[D-REVIEW-SESSION]`. Each call is a fresh in-process session: `createAgentSession` with
+>   in-memory `SessionManager` and `SettingsManager`, in the caller's `ctx.cwd`, keeping the caller's session settings
+>   (shell, images, retries and provider timeouts, transport and its timeouts, compaction, thinking budgets, codemode;
+>   the [Agent](#agent) parity entry records the owner's answer; `reviewerSettings`). The resource loader loads no user extensions, skills,
+>   prompt templates, themes, context files or appended prompt. Its inline extension factories are Pi's `codemode` and
+>   `tool_search` when the caller has them active, and one factory that installs GPT Fast inheritance and the bash git
+>   guard. `REVIEWER.md` is the prompt; Pi adds only its `<cwd>` block. A general subagent of RQW-agent gets its own
+>   `review` through the `pi.events` offer `rqw-review:subagent-review`: verdicts go to it, its brief is its own messages,
+>   and its reviews end with it ([RQW-review README](extensions/RQW-review/README.md#review-in-subagents)).
+>   Since: `3389347`.
+
+## A-0306 · archived 2026-10-24 · Reviewer tools
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1317-1328, whole entry verbatim.
+Original provenance: `a04a9c0`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0306' -- DECISIONS-ARCHIVE.md`.
+
+> - **Reviewer tools** `[D-REVIEW-TOOLS]`. `read`, `bash`, `grep`, `find`, no `edit` or `write`, plus Pi's `codemode` and
+>   `tool_search` when the caller has them active, plus RQW-tools' `job` when RQW-tools offers its definitions. Each
+>   session requests fresh definitions over `pi.events` channel `rqw-tools:subagent-tools` with RQW-agent's
+>   `{ offer(factory) }` handshake, passing cwd, a settings getter and options: `label` `review` for the main session's
+>   reviewer, the caller's path plus `/review` for a subagent's (`agent#1/review`), and `codemode`, only when the reviewer
+>   has codemode, as Pi's definition built from the reviewer's own API. It keeps the four names, `job` and the returned
+>   `codemode`. Tools "Background jobs": a reviewer call still running after 12 s goes to the background; an abort of the review
+>   (session shutdown or the end of its subagent) aborts its jobs, and the end of the review disposes them. Without an offer: the four stock
+>   definitions (`reviewerTools`) and Pi's own `codemode`/`tool_search` when active; nothing goes to the background. Offered
+>   and stock grep/find share `dropEmptyOptional`: `prepareArguments` drops optional arguments equal to `"null"`,
+>   `"undefined"` or blank, then chains the existing `prepareArguments`. Reason: grep otherwise passes `--glob null` to rg,
+>   a silent false negative. Proof: `test/review.test.ts`, stock and offered search paths. Since: `a04a9c0`.
+
+## A-0307 · archived 2026-10-24 · Reviewer git guard
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1329-1333, whole entry verbatim.
+Original provenance: `a04a9c0`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0307' -- DECISIONS-ARCHIVE.md`.
+
+> - **Reviewer git guard** `[D-REVIEW-GITGUARD]`. `extensions/RQW-review/git-guard.ts` is self-contained.
+>   Every child bash `tool_call`, offered or stock, checks `blockedGit` and returns its reason as the tool error. Limit: a
+>   shell-syntax guard, not a sandbox. No file edits through bash is a prompt rule ("Do not edit files, perform
+>   state-changing actions or spawn agents"), not runtime enforcement. Carrier: `index.ts`, `git-guard.ts`,
+>   `REVIEWER.md`. Since: `a04a9c0`.
+
+## A-0308 · archived 2026-10-24 · Session model runtime
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1334-1336, whole entry verbatim.
+Original provenance: `3389347`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0308' -- DECISIONS-ARCHIVE.md`.
+
+> - **Session model runtime** `[D-REVIEW-RUNTIME]`. The reviewer uses the session's own `ctx.modelRegistry.runtime`,
+>   private to TypeScript only. Reason: providers and logins registered by extensions reach the reviewer (with this
+>   package, RQW-anthropic's `anthropic` provider), and no second runtime refreshes the same OAuth login. Since: `3389347`.
+
+## A-0309 · archived 2026-10-24 · Async verdicts
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1345-1351, whole entry verbatim.
+Original provenance: `3389347`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0309' -- DECISIONS-ARCHIVE.md`.
+
+> - **Async verdicts** `[D-REVIEW-ASYNC]`. The call returns `review#N started. ...` at once. The verdict, the reviewer's
+>   last assistant text, arrives as `pi.sendMessage({ customType: "review", content: "[review#N] <verdict>\n\n<next step>",
+>   display: true }, ...)`; `details` carry `n`, level, model, thinking and seconds. Numbers count per session and continue
+>   after resume; each issued number is persisted with `pi.appendEntry("review", { n })` before any asynchronous work.
+>   Recovery also accepts old direct review tool results and verdicts, not arbitrary tool text; this covers nested
+>   `ctx.executeTool` callers. Without `session_start` after an SDK reload, the first execution restores context and
+>   counter. `session_shutdown` aborts running reviews and delivers nothing. Since: `3389347`.
+
+## A-0310 · archived 2026-10-24 · Exactly-once delivery
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1352-1363, whole entry verbatim.
+Original provenance: `ca6e2dd`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0310' -- DECISIONS-ARCHIVE.md`.
+
+> - **Exactly-once delivery** `[D-REVIEW-DELIVERY]`. A verdict never waits in the agent's queue and gets exactly one main
+>   turn unless the run was aborted. Idle (`ctx.isIdle()`): sent with `triggerTurn: true, deliverAs: "followUp"` unless the
+>   last main run was aborted. Busy: sent with `triggerTurn: false`; Pi appends it at the end of the current turn or run,
+>   and the `agent_before_settle` handler returns `continue: true` while the verdict has no assistant message after it.
+>   When that handler returns without `continue`, a `settling` flag holds until `turn_start` or `agent_settled`; verdicts
+>   arriving meanwhile wait in `late` and `agent_settled` sends them, the last with `triggerTurn: !event.aborted`, so
+>   several get one turn. `mainAborted` latches `agent_settled.aborted` until a new `agent_start` and suppresses delivery
+>   turns only while idle. A verdict finishing after Esc or RPC abort while idle is saved once without starting Main; the
+>   next prompt carries it once. In print and json mode `agent_end` waits for jobs with its active `ctx.signal`; abort
+>   interrupts only that wait. Pi 1.4.0 has no active `ctx.signal` in `agent_before_settle`. Reason: review findings
+>   showed lost verdicts in print/json mode, after queue clears, error-ended runs and slow foreign `agent_before_settle`
+>   handlers. Proof: `test/review.test.ts`. Since: `ca6e2dd`.
+
+## A-0311 · archived 2026-10-24 · Auth fallback
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1364-1366, whole entry verbatim.
+Original provenance: `ca6e2dd`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0311' -- DECISIONS-ARCHIVE.md`.
+
+> - **Auth fallback** `[D-REVIEW-AUTH]`. "No credentials" only when both `ctx.modelRegistry.hasConfiguredAuth(model)` and
+>   `await runtime.checkAuth(provider, { signal })` say so, as in Pi's own prompt. Reason: the auth snapshot is filled
+>   asynchronously and can miss credentials right after startup or reload. Since: `ca6e2dd`.
+
+## A-0312 · archived 2026-10-24 · Whole-job cancellation
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1367-1372, whole entry verbatim.
+Original provenance: `b4b23cf`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0312' -- DECISIONS-ARCHIVE.md`.
+
+> - **Whole-job cancellation** `[D-REVIEW-CANCEL]`. Cancellation bounds the whole review job, including auth, session
+>   creation and prompt preflight. `untilAborted` races each asynchronous stage, observes late rejection and removes its
+>   listener; auth gets the signal; late-created sessions are disposed without prompting; prompt cancellation aborts and
+>   disposes without awaiting an uncooperative provider. The reviewer's `agent.streamFunction` checks the job signal
+>   before the SDK stream, so a preflight resuming after disposal cannot make a request; an unabortable underlying promise
+>   may stay pending but cannot hold the job or deliver twice. Coordinator text (not found in the Pi sessions): "deadline boundsWHOLEjobinclcheckAuth/create/promptpreflight". Since: `b4b23cf`.
+
+## A-0313 · archived 2026-10-24 · Deterministic regression coverage
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1373-1380, whole entry verbatim.
+Original provenance: `b4b23cf`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0313' -- DECISIONS-ARCHIVE.md`.
+
+> - **Deterministic regression coverage** `[D-REVIEW-TESTS]`. `test/review.test.ts` (real sessions, faux main and
+>   reviewer providers) covers the five audit reproductions, post-abort delivery in all four modes, several verdicts,
+>   nested reload and legacy ids, ignored auth/provider cancellation, native prompt-preflight after timeout or shutdown,
+>   busy-time delivery, two verdicts held by a slow second extension (`test/slow-settle.ts`), and grep/find with `"null"`,
+>   `"undefined"` and blank arguments. `test/cli.test.ts` runs real CLI print/json subprocesses on Node, and on Bun with
+>   `PI_REVIEW_TEST_RUNTIME=bun`, with `test/cli-faux.ts` and the `test/offline.mjs` network tripwire. These establish
+>   runtime behavior, not review quality. Historical live smoke runs:
+>   [decisions evidence](notes/decisions-evidence.md#review-live-smoke). Since: `b4b23cf`.
+
+## A-0314 · archived 2026-10-24 · Known limits
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1381-1386, whole entry verbatim.
+Original provenance: `3389347`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0314' -- DECISIONS-ARCHIVE.md`.
+
+> - **Known limits** `[D-REVIEW-LIMITS]`. `ctx.modelRegistry.runtime` may be renamed by a Pi update, then every review
+>   fails with "the model runtime of the session is not reachable"; a verdict finishing after the session ended (quit,
+>   `/new`, `/resume`, reload) is dropped; print and json mode wait for a slow review as long as it runs, and an abort of the caller's run only ends that wait, leaving the review running and its verdict saved without a turn; a verdict
+>   arriving during a manual `/compact` with no run is appended and seen on the next turn; the reviewer may read a file
+>   Main is still editing (`startedText` asks Main not to). The main agent's own RQW-tools grep still passes a string
+>   `"null"` glob to rg: item GREP-NULL in [BACKLOG.md](BACKLOG.md#grep-null). Since: `3389347`.
+
+## A-0315 · archived 2026-10-24 · Verdict format
+
+Status: SUPERSEDED by `[D-REVIEW-VERDICT]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1337-1344, whole entry verbatim.
+Original provenance: this port.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0315' -- DECISIONS-ARCHIVE.md`.
+
+> - **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by `CHECKED:`, or `FINDINGS:` with
+>   numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME, each once) followed by `CHECKED:` and
+>   `UNCHECKED:` sections when they apply; `REVIEWER.md` carries the exact format. `kindOf` in `index.ts` sorts a verdict
+>   into `clean` (`CLEAN`, a non-empty `CHECKED:` and no `UNCHECKED:`), `findings` (an exact `FINDINGS:` line and complete
+>   blocks), `incomplete` (anything else, including any `UNCHECKED:`, which is never acceptance) or `failed`. The text
+>   stays as the reviewer wrote it, a preamble included. Structure cannot prove coverage: Main still assesses every required
+>   obligation against `CHECKED:`. The message is `[review#N] <verdict>` and one `NEXT` paragraph for the kind.
+>   Carrier: `index.ts`, `REVIEWER.md`. Proof: `test/review.test.ts`. Since: this port.
+
+## A-0316 · archived 2026-10-24 · No invented data
+
+Status: SUPERSEDED by `[D-STATUSBAR-SCOPE]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1644-1647, whole entry verbatim.
+Original provenance: `0f356c4`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0316' -- DECISIONS-ARCHIVE.md`.
+
+> - **No invented data** `[D-STATUSBAR-SCOPE]`. omp data without a stock Pi API is not shown: modes, collaboration,
+>   streaming/recording and PR metadata. Running agent and review counts are shown, read from RQW-agent and
+>   RQW-review over `pi.events` (`[D-STATUSBAR-ACTIVITY]`). Colours are the extension's own ANSI and truecolour values, not
+>   stock theme roles. Limits and samples: `notes/statusbar-omp.md`. Since: `0f356c4`.
+
+## A-0317 · archived 2026-10-24 · Activity chrome (UI port P6)
+
+Status: SUPERSEDED by `[D-STATUSBAR-ACTIVITY]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1648-1658, whole entry verbatim.
+Original provenance: `d84b541`.
+Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0317' -- DECISIONS-ARCHIVE.md`.
+
+> - **Activity chrome (UI port P6)** `[D-STATUSBAR-ACTIVITY]`. The editor's top border shows the activity status after
+>   `── `: the running tool's action (`Running <command>`, `Editing <file>`, `Searching files`) or `Planning next moves`,
+>   then running counts (`2 agents, 1 review`) from the `rqw:running-counts:request`/`offer` channels, or
+>   `Waiting for <counts>` when only background work runs, and `Compacting context` in gold during compaction; idle it is
+>   the plain rule. Ordinary rules are silver, busy letters shimmer silver, compaction letters, chrome and context row shimmer
+>   gold with the busy-letter mechanics (`[D-STATUSBAR-SHEEN]`). A static bold gold session title widget (`rqw-statusbar-title`) shows the session name above the
+>   input. Off the original first branch the place row shows the English `⑂ fork #N` marker from the public session
+>   tree, as defined in `[D-STATUSBAR-BRANCH-MARK]`. Footer effort colours: low plain, medium bold green, high bold
+>   gold, xhigh bold bright purple, max bold red. Carrier: `extensions/RQW-statusbar/{activity,branch,render,editor,index}.ts`.
+>   No owner quote for P6 is recorded here; the commit message lists the cross-extension native integration as not
+>   verified. Since: `d84b541`.
+
+## A-0318 · archived 2026-10-24 · D-SCOPE-WEB-SEARCH-MODEL
+
+Status: SUPERSEDED by `[D-SCOPE-WEB-SEARCH-MODEL]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 502-525, verbatim.
+Archived by: subagent-profiles; archive commit: `git log -S'A-0318' -- DECISIONS-ARCHIVE.md`.
+
+> - **Web-search model follows the caller** `[D-SCOPE-WEB-SEARCH-MODEL]`. The search-side GPT model matches the
+>   calling agent, independently of the coordinator's development subagent table. GPT callers use the same model and
+>   thinking; Claude callers use a fixed GPT counterpart from a product-side mapping, the same kind of cross-family
+>   fallback as the reviewer. The owner's confirmed model/thinking table is in [D-WEB-MAPPING](#web-search-cli).
+>   Search consumes the owner's ChatGPT
+>   subscription usage like any Codex message; the subagent matrix is unchanged.
+>   Owner (`16-27-59:4924`, entry `89d7b2e6`):
+>   «Мы не привязываемся к координатам. Короче, модель будет та же, которая соответствует нашей модели, которая делает запрос. Вот так. Как понял меня? Давай синканемся здесь.»
+>   «У нас у каждой cloud-модели есть соответственная модель GPT. А там какая модель на GPT? Там какая-то определённая модель выбирается, или как это происходит? Я не понимаю.»
+>   Owner follow-up (`16-27-59:4928`, entry `e8dc0395`):
+>   «Надо таблицу соответствия закрепить сразу же заранее. Просто надо понимать, какие модели ищут. Какая-то модель Soul 6, допустим.»
+>   Coordinator text, interpretation before the owner's follow-up at line 4928: same GPT model/thinking for a GPT
+>   caller; product-side fixed GPT counterpart for a Claude caller, not the coordinator's subagent classes;
+>   searches spend subscription usage.
+>   Owner fixed mapping (`16-27-59:4937`, entry `a8684155`):
+>   «Давай так: для Haiku 5.5 будет Luna 5.6. Для Sonnet 5.5 будет Sol 6, а для Opus 5.5 будет Sol 6.1. Вот и всё. Только Sol 6.1 и Sol 6 знаешь как будут соответствовать Haiku? Следующим образом, смотри: Sonnet и Opus: low модель соответствует low модели. Sol 6.1 один к одному соответствует Sonnet. А вот Opus 5.5 и Sol 6.1 соответствуют следующим образом: Opus 5.5 low соответствует Sol 6.1 low, Opus 5.5 medium соответствует Sol 6.1 high, а Opus 5.5 high соответствует Sol 6.1 extra high. Соответственно, все высшие рислинги Opus соответствует Sol 6.1 max.»
+>   Owner confirmed the complete table (`16-27-59:4941`, entry `2502a877`):
+>   «Да, всё именно так, как ты записал.»
+>   CLI callers may pass model/thinking arguments; the later tool applies the mapping automatically from its calling
+>   agent's model/thinking, without model arguments for the agent. Owner (`16-27-59:4945`, entry `5a0f77bd`):
+>   «И потом в будущем, когда мы сделаем tooling, таблица соответствия модели будет прокидываться автоматически на уровне функционала. Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться»
+>   Reason: search follows the caller's capability instead of a universal cheap backend. Carrier: `cli/web/model-map.ts`,
+>   table in [D-WEB-MAPPING](#web-search-cli).
+>   Since: process-rules-oct23 squash.
+
+## A-0319 · archived 2026-10-24 · D-SETTINGS-WARMING
+
+Status: SUPERSEDED by `[D-SETTINGS-WARMING]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 1065-1068, verbatim.
+Archived by: subagent-profiles; archive commit: `git log -S'A-0319' -- DECISIONS-ARCHIVE.md`.
+
+> - **Background cache warming** `[D-SETTINGS-WARMING]`. Background warming is off inside RQW-settings regardless of user configuration; normal inference still writes and reads prompt caches. A reversible session-owned `getCacheWarmingMode` policy leaves settings files, environment and cache-miss notices unchanged, restores the native getter on shutdown, and preserves other owners and foreign hooks through reload. Children carry their independent policy in Agent and Review.
+>   Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 440, in `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`.
+>   Reason: no synthetic keepalive inference before the first real request.
+>   Carrier: `extensions/RQW-settings/cache-warming.ts`, `extensions/RQW-settings/test/cache-warming.test.ts`, `test/cache-warming-reload.test.ts`; evidence: `notes/prompt-cache-policy.md`. Since: `b91f832`.
+
+## A-0320 · archived 2026-10-24 · D-CODEX-OWNERSHIP
+
+Status: SUPERSEDED by `[D-CODEX-OWNERSHIP]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, line 1982, whole entry verbatim.
+Archived by: subagent-profiles; archive commit: `git log -S'A-0320' -- DECISIONS-ARCHIVE.md`.
+
+> - **Ownership/coexistence** `[D-CODEX-OWNERSHIP]`. Provider hiding lives in the independently switchable `extensions/RQW-providers`, not in Anthropic or Codex transport registration. RQW-providers remains extension 14; RQW-codex is extension 15 immediately after it in `pi.extensions`. RQW-settings alone owns `/fast-gpt`, default off, priority through final payload hooks; child inheritance/overrides remain in RQW-agent/RQW-review. Children share native root cache affinity but never socket continuation, sticky turn state or opaque history. Reason: accepted 7a and extension isolation. Carriers: RQW-codex registration/lifecycle, optional `rqw-codex:session-policy` event in child factories; existing Fast owners unchanged.
+
+## A-0321 · archived 2026-10-24 · Codex exception ledger: reviewer lifecycle
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `c101637:DECISIONS.md`, lines 2009-2009, verbatim.
+Archived by: subagent-profiles; archive commit: `git log -S'A-0321' -- DECISIONS-ARCHIVE.md`.
+
+> | Reviewer wall cap and explicit compaction-off policy | RQW-review keeps its existing safety and caller contract; native reconnect remains cancelable | RQW-review lifecycle |
+
+## A-0322 · archived 2026-10-24 · D-SCOPE-POSTPONED · upstream corrected version
+
+Status: SUPERSEDED by `[D-SCOPE-POSTPONED]` in DECISIONS.md.
+Source: `d6fd638:DECISIONS.md`, lines 551-555, whole entry verbatim.
+Archived by: subagent-profiles merge resolution; archive commit: `git log -S'A-0322' -- DECISIONS-ARCHIVE.md`.
+The corrected upstream version is preserved separately from the earlier `c101637` version.
+
+> - **Postponed features** `[D-SCOPE-POSTPONED]`. Postponed, not dropped: `custom`, the
+>   `define-goal` skill and work orders, and the task list with the check before stopping (later switched on by a skill).
+>   Coordinator text (historical unverified attribution): "мы их не упраздняем, а откладываем". Status of each item:
+>   [BACKLOG.md](BACKLOG.md). The `agent` and `review` tools are separate decisions:
+>   [Agent](#agent), [Review](#review). Since: `d28ae41`.
+
+## A-0323 · archived 2026-10-24 · D-AGENT-PARITY · upstream corrected version
+
+Status: SUPERSEDED by `[D-AGENT-PARITY]` in DECISIONS.md.
+Source: `d6fd638:DECISIONS.md`, lines 1123-1126, whole entry verbatim.
+Archived by: subagent-profiles merge resolution; archive commit: `git log -S'A-0323' -- DECISIONS-ARCHIVE.md`.
+The corrected upstream version is preserved separately from the earlier `c101637` version.
+
+> - **Subagent parity** `[D-AGENT-PARITY]`. General subagents use the main run's built prompt from public `ctx.getSystemPrompt()`, followed by a short subagent reminder and optional `role`; nested subagents receive the main prompt handed down, not their parent's role. Optional `system` or `system_file` replaces that whole prompt exactly; file alternatives and validation are defined in `[D-AGENT-PROMPT-FILES]`. General subagents get `agent` recursively with no depth or concurrency limit; explorers are leaves. Repository coordinator rules are not product policy, and the reminder excludes instructions addressed to the main agent or coordinator.
+>   Owner: «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи свои предложения» Source: the same session, USER entry at line 2608.
+>   Reason: share main's rules and context while allowing short role configuration and independent decomposition.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`, `extensions/RQW-agent/test/agent.test.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). Since: `c86e9bb`.
+
+## A-0324 · archived 2026-10-24 · D-AGENT-EXPLORE-TOOLS · upstream corrected version
+
+Status: SUPERSEDED by `[D-AGENT-PROFILES]` in DECISIONS.md.
+Source: `d6fd638:DECISIONS.md`, lines 1135-1149, whole entry verbatim.
+Archived by: subagent-profiles merge resolution; archive commit: `git log -S'A-0324' -- DECISIONS-ARCHIVE.md`.
+The corrected upstream version is preserved separately from the earlier `c101637` version.
+
+> - **Explorer tools and read-only** `[D-AGENT-EXPLORE-TOOLS]`. `explore` keeps the main system prompt, the subagent reminder, a short search role and thoroughness `quick`, `medium` or `very thorough`, and takes no custom system/role/model/tools or prompt-file overrides. It runs on the current caller's model with the caller's active subset of the base tools `read`, `bash`, `edit`, `write`, `grep`, `find`, without `agent` or review; `codemode` and `tool_search` follow the caller's active tools, and `job` stays available when RQW-tools offers it. `restart` reads the caller's current model and active tools again. Read-only is an instruction of the role, not a mechanism: no file writes, edits or deletion, git state changes or installs, including through shell and codemode. No git guard or sandbox is installed for explorers. The separate `grep` and `find` tools stay for every agent next to `bash`, and no tool registration is added or removed. Reviewer read-only policy is a separate decision under [Review](#review), and this change modifies no RQW-review files.
+>   Owner, session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, `16-27-59:4416`, message `f3830a52`: «давай сделаем разведчика как в курсоре т.е. те же инструменты и шел
+>
+> баг бот и секьюрити ревью вообще не понял к чему ты их преплел
+> Песочницы у нас нет»
+>   Owner, `16-27-59:4424`, message `698dcebc`: «Смотри, у нас Explorer работает на той же модели, что и основной агент, поэтому его защита будет от записи просто инструкцией о том, что ему запрещено делать операции записи. Только чтение. Только редовые операции и всё. Этого будет достаточно, потому что если это будет тупая модель, то похуй. Я не видел таких ошибок вообще никогда, поэтому об этом даже не надо париться, о механической защите от записи.
+>
+> Я гоняю кодекс. Мой кодекс CLI никогда не работает в песочнице, он всегда работает на боевой, там песочница отключена. И ни разу не было такого, что reviewer что-нибудь напишет либо explorer что-нибудь напишет.»
+>   Owner correction, `16-27-59:4429`, message `7690ba13`: «только read-only я хотел написать а не редовые»
+>   Owner, `16-27-59:4433`, message `30ae092f`: «Тогда я думаю, отдельные инструменты типа grep и find не надо выносить в отдельные инструменты, пусть они будут в рамках шелла. И всё так же, как и раньше. Мы не будем ничего усложнять»
+>   Owner, `16-27-59:4435`, message `331ce08c`: «И у ревьюера везде, где есть Read Only, просто будет Read Only на уровне инструкции, и всё»
+>   Owner, `16-27-59:4451`, message `b1c5700f`: «Ну всё, тогда мы это оставляем и не трогаем. Это заебись!»
+>   Coordinator text: the owner trusts the caller's model to obey the read-only instruction and explicitly rejects mechanical write protection. Cursor evidence: `my-pi-evidence/subagent-parity/cursor/REPORT.md:49`, explore has no tools override and inherits the caller's tools minus Task; the model inheritance and the read-only instruction are the owner's requirements, not a claim that Cursor enforces read-only.
+>   Reason: a caller-model explorer with the caller's tools searches like a parent would, and the owner chose an instruction over protection code.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title); proof: `extensions/RQW-agent/test/agent.test.ts`. Supersedes the git-guarded read/grep/find/bash allowlist of `[D-AGENT-TITLE-EXPLORE]` (A-0241). Since: the explore-cursor change.
+
+## A-0325 · archived 2026-10-24 · D-REVIEW-PORT · upstream corrected version
+
+Status: SUPERSEDED by `[D-REVIEW-PORT]` in DECISIONS.md.
+Source: `5aacef79eb9b37846902efc9409cd1c8c8efc0f8:DECISIONS.md`, lines 1205-1220, whole entry verbatim.
+Archived by: subagent-profiles merge resolution; archive commit: `git log -S'A-0325' -- DECISIONS-ARCHIVE.md`.
+The corrected upstream version is preserved separately from the earlier `c101637` version.
+
+> - **Codex reviewer port** `[D-REVIEW-PORT]`. `RQW-review` carries the owner's working Codex CLI reviewer over to Pi, adapted
+>   to this harness. The base is his existing cycle, not a newly invented workflow: the profiles `smarty` and `bossy`
+>   (`agents/*.toml`) and the Main-side skills `subagents`, `blindreview` and `highreview` of his Codex CLI plugin
+>   `scope-focus`, whose `.codex-plugin/plugin.json` names the developer `A. Chukavin` and supplies no licence text or other
+>   attribution. The earlier reviewer flow, its dispute rules and its benchmark campaign are cancelled; their entries are
+>   in [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md) (A-0248 to A-0256). Pi's `read`, `bash`, `grep` and `find` replace the
+>   Codex tools.
+>   Owner (`16-27-59:5195`, `16-27-59:5210`, `16-27-59:5286`, `16-27-59:5291`):
+>   «этот малой на Sol 6.1 Low очень хорошо защищает агента от ошибок»
+>   «Мы отменяем текущий flow работы над reviewer и переобуваемся в новый прекрасный flow.»
+>   «давай мы пойдём от того, что мы возьмём текущего ревьюера, рабочего уже, пиздатого, и его немножко прокачаем, подтюним, оптимизируем. Не будем смотреть на старого ревьюера.»
+>   «Надо его перенести, адаптировав к нашему harness, потому что у них свой harness, у нас свой harness. Надо адаптацию сделать полную, чтобы по смыслу работало так же»
+>   Reason: the Codex reviewer already works in practice, and the old reviewer missed errors. Carriers: `REVIEWER.md`,
+>   `index.ts`, [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md, Independent review](PROCESS.md#independent-review).
+>   The whole-cycle comparison with the original plugin is discarded by the owner, not queued:
+>   [BACKLOG.md, Discarded](BACKLOG.md#codex-reviewer-comparison).
+
+## A-0326 · archived 2026-10-24 · D-REVIEW-PROFILES · upstream corrected version
+
+Status: SUPERSEDED by `[D-REVIEW-PROFILES]` in DECISIONS.md.
+Source: `5aacef79eb9b37846902efc9409cd1c8c8efc0f8:DECISIONS.md`, lines 1237-1249, whole entry verbatim.
+Archived by: subagent-profiles merge resolution; archive commit: `git log -S'A-0326' -- DECISIONS-ARCHIVE.md`.
+The corrected upstream version is preserved separately from the earlier `c101637` version.
+
+> - **Reviewer profiles** `[D-REVIEW-PROFILES]`. One table, `LEVELS` in `index.ts`, independent of the main agent's model:
+>   `blind` is Smarty, `openai-codex/gpt-6.1-sol` thinking low; `high` is Bossy, `openai-codex/gpt-6.1-sol` thinking
+>   medium. When the model is missing or `openai-codex` has no credentials, the review fails with an explicit error
+>   (`review requires Codex credentials, no fallback`) and no other provider runs. A failed request gives
+>   `Review failed: <reason>` and no automatic retry by the extension; Pi's own inherited request retries apply. The
+>   review has no deadline of its own: only session shutdown, or the end of the subagent that asked, aborts a running
+>   review, while an abort of the caller's run (Esc or RPC) leaves it running. Verdict `details` carry the model that ran.
+>   Coordinator text: Bossy medium is the `model_reasoning_effort` of `agents/bossy.toml`, which the source skill maps to
+>   the `high` level. The Claude reviewer measurement is discarded by the owner, not deferred:
+>   [BACKLOG.md, Discarded](BACKLOG.md#claude-reviewer).
+>   Reason: the owner's working reviewer runs on Sol; no Claude measurement or model selection is scheduled.
+>   Carrier: `index.ts` (`LEVELS`, `pickReviewer`). Proof: `test/levels.test.ts`, `test/codex-policy.test.ts`,
+>   `test/startup-policy.test.ts`. Since: this port.

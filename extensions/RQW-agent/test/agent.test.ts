@@ -34,7 +34,7 @@ import {
 	createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { explorerRole, SUBAGENT_REMINDER } from "../prompt.ts";
+import { SUBAGENT_REMINDER } from "../prompt.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EXTENSION = join(HERE, "..", "index.ts");
@@ -252,7 +252,7 @@ describe("agent tool", () => {
 		assert.deepEqual(r.system, [SYSTEM], "one system message, exactly the given text");
 		assert.equal(r.model, "a");
 		assert.equal(r.reasoning, "high");
-		assert.deepEqual(r.tools.sort(), ["agent", "code_writer", "grep", "read", "shell_runner"]);
+		assert.deepEqual(r.tools.sort(), ["agent", "grep", "read"]);
 		assert.deepEqual(r.texts, ["do X"]);
 		assert.deepEqual(m.delivered(), [], "nothing delivered while running");
 		g.release();
@@ -263,7 +263,7 @@ describe("agent tool", () => {
 		await shutdown(m);
 	});
 
-	it("defaults: the main agent's system prompt plus the subagent reminder, the main model and thinking level, all six tools, agent and workers", async () => {
+	it("defaults: the main agent's system prompt plus the subagent reminder, the main model and thinking level, all six base tools and agent", async () => {
 		const m = await startMain();
 		const mainPrompt = m.session.systemPrompt;
 		assert.ok(mainPrompt.length > 0);
@@ -275,7 +275,7 @@ describe("agent tool", () => {
 		assert.match(SUBAGENT_REMINDER, /main agent or a coordinator do not apply to you/);
 		assert.equal(r.model, "m");
 		assert.equal(r.reasoning, "low");
-		assert.deepEqual(r.tools.sort(), ["agent", "bash", "code_writer", "edit", "find", "grep", "read", "shell_runner", "write"]);
+		assert.deepEqual(r.tools.sort(), ["agent", "bash", "edit", "find", "grep", "read", "write"]);
 		await shutdown(m);
 	});
 
@@ -446,7 +446,7 @@ describe("agent tool", () => {
 		assert.equal(m.delivered()[0], "[agent#1] fresh");
 		const r = sub.requests[1];
 		assert.deepEqual(r.texts, ["new task"], "no old history");
-		assert.deepEqual([r.system, r.model, r.reasoning, r.tools.sort()], [[SYSTEM], "a", "high", ["agent", "code_writer", "read", "shell_runner"]]);
+		assert.deepEqual([r.system, r.model, r.reasoning, r.tools.sort()], [[SYSTEM], "a", "high", ["agent", "read"]]);
 		assert.equal(await m.call({ action: "restart", id: "agent#1", model: "sub/b", system: "S2" }), "agent#1 restarted, idle");
 		await m.call({ action: "send", id: "agent#1", task: "go" });
 		await until(() => m.delivered().length === 2, "the second delivery");
@@ -459,8 +459,6 @@ describe("agent tool", () => {
 		await assert.rejects(m.call({ action: "send", id: "agent#9", task: "x" }), /Unknown agent id: agent#9/);
 		await assert.rejects(m.call({ action: "start", system: SYSTEM, task: "x", model: "sub/zzz" }), /Unknown model: sub\/zzz/);
 		await assert.rejects(m.call({ action: "start", system: SYSTEM, role: "R", task: "x" }), /system .* or role .*, not both/);
-		await assert.rejects(m.call({ action: "start", explore: "quick", system: SYSTEM, task: "x" }), /omit system, role, tools and model/);
-		await assert.rejects(m.call({ action: "start", explore: "quick", model: "sub/a", task: "x" }), /omit system, role, tools and model/);
 		await assert.rejects(m.call({ action: "start", system: SYSTEM }), /task is required/);
 		sub.replies.push(fauxAssistantMessage([fauxText("")], { stopReason: "error", errorMessage: "bad request: field x" }));
 		// Strict-mode providers send null for optional fields.
@@ -925,18 +923,13 @@ describe("subagent parity", () => {
 	it("codemode and tool_search: a child gets them when the main session has them active, Pi's own definitions", async () => {
 		const m = await startMain("tui", undefined, [], EXTENSION, {
 			factories: [createCodemodeExtension(), createToolSearchExtension()],
-			tools: ["read", "bash", "edit", "write", "grep", "find", "agent", "code_writer", "shell_runner", "codemode", "tool_search"],
+			tools: ["read", "bash", "edit", "write", "grep", "find", "agent", "codemode", "tool_search"],
 		});
 		assert.ok(m.session.getActiveToolNames().includes("codemode"));
-		sub.replies.push(fauxAssistantMessage("one"), fauxAssistantMessage("two"));
+		sub.replies.push(fauxAssistantMessage("one"));
 		await m.call({ action: "start", system: SYSTEM, task: "hi", model: "sub/a", tools: ["read"] });
 		await until(() => m.delivered().length === 1, "the delivery");
-		assert.deepEqual(sub.requests[0].tools.sort(), ["agent", "code_writer", "codemode", "read", "shell_runner", "tool_search"]);
-		await m.call({ action: "start", explore: "quick", task: "find" });
-		await until(() => m.delivered().length === 2, "the explorer delivery");
-		const explorer = main.requests.filter(r => r.system[0]?.includes("<role>\nYou are a file search specialist."));
-		assert.equal(explorer.length, 1);
-		assert.deepEqual(explorer[0].tools.sort(), ["bash", "codemode", "edit", "find", "grep", "read", "tool_search", "write"]);
+		assert.deepEqual(sub.requests[0].tools.sort(), ["agent", "codemode", "read", "tool_search"]);
 		await shutdown(m);
 	});
 
@@ -946,7 +939,7 @@ describe("subagent parity", () => {
 		sub.replies.push(fauxAssistantMessage("one"));
 		await m.call({ action: "start", system: SYSTEM, task: "hi", model: "sub/a", tools: ["read"] });
 		await until(() => m.delivered().length === 1, "the delivery");
-		assert.deepEqual(sub.requests[0].tools.sort(), ["agent", "code_writer", "read", "shell_runner"]);
+		assert.deepEqual(sub.requests[0].tools.sort(), ["agent", "read"]);
 		await shutdown(m);
 	});
 
@@ -969,87 +962,47 @@ describe("subagent parity", () => {
 		};
 	}
 
-	it("with RQW-tools offering: a child's codemode is the offered one built from the child's own codemode; explorers inherit active edit/write and get job", async t => {
+	it("with RQW-tools offering: children get their own offered codemode, edit/write and job tools", async t => {
 		const sessions = captureSessions(t);
 		const seen: { label?: string; codemode?: ToolDefinition }[] = [];
 		const returned: ToolDefinition[] = [];
 		const jobEvents: string[] = [];
 		const m = await startMain("tui", undefined, [], EXTENSION, {
 			factories: [createCodemodeExtension(), createToolSearchExtension(), toolsOffer(seen, returned, jobEvents)],
-			tools: ["read", "bash", "edit", "write", "grep", "find", "agent", "code_writer", "shell_runner", "codemode", "tool_search"],
+			tools: ["read", "bash", "edit", "write", "grep", "find", "agent", "codemode", "tool_search"],
 		});
 		const mainCodemode = m.session.getToolDefinition("codemode");
 		sub.replies.push(fauxAssistantMessage("one"));
 		await m.call({ action: "start", system: SYSTEM, task: "hi", model: "sub/a", tools: ["read"] });
 		await until(() => m.delivered().length === 1, "the delivery");
-		assert.deepEqual(sub.requests[0].tools.sort(), ["agent", "code_writer", "codemode", "job", "read", "shell_runner", "tool_search"]);
+		assert.deepEqual(sub.requests[0].tools.sort(), ["agent", "codemode", "job", "read", "tool_search"]);
 		assert.equal(seen[0].label, "agent#1");
 		assert.equal(seen[0].codemode?.name, "codemode", "the child's own Pi codemode definition goes to the factory");
 		assert.notEqual(seen[0].codemode, mainCodemode, "built for the child, not the main session's");
 		const child = sessions.find(s => s !== m.session)!;
 		assert.equal(child.getToolDefinition("codemode"), returned[0], "the child runs the codemode the factory returned");
 
-		main.replies.push(fauxAssistantMessage("FOUND"));
-		await m.call({ action: "start", explore: "quick", task: "find" });
-		await until(() => m.delivered().length === 2, "the explorer delivery");
-		const explorer = main.requests.filter(r => r.system[0]?.includes("<role>\nYou are a file search specialist."));
-		assert.deepEqual(explorer[0].tools.sort(), ["bash", "codemode", "edit", "find", "grep", "job", "read", "tool_search", "write"], "active base tools, plus job because it is offered");
+		sub.replies.push(fauxAssistantMessage("FOUND"));
+		await m.call({ action: "start", task: "find", model: "sub/a" });
+		await until(() => m.delivered().length === 2, "the second child delivery");
+		assert.deepEqual(sub.requests[1].tools.sort(), ["agent", "bash", "codemode", "edit", "find", "grep", "job", "read", "tool_search", "write"], "all generic tools, plus job because it is offered");
 		assert.equal(seen[1].label, "agent#2");
-		const explorerSession = sessions.filter(s => s !== m.session)[1];
-		for (const name of ["agent", "code_writer", "shell_runner"]) assert.equal(explorerSession.getToolDefinition(name), undefined, name);
-		for (const name of ["edit", "write"]) assert.equal(explorerSession.getToolDefinition(name)?.description, `OFFERED ${name}`);
-		assert.equal(explorerSession.getToolDefinition("codemode"), returned[1]);
+		const secondChild = sessions.filter(s => s !== m.session)[1];
+		assert.ok(secondChild.getToolDefinition("agent"));
+		for (const name of ["edit", "write"]) assert.equal(secondChild.getToolDefinition(name)?.description, `OFFERED ${name}`);
+		assert.equal(secondChild.getToolDefinition("codemode"), returned[1]);
 		await m.call({ action: "stop", id: "agent#2" });
-		assert.deepEqual(jobEvents, ["dispose agent#2"], "the explorer's jobs end with it");
+		assert.deepEqual(jobEvents, ["dispose agent#2"], "the child's jobs end with it");
 		await shutdown(m);
 	});
 
-	it("without an RQW-tools offer an explorer has no job tool", async () => {
+	it("without an RQW-tools offer a child has no job tool", async () => {
 		const m = await startMain();
-		main.replies.push(fauxAssistantMessage("FOUND"));
-		await m.call({ action: "start", explore: "quick", task: "find" });
+		sub.replies.push(fauxAssistantMessage("FOUND"));
+		await m.call({ action: "start", task: "find", model: "sub/a" });
 		await until(() => m.delivered().length === 1, "the delivery");
-		assert.deepEqual(main.requests[0].tools.sort(), ["bash", "edit", "read", "write"], "Pi's default caller has no active grep or find");
+		assert.deepEqual(sub.requests[0].tools.sort(), ["agent", "bash", "edit", "find", "grep", "read", "write"]);
 		await shutdown(m);
-	});
-
-	it("explore inherits a restricted caller subset and refreshes it on restart; an offer cannot widen it", async () => {
-		const m = await startMain("tui", undefined, [], EXTENSION, {
-			factories: [createCodemodeExtension(), createToolSearchExtension(), toolsOffer([], [], [])],
-			tools: ["read", "bash", "edit", "write", "grep", "find", "agent", "code_writer", "shell_runner", "codemode", "tool_search"],
-		});
-		m.session.setActiveToolsByName(["read", "bash", "agent", "code_writer", "shell_runner"]);
-		try {
-			main.replies.push(fauxAssistantMessage("FOUND"));
-			await m.call({ action: "start", explore: "quick", task: "find" });
-			await until(() => m.delivered().length === 1, "the delivery");
-			assert.deepEqual(main.requests[0].tools.sort(), ["bash", "job", "read"]);
-			m.session.setActiveToolsByName(["grep", "agent", "codemode", "tool_search"]);
-			main.replies.push(fauxAssistantMessage("AGAIN"));
-			await m.call({ action: "restart", id: "agent#1", task: "find again" });
-			await until(() => m.delivered().length === 2, "the restarted delivery");
-			const explorer = main.requests.filter(r => r.system[0]?.includes("<role>\nYou are a file search specialist."));
-			assert.deepEqual(explorer[1].tools.sort(), ["codemode", "grep", "job", "tool_search"]);
-			assert.equal(explorer[1].model, "m");
-		} finally { await shutdown(m); }
-	});
-
-	it("a nested explorer inherits its direct caller's model and restricted tools, not main's", async () => {
-		const m = await startMain();
-		sub.replies.push(
-			fauxAssistantMessage([fauxToolCall("agent", { action: "start", explore: "quick", task: "find" })], { stopReason: "toolUse" }),
-			fauxAssistantMessage("WAITING"),
-			fauxAssistantMessage("FOUND"),
-			fauxAssistantMessage("TOP"),
-		);
-		try {
-			await m.call({ action: "start", task: "delegate", model: "sub/a", tools: ["read", "grep"] });
-			await until(() => m.delivered().length === 1, "the final delivery", 5000);
-			const explorer = sub.requests.filter(r => r.system[0]?.includes("<role>\nYou are a file search specialist."));
-			assert.equal(explorer.length, 1);
-			assert.equal(explorer[0].model, "a");
-			assert.deepEqual(explorer[0].tools.sort(), ["grep", "read"]);
-		} finally { await shutdown(m); }
 	});
 
 	it("labels for RQW-tools notes are paths from the main session: agent#1/agent#1", async () => {
@@ -1080,101 +1033,11 @@ describe("subagent parity", () => {
 		assert.deepEqual(m.delivered(), ["[agent#1] TOP"], "main gets only the subagent's final answer");
 		assert.equal(deep.requests.length, 1);
 		assert.deepEqual(deep.requests[0].system, [`${mainPrompt}\n\n${SUBAGENT_REMINDER}`], "the main prompt, not the caller's, and no repeated reminder");
-		assert.deepEqual(deep.requests[0].tools.sort(), ["agent", "bash", "code_writer", "edit", "find", "grep", "read", "shell_runner", "write"]);
+		assert.deepEqual(deep.requests[0].tools.sort(), ["agent", "bash", "edit", "find", "grep", "read", "write"]);
 		assert.ok(sub.requests.at(-1)!.texts.includes("[agent#1] DEEP"), "the grandchild's result reached its direct caller");
 		await tick();
 		assert.equal(m.delivered().length, 1);
 		await shutdown(m);
 	});
 
-	it("explore: the main prompt, reminder and read-only role; caller model and active base tools; no git guard; a leaf", async t => {
-		const sessions = captureSessions(t);
-		const m = await startMain();
-		const mainPrompt = m.session.systemPrompt.trimEnd();
-		main.replies.push(
-			fauxAssistantMessage([fauxToolCall("bash", { command: "git --version" })], { stopReason: "toolUse" }),
-			fauxAssistantMessage("FOUND"),
-		);
-		assert.equal(await m.call({ action: "start", explore: "very thorough", task: "where is X", thinking: "minimal", title: "Find X" }), "agent#1 started");
-		await until(() => m.delivered().length === 1, "the delivery");
-		assert.equal(m.delivered()[0], "[agent#1] FOUND");
-		const [first, second] = main.requests;
-		assert.equal(first.model, "m", "the caller's model");
-		assert.equal(first.reasoning, "minimal");
-		assert.deepEqual(first.system, [`${mainPrompt}\n\n${SUBAGENT_REMINDER}\n\n<role>\n${explorerRole("very thorough")}\n</role>`]);
-		assert.match(explorerRole("very thorough"), /Thoroughness: very thorough\./);
-		assert.match(explorerRole("quick"), /Perform read-only operations only, including in shell and codemode/);
-		assert.match(explorerRole("quick"), /do not create, write, edit or delete files, change git state, or install packages or dependencies/);
-		assert.deepEqual(first.tools.sort(), ["bash", "edit", "read", "write"], "Pi's default caller base tools, no agent or workers");
-		assert.ok(second.texts.some(text => /git version/.test(text)), "read-only shell command ran");
-		const child = sessions.find(s => s !== m.session)!;
-		for (const name of ["agent", "code_writer", "shell_runner"]) assert.equal(child.getToolDefinition(name), undefined, name);
-		// Check the hook without executing a mutation: read-only is a role rule, not a runtime git guard.
-		assert.equal(await child.extensionRunner.emitToolCall({ type: "tool_call", toolName: "bash", toolCallId: "guard-probe", input: { command: "git commit -m x" } }), undefined);
-		// restart keeps the kind; an explorer takes no system, role, tools or model.
-		await assert.rejects(m.call({ action: "restart", id: "agent#1", tools: ["read"] }), /omit system, role, tools and model/);
-		main.replies.push(fauxAssistantMessage("AGAIN"));
-		await m.call({ action: "restart", id: "agent#1", task: "again", explore: "quick" });
-		await until(() => m.delivered().length === 2, "the second delivery");
-		const quick = `${mainPrompt}\n\n${SUBAGENT_REMINDER}\n\n<role>\n${explorerRole("quick")}\n</role>`;
-		assert.equal(main.requests.filter(r => r.system[0] === quick).length, 1, "the restarted explorer at its new thoroughness");
-		await shutdown(m);
-	});
-
-	it("review: a start canceled during or right after the loader reload ends the offered review's lifetime (no leaked counts source)", async () => {
-		for (const when of ["during reload", "after reload"] as const) {
-			const caller = new AbortController();
-			const lifetimes: AbortSignal[] = [];
-			const offers: ExtensionFactory = (pi: ExtensionAPI) => {
-				pi.events.on("rqw-review:subagent-review", (request) => (request as { offer(register: unknown): void }).offer(
-					(_child: ExtensionAPI, options: { signal: AbortSignal }) => {
-						lifetimes.push(options.signal);
-						if (when === "during reload") caller.abort(new Error("canceled during reload"));
-					}));
-				// The RQW-tools offer is asked for right after the reload: cancel there.
-				pi.events.on("rqw-tools:subagent-tools", () => { if (when === "after reload") caller.abort(new Error("canceled after reload")); });
-			};
-			const m = await startMain("tui", undefined, [], EXTENSION, { factories: [offers] });
-			const tool = m.session.getToolDefinition("agent") as ToolDefinition;
-			await assert.rejects(tool.execute("t", { action: "start", system: SYSTEM, task: "hi", model: "sub/a" } as never, caller.signal, undefined, m.ctx), /canceled/);
-			assert.equal(lifetimes.length, 1, when);
-			assert.equal(lifetimes[0].aborted, true, `${when}: the child's lifetime ended, so the review's source and listener end`);
-			await tick();
-			assert.equal(sub.requests.length, 0, `${when}: no child request`);
-			await shutdown(m);
-		}
-	});
-
-	it("review: offered over pi.events by RQW-review's handshake to general subagents only, with the main bus, the child's GPT Fast and its lifetime", async () => {
-		const offers: { events: unknown; fast: () => boolean; signal: AbortSignal }[] = [];
-		let mainEvents: unknown;
-		const reviewOffer: ExtensionFactory = (pi: ExtensionAPI) => {
-			mainEvents = pi.events;
-			pi.events.on("rqw-review:subagent-review", (request) => (request as { offer(register: unknown): void }).offer(
-				(child: ExtensionAPI, options: { events: unknown; fast: () => boolean; signal: AbortSignal }) => {
-					offers.push(options);
-					child.registerTool({ name: "review", label: "review", description: "FAKE REVIEW", parameters: Type.Object({}),
-						execute: async () => ({ content: [{ type: "text", text: "review#1 started" }], details: {} }) });
-				}));
-		};
-		const m = await startMain("tui", undefined, [], EXTENSION, { factories: [reviewOffer] });
-		sub.replies.push(fauxAssistantMessage("one"));
-		await m.call({ action: "start", system: SYSTEM, task: "hi", model: "sub/a", tools: [], fast_gpt: true });
-		await until(() => m.delivered().length === 1, "the delivery");
-		assert.deepEqual(sub.requests[0].tools.sort(), ["agent", "code_writer", "review", "shell_runner"]);
-		assert.equal(offers.length, 1);
-		let heard = false;
-		(mainEvents as ExtensionAPI["events"]).on("rqw-agent-test:probe", () => { heard = true; });
-		(offers[0].events as ExtensionAPI["events"]).emit("rqw-agent-test:probe", {});
-		assert.ok(heard, "the main session's bus");
-		assert.equal(offers[0].fast(), true, "the child's GPT Fast");
-		assert.equal(offers[0].signal.aborted, false);
-		main.replies.push(fauxAssistantMessage("explored"));
-		await m.call({ action: "start", explore: "quick", task: "find" });
-		await until(() => m.delivered().length === 2, "the explorer delivery");
-		assert.equal(offers.length, 1, "an explorer gets no review");
-		await m.call({ action: "stop", id: "agent#1" });
-		assert.equal(offers[0].signal.aborted, true, "the lifetime ends with the child");
-		await shutdown(m);
-	});
 });

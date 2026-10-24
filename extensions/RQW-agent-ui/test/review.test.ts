@@ -7,11 +7,11 @@ import type { CardTheme } from "../card.ts";
 const identity: CardTheme = { fg: (_color, text) => text, bold: text => text };
 const tagged: CardTheme = { fg: (color, text) => `<${color}>${text}</${color}>`, bold: text => text };
 const ansi: CardTheme = { fg: (_color, text) => `\x1b[31m${text}\x1b[39m`, bold: text => text };
-// Copied from merged verdictMessage/NEXT: advice is an unlabelled appended paragraph, not a NEXT: field.
+// Legacy standalone review advice is an unlabelled appended paragraph, not a NEXT: field.
 const NEXT_CLEAN = "The check passed only with complete CHECKED evidence and no UNCHECKED. Run no extra pass for confidence, but preserve every independent pass and its order required by the invoking procedure.";
 const NEXT_INCOMPLETE = "The check is incomplete regardless of its leading verdict. Resolve missing sources or evidence or retry malformed output; never record it as acceptance.";
 const CLEAN = `CLEAN\nCHECKED:\n- Layout matches the requirement (brief; card.ts).\n\n${NEXT_CLEAN}`;
-// REVIEWER.md's real fields; no separate QUOTE, DISPUTE, RULING or ANSWER fields are produced now.
+// Legacy review verdict fields; separate QUOTE, DISPUTE, RULING and ANSWER fields were not produced.
 const FIELDS = "REQUIREMENT: Keep the full text (brief).\nMISMATCH: The card drops the answer.\nEVIDENCE: The body is missing (card.ts).\nREQUIRED OUTCOME: Keep the entire answer.";
 const FINDINGS = `FINDINGS:\nFINDING 1\n${FIELDS}\nFINDING 2\n${FIELDS}\nCHECKED:\n- Width matches the brief (card.ts).\nUNCHECKED:\n- evidence.log - unavailable\n- terminal proof - unavailable\n\n${NEXT_INCOMPLETE}`;
 

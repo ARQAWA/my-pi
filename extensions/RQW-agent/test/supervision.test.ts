@@ -1,8 +1,8 @@
 // SDK-level supervision: real sessions, faux providers and explicit caller waits. No model/network calls.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
-import { AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { fauxToolCall } from "@earendil-works/pi-ai";
+import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { answer, fixture, gate, tick, until, texts } from "./audit-fixture.ts";
 
 function waits(session: AgentSession) {
@@ -11,14 +11,6 @@ function waits(session: AgentSession) {
 		const text = m.content.filter(c => c.type === "text").map(c => c.text).join("");
 		return text.startsWith("{") ? [JSON.parse(text)] : [];
 	});
-}
-
-async function workerProvider(f: Awaited<ReturnType<typeof fixture>>) {
-	const provider = fauxProvider({ provider: "anthropic", api: "supervision-worker", models: [{ id: "claude-haiku-5-5", reasoning: true }] });
-	const held = gate("WORKER_DONE");
-	provider.setResponses([held.reply]);
-	f.runtime.registerNativeProvider(provider.provider);
-	return held;
 }
 
 test("default error alert wakes without consuming terminal result; its later push and receipt survive", async () => {
@@ -77,33 +69,33 @@ test("wake_on_alert false retains terminal wait delivery and makes no duplicate 
 	} finally { held.release(); await f.cleanup(); }
 });
 
-test("until all holds mixed agent/worker completions without pushing the first result", async () => {
-	const f = await fixture(), child = gate("AGENT_DONE"), worker = await workerProvider(f);
-	f.subReplies.push(child.reply);
+test("until all holds multiple agent completions without pushing the first result", async () => {
+	const f = await fixture(), child = gate("FIRST_DONE"), second = gate("SECOND_DONE");
+	f.subReplies.push(child.reply, second.reply);
 	f.mainReplies.push(
 		answer([
 			fauxToolCall("agent", f.params(), { id: "start-agent" }),
-			fauxToolCall("code_writer", { task: "WORKER_TASK" }, { id: "start-worker" }),
+			fauxToolCall("agent", f.params("SECOND_TASK"), { id: "start-second" }),
 		], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1", "code_writer#1"], timeout_ms: 10000, until: "all", wake_on_alert: false })], { stopReason: "toolUse" }),
+		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1", "agent#2"], timeout_ms: 10000, until: "all", wake_on_alert: false })], { stopReason: "toolUse" }),
 		answer("GOT_BOTH"),
 	);
 	try {
 		const run = f.session.prompt("GO");
-		await until(() => child.entered() && worker.entered() && f.requests.main.length === 2, "mixed all wait");
+		await until(() => child.entered() && second.entered() && f.requests.main.length === 2, "multiple agent all wait");
 		await tick(); child.release();
 		await tick();
 		const firstStatus = JSON.parse(await f.call({ action: "status", ids: ["agent#1"] })).statuses[0];
 		assert.equal(firstStatus.state, "idle");
 		assert.equal(f.requests.main.length, 2, "caller stays mechanically parked after first completion");
 		assert.deepEqual(f.delivered(), []);
-		assert.equal(f.session.messages.some(m => m.role === "custom" && m.customType === "code_writer"), false);
-		worker.release(); await run;
+		assert.equal(f.session.messages.some(m => m.role === "custom" && m.customType === "agent"), false);
+		second.release(); await run;
 		const [result] = waits(f.session);
 		assert.equal(result.reason, "result");
-		assert.deepEqual(result.results.map((r: any) => [r.id, r.text]), [["agent#1", "AGENT_DONE"], ["code_writer#1", "WORKER_DONE"]]);
-		assert.equal(f.session.messages.some(m => m.role === "custom" && ["agent", "code_writer"].includes(m.customType)), false);
-	} finally { child.release(); worker.release(); await f.cleanup(); }
+		assert.deepEqual(result.results.map((r: any) => [r.id, r.text]), [["agent#1", "FIRST_DONE"], ["agent#2", "SECOND_DONE"]]);
+		assert.equal(f.session.messages.some(m => m.role === "custom" && m.customType === "agent"), false);
+	} finally { child.release(); second.release(); await f.cleanup(); }
 });
 
 test("descendant status is read-only, depth zero omits children and depth one exposes the direct child's children", async () => {
@@ -161,49 +153,23 @@ test("long-turn alerts are opt-in, wake wait, reset on restart and inherited thr
 	} finally { first.release(); second.release(); unconfigured.release(); await f.cleanup(); }
 });
 
-test("workers share supervision schema and long-turn threshold, and guard refusals raise scope_block alerts", async () => {
-	const f = await fixture(), held = gate("WORKER_DONE");
-	const provider = fauxProvider({ provider: "anthropic", api: "supervision-guard", models: [{ id: "claude-haiku-5-5", reasoning: true }] });
-	provider.setResponses([
-		async (context, options) => {
-			await held.reply(context, options);
-			return answer([fauxToolCall("bash", { command: "git add forbidden.txt" })], { stopReason: "toolUse" });
-		},
-		answer("GUARD_DONE"),
-	]);
-	f.runtime.registerNativeProvider(provider.provider);
-	f.mainReplies.push(
-		answer([fauxToolCall("code_writer", { task: "GUARD_TASK", alert_after_ms: 10 })], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["code_writer#1"], timeout_ms: 1000 })], { stopReason: "toolUse" }),
-		answer("LONG_ALERT_ACK"),
-	);
+test("agent exposes the supervision schema", async () => {
+	const f = await fixture();
 	try {
-		for (const name of ["agent", "code_writer", "shell_runner"]) {
-			const properties = f.session.getToolDefinition(name)!.parameters.properties;
-			for (const key of ["until", "wake_on_alert", "depth", "alert_after_ms"]) assert.ok(key in properties, `${name} has ${key}`);
-		}
-		await f.session.prompt("GO");
-		const [long] = waits(f.session);
-		assert.equal(long.reason, "alert");
-		assert.ok(long.statuses[0].alerts.some((a: any) => a.kind === "long_turn"));
-		assert.equal(held.aborted(), false);
-		held.release();
-		await until(() => f.session.messages.some(m => m.role === "custom" && m.customType === "code_writer"), "guard worker result");
-		const status = JSON.parse(await f.call({ action: "status", ids: ["code_writer#1"] })).statuses[0];
-		assert.equal(status.alerts.filter((a: any) => a.kind === "scope_block").length, 1);
-		assert.equal(status.alerts.some((a: any) => a.kind === "error"), false, "ordinary refused tools are not generic runtime errors");
-		assert.equal(status.last_tool.is_error, true);
-	} finally { held.release(); await f.cleanup(); }
+		const properties = f.session.getToolDefinition("agent")!.parameters.properties;
+		for (const key of ["until", "wake_on_alert", "depth", "alert_after_ms"]) assert.ok(key in properties, `agent has ${key}`);
+	} finally { await f.cleanup(); }
 });
 
-test("actual SDK schema rejections alert on the second rejection before tool_call hooks run", async () => {
+test("actual SDK schema rejections alert on the second rejection before tool_call hooks run", async t => {
+	const sessions: AgentSession[] = [];
+	const bind = (AgentSession.prototype as any)._bindExtensionCore;
+	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function(this: AgentSession, ...args: unknown[]) {
+		sessions.push(this);
+		return bind.apply(this, args);
+	});
 	const f = await fixture(), begin = gate(), final = gate("SCHEMA_DONE");
 	let readHooks = 0;
-	// The public subagent-review offer exposes the child's API, without accessing Pi internals.
-	f.bus.on("rqw-review:subagent-review", raw => {
-		const request = raw as unknown as { offer(register: (child: ExtensionAPI) => void): void };
-		request.offer(child => { child.on("tool_call", event => { if (event.toolName === "read") readHooks++; }); });
-	});
 	f.subReplies.push(
 		async (context, options) => {
 			await begin.reply(context, options);
@@ -221,6 +187,13 @@ test("actual SDK schema rejections alert on the second rejection before tool_cal
 	try {
 		const run = f.session.prompt("GO");
 		await until(() => begin.entered() && f.requests.main.length === 2, "wait before invalid tools");
+		const child = sessions.find(session => session !== f.session)!;
+		assert.ok(child, "the child bound its extensions before requesting inference");
+		const emitToolCall = child.extensionRunner.emitToolCall;
+		t.mock.method(child.extensionRunner, "emitToolCall", function(...args: Parameters<typeof emitToolCall>) {
+			if (args[0].toolName === "read") readHooks++;
+			return emitToolCall.apply(child.extensionRunner, args);
+		});
 		await tick(); begin.release(); await run;
 		const [result] = waits(f.session);
 		assert.equal(result.reason, "alert");

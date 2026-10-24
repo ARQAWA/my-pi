@@ -137,22 +137,22 @@
 			" "
 		],
 		"8": [
-			"   …er#2",
+			"   …nt#2",
 			"   [age…",
 			"   ✓ 1m…"
 		],
 		"24": [
-			"   …gent#1 code_writer#2",
+			"   wait agent#1 agent#2 ",
 			"   [agent#1] done       ",
 			"   ✓ 1m 05s             "
 		],
 		"48": [
-			"   wait agent#1 code_writer#2                   ",
+			"   wait agent#1 agent#2                         ",
 			"   [agent#1] done                               ",
 			"   ✓ 1m 05s                                     "
 		],
 		"80": [
-			"   wait agent#1 code_writer#2                                                   ",
+			"   wait agent#1 agent#2                                                         ",
 			"   [agent#1] done                                                               ",
 			"   ✓ 1m 05s                                                                     "
 		]

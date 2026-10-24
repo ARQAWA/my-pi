@@ -46,7 +46,7 @@ export type JobsOptions = {
 	retain?: () => () => void;
 	/** Whether the caller can see the job tool now; without it calls run in the foreground as stock Pi runs them. */
 	enabled?: () => boolean;
-	/** The caller session in notes of other sessions: "main", "code_writer#2". */
+	/** The caller session in notes of other sessions: "main", "agent#2". */
 	label?: string;
 };
 
@@ -80,7 +80,7 @@ export type JobHandle = {
 	barrier: Detachable;
 	/** What it waits for outside the barrier (process-wide resources, a codemode slot), while it waits. */
 	waitingOn(blockers: () => string[]): void;
-	/** "job#3 (holds package folder .)" or "a call of code_writer#2", for other calls' `waiting_for`. */
+	/** "job#3 (holds package folder .)" or "a call of agent#2", for other calls' `waiting_for`. */
 	describe(): string;
 	/** Whether the call went to the background. */
 	backgrounded(): boolean;

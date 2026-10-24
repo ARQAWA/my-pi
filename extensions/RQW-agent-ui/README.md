@@ -6,21 +6,24 @@ exports) and changes nothing in Pi. It never changes stored messages, details or
 No Pi patches, method replacement or wrapping, private fields, component-tree splicing or production deep imports
 are allowed. Only public extension and TUI APIs are used.
 
-Current state: the agent/worker card (`card.ts`, `fit.ts`) and its wiring to both ways a result arrives (`index.ts`,
-`wait.ts` and `self.ts`, below), plus the review custom-message card (`review.ts`). The package registers it in
-`pi.extensions` before RQW-tool-ui. The upper-input activity indicator is not here (RQW-statusbar).
+Current state: agent cards (`card.ts`, `fit.ts`) for ordinary children, including the `spotty` and `bossy`
+reviewer profiles, on `agent` messages, `wait` results and `child_wait` notifications. The `review` custom-message
+card (`review.ts`) remains only for legacy stored history. The package registers agent-ui in `pi.extensions`
+before RQW-tool-ui. The upper-input activity indicator is not here (RQW-statusbar).
 
 ## Wiring (`index.ts`, `wait.ts`, `self.ts`)
 
-A subagent or worker result reaches the transcript in one of two ways, and both get the card. Everything is display
+A current subagent result reaches the transcript through the three delivery paths below, and each gets the
+ordinary agent card. Reviewer profiles use these same paths, not the legacy review card. Everything is display
 only: stored messages, tool results, their details and what the model sees are never changed.
 
-- **Custom message** `[<name>#<id>] ...` (types `agent`, `code_writer`, `shell_runner`): `index.ts` registers the card
-  with `pi.registerMessageRenderer` for the three types. The display details are the message's own `details`
-  (`id`, `outcome`, `model`, `thinking`, `seconds`, optional `title` and `prompt_file`, beside `delivery` and `run`).
-  `prompt_file` provenance (`kind`, absolute `path`, `sha256`) and delivery tokens stay stored but are not card text.
-- **`wait` result** of the tools `agent`, `code_writer`, `shell_runner`: `index.ts` registers one
-  `pi.registerToolRenderer` resolver. For these three tools it returns the renderers of whatever comes after it
+- **Custom message** `[<name>#<id>] ...` (type `agent`): `index.ts` registers the card
+  with `pi.registerMessageRenderer` for that type. The display details are the message's own `details`
+  (`id`, `outcome`, `model`, `thinking`, `seconds`, optional `title`, `prompt_file` and `profile`, beside `delivery`
+  and `run`). Profile provenance is `{ name, path, sha256 }`; all three fields stay in stored details, not card text. `prompt_file` provenance (`kind`, absolute `path`, `sha256`) and delivery
+  tokens also stay stored but are not card text.
+- **`wait` result** of the `agent` tool: `index.ts` registers one
+  `pi.registerToolRenderer` resolver. For this tool it returns the renderers of whatever comes after it
   (`next()`: another extension's, else the tool's). Without a self shell, only `renderResult` is replaced (`wait.ts`):
   a finished, collapsed call with `action: "wait"` shows one card per delivered result of `details.results[i]`, with that item's
   `display` details (the RQW-agent metadata), its `id` and its `text`. Results without metadata still get a card
@@ -34,8 +37,10 @@ only: stored messages, tool results, their details and what the model sees are n
   `results[i]` (`id`, `text`, `outcome`) it shows cards like the other paths: a single result is one card named
   `child_wait · <id>`; several get a summary row `child_wait · N results` (plus `· K failed` in the error color) and one
   indented card per result. The coordinator `outcome` maps `completed` to `finished` and `error` to `failed`; any other
-  value shows no status. The notification carries no model or seconds (`display`), so the cards show none. Timeouts,
-  alerts, receipts, `idle` and anything without a delivered result, or unreadable JSON, return `undefined` and stay
+  value shows no status. When an item carries `display`, its model, effort, duration and title
+  are rendered like ordinary agent cards; profile provenance stays in stored metadata. Without `display`, only the item ID, mapped outcome and answer are used;
+  missing metadata is not invented. Timeouts, alerts, receipts, `idle` and anything without a delivered result,
+  or unreadable JSON, return `undefined` and stay
   Pi's stock box. Ctrl+O shows the whole answer of every result.
 - **Ctrl+O** (expanded tools): custom messages show the full card body. With tool-ui, each wait result shows its
   expanded cards once inside a stock-look box, with the full answer text instead of the raw result JSON. Without
@@ -60,7 +65,7 @@ only: stored messages, tool results, their details and what the model sees are n
 
 ## Layout and Markdown (`fit.ts`, `card.ts`)
 
-The cards drawn as custom messages (`agent`, `code_writer`, `shell_runner`, `child_wait`, `review`, and the dev `qa-status`) keep
+The cards drawn as custom messages (`agent`, `child_wait`, legacy `review`, and the dev `qa-status`) keep
 Pi's output padding: `padded` in `fit.ts` leaves `options.outputPad` cells free at both sides, so a header and its body line up
 with the text blocks around the card, collapsed and expanded, and the wrapping uses the narrower width. A width at or below
 the padding is drawn without it. Cards inside a tool result are already inside Pi's own box and are not padded again.
@@ -70,8 +75,8 @@ original text unchanged.
 
 ## The card (`card.ts`)
 
-`createAgentCard` is a Pi `MessageRenderer` for the custom message types `agent`, `code_writer` and `shell_runner`, as
-`extensions/RQW-agent` delivers them (content `[<name>#<id>] <text>`). Any other type returns `undefined`, so Pi renders
+`createAgentCard` is a Pi `MessageRenderer` for the custom message type `agent`, as
+`extensions/RQW-agent` delivers it (content `[<name>#<id>] <text>`). Any other type returns `undefined`, so Pi renders
 it as before.
 
 Collapsed, two rows:
@@ -84,8 +89,7 @@ agent#3 finished · opus medium · 42s
 - Header: `<name>#<id>`, then the child's short title from `details.title` when RQW-agent supplies it (the caller's
   optional `title`, one line, muted; it gets only the width the rest of the header leaves and is cut with `…`, or left
   out below two cells), then the status `finished` / `failed` from `details.outcome` (nothing when absent, neutral),
-  then ` · <model> <effort>` and ` · <seconds>` when `details` supplies them. Unknown or unusable parts are left out; no
-  details at all gives just `agent#3`.
+  then ` · <model> <effort>` and ` · <seconds>` when `details` supplies them. Unknown or unusable parts are left out; no details at all gives just `agent#3`.
 - Model: `anthropic/claude-opus-5-5` shows as `opus`; any other `provider/id` shows as `id`. Seconds: `42s`, `12.3s`,
   `1m 05s`.
 - Below the header the first nonempty line of the answer, indented, cut at the end with `…`.
@@ -99,12 +103,15 @@ the answer stay. Without a prefix the id comes from `details.id`, else the messa
 Display text has terminal escape sequences and control characters removed and tabs shown as four spaces, because the
 text is a model's output and must not reach the terminal as commands; the stored message keeps it as is.
 
-## Review card (`review.ts`)
+## Legacy review card (`review.ts`)
 
-`index.ts` registers `createReviewCard` for custom type `review`. The merged reviewer delivers
-`[review#N] <verdict>` with `details.n`, level, model, thinking and seconds. Unlike agents, it has no wait-result
-verdict path: the tool returns a start acknowledgement, and the verdict arrives as a custom message. Tool-ui does
-not intercept this message renderer. No review policy or producer is changed.
+`index.ts` retains `createReviewCard` for custom type `review` only to render legacy stored history from older
+sessions. It recognizes the stored `[review#N] <verdict>` prefix, with `details.n` as an ID fallback. Tool-ui does
+not intercept this message renderer. It starts no reviewer and is not a current verdict producer.
+
+Current `spotty` and `bossy` reviewers are ordinary profiled agents. Their results use the `agent`, `wait` and
+`child_wait` cards described above, with `profile: { name, path, sha256 }` in display details when supplied;
+they do not create standalone `review` messages or use this legacy verdict summary.
 
 Collapsed: muted ID, verdict, then the first nonempty body line. An exact `CLEAN` verdict line is success;
 `CLEAN-ish` and `CLEAN, but` are muted. `FINDINGS:` shows the count of actual `FINDING n` headings, muted.
@@ -116,11 +123,10 @@ Ctrl+O shows the entire body, width-wrapped, with only the outer review prefix r
 Russian and every field remain visible. The same terminal-control sanitization and narrow-glyph limit as agent cards
 apply. Stored content and details never change.
 
-Merged-format differences from the execution brief: findings have `REQUIREMENT`, `MISMATCH`, `EVIDENCE` and
-`REQUIRED OUTCOME`, followed by `CHECKED:` and optional `UNCHECKED:`. The merged prompt does not produce `DISPUTE`,
-`RULING` or `ANSWER`, but such text is preserved if received. `verdictMessage` appends `NEXT[kindOf(...)]` as plain
-advice, without a literal `NEXT:` label. The expanded card retains that advice too. Exact CLEAN coloring does not
-replace `kindOf`'s stricter structural and evidence checks.
+Stored findings may contain `REQUIREMENT`, `MISMATCH`, `EVIDENCE` and `REQUIRED OUTCOME`, followed by `CHECKED:`
+and optional `UNCHECKED:`. Expanded cards retain all stored fields and appended advice, including dispute, ruling
+or answer text when present. The renderer generates no advice and performs no review acceptance or coverage check;
+its colors and counts describe only the stored text.
 
 ## Colors
 
@@ -138,7 +144,8 @@ and ANSI); at width 0 nothing is rendered.
 ## Tests
 
 - `node --test extensions/RQW-agent-ui/test/card.test.ts`: the card (pure).
-- `node --test extensions/RQW-agent-ui/test/review.test.ts`: review verdicts, source-aware counts, full body, width and purity.
+- `node --test extensions/RQW-agent-ui/test/review.test.ts`: legacy stored verdict fixtures, source-aware counts,
+  full body and appended advice, width and purity.
 - `node --test extensions/RQW-agent-ui/test/child-wait.test.ts`: the `child_wait` card rows (pure).
 - `node --test extensions/RQW-agent-ui/test/wait.test.ts`: the wait cards, the stock view parity, layering, width, purity.
 - `node --test extensions/RQW-agent-ui/test/self.test.ts`: a tool-ui-like self shell, exact folded delegation, full
@@ -147,7 +154,8 @@ and ANSI); at width 0 nothing is rendered.
   faux model and only this extension: both delivery paths, Ctrl+O and back, off = stock, `/reload` and a new session
   register the cards again, the extension has no handler or subscription. The delivery shapes are stand-ins for
   RQW-agent's, as its README describes them.
-- `node --test test/agent-ui-delivery.test.ts`: the same two paths for `agent`, `code_writer` and `shell_runner` on
-  what the real RQW-agent delivers (faux providers, isolated directory), drawn by Pi's exported host components;
-  current wait-for-all, status/alert shapes and composition with tool-ui. Also tests merged `verdictMessage` review
-  custom messages with both UI extensions independently absent or present, not review tool results.
+- `node --test test/agent-ui-delivery.test.ts`: real RQW-agent message and wait deliveries for generic and profiled
+  agents, including ordinary card rendering and stored `{ name, path, sha256 }` provenance, drawn by Pi's exported
+  host components with faux providers and isolated directories. Covers wait-for-all, status/alert shapes and
+  composition with tool-ui. Separately injects legacy stored `review` message fixtures with both UI extensions
+  independently absent or present; it does not exercise a current standalone review runtime.

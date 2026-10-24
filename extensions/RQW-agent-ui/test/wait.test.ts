@@ -66,7 +66,7 @@ it("wait-cards: a finished wait shows one card per delivered result, from detail
 	assert.doesNotMatch(body, /Вторая строка/, "collapsed: the first answer line only");
 	assert.match(body, /code_writer#2 failed · 7\.3s/);
 	assert.doesNotMatch(body, /"reason"|"delivery"/, "not the JSON");
-	assert.deepEqual(WAIT_TOOLS, ["agent", "code_writer", "shell_runner"]);
+	assert.deepEqual(WAIT_TOOLS, ["agent"]);
 });
 
 it("wait-originals: Ctrl+O shows the stock result view, byte for byte what Pi draws without this extension", () => {

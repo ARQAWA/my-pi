@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { actionPhrase, CountsWatch, countParts, COUNTS_OFFER, COUNTS_REQUEST, statusText } from "../activity.ts";
 import { branchNumber, type TreeNodeLike } from "../branch.ts";
 
-type Listener = (counts: { agents: number; workers: number; reviews: number } | null) => void;
+type Listener = (counts: { agents: number } | null) => void;
 
 /** A minimal bus with the events semantics the counts contract needs: handlers run on emit, unsubscribe removes them. */
 function bus() {
@@ -21,13 +21,13 @@ function bus() {
 }
 
 /** A producer's source over mutable counts; `end` ends it as the contract's `dispose` does. */
-function source(start: { agents: number; workers: number; reviews: number }, version = 1) {
+function source(start: { agents: number }, version = 1) {
 	let current = { ...start };
 	let ended = false;
 	const listeners = new Set<Listener>();
 	const value = {
 		version,
-		snapshot: () => (ended ? { agents: 0, workers: 0, reviews: 0 } : { ...current }),
+		snapshot: () => (ended ? { agents: 0 } : { ...current }),
 		subscribe(listener: Listener) {
 			if (ended) { listener(null); return () => {}; }
 			listeners.add(listener);
@@ -36,7 +36,7 @@ function source(start: { agents: number; workers: number; reviews: number }, ver
 	};
 	return {
 		value,
-		set(next: { agents: number; workers: number; reviews: number }) {
+		set(next: { agents: number }) {
 			current = { ...next };
 			for (const listener of listeners) listener(current);
 		},
@@ -50,28 +50,29 @@ function source(start: { agents: number; workers: number; reviews: number }, ver
 
 describe("status text", () => {
 	it("is absent when fully idle: no label and no reserved gap", () => {
-		assert.equal(statusText({ compacting: false, running: false, counts: { agents: 0, workers: 0, reviews: 0 } }), undefined);
+		assert.equal(statusText({ compacting: false, running: false, counts: { agents: 0 } }), undefined);
 	});
 
-	it("main planning and tool actions, with the counts by kind after the main answer", () => {
-		const none = { agents: 0, workers: 0, reviews: 0 };
+	it("main planning and tool actions, with the agent counts after the main answer", () => {
+		const none = { agents: 0 };
 		assert.deepEqual(statusText({ compacting: false, running: true, counts: none }), { text: "Planning next moves", compacting: false });
 		assert.deepEqual(statusText({ compacting: false, running: true, action: "Running npm test", counts: none }),
 			{ text: "Running npm test", compacting: false });
-		assert.equal(statusText({ compacting: false, running: true, counts: { agents: 2, workers: 0, reviews: 0 } })?.text,
+		assert.equal(statusText({ compacting: false, running: true, counts: { agents: 2 } })?.text,
 			"Planning next moves · 2 agents");
-		assert.equal(statusText({ compacting: false, running: false, counts: { agents: 2, workers: 1, reviews: 1 } })?.text,
-			"Waiting for 2 agents, 1 worker, 1 review");
+		assert.equal(statusText({ compacting: false, running: false, counts: { agents: 2 } })?.text,
+			"Waiting for 2 agents");
 	});
 
 	it("compaction is its own gold status, whatever runs", () => {
 		assert.deepEqual(statusText({ compacting: true, running: true, action: "Running npm test",
-			counts: { agents: 1, workers: 0, reviews: 0 } }), { text: "Compacting context", compacting: true });
+			counts: { agents: 1 } }), { text: "Compacting context", compacting: true });
 	});
 
-	it("counts are spelled by kind with correct plurals and zero kinds omitted", () => {
-		assert.deepEqual(countParts({ agents: 1, workers: 0, reviews: 2 }), ["1 agent", "2 reviews"]);
-		assert.deepEqual(countParts({ agents: 0, workers: 1, reviews: 0 }), ["1 worker"]);
+	it("agent counts have correct plurals and omit zero", () => {
+		assert.deepEqual(countParts({ agents: 1 }), ["1 agent"]);
+		assert.deepEqual(countParts({ agents: 2 }), ["2 agents"]);
+		assert.deepEqual(countParts({ agents: 0 }), []);
 	});
 });
 
@@ -87,61 +88,61 @@ describe("action phrases", () => {
 });
 
 describe("counts consumption", () => {
-	it("requests existing producers, sums live sources by kind, drops ended ones and clears on stop", () => {
+	it("requests existing producers, sums live agent sources, drops ended ones and clears on stop", () => {
 		const events = bus();
 		const changes: number[] = [];
 		const watch = new CountsWatch(events as never, () => changes.push(1));
-		const one = source({ agents: 1, workers: 0, reviews: 0 });
-		const two = source({ agents: 0, workers: 2, reviews: 1 });
+		const one = source({ agents: 1 });
+		const two = source({ agents: 2 });
 		// A live producer that replies to the request (its load order may be either way round).
 		events.on(COUNTS_REQUEST, (request) => (request as { reply(s: unknown): void }).reply(one.value));
 		watch.start();
 		events.emit(COUNTS_OFFER, { version: 1, source: two.value });
-		assert.deepEqual(watch.get(), { agents: 1, workers: 2, reviews: 1 });
-		one.set({ agents: 3, workers: 0, reviews: 0 });
-		assert.deepEqual(watch.get(), { agents: 3, workers: 2, reviews: 1 });
+		assert.deepEqual(watch.get(), { agents: 3 });
+		one.set({ agents: 3 });
+		assert.deepEqual(watch.get(), { agents: 5 });
 		two.end();
-		assert.deepEqual(watch.get(), { agents: 3, workers: 0, reviews: 0 });
+		assert.deepEqual(watch.get(), { agents: 3 });
 		assert.ok(changes.length >= 3);
 		watch.stop();
-		assert.deepEqual(watch.get(), { agents: 0, workers: 0, reviews: 0 });
-		one.set({ agents: 9, workers: 0, reviews: 0 });
-		assert.deepEqual(watch.get(), { agents: 0, workers: 0, reviews: 0 }, "no subscription survives stop");
+		assert.deepEqual(watch.get(), { agents: 0 });
+		one.set({ agents: 9 });
+		assert.deepEqual(watch.get(), { agents: 0 }, "no subscription survives stop");
 	});
 
 	it("a source that has already ended is never kept", () => {
 		const events = bus();
 		const watch = new CountsWatch(events as never, () => undefined);
 		watch.start();
-		const ended = source({ agents: 4, workers: 0, reviews: 0 });
+		const ended = source({ agents: 4 });
 		ended.end();
 		events.emit(COUNTS_OFFER, { version: 1, source: ended.value });
-		assert.deepEqual(watch.get(), { agents: 0, workers: 0, reviews: 0 });
+		assert.deepEqual(watch.get(), { agents: 0 });
 	});
 
 	it("only version 1 is adopted, both on the offer and on the source; a source is counted once", () => {
 		const events = bus();
 		const watch = new CountsWatch(events as never, () => undefined);
 		watch.start();
-		const future = source({ agents: 5, workers: 0, reviews: 0 }, 2);
+		const future = source({ agents: 5 }, 2);
 		events.emit(COUNTS_OFFER, { version: 1, source: future.value });
-		events.emit(COUNTS_OFFER, { version: 2, source: source({ agents: 7, workers: 0, reviews: 0 }).value });
-		assert.deepEqual(watch.get(), { agents: 0, workers: 0, reviews: 0 }, "wrong source or offer versions are ignored");
-		const one = source({ agents: 1, workers: 0, reviews: 0 });
+		events.emit(COUNTS_OFFER, { version: 2, source: source({ agents: 7 }).value });
+		assert.deepEqual(watch.get(), { agents: 0 }, "wrong source or offer versions are ignored");
+		const one = source({ agents: 1 });
 		events.emit(COUNTS_OFFER, { version: 1, source: one.value });
 		events.emit(COUNTS_OFFER, { version: 1, source: one.value });
-		assert.deepEqual(watch.get(), { agents: 1, workers: 0, reviews: 0 }, "the same source object is deduplicated");
+		assert.deepEqual(watch.get(), { agents: 1 }, "the same source object is deduplicated");
 	});
 
 	it("either load order works: a source offered before the consumer starts is found by the request", () => {
 		const events = bus();
-		const early = source({ agents: 2, workers: 0, reviews: 0 });
+		const early = source({ agents: 2 });
 		events.on(COUNTS_REQUEST, (request) => (request as { reply(s: unknown): void }).reply(early.value));
 		const watch = new CountsWatch(events as never, () => undefined);
 		watch.start();
-		assert.deepEqual(watch.get(), { agents: 2, workers: 0, reviews: 0 });
+		assert.deepEqual(watch.get(), { agents: 2 });
 		watch.start();
-		assert.deepEqual(watch.get(), { agents: 2, workers: 0, reviews: 0 }, "a second start is idempotent");
+		assert.deepEqual(watch.get(), { agents: 2 }, "a second start is idempotent");
 	});
 
 	it("without any producer the consumer stays at zero, and stop then start again works", () => {
@@ -150,11 +151,11 @@ describe("counts consumption", () => {
 		watch.start();
 		watch.stop();
 		watch.stop();
-		assert.deepEqual(watch.get(), { agents: 0, workers: 0, reviews: 0 });
-		const late = source({ agents: 1, workers: 1, reviews: 0 });
+		assert.deepEqual(watch.get(), { agents: 0 });
+		const late = source({ agents: 1 });
 		events.on(COUNTS_REQUEST, (request) => (request as { reply(s: unknown): void }).reply(late.value));
 		watch.start();
-		assert.deepEqual(watch.get(), { agents: 1, workers: 1, reviews: 0 });
+		assert.deepEqual(watch.get(), { agents: 1 });
 	});
 });
 

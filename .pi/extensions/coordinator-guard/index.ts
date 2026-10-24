@@ -1,17 +1,16 @@
 // Dev-only project extension of this repository: mechanical guard for Main, the top-level coordinator session.
 // Pi loads it only from `.pi/extensions` of a trusted cwd; the shipped package and RQW-agent children
-// (noExtensions) never load it. Rules: PROCESS.md, the `json coordinator-rules` block in "Worker models".
+// (noExtensions) never load it. Rules: PROCESS.md, the `json coordinator-rules` block in "Subagent models".
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractOwnerMessages, findNonVerbatimQuotes } from "../../../scripts/owner-quotes.mjs";
 import { acquireLock, LOCK_NAME, processStart, releaseLock } from "./lock.ts";
 import { canonical, gitCommonDir, isInside, protectedRoots, resolveToolPath } from "./paths.ts";
-import { describePairs, isAllowed, loadRules, OPUS_MODEL, restrictionText, type Loaded, type Rules } from "./rules.ts";
+import { describePairs, isAllowed, loadRules, restrictionText, type Loaded, type Rules } from "./rules.ts";
 
-const LINK = "PROCESS.md#worker-models";
+const LINK = "PROCESS.md#subagent-models";
 const QUOTED_FIELDS = ["task", "role", "system"] as const;
-const FIXED_WORKERS = new Set(["code_writer", "shell_runner"]);
 const SECTION = "coordinator_rules";
 const NOTE_SECTION = "coordinator_note";
 // Pi builds a new instance of this extension (and may load the module afresh) on /new, /resume, /fork and /reload,
@@ -30,7 +29,6 @@ export function childInstruction(rules: Rules, now: number = Date.now()): string
 	];
 	const temporary = restrictionText(rules, now);
 	if (temporary) parts.push(temporary);
-	parts.push("You may use code_writer, shell_runner, explore and review yourself as needed: these limits on them are for the top-level coordinator only.");
 	return parts.join(" ");
 }
 
@@ -40,7 +38,7 @@ export function promptSection(loaded: Loaded, processFile: string, now: number =
 		return [
 			head,
 			`- ERROR: the coordinator-rules block in ${processFile} is unreadable: ${loaded.error}`,
-			"- Until it is fixed, every agent start and restart and every code_writer and shell_runner call is blocked. Tell the owner at once.",
+			"- Until it is fixed, every agent start and restart is blocked. Tell the owner at once.",
 			"- Main still never edits or writes repository files itself.",
 		].join("\n");
 	}
@@ -51,9 +49,6 @@ export function promptSection(loaded: Loaded, processFile: string, now: number =
 		"- Main delegates research, edits, checks and fixes to subagents. When the owner asks Main to do such work personally (for example \"ты сам\" or \"you do it\"), Main objects and proposes a subagent for it; only an explicit owner override lets Main do that work itself. Main never edits or writes files in the checkout or its worktrees (edit and write there are blocked).",
 		`- Every agent start or restart by Main names model and thinking explicitly, only one of these pairs: ${describePairs(rules, now)} (${LINK}).`,
 		...(temporary ? [`- ${temporary}`] : []),
-		rules.fixedWorkers === "block"
-			? "- Main never uses code_writer or shell_runner and never starts an explore subagent; those calls are blocked. Subagents Main starts may use them."
-			: "- Main never starts an explore subagent; that call is blocked. Subagents Main starts may use it.",
 		"- Text inside guillemets in a brief must be one exact contiguous span of one owner message: no inserted omissions, cuts or paraphrase; only Unicode NFC and whitespace runs are normalised. Other text goes outside guillemets. Briefs that break this are blocked.",
 	].join("\n");
 }
@@ -170,24 +165,9 @@ export function createCoordinatorGuard(options: GuardOptions) {
 				return undefined;
 			}
 
-			if (name !== "agent" && !FIXED_WORKERS.has(name)) return undefined;
+			if (name !== "agent") return undefined;
 			const action = input.action ?? "start";
 			const starts = action === "start" || action === "restart";
-
-			if (FIXED_WORKERS.has(name)) {
-				const loaded = loadRules(processFile);
-				if (!loaded.ok) return { block: true, reason: `coordinator-guard: coordinator-rules in ${processFile} is unreadable: ${loaded.error}` };
-				if (loaded.rules.fixedWorkers === "block") {
-					return { block: true, reason: `coordinator-guard: Main never uses ${name} (fixedWorkers: block, ${LINK}); start an ordinary agent with an allowed model instead.` };
-				}
-				if (starts || action === "send") {
-					const problem = quoteProblem(input, ctx);
-					if (problem) return { block: true, reason: `coordinator-guard: ${problem}` };
-				}
-				return undefined;
-			}
-
-			// agent
 			if (!starts && action !== "send") return undefined;
 			const problem = quoteProblem(input, ctx);
 			if (problem) return { block: true, reason: `coordinator-guard: ${problem}` };
@@ -198,15 +178,12 @@ export function createCoordinatorGuard(options: GuardOptions) {
 			const { rules } = loaded;
 			const now = clock();
 			const allowed = `allowed: ${describePairs(rules, now)} (${LINK})`;
-			if (input.explore !== undefined) {
-				return { block: true, reason: `coordinator-guard: Main never starts explore: an explorer runs on Main's own model. Start an ordinary agent with an allowed model and a read-only role instead; ${allowed}.` };
-			}
 			if (typeof input.model !== "string" || typeof input.thinking !== "string") {
 				return { block: true, reason: `coordinator-guard: give model and thinking explicitly on agent ${action}; ${allowed}.` };
 			}
-			if (!isAllowed(rules, input.model, input.thinking, now, input.title)) {
+			if (!isAllowed(rules, input.model, input.thinking, now)) {
 				const temporary = restrictionText(rules, now);
-				const hint = temporary && input.model === OPUS_MODEL ? ` ${temporary}` : "";
+				const hint = temporary ? ` ${temporary}` : "";
 				return { block: true, reason: `coordinator-guard: ${input.model} ${input.thinking} is not an allowed pair; ${allowed}.${hint}` };
 			}
 			if (typeof input.task === "string") input.task = `${input.task}\n\n${childInstruction(rules, now)}`;

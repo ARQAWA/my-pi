@@ -1,7 +1,6 @@
 // The child's startup prompt on the `rqw-codex:session-policy` request, in real Pi sessions, against the prompt the provider
 // actually receives. This test loads only RQW-agent. The main session's before_agent_start forces its prompt the way the
-// real prompt extension does, so a child that inherits it must send exactly the same leading base. The offered `review`
-// channel is answered by a stand-in on the main bus, which records the bus the offer carries.
+// real prompt extension does, so a child that inherits it must send exactly the same leading base.
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,7 +8,7 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import {
-	createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type EventBus, type ExtensionAPI,
+	createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ExtensionAPI,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -66,10 +65,7 @@ async function open() {
 	const seen: Request[] = [];
 	// The agent tool is called from inside a main run, as a real tool call is: the probe tool runs the queued action with that run's context.
 	const probe: { queue: ((ctx: ExtensionContext) => Promise<void>)[] } = { queue: [] };
-	const offers: { child: ExtensionAPI; events: EventBus }[] = [];
-	const heard: string[] = [];
 	const stand = (pi: ExtensionAPI) => {
-		pi.events.on("rqw-test:bus", (raw) => { heard.push((raw as { from: string }).from); });
 		pi.on("before_agent_start", () => ({ systemPrompt: MAIN_FORCED }));
 		pi.registerTool({ name: "probe", label: "probe", description: "test probe", parameters: Type.Object({}),
 			execute: async (_id, _params, _signal, _update, ctx) => {
@@ -80,12 +76,6 @@ async function open() {
 			const request = raw as Request;
 			seen.push(request);
 			request.release = () => {};
-		});
-		// The RQW-review offer: a stand-in registrar that records the bus it was handed.
-		pi.events.on("rqw-review:subagent-review", (raw) => {
-			(raw as { offer: (register: (child: ExtensionAPI, host: { events: EventBus }) => void) => void }).offer((child, host) => {
-				offers.push({ child, events: host.events });
-			});
 		});
 	};
 	const loader = new DefaultResourceLoader({ cwd: dir, agentDir: dir, additionalExtensionPaths: [EXTENSION],
@@ -113,7 +103,7 @@ async function open() {
 		return texts;
 	};
 	const close = async () => { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); session.dispose(); };
-	return { session, seen, offers, heard, call, close, mainId: () => session.sessionManager.getSessionId() };
+	return { session, seen, call, close, mainId: () => session.sessionManager.getSessionId() };
 }
 
 describe("RQW-agent: startup prompt of a child against the prompt the provider receives", () => {
@@ -147,22 +137,6 @@ describe("RQW-agent: startup prompt of a child against the prompt the provider r
 			assert.equal(f.seen[0].startupSystemPrompt, expected);
 			assert.equal(f.seen[0].startupSystemPromptForced, true, "a role child is forced too");
 			assert.deepEqual(systemOf(wire[0].body), [expected]);
-		} finally { await f.close(); }
-	});
-
-	it("the offered review channel hands the parent's bus to the offer, not the child's own bus", async () => {
-		wire.length = 0;
-		const f = await open();
-		try {
-			const [started, waited] = await f.call({ action: "start", task: "go", model: "anthropic/claude-opus-5-5", tools: [] }, { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
-			assert.equal(started, "agent#1 started");
-			assert.match(waited, /ok/);
-			assert.equal(f.offers.length, 1, "one general child is offered review");
-			// Behaviour, not object identity: each bus is a wrapper per extension, so a message on the offered bus must reach the
-			// parent's listeners, and a message on the child's own bus must not.
-			f.offers[0].events.emit("rqw-test:bus", { from: "offered" });
-			f.offers[0].child.events.emit("rqw-test:bus", { from: "child" });
-			assert.deepEqual(f.heard, ["offered"], "the offer's bus is the parent's; the child's own bus is not");
 		} finally { await f.close(); }
 	});
 });

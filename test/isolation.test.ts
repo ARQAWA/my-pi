@@ -123,9 +123,23 @@ describe("isolation: the package with one extension switched off", () => {
 				assert.deepEqual(r.loaded, NAMES.filter((n) => n !== off));
 			});
 
-			it("the others register exactly the tools they register with everything on, with the same descriptions", () => {
+			it("the others keep their tools and descriptions, except the disabled provider's profile catalogue", () => {
+				let expected = full;
+				if (off === "RQW-review") {
+					const marker = "\n\nAgent types:\n";
+					const agent = full.tools.find(t => t.name === "agent" && t.by === "RQW-agent")!;
+					const parts = agent.description.split(marker);
+					assert.equal(parts.length, 2, "agent has exactly one profile catalogue");
+					assert.deepEqual(parts[1].split("\n").map(line => line.split(":")[0]), ["bossy", "spotty"]);
+					const description = `${parts[0]}${marker}No profiles discovered.`;
+					for (const disabled of [r, viaReload]) {
+						const tool = disabled.tools.find(t => t.name === "agent" && t.by === "RQW-agent")!;
+						assert.equal(tool.description, description, "spotty and bossy disappear; the base description stays exact");
+					}
+					expected = { ...full, tools: full.tools.map(t => t === agent ? { ...t, description } : t) };
+				}
 				const others = (x: Run) => x.tools.filter((t) => t.by !== "builtin" && t.by !== off).map(key).sort();
-				assert.deepEqual(others(r), others(full));
+				assert.deepEqual(others(r), others(expected));
 			});
 
 			it("a model turn with a tool call completes", () => {

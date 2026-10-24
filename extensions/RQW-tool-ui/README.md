@@ -37,9 +37,9 @@ The theme is distributed separately through `pi.themes`, not as an extension.
   call and the result, with the row's own last components and Pi's renderer state; a bare `Container` for an original
   that draws its own frame; Pi's padded text for a tool Pi has no definition for. Pi adds the leading blank row and the
   images itself. Expanded rows show no summary line; Ctrl+O again folds back.
-- Pi's fallback formatting (a call without `renderCall`, a result without `renderResult` or whose renderer throws, a
-  tool without a definition, as RQW-agent's and RQW-review's tools or tools of a resumed session) is not exported by
-  Pi, so `fallback.ts` holds a small copy of it, approved by the owner, pinned to Pi 1.4.0 with its sources cited in
+- Pi's fallback formatting (a call without `renderCall`, a result without `renderResult` or whose renderer throws, or
+  a tool without a definition, such as an unavailable tool in stored session history) is not exported by Pi, so
+  `fallback.ts` holds a small copy of it, approved by the owner, pinned to Pi 1.4.0 with its sources cited in
   its header. Maintenance: on a Pi upgrade, `test/original.test.ts` fails on the version pin; compare `fallback.ts`
   with the cited Pi sources, update it and the pin. The same test compares every case with Pi's own
   `ToolExecutionComponent.render()` (whole rows, colours included), so a drift in the shell shows there too.
@@ -57,16 +57,21 @@ The theme is distributed separately through `pi.themes`, not as an extension.
 
 ### Wait results
 
-`agent`, `code_writer`, `shell_runner` and `review` calls with `action: "wait"` count as `waited for N agents` in the
-summary line and the live block shows `wait <ids>`. RQW-agent-ui is registered before tool-ui; while collapsed it
-delegates to tool-ui, and Ctrl+O shows agent-ui's expanded wait cards with the full answers. Without tool-ui,
-agent-ui renders its collapsed wait cards.
+`agent` calls with `action: "wait"` count as `waited for N agents` in the summary line and the live block shows
+`wait <ids>`. Reviewer profiles `spotty` and `bossy` run as ordinary `agent` children and use these same waits.
+RQW-agent-ui is registered before tool-ui; while collapsed it delegates to tool-ui, and Ctrl+O shows agent-ui's
+expanded wait cards with the full answers. Without tool-ui, agent-ui renders its collapsed wait cards.
+
+Stored standalone `review` waits keep the same compact summary and live wait header only for legacy history
+compatibility. This rendering starts no reviewer and provides no current `review` tool; RQW-review supplies
+profiles and skills for the ordinary `agent` runtime.
 
 ### Data and render functions
 
 - `classify.ts`: `classify(toolName, args, result, context)` turns one call into
   `{ kind, target, status, countKey, countKeys, outputText, exitCode? }` for `read`, `grep`/`find`, `bash`,
-  `wait` of `agent`/`code_writer`/`shell_runner`/`review` (one count key per waited ID) and every other tool.
+  `agent` waits (one count key per waited ID) and every other tool. Stored standalone `review` waits retain the same
+  classification only for legacy history compatibility.
   The `read` count key is the lexically normalized path, as Pi 1.4.0 `resolveToCwd` resolves it (no filesystem
   access): Unicode spaces (NBSP, U+2000-200A, U+202F, U+205F, U+3000) fold to a space, a leading `@` goes, `~`, `~/`
   (Windows also `~\`) expand with the home folder, `file://` URLs become paths, Windows shell drive forms (`/c/`) read as

@@ -1,5 +1,5 @@
-// What the upper border says: the main agent's planning or tool action, the running background work by kind (counts
-// read from RQW-agent's and RQW-review's `pi.events` offers, not a second registry), and the compaction. Pure text
+// What the upper border says: the main agent's planning or tool action, running agents (counts
+// read from RQW-agent's `pi.events` offers, not a second registry), and the compaction. Pure text
 // plus a small consumer of the counts channel; nothing here draws.
 import type { EventBus } from "@earendil-works/pi-coding-agent";
 import { singleLine } from "./render.ts";
@@ -11,8 +11,6 @@ export const COUNTS_OFFER = "rqw:running-counts:offer";
 
 export interface RunningCounts {
 	agents: number;
-	workers: number;
-	reviews: number;
 }
 
 type CountsListener = (counts: RunningCounts | null) => void;
@@ -22,10 +20,10 @@ interface CountsSource {
 	subscribe(listener: CountsListener): () => void;
 }
 
-const zero = (): RunningCounts => ({ agents: 0, workers: 0, reviews: 0 });
-const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents && a.workers === b.workers && a.reviews === b.reviews;
+const zero = (): RunningCounts => ({ agents: 0 });
+const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents;
 
-/** Sums the live counts sources of this session by kind; a source that ends (`null`) is dropped at once. */
+/** Sums the live agent counts of this session; a source that ends (`null`) is dropped at once. */
 export class CountsWatch {
 	private readonly events: Pick<EventBus, "emit" | "on">;
 	private readonly changed: () => void;
@@ -95,8 +93,6 @@ export class CountsWatch {
 		for (const source of this.sources.keys()) {
 			const counts = source.snapshot();
 			next.agents += counts.agents;
-			next.workers += counts.workers;
-			next.reviews += counts.reviews;
 		}
 		const changed = !same(next, this.total);
 		this.total = next;
@@ -104,11 +100,9 @@ export class CountsWatch {
 	}
 }
 
-/** "2 agents", "1 worker", "1 review" in this order; zero kinds are omitted. */
+/** Agent count with the correct plural; zero is omitted. */
 export function countParts(counts: RunningCounts): string[] {
-	const part = (n: number, one: string, many: string) => (n > 0 ? `${n} ${n === 1 ? one : many}` : "");
-	return [part(counts.agents, "agent", "agents"), part(counts.workers, "worker", "workers"), part(counts.reviews, "review", "reviews")]
-		.filter(Boolean);
+	return counts.agents > 0 ? [`${counts.agents} ${counts.agents === 1 ? "agent" : "agents"}`] : [];
 }
 
 export interface StatusInput {

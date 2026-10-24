@@ -17,8 +17,8 @@ function render(m: Message, width: number, expanded = false, theme: CardTheme = 
 }
 
 const ok = { id: "agent#418", run: "r:1", delivery: "d-1", outcome: "completed", text: "Yes: exclusion holds.\nSecond line [with brackets].\nThird line." };
-const failed = { id: "code_writer#9", run: "r:2", delivery: "d-2", outcome: "error", text: "error: edit refused\nfile changed since the last read" };
-const done = { id: "shell_runner#4", run: "r:3", delivery: "d-3", outcome: "completed", text: "npm test: 214 passed" };
+const failed = { id: "agent#9", run: "r:2", delivery: "d-2", outcome: "error", text: "error: edit refused\nfile changed since the last read" };
+const done = { id: "agent#4", run: "r:3", delivery: "d-3", outcome: "completed", text: "npm test: 214 passed" };
 const wait = (...results: unknown[]) => ({ reason: "result", timed_out: false, results, receipts: [], statuses: [], wait_id: "w-1" });
 
 it("child-wait-single: a completed result is one card, never the raw JSON", () => {
@@ -29,14 +29,14 @@ it("child-wait-multiple: a summary row, one indented card per result, a failure 
 	assert.deepEqual(render(notification(wait(ok, failed, done)), 80), [
 		"child_wait · 3 results · 1 failed",
 		"  agent#418 finished", "    Yes: exclusion holds.",
-		"  code_writer#9 failed", "    error: edit refused",
-		"  shell_runner#4 finished", "    npm test: 214 passed",
+		"  agent#9 failed", "    error: edit refused",
+		"  agent#4 finished", "    npm test: 214 passed",
 	]);
 	const painted = render(notification(wait(ok, failed)), 80, false, tagged)!.join("\n");
 	assert.match(painted, /<error>1 failed<\/error>/);
-	assert.match(painted, /code_writer#9<\/muted><muted> <\/muted><error>failed<\/error>\n\s+<error>error: edit refused<\/error>/, "the failed status and its answer are error-coloured, not hidden");
+	assert.match(painted, /agent#9<\/muted><muted> <\/muted><error>failed<\/error>\n\s+<error>error: edit refused<\/error>/, "the failed status and its answer are error-coloured, not hidden");
 	assert.match(painted, /<success>finished<\/success>/);
-	assert.deepEqual(render(notification(wait(failed)), 80), ["child_wait · code_writer#9 failed", "  error: edit refused"], "a single failure keeps its status");
+	assert.deepEqual(render(notification(wait(failed)), 80), ["child_wait · agent#9 failed", "  error: edit refused"], "a single failure keeps its status");
 });
 
 it("child-wait-expanded: the whole answer of every result, wrapped, nothing dropped", () => {
@@ -44,7 +44,7 @@ it("child-wait-expanded: the whole answer of every result, wrapped, nothing drop
 	assert.deepEqual(rows, [
 		"child_wait · 2 results · 1 failed",
 		"  agent#418 finished", "    Yes: exclusion holds.", "    Second line [with brackets].", "    Third line.",
-		"  code_writer#9 failed", "    error: edit refused", "    file changed since the last read",
+		"  agent#9 failed", "    error: edit refused", "    file changed since the last read",
 	]);
 	assert.deepEqual(render(notification(wait(ok)), 80, true), ["child_wait · agent#418 finished", "  Yes: exclusion holds.", "  Second line [with brackets].", "  Third line."]);
 });

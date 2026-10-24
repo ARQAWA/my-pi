@@ -1,4 +1,4 @@
-// Display only: the merged reviewer delivers a custom message, not a wait tool result.
+// Display only: retain cards for stored standalone review messages from older sessions.
 import type { MessageRenderer } from "@earendil-works/pi-coding-agent";
 import { messageText, splitPrefix } from "./card.ts";
 import { clean, fit, padded, wrap } from "./fit.ts";

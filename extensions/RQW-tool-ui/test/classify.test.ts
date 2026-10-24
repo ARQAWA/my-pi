@@ -148,12 +148,13 @@ describe("classify", () => {
 	});
 
 	it("wait calls are their own kind, one count key per waited ID", () => {
-		for (const tool of ["agent", "code_writer", "shell_runner", "review"]) {
-			const r = classify(tool, { action: "wait", ids: ["agent#2", "code_writer#5", "agent#2"], timeout_ms: 600000 }, done("[agent#2] result"), ctx);
-			assert.deepEqual(r, { kind: "wait", target: "agent#2 code_writer#5", status: "done", countKey: "agent#2", countKeys: ["agent#2", "code_writer#5"], outputText: "[agent#2] result" });
+		for (const tool of ["agent", "review"]) {
+			const ids = [`${tool}#2`, `${tool}#5`, `${tool}#2`];
+			const r = classify(tool, { action: "wait", ids, timeout_ms: 600000 }, done(`[${tool}#2] result`), ctx);
+			assert.deepEqual(r, { kind: "wait", target: `${tool}#2 ${tool}#5`, status: "done", countKey: `${tool}#2`, countKeys: [`${tool}#2`, `${tool}#5`], outputText: `[${tool}#2] result` });
 		}
 		const streaming = classify("agent", { action: "wait" }, undefined, ctx);
 		assert.deepEqual([streaming.kind, streaming.status, streaming.countKey, streaming.countKeys], ["wait", "running", "call-1", []]);
-		assert.equal(classify("shell_runner", { action: "wait", ids: ["shell_runner#1"] }, done("timeout"), { ...ctx, isError: true }).status, "error");
+		assert.equal(classify("agent", { action: "wait", ids: ["agent#1"] }, done("timeout"), { ...ctx, isError: true }).status, "error");
 	});
 });
