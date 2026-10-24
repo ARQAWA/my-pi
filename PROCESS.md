@@ -7,7 +7,12 @@ the accepted decisions and their reasons. New owner instructions take precedence
 
 ## Research and agreement
 
-1. While the owner discusses or plans, change nothing. A proposal or question is not permission to implement it.
+1. Main and every agent implement only the owner's requirements and decisions the owner himself accepted.
+   Add no protections, fallbacks, edge-case handling, options, settings or mechanisms beyond them. Main cannot
+   accept a technical decision that adds behavior on the owner's behalf. Delegated technical choices concern only
+   how to implement what was ordered, never what to add. Propose an addition only as a question to the owner and
+   only when Main considers it critical; do not raise non-critical proposals until the owner asks.
+   While the owner discusses or plans, change nothing. A proposal or question is not permission to implement it.
 2. Delegate initial research of the request and relevant source code to subagents, in parallel where useful.
    Main compiles all requirements across the conversation and accepted proposals, retaining the owner's exact words.
    Keep agreed work intact: do not lose, silently drop, reinterpret or invent requirements.
@@ -15,9 +20,8 @@ the accepted decisions and their reasons. New owner instructions take precedence
    agents. Report candidates with their license, maintenance, size and dependency risk, and explain suitability.
    Build our own only with the owner's consent, recorded in `DECISIONS.md`. Keep the no-fork/no-Pi-patch and
    independent-extension boundaries. Small changes, bug fixes and test fixes do not require this search.
-4. Bring all material ambiguities, conflicts and missing outcome decisions to the owner in one question batch.
-   Do not decide for the customer without permission. Delegated technical choices, including subagent model selection,
-   remain the agent's responsibility within the agreed outcome; they are not permission to widen or shrink it.
+4. Bring material ambiguities, conflicts and missing decisions needed to deliver the ordered outcome to the owner
+   in one question batch, under rule 1. An unanswered question is not acceptance, including overnight.
 5. The owner's answers or approval start the agreed work without another go question. If nothing is open and the
    owner has explicitly requested execution, start. Keep the minimal necessary agreed scope, not a smaller scope.
 
@@ -59,17 +63,9 @@ the accepted decisions and their reasons. New owner instructions take precedence
      `- Task C [blocked by B]
   ```
 
-- Night default: while the owner is asleep or not answering overnight, take the recommended option on every question to
-  him, record the choice as `taken by default` in `DECISIONS.md` and the handoff, and keep it reversible by the
-  owner in the morning. This includes structure choices after research, web-search parameters and small design
-  forks; default choices are coordinator records under this accepted rule, not fabricated owner quotations.
-  Without the owner, never publish PCLI to the Marketplace, delete his data or sessions, change `~/.pi` beyond
-  installing third-party extensions, or spend limits beyond the reviewer measurement. These exceptions stay
-  blocked rather than being approved by default. Resuming a task paused by its 2-hour timebox is one more such
-  exception ([Task timebox](#task-timebox)).
-- Main drives the whole agreed task to completion autonomously through subagents: they implement, inspect, make the
-  needed probes and measurements, and fix obvious defects and relevant corner cases. Do not polish extremely
-  unlikely scenarios or expand the task.
+- Main drives the whole agreed task to completion autonomously through subagents: they implement, inspect,
+  perform the required checks and fix deviations from the ordered outcome under [Research and agreement](#research-and-agreement).
+  Defect or corner-case work is not separate permission to add behavior.
 - Commit completed stages promptly to the task branch, staging exact task paths. Stage commits require no review
   or test gate; they do not replace final verification or authorize a merge.
 - Work only in my-pi. Other repositories are read-only sources. Keep the user's changes, credentials and settings.
@@ -153,7 +149,7 @@ Owner's words and reasons: [DECISIONS.md, Task pipeline](DECISIONS.md#task-pipel
   figure the timestamps do not prove.
 - The freed active slot goes at once to the highest-priority runnable task of the waiting queue. No slot is held for
   the owner's answer.
-- More work on the paused task needs the owner's decision. The night default never authorizes it, and no silent
+- More work on the paused task needs the owner's decision, and no silent
   continuation, restart or reassignment replaces it. If the owner continues it, Main reprioritises and resumes the
   task, interrupting a lower-priority active task if needed, with its history kept.
 - This is a control checkpoint, not a promise that any task is done in 2 hours.
@@ -345,13 +341,16 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
 - The review cycle, ported from the owner's Codex CLI reviewer skills (`DECISIONS.md`, [Review](DECISIONS.md#review)).
   It runs when the owner asks for a review or a checked result, or when this section requires it, such as before
   a squash merge; never on Main's own initiative. The task has these sections in this order: `<agreement>` only
-  when there are accepted proposals and decisions that are not the owner's own messages, `<object>` (exact paths
-  or readable references, primary requirements, governing rules, source evidence, the diff as a file path, and the
-  stage `pre-action` or `pre-completion`), `<criterion>` (what the check confirms and which deliverable must fulfil
-  each obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second
+  when needed, containing only decisions the owner himself accepted, each with its source and evidence of his
+  acceptance; Main's or another agent's approval is not agreement. Then `<object>` (exact paths or readable
+  references, primary requirements, governing rules, source evidence, the diff as a file path, and the stage
+  `pre-action` or `pre-completion`), `<criterion>` (what the check confirms and which deliverable must fulfil each
+  obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second
   pass on, `<rejected_earlier>`. `include: ["user_messages"]` mechanically appends `<user_messages>` after the task:
   every user-role text of the caller's selected branch, verbatim and in order, including entries before compaction.
   Images and non-user messages are omitted; nested callers contribute their own messages. Do not retype the messages.
+  Every review brief, including code and test-integrity review, follows these agreement-source rules and includes
+  in `<criterion>`: "Any element beyond the owner's requirements and decisions the owner himself accepted is a finding."
   Set no file, search, tool-call or turn quotas, and leave the reviewed files unchanged until the verdict.
 - For large work, run a separate read-only code reviewer in parallel with result review whenever a changed path falls outside
   the `tests.yml` `paths-ignore` filters used by `scripts/deliver-check.mjs`, considering both base and head filters.

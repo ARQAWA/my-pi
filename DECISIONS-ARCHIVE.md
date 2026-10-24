@@ -5411,3 +5411,129 @@ The corrected upstream version is preserved separately from the earlier `c101637
 >   Reason: the owner's working reviewer runs on Sol; no Claude measurement or model selection is scheduled.
 >   Carrier: `index.ts` (`LEVELS`, `pickReviewer`). Proof: `test/levels.test.ts`, `test/codex-policy.test.ts`,
 >   `test/startup-policy.test.ts`. Since: this port.
+
+
+## A-0318 · archived 2026-10-24 · D-WORK-NIGHT-DEFAULT
+
+Status: SUPERSEDED by [D-WORK-ONLY-ORDERED] in DECISIONS.md.
+Source: `df250746e1d2aa901612e8a020534531bfc94b90:DECISIONS.md`, whole entry verbatim.
+Archived by: rule-only-ordered; exact commit: `git log -S'A-0318' -- DECISIONS-ARCHIVE.md`.
+
+> - **Night defaults** `[D-WORK-NIGHT-DEFAULT]`. While the owner sleeps or does not answer overnight, Main takes the
+>   recommended option for each question and records it as `taken by default` in DECISIONS and the handoff;
+>   the owner may reverse it in the morning. Owner (`16-27-59:4911`, entry `75120103`):
+>   «да принимаю это ночное правило»
+>   Coordinator text, accepted proposal (`16-27-59:4907`, entry `08ec46e5`):
+>
+>   **Для остальных задач, которые ждут твоих ответов, предлагаю ночное правило.** Пока ты спишь, на каждый вопрос к тебе я беру рекомендованный вариант и записываю его как принятый по умолчанию. Утром ты можешь его отменить. Это касается, например, выбора структуры после исследования, параметров веб-поиска и мелких развилок. Без тебя ночью не делается:
+>   1. публикация плагина в Marketplace;
+>   2. удаление твоих данных и сессий;
+>   3. изменения в `~/.pi` сверх установки сторонних расширений;
+>   4. траты лимитов сверх замера ревьюера.
+>
+>   Never default-approve Marketplace publication, deletion of owner data/sessions, ~/.pi changes beyond installing
+>   third-party extensions, or spending limits beyond the reviewer measurement. Resuming a task paused by its 2-hour
+>   timebox ([D-PIPELINE-TIMEBOX]) is never default-approved. Reason: keep routine choices moving
+>   without granting irreversible or excluded actions. Carrier:
+>   [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
+>   Since: process-rules-oct23 squash.
+
+
+## A-0319 · archived 2026-10-24 · D-SCOPE-LEAN
+
+Status: SUPERSEDED by [D-WORK-ONLY-ORDERED] in DECISIONS.md.
+Source: `df250746e1d2aa901612e8a020534531bfc94b90:DECISIONS.md`, whole entry verbatim.
+Archived by: rule-only-ordered; exact commit: `git log -S'A-0319' -- DECISIONS-ARCHIVE.md`.
+
+> - **Lean engineering scope** `[D-SCOPE-LEAN]`. Fix obvious major failures, not speculative rare cases; completed native
+>   physical routing and filesystem identity fixes stay. Coordinator text (historical unverified attribution): "Не надо
+>   делать микроправки всяких хуёвин, которые возможно никогда не всплывут, и у них редкость возникновения очень высокая,
+>   вероятность, что они возникнут, крайне мала. Надо править именно очевидные жирные ошибки, а не вылизывать до
+>   предела."; "ты всю уже выполненную работу собираешь вместе. Просто ты дополнительной работы не делаешь и всё."
+>   Carriers: `extensions/RQW-context/index.ts`, `extensions/RQW-tools/`, `notes/context-questions.md`; this does not
+>   promise every rare filesystem or long-path case. Process side: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
+>   Since: `9ef1519`.
+
+
+## A-0320 · archived 2026-10-24 · D-STRUCT-NIGHT-DEFAULTS
+
+Status: SUPERSEDED by [D-WORK-ONLY-ORDERED] in DECISIONS.md.
+Source: `df250746e1d2aa901612e8a020534531bfc94b90:DECISIONS.md`, whole entry verbatim.
+Archived by: rule-only-ordered; exact commit: `git log -S'A-0320' -- DECISIONS-ARCHIVE.md`.
+
+> - **Code-layout research night defaults** `[D-STRUCT-NIGHT-DEFAULTS]`. Coordinator record, not an owner quotation:
+>   all seven recommended options in section 7 of
+>   `/Users/arkadijcukavin/ai-project/my-pi-evidence/code-layout-research/REPORT.md` are `taken by default`
+>   under [PROCESS.md, Night default](PROCESS.md#isolated-parallel-execution), reversible by the owner.
+>   1. **1a:** Keep `test/` as the root, with mirrored tests in `test/extensions/RQW-<name>/`.
+>   2. **2a:** Keep extensions flat: `index.ts`, concern-specific files and README; use subfolders only above
+>      15 code files, currently only `RQW-codex`.
+>   3. **3a:** Generate `INDEX.md` and each README's file table, run `--check` in `npm test`, and shorten
+>      `AGENTS.md` to about 60 lines.
+>   4. **4a:** Add `ast-grep` as a devDependency, `tsconfig.json` and `npm run typecheck`; consider hybrid
+>      document search only after a measurement on 30 questions; do not install LSP or MCP.
+>   5. **5a:** Adopt the proposed `PROCESS.md` Code quality text from report section 5.5; leave the manifesto unchanged.
+>   6. **6a:** Do not run the dense-versus-decomposed measurement; accept the section 5.5 principle as proposed.
+>   7. **7a:** Follow the queue: UI branches, small merges, then one structure-plus-index task using `git mv`
+>      and index checking; audits follow afterwards.
+>   Reason: record the report's recommended choices under the accepted night rule without attributing them to the owner.
+>   Carrier: this decision records choices for later implementation; it does not claim those changes are implemented.
+
+## A-0321 · archived 2026-10-24 · Replaced scope and review-brief rules
+
+Status: SUPERSEDED by [D-WORK-ONLY-ORDERED] in DECISIONS.md.
+Source: `df250746e1d2aa901612e8a020534531bfc94b90:PROCESS.md` and `extensions/RQW-review/skills/reviewer/SKILL.md`, replaced spans verbatim.
+Archived by: rule-only-ordered; exact commit: `git log -S'A-0321' -- DECISIONS-ARCHIVE.md`.
+
+> 4. Bring all material ambiguities, conflicts and missing outcome decisions to the owner in one question batch.
+>    Do not decide for the customer without permission. Delegated technical choices, including subagent model selection,
+>    remain the agent's responsibility within the agreed outcome; they are not permission to widen or shrink it.
+
+> - Night default: while the owner is asleep or not answering overnight, take the recommended option on every question to
+>   him, record the choice as `taken by default` in `DECISIONS.md` and the handoff, and keep it reversible by the
+>   owner in the morning. This includes structure choices after research, web-search parameters and small design
+>   forks; default choices are coordinator records under this accepted rule, not fabricated owner quotations.
+>   Without the owner, never publish PCLI to the Marketplace, delete his data or sessions, change `~/.pi` beyond
+>   installing third-party extensions, or spend limits beyond the reviewer measurement. These exceptions stay
+>   blocked rather than being approved by default. Resuming a task paused by its 2-hour timebox is one more such
+>   exception ([Task timebox](#task-timebox)).
+> - Main drives the whole agreed task to completion autonomously through subagents: they implement, inspect, make the
+>   needed probes and measurements, and fix obvious defects and relevant corner cases. Do not polish extremely
+>   unlikely scenarios or expand the task.
+
+>   a squash merge; never on Main's own initiative. The task has these sections in this order: `<agreement>` only
+>   when there are accepted proposals and decisions that are not the owner's own messages, `<object>` (exact paths
+>   or readable references, primary requirements, governing rules, source evidence, the diff as a file path, and the
+>   stage `pre-action` or `pre-completion`), `<criterion>` (what the check confirms and which deliverable must fulfil
+>   each obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second
+>   pass on, `<rejected_earlier>`. `include: ["user_messages"]` mechanically appends `<user_messages>` after the task:
+>   every user-role text of the caller's selected branch, verbatim and in order, including entries before compaction.
+>   Images and non-user messages are omitted; nested callers contribute their own messages. Do not retype the messages.
+>   Set no file, search, tool-call or turn quotas, and leave the reviewed files unchanged until the verdict.
+
+>   - `<agreement>`, only when there are any: accepted proposals and decisions that are not in the user's own messages, verbatim.
+
+>   - `<criterion>`: what this check confirms and which deliverable must fulfill each obligation; an exclusion cannot silently waive a governing requirement of this pass.
+
+## A-0322 · archived 2026-10-24 · D-WEB-DEFAULTS
+
+Status: SUPERSEDED by [D-WORK-ONLY-ORDERED] in DECISIONS.md.
+Source: `23e7413:DECISIONS.md`, whole entry verbatim.
+Archived by: rule-only-ordered; exact commit: `git log -S'A-0322' -- DECISIONS-ARCHIVE.md`.
+
+> - **Defaults** `[D-WEB-DEFAULTS]`. These choices are `taken by default` under the night rule, `PROCESS.md` Night default; the owner accepted that rule: «да принимаю это ночное правило про проверку кодекс транспорта или там что то еще?» (`16-27-59:4911`). These are coordinator records, not owner quotations, reversible by the owner: 1. name `rqw-web` and default mode `cached`, `--mode live` for fresh facts; 2. at most three targets run at once, the rest are queued, a normal wave is up to four targets; 3. stdout is capped at 2000 lines or 48 KiB, the earlier wins, and the full normalized result goes to a private temporary file with the path and the next line printed; 4. Claude `off` and `minimal` are rejected as unmapped. Reason: the research recommendations, with a bounded subscription burst and a result that cannot flood the caller's context. The original build request explicitly authorized the small live subscription checks; they were performed and are not repeated for this scope correction, which authorizes no additional live calls.
+
+## A-0323 · archived 2026-10-24 · D-REVIEW-CYCLE brief procedure
+
+Status: SUPERSEDED by [D-WORK-ONLY-ORDERED] in DECISIONS.md.
+Source: `23e7413:DECISIONS.md`, replaced brief bullet verbatim.
+Archived by: rule-only-ordered; exact commit: `git log -S'A-0323' -- DECISIONS-ARCHIVE.md`.
+
+>   - Brief: `include: ["user_messages"]` mechanically appends user-role text from the caller's selected branch,
+>     verbatim and in order, after the task; images and non-user summaries are omitted. Main gives `<agreement>` when there is any (accepted proposals and decisions
+>     that are not the user's own messages, verbatim), `object` (exact paths or readable references to the object, the
+>     primary requirements, applicable governing rules and source evidence, the diff as a file path, and the stage
+>     `pre-action` or `pre-completion`), `criterion` (what the check confirms and which deliverable must fulfil each
+>     obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second pass on,
+>     `rejected_earlier` (each rejected finding with its reason). These task sections keep that order, then
+>     `<user_messages>` follows. No file, search, tool-call or turn quotas.

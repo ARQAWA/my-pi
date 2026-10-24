@@ -26,24 +26,19 @@ Provenance:
 
 ## Work policy
 
-- **Night defaults** `[D-WORK-NIGHT-DEFAULT]`. While the owner sleeps or does not answer overnight, Main takes the
-  recommended option for each question and records it as `taken by default` in DECISIONS and the handoff;
-  the owner may reverse it in the morning. Owner (`16-27-59:4911`, entry `75120103`):
-  «да принимаю это ночное правило»
-  Coordinator text, accepted proposal (`16-27-59:4907`, entry `08ec46e5`):
-
-  **Для остальных задач, которые ждут твоих ответов, предлагаю ночное правило.** Пока ты спишь, на каждый вопрос к тебе я беру рекомендованный вариант и записываю его как принятый по умолчанию. Утром ты можешь его отменить. Это касается, например, выбора структуры после исследования, параметров веб-поиска и мелких развилок. Без тебя ночью не делается:
-  1. публикация плагина в Marketplace;
-  2. удаление твоих данных и сессий;
-  3. изменения в `~/.pi` сверх установки сторонних расширений;
-  4. траты лимитов сверх замера ревьюера.
-
-  Never default-approve Marketplace publication, deletion of owner data/sessions, ~/.pi changes beyond installing
-  third-party extensions, or spending limits beyond the reviewer measurement. Resuming a task paused by its 2-hour
-  timebox ([D-PIPELINE-TIMEBOX]) is never default-approved. Reason: keep routine choices moving
-  without granting irreversible or excluded actions. Carrier:
-  [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
-  Since: process-rules-oct23 squash.
+- **Only ordered work** `[D-WORK-ONLY-ORDERED]`. The scope and proposal rule is carried once in
+  [PROCESS.md, Research and agreement](PROCESS.md#research-and-agreement); review-brief construction is in
+  [PROCESS.md, Independent review](PROCESS.md#independent-review) and the native
+  [reviewer skill](extensions/RQW-review/skills/reviewer/SKILL.md). This replaces night-default authority
+  and the earlier defect-fixing scope permission, preserved verbatim in archive entries A-0318 to A-0323.
+  Owner, session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`,
+  `16-27-59:6382`, entry `6d5adad3`:
+  «Ты должен только delivery то, что я заказываю. Ничего сверх этого, ничего, выходящего за рамки. Ты можешь мне что-то предложить, но сам принять ты не можешь этого. И каждую работу, которую ты сдаёшь, должен проверять reviewer, который не должен допускать такие ситуации.»
+  Owner, same session, `16-27-59:6384`, entry `875f309b`:
+  «любые такие предложения идут ко мне вопросами, а идут предложения только которые ты считаешь критом. Просто так предлагать мне нахуй не надо»
+  The latter entry accepts the four-point proposal in assistant entry `40a7eaef`, line 6383, with the critical-only
+  proposal amendment. Reason: Main's or an agent's technical approval must not become permission for extra behavior.
+  The reviewer prompt itself is unchanged. Since: rule-only-ordered.
 
 - **Task dependency graph** `[D-WORK-DEPENDENCIES]`. Main identifies, links and blocks dependent tasks itself,
   then shows their order as a plain-text dependency tree in terminal output, not Mermaid. BACKLOG `Blocked by:`
@@ -434,7 +429,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   restart or helper never resets it; genuinely paused or externally waiting time is not counted. At 2 hours the
   coordinator pauses the task with its sessions kept and no checkpoint file, and reports the result, the known costs, the
   roadmap and the causes with facts apart from hypotheses, giving substantive time separately from verification and wait
-  time, and "unknown" where the logs cannot separate them. The night default never resumes a timed-out task. Benchmark
+  time, and "unknown" where the logs cannot separate them. Only the owner may resume a timed-out task. Benchmark
   and measurement runs keep no hard request or start caps ([D-WORK-NO-CAPS]); their outstanding work pauses at a review
   boundary at 2 hours and is reported. The limit is a control checkpoint, not a promise that a task is done in 2 hours.
   Reason: the reviewer work cost a day and many tokens on tests with no result. Carrier:
@@ -546,15 +541,6 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   the rule and its carriers are in [Providers](#providers). Coordinator text (historical unverified attribution, see
   `C:3171` there): "Это именно отключить. Когда мы заходим в логин, там должны быть только кодекс, авторизация и
   авторизация через Anthropic, которую ты сейчас делаешь. И всё". Since: `c8434b0`.
-- **Lean engineering scope** `[D-SCOPE-LEAN]`. Fix obvious major failures, not speculative rare cases; completed native
-  physical routing and filesystem identity fixes stay. Coordinator text (historical unverified attribution): "Не надо
-  делать микроправки всяких хуёвин, которые возможно никогда не всплывут, и у них редкость возникновения очень высокая,
-  вероятность, что они возникнут, крайне мала. Надо править именно очевидные жирные ошибки, а не вылизывать до
-  предела."; "ты всю уже выполненную работу собираешь вместе. Просто ты дополнительной работы не делаешь и всё."
-  Carriers: `extensions/RQW-context/index.ts`, `extensions/RQW-tools/`, `notes/context-questions.md`; this does not
-  promise every rare filesystem or long-path case. Process side: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
-  Since: `9ef1519`.
-
 ## UI activation
 
 - **Enable the ready interface now** `[D-UI-ENABLE-NOW]`. Owner: «1а».
@@ -686,24 +672,6 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `package.json`, `INSTALL.md`; independently switchable through Pi's package filter and `/reload`.
 
 ## Structure
-
-- **Code-layout research night defaults** `[D-STRUCT-NIGHT-DEFAULTS]`. Coordinator record, not an owner quotation:
-  all seven recommended options in section 7 of
-  `/Users/arkadijcukavin/ai-project/my-pi-evidence/code-layout-research/REPORT.md` are `taken by default`
-  under [PROCESS.md, Night default](PROCESS.md#isolated-parallel-execution), reversible by the owner.
-  1. **1a:** Keep `test/` as the root, with mirrored tests in `test/extensions/RQW-<name>/`.
-  2. **2a:** Keep extensions flat: `index.ts`, concern-specific files and README; use subfolders only above
-     15 code files, currently only `RQW-codex`.
-  3. **3a:** Generate `INDEX.md` and each README's file table, run `--check` in `npm test`, and shorten
-     `AGENTS.md` to about 60 lines.
-  4. **4a:** Add `ast-grep` as a devDependency, `tsconfig.json` and `npm run typecheck`; consider hybrid
-     document search only after a measurement on 30 questions; do not install LSP or MCP.
-  5. **5a:** Adopt the proposed `PROCESS.md` Code quality text from report section 5.5; leave the manifesto unchanged.
-  6. **6a:** Do not run the dense-versus-decomposed measurement; accept the section 5.5 principle as proposed.
-  7. **7a:** Follow the queue: UI branches, small merges, then one structure-plus-index task using `git mv`
-     and index checking; audits follow afterwards.
-  Reason: record the report's recommended choices under the accepted night rule without attributing them to the owner.
-  Carrier: this decision records choices for later implementation; it does not claim those changes are implemented.
 
 - **Everything is an extension** `[D-STRUCT-EXTENSIONS]`. One folder per extension under `extensions/`; a shipped
   extension is listed in `package.json` `pi.extensions`, first `RQW-settings`, second `RQW-prompt`.
@@ -1282,14 +1250,9 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
     it, such as the squash-merge rule of PROCESS; never on Main's own initiative or as an automatic step of other work.
     `blindreview` with `agent_type: "spotty"` unless the owner or that procedure asks for `highreview` with
     `agent_type: "bossy"`. Main keeps working meanwhile but leaves the reviewed files unchanged until the verdict.
-  - Brief: `include: ["user_messages"]` mechanically appends user-role text from the caller's selected branch,
-    verbatim and in order, after the task; images and non-user summaries are omitted. Main gives `<agreement>` when there is any (accepted proposals and decisions
-    that are not the user's own messages, verbatim), `object` (exact paths or readable references to the object, the
-    primary requirements, applicable governing rules and source evidence, the diff as a file path, and the stage
-    `pre-action` or `pre-completion`), `criterion` (what the check confirms and which deliverable must fulfil each
-    obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second pass on,
-    `rejected_earlier` (each rejected finding with its reason). These task sections keep that order, then
-    `<user_messages>` follows. No file, search, tool-call or turn quotas.
+  - Brief construction: [PROCESS.md, Independent review](PROCESS.md#independent-review) is the canonical
+    development rule; the native [reviewer skill](extensions/RQW-review/skills/reviewer/SKILL.md) carries it at runtime.
+    The replaced brief text is preserved verbatim in DECISIONS-ARCHIVE.md, A-0323.
   - `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` passes: no extra pass for confidence, but every independent pass
     and its order that the invoking procedure requires stays.
   - `FINDINGS:` are the teammate's findings. Main finds each quote by searching for it. A finding whose two quotes stand
@@ -1962,7 +1925,6 @@ The phase 1 contract of the repository-local `rqw-web` CLI on this task branch, 
   Claude `off` and `minimal` have no owner mapping and are rejected with an error, never lowered silently. A GPT level the pinned capability record does not support is an error too.
 - **Engine** `[D-WEB-ENGINE]`. Coordinator technical decision from the source research of Codex CLI 0.164.0 (commit `6aaac694803004a63c6f393d153c96d22521a6b9`): the mapped GPT models use Responses Lite, whose ordinary search path is `function_call web.run` -> `POST alpha/search` -> `function_call_output` -> sourced answer, not the hosted `{type:"web_search"}` tool. The CLI runs that short loop per target as an ephemeral request with only `web.run` allowed, with no Pi `AgentSession`, prewarm, stored history or compaction, so it never enters the compaction path. It imports the pure modules of `extensions/RQW-codex` by path and works with `RQW-codex` switched off; the CLI is not an extension, so the extension isolation rule does not apply to it. The pinned transport stays Codex 0.163.0; no upgrade. Carrier: `cli/web/`.
 - **Credentials, read only** `[D-WEB-AUTH]`. Coordinator decision under the no-`~/.pi`-change rule of this phase: the CLI reads the saved `openai-codex` credential through a read-only store over the public `readStoredCredential`. It uses no private `ModelRuntime.credentials`, copies no auth file and writes nothing. It does not refresh OAuth itself. An expired credential or a 401 ends the target with a clear error that tells the user to start Pi and run `/login openai-codex`, or to use Pi so that it refreshes the grant, then repeat the command. Pi's own ordinary refresh and the RQW-codex recovery stay inside Pi; a forced refresh after 401 needs a write and is not done from the CLI. This limit does not change the mapping or the engine. Carrier: `cli/web/credentials.ts`. Exact behavior: [cli/web/README.md](cli/web/README.md#credentials).
-- **Defaults** `[D-WEB-DEFAULTS]`. These choices are `taken by default` under the night rule, `PROCESS.md` Night default; the owner accepted that rule: «да принимаю это ночное правило про проверку кодекс транспорта или там что то еще?» (`16-27-59:4911`). These are coordinator records, not owner quotations, reversible by the owner: 1. name `rqw-web` and default mode `cached`, `--mode live` for fresh facts; 2. at most three targets run at once, the rest are queued, a normal wave is up to four targets; 3. stdout is capped at 2000 lines or 48 KiB, the earlier wins, and the full normalized result goes to a private temporary file with the path and the next line printed; 4. Claude `off` and `minimal` are rejected as unmapped. Reason: the research recommendations, with a bounded subscription burst and a result that cannot flood the caller's context. The original build request explicitly authorized the small live subscription checks; they were performed and are not repeated for this scope correction, which authorizes no additional live calls.
 - **Phase 1 platform scope** `[D-WEB-PHASE1]`. Coordinator technical scope record under the latest explicit owner-authorized continuation: repository-local development tooling is macOS-only in this phase; Windows belongs to the later shipped package tool wrapper. This records the relayed phase decision, not an owner quotation or a new general OS policy. The eight new web test files use a non-darwin outer-suite skip with the reason `Repo-local development tooling is macOS-only by owner rule; Windows support belongs to later package tool-wrapper phase.` Every in-scope macOS assertion remains, including POSIX private-file mode and the exact raw schema hash; obsolete production-only package-install fixtures are replaced by repo-local dependency, no-registration and fake-expired-auth checks. The old Windows failures remain evidence, not fixed behavior: `/tmp/web-search-ci-failed.log:4198-4233` records the checkout-byte schema hash mismatch and private-file bits `54 !== 0`. Windows CRLF/hash and permission handling are deferred, not changed. Reason: the owner's corrected phase boundary, not a claim that the prior assertions were wrong on macOS. No workflow or delivery-gate change belongs to this CLI task. Carrier: `test/web-cli-{args,batch,credentials,main,output}.test.ts`, `extensions/RQW-codex/test/web-{engine,alpha,schema}.test.ts`, `cli/web/README.md`.
 - **Access for every repository agent** `[D-WEB-ACCESS]`. Phase 1 runs only from a macOS checkout after `npm ci`, with `node /absolute/repo/bin/rqw-web.mjs ...` from any cwd, replacing `/absolute/repo` with the checkout path. Pi 1.4.0, pi-ai 1.4.0 and jiti 2.7.0 are exact local development dependencies; baseline production `ws` and the Pi peer declaration stay unchanged. There is no npm `bin` registration, global link, installer step or `pi.extensions` change. Repository agents learn batching, help, own-model/effort, primary-source, known-URL and untrusted-text rules from `AGENTS.md`. Every agent can execute an exact absolute command supplied in its brief; the subagent model matrix stays unchanged. Normal `INSTALL.md` package installation does not expose this CLI. Carrier: `package.json`, `bin/rqw-web.mjs`, `AGENTS.md`, `cli/web/README.md`.
 - **Future shipped tool and Windows** `[D-WEB-TOOL-LATER]`. Phase 2 is the separate shipped Pi tool wrapper with Windows support, not built in phase 1; it is the open item WEB-SEARCH-TOOL in [BACKLOG](BACKLOG.md#web-search-tool). It reuses the CLI core and applies the mapping from the session itself. Windows permissions and checkout-byte hash behavior are not claimed supported.
