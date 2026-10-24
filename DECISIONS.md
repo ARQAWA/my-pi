@@ -855,6 +855,11 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   the stock 50KB output cap stays; read and bash keep the stock 2000 lines / 50KB. Reason: Pi's default 100 grep matches
   cuts the broad first search wave; omp-lite's 51 200-character budget equals 50KB for ASCII. Carriers:
   `extensions/RQW-tools/index.ts`, `extensions/RQW-tools/test/tools.test.ts`, the descriptions. Since: `8889fdf`.
+  GREP-NULL correction: every optional grep/find field equal to JSON `null`, `undefined` or the string `"null"`
+  is removed before argument validation, preserving required `pattern`, explicit booleans, zero and other values.
+  Reason: a literal `"null"` otherwise becomes a glob/path or an invalid option. Source: GREP-NULL audit section 5
+  and the owner's 2026-10-24 fix request. Carrier: `extensions/RQW-tools/index.ts`; proof:
+  `extensions/RQW-tools/test/search-null.test.ts`.
 - **Search method section** `[D-TOOLS-SEARCH-METHOD]`. The search wave method lives in the grep description; RQW-tools
   supplies the one-line `<search_method>` section through its own `before_agent_start` hook when read, grep and find
   are declared. Carriers: `extensions/RQW-tools/descriptions/grep.md`, `extensions/RQW-tools/index.ts`. Since: `04aa50f`.

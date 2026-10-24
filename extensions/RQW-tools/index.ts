@@ -47,6 +47,18 @@ function withDescription(schema: any, property: string, text: string): any {
 	};
 }
 
+/** Remove null sentinels before Pi can coerce them into search options; required arguments stay untouched. */
+function prepareSearchArguments(stock: any, input: unknown): unknown {
+	let args = input;
+	if (input && typeof input === "object" && !Array.isArray(input)) {
+		const required: string[] = stock.parameters.required ?? [];
+		args = Object.fromEntries(Object.entries(input).filter(([key, value]) =>
+			required.includes(key) || (value != null && value !== "null"),
+		));
+	}
+	return stock.prepareArguments ? stock.prepareArguments(args) : args;
+}
+
 /** The settings a getter returns, or undefined when there are none or the read fails (stock defaults then). */
 function safely(settings: () => any): any {
 	try {
@@ -448,6 +460,7 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 		{
 			...notDefault,
 			description: description("grep"),
+			prepareArguments: (input: unknown) => prepareSearchArguments(grep, input),
 			parameters: withDescription(
 				grep.parameters,
 				"limit",
@@ -464,6 +477,7 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 		{
 			...notDefault,
 			description: description("find"),
+			prepareArguments: (input: unknown) => prepareSearchArguments(find, input),
 			parameters: withDescription(
 				find.parameters,
 				"limit",
