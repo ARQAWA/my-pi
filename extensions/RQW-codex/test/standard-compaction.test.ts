@@ -9,6 +9,7 @@ import { AgentSession, createAgentSession, DefaultResourceLoader, ModelRuntime, 
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { installRuntimeAuth } from "../auth-runtime.ts";
 import { createCodexExtension } from "../index.ts";
+import { collectWorkspaceMetadata } from "../metadata.ts";
 import { CODEX_PROVIDER } from "../profile.ts";
 import { SocketError } from "../websocket.ts";
 
@@ -34,6 +35,16 @@ function events(id: string, input: number, opaque: boolean) {
 async function withSession(mode: Mode, run: (context: { session: Session; posts: Body[]; lifecycle: Array<Record<string, any>>; prototype: Map<string, PropertyDescriptor | undefined> }) => Promise<void>) {
 	const dir = await mkdtemp(join(tmpdir(), "rqw-standard-compaction-"));
 	const prototype = new Map(METHODS.map((name) => [name, Object.getOwnPropertyDescriptor(AgentSession.prototype, name)]));
+	// The extension runs the real `git -C <dir>` probe at session start. On Windows git holds the directory while it runs,
+	// so the directory is removed only after every probe has settled.
+	const gitProbes = new Set<Promise<unknown>>();
+	const trackedCollect = ((cwd: string) => {
+		const probe = collectWorkspaceMetadata(cwd);
+		gitProbes.add(probe);
+		const done = () => { gitProbes.delete(probe); };
+		probe.then(done, done);
+		return probe;
+	}) as typeof collectWorkspaceMetadata;
 	try {
 		const store = new InMemoryCredentialStore();
 		const exp = Math.floor(Date.now() / 1000) + 3600;
@@ -60,7 +71,7 @@ async function withSession(mode: Mode, run: (context: { session: Session; posts:
 		const loader = new DefaultResourceLoader({ cwd: dir, agentDir: dir, additionalExtensionPaths: [], noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 			extensionFactories: [createCodexExtension({ installationId: "11111111-2222-4333-8444-555555555555", agentDir: dir, dependencies: {
 				connect: async () => { throw new SocketError(426, {}, "upgrade required", "upgrade-rejected"); },
-				postEvents, fetch: async () => { throw new Error("real network forbidden"); }, sleep: async () => undefined,
+				postEvents, fetch: async () => { throw new Error("real network forbidden"); }, sleep: async () => undefined, collectWorkspaceMetadata: trackedCollect,
 			} })] });
 		await loader.reload();
 		assert.deepEqual(loader.getExtensions().errors, []);
@@ -87,6 +98,7 @@ async function withSession(mode: Mode, run: (context: { session: Session; posts:
 			release();
 		}
 	} finally {
+		while (gitProbes.size > 0) await Promise.allSettled([...gitProbes]);
 		await rm(dir, { recursive: true, force: true });
 	}
 }

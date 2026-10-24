@@ -8,6 +8,7 @@ import { zstdDecompressSync } from "node:zlib";
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { InMemoryCredentialStore, type Api, type Model } from "@earendil-works/pi-ai";
 import { createCodexExtension } from "../index.ts";
+import { collectWorkspaceMetadata } from "../metadata.ts";
 import { SESSION_POLICY_CHANNEL } from "../registration.ts";
 import { installSessionCompaction } from "../session-compaction.ts";
 import { SocketError } from "../websocket.ts";
@@ -137,6 +138,16 @@ it("child hook bridges isolate stock Pi summaries, routing and concurrent callba
 	const dir = await mkdtemp(join(tmpdir(), "rqw-child-standard-compaction-"));
 	const sessions: Array<Awaited<ReturnType<typeof createAgentSession>>["session"]> = [];
 	const releases: Array<() => void> = [];
+	// Every session runs the real `git -C <dir>` probe. On Windows git holds the directory while it runs,
+	// so the directory is removed only after every probe has settled.
+	const gitProbes = new Set<Promise<unknown>>();
+	const trackedCollect = ((cwd: string) => {
+		const probe = collectWorkspaceMetadata(cwd);
+		gitProbes.add(probe);
+		const done = () => { gitProbes.delete(probe); };
+		probe.then(done, done);
+		return probe;
+	}) as typeof collectWorkspaceMetadata;
 	try {
 		const store = new InMemoryCredentialStore();
 		const exp = Math.floor(Date.now() / 1000) + 3600;
@@ -153,6 +164,7 @@ it("child hook bridges isolate stock Pi summaries, routing and concurrent callba
 		const factory = createCodexExtension({ installationId: "11111111-2222-4333-8444-555555555555", agentDir: dir, dependencies: {
 			connect: async () => { throw new SocketError(426, {}, "upgrade required", "upgrade-rejected"); },
 			fetch: async () => { throw new Error("real network forbidden"); },
+			collectWorkspaceMetadata: trackedCollect,
 			postEvents: (options: any) => {
 				const body = JSON.parse(zstdDecompressSync(Buffer.from(options.body)).toString("utf8"));
 				posts.push({ body, headers: options.headers });
@@ -351,6 +363,7 @@ it("child hook bridges isolate stock Pi summaries, routing and concurrent callba
 	} finally {
 		for (const release of releases) release();
 		for (const session of sessions.reverse()) session.dispose();
+		while (gitProbes.size > 0) await Promise.allSettled([...gitProbes]);
 		await rm(dir, { recursive: true, force: true });
 	}
 });
