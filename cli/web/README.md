@@ -10,6 +10,7 @@ Pi tool wrapper belong to phase 2 and are not implemented. Decisions: [DECISIONS
 Run `npm ci` in the repository once to install local development dependencies. Replace `/absolute/repo` below with
 this checkout's absolute path; the command then works from any cwd. For help use
 `node /absolute/repo/bin/rqw-web.mjs --help`. There is no global install or PATH setup.
+After pulling dependency changes, run `npm ci` again in that checkout. If the local loader is missing, the CLI reports this setup step instead of a Node loader stack trace.
 
 One invocation takes repeated `--query` OR repeated `--url`, never both.
 

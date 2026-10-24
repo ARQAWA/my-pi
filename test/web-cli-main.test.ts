@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
@@ -65,6 +65,16 @@ describe("rqw-web main", () => {
 });
 
 describe("rqw-web executable", () => {
+	it("explains how to install missing local dependencies without a loader stack trace", () => {
+		const root = tempRoot("rqw-web-no-deps-");
+		const bin = join(root, "rqw-web.mjs");
+		copyFileSync(BIN, bin);
+		const result = spawnSync(process.execPath, [bin, "--help"], { cwd: tmpdir(), encoding: "utf8" });
+		assert.equal(result.status, 1);
+		assert.equal(result.stdout, "");
+		assert.equal(result.stderr, "rqw-web: Local development dependencies are missing. Run npm ci in the repository checkout, then retry.\n");
+	});
+
 	it("prints help from any cwd without loading auth or the network", () => {
 		const result = spawnSync(process.execPath, [BIN, "--help"], { cwd: tmpdir(), encoding: "utf8", env: { ...process.env, PI_CODING_AGENT_DIR: "/nonexistent-rqw-web-dir" } });
 		assert.equal(result.status, 0);

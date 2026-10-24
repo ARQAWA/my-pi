@@ -573,6 +573,24 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 ## Structure
 
+- **Code-layout research night defaults** `[D-STRUCT-NIGHT-DEFAULTS]`. Coordinator record, not an owner quotation:
+  all seven recommended options in section 7 of
+  `/Users/arkadijcukavin/ai-project/my-pi-evidence/code-layout-research/REPORT.md` are `taken by default`
+  under [PROCESS.md, Night default](PROCESS.md#isolated-parallel-execution), reversible by the owner.
+  1. **1a:** Keep `test/` as the root, with mirrored tests in `test/extensions/RQW-<name>/`.
+  2. **2a:** Keep extensions flat: `index.ts`, concern-specific files and README; use subfolders only above
+     15 code files, currently only `RQW-codex`.
+  3. **3a:** Generate `INDEX.md` and each README's file table, run `--check` in `npm test`, and shorten
+     `AGENTS.md` to about 60 lines.
+  4. **4a:** Add `ast-grep` as a devDependency, `tsconfig.json` and `npm run typecheck`; consider hybrid
+     document search only after a measurement on 30 questions; do not install LSP or MCP.
+  5. **5a:** Adopt the proposed `PROCESS.md` Code quality text from report section 5.5; leave the manifesto unchanged.
+  6. **6a:** Do not run the dense-versus-decomposed measurement; accept the section 5.5 principle as proposed.
+  7. **7a:** Follow the queue: UI branches, small merges, then one structure-plus-index task using `git mv`
+     and index checking; audits follow afterwards.
+  Reason: record the report's recommended choices under the accepted night rule without attributing them to the owner.
+  Carrier: this decision records choices for later implementation; it does not claim those changes are implemented.
+
 - **Everything is an extension** `[D-STRUCT-EXTENSIONS]`. One folder per extension under `extensions/`; a shipped
   extension is listed in `package.json` `pi.extensions`, first `RQW-settings`, second `RQW-prompt`. Fifteen are listed.
   `RQW-tool-ui`, `RQW-thinking`, `RQW-theme` and `RQW-naming` are on `main` but unregistered until UI port stage P10
