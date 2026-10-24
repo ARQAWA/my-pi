@@ -595,6 +595,9 @@ describe("compact UI end to end in real Pi", { concurrency: false }, () => {
 	});
 
 	it("e2e-cards-wait-result: wait results fold as tool-ui draws them; Ctrl+O shows agent-ui's expanded cards", async () => {
+		// RQW-agent notification waits (7cff2f5): a plain `wait` returns a waiting receipt at once and ends the turn.
+		// `blocking: true` keeps the call open, so these waits still return the finished result in the same tool result;
+		// the notification path is the next test.
 		// Owner's wait amendment: collapsed, a wait is the summary part `Waited for N agents` and tool-ui's live block
 		// (header `wait <ids>`); the card is not required there. Ctrl+O on the wait call shows agent-ui's card of each
 		// result in expanded form (header id, status, model, effort, seconds and the full answer text verbatim), once,
@@ -610,11 +613,11 @@ describe("compact UI end to end in real Pi", { concurrency: false }, () => {
 		const afterRunner = gate(() => fauxAssistantMessage("Waited."));
 		mainScripts.set("cards-wait", [
 			toolUse(fauxToolCall("agent", { action: "start", task: "CHILD_W task", system: "You are a test child.", tools: [], model: "openai-codex/gpt-6.1-sol" }, { id: "q1" })),
-			toolUse(fauxToolCall("agent", { action: "wait", ids: ["agent#2"], timeout_ms: 60000 }, { id: "q2" })),
+			toolUse(fauxToolCall("agent", { action: "wait", ids: ["agent#2"], timeout_ms: 60000, blocking: true }, { id: "q2" })),
 			afterAgent.reply,
-			toolUse(fauxToolCall("code_writer", { action: "wait", ids: ["code_writer#2"], timeout_ms: 60000 }, { id: "q4" })),
+			toolUse(fauxToolCall("code_writer", { action: "wait", ids: ["code_writer#2"], timeout_ms: 60000, blocking: true }, { id: "q4" })),
 			afterWriter.reply,
-			toolUse(fauxToolCall("shell_runner", { action: "wait", ids: ["shell_runner#2"], timeout_ms: 60000 }, { id: "q6" })),
+			toolUse(fauxToolCall("shell_runner", { action: "wait", ids: ["shell_runner#2"], timeout_ms: 60000, blocking: true }, { id: "q6" })),
 			afterRunner.reply,
 		]);
 		const steps: [string, Gate, Gate, RegExp, string, string][] = [
@@ -666,6 +669,44 @@ describe("compact UI end to end in real Pi", { concurrency: false }, () => {
 		assert.ok(!steps.some(([id, , , card]) => hasRow(card) || hasRow(`wait ${id}`)), "no live block or card after the answer");
 		const custom = runtime!.session.messages.filter((m) => m.role === "custom" && /#2\]/.test(String((m as { content: unknown }).content)));
 		assert.deepEqual(custom, [], "a waited result is not also delivered as a message");
+	});
+
+	it("e2e-wait-notification: a plain wait returns a waiting receipt and ends the turn; the result wakes main once as child_wait", async () => {
+		// RQW-agent (7cff2f5): without `blocking` the wait returns `reason: "waiting"` with no results and `terminate: true`, so
+		// main makes no further model request; the finished result arrives once as a `child_wait` message that wakes main.
+		const child = gate(() => fauxAssistantMessage("Ответ через уведомление N."));
+		const wake = gate(() => fauxAssistantMessage("Notified."));
+		childReplies.set("CHILD_N", child.reply);
+		mainScripts.set("wait-notify", [
+			toolUse(fauxToolCall("agent", { action: "start", task: "CHILD_N task", system: "You are a test child.", tools: [], model: "openai-codex/gpt-6.1-sol" }, { id: "n1" })),
+			toolUse(fauxToolCall("agent", { action: "wait", ids: ["agent#3"], timeout_ms: 60000 }, { id: "n2" })),
+		]);
+		mainScripts.set('{"reason":"result"', [wake.reply]);
+		const mainRequests = () => requests.filter((r) => r.startsWith("main "));
+		const customMessages = () => runtime!.session.messages.filter((m) => m.role === "custom") as { customType: string; content: unknown }[];
+		send("wait-notify");
+		await until("the wait for agent#3 with the child running", () => waitStarts.includes("agent#3") && child.entered());
+		await until("the turn ended with the child still running", () => runtime!.session.isIdle && topStatus() === "Waiting for 1 agent");
+		const receipt = JSON.parse(textOf((runtime!.session.messages.filter((m) => m.role === "toolResult" && (m as { toolName?: string }).toolName === "agent").at(-1) as { content: unknown }).content));
+		assert.equal(receipt.reason, "waiting", "the wait returned a waiting receipt");
+		assert.deepEqual(receipt.results, [], "no result yet");
+		assert.equal(mainRequests().at(-1), "main wait-notify 1", "no model request after the waiting receipt");
+		assert.ok(hasRow("Waited for 1 agent"), `the collapsed wait is a summary part\n${dump()}`);
+		child.release();
+		await until("main woken by the child_wait notification", () => wake.entered());
+		const notice = customMessages().filter((m) => m.customType === "child_wait");
+		assert.equal(notice.length, 1, "one child_wait notification");
+		const delivered = JSON.parse(String(notice[0].content));
+		assert.equal(delivered.reason, "result");
+		assert.equal(delivered.results.length, 1);
+		assert.equal(delivered.results[0].id, "agent#3");
+		assert.equal(delivered.results[0].outcome, "completed");
+		assert.equal(delivered.results[0].text, "Ответ через уведомление N.");
+		wake.release();
+		await until("the answer after the wake", () => hasRow("Notified."));
+		await until("idle", () => topStatus() === "" && runtime!.session.isIdle);
+		assert.ok(!customMessages().some((m) => String(m.content).startsWith("[agent#3]")), "the waited result is not also pushed as a message");
+		assert.equal(mainRequests().filter((r) => r.startsWith("main {")).length, 1, "one wake request");
 	});
 
 	// The real review tool answers with a start acknowledgement; the verdict of the reviewer (the merged REVIEWER.md
