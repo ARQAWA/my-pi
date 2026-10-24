@@ -6,6 +6,8 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
+import { acknowledgements } from "./qa-inbox-snapshot.mjs";
+import { DOWNLOAD_TIMEOUT } from "./qa-inbox.mjs";
 import { decodeState, INBOX_LABEL } from "./qa-state.mjs";
 
 export const INTERVAL_MS = 60_000;
@@ -147,7 +149,13 @@ export async function refreshInbox({ cwd = process.cwd(), execute = run, now = D
 		return { id: `issue:${issue.number}:${lastSeen}`, level: "red", url: issue.html_url,
 			text: `#${issue.number} ${issue.title} [${issue.labels.map((label) => typeof label === "string" ? label : label.name).join(", ")}] rate ${rate ? `${rate.k}/${rate.n}` : "unknown"}; lastSeen ${lastSeen ?? "unknown"}; occurrences ${state?.occurrences?.length ?? 0}` };
 	});
-	const state = { version: 1, repo, fetchedAt: new Date(now()).toISOString(), items };
+	// Failed main runs come from the watcher file; only the closed-issue and evidence reads need gh.
+	const watched = await readJson(join(dir, "status.json")).catch(() => null);
+	const api = async (endpoint) => JSON.parse(await execute("gh", ["api", `repos/${repo}/${endpoint}`], { cwd }));
+	const download = (runId, name, target) => execute("gh", ["run", "download", String(runId), "-R", repo, "-n", name, "-D", target], { cwd, timeout: DOWNLOAD_TIMEOUT });
+	const acknowledged = watched?.repo === repo && Array.isArray(watched.runs)
+		? await acknowledgements({ repo, runs: watched.runs, openIssues: issues, api, download }).catch(() => []) : [];
+	const state = { version: 1, repo, fetchedAt: new Date(now()).toISOString(), items, acknowledged };
 	await mkdir(dir, { recursive: true, mode: 0o700 });
 	await atomicJson(join(dir, "inbox.json"), state);
 	return state;

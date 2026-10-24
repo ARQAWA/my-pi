@@ -426,6 +426,8 @@ The owner relays them to Main. Main also checks the inbox when it is online.
   `.pi/extensions/qa-status` extension, `/qa` for the full view, or `npm run qa-status` (workers use this one).
   All three read the shared [CI watcher](#task-pipeline) file instead of calling `gh` themselves.
 - A red scheduled `main` is mentioned to the owner in one line and triaged. Main never polls CI itself.
+  A failed `main` run whose every failure signature is recorded in a closed inbox issue is shown as info
+  (acknowledged); a run with any other failure, or one only an open issue records, stays red.
 - A red `main` does not block merges. `deliver-check` only lists the open inbox issues.
 
 **Triage.** Before any fix, a read-only worker classifies the failure and records the class with its evidence in the

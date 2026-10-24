@@ -27,7 +27,7 @@ const FAILED_JOB = new Set(["failure", "timed_out", "startup_failure"]);
 // Run conclusions that count for the rate: the run executed its jobs.
 const COUNTED_RUN = new Set(["success", "failure", "timed_out"]);
 // Run conclusions the catch-up reads and that get a run-level record when no job failed.
-const FAILED_RUN = new Set(["failure", "timed_out", "startup_failure"]);
+export const FAILED_RUN = new Set(["failure", "timed_out", "startup_failure"]);
 // Catch-up window for runs no pass has read (a lost pending pass), and the extra creation slack for long runs.
 const CATCH_UP_MS = 48 * 3600_000;
 const CATCH_UP_SLACK_MS = 6 * 3600_000;
@@ -257,7 +257,7 @@ export function buildIssue(state, { repo }) {
 // ---------------------------------------------------------------------------------------------------------------
 // State
 
-const occKey = (o) => `${o.runId}:${o.attempt}:${o.job}`;
+export const occKey = (o) => `${o.runId}:${o.attempt}:${o.job}`;
 const byRunId = (a, b) => a.runId - b.runId || a.attempt - b.attempt || String(a.job).localeCompare(String(b.job));
 
 function mergeOccurrences(state, added) {
@@ -467,7 +467,7 @@ export function applyRun({ repo, workflow, failures, issues, runs, git }) {
 // gh and git
 
 const GH_TIMEOUT = 60_000;
-const DOWNLOAD_TIMEOUT = 300_000;
+export const DOWNLOAD_TIMEOUT = 300_000;
 const GIT_TIMEOUT = 60_000;
 
 // On Windows `gh` may be a .cmd shim, which needs a shell; quote what cmd would split.
@@ -550,7 +550,7 @@ export function matchArtifact(jobName, attempt, artifacts) {
 	return hits.sort((x, y) => y.len - x.len)[0]?.a ?? null;
 }
 
-function tapFiles(dir) {
+export function tapFiles(dir) {
 	const out = [];
 	for (const e of readdirSync(dir, { withFileTypes: true })) {
 		const p = join(dir, e.name);
@@ -590,17 +590,18 @@ function ensureLabels(repo, needed) {
 }
 
 // Failures of one run: every attempt's failed jobs, their TAP evidence or else the failed step. A failed run with no
-// failed job (startup failure) is one run-level job signature, so every failed run leaves a record.
-function runFailures(repo, run, tmp) {
+// failed job (startup failure) is one run-level job signature, so every failed run leaves a record. Shared with the
+// status snapshot (scripts/qa-status.mjs), which reads the same signatures to find runs a closed issue covers.
+// io (sync or async): jobs(attempt) -> API jobs of the attempt; artifacts() -> API artifacts of the run;
+// tapTexts(artifact) -> TAP texts of the artifact. Any throw aborts: a partial list would hide failures.
+export async function collectRunFailures({ repo, run, io, log = () => {} }) {
 	const jobs = [];
 	for (let n = 1; n <= (run.run_attempt ?? 1); n++) {
-		for (const job of ghList(`repos/${repo}/actions/runs/${run.id}/attempts/${n}/jobs`, "jobs")) {
-			jobs.push({ ...job, attempt: job.run_attempt ?? n });
-		}
+		for (const job of await io.jobs(n)) jobs.push({ ...job, attempt: job.run_attempt ?? n });
 	}
 	const seenJobs = new Set();
 	const failedJobs = jobs.filter((j) => FAILED_JOB.has(j.conclusion) && !seenJobs.has(j.id) && seenJobs.add(j.id));
-	const artifacts = failedJobs.length ? ghList(`repos/${repo}/actions/runs/${run.id}/artifacts`, "artifacts") : [];
+	const artifacts = failedJobs.length ? await io.artifacts() : [];
 	const failures = [];
 	for (const job of failedJobs) {
 		const occurrence = {
@@ -610,10 +611,8 @@ function runFailures(repo, run, tmp) {
 		const art = matchArtifact(job.name, job.attempt, artifacts);
 		const found = new Map();
 		if (art && !art.expired) {
-			const dir = join(tmp, `${run.id}-${art.name}`);
-			gh(["run", "download", String(run.id), "-R", repo, "-n", art.name, "-D", dir], { timeout: DOWNLOAD_TIMEOUT });
-			for (const file of tapFiles(dir)) {
-				for (const f of parseTap(readFileSync(file, "utf8"))) {
+			for (const text of await io.tapTexts(art)) {
+				for (const f of parseTap(text)) {
 					const key = signatureKey(f, run.name);
 					if (!found.has(key)) found.set(key, f);
 				}
@@ -621,11 +620,11 @@ function runFailures(repo, run, tmp) {
 		}
 		const note = art ? (art.expired ? "evidence expired" : `${found.size} TAP failure(s) in ${art.name}`) : "no evidence artifact";
 		if (!found.size) found.set("job", jobFailure(job));
-		console.log(`run ${run.id}: failed job: ${job.name} (attempt ${job.attempt}): ${note}`);
+		log(`run ${run.id}: failed job: ${job.name} (attempt ${job.attempt}): ${note}`);
 		for (const f of found.values()) failures.push({ failure: f, occurrence });
 	}
 	if (!failures.length && FAILED_RUN.has(run.conclusion)) {
-		console.log(`run ${run.id}: ${run.conclusion} without a failed job`);
+		log(`run ${run.id}: ${run.conclusion} without a failed job`);
 		failures.push({
 			failure: { ...jobFailure({ name: "(run)", conclusion: run.conclusion, steps: [] }), jobFamily: "(run)", step: `(run ${run.conclusion})` },
 			occurrence: { runId: run.id, attempt: run.run_attempt ?? 1, job: "(run)", sha: run.head_sha, event: run.event,
@@ -634,6 +633,16 @@ function runFailures(repo, run, tmp) {
 	}
 	return failures;
 }
+
+const runFailures = (repo, run, tmp) => collectRunFailures({ repo, run, log: console.log, io: {
+	jobs: (n) => ghList(`repos/${repo}/actions/runs/${run.id}/attempts/${n}/jobs`, "jobs"),
+	artifacts: () => ghList(`repos/${repo}/actions/runs/${run.id}/artifacts`, "artifacts"),
+	tapTexts(art) {
+		const dir = join(tmp, `${run.id}-${art.name}`);
+		gh(["run", "download", String(run.id), "-R", repo, "-n", art.name, "-D", dir], { timeout: DOWNLOAD_TIMEOUT });
+		return tapFiles(dir).map((file) => readFileSync(file, "utf8"));
+	},
+} });
 
 export async function main(argv = process.argv.slice(2)) {
 	const opt = parseArgs(argv);
@@ -680,7 +689,7 @@ export async function main(argv = process.argv.slice(2)) {
 			if (!byWorkflow.has(r.name)) byWorkflow.set(r.name, { workflowId: r.workflow_id, runIds: [], failures: [] });
 			const w = byWorkflow.get(r.name);
 			w.runIds.push(r.id);
-			w.failures.push(...runFailures(repo, r, tmp));
+			w.failures.push(...await runFailures(repo, r, tmp));
 		}
 	} finally {
 		rmSync(tmp, { recursive: true, force: true });

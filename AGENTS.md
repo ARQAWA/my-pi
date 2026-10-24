@@ -130,7 +130,9 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   `npm run ci-watch -- --refresh-inbox` explicitly refreshes the `qa-inbox` issue snapshot (`inbox.json`) at triage,
   task takeover or after an issue change, not per agent. Never merge evidence ([PROCESS.md](PROCESS.md#task-pipeline), `DECISIONS.md` [Task pipeline](DECISIONS.md#task-pipeline)).
 - `scripts/qa-status.mjs`, `npm run qa-status`: reads the watcher file for the inbox snapshot, latest `main` runs and
-  the current branch's CI; workers and hosts without the extension use it.
+  the current branch's CI; workers and hosts without the extension use it. A failed `main` run whose every failure
+  signature is an occurrence in a closed inbox issue shows as info (acknowledged), else red (`DECISIONS.md` `[D-QA-ACK]`);
+  `--refresh-inbox` computes that with `scripts/qa-inbox-snapshot.mjs`.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all.
 - `.agents/reviewers/test-integrity.md`: the read-only reviewer prompt for mechanically detected weakened tests, used

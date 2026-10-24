@@ -38,9 +38,9 @@ function setup() {
 			fetchedAt: new Date(NOW).toISOString(), runs, ...metadata }));
 	};
 	set();
-	const setInbox = (items: any[], fetchedAt = new Date(NOW).toISOString()) => {
+	const setInbox = (items: any[], fetchedAt = new Date(NOW).toISOString(), acknowledged?: any[]) => {
 		writeFileSync(join(dirname(cachePath), "inbox.json"), JSON.stringify({
-			version: 1, repo: "example/project", fetchedAt, items,
+			version: 1, repo: "example/project", fetchedAt, items, acknowledged,
 		}));
 	};
 	const calls: { cmd: string; args: string[]; opts: any }[] = [];
@@ -88,6 +88,18 @@ describe("QA snapshot from watcher cache", { skip: process.platform !== "darwin"
 		assert.match(inbox.text, /not (?:automatically )?refreshed|manual|on-demand/i);
 		assert.match(render(state), /--refresh-inbox/);
 		assert.equal(state.items.filter((i: any) => i.id.startsWith("run:") && i.level === "green").length, 4);
+	});
+	it("shows a failed main run as info when the inbox snapshot acknowledges it, and red otherwise", async () => {
+		const t = setup();
+		t.set({ "tests.yml": [record(8, { conclusion: "failure", event: "workflow_dispatch" }), record(7, { conclusion: "failure" }), record(6)],
+			"pcli.yml": [record(9, { conclusion: "failure", run_attempt: 2 })] });
+		t.setInbox([], undefined, [{ runId: 8, attempt: 1, numbers: [1] }, { runId: 9, attempt: 1, numbers: [2] }]);
+		const state = await t.get();
+		const level = (id: string) => state.items.find((i: any) => i.id === id)?.level;
+		assert.equal(level("run:8:1"), "info");
+		assert.match(render(state), /INFO main tests: failure #8 attempt 1; acknowledged: every failure is in closed qa-inbox issue #1/);
+		assert.equal(level("run:7:1"), "red");
+		assert.equal(level("run:9:2"), "red", "another attempt of the run is not acknowledged");
 	});
 	it("does not read legacy inbox items embedded in the workflow cache", async () => {
 		const t = setup();

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
+import { signature, signatureKey } from "../scripts/qa-inbox.mjs";
 import { encodeState } from "../scripts/qa-state.mjs";
 import { acquireLock, assertMac, atomicJson, cacheDirectory, INTERVAL_MS, isFresh, poll, processStart, readJson, refreshInbox, restartOwner, STALE_MS, watch } from "../scripts/ci-watch.mjs";
 
@@ -243,6 +244,30 @@ setInterval(() => {}, 1000);
 		response = Array.from({ length: 100 }, () => response[0]);
 		await assert.rejects(refreshInbox({ execute }), /100-item bound/);
 		assert.deepEqual(await readJson(join(dir, "ci-watch", "inbox.json")), state);
+	});
+
+	it("refresh reads failed main runs from the watcher file and stores the closed-issue acknowledgement", async () => {
+		const dir = await temp();
+		const sig = signature(signatureKey({ kind: "job", jobFamily: "test", step: "Run npm test" }, "tests"));
+		const failed = { id: 5, name: "tests", path: ".github/workflows/tests.yml", run_attempt: 1, head_branch: "main", head_sha: "a".repeat(40),
+			event: "workflow_dispatch", status: "completed", conclusion: "failure", created_at: "2026-10-23T00:00:00Z" };
+		await mkdir(join(dir, "ci-watch"), { recursive: true });
+		await writeFile(join(dir, "ci-watch", "status.json"), JSON.stringify({ version: 1, repo: "o/r", fetchedAt: new Date(now).toISOString(), runs: [failed] }));
+		const closed = { number: 1, title: "[qa] x", labels: [{ name: "qa-inbox" }], html_url: "u", body: encodeState({ signature: sig, workflow: "tests",
+			occurrences: [{ runId: 5, attempt: 1, job: "test (macos-latest, node 24)" }] }) };
+		const calls: string[] = [];
+		const execute = async (command: string, args: string[]) => {
+			if (command === "git") return args[0] === "remote" ? "git@github.com:o/r.git" : dir;
+			const endpoint = args[1];
+			calls.push(endpoint);
+			if (endpoint.includes("state=open")) return "[]";
+			if (endpoint.includes("state=closed")) return JSON.stringify([closed]);
+			return JSON.stringify({ jobs: [{ id: 1, name: "test (macos-latest, node 24)", conclusion: "failure", run_attempt: 1,
+				steps: [{ number: 1, name: "Run npm test", conclusion: "failure" }] }] });
+		};
+		const state = await refreshInbox({ execute, now: () => now });
+		assert.deepEqual(state.acknowledged, [{ runId: 5, attempt: 1, numbers: [1] }]);
+		assert.ok(!calls.some((c) => c.includes("actions/runs?")), "runs come from the watcher file, not from gh");
 	});
 
 	it("restarting an exited watcher honors the persisted minute budget without gh", async () => {

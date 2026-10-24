@@ -1930,6 +1930,31 @@ in the approved proposal (not stored in this repository). The loop reads only pu
   `2026-10-21T16-27-59-062Z_01a15f4a`, USER `baecafb2`, physical JSONL line 4128).
   Reason: the pinned subscription protocol must remain checked after delivery; minute 43 avoids top-of-hour load.
   Since: `3bdac4f`.
+- **Closed issue acknowledges a failed main run** `[D-QA-ACK]`. Source: Owner task message, 2026-10-23, qa-status
+  acknowledgement defect:
+
+  > Defect found by triage: after a Pi restart the qa-status extension reports two deliberate QA canary runs on main (39982873982, 39979775666) as new red, although their only failure is covered by qa-inbox issue #1, closed by hand with an explanation.
+  >
+  > Fix: in scripts/qa-status.mjs treat a failed main run as acknowledged INFO only when every failure signature of that run is an occurrence recorded in a closed qa-inbox issue (use the shared format in scripts/qa-state.mjs); a run with any other failure stays red. Do not special-case qa_canary.
+
+  Before the fix, after a Pi restart `qa-status` reported the two canary runs as new red although their failure was in
+  `qa-inbox` issue #1, closed by hand with an explanation. Decision: `qa-status` shows a failed
+  scheduled or dispatched `main` run of `tests` or `pcli` (not `qa-inbox` or `qa-digest`) as `info` (text `acknowledged: every failure is in closed qa-inbox issue #N`) only when
+  every failure signature of that run is an occurrence (run, attempt, job) of the same signature in a closed `qa-inbox`
+  issue, and no open issue records it. The signatures come from the same code as the bot (`collectRunFailures` in
+  `scripts/qa-inbox.mjs`: jobs of every attempt, TAP evidence, else the failed step), compared through the shared format
+  of `scripts/qa-state.mjs`. Anything else stays red: another failure of the run, a capped or missing occurrence, an
+  empty failure list, evidence that cannot be downloaded or read, a failed `gh` call, a run that no closed issue records.
+  Expired or missing evidence is not a failure of the read: as in the bot, the failed step gives a job signature, and that
+  signature is acknowledged only when a closed issue records it for the same run, attempt and job. No test name
+  is special-cased. The gh reads that only GitHub can give (closed issues, jobs, artifacts, TAP evidence) happen once in
+  `npm run ci-watch -- --refresh-inbox` (`scripts/qa-inbox-snapshot.mjs`), for the failed main runs found in the watcher file
+  `status.json` and recorded by some closed issue, and the result is stored in `inbox.json`; `qa-status` itself never
+  calls `gh`. A failed run that appears after the last refresh stays red until the next refresh. The extension memory is
+  unchanged: acknowledgement lives in the snapshot, so a restart shows no red for acknowledged runs. Reason: a signature closed on purpose must not come back as new red at every
+  restart, yet a run with one more unknown failure must not be hidden. Carrier: `scripts/qa-inbox-snapshot.mjs`,
+  `scripts/qa-runs.mjs`, `scripts/ci-watch.mjs`, `scripts/qa-status.mjs`, `scripts/qa-inbox.mjs`,
+  `test/qa-inbox-snapshot.test.ts`, `test/qa-status.test.ts`, `test/ci-watch.test.ts`. Since: the delivering commit of branch `qa-status-ack`.
 
 ## Codex subscription transport
 
