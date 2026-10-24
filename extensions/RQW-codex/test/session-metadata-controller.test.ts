@@ -11,6 +11,8 @@ import * as zlib from "node:zlib";
 import * as pi from "@earendil-works/pi-coding-agent";
 import { InMemoryCredentialStore, type Api, type Context, type Model } from "@earendil-works/pi-ai";
 
+import { createCodexExtension } from "../index.ts";
+import { installRuntimeAuth } from "../auth-runtime.ts";
 import { createSessionController, type SessionTransport } from "../session.ts";
 import { CodexThreadTransport } from "../transport.ts";
 import { SocketError } from "../websocket.ts";
@@ -70,11 +72,6 @@ const completedEvent = (id: string) => ({
 const textEvents = (id: string, text: string) => [
 	{ type: "response.created", response: { id } },
 	{ type: "response.output_item.done", output_index: 0, item: { type: "message", id: `msg_${id}`, role: "assistant", status: "completed", content: [{ type: "output_text", text, annotations: [] }] } },
-	completedEvent(id),
-];
-const compactionEvents = (id: string, encrypted: string) => [
-	{ type: "response.created", response: { id } },
-	{ type: "response.output_item.done", output_index: 0, item: { type: "compaction", encrypted_content: encrypted } },
 	completedEvent(id),
 ];
 
@@ -249,27 +246,66 @@ it("[real facade] the cold prewarm updates metadata before it is sent: no turn, 
 	});
 });
 
-it("[real facade] manual compaction sends the actual compaction metadata with the seed-free baseline and the same headers", { timeout: 15000 }, async () => {
-	await withSession((repo, sessionDir) => {
+it("[real facade] stock compaction has isolated normal-request metadata, not native compaction metadata", { timeout: 15000 }, async () => {
+	const repo = gitWorkspace();
+	const agentDir = scratch("stock-agent");
+	const sessionDir = scratch("stock-sessions");
+	const store = await seededStore();
+	const runtime = await pi.ModelRuntime.create({ credentials: store, modelsPath: null, refreshOnCreate: false });
+	const releaseAuth = installRuntimeAuth(runtime);
+	const sse = sseScript([textEvents("resp_1", "ok"), textEvents("resp_summary", "PORTABLE_SUMMARY")]);
+	const resourceLoader = new pi.DefaultResourceLoader({ cwd: repo, agentDir, additionalExtensionPaths: [], noSkills: true,
+		noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories: [createCodexExtension({
+			installationId: INSTALLATION, agentDir, dependencies: { ...timing, connect: upgradeRequired, postEvents: sse.fn,
+				fetch: async () => { throw new Error("real network forbidden"); } },
+		})] });
+	let session: pi.AgentSession | undefined;
+	try {
+		await resourceLoader.reload();
+		assert.deepEqual(resourceLoader.getExtensions().errors, []);
+		const model = runtime.getModels("openai-codex").find((item) => item.id === MODEL.id)!;
+		assert.ok(model);
 		const manager = pi.SessionManager.create(repo, sessionDir);
-		manager.appendMessage(userMsg("hello") as never);
-		return manager;
-	}, async (session) => {
-		const sse = sseScript([textEvents("resp_1", "ok"), compactionEvents("resp_c", "ENC-C")]);
-		const controller = createSessionController({ session, installationId: INSTALLATION, store: await seededStore(), dependencies: { ...timing, connect: upgradeRequired, postEvents: sse.fn } });
-		await runOnce(controller, helloContext([tool("read")]));
-		await session.compact();
-		controller.release();
-
+		manager.appendMessage(userMsg("ORIGINAL_TASK ".repeat(500)) as never);
+		manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "Earlier source progress" }], api: model.api,
+			provider: model.provider, model: model.id, stopReason: "stop", timestamp: 1_700_000_000_001,
+			usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } } as never);
+		manager.appendMessage(userMsg("kept tail") as never);
+		({ session } = await pi.createAgentSession({ cwd: repo, agentDir, resourceLoader, modelRuntime: runtime, model,
+			thinkingLevel: "off", sessionManager: manager, settingsManager: pi.SettingsManager.inMemory({
+				retry: { enabled: false }, compaction: { enabled: true, reserveTokens: 10000, keepRecentTokens: 100 }, transport: "sse",
+			}) }));
+		await session.bindExtensions({ mode: "tui" });
+		await session.prompt("continue");
+		const result = await session.compact();
+		assert.equal(sse.calls.length, 2, "one ordinary turn and one summary request");
+		assert.equal(result.summary, "PORTABLE_SUMMARY");
+		assert.equal(manager.getBranch().filter((entry) => entry.type === "compaction").length, 1);
+		const normal = turnMetaOf(bodyOf(sse.calls[0].body));
+		assert.equal(normal.agent_name, "/root");
+		assert.equal(normal.sandbox_mode, "danger-full-access");
+		assert.equal(Object.keys(normal.workspaces).length, 1, "ordinary turns retain the actual workspace facts");
 		const body = bodyOf(sse.calls[1].body);
 		const meta = turnMetaOf(body);
-		assert.equal(meta.request_kind, "compaction");
-		assert.deepEqual(meta.compaction, { trigger: "manual", reason: "user_requested", implementation: "responses_compaction_v2", phase: "standalone_turn", strategy: "memento" });
-		assert.equal(meta.history_initialization, "supplied_history");
-		assert.equal(meta.sandbox_mode, "danger-full-access");
-		assert.ok(Object.keys(meta.workspaces).length === 1, "workspace facts of the actual cwd");
+		assert.equal(meta.request_kind, "turn", "a Pi summary is a normal request, not native backend compaction");
+		assert.equal(Object.hasOwn(meta, "compaction"), false);
+		assert.equal(JSON.stringify(body).includes("responses_compaction_v2"), false);
+		assert.equal(body.input.some((item: any) => item.type === "compaction_trigger" || item.type === "compaction"), false);
+		assert.match(JSON.stringify(body.input), /<conversation>/);
+		assert.match(JSON.stringify(body.input), /ORIGINAL_TASK/);
+		assert.notEqual(meta.thread_id, session.sessionId, "summary uses an independent request-local thread");
+		assert.equal(meta.session_id, meta.thread_id);
+		assert.equal(meta.window_number, 0);
+		assert.match(meta.context_window_id, /^[0-9a-f-]{36}$/);
+		assert.equal(Object.hasOwn(meta, "root_turn_id"), false, "no completed turn is borrowed by a standalone summary");
+		assert.equal(Object.hasOwn(meta, "turn_started_at_unix_ms"), false);
+		assert.equal(Object.hasOwn(meta, "workspaces"), false, "summary does not invent a workspace snapshot");
 		assert.deepEqual(withoutNamespaces(meta), withoutNamespaces(JSON.parse(sse.calls[1].headers!["x-codex-turn-metadata"])), "header and body agree");
-	});
+		assert.equal(JSON.stringify(body).includes("secret"), false, "sanitized workspace credentials never enter the summary request");
+	} finally {
+		session?.dispose();
+		releaseAuth();
+	}
 });
 
 it("[real facade] a fresh empty session's first turn is initialized as new", { timeout: 15000 }, async () => {

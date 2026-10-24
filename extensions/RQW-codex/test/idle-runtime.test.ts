@@ -73,18 +73,11 @@ function textEvents(id: string, text: string) {
 /** A prepared warm response (generate:false): created and completed, no output item. */
 const warmEvents = (id: string) => [created(id), completed(id)];
 
-const COMPACT_RESPONSE = "resp_compact_idle_1";
-const COMPACT_OPAQUE = "fakeOpaque-compaction-idle-1";
-const COMPACT_ITEM = { type: "compaction", id: "cmp_idle_1", encrypted_content: COMPACT_OPAQUE };
+const SUMMARY_RESPONSE = "resp_summary_idle_1";
+const SUMMARY_TEXT = "IDLE-PI-SUMMARY-1: the stock Pi summary of the compacted history";
 
-/** Auto response of a compaction request (its input ends with compaction_trigger): one opaque item, then completed with that output. */
-const compactionScript = (): Script => ({
-	events: [
-		created(COMPACT_RESPONSE),
-		{ type: "response.output_item.done", output_index: 0, item: COMPACT_ITEM },
-		{ type: "response.completed", response: { id: COMPACT_RESPONSE, status: "completed", usage: usageOf(1), output: [COMPACT_ITEM] } },
-	],
-});
+/** Response of Pi's summary request (a normal Responses request with a fresh routing id): one assistant message with the summary text. */
+const summaryScript = (): Script => ({ events: textEvents(SUMMARY_RESPONSE, SUMMARY_TEXT) });
 
 /** One scripted socket response, in the order the socket receives requests. `hold` keeps it open until the socket closes. */
 type Script = { events: Array<Record<string, unknown>>; hold?: boolean };
@@ -148,8 +141,7 @@ function fakePeer(scripts: Script[]): Peer {
 			},
 			async send(object: Record<string, any>) {
 				peer.sends.push(object);
-				const isCompaction = (Array.isArray(object.input) ? (object.input.at(-1) as { type?: unknown } | undefined)?.type : undefined) === "compaction_trigger";
-				const next = isCompaction ? compactionScript() : scripts.shift();
+				const next = scripts.shift();
 				if (next === undefined) throw new Error(`unscripted socket request #${peer.sends.length}`);
 				batch = next;
 			},
@@ -195,7 +187,7 @@ async function drain(): Promise<void> {
  * One real registered facade on one real AgentSession. `scripts` are the socket responses in send order; `history` resumes the
  * session with provided messages. Everything the run created is aborted, disposed and removed in finally.
  */
-async function withHost(options: { scripts: Script[]; history?: boolean; passthrough?: boolean; codemode?: boolean; parentOnly?: boolean; startup?: boolean; compactionOff?: boolean }, run: (host: Host) => Promise<void>) {
+async function withHost(options: { scripts: Script[]; history?: boolean; passthrough?: boolean; codemode?: boolean; parentOnly?: boolean; startup?: boolean; /** Manual stock compaction only: no threshold trigger, and a cut that keeps just the last message. */ compactionOff?: boolean }, run: (host: Host) => Promise<void>) {
 	// passthrough (test-only opt-in): a before_agent_start hook that returns the event's own prompt options. Off by default: the real SDK runs.
 	const root = await mkdtemp(join(tmpdir(), "rqw-codex-idle-runtime-"));
 	let session: AgentSession | undefined;
@@ -273,7 +265,7 @@ async function withHost(options: { scripts: Script[]; history?: boolean; passthr
 			cwd: agentDir, agentDir, modelRuntime: runtime, model, thinkingLevel: "off",
 			resourceLoader: loader,
 			sessionManager: options.history ? seededHistory(agentDir) : SessionManager.inMemory(agentDir),
-			settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, transport: "websocket", ...(options.codemode === true ? { codemode: { mode: "only" } } : {}), ...(options.compactionOff === true ? { compaction: { enabled: false } } : {}) } as never),
+			settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, transport: "websocket", ...(options.codemode === true ? { codemode: { mode: "only" } } : {}), ...(options.compactionOff === true ? { compaction: { enabled: false, keepRecentTokens: 1 } } : {}) } as never),
 		}));
 		// Built-in codemode is registered inactive; `only` hides the active direct base functions from the declarations (still executable).
 		if (options.codemode === true) session.setActiveToolsByName([...session.getActiveToolNames(), "codemode"]);
@@ -761,41 +753,68 @@ describe("idle host channel on the real registered facade (Pi 1.4.0 AgentSession
 		});
 	});
 
-	it("manual compaction on legacy history without a leading system message (codemode only): the one compaction request declares the visible catalog only, ends with one compaction_trigger, and the accepted opaque item is installed with no text summary", { timeout: CASE_TIMEOUT_MS }, async () => {
-		await withHost({ scripts: [], history: true, codemode: true, compactionOff: true }, async (host) => {
+	it("manual stock compaction on legacy history without a leading system message (codemode only): the one summary request is a plain request without tools, the Pi compaction entry and summary message are installed, and the automatic warm after it declares the visible catalog only", { timeout: CASE_TIMEOUT_MS }, async () => {
+		await withHost({ scripts: [summaryScript(), { events: warmEvents(PREWARM_1) }, { events: textEvents(TURN_1, ANSWER) }], history: true, codemode: true, compactionOff: true }, async (host) => {
+			const keptId = host.session.sessionManager.getBranch().find((entry) => entry.type === "message" && entry.message.role === "assistant")!.id;
 			const result = await host.session.compact();
-			assert.equal(host.peer.sends.length, 1, "exactly one compaction request, no inference");
-			const body = host.peer.sends[0]!;
-			const input = body.input as Array<Record<string, any>>;
-			assert.deepEqual(input.at(-1), { type: "compaction_trigger" }, "the request ends with the compaction trigger");
-			assert.equal(JSON.stringify(input).split("compaction_trigger").length - 1, 1, "one trigger");
-			assert.equal(JSON.stringify(input).split(HISTORY_USER).length - 1, 1, "the legacy history is sent once");
-			const names = declaredNames(body);
-			assert.equal(names.includes("codemode"), true, "the visible catalog declares codemode");
-			for (const name of HIDDEN_BASE) assert.equal(names.includes(name), false, `no declaration of the hidden base function ${name} in any tool declaration`);
-			assert.equal(result.details.window.number, 1, "the accepted compaction advances the window 0 to 1");
-			assert.equal(host.session.messages.some((message) => (message as { role?: string }).role === "compactionSummary"), false, "no Pi text summary entry");
-			assert.equal(host.session.sessionManager.getBranch().some((entry) => entry.type === "compaction"), false, "no Pi compaction entry");
+			const summary = host.peer.sends[0]!;
+			const summaryInput = summary.input as Array<Record<string, any>>;
+			const summaryJson = JSON.stringify(summary);
+			assert.equal(summaryJson.includes("compaction_trigger"), false, "no compaction trigger in the summary request");
+			assert.equal(summaryInput.some((item) => item.type === "compaction"), false, "no opaque compaction item in the summary request");
+			assert.equal(summaryJson.split(HISTORY_USER).length - 1, 1, "the summarized history is serialized once");
+			assert.equal(summaryJson.includes(HISTORY_ASSISTANT), false, "the kept tail is not summarized");
+			assert.deepEqual(declaredNames(summary), [], "the plain summary request declares no tool, hidden or visible");
+			assert.ok(result.summary.includes(SUMMARY_TEXT), "the result carries the Pi summary text");
+			assert.equal(result.firstKeptEntryId, keptId, "the kept tail starts at the last history message");
+			const entries = host.session.sessionManager.getBranch().filter((entry) => entry.type === "compaction");
+			assert.equal(entries.length, 1, "one normal Pi compaction entry");
+			assert.equal(entries[0]!.summary, result.summary, "the entry holds the summary text");
+			assert.equal(host.session.messages.filter((message) => (message as { role?: string }).role === "compactionSummary").length, 1, "Pi's compaction summary message is installed");
+			await waitFor(() => host.peer.sends.length === 2, "the automatic warm after the compaction");
+			const warm = host.peer.sends[1]!;
+			assert.equal(warm.generate, false, "the automatic warm is generate:false");
+			const warmNames = declaredNames(warm);
+			assert.equal(warmNames.includes("codemode"), true, "the warm declares the visible catalog");
+			for (const name of HIDDEN_BASE) assert.equal(warmNames.includes(name), false, `the warm does not declare the hidden base function ${name}`);
+			const warmJson = JSON.stringify(warm.input);
+			assert.equal(warmJson.split(SUMMARY_TEXT).length - 1, 1, "the warm carries the Pi summary once");
+			assert.equal(warmJson.split(HISTORY_ASSISTANT).length - 1, 1, "the warm carries the kept tail once");
+			assert.equal(warmJson.includes(HISTORY_USER), false, "the compacted-away history is not in the warm");
+			assert.equal(warmJson.includes("compaction_trigger"), false, "no compaction trigger in the warm");
+			await drain();
+			assert.equal(host.peer.sends.length, 2, "no further request before the next prompt");
+			await host.session.prompt(NEW_PROMPT);
+			assert.equal(host.peer.sends.length, 3, "exactly one normal request after the warm");
+			const turn = host.peer.sends[2]!;
+			assert.equal(turn.previous_response_id, PREWARM_1, "previous_response_id is the warm response");
+			assert.equal((turn.input as unknown[]).length, 1, "only the new user input is sent incrementally");
+			assert.equal(JSON.stringify(turn.input).includes(SUMMARY_TEXT), false, "the summary is not sent again");
 			assert.equal(host.counts().http, 0, "no HTTP request");
 		});
 	});
 
-	it("fresh leading codemode only: after the first actual prompt, a manual compaction's wire catalog never declares a hidden base function, whatever the physical projection retains", { timeout: CASE_TIMEOUT_MS }, async (context) => {
-		await withHost({ scripts: [{ events: textEvents(TURN_1, FIRST_ANSWER) }], codemode: true, compactionOff: true }, async (host) => {
+	it("fresh leading codemode only: after the first actual prompt, a manual stock compaction sends a plain summary request without tools and the automatic warm after it never declares a hidden base function, whatever the physical projection retains", { timeout: CASE_TIMEOUT_MS }, async (context) => {
+		await withHost({ scripts: [{ events: textEvents(TURN_1, FIRST_ANSWER) }, summaryScript(), { events: warmEvents(PREWARM_1) }], codemode: true, compactionOff: true }, async (host) => {
 			await host.session.prompt(FIRST_PROMPT);
 			const firstNames = declaredNames(host.peer.sends[0]!);
 			assert.equal(firstNames.includes("codemode"), true, "the first actual request declares codemode");
 			for (const name of HIDDEN_BASE) assert.equal(firstNames.includes(name), false, `the first actual request does not declare the hidden base function ${name}`);
 			const physical = JSON.stringify(host.session.sessionManager.buildSessionProjection().messages);
 			context.diagnostic(`physical projection mentions hidden names: ${HIDDEN_BASE.filter((name) => physical.includes(name)).join(",") || "none"}`);
-			await host.session.compact();
-			assert.equal(host.peer.sends.length, 2, "the first request and one compaction request");
-			const body = host.peer.sends[1]!;
-			const input = body.input as Array<Record<string, any>>;
-			assert.deepEqual(input.at(-1), { type: "compaction_trigger" }, "the compaction request ends with the trigger");
-			const names = declaredNames(body);
-			assert.equal(names.includes("codemode"), true, "the compaction catalog declares codemode");
-			for (const name of HIDDEN_BASE) assert.equal(names.includes(name), false, `the compaction wire never declares the hidden base function ${name}`);
+			const result = await host.session.compact();
+			const summary = host.peer.sends[1]!;
+			assert.equal(JSON.stringify(summary).includes("compaction_trigger"), false, "no compaction trigger in the summary request");
+			assert.equal(JSON.stringify(summary).split(FIRST_PROMPT).length - 1, 1, "the summarized prompt is serialized once");
+			assert.deepEqual(declaredNames(summary), [], "the plain summary request declares no tool, hidden or visible");
+			assert.ok(result.summary.includes(SUMMARY_TEXT), "the result carries the Pi summary text");
+			await waitFor(() => host.peer.sends.length === 3, "the automatic warm after the compaction");
+			const warm = host.peer.sends[2]!;
+			assert.equal(warm.generate, false, "the automatic warm is generate:false");
+			const warmNames = declaredNames(warm);
+			assert.equal(warmNames.includes("codemode"), true, "the warm catalog declares codemode");
+			for (const name of HIDDEN_BASE) assert.equal(warmNames.includes(name), false, `the warm after the compaction never declares the hidden base function ${name}`);
+			assert.equal(JSON.stringify(warm.input).split(SUMMARY_TEXT).length - 1, 1, "the warm carries the Pi summary once");
 			assert.equal(host.counts().http, 0, "no HTTP request");
 		});
 	});

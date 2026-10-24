@@ -422,13 +422,13 @@ async function pickReviewer(level: Level, ctx: ExtensionContext, signal: AbortSi
  * sets `error` makes the review fail before any prompt. `release`, set by a listener, runs once when the reviewer ends.
  */
 const SESSION_POLICY = "rqw-codex:session-policy";
-type SessionPolicyRequest = { session: AgentSession; parentThreadId: string; kind: "collab_spawn" | "review"; startupSystemPrompt?: string; childName?: string; captureRun?: (callerThreadId?: string) => void; release?: () => void; error?: string };
+type SessionPolicyRequest = { session: AgentSession; parentThreadId: string; kind: "collab_spawn" | "review"; startupSystemPrompt?: string; childName?: string; captureRun?: (callerThreadId?: string) => void; installCompactionHooks?: (api: ExtensionAPI) => void; release?: () => void; error?: string };
 
 /**
  * Emits the request on the caller's bus. Returns the idempotent release and the per-operation capture (a no-op after release);
  * a refused request disposes the session and throws. `childName` is the reviewer's actual label, `review#N`.
  */
-function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession, parentThreadId: string, kind: SessionPolicyRequest["kind"], startupSystemPrompt: string, childName: string): { release: () => void; capture: (callerThreadId?: string) => void } {
+function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession, parentThreadId: string, kind: SessionPolicyRequest["kind"], startupSystemPrompt: string, childName: string, childApi: ExtensionAPI): { release: () => void; capture: (callerThreadId?: string) => void } {
 	const request: SessionPolicyRequest = { session, parentThreadId, kind, startupSystemPrompt, childName };
 	let released = false;
 	const release = () => {
@@ -442,7 +442,10 @@ function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession
 	};
 	let failed = false;
 	let failure: unknown;
-	try { events.emit(SESSION_POLICY, request); } catch (error) { failed = true; failure = error; }
+	try {
+		events.emit(SESSION_POLICY, request);
+		if (request.error === undefined) request.installCompactionHooks?.(childApi);
+	} catch (error) { failed = true; failure = error; }
 	if (!failed && request.error === undefined) return { release, capture };
 	release();
 	session.dispose();
@@ -470,6 +473,7 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 	// The offer is asked for at that point of the reload when the reviewer has codemode, otherwise right after it.
 	let factory: ToolsFactory | undefined;
 	let codemode: ToolDefinition | undefined;
+	let childApi!: ExtensionAPI;
 	const withCodemode = (sub: ExtensionAPI) => {
 		factory = signal.aborted ? undefined : offeredFactory(host.events);
 		// The built-in factory only calls `registerTool`; the rest of the API stays the reviewer's for its callbacks.
@@ -491,6 +495,7 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 		// Pi's codemode and tool_search when the caller has them active, and the git guard of every bash call, stock or
 		// offered (a codemode script's bash calls pass the same hook).
 		extensionFactories: [...builtins.map((name) => (name === "codemode" ? withCodemode : createToolSearchExtension())), (sub: ExtensionAPI) => {
+			childApi = sub;
 			fastGpt(sub, () => inherited);
 			sub.on("tool_call", (event) => {
 				if (event.toolName !== "bash" || typeof event.input.command !== "string") return;
@@ -524,7 +529,7 @@ async function runReviewer(pi: ExtensionAPI, host: ReviewHost, level: Level, bri
 			parentThreadId = ctx.sessionManager.getSessionId();
 			startupSystemPrompt = created.session.systemPrompt;
 		} catch (error) { created.session.dispose(); throw error; }
-		const policy = bindSessionPolicy(host.events, created.session, parentThreadId, "review", startupSystemPrompt, label);
+		const policy = bindSessionPolicy(host.events, created.session, parentThreadId, "review", startupSystemPrompt, label, childApi);
 		if (signal.aborted) {
 			jobs?.dispose();
 			policy.release();

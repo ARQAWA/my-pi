@@ -4,13 +4,14 @@
 // leases and listeners. The owner's root is its first actual root binding; disposing that root closes the owner.
 // Session controllers are supplied by the caller (createController); this module never builds a transport itself.
 // Imports: this folder, Pi SDK types/runtime and npm packages only.
-import type { AssistantMessageEventStream, Api, Context, CredentialStore, Model, OAuthCredential, OAuthCredentials } from "@earendil-works/pi-ai";
+import type { AssistantMessageEventStream, Api, Context, CredentialStore, Model, OAuthCredential, OAuthCredentials, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { VERSION, type AgentSession, type ExtensionAPI, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { installRuntimeAuth } from "./auth-runtime.ts";
 import { loginDevice, refreshCredential } from "./auth.ts";
 import { installLifecycle, type Lifecycle, type SessionPolicy } from "./lifecycle.ts";
 import { CODEX_API, CODEX_PROVIDER } from "./profile.ts";
+import { installSessionCompaction } from "./session-compaction.ts";
 
 /** Child request channel of RQW-agent (same literal; no import across folders). */
 export const SESSION_POLICY_CHANNEL = "rqw-codex:session-policy";
@@ -52,6 +53,8 @@ export type RegisteredController = {
 	captureRunOrigin?(origin: { rootTurnId?: string }): void;
 	/** Optional: explicit idle prewarm of the session's Codex history; a controller without it is never prewarmed. */
 	prewarmWithHistory?(): Promise<void>;
+	/** Drop in-memory continuation after Pi commits a new summary boundary. */
+	afterPiCompaction?(): void;
 };
 
 export type CreateControllerOptions = {
@@ -95,6 +98,8 @@ export type SessionPolicyRequest = {
 	childName?: string;
 	/** Set by this binder: records the root turn of the child's next logical run from the actual caller, synchronously. */
 	captureRun?: (callerThreadId?: string) => void;
+	/** Install public compaction preparation hooks on the child's own extension API after policy binding. */
+	installCompactionHooks?: (api: ExtensionAPI) => void;
 	release?: () => void;
 	error?: string;
 };
@@ -117,6 +122,11 @@ type Entry = {
 	key: string;
 	started: boolean;
 	done: boolean;
+	compacting: boolean;
+	summarySignal?: AbortSignal;
+	releaseSummary: () => void;
+	hookReleases: Set<() => void>;
+	unsubscribeCompaction: () => void;
 	releaseRuntime: () => void;
 };
 
@@ -130,6 +140,7 @@ type OwnerState = {
 type RuntimeRecord = {
 	refs: number;
 	owners: Set<OwnerState>;
+	summaries: WeakMap<AbortSignal, { entry: Entry; owner: OwnerState }>;
 	authRelease: () => void;
 	saved: ProviderConfigInput | undefined;
 	config: ProviderConfigInput;
@@ -195,7 +206,7 @@ function attach(runtime: ModelRuntime, owner: OwnerState): () => void {
 		if (current !== undefined && !isOwned(current) && current.api === CODEX_API) {
 			throw new Error("RQW-codex: openai-codex already has a competing Codex adapter; it was not overwritten. Nothing was registered.");
 		}
-		const created: RuntimeRecord = { refs: 0, owners: new Set(), authRelease: () => {}, saved: current, config: {} as ProviderConfigInput };
+		const created: RuntimeRecord = { refs: 0, owners: new Set(), summaries: new WeakMap(), authRelease: () => {}, saved: current, config: {} as ProviderConfigInput };
 		const streamSimple = (model: Model<Api>, context: Context, options?: unknown): AssistantMessageEventStream => {
 			const sessionId = (options as { sessionId?: string } | undefined)?.sessionId;
 			if (sessionId === undefined) {
@@ -206,6 +217,32 @@ function attach(runtime: ModelRuntime, owner: OwnerState): () => void {
 			for (const item of created.owners) {
 				const entry = item.entries.get(sessionId);
 				if (entry) return entry.controller.stream(model, context, options);
+			}
+			// Pi's standalone summaries get fresh routing IDs. Only an active Pi compaction may use this auxiliary path.
+			const auxiliary = (options as { cacheRetention?: string } | undefined)?.cacheRetention === "none"
+				&& /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId)
+				&& model.provider === CODEX_PROVIDER && model.api === CODEX_API;
+			if (auxiliary) {
+				const streamOptions = options as SimpleStreamOptions;
+				const route = streamOptions.signal ? created.summaries.get(streamOptions.signal) : undefined;
+				if (route && !route.entry.done && route.entry.compacting && route.entry.session.modelRuntime === runtime
+					&& !streamOptions.signal!.aborted && route.owner.directs) {
+					const agent = route.entry.session.agent;
+					return route.owner.directs().stream(model, context, {
+						...streamOptions,
+						onPayload: streamOptions.onPayload ?? agent.onPayload,
+						onResponse: streamOptions.onResponse ?? agent.onResponse,
+						onProviderStreamEvent: streamOptions.onProviderStreamEvent ?? agent.onProviderStreamEvent,
+					});
+				}
+				// SDK children without extension hooks may use an isolated transport, never another session's callbacks.
+				const active = [...created.owners].flatMap((item) => [...item.entries.values()]
+					.filter((entry) => !entry.done && entry.compacting && entry.session.modelRuntime === runtime)
+					.map((entry) => ({ owner: item, entry })));
+				if (active.length === 1 && active[0].entry.summarySignal === undefined
+					&& active[0].owner.directs && !streamOptions.signal?.aborted) {
+					return active[0].owner.directs().stream(model, context, options);
+				}
 			}
 			throw new Error("RQW-codex: no bound controller for this session id. Request not sent.");
 		};
@@ -274,6 +311,10 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 	const releaseEntry = (entry: Entry): void => {
 		if (entry.done) return;
 		entry.done = true;
+		entry.releaseSummary();
+		for (const off of entry.hookReleases) off();
+		entry.hookReleases.clear();
+		entry.unsubscribeCompaction();
 		if (owner.entries.get(entry.key) === entry) owner.entries.delete(entry.key);
 		try {
 			entry.controller.release();
@@ -306,7 +347,16 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 			releaseRuntime();
 			throw error;
 		}
-		const entry: Entry = { session, controller, key: controller.threadId, started: false, done: false, releaseRuntime };
+		const entry: Entry = { session, controller, key: controller.threadId, started: false, done: false,
+			compacting: false, releaseSummary: () => {}, hookReleases: new Set(), unsubscribeCompaction: () => {}, releaseRuntime };
+		entry.unsubscribeCompaction = session.subscribe((event) => {
+			if (event.type === "compaction_start") entry.compacting = true;
+			else if (event.type === "compaction_end") {
+				entry.releaseSummary();
+				entry.compacting = false;
+				if (event.result && !event.aborted) entry.controller.afterPiCompaction?.();
+			}
+		});
 		owner.entries.set(entry.key, entry);
 		return entry;
 	};
@@ -320,11 +370,13 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 			store: (entry.session.modelRuntime as unknown as { credentials: CredentialStore }).credentials,
 		});
 		const previous = entry.controller;
+		entry.releaseSummary();
 		if (owner.entries.get(entry.key) === entry) owner.entries.delete(entry.key);
 		previous.release();
 		entry.controller = next;
 		entry.key = next.threadId;
 		entry.started = false;
+		entry.compacting = false;
 		owner.entries.set(entry.key, entry);
 	};
 
@@ -342,11 +394,35 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 	};
 
 	const lifecycle: Lifecycle = installLifecycle(pi, policyFor);
+	const entryForContext = (ctx: { sessionManager: unknown }) => [...owner.entries.values()]
+		.find((entry) => !entry.done && entry.session.sessionManager === ctx.sessionManager);
+	const prepareSummary = (entry: Entry, signal: AbortSignal): void => {
+		entry.releaseSummary();
+		const record = all.records.get(entry.session.modelRuntime);
+		if (!record || signal.aborted) return;
+		record.summaries.set(signal, { entry, owner });
+		entry.summarySignal = signal;
+		const release = () => {
+			record.summaries.delete(signal);
+			if (entry.summarySignal === signal) entry.summarySignal = undefined;
+			signal.removeEventListener("abort", release);
+			if (entry.releaseSummary === release) entry.releaseSummary = () => {};
+		};
+		entry.releaseSummary = release;
+		signal.addEventListener("abort", release, { once: true });
+	};
+	const offCompaction = installSessionCompaction(pi, {
+		accepts: (ctx) => !closed && entryForContext(ctx) !== undefined,
+		prepare: (event, ctx) => prepareSummary(entryForContext(ctx)!, event.signal),
+		onCompacted: (ctx) => entryForContext(ctx)?.controller.afterPiCompaction?.(),
+		onFinished: (ctx) => entryForContext(ctx)?.releaseSummary(),
+	});
 
 	/** Closes this owner once: its listeners, its lifecycle lease, then any entry the lease did not release. */
 	function closeOwner(): void {
 		if (closed) return;
 		closed = true;
+		offCompaction();
 		offChild();
 		offPrewarm();
 		all.owners.delete(owner);
@@ -449,8 +525,20 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 			// Initial root origin of this child: the caller is its creation parent.
 			originFrom(bound, request.parentThreadId);
 			request.captureRun = (callerThreadId) => originFrom(bound, callerThreadId ?? request.parentThreadId);
+			let hooksInstalled = false;
+			request.installCompactionHooks = (api) => {
+				if (closed || bound.done || hooksInstalled) return;
+				hooksInstalled = true;
+				bound.hookReleases.add(installSessionCompaction(api, {
+					accepts: (ctx) => !bound.done && ctx.sessionManager === bound.session.sessionManager,
+					prepare: (event) => prepareSummary(bound, event.signal),
+					onCompacted: () => bound.controller.afterPiCompaction?.(),
+					onFinished: () => bound.releaseSummary(),
+				}));
+			};
 			request.release = () => {
 				request.captureRun = undefined;
+				request.installCompactionHooks = undefined;
 				releaseEntry(bound);
 			};
 			startIfCodex(bound);

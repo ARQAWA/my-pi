@@ -4256,3 +4256,35 @@ Original DECISIONS.md lines 90-96 at `b0b3672`, verbatim:
 >   Reason: limit Opus usage during project development. Carrier: PROCESS coordinator-rules and the dev guard.
 >   The reviewer finalisation task alone carries its task-specific exception; this is not general worker permission.
 >   Since: process-rules-oct23 squash.
+
+## A-0259 · archived 2026-10-24 · Codex subscription transport · Codex compaction as backend V2 with opaque window
+
+Status: SUPERSEDED by `[D-CODEX-SIMPLE-COMPACTION]` (DECISIONS.md#codex-subscription-transport).
+Introduced: `2304f7e`. Superseded: the `codex-compaction-fix` change (squash hash is recorded by its delivery). Archived by: that change.
+Verbatim text as it was in DECISIONS.md at `b0b3672`, line 1543 (this block is a single source line; the table row or paragraph is not wrapped):
+
+> - **Compaction** `[D-CODEX-COMPACTION]`. Codex backend V2, `compaction_trigger` on the same `/codex/responses` endpoint, opaque backend item and atomic durable window installation, not legacy `/responses/compact` and not a Pi text-summary inference for Codex. Owner clarification (verbatim): «компакшен именно реализовать метод - т.е. эндпоинт и то как это делается механически, а не лимиты контекста». Source: user message `69c91527`, `2026-10-22T23:20:48.061Z`, physical JSONL line 2405 of `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's external Pi session directory. Coordinator interpretation: implement Codex's compaction method and endpoint mechanics, not its context limits; the trigger stays RQW-context's W/R rule. RQW-context keeps W = min(contextWindow, 500000), R = round(W/10), threshold W−R and existing explicit reserve precedence. RQW-codex replaces the summary method/projection only for its owned subscription sessions. Reason: the accepted 6b changes method, not physical limits. Carriers: `compaction.ts`, `history.ts`, `lifecycle.ts`; RQW-context remains the threshold owner.
+
+## A-0260 · archived 2026-10-24 · Codex subscription transport · Portable original history beside the opaque Codex checkpoint
+
+Status: SUPERSEDED by `[D-CODEX-SIMPLE-COMPACTION]` (DECISIONS.md#codex-subscription-transport).
+Introduced: `2304f7e`. Superseded: the `codex-compaction-fix` change (squash hash is recorded by its delivery). Archived by: that change.
+Verbatim text as it was in DECISIONS.md at `b0b3672`, line 1544 (this block is a single source line; the table row or paragraph is not wrapped):
+
+> - **Portable original history** `[D-CODEX-HISTORY]`. Owner answer (verbatim) «1а 2б» (user message `92037bbf`, physical JSONL line 2414 of the same external session). Coordinator option 1a summary, not an owner quotation: retain original history beside encrypted Codex history; Claude receives the original history and Pi compacts it only if it does not fit its window, with an extra request only then. Original pre-compaction entries remain alongside opaque Codex state. Non-Codex providers and a disabled adapter get that original history; stock Pi compacts only when needed for their window. No extra inference otherwise and no blocking. Reason: opaque backend state must not strand a portable Pi session. Carriers: `history.ts`, `compaction.ts`, scoped lifecycle projection.
+
+## A-0261 · archived 2026-10-24 · Codex subscription transport · Native differential checks paragraph with native compaction cases
+
+Status: SUPERSEDED by the rewritten paragraph of the same section and `[D-CODEX-SIMPLE-COMPACTION]`.
+Introduced: `2304f7e`. Superseded: the `codex-compaction-fix` change (squash hash is recorded by its delivery). Archived by: that change.
+Verbatim text as it was in DECISIONS.md at `b0b3672`, line 1558 (this block is a single source line; the table row or paragraph is not wrapped):
+
+> Coordinator technical implementation, not an owner quotation: replay pinned native responses through the real RQW-codex extension in a Pi `AgentSession` and compare the adapter's ordered request projection with the native capture projection. Reason: native oracle success alone does not establish adapter parity. `test/fixtures/native-differential.json` pins [normal oracle run 39956439677](https://github.com/ARQAWA/my-pi/actions/runs/39956439677), my-pi head `fe3e9ec554070811a76eb5403934b753825e67df`, with 10 cases: transport 4, retry 3, compaction 3. The shared projection checks transport/endpoint, turn state, request kind, compaction metadata, turn grouping, retry-body identity and conversation replay; selected cases also compare content encoding. Compaction before an agent follow-up sampling inside the same user turn uses `mid_turn`, not `pre_turn`; the hook tracks that nested check in `session-compaction.ts`.
+
+## A-0262 · archived 2026-10-24 · Codex subscription transport · Exception ledger row for retained original history
+
+Status: SUPERSEDED by the `Compaction method` row of the exception ledger and `[D-CODEX-SIMPLE-COMPACTION]`.
+Introduced: `2304f7e`. Superseded: the `codex-compaction-fix` change (squash hash is recorded by its delivery). Archived by: that change.
+Verbatim text as it was in DECISIONS.md at `b0b3672`, line 1569 (this block is a single source line; the table row or paragraph is not wrapped):
+
+> | Original history retained for other providers/disabled adapter | Explicit 1a; opaque Codex state cannot be decoded by Claude/stock Pi; a Pi summary request occurs only on window overflow | RQW-codex history/compaction |

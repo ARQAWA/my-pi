@@ -34,9 +34,8 @@ const PREWARM_2 = "resp_auto_warm_2";
 const TURN_1 = "resp_auto_turn_1";
 const TURN_2 = "resp_auto_turn_2";
 const HELD_TURN = "resp_auto_held_1";
-const COMPACT_RESPONSE = "resp_auto_compact_1";
-const COMPACT_OPAQUE = "fakeOpaque-auto-compaction-1";
-const COMPACT_ITEM = { type: "compaction", id: "cmp_auto_1", encrypted_content: COMPACT_OPAQUE };
+const SUMMARY_RESPONSE = "resp_auto_summary_1";
+const SUMMARY_TEXT = "AUTO-PI-SUMMARY-1: the stock Pi summary of the compacted history";
 
 function b64url(value: unknown): string {
 	return Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -75,14 +74,8 @@ function textEvents(id: string, text: string) {
 /** A prepared warm response (generate:false): created and completed, no output item. */
 const warmEvents = (id: string) => [created(id), completed(id)];
 
-/** Response of a compaction request (its input ends with compaction_trigger): one opaque item, then completed with that output. */
-const compactionScript = (): Script => ({
-	events: [
-		created(COMPACT_RESPONSE),
-		{ type: "response.output_item.done", output_index: 0, item: COMPACT_ITEM },
-		{ type: "response.completed", response: { id: COMPACT_RESPONSE, status: "completed", usage: usageOf(1), output: [COMPACT_ITEM] } },
-	],
-});
+/** Response of Pi's summary request (a normal Responses request with a fresh routing id): one assistant message with the summary text. */
+const summaryScript = (): Script => ({ events: textEvents(SUMMARY_RESPONSE, SUMMARY_TEXT) });
 
 /** One scripted socket response, in the order the socket receives requests. `hold` keeps it open until the socket closes. */
 type Script = { events: Array<Record<string, unknown>>; hold?: boolean };
@@ -105,7 +98,7 @@ type Host = {
 	/** Arms the NEXT workspace capture to wait until the returned release is called (the automatic capture when armed in a settled listener). */
 	holdNextCapture: () => () => void;
 	/** Public listener helper: session.subscribe wrapper, returns the unsubscribe. */
-	onEvent: (listener: (event: { type: string; aborted?: boolean }) => void) => () => void;
+	onEvent: (listener: (event: { type: string; reason?: string; aborted?: boolean; willRetry?: boolean }) => void) => () => void;
 };
 
 /** Scripted in-process WebSocket peer. A request beyond the script fails the send (recorded first, so it is counted). */
@@ -146,8 +139,7 @@ function fakePeer(scripts: Script[]): Peer {
 			},
 			async send(object: Record<string, any>) {
 				peer.sends.push(object);
-				const isCompaction = (Array.isArray(object.input) ? (object.input.at(-1) as { type?: unknown } | undefined)?.type : undefined) === "compaction_trigger";
-				const next = isCompaction ? compactionScript() : scripts.shift();
+				const next = scripts.shift();
 				if (next === undefined) throw new Error(`unscripted socket request #${peer.sends.length}`);
 				batch = next;
 			},
@@ -189,10 +181,10 @@ async function quietWindow(): Promise<void> {
 
 /**
  * One real registered facade on one real AgentSession, with the automatic path only (no host channel). `scripts` are the socket
- * responses in send order (compaction requests are answered by the peer itself). `history` resumes the session with provided
+ * responses in send order (Pi's summary request is one of them). `history` resumes the session with provided
  * messages. Everything the run created is aborted, disposed and released in finally.
  */
-async function withAutoHost(options: { scripts: Script[]; history?: boolean; compactionOff?: boolean; anthropicKey?: boolean }, run: (host: Host) => Promise<void>) {
+async function withAutoHost(options: { scripts: Script[]; history?: boolean; /** Manual stock compaction only: no threshold trigger, and a cut that keeps just the last message. */ compactionOff?: boolean; anthropicKey?: boolean }, run: (host: Host) => Promise<void>) {
 	const root = await mkdtemp(join(tmpdir(), "rqw-codex-auto-runtime-"));
 	let session: AgentSession | undefined;
 	const releases: Array<() => void> = [];
@@ -260,7 +252,7 @@ async function withAutoHost(options: { scripts: Script[]; history?: boolean; com
 			cwd: agentDir, agentDir, modelRuntime: runtime, model, thinkingLevel: "off",
 			resourceLoader: loader,
 			sessionManager: options.history ? seededHistory(agentDir) : SessionManager.inMemory(agentDir),
-			settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, transport: "websocket", ...(options.compactionOff === true ? { compaction: { enabled: false } } : {}) } as never),
+			settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, transport: "websocket", ...(options.compactionOff === true ? { compaction: { enabled: false, keepRecentTokens: 1 } } : {}) } as never),
 		}));
 
 		const host: Host = {
@@ -272,7 +264,7 @@ async function withAutoHost(options: { scripts: Script[]; history?: boolean; com
 				holdNext = true;
 				return () => releases.splice(0).forEach((resolve) => resolve());
 			},
-			onEvent: (listener) => session!.subscribe((event) => listener(event as { type: string; aborted?: boolean })),
+			onEvent: (listener) => session!.subscribe((event) => listener(event as { type: string; reason?: string; aborted?: boolean; willRetry?: boolean })),
 		};
 		await run(host);
 	} finally {
@@ -426,34 +418,61 @@ describe("automatic idle warm on the real registered facade (Pi 1.4.0 AgentSessi
 		});
 	});
 
-	it("manual compaction with a fake peer: the compaction request sends exactly one opaque item, then the public compaction_end drops the socket, and the automatic warm carries the accepted opaque checkpoint once with no compaction trigger and no old ordinary assistant or duplicate originals", { timeout: CASE_TIMEOUT_MS }, async () => {
-		await withAutoHost({ scripts: [{ events: warmEvents(PREWARM_1) }, { events: textEvents(TURN_2, NEXT_ANSWER) }], history: true, compactionOff: true }, async (host) => {
-			let compactionEnds = 0;
+	it("manual stock compaction with a fake peer: Pi's summary request is a normal request with a fresh routing id, the public compaction_end drops the socket, and the automatic warm carries the Pi summary and the kept tail once, with no compaction trigger, no opaque item and no compacted-away history", { timeout: CASE_TIMEOUT_MS }, async () => {
+		await withAutoHost({ scripts: [summaryScript(), { events: warmEvents(PREWARM_1) }, { events: textEvents(TURN_2, NEXT_ANSWER) }], history: true, compactionOff: true }, async (host) => {
+			const keptId = host.session.sessionManager.getBranch().find((entry) => entry.type === "message" && entry.message.role === "assistant")!.id;
+			const lifecycle: Array<{ type: string; reason?: string; aborted?: boolean; willRetry?: boolean }> = [];
 			host.onEvent((event) => {
-				if (event.type !== "compaction_end") return;
-				compactionEnds++;
-				host.peer.dropSocket();
+				if (event.type !== "compaction_start" && event.type !== "compaction_end") return;
+				lifecycle.push(event);
+				if (event.type === "compaction_end") host.peer.dropSocket();
 			});
 			const result = await host.session.compact();
-			assert.equal(compactionEnds, 1, "the public compaction_end was seen once");
-			assert.equal(result.details.window.number, 1, "the accepted compaction advances the window 0 to 1");
+			assert.deepEqual(lifecycle.map((event) => [event.type, event.reason, event.aborted, event.willRetry]), [["compaction_start", "manual", undefined, undefined], ["compaction_end", "manual", false, false]], "the public compaction events are seen once, in stock order");
+			assert.ok(result.summary.includes(SUMMARY_TEXT), "the compaction result carries the Pi summary text");
+			assert.equal(result.firstKeptEntryId, keptId, "the kept tail starts at the last history message");
+			const entries = host.session.sessionManager.getBranch().filter((entry) => entry.type === "compaction");
+			assert.equal(entries.length, 1, "one normal Pi compaction entry");
+			assert.equal(entries[0]!.summary, result.summary, "the entry holds the summary text");
+			assert.equal(entries[0]!.firstKeptEntryId, keptId, "the entry keeps the same tail");
+			assert.equal(entries[0]!.tokensBefore, result.tokensBefore, "the entry records the tokens before");
+			const summaryMessages = host.session.messages.filter((message) => (message as { role?: string }).role === "compactionSummary");
+			assert.equal(summaryMessages.length, 1, "Pi's compaction summary message is the model-visible context");
+			assert.ok(JSON.stringify(summaryMessages[0]).includes(SUMMARY_TEXT), "the summary message carries the text");
 			await waitFor(() => host.peer.sends.length === 2, "the automatic warm after the compaction");
-			const compaction = host.peer.sends[0]!;
-			assert.deepEqual((compaction.input as Array<Record<string, any>>).at(-1), { type: "compaction_trigger" }, "the manual request ends with the trigger");
+			const summary = host.peer.sends[0]!;
+			const summaryInput = summary.input as Array<Record<string, any>>;
+			const summaryJson = JSON.stringify(summary);
+			assert.equal(summaryJson.includes("compaction_trigger"), false, "the summary request has no compaction trigger");
+			assert.equal(summaryInput.some((item) => item.type === "compaction"), false, "the summary request has no opaque compaction item");
+			assert.equal(summary.generate, undefined, "the summary request generates");
+			assert.equal(summary.previous_response_id, undefined, "the summary request continues nothing");
+			assert.equal(summary.tools, undefined, "the summary request declares no tools");
+			assert.equal(summaryInput.some((item) => item.type === "additional_tools"), false, "the summary request declares no additional tools");
+			assert.equal(summaryJson.split(HISTORY_USER).length - 1, 1, "the summarized history is serialized once");
+			assert.equal(summaryJson.includes(HISTORY_ASSISTANT), false, "the kept tail is not summarized");
+			assert.ok(summaryJson.includes("context summarization assistant"), "Pi's summarization system prompt is the instruction");
 			const warm = host.peer.sends[1]!;
+			assert.equal(summary.model, warm.model, "the summary uses the selected model");
+			assert.match(String(summary.prompt_cache_key), /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, "the summary has a fresh UUIDv7 routing id");
+			assert.notEqual(summary.prompt_cache_key, warm.prompt_cache_key, "the summary routing id is not the session's");
+			assert.equal(host.peer.connectOptions[0]!.headers["session-id"], summary.prompt_cache_key, "the summary socket carries its own routing id");
+			assert.equal(host.peer.connectOptions[1]!.headers["session-id"], host.session.sessionId, "the warm socket carries the session id");
 			assert.equal(warm.generate, false, "the automatic warm is generate:false");
 			assert.equal(warm.previous_response_id, undefined, "the new socket carries no previous response");
 			const input = warm.input as Array<Record<string, any>>;
-			// Accepted projection: the next actual request after this compaction carries the retained user text, the opaque checkpoint,
-			// the transient developer item and the new prompt. Native V2 retention keeps recent USER text; old assistant text is excluded.
-			assert.equal(JSON.stringify(input).split(COMPACT_OPAQUE).length - 1, 1, "the accepted opaque checkpoint appears once");
-			assert.ok(JSON.stringify(input).split(HISTORY_USER).length - 1 <= 1, "the retained user text appears at most once");
-			assert.equal(input.some((item) => item.type === "compaction_trigger"), false, "no compaction trigger in the automatic warm");
-			assert.equal(JSON.stringify(input).includes(HISTORY_ASSISTANT), false, "no old ordinary assistant text after the native compaction");
-			assert.equal(host.session.messages.some((message) => (message as { role?: string }).role === "compactionSummary"), false, "no Pi text summary entry");
+			const warmJson = JSON.stringify(input);
+			assert.equal(warmJson.split(SUMMARY_TEXT).length - 1, 1, "the Pi summary appears once");
+			assert.equal(warmJson.split(HISTORY_ASSISTANT).length - 1, 1, "the kept tail appears once");
+			assert.equal(warmJson.includes(HISTORY_USER), false, "the compacted-away history is not in the warm");
+			assert.equal(warmJson.includes("compaction_trigger"), false, "no compaction trigger in the automatic warm");
+			assert.equal(input.some((item) => item.type === "compaction"), false, "no opaque compaction item in the automatic warm");
+			assert.equal(warmJson.includes("encrypted_content"), false, "no encrypted item in the automatic warm");
+			const order = (text: string) => input.findIndex((item) => JSON.stringify(item).includes(text));
+			assert.ok(order(SUMMARY_TEXT) < order(HISTORY_ASSISTANT), "the summary comes before the kept tail");
 			await quietWindow();
 			assert.equal(host.peer.sends.length, 2, "a further quiet window sends no duplicate warm");
-			// Baseline above: the compaction request and the automatic warm only. Now the next actual prompt on the warm's socket.
+			// Baseline above: the summary request and the automatic warm only. Now the next actual prompt on the warm's socket.
 			await host.session.prompt(NEXT_PROMPT);
 			assert.equal(host.peer.sends.length, 3, "the next actual prompt sends exactly one request");
 			assert.equal(host.peer.connects, 2, "the next actual prompt reuses the automatic warm's socket");
@@ -465,7 +484,7 @@ describe("automatic idle warm on the real registered facade (Pi 1.4.0 AgentSessi
 			assert.equal(nextInput[0]!.role, "user", "the delta is the new user item");
 			const nextJson = JSON.stringify(nextInput);
 			assert.equal(nextJson.split(NEXT_PROMPT).length - 1, 1, "the new prompt appears once");
-			for (const text of [COMPACT_OPAQUE, HISTORY_USER, HISTORY_ASSISTANT]) assert.equal(nextJson.includes(text), false, `the next request does not resend ${text}`);
+			for (const text of [SUMMARY_TEXT, HISTORY_USER, HISTORY_ASSISTANT]) assert.equal(nextJson.includes(text), false, `the next request does not resend ${text}`);
 			await quietWindow();
 			assert.equal(host.peer.sends.length, 3, "a healthy settled next prompt sends no additional warm");
 			assert.equal(host.counts().http, 0, "no HTTP request");
@@ -500,23 +519,23 @@ describe("automatic idle warm on the real registered facade (Pi 1.4.0 AgentSessi
 		});
 	}
 
-	it("manual V2 compaction, then the saved slot becomes account B while the automatic capture is held after its ensureReady: the released setup sends nothing under B, the next prompt under B carries no A opaque item and the B header", { timeout: CASE_TIMEOUT_MS }, async () => {
-		await withAutoHost({ scripts: [{ events: textEvents(TURN_2, NEXT_ANSWER) }], history: true, compactionOff: true }, async (host) => {
+	it("manual stock compaction, then the saved slot becomes account B while the automatic capture is held after its ensureReady: the released setup sends nothing under B, the next prompt under B carries the portable Pi summary, no A response or ciphertext and the B header", { timeout: CASE_TIMEOUT_MS }, async () => {
+		await withAutoHost({ scripts: [summaryScript(), { events: textEvents(TURN_2, NEXT_ANSWER) }], history: true, compactionOff: true }, async (host) => {
 			let compactionEnds = 0;
 			let collectsAtEnd = -1;
 			let releaseCapture: (() => void) | undefined;
 			host.onEvent((event) => {
 				if (event.type !== "compaction_end") return;
 				compactionEnds++;
-				// The manual compaction's own capture is already done here; the next capture is the automatic one, which is held.
+				// The summary request's own capture is already done here; the next capture is the automatic one, which is held.
 				collectsAtEnd = host.counts().collects;
 				host.peer.dropSocket();
 				releaseCapture = host.holdNextCapture();
 			});
 			const result = await host.session.compact();
 			assert.equal(compactionEnds, 1, "the public compaction_end was seen once");
-			assert.equal(result.details.window.number, 1, "the accepted compaction advances the window 0 to 1");
-			assert.equal(host.peer.sends.length, 1, "the manual compaction sent exactly one request");
+			assert.ok(result.summary.includes(SUMMARY_TEXT), "the accepted compaction carries the Pi summary");
+			assert.equal(host.peer.sends.length, 1, "the manual compaction sent exactly one request (the summary)");
 			await waitFor(() => host.counts().collects === collectsAtEnd + 1 && releaseCapture !== undefined, "the automatic capture to park after its ensureReady");
 			assert.equal(host.peer.sends.length, 1, "nothing is sent while the automatic capture is parked");
 			const acceptedEntries = JSON.stringify(host.session.sessionManager.getEntries());
@@ -524,9 +543,9 @@ describe("automatic idle warm on the real registered facade (Pi 1.4.0 AgentSessi
 			await host.runtime.credentials.modify(CODEX_PROVIDER, async () => ({ type: "oauth", access: tokenOf(ACCOUNT_B, "b-1"), refresh: "refresh-b-1", expires: (Math.floor(Date.now() / 1000) + 3600) * 1000, accountId: ACCOUNT_B }) as never);
 			releaseCapture!();
 			await quietWindow();
-			assert.equal(host.peer.sends.length, 1, "the released setup sends nothing: no A opaque, no automatic warm under B");
+			assert.equal(host.peer.sends.length, 1, "the released setup sends nothing: no automatic warm under B");
 			assert.equal(host.peer.connects, 1, "no socket is opened under B by the automatic setup");
-			assert.equal(JSON.stringify(host.session.sessionManager.getEntries()), acceptedEntries, "the accepted A checkpoint, window and entries are unchanged");
+			assert.equal(JSON.stringify(host.session.sessionManager.getEntries()), acceptedEntries, "the accepted Pi compaction and the entries are unchanged");
 			assert.equal(host.session.sessionManager.getEntries().filter((entry) => entry.type === "custom").length, acceptedCustom, "the custom entry count is unchanged");
 			await host.session.prompt(NEXT_PROMPT);
 			assert.equal(host.peer.sends.length, 2, "the next normal prompt under B sends exactly one request");
@@ -538,19 +557,21 @@ describe("automatic idle warm on the real registered facade (Pi 1.4.0 AgentSessi
 			assert.notEqual(next.generate, false, "the next request generates");
 			assert.equal(next.previous_response_id, undefined, "the B request has no A previous response");
 			const json = JSON.stringify(next.input);
-			assert.equal(json.includes(COMPACT_OPAQUE), false, "no A opaque checkpoint under B");
-			assert.equal(json.includes("encrypted_content"), false, "no raw encrypted item under B");
+			assert.equal(json.includes("encrypted_content"), false, "no encrypted item under B");
+			assert.equal(json.includes("compaction_trigger"), false, "no compaction trigger under B");
 			assert.equal(json.split(NEXT_PROMPT).length - 1, 1, "the new prompt appears once");
-			assert.equal(json.split(HISTORY_USER).length - 1, 1, "the portable original user text is retained once");
-			assert.equal(json.split(HISTORY_ASSISTANT).length - 1, 1, "the portable original assistant text is retained once");
+			assert.equal(json.split(SUMMARY_TEXT).length - 1, 1, "the portable Pi summary is sent once under B");
+			assert.equal(json.split(HISTORY_ASSISTANT).length - 1, 1, "the kept tail is sent once under B");
+			assert.equal(json.includes(HISTORY_USER), false, "the compacted-away history is not sent under B");
+			for (const request of host.peer.sends.slice(1)) assert.equal(JSON.stringify(request).includes(tokenOf(ACCOUNT, "a-1")), false, "no A credential in a request under B");
 			await quietWindow();
 			assert.equal(host.peer.sends.length, 2, "a healthy settled prompt under B sends no extra warm");
 			assert.equal(host.counts().http, 0, "no HTTP request");
 		});
 	});
 
-	it("manual V2 compaction, then a same-account token rotation while the automatic capture is held: the automatic generate:false warm carries the A checkpoint once with the rotated token, and the next prompt reuses its response and socket", { timeout: CASE_TIMEOUT_MS }, async () => {
-		await withAutoHost({ scripts: [{ events: warmEvents(PREWARM_1) }, { events: textEvents(TURN_2, NEXT_ANSWER) }], history: true, compactionOff: true }, async (host) => {
+	it("manual stock compaction, then a same-account token rotation while the automatic capture is held: the automatic generate:false warm carries the Pi summary once with the rotated token, and the next prompt reuses its response and socket", { timeout: CASE_TIMEOUT_MS }, async () => {
+		await withAutoHost({ scripts: [summaryScript(), { events: warmEvents(PREWARM_1) }, { events: textEvents(TURN_2, NEXT_ANSWER) }], history: true, compactionOff: true }, async (host) => {
 			let collectsAtEnd = -1;
 			let releaseCapture: (() => void) | undefined;
 			host.onEvent((event) => {
@@ -560,7 +581,7 @@ describe("automatic idle warm on the real registered facade (Pi 1.4.0 AgentSessi
 				releaseCapture = host.holdNextCapture();
 			});
 			await host.session.compact();
-			assert.equal(host.peer.sends.length, 1, "the manual compaction sent exactly one request");
+			assert.equal(host.peer.sends.length, 1, "the manual compaction sent exactly one request (the summary)");
 			await waitFor(() => host.counts().collects === collectsAtEnd + 1 && releaseCapture !== undefined, "the automatic capture to park after its ensureReady");
 			assert.equal(host.peer.sends.length, 1, "nothing is sent while the automatic capture is parked");
 			const rotated = tokenOf(ACCOUNT, "a-2");
@@ -571,9 +592,12 @@ describe("automatic idle warm on the real registered facade (Pi 1.4.0 AgentSessi
 			assert.equal(warm.generate, false, "the automatic warm is generate:false");
 			assert.equal(warm.previous_response_id, undefined, "the new socket carries no previous response");
 			const warmJson = JSON.stringify(warm.input);
-			assert.equal(warmJson.split(COMPACT_OPAQUE).length - 1, 1, "the A accepted checkpoint appears once in the warm");
-			assert.equal((warm.input as Array<Record<string, unknown>>).some((item) => item.type === "compaction_trigger"), false, "no compaction trigger in the warm");
-			assert.equal(host.peer.connects, 2, "one new socket for the warm");
+			assert.equal(warmJson.split(SUMMARY_TEXT).length - 1, 1, "the Pi summary appears once in the warm");
+			assert.equal(warmJson.split(HISTORY_ASSISTANT).length - 1, 1, "the kept tail appears once in the warm");
+			assert.equal(warmJson.includes(HISTORY_USER), false, "the compacted-away history is not in the warm");
+			assert.equal(warmJson.includes("compaction_trigger"), false, "no compaction trigger in the warm");
+			assert.equal((warm.input as Array<Record<string, unknown>>).some((item) => item.type === "compaction"), false, "no opaque compaction item in the warm");
+			assert.equal(host.peer.connects, 2, "the summary socket and one new socket for the warm");
 			const headers = host.peer.connectOptions[1]!.headers as Record<string, string>;
 			assert.equal(headers.Authorization, `Bearer ${rotated}`, "the warm socket carries the rotated token");
 			assert.equal(headers["ChatGPT-Account-ID"], ACCOUNT, "the warm socket carries the same account");
@@ -588,7 +612,7 @@ describe("automatic idle warm on the real registered facade (Pi 1.4.0 AgentSessi
 			const nextInput = next.input as Array<Record<string, any>>;
 			assert.equal(nextInput.length, 1, "the next request carries only the new user delta");
 			assert.equal(nextInput[0]!.role, "user", "the delta is the new user item");
-			assert.equal(JSON.stringify(nextInput).includes(COMPACT_OPAQUE), false, "the next request does not resend the checkpoint");
+			for (const text of [SUMMARY_TEXT, HISTORY_ASSISTANT]) assert.equal(JSON.stringify(nextInput).includes(text), false, `the next request does not resend ${text}`);
 			await quietWindow();
 			assert.equal(host.peer.sends.length, 3, "a healthy settled next prompt sends no additional warm");
 			assert.equal(host.counts().http, 0, "no HTTP request");

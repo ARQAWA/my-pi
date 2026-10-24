@@ -1,7 +1,7 @@
 // Model downshift through the real Pi 1.4.0 AgentSession: session.prompt on a registered RQW-codex extension (the owned facade ->
 // registration -> session controller -> CodexThreadTransport -> compaction hook), a fake auth store and a fake Codex backend (SSE).
 // The previous model is a known pinned slug with a larger window; the current model has a smaller window, so the preflight
-// threshold of the current model triggers and the compaction runs on the previous model with the current model as fallback.
+// threshold of the current model triggers. Stock Pi summarizes with the current model and has no previous-model fallback.
 // Only this extension is loaded. Every backend request is recorded; a request beyond the scripted steps fails the test.
 // Fake OAuth JWT, temporary agent directory, no network, no auth homes.
 import assert from "node:assert/strict";
@@ -26,7 +26,8 @@ const OLD_SLUG = "gpt-6.1-sol";
 const CURRENT_SLUG = "gpt-6-luna";
 const OLD_WINDOW = 100_000;
 const CURRENT_WINDOW = 50_000;
-const COMPACTION = { type: "compaction", encrypted_content: "ENC+/==raw" };
+const SUMMARY = "STOCK_PI_SUMMARY: preserve the task and continue.";
+const OLD_HISTORY = `COMPACTED_HISTORY_ONLY: ${"old detail ".repeat(100)}`;
 
 function b64url(value: unknown): string {
 	return Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -52,9 +53,9 @@ function textEvents(id: string, text: string, input = 1) {
 	];
 }
 
-const compactionEvents = (id: string) => [created(id), { type: "response.output_item.done", output_index: 0, item: COMPACTION }, completed(id, 9)];
+const compactionEvents = (id: string) => textEvents(id, SUMMARY, 9);
 
-/** A non-retryable failed response (invalid request class): the primary attempt fails, no transport retry. */
+/** Non-retryable invalid-request responses must not start a second summary request. */
 const failedEvents = (id: string, code: string) => [
 	created(id),
 	{ type: "response.failed", response: { id, status: "failed", error: { type: "invalid_request_error", code, message: code } } },
@@ -71,10 +72,6 @@ type Session = Awaited<ReturnType<typeof createAgentSession>>["session"];
 /** The compaction block of a request, from the body metadata (the header carries the same block). */
 function compactionBlockOf(post: Post): Record<string, any> | undefined {
 	return JSON.parse(post.body.client_metadata["x-codex-turn-metadata"] as string).compaction;
-}
-
-function turnMetaOf(post: Post): Record<string, any> {
-	return JSON.parse(post.body.client_metadata["x-codex-turn-metadata"] as string);
 }
 
 async function withSession(steps: Step[], run: (ctx: { session: Session; posts: Post[]; events: Array<Record<string, any>>; runtime: ModelRuntime }) => Promise<void>) {
@@ -109,8 +106,8 @@ async function withSession(steps: Step[], run: (ctx: { session: Session; posts: 
 		const loader = new DefaultResourceLoader({
 			cwd: agentDir, agentDir, additionalExtensionPaths: [], noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 			extensionFactories: [createCodexExtension({
-				installationId: INSTALLATION,
-				dependencies: { connect: upgradeRefused as never, postEvents: postEvents as never, sleep: async () => undefined, clock: { now: () => Date.now() } },
+				installationId: INSTALLATION, agentDir,
+				dependencies: { connect: upgradeRefused as never, postEvents: postEvents as never, fetch: async () => { throw new Error("real network forbidden"); }, sleep: async () => undefined, clock: { now: () => Date.now() } },
 			})],
 		});
 		await loader.reload();
@@ -126,9 +123,13 @@ async function withSession(steps: Step[], run: (ctx: { session: Session; posts: 
 				return { ...model!, contextWindow: window };
 			};
 			const oldModel = pick(OLD_SLUG, OLD_WINDOW);
+			const manager = SessionManager.inMemory(agentDir);
+			manager.appendMessage({ role: "user", content: OLD_HISTORY, timestamp: 1 });
+			manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "Earlier progress." }], api: oldModel.api, provider: CODEX_PROVIDER, model: oldModel.id, stopReason: "stop", timestamp: 2,
+				usage: { input: 9, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
 			const { session } = await createAgentSession({ cwd: agentDir, agentDir, modelRuntime: runtime, model: oldModel as never, thinkingLevel: "off",
-				resourceLoader: loader, sessionManager: SessionManager.inMemory(agentDir),
-				settingsManager: SettingsManager.inMemory({ compaction: { enabled: true, reserveTokens: RESERVE }, retry: { enabled: false }, transport: "sse" }) });
+				resourceLoader: loader, sessionManager: manager,
+				settingsManager: SettingsManager.inMemory({ compaction: { enabled: true, reserveTokens: RESERVE, keepRecentTokens: 100 }, retry: { enabled: false }, transport: "sse" }) });
 			await session.bindExtensions({ mode: "tui" });
 			await session.setModel(oldModel as never);
 			const unsubscribe = session.subscribe((event) => { events.push(event as Record<string, any>); });
@@ -156,109 +157,107 @@ function currentOf(runtime: ModelRuntime) {
 /** Generation 1 on the previous model: usage 60000 is below its trigger (90000), so no compaction runs. */
 const FIRST_GENERATION = textEvents("resp_first", "First answer.", 60_000);
 
+function assertStockRequest(post: Post, effort?: string) {
+	assert.equal(post.body.model, CURRENT_SLUG, "stock Pi summarizes with the selected smaller model");
+	assert.equal(post.body.previous_response_id, undefined);
+	assert.equal(post.body.input.some((item: { type?: string }) => item.type === "compaction_trigger" || item.type === "compaction"), false);
+	assert.match(JSON.stringify(post.body.input), /<conversation>/);
+	assert.match(JSON.stringify(post.body.input), /Create a structured context checkpoint summary/);
+	assert.ok(JSON.stringify(post.body.input).includes(OLD_HISTORY));
+	assert.equal(compactionBlockOf(post), undefined, "no native compaction metadata");
+	assert.equal(JSON.parse(post.headers["x-codex-turn-metadata"] ?? "{}").compaction, undefined);
+	if (effort !== undefined) assert.equal(post.body.reasoning.effort, effort);
+}
+
+function assertNoInstallation(session: Session, posts: Post[], events: Array<Record<string, any>>, error: RegExp) {
+	assert.equal(posts.length, 3, "first generation, one failed summary, current generation; no model fallback");
+	assertStockRequest(posts[1]!);
+	assert.equal(posts[2]!.body.model, CURRENT_SLUG);
+	assert.equal(posts[2]!.body.input.some((item: { type?: string }) => item.type === "compaction_trigger" || item.type === "compaction"), false);
+	assert.ok(JSON.stringify(posts[2]!.body.input).includes(OLD_HISTORY), "failure preserves the original context");
+	assert.deepEqual(events.filter((e) => e.type === "compaction_start").map((e) => e.reason), ["threshold"]);
+	const ends = events.filter((e) => e.type === "compaction_end");
+	assert.equal(ends.length, 1);
+	assert.equal(session.sessionManager.getBranch().some((e) => e.type === "compaction"), false);
+	assert.equal(session.sessionManager.getBranch().some((e) => e.type === "custom" && e.customType === "rqw-codex/wire-history" && (e.data as { kind?: string })?.kind === "checkpoint"), false);
+	assert.equal(session.messages.some((message) => message.role === "compactionSummary"), false);
+	assert.equal(session.isCompacting, false);
+	assert.deepEqual([ends[0]!.reason, ends[0]!.aborted, ends[0]!.willRetry, ends[0]!.result], ["threshold", false, false, undefined]);
+	assert.match(ends[0]!.errorMessage, error);
+}
+
 describe("model downshift through the real AgentSession", () => {
-	it("pre-turn threshold after a larger previous model compacts on that model; the current model generates with the checkpoint once", { timeout: CASE_TIMEOUT_MS }, async () => {
+	it("pre-turn current-model threshold after a larger model uses one current-model summary, then generates from Pi's summary", { timeout: CASE_TIMEOUT_MS }, async () => {
 		const steps: Step[] = [{ events: FIRST_GENERATION }, { events: compactionEvents("resp_downshift_compact") }, { events: textEvents("resp_current_2", "Second answer.") }];
 		await withSession(steps, async ({ session, posts, events, runtime }) => {
 			await session.prompt("first");
-			assert.equal(posts.length, 1, "the first generation alone: usage below the previous model's trigger");
+			assert.equal(posts.length, 1, "usage is below the previous model's threshold");
 			await session.setModel(currentOf(runtime) as never);
-			await session.prompt("second");
-			await session.waitForIdle();
-
-			assert.equal(posts.length, 3, "generation, one compaction, current generation");
-			assert.equal(posts[0]!.body.model, OLD_SLUG);
-			assert.equal(posts[1]!.body.model, OLD_SLUG, "the compaction is primary on the previous model");
-			assert.equal(posts[2]!.body.model, CURRENT_SLUG, "the next generation is on the current model");
-			const trigger = posts[1]!.body.input as Array<Record<string, unknown>>;
-			assert.deepEqual(trigger[trigger.length - 1], { type: "compaction_trigger" });
-			assert.deepEqual(compactionBlockOf(posts[1]!), { trigger: "auto", reason: "model_downshift", implementation: "responses_compaction_v2", phase: "pre_turn", strategy: "memento" });
-			assert.deepEqual(JSON.parse(posts[1]!.headers["x-codex-turn-metadata"] ?? "{}").compaction, compactionBlockOf(posts[1]!));
-			assert.deepEqual(events.filter((e) => e.type === "compaction_start").map((e) => e.reason), ["threshold"]);
-			assert.deepEqual(events.filter((e) => e.type === "compaction_end").map((e) => [e.reason, e.aborted, e.willRetry]), [["threshold", false, false]]);
-			assert.equal(session.messages.some((m) => (m as { role?: string }).role === "compactionSummary"), false, "no Pi text summary entry");
-
-			const next = posts[2]!.body.input as Array<Record<string, any>>;
-			assert.equal(next.filter((item) => item.type === "compaction").length, 1, "the opaque checkpoint appears exactly once");
-			assert.equal(next.find((item) => item.type === "compaction")?.encrypted_content, "ENC+/==raw");
-			assert.equal(next.some((item) => item.type === "compaction_trigger"), false);
-			const checkpoint = session.sessionManager.getBranch().find((e) => e.type === "custom" && (e.data as { kind?: string } | undefined)?.kind === "checkpoint") as { data: { window: { number: number } } } | undefined;
-			assert.equal(checkpoint?.data.window.number, 1, "the accepted checkpoint advanced the window once");
-		});
-	});
-
-	it("primary previous-model compaction fails non-retryably: the current model compacts the same operation, with its own efforts", { timeout: CASE_TIMEOUT_MS }, async () => {
-		const steps: Step[] = [
-			{ events: FIRST_GENERATION },
-			{ events: failedEvents("resp_old_fail", "invalid_prompt") },
-			{ events: compactionEvents("resp_current_compact") },
-			{ events: textEvents("resp_current_2", "Second answer.") },
-		];
-		await withSession(steps, async ({ session, posts, events, runtime }) => {
-			await session.prompt("first");
-			await session.setModel(currentOf(runtime) as never);
-			// Explicit selection supported by both models (Pi clamps the thinking level after a model switch).
 			session.setThinkingLevel("high");
 			await session.prompt("second");
 			await session.waitForIdle();
-
-			assert.equal(posts.length, 4, "generation, failed primary compaction, fallback compaction, current generation");
-			assert.equal(posts[1]!.body.model, OLD_SLUG);
+			assert.equal(posts.length, 3, "generation, one summary, current generation");
+			assert.equal(posts[0]!.body.model, OLD_SLUG);
+			assertStockRequest(posts[1]!, "high");
 			assert.equal(posts[2]!.body.model, CURRENT_SLUG);
-			assert.equal(posts[3]!.body.model, CURRENT_SLUG);
-			const primaryMeta = turnMetaOf(posts[1]!);
-			const fallbackMeta = turnMetaOf(posts[2]!);
-			assert.equal(primaryMeta.turn_id, fallbackMeta.turn_id, "both attempts are one operation");
-			assert.equal(primaryMeta.compaction.reason, "model_downshift");
-			assert.equal(fallbackMeta.compaction.reason, "model_downshift");
-			// The current selection (high) is supported by the previous model, so both attempts send high.
-			assert.equal(posts[1]!.body.reasoning.effort, "high");
-			assert.equal(posts[1]!.body.reasoning.context, "all_turns", "Lite compaction keeps the native reasoning context");
-			assert.equal(posts[2]!.body.reasoning.effort, "high");
-			assert.equal(posts[2]!.body.reasoning.context, "all_turns");
-			assert.equal(JSON.parse(posts[1]!.headers["x-codex-turn-metadata"] ?? "{}").model, OLD_SLUG);
-			assert.equal(JSON.parse(posts[2]!.headers["x-codex-turn-metadata"] ?? "{}").model, CURRENT_SLUG);
-			assert.deepEqual(events.filter((e) => e.type === "compaction_end").map((e) => [e.aborted, e.errorMessage === undefined]), [[false, true]]);
-			const checkpoint = session.sessionManager.getBranch().find((e) => e.type === "custom" && (e.data as { kind?: string } | undefined)?.kind === "checkpoint") as { data: { modelHash: string; primaryModelHash?: string } } | undefined;
-			assert.equal(checkpoint?.data.modelHash, "3000", "the checkpoint records the model that produced it");
-			assert.equal(checkpoint?.data.primaryModelHash, "3000");
+			assert.deepEqual(events.filter((e) => e.type === "compaction_start").map((e) => e.reason), ["threshold"]);
+			assert.deepEqual(events.filter((e) => e.type === "compaction_end").map((e) => [e.reason, e.aborted, e.willRetry]), [["threshold", false, false]]);
+			const entries = session.sessionManager.getBranch();
+			const compactions = entries.filter((e) => e.type === "compaction");
+			assert.equal(compactions.length, 1);
+			assert.equal(compactions[0]!.summary, SUMMARY);
+			const kept = entries.find((e) => e.type === "message" && e.message.role === "user" && JSON.stringify(e.message.content) === JSON.stringify([{ type: "text", text: "first" }]))!;
+			assert.equal(compactions[0]!.firstKeptEntryId, kept.id);
+			assert.equal(compactions[0]!.tokensBefore, 60_001, "pre-run compaction precedes appending the new user message");
+			assert.equal(events.find((e) => e.type === "compaction_end")!.result.tokensBefore, compactions[0]!.tokensBefore);
+			assert.equal(session.messages.filter((m) => m.role === "compactionSummary").length, 1);
+			assert.equal(session.messages.find((m) => m.role === "compactionSummary")?.summary, SUMMARY);
+			assert.equal(posts[2]!.body.previous_response_id, undefined, "new transport starts with full summarized input");
+			assert.ok(JSON.stringify(posts[2]!.body.input).includes(SUMMARY));
+			assert.equal(JSON.stringify(posts[2]!.body.input).includes(OLD_HISTORY), false);
+			assert.equal(JSON.stringify(posts[2]!.body.input).includes("First answer."), true, "the recent kept turn stays alongside the summary");
+			assert.equal(posts[2]!.body.input.some((item: { type?: string }) => item.type === "compaction" || item.type === "compaction_trigger"), false);
+			assert.equal(entries.some((e) => e.type === "custom" && (e.data as { kind?: string } | undefined)?.kind === "checkpoint"), false);
+			for (const name of ["compact", "_runAutoCompaction", "_checkCompaction", "_exceedsCompactionThreshold", "_compactBeforeNextAssistantResponse", "getContextUsage"]) {
+				assert.equal(Object.hasOwn(session, name), false, name + " remains inherited from Pi");
+			}
 		});
 	});
 
-	it("both previous and current compaction fail: the original (primary) error is reported and nothing is installed", { timeout: CASE_TIMEOUT_MS }, async () => {
-		const steps: Step[] = [
-			{ events: FIRST_GENERATION },
-			{ events: failedEvents("resp_old_fail", "invalid_prompt") },
-			{ events: failedEvents("resp_current_fail", "cyber_policy") },
-			{ events: textEvents("resp_current_2", "Second answer.") },
-		];
+	it("non-retryable current-model summary failure is reported once without a previous-model fallback", { timeout: CASE_TIMEOUT_MS }, async () => {
+		const steps: Step[] = [{ events: FIRST_GENERATION }, { events: failedEvents("resp_summary_fail", "invalid_prompt") }, { events: textEvents("resp_current_2", "Second answer.") }];
+		await withSession(steps, async ({ session, posts, events, runtime }) => {
+			await session.prompt("first");
+			await session.setModel(currentOf(runtime) as never);
+			session.setThinkingLevel("high");
+			await session.prompt("second");
+			await session.waitForIdle();
+			assertStockRequest(posts[1]!, "high");
+			assertNoInstallation(session, posts, events, /Invalid request\./);
+		});
+	});
+
+	it("policy failure never tries another model and installs neither a summary nor a checkpoint", { timeout: CASE_TIMEOUT_MS }, async () => {
+		const steps: Step[] = [{ events: FIRST_GENERATION }, { events: failedEvents("resp_summary_policy", "cyber_policy") }, { events: textEvents("resp_current_2", "Second answer.") }];
 		await withSession(steps, async ({ session, posts, events, runtime }) => {
 			await session.prompt("first");
 			await session.setModel(currentOf(runtime) as never);
 			await session.prompt("second");
 			await session.waitForIdle();
-
-			assert.equal(posts.length, 4);
-			const end = events.filter((e) => e.type === "compaction_end").at(-1);
-			assert.equal(end?.aborted, false);
-			assert.match(String(end?.errorMessage), /Invalid request\./, "the original error is reported");
-			assert.doesNotMatch(String(end?.errorMessage), /cybersecurity/);
-			assert.equal(session.sessionManager.getBranch().some((e) => e.type === "custom" && (e.data as { kind?: string } | undefined)?.kind === "checkpoint"), false, "no checkpoint installed");
+			assertNoInstallation(session, posts, events, /cybersecurity/i);
 		});
 	});
 
-	it("an incomplete previous-model compaction never falls back to the current model", { timeout: CASE_TIMEOUT_MS }, async () => {
-		const steps: Step[] = [{ events: FIRST_GENERATION }, { events: incompleteEvents("resp_old_incomplete") }, { events: textEvents("resp_current_2", "Second answer.") }];
+	it("an incomplete current-model summary is rejected without fallback or installing partial text", { timeout: CASE_TIMEOUT_MS }, async () => {
+		const partial = textEvents("resp_incomplete", "UNSAFE_PARTIAL_SUMMARY").slice(0, -1);
+		const steps: Step[] = [{ events: FIRST_GENERATION }, { events: [...partial, ...incompleteEvents("resp_incomplete").slice(1)] }, { events: textEvents("resp_current_2", "Second answer.") }];
 		await withSession(steps, async ({ session, posts, events, runtime }) => {
 			await session.prompt("first");
 			await session.setModel(currentOf(runtime) as never);
 			await session.prompt("second");
 			await session.waitForIdle();
-
-			assert.equal(posts.length, 3, "no fallback compaction request after an incomplete response");
-			assert.equal(posts[1]!.body.model, OLD_SLUG);
-			assert.equal(posts[2]!.body.input.some((item: { type?: string }) => item.type === "compaction_trigger"), false);
-			assert.equal(events.filter((e) => e.type === "compaction_end").at(-1)?.aborted, false);
+			assert.equal(JSON.stringify(posts[2]!.body.input).includes("UNSAFE_PARTIAL_SUMMARY"), false);
+			assertNoInstallation(session, posts, events, /Summarization failed: Incomplete response returned, reason: max_output_tokens/);
 		});
 	});
 
@@ -266,15 +265,31 @@ describe("model downshift through the real AgentSession", () => {
 		const steps: Step[] = [{ events: FIRST_GENERATION }, { events: textEvents("resp_current_2", "Second answer.") }];
 		await withSession(steps, async ({ session, posts, events, runtime }) => {
 			await session.prompt("first");
-			// Window 80000: trigger 70000, usage 60000 stays below it although the previous window is larger.
 			const model = runtime.getModels(CODEX_PROVIDER).find((m) => m.id === CURRENT_SLUG)!;
 			await session.setModel({ ...model, contextWindow: 80_000 } as never);
 			await session.prompt("second");
 			await session.waitForIdle();
-
-			assert.equal(posts.length, 2, "two generations, no compaction request");
+			assert.equal(posts.length, 2, "two generations, no summary request");
 			assert.equal(posts[1]!.body.model, CURRENT_SLUG);
 			assert.equal(events.some((e) => e.type === "compaction_start"), false);
+			assert.equal(events.some((e) => e.type === "compaction_end"), false);
+			assert.equal(session.sessionManager.getBranch().some((e) => e.type === "compaction"), false);
+		});
+	});
+
+	it("exactly at the selected model threshold stock Pi does not compact", { timeout: CASE_TIMEOUT_MS }, async () => {
+		const steps: Step[] = [{ events: FIRST_GENERATION }, { events: textEvents("resp_current_2", "Second answer.") }];
+		await withSession(steps, async ({ session, posts, events, runtime }) => {
+			await session.prompt("first");
+			const model = currentOf(runtime);
+			// 60001 tokens of reported usage plus ceil(6 / 4) tokens for "second".
+			await session.setModel({ ...model, contextWindow: 60_003 + RESERVE } as never);
+			await session.prompt("second");
+			await session.waitForIdle();
+			assert.equal(posts.length, 2, "the threshold comparison is strict greater-than");
+			assert.equal(posts[1]!.body.model, CURRENT_SLUG);
+			assert.deepEqual(events.filter((e) => e.type === "compaction_start" || e.type === "compaction_end"), []);
+			assert.equal(session.messages.some((m) => m.role === "compactionSummary"), false);
 		});
 	});
 });

@@ -147,6 +147,14 @@ function isHistoryEntry(entry: WireSessionEntry): boolean {
 	return entry.type === "custom" && entry.customType === HISTORY_CUSTOM_TYPE;
 }
 
+/** A persisted Pi summary supersedes every earlier native wire record on this branch, even before its event fires. */
+export function lastPiCompactionIndex(branch: readonly { type?: string }[]): number {
+	for (let index = branch.length - 1; index >= 0; index--) {
+		if (branch[index]!.type === "compaction") return index;
+	}
+	return -1;
+}
+
 function assertNoContinuation(record: Record<string, unknown>, where: string): void {
 	for (const key of Object.keys(record)) {
 		if (CONTINUATION_KEYS.has(key)) throw new TypeError(`${where}: ${key} is a socket continuation token and is never persisted`);
@@ -352,9 +360,9 @@ export class WireHistory {
 	load(leafId?: string | null, expectedModelHash?: string): LoadedWire {
 		const branch = this.#session.getBranch(leafId ?? undefined);
 		// The latest own rebase seed on this branch is a reset: entries before it are neither replayed nor checked.
-		let resetIndex = -1;
+		let resetIndex = lastPiCompactionIndex(branch);
 		branch.forEach((entry, index) => {
-			if (entry.type !== "custom" || entry.customType !== HISTORY_CUSTOM_TYPE) return;
+			if (index < resetIndex || !isHistoryEntry(entry)) return;
 			const data = verify(entry.data);
 			if (data && data.kind === "seed" && data.rebase === true && data.scope === this.#scopeHash) resetIndex = index;
 		});
@@ -510,9 +518,10 @@ export class WireHistory {
 	/** This scope's verified history entries on the branch ending at leafId, in branch order. */
 	#ownEntries(leafId?: string | null): Array<{ entryId: string; branchIndex: number; data: Record<string, unknown> }> {
 		const branch = this.#session.getBranch(leafId ?? undefined);
+		const boundary = lastPiCompactionIndex(branch);
 		const out: Array<{ entryId: string; branchIndex: number; data: Record<string, unknown> }> = [];
 		branch.forEach((entry, index) => {
-			if (entry.type !== "custom" || entry.customType !== HISTORY_CUSTOM_TYPE) return;
+			if (index <= boundary || !isHistoryEntry(entry)) return;
 			const data = verify(entry.data);
 			if (!data || (data.scope !== this.#scopeHash && !this.#adopted.has(String(data.scope)))) return;
 			out.push({ entryId: entry.id, branchIndex: index, data: data as Record<string, unknown> });

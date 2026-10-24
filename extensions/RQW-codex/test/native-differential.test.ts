@@ -6,6 +6,10 @@
 // adapter sends are projected by the same function as the native captures (test/native-differential.mjs) and must be
 // equal: transport, endpoint, turn-state replay, request kind and compaction block, turn grouping, exact-body retries
 // and the conversation (server items literal, client items by type/role/call id).
+// Active adapter loop: the transport and retry cases only. The three native compaction cases stay in the fixture, the
+// pin script and the oracle workflow unchanged, but the adapter no longer reproduces native compaction (no backend
+// compaction request, no opaque checkpoint, no compaction metadata block); stock Pi compaction is covered by
+// test/standard-compaction.test.ts.
 // Fake OAuth JWT, temporary agent directory, no network, no real waiting (sleep is recorded).
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
@@ -35,6 +39,7 @@ type Case = {
 	steps: string[];
 	upgrade: "none" | number;
 	providerRetries?: { requestMaxRetries?: number; streamMaxRetries?: number };
+	/** Native compaction limit: fixture provenance only, no active adapter case replays it. */
 	autoCompactTokenLimit?: number;
 	expectError?: boolean;
 	/** Half-open [min, max) ms ranges, one per retry wait, in order (source-backed, see sleepSource). */
@@ -61,6 +66,8 @@ const INSTALLATION = "11111111-2222-4333-8444-555555555555";
 const SLUG = "gpt-6.1-sol";
 const CASE_TIMEOUT_MS = 20_000;
 const SYSTEM_PROMPT = "Native differential.";
+/** Native compaction cases: pinned fixture and oracle data, not replayed against the stock-compaction adapter. */
+const NATIVE_COMPACTION_CASES = ["compaction-manual-stream-retry-budget", "compaction-manual-http-retry-after", "compaction-mid-turn-turn-state"];
 
 function b64url(value: unknown): string {
 	return Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -106,6 +113,7 @@ function nativeServer(entry: Case) {
 }
 
 async function runCase(entry: Case) {
+	assert.notEqual(entry.area, "compaction", `${entry.id}: native compaction is not replayed by the adapter`);
 	const root = await mkdtemp(join(tmpdir(), "rqw-codex-native-differential-"));
 	const server = nativeServer(entry);
 	const sleeps: number[] = [];
@@ -121,8 +129,7 @@ async function runCase(entry: Case) {
 		const runtime = await ModelRuntime.create({ authPath, modelsPath: null, refreshOnCreate: false });
 		const loader = new DefaultResourceLoader({
 			cwd: agentDir, agentDir, additionalExtensionPaths: [], noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
-			// A short prompt and no tools keep the adapter's own physical estimate after a checkpoint below the native limit,
-			// as the native server-reported usage is (the native prompt and tools are not part of the comparison).
+			// A short prompt and no tools: the native prompt and tools are not part of the comparison.
 			systemPrompt: SYSTEM_PROMPT,
 			extensionFactories: [createCodexExtension({
 				installationId: INSTALLATION,
@@ -145,23 +152,17 @@ async function runCase(entry: Case) {
 		try {
 			const listed = runtime.getModels(CODEX_PROVIDER).find((m) => m.id === SLUG);
 			assert.ok(listed, `model ${SLUG} is listed`);
-			// Native auto-compact limit L maps to Pi's threshold: window - reserve = L.
-			const limit = entry.autoCompactTokenLimit;
-			const model = limit === undefined ? listed! : { ...listed!, contextWindow: limit * 5 };
-			const compaction = limit === undefined ? { enabled: false } : { enabled: true, reserveTokens: limit * 4 };
+			// Pi compaction is off: the transport and retry cases must not meet a stock summary request.
 			const { session } = await createAgentSession({
-				cwd: agentDir, agentDir, modelRuntime: runtime, model: model as never, thinkingLevel: "off", resourceLoader: loader, noTools: "all",
+				cwd: agentDir, agentDir, modelRuntime: runtime, model: listed as never, thinkingLevel: "off", resourceLoader: loader, noTools: "all",
 				sessionManager: SessionManager.inMemory(agentDir),
-				settingsManager: SettingsManager.inMemory({ compaction, retry: { enabled: false } }),
+				settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
 			});
 			await session.bindExtensions({ mode: "tui" });
-			await session.setModel(model as never);
+			await session.setModel(listed as never);
 			try {
 				for (const step of entry.steps) {
-					if (step === "compact") {
-						await session.compact();
-						continue;
-					}
+					assert.match(step, /^prompt:\d+$/, `${entry.id}: the active loop replays prompts only`);
 					const prompt = entry.prompts[Number(step.split(":")[1])]!;
 					await session.prompt(prompt);
 					await session.waitForIdle();
@@ -202,6 +203,8 @@ function caseFailures(entry: Case, run: Awaited<ReturnType<typeof runCase>>): st
 	if (!isDeepStrictEqual(run.server.timeline, timeline)) failures.push(`upgrade/POST order ${JSON.stringify(run.server.timeline)}, expected ${JSON.stringify(timeline)}`);
 	return failures;
 }
+
+const ACTIVE_CASES = FIXTURE.cases.filter((c) => c.area !== "compaction");
 
 const byId = (id: string): Case => {
 	const entry = FIXTURE.cases.find((c) => c.id === id);
@@ -257,13 +260,22 @@ describe("native differential fixture", () => {
 		assert.deepEqual(mutate((f) => { f.provenance.sourceSha256 = { ...f.provenance.sourceSha256, "core/tests/suite/turn_state.rs": "0".repeat(64) }; }), ["cited native source digests differ"]);
 	});
 
+	it("the native compaction cases stay pinned in the fixture but are outside the active adapter loop", () => {
+		assert.deepEqual(FIXTURE.cases.filter((c) => c.area === "compaction").map((c) => c.id), NATIVE_COMPACTION_CASES);
+		assert.deepEqual(FIXTURE.cases.filter((c) => c.area !== "compaction").map((c) => c.id), ACTIVE_CASES.map((c) => c.id));
+		for (const entry of FIXTURE.cases.filter((c) => c.area !== "compaction")) {
+			assert.ok(entry.steps.every((s) => /^prompt:\d+$/.test(s)), `${entry.id}: the active loop has prompt steps only`);
+			assert.equal(entry.autoCompactTokenLimit, undefined, `${entry.id}: no native compaction limit in an active case`);
+		}
+	});
+
 	it("the shared projection reads native wire SSE exactly like the native sse() producer", () => {
 		assert.equal(nativeSseText([{ type: "response.created", response: { id: "r" } }, { type: "done" }]), 'event: response.created\ndata: {"type":"response.created","response":{"id":"r"}}\n\nevent: done\n\n');
 	});
 });
 
 describe("adapter vs pinned native oracle request sequences", () => {
-	for (const entry of FIXTURE.cases) {
+	for (const entry of ACTIVE_CASES) {
 		it(`[${entry.area}] ${entry.id} (${entry.test})`, { timeout: CASE_TIMEOUT_MS }, async () => {
 			assert.deepEqual(caseFailures(entry, await runCase(entry)), [], `${entry.id}: adapter differs from native ${entry.capturePrefix}`);
 		});
@@ -300,9 +312,10 @@ describe("native differential checker rejects real behavioral differences", () =
 		assert.deepEqual(failures, ["retry wait 0 is 2000 ms, outside [1000, 1001)", "retry wait 1 is 2000 ms, outside [1000, 1001)"]);
 	});
 
-	it("incorrect delay: a compaction retry without the server advice waits the local backoff, not the native Retry-After", { timeout: CASE_TIMEOUT_MS }, async () => {
-		const entry = byId("compaction-manual-http-retry-after");
-		const responses = entry.responses.map((r) => (r.headers?.["retry-after"] ? { ...r, headers: { "content-type": "application/json" } } : r));
+	it("incorrect delay: a 503 retry without the server advice waits the local backoff, not the native Retry-After", { timeout: CASE_TIMEOUT_MS }, async () => {
+		const entry = byId("retry-http-503-retry-after");
+		// Only the first 503 loses its advice: the second keeps it, so the stream budget stays as native and only the first wait differs.
+		const responses = entry.responses.map((r, i) => (i === 0 ? { ...r, headers: { "content-type": "application/json" } } : r));
 		const failures = caseFailures(entry, await runCase({ ...entry, responses }));
 		assert.deepEqual(failures, ["retry wait 0 is 200 ms, outside [1000, 1001)"]);
 	});

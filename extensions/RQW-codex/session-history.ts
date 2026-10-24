@@ -21,6 +21,7 @@ import {
 	HISTORY_CUSTOM_TYPE,
 	HISTORY_VERSION,
 	isCallItem,
+	lastPiCompactionIndex,
 	normalizeCallId,
 	scopeDigest,
 	sha256Hex,
@@ -217,7 +218,8 @@ export function proveForkAdoption(manager: SessionManagerLike, threadId: string,
 	const parentScope = scopeDigest({ runtimeId: "", threadId: parentId, ownerId });
 	const ownScope = scopeDigest({ runtimeId: "", threadId, ownerId });
 	let foreign = 0;
-	for (const entry of manager.getBranch()) {
+	const branch = manager.getBranch();
+	for (const entry of branch.slice(lastPiCompactionIndex(branch) + 1)) {
 		if (!isHistoryEntry(entry)) continue;
 		const scope = (entry.data as { scope?: unknown } | undefined)?.scope;
 		if (scope === ownScope) continue;
@@ -261,6 +263,12 @@ export class SessionWireState {
 	/** Durable history of the current thread and owner (rebuilt by refresh()). */
 	get history(): WireHistory {
 		return this.#history;
+	}
+
+	/** Latest persisted Pi compaction on the active branch; also detects restart before session_compact was delivered. */
+	get projectionBoundaryId(): string | null {
+		const branch = this.#manager().getBranch();
+		return branch[lastPiCompactionIndex(branch)]?.id ?? null;
 	}
 
 	/** Window of this thread: the accepted checkpoint's window when this thread made it, else the persisted initial one. */
@@ -374,9 +382,10 @@ export class SessionWireState {
 
 	#scan(): { branch: WireSessionEntry[]; own: OwnEntry[] } {
 		const branch = this.#view.getBranch();
+		const boundary = lastPiCompactionIndex(branch);
 		const own: OwnEntry[] = [];
 		branch.forEach((entry, index) => {
-			if (!isHistoryEntry(entry)) return;
+			if (index <= boundary || !isHistoryEntry(entry)) return;
 			const data = verifyData(entry.data);
 			if (!data) return;
 			const scope = String(data.scope);

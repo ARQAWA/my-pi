@@ -238,13 +238,13 @@ const given = (value: string | undefined): value is string => typeof value === "
  * error or cancel of the child.
  */
 const SESSION_POLICY = "rqw-codex:session-policy";
-type SessionPolicyRequest = { session: AgentSession; parentThreadId: string; kind: "collab_spawn" | "review"; startupSystemPrompt?: string; startupSystemPromptForced?: boolean; childName?: string; captureRun?: (callerThreadId?: string) => void; release?: () => void; error?: string };
+type SessionPolicyRequest = { session: AgentSession; parentThreadId: string; kind: "collab_spawn" | "review"; startupSystemPrompt?: string; startupSystemPromptForced?: boolean; childName?: string; captureRun?: (callerThreadId?: string) => void; installCompactionHooks?: (api: ExtensionAPI) => void; release?: () => void; error?: string };
 
 /**
  * Emits the request on the caller's bus. Returns the idempotent release and the per-operation capture (a no-op after release);
  * a refused request disposes the session and throws. `childName` is the child's actual label, `kind#id`.
  */
-function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession, parentThreadId: string, kind: SessionPolicyRequest["kind"], startupSystemPrompt: string, childName: string, startupSystemPromptForced: boolean): { release: () => void; capture: (callerThreadId?: string) => void } {
+function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession, parentThreadId: string, kind: SessionPolicyRequest["kind"], startupSystemPrompt: string, childName: string, startupSystemPromptForced: boolean, childApi: ExtensionAPI): { release: () => void; capture: (callerThreadId?: string) => void } {
 	const request: SessionPolicyRequest = { session, parentThreadId, kind, startupSystemPrompt, startupSystemPromptForced, childName };
 	let released = false;
 	const release = () => {
@@ -258,7 +258,10 @@ function bindSessionPolicy(events: ExtensionAPI["events"], session: AgentSession
 	};
 	let failed = false;
 	let failure: unknown;
-	try { events.emit(SESSION_POLICY, request); } catch (error) { failed = true; failure = error; }
+	try {
+		events.emit(SESSION_POLICY, request);
+		if (request.error === undefined) request.installCompactionHooks?.(childApi);
+	} catch (error) { failed = true; failure = error; }
 	if (!failed && request.error === undefined) return { release, capture };
 	release();
 	session.dispose();
@@ -475,6 +478,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 		// when the child has codemode, otherwise right after it.
 		let factory: ToolsFactory | undefined;
 		let codemode: ToolDefinition | undefined;
+		let childApi!: ExtensionAPI;
 		const withCodemode = (sub: ExtensionAPI) => {
 			factory = controller.signal.aborted || signal.aborted ? undefined : offeredFactory();
 			// The built-in factory only calls `registerTool`; the rest of the API stays the child's for its callbacks.
@@ -491,6 +495,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				...(builtins.includes("codemode") ? [withCodemode] : []),
 				...(builtins.includes("tool_search") ? [createToolSearchExtension()] : []),
 				(sub: ExtensionAPI) => {
+					childApi = sub;
 					fastGpt(sub, () => fast.on);
 					sub.on("before_agent_start", () => {
 						check();
@@ -525,7 +530,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, worker?: WorkerProfile,
 				let parent: string;
 				try { parent = ctx.sessionManager.getSessionId(); } catch (error) { session.dispose(); throw error; }
 				// The child's factory forces config.system as its prompt (before_agent_start returns it), so the prompt is forced.
-				const policy = bindSessionPolicy(toolEvents, session, parent, "collab_spawn", config.system, childName, true);
+				const policy = bindSessionPolicy(toolEvents, session, parent, "collab_spawn", config.system, childName, true, childApi);
 				if (signal.aborted) { jobs?.dispose(); policy.release(); session.dispose(); signal.throwIfAborted(); }
 				// prompt() may finish auth after abort()/dispose(). Never let an abandoned preflight reach inference.
 				const stream = session.agent.streamFunction;

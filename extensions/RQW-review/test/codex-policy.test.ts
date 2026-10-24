@@ -34,7 +34,7 @@ const until = async (check: () => boolean, what: string) => {
 	}
 };
 
-type Request = { session: AgentSession; parentThreadId: string; kind: string; release?: () => void; error?: string };
+type Request = { session: AgentSession; parentThreadId: string; kind: string; installCompactionHooks?: (api: ExtensionAPI) => void; release?: () => void; error?: string };
 type Seen = { request: Request; wireAtEmit: number; messagesAtEmit: number };
 type Capture = { callerThreadId?: string; wireAtCapture: number };
 
@@ -49,13 +49,20 @@ async function open(binder: boolean) {
 	main.setResponses(Array.from({ length: 20 }, () => () => fauxAssistantMessage("main ok")));
 	runtime.registerNativeProvider(main.provider);
 	const seen: Seen[] = [];
-	const policy = { error: undefined as string | undefined, releases: 0 };
+	const policy = { error: undefined as string | undefined, hookError: undefined as string | undefined, releases: 0 };
+	const hookInstalls: Array<{ session: AgentSession; wireAtInstall: number }> = [];
+	const hookContexts: string[] = [];
 	const captures: Capture[] = [];
 	const binderStandIn = (pi: ExtensionAPI) => {
 		pi.events.on("rqw-codex:session-policy", (raw) => {
 			const request = raw as Request;
 			seen.push({ request, wireAtEmit: wire.length, messagesAtEmit: request.session.messages.length });
 			if (policy.error !== undefined) request.error = policy.error;
+			request.installCompactionHooks = (api: ExtensionAPI) => {
+				if (policy.hookError) throw new Error(policy.hookError);
+				hookInstalls.push({ session: request.session, wireAtInstall: wire.length });
+				api.on("before_agent_start", (_event, ctx) => { hookContexts.push(ctx.sessionManager.getSessionId()); });
+			};
 			request.release = () => { policy.releases++; };
 			request.captureRun = (callerThreadId) => { captures.push({ callerThreadId, wireAtCapture: wire.length }); };
 		});
@@ -75,10 +82,37 @@ async function open(binder: boolean) {
 	};
 	const verdicts = () => session.messages.flatMap((m) => (m.role === "custom" && m.customType === "review" && typeof m.content === "string" ? [m.content] : []));
 	const close = async () => { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); session.dispose(); };
-	return { session, seen, policy, captures, review, verdicts, close, mainId: () => session.sessionManager.getSessionId() };
+	return { session, seen, policy, captures, hookInstalls, hookContexts, review, verdicts, close, mainId: () => session.sessionManager.getSessionId() };
 }
 
 describe("RQW-review: optional rqw-codex:session-policy request", () => {
+	it("installs offered hooks on the real reviewer's API before its first prompt", async () => {
+		wire.length = 0;
+		const f = await open(true);
+		try {
+			await f.review();
+			await until(() => f.verdicts().length === 1, "the verdict");
+			assert.equal(f.hookInstalls.length, 1);
+			const child = f.seen[0].request.session;
+			assert.equal(f.hookInstalls[0].session, child);
+			assert.equal(f.hookInstalls[0].wireAtInstall, 0);
+			assert.deepEqual(f.hookContexts, [child.sessionId], "the registered callback belongs to the reviewer, not its parent");
+			assert.equal(f.policy.releases, 1, "the existing policy release owns hook cleanup");
+		} finally { await f.close(); }
+	});
+
+	it("releases the policy and fails the review before prompting if hook installation throws", async () => {
+		wire.length = 0;
+		const f = await open(true);
+		try {
+			f.policy.hookError = "hook installation failed";
+			await f.review();
+			await until(() => f.verdicts().length === 1, "the failed verdict");
+			assert.match(f.verdicts()[0], /Session policy refused: hook installation failed/);
+			assert.equal(f.policy.releases, 1);
+			assert.equal(wire.length, 0);
+		} finally { await f.close(); }
+	});
 	it("is emitted after the reviewer exists and before its prompt, with the caller's session id and kind review", async () => {
 		wire.length = 0;
 		const f = await open(true);

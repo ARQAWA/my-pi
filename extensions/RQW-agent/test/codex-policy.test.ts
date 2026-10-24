@@ -63,7 +63,7 @@ const until = async (check: () => boolean, what: string) => {
 	}
 };
 
-type Request = { session: AgentSession; parentThreadId: string; kind: string; release?: () => void; error?: string };
+type Request = { session: AgentSession; parentThreadId: string; kind: string; installCompactionHooks?: (api: ExtensionAPI) => void; release?: () => void; error?: string };
 type Seen = { request: Request; wireAtEmit: number; messagesAtEmit: number };
 type Capture = { callerThreadId?: string; wireAtCapture: number };
 
@@ -78,13 +78,21 @@ async function open(binder: boolean) {
 	main.setResponses(Array.from({ length: 20 }, () => () => fauxAssistantMessage("main ok")));
 	runtime.registerNativeProvider(main.provider);
 	const seen: Seen[] = [];
-	const policy = { error: undefined as string | undefined, releases: 0 };
+	const policy = { error: undefined as string | undefined, hookError: undefined as string | undefined, releases: 0 };
+	const hookInstalls: Array<{ session: AgentSession; wireAtInstall: number }> = [];
+	const hookContexts: string[] = [];
 	const captures: Capture[] = [];
 	const binderStandIn = (pi: ExtensionAPI) => {
 		pi.events.on("rqw-codex:session-policy", (raw) => {
 			const request = raw as Request;
 			seen.push({ request, wireAtEmit: wire.length, messagesAtEmit: request.session.messages.length });
 			if (policy.error !== undefined) request.error = policy.error;
+			request.installCompactionHooks = (api: ExtensionAPI) => {
+				if (policy.hookError) throw new Error(policy.hookError);
+				hookInstalls.push({ session: request.session, wireAtInstall: wire.length });
+				api.on("before_agent_start", (_event, ctx) => { hookContexts.push(ctx.sessionManager.getSessionId()); });
+				api.on("session_before_compact", (event) => ({ compaction: { summary: "child portable summary", firstKeptEntryId: event.preparation.firstKeptEntryId, tokensBefore: event.preparation.tokensBefore } }));
+			};
 			request.release = () => { policy.releases++; };
 			request.captureRun = (callerThreadId) => { captures.push({ callerThreadId, wireAtCapture: wire.length }); };
 		});
@@ -95,7 +103,7 @@ async function open(binder: boolean) {
 	assert.deepEqual(loader.getExtensions().errors, []);
 	const { session } = await createAgentSession({ cwd: dir, agentDir: dir, modelRuntime: runtime, model: main.getModel("m"), thinkingLevel: "off",
 		resourceLoader: loader, sessionManager: SessionManager.inMemory(dir),
-		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, transport: "sse" }) });
+		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false, keepRecentTokens: 0 }, retry: { enabled: false }, transport: "sse" }) });
 	await session.bindExtensions({ mode: "tui" });
 	const call = async (params: Record<string, unknown>) => {
 		const result = await session.getToolDefinition("agent")!.execute("t", params as never, undefined, undefined, session.extensionRunner.createContext());
@@ -103,10 +111,41 @@ async function open(binder: boolean) {
 	};
 	const child = (task = "go", system = "EXACT") => ({ action: "start", system, task, model: "anthropic/claude-opus-5-5", tools: [] });
 	const close = async () => { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); session.dispose(); };
-	return { session, seen, policy, captures, call, child, close, mainId: () => session.sessionManager.getSessionId() };
+	return { session, seen, policy, captures, hookInstalls, hookContexts, call, child, close, mainId: () => session.sessionManager.getSessionId() };
 }
 
 describe("RQW-agent: optional rqw-codex:session-policy request", () => {
+	it("installs offered public compaction hooks on the actual child's API before its first prompt", async () => {
+		wire.length = 0;
+		const f = await open(true);
+		try {
+			await f.call(f.child());
+			await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
+			assert.equal(f.hookInstalls.length, 1);
+			const child = f.seen[0].request.session;
+			assert.equal(f.hookInstalls[0].session, child);
+			assert.equal(f.hookInstalls[0].wireAtInstall, 0);
+			assert.deepEqual(f.hookContexts, [child.sessionId], "the registered callback belongs to the child, not its parent");
+			const requestsBefore = wire.length;
+			const result = await child.compact();
+			assert.equal(result.summary, "child portable summary");
+			assert.equal(child.sessionManager.buildContextEntries()[0]?.type, "compaction");
+			assert.equal(wire.length, requestsBefore, "the offered callback supplied the summary without provider fallback");
+			await f.call({ action: "stop", id: "agent#1" });
+			assert.equal(f.policy.releases, 1);
+		} finally { await f.close(); }
+	});
+
+	it("releases the policy and refuses the child before prompting if hook installation throws", async () => {
+		wire.length = 0;
+		const f = await open(true);
+		try {
+			f.policy.hookError = "hook installation failed";
+			await assert.rejects(f.call(f.child()), /Session policy refused: hook installation failed/);
+			assert.equal(f.policy.releases, 1);
+			assert.equal(wire.length, 0);
+		} finally { await f.close(); }
+	});
 	it("is emitted after the child exists and before its first prompt, with the caller's session id and kind collab_spawn", async () => {
 		wire.length = 0;
 		const f = await open(true);

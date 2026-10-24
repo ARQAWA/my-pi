@@ -3,9 +3,11 @@
 // usage until a later context_edit or compaction, so it underestimates. This module appends one identical-content
 // context_edit (a no-op for the logical model content) on the smallest visible entry, which makes stock Pi fall back to
 // its physical estimate. Original entries, usage, costs, messages, compaction entries and model queries are never changed.
-// Imports: Pi SDK types/runtime and npm packages only.
+// Imports: Pi SDK types/runtime, this folder and npm packages only.
 import { calculateContextTokens, type AgentSession, type SessionProjection } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
+
+import { HISTORY_CUSTOM_TYPE, lastPiCompactionIndex } from "./history.ts";
 
 /** Owned Codex pair (session.ts): only usage from this provider and API can be stale after a native checkpoint. */
 export const PORTABLE_HISTORY_PROVIDER = "openai-codex";
@@ -59,6 +61,9 @@ export function installPortableHistory(session: AgentSession, options: PortableH
 	const invalidateOnce = (): boolean => {
 		if (!options.hasNativeCheckpoint()) return false;
 		const branch = manager.getBranch();
+		const boundary = lastPiCompactionIndex(branch);
+		if (boundary >= 0 && !branch.slice(boundary + 1).some((entry) =>
+			entry.type === "custom" && entry.customType === HISTORY_CUSTOM_TYPE && (entry.data as { kind?: unknown } | undefined)?.kind === "checkpoint")) return false;
 		let latest = -1;
 		for (let index = branch.length - 1; index >= 0; index--) {
 			const entry = branch[index]!;

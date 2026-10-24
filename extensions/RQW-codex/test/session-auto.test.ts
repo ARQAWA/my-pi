@@ -1,4 +1,4 @@
-// Automatic and manual backend compaction through the real Pi 1.4.0 AgentSession: session.prompt, session.compact,
+// Automatic and manual stock Pi compaction through the real Pi 1.4.0 AgentSession: session.prompt, session.compact,
 // session.abortCompaction, session.waitForIdle and the session subscription, with the owned facade (createCodexExtension ->
 // registration -> session controller -> CodexThreadTransport -> compaction hook). Only this extension is loaded. The Codex
 // backend is a fake postEvents (SSE); every request is recorded and a request beyond the scripted steps fails the test.
@@ -21,7 +21,8 @@ const INSTALLATION = "11111111-2222-4333-8444-555555555555";
 const CASE_TIMEOUT_MS = 15_000;
 /** Explicit reserve (compaction.reserveTokens): the trigger is contextWindow - RESERVE, so the test does not depend on defaults. */
 const RESERVE = 10_000;
-const COMPACTION = { type: "compaction", encrypted_content: "ENC+/==raw" };
+const SUMMARY = "STOCK_PI_SUMMARY: preserve the task and continue.";
+const OLD_HISTORY = `COMPACTED_HISTORY_ONLY: ${"old detail ".repeat(100)}`;
 
 function b64url(value: unknown): string {
 	return Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -47,11 +48,7 @@ function textEvents(id: string, text: string, input = 1) {
 	];
 }
 
-const compactionEvents = (id: string) => [
-	created(id),
-	{ type: "response.output_item.done", output_index: 0, item: COMPACTION },
-	completed(id, 9),
-];
+const compactionEvents = (id: string) => textEvents(id, SUMMARY, 9);
 
 /**
  * One scripted backend request. `events` are yielded in order; `fail` is thrown after them; `hold` keeps the request open
@@ -69,7 +66,7 @@ async function waitFor(condition: () => boolean, label: string, ms = 10_000): Pr
 	}
 }
 
-async function withSession(steps: Step[], run: (ctx: { session: Session; posts: Post[]; events: Array<Record<string, any>>; agentDir: string }) => Promise<void>) {
+async function withSession(steps: Step[], run: (ctx: { session: Session; posts: Post[]; events: Array<Record<string, any>>; agentDir: string }) => Promise<void>, seedHistory = true) {
 	const root = await mkdtemp(join(tmpdir(), "rqw-codex-session-auto-"));
 	try {
 		const agentDir = join(root, "agent");
@@ -108,8 +105,8 @@ async function withSession(steps: Step[], run: (ctx: { session: Session; posts: 
 		const loader = new DefaultResourceLoader({
 			cwd: agentDir, agentDir, additionalExtensionPaths: [], noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 			extensionFactories: [createCodexExtension({
-				installationId: INSTALLATION,
-				dependencies: { connect: upgradeRefused as never, postEvents: postEvents as never, sleep: async () => undefined, clock: { now: () => Date.now() } },
+				installationId: INSTALLATION, agentDir,
+				dependencies: { connect: upgradeRefused as never, postEvents: postEvents as never, fetch: async () => { throw new Error("real network forbidden"); }, sleep: async () => undefined, clock: { now: () => Date.now() } },
 			})],
 		});
 		await loader.reload();
@@ -119,9 +116,15 @@ async function withSession(steps: Step[], run: (ctx: { session: Session; posts: 
 		const release = installRuntimeAuth(runtime);
 		try {
 			const model = runtime.getModels(CODEX_PROVIDER)[0]!;
+			const manager = SessionManager.inMemory(agentDir);
+			if (seedHistory) {
+				manager.appendMessage({ role: "user", content: OLD_HISTORY, timestamp: 1 });
+				manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "Earlier progress." }], api: model.api, provider: CODEX_PROVIDER, model: model.id, stopReason: "stop", timestamp: 2,
+					usage: { input: 9, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
+			}
 			const { session } = await createAgentSession({ cwd: agentDir, agentDir, modelRuntime: runtime, model, thinkingLevel: "off",
-				resourceLoader: loader, sessionManager: SessionManager.inMemory(agentDir),
-				settingsManager: SettingsManager.inMemory({ compaction: { enabled: true, reserveTokens: RESERVE }, retry: { enabled: false }, transport: "sse" }) });
+				resourceLoader: loader, sessionManager: manager,
+				settingsManager: SettingsManager.inMemory({ compaction: { enabled: true, reserveTokens: RESERVE, keepRecentTokens: 100 }, retry: { enabled: false }, transport: "sse" }) });
 			await session.bindExtensions({ mode: "tui" });
 			await session.setModel(model);
 			const unsubscribe = session.subscribe((event) => { events.push(event as Record<string, any>); });
@@ -146,64 +149,96 @@ async function windowOf(session: Session): Promise<number> {
 	return window as number;
 }
 
-describe("automatic and manual backend compaction through the real AgentSession", () => {
-	it("first generation above contextWindow - reserve triggers one backend compaction; the next generation carries the opaque checkpoint once", { timeout: CASE_TIMEOUT_MS }, async () => {
-		const steps: Step[] = [
-			{ events: [] },
-			{ events: compactionEvents("resp_auto_compact") },
-			{ events: textEvents("resp_auto_2", "Second answer.") },
-		];
+function assertSummaryRequest(post: Post, model: string, splitTurn = false) {
+	assert.equal(post.body.model, model);
+	assert.equal(post.body.previous_response_id, undefined, "summary is a standalone full-input request");
+	assert.equal(post.body.input.some((item: { type?: string }) => item.type === "compaction_trigger" || item.type === "compaction"), false);
+	if (splitTurn) {
+		assert.match(JSON.stringify(post.body.input), /# Conversation/);
+		assert.match(JSON.stringify(post.body.input), /\[User\]: first/);
+		assert.match(JSON.stringify(post.body.input), /Create a concise checkpoint/);
+	} else {
+		assert.match(JSON.stringify(post.body.input), /<conversation>/);
+		assert.match(JSON.stringify(post.body.input), /Create a structured context checkpoint summary/);
+		assert.ok(JSON.stringify(post.body.input).includes(OLD_HISTORY), "summary serializes the compacted conversation");
+	}
+	assert.equal(JSON.parse(post.body.client_metadata["x-codex-turn-metadata"]).compaction, undefined);
+}
+
+function assertInstalledSummary(session: Session, next: Post, events: Array<Record<string, any>>, splitTurn = false) {
+	const summary = splitTurn ? `No prior history.\n\n---\n\n**Turn Context (split turn):**\n\n${SUMMARY}` : SUMMARY;
+	const entries = session.sessionManager.getBranch();
+	const compacted = entries.filter((entry) => entry.type === "compaction");
+	assert.equal(compacted.length, 1);
+	const entry = compacted[0]!;
+	assert.equal(entry.summary, summary);
+	if (splitTurn) {
+		const firstIndex = entries.findIndex((item) => item.type === "message" && item.message.role === "user");
+		assert.equal(entry.firstKeptEntryId, entries[firstIndex + 1]!.id, "stock overflow preparation advances one entry past summarized user input");
+		assert.equal(session.messages.some((message) => message.role === "assistant" && message.stopReason === "error"), false, "failed overflow attempt is not replayed");
+	} else {
+		const first = entries.find((item) => item.type === "message" && item.message.role === "user" && JSON.stringify(item.message.content) === JSON.stringify([{ type: "text", text: "first" }]))!;
+		assert.equal(entry.firstKeptEntryId, first.id, "Pi retains the current turn, not the compacted history");
+	}
+	const end = events.filter((event) => event.type === "compaction_end").at(-1)!;
+	assert.equal(entry.tokensBefore, end.result.tokensBefore);
+	assert.equal(entry.firstKeptEntryId, end.result.firstKeptEntryId);
+	assert.equal(end.result.summary, summary);
+	assert.equal(session.messages.filter((message) => message.role === "compactionSummary").length, 1);
+	assert.equal(session.messages.find((message) => message.role === "compactionSummary")?.summary, summary);
+	assert.equal(entries.some((item) => item.type === "custom" && item.customType === "rqw-codex/wire-history" && (item.data as { kind?: string })?.kind === "checkpoint"), false);
+	assert.equal(next.body.previous_response_id, undefined, "compaction drops continuation");
+	assert.ok(JSON.stringify(next.body.input).includes(SUMMARY));
+	assert.equal(JSON.stringify(next.body.input).includes(OLD_HISTORY), false, "compacted history is not replayed");
+	assert.equal(next.body.input.some((item: { type?: string }) => item.type === "compaction" || item.type === "compaction_trigger"), false);
+	assert.equal(JSON.parse(next.body.client_metadata["x-codex-turn-metadata"]).compaction, undefined);
+	for (const name of ["compact", "_runAutoCompaction", "_checkCompaction", "_exceedsCompactionThreshold", "_compactBeforeNextAssistantResponse", "getContextUsage"]) {
+		assert.equal(Object.hasOwn(session, name), false, name + " remains stock Pi");
+	}
+}
+
+describe("automatic and manual stock Pi compaction through the real AgentSession", () => {
+	it("above contextWindow - reserve triggers one stock summary; the next generation carries it without stale-usage recompaction", { timeout: CASE_TIMEOUT_MS }, async () => {
+		const steps: Step[] = [{ events: [] }, { events: compactionEvents("resp_auto_compact") }, { events: textEvents("resp_auto_2", "Second answer.") }];
 		await withSession(steps, async ({ session, posts, events }) => {
 			const window = await windowOf(session);
-			// The first generation reports usage above the trigger (physical usage, reported by the backend).
 			steps[0] = { events: textEvents("resp_auto_1", "First answer.", window - RESERVE + 1) };
-
 			await session.prompt("first");
-			await waitFor(() => posts.length === 2 && !session.isCompacting, "one compaction request");
-
-			assert.equal(posts.length, 2, "exactly one backend compaction after the first generation");
-			const trigger = posts[1]!.body.input as Array<Record<string, unknown>>;
-			assert.deepEqual(trigger[trigger.length - 1], { type: "compaction_trigger" });
+			await session.waitForIdle();
+			assert.equal(posts.length, 2, "exactly one summary after the first generation");
+			assertSummaryRequest(posts[1]!, session.model!.id);
 			assert.deepEqual(events.filter((e) => e.type === "compaction_start").map((e) => e.reason), ["threshold"]);
 			assert.deepEqual(events.filter((e) => e.type === "compaction_end").map((e) => [e.reason, e.aborted, e.willRetry]), [["threshold", false, false]]);
-			assert.equal(session.messages.some((m) => (m as { role?: string }).role === "compactionSummary"), false, "no Pi text summary entry");
-
+			assert.equal(events.find((e) => e.type === "compaction_end")?.result.tokensBefore, window - RESERVE + 2);
 			await session.prompt("second");
-			assert.equal(posts.length, 3, "the next generation is a normal request, not a second compaction");
-			const next = posts[2]!.body.input as Array<Record<string, any>>;
-			assert.equal(next.filter((item) => item.type === "compaction").length, 1, "the opaque checkpoint appears exactly once");
-			assert.equal(next.find((item) => item.type === "compaction")?.encrypted_content, "ENC+/==raw");
+			await session.waitForIdle();
+			assert.equal(posts.length, 3, "the next generation does not repeat compaction");
+			assertInstalledSummary(session, posts[2]!, events);
 			const prefix = JSON.stringify(posts[0]!.body.input[0]);
-			assert.equal(next.filter((item) => JSON.stringify(item) === prefix).length, 1, "the fresh prefix is sent once, not repeated");
-			assert.equal(next.some((item) => item.type === "compaction_trigger"), false);
-
-			assert.equal(events.filter((e) => e.type === "compaction_start").length, 1, "no repeat compaction from the physical usage of the old generation");
+			assert.equal(posts[2]!.body.input.filter((item: unknown) => JSON.stringify(item) === prefix).length, 1, "fresh prefix sent once");
+			assert.equal(events.filter((e) => e.type === "compaction_start").length, 1);
 		});
 	});
 
 	it("manual compact held at the backend, then aborted: nothing installed, no query after the cancel, idle and events as Pi 1.4", { timeout: CASE_TIMEOUT_MS }, async () => {
-		const steps: Step[] = [
-			{ events: textEvents("resp_manual_1", "Before compaction.") },
-			{ hold: true },
-		];
+		const steps: Step[] = [{ events: textEvents("resp_manual_1", "Before compaction.") }, { hold: true }];
 		await withSession(steps, async ({ session, posts, events }) => {
 			await session.prompt("first");
 			const compacting = session.compact();
 			const rejected = assert.rejects(compacting);
 			await waitFor(() => posts.length === 2, "held compaction request");
+			assertSummaryRequest(posts[1]!, session.model!.id);
 			session.abortCompaction();
 			await rejected;
 			await session.waitForIdle();
-
-			const queriesAtCancel = posts.length;
 			await new Promise((resolve) => setTimeout(resolve, 200));
-			assert.equal(posts.length, queriesAtCancel, "no backend query after the cancel");
+			assert.equal(posts.length, 2, "no backend query after the cancel");
 			assert.equal(session.isCompacting, false);
 			assert.equal(session.isStreaming, false);
-			assert.equal(session.sessionManager.getBranch().some((e) => e.type === "compaction"), false, "no Pi compaction entry");
-			assert.equal(session.sessionManager.getBranch().some((e) => e.type === "custom" && e.customType === "rqw-codex/wire-history" && (e.data as { kind?: string }).kind === "checkpoint"), false, "no checkpoint entry");
-			const ends = events.filter((e) => e.type === "compaction_end");
-			assert.deepEqual(ends.map((e) => [e.reason, e.aborted, e.willRetry, e.errorMessage]), [["manual", true, false, undefined]]);
+			assert.equal(session.sessionManager.getBranch().some((e) => e.type === "compaction"), false);
+			assert.equal(session.sessionManager.getBranch().some((e) => e.type === "custom" && e.customType === "rqw-codex/wire-history" && (e.data as { kind?: string }).kind === "checkpoint"), false);
+			assert.equal(session.messages.some((message) => message.role === "compactionSummary"), false);
+			assert.deepEqual(events.filter((e) => e.type === "compaction_end").map((e) => [e.reason, e.aborted, e.willRetry, e.errorMessage, e.result]), [["manual", true, false, undefined, undefined]]);
 			assert.deepEqual(events.filter((e) => e.type === "compaction_start").map((e) => e.reason), ["manual"]);
 		});
 	});
@@ -215,46 +250,39 @@ describe("automatic and manual backend compaction through the real AgentSession"
 			steps[0] = { events: textEvents("resp_auto_abort_1", "Above the trigger.", window - RESERVE + 1) };
 			const prompting = session.prompt("first");
 			await waitFor(() => posts.length === 2, "held automatic compaction request");
+			assertSummaryRequest(posts[1]!, session.model!.id);
 			session.abortCompaction();
 			await prompting;
 			await session.waitForIdle();
-
-			const queriesAtCancel = posts.length;
 			await new Promise((resolve) => setTimeout(resolve, 200));
-			assert.equal(posts.length, queriesAtCancel, "no backend query after the cancel");
+			assert.equal(posts.length, 2, "no backend query after the cancel");
 			assert.equal(session.isCompacting, false);
+			assert.equal(session.isStreaming, false);
 			assert.equal(session.sessionManager.getBranch().some((e) => e.type === "compaction"), false);
-			assert.equal(session.sessionManager.getBranch().some((e) => e.type === "custom" && e.customType === "rqw-codex/wire-history" && (e.data as { kind?: string }).kind === "checkpoint"), false, "no checkpoint entry");
-			const ends = events.filter((e) => e.type === "compaction_end");
-			assert.deepEqual(ends.map((e) => [e.reason, e.aborted, e.willRetry, e.errorMessage]), [["threshold", true, false, undefined]]);
-			const last = session.messages[session.messages.length - 1] as { role: string; stopReason?: string };
+			assert.equal(session.sessionManager.getBranch().some((e) => e.type === "custom" && e.customType === "rqw-codex/wire-history" && (e.data as { kind?: string }).kind === "checkpoint"), false);
+			assert.equal(session.messages.some((message) => message.role === "compactionSummary"), false);
+			assert.deepEqual(events.filter((e) => e.type === "compaction_start").map((e) => e.reason), ["threshold"]);
+			assert.deepEqual(events.filter((e) => e.type === "compaction_end").map((e) => [e.reason, e.aborted, e.willRetry, e.errorMessage, e.result]), [["threshold", true, false, undefined, undefined]]);
+			const last = session.messages.at(-1)!;
 			assert.equal(last.role, "assistant");
-			assert.equal(last.stopReason, "stop", "the completed generation is kept");
+			assert.equal(last.stopReason, "stop", "completed generation is kept");
 		});
 	});
 
-	it("typed context_length_exceeded goes through Pi's overflow branch, one backend compaction, then one retry with the opaque checkpoint and no Pi text summary", { timeout: CASE_TIMEOUT_MS }, async () => {
-		const overflow = {
-			type: "response.failed",
-			response: { id: "resp_overflow_1", status: "failed", error: { type: "invalid_request_error", code: "context_length_exceeded", message: "Your input exceeds the context window of this model." } },
-		};
-		const steps: Step[] = [
-			{ events: [created("resp_overflow_1"), overflow] },
-			{ events: compactionEvents("resp_overflow_compact") },
-			{ events: textEvents("resp_overflow_2", "Recovered answer.") },
-		];
+	it("context_length_exceeded triggers one stock compaction and one retry carrying the Pi summary", { timeout: CASE_TIMEOUT_MS }, async () => {
+		const overflow = { type: "response.failed", response: { id: "resp_overflow_1", status: "failed", error: { type: "invalid_request_error", code: "context_length_exceeded", message: "Your input exceeds the context window of this model." } } };
+		const steps: Step[] = [{ events: [created("resp_overflow_1"), overflow] }, { events: compactionEvents("resp_overflow_compact") }, { events: textEvents("resp_overflow_2", "Recovered answer.") }];
 		await withSession(steps, async ({ session, posts, events }) => {
 			await session.prompt("first");
-			assert.equal(posts.length, 3, "failed generation, one compaction, one retry");
-			const retry = posts[2]!.body.input as Array<Record<string, any>>;
-			assert.equal(retry.filter((item) => item.type === "compaction").length, 1, "the retry carries the opaque checkpoint once");
-			assert.equal(retry.some((item) => item.type === "compaction_trigger"), false);
+			await session.waitForIdle();
+			assert.equal(posts.length, 3, "failed generation, one summary, one retry");
+			assertSummaryRequest(posts[1]!, session.model!.id, true);
+			assertInstalledSummary(session, posts[2]!, events, true);
 			assert.deepEqual(events.filter((e) => e.type === "compaction_start").map((e) => e.reason), ["overflow"]);
 			assert.deepEqual(events.filter((e) => e.type === "compaction_end").map((e) => [e.reason, e.aborted, e.willRetry]), [["overflow", false, true]]);
-			assert.equal(session.messages.some((m) => (m as { role?: string }).role === "compactionSummary"), false, "no Pi text summary entry");
-			const last = session.messages[session.messages.length - 1] as { role: string; stopReason?: string; content: Array<{ type: string; text?: string }> };
+			const last = session.messages.at(-1)!;
 			assert.equal(last.stopReason, "stop");
-			assert.equal(last.content.find((c) => c.type === "text")?.text, "Recovered answer.");
-		});
+			assert.equal(last.content.find((c: { type: string }) => c.type === "text")?.text, "Recovered answer.");
+		}, false); // One split-turn summary, without a separate history summary request.
 	});
 });

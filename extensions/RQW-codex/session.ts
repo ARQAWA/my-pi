@@ -5,26 +5,24 @@
 // Startup runs after the session's prompt and tools are final: the RQW prompt projection is asked synchronously over
 // pi.events, rendered through the exact session.systemPrompt getter and restored in finally.
 // Codex auth and state work happens only for the owned openai-codex / openai-codex-responses pair; other models never
-// resolve a credential. The per-session compaction hook (session-compaction.ts) is installed after validation and released
-// with the controller: its prepare() builds the native compaction input from this controller's owner, state and transport.
+// resolve a credential. Compaction is stock Pi's own summary: the controller only observes the latest Pi compaction entry of
+// the branch and, after a new one, drops its prepared work and transport (afterPiCompaction).
 // Imports: Pi SDK types/runtime, this folder and npm packages only.
 import { convertToLlm, type AgentSession, type ExtensionAPI, type NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
 import { getCurrentTools, lazyStream, type Api, type AssistantMessageEventStream, type Context, type CredentialStore, type Model } from "@earendil-works/pi-ai";
 
 import { resolveStoredCredential } from "./auth-boundary.ts";
 import { credentialIdentity, PROVIDER_ID, validateCredential } from "./auth.ts";
-import { type CompactOptions, type CompactRequest, type CompactResult, uuidv7 } from "./compaction.ts";
-import { createCompactionSender } from "./compaction-wire.ts";
+import { uuidv7 } from "./compaction.ts";
 import { canonicalJson, HISTORY_CUSTOM_TYPE, HISTORY_VERSION, scopeDigest, sha256Hex } from "./history.ts";
 import { collectWorkspaceMetadata, type CodexIdentity, type HistoryInitialization, type WorkspaceMetadata } from "./metadata.ts";
-import { CODEX_API, CODEX_MODEL_SLUGS, CODEX_PROVIDER, CODEX_STABLE_FEATURES, codexModelCapabilities } from "./profile.ts";
+import { CODEX_API, CODEX_PROVIDER, CODEX_STABLE_FEATURES, codexModelCapabilities } from "./profile.ts";
 import { installPortableHistory } from "./portable-history.ts";
-import { type CompactionHookPrepareInput, installSessionCompaction } from "./session-compaction.ts";
 import { normalizeRunOptions, pendingSystemMessage, pendingToolChanges, withHiddenTools } from "./session-prefix.ts";
 import { proveForkAdoption, SessionWireState } from "./session-history.ts";
 import { inferHistoryInitialization, requestMetadata, SESSION_POLICY_METADATA } from "./session-metadata.ts";
 import { CodexThreadTransport, PREWARM_WAIT_BUDGET_MS, wireCapabilities, type CodexStreamOptions, type RawItemHistory, type SendRawOptions, type TransportDependencies } from "./transport.ts";
-import { buildRequest, prefixContext, resolveEffort, type WireItem, type WireOptions } from "./wire.ts";
+import { buildRequest, prefixContext, type WireItem, type WireOptions } from "./wire.ts";
 
 /** Startup projection channel (same literal as RQW-prompt; no import across folders). */
 export const STARTUP_PROJECTION_CHANNEL = "rqw-prompt:startup-projection";
@@ -110,6 +108,11 @@ export interface SessionController {
 	captureRunOrigin(origin: { rootTurnId?: string }): void;
 	/** Explicit idle prewarm of the Codex history: accepted only when the session is idle; never a turn. Automatic idle prewarm is controller-owned (see createSessionController). */
 	prewarmWithHistory(): Promise<void>;
+	/**
+	 * Called after stock Pi finished a compaction. When the latest Pi compaction entry of the branch differs from the observed one,
+	 * prepared work and the transport are dropped and the owned state is refreshed; otherwise nothing happens.
+	 */
+	afterPiCompaction(): void;
 }
 
 /** Pi's startup projection request, as RQW-prompt reads it (structural copy). */
@@ -246,7 +249,6 @@ export function createSessionController(options: SessionControllerOptions): Sess
 	let turnStartedAt: number | undefined;
 	// Whether the current transport has received beginTurn for the active run (a transport created later gets it at creation).
 	let turnBegun = false;
-	let uninstallCompaction: (() => void) | undefined;
 	let startup: StartupAttempt | undefined;
 	// Explicit idle prewarm setup: its own origin and budget, separate from the startup latch.
 	let idle: StartupAttempt | undefined;
@@ -257,6 +259,39 @@ export function createSessionController(options: SessionControllerOptions): Sess
 	let auto: StartupAttempt | undefined;
 	let unsubscribeAuto: (() => void) | undefined;
 	const now = (): number => (deps.clock ? deps.clock.now() : Date.now());
+
+	/** Id of the newest real Pi compaction entry of the current branch (public session manager API only). */
+	const latestCompactionId = (): string | undefined => {
+		const branch = session.sessionManager.getBranch() as unknown as { type?: unknown; id?: unknown }[];
+		for (let index = branch.length - 1; index >= 0; index--) {
+			if (branch[index].type === "compaction") return String(branch[index].id);
+		}
+		return undefined;
+	};
+	let observedCompactionId = latestCompactionId();
+
+	/**
+	 * Compares the branch's latest Pi compaction entry with the observed one. A new boundary cancels the startup, idle and automatic
+	 * attempts and the automatic check, starts a new automatic epoch, and drops the transport and its turn/window bookkeeping, so work
+	 * prepared before the summary can never be reused. The logical run and its turn stay: the next transport begins the current turn.
+	 */
+	const observeCompactionBoundary = (): boolean => {
+		const latest = owned ? owned.state.projectionBoundaryId ?? undefined : latestCompactionId();
+		if (latest === observedCompactionId) return false;
+		observedCompactionId = latest;
+		startup?.abort.abort();
+		idle?.abort.abort();
+		auto?.abort.abort();
+		cancelAutoCheck();
+		autoEpoch++;
+		turnBegun = false;
+		transportWindow = undefined;
+		const previous = transport;
+		transport = undefined;
+		previous?.dispose();
+		owned?.state.refresh();
+		return true;
+	};
 
 	// Native window header and blob window_id: `${thread}:${number}`. The bare UUIDv7 is the context window id (blob only).
 	const windowKey = (state: SessionWireState): string => {
@@ -331,10 +366,13 @@ export function createSessionController(options: SessionControllerOptions): Sess
 	 */
 	const ensureReady = async (model: Model<Api>, signal: AbortSignal): Promise<{ owner: string; state: SessionWireState; transport: SessionTransport; historyInit: HistoryInitialization }> => {
 		if (released) throw new Error("RQW-codex: session controller is released");
+		// A new Pi summary boundary drops the old transport before this request picks one.
+		observeCompactionBoundary();
 		// The transport takes its lineage identity from here: lineage is sealed from the first Codex request on.
 		sealed = true;
 		const { accountId } = await resolveStoredCredential(requireStore(), signal);
 		if (released) throw new Error("RQW-codex: session controller is released");
+		observeCompactionBoundary();
 		if (owned?.owner !== accountId) {
 			const previous = transport;
 			transport = undefined;
@@ -359,6 +397,7 @@ export function createSessionController(options: SessionControllerOptions): Sess
 
 	/** Synchronous owner decision over one stored value (no await, no refresh): same account, and the owned state and transport are still current. */
 	const decideOwnedBy = (ready: { owner: string; state: SessionWireState; transport: SessionTransport }, stored: unknown): void => {
+		observeCompactionBoundary();
 		if (!stillOwnedBy(ready)) throw preparedRefusal();
 		let accountId: string;
 		try {
@@ -370,12 +409,13 @@ export function createSessionController(options: SessionControllerOptions): Sess
 	};
 
 	/**
-	 * Prepared-owner guard: a prepared request (idle or startup prewarm, normal stream, compaction preparation) goes on only
+	 * Prepared-owner guard: a prepared request (idle or startup prewarm, normal stream) goes on only
 	 * while the saved login still belongs to the owner ensureReady chose and its state and transport are still the current ones. Same account
 	 * token rotation passes. The saved slot is re-read and validated without a refresh; a refusal names no secret and deletes nothing.
 	 */
 	const assertPrepared = async (ready: { owner: string; state: SessionWireState; transport: SessionTransport }, signal: AbortSignal): Promise<void> => {
 		signal.throwIfAborted();
+		observeCompactionBoundary();
 		if (!stillOwnedBy(ready)) throw preparedRefusal();
 		let stored: unknown;
 		try {
@@ -386,40 +426,6 @@ export function createSessionController(options: SessionControllerOptions): Sess
 		}
 		signal.throwIfAborted();
 		decideOwnedBy(ready, stored);
-	};
-
-	/**
-	 * Checkpoint install guard of one backend compaction. The owner decision and the synchronous install run inside the store's modify
-	 * callback, on the callback's current credential, so no owner change can land between the check and the commit. Waiting for the store
-	 * lock can be cancelled by the signal; once the callback is entered, the relay listeners are removed and nothing aborts the commit.
-	 * The callback returns undefined, so modify writes no credential. Never refreshes and never reads the store inside the lock.
-	 */
-	const guardedInstall = async (ready: { owner: string; state: SessionWireState; transport: SessionTransport }, signal: AbortSignal, install: () => CompactResult): Promise<CompactResult> => {
-		signal.throwIfAborted();
-		const waiting = new AbortController();
-		const abortWait = () => waiting.abort(signal.reason);
-		signal.addEventListener("abort", abortWait, { once: true });
-		const cancelled = Promise.withResolvers<never>();
-		const cancel = () => cancelled.reject(signal.reason ?? abortError());
-		signal.addEventListener("abort", cancel, { once: true });
-		let committed: CompactResult | undefined;
-		try {
-			const operation = requireStore().modify(PROVIDER_ID, async (current) => {
-				// Inside the lock: cancellation of the wait no longer applies. The check and the install below run without any await.
-				signal.removeEventListener("abort", abortWait);
-				signal.removeEventListener("abort", cancel);
-				signal.throwIfAborted();
-				decideOwnedBy(ready, current);
-				committed = install();
-				return undefined;
-			}, { signal: waiting.signal });
-			await Promise.race([operation, cancelled.promise]);
-		} finally {
-			signal.removeEventListener("abort", abortWait);
-			signal.removeEventListener("abort", cancel);
-		}
-		if (committed === undefined) throw preparedRefusal();
-		return committed;
 	};
 
 	/** Internal prewarm only: chains the session's before_provider_request handlers once (same guard as Pi's sdk transform), then the caller's hook. */
@@ -554,185 +560,14 @@ export function createSessionController(options: SessionControllerOptions): Sess
 		unsubscribeAuto = undefined;
 		cancelAutoCheck();
 		autoArmed = false;
-		// Compaction and its abort first, then the portable history while the owned state is still available, then the transport.
+		// Abort first, then the portable history while the owned state is still available, then the transport.
 		lifetime.abort();
-		uninstallCompaction?.();
-		uninstallCompaction = undefined;
 		portable.release();
 		const current = transport;
 		transport = undefined;
 		transportWindow = undefined;
 		current?.dispose();
 	}
-
-	/**
-	 * Native compaction input for one run: owner state, actual prompt, tools and thinking; no network unless the history needs a seed.
-	 * Ordinary compaction is primary on the current model. A pre-turn threshold compaction after a turn on a larger window model
-	 * (model downshift) is primary on that previous model, with the current model as the declared fallback of the same operation.
-	 */
-	const prepare = async ({ reason, phase: hookPhase, signal }: CompactionHookPrepareInput): Promise<CompactOptions> => {
-		const model = session.model as Model<Api> | undefined;
-		if (!isCodexModel(model)) throw new Error("RQW-codex: backend compaction needs the openai-codex model");
-		await waitForPendingSetups(signal);
-		const ready = await ensureReady(model!, signal);
-		const { state, transport: current } = ready;
-		if (typeof current.sendRaw !== "function") throw new Error("RQW-codex: the transport has no raw send for compaction");
-		const sendRaw = current.sendRaw.bind(current);
-		const thinking = session.thinkingLevel;
-		const streamOptions: CodexStreamOptions = { reasoning: thinking === "off" ? undefined : thinking, preparedOwner: ready.owner };
-		const capabilities = wireCapabilities(model!);
-		// Physical source of the baseline: Pi's effective projection, converted exactly as the transport compares it.
-		// Historical system messages lose the hidden names as the request projection does; the catalog is the declared one.
-		const messages = withHiddenTools(convertToLlm(session.sessionManager.buildSessionProjection().messages as never) as unknown as Context["messages"], hiddenNamesOf(session));
-		const tools = declaredCatalogOf(session);
-		// A leading system message already carries the prompt and tools: used as is. Otherwise the legacy prompt is added here.
-		const context: Context = messages[0]?.role === "system"
-			? { messages }
-			: { systemPrompt: lineage.startupSystemPrompt ?? projectStartupPrompt(session, pi), messages, tools };
-		const args = { context, model: model!, capabilities, options: wireOptionsOf(streamOptions) };
-		// Phase comes from the hook (manual standalone, overflow and post-sampling mid, preflight pre). Without it, the old heuristic.
-		const phase = hookPhase ?? (reason === "manual" ? "standalone_turn" : reason === "threshold" && !runActive ? "pre_turn" : "mid_turn");
-		// Model downshift: a pre-turn threshold (the current threshold already triggered) after a turn on another, larger known model.
-		const previous = reason === "threshold" && phase === "pre_turn" ? state.previousTurnSettings : undefined;
-		const downshift = previous !== undefined && previous.model !== model!.id && previous.contextWindow > model!.contextWindow && CODEX_MODEL_SLUGS.includes(previous.model)
-			? previous
-			: undefined;
-		const mapping = downshift
-			? { trigger: "auto", reason: "model_downshift", phase }
-			: reason === "manual"
-				? { trigger: "manual", reason: "user_requested", phase }
-				: { trigger: "auto", reason: "context_limit", phase };
-		// Previous model reconstructed from the saved safe settings; its own pinned capability record supplies the rest.
-		const downshiftModel = downshift
-			? ({
-				...model!,
-				id: downshift.model,
-				contextWindow: downshift.contextWindow,
-				input: downshift.inputModalities,
-				compat: { ...model!.compat, supportsStrictMode: downshift.supportsStrictMode, supportsOpenAIGrammarTools: downshift.supportsOpenAIGrammarTools },
-			} as unknown as Model<Api>)
-			: undefined;
-		// Native TurnContext.with_model: the current explicit effort when the previous model supports it; otherwise its median level,
-		// or its default when it lists no levels. No current selection (thinking off) takes the median too. Recorded reasoning is not reused.
-		const downshiftCapabilities = downshiftModel ? wireCapabilities(downshiftModel) : undefined;
-		const levels = downshiftCapabilities?.supported_reasoning_levels?.map((level) => level.effort) ?? [];
-		const selected = thinking === "off" ? undefined : resolveEffort({ options: { reasoning: thinking }, model: model!, capabilities });
-		const downshiftEffort = downshiftCapabilities
-			? selected !== undefined && levels.includes(selected)
-				? selected
-				: levels.length > 0
-					? levels[Math.floor((levels.length - 1) / 2)]
-					: downshiftCapabilities.default_reasoning_level ?? undefined
-			: undefined;
-		// One immutable operation identity: the active run's turn, or a fresh one for a standalone compaction (no global turn is begun).
-		const opTurn = turnId ?? uuidv7();
-		const opStart = runActive ? (turnStartedAt ?? now()) : now();
-		const workspaces = await workspacesFor();
-		await assertPrepared(ready, signal);
-		// Per route: its own snapshot (model and effort metadata), the same operation identity, timing and physical projection.
-		// The native request skeleton gives the route's full reasoning codec object and service tier.
-		const routeOf = (routeModel: Model<Api>, routeOptions: CodexStreamOptions) => {
-			const routeCapabilities = wireCapabilities(routeModel);
-			const snapshot = snapshotOf({
-				model: routeModel,
-				context,
-				options: routeOptions,
-				workspaces,
-				historyInit: ready.historyInit,
-				turnStartedAtUnixMs: opStart,
-				rootTurnId: isRootThread() ? opTurn : runActive ? activeRoot : undefined,
-			});
-			const routeIdentity: CodexIdentity = {
-				...identity(state),
-				...snapshot,
-				turnId: opTurn,
-				compaction: { ...mapping, implementation: "responses_compaction_v2", strategy: "memento" },
-			} as CodexIdentity;
-			const skeleton = buildRequest({
-				model: routeModel,
-				context: prefixContext(context),
-				options: wireOptionsOf(routeOptions),
-				capabilities: routeCapabilities,
-				identity: routeIdentity,
-				requestKind: "compaction",
-			});
-			const request: CompactRequest = {
-				model: routeModel.id,
-				useResponsesLite: routeCapabilities.use_responses_lite === true,
-				inputModalities: routeModel.input as CompactRequest["inputModalities"],
-				contextWindow: routeModel.contextWindow,
-				reasoning: skeleton.reasoning as unknown as Record<string, unknown>,
-				serviceTier: skeleton.service_tier ?? null,
-			};
-			return {
-				model: routeModel,
-				options: routeOptions,
-				identity: routeIdentity,
-				capabilities: routeCapabilities,
-				request,
-				modelHash: codexModelCapabilities(routeModel.id).compactionHash,
-			};
-		};
-		const currentRoute = routeOf(model!, streamOptions);
-		const downshiftRoute = downshiftModel ? routeOf(downshiftModel, { reasoningEffort: downshiftEffort, preparedOwner: ready.owner }) : undefined;
-		const primary = downshiftRoute ?? currentRoute;
-		// Appends the new physical source messages when a native base exists; otherwise seeds the built request (never a trigger).
-		if (state.nativeInput(args) === undefined) {
-			// Network-free baseline: only raw outputs this request may replay (the edited or deleted ones are refused).
-			const accepted = new Map([...state.rawHistory.rawOutputs()].filter(([id]) => state.rawHistory.acceptRawResponse?.(id, context) !== false));
-			const seed = buildRequest({
-				model: model!,
-				context,
-				options: args.options,
-				capabilities,
-				identity: currentRoute.identity,
-				history: { allowThinkingSignatures: false, rawOutputs: accepted },
-			}).input;
-			if (seed.some((item) => (item as { type?: unknown }).type === "compaction_trigger")) {
-				throw new Error("RQW-codex: the baseline seed must not carry the compaction trigger");
-			}
-			state.rawHistory.preparedRequest({ input: seed });
-		}
-		const send = createCompactionSender({
-			transport: { sendRaw },
-			model: primary.model,
-			context,
-			options: withRunnerHook(primary.options),
-			identity: primary.identity,
-			capabilities: primary.capabilities,
-			toolsInHistory: state.history.load().items.some((entry) => entry.item.type === "additional_tools"),
-			fallback: downshiftRoute
-				? { model: currentRoute.model, options: withRunnerHook(currentRoute.options), identity: currentRoute.identity, capabilities: currentRoute.capabilities }
-				: undefined,
-		});
-		return {
-			request: primary.request,
-			history: state.history,
-			window: state.window,
-			sourceEntryIds: state.sourceEntryIds,
-			modelHash: primary.modelHash,
-			fallback: downshiftRoute ? { request: currentRoute.request, modelHash: currentRoute.modelHash } : undefined,
-			send,
-			signal,
-			// Native provider stream_max_retries when injected (differential tests); absent keeps the native default.
-			streamMaxRetries: deps.providerRetries?.streamMaxRetries,
-			// Injected wait and jitter (tests); absent keeps compactBackend's real timer and Math.random.
-			sleep: deps.sleep,
-			random: deps.random,
-			// Atomic owner check and synchronous install under the credential store lock (no checkpoint, window or onInstalled on refusal).
-			withInstallGuard: (install) => guardedInstall(ready, signal, install),
-		};
-	};
-
-	/** Accepted checkpoint: the window advanced; the socket stays open, only its metadata follows the new window. */
-	const onInstalled = () => {
-		const state = owned?.state;
-		if (!state) return;
-		state.refresh();
-		if (transport) syncWindow(state, transport);
-		// The usage of the owned pair describes the compressed wire now: a marker makes stock Pi estimate physically.
-		if (portable.invalidate()) state.refresh();
-	};
 
 	const abortError = (): Error => {
 		const error = new Error("Request was aborted");
@@ -1030,6 +865,7 @@ export function createSessionController(options: SessionControllerOptions): Sess
 		},
 		prewarmWithHistory() {
 			if (released) return Promise.resolve();
+			observeCompactionBoundary();
 			const model = session.model;
 			// Foreign models never touch auth or state. A setup of this controller already in flight is joined, never duplicated.
 			if (!isCodexModel(model)) return Promise.resolve();
@@ -1049,6 +885,7 @@ export function createSessionController(options: SessionControllerOptions): Sess
 		start() {
 			if (released) return Promise.resolve();
 			sealed = true;
+			observeCompactionBoundary();
 			// One latched or spent attempt only; an unsettled attempt is shared by every concurrent start call.
 			if (started || startup?.spent) return Promise.resolve();
 			if (startup && !startup.settled) return startup.promise;
@@ -1088,6 +925,7 @@ export function createSessionController(options: SessionControllerOptions): Sess
 			// The owner and durable state are resolved first, so the stream is lazy; setup failures end it with one error event.
 			return lazyStream(model, async () => {
 				const signal = streamOptions?.signal ? AbortSignal.any([streamOptions.signal, lifetime.signal]) : lifetime.signal;
+				observeCompactionBoundary();
 				// The first normal stream sees the startup setup and waits only for its remaining budget (never a second 15 s).
 				await waitForPendingSetups(signal);
 				const ready = await ensureReady(model, signal);
@@ -1109,13 +947,12 @@ export function createSessionController(options: SessionControllerOptions): Sess
 				return ready.transport.stream(model, context, armed);
 			});
 		},
+		afterPiCompaction() {
+			if (released) return;
+			observeCompactionBoundary();
+		},
 		release,
 	};
-	uninstallCompaction = installSessionCompaction(session, {
-		prepare,
-		projectTokens: () => owned?.state.projectTokens(),
-		onInstalled,
-	});
 	const portable = installPortableHistory(session, {
 		hasNativeCheckpoint: () => {
 			const loaded = owned?.state.history.load();
@@ -1135,7 +972,10 @@ export function createSessionController(options: SessionControllerOptions): Sess
 				autoArmed = false;
 				cancelAutoCheck();
 			} else scheduleAutoCheck();
-		} else if (item.type === "compaction_end" && item.aborted !== true && item.result !== undefined) scheduleAutoCheck();
+		} else if (item.type === "compaction_end" && item.aborted !== true && item.result !== undefined) {
+			observeCompactionBoundary();
+			scheduleAutoCheck();
+		}
 	}) : undefined;
 	return controller;
 }
