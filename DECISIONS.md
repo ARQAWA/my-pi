@@ -406,6 +406,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   forbidden list of [D-QA-TEST-INTEGRITY]; retries, raised timeouts and whole-file skips stay forbidden. Carrier:
   [PROCESS.md, Quality control loop](PROCESS.md#quality-control-loop), [BACKLOG.md](BACKLOG.md#qa-flakes-last),
   `extensions/RQW-tools/test/background.test.ts`. Since: process-pipeline squash.
+  Retired: the causal fix landed as `2b9c088` and no skip exists in the tests; the exception is not in force.
 
 - **Pause is interrupt, resume is send** `[D-PIPELINE-PAUSE-RESUME]`. Pausing a task is an `agent` `interrupt` of its agent:
   the session and its full history stay. Resuming it is an `agent` `send` of the next message to the same agent, which
@@ -1388,7 +1389,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `/new`, `/resume`, reload) is dropped; print and json mode wait for a slow review as long as it runs, and an abort of the caller's run only ends that wait, leaving the review running and its verdict saved without a turn; a verdict
   arriving during a manual `/compact` with no run is appended and seen on the next turn; the reviewer may read a file
   Main is still editing (`startedText` asks Main not to). The main agent's own RQW-tools grep still passes a string
-  `"null"` glob to rg: item GREP-NULL in [BACKLOG.md](BACKLOG.md#open). Since: `3389347`.
+  `"null"` glob to rg: item GREP-NULL in [BACKLOG.md](BACKLOG.md#grep-null). Since: `3389347`.
 
 ## PCLI
 

@@ -444,12 +444,9 @@ deleting a test or an assertion; weakening an assertion (exact to range, `includ
 rewriting an expected value to the current output; `continue-on-error`; removing a matrix entry; changing
 `paths-ignore` to avoid a run. Replacing a time-based assertion by an event-based one is allowed with that proof.
 
-**Owner-approved interim skip.** For inbox issues #3, #4 and #5 (background-test timing) the owner allows a narrow
-Windows skip instead of an immediate fix: skip only the failing assertion, only on Windows, with the issue number in
-the skip message; every other assertion and platform stays strict. It is not a fix: the issue stays open, the squash
-has no `QA: #N` line, and the causal fix is queued last ([BACKLOG.md](BACKLOG.md#qa-flakes-last)). Retries, raised
-timeouts and whole-file skips stay forbidden. The test-integrity review and the `Test-change:` and `Test-review:`
-trailers still apply. The causal fix removes the skip.
+**Interim skip retired.** The owner-approved Windows skip for inbox issues #3, #4 and #5 was applied and then removed: the causal
+fix landed as `2b9c088` and no skip is in the tests. The forbidden list above applies in full again; a new narrow skip
+needs a fresh owner decision ([D-PIPELINE-FLAKE-SKIP](DECISIONS.md#task-pipeline)).
 
 **Proof of a fix.**
 - Red before, green after: the test fails on the pre-fix code (or with the fault put back) and passes after, both in
