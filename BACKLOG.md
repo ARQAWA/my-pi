@@ -26,19 +26,20 @@ is supplied.
 | <a id="extension-audits"></a>EXTENSION-AUDITS | Full independent re-check of each implemented extension, one queued task each; criteria and simplest-first task list below. | QUEUED after small near-ready merges and rebuild/knowledge base, before remaining flaky-test work; all audits and their fixes blocked until rebuild/knowledge base are delivered; auditor never fixes. | Owner `16-27-59:4864/4868/4872/4892`, entries `c7934716`, `6e47c19b`, `249fcb3b`, `40d49370`. |
 | <a id="grep-null"></a>GREP-NULL | Normalize optional grep fields so the main tool does not pass literal string `null` as a glob. | OPEN, no branch assigned; reviewer already has `dropEmptyOptional`, main path does not. | AUDIT section 5, Review limits; `extensions/RQW-review/index.ts`, `extensions/RQW-tools/index.ts`. |
 | <a id="publish-skill"></a>PUBLISH-SKILL | Reconcile separate commit/push permission with PROCESS; require successful publication CI on the exact packaged commit, not merely the latest green branch run, and dispatch the intended ref when needed. | OPEN, no branch assigned; skill edits outside this cleanup. Marketplace publishing still needs a direct owner request. | AUDIT item 15 and docs-consistency findings; `.agents/skills/publish-pcli/SKILL.md`. |
-| <a id="web-search"></a>WEB-SEARCH | Codex-subscription web search, CLI-first: agents call it from Bash/shell like grep/find; later wrap it as a separate tool as our grep/find wrap Pi's rg/fd. CLI must support unattended background research while the owner sleeps. | QUEUED after this process-rules task; implementation/design still follows research and agreement; no branch assigned here. | Owner `16-27-59:4782/4880/4888`, entries `f73155f0`, `c47e60b3`, `0aa23856`; CLI quote below. |
+| <a id="qa-inbox-followups"></a>QA-INBOX-FOLLOWUPS | Adapt retained implementations to the shared ci-watch cache snapshot architecture: acknowledgement of closed inbox failures in `qa-status-ack` at `4826b43`, and atomic claim helper semantics in `qa-claim` at `0ab8e1a`. | OPEN, NOT delivered; branches retained. No implementation is authorized in this train. | Owner integration bookkeeping and completeness review; superseded architecture does not deliver these behaviors. |
+| <a id="web-search-tool"></a>WEB-SEARCH-TOOL | Phase 2: ship a separate Pi web tool wrapper with Windows support, reusing the phase 1 macOS repo-local CLI core; forward the caller's model and thinking through the mapping itself. | OPEN, no branch; blocked by none, the macOS repo-local CLI is delivered ([D-WEB-CLI](DECISIONS.md#web-search-cli)). | Owner `16-27-59:4888/4945`; [D-WEB-MAPPING](DECISIONS.md#web-search-cli). |
 | <a id="token-efficiency-review"></a>TOKEN-EFFICIENCY-REVIEW | Follow-up review of the read cache. At the merge date plus 3 days, inspect the sessions since the merge: tokens saved, failed edits, retries. Then tune the cutoff or remove the mechanism. The coordinator reminds the owner in the first conversation after that date; it does not wake itself. | QUEUED. The read cache merged into `main` from branch `unchanged-read`, built ahead of WEB-SEARCH on the owner's explicit request; the review is due at its merge date plus 3 days, planned `2026-10-27` for a merge on `2026-10-24`. The merge agent corrects the date here if the merge lands on another day. | Owner `16-27-59:5135`, entry `171f4d82`: «Мы просто это запилим, я буду с этим работать, а потом через какое-то время ты мне напомнишь, поставишь задачу» and «через три дня после merge надо будет сделать review всех старых сессий на предмет того, помогло нам это или нет. И всё. Не будем никаких делать испытаний и прочей хуйни.» Sessions since the merge, tune or remove, and the reminder rule are coordinator text (`16-27-59:5138`). |
-| <a id="timebox-practices"></a>TIMEBOX-PRACTICES | Research, a record only, not started: how practising professional engineers avoid sunk cost, experiment loops, runaway cost and over-testing. Credible primary sources, found with our WEB-SEARCH CLI once it is available. Output: a short evidence-based proposal of timeboxing, stop criteria, uncertainty spikes, cost versus information, escalation and minimal acceptance checks, adapted to this repository. Not an open-ended benchmark. Linked: [D-PIPELINE-TIMEBOX](DECISIONS.md#task-pipeline). | QUEUED, no branch; do not start. Blocked by: WEB-SEARCH delivery. The owner has not set its place in the queue. | Owner `16-27-59:5231`, entry `ce0d83d8`: «Надо понять, как их избегать, как не попадать в такие ловушки. Надо поресёрчить, как люди с этим справляются уже — реальные программисты, реальные профессионалы. Это просто как web search работать» |
+| <a id="timebox-practices"></a>TIMEBOX-PRACTICES | Research, a record only, not started: how practising professional engineers avoid sunk cost, experiment loops, runaway cost and over-testing. Credible primary sources, found with the delivered `rqw-web` CLI ([D-WEB-CLI](DECISIONS.md#web-search-cli)). Output: a short evidence-based proposal of timeboxing, stop criteria, uncertainty spikes, cost versus information, escalation and minimal acceptance checks, adapted to this repository. Not an open-ended benchmark. Linked: [D-PIPELINE-TIMEBOX](DECISIONS.md#task-pipeline). | QUEUED, no branch; do not start. Blocked by: none; the WEB-SEARCH CLI is delivered. The owner has not set its place in the queue. | Owner `16-27-59:5231`, entry `ce0d83d8`: «Надо понять, как их избегать, как не попадать в такие ловушки. Надо поресёрчить, как люди с этим справляются уже — реальные программисты, реальные профессионалы. Это просто как web search работать» |
 | <a id="nonblocking-waits"></a>NONBLOCKING-WAITS | Background child/job/long-call waits wake the agent by notification; owner steering remains available without aborting those waits or children/jobs. | QUEUED, next after the delivered TOKEN-EFFICIENCY read cache; no branch; open design: interruptible calls and how queued user input ends a wait early while children/jobs continue. | Owner `16-27-59:4876`, entry `85357ce9`; queue placement is coordinator recommendation without owner objection, not a separate owner quotation. |
 | <a id="async-tool-calling"></a>ASYNC-TOOL-CALLING | Asynchronous tool calling as in Codex CLI: agents call tools, keep working, receive owner messages and are not cut off. | QUEUED, next after the delivered TOKEN-EFFICIENCY read cache, with NONBLOCKING-WAITS; linked theme, design may merge them; no branch. | Owner `16-27-59:4937`, entry `a8684155`; exact request below. |
 | <a id="codex-changelog"></a>CODEX-CHANGELOG | Review the last six months of Codex CLI changelog/source for strong implementations portable to Pi; return a ranked list with sources to the owner. | QUEUED after NONBLOCKING-WAITS / ASYNC-TOOL-CALLING; not blocked by WEB-SEARCH, use GitHub via git; no branch. | Owner `16-27-59:4937`, entry `a8684155`; exact request below. |
 | <a id="qa-flakes-last"></a>QA-FLAKES-LAST | Causal fix of the flaky background-test failures, QA #3 with duplicates #4 and #5, without retries, raised timeouts or weakened assertions. Interim narrow Windows assertion skips are the owner-approved stop-gap ([PROCESS.md](PROCESS.md#quality-control-loop)). | QUEUED last, worked by the test lane whenever items exist ([D-PIPELINE-TEST-LANE](DECISIONS.md#task-pipeline)), existing branch `bg-port-flake`; remaining proof belongs to that task, not this documentation change. It no longer blocks new UI or small merges. | Owner `16-27-59:5060`, entry `46a9e546`, answer to item 4 ([D-PIPELINE-FLAKE-SKIP](DECISIONS.md#task-pipeline)); QA issues #3, #4, #5. Replaces the earlier promotion at `16-27-59:4900`. |
-| <a id="agent-structure-research"></a>AGENT-STRUCTURE-RESEARCH | Research TypeScript code and folder organisation for AI maintenance, plus code search/navigation: AST structural search, grep, LSP, BM25, E5 embeddings and hybrid retrieval. Test the owner hypothesis that senior well-decomposed code plus fast search works best; propose uniform extension structure and adapt the provisional code-quality principle from evidence. | QUEUED after WEB-SEARCH; blocked until its CLI is delivered into main; research must use that web search; no branch. | Owner `16-27-59:4872/4880/4884`, entries `249fcb3b`, `c47e60b3`, `17c100e6`; quotes below. |
+| <a id="agent-structure-research"></a>AGENT-STRUCTURE-RESEARCH | Research TypeScript code and folder organisation for AI maintenance, plus code search/navigation: AST structural search, grep, LSP, BM25, E5 embeddings and hybrid retrieval. Test the owner hypothesis that senior well-decomposed code plus fast search works best; propose uniform extension structure and adapt the provisional code-quality principle from evidence. | QUEUED after WEB-SEARCH; its macOS repo-local WEB-SEARCH CLI prerequisite is delivered ([D-WEB-CLI](DECISIONS.md#web-search-cli)); research must use `rqw-web` from the checkout; no branch. | Owner `16-27-59:4872/4880/4884`, entries `249fcb3b`, `c47e60b3`, `17c100e6`; quotes below. |
 | <a id="extension-structure"></a>EXTENSION-STRUCTURE | Rebuild with one identical structure framework per extension; move tests into a separate folder mirroring the extension tree, with no tests in extensions; fix the structure as a repo rule. | QUEUED after research, new UI and small near-ready merges; blocked by all three; no branch. Detailed design still requires agreement. | Owner `16-27-59:4872/4892/4900`, entries `249fcb3b`, `40d49370`, `d4622d56`; questions and quotes below. |
 | <a id="repo-knowledge-index"></a>REPO-KNOWLEDGE-INDEX | Skeletal Markdown repository index/folder groups so agents locate code without grep/find; agents maintain it on every change with mechanical consistency checks. | QUEUED with rebuild after research, new UI and small merges; blocked by all three; no branch. Detailed design still requires agreement. | Owner `16-27-59:4872/4892/4900`, entries `249fcb3b`, `40d49370`, `d4622d56`; quotes below. |
 
 | <a id="project-explorer"></a>PROJECT-EXPLORER | Rework `explore` into an appropriately renamed project or file explorer, limited to this project's codebase on this computer. Coordinator summary, not owner words: the explorer does not write its report in the answer. Through a tool call it creates one combined file in the operating system's temporary directory from a template: an analytic report of about 50000 tokens (the owner's target within the 128k output limit, not a measured guarantee) with placeholders, and the tool fills the placeholders with the actual code excerpts of the referenced ranges, reading them in parallel. The code excerpts come on top of the 50000 tokens, not inside them, and the model never reprints code. The explorer returns only the file path to main, and main reads the file in chunks. The report is very detailed, dense and self-contained, so that main can continue alone: the files and their contents, who owns what, the structure and the important code. Coordinator text, not an owner quote: the file starts with a table of contents giving the line range of every section, so main reads only the sections it needs and not the whole file. Afterwards a small measurement: Sonnet 5.5 medium against Haiku 5.5 high, the same research, 3 attempts each. Today's explorer: [D-AGENT-EXPLORE-TOOLS](DECISIONS.md#agent). | QUEUED at the very end of the queue, low priority, after every other entry including TIMEBOX-PRACTICES and QA-FLAKES-LAST and before WINDOWS-TEST-FAILURES; a record only, no branch, nothing started, no model launched. The measurement waits for the Anthropic limits refresh; nothing else needs the owner. The current development model table gets no exception now. | Owner `16-27-59:5303`, entry `08ec21d0`: «Надо его переименовать во projects explorer, чтобы он был explorer только в рамках кодовой базы этого проекта и этого компьютера.» «Хорошо, не все, а хотя бы чтобы он старался на 50 тыс. Уложиться, но при этом не перепечатывать код» «Не Opus, давай Sonnet Medium против Haiku High. Чисто такой замер бы сделал на трёх попытках одного и того же ресёрча.» «Эта задача не приоритетная, на будущее, в самый конец» Owner correction `16-27-59:5315`, entry `27bf102e`: «Explorer будет не писать отчёт основному агенту, а через tool call будет писать комбинированный файл.» «И это всё будет параллельный tool call: параллельно читаются куски файлов, параллельно он записывает файл и куски файлов эти подкрепляет в placeholder куда-нибудь, как будет по шаблону.» «Он этот файл генерирует и потом отдаёт ссылку на этот файл основному агенту. А файл этот где-то во временных файлах системы генерируется.» «Таким образом, он реально полезную нагрузку на 50К токенов генерирует, а содержимое файлов идет сверх этого. Основной агент просто вычитывает этот огромный файл кусками и дальше от него уже пляшет.» Coordinator text `16-27-59:5318` (the table of contents). |
-| <a id="windows-test-failures"></a>WINDOWS-TEST-FAILURES | Umbrella for every Windows test failure ignored by the merge gate, so Windows support is finished later. New ignored failures are added here or as a linked `qa-inbox` issue ([PROCESS.md](PROCESS.md#task-pipeline)); fixes follow the triage and proof rules of [PROCESS.md](PROCESS.md#quality-control-loop), real fixes and not skips. Known now, all causes unresolved unless stated; existing canonical entries are linked, not duplicated: (1) background-test timing, QA #3 with duplicates #4 and #5: [QA-FLAKES-LAST](#qa-flakes-last), issues [#3](https://github.com/ARQAWA/my-pi/issues/3), [#4](https://github.com/ARQAWA/my-pi/issues/4), [#5](https://github.com/ARQAWA/my-pi/issues/5). (2) Bun RPC, QA #2: [issue #2](https://github.com/ARQAWA/my-pi/issues/2), branch `qa-2-bun-rpc`; a product, test or infra cause is not proven. (3) `QA-CODEX-CHILD-EBUSY`: Windows temporary-directory cleanup in `extensions/RQW-codex/test/session-compaction.test.ts:136`, [run 40045058810](https://github.com/ARQAWA/my-pi/actions/runs/40045058810); its own entry is on branch `codex-compaction-fix` (commit `6500f63`, not on `main` yet). (4) `web-search-cli`: [run 40044105379](https://github.com/ARQAWA/my-pi/actions/runs/40044105379), head `f538245701d59a832e5903ff083a078b5ec3f697`; a POSIX file-permission check and a file hash mismatch, line endings only a coordinator hypothesis; its tests are scoped to macOS for now. (5) `qa-status-ack`: [run 40007862125](https://github.com/ARQAWA/my-pi/actions/runs/40007862125), [attempt 2](https://github.com/ARQAWA/my-pi/actions/runs/40007862125/attempts/2), `background.test.ts:256` on Windows, noted on [issue #3](https://github.com/ARQAWA/my-pi/issues/3#issuecomment-6372940758) for triage; not claimed to be the same cause. (6) `theme-card-colors`: [run 40008518122](https://github.com/ARQAWA/my-pi/actions/runs/40008518122), job `test (windows-latest, node 22.19.0)`, step "Tests in a path with spaces and Cyrillic", background-job tests of `RQW-tools`; cause not established. | QUEUED at the very end of the queue, after PROJECT-EXPLORER, worked by the test lane whenever items exist ([D-PIPELINE-TEST-LANE](DECISIONS.md#task-pipeline)); a record only, no fix branch, nothing fixed here. Sources are coordinator reports of the session, not owner words. | Owner `16-27-59:5309`, entry `1bbe27c1`: «нужно все косяки Windows-тестов в конец бэклога засунуть, чтобы он их потом фиксил, чтобы они не были заброшены, чтобы Windows тоже поддерживалась, доводилась до конца.» Coordinator text `16-27-59:5312` (the list) and `5310` (the brief to the agents). [D-PIPELINE-MAC-GATE](DECISIONS.md#task-pipeline). |
+| <a id="windows-test-failures"></a>WINDOWS-TEST-FAILURES | Umbrella for every Windows test failure ignored by the merge gate, so Windows support is finished later. New ignored failures are added here or as a linked `qa-inbox` issue ([PROCESS.md](PROCESS.md#task-pipeline)); fixes follow the triage and proof rules of [PROCESS.md](PROCESS.md#quality-control-loop), real fixes and not skips. Known now, all causes unresolved unless stated; existing canonical entries are linked, not duplicated: (1) background-test timing, QA #3 with duplicates #4 and #5: [QA-FLAKES-LAST](#qa-flakes-last), issues [#3](https://github.com/ARQAWA/my-pi/issues/3), [#4](https://github.com/ARQAWA/my-pi/issues/4), [#5](https://github.com/ARQAWA/my-pi/issues/5). (2) Bun RPC, QA #2: [issue #2](https://github.com/ARQAWA/my-pi/issues/2), branch `qa-2-bun-rpc`; a product, test or infra cause is not proven. (3) `QA-CODEX-CHILD-EBUSY`: Windows temporary-directory cleanup in `extensions/RQW-codex/test/session-compaction.test.ts:136`, [run 40045058810](https://github.com/ARQAWA/my-pi/actions/runs/40045058810); its own entry is on branch `codex-compaction-fix` (commit `6500f63`, not on `main` yet). (4) `web-search-cli`: [run 40044105379](https://github.com/ARQAWA/my-pi/actions/runs/40044105379), head `f538245701d59a832e5903ff083a078b5ec3f697`; a POSIX file-permission check and a file hash mismatch, line endings only a coordinator hypothesis; its tests are scoped to macOS for now. (5) `qa-status-ack`: [run 40007862125](https://github.com/ARQAWA/my-pi/actions/runs/40007862125), [attempt 2](https://github.com/ARQAWA/my-pi/actions/runs/40007862125/attempts/2), `background.test.ts:256` on Windows, noted on [issue #3](https://github.com/ARQAWA/my-pi/issues/3#issuecomment-6372940758) for triage; not claimed to be the same cause. (6) `theme-card-colors`: [run 40008518122](https://github.com/ARQAWA/my-pi/actions/runs/40008518122), job `test (windows-latest, node 22.19.0)`, step "Tests in a path with spaces and Cyrillic", background-job tests of `RQW-tools`; cause not established. (7) Old `qa-2-bun-rpc` head `d0e9d04`: completed failed [run 40051822563](https://github.com/ARQAWA/my-pi/actions/runs/40051822563); fresh finished-run evidence `/tmp/train-qa2-old-jobs.json` shows only [windows-portable-git (node 22.19.0)](https://github.com/ARQAWA/my-pi/actions/runs/40051822563/job/120745944856) failed. Cause not inspected or established. | QUEUED at the very end of the queue, after PROJECT-EXPLORER, worked by the test lane whenever items exist ([D-PIPELINE-TEST-LANE](DECISIONS.md#task-pipeline)); a record only, no fix branch, nothing fixed here. Sources are coordinator reports of the session, not owner words. | Owner `16-27-59:5309`, entry `1bbe27c1`: «нужно все косяки Windows-тестов в конец бэклога засунуть, чтобы он их потом фиксил, чтобы они не были заброшены, чтобы Windows тоже поддерживалась, доводилась до конца.» Coordinator text `16-27-59:5312` (the list) and `5310` (the brief to the agents). [D-PIPELINE-MAC-GATE](DECISIONS.md#task-pipeline). |
 
 ## Waiting for owner
 
@@ -84,14 +85,15 @@ Owner quotes for CODEX-REVIEWER-COMPARISON and CLAUDE-REVIEWER, session
 ## Current execution order and dependencies
 
 This is the current owner-directed queue, not a permanent PROCESS rule. Detailed design still follows Research and
-agreement. WEB-SEARCH is CLI-first; the TOKEN-EFFICIENCY read cache was built ahead of it on the owner's explicit request, then NONBLOCKING-WAITS and ASYNC-TOOL-CALLING together, then CODEX-CHANGELOG.
-The waits placement is coordinator recommendation without owner objection. Research uses the delivered web-search CLI.
+agreement. The phase 1 macOS repo-local WEB-SEARCH CLI is delivered ([D-WEB-CLI](DECISIONS.md#web-search-cli)); the TOKEN-EFFICIENCY read cache was built ahead of it on the owner's explicit request, then NONBLOCKING-WAITS and ASYNC-TOOL-CALLING together, then CODEX-CHANGELOG.
+The waits placement is coordinator recommendation without owner objection. Research uses the macOS checkout CLI.
 Rebuild and knowledge base follow research, new UI and small merges; audits and every audit fix wait for that rebuild.
 Flaky-test work (QA-FLAKES-LAST) stays last, after interim Windows skips.
 
 ```text
 TOKEN-EFFICIENCY-REVIEW (read cache merge + 3 days, then tune or remove)
-WEB-SEARCH (CLI delivered into main)
+WEB-SEARCH CLI (macOS repo-local; delivered: D-WEB-CLI)
+|- WEB-SEARCH-TOOL (phase 2 shipped wrapper + Windows)
 |- NONBLOCKING-WAITS + ASYNC-TOOL-CALLING (after the delivered TOKEN-EFFICIENCY read cache)
 `- AGENT-STRUCTURE-RESEARCH
 CODEX-CHANGELOG (after waits/async; no web-search dependency)
@@ -106,48 +108,27 @@ PROJECT-EXPLORER (very end of the queue, low priority; measurement after the Ant
 WINDOWS-TEST-FAILURES (very end of the queue, after PROJECT-EXPLORER)
 ```
 
-### WEB-SEARCH
+### WEB-SEARCH-TOOL
 
-Blocked by: none; queued after the process-rules change.
-One command searches and reads a page by URL; use two commands if the combined command is hard for agents to use.
-The interaction is a Codex clone: our agent uses it exactly like Codex web search and receives a short summary with
-sources and links. Optimise the prompt and the command's own help text for effective agent use; the tool itself
-explains how to use it. It is available to every agent and worker; the agent/worker model matrix does not change.
-Search-side GPT follows the calling agent, not the coordinator's worker table: a GPT caller uses the same model
-and thinking; a Claude caller uses the fixed product-side GPT mapping below, independent of coordinator classes.
-Searches spend the owner's ChatGPT subscription usage like any Codex message. The worker matrix remains unchanged.
-See `D-SCOPE-WEB-SEARCH-MODEL`.
-
-| Calling model | Search-side GPT | Thinking |
-| --- | --- | --- |
-| Any GPT caller | The caller's own model | The caller's own thinking. |
-| Haiku 5.5 | Luna 5.6, `gpt-5.6-luna` | Same thinking level. |
-| Sonnet 5.5 | Sol 6, `gpt-6-sol` | Same thinking level, one to one. |
-| Opus 5.5 | Sol 6.1, `gpt-6.1-sol` | `low` -> `low`; `medium` -> `high`; `high` -> `xhigh`; any higher level -> `max`. |
-
-Owner confirmed the complete table (`16-27-59:4941`, entry `2502a877`):
-«Да, всё именно так, как ты записал.»
-
-In the CLI phase, caller model/thinking may be passed as CLI arguments. In the later tool phase, the tool forwards
-the calling agent's model and thinking through the mapping automatically inside its functionality; the agent
-passes no model arguments.
-Owner (`16-27-59:4945`, entry `5a0f77bd`):
-«И потом в будущем, когда мы сделаем tooling, таблица соответствия модели будет прокидываться автоматически на уровне функционала. Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться»
+Blocked by: none; the phase 1 macOS repo-local CLI is delivered ([D-WEB-CLI](DECISIONS.md#web-search-cli)).
+Open phase 2: add Windows support and ship one separate Pi tool wrapper over the repository CLI core, as our `grep` and `find` wrap stock search. The tool takes `queries` OR `urls`,
+`focus`, `mode` and `response_length`, takes the calling agent's model and thinking from the session and applies the
+mapping in `cli/web/model-map.ts` itself, with no model arguments for the agent. The CLI core is reused, not copied. No tool exists yet.
 
 ### NONBLOCKING-WAITS and ASYNC-TOOL-CALLING
 
-Blocked by: WEB-SEARCH.
+Blocked by: none; queued after TOKEN-EFFICIENCY, and the phase 1 macOS repo-local WEB-SEARCH CLI prerequisite is delivered.
 These are the same interaction theme; the design may merge them. Waits must not prevent owner steering, and full
 asynchronous tool calling lets the agent keep working and receive messages while tool calls continue.
 
 ### CODEX-CHANGELOG
 
 Blocked by: none; queue after NONBLOCKING-WAITS and ASYNC-TOOL-CALLING. Read the changelog and source through GitHub
-via git, so this research does not require WEB-SEARCH.
+via git, so this research does not use the web-search CLI.
 
 ### AGENT-STRUCTURE-RESEARCH
 
-Blocked by: WEB-SEARCH, including the local CLI, delivered into main; it may not start earlier.
+Blocked by: none; the phase 1 macOS repo-local WEB-SEARCH CLI is delivered into main.
 
 ### New UI and small near-ready merges
 
@@ -260,37 +241,10 @@ Owner (`16-27-59:4900`, entry `d4622d56`):
 
 > «1а 2а»
 
-## Web-search interface decisions
-
-Owner (`16-27-59:4917`, entry `b86db4f5`), exact spans:
-
-> «2 Про модель для веб-поиска не понял. Я думаю, веб-поиск будет делать любой агент. Это будет инструмент, который будет доступен всем агентам, и воркеры будут типа нашей матрицы агентов и исполнителей, она никак не меняется. Я так думал.»
-
-> «3а - Главное, чтобы агент не охуел этим пользоваться. Если для агента это будет тяжело, то сделай две команды. А если казуально, то оставь одну»
-
-> «4а - Делаем клон Codex, чтобы наш агент работал с этой хуйнёй так же, как с Codex. Мы максимально эффективно прописываем prompt, чтобы он суперэффективно ей пользовался, как и другими инструментами, чтобы сам инструмент подсказывал, как собой пользоваться»
-
-Coordinator text, accepted options 3a and 4a from the question before that message:
-
-1. Одна команда умеет и искать, и читать страницу по ссылке.
-2. Короткую сводку с источниками и ссылками, как в Codex.
-
-Web-search model decision, owner (`16-27-59:4924`, entry `89d7b2e6`), exact spans:
-
-> «Мы не привязываемся к координатам. Короче, модель будет та же, которая соответствует нашей модели, которая делает запрос. Вот так. Как понял меня? Давай синканемся здесь.»
-
-> «У нас у каждой cloud-модели есть соответственная модель GPT. А там какая модель на GPT? Там какая-то определённая модель выбирается, или как это происходит? Я не понимаю.»
-
-Owner follow-up (`16-27-59:4928`, entry `e8dc0395`):
-
-> «Надо таблицу соответствия закрепить сразу же заранее. Просто надо понимать, какие модели ищут. Какая-то модель Soul 6, допустим.»
-
-## Fixed search mapping and asynchronous-tool research sources
+## Asynchronous-tool research sources
 
 Owner (`16-27-59:4937`, entry `a8684155`), exact spans:
 
 > «Также добавь в список задач, что нам нужно сделать реализацию асинхронного tool calling, как в Codecs CLI, чтобы агент мог вызывать tool call и при этом асинхронно полностью работать, принимать от меня сообщения и не обрываться на этом.»
 
 > «Изучение это давно уже реализовали. И вообще отдельные задачи надо по changelog за последние полгода пройтись и подобрать охуенные реализации, которые мы можем себе спиздить в наш Pi.»
-
-> «Давай так: для Haiku 5.5 будет Luna 5.6. Для Sonnet 5.5 будет Sol 6, а для Opus 5.5 будет Sol 6.1. Вот и всё. Только Sol 6.1 и Sol 6 знаешь как будут соответствовать Haiku? Следующим образом, смотри: Sonnet и Opus: low модель соответствует low модели. Sol 6.1 один к одному соответствует Sonnet. А вот Opus 5.5 и Sol 6.1 соответствуют следующим образом: Opus 5.5 low соответствует Sol 6.1 low, Opus 5.5 medium соответствует Sol 6.1 high, а Opus 5.5 high соответствует Sol 6.1 extra high. Соответственно, все высшие рислинги Opus соответствует Sol 6.1 max.»
