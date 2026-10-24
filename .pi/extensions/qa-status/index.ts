@@ -55,7 +55,7 @@ export function createQaStatus({ pi, getSnapshot = snapshot, now = Date.now }: {
 		else void refresh(ctx.cwd);
 	});
 	pi.on("agent_start", (_event, ctx) => {
-		if (!last || now() - Date.parse(last.at) > 10 * 60_000) void refresh(ctx.cwd);
+		if (!last || now() - Date.parse(last.at) > 60_000) void refresh(ctx.cwd);
 	});
 	pi.registerCommand("qa", {
 		description: "Show current QA inbox and workflow status",

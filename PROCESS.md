@@ -39,11 +39,12 @@ the accepted decisions and their reasons. New owner instructions take precedence
   not an override. The guard's mechanical repository edit/write block stays in force, even after an override.
 - Main never blocks its own thread on waiting, polling, CI watching, test runs or any other long work. It hands
   all of that to subagents and stays free to coordinate and talk to the owner.
-- At most three tasks run at the same time, in the priority queue set by the owner. Fill a free slot from that
-  queue, not from Main's preferred order; a priority change from the owner steers the queue. This is a task limit,
-  not a count of first-level subagents. Parallel workers inside an active task do not create extra task slots.
-  Run useful independent work within those tasks in parallel, avoid concurrent writes to the same files and
-  stop superseded workers. Keep the current queue in the handoff, not as a permanent rule here.
+- At most three tasks are in active execution at the same time, in the priority queue set by the owner. Fill a free
+  slot from that queue, not from Main's preferred order; a priority change from the owner steers the queue. This is
+  a task limit, not a count of first-level subagents. A task that waits for CI, a reviewer, the merge queue or the
+  owner holds no slot, and the test lane is outside the limit ([Task pipeline](#task-pipeline)). Parallel workers inside an active task do not create extra
+  task slots. Run useful independent work within those tasks in parallel, avoid concurrent writes to the same files
+  and stop superseded workers. Keep the current queue in the handoff, not as a permanent rule here.
 - Main identifies task dependencies itself, links them and blocks dependent work before scheduling. The graph's
   source of truth is the `Blocked by:` lines in `BACKLOG.md` plus the handoff. Main shows the owner the execution
   order as a plain-text dependency tree in terminal output, not a Mermaid diagram. A dependency becomes runnable
@@ -62,7 +63,8 @@ the accepted decisions and their reasons. New owner instructions take precedence
   forks; default choices are coordinator records under this accepted rule, not fabricated owner quotations.
   Without the owner, never publish PCLI to the Marketplace, delete his data or sessions, change `~/.pi` beyond
   installing third-party extensions, or spend limits beyond the reviewer measurement. These exceptions stay
-  blocked rather than being approved by default.
+  blocked rather than being approved by default. Resuming a task paused by its 2-hour timebox is one more such
+  exception ([Task timebox](#task-timebox)).
 - Main drives the whole agreed task to completion autonomously through workers: they implement, inspect, make the
   needed probes and measurements, and fix obvious defects and relevant corner cases. Do not polish extremely
   unlikely scenarios or expand the task.
@@ -76,6 +78,81 @@ the accepted decisions and their reasons. New owner instructions take precedence
 - Temporary task files belong in the OS temporary directory. Do not put transcripts, credentials, archive copies,
   historical cleanup notes or execution ledgers in the repository. History belongs in Git, with one explicit exception:
   root `DECISIONS-ARCHIVE.md` preserves superseded and obsolete decisions verbatim with their provenance.
+
+## Task pipeline
+
+Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](DECISIONS.md#task-pipeline).
+
+- A task is active or waiting. Only active execution holds one of the three slots: a worker implementing,
+  researching, fixing or measuring. Waiting for CI, a reviewer, the merge queue or the owner holds no slot. Main
+  fills each free slot from the owner's queue and keeps every waiting task in the current session queue and state with what it waits for, in no file.
+- When a task's local checks are clean, its branch is pushed, CI and the required reviews start in the background and
+  the task becomes waiting. Its agent finishes its turn or is paused, keeps its session and history, and frees the slot;
+  Main's coordination is never blocked. Only the merge agent and the CI watcher follow the CI run, in the background.
+- One merge agent, an ordinary agent started by Main, owns integration. Main fixes the train order in the current
+  session queue, from the owner's queue. The agent takes waiting branches in that order, rebases each onto current `main` and pushes
+  it, so CI runs in the background and holds no slot. It merges a branch only when the `macos-latest` jobs of `tests.yml` are green on the exact head, the
+  required reviews are clean and `deliver-check` passes. When `main` moves, the remaining branches rebase and rerun
+  CI in the background. No head is merged into `main` unless every returned `macos-latest` job of `tests.yml` on that exact head is green and the
+  expected macOS matrix is fully present; a missing or pending macOS job is not green.
+- Windows jobs keep running and are not cancelled in the final run, but they are advisory. A red Windows job is
+  not fixed before the merge and does not block delivery. An agent explicitly creates or triages a `qa-inbox` issue for
+  it, or a failed scheduled or dispatched `main` run is picked up by `qa-inbox.yml`; nothing here creates issues
+  automatically. `ci-watch -- --refresh-inbox` only reads the existing issues into the local snapshot, after the
+  issue exists. Every ignored Windows failure is recorded before the delivery closes, as a tail item of `BACKLOG.md` or a
+  `main` `qa-inbox` issue linked from it; none is silently deferred or abandoned, so Windows support is finished
+  later. If Windows jobs still run when the macOS jobs are green and the merge happens, the merge agent keeps that run
+  tracked in the background through the watcher cache or a notification, holding no active slot and spending no model
+  polling turns. A later Windows failure then gets its tail `BACKLOG.md` item or linked issue and is not lost when
+  the branch is deleted. Delivery never waits for Windows. The workflow's overall result need not be green. The one exception is
+  `pcli-vscode`, a Windows-only product: its change still needs a green `pcli.yml` run on the exact head.
+- Test lane. Besides the three main work lanes, a fourth lane for tests only, outside the three active slots, owns all
+  test work: ordinary `agent`s on the simple pairs of the [worker table](#worker-models), with
+  `.agents/roles/test-fixer.md` as the `role`. It starts only after this pipeline change is delivered and follows all
+  pipeline agreements. Decisions: [DECISIONS.md](DECISIONS.md#task-pipeline).
+- A red required CI, meaning a red `macos-latest` job of `tests.yml` or, for `pcli-vscode`, a red `pcli.yml`, or a
+  conflicting rebase sends the task back to the top of the queue. A red advisory Windows job does not. At the next free active slot,
+  ahead of tasks not yet started, resume its existing agent; start another only if its session no longer exists.
+- Pause and resume. Pausing a task is an `agent` `interrupt` of its agent, which keeps the session and history.
+  Resuming is an `agent` `send` of the next message to the same agent, with its full history. This is the shipped API;
+  a `resume` action that retries the cut-off request is planned in AGENT-SESSION-PERSIST and not delivered yet. Write no checkpoint,
+  continuation or handoff file for a pause or resume. `stop` only a finished or cancelled task's agent. Until child
+  sessions survive a Pi restart, write one short checkpoint only immediately before a planned Pi restart.
+- CI watcher. `npm run ci-watch` starts one shared watcher per repository; a second start finds the lock and exits.
+  It reads all recent workflow runs once a minute and writes the shared file
+  `<git common dir>/ci-watch/status.json` atomically, so every worktree sees it. Agents read that file (with
+  `fetchedAt`, head SHA, run id, attempt and conclusion) instead of polling `gh`. A file older than 3 minutes means
+  the watcher is dead or backing off: restart it with `npm run ci-watch -- --restart` in the background. Job lists and
+  logs are fetched with `gh` only for a failed or finished run that needs them, and once fresh before a merge to verify
+  the macOS jobs of the exact head even while Windows jobs still run; this is no ordinary polling. The watcher is a repo-local macOS
+  development tool, never shipped and never merge evidence: `deliver-check` still reads the run of the exact head
+  fresh before every merge.
+- QA inbox snapshot. The watcher's minute poll reads workflow runs only. `npm run ci-watch -- --refresh-inbox` is a
+  separate explicit read of the open `qa-inbox` issues into `<git common dir>/ci-watch/inbox.json`. Run it once at
+  triage, when taking over a task, and after changing an inbox issue, never as per-agent polling. `qa-status` shows
+  the snapshot with its own `inboxFetchedAt`, or says it is unknown.
+
+## Task timebox
+
+Owner's words and reasons: [DECISIONS.md, Task pipeline](DECISIONS.md#task-pipeline), `D-PIPELINE-TIMEBOX`.
+
+- Substantive work on a development task is limited to 2 hours, from the start of real work until the finished
+  implementation or result is handed over. Count research, design, implementation and fixes of actual defects. Do
+  not count check runs, review passes, CI or other external waits: they run asynchronously in the pipeline and hold
+  no active slot. Time that is genuinely paused or waiting on something external is not counted.
+- The clock belongs to the logical task: all its descendant agents and all earlier work count. A retry, a restart or
+  a handover to a helper never resets it.
+- At 2 hours of substantive work on an unfinished task, Main pauses it safely (`interrupt`, sessions kept, no
+  checkpoint file) and reports to the owner: the achieved result, the known costs, the roadmap of next steps and why
+  it is unfinished, with facts kept apart from hypotheses. The report gives substantive work time separately from
+  verification and wait time; when the logs cannot separate them, it says the time is unknown and states no exact
+  figure the timestamps do not prove.
+- The freed active slot goes at once to the highest-priority runnable task of the waiting queue. No slot is held for
+  the owner's answer.
+- More work on the paused task needs the owner's decision. The night default never authorizes it, and no silent
+  continuation, restart or reassignment replaces it. If the owner continues it, Main reprioritises and resumes the
+  task, interrupting a lower-priority active task if needed, with its history kept.
+- This is a control checkpoint, not a promise that any task is done in 2 hours.
 
 ## Worker models
 
@@ -147,6 +224,21 @@ the task-specific exception and judge configuration are recorded only in the rev
    `PROCESS.md` against the owner sessions of this repository. `MY_PI_SESSIONS` overrides them with directories
    joined by the path delimiter; no session files found fails closed.
 
+## Golden rule
+
+Standing requirement for designing and reviewing the harness and the development workflow. Owner's words and reason:
+[DECISIONS.md, Work policy](DECISIONS.md#work-policy), `D-WORK-GOLDEN-RULE`; personal wording:
+[WORKFLOW-MANIFEST.md](WORKFLOW-MANIFEST.md#золотое-правило).
+
+- Spend no tokens where they can be avoided: no polling, no model turns spent only waiting, no repeated reads or
+  reviews without new input.
+- Solutions are engineered, thought through, efficient, optimal and as simple as possible. Weigh the trade-offs and
+  balance them to reach the right decision.
+- Every design, implementation and review checks this. The review criterion of every brief carries this line:
+  "Golden rule: no avoidable token spending (no polling, no model turns only to wait, no repeated reads or reviews
+  without new input); engineered, simple, optimal; trade-offs weighed." Reviewers report only an evidenced
+  violation, not taste.
+
 ## Code quality
 
 Provisional until the AI-maintainability research lands: every change and every review must keep extension source
@@ -172,16 +264,21 @@ Owner's principle and source: [DECISIONS.md, Work policy](DECISIONS.md#work-poli
   tested code, configuration and document contracts remain unchanged.
 - CPU-heavy work (full suites, repeat loops, pressure runs and load probes) runs in GitHub Actions, never on the
   owner's MacBook Air. Locally run only the focused test files of the change. Windows checks run in CI too,
-  including relevant Node, Bun and PortableGit coverage. Linux is out of scope.
+  including relevant Node, Bun and PortableGit coverage, but they are advisory and do not gate a merge
+  ([Task pipeline](#task-pipeline)). Linux is out of scope.
 - Run `npm run test:bun` in CI when Bun/codemode behavior is affected. Test extension isolation when affected.
 - Workers save their check and probe logs. Every number in a report or documentation must point to a CI run URL
   or a named saved log file; never report counts from memory. Save local logs in OS temporary storage.
 - Test exactly what gets merged. If `main` moved since the branch was created, the worker rebases the branch onto
-  current `main`; Mac tests and Windows CI must pass on that final head commit, whose squash has the same tree.
+  current `main`; the `macos-latest` jobs of `tests.yml` must pass on that final head commit, whose squash has the same tree; the
+  Windows jobs stay advisory.
   If the push started no `tests.yml` run (path filter), dispatch it: `gh workflow run tests.yml --ref <branch>`.
 - Root documentation, notes and development instructions alone do not justify application tests or model runs.
   A workflow change does require validating its triggers and affected Windows jobs. Do not claim a queued or
   incomplete run passed.
+- Everyone who writes, generates or fixes tests, a worker, a reviewer or the test-fix lane, has one purpose: to check
+  that the behavior matches the requirements, never to turn the run green. The bound is the reviewer's: no
+  fanaticism, perfectionism, polishing or taste.
 - Fix failures caused by the task, including assertions for deliberately changed behavior. Report unrelated failures
   without repairing them or falsely counting a failing required check as clean. If they block delivery, ask the owner.
 - For prompt/tool behavior performance claims, compare against the relevant baseline. The product goal remains
@@ -202,7 +299,9 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
 5. Calibration, meaning fixing the system under test, happens on the strongest models. Weaker models are measured
    afterwards on the calibrated version; their failures are recorded as capability limits, not treated as defects
    to fix, unless they show a mechanics or checker bug.
-6. Measurement runs have no hard request or start caps as stop conditions; usage never stops a run. The measurer
+6. Measurement runs have no hard request or start caps as stop conditions; usage never stops a run. The one exception is the
+   controlled pause of the [task timebox](#task-timebox): outstanding work pauses at a review boundary and is
+   reported; it is no request or start cap. The measurer
    supervises instead: a programmatic monitor checks the running wave every 1-5 minutes (not
    continuous polling), the measurer reads the actual outputs it surfaces, and interrupts the run on real anomalies
    (harness defect, stuck or looping reviewer, runaway repairs, unpinned sources, errors).
@@ -214,15 +313,34 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
 - While RQW-review is disabled in the owner's settings, result review runs through an `agent` subagent whose
   whole system prompt is the new reviewer text (`extensions/RQW-review/REVIEWER.md` in `main`). Give it the
   owner's messages verbatim (the session file), plus agreement, object and criterion; record `Review: agent#N CLEAN`.
-- Except for the [third-party installation fast path](#third-party-installation-fast-path), every squash merge
-  requires a clean result review, including mechanical corrections. Small work, at most
-  five requirements and five changed files, uses `review` level `blind`; larger work uses `high`. An answer or report
-  without changes needs no review. Explicit owner requirements for a review take precedence.
+- Main names the change class in the task brief and in the squash message. Reasons and the owner's words:
+  [DECISIONS.md, Task pipeline](DECISIONS.md#task-pipeline).
+  1. Proofreading: typos, wording, quote spans, links and formatting of passive documents, with no change of meaning
+     and no new or changed rule. Proof is local: the owner-quote check of touched quotes, a link check and a format
+     check of the touched files, saved in a log. No independent review and no application CI. The squash message
+     carries `Change-class: proofreading` and `Doc-check: <absolute log path>`; `deliver-check` accepts them only for
+     the passive documents it lists. Never for runtime prompts, the `coordinator-rules` block, `package.json`, a
+     changed rule or a `QA: #N` fix.
+  2. Meaning change of process or documents: one clean result review, plus a code review where the path rule below
+     applies.
+  3. Runtime prompts (`extensions/RQW-prompt/SYSTEM.md`, `extensions/RQW-agent/roles/*.md`,
+     `extensions/RQW-review/REVIEWER.md`, `extensions/RQW-tools/descriptions/*.md`): mechanical checks and a model
+     probe of the claimed behavior, plus the reviews of class 2.
+- Except for proofreading and the [third-party installation fast path](#third-party-installation-fast-path), every
+  squash merge requires a clean result review. Result review uses `review` level `blind` for small work and `high`
+  for large work. An answer or report without changes needs no review. Explicit owner requirements for a review
+  take precedence.
+- Small work is at most 100 added plus deleted lines, all inside one extension, with no owner-visible behavior change.
+  One combined result and code review covers it: one `agent` reviewer given the result criteria and `.agents/reviewers/code.md`,
+  recorded as `Combined-review: agent#N CLEAN`. Large work and any owner-visible behavior change get the separate
+  result review and code review below. A QA fix, a workflow change and a test-integrity trigger are never small.
+  `deliver-check` enforces the line limit and the single extension; that reviewer verifies that no owner-visible
+  behavior changes.
 - Workers first self-check their work and fix defects before independent review. Main checks their evidence and
   acceptance against the agreement, routing needed fixes to workers. The final independent result review checks agreed completeness,
   consistency, documentation and absence of unagreed additions. Give the reviewer the agreement verbatim, object,
   diff and sources, criterion and earlier rejected findings with reasons. Each pass returns all real findings at once.
-- Run a separate read-only code reviewer in parallel with result review whenever a changed path falls outside
+- For large work, run a separate read-only code reviewer in parallel with result review whenever a changed path falls outside
   the `tests.yml` `paths-ignore` filters used by `scripts/deliver-check.mjs`, considering both base and head filters.
   This includes extension READMEs even though their contents are prose. Root Markdown, `notes/**` and `.agents/**`
   alone are excluded by the current filters. Workflow logic is executable configuration and needs code review too.
@@ -270,6 +388,7 @@ The owner relays them to Main. Main also checks the inbox when it is online.
 **Awareness.**
 - At task start and when taking over a branch, Main reads the QA status: the `qa-status` message of the dev-only
   `.pi/extensions/qa-status` extension, `/qa` for the full view, or `npm run qa-status` (workers use this one).
+  All three read the shared [CI watcher](#task-pipeline) file instead of calling `gh` themselves.
 - A red scheduled `main` is mentioned to the owner in one line and triaged. Main never polls CI itself.
 - A red `main` does not block merges. `deliver-check` only lists the open inbox issues.
 
@@ -283,11 +402,18 @@ issue:
 | Infra | The failed step's log lines. No test change; fix only our own CI configuration. |
 | Drift | The version diff between the last green and the first red run (Facts step). Fix the compatibility or pin the version with a `DECISIONS.md` entry; dropping a platform or version needs the owner. |
 
-**Forbidden without proof.** These need triage proof that the old value or assertion was wrong, plus a clean
-test-integrity review: raising a timeout or deadline; retries or job reruns; `skip`, `todo` or a platform skip;
+**Forbidden without proof.** These need triage proof that the old value or assertion was wrong; the test-integrity review
+applies only when `deliver-check` mechanically detects the weakening (see below): raising a timeout or deadline; retries or job reruns; `skip`, `todo` or a platform skip;
 deleting a test or an assertion; weakening an assertion (exact to range, `includes`, truthy); swallowing an error;
 rewriting an expected value to the current output; `continue-on-error`; removing a matrix entry; changing
 `paths-ignore` to avoid a run. Replacing a time-based assertion by an event-based one is allowed with that proof.
+
+**Owner-approved interim skip.** For inbox issues #3, #4 and #5 (background-test timing) the owner allows a narrow
+Windows skip instead of an immediate fix: skip only the failing assertion, only on Windows, with the issue number in
+the skip message; every other assertion and platform stays strict. It is not a fix: the issue stays open, the squash
+has no `QA: #N` line, and the causal fix is queued last ([BACKLOG.md](BACKLOG.md#qa-flakes-last)). Retries, raised
+timeouts and whole-file skips stay forbidden. The test-integrity review and the `Test-change:` and `Test-review:`
+trailers still apply. The causal fix removes the skip.
 
 **Proof of a fix.**
 - Red before, green after: the test fails on the pre-fix code (or with the fault put back) and passes after, both in
@@ -295,16 +421,17 @@ rewriting an expected value to the current output; `continue-on-error`; removing
 - Intermittent failure: n repeat runs after the fix with no failure, where (1-p)^n < 0.05 and p is the failure rate
   before the fix. Use the manual `codemode-stress.yml` repeat harness (dispatch inputs: test file, name pattern, os, node, runs) or a dispatch of `tests.yml`; CPU-heavy repeats stay in CI.
 
-**Test-integrity review.** For every QA fix, and for every test or workflow change that weakens a check
-(`deliver-check` detects it), a reviewer subagent runs with `.agents/reviewers/test-integrity.md` as its whole
+**Test-integrity review.** For every test or workflow change that weakens a check, as `deliver-check` mechanically
+detects it (`skip`, `todo`, retry, raised timeout, `continue-on-error`, fewer assertions), and not for every QA fix, a
+reviewer subagent runs with `.agents/reviewers/test-integrity.md` as its whole
 `system`, model and reasoning from the [worker table](#worker-models), in parallel with the result and code reviews.
 Its brief has the issue, the triage claim, the diff and the red/green and repeat evidence.
 
 **Trailers** of the squash message. `QA: #N` marks a fix of inbox issue N. `deliver-check` requires
 `Test-change: <why the old test was wrong or what it proves now>` and `Test-review: agent#N CLEAN` when the
 test-integrity rule triggers: a test or workflow change adds `skip`, `todo`, `--test-retry` or `continue-on-error`,
-raises a timeout, or leaves fewer assertions in a test file. A `QA: #N` line always requires `Test-review:`, and
-`Test-change:` only when test or workflow files changed. An ordinary test change needs neither.
+raises a timeout, or leaves fewer assertions in a test file. A `QA: #N` line requires `Test-change:` when test or workflow
+files changed, and `Test-review:` only when the weakening rule above triggers. An ordinary test change needs neither.
 
 ## Third-party installation fast path
 
@@ -328,26 +455,31 @@ and guard change. Record the accepted choice in `DECISIONS.md`.
    require sufficient proof and the required clean reviews for the final head commit on current `main`.
    The "Mac tests" requirement is met by the `macos-latest` test jobs in `tests.yml` on that exact head
    (see [Sufficient proof](#sufficient-proof-without-idle-reruns) and [Independent review](#independent-review)).
-3. Before every squash merge, Main writes the planned squash message and runs, from the clean main checkout,
+3. Before every squash merge, the merge agent ([Task pipeline](#task-pipeline)) writes the planned squash message
+   and runs, from the clean main checkout,
    `npm run deliver-check -- <branch> <message-file>` (`scripts/deliver-check.mjs`; it fails in any checkout
    without `main` checked out). It requires: the branch
    contains current `origin/main` and the main checkout's HEAD, the merge destination; for changes (both sides
-   of a move) outside the `tests.yml` `paths-ignore` filter, the latest `tests.yml` run on the exact head SHA
-   succeeded, and likewise `pcli.yml` when its `paths` changed; the filters are `main`'s and the branch head's
+   of a move) outside the `tests.yml` `paths-ignore` filter, every returned `macos-latest` job of the latest `tests.yml` run on the exact head SHA
+   succeeded and the expected macOS matrix is present, whatever the Windows jobs or the workflow's overall result say, and `pcli.yml` succeeded when its `paths`
+   changed; the filters are `main`'s and the branch head's
    (a file counts if either version requires CI); the message carries the
    trailers `Review: review#N CLEAN` (or `Review: agent#N CLEAN` under the temporary
    [disabled-review rule](#independent-review); at least one clean result review), `Code-review: CLEAN` (any path outside
    the workflow exclusions, including extension READMEs),
+   or instead of both for small work `Combined-review: agent#N CLEAN`, or for proofreading no review trailer and
+   `Change-class: proofreading` with `Doc-check: <absolute log path>` ([Independent review](#independent-review)),
    `CI: <run url>` (each required run) and `Unverified: <what was not verified live, or none>`. An optional
    `Decision: D-<SECTION>-<NAME>` trailer links the squash to a stable decision ID; it is not a gate requirement.
    When the
    test-integrity rule triggers it also requires `Test-change:` and `Test-review:`; a `QA: #N` line requires
-   `Test-review:`, and `Test-change:` when test or workflow files changed, and issue N must carry the `qa-inbox`
+   `Test-change:` when test or workflow files changed, and issue N must carry the `qa-inbox`
    label ([Quality control loop](#quality-control-loop)). It lists the open `qa-inbox` issues as information:
    a red `main` does not block a merge. Any failure: no merge.
 4. Squash merge into `main`: one task, one commit, with that message. Never merge the task's stage commits into main
    as a merge commit. Push main autonomously; the squash tree equals the tested head, so it is not retested.
-5. After every merge and before the final report, run a completeness check for the session: a fresh independent
+5. Run a completeness check for the session once after 7 merges or 120 minutes, whichever comes first, counted from
+   the previous check or the session start, and always before the final report: a fresh independent
    `review` (the tool already receives all the owner's messages verbatim), or an `agent` subagent running the same
    way under the [disabled-review rule](#independent-review) while RQW-review is disabled. Object: `main`'s git log since the session
    start, plus the in-progress branches and worktrees and the items the owner cancelled. Criterion: every owner
@@ -355,7 +487,8 @@ and guard change. Record the accepted choice in `DECISIONS.md`.
    with no mark is a finding: do it, or ask the owner.
 6. Update the locally installed Pi when a runtime/package change requires it, preserving auth and other settings;
    restart when process-wide patches require it. Documentation-only work needs no package update or restart.
-7. After successful delivery, remove this task's worktree and branch. Do not clean up other tasks' worktrees.
+7. After successful delivery, and after every ignored Windows failure is recorded and any still-running Windows run is
+   handed to background tracking ([Task pipeline](#task-pipeline)), remove this task's worktree and branch. Do not clean up other tasks' worktrees.
    Publishing a release or Marketplace version requires the owner's direct request.
 8. Report the result once, unprompted with an evidence table (claim, check, result or run link) and an honest
    "not verified live" section, plus any real limitation and manual commands only when useful.

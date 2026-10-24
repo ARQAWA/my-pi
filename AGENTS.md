@@ -7,7 +7,11 @@ Before every task, read and follow [PROCESS.md](PROCESS.md). Restore it after co
 continuing. This is mandatory lazy loading, not optional background reading. Give subagents the relevant process
 rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
 Coordinator personal-work objections and explicit overrides: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
-At most three active tasks follow the owner's priority queue: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
+At most three tasks in active execution follow the owner's priority queue; tasks waiting for CI, review, the merge queue or
+the owner hold no slot, and a fourth lane for tests only is outside the limit; pause is `agent` `interrupt`, resume is `agent` `send`, with no pause files:
+[PROCESS.md](PROCESS.md#task-pipeline).
+Golden rule, no avoidable token spending and simplest engineered solutions: [PROCESS.md](PROCESS.md#golden-rule).
+Task timebox, at most 2 hours of substantive work, then a pause and a report: [PROCESS.md](PROCESS.md#task-timebox).
 Temporary subagent model restriction and expiry: [PROCESS.md](PROCESS.md#worker-models).
 Search ready-made solutions before new features or mechanisms: [PROCESS.md](PROCESS.md#research-and-agreement).
 Third-party installs go into the owner's Pi first, then the package: [PROCESS.md](PROCESS.md#third-party-installation-fast-path).
@@ -104,12 +108,19 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
 - `.github/workflows/qa-inbox.yml`: turns failed `main` runs into `qa-inbox` issues with `scripts/qa-inbox.mjs`.
   `.github/workflows/qa-digest.yml`: mails the owner at 09:30 and 21:30 Moscow time, only about failures, with
   `scripts/qa-digest.mjs`. Shared issue format: `scripts/qa-state.mjs`. Tests: `npm test`.
-- `scripts/qa-status.mjs`, `npm run qa-status`: one bounded `gh` read of the inbox, latest `main` runs and the
-  current branch's CI; workers and hosts without the extension use it.
+- `scripts/ci-watch.mjs`, `npm run ci-watch`: the shared repo-local CI watcher. One instance reads all recent workflow
+  runs once a minute and writes `<git common dir>/ci-watch/status.json` atomically; agents read that file instead of
+  polling `gh`, and restart it with `npm run ci-watch -- --restart` when it is older than 3 minutes.
+  `npm run ci-watch -- --refresh-inbox` explicitly refreshes the `qa-inbox` issue snapshot (`inbox.json`) at triage,
+  task takeover or after an issue change, not per agent. Never merge evidence ([PROCESS.md](PROCESS.md#task-pipeline), `DECISIONS.md` [Task pipeline](DECISIONS.md#task-pipeline)).
+- `scripts/qa-status.mjs`, `npm run qa-status`: reads the watcher file for the inbox snapshot, latest `main` runs and
+  the current branch's CI; workers and hosts without the extension use it.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all.
-- `.agents/reviewers/test-integrity.md`: the read-only reviewer prompt for QA fixes and weakened tests, used through
-  `agent` as the whole `system`.
+- `.agents/reviewers/test-integrity.md`: the read-only reviewer prompt for mechanically detected weakened tests, used
+  through `agent` as the whole `system`.
+- `.agents/roles/test-fixer.md`: the short role of the test-fix lane agents, passed as the `role` of an `agent`, not as
+  the whole `system` ([PROCESS.md](PROCESS.md#task-pipeline)).
 - UI source folders `extensions/RQW-naming/`, `extensions/RQW-theme/`, `extensions/RQW-thinking/` and
   `extensions/RQW-tool-ui/` exist on main but are not registered in the package until UI integration P10.
   There is no `pi.themes` registration and no `extensions/RQW-agent-ui/` on main. Normal package loading does not

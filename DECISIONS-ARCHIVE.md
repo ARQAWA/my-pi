@@ -3977,3 +3977,67 @@ Archived by: process-rules-oct23 squash.
 >   Carriers: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution) and a short line in
 >   `AGENTS.md`; the product prompt `extensions/RQW-prompt/SYSTEM.md` does not carry it. Since: `47868b0`; limit 10 since `57fa3ff`.
 >   Historical parallel-limit source: `DECISIONS-ARCHIVE.md`, A-0003, USER entry at session line 2462.
+
+## A-0244 · archived 2026-10-24 · Work policy · Completeness check after every merge
+
+Status: SUPERSEDED by `[D-PIPELINE-COMPLETENESS]` ([DECISIONS.md, Task pipeline](DECISIONS.md#task-pipeline)).
+Introduced: `47868b0`. Source tree: `b0b3672`, lines 251-256, verbatim.
+Archived by: the process-pipeline change; the commit is `git log -S'A-0244' -- DECISIONS-ARCHIVE.md`.
+
+> - **Completeness check after every merge** `[D-WORK-COMPLETENESS]`. Owner (`16-27-59:593`):
+>   «А у тебя есть встроенный процесс, который перепроверяет, что нигде ничего не забыто? То, что я выше озвучивал про то, что у нас работа хуёво делается, и должна быть независимая перепроверка, что каждый влитый pull request действительно соответствует истине, что там всё заебись. Ты, по-моему, уже на эту хуйню решение придумал. У меня вопрос: оно уже работает или нет?»
+>   Coordinator text, the approved proposal: "a) После каждого слияния и перед итоговым отчётом свежий независимый ревьюер получает все твои сообщения из сессии и историю main. По каждой просьбе он отмечает: сделано и каким коммитом, в работе или ты её отменил. Если у просьбы нет ни одной отметки, это находка. Правило записываю в PROCESS.md."
+>   Owner (`16-27-59:599`): «Да, один по проверке, что ничего не забыто»
+>   Reason: a request can be dropped silently between sessions, merges and reports. Carrier:
+>   [PROCESS.md, Delivery](PROCESS.md#delivery) step 5. Since: `47868b0`.
+
+## A-0245 · archived 2026-10-24 · Quality control · Awareness without a permanent process
+
+Status: SUPERSEDED by the updated `[D-QA-STATUS]` and `[D-PIPELINE-CI-WATCHER]` ([DECISIONS.md, Task pipeline](DECISIONS.md#task-pipeline)): the "no daemon" and "one bounded gh round per call" parts no longer hold.
+Introduced: `3bdac4f`. Source tree: `b0b3672`, lines 1506-1514, verbatim.
+Archived by: the process-pipeline change; the commit is `git log -S'A-0245' -- DECISIONS-ARCHIVE.md`.
+
+> - **Awareness without a permanent process** `[D-QA-STATUS]`. Owner: «И ты периодически проверял в процессе работы, не типа отдельно воркером проверял, а чтобы ты проверял в рамках работы над задачей. Новую задачу ставишь, и чтобы автоматически тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть постоянный, перманентно висящий процесс». Decision: no daemon,
+>   timer or local cron. `scripts/qa-status.mjs` makes one bounded `gh` round (`npm run qa-status`, for workers); the
+>   dev-only, repo-local `.pi/extensions/qa-status/` shows a message on session start and on a changed red state, and
+>   `/qa` shows the full view. Main reads the status at task start, tells the owner in one line about a red scheduled
+>   `main` and triages it. Reason: the extension is useless outside this repository and must not ship in the
+>   package, so it is not an `RQW-*` extension and is not in `pi.extensions`; a failed `gh` call is reported as
+>   unavailable, never as green. Carrier: `.pi/extensions/qa-status/index.ts`, `scripts/qa-status.mjs`,
+>   [PROCESS.md](PROCESS.md#quality-control-loop).
+>   Since: `3bdac4f`.
+
+## A-0246 · archived 2026-10-24 · Work policy · Deterministic delivery quality (Windows CI gate)
+
+Status: SUPERSEDED in part by `[D-PIPELINE-MAC-GATE]` ([DECISIONS.md, Task pipeline](DECISIONS.md#task-pipeline)): the rules that Windows CI must pass on the exact head and that `deliver-check` requires it no longer hold; the active entry keeps the rest.
+Introduced: `47868b0`. Source tree: `main` (`b0b3672`), the whole entry, verbatim.
+Archived by: the process-pipeline change; the commit is `git log -S'A-0246' -- DECISIONS-ARCHIVE.md`.
+
+> - **Deterministic delivery quality** `[D-WORK-DELIVER-CHECK]`. Owner (`16-27-59:440`, approval `16-27-59:450`):
+>   «Теперь смотри насчет выполнения задач и пробелов, которые ты нашел. Я же не буду всегда тебя переспрашивать. Если бы я не спросил, ты бы об этом не узнал. Надо поэтому сделать какой-то процесс, как детерминированно эту проблему решить на постоянке, чтобы мне не надо было тебя постоянно переспрашивать, чтобы ты сам следил за качеством. Надо твое предложение по тому, как мы этот пробел будем закрывать.»
+>   «Правила по Process MD я одобряю»
+>   Coordinator text, the approved proposal: "1. Тестируется ровно то, что вливается. Если main изменился с момента создания ветки, исполнитель переносит ветку на свежий main. Тесты на Mac и Windows CI проходят на этом итоговом коммите.
+>   2. Ревью действует только для того коммита, который оно проверило. Любой коммит после CLEAN снова отправляет изменённые места на проверку: и задачу, и код.
+>   3. Перед каждым слиянием я запускаю скрипт npm run deliver-check <ветка>. Он проверяет три вещи. Ветка содержит текущий main. Windows CI прошёл именно на этом коммите. В описании коммита записаны номера ревью с CLEAN и список того, что не проверено вживую. Если чего-то нет, слияния нет.
+>   4. В каждом отчёте о готовой задаче я сам даю таблицу доказательств и честный раздел "не проверено вживую", без твоего запроса."
+>   Coordinator text, interpretation of rule 2: a conflict-free rebase onto `main` needs new tests and CI on the new head
+>   but no new review; places changed while resolving conflicts go back to review.
+>   Reason: branches tested alone were squashed onto a moved `main`, and a code-review CLEAN once covered an earlier commit
+>   while two later fixes landed unreviewed. Carriers: [PROCESS.md](PROCESS.md) (Sufficient proof, Independent review,
+>   Delivery), `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`. Since: `47868b0`.
+
+## A-0247 · archived 2026-10-24 · Quality control · Test integrity (review of every QA fix)
+
+Status: SUPERSEDED in part by the updated `[D-QA-TEST-INTEGRITY]` and `[D-PIPELINE-TEST-LANE]` ([DECISIONS.md, Quality control](DECISIONS.md#quality-control)): the integrity review of every QA fix is replaced by a review only of mechanically detected weakening.
+Introduced: `3bdac4f`. Source tree: `main` (`b0b3672`), the whole entry, verbatim.
+Archived by: the process-pipeline change; the commit is `git log -S'A-0247' -- DECISIONS-ARCHIVE.md`.
+
+> - **Test integrity** `[D-QA-TEST-INTEGRITY]`. Owner: «нужно именно обеспечивать качество, а не фальсифицировать работу, чтобы тесты были зелёные. Это супер критически важно, потому что эти тесты и вся наша работа — это всё обеспечение контроля качества.» and «Можно даже ревьюера поднимать, который перепроверяет тесты.» Decision: before any fix Main records a triage
+>   class (product bug, test bug, infra, drift) with evidence; a fixed list of weakening changes is forbidden without
+>   proof; a fix needs red-before/green-after in CI logs, and an intermittent one repeat runs with (1-p)^n < 0.05 (generic repeat harness `codemode-stress.yml`).
+>   A reviewer subagent with `.agents/reviewers/test-integrity.md` as its whole `system` checks every QA fix and every
+>   test or workflow change that weakens a check; `deliver-check` detects that case and requires the trailers
+>   `Test-change:` and `Test-review: agent#N CLEAN` (exact conditions: [PROCESS.md](PROCESS.md#quality-control-loop)). Reason: the aim is a working
+>   product, not a green badge; a weakened assertion turns a real failure into silence. Carrier: `PROCESS.md`,
+>   `.agents/reviewers/test-integrity.md`, `scripts/deliver-check.mjs`.
+>   Since: `3bdac4f`.

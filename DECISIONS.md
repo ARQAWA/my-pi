@@ -39,7 +39,8 @@ Provenance:
   4. траты лимитов сверх замера ревьюера.
 
   Never default-approve Marketplace publication, deletion of owner data/sessions, ~/.pi changes beyond installing
-  third-party extensions, or spending limits beyond the reviewer measurement. Reason: keep routine choices moving
+  third-party extensions, or spending limits beyond the reviewer measurement. Resuming a task paused by its 2-hour
+  timebox ([D-PIPELINE-TIMEBOX]) is never default-approved. Reason: keep routine choices moving
   without granting irreversible or excluded actions. Carrier:
   [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
   Since: process-rules-oct23 squash.
@@ -71,6 +72,30 @@ Provenance:
   Research, architecture reorganisation and a mechanically checkable repository index are queued in `BACKLOG.md`;
   detailed design still needs agreement before implementation. Since: process-rules-oct23 squash.
 
+- **Golden rule: no avoidable token spending** `[D-WORK-GOLDEN-RULE]`. A standing design and review requirement for the
+  harness and for the development workflow: spend no tokens where they can be avoided (no polling, no model turns
+  spent only waiting, no repeated reads or reviews without new input); every solution is engineered, thought through,
+  efficient, optimal and as simple as possible, with its trade-offs weighed and balanced to reach the right decision.
+  Owner (`16-27-59:5096`, entry `4a276e33`): «Мы вообще не должны тратить токены там, где мы токены можем не тратить. Это золотое правило нашего workflow разработки этого майпи харнеса.»
+  «Все должно быть суперинженерно, суперпродуманно, эффективно, оптимально и самым простым способом. Мы ищем баланс и разбираем трейд-оффы в реализации для того, чтобы принять правильное решение.»
+  Owner (`16-27-59:5107`, entry `5f6049b7`), where to record it: «Это еще можно зафиксировать в системном промте про золотое правило: не тратить токены там, где их можно не тратить, чтобы работать максимально эффективно и инженерно.»
+  Owner (`16-27-59:5111`, entry `8295a6f4`), on designing the first optimisation: «Короче, надо подумать, как следует сделать всё пиздато, максимально в соответствии с нашим манифестом workflow, с нашими стандартами качества и работы»
+  Owner (`16-27-59:5119`, entry `f6282fe9`), no reread to verify an own successful edit: «Когда мы правки делаем, мы знаем, в каких строках что должно быть написано. И если справка легла правильно, то мы знаем о том, что у нас там всё исправлено и всё. Не надо вообще читать файл для этого.»
+  This ships as one line in the `edit` and `write` descriptions and in `extensions/RQW-prompt/SYSTEM.md`: a successful
+  edit or write means the file holds the new text; do not reread it only to verify.
+  Follow-up read cache, approved and built directly after WEB-SEARCH with no pre-build measurement or trial:
+  [BACKLOG.md](BACKLOG.md#token-efficiency), reviewed at merge plus 3 days in
+  [BACKLOG.md](BACKLOG.md#token-efficiency-review). Coordinator question (`16-27-59:5122`): "Его делаем после веб-поиска?"
+  Owner (`16-27-59:5123`, entry `d0a9a090`): «да» Owner (`16-27-59:5131`, entry `1b3abc69`) on the mechanism: «Эта механика должна быть абсолютно полностью инженерной.»
+  Owner (`16-27-59:5135`, entry `171f4d82`), no trials: «через три дня после merge надо будет сделать review всех старых сессий на предмет того, помогло нам это или нет. И всё. Не будем никаких делать испытаний и прочей хуйни.»
+  Coordinator text (`16-27-59:5138`): the unchanged note only if the last read of the same range was at most 10 turns
+  and at most 30000 context tokens ago, otherwise full content.
+  Reason: tokens are a cost the owner wants spent only where nothing simpler works. Carriers:
+  [PROCESS.md, Golden rule](PROCESS.md#golden-rule), the owner's own record in
+  [WORKFLOW-MANIFEST.md](WORKFLOW-MANIFEST.md#золотое-правило), the code reviewer `.agents/reviewers/code.md`, the
+  review criterion line of every brief (`extensions/RQW-review/REVIEWER.md` already checks custom criteria), and the
+  product line in `extensions/RQW-prompt/SYSTEM.md` (a separate agent edits it with its prompt test).
+  Since: process-pipeline squash.
 - **Personal-work objection** `[D-WORK-EXECUTOR-ROLE]`. Main objects when asked to execute personal work and
   proposes a subagent. Only an explicit owner override permits personal execution; mechanical repository edit/write
   blocks remain unchanged. Owner (`16-27-59:4829`, entry `e512853d`):
@@ -79,7 +104,8 @@ Provenance:
   Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution), guard prompt.
   Since: process-rules-oct23 squash.
 - **Three active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most three tasks
-  run at once in the owner's priority queue, not ten first-level agents. The current order belongs in the handoff.
+  run in active execution at once in the owner's priority queue, not ten first-level agents; waiting tasks hold
+  no slot ([D-PIPELINE-SLOTS]); the test lane is the one exception ([D-PIPELINE-TEST-LANE]). The current order belongs in the handoff.
   Owner (`16-27-59:4782`, entry `f73155f0`):
   «Еще надо сузить количество одновременно выполняемых задач до трех и приоритеты расставить правильно, чтобы они в определенном порядке очереди шли»
   Owner (`16-27-59:4813`, entry `8f53ebc4`):
@@ -222,17 +248,19 @@ Opus 5.5 Low — это слишком дорого»
   Node tooling runs through Git Bash; the existing CI `pwsh` bootstrap is allowed infrastructure. Reason: no idle
   reruns. Carrier: [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns). Since: `8f2ea64`.
 - **Final checks and code reviewer** `[D-WORK-FINAL-CHECK]`. Work ends with an independent completeness-and-consistency
-  check; code changes also get a separate bug/quality reviewer through `agent` with `.agents/reviewers/code.md` as its
-  system prompt. Installed Pi is updated only for relevant runtime changes. Reason: independent proof without new
+  check; large code changes also get a separate bug/quality reviewer through `agent` with `.agents/reviewers/code.md` as its
+  system prompt, small ones one combined review ([D-PIPELINE-COMBINED-REVIEW]). Installed Pi is updated only for relevant runtime changes. Reason: independent proof without new
   product tools. Carriers: [PROCESS.md, Independent review](PROCESS.md#independent-review), `.agents/reviewers/code.md`.
   Since: `8f2ea64`.
 - **Deterministic delivery quality** `[D-WORK-DELIVER-CHECK]`. Owner (`16-27-59:440`, approval `16-27-59:450`):
   «Теперь смотри насчет выполнения задач и пробелов, которые ты нашел. Я же не буду всегда тебя переспрашивать. Если бы я не спросил, ты бы об этом не узнал. Надо поэтому сделать какой-то процесс, как детерминированно эту проблему решить на постоянке, чтобы мне не надо было тебя постоянно переспрашивать, чтобы ты сам следил за качеством. Надо твое предложение по тому, как мы этот пробел будем закрывать.»
   «Правила по Process MD я одобряю»
-  Coordinator text, the approved proposal: "1. Тестируется ровно то, что вливается. Если main изменился с момента создания ветки, исполнитель переносит ветку на свежий main. Тесты на Mac и Windows CI проходят на этом итоговом коммите.
-  2. Ревью действует только для того коммита, который оно проверило. Любой коммит после CLEAN снова отправляет изменённые места на проверку: и задачу, и код.
-  3. Перед каждым слиянием я запускаю скрипт npm run deliver-check <ветка>. Он проверяет три вещи. Ветка содержит текущий main. Windows CI прошёл именно на этом коммите. В описании коммита записаны номера ревью с CLEAN и список того, что не проверено вживую. Если чего-то нет, слияния нет.
-  4. В каждом отчёте о готовой задаче я сам даю таблицу доказательств и честный раздел "не проверено вживую", без твоего запроса."
+  Coordinator text, the approved proposal in short (the verbatim text is in `DECISIONS-ARCHIVE.md`, A-0246): 1. test exactly
+  what is merged, rebased onto a fresh `main`, with the tests on the final commit (the Windows part is replaced by
+  [D-PIPELINE-MAC-GATE]); 2. a review covers only the commit it checked; 3. before every merge `deliver-check` checks the
+  branch contains current `main`, the CI of that exact commit (the macOS jobs, see [D-PIPELINE-MAC-GATE]), the review
+  numbers with CLEAN and the list of what was not verified live; 4. every report carries an evidence table and an honest
+  "not verified live" section.
   Coordinator text, interpretation of rule 2: a conflict-free rebase onto `main` needs new tests and CI on the new head
   but no new review; places changed while resolving conflicts go back to review.
   Reason: branches tested alone were squashed onto a moved `main`, and a code-review CLEAN once covered an earlier commit
@@ -248,12 +276,6 @@ Opus 5.5 Low — это слишком дорого»
   Reason: the gate needs an honest result-review trailer while the reviewer is off. Carriers:
   [PROCESS.md, Independent review](PROCESS.md#independent-review), `scripts/deliver-check.mjs`,
   `test/deliver-check.test.ts`. Since: `9b93931`.
-- **Completeness check after every merge** `[D-WORK-COMPLETENESS]`. Owner (`16-27-59:593`):
-  «А у тебя есть встроенный процесс, который перепроверяет, что нигде ничего не забыто? То, что я выше озвучивал про то, что у нас работа хуёво делается, и должна быть независимая перепроверка, что каждый влитый pull request действительно соответствует истине, что там всё заебись. Ты, по-моему, уже на эту хуйню решение придумал. У меня вопрос: оно уже работает или нет?»
-  Coordinator text, the approved proposal: "a) После каждого слияния и перед итоговым отчётом свежий независимый ревьюер получает все твои сообщения из сессии и историю main. По каждой просьбе он отмечает: сделано и каким коммитом, в работе или ты её отменил. Если у просьбы нет ни одной отметки, это находка. Правило записываю в PROCESS.md."
-  Owner (`16-27-59:599`): «Да, один по проверке, что ничего не забыто»
-  Reason: a request can be dropped silently between sessions, merges and reports. Carrier:
-  [PROCESS.md, Delivery](PROCESS.md#delivery) step 5. Since: `47868b0`.
 - **Measurements in waves** `[D-WORK-MEASURE-WAVES]`. Owner (`16-27-59:3044`; `16-27-59:3059` to the five-step plan
   whose step 5 is this rule; `16-27-59:3197`; `16-27-59:3202`):
   «Так блять надо фиксить ты шо гонишь мы нахуй прогоны эти делаем . Мы прогоны делаем не ради прогонов. Мы прогоны делаем для того, чтобы найти косяки, найти хуйню, её пофиксить и делать пиздато всё. А ты, получается, просто всю ночь гоняешь прогоны и жгёшь лимиты. Для чего? Просто чтобы поставить галочку, что мы сделали прогоны нахуй?»
@@ -273,7 +295,8 @@ Opus 5.5 Low — это слишком дорого»
   «Нахуй ты вообще лимиты какие то ставишь? я разве говорил ставить? ты наблюдаешь за запусками следишь как себя агенты ведут и сам их прерываешь, но ты их не полишь, а опрашиваешь прграмно раз допустим в 1-3-5 минут.»
   «ну я имею ввиду не лично ты а тот кто делает замеры»
   Reason: a pilot once stopped on a self-imposed request cap after harness pauses used it up; caps are not stop
-  conditions. Carrier: [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks), rule 6.
+  conditions. The one exception is the controlled pause of [D-PIPELINE-TIMEBOX](#task-pipeline). Carrier:
+  [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks), rule 6.
   Since: `c7baf0c`.
 - **Short replies** `[D-WORK-SHORT-REPLIES]`. Owner (`13-49-40:204`, the line quoted in [D-WORK-BRANCHES], then):
   «Если это не требует расширения, конечно»
@@ -297,6 +320,163 @@ Opus 5.5 Low — это слишком дорого»
   baseline fix without allowing a runner-cached 24.21.0; the incident's exact cause remains unproven. Evidence
   collection and failure handling stay unchanged, with no reruns. Captured signature, isolation, upstream candidates
   and the CI policy: [notes/codemode-native-crash.md](notes/codemode-native-crash.md).
+
+## Task pipeline
+
+Rules: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline). Evidence: the speed analysis report outside the repository,
+`my-pi-evidence/process-speed/REPORT.md`. The owner answered the chat version of its seven questions (coordinator
+questions `16-27-59:5043`, entry `605c1e21`) in `16-27-59:5060`, entry `46a9e546`; the coordinator replied in
+`16-27-59:5061`, entry `a60ba2a1`; the owner approved in `16-27-59:5068`, entry `0a1ded04`. His approval quotes
+only the slot summary of [D-PIPELINE-SLOTS]; the other points of that coordinator reply ("Остальное принял") follow his
+numbered answers and are coordinator text. The owner answered items 2 and 3 with «2а 3а».
+
+- **Active slots and waiting tasks** `[D-PIPELINE-SLOTS]`. Only active execution holds one of the three slots. A task
+  that waits for CI, a reviewer, the merge queue or the owner holds none. A red required CI (a red macOS job of `tests.yml`, or
+  `pcli.yml` for `pcli-vscode`; not an advisory Windows job) sends the task to the top of the
+  queue; at the next free active slot its existing agent is resumed, and another is started only if its
+  session no longer exists. Owner (`16-27-59:5060`): «7 надо чет пиздатое придумать, по типу пятого пункта или же делать всегда но не делать из этого блокер, т.е. не ждать, свичиться на след задачу и переключаться интелекетуально как релаьный прогер»
+  «Работа должна быть суперконвейерная, суперэффективная, производительная, супербыстрая, без дрочи.»
+  Owner (`16-27-59:5068`) answered the quoted coordinator text with: «Делаем, да»
+  Coordinator text, the pipeline proposal (`16-27-59:5061`, formatting marks removed): "Про CI предлагаю конвейер, как у живого программиста, но без красного `main`. Агент доделал задачу, проверки чистые, ветка ушла в CI. Задача переходит в ожидание и место в тройке не занимает. Агенты сразу берут следующую задачу. Ожидающие задачи держит агент слияний. Зелёный CI он вливает сам. После сдвига `main` он заново гоняет CI тоже в фоне, никого не держа. Если CI красный, задача возвращается в начало очереди, и следующий освободившийся агент её чинит. Отличие от твоего варианта одно: вливаем после зелёного CI, а не до. Скорость та же, потому что никто не ждёт, а в `main` не попадает непроверенный код."
+  Coordinator text, the slot summary the owner quoted: "Получается так: три места только для активной работы. Задачи, которые ждут CI, проверку или тебя, места не занимают. Агент слияний и скрипт CI идут сбоку."
+  Reason: waits for CI, review and the owner idled slots; the analysis found CI and queue waits to be the largest
+  removable delay. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and
+  [Isolated parallel execution](PROCESS.md#isolated-parallel-execution), replacing the former plain "three tasks at the
+  same time" wording of [D-WORK-PARALLEL].
+  Since: process-pipeline squash.
+- **One merge agent, fixed order** `[D-PIPELINE-MERGE-TRAIN]`. One agent integrates branches in an order fixed in
+  the current session queue. It rebases onto current `main`, lets CI run in the background, and merges only when the macOS jobs on the exact
+  head are green and `deliver-check` passes ([D-PIPELINE-MAC-GATE]). Owner: «2а 3а» (item 3 a). Coordinator text, option 3a: "Слияниями занимается один агент в заранее заданном порядке. Повторов меньше, каждая итоговая версия проверяется."
+  Reason: moved `main` forced repeated final CI on ready branches. The exact-head gate stays for the macOS jobs: nothing untested is
+  merged. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and [Delivery](PROCESS.md#delivery).
+  Since: process-pipeline squash.
+- **Shared CI watcher** `[D-PIPELINE-CI-WATCHER]`. Owner (`16-27-59:5060`): «Окей, насчёт одного скрипта раз в минуту я согласен.»
+  One repo-local script, `npm run ci-watch`, reads all recent runs once a minute and atomically writes
+  `<git common dir>/ci-watch/status.json`. Agents read the file instead of calling `gh`; a file older than 3 minutes
+  is restarted with `npm run ci-watch -- --restart`; a fresh exact-head check before every merge stays in
+  `deliver-check`. The minute poll reads runs only; the open `qa-inbox` issues are an explicit separate read, `npm run ci-watch -- --refresh-inbox`
+  (`inbox.json`), run at triage, task takeover or after an issue change, not per agent. It replaces independent per-agent `gh` polling and the 10-minute per-process status cache of the
+  `qa-status` extension. Coordinator text, the explanation of how it works (`16-27-59:5061`): "Да, скрипт только для этого репозитория и только на твоём Mac, в наш продукт он не попадает. Помогает он так. Сейчас каждый агент сам спрашивает GitHub о своём прогоне, и десяток агентов съедают лимит. Скрипт одним запросом раз в минуту получает статус всех свежих прогонов репозитория и пишет его в файл, а агенты читают файл и в GitHub больше не ходят. Гонок не будет: скрипт запускается в одном экземпляре через метку, как координатор; файл он пишет целиком через переименование; если скрипт упал, файл устаревает, и следующий агент перезапускает скрипт."
+  Reason: independent pollers hit the GitHub limit and stopped every agent for at least 13 minutes (report). The file is
+  awareness only, never merge proof. Carrier: `scripts/ci-watch.mjs`, `scripts/qa-status.mjs`,
+  `scripts/deliver-check.mjs`, `.pi/extensions/qa-status/`, [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline).
+  Since: process-pipeline squash.
+- **Three classes of text change** `[D-PIPELINE-TEXT-CLASSES]`. Proofreading is checked locally with no independent
+  review and no application CI; a change of meaning gets review; runtime prompts are checked by agent behavior. Owner:
+  «2а 3а» (item 2 a). Coordinator text, option 2a: "Опечатки и правки формулировок проверяются локально. Изменения смысла идут на проверку. Рабочие промпты проверяются по поведению агента. Быстрее, а контроль остаётся."
+  The report's extra idea of dropping extension READMEs from application CI was not part of the chat option and is not
+  adopted; READMEs still need CI and code review. Reason: the 39-file documentation cleanup spent at least 50 minutes
+  of CI and found 9 real inconsistencies by review, so meaning review stays. Carrier:
+  [PROCESS.md, Independent review](PROCESS.md#independent-review), `scripts/deliver-check.mjs` (`Change-class:`,
+  `Doc-check:`). Since: process-pipeline squash.
+- **Combined review for small work** `[D-PIPELINE-COMBINED-REVIEW]`. Small work gets one combined result and code
+  review; large work keeps both. Owner: «6b» Coordinator text, option 6b: "Сразу перейти на совмещённую проверку для малых правок: меньше работы, риск не измерен." Coordinator definition of small (not owner words): at most 100 added plus deleted lines, all inside one extension, with no owner-visible behavior change; the gate enforces the lines and the extension, the reviewer verifies the behavior. An explicit owner request for both reviews on a delivery takes precedence.
+  Reason: two roles found different real defects, so large work keeps both; the owner accepted the unmeasured risk for
+  small work. Carrier: [PROCESS.md, Independent review](PROCESS.md#independent-review), `scripts/deliver-check.mjs`
+  (`Combined-review:`). Since: process-pipeline squash.
+- **Completeness check by count or time** `[D-PIPELINE-COMPLETENESS]`. A fresh independent completeness check runs
+  once after 7 merges or 120 minutes, whichever comes first, and always before the final report. Owner: «5а - раз в 7 слияний или раз в 120 минут»
+  Reason: the owner set the cadence against the coordinator's 3 merges or 30 minutes; checks mostly fixed marks and reread
+  the same chat. Replaces the check after every merge (`DECISIONS-ARCHIVE.md`, A-0244). Carrier:
+  [PROCESS.md, Delivery](PROCESS.md#delivery) step 5. Since: process-pipeline squash.
+- **Interim Windows skips for flaky tests** `[D-PIPELINE-FLAKE-SKIP]`. Inbox issues #3, #4 and #5 get a narrow skip, and
+  their causal fix goes to the end of the queue. Owner (`16-27-59:5060`): «4 - а может поставить им скип и в конец очереди на починку? что за дроч бежать чинить тесты срауз без бага явного?»
+  The test lane of [D-PIPELINE-TEST-LANE] works these items.
+  Coordinator text (`16-27-59:5061`): "Нестабильные тесты пропускаются, а их починка уходит в конец очереди. Пропускать буду узко: только упавшие проверки и только на Windows, со ссылкой на задачу в копилке. Остальная часть тестов фоновых задач продолжит ловить настоящие ошибки."
+  Reason: chasing a fix without an obvious bug blocked unrelated work. This is the owner-approved exception to the
+  forbidden list of [D-QA-TEST-INTEGRITY]; retries, raised timeouts and whole-file skips stay forbidden. Carrier:
+  [PROCESS.md, Quality control loop](PROCESS.md#quality-control-loop), [BACKLOG.md](BACKLOG.md#qa-flakes-last),
+  `extensions/RQW-tools/test/background.test.ts`. Since: process-pipeline squash.
+
+- **Pause is interrupt, resume is send** `[D-PIPELINE-PAUSE-RESUME]`. Pausing a task is an `agent` `interrupt` of its agent:
+  the session and its full history stay. Resuming it is an `agent` `send` of the next message to the same agent, which
+  continues with its full history. No checkpoint, continuation or handoff file is written for a pause or a resume, and
+  an agent is `stop`ped only when its task is finished or cancelled. Until child sessions survive a Pi restart, one
+  short checkpoint is written only immediately before a planned Pi restart. The current session queue stays the source
+  of the task order, not a file. Owner (`16-27-59:5087`, entry `ddd0ce47`): «Нет. Агент на паузе. Не надо писать никакой файл продолжения, надо просто уметь его возобновить. У нас же есть всё от него для того, чтобы его возобновить. У нас есть его сессия, есть его ID, есть всё от него. Надо просто, чтобы наш функционал саб-агентов мог возобновлять агентов и всё. Не надо никаких хендоффов делать.»
+  «И да, интерфейс должен разключать, когда агент стоит, когда он AFK, когда он работает.»
+  Owner (`16-27-59:5092`, entry `3c2122c8`), restart of the whole Pi process: «Я могу зайти в P, сделать resume и сказать: "Продолжай". И он должен уметь возобновить вообще всё: текущий чат возобновится, и агент основной текущего чата возобновит все предыдущие процессы.»
+  «В Kushore отдельная кнопка есть: можно основной чат не возобновлять, а возобновить только саб-агентов. И потом, когда они ответят, они сами дадут нотификацию основному чату, и основной чат сам продолжит работу.»
+  «основной чат не должен ни висеть, ни пулить, ничего. Он должен просто быть AFK, пока не придёт notification.»
+  Owner (`16-27-59:5103`, entry `8bb70dcd`), what resume means: «возобновить, значит просто retry тот запрос, на котором он был оборван. Вот и всё.»
+  Coordinator design text (not an owner quote; the future `resume` action of AGENT-SESSION-PERSIST): a paused or
+  interrupted agent resumes by retrying the interrupted model request without a new message, and the same `resume`
+  action works from a saved session after a Pi restart. A model request that was cut off is retried. A tool call that
+  was interrupted and may have side effects is never replayed blindly: the model sees it as interrupted and decides.
+  The shipped `agent` API stays as it is, `interrupt` then `send`, until the `resume` action is delivered; it is
+  not implemented by this entry.
+  Coordinator text (`16-27-59:5090`, entry `d044f551`, formatting marks removed): "Чего не хватает в самом функционале: 1. Сессии субагентов живут только в памяти, поэтому при перезапуске Pi они теряются. Их надо сохранять на диск со связью с родительской сессией. Тогда агента можно будет продолжить по номеру и после перезапуска, а `/remove` будет удалять их вместе с родителем. 2. В списке агентов будут видны три разных состояния: 'работает', 'ждёт' и 'простаивает'."
+  Coordinator text, scope of this entry: it records the rule only; disk-persisted subagent sessions and the three-state
+  agent list are queued in [BACKLOG.md](BACKLOG.md#agent-session-persist) and
+  [BACKLOG.md](BACKLOG.md#agent-states-ui) and are not implemented by it; AGENT-SESSION-PERSIST also carries the restart, subagents-only resume and notification wake-up above, linked to NONBLOCKING-WAITS and ASYNC-TOOL-CALLING.
+  Reason: closing paused agents lost their history and left only files they had written themselves; one Pi run
+  already resumes an interrupted agent with `send`. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline).
+  Since: process-pipeline squash.
+
+- **Two hours of substantive work per task** `[D-PIPELINE-TIMEBOX]`. Each development task gets at most 2 hours of
+  substantive work, then a safe pause and a report; the freed active slot goes at once to the highest-priority runnable
+  waiting task; more work on the paused task needs the owner's decision. Owner (`16-27-59:5231`, entry `ce0d83d8`): «Надо поставить тайм-лимит на каждую задачу — не больше двух часов на исполнение. Если больше двух часов проходит, то ты должен дать summary за проведённые два часа, дорожную карту и причинно-следственную связь.»
+  «Потому что на эту хуйню с review мы потратили день и кучу токенов сожгли на тесты, а в итоге получили хуй во рту.»
+  Owner (`16-27-59:5237`, entry `859f9675`): «Причем не просто остановка, а ты задачу останавливаешь, даешь мне отчет в таком виде. А вместо этого паркуется другая задача из списка ожидания.»
+  «Если я решу эту задачу продолжить, то ты их перетусуешь и вернёшь обратно задачу в работу»
+  Owner clarification (`16-27-59:5241`, entry `e3c8d844`): «Когда я имею в виду, что не больше двух часов, это имеется в виду именно саму сдачу. Когда он начал делать до самого конца сдачи, а не всё вместе со всеми перепроверками анальными, всякими тестами, CI, CD и прочей залупой»
+  Plain coordinator interpretation, not owner words: the limit counts research, design, implementation and fixes of
+  actual defects; it excludes check runs, review passes and external waits, which run asynchronously in the pipeline and
+  hold no active slot. Coordinator text (`16-27-59:5240`, entry `81302812`): "Да: через два часа задача встаёт на паузу, ты получаешь отчёт, а её место сразу занимает следующая готовая задача из очереди. Место под твой ответ не держим. Если разрешишь продолжить, пересоберу приоритеты и верну задачу в работу, при необходимости поставив менее важную на паузу. Сессии сохраняются."
+  Coordinator text (`16-27-59:5244`, entry `ecee6e20`): "Понял: два часа на выполнение самой задачи до передачи готового результата, а не на весь путь до слияния. Ревью, тесты, CI и ожидания в этот лимит не входят и идут отдельно. Реальные доработки считаются работой над задачей, таймер не обнуляют. В отчёте время работы и время проверок будут разделены."
+  Rules of this entry: the clock belongs to the logical task, with all descendant agents and all earlier work; a retry,
+  restart or helper never resets it; genuinely paused or externally waiting time is not counted. At 2 hours the
+  coordinator pauses the task with its sessions kept and no checkpoint file, and reports the result, the known costs, the
+  roadmap and the causes with facts apart from hypotheses, giving substantive time separately from verification and wait
+  time, and "unknown" where the logs cannot separate them. The night default never resumes a timed-out task. Benchmark
+  and measurement runs keep no hard request or start caps ([D-WORK-NO-CAPS]); their outstanding work pauses at a review
+  boundary at 2 hours and is reported. The limit is a control checkpoint, not a promise that a task is done in 2 hours.
+  Reason: the reviewer work cost a day and many tokens on tests with no result. Carrier:
+  [PROCESS.md, Task timebox](PROCESS.md#task-timebox) and `AGENTS.md`. Since: process-pipeline squash.
+
+- **macOS gates the merge, Windows is advisory** `[D-PIPELINE-MAC-GATE]`. A merge needs every returned `macos-latest` job
+  of `tests.yml` green on the exact head and the expected macOS matrix fully present. The Windows jobs keep running, are not cancelled in the final run and are advisory:
+  a red Windows job neither has to be fixed before the merge nor blocks delivery. An agent explicitly creates or triages a
+  `qa-inbox` issue for it, or a failed scheduled or dispatched `main` run is picked up by `qa-inbox.yml`; no issue is
+  created automatically, and `ci-watch -- --refresh-inbox` only reads existing issues into the local snapshot. The workflow's overall result is not required green. Owner
+  (`16-27-59:5269`, entry `e3ac659f`): «надо обойти эти ошибки подумай»
+  Owner (`16-27-59:5273`, entry `815dd5b0`), about the Windows CI failures: «они не должны блокировать нас»
+  Coordinator text (`16-27-59:5277`, entry `1e8c825d`), formatting marks removed: "Принял: падения на Windows больше не блокируют слияния. Для слияния нужен зелёный CI на Mac. Windows-проверки продолжают запускаться, но только для информации. Каждое их падение уходит в копилку задачей и встаёт в очередь. Одно исключение: правки плагина для VS Code, который работает только на Windows, по-прежнему ждут его собственной проверки. Это идёт в правку конвейера. Веб-поиск сольётся уже по этому правилу."
+  Owner (`16-27-59:5309`, entry `1bbe27c1`), what happens to the ignored failures: «нужно все косяки Windows-тестов в конец бэклога засунуть, чтобы он их потом фиксил, чтобы они не были заброшены, чтобы Windows тоже поддерживалась, доводилась до конца.»
+  Coordinator text (`16-27-59:5312`, entry `4cf73f93`), formatting marks removed: "Да, все падения Windows будут уходить в конец бэклога, ни одно не потеряется. Это часть правила: агент слияний записывает каждое такое падение задачей со ссылкой на прогон. В бэклоге появится общий пункт 'Падения тестов на Windows' со всем известным сейчас: 1. нестабильные тесты фоновых задач;"
+  Obligation, the same for every ignored failure and no new automation: before the delivery closes, the merge agent
+  records each ignored Windows failure as a tail `BACKLOG.md` item (umbrella `WINDOWS-TEST-FAILURES`) or a linked
+  `qa-inbox` issue. If Windows jobs still run at the merge, it keeps tracking the run in the background without an
+  active slot and without model polling turns, and records a later failure the same way, so branch deletion loses nothing.
+  Coordinator narrow exception, coordinator text and not an owner quote: the `pcli-vscode` change, a product that runs only
+  on Windows, still waits for a green `pcli.yml` run on the exact head.
+  Supersedes the Windows part of [D-WORK-DELIVER-CHECK] (original in `DECISIONS-ARCHIVE.md`, A-0246) and the Windows
+  wording of [D-WORK-CI-LOGS] and [D-WORK-CHECKS-ONCE]. Reason: Windows timing failures blocked unrelated work; they are
+  tracked in the inbox ([D-PIPELINE-FLAKE-SKIP]) instead. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and
+  [Delivery](PROCESS.md#delivery), `scripts/deliver-check.mjs`. Since: process-pipeline squash.
+
+- **Test lane** `[D-PIPELINE-TEST-LANE]`. Three main work lanes and a fourth lane for tests only, usable for nothing else and
+  outside the three active slots. Its agents are ordinary `agent`s on the simple pairs of the worker table, Sonnet 5.5
+  medium or Sol 6.1 low (coordinator interpretation of the owner's wording), with `.agents/roles/test-fixer.md` as the
+  `role`. They take the tail items of [WINDOWS-TEST-FAILURES](BACKLOG.md#windows-test-failures) and
+  [QA-FLAKES-LAST](BACKLOG.md#qa-flakes-last) and own all test work: every failing test, reruns and the full restoration
+  of Windows. The lane starts only after this pipeline change is delivered, and then follows all its agreements and
+  tooling (CI watcher, merge agent, queue); it is not launched in this branch. Reruns follow a fix or a new head, not blind
+  retries to get green, unless the owner decides otherwise later. Red before and green after, and no weakening of a check,
+  stay. Owner (`16-27-59:5327`, entry `f293eaf1`): «Просто зафиксируй, что у нас есть три основных рабочих потока и четвёртый поток чисто для тестов, больше ни для чего непригодный.»
+  Owner (`16-27-59:5331`, entry `de8294bf`): «И пусть этот отдельный поток всеми тестами занимается: чинит всё, перезапускает. Он починит все упавшие тесты, всю Windows починит.» «После того, как конвейер будет готов, переработан, чтобы он в рамках всех договорённостей и всего tooling конвейера работал.»
+  Owner (`16-27-59:5323`, entry `6256b148`), the prompt: «Ты нормальный пром дай, нормально сконфигурируй, выдай ему рамки, ограничения, и он нормально работу сделает»
+  Reason: Windows and flaky failures would otherwise wait for the three slots. Carrier:
+  [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), `.agents/roles/test-fixer.md`. Since: process-pipeline squash.
+- **Tests exist to check behavior** `[D-PIPELINE-TEST-PURPOSE]`. Every agent that writes, generates or fixes tests has one
+  purpose: to check that the behavior matches the requirements, not to turn the run green, with the same bound as the
+  reviewer: no fanaticism, perfectionism, polishing or taste. Owner (`16-27-59:5319`, entry `826fc7dd`): «Надо записать workflow, что все агенты, которые работают с тестами, пишут тесты, генерируют тесты, их задача — проверить качество на совпадение с требованиями, а не просто покрасить тесты в зеленый цвет.»
+  «При этом так же, как и в случае с ревьюером, там должно быть без фанатизма, перфекционизма, вылизывания и прочей хуйни, вкусовщины»
+  Coordinator interpretation, not owner words and not a direct owner approval of the algorithm: the owner gave the
+  instruction for the prompt and the workflow; the test-integrity review is therefore narrowed to mechanically detected
+  weakening, with `deliver-check` as the detector. Reason: this is the only purpose of tests and of work on them.
+  Carrier: [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns) and
+  [Quality control loop](PROCESS.md#quality-control-loop). Since: process-pipeline squash.
 
 ## Scope
 
@@ -1503,20 +1683,14 @@ in the approved proposal (not stored in this repository). The loop reads only pu
   it does fail when a `QA: #N` line names an issue that is not in the inbox. Reason: a flaky or drifting `main` must
   not freeze unrelated work, while Main still sees what is open. Carrier: `scripts/deliver-check.mjs`.
   Since: `3bdac4f`.
-- **Awareness without a permanent process** `[D-QA-STATUS]`. Owner: «И ты периодически проверял в процессе работы, не типа отдельно воркером проверял, а чтобы ты проверял в рамках работы над задачей. Новую задачу ставишь, и чтобы автоматически тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть постоянный, перманентно висящий процесс». Decision: no daemon,
-  timer or local cron. `scripts/qa-status.mjs` makes one bounded `gh` round (`npm run qa-status`, for workers); the
-  dev-only, repo-local `.pi/extensions/qa-status/` shows a message on session start and on a changed red state, and
-  `/qa` shows the full view. Main reads the status at task start, tells the owner in one line about a red scheduled
-  `main` and triages it. Reason: the extension is useless outside this repository and must not ship in the
-  package, so it is not an `RQW-*` extension and is not in `pi.extensions`; a failed `gh` call is reported as
-  unavailable, never as green. Carrier: `.pi/extensions/qa-status/index.ts`, `scripts/qa-status.mjs`,
-  [PROCESS.md](PROCESS.md#quality-control-loop).
+- **Awareness through the shared watcher** `[D-QA-STATUS]`. Owner: «И ты периодически проверял в процессе работы, не типа отдельно воркером проверял, а чтобы ты проверял в рамках работы над задачей. Новую задачу ставишь, и чтобы автоматически тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть постоянный, перманентно висящий процесс». Later owner answer (`16-27-59:5060`, entry `46a9e546`): «Окей, насчёт одного скрипта раз в минуту я согласен.» Decision: no timer or local cron; the watcher of [D-PIPELINE-CI-WATCHER] is started on demand and shared. `scripts/qa-status.mjs` (`npm run qa-status`, for workers) and the dev-only, repo-local `.pi/extensions/qa-status/` read its file instead of making their own `gh` rounds; the extension shows a message on session start and on a changed red state, and `/qa` shows the full view. Main reads the status at task start, tells the owner in one line about a red scheduled `main` and triages it. Reason: the extension is useless outside this repository and must not ship in the package, so it is not an `RQW-*` extension and is not in `pi.extensions`; an unreadable or stale cache is reported as unavailable, never as green. Carrier: `.pi/extensions/qa-status/index.ts`, `scripts/qa-status.mjs`, `scripts/ci-watch.mjs`, [PROCESS.md](PROCESS.md#quality-control-loop).
   Since: `3bdac4f`.
 - **Test integrity** `[D-QA-TEST-INTEGRITY]`. Owner: «нужно именно обеспечивать качество, а не фальсифицировать работу, чтобы тесты были зелёные. Это супер критически важно, потому что эти тесты и вся наша работа — это всё обеспечение контроля качества.» and «Можно даже ревьюера поднимать, который перепроверяет тесты.» Decision: before any fix Main records a triage
   class (product bug, test bug, infra, drift) with evidence; a fixed list of weakening changes is forbidden without
   proof; a fix needs red-before/green-after in CI logs, and an intermittent one repeat runs with (1-p)^n < 0.05 (generic repeat harness `codemode-stress.yml`).
-  A reviewer subagent with `.agents/reviewers/test-integrity.md` as its whole `system` checks every QA fix and every
-  test or workflow change that weakens a check; `deliver-check` detects that case and requires the trailers
+  A reviewer subagent with `.agents/reviewers/test-integrity.md` as its whole `system` checks only a test or workflow
+  change that `deliver-check` mechanically detects as weakening a check (skip, todo, retry, raised timeout,
+  continue-on-error, fewer assertions), not every QA fix ([D-PIPELINE-TEST-LANE]); the gate then requires the trailers
   `Test-change:` and `Test-review: agent#N CLEAN` (exact conditions: [PROCESS.md](PROCESS.md#quality-control-loop)). Reason: the aim is a working
   product, not a green badge; a weakened assertion turns a real failure into silence. Carrier: `PROCESS.md`,
   `.agents/reviewers/test-integrity.md`, `scripts/deliver-check.mjs`.

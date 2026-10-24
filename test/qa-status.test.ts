@@ -1,90 +1,101 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { snapshot, render, run } from "../scripts/qa-status.mjs";
-import { encodeState } from "../scripts/qa-state.mjs";
 import { createQaStatus } from "../.pi/extensions/qa-status/index.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const temps: string[] = [];
 after(() => { for (const p of temps) rmSync(p, { recursive: true, force: true }); });
-const record = (id = 1, extra = {}) => ({ id, run_attempt: 1, head_branch: "main", head_sha: "a".repeat(40),
+const NOW = Date.parse("2026-10-23T02:00:00Z");
+const record = (id = 1, extra = {}) => ({ id, path: ".github/workflows/tests.yml", run_attempt: 1, head_branch: "main", head_sha: "a".repeat(40),
 	event: "schedule", status: "completed", conclusion: "success", created_at: "2026-10-23T00:00:00Z",
 	html_url: `https://github.com/o/r/actions/runs/${id}`, ...extra });
 
 function setup() {
 	const tmp = mkdtempSync(join(tmpdir(), "qa-status-"));
 	temps.push(tmp);
-	const bin = join(tmp, "bin");
-	mkdirSync(bin);
-	const data = join(tmp, "data.json");
-	const calls = join(tmp, "calls.jsonl");
-	writeFileSync(join(bin, "gh.mjs"), `import { readFileSync, appendFileSync } from "node:fs";
-const endpoint = process.argv[3];
-appendFileSync(process.env.FAKE_QA_CALLS, JSON.stringify(endpoint) + "\\n");
-const data = JSON.parse(readFileSync(process.env.FAKE_QA_DATA, "utf8"));
-if (data.fail) { console.error("fake gh unavailable"); process.exit(1); }
-if (endpoint.includes("/issues?")) console.log(JSON.stringify(data.issues ?? []));
-else {
- const workflow = endpoint.match(/workflows\\/([^/]+)\\/runs/)[1];
- if (data.workflowErrors?.[workflow]) { console.error(data.workflowErrors[workflow]); process.exit(1); }
- const params = new URLSearchParams(endpoint.split("?")[1]);
- const runs = (data[workflow] ?? []).filter(r => (!params.has("event") || r.event === params.get("event")) &&
- (!params.has("branch") || r.head_branch === params.get("branch")));
- console.log(JSON.stringify({ workflow_runs: runs }));
-}
-`);
-	if (process.platform === "win32") writeFileSync(join(bin, "gh.cmd"), `@"${process.execPath}" "%~dp0gh.mjs" %*\r\n`);
-	else {
-		writeFileSync(join(bin, "gh"), `#!/bin/sh\nexec "${process.execPath}" "${join(bin, "gh.mjs")}" "$@"\n`);
-		chmodSync(join(bin, "gh"), 0o755);
-	}
 	const config = join(tmp, "gitconfig");
 	writeFileSync(config, "[user]\n name = t\n email = t@example.com\n[commit]\n gpgsign = false\n");
-	const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
-	const env = { ...process.env, [pathKey]: bin + delimiter + process.env[pathKey],
-		GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: config, FAKE_QA_DATA: data, FAKE_QA_CALLS: calls };
+	const env = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: config };
 	const git = (...args: string[]) => execFileSync("git", args, { cwd: tmp, env, encoding: "utf8" }).trim();
 	git("init", "--quiet", "-b", "main");
 	git("commit", "--quiet", "--allow-empty", "-m", "base");
 	git("remote", "add", "origin", "git@github.com:example/project.git");
-	const set = (extra = {}) => writeFileSync(data, JSON.stringify({ issues: [],
-		"tests.yml": [record()], "pcli.yml": [record(2)], "qa-inbox.yml": [record(3)], "qa-digest.yml": [record(4)], ...extra }));
+	const cachePath = join(tmp, ".git", "ci-watch", "status.json");
+	mkdirSync(dirname(cachePath), { recursive: true });
+	const defaults = { "tests.yml": [record()], "pcli.yml": [record(2)],
+		"qa-inbox.yml": [record(3)], "qa-digest.yml": [record(4)] };
+	const set = (extra: any = {}, metadata: any = {}) => {
+		const workflows = { ...defaults, ...extra };
+		const runs = Object.entries(workflows).flatMap(([workflow, list]) => (list as any[])
+			.map((r) => ({ ...r, path: `.github/workflows/${workflow}` })));
+		writeFileSync(cachePath, JSON.stringify({ version: 1, repo: "example/project",
+			fetchedAt: new Date(NOW).toISOString(), runs, ...metadata }));
+	};
 	set();
-	const get = () => snapshot({ cwd: tmp, run: (cmd: string, args: string[], opts: object) => run(cmd, args, { ...opts, env }) });
-	return { tmp, git, set, get, calls, env };
+	const setInbox = (items: any[], fetchedAt = new Date(NOW).toISOString()) => {
+		writeFileSync(join(dirname(cachePath), "inbox.json"), JSON.stringify({
+			version: 1, repo: "example/project", fetchedAt, items,
+		}));
+	};
+	const calls: { cmd: string; args: string[]; opts: any }[] = [];
+	const execute = (cmd: string, args: string[], opts: any) => {
+		calls.push({ cmd, args, opts });
+		assert.equal(cmd, "git", "snapshot must never invoke gh or another network client");
+		return run(cmd, args, { ...opts, env });
+	};
+	const get = (options = {}) => snapshot({ cwd: tmp, run: execute, now: () => NOW, ...options });
+	return { tmp, git, set, setInbox, get, calls, env, cachePath };
 }
 
-describe("QA snapshot with fake gh", () => {
+describe("QA snapshot from watcher cache", () => {
 	it("reports green runs, derives origin, and gives every child a bounded timeout", async () => {
 		const t = setup();
 		const state = await t.get();
 		assert.equal(state.ok, true, render(state));
-		assert.equal(state.items.length, 4);
-		assert.ok(state.items.every((i: any) => i.level === "green"));
-		assert.match(readFileSync(t.calls, "utf8"), /repos\/example\/project\//);
-		const commands: any[] = [];
-		await snapshot({ cwd: t.tmp, repo: "o/r", run: async (cmd: string, args: string[], opts: any) => {
-			commands.push(opts); return run(cmd, args, { ...opts, env: t.env });
-		} });
-		assert.ok(commands.every((o) => o.timeout > 0 && o.timeout <= 11_000));
+		assert.equal(state.items.filter((i: any) => i.id.startsWith("run:")).length, 4);
+		assert.ok(state.items.filter((i: any) => i.id.startsWith("run:")).every((i: any) => i.level === "green"));
+		assert.ok(t.calls.some((c) => c.args.join(" ") === "remote get-url origin"));
+		assert.ok(t.calls.some((c) => c.args.includes("--git-common-dir")));
+		assert.ok(t.calls.every((c) => c.cmd === "git" && c.opts.timeout > 0 && c.opts.timeout <= 11_000));
+		assert.match(render(state), /inbox.*not refreshed/i);
 	});
-	it("decodes a red inbox issue, including labels, rate and occurrence identity", async () => {
+	it("reads a manually refreshed inbox sidecar with labels, rate and occurrence identity", async () => {
 		const t = setup();
 		const lastSeen = "2026-10-23T01:00:00Z";
-		t.set({ issues: [{ number: 7, title: "[qa] a failure", labels: [{ name: "qa-inbox" }],
-			html_url: "https://github.com/o/r/issues/7", body: encodeState({ signature: "abc1234", lastSeen,
-				rate: { k: 2, n: 6 }, occurrences: [{}, {}] }) }] });
+		t.setInbox([{ id: `issue:7:${lastSeen}`, level: "red", url: "https://github.com/o/r/issues/7",
+			text: `#7 [qa] a failure [qa-inbox] rate 2/6; lastSeen ${lastSeen}; occurrences 2` }]);
 		const state = await t.get();
 		assert.equal(state.items[0].id, `issue:7:${lastSeen}`);
 		assert.equal(state.items[0].level, "red");
 		assert.match(render(state), /rate 2\/6; lastSeen .*; occurrences 2/);
 		assert.match(render(state, { onlyIds: [state.items[0].id] }), /qa-inbox/);
 		assert.doesNotMatch(render(state, { onlyIds: [state.items[0].id] }), /GREEN/);
+	});
+	it("keeps the inbox refresh timestamp independent of fresh workflow runs", async () => {
+		const t = setup();
+		const fetchedAt = "2026-10-20T02:00:00.000Z";
+		t.setInbox([], fetchedAt);
+		const state = await t.get();
+		assert.equal(state.ok, true, render(state));
+		const inbox = state.items.find((i: any) => i.level === "info" && /inbox/i.test(i.text) && i.text.includes(fetchedAt));
+		assert.ok(inbox, "the inbox must show its own older refresh timestamp");
+		assert.match(inbox.text, /not (?:automatically )?refreshed|manual|on-demand/i);
+		assert.match(render(state), /--refresh-inbox/);
+		assert.equal(state.items.filter((i: any) => i.id.startsWith("run:") && i.level === "green").length, 4);
+	});
+	it("does not read legacy inbox items embedded in the workflow cache", async () => {
+		const t = setup();
+		t.set({}, { inboxItems: [{ id: "issue:99:legacy", level: "red", text: "legacy inbox item", url: "" }] });
+		const state = await t.get();
+		assert.equal(state.ok, true, render(state));
+		assert.ok(!state.items.some((i: any) => i.id === "issue:99:legacy"));
+		assert.match(render(state), /inbox.*not refreshed/i);
 	});
 	it("shows only the last three eligible main runs, including a failed attempt", async () => {
 		const t = setup();
@@ -108,33 +119,58 @@ describe("QA snapshot with fake gh", () => {
 		t.git("checkout", "--quiet", "--detach");
 		assert.ok(!(await t.get()).items.some((i: any) => i.id.startsWith("branch:")));
 	});
-	it("keeps other results when a workflow is not on the default branch yet", async () => {
+	it("keeps other results when a workflow has no cached runs", async () => {
 		const t = setup();
-		t.set({ workflowErrors: { "qa-inbox.yml": "gh: Not Found (HTTP 404)" },
-			"tests.yml": [record(8, { conclusion: "failure" })] });
+		t.set({ "qa-inbox.yml": [], "tests.yml": [record(8, { conclusion: "failure" })] });
 		const state = await t.get();
 		assert.equal(state.ok, true, render(state));
-		assert.deepEqual(state.items.find((i: any) => i.id === "workflow:qa-inbox.yml:not-on-default"), {
-			id: "workflow:qa-inbox.yml:not-on-default", level: "info", url: "",
-			text: "qa-inbox.yml: not on the default branch yet",
-		});
+		assert.ok(state.items.some((i: any) => i.level === "info" && /qa-inbox.*no runs/.test(i.text)));
 		assert.ok(state.items.some((i: any) => i.id === "run:8:1" && i.level === "red"));
 		assert.ok(state.items.some((i: any) => i.id === "run:4:1" && i.level === "green"));
 		assert.doesNotMatch(render(state), /unavailable/);
 	});
-	it("does not suppress a non-404 workflow error", async () => {
+	it("selects the latest inbox and digest runs and three eligible pcli runs", async () => {
 		const t = setup();
-		t.set({ workflowErrors: { "qa-inbox.yml": "gh: Forbidden (HTTP 403)" } });
+		t.set({ "pcli.yml": [record(20, { event: "push" }), record(19, { head_branch: "task" }),
+			record(18), record(17, { event: "workflow_dispatch" }), record(16), record(15)],
+			"qa-inbox.yml": [record(30), record(31)], "qa-digest.yml": [record(40), record(41)] });
 		const state = await t.get();
-		assert.equal(state.ok, false);
-		assert.match(render(state), /QA status unavailable:.*HTTP 403/);
+		const ids = state.items.map((i: any) => i.id);
+		for (const id of [18, 17, 16, 31, 41]) assert.ok(ids.includes(`run:${id}:1`));
+		for (const id of [20, 19, 15, 30, 40]) assert.ok(!ids.includes(`run:${id}:1`));
 	});
-	it("reports unavailable, never green, on gh failure; CLI always exits zero", async () => {
+	it("accepts the freshness boundary but rejects stale, future, missing and malformed cache", async () => {
 		const t = setup();
-		t.set({ fail: true });
-		const state = await t.get();
+		t.set({}, { fetchedAt: new Date(NOW - 180_000).toISOString() });
+		assert.equal((await t.get()).ok, true);
+		for (const fetchedAt of [new Date(NOW - 180_001).toISOString(), new Date(NOW + 1).toISOString()]) {
+			t.set({}, { fetchedAt });
+			const state = await t.get();
+			assert.equal(state.ok, false);
+			assert.match(render(state), /npm run ci-watch/);
+			assert.doesNotMatch(render(state), /GREEN/);
+		}
+		rmSync(t.cachePath);
+		const missing = await t.get();
+		assert.equal(missing.ok, false);
+		assert.match(render(missing), /npm run ci-watch/);
+		writeFileSync(t.cachePath, "not json");
+		assert.equal((await t.get()).ok, false);
+	});
+	it("supports an explicit cache path and rejects a different repository", async () => {
+		const t = setup();
+		const override = join(t.tmp, "override.json");
+		writeFileSync(override, readFileSync(t.cachePath));
+		rmSync(t.cachePath);
+		assert.equal((await t.get({ cachePath: override, repo: "example/project" })).ok, true);
+		assert.equal((await t.get({ cachePath: override, repo: "other/project" })).ok, false);
+	});
+	it("reports unavailable, never green, on watcher failure; CLI always exits zero", async () => {
+		const t = setup();
+		t.set({}, { error: "watcher offline", fetchedAt: new Date().toISOString() });
+		const state = await t.get({ now: () => Date.now() });
 		assert.equal(state.ok, false);
-		assert.match(render(state), /^QA status unavailable:.*fake gh unavailable/);
+		assert.match(render(state), /^QA status unavailable:.*watcher offline/);
 		assert.doesNotMatch(render(state), /GREEN/);
 		const cli = spawnSync(process.execPath, [join(ROOT, "scripts/qa-status.mjs"), "--json"], { cwd: t.tmp, env: t.env, encoding: "utf8", timeout: 20_000 });
 		assert.equal(cli.status, 0, cli.stderr);
@@ -168,7 +204,7 @@ describe("QA project extension", () => {
 		await h.flush();
 		assert.equal(h.calls(), 1);
 		assert.equal(h.sent.length, 0);
-		h.advance(599_999);
+		h.advance(59_999);
 		h.hooks.agent_start({}, h.ctx);
 		await h.flush();
 		assert.equal(h.calls(), 1);

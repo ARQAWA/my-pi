@@ -1,19 +1,8 @@
-import { execFile } from "node:child_process";
-import { resolve } from "node:path";
+import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { decodeState, INBOX_LABEL } from "./qa-state.mjs";
-
-// All children share one deadline; no retries or persistent polling.
-export function run(command, args, options) {
-	return new Promise((resolve, reject) => {
-		const windowsGh = process.platform === "win32" && command === "gh";
-		execFile(command, windowsGh ? args.map((a) => `"${a}"`) : args, { ...options, encoding: "utf8", maxBuffer: 4 * 1024 * 1024,
-			shell: process.platform === "win32" && command === "gh" }, (error, stdout, stderr) => {
-			if (error) reject(new Error(String(stderr || error.message).trim()));
-			else resolve(stdout.trim());
-		});
-	});
-}
+import { cacheDirectory, isFresh, readJson, run } from "./ci-watch.mjs";
+export { run } from "./ci-watch.mjs";
 
 const levelOf = (r) => r.status !== "completed" ? "pending"
 	: r.conclusion === "success" ? "green"
@@ -22,71 +11,51 @@ const newest = (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || 
 const runItem = (r, name) => ({ id: `run:${r.id}:${r.run_attempt ?? 1}`, level: levelOf(r),
 	text: `${name}: ${r.status === "completed" ? r.conclusion : r.status} #${r.id} attempt ${r.run_attempt ?? 1}`, url: r.html_url });
 const reason = (e) => String(e?.message ?? e).replace(/\s+/g, " ").slice(0, 400);
+const workflowRuns = (runs, workflow) => runs.filter((r) => r.path?.split("@")[0] === `.github/workflows/${workflow}`).sort(newest);
 
-export async function snapshot({ cwd = process.cwd(), repo, run: execute = run } = {}) {
-	const at = new Date().toISOString();
-	const deadline = Date.now() + 15_000;
-	const call = (cmd, args) => execute(cmd, args, { cwd, timeout: Math.max(1, Math.min(11_000, deadline - Date.now())) });
+// Readers never query GitHub. A bounded recent page is useful awareness, not merge proof.
+export async function snapshot({ cwd = process.cwd(), repo, run: execute = run, now = Date.now, cachePath } = {}) {
+	const at = new Date(now()).toISOString();
+	const call = (cmd, args) => execute(cmd, args, { cwd, timeout: 11_000 });
 	try {
 		if (!repo) {
-			let remote = "";
-			try { remote = await call("git", ["remote", "get-url", "origin"]); } catch { /* A checkout without origin uses the project default. */ }
-			repo = /(?:github\.com[:/])([^/\s]+\/[^/\s]+?)(?:\.git)?$/.exec(remote)?.[1] ?? "ARQAWA/my-pi";
+			const remote = await call("git", ["remote", "get-url", "origin"]);
+			repo = /(?:github\.com[:/])([^/\s]+\/[^/\s]+?)(?:\.git)?$/.exec(remote)?.[1];
 		}
-		if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("invalid repository name");
-		const [branch, sha] = await Promise.all([
+		if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("invalid repository name");
+		const [branch, sha, dir] = await Promise.all([
 			call("git", ["rev-parse", "--abbrev-ref", "HEAD"]), call("git", ["rev-parse", "HEAD"]),
+			cachePath ? null : cacheDirectory(cwd, (cmd, args) => call(cmd, args)),
 		]);
 		if (!/^[0-9a-f]{40,64}$/.test(sha)) throw new Error("invalid local HEAD");
-		const api = async (endpoint) => JSON.parse(await call("gh", ["api", `repos/${repo}/${endpoint}`]));
-		const missingWorkflows = new Set();
-		const runs = async (workflow, query) => {
-			try {
-				return (await api(`actions/workflows/${workflow}/runs?${query}`)).workflow_runs;
-			} catch (e) {
-				if (!/\bHTTP 404\b/.test(String(e?.message ?? e))) throw e;
-				missingWorkflows.add(workflow);
-				return [];
-			}
-		};
-		// Fixed, shell-safe arguments also let Windows use the gh.cmd test shim.
-		const mainRuns = (workflow) => Promise.all(["schedule", "workflow_dispatch"].map((event) =>
-			runs(workflow, `branch=main&event=${event}&per_page=3`))).then((groups) => groups.flat()
-			.filter((r) => r.head_branch === "main" && ["schedule", "workflow_dispatch"].includes(r.event)).sort(newest).slice(0, 3));
-		const checkBranch = branch !== "main" && branch !== "HEAD";
-		const [issues, tests, pcli, inbox, digest, branchRuns] = await Promise.all([
-			api(`issues?state=open&labels=${INBOX_LABEL}&per_page=100`),
-			mainRuns("tests.yml"), mainRuns("pcli.yml"),
-			runs("qa-inbox.yml", "per_page=1"), runs("qa-digest.yml", "per_page=1"),
-			checkBranch ? runs("tests.yml", `head_sha=${sha}&per_page=100`) : [],
-		]);
-		const items = issues.filter((i) => !i.pull_request).map((i) => {
-			const state = decodeState(i.body);
-			const rate = state?.rate;
-			const lastSeen = state?.lastSeen ?? i.updated_at;
-			return { id: `issue:${i.number}:${lastSeen}`, level: "red", url: i.html_url,
-				text: `#${i.number} ${i.title} [${i.labels.map((l) => typeof l === "string" ? l : l.name).join(", ")}] rate ${rate ? `${rate.k}/${rate.n}` : "unknown"}; lastSeen ${lastSeen ?? "unknown"}; occurrences ${state?.occurrences?.length ?? 0}` };
-		});
-		if (issues.length === 100) throw new Error("open issue list reached its 100-item bound; status is incomplete");
-		for (const [name, workflow, list] of [["main tests", "tests.yml", tests], ["main pcli", "pcli.yml", pcli],
-			["qa-inbox", "qa-inbox.yml", inbox], ["qa-digest", "qa-digest.yml", digest]]) {
-			if (missingWorkflows.has(workflow)) {
-				items.push({ id: `workflow:${workflow}:not-on-default`, level: "info",
-					text: `${workflow}: not on the default branch yet`, url: "" });
-				continue;
-			}
+		const cached = JSON.parse(await readFile(cachePath ?? resolve(dir, "status.json"), "utf8"));
+		if (cached.repo !== repo || !Array.isArray(cached.runs)) throw new Error("invalid watcher cache");
+		if (!isFresh(cached, now())) throw new Error("watcher cache stale or missing successful fetch; restart with npm run ci-watch -- --restart");
+		if (cached.error) throw new Error(`watcher fetch failed: ${cached.error}; restart with npm run ci-watch -- --restart`);
+		const inbox = await readJson(resolve(cachePath ? dirname(cachePath) : dir, "inbox.json"));
+		const validInbox = inbox?.version === 1 && inbox.repo === repo && Array.isArray(inbox.items);
+		const items = validInbox ? [...inbox.items] : [];
+		// Issues have their own explicit, on-demand fetch; run freshness never refreshes them.
+		items.push({ id: "inbox:local-only", level: "info", text: validInbox
+			? `QA inbox: local snapshot from ${inbox.fetchedAt}; not refreshed by ci-watch polling; refresh with npm run ci-watch -- --refresh-inbox`
+			: "QA inbox: no local snapshot; not refreshed by ci-watch polling; run npm run ci-watch -- --refresh-inbox", url: "" });
+		for (const [name, workflow, mainOnly] of [["main tests", "tests.yml", true], ["main pcli", "pcli.yml", true],
+			["qa-inbox", "qa-inbox.yml", false], ["qa-digest", "qa-digest.yml", false]]) {
+			const list = workflowRuns(cached.runs, workflow).filter((r) => !mainOnly
+				|| r.head_branch === "main" && ["schedule", "workflow_dispatch"].includes(r.event)).slice(0, mainOnly ? 3 : 1);
 			items.push(...list.map((r) => runItem(r, name)));
-			if (!list.length) items.push({ id: `workflow:${name}:missing`, level: "info", text: `${name}: no runs`, url: "" });
+			if (!list.length) items.push({ id: `workflow:${name}:missing`, level: "info", text: `${name}: no runs in bounded cache`, url: "" });
 		}
-		if (checkBranch && !missingWorkflows.has("tests.yml")) {
-			const latest = branchRuns.filter((r) => r.head_sha === sha && r.head_branch === branch).sort(newest)[0];
+		if (branch !== "main" && branch !== "HEAD") {
+			const latest = workflowRuns(cached.runs, "tests.yml").find((r) => r.head_sha === sha && r.head_branch === branch);
 			const status = latest ? latest.status === "completed" ? latest.conclusion : latest.status : "missing";
 			items.push({ id: `branch:${branch}:${sha}:${status}`, level: latest ? levelOf(latest) : "info",
-				text: `branch ${branch} ${sha.slice(0, 7)} tests: ${status}`, url: latest?.html_url ?? `https://github.com/${repo}/actions/workflows/tests.yml` });
+				text: `branch ${branch} ${sha.slice(0, 7)} tests: ${status}${latest ? " (cached, not merge proof)" : " in bounded cache; not proof of success"}`,
+				url: latest?.html_url ?? `https://github.com/${repo}/actions/workflows/tests.yml` });
 		}
-		return { ok: true, at, items };
+		return { ok: true, at: cached.fetchedAt, items };
 	} catch (e) {
-		return { ok: false, at, items: [], error: `QA status unavailable: ${reason(e)}` };
+		return { ok: false, at, items: [], error: `QA status unavailable: ${reason(e)}${e.code === "ENOENT" ? "; start npm run ci-watch" : ""}` };
 	}
 }
 

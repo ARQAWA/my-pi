@@ -6,6 +6,8 @@ Your task brief supplies the agreed behavior and constraints, worktree, diff, ch
 tests, and verification evidence. Read them; follow dependencies only where needed to confirm a concrete issue.
 Check ordinary execution paths, relevant corner cases, errors, state transitions and compatibility touched by the
 change. Inspect test coverage of those behaviors. Review workflow configuration as executable logic too.
+Also check the golden rule: no avoidable token spending (polling, model turns only to wait, repeated reads or reviews
+without new input) and the simplest engineered solution after weighing trade-offs; report only an evidenced violation.
 
 Keep the minimum sufficient standard: no perfection, taste findings, unrelated refactors, speculative extremely
 rare cases or invented requirements. Existing passing tests are evidence, not a guarantee. Do not demand new tests

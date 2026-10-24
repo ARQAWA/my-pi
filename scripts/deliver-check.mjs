@@ -3,8 +3,8 @@
 //   npm run deliver-check -- <branch> <message-file>
 // <message-file> is the planned squash commit message. Every failed check prints one line; any failure exits 1.
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { findNonVerbatimQuotes, loadOwnerMessages, ownerSessionDirs } from "./owner-quotes.mjs";
 
 const [branch, messageFile] = process.argv.slice(2);
@@ -25,26 +25,58 @@ const finish = () => {
 	process.exit(1);
 };
 
-// Informational only: open failure-inbox issues (red main never blocks a merge, owner decision). gh runs in the cwd,
-// so it takes the repository from the checkout's remote. A gh failure is one line, never a check failure.
+// gh serves only the checks that need live GitHub data (`QA: #N` labels, the exact-head CI runs below).
 const ghRun = (args) => {
 	const r = spawnSync("gh", args, { encoding: "utf8", shell: process.platform === "win32", timeout: 30000 });
 	if (r.status === 0) return { stdout: r.stdout };
 	const reason = String(r.stderr || r.error?.message || `exit ${r.status}`).trim().split(/\r?\n/)[0];
 	return { reason };
 };
-function qaOpenLines() {
-	const r = ghRun(["issue", "list", "--label", "qa-inbox", "--state", "open", "--json", "number,title,labels,url", "--limit", "50"]);
-	if (r.reason !== undefined) return [`  QA open: unavailable (${r.reason})`];
-	let issues;
-	try {
-		issues = JSON.parse(r.stdout);
-	} catch (e) {
-		return [`  QA open: unavailable (unreadable gh output: ${e.message})`];
+
+// Informational only (red main never blocks a merge, owner decision): local ci-watch files in
+// `<git-common-dir>/ci-watch/`, read synchronously with no gh call. Never merge proof; the exact head CI run is
+// checked live below. `status.json` carries the bounded run list, the sidecar `inbox.json` the issue snapshot that
+// `npm run ci-watch -- --refresh-inbox` wrote on demand: it says when it was fetched, never that issues are open now.
+const CACHE_STALE_MS = 180_000;
+const RED = ["failure", "timed_out", "startup_failure", "action_required"];
+const readCache = (name) => {
+	const dir = resolve(process.cwd(), git("rev-parse", "--git-common-dir"));
+	return JSON.parse(readFileSync(join(dir, "ci-watch", name), "utf8"));
+};
+function inboxLines() {
+	let inbox;
+	try { inbox = readCache("inbox.json"); } catch (e) {
+		return [`  QA inbox: no local snapshot (${e.code ?? e.message}); run npm run ci-watch -- --refresh-inbox, workflow failures shown instead`];
 	}
-	if (!issues.length) return ["  QA open: none"];
-	return issues.map((i) => `  QA open: #${i.number} ${i.title} [${(i.labels ?? []).map((l) => l.name ?? l).join(", ")}] ${i.url}`);
+	if (inbox?.version !== 1 || !Array.isArray(inbox.items) || !Number.isFinite(Date.parse(inbox.fetchedAt))) {
+		return ["  QA inbox: local snapshot invalid; run npm run ci-watch -- --refresh-inbox"];
+	}
+	const lines = [`  QA inbox: local cached snapshot from ${inbox.fetchedAt}; not refreshed by ci-watch, not the current state`];
+	if (!inbox.items.length) lines.push("  QA inbox: no items in that snapshot");
+	for (const i of inbox.items) lines.push(`  QA inbox: ${String(i.level ?? "info").toUpperCase()} ${i.text}${i.url ? ` ${i.url}` : ""}`);
+	return lines;
 }
+function mainRunLines() {
+	let cache;
+	try { cache = readCache("status.json"); } catch (e) {
+		return [`  main runs: unavailable (no readable ci-watch cache: ${e.code ?? e.message})`];
+	}
+	const age = Date.now() - Date.parse(cache?.fetchedAt);
+	if (cache?.version !== 1 || !Array.isArray(cache.runs) || !Number.isFinite(age) || age < 0 || age > CACHE_STALE_MS) {
+		return ["  main runs: unavailable (ci-watch cache stale or invalid)"];
+	}
+	if (cache.error) return [`  main runs: unavailable (ci-watch fetch failed: ${String(cache.error).split(/\r?\n/)[0].slice(0, 200)})`];
+	// Newest run per workflow file on main; a red one is extra information.
+	const latest = new Map();
+	for (const r of cache.runs.filter((x) => x.head_branch === "main")) {
+		const key = String(r.path ?? r.name).split("@")[0];
+		const prev = latest.get(key);
+		if (!prev || Date.parse(r.created_at) > Date.parse(prev.created_at)) latest.set(key, r);
+	}
+	return [...latest.values()].filter((r) => r.status === "completed" && RED.includes(r.conclusion))
+		.map((r) => `  main red (cached): ${r.name ?? r.path} ${r.conclusion} ${r.html_url ?? ""}`.trimEnd());
+}
+const qaOpenLines = () => [...inboxLines(), ...mainRunLines()];
 
 const root = git("rev-parse", "--show-toplevel");
 
@@ -115,21 +147,63 @@ const required = [];
 if (codeChanged) required.push("tests.yml");
 if (changed.some((f) => pcliPaths.some((globs) => matchesAny(f, globs)))) required.push("pcli.yml");
 
+// Job names follow tests.yml's macos-latest Node matrix. Windows jobs remain advisory.
+const REQUIRED_MAC_JOBS = ["test (macos-latest, node 22.19.0)", "test (macos-latest, node 24)"];
+function liveJson(args) {
+	const result = ghRun(args);
+	if (result.reason !== undefined) throw new Error(result.reason);
+	return JSON.parse(result.stdout);
+}
+function macJobsGreen(run) {
+	const endpoint = `repos/{owner}/{repo}/actions/runs/${run.databaseId}`;
+	const before = liveJson(["api", endpoint]);
+	if (before.id !== run.databaseId || before.head_sha !== head || !Number.isSafeInteger(before.run_attempt) || before.run_attempt < 1) {
+		throw new Error("run metadata does not match the exact head/run/attempt");
+	}
+	const data = liveJson(["api", `${endpoint}/attempts/${before.run_attempt}/jobs?per_page=100`]);
+	if (!Array.isArray(data.jobs) || !Number.isSafeInteger(data.total_count) || data.total_count !== data.jobs.length) {
+		throw new Error("job list is incomplete or invalid; cannot verify all required macOS jobs");
+	}
+	if (data.jobs.some((job) => job.run_id !== before.id || job.run_attempt !== before.run_attempt || job.head_sha !== head)) {
+		throw new Error("job data does not match the exact head/run/attempt");
+	}
+	for (const job of data.jobs.filter((job) => /windows/i.test(job.name))) {
+		if (job.status !== "completed" || job.conclusion !== "success") {
+			console.log(`  Windows advisory: ${job.name}: ${job.status === "completed" ? job.conclusion : job.status} ${job.html_url ?? run.url}`);
+			console.log("    Triage via scheduled main qa-inbox or an explicit issue; no automatic code fix.");
+		}
+	}
+	for (const name of REQUIRED_MAC_JOBS) {
+		const matches = data.jobs.filter((job) => job.name === name);
+		if (matches.length !== 1) throw new Error(`required macOS job missing or duplicated: ${name}`);
+	}
+	for (const job of data.jobs.filter((job) => job.name.includes("macos-latest"))) {
+		if (job.status !== "completed" || job.conclusion !== "success") {
+			throw new Error(`required macOS job ${job.name} is ${job.status === "completed" ? job.conclusion : job.status}: ${job.html_url ?? run.url}`);
+		}
+	}
+	// A rerun may start while jobs are fetched. Never accept jobs from an earlier attempt.
+	const after = liveJson(["api", endpoint]);
+	if (after.id !== before.id || after.head_sha !== head || after.run_attempt !== before.run_attempt) {
+		throw new Error("run head/attempt changed during the fresh macOS check; check again");
+	}
+}
+
 // gh is gh.exe on Windows; the shell there also finds a .cmd shim. Arguments are fixed words and a hex SHA.
 function latestRun(workflow) {
-	const args = ["run", "list", "--workflow", workflow, "--commit", head, "--limit", "20",
-		"--json", "databaseId,headSha,status,conclusion,url"];
-	const r = spawnSync("gh", args, { encoding: "utf8", shell: process.platform === "win32" });
-	if (r.status !== 0) {
-		fail(`${workflow}: gh run list failed: ${String(r.stderr || r.error?.message || "").trim()}`);
+	try {
+		const runs = liveJson(["run", "list", "--workflow", workflow, "--commit", head, "--limit", "20",
+			"--json", "databaseId,headSha,status,conclusion,url"]);
+		const run = runs.find((item) => item.headSha === head); // gh lists the newest run first
+		if (!run) throw new Error(`no run for ${short(head)}; push the branch and wait for CI`);
+		if (workflow === "tests.yml") macJobsGreen(run);
+		else if (run.status !== "completed") throw new Error(`latest run for ${short(head)} is ${run.status}: ${run.url}`);
+		else if (run.conclusion !== "success") throw new Error(`latest run for ${short(head)} concluded ${run.conclusion}: ${run.url}`);
+		return run;
+	} catch (error) {
+		fail(`${workflow}: ${error.message}`);
 		return null;
 	}
-	const run = JSON.parse(r.stdout).find((x) => x.headSha === head); // gh lists the newest run first
-	if (!run) fail(`${workflow}: no run for ${short(head)}; push the branch and wait for CI`);
-	else if (run.status !== "completed") fail(`${workflow}: latest run for ${short(head)} is ${run.status}: ${run.url}`);
-	else if (run.conclusion !== "success") fail(`${workflow}: latest run for ${short(head)} concluded ${run.conclusion}: ${run.url}`);
-	else return run;
-	return null;
 }
 
 // 3. The squash message records clean reviews, the CI runs and what was not verified live.
@@ -150,8 +224,8 @@ for (const workflow of required) {
 	if (run) passed.push(`${workflow} ${run.url}`);
 	if (!run && !ciIds.length) fail(`message: missing trailer "CI: <run url>" for ${workflow}`);
 }
-// 3b. Test integrity: a change that weakens tests or workflows needs a recorded reason and an independent
-// test-integrity review. `QA: #N` lines tie the squash to failure-inbox issues and carry the same requirement.
+// 3b. Detected test/workflow weakening needs both a reason and an independent test-integrity review.
+// `QA: #N` also needs a reason for test/workflow edits, but is not itself an integrity-review trigger.
 const isTestFile = (f) => /(^|\/)test\//.test(f) || /(^|\/)[^/]*\.test\.[^/]*$/.test(f);
 const isWorkflowFile = (f) => f.startsWith(".github/workflows/");
 const SKIP_RES = [/\.(?:skip|todo)\s*\(/, /\{\s*(?:skip|todo)\s*:/, /\b(?:skip|todo)\s*:\s*(?:true|['"])/];
@@ -220,7 +294,6 @@ for (const l of lines.filter((x) => x.startsWith("QA:"))) {
 	else if (!qaIssues.includes(n)) qaIssues.push(n);
 }
 if (qaIssues.length) {
-	if (!hasTestReview) fail('message: "QA: #N" requires trailer "Test-review: agent#N CLEAN"');
 	if (!hasTestChange && changed.some((f) => isTestFile(f) || isWorkflowFile(f))) {
 		fail('message: "QA: #N" with test or workflow files changed requires trailer "Test-change: <text>"');
 	}
@@ -234,8 +307,79 @@ if (qaIssues.length) {
 	}
 }
 
-if (!reviews.length) fail('message: missing trailer "Review: review#N CLEAN" or "Review: agent#N CLEAN"');
-if (codeChanged && !has(/^Code-review: CLEAN$/)) fail('message: missing trailer "Code-review: CLEAN" (non-doc files changed)');
+// 3c. Review gates. Two declared shortcuts, both conservative:
+// - `Change-class: proofreading` + `Doc-check: <absolute log path>`: passive documents only, no review trailers.
+// - `Combined-review: agent#N CLEAN`: one reviewer for result and code review; at most 100 added plus deleted lines,
+//   every changed path inside one extensions/RQW-*/ folder. "No visible behavior change" stays the reviewer's attestation.
+const changeClasses = lines.filter((l) => l.startsWith("Change-class:"));
+const docChecks = lines.filter((l) => l.startsWith("Doc-check:")).map((l) => l.slice(10).trim());
+const combinedLines = lines.filter((l) => /^Combined-review: (?:review|agent)#\d+ CLEAN$/.test(l)).map((l) => l.slice(17, -6));
+const COMBINED_MAX_LINES = 100;
+const isPassiveDoc = (f) => /^[^/]+\.md$/.test(f) && !["AGENTS.md", "INSTALL.md"].includes(f) || /^notes\/.+\.md$/.test(f);
+const rulesBlock = (rev) => {
+	try { return /^```json coordinator-rules\r?\n([\s\S]*?)^```/m.exec(git("show", `${rev}:PROCESS.md`))?.[1]; } catch { return undefined; }
+};
+const existsAt = (rev, f) => spawnSync("git", ["cat-file", "-e", `${rev}:${f}`]).status === 0;
+function proofreadingProblems() {
+	const problems = [];
+	if (changeClasses.length !== 1 || changeClasses[0] !== "Change-class: proofreading") {
+		return ['malformed "Change-class:" line(s), expected exactly "Change-class: proofreading"'];
+	}
+	if (docChecks.length !== 1 || !isAbsolute(docChecks[0])) problems.push('needs exactly one "Doc-check: <absolute local log path>"');
+	else {
+		let size = 0;
+		try { size = statSync(docChecks[0]).isFile() ? statSync(docChecks[0]).size : 0; } catch { /* missing */ }
+		if (!size) problems.push(`Doc-check log ${docChecks[0]} is missing or empty`);
+	}
+	const bad = changed.filter((f) => !isPassiveDoc(f));
+	if (bad.length) problems.push(`not passive documents: ${bad.slice(0, 5).join(", ")}`);
+	if (!changed.length) problems.push("no changed files");
+	const moved = changed.filter((f) => !existsAt(main, f) || !existsAt(head, f));
+	if (moved.length) problems.push(`added or deleted files: ${moved.slice(0, 5).join(", ")}`);
+	if (changed.includes("PROCESS.md") && (rulesBlock(main) === undefined || rulesBlock(main) !== rulesBlock(head))) {
+		problems.push("PROCESS.md coordinator-rules block changed or unreadable");
+	}
+	if (codeChanged || required.length) problems.push("CI is required for this change");
+	if (qaIssues.length) problems.push('"QA: #N" is not proofreading');
+	return problems;
+}
+let proofreading = false;
+if (changeClasses.length) {
+	const problems = proofreadingProblems();
+	for (const p of problems) fail(`message: proofreading exemption: ${p}`);
+	proofreading = !problems.length;
+}
+// Added plus deleted lines of the whole change; null when a binary or non-numeric entry makes the size unknowable.
+function changedLineCount() {
+	let total = 0;
+	for (const row of git("diff", "--numstat", "--no-renames", `${main}...${head}`).split(/\r?\n/).filter(Boolean)) {
+		const [add, del] = row.split("\t");
+		if (!/^\d+$/.test(add) || !/^\d+$/.test(del)) return null;
+		total += Number(add) + Number(del);
+	}
+	return total;
+}
+const combinedProblems = () => {
+	const problems = [];
+	const folders = new Set(changed.map((f) => /^(extensions\/RQW-[^/]+)\/./.exec(f)?.[1] ?? ""));
+	if (!changed.length || folders.has("") || folders.size !== 1) problems.push("changed paths are not all inside one extensions/RQW-*/ folder");
+	const lines = changedLineCount();
+	if (lines === null) problems.push("binary or non-numeric diff entry");
+	else if (lines > COMBINED_MAX_LINES) problems.push(`${lines} added plus deleted lines, at most ${COMBINED_MAX_LINES}`);
+	if (weak.length) problems.push("test integrity rule triggered");
+	if (qaIssues.length) problems.push('"QA: #N" fix');
+	if (changed.some(isWorkflowFile)) problems.push("workflow file changed");
+	return problems;
+};
+const combinedProblem = combinedLines.length ? combinedProblems() : [];
+const combined = combinedLines.length > 0 && !combinedProblem.length;
+const needsReview = !reviews.length && !combined && !proofreading;
+const needsCodeReview = codeChanged && !has(/^Code-review: CLEAN$/) && !combined;
+if (combinedProblem.length && (needsReview || needsCodeReview)) {
+	fail(`message: "Combined-review:" not allowed (${combinedProblem.join("; ")}): use separate "Review:" and "Code-review: CLEAN"`);
+}
+if (needsReview) fail('message: missing trailer "Review: review#N CLEAN" or "Review: agent#N CLEAN"');
+if (needsCodeReview) fail('message: missing trailer "Code-review: CLEAN" (non-doc files changed)');
 if (!has(/^Unverified: \S/)) fail('message: missing trailer "Unverified: <text or none>"');
 
 // 5. Only head-version quote spans touching added lines need provenance. Historical quotes stay untouched.
@@ -267,7 +411,9 @@ finish();
 console.log(`deliver-check PASS ${branch} ${short(head)}`);
 console.log(`  contains origin/main ${short(main)}; ${changed.length} changed file(s)`);
 console.log(`  CI: ${passed.length ? passed.join("; ") : "not required (docs-only)"}`);
-console.log(`  reviews: ${reviews.join(", ")}${codeChanged ? "; code review CLEAN" : ""}`);
+if (proofreading) console.log(`  reviews: exempt (proofreading, Doc-check ${docChecks[0]})`);
+else if (combined && !reviews.length) console.log(`  reviews: combined ${combinedLines.join(", ")} (result and code review)`);
+else console.log(`  reviews: ${reviews.join(", ")}${codeChanged ? "; code review CLEAN" : ""}`);
 if (weak.length) console.log(`  test integrity: ${weak.length} weakening file(s) accepted with Test-change and Test-review`);
-if (qaIssues.length) console.log(`  QA: ${qaIssues.map((n) => `#${n}`).join(", ")} (qa-inbox issues, Test-review present)`);
+if (qaIssues.length) console.log(`  QA: ${qaIssues.map((n) => `#${n}`).join(", ")} (qa-inbox issues)`);
 for (const line of qaOpenLines()) console.log(line);

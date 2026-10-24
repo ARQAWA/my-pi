@@ -1,5 +1,6 @@
 // scripts/deliver-check.mjs against throwaway git repos: a bare origin, a "main checkout" clone, and a fake `gh`
-// on PATH that answers `gh run list`, `gh issue list` and `gh issue view` from JSON files. Global and system git config are ignored.
+// on PATH that answers `gh run list`, `gh issue view` and the REST `gh api` run metadata and job listings from JSON files
+// (`gh issue list` is a test failure). Global and system git config are ignored.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -13,8 +14,8 @@ const SCRIPT = join(ROOT, "scripts", "deliver-check.mjs");
 const temps: string[] = [];
 after(() => { for (const t of temps) rmSync(t, { recursive: true, force: true }); });
 
-type IssueRec = { number: number; title: string; url: string; labels: { name: string }[] };
 type RunRec = { databaseId: number; headSha: string; status: string; conclusion: string; url: string };
+type JobRec = { name: string; status?: string; conclusion?: string | null; run_id?: number; head_sha?: string; run_attempt?: number; html_url?: string };
 
 function setup() {
 	const tmp = mkdtempSync(join(tmpdir(), "deliver-check-"));
@@ -22,15 +23,43 @@ function setup() {
 	const bin = join(tmp, "bin");
 	mkdirSync(bin);
 	writeFileSync(join(bin, "gh.mjs"), [
-		'import { readFileSync } from "node:fs";',
+		'import { appendFileSync, readFileSync, writeFileSync } from "node:fs";',
 		"const a = process.argv.slice(2);",
+		'appendFileSync(process.env.FAKE_GH_LOG, a.join(" ") + "\\n");',
 		'if (a[0] === "issue") {',
 		'\tif (process.env.FAKE_GH_ISSUE_FAIL === "1") { process.stderr.write("HTTP 502: bad gateway\\nsecond line\\n"); process.exit(1); }',
 		'\tconst data = JSON.parse(readFileSync(process.env.FAKE_GH_ISSUES, "utf8"));',
-		'\tif (a[1] === "list") { process.stdout.write(JSON.stringify(data.list)); process.exit(0); }',
+		'\tif (a[1] === "list") { process.stderr.write("unexpected gh issue list\\n"); process.exit(1); }',
 		'\tconst one = data.view[a[2]];',
 		'\tif (!one) { process.stderr.write("GraphQL: Could not resolve to an Issue\\n"); process.exit(1); }',
 		'\tprocess.stdout.write(JSON.stringify(one)); process.exit(0);',
+		"}",
+		'if (a[0] === "api") {',
+		'	const path = a.find((x) => x.startsWith("repos/")) ?? "";',
+		'	const m = /actions\\/runs\\/(\\d+)(?:\\/attempts\\/(\\d+)\\/jobs)?/.exec(path);',
+		'	const all = Object.values(JSON.parse(readFileSync(process.env.FAKE_GH_RUNS, "utf8"))).flat();',
+		'	const rec = m && all.find((r) => String(r.databaseId) === m[1]);',
+		'	if (!rec) { process.stderr.write("HTTP 404: Not Found\\n"); process.exit(1); }',
+		'	const over = JSON.parse(readFileSync(process.env.FAKE_GH_API, "utf8"));',
+		"	if (!m[2]) {",
+		'		let ov = over.metadata[m[1]];',
+		'		if (Array.isArray(ov)) { // successive GETs of the same run answer successive entries, the last one repeats',
+		'			const counter = process.env.FAKE_GH_API + ".count" + m[1];',
+		'			let n = 0; try { n = Number(readFileSync(counter, "utf8")); } catch {}',
+		'			writeFileSync(counter, String(n + 1)); ov = ov[Math.min(n, ov.length - 1)];',
+		"		}",
+		'		process.stdout.write(JSON.stringify({ id: rec.databaseId, head_sha: rec.headSha, run_attempt: 1,',
+		'			status: rec.status, conclusion: rec.conclusion || null, ...ov })); process.exit(0);',
+		"	}",
+		'	// Jobs default to the run\'s own state; a green run has green jobs, a red or unfinished one has none green.',
+		'	const done = rec.status === "completed";',
+		'	const names = ["test (macos-latest, node 22.19.0)", "test (macos-latest, node 24)", "test (windows-latest, node 22.19.0)",',
+		'		"test (windows-latest, node 24)", "windows-portable-git (node 22.19.0)"];',
+		'	const ov = over.jobs[m[1]];',
+		'	const jobs = (ov?.jobs ?? names.map((name) => ({ name }))).map((j, i) => ({ id: rec.databaseId * 100 + i, run_id: rec.databaseId,',
+		'		run_attempt: Number(m[2]), head_sha: rec.headSha, status: rec.status, conclusion: done ? rec.conclusion : null,',
+		'		html_url: rec.url + "/job/" + (rec.databaseId * 100 + i), ...j }));',
+		'	process.stdout.write(JSON.stringify({ total_count: ov?.total_count ?? jobs.length, jobs })); process.exit(0);',
 		"}",
 		'const wf = a[a.indexOf("--workflow") + 1], sha = a[a.indexOf("--commit") + 1];',
 		'const runs = JSON.parse(readFileSync(process.env.FAKE_GH_RUNS, "utf8"))[wf] ?? [];',
@@ -47,7 +76,7 @@ function setup() {
 	writeFileSync(gitconfig, "[user]\n\tname = t\n\temail = t@example.com\n[commit]\n\tgpgsign = false\n[core]\n\tautocrlf = false\n");
 	const runsFile = join(tmp, "runs.json");
 	const issuesFile = join(tmp, "issues.json");
-	writeFileSync(issuesFile, JSON.stringify({ list: [], view: {} }));
+	writeFileSync(issuesFile, JSON.stringify({ view: {} }));
 	const sessions = join(tmp, "sessions");
 	mkdirSync(sessions);
 	writeFileSync(join(sessions, "owner.jsonl"), JSON.stringify({ type: "message", message: {
@@ -57,7 +86,7 @@ function setup() {
 	const env = {
 		...process.env, [pathKey]: bin + delimiter + process.env[pathKey],
 		GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: gitconfig, FAKE_GH_RUNS: runsFile,
-		FAKE_GH_ISSUES: issuesFile, MY_PI_SESSIONS: sessions,
+		FAKE_GH_ISSUES: issuesFile, MY_PI_SESSIONS: sessions, FAKE_GH_LOG: join(tmp, "gh.log"), FAKE_GH_API: join(tmp, "api.json"),
 	};
 	const repo = join(tmp, "checkout");
 	const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, env, encoding: "utf8" }).trim();
@@ -90,15 +119,37 @@ function setup() {
 	};
 	const runs = (r: Record<string, RunRec[]>) => writeFileSync(runsFile, JSON.stringify(r));
 	runs({});
-	const issues = (data: { list?: IssueRec[]; view?: Record<string, { labels: { name: string }[]; state: string }> }) =>
-		writeFileSync(issuesFile, JSON.stringify({ list: data.list ?? [], view: data.view ?? {} }));
+	// REST overrides for the fake `gh api`: defaults are synthesized from the RunRec, so a run listed as red or unfinished
+	// gets jobs in that state and a green run gets green jobs.
+	const api: { metadata: Record<number, object | object[]>; jobs: Record<number, { jobs?: JobRec[]; total_count?: number }> } = { metadata: {}, jobs: {} };
+	const writeApi = () => writeFileSync(join(tmp, "api.json"), JSON.stringify(api));
+	writeApi();
+	const jobs = (runId: number, list: JobRec[] | undefined, total_count?: number) => {
+		api.jobs[runId] = { ...(list ? { jobs: list } : {}), ...(total_count === undefined ? {} : { total_count }) };
+		writeApi();
+	};
+	const metadata = (runId: number, override: object | object[]) => { api.metadata[runId] = override; writeApi(); };
+	const issues = (data: { view?: Record<string, { labels: { name: string }[]; state: string }> }) =>
+		writeFileSync(issuesFile, JSON.stringify({ view: data.view ?? {} }));
+	// The local ci-watch files that deliver-check reads for its informational lines: status.json and the sidecar inbox.json.
+	const cacheFile = (name: string, state: Record<string, unknown> | null) => {
+		const file = join(repo, ".git", "ci-watch", name);
+		if (state === null) { rmSync(file, { force: true }); return; }
+		mkdirSync(dirname(file), { recursive: true });
+		writeFileSync(file, JSON.stringify(state));
+	};
+	const cache = (state: Record<string, unknown> | null, ageMs = 0) => cacheFile("status.json", state && {
+		version: 1, repo: "o/r", fetchedAt: new Date(Date.now() - ageMs).toISOString(), runs: [], ...state });
+	const inbox = (state: Record<string, unknown> | null) => cacheFile("inbox.json", state && {
+		version: 1, repo: "o/r", fetchedAt: "2026-10-23T09:00:00.000Z", items: [], ...state });
 	const run = (message: string, cwd = repo) => {
 		const msg = join(tmp, "message.txt");
 		writeFileSync(msg, message);
 		const r = spawnSync(process.execPath, [SCRIPT, "task", msg], { cwd, env, encoding: "utf8" });
 		return { code: r.status, out: r.stdout + r.stderr };
 	};
-	return { tmp, repo, env, git, commit, task, runs, issues, run, sessions };
+	const ghCalls = () => { try { return readFileSync(join(tmp, "gh.log"), "utf8"); } catch { return ""; } };
+	return { tmp, repo, env, git, commit, task, runs, jobs, metadata, issues, cache, inbox, ghCalls, run, sessions };
 }
 
 // Replaces the value of pcli.yml's `paths: [...]` filter, whatever the real filter lists.
@@ -106,6 +157,12 @@ const setPcliPaths = (text: string, list: string) => text.replace(/^(\s*paths:\s
 
 const ok = (id: number, headSha: string, conclusion = "success", status = "completed"): RunRec =>
 	({ databaseId: id, headSha, status, conclusion, url: `https://github.com/o/r/actions/runs/${id}` });
+const MAC22 = "test (macos-latest, node 22.19.0)";
+const MAC24 = "test (macos-latest, node 24)";
+const WIN24 = "test (windows-latest, node 24)";
+// A job in one state: queued and in_progress are unfinished (no conclusion), anything else is completed with it.
+const job = (name: string, state = "success", extra: Partial<JobRec> = {}): JobRec => ({ name, ...(
+	["queued", "in_progress", "pending", "waiting"].includes(state) ? { status: state, conclusion: null } : { status: "completed", conclusion: state }), ...extra });
 const MSG = (ci: number[]) => ["Task", "", "Review: review#7 CLEAN", "Code-review: CLEAN",
 	...ci.map((id) => `CI: https://github.com/o/r/actions/runs/${id}`), "Unverified: none", ""].join("\n");
 
@@ -260,9 +317,9 @@ describe("deliver-check", () => {
 		t.runs({ "tests.yml": [ok(12, head, "failure"), ok(11, head)] });
 		const failed = t.run(MSG([11]));
 		assert.equal(failed.code, 1);
-		assert.match(failed.out, /FAIL tests\.yml: latest run for \w+ concluded failure/);
+		assert.match(failed.out, /FAIL tests\.yml: [^\n]*macos-latest/);
 		t.runs({ "tests.yml": [ok(13, head, "", "in_progress")] });
-		assert.match(t.run(MSG([13])).out, /FAIL tests\.yml: latest run for \w+ is in_progress/);
+		assert.match(t.run(MSG([13])).out, /FAIL tests\.yml: [^\n]*macos-latest/);
 	});
 
 	it("applies its own headSha filter when gh ignores --commit", () => {
@@ -272,7 +329,7 @@ describe("deliver-check", () => {
 		t.runs({ "tests.yml": [ok(12, "0".repeat(40)), ok(11, head, "failure")] }); // newest run is for another SHA
 		const wrong = t.run(MSG([12]));
 		assert.equal(wrong.code, 1);
-		assert.match(wrong.out, /FAIL tests\.yml: latest run for \w+ concluded failure/);
+		assert.match(wrong.out, /FAIL tests\.yml: [^\n]*macos-latest/);
 		assert.doesNotMatch(wrong.out, /PASS/);
 		t.runs({ "tests.yml": [ok(12, "0".repeat(40))] });
 		assert.match(t.run(MSG([12])).out, /FAIL tests\.yml: no run for/);
@@ -407,39 +464,418 @@ describe("deliver-check", () => {
 	});
 });
 
-describe("deliver-check QA open issues", () => {
-	it("lists open qa-inbox issues after PASS and never fails on them", () => {
+describe("deliver-check macOS gate", () => {
+	const setupGreenMacs = (overall: { conclusion: string; status?: string } = { conclusion: "failure" }) => {
 		const t = setup();
 		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		t.issues({ list: [{ number: 12, title: "[qa] tests: a.test.ts \u203a x (testCodeFailure)", url: "https://github.com/o/r/issues/12",
-			labels: [{ name: "qa-inbox" }, { name: "qa:persistent" }] }] });
+		t.runs({ "tests.yml": [ok(11, head, overall.conclusion, overall.status ?? "completed")] });
+		return { t, head };
+	};
+	const WIN_URL = "https://github.com/o/r/actions/runs/11/job/901";
+	const metadataGets = (t: ReturnType<typeof setup>) => t.ghCalls().split("\n").filter((l) => /^api \S*actions\/runs\/11(\s|$)/.test(l)).length;
+	const jobsGets = (t: ReturnType<typeof setup>) => t.ghCalls().split("\n").filter((l) => /actions\/runs\/11\/attempts\/1\/jobs\?per_page=100/.test(l)).length;
+
+	it("passes when both required Mac jobs are green although the workflow failed on Windows, and prints an advisory", () => {
+		const { t } = setupGreenMacs();
+		t.jobs(11, [job(MAC22), job(MAC24), job(WIN24, "failure", { html_url: WIN_URL }), job("windows-portable-git (node 22.19.0)")]);
 		const r = t.run(MSG([11]));
 		assert.equal(r.code, 0, r.out);
 		assert.match(r.out, /deliver-check PASS task/);
-		assert.match(r.out, /  QA open: #12 \[qa\] tests: a\.test\.ts \u203a x \(testCodeFailure\) \[qa-inbox, qa:persistent\] https:\/\/github\.com\/o\/r\/issues\/12/);
-		assert.ok(r.out.indexOf("PASS") < r.out.indexOf("QA open"));
+		assert.match(r.out, /Windows advisory: test \(windows-latest, node 24\): failure https:\/\/github\.com\/o\/r\/actions\/runs\/11\/job\/901\n[^\n]*no automatic code fix/);
+		assert.equal(metadataGets(t), 2, t.ghCalls()); // metadata, jobs, then the same metadata again
+		assert.equal(jobsGets(t), 1, t.ghCalls());
+		assert.ok(t.ghCalls().indexOf("attempts/1/jobs") > t.ghCalls().indexOf("actions/runs/11\n"));
 	});
 
-	it("lists them on failure too", () => {
+	it("passes with the overall run in progress and Windows jobs pending when both Mac jobs are green", () => {
+		const { t } = setupGreenMacs({ conclusion: "", status: "in_progress" });
+		t.jobs(11, [job(MAC22), job(MAC24), job(WIN24, "in_progress", { html_url: WIN_URL }), job("test (windows-latest, node 22.19.0)", "queued")]);
+		const r = t.run(MSG([11]));
+		assert.equal(r.code, 0, r.out);
+		assert.match(r.out, /Windows advisory: test \(windows-latest, node 24\): in_progress https:\/\/github\.com\/o\/r\/actions\/runs\/11\/job\/901/);
+		assert.match(r.out, /Windows advisory: test \(windows-latest, node 22\.19\.0\): queued /);
+	});
+
+	it("requires every returned macos-latest job to be green, including extra jobs", () => {
+		const name = "extra-check (macos-latest)";
+		for (const status of ["failure", "in_progress", "success"]) {
+			const { t } = setupGreenMacs();
+			t.jobs(11, [job(MAC22), job(MAC24), job(name, status)]);
+			const result = t.run(MSG([11]));
+			assert.equal(result.code, status === "success" ? 0 : 1, result.out);
+			if (status === "success") assert.match(result.out, /deliver-check PASS task/);
+			else assert.ok(result.out.includes(`required macOS job ${name} is ${status}`), result.out);
+		}
+	});
+
+	const esc = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+	it("rejects a missing, duplicated, failed, pending, queued, cancelled or skipped Mac job", () => {
+		const missing = (name: string) => new RegExp(`FAIL tests\\.yml: required macOS job missing or duplicated: ${esc(name)}`);
+		const state = (name: string, st: string) => new RegExp(`FAIL tests\\.yml: required macOS job ${esc(name)} is ${st}`);
+		const cases: [string, JobRec[], RegExp][] = [
+			["missing node 24", [job(MAC22), job(WIN24)], missing(MAC24)],
+			["missing both", [job(WIN24)], missing(MAC22)],
+			["duplicated", [job(MAC22), job(MAC24), job(MAC24)], missing(MAC24)],
+			["failed", [job(MAC22), job(MAC24, "failure")], state(MAC24, "failure")],
+			["in progress", [job(MAC22, "in_progress"), job(MAC24)], state(MAC22, "in_progress")],
+			["queued", [job(MAC22), job(MAC24, "queued")], state(MAC24, "queued")],
+			["cancelled", [job(MAC22, "cancelled"), job(MAC24)], state(MAC22, "cancelled")],
+			["skipped", [job(MAC22), job(MAC24, "skipped")], state(MAC24, "skipped")],
+			["renamed", [job(MAC22), job("test (macos-latest, node 24.1)")], missing(MAC24)],
+		];
+		for (const [name, list, re] of cases) {
+			const { t } = setupGreenMacs();
+			t.jobs(11, list);
+			const r = t.run(MSG([11]));
+			assert.equal(r.code, 1, `${name}\n${r.out}`);
+			assert.match(r.out, re, name);
+			assert.doesNotMatch(r.out, /PASS/, name);
+		}
+	});
+
+	it("rejects any job of another run, head or attempt, and incomplete pagination", () => {
+		const jobMismatch = /FAIL tests\.yml: job data does not match the exact head\/run\/attempt/;
+		const cases: [string, JobRec[], number | undefined, RegExp][] = [
+			["Mac job of another run", [job(MAC22), job(MAC24, "success", { run_id: 99 })], undefined, jobMismatch],
+			["Mac job of another head", [job(MAC22, "success", { head_sha: "0".repeat(40) }), job(MAC24)], undefined, jobMismatch],
+			["Mac job of another attempt", [job(MAC22), job(MAC24, "success", { run_attempt: 2 })], undefined, jobMismatch],
+			["Windows job of another run", [job(MAC22), job(MAC24), job(WIN24, "success", { run_id: 99 })], undefined, jobMismatch],
+			["total_count larger than jobs", [job(MAC22), job(MAC24)], 3, /FAIL tests\.yml: job list is incomplete or invalid/],
+			["total_count smaller than jobs", [job(MAC22), job(MAC24)], 1, /FAIL tests\.yml: job list is incomplete or invalid/],
+		];
+		for (const [name, list, total, re] of cases) {
+			const { t } = setupGreenMacs({ conclusion: "success" });
+			t.jobs(11, list, total);
+			const r = t.run(MSG([11]));
+			assert.equal(r.code, 1, `${name}\n${r.out}`);
+			assert.match(r.out, re, name);
+			assert.doesNotMatch(r.out, /PASS/, name);
+		}
+	});
+
+	it("rejects metadata of another head or run, and a rerun detected by the second metadata GET", () => {
+		const first = /FAIL tests\.yml: run metadata does not match the exact head\/run\/attempt/;
+		const changed = /FAIL tests\.yml: run head\/attempt changed during the fresh macOS check; check again/;
+		const cases: [string, object | object[], RegExp][] = [
+			["other head in the first GET", { head_sha: "0".repeat(40) }, first],
+			["other id in the first GET", { id: 12 }, first],
+			["invalid attempt in the first GET", { run_attempt: 0 }, first],
+			["attempt changes", [{ run_attempt: 1 }, { run_attempt: 2 }], changed],
+			["head changes", [{}, { head_sha: "0".repeat(40) }], changed],
+			["id changes", [{}, { id: 12 }], changed],
+		];
+		for (const [name, override, re] of cases) {
+			const { t } = setupGreenMacs({ conclusion: "success" });
+			t.metadata(11, override);
+			const r = t.run(MSG([11]));
+			assert.equal(r.code, 1, `${name}\n${r.out}`);
+			assert.match(r.out, re, name);
+			assert.doesNotMatch(r.out, /PASS/, name);
+		}
+	});
+
+	it("uses jobs of the attempt the metadata names", () => {
+		const { t } = setupGreenMacs({ conclusion: "success" });
+		t.metadata(11, { run_attempt: 2 });
+		const r = t.run(MSG([11]));
+		assert.equal(r.code, 0, r.out);
+		assert.match(t.ghCalls(), /actions\/runs\/11\/attempts\/2\/jobs\?per_page=100/);
+	});
+
+	it("does not take an older green run as proof when the newest run for the head is not green on Mac", () => {
+		const t = setup();
+		const head = t.task({ "src/a.js": "1\n" });
+		t.runs({ "tests.yml": [ok(12, head, "", "in_progress"), ok(11, head)] }); // gh lists the newest first
+		t.jobs(12, [job(MAC22), job(MAC24, "in_progress")]);
+		const r = t.run(MSG([11]));
+		assert.equal(r.code, 1, r.out);
+		assert.match(r.out, /FAIL tests\.yml: required macOS job test \(macos-latest, node 24\) is in_progress/);
+		assert.doesNotMatch(t.ghCalls(), /actions\/runs\/11(\/|\s|$)/); // the older run is never fetched
+	});
+
+	it("requires the CI trailer to name the exact run even when its Macs are green", () => {
+		const { t } = setupGreenMacs({ conclusion: "success" });
+		const r = t.run(MSG([10]));
+		assert.equal(r.code, 1, r.out);
+		assert.match(r.out, /FAIL message: missing trailer "CI: https:\/\/github\.com\/o\/r\/actions\/runs\/11"/);
+	});
+
+	it("keeps requiring the whole pcli.yml run: a failed or pending Windows pcli job is not excused", () => {
+		const t = setup();
+		const head = t.task({ "pcli-vscode/x.js": "1\n" });
+		const msg = MSG([11, 21]);
+		for (const [pcli, re] of [
+			[ok(21, head, "failure"), /FAIL pcli\.yml: latest run for \w+ concluded failure/],
+			[ok(21, head, "", "in_progress"), /FAIL pcli\.yml: latest run for \w+ is in_progress/],
+			[ok(21, head, "cancelled"), /FAIL pcli\.yml: latest run for \w+ concluded cancelled/],
+		] as [RunRec, RegExp][]) {
+			t.runs({ "tests.yml": [ok(11, head)], "pcli.yml": [pcli] });
+			const r = t.run(msg);
+			assert.equal(r.code, 1, r.out);
+			assert.match(r.out, re);
+		}
+		t.runs({ "tests.yml": [ok(11, head, "failure")], "pcli.yml": [ok(21, head)] });
+		t.jobs(11, [job(MAC22), job(MAC24), job(WIN24, "failure")]);
+		assert.equal(t.run(msg).code, 0); // only tests.yml gets the Mac-only rule
+	});
+});
+
+describe("deliver-check QA cache lines", () => {
+	const redRun = { id: 5, name: "tests", path: ".github/workflows/tests.yml@refs/heads/main", head_branch: "main", status: "completed",
+		conclusion: "failure", created_at: "2026-10-23T10:00:00Z", html_url: "https://github.com/o/r/actions/runs/5" };
+	const passing = (t: ReturnType<typeof setup>) => {
+		const head = t.task({ "src/a.js": "1\n" });
+		t.runs({ "tests.yml": [ok(11, head)] });
+	};
+
+	it("reports the sidecar inbox snapshot with its date as local cached, after PASS, with no gh issue list", () => {
+		const t = setup();
+		passing(t);
+		t.inbox({ items: [{ id: "i1", level: "red", text: "#12 [qa] tests: a.test.ts failing", url: "https://github.com/o/r/issues/12" }] });
+		const r = t.run(MSG([11]));
+		assert.equal(r.code, 0, r.out);
+		assert.match(r.out, /  QA inbox: local cached snapshot from 2026-10-23T09:00:00\.000Z; not refreshed by ci-watch, not the current state/);
+		assert.match(r.out, /  QA inbox: RED #12 \[qa\] tests: a\.test\.ts failing https:\/\/github\.com\/o\/r\/issues\/12/);
+		assert.ok(r.out.indexOf("PASS") < r.out.indexOf("QA inbox"));
+		assert.doesNotMatch(t.ghCalls(), /issue list/);
+		assert.match(t.ghCalls(), /run list/); // the exact-head CI check still uses gh
+	});
+
+	it("never says the inbox is empty or open without a snapshot; an empty snapshot says so with its date", () => {
+		const t = setup();
+		passing(t);
+		const none = t.run(MSG([11]));
+		assert.equal(none.code, 0, none.out);
+		assert.match(none.out, /QA inbox: no local snapshot \(ENOENT\); run npm run ci-watch -- --refresh-inbox/);
+		assert.doesNotMatch(none.out, /no items|QA open/);
+		t.inbox({ items: [] });
+		const empty = t.run(MSG([11]));
+		assert.match(empty.out, /QA inbox: local cached snapshot from 2026-10-23T09:00:00\.000Z/);
+		assert.match(empty.out, /QA inbox: no items in that snapshot/);
+	});
+
+	it("ignores the old inboxItems field of status.json and reports an invalid sidecar", () => {
+		const t = setup();
+		passing(t);
+		t.cache({ inboxItems: [{ id: "x", level: "red", text: "old shim item", url: "" }] });
+		const old = t.run(MSG([11]));
+		assert.doesNotMatch(old.out, /old shim item/);
+		assert.match(old.out, /QA inbox: no local snapshot/);
+		for (const bad of [{ version: 2 }, { items: "x" }, { fetchedAt: "not a date" }]) {
+			t.inbox(bad);
+			const r = t.run(MSG([11]));
+			assert.equal(r.code, 0, r.out);
+			assert.match(r.out, /QA inbox: local snapshot invalid/);
+		}
+	});
+
+	it("reports an absent, stale or failed status cache as one unavailable line and still passes", () => {
+		const t = setup();
+		passing(t);
+		const absent = t.run(MSG([11]));
+		assert.equal(absent.code, 0, absent.out);
+		assert.match(absent.out, /main runs: unavailable \(no readable ci-watch cache: ENOENT\)/);
+		t.cache({}, 181_000);
+		assert.match(t.run(MSG([11])).out, /main runs: unavailable \(ci-watch cache stale or invalid\)/);
+		t.cache({ error: "HTTP 502: bad gateway\nsecond line" });
+		const failed = t.run(MSG([11]));
+		assert.equal(failed.code, 0, failed.out);
+		assert.match(failed.out, /main runs: unavailable \(ci-watch fetch failed: HTTP 502: bad gateway\)/);
+		assert.doesNotMatch(failed.out, /second line/);
+	});
+
+	it("shows a red main run from the cache as extra information, also on failure, and ignores other branches", () => {
 		const t = setup();
 		t.task({ "src/a.js": "1\n" });
-		t.issues({ list: [{ number: 13, title: "t", url: "https://github.com/o/r/issues/13", labels: [{ name: "qa-inbox" }] }] });
+		t.cache({ runs: [redRun, { ...redRun, id: 6, head_branch: "task", html_url: "https://x/6" }] });
 		const r = t.run(MSG([11]));
 		assert.equal(r.code, 1);
 		assert.match(r.out, /FAIL tests\.yml: no run for/);
-		assert.match(r.out, /  QA open: #13 t \[qa-inbox\] https:\/\/github\.com\/o\/r\/issues\/13/);
+		assert.match(r.out, /  main red \(cached\): tests failure https:\/\/github\.com\/o\/r\/actions\/runs\/5/);
+		assert.doesNotMatch(r.out, /x\/6/);
 	});
 
-	it("reports an unavailable gh as one line and still passes", () => {
+	it("keeps the exact-head CI gate even when the cache lists a green run for the head", () => {
 		const t = setup();
 		const head = t.task({ "src/a.js": "1\n" });
-		t.runs({ "tests.yml": [ok(11, head)] });
-		t.env.FAKE_GH_ISSUE_FAIL = "1";
+		t.cache({ runs: [{ ...redRun, conclusion: "success", head_sha: head, head_branch: "task" }] });
 		const r = t.run(MSG([11]));
+		assert.equal(r.code, 1);
+		assert.match(r.out, /FAIL tests\.yml: no run for/);
+	});
+});
+
+describe("deliver-check proofreading exemption and combined review", () => {
+	const doc = (t: ReturnType<typeof setup>) => {
+		const log = join(t.tmp, "doc-check.log");
+		writeFileSync(log, "doc check ok\n");
+		return log;
+	};
+	const PROOF = (log: string) => `Fix typos\n\nChange-class: proofreading\nDoc-check: ${log}\nUnverified: none\n`;
+	const withMain = (t: ReturnType<typeof setup>, files: Record<string, string>) => {
+		t.commit("main", files);
+		t.git("push", "--quiet", "origin", "main");
+	};
+
+	it("accepts proofreading of passive documents with a Doc-check log and no review trailers", () => {
+		const t = setup();
+		withMain(t, { "DECISIONS.md": "a\n", "notes/n.md": "n\n" });
+		t.task({ "DECISIONS.md": "b\n", "notes/n.md": "m\n" });
+		const r = t.run(PROOF(doc(t)));
 		assert.equal(r.code, 0, r.out);
-		assert.match(r.out, /  QA open: unavailable \(HTTP 502: bad gateway\)/);
-		assert.doesNotMatch(r.out, /second line/);
+		assert.match(r.out, /reviews: exempt \(proofreading, Doc-check /);
+	});
+
+	it("rejects a missing, relative, absent or empty Doc-check and a malformed class", () => {
+		const t = setup();
+		t.task({ "README.md": "changed\n" });
+		const log = doc(t);
+		const empty = join(t.tmp, "empty.log");
+		writeFileSync(empty, "");
+		for (const [msg, re] of [
+			["Change-class: proofreading\nUnverified: none\n", /needs exactly one "Doc-check: <absolute local log path>"/],
+			["Change-class: proofreading\nDoc-check: doc.log\nUnverified: none\n", /needs exactly one "Doc-check/],
+			[`Change-class: proofreading\nDoc-check: ${join(t.tmp, "absent.log")}\nUnverified: none\n`, /is missing or empty/],
+			[`Change-class: proofreading\nDoc-check: ${empty}\nUnverified: none\n`, /is missing or empty/],
+			[`Change-class: typo\nDoc-check: ${log}\nUnverified: none\n`, /malformed "Change-class:"/],
+		] as [string, RegExp][]) {
+			const r = t.run(`Fix\n\n${msg}`);
+			assert.equal(r.code, 1, r.out);
+			assert.match(r.out, re);
+		}
+	});
+
+	it("without the exemption a docs-only change still needs a Review trailer", () => {
+		const t = setup();
+		t.task({ "README.md": "changed\n" });
+		const r = t.run("Docs\n\nUnverified: none\n");
+		assert.equal(r.code, 1);
+		assert.match(r.out, /missing trailer "Review: review#N CLEAN"/);
+	});
+
+	it("rejects proofreading of runtime prompts, config, source, workflows, agent files and added or deleted files", () => {
+		for (const files of [
+			{ "AGENTS.md": "x\n" }, { "INSTALL.md": "x\n" }, { "extensions/RQW-prompt/SYSTEM.md": "x\n" }, { "extensions/RQW-x/README.md": "x\n" },
+			{ ".agents/reviewers/x.md": "x\n" }, { "package.json": "{}\n" }, { "src/a.js": "1\n" }, { ".github/workflows/x.yml": "a: 1\n" },
+			{ "notes/new.md": "new\n" }, { "README.md": null },
+		] as Record<string, string | null>[]) {
+			const t = setup();
+			t.task(files);
+			const r = t.run(PROOF(doc(t)));
+			assert.equal(r.code, 1, `${Object.keys(files)}\n${r.out}`);
+			assert.match(r.out, /FAIL message: proofreading exemption: /);
+		}
+	});
+
+	it("allows PROCESS.md prose but not a change of the coordinator-rules JSON", () => {
+		const block = (v: string) => `intro\n\n\`\`\`json coordinator-rules\n{"v": ${v}}\n\`\`\`\n\nouter prose\n`;
+		const t = setup();
+		withMain(t, { "PROCESS.md": block("1") });
+		t.task({ "PROCESS.md": block("1").replace("outer prose", "outer proza") });
+		const ok1 = t.run(PROOF(doc(t)));
+		assert.equal(ok1.code, 0, ok1.out);
+
+		const u = setup();
+		withMain(u, { "PROCESS.md": block("1") });
+		u.task({ "PROCESS.md": block("2") });
+		const bad = u.run(PROOF(doc(u)));
+		assert.equal(bad.code, 1, bad.out);
+		assert.match(bad.out, /PROCESS\.md coordinator-rules block changed or unreadable/);
+	});
+
+	it("rejects proofreading together with a QA line and keeps the owner quote gate", () => {
+		const t = setup();
+		withMain(t, { "DECISIONS.md": "a\n" });
+		t.task({ "DECISIONS.md": "Owner: \u00abinvented words\u00bb\n" });
+		const quote = t.run(PROOF(doc(t)));
+		assert.equal(quote.code, 1, quote.out);
+		assert.match(quote.out, /FAIL DECISIONS\.md:1 quote is not verbatim/);
+		const qa = t.run(PROOF(doc(t)) + "QA: #6\nTest-review: agent#8 CLEAN\n");
+		assert.match(qa.out, /"QA: #N" is not proofreading/);
+	});
+
+	const EXT = "extensions/RQW-x";
+	const lines = (n: number, tag = "n") => Array.from({ length: n }, (_, i) => `${tag}${i}\n`).join(""); // distinct lines, so a rewrite counts both sides
+	const COMBINED = (extra = "") => `Task\n\nCombined-review: agent#7 CLEAN\nCI: https://github.com/o/r/actions/runs/11\n${extra}Unverified: none\n`;
+	// Runs one combined-review change; `base` files are first committed to main.
+	const combined = (files: Record<string, string | null>, base: Record<string, string> = {}, extra = "") => {
+		const t = setup();
+		if (Object.keys(base).length) { t.commit("main", base); t.git("push", "--quiet", "origin", "main"); }
+		const head = t.task(files);
+		t.runs({ "tests.yml": [ok(11, head)] });
+		t.issues({ view: { "6": { labels: [{ name: "qa-inbox" }], state: "OPEN" } } });
+		return t.run(COMBINED(extra));
+	};
+
+	it("accepts Combined-review in place of Review and Code-review inside one extension", () => {
+		const r = combined({ [`${EXT}/a.js`]: "1\n", [`${EXT}/sub/b.js`]: "2\n" });
+		assert.equal(r.code, 0, r.out);
+		assert.match(r.out, /reviews: combined agent#7 \(result and code review\)/);
+		const t = setup();
+		const head = t.task({ [`${EXT}/a.js`]: "1\n" });
+		t.runs({ "tests.yml": [ok(11, head)] });
+		for (const bad of ["Combined-review: agent#N CLEAN", "Combined-review: agent#7 found issues"]) {
+			assert.match(t.run(COMBINED().replace("Combined-review: agent#7 CLEAN", bad)).out, /missing trailer "Review: review#N CLEAN"/);
+		}
+	});
+
+	it("counts added plus deleted lines: 100 passes, 101 fails", () => {
+		assert.equal(combined({ [`${EXT}/a.js`]: lines(100) }).code, 0);
+		const over = combined({ [`${EXT}/a.js`]: lines(101) });
+		assert.equal(over.code, 1, over.out);
+		assert.match(over.out, /"Combined-review:" not allowed \(101 added plus deleted lines, at most 100\)/);
+		// 60 deleted + 40 added = 100 passes; 60 + 41 = 101 fails.
+		const base = { [`${EXT}/a.js`]: lines(60, "old") };
+		assert.equal(combined({ [`${EXT}/a.js`]: lines(40) }, base).code, 0);
+				assert.match(combined({ [`${EXT}/a.js`]: lines(41) }, base).out, /101 added plus deleted lines/);
+	});
+
+	it("allows more than five files in one extension within 100 lines", () => {
+		const files = Object.fromEntries([17, 17, 17, 17, 16, 16].map((n, i) => [`${EXT}/f${i}.js`, lines(n)]));
+		const r = combined(files);
+		assert.equal(r.code, 0, r.out);
+	});
+
+	it("requires every changed path in the same extensions/RQW-*/ folder", () => {
+		for (const [name, files] of [
+			["two extensions", { "extensions/RQW-x/a.js": "1\n", "extensions/RQW-y/b.js": "1\n" }],
+			["outside folder", { "extensions/RQW-x/a.js": "1\n", "src/b.js": "1\n" }],
+			["ancillary doc", { "extensions/RQW-x/a.js": "1\n", "README.md": "doc\n" }],
+			["extension root file", { "extensions/RQW-x": "1\n" }],
+			["not an RQW folder", { "extensions/other/a.js": "1\n" }],
+		] as [string, Record<string, string>][]) {
+			const r = combined(files);
+			assert.equal(r.code, 1, `${name}\n${r.out}`);
+			assert.match(r.out, /"Combined-review:" not allowed \(changed paths are not all inside one extensions\/RQW-\*\/ folder\)/, name);
+		}
+	});
+
+	it("treats a binary diff entry as ineligible", () => {
+		const r = combined({ [`${EXT}/a.bin`]: "a\0b\n" });
+		assert.equal(r.code, 1, r.out);
+		assert.match(r.out, /"Combined-review:" not allowed \(binary or non-numeric diff entry\)/);
+	});
+
+	it("rejects Combined-review for test weakening, QA fixes and workflow changes", () => {
+		const BASE_TEST = 'import assert from "node:assert/strict";\nit("a", () => {\n\tassert.equal(1, 1);\n\tassert.equal(2, 2);\n});\n';
+		const testFile = `${EXT}/test/a.test.ts`;
+		const weak = combined({ [testFile]: BASE_TEST.replace('it("a"', 'it.skip("a"') }, { [testFile]: BASE_TEST },
+			"Test-change: why\nTest-review: agent#8 CLEAN\n");
+		assert.match(weak.out, /"Combined-review:" not allowed \(test integrity rule triggered\)/);
+		const qa = combined({ [`${EXT}/a.js`]: "1\n" }, {}, "QA: #6\nTest-review: agent#8 CLEAN\n");
+		assert.match(qa.out, /"Combined-review:" not allowed \(\"QA: #N\" fix\)/);
+		const wf = combined({ ".github/workflows/x.yml": "a: 1\n" });
+		assert.match(wf.out, /"Combined-review:" not allowed .*workflow file changed/);
+		for (const r of [weak, qa, wf]) assert.equal(r.code, 1, r.out);
+	});
+
+	it("ignores an ineligible Combined-review when separate review trailers are present", () => {
+		const t = setup();
+		const head = t.task({ "src/a.js": "1\n", [`${EXT}/b.js`]: "1\n" }); // outside one extension: combined is ineligible
+		t.runs({ "tests.yml": [ok(11, head)] });
+		const r = t.run(MSG([11]) + "Combined-review: agent#9 CLEAN\n");
+		assert.equal(r.code, 0, r.out);
 	});
 });
 
@@ -569,32 +1005,57 @@ describe("deliver-check test integrity", () => {
 		assert.match(t.run(MSG([11]) + "QA: #6\nTest-review: agent#8 CLEAN\n").out, /FAIL message: "QA: #6": gh issue view failed: HTTP 502/);
 	});
 
-	it("QA: #N valid with Test-review passes; a missing Test-review or malformed line fails", () => {
+	it("QA: #N without weakening needs neither integrity trailer but still rejects malformed QA lines", () => {
 		const t = setup();
 		const head = t.task({ "src/a.js": "1\n" });
 		t.runs({ "tests.yml": [ok(11, head)] });
 		t.issues({ view: { "6": inbox } });
-		const good = t.run(MSG([11]) + "QA: #6\nTest-review: agent#8 CLEAN\n");
+		const good = t.run(MSG([11]) + "QA: #6\n");
 		assert.equal(good.code, 0, good.out);
-		assert.match(good.out, /QA: #6 \(qa-inbox issues/);
-		const noReview = t.run(MSG([11]) + "QA: #6\n");
-		assert.equal(noReview.code, 1);
-		assert.match(noReview.out, /FAIL message: "QA: #N" requires trailer "Test-review: agent#N CLEAN"/);
-		assert.doesNotMatch(noReview.out, /requires trailer "Test-change/); // no test or workflow file changed
-		const malformed = t.run(MSG([11]) + "QA: 6\nTest-review: agent#8 CLEAN\n");
+		assert.match(good.out, /QA: #6 \(qa-inbox issues\)/);
+		assert.doesNotMatch(good.out, /Test-review present|test integrity:/);
+		const malformed = t.run(MSG([11]) + "QA: 6\n");
+		assert.equal(malformed.code, 1, malformed.out);
 		assert.match(malformed.out, /FAIL message: malformed line "QA: 6"/);
 	});
 
-	it("QA: #N with test files changed also needs Test-change", () => {
+	it("ordinary QA test or workflow changes need Test-change but not Test-review without weakening", () => {
+		for (const files of [
+			{ "test/new.test.ts": 'import assert from "node:assert/strict";\nit("n", () => assert.ok(true));\n' },
+			{ ".github/workflows/extra.yml": "name: extra\non: workflow_dispatch\njobs: {}\n" },
+		]) {
+			const t = setup();
+			const head = t.task(files);
+			t.runs({ "tests.yml": [ok(11, head)] });
+			t.issues({ view: { "6": inbox } });
+			const msg = MSG([11]) + "QA: #6\n";
+			const missingReason = t.run(msg);
+			assert.equal(missingReason.code, 1, missingReason.out);
+			assert.match(missingReason.out, /"QA: #N" with test or workflow files changed requires trailer "Test-change: <text>"/);
+			assert.doesNotMatch(missingReason.out, /test integrity:|requires trailer "Test-review/);
+			const good = t.run(msg + "Test-change: proves the corrected QA behavior\n");
+			assert.equal(good.code, 0, good.out);
+			assert.doesNotMatch(good.out, /test integrity:/);
+		}
+	});
+
+	it("detected weakening requires both integrity trailers with or without a QA flag", () => {
 		const t = setup();
-		const head = t.task({ "test/new.test.ts": 'import assert from "node:assert/strict";\nit("n", () => assert.ok(true));\n' });
+		withMain(t, { "test/a.test.ts": BASE_TEST });
+		const head = t.task({ "test/a.test.ts": BASE_TEST.replace('it("a"', 'it.skip("a"') });
 		t.runs({ "tests.yml": [ok(11, head)] });
 		t.issues({ view: { "6": inbox } });
-		const msg = MSG([11]) + "QA: #6\nTest-review: agent#8 CLEAN\n";
-		const bad = t.run(msg);
-		assert.equal(bad.code, 1, bad.out);
-		assert.match(bad.out, /FAIL message: "QA: #N" with test or workflow files changed requires trailer "Test-change: <text>"/);
-		const good = t.run(msg + "Test-change: the new test proves the fixed race\n");
-		assert.equal(good.code, 0, good.out);
+		for (const qa of ["", "QA: #6\n"]) {
+			for (const trailer of ["", "Test-change: approved reason\n", "Test-review: agent#8 CLEAN\n"]) {
+				const result = t.run(MSG([11]) + qa + trailer);
+				assert.equal(result.code, 1, result.out);
+				assert.match(result.out, /FAIL test integrity: test\/a\.test\.ts adds skip\/todo: missing trailer/);
+				if (!trailer.startsWith("Test-change:")) assert.ok(result.out.includes('"Test-change: <text>"'), result.out);
+				if (!trailer.startsWith("Test-review:")) assert.ok(result.out.includes('"Test-review: agent#N CLEAN"'), result.out);
+			}
+			const good = t.run(MSG([11]) + qa + TRAILERS);
+			assert.equal(good.code, 0, good.out);
+			assert.match(good.out, /test integrity: 1 weakening file\(s\) accepted/);
+		}
 	});
 });
