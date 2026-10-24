@@ -34,7 +34,7 @@ export interface CallResult {
 	isError?: boolean;
 }
 
-const WAITERS = new Set(["agent", "code_writer", "shell_runner", "review"]);
+const WAITERS = new Set(["agent", "review"]);
 // eslint-disable-next-line no-control-regex
 const ESCAPES = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])|\x9b[0-?]*[ -/]*[@-~]/g;
 // eslint-disable-next-line no-control-regex

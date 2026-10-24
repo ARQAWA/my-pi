@@ -1,4 +1,4 @@
-// GPT Fast in RQW-agent's children (`agent`, `code_writer`, `shell_runner`): real Pi sessions, the real openai-codex
+// GPT Fast in RQW-agent's children: real Pi sessions, the real openai-codex
 // and anthropic providers, only the network (globalThis.fetch) replaced, so the assertions read the request bodies
 // that would go on the wire. RQW-settings is not loaded (this test loads only RQW-agent); a stand-in answers on the
 // parent's `pi.events` the query channel that RQW-settings answers in production (`state.fast` is the main chat's /fast-gpt state).
@@ -24,8 +24,8 @@ const codexAnswer = sse([
 	{ type: "response.output_item.done", item: message },
 	{ type: "response.completed", response: { id: "r", status: "completed", output: [message], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
 ]);
-/** A codex answer that calls code_writer once, for the nested-inheritance test. */
-const call = { type: "function_call", id: "fc1", call_id: "call1", name: "code_writer", arguments: '{"task":"nested"}', status: "completed" };
+/** A codex answer that starts an ordinary agent, for the nested-inheritance test. */
+const call = { type: "function_call", id: "fc1", call_id: "call1", name: "agent", arguments: '{"action":"start","system":"INNER","task":"nested","model":"openai-codex/gpt-6.1-sol","tools":[]}', status: "completed" };
 const codexNested = sse([
 	{ type: "response.output_item.added", item: { ...call, arguments: "", status: "in_progress" } },
 	{ type: "response.function_call_arguments.delta", delta: call.arguments },
@@ -42,7 +42,7 @@ const claudeAnswer = sse([
 	{ type: "message_stop" },
 ]);
 
-/** A child whose system prompt is NESTED calls code_writer in its first request only (no continuation, no tool result yet). */
+/** A child whose system prompt is NESTED calls agent in its first request only (no continuation, no tool result yet). */
 const codexReply = (body: Record<string, any>) =>
 	body.instructions === "NESTED" && !body.previous_response_id && !JSON.stringify(body.input).includes("function_call_output") ? codexNested : codexAnswer;
 
@@ -157,7 +157,7 @@ describe("GPT Fast, RQW-agent children", () => {
 			assert.deepEqual(tiers(), [PRIORITY, undefined], "main chat off: the next child starts without");
 			f.state.fast = true;
 			wire.length = 0;
-			await start({}, "anthropic/claude-opus-5-5");
+			await start({ fast_gpt: true }, "anthropic/claude-opus-5-5");
 			await until(() => f.delivered().length === 3, "anthropic answer");
 			assert.match(wire[0].url, /anthropic/);
 			assert.ok(!("service_tier" in wire[0].body), "Anthropic is never touched, whatever the state");
@@ -244,11 +244,11 @@ describe("GPT Fast, RQW-agent children", () => {
 			f.state.fast = main;
 			try {
 				await f.call("agent", { action: "start", system: "NESTED", task: "go", model, tools: [], fast_gpt: child });
-				await until(() => f.delivered().length === 1, "nested chain answer");
+				await until(() => f.delivered().length === 1 && wire.some(({ body }) => body.instructions === "INNER"), "nested chain answer");
 				const bodies = wire.filter(({ body }) => body.instructions !== "NESTED");
-				assert.equal(bodies.length, 1, "exactly one nested worker request");
+				assert.equal(bodies.length, 1, "exactly one nested agent request");
 				const own = wire.filter(({ body }) => body.instructions === "NESTED").map(({ body }) => body.service_tier);
-				assert.ok(own.length >= 2, "the child called the worker and then answered");
+				assert.ok(own.length >= 2, "the child started a nested agent and then answered");
 				assert.ok(own.every((tier) => tier === (child ? PRIORITY : undefined)), "the child keeps its own state");
 				assert.equal(bodies[0].body.service_tier, nested, `main ${main}, child ${child}`);
 			} finally { await f.close(); }
@@ -266,45 +266,12 @@ describe("GPT Fast, RQW-agent children", () => {
 		} finally { await f.close(); }
 	});
 
-	for (const role of ["code_writer", "shell_runner"]) {
-		it(`${role}: a GPT worker inherits (priority), fast_gpt false forbids it, a Claude worker never gets it`, async () => {
-			wire.length = 0;
-			const gpt = await open(["openai-codex"]);
-			try {
-				await gpt.call(role, { task: "do it" });
-				await until(() => gpt.delivered().length === 1, "GPT worker answer");
-				assert.deepEqual(wire.map(({ body }) => body.model), ["gpt-6-luna"]);
-				assert.deepEqual(tiers(), [PRIORITY]);
-				await gpt.call(role, { task: "do it", fast_gpt: false });
-				await until(() => gpt.delivered().length === 2, "forbidden worker answer");
-				assert.deepEqual(tiers(), [PRIORITY, undefined]);
-				gpt.state.fast = false;
-				await gpt.call(role, { task: "do it" });
-				await until(() => gpt.delivered().length === 3, "main-off worker answer");
-				assert.deepEqual(tiers(), [PRIORITY, undefined, undefined]);
-				await gpt.call(role, { task: "do it", fast_gpt: true });
-				await until(() => gpt.delivered().length === 4, "forced-on worker answer");
-				assert.deepEqual(tiers().at(-1), PRIORITY);
-			} finally { await gpt.close(); }
-			wire.length = 0;
-			const claude = await open(["anthropic"]);
-			try {
-				await claude.call(role, { task: "do it", fast_gpt: true });
-				await until(() => claude.delivered().length === 1, "Claude worker answer");
-				assert.deepEqual(wire.map(({ body }) => body.model), ["claude-haiku-5-5"]);
-				assert.ok(!("service_tier" in wire[0].body));
-			} finally { await claude.close(); }
-		});
-	}
-
-	it("the three tools describe the inheritance and the fast_gpt switch in one sentence", async () => {
+	it("agent describes inheritance and the fast_gpt switch in one sentence", async () => {
 		const f = await open(["openai-codex"]);
 		try {
-			for (const tool of ["agent", "code_writer", "shell_runner"]) {
-				const definition = f.session.getToolDefinition(tool)!;
-				assert.match(definition.description, /By default children inherit GPT Fast; pass fast_gpt false when the user forbids Fast for subagents\./);
-				assert.equal((definition.parameters as { properties: Record<string, { type: string }> }).properties.fast_gpt.type, "boolean");
-			}
+			const definition = f.session.getToolDefinition("agent")!;
+			assert.match(definition.description, /By default children inherit GPT Fast; pass fast_gpt false when the user forbids Fast for subagents\./);
+			assert.equal((definition.parameters as { properties: Record<string, { type: string }> }).properties.fast_gpt.type, "boolean");
 		} finally { await f.close(); }
 	});
 });

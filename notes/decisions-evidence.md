@@ -226,7 +226,7 @@ Evidence for `[D-TOOLS-BG]`: the first live probe and its two refinements, the s
   server or a long build stop blocking the agent; Codex 0.163.0 and oh-my-pi 18.8.9 do not order shell calls at all.
   Race analysis, rejected alternatives and cost: `my-pi-evidence/bash-background/D4-ORDERING.md`; design:
   `DESIGN.md` there. Carriers: `extensions/RQW-tools/jobs.ts`, `barrier.ts`, `nested.ts`, `index.ts`, `codemode.ts`,
-  `descriptions/bash.md`, `descriptions/job.md`; `extensions/RQW-agent/index.ts`, `roles/*.md`.
+  `descriptions/bash.md`, `descriptions/job.md`; `extensions/RQW-agent/index.ts`.
   Proof: `extensions/RQW-tools/test/background.test.ts` (injected threshold, gate-file commands),
   `test/barrier-detach.test.ts` in that folder (held operations, an independent oracle, randomized detach; it fails
   with a no-op detach, and the queued-edit test fails when file jobs detach too),
@@ -283,8 +283,8 @@ Evidence for `[D-TOOLS-BG]`: the first live probe and its two refinements, the s
   identity, the time cutoff); each has a test in `background.test.ts` (#3-#8) or `ledger.test.ts` that fails on the
   code before the fix. Proof: `extensions/RQW-tools/test/footprint.test.ts`, `ledger.test.ts`,
   `barrier-detach.test.ts` (held oracle, randomized; it fails when held entries are ignored),
-  `background.test.ts` (R16 and R17 fail when the classifier holds nothing), `extensions/RQW-agent/test/
-  nested-workers.test.ts` and `extensions/RQW-review/test/review.test.ts` (labels, reviewer `job` lifetime),
+  `background.test.ts` (R16 and R17 fail when the classifier holds nothing),
+  `extensions/RQW-review/test/review.test.ts` (labels, reviewer `job` lifetime),
   `extensions/RQW-agent/test/agent.test.ts` and `extensions/RQW-review/test/subagent.test.ts` (offered child codemode,
   explorer `job`, path labels, a child reviewer's jobs on the child's end), `background.test.ts` ("S1 across sessions"),
   `test/prompt-tools-isolation.test.ts` (section text).
@@ -510,29 +510,6 @@ Original lines: 1086-1114. Source: `30952e6:DECISIONS.md`.
   the queued follow-up in the same message (`[agent#1] W: ... first ... W: ... second`,
   `[agent#2] Q: The bug is in add ...`).
 
-```
-
-<a id="workers-b4-results"></a>
-## Workers B4 benchmark results
-
-Used by `[D-WORKERS-REASONING]`. Source: DECISIONS.md at `30952e6`, archive A-0140 (lines 1179-1194).
-
-```text
-Source: [workers benchmark, Results and B4](notes/workers-bench.md#b4-chosen-levels), saved log
-  `logs/b3-final-3models-summary.md` under the benchmark directory named in that report. Each pair below is
-  low vs medium; judge means cover all runs.
-
-  | Model | Role | Tuning pass: low vs medium | Holdout pass: low vs medium | Judge mean: low vs medium | Chosen |
-  | --- | --- | --- | --- | --- | --- |
-  | anthropic/claude-haiku-5-5 | code_writer | 75/75 vs 75/75 | 50/50 vs 50/50 | 9.7 vs 9.7 | low |
-  | anthropic/claude-haiku-5-5 | shell_runner | 75/75 vs 75/75 | 50/50 vs 50/50 | 9.6 vs 9.6 | low |
-  | openai-codex/gpt-6-luna | code_writer | 75/75 vs 75/75 | 50/50 vs 49/50 | 9.9 vs 9.8 | low |
-  | openai-codex/gpt-6-luna | shell_runner | 72/75 vs 75/75 | 49/50 vs 50/50 | 9.5 vs 9.6 | medium |
-
-  GPT-6 Luna shell_runner low qualifies but loses to medium on pass rate, so medium is selected. The separately
-  measured GPT-5.6 Luna is not in this model chain and is not used. Its code_writer met the bar at no level:
-  holdout pass rates were 84.0%, 82.0%, 86.0% and 92.0% for low, medium, high and xhigh, with runaway writes hitting
-  the 15-minute cut. Those measurements do not add a model or change the accepted primary/fallback chain.
 ```
 
 <a id="review-gpt-match"></a>

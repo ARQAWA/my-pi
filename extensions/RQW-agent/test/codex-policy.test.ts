@@ -25,11 +25,11 @@ const answer = sse([
 	{ type: "content_block_stop", index: 0 },
 	...end,
 ]);
-/** The child calls code_writer once: the nested child of the test. */
-const callWorker = sse([
+/** The child starts an ordinary agent: the nested child of the test. */
+const callAgent = sse([
 	start,
-	{ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu1", name: "code_writer", input: {} } },
-	{ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"task":"nested"}' } },
+	{ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu1", name: "agent", input: {} } },
+	{ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"action":"start","system":"INNER","task":"nested","model":"anthropic/claude-opus-5-5","tools":[]}' } },
 	{ type: "content_block_stop", index: 0 },
 	{ type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { output_tokens: 2 } },
 	{ type: "message_stop" },
@@ -42,12 +42,12 @@ const realFetch = globalThis.fetch;
 
 before(async () => {
 	root = await mkdtemp(join(tmpdir(), "rqw-agent-policy-"));
-	// Only a child whose prompt says NESTED calls code_writer, and only before the tool result comes back.
+	// Only a child whose prompt says NESTED calls agent, and only before the tool result comes back.
 	globalThis.fetch = async (input, init) => {
 		const body = JSON.parse(String(init?.body));
 		wire.push({ url: String(input), body });
 		const nested = JSON.stringify(body.system ?? "").includes("NESTED") && !JSON.stringify(body.messages).includes("tool_result");
-		return new Response(nested ? callWorker : answer, { headers: { "content-type": "text/event-stream" } });
+		return new Response(nested ? callAgent : answer, { headers: { "content-type": "text/event-stream" } });
 	};
 });
 after(async () => { globalThis.fetch = realFetch; await rm(root, { recursive: true, force: true }); });
@@ -177,14 +177,17 @@ describe("RQW-agent: optional rqw-codex:session-policy request", () => {
 			assert.equal(inner.kind, "collab_spawn");
 			assert.equal(inner.parentThreadId, outer.session.sessionManager.getSessionId(), "the nested child's parent is the child");
 			assert.equal(outer.childName, "agent#1");
-			assert.equal(inner.childName, "code_writer#1", "Codex gets only the local kind#id, not the tools' parent path");
+			assert.equal(inner.childName, "agent#1", "Codex gets only the local kind#id, not the tools' parent path");
 			assert.notEqual(inner.session, outer.session);
 			await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
-			await outer.session.getToolDefinition("code_writer")!.execute("nested-restart", {
-				action: "restart", id: "code_writer#1", task: "fresh nested run",
+			await outer.session.getToolDefinition("agent")!.execute("nested-wait", {
+				action: "wait", ids: ["agent#1"], blocking: true, timeout_ms: 60_000,
+			} as never, undefined, undefined, outer.session.extensionRunner.createContext());
+			await outer.session.getToolDefinition("agent")!.execute("nested-restart", {
+				action: "restart", id: "agent#1", task: "fresh nested run",
 			} as never, undefined, undefined, outer.session.extensionRunner.createContext());
 			assert.equal(f.seen.length, 3);
-			assert.equal(f.seen[2].request.childName, "code_writer#1", "restart also keeps Codex's name local");
+			assert.equal(f.seen[2].request.childName, "agent#1", "restart also keeps Codex's name local");
 		} finally { await f.close(); }
 	});
 

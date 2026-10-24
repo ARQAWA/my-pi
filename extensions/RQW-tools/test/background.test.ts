@@ -547,7 +547,7 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 	it("#4: bash inside a codemode script takes the process-wide claims: it waits for a background install and another session's commit", async () => {
 		const { dir, tools } = await fresh();
 		await fakes(dir);
-		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "code_writer#2" });
+		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "agent#2" });
 		const nested2 = createNestedBarrier();
 		const other = Object.fromEntries(createTools(dir, () => ({}), nested2, { jobs: otherJobs }).map((t) => [t.name, t as any]));
 		assert.match(text(await call(tools.bash, { command: P + "npm ci" }, dir)), /holds: package folder \./);
@@ -579,7 +579,7 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 	it("#5: two sessions read one version and write together: the second write is refused, not silently overwriting", async (t) => {
 		const { dir, tools } = await fresh();
 		freezeThreshold(t);
-		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "code_writer#2" });
+		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "agent#2" });
 		const other = Object.fromEntries(createTools(dir, () => ({}), createNestedBarrier(), { jobs: otherJobs }).map((t) => [t.name, t as any]));
 		await writeFile(join(dir, "s.ts"), "v1\n");
 		await call(tools.read, { path: "s.ts" }, dir);
@@ -597,18 +597,18 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 	it("#6: a read through a symlink and a write of the real file by another session: the write through the link is refused", async (t) => {
 		const { dir, tools } = await fresh();
 		freezeThreshold(t);
-		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "code_writer#2" });
+		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "agent#2" });
 		const other = Object.fromEntries(createTools(dir, () => ({}), createNestedBarrier(), { jobs: otherJobs }).map((t) => [t.name, t as any]));
 		await writeFile(join(dir, "Real.ts"), "v1\n");
 		try { await symlink(join(dir, "Real.ts"), join(dir, "alias.ts")); } catch (error) { if (WIN) return; throw error; }
 		await call(tools.read, { path: "alias.ts" }, dir);
 		await call(other.write, { path: "Real.ts", content: "v2 from the other session\n" }, dir);
-		await assert.rejects(call(tools.write, { path: "alias.ts", content: "main\n" }, dir), /alias\.ts changed after you last read it \(by code_writer#2/);
+		await assert.rejects(call(tools.write, { path: "alias.ts", content: "main\n" }, dir), /alias\.ts changed after you last read it \(by agent#2/);
 		// Another case spelling on a case-insensitive volume is the same file too.
 		if (existsSync(join(dir, "real.ts"))) {
 			await call(tools.read, { path: "real.ts" }, dir);
 			await call(other.write, { path: "Real.ts", content: "v3\n" }, dir);
-			await assert.rejects(call(tools.write, { path: "REAL.ts", content: "main\n" }, dir), /changed after you last read it \(by code_writer#2/);
+			await assert.rejects(call(tools.write, { path: "REAL.ts", content: "main\n" }, dir), /changed after you last read it \(by agent#2/);
 		}
 	});
 
@@ -627,7 +627,7 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 
 	it("R2-2: a read waits for the same-response bash that creates its fallback spelling, and keys the file it opened", async (t) => {
 		const { dir, tools } = await fresh();
-		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "code_writer#2" });
+		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "agent#2" });
 		const other = Object.fromEntries(createTools(dir, () => ({}), createNestedBarrier(), { jobs: otherJobs }).map((t) => [t.name, t as any]));
 		const curly = "it\u2019s.txt";
 		await writeFile(join(dir, "source.txt"), "made by bash\n");
@@ -650,12 +650,12 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 		// The rest is file calls only, with nothing meant to go to the background: stop the threshold timer for them.
 		freezeThreshold(t);
 		await call(other.edit, { path: curly, edits: [{ oldText: "made by bash", newText: "edited by the other session" }] }, dir);
-		await assert.rejects(call(tools.write, { path: curly, content: "main\n" }, dir), /changed after you last read it \(by code_writer#2 \(edit/);
+		await assert.rejects(call(tools.write, { path: curly, content: "main\n" }, dir), /changed after you last read it \(by agent#2 \(edit/);
 	});
 
 	it("R2-3: an own edit later overwritten by another session stays in the job's report as yours and as overwritten", async () => {
 		const { dir, tools, jobs } = await fresh();
-		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "code_writer#2" });
+		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "agent#2" });
 		const other = Object.fromEntries(createTools(dir, () => ({}), createNestedBarrier(), { jobs: otherJobs }).map((t) => [t.name, t as any]));
 		await writeFile(join(dir, "A.ts"), "one\n");
 		await call(tools.bash, { command: gated("true") }, dir);
@@ -668,7 +668,7 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 		const e = (await job(tools, dir, { action: "wait", ids: ["job#1"], timeout_ms: 20000 })).results[0].effects;
 		assert.deepEqual(e.yours, ["A.ts (edit)"], JSON.stringify(e));
 		assert.deepEqual(e.overwritten, ["A.ts"]);
-		assert.ok(e.changed.includes("A.ts (by code_writer#2, write)"), JSON.stringify(e));
+		assert.ok(e.changed.includes("A.ts (by agent#2, write)"), JSON.stringify(e));
 		// The history was kept for this job only: nothing is kept once no job of the owner watches.
 		assert.equal(keptOwnWrites(jobs.owner), undefined);
 	});
@@ -677,7 +677,7 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 		const { dir } = await fresh();
 		freezeThreshold(t);
 		const make = () => {
-			const jobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "code_writer#2" });
+			const jobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "agent#2" });
 			return { jobs, tools: Object.fromEntries(createTools(dir, () => ({}), createNestedBarrier(), { jobs }).map((t) => [t.name, t as any])) };
 		};
 		await writeFile(join(dir, "k.ts"), "v1\n");
@@ -698,13 +698,13 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 		await call(b.tools.read, { path: "m.ts" }, dir);
 		await call(a.tools.write, { path: "m.ts", content: "from a, longer\n" }, dir).catch(() => {});
 		await call(a.tools.write, { path: "m.ts", content: "from a, longer\n" }, dir).catch(() => {});
-		assert.match(text(await call(b.tools.read, { path: "m.ts" }, dir)), /note: m\.ts was changed by code_writer#2 \(write/);
+		assert.match(text(await call(b.tools.read, { path: "m.ts" }, dir)), /note: m\.ts was changed by agent#2 \(write/);
 	});
 
 	it("R17: a `git commit` of a subagent waits for a background `git commit` of the main session in the same repository", async () => {
 		const { dir, tools } = await fresh();
 		await fakes(dir);
-		const childJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "code_writer#2" });
+		const childJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "agent#2" });
 		const child = Object.fromEntries(createTools(dir, () => ({}), createNestedBarrier(), { jobs: childJobs }).map((t) => [t.name, t as any]));
 		assert.match(text(await call(tools.bash, { command: P + "git commit -m a" }, dir)), /holds: git index of \./);
 		const second = await call(child.bash, { command: P + "git commit -m b" }, dir);
@@ -1134,7 +1134,7 @@ describe("codemode as one background job", () => {
 			const waited = await job(tools, dir, { action: "wait", ids: ["job#1"], timeout_ms: 20000 });
 			assert.equal(waited.results[0].result, "done factory");
 			// The label: another session that read a file sees who changed it. The handoff is done; these are plain file calls.
-			const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "code_writer#2" });
+			const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "agent#2" });
 			const other = Object.fromEntries(createTools(dir, () => ({}), createNestedBarrier(), { jobs: otherJobs }).map((tool) => [tool.name, tool as any]));
 			await writeFile(join(dir, "who.ts"), "v1\n");
 			await call(other.read, { path: "who.ts" }, dir);

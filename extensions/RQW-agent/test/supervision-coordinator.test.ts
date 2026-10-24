@@ -60,19 +60,19 @@ test("wake_on_alert false and unselected alerts do not end the wait", async () =
 });
 
 test("all holds early selected results without pushing, then reserves one aggregate handoff", async () => {
-	const f = setup(), a = f.child("agent#1"), b = f.child("shell_runner#1");
+	const f = setup(), a = f.child("agent#1"), b = f.child("agent#2");
 	let resolved = false;
-	const wait = f.coordinator.wait(["agent#1", "shell_runner#1"], 10000, signal(), "call", { until: "all" }).then(r => { resolved = true; return r; });
+	const wait = f.coordinator.wait(["agent#1", "agent#2"], 10000, signal(), "call", { until: "all" }).then(r => { resolved = true; return r; });
 	a.finish(); await tick();
 	assert.equal(resolved, false);
 	assert.equal(f.pushes.length, 0);
 	b.finish();
 	const result = (await wait).details as any;
 	assert.equal(result.reason, "result");
-	assert.deepEqual(result.results.map((r: any) => r.id), ["agent#1", "shell_runner#1"]);
+	assert.deepEqual(result.results.map((r: any) => r.id), ["agent#1", "agent#2"]);
 	assert.equal(f.pushes.length, 0);
 	f.branch.push(saved("call", result)); f.emit("turn_end");
-	const receipt = (await f.coordinator.wait(["agent#1", "shell_runner#1"], 10000, signal(), "again", { until: "all" })).details as any;
+	const receipt = (await f.coordinator.wait(["agent#1", "agent#2"], 10000, signal(), "again", { until: "all" })).details as any;
 	assert.equal(receipt.reason, "receipt");
 	assert.equal(receipt.receipts.length, 2);
 	assert.deepEqual(receipt.results, []);

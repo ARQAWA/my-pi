@@ -32,11 +32,10 @@ for (const name of readdirSync(GUARD)) copy(join(GUARD, name), join(cwd, ".pi", 
 copy(join(ROOT, "scripts", "owner-quotes.mjs"), join(cwd, "scripts", "owner-quotes.mjs"));
 // A fixture rules block with a far-future restriction, so the run does not depend on today's date.
 const RULES = {
-	workerModels: {
+	agentModels: {
 		simple: [["anthropic/claude-sonnet-5-5", "medium"], ["openai-codex/gpt-6.1-sol", "low"]],
 		hardest: [["anthropic/claude-opus-5-5", "medium"], ["openai-codex/gpt-6.1-sol", "high"]],
 	},
-	fixedWorkers: "block",
 	temporaryOpusRestriction: { until: "2999-01-01T00:00:00Z", arbiterTitlePrefix: "Арбитр замера" },
 };
 writeFileSync(join(cwd, "PROCESS.md"), `# Process\n\n\`\`\`json coordinator-rules\n${JSON.stringify(RULES, null, 2)}\n\`\`\`\n`);

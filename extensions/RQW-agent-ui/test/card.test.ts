@@ -55,7 +55,7 @@ it("card-expanded-full-text: the whole original text, wrapped, nothing added or 
 });
 
 it("card-missing-details: the id comes from the prefix, unknown parts are left out", () => {
-	assert.deepEqual(render(message("code_writer", "[code_writer#9] ok"), 80), ["code_writer#9", "  ok"]);
+	assert.deepEqual(render(message("agent", "[agent#2] ok"), 80), ["agent#2", "  ok"]);
 	assert.deepEqual(render(message("agent", "[agent#9] ok", {}), 80), ["agent#9", "  ok"]);
 	assert.deepEqual(render(message("agent", "[agent#9] ok", { delivery: 1, run: "1:1" }), 80), ["agent#9", "  ok"]);
 	assert.deepEqual(render(message("agent", "[agent#9] ok", { outcome: "failed" }), 80), ["agent#9 failed", "  ok"]);
@@ -79,13 +79,13 @@ it("card-prefix-only: just the outer prefix is removed, inner brackets stay", ()
 	assert.deepEqual(render(message("agent", "[agent#1] [review#3] CLEAN"), 80, true), ["agent#1", "  [review#3] CLEAN"]);
 	assert.deepEqual(render(message("agent", "[agent#1][x]"), 80, true), ["agent#1", "  [x]"]);
 	// Another type's prefix, or one that does not start the text, is not ours.
-	assert.deepEqual(render(message("agent", "[shell_runner#1] hi"), 80, true), ["agent", "  [shell_runner#1] hi"]);
+	assert.deepEqual(render(message("agent", "[review#1] hi"), 80, true), ["agent", "  [review#1] hi"]);
 	assert.deepEqual(render(message("agent", "x [agent#1] hi"), 80, true), ["agent", "  x [agent#1] hi"]);
 	assert.deepEqual(render(message("agent", "[agent#1]\nsecond"), 80, true), ["agent#1", "", "  second"], "only a following space belongs to the prefix");
 });
 
-it("card-worker-types: agent, code_writer and shell_runner get cards; other types are left to Pi", () => {
-	assert.deepEqual([...CARD_TYPES], ["agent", "code_writer", "shell_runner"]);
+it("card-agent-type: agent messages get cards; other types are left to Pi", () => {
+	assert.deepEqual([...CARD_TYPES], ["agent"]);
 	for (const type of CARD_TYPES) {
 		assert.deepEqual(render(message(type, `[${type}#2] done`, { outcome: "finished", seconds: 1 }), 80), [`${type}#2 finished · 1s`, "  done"]);
 	}
@@ -109,7 +109,7 @@ it("card-width-fit: no row is wider than the width, from 0 to 160", () => {
 			for (const d of detailsSets) {
 				for (const expanded of [false, true]) {
 					for (let width = 0; width <= 160; width++) {
-						for (const row of render(message("shell_runner", `[shell_runner#12] ${text}`, d), width, expanded, theme)) {
+						for (const row of render(message("agent", `[agent#12] ${text}`, d), width, expanded, theme)) {
 							assert.ok(visibleWidth(row) <= width, `${width}: ${JSON.stringify(row)}`);
 							assert.ok(!/[\r\n\t\u0000]/.test(row), JSON.stringify(row));
 							assert.ok(!/\x1b\[2J|\x1b\]8/.test(row), "no foreign terminal sequence reaches the screen");
@@ -201,7 +201,7 @@ it("card-title: details.title follows the id, fitted to the width before the sta
 	for (const title of [undefined, "", "   ", 5, {}, null]) {
 		assert.deepEqual(render(message("agent", "[agent#3] Done", { ...details, title }), 80), ["agent#3 finished · opus medium · 42s", "  Done"], String(title));
 	}
-	assert.deepEqual(render(message("shell_runner", "[shell_runner#1] ok", { title: "Run tests" }), 80), ["shell_runner#1 Run tests", "  ok"]);
+	assert.deepEqual(render(message("agent", "[agent#1] ok", { title: "Run tests" }), 80), ["agent#1 Run tests", "  ok"]);
 	assert.deepEqual(render(message("agent", "[agent#3] Done", { ...titled, title: "\x1b[31mred\x1b[0m title" }), 80)[0], "agent#3 red title finished · opus medium · 42s", "terminal sequences removed");
 });
 

@@ -4,13 +4,13 @@ Append-only record of superseded and obsolete entries removed from [DECISIONS.md
 in `DECISIONS.md`; this file is only for checking history. Each block is the text exactly as it was in
 `DECISIONS.md` at `30952e6`, with `> ` added at the start of each line. Do not edit a block after it is added.
 
-## A-0001 · archived 2026-10-23 · Work policy · Old development worker models (Sonnet medium/high/xhigh, Opus low only)
+## A-0001 · archived 2026-10-23 · Work policy · Old development subagent models (Sonnet medium/high/xhigh, Opus low only)
 
 Status: SUPERSEDED by `[D-WORK-MODELS]` (DECISIONS.md#work-policy).
 Introduced: `8f2ea64`. Superseded: `57fa3ff`. Archived by: the coordinator-guard change.
 Verbatim text as it was in DECISIONS.md at `30952e6`, lines 19-21:
 
-> - (Superseded, see the current rule below.) Development workers, including subagents, were authorized to use
+> - (Superseded, see the current rule below.) Development subagents were authorized to use
 >   Sonnet medium/high/xhigh, Opus low only and GPT-6.1-Sol low/medium/high. This is development routing only, not a product model configuration or permission to add other
 >   GPT models. Product review `LEVELS` remain Haiku 5.5 medium / Sonnet 5.5 low.
 
@@ -24,7 +24,7 @@ Verbatim text as it was in DECISIONS.md at `30952e6`, lines 22-24:
 >   Reason: the Claude subscription limit is running out; the restriction is temporary ("for now"). The balance rule
 >   between Anthropic and GPT stays. Superseded by the next entry.
 
-## A-0003 · archived 2026-10-23 · Work policy · Development worker models and parallel limit (Opus low or Sol low for ordinary work)
+## A-0003 · archived 2026-10-23 · Work policy · Development subagent models and parallel limit (Opus low or Sol low for ordinary work)
 
 Status: SUPERSEDED by `[D-WORK-MODELS]` (DECISIONS.md#work-policy) and `[D-WORK-PARALLEL]` for the parallel limit.
 Introduced: `57fa3ff`. Superseded: `0179c98` (model assignment; the parallel limit continues as `[D-WORK-PARALLEL]`). Archived by: the coordinator-guard change.
@@ -32,7 +32,7 @@ Verbatim text as it was in DECISIONS.md at `30952e6`, lines 25-39:
 
 Note: the first five quotes are paragraphs of one owner message (session file `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, line 2462); the sixth is the whole message at line 2464.
 
-> - Development worker models and parallel limit. The parallel limit below is current; the model assignment is
+> - Development subagent models and parallel limit. The parallel limit below is current; the model assignment is
 >   superseded by the next entry. Owner, in order:
 >   «ТАк вот все верно там написано давай не выдумывай хуйню»
 >   «Одновременно до 10 первого уровня, вложенные похуй»
@@ -42,13 +42,13 @@ Note: the first five quotes are paragraphs of one owner message (session file `2
 >   «блять не для сложных сделай опус медиум все таки»
 >   Rule at that time (model assignment superseded by the next entry): ordinary work uses Opus 5.5 low or GPT-6.1-Sol low;
 >   complex work uses Sonnet 5.5 high, Opus 5.5 medium or GPT-6.1-Sol medium; no other models or levels for
->   development workers. Current: at most 10 first-level subagents (started
+>   development subagents. Current: at most 10 first-level subagents (started
 >   by the coordinator) run in parallel; nested subagents do not count; a ceiling, not a quota. The even
 >   Anthropic/GPT balance stays. Product review `LEVELS` are unchanged.
 >   Reason: owner decision. The limit is carried by [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution)
 >   and `AGENTS.md`.
 
-## A-0004 · archived 2026-10-23 · Work policy · Development worker models, 2026-10-23 rule (simple Sonnet high, complex Opus medium)
+## A-0004 · archived 2026-10-23 · Work policy · Development subagent models, 2026-10-23 rule (simple Sonnet high, complex Opus medium)
 
 Status: SUPERSEDED by `[D-WORK-MODELS]` (DECISIONS.md#work-policy).
 Introduced: `0179c98`. Superseded: the coordinator-guard change. Archived by: the coordinator-guard change.
@@ -56,13 +56,13 @@ Verbatim text as it was in DECISIONS.md at `30952e6`, lines 40-46:
 
 Note: the quote is not byte-exact. The owner's whole message (same session file, line 2487) reads «сложная работу опус медиум простая работа сонет хай».
 
-> - Development worker models, current rule, correcting the previous entry. Owner (verbatim, after the quotes above):
+> - Development subagent models, current rule, correcting the previous entry. Owner (verbatim, after the quotes above):
 >   «сложная работа опус медиум простая работа сонет хай»
 >   Coordinator interpretation (the owner may correct it): Claude side, simple work is Sonnet 5.5 high and complex work
 >   is Opus 5.5 medium; GPT side unchanged, simple is GPT-6.1-Sol low and complex is GPT-6.1-Sol medium. Opus low,
->   Sonnet medium/xhigh and Sol high are not allowed for development workers; no other models or levels. The limit of 10
+>   Sonnet medium/xhigh and Sol high are not allowed for development subagents; no other models or levels. The limit of 10
 >   first-level subagents and the even Anthropic/GPT balance stay. Product review `LEVELS` are unchanged.
->   Reason: owner decision. Carried by [PROCESS.md, Worker models](PROCESS.md#worker-models) (the table).
+>   Reason: owner decision. Carried by [PROCESS.md, Subagent models](PROCESS.md#subagent-models) (the table).
 
 ## A-0005 · archived 2026-10-23 · Preamble · Provenance and C:<line> convention
 
@@ -100,7 +100,7 @@ Introduced: `4d8c004`. Archived by: docs-cleanup (this cleanup; exact commit rec
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 16-18:
 
 > - Main is the coordinator, not an independent implementer: «Да, он как техлид/тимлид, координатор, но не исполнитель самостоятельный.»
->   Reason: keep orchestration and acceptance with Main and actual execution with worker subagents. The procedure
+>   Reason: keep orchestration and acceptance with Main and actual execution with subagents. The procedure
 >   is carried by [PROCESS.md](PROCESS.md).
 
 ## A-0008 · archived 2026-10-23 · Work policy · Anthropic/GPT balance
@@ -110,7 +110,7 @@ Introduced: `a7146ae`. Archived by: docs-cleanup (this cleanup; exact commit rec
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 47-48:
 
 > - Owner: «Смотри, надо скорректировать так, чтобы ты как координатор поровну поднимал модели из Anthropic и GPT, чтобы не было перевеса в другим, дисбаланса. Поднимай саб-агенты и те, и те, чтобы лимит расходовался равномерно. И зафиксирую это в процесс.nd файле, эту информацию на будущее»
->   Reason: even use of both subscriptions' limits. Carried by [PROCESS.md, Worker models](PROCESS.md#worker-models).
+>   Reason: even use of both subscriptions' limits. Carried by [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
 
 ## A-0009 · archived 2026-10-23 · Work policy · Old paused Claude benchmark campaigns
 
@@ -119,7 +119,7 @@ Introduced: `8f2ea64`. Archived by: docs-cleanup (this cleanup; exact commit rec
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 49-50:
 
 > - The old paused Claude benchmark/tuning campaigns remain paused until explicitly resumed; saved results stay.
->   That campaign pause does not forbid Claude workers, independent review or other authorized Claude+GPT work.
+>   That campaign pause does not forbid Claude subagents, independent review or other authorized Claude+GPT work.
 
 ## A-0010 · archived 2026-10-23 · Work policy · PROCESS.md link and manifesto
 
@@ -161,7 +161,7 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 61-68:
 > - Owner: «И почему у тебя основной поток заблокирован, блядь? Почему у тебя основной поток исполнения заблокирован какой-то хуйнёй? Заблокирован какими-то запусками, тестами или что это такое, блядь, где ты по 20 секунд GitHub Review Run делаешь. Это что такое, нахуй? Ты не должен блокировать основной поток исполнения какой-то работой блокирующей. Ты всё делаешь через саб-агентов. Саб-агентов можешь поднимать до 40 штук параллельно.»
 >   Reason: Main must stay free to coordinate and talk to the owner. It never blocks its own thread on waits,
 >   polling, CI watching, test runs or other long work; subagents do it. The parallel limit is now up to 10
->   first-level subagents (nested ones do not count), not as an artificial quota; see the worker models entry above. Carried by
+>   first-level subagents (nested ones do not count), not as an artificial quota; see the subagent models entry above. Carried by
 >   [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
 >   Later owner update of the limit, to be known to the agent at the prompt level: «Зафиксируй, пожалуйста, до 50 саб-агентов на уровне промта, на уровне Process MD, на уровне знания агента об этом, чтобы потом в будущем я это не напоминал опять и опять.»
 >   The limit is stated in `PROCESS.md` and, as a short line, in `AGENTS.md` (project instructions loaded into every
@@ -396,17 +396,17 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 167-171:
 
 > - Postponed, not dropped (user: «мы их не упраздняем, а откладываем»): `codebase_explorer`, `custom`; the
 >   `define-goal` skill and work orders; and the task list with the check before stopping (later switched on by a skill
->   rather than always on). The extension-provided `agent`, `review`, `code_writer` and `shell_runner` tools are
->   implemented separately; see [Agent](#agent), [Review](#review) and [Workers](#workers) below. `RQW-models`,
+>   rather than always on). The extension-provided `agent` and `review` tools are
+>   implemented separately; see [Agent](#agent) and [Review](#review) below. `RQW-models`,
 >   `RQW-statusbar` and `RQW-send-now` also port UI; see [Models](#models), [Statusbar](#statusbar) and [Send now](#send-now).
 
-## A-0033 · archived 2026-10-23 · Scope · Worker authorization pointer
+## A-0033 · archived 2026-10-23 · Scope · Subagent authorization pointer
 
 Status: MERGED into `[D-WORK-MODELS]`; the campaign part is obsolete (see A-0009).
 Introduced: `8f2ea64`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0033' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 172-173:
 
-> - Development worker authorization and the old paused benchmark campaigns are governed by [Work policy](#work-policy),
+> - Development subagent authorization and the old paused benchmark campaigns are governed by [Work policy](#work-policy),
 >   independently of the product reviewer pins below.
 
 ## A-0034 · archived 2026-10-23 · Scope · Reviewers accepted plan
@@ -898,7 +898,7 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 372-525:
 >   a job with its process tree or cancels a queued one. Polling only, no pushed messages; the descriptions say to wait
 >   for or kill one's jobs before the final answer. A job dies on Esc (an abort of any run of its caller), `job kill`,
 >   its `timeout`, and the caller's shutdown or reload; jobs belong to the session whose call started them (one registry
->   per `createTools`, so each subagent and worker has its own; RQW-agent calls the offered `job` definition's
+>   per `createTools`, so each subagent has its own; RQW-agent calls the offered `job` definition's
 >   `jobs.abortAll()` on interrupt and `jobs.dispose()` on close). `job` is activated whenever one of these tools is
 >   active, whatever the selection; when Pi's allowlist keeps it off, nothing goes to the background. Reason: the owner
 >   wants long operations not to hold the agent and a tool to check them; Codex unified exec yields the same way
@@ -919,7 +919,7 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 372-525:
 >   server or a long build stop blocking the agent; Codex 0.163.0 and oh-my-pi 18.8.9 do not order shell calls at all.
 >   Race analysis, rejected alternatives and cost: `my-pi-evidence/bash-background/D4-ORDERING.md`; design:
 >   `DESIGN.md` there. Carriers: `extensions/RQW-tools/jobs.ts`, `barrier.ts`, `nested.ts`, `index.ts`, `codemode.ts`,
->   `descriptions/bash.md`, `descriptions/job.md`; `extensions/RQW-agent/index.ts`, `roles/*.md`.
+>   `descriptions/bash.md`, `descriptions/job.md`; `extensions/RQW-agent/index.ts`.
 >   Proof: `extensions/RQW-tools/test/background.test.ts` (injected threshold, gate-file commands),
 >   `test/barrier-detach.test.ts` in that folder (held operations, an independent oracle, randomized detach; it fails
 >   with a no-op detach, and the queued-edit test fails when file jobs detach too),
@@ -944,7 +944,7 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 372-525:
 >   doubt (command substitution, variables or globs in a path, an unknown `cd`) holds nothing, so a missed writer falls
 >   back to the rule above plus the effects report. The handoff text says `holds: ...`; a call queued behind a hold
 >   shows `waiting for: job#N (holds ...)`. Package-folder and git holds are process-wide (`ledger.ts`): main,
->   subagents, workers and reviewers of one Pi process wait for each other's holds; files are not ordered across
+>   subagents and reviewers of one Pi process wait for each other's holds; files are not ordered across
 >   sessions, they get attributed notes. Effects report (O1): a top-level bash or codemode call takes a snapshot of
 >   the working tree (every file of `git ls-files -co --exclude-standard`, or outside git a walk of at most 20000 files
 >   without .git, node_modules, .next, target, .venv, __pycache__, with mtime and size) right before its command starts,
@@ -976,7 +976,7 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 372-525:
 >   and write run in one process-wide critical section per file (`withFileLock`, files locked in sorted order), so two
 >   sessions that read one version cannot both pass the check and overwrite one after the other. Files are keyed by
 >   their native real path (`identityKey` in keys.ts): symlink and case aliases share records, distinct files never do.
->   Records belong to a registry (`owner`, unique; the label "main", "code_writer#2" is only shown); a registry that ends
+>   Records belong to a registry (`owner`, unique; the label "main", "agent#2" is only shown); a registry that ends
 >   forgets what it saw, so a restarted session or a second session with the same label inherits nothing. A multi-file
 >   edit or write records each written file even when a sibling failed; a file whose result says "Possibly changed" is
 >   marked uncertain, and the next write of it is refused once until it is read. A read keys the spelling it will open
@@ -984,7 +984,7 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 372-525:
 >   Own writes are kept per owner while a bash or codemode job of that owner runs (from its start until its report is
 >   built, dropped when no job watches), so a later write by another session cannot erase them from `yours` and the
 >   report shows the lost update under `overwritten`. A read whose file changed while it was read gets a note and does not
->   count as seen. Notes of a read, edit or write name the other session (`changed by code_writer#2 (edit, hh:mm:ss)
+>   count as seen. Notes of a read, edit or write name the other session (`changed by agent#2 (edit, hh:mm:ss)
 >   after you last saw it`). K1: `job kill` also cancels the queued calls of the same response that wait for the killed
 >   job (transitively) and lists them in `cancelled_followers`; calls of later responses are not cancelled. A killed
 >   queued call leaves the barrier at once and never runs (`withdraw` in barrier.ts), so a later call of the same file
@@ -1000,7 +1000,7 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 372-525:
 >   that names a port a running job of any session serves gets a note. A bash call inside a codemode script never goes
 >   to the background but takes the same process-wide git and package-folder claims, waiting inside the script. Each session's label comes through the optional
 >   `options.label` of the offered factory: the path from the main session (RQW-agent passes `agent#1`,
->   `agent#1/agent#1`, `agent#1/code_writer#2`; RQW-review `review`, a child's reviewer `agent#1/review`; main is
+>   `agent#1/agent#1`; RQW-review `review`, a child's reviewer `agent#1/review`; main is
 >   `main`). It is shown only in notes; each registry keeps its unique owner. Children like main (coordinator's technical
 >   decision at the rebase onto subagent parity, from the owner's «children like main» and the background of a whole
 >   script): with an RQW-tools offer, a child's or reviewer's `codemode` is Pi's definition built from that session's API,
@@ -1031,8 +1031,8 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 372-525:
 >   identity, the time cutoff); each has a test in `background.test.ts` (#3-#8) or `ledger.test.ts` that fails on the
 >   code before the fix. Proof: `extensions/RQW-tools/test/footprint.test.ts`, `ledger.test.ts`,
 >   `barrier-detach.test.ts` (held oracle, randomized; it fails when held entries are ignored),
->   `background.test.ts` (R16 and R17 fail when the classifier holds nothing), `extensions/RQW-agent/test/
->   nested-workers.test.ts` and `extensions/RQW-review/test/review.test.ts` (labels, reviewer `job` lifetime),
+>   `background.test.ts` (R16 and R17 fail when the classifier holds nothing),
+>   `extensions/RQW-review/test/review.test.ts` (labels, reviewer `job` lifetime),
 >   `extensions/RQW-agent/test/agent.test.ts` and `extensions/RQW-review/test/subagent.test.ts` (offered child codemode,
 >   explorer `job`, path labels, a child reviewer's jobs on the child's end), `background.test.ts` ("S1 across sessions"),
 >   `test/prompt-tools-isolation.test.ts` (section text).
@@ -1556,10 +1556,10 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >     (line 1211; the cached-continuation frame spreads the body too, lines 1158-1168), so `model` is the bare id and
 >     `service_tier` is top-level on both transports. The tests drive both: SSE with a replaced `fetch`, WebSocket with a
 >     fake `globalThis.WebSocket` (the child tests use the default transport, so they run offline).
->   - Children (RQW-agent's `agent` subagents, `code_writer`, `shell_runner`; RQW-review's reviewers) inherit the caller's
+>   - Children (RQW-agent's `agent` subagents; RQW-review's reviewers) inherit the caller's
 >     GPT Fast state once, when they start, and keep it for their life, including `send` and `restart`; later `/fast-gpt`
 >     changes do not reach a running child. A nested child inherits from its direct caller. Reviewers inherit the main chat's
->     state at their start. `agent`, `code_writer`, `shell_runner` and `review` take an optional boolean `fast_gpt` that overrides the
+>     state at their start. `agent` and `review` take an optional boolean `fast_gpt` that overrides the
 >     inherited state (`false` when the user forbids Fast for subagents; `send` and `restart` of `agent` may change it); a
 >     null from a strict-mode provider means inherit. Each tool description carries the one sentence "By default children
 >     inherit GPT Fast; pass fast_gpt false when the user forbids Fast for subagents." Each extension applies the rule to
@@ -1675,14 +1675,12 @@ Cleanup commit lookup: `git log -S'A-0109' --format='%h %s' -- DECISIONS-ARCHIVE
 Original DECISIONS.md lines 856-874. Source: `30952e6:DECISIONS.md`.
 Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
-> - Owner (verbatim): «основной агент запускает сабагента — воркера, shellrunner или codewriter. Пока они работают, он его либо ждёт, либо что-то делает параллельно, а потом ждёт. Когда shellrunner или codewriter отвечает, тот обрывает ожидание и дальше работает с его ответом. Если же он не ответил за время ожидания, то основной агент сам идёт и смотрит состояние codewriter или shellrunner, что там происходит, вычитывает его последние пять-десять сообщений и думает, что с ним делать дальше: interrupt его, давать ему какой-то follow-up, либо вырубать, либо перезапускать.»
->   «Надо сделать интеллектуально, чтобы основной агент большой, который поднял runner, через время поглядывал за ним, через пять минут проверял статус. Только не тратить токены, а через механический wait.»
+> - Owner (verbatim): «Только не тратить токены, а через механический wait.»
 >   «надо сделать интеллектуальное ожидание. Не пять минут, а чтобы большой агент сам решил, сколько он будет ждать.»
 >   «Если они работают долго, пусть работают.»
 >   «А почему стоп мы им делаем? Мы же договорились о том, что мы это сделаем, как в кодексе.»
 >   «Можно начинать уже и можно продолжать всю работу, которая была до этого начата».
->   Reason: the caller, not a watchdog, decides how long to wait and how to manage continuing work. All three tools
->   share caller-local `wait`/`status` with mixed direct-child IDs. The caller estimates remaining duration and sets
+>   Reason: the caller, not a watchdog, decides how long to wait and how to manage continuing work. The `agent` tool provides caller-local `wait`/`status` with mixed direct-child IDs. The caller estimates remaining duration and sets
 >   timeout_ms somewhat longer on each wait; 300000 is only the omission/null default, not a cadence or maximum.
 >   The mechanical pause itself spends no tokens and makes no model turns; children continue their own work, and
 >   the wait call and its result are normal caller context.
@@ -1690,7 +1688,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >   in-flight calls. Results arrive once through wait or the existing message wakeup, with delivery receipts on races.
 >   No execution/turn/token/output-growth limits or automatic interrupt/stop/restart are introduced. Explicit controls
 >   retain history on interrupt, fence old generations on restart/stop, and do not block on an uncooperative tool.
->   Carriers: `extensions/RQW-agent/index.ts`, `coordinator.ts`, `activity.ts`, descriptions and roles in that folder;
+>   Carriers: `extensions/RQW-agent/index.ts`, `coordinator.ts`, `activity.ts` and descriptions in that folder;
 >   API, retention cost, implicit fallback and public in-process cancellation limits:
 >   [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management).
 >
@@ -1734,8 +1732,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Subagent parity, like Cursor (owner session 2026-10-23; agreement and Cursor/Codex/our evidence in
 >   `my-pi-evidence/subagent-parity/`). This entry supersedes the earlier rules below that a subagent's prompt is
->   exactly the caller's `system` with no main prompt, and that a subagent has no `agent` tool (maximum depth main ->
->   subagent -> worker). Owner (verbatim): «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи
+>   exactly the caller's `system` with no main prompt, and that a subagent has no `agent` tool. Owner (verbatim): «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи
 >   свои предложения».
 >   - Prompt. Owner: «1 - про как в курсор не понял. я думал саб агент получает тот же систенмный промпт что и основной
 >     агент ток чуть чуть подрезанный как это в курсоре сделано», then «1а. что бы тонко конфигурировать роль надо
@@ -1747,8 +1744,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >     not parsed from the start of `task`. `system` stays the full override, sent exactly. Nested subagents get the
 >     main prompt handed down, not their caller's prompt. Reason: the child works under the same rules and project
 >     context as main, and the caller tunes it with a few words instead of writing a whole prompt.
->   - Nesting. Owner: «1а» to "a subagent may start subagents without a level limit, as Codex V2. Workers stay the last
->     level. No global limits". General subagents get `agent` recursively; code_writer, shell_runner and explorers are
+>   - Nesting. Owner: «1а» to unlimited subagent nesting. General subagents get `agent` recursively; explorers are
 >     leaves; no depth, count or concurrency limit. Reason: a subagent can split its own work the way main does; the
 >     existing caller-local runtime (delivery to the direct caller, a parent's answer waiting for its pending children,
 >     interrupt/stop/restart cascading to descendants) already works per level.
@@ -1758,8 +1754,8 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >     when/when-not usage advice (not for narrow questions, a known file or two or one search; independent areas in
 >     parallel; full context and the exact return; trust the result; the user does not see it).
 >   - Child gaps. Owner: «2а (что значит когда ревьюер вернется? типа у нас он один что ли на всю систему?)» to "give
->     children codemode and tool_search, workers cwd/date/OS, all children the owner's settings; subagents may call
->     review". Every child (subagent, explorer, worker) gets Pi's built-in `codemode` and `tool_search` when its caller
+>     children codemode and tool_search, all children the owner's settings; subagents may call
+>     review". Every child (subagent, explorer) gets Pi's built-in `codemode` and `tool_search` when its caller
 >     has them active. General subagents get `review` when RQW-review is loaded, through RQW-review's own `pi.events`
 >     offer `rqw-review:subagent-review`: each caller has its own reviews and numbering, and the verdict goes to the
 >     caller that asked. Children run with the caller's session settings: shell path and prefix, image resize and
@@ -1767,23 +1763,22 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >     overrides), thinking budgets, steering and follow-up modes, codemode mode and budget; warming stays off. The
 >     reviewer is a child too (result review findings 1 and 2): it gets `codemode` and `tool_search` when its caller has
 >     them active, and the same settings except the two queue modes (compaction included; the former forced
->     `compaction: { enabled: false }` is removed). Workers get cwd, OS and today's date after
->     their fixed role. Reason: a child is not weaker than main by accident; the evidence found these gaps without a
+>     `compaction: { enabled: false }` is removed). Reason: a child is not weaker than main by accident; the evidence found these gaps without a
 >     recorded reason (`ours/REPORT.md`).
 >   - Rest of Codex. Owner: «3а»: durable resume, parent history fork, web search and MCP for children are deferred.
 >   - Title. Owner: «2а» to an optional short title (3-5 words) shown in status and result headers: `title` on start and
->     restart of `agent`, `code_writer` and `shell_runner`. It shows as `title` in `status`, in the wait result's display
+>     restart of `agent`. It shows as `title` in `status`, in the wait result's display
 >     data (`results[i].display.title`) and in the message `details.title`, which the RQW-agent-ui card header shows after
 >     `<name>#<id>` (branch p5-agent-ui); the delivered content keeps its `[agent#N] ...` format.
 >   - Explore. Owner: «3 да давай сделаем эксплорера буквально как в курсоре там он как системный + очен коротка роль и он
 >     запускается на модели родетиля а не на собой модели», then «2а» to "explore = the same system prompt + a very short
 >     search role + thoroughness level (quick / medium / very thorough), runs on the parent's model, read and search only
 >     (no edit/write, bash behind the git guard like the reviewer)". Engineering choice: the `explore` option of `agent`
->     `start` (not a fourth tool): one field reuses the agent runtime and adds no tool declaration to every request.
->   Carriers: `extensions/RQW-agent/index.ts`, `prompt.ts`, `workers.ts`; `extensions/RQW-review/index.ts`. Details:
+>     `start` (not a separate tool): one field reuses the agent runtime and adds no tool declaration to every request.
+>   Carriers: `extensions/RQW-agent/index.ts`, `prompt.ts`; `extensions/RQW-review/index.ts`. Details:
 >   [RQW-agent README](extensions/RQW-agent/README.md#prompt-kinds-and-title),
 >   [RQW-review README](extensions/RQW-review/README.md#review-in-subagents). Proof: `extensions/RQW-agent/test/agent.test.ts`
->   ("subagent parity"), `test/workers.test.ts`, `test/nested-workers.test.ts`, `test/cli.test.ts`,
+>   ("subagent parity"), `test/cli.test.ts`,
 >   `extensions/RQW-review/test/subagent.test.ts`.
 
 ## A-0113 · archived 2026-10-23 · Agent
@@ -1816,7 +1811,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 > - One tool `agent` with `action` `start`, `wait`, `status`, `send`, `interrupt`, `stop`, `restart` and the fields
 >   `ids`, `timeout_ms`, `messages` (wait/status above), `id`, `system`, `role`, `title`, `explore` (parity entry above), `task`,
 >   `model` (`provider/id`), `thinking` (Pi's levels `off` to `max`), `tools` (a subset of `read`, `bash`, `edit`,
->   `write`, `grep`, `find`). This selects base tools; delegation tools follow [Workers](#workers).
+>   `write`, `grep`, `find`). This selects base tools; general subagents also get `agent` recursively.
 >   The schema passes Pi's `makeStrictJsonSchema`; `null` in an optional field counts as omitted.
 
 ## A-0115 · archived 2026-10-23 · Agent
@@ -1843,7 +1838,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 > - The system prompt, `system` when given or the default of the parity entry above, is sent exactly. Pi appends `<cwd>` and other sections to every custom prompt
 >   (`buildSystemPromptSections` in Pi's `dist/core/system-prompt.js`); only a forced prompt goes out as it is. So the
 >   loader carries an inline `before_agent_start` handler returning `{ systemPrompt: system }`. Only our inline
->   runtime hooks and the [worker tools](#workers) are loaded, not external extensions. A test checks that the request
+>   runtime hooks and the `agent` tool are loaded, not external extensions. A test checks that the request
 >   has one system message equal to `system`, and another that the default is the main prompt plus the reminder.
 
 ## A-0117 · archived 2026-10-23 · Agent
@@ -1869,7 +1864,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Defaults follow Cursor's generalPurpose: all tools, the main model ("inherit") (Cursor transcript 704ada44 in
 >   `cursor-like-harness/kb/sources/cursor-reverse-extra`). Here: the main session's model and thinking level, all six
->   base tools, `agent` and the [worker tools](#workers). The earlier "no subagents of its own" default is superseded by
+>   base tools and `agent`. The earlier "no subagents of its own" default is superseded by
 >   the owner's «1а» (parity entry above).
 
 ## A-0119 · archived 2026-10-23 · Agent
@@ -1933,7 +1928,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 > - Results are async. At the end of each run the direct caller gets the text through wait or `[agent#N] <text>`
 >   through `pi.sendMessage`, once, as the wait decision above specifies. The
 >   text is every final answer of the run, so a follow-up queued during the run does not hide the first answer (the brief
->   said "last assistant text"). Native runs awaiting worker results are intermediate, not final; see [Workers](#workers). The text also carries every final error of the run as `error: <reason>`, in order with
+>   said "last assistant text"). Native runs awaiting subagent results are intermediate, not final. The text also carries every final error of the run as `error: <reason>`, in order with
 >   the answers: a failed follow-up does not hide the first answer (`[agent#1] FIRST ANSWER\n\nerror: bad request`,
 >   review C), and a first task that fails for good does not vanish when Pi then runs a queued follow-up that succeeds
 >   (`[agent#1] error: bad request: first task\n\nSECOND ANSWER`, review D). An attempt that Pi repeats is not a result. Pi
@@ -2008,28 +2003,27 @@ Cleanup commit lookup: `git log -S'A-0126' --format='%h %s' -- DECISIONS-ARCHIVE
 Original DECISIONS.md lines 1035-1063. Source: `30952e6:DECISIONS.md`.
 Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
-> - `send` to a running subagent (and to a running `code_writer` / `shell_runner`) is Pi steering, `session.steer`; to
+> - `send` to a running subagent is Pi steering, `session.steer`; to
 >   an idle one it starts a new run with the history. Coordinator proposal, accepted by the owner with «Да»: «сообщение
 >   работающему субагенту будет доходить после его текущего вызова инструмента, а не после всей его работы, как в
 >   основном чате». Reason: the earlier `session.followUp` waited for the child's whole run, and `interrupt` was the only
->   faster way, which aborts the in-flight tool calls and workers. Pi 1.4.0 delivers a steering message after the
+>   faster way, which aborts the in-flight tool calls and subagents. Pi 1.4.0 delivers a steering message after the
 >   current assistant turn has executed its tool calls (all calls of that turn) and before the next model request, with
 >   no abort; a message sent before the first request goes into that request. Result text: `agent#N: queued after the
->   current tool call`; a child that is native-idle and waiting only for its own workers is woken at once (reply `agent#N: sent`, code review finding). Carriers: `extensions/RQW-agent/index.ts` (`send`; the run loop also drains steering that missed
+>   current tool call`; a child that is native-idle and waiting only for its own subagents is woken at once (reply `agent#N: sent`, code review finding). Carriers: `extensions/RQW-agent/index.ts` (`send`; the run loop also drains steering that missed
 >   the last poll), the tool descriptions, `extensions/RQW-agent/test/steer.test.ts`.
 >   Interrupt and redirect in one call, like Cursor's Subagent `interrupt:true`; owner: «4 пункт мне нравится»: `send`
->   takes an optional boolean `interrupt` (agent, code_writer, shell_runner). On a running child it drops the queued
+>   takes an optional boolean `interrupt`. On a running child it drops the queued
 >   steering and follow-ups, aborts the current turn exactly like `interrupt` (same code path; session and history kept),
 >   returns at once with the reply `<name>#N: interrupted, sent`. No time limit, by the owner's rule of no hard limits for agents (this entry: no execution
 >   timeout of our own; coordinator relayed it as the reason for this change): the task is recorded as the child's next run and starts, once, when
 >   the old run has stopped; a tool ignoring the abort signal just delays it and `status` shows `pending_sends`. Until then
 >   the child counts as running, so `wait` never reports `idle` and ends with `target_changed` at the new run; a native run
->   woken by a worker result is waited out before the new prompt (code review findings: a premature `idle`, and Pi's
+>   woken by a subagent result is waited out before the new prompt (code review findings: a premature `idle`, and Pi's
 >   "Agent is already processing" losing the sends). A later
 >   `send` before the start is appended in order (one prompt); `interrupt`, `stop` and `restart` drop pending tasks. On
 >   an idle child it is a plain send; without the flag behavior is unchanged. Carriers:
->   `index.ts` (`requestInterrupt`, `Agent.next`), the schema and descriptions, `test/steer.test.ts`,
->   `test/nested-workers.test.ts`.
+>   `index.ts` (`requestInterrupt`, `Agent.next`), the schema and descriptions, `test/steer.test.ts`.
 >   `interrupt` requests `session.abort()`, drops queued steering and follow-ups, sends no result message and keeps history.
 >   It returns the pre-interrupt snapshot and cancellation-requested state without waiting indefinitely; a plain send is rejected
 >   while cancellation remains pending, unless an interrupting `send` is already waiting (then it is appended).
@@ -2046,7 +2040,7 @@ Cleanup commit lookup: `git log -S'A-0127' --format='%h %s' -- DECISIONS-ARCHIVE
 Original DECISIONS.md lines 1064-1070. Source: `30952e6:DECISIONS.md`.
 Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
-> - Management registration across the three tools runs in call order; wait releases the queue after subscription,
+> - Management registration for `agent` runs in call order; wait releases the queue after subscription,
 >   before its Promise settles. Pi runs the calls of one response in parallel, and a batch of
 >   `start` and `send agent#1` failed without this (checked by removing it). `start`, `send` to an idle subagent and
 >   `restart` with a task return only once Pi has started the run, through the `preflightResult` callback of
@@ -2078,7 +2072,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Print/JSON use one caller-wide non-consuming fallback wait in `agent_end`, with the omission default. A result
 >   follows normal message continuation; deadline returns compact status to the caller for its decision, not a stop.
->   Native-idle subagents use the same bounded fallback for their workers without forwarding intermediate answers.
+>   Native-idle subagents use the same bounded fallback for their subagents without forwarding intermediate answers.
 >   Explicit waits take priority. TUI/RPC idle callers retain push wakeups. Carrier: `coordinator.ts` and `index.ts`.
 
 ## A-0130 · archived 2026-10-23 · Agent
@@ -2151,147 +2145,6 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >   the queued follow-up in the same message (`[agent#1] W: ... first ... W: ... second`,
 >   `[agent#2] Q: The bug is in add ...`).
 >
-
-## A-0134 · archived 2026-10-23 · Workers · Recursive workers and caller-local delivery
-Status: SUPERSEDED by `[D-WORKERS-NESTED]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'Owner: «Я хочу сделать такие два саб-агента сейчас для моего' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0134' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1117-1128 at `30952e6`, verbatim:
-
-> - Owner: «Я хочу сделать такие два саб-агента сейчас для моего My Pi. ... чтобы и основной агент мог вызывать этих
->   саб-агентов для этих задач, и саб-агенты могли их тоже вызывать. Чтобы были вложенные саб-агенты, чтобы, допустим,
->   саб-агент Opus или саб-агент Sonnet мог вызвать CodeWriter либо ShellRunner, которые будут выполнять шумную
->   механическую работу, которая токены утилизирует.» The final answer goes «тому агенту, который его вызвал».
->   Reason: the deciding agent at either caller level can delegate mechanical work without routing raw worker reports
->   through main. `extensions/RQW-agent/index.ts` binds workers to the direct caller's API, at every level of the
->   recursive subagent tree ([Agent](#agent), parity entry: subagents now have `agent` too), and no delegation tools in
->   workers. It keeps the subagent's logical assignment open across worker
->   wakeups, withholding intermediate answers until no workers or unconsumed results remain. Carrier: `index.ts` and
->   `workers.ts` in that folder; proof: `test/nested-workers.test.ts` and the worker-only declarations checked by
->   `test/cli-provider.ts` through `test/cli.test.ts`. Current lifecycle and cancellation rules:
->   [RQW-agent README, Workers](extensions/RQW-agent/README.md#runtime-and-delivery).
-
-## A-0135 · archived 2026-10-23 · Workers · Fresh assignments and explicit follow-ups
-Status: SUPERSEDED by `[D-WORKERS-FRESH]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'Owner: «И каждый раз, когда ты даешь ему новое задание, сбра' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0135' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1129-1136 at `30952e6`, verbatim:
-
-> - Owner: «И каждый раз, когда ты даешь ему новое задание, сбрасываешь ему контекстное окно».
->   Reason: new assignments must not inherit unrelated tasks or old worker answers. `{task}`/`start` creates a fresh
->   in-process session. Explicit `send` is a follow-up to the same assignment, not a new assignment; see the later
->   owner-approved [wait and management decision](#agent). Completed workers remain idle until stop/caller shutdown;
->   retained history consumes memory and send input/cache/compaction costs. Idle retention never counts as pending. Role prompts (followed by the
->   working directory, OS and date block of the [Agent](#agent) parity entry), descriptions and
->   tool allowlists are fixed in `extensions/RQW-agent/workers.ts`, `roles/` and `descriptions/`; model/reasoning is
->   fixed in `worker-model.ts` in that folder.
-
-## A-0136 · archived 2026-10-23 · Workers · Complete briefs and trusted results
-Status: SUPERSEDED by `[D-WORKERS-BRIEFS]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'Owner: «Например, чтобы агент Main не использовал кодрайтер ' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0136' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1137-1142 at `30952e6`, verbatim:
-
-> - Owner: «Например, чтобы агент Main не использовал кодрайтер в той ситуации, где бриф будет длиннее, чем написать код
->   самостоятельно.»; «Идея в том, что саб-агент ускоряет main-агента. Main-агент должен доверять саб-агенту.»
->   Reason: delegation must accelerate the caller rather than create briefing and repeated-work overhead. Caller
->   descriptions require complete decided briefs, trusting results, no busy polling and parallel calls only when
->   independent, never two code_writers on the same file. Carriers:
->   `extensions/RQW-agent/descriptions/code_writer.md` and `descriptions/shell_runner.md` in that folder.
-
-## A-0137 · archived 2026-10-23 · Workers · D2: code and config only
-Status: SUPERSEDED by `[D-WORKERS-SCOPE]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'D2: code_writer has bash and may run a focused check of its ' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0137' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1143-1150 at `30952e6`, verbatim:
-
-> - D2: code_writer has bash and may run a focused check of its own change. Owner's scope:
->   «только код. не документацию, не промпты, а только код и какие-то конфиги. и всё».
->   Reason: checking the decided code/config change belongs with its mechanical execution, but documentation,
->   prompts and product decisions do not. RQW-tools' existing [ordered barrier](#tools) orders edits and checks when
->   loaded; without an offer, workers use stock tools, as [Agent](#agent) describes. Carriers:
->   `extensions/RQW-agent/roles/code_writer.md`, `workers.ts` and `index.ts`; shell_runner's exact-command/no-fixes
->   contract and report format are carried by `roles/shell_runner.md` in that folder. Briefs, reports and tool sets:
->   [RQW-agent README](extensions/RQW-agent/README.md#briefs-and-reports).
-
-## A-0138 · archived 2026-10-23 · Workers · D3: no git mutations
-Status: SUPERSEDED by `[D-WORKERS-GIT]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'D3: neither worker changes git state; supported read-only gi' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0138' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1151-1158 at `30952e6`, verbatim:
-
-> - D3: neither worker changes git state; supported read-only git queries are allowed. Reason: commits, staging,
->   branches, merges and pushes belong to the caller and [PROCESS.md](PROCESS.md); such a command is shorter than
->   a brief, and a cheap low-reasoning model must not own destructive git commands. Enforcement is code, not just
->   role text: `extensions/RQW-agent/workers.ts` installs `git-guard.ts` in each worker's `tool_call` hook before bash
->   executes. The syntax guard blocks obvious launcher/config-injection bypasses without rejecting ordinary
->   listings; it is not a sandbox. Supported queries, execution-override rules and limits have one description:
->   [RQW-agent README, Git guard](extensions/RQW-agent/README.md#git-guard).
->   Proof: `extensions/RQW-agent/test/git-guard.test.ts` and `test/workers.test.ts` in that folder.
-
-## A-0139 · archived 2026-10-23 · Workers · D1: worker models
-Status: SUPERSEDED by `[D-WORKERS-MODEL]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of ``git log -S'D1: `anthropic/claude-haiku-5-5` is primary; `openai-codex/g' -- DECISIONS.md``.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0139' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1159-1168 at `30952e6`, verbatim:
-
-> - D1: `anthropic/claude-haiku-5-5` is primary; `openai-codex/gpt-6-luna` is the credential fallback. If neither
->   is available with credentials, the call fails with a clear error. Missing candidates and rejected provider auth
->   checks do not disable the remaining fallback. Owner:
->   «Я бы хотел, чтобы мы прогнали этих малышей на каких-то нижних reasoning. Например, Haiku 5.5 medium либо low и
->   GPT-6 Luna medium либо low. Для нас предпочтительно утилизировать шумную работу внутри Haiku и внутри Luna, потому
->   что они полностью бесплатны для наших подписок. ... Я бы хотел это сделать для обоих моделей, но надо сделать
->   честные замеры.»; «Протестировали этих workers с max reasoning — полная хуета.»
->   Reason: put noisy work on the preferred subscription models at measured lower reasoning, rather than inheriting
->   the caller's expensive model/level or assuming max is better. Carrier: `extensions/RQW-agent/worker-model.ts`;
->   proof: `test/worker-model.test.ts` and `test/workers.test.ts` in that folder.
-
-## A-0140 · archived 2026-10-23 · Workers · B4: qualification and chosen reasoning
-Status: SUPERSEDED by `[D-WORKERS-REASONING]` ([DECISIONS.md, Workers](DECISIONS.md#workers)). Results table moved to notes/decisions-evidence.md#workers-b4-results.
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'B4: only levels meeting the owner'\''s bar independently on tun' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0140' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1169-1194 at `30952e6`, verbatim:
-
-> - B4: only levels meeting the owner's bar independently on tuning and holdout qualify. Owner:
->   «Даже 4% не было ошибок»; «Поставь 95, хоть помягче
->   чуть-чуть». The bar is 95%, not lowered by the coordinator. Low is chosen when it qualifies, its combined
->   tuning/holdout pass rate is not below medium's and its judge mean is at most 0.5 below medium's; otherwise use
->   qualifying medium. Reason: lower reasoning must retain reliable execution and report quality. Owner on honest
->   repeated measurements: «замеры можно делать бесконечно, потому что хайку и Luna бесплатные».
->   If neither low nor medium qualifies, the owner chooses the trade-off rather than the coordinator raising the
->   level or lowering the bar: «Гораздо проще, если там будет высокий процент успеха, допустим,
->   70-80, то пусть лучше он в один проход напишет большую часть, потом его основной агент подправит. Чем
->   он будет сидеть по пять минут писать код».
->   Source: [workers benchmark, Results and B4](notes/workers-bench.md#b4-chosen-levels), saved log
->   `logs/b3-final-3models-summary.md` under the benchmark directory named in that report. Each pair below is
->   low vs medium; judge means cover all runs.
->
->   | Model | Role | Tuning pass: low vs medium | Holdout pass: low vs medium | Judge mean: low vs medium | Chosen |
->   | --- | --- | --- | --- | --- | --- |
->   | anthropic/claude-haiku-5-5 | code_writer | 75/75 vs 75/75 | 50/50 vs 50/50 | 9.7 vs 9.7 | low |
->   | anthropic/claude-haiku-5-5 | shell_runner | 75/75 vs 75/75 | 50/50 vs 50/50 | 9.6 vs 9.6 | low |
->   | openai-codex/gpt-6-luna | code_writer | 75/75 vs 75/75 | 50/50 vs 49/50 | 9.9 vs 9.8 | low |
->   | openai-codex/gpt-6-luna | shell_runner | 72/75 vs 75/75 | 49/50 vs 50/50 | 9.5 vs 9.6 | medium |
->
->   GPT-6 Luna shell_runner low qualifies but loses to medium on pass rate, so medium is selected. The separately
->   measured GPT-5.6 Luna is not in this model chain and is not used. Its code_writer met the bar at no level:
->   holdout pass rates were 84.0%, 82.0%, 86.0% and 92.0% for low, medium, high and xhigh, with runaway writes hitting
->   the 15-minute cut. Those measurements do not add a model or change the accepted primary/fallback chain.
->   Carrier: `extensions/RQW-agent/worker-model.ts` (`WORKER_REASONING`); proof is shared with D1 above.
-
-## A-0141 · archived 2026-10-23 · Workers · Shared lifecycle
-Status: SUPERSEDED by `[D-WORKERS-LIFECYCLE]` ([DECISIONS.md, Workers](DECISIONS.md#workers)).
-Introduced: `b7d9ae7`, the oldest hit of `git log -S'Engineering choice: worker profiles parameterize the existin' -- DECISIONS.md`.
-Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0141' -- DECISIONS-ARCHIVE.md`.
-Original DECISIONS.md lines 1195-1201 at `30952e6`, verbatim:
-
-> - Engineering choice: worker profiles parameterize the existing session runtime in `extensions/RQW-agent/index.ts`,
->   rather than copying id allocation/persistence, cancellation, delivery and late-after-abort rules. `workers.ts`
->   groups caller-local handles; completed sessions are retained for explicit follow-ups and caller shutdown closes
->   active and retained workers, as the owner's [Agent wait decision](#agent) requires.
->   Reason: keep one lifecycle implementation and prevent worker results from leaking into another caller's session.
->   Offline proof: `extensions/RQW-agent/test/workers.test.ts`; [Isolation](#isolation) remains covered by
->   `test/isolation.test.ts` and the extension-local standalone import scan. No other extension is imported.
 
 ## A-0142 · archived 2026-10-23 · Review · Deep reviewer and hang guard
 Status: SUPERSEDED by `[D-REVIEW-DEEP]` ([DECISIONS.md, Review](DECISIONS.md#review)). Absolute evidence path dropped; hang-guard replacement is BACKLOG.md item R01.
@@ -3644,7 +3497,7 @@ Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0219' -- DECI
 Original DECISIONS.md lines 2028-2030 at `30952e6`, verbatim:
 
 > - Integration proof uses offline fixtures only; it does not establish live auth, subscription acceptance or billing.
->   The owner's old Claude campaign pause C:3244 remains in force, not a ban on Claude workers. Historical local results and their boundaries are recorded in
+>   The owner's old Claude campaign pause C:3244 remains in force, not a ban on Claude subagents. Historical local results and their boundaries are recorded in
 >   `notes/anthropic-integration.md`, not a standing prohibition on independent review or normal branch delivery.
 
 ## A-0220 · archived 2026-10-23 · Scroll · Escape jumps down
@@ -3997,8 +3850,8 @@ Status: SUPERSEDED by the updated `[D-QA-STATUS]` and `[D-PIPELINE-CI-WATCHER]` 
 Introduced: `3bdac4f`. Source tree: `b0b3672`, lines 1506-1514, verbatim.
 Archived by: the process-pipeline change; the commit is `git log -S'A-0245' -- DECISIONS-ARCHIVE.md`.
 
-> - **Awareness without a permanent process** `[D-QA-STATUS]`. Owner: «И ты периодически проверял в процессе работы, не типа отдельно воркером проверял, а чтобы ты проверял в рамках работы над задачей. Новую задачу ставишь, и чтобы автоматически тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть постоянный, перманентно висящий процесс». Decision: no daemon,
->   timer or local cron. `scripts/qa-status.mjs` makes one bounded `gh` round (`npm run qa-status`, for workers); the
+> - **Awareness without a permanent process** `[D-QA-STATUS]`. Owner: «Новую задачу ставишь, и чтобы автоматически тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть постоянный, перманентно висящий процесс». Decision: no daemon,
+>   timer or local cron. `scripts/qa-status.mjs` makes one bounded `gh` round (`npm run qa-status`, for subagents); the
 >   dev-only, repo-local `.pi/extensions/qa-status/` shows a message on session start and on a changed red state, and
 >   `/qa` shows the full view. Main reads the status at task start, tells the owner in one line about a red scheduled
 >   `main` and triages it. Reason: the extension is useless outside this repository and must not ship in the
@@ -4250,11 +4103,11 @@ Archived by: reviewer-codex-port squash (the commit is `git log -S'A-0258' -- DE
 Original DECISIONS.md lines 90-96 at `b0b3672`, verbatim:
 
 > - **Temporary Sonnet-only Anthropic subagents** `[D-WORK-TEMP-SONNET]`. The temporary restriction and its explicit
->   expiry live in [PROCESS.md, Worker models](PROCESS.md#worker-models). After expiry the normal table applies.
+>   expiry live in [PROCESS.md, Subagent models](PROCESS.md#subagent-models). After expiry the normal table applies.
 >   Owner (`16-27-59:4789`, entry `de383e38`):
 >   «Да, и временно нужно до конца недели из subagent убрать Opus, использовать только Sonnet. Надо зафиксировать это до вечера среды. Сейчас у нас 11:25 p.m. пятницы, и мы до следующей среды, до 19:00, не используем Opus модели с subagent в этой связке координатора, именно в этом проекте, в работе над проектом.»
 >   Reason: limit Opus usage during project development. Carrier: PROCESS coordinator-rules and the dev guard.
->   The reviewer finalisation task alone carries its task-specific exception; this is not general worker permission.
+>   The reviewer finalisation task alone carries its task-specific exception; this is not general subagent permission.
 >   Since: process-rules-oct23 squash.
 
 ## A-0259 · archived 2026-10-24 · Codex subscription transport · Codex compaction as backend V2 with opaque window
@@ -4363,7 +4216,7 @@ Archived by: the agent-async change (stages 1 and 2, branch `agent-async`; stage
 >   `footprint.ts` restores the outer working directory when a subshell closes. Mutating `git symbolic-ref` and
 >   `git reflog` forms hold the repository; their read-only forms remain reads.
 >   A later call waits only for these; reads never wait; any doubt holds nothing. Package-folder and git holds are
->   process-wide (`ledger.ts`) across main, subagents, workers and reviewers; files are not ordered across sessions, they
+>   process-wide (`ledger.ts`) across main, subagents and reviewers; files are not ordered across sessions, they
 >   get attributed notes. Effects report (O1): a top-level bash call that can become a job, or a top-level codemode call,
 >   takes a snapshot of the working tree
 >   (`git ls-files -co --exclude-standard`, or outside git a walk with one global limit of 20000 files, including
@@ -4388,7 +4241,7 @@ Archived by: the agent-async change (stages 1 and 2, branch `agent-async`; stage
 >   W1: `job wait` takes `until`, a JavaScript regular expression on the output (a leading `(?i)` ignores case). S1: a
 >   codemode script waits as a queued job for a free worker of the process (`PI_CODEMODE_MAX_WORKERS`, default 2). A
 >   bash call inside a codemode script takes the same process-wide claims. Each session's label comes through the
->   optional `options.label` of the offered factory (`main`, `agent#1`, `agent#1/code_writer#2`, `review`, ...).
+>   optional `options.label` of the offered factory (`main`, `agent#1`, `agent#1/agent#2`, `review`, ...).
 >   Children like main. Coordinator text, technical decision at the rebase onto subagent parity; the parity request,
 >   owner (`16-27-59:2608`): «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи свои предложения».
 >   With an RQW-tools offer, a child's or reviewer's `codemode` is Pi's definition built from that session's API, passed
@@ -4403,9 +4256,9 @@ Archived by: the agent-async change (stages 1 and 2, branch `agent-async`; stage
 >   R16-R24: `notes/analysis-races.md` section 9.
 >   Carriers: `extensions/RQW-tools/jobs.ts`, `barrier.ts`, `nested.ts`, `footprint.ts`, `ledger.ts`, `keys.ts`,
 >   `index.ts`, `codemode.ts`, `descriptions/bash.md`, `descriptions/job.md`, `descriptions/write.md`;
->   `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/roles/*.md`; `extensions/RQW-review/index.ts`;
+>   `extensions/RQW-agent/index.ts`; `extensions/RQW-review/index.ts`;
 >   `notes/prompt-tools-isolation.md`. Proof: `extensions/RQW-tools/test/background.test.ts`, `barrier-detach.test.ts`,
->   `footprint.test.ts`, `ledger.test.ts`; `extensions/RQW-agent/test/wait.test.ts`, `nested-workers.test.ts`,
+>   `footprint.test.ts`, `ledger.test.ts`; `extensions/RQW-agent/test/wait.test.ts`,
 >   `agent.test.ts`; `extensions/RQW-review/test/review.test.ts`, `subagent.test.ts`;
 >   `test/prompt-tools-isolation.test.ts`. Since: `e5440f2`; scan and footprint safeguards since `e1cca48`.
 
@@ -4415,7 +4268,7 @@ Status: SUPERSEDED by the updated `[D-AGENT-API]` (DECISIONS.md#agent): `resume`
 Introduced: `7a9f505`; inherited defaults `c86e9bb`. Source tree: `main` (`2171049`), the whole entry, verbatim.
 Archived by: the agent-async change (stages 1 and 2, branch `agent-async`; stage 1 head `dd93a40`); the commit is `git log -S'A-0265' -- DECISIONS-ARCHIVE.md`.
 
-> - **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `explore`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus the delegation tools allowed by [Workers](#workers). Sessions run in-process at caller cwd with in-memory settings/history, using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
+> - **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `explore`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus `agent` for recursive delegation. Sessions run in-process at caller cwd with in-memory settings/history, using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
 >   Coordinator text. Reason: reuse Pi sessions and the caller's provider runtime without subprocesses or duplicate resource loading.
 >   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/test/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`.
 
@@ -4431,10 +4284,10 @@ Archived by: the agent-async change (stages 1 and 2, branch `agent-async`; stage
 
 ## A-0267 · archived 2026-10-24 · Agent · Ordered management and shutdown (bounded fallback for native-idle children)
 
-Status: SUPERSEDED in part by the updated `[D-AGENT-MANAGEMENT]` (DECISIONS.md#agent): a native-idle child waits for its active workers by their completion events with no implicit timeout; the bounded fallback stays for external print/json hosts.
+Status: SUPERSEDED in part by the updated `[D-AGENT-MANAGEMENT]` (DECISIONS.md#agent): a native-idle child waits for its active subagents by their completion events with no implicit timeout; the bounded fallback stays for external print/json hosts.
 Introduced: `fe0e375`. Source tree: `main` (`11b0fe2`), the whole entry, verbatim.
 Archived by: the agent-async change; the commit is `git log -S'A-0267' -- DECISIONS-ARCHIVE.md`.
 
-> - **Ordered management and shutdown** `[D-AGENT-MANAGEMENT]`. Management calls across all three tools register in call order; wait releases that queue after subscription. Start, idle send and restart with task return once prompt preflight starts the run or `compaction_start` makes cancellation effective. Closing clears queues, calls abort and only then disposes, preventing requests after stop or shutdown. Print/JSON use a caller-wide non-consuming fallback wait in `agent_end`, subordinate to explicit waits; native-idle children use the same bounded fallback for their workers. TUI/RPC retain push wakeups. `session_shutdown` closes all descendants without result messages.
+> - **Ordered management and shutdown** `[D-AGENT-MANAGEMENT]`. Management calls of `agent` register in call order; wait releases that queue after subscription. Start, idle send and restart with task return once prompt preflight starts the run or `compaction_start` makes cancellation effective. Closing clears queues, calls abort and only then disposes, preventing requests after stop or shutdown. Print/JSON use a caller-wide non-consuming fallback wait in `agent_end`, subordinate to explicit waits; native-idle children use the same bounded fallback for their subagents. TUI/RPC retain push wakeups. `session_shutdown` closes all descendants without result messages.
 >   Coordinator text. Reason: parallel tool batches, pre-run compaction and disposal must not leave unowned requests.
 >   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `extensions/RQW-agent/test/agent.test.ts`; [historical proof](notes/decisions-evidence.md#agent-proof). Since: `fe0e375`.

@@ -35,8 +35,8 @@ binds none of them itself.
 
 ## Compact interface and theme
 
-Normal package loading enables compact tool display, agent/worker cards, thinking-text hiding and automatic
-session naming. Agent, worker and review results (`[review#N]`) show cards. With both agent-ui and tool-ui loaded,
+Normal package loading enables compact tool display, agent cards, thinking-text hiding and automatic
+session naming. Agent and review results (`[review#N]`) show cards. With both agent-ui and tool-ui loaded,
 a collapsed wait result is tool-ui's (`Waited for N agents` in the summary, `wait <ids>` in the live block);
 with tool-ui off, agent-ui shows its collapsed wait cards. Ctrl+O shows full original tool and agent results,
 including agent-ui's expanded wait cards, and folds back. Native thinking spacer rows remain and stock image
@@ -77,11 +77,11 @@ excludes nothing.
 - The compact UI switches independently with `-extensions/RQW-tool-ui/index.ts`,
   `-extensions/RQW-agent-ui/index.ts`, `-extensions/RQW-thinking/index.ts` and
   `-extensions/RQW-naming/index.ts`, one exclusion per extension. Tool-ui off restores stock old and new tool
-  calls, except that agent-ui then shows its collapsed wait cards; agent-ui off restores stock agent, worker and review results; thinking off restores native reasoning display;
+  calls, except that agent-ui then shows its collapsed wait cards; agent-ui off restores stock agent and review results; thinking off restores native reasoning display;
   naming off stops automatic generation and removes `/rename-gen`, leaving the persisted native name and `/name`.
   The separate activity indicator and static title belong to RQW-statusbar, switched with
   `-extensions/RQW-statusbar/index.ts` or `/statusbar off`; cards do not own that indicator. It shows the actual
-  running counts by agents, workers and reviews; ordinary busy letters shimmer silver, compaction shimmers gold, and a
+  running counts by agents and reviews; ordinary busy letters shimmer silver, compaction shimmers gold, and a
   fully idle rule is continuous.
 - After `/reload` Pi keeps the active tool set, so tools of a switched-off extension stay active, now Pi's own,
   until `/new` or a restart.

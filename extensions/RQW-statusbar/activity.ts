@@ -11,7 +11,6 @@ export const COUNTS_OFFER = "rqw:running-counts:offer";
 
 export interface RunningCounts {
 	agents: number;
-	workers: number;
 	reviews: number;
 }
 
@@ -22,8 +21,8 @@ interface CountsSource {
 	subscribe(listener: CountsListener): () => void;
 }
 
-const zero = (): RunningCounts => ({ agents: 0, workers: 0, reviews: 0 });
-const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents && a.workers === b.workers && a.reviews === b.reviews;
+const zero = (): RunningCounts => ({ agents: 0, reviews: 0 });
+const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents && a.reviews === b.reviews;
 
 /** Sums the live counts sources of this session by kind; a source that ends (`null`) is dropped at once. */
 export class CountsWatch {
@@ -95,7 +94,6 @@ export class CountsWatch {
 		for (const source of this.sources.keys()) {
 			const counts = source.snapshot();
 			next.agents += counts.agents;
-			next.workers += counts.workers;
 			next.reviews += counts.reviews;
 		}
 		const changed = !same(next, this.total);
@@ -104,10 +102,10 @@ export class CountsWatch {
 	}
 }
 
-/** "2 agents", "1 worker", "1 review" in this order; zero kinds are omitted. */
+/** "2 agents", "1 review" in this order; zero kinds are omitted. */
 export function countParts(counts: RunningCounts): string[] {
 	const part = (n: number, one: string, many: string) => (n > 0 ? `${n} ${n === 1 ? one : many}` : "");
-	return [part(counts.agents, "agent", "agents"), part(counts.workers, "worker", "workers"), part(counts.reviews, "review", "reviews")]
+	return [part(counts.agents, "agent", "agents"), part(counts.reviews, "review", "reviews")]
 		.filter(Boolean);
 }
 

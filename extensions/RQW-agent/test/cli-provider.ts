@@ -18,10 +18,9 @@ export default function (pi: ExtensionAPI) {
 			assert.equal(systems.length, 1);
 			assert.equal(getSystemMessageText(systems[0]), "AUDIT_EXACT_SYSTEM");
 			assert.equal(options?.reasoning, "high");
-			// tools:[] removes base tools, not agent and the fixed worker tools available to every agent child; codemode
-			// comes as the main session has it (active in the nested scenario).
+			// tools:[] removes base tools, not recursive agent access; codemode follows the caller.
 			assert.deepEqual((systems[0].toolsAdded ?? []).map(tool => tool.name).sort(),
-				["agent", "code_writer", ...(scenario === "nested" ? ["codemode"] : []), "shell_runner"]);
+				["agent", ...(scenario === "nested" ? ["codemode"] : [])]);
 			options?.signal?.addEventListener("abort", () => release.resolve(), { once: true });
 			if (scenario !== "nested") await release.promise;
 			return answer(`CLI_CHILD_${n}`);
@@ -77,17 +76,15 @@ export default function (pi: ExtensionAPI) {
 const WAIT_SCENARIOS = new Set(["wait", "codemode-wait", "codemode-error", "codemode-timeout", "codemode-mixed", "nested-wait", "codemode-abort"]);
 
 /**
- * Real-CLI wait scenarios. Children, workers and the subagent wait on gates that open only on actual nested events
+ * Real-CLI wait scenarios. Children and grandchildren wait on gates that open only on actual nested events
  * (a wait tool_execution_start, a codemode tool_execution_end) or after bounded setImmediate ticks; no timers of minutes.
  */
 function waitScenarios(pi: ExtensionAPI, scenario: string) {
 	const waitStarted = Promise.withResolvers<void>();
 	const codemodeEnded = Promise.withResolvers<void>();
 	const abortGate = Promise.withResolvers<void>();
-	const workerGate = Promise.withResolvers<void>();
+	const grandchildGate = Promise.withResolvers<void>();
 	const main = fauxProvider({ provider: "agent-audit-cli", api: "agent-audit-cli", models: [{ id: "main", reasoning: true }, { id: "child", reasoning: true }] });
-	// Fixed worker profiles resolve anthropic/claude-haiku-5-5 first; the CLI env supplies its credential.
-	const workers = fauxProvider({ provider: "anthropic", api: "wait-worker-faux", models: [{ id: "claude-haiku-5-5", reasoning: true }] });
 	const body = (message: any): string => typeof message.content === "string" ? message.content : message.content.flatMap((c: any) => c.type === "text" ? [c.text] : []).join("");
 	const first = (context: any) => body(context.messages.find((m: any) => m.role === "user"));
 	const results = (context: any, name: string): string[] => context.messages.filter((m: any) => m.role === "toolResult" && m.toolName === name).map(body);
@@ -103,10 +100,10 @@ function waitScenarios(pi: ExtensionAPI, scenario: string) {
 		"codemode-error": `await tools.agent(${JSON.stringify(start("ERROR_CHILD"))});\nconst got = await tools.agent(${JSON.stringify(wait)});\nthrow new Error("CODEMODE_AFTER_WAIT");`,
 		"codemode-timeout": `// @options: {"timeout_ms": 5000}\nawait tools.agent(${JSON.stringify(start("TIMEOUT_CHILD"))});\nreturn await tools.agent(${JSON.stringify(wait)});`,
 		"codemode-mixed": [
-			`const ids = ["agent#1", "code_writer#1", "shell_runner#1"];`,
+			`const ids = ["agent#1", "agent#2", "agent#3"];`,
 			`await tools.agent(${JSON.stringify(start("MIXED_AGENT"))});`,
-			`await tools.code_writer({ task: "CODE_MIXED" });`,
-			`await tools.shell_runner({ task: "SHELL_MIXED" });`,
+			`await tools.agent(${JSON.stringify(start("CODE_MIXED"))});`,
+			`await tools.agent(${JSON.stringify(start("SHELL_MIXED"))});`,
 			`const got = [], seen = new Set();`,
 			`while (seen.size < 3) {`,
 			`  const r = JSON.parse(await tools.agent({ action: "wait", blocking: true, ids: ids.filter(id => !seen.has(id)), timeout_ms: 60000 }));`,
@@ -119,24 +116,33 @@ function waitScenarios(pi: ExtensionAPI, scenario: string) {
 	};
 
 	async function subagent(context: any) {
-		const code = results(context, "code_writer");
+		const code = results(context, "agent");
 		if (code.length === 0) {
 			await waitStarted.promise;
-			return answer([fauxToolCall("code_writer", { task: "WORKER_TASK" })], { stopReason: "toolUse" });
+			return answer([fauxToolCall("agent", start("GRANDCHILD_TASK"))], { stopReason: "toolUse" });
 		}
 		if (code.length === 1) {
-			// The worker's reply waits a few ticks after this gate, so its result arrives after the nested wait registers.
-			workerGate.resolve();
-			return answer([fauxToolCall("code_writer", { action: "wait", blocking: true, ids: ["code_writer#1"], timeout_ms: 60000 })], { stopReason: "toolUse" });
+			// Delay completion until the nested wait has registered.
+			grandchildGate.resolve();
+			return answer([fauxToolCall("agent", wait)], { stopReason: "toolUse" });
 		}
 		assert.match(code[1], /"reason":"result"/);
-		assert.equal(count(code[1], "WORKER_RAW"), 1, "the subagent receives the raw worker result once");
+		assert.equal(count(code[1], "GRANDCHILD_RAW"), 1, "the subagent receives the raw child result once");
 		return answer("SUB_FINAL_ANSWER");
 	}
 
 	async function child(context: any, options: any) {
 		const task = first(context);
 		if (task === "NESTED_SUB") return subagent(context);
+		if (task === "GRANDCHILD_TASK") {
+			await grandchildGate.promise;
+			await ticks(200);
+			return answer("GRANDCHILD_RAW");
+		}
+		if (task === "CODE_MIXED" || task === "SHELL_MIXED") {
+			await waitStarted.promise;
+			return answer(task === "CODE_MIXED" ? "CODE_MIXED_DONE" : "SHELL_MIXED_DONE");
+		}
 		await (task === "ABORT_CHILD" ? abortGate : task === "TIMEOUT_CHILD" ? codemodeEnded : waitStarted).promise;
 		assert.ok(!options?.signal?.aborted, "a timed-out wait must not stop its child");
 		return answer(CHILD[task]);
@@ -154,7 +160,7 @@ function waitScenarios(pi: ExtensionAPI, scenario: string) {
 				return answer("CLI_WAIT_FINAL");
 			}
 			assert.equal(count(agent[1], "SUB_FINAL_ANSWER"), 1);
-			assert.ok(!everything(context).includes("WORKER_RAW"), "main never sees the raw worker result");
+			assert.ok(!everything(context).includes("GRANDCHILD_RAW"), "main never sees the raw grandchild result");
 			return answer("CLI_NESTED_WAIT_FINAL");
 		}
 		if (scenario === "codemode-abort") {
@@ -182,18 +188,7 @@ function waitScenarios(pi: ExtensionAPI, scenario: string) {
 		for (const needle of ["CHILD_MIXED_DONE", "CODE_MIXED_DONE", "SHELL_MIXED_DONE"]) assert.equal(count(everything(context), needle), 1, needle);
 		return answer("CLI_MIXED_FINAL");
 	}));
-	workers.setResponses(Array.from({ length: 10 }, () => async (context: any) => {
-		const task = first(context);
-		if (task === "WORKER_TASK") {
-			await workerGate.promise;
-			await ticks(200);
-			return answer("WORKER_RAW");
-		}
-		await waitStarted.promise;
-		return answer(task === "CODE_MIXED" ? "CODE_MIXED_DONE" : "SHELL_MIXED_DONE");
-	}));
 	pi.registerProvider(main.provider);
-	pi.registerProvider(workers.provider);
 	// The start event precedes the wait's registration by a few ticks; open the gate after them, so the result is waited for.
 	pi.on("tool_execution_start", event => {
 		if (event.toolName !== "agent" || event.args?.action !== "wait") return;

@@ -57,7 +57,7 @@ The theme is distributed separately through `pi.themes`, not as an extension.
 
 ### Wait results
 
-`agent`, `code_writer`, `shell_runner` and `review` calls with `action: "wait"` count as `waited for N agents` in the
+`agent` and `review` calls with `action: "wait"` count as `waited for N agents` in the
 summary line and the live block shows `wait <ids>`. RQW-agent-ui is registered before tool-ui; while collapsed it
 delegates to tool-ui, and Ctrl+O shows agent-ui's expanded wait cards with the full answers. Without tool-ui,
 agent-ui renders its collapsed wait cards.
@@ -66,7 +66,7 @@ agent-ui renders its collapsed wait cards.
 
 - `classify.ts`: `classify(toolName, args, result, context)` turns one call into
   `{ kind, target, status, countKey, countKeys, outputText, exitCode? }` for `read`, `grep`/`find`, `bash`,
-  `wait` of `agent`/`code_writer`/`shell_runner`/`review` (one count key per waited ID) and every other tool.
+  `wait` of `agent`/`review` (one count key per waited ID) and every other tool.
   The `read` count key is the lexically normalized path, as Pi 1.4.0 `resolveToCwd` resolves it (no filesystem
   access): Unicode spaces (NBSP, U+2000-200A, U+202F, U+205F, U+3000) fold to a space, a leading `@` goes, `~`, `~/`
   (Windows also `~\`) expand with the home folder, `file://` URLs become paths, Windows shell drive forms (`/c/`) read as

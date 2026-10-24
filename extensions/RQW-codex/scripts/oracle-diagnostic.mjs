@@ -80,7 +80,7 @@ export const MARK_STAGES = [
   'client_setup_done',
 ];
 
-// Pre-edit digests of the four extra native files the marked arm instruments (worker-inspected pinned commit).
+// Pre-edit digests of the four extra native files the marked arm instruments (agent-inspected pinned commit).
 export const DIAGNOSTIC_SHA256 = {
   'core/tests/suite/retry_after.rs': '2437e45336c5d3e811158aeb43963992860499cc1e9e66b939ad223d9e4d12af',
   'core/src/responses_retry.rs': '8136a44f54b593cd9257658b1798418567e1e26928dc0ad1b3edf748e2a181fd',

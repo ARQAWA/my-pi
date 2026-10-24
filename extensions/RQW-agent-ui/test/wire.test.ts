@@ -40,7 +40,7 @@ const WAIT_DETAILS = {
 /** RQW-agent's `child_wait` notification: the wait details, and the same object as JSON content. */
 const WAITED = { reason: "result", timed_out: false, receipts: [], statuses: [], wait_id: "w-1" };
 const DONE = { id: "agent#3", run: "1:1", delivery: "d-3", outcome: "completed", text: "Проверил отступы.\nВторая строка ответа." };
-const BROKEN = { id: "code_writer#9", run: "1:2", delivery: "d-4", outcome: "error", text: "error: правка отклонена\nфайл изменился после чтения" };
+const BROKEN = { id: "agent#9", run: "1:2", delivery: "d-4", outcome: "error", text: "error: правка отклонена\nфайл изменился после чтения" };
 const notification = (details: object) => ({ customType: "child_wait", content: JSON.stringify(details), display: true, details });
 const WAIT_TEXT = JSON.stringify({ ...WAIT_DETAILS, results: WAIT_DETAILS.results.map(({ display: _display, ...rest }) => rest) });
 
@@ -260,7 +260,7 @@ it("wire-reload-and-switch: reload and a new session register the cards again, t
 		assert.ok(own, "the extension is loaded");
 		assert.equal(own.handlers.size, 0, "no event handler");
 		assert.equal(own.tools.size, 0, "no tool");
-		assert.deepEqual([...own.messageRenderers.keys()].sort(), ["agent", "child_wait", "code_writer", "review", "shell_runner"]);
+		assert.deepEqual([...own.messageRenderers.keys()].sort(), ["agent", "child_wait", "review"]);
 		assert.equal(own.toolRenderers?.length, 1);
 
 		// /reload: a fresh extension instance, the old one is stale, the cards still draw.
@@ -303,7 +303,7 @@ it("wire-child-wait: delivered results show cards, Ctrl+O the full answers, erro
 		const collapsed = await h.screen();
 		assert.match(collapsed, /child_wait · agent#3 finished/);
 		assert.match(collapsed, /child_wait · 2 results · 1 failed/);
-		assert.match(collapsed, /code_writer#9 failed/);
+		assert.match(collapsed, /agent#9 failed/);
 		assert.match(collapsed, /error: правка отклонена/);
 		assert.doesNotMatch(collapsed, /\[child_wait\]|"reason"|"wait_id"/, "no raw JSON in the collapsed view");
 		assert.doesNotMatch(collapsed, /файл изменился/, "collapsed shows only the first answer line");

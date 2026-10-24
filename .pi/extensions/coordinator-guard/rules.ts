@@ -6,7 +6,7 @@ export const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "ma
 export type Pair = [model: string, thinking: string];
 /** Optional. Absent means no temporary ban. Temporary ban of `OPUS_MODEL`: active while now < untilMs; a start whose title begins with arbiterTitlePrefix is exempt. */
 export type OpusRestriction = { until: string; untilMs: number; arbiterTitlePrefix: string };
-export type Rules = { workerModels: Record<string, Pair[]>; fixedWorkers: "block" | "allow"; temporaryOpusRestriction?: OpusRestriction };
+export type Rules = { agentModels: Record<string, Pair[]>; temporaryOpusRestriction?: OpusRestriction };
 
 export const OPUS_MODEL = "anthropic/claude-opus-5-5";
 const UTC_SECONDS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
@@ -24,15 +24,15 @@ export function parseRules(markdown: string): Rules {
 		throw new Error(`coordinator-rules is not valid JSON: ${(error as Error).message}`);
 	}
 	if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("coordinator-rules must be a JSON object");
-	const models = data.workerModels;
-	if (!models || typeof models !== "object" || Array.isArray(models)) throw new Error("workerModels must be an object of classes");
+	const models = data.agentModels;
+	if (!models || typeof models !== "object" || Array.isArray(models)) throw new Error("agentModels must be an object of classes");
 	const classes = Object.entries(models);
-	if (classes.length === 0) throw new Error("workerModels has no classes");
-	const workerModels: Record<string, Pair[]> = {};
+	if (classes.length === 0) throw new Error("agentModels has no classes");
+	const agentModels: Record<string, Pair[]> = {};
 	for (const [name, pairs] of classes) {
-		if (!Array.isArray(pairs) || pairs.length === 0) throw new Error(`workerModels.${name} must be a non-empty array of [model, thinking] pairs`);
-		workerModels[name] = pairs.map((pair, i) => {
-			const where = `workerModels.${name}[${i}]`;
+		if (!Array.isArray(pairs) || pairs.length === 0) throw new Error(`agentModels.${name} must be a non-empty array of [model, thinking] pairs`);
+		agentModels[name] = pairs.map((pair, i) => {
+			const where = `agentModels.${name}[${i}]`;
 			if (!Array.isArray(pair) || pair.length !== 2) throw new Error(`${where} must be [model, thinking]`);
 			const [model, thinking] = pair;
 			if (typeof model !== "string" || !/^[^/\s]+\/\S+$/.test(model)) throw new Error(`${where}: model must be "provider/id"`);
@@ -42,8 +42,7 @@ export function parseRules(markdown: string): Rules {
 			return [model, thinking] as Pair;
 		});
 	}
-	if (data.fixedWorkers !== "block" && data.fixedWorkers !== "allow") throw new Error('fixedWorkers must be "block" or "allow"');
-	const rules: Rules = { workerModels, fixedWorkers: data.fixedWorkers };
+	const rules: Rules = { agentModels };
 	// An absent key means no temporary restriction; a present key must parse.
 	if (data.temporaryOpusRestriction !== undefined) rules.temporaryOpusRestriction = parseRestriction(data.temporaryOpusRestriction);
 	return rules;
@@ -87,7 +86,7 @@ export function loadRules(file: string): Loaded {
  * prefix; the exception only permits pairs already in the table, so it adds no thinking level.
  */
 export function isAllowed(rules: Rules, model: string, thinking: string, now: number, title?: unknown): boolean {
-	const inTable = Object.values(rules.workerModels).some((pairs) => pairs.some(([m, t]) => m === model && t === thinking));
+	const inTable = Object.values(rules.agentModels).some((pairs) => pairs.some(([m, t]) => m === model && t === thinking));
 	if (!inTable) return false;
 	if (model === OPUS_MODEL && restrictionActive(rules, now) && !isArbiterTitle(rules, title)) return false;
 	return true;
@@ -97,7 +96,7 @@ export function isAllowed(rules: Rules, model: string, thinking: string, now: nu
 export function describePairs(rules: Rules, now: number): string {
 	const hideOpus = restrictionActive(rules, now);
 	const classes: string[] = [];
-	for (const [name, pairs] of Object.entries(rules.workerModels)) {
+	for (const [name, pairs] of Object.entries(rules.agentModels)) {
 		const shown = hideOpus ? pairs.filter(([model]) => model !== OPUS_MODEL) : pairs;
 		if (shown.length === 0) continue;
 		const list = shown.map(([model, thinking]) => `${model} ${thinking}`).join(", ");
@@ -112,7 +111,7 @@ export function restrictionText(rules: Rules, now: number): string | undefined {
 	if (!restriction || !restrictionActive(rules, now)) return undefined;
 	const { until, arbiterTitlePrefix } = restriction;
 	const opusPairs = new Set<string>();
-	for (const pairs of Object.values(rules.workerModels)) {
+	for (const pairs of Object.values(rules.agentModels)) {
 		for (const [model, thinking] of pairs) {
 			if (model === OPUS_MODEL) opusPairs.add(`${model} ${thinking}`);
 		}

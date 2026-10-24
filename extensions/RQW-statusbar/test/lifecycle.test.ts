@@ -30,7 +30,7 @@ const MODEL = { provider: "anthropic", id: "claude-fixture", name: "Claude Fixtu
 const root = mkdtempSync(join(tmpdir(), "rqw-statusbar-lifecycle-"));
 after(() => rmSync(root, { recursive: true, force: true }));
 
-type Counts = { agents: number; workers: number; reviews: number };
+type Counts = { agents: number; reviews: number };
 type Listener = (counts: Counts | null) => void;
 interface Screen {
 	render(width: number): string[];
@@ -318,24 +318,24 @@ function branchTree(h: Harness) {
 
 it("producer offers and requests load in either order and count by kind once per source", (t) => {
 	const a = harness(t);
-	const first = new Producer(a.bus, { agents: 2, workers: 1, reviews: 1 });
+	const first = new Producer(a.bus, { agents: 2, reviews: 1 });
 	a.fire("session_start", { reason: "startup" });
 	assert.equal(first.requests, 1, "the bar asks a producer that is already listening");
-	assert.match(top(a), /── Waiting for 2 agents, 1 worker, 1 review /);
+	assert.match(top(a), /── Waiting for 2 agents, 1 review /);
 
 	const b = harness(t);
 	b.fire("session_start", { reason: "startup" });
-	const late = new Producer(b.bus, { agents: 2, workers: 1, reviews: 1 }, false);
+	const late = new Producer(b.bus, { agents: 2, reviews: 1 }, false);
 	late.offer();
 	late.offer();
-	assert.match(top(b), /── Waiting for 2 agents, 1 worker, 1 review /);
+	assert.match(top(b), /── Waiting for 2 agents, 1 review /);
 	assert.equal(b.bus.listeners(COUNTS_OFFER), 1, "the bar keeps one offer listener");
 	assert.equal(late.source.listeners.size, 1, "the same source is adopted once");
 });
 
 it("main planning, tool action phrases and the latest running tool drive the top border", (t) => {
 	const h = harness(t);
-	new Producer(h.bus, { agents: 0, workers: 0, reviews: 0 });
+	new Producer(h.bus, { agents: 0, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	h.fire("agent_start");
 	assert.match(top(h), /── Planning next moves /);
@@ -355,7 +355,7 @@ it("main planning, tool action phrases and the latest running tool drive the top
 
 it("the animation redraws 50 times a second, at least twice the old cadence, and its phase follows elapsed time, not ticks", (t) => {
 	const h = harness(t);
-	new Producer(h.bus, { agents: 0, workers: 0, reviews: 0 });
+	new Producer(h.bus, { agents: 0, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	h.fire("agent_start");
 	const raw = () => h.ui.editor!.render(80)[0];
@@ -390,7 +390,7 @@ it("the animation redraws 50 times a second, at least twice the old cadence, and
 
 it("children count after the main reply: agent_settled shows Waiting until zero, then the idle rule is continuous", (t) => {
 	const h = harness(t);
-	const p = new Producer(h.bus, { agents: 2, workers: 0, reviews: 0 });
+	const p = new Producer(h.bus, { agents: 2, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	h.fire("agent_start");
 	assert.match(top(h), /── Planning next moves · 2 agents /);
@@ -408,7 +408,7 @@ it("children count after the main reply: agent_settled shows Waiting until zero,
 
 it("no Working text, native working indicator or spinner appears in any activity state", (t) => {
 	const h = harness(t);
-	const p = new Producer(h.bus, { agents: 1, workers: 0, reviews: 0 });
+	const p = new Producer(h.bus, { agents: 1, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	const seen: string[] = [];
 	h.fire("agent_start");
@@ -498,7 +498,7 @@ it("the context meter during compaction is a full busy meter with no measured pr
 
 it("install, off, on and shutdown count subscriptions and release every listener, timer and widget", async (t) => {
 	const h = harness(t);
-	const p = new Producer(h.bus, { agents: 1, workers: 0, reviews: 0 });
+	const p = new Producer(h.bus, { agents: 1, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	assert.equal(h.bus.listeners(COUNTS_OFFER), 1);
 	assert.equal(p.source.listeners.size, 1);
@@ -534,26 +534,26 @@ it("install, off, on and shutdown count subscriptions and release every listener
 
 it("reinstall makes a fresh producer handshake and ignores the old source callbacks", (t) => {
 	const h = harness(t);
-	const p = new Producer(h.bus, { agents: 1, workers: 0, reviews: 0 });
+	const p = new Producer(h.bus, { agents: 1, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	assert.match(top(h), /── Waiting for 1 agent /);
 	const old = p.source;
 	const stale = [...old.listeners];
-	p.source = source({ agents: 3, workers: 0, reviews: 0 });
+	p.source = source({ agents: 3, reviews: 0 });
 	const requests = p.requests;
 	h.fire("session_start", { reason: "reload" });
 	assert.equal(p.requests, requests + 1, "reinstall asks the producer again");
 	assert.equal(h.bus.listeners(COUNTS_OFFER), 1);
 	assert.equal(old.listeners.size, 0, "the old source is released at reinstall");
 	assert.match(top(h), /── Waiting for 3 agents /, "the fresh source answers");
-	for (const listener of stale) listener({ agents: 9, workers: 9, reviews: 9 });
+	for (const listener of stale) listener({ agents: 9, reviews: 9 });
 	assert.match(top(h), /── Waiting for 3 agents /, "late callbacks of the old source change nothing");
 	assert.equal(old.disposed, 0);
 });
 
 it("a cancelable session_before_switch never tears the bar down", (t) => {
 	const h = harness(t);
-	new Producer(h.bus, { agents: 0, workers: 0, reviews: 0 });
+	new Producer(h.bus, { agents: 0, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	h.fire("agent_start");
 	const footer = h.ui.footerComponent!;
@@ -600,7 +600,7 @@ it("title takes the current native name on install, with no truncation of a long
 
 it("title is static across frames and states, with the same ANSI bytes", (t) => {
 	const h = harness(t, { name: "Refactor the statusbar lifecycle and its long native title" });
-	new Producer(h.bus, { agents: 1, workers: 0, reviews: 0 });
+	new Producer(h.bus, { agents: 1, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	const widget = () => h.ui.widgets.get(TITLE_KEY)!.render(100)[0];
 	const frames = [widget()];
@@ -752,7 +752,7 @@ it("with our editor Pi's hidden spinner gets no frames (no 80 ms timer); off, sh
 
 it("a foreign editor replacing ours restores Pi's spinner on the next tick or agent_start, and ours coming back hides it again", (t) => {
 	const h = harness(t);
-	new Producer(h.bus, { agents: 0, workers: 0, reviews: 0 });
+	new Producer(h.bus, { agents: 0, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	const ours = h.ui.editorFactory;
 	const foreign = () => ({ render: () => ["foreign"] });
@@ -784,7 +784,7 @@ it("a foreign editor replacing ours restores Pi's spinner on the next tick or ag
 
 it("the bar never calls setWorkingVisible or any global status setter besides the spinner frames", async (t) => {
 	const h = harness(t);
-	const p = new Producer(h.bus, { agents: 1, workers: 1, reviews: 0 });
+	const p = new Producer(h.bus, { agents: 1, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	h.fire("agent_start");
 	h.fire("tool_execution_start", { toolCallId: "t1", toolName: "bash", args: { command: "npm test" } });
@@ -827,7 +827,7 @@ it("non-TUI modes read no UI, session name, tree or settings and open no subscri
 
 it("normal widget path: the title row is registered before the footer, and the footer is installed and drawn", async (t) => {
 	const h = harness(t, { widget: "normal" });
-	new Producer(h.bus, { agents: 0, workers: 0, reviews: 0 });
+	new Producer(h.bus, { agents: 0, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	const order = h.ui.calls.filter((call) => call === "setWidget" || call === "setFooter" || call === "setEditorComponent");
 	assert.deepEqual(order, ["setWidget", "setEditorComponent", "setFooter"], "title widget first, then editor and footer");
@@ -839,7 +839,7 @@ it("normal widget path: the title row is registered before the footer, and the f
 
 it("throwing setWidget: the footer and the editor still install, off restores stock and shutdown disposes cleanly", async (t) => {
 	const h = harness(t, { widget: "throws" });
-	const p = new Producer(h.bus, { agents: 1, workers: 0, reviews: 0 });
+	const p = new Producer(h.bus, { agents: 1, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	assert.ok(h.ui.calls.includes("setWidget"), "the title call was attempted");
 	assert.ok(h.ui.calls.indexOf("setWidget") < h.ui.calls.indexOf("setFooter"), "the attempt came before the footer");
@@ -874,7 +874,7 @@ it("throwing setWidget: the footer and the editor still install, off restores st
 
 it("absent setWidget: the footer and the editor still install, off restores stock and shutdown disposes cleanly", async (t) => {
 	const h = harness(t, { widget: "absent" });
-	const p = new Producer(h.bus, { agents: 1, workers: 0, reviews: 0 });
+	const p = new Producer(h.bus, { agents: 1, reviews: 0 });
 	h.fire("session_start", { reason: "startup" });
 	assert.equal(h.ui.calls.includes("setWidget"), false, "the absent method records no call");
 	assert.ok(h.ui.footerComponent, "the footer is installed without setWidget");

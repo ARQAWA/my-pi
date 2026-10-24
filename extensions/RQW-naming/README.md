@@ -14,7 +14,7 @@ Native `/name` remains unchanged.
 - Use all currently available projected context, including the compaction summary
   and kept messages; do not recover discarded context or shorten it locally.
 - Prefer `anthropic/claude-haiku-5-5`, otherwise use authenticated
-  `openai-codex/gpt-6-luna`, in the same priority order as the worker policy.
+  `openai-codex/gpt-6-luna`.
   Credential availability is checked through the public model registry, not its
   private runtime field. Each request uses the model's lowest supported reasoning.
 - Ask for ten candidates, reject invalid names, then ask the model to select the

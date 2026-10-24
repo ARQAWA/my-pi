@@ -1,6 +1,22 @@
 // One direct caller's registry and result broker. No process-global child or delivery state.
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { RunningCounts } from "./counts.ts";
+
+/** Caller-owned children and results, including results not yet consumed by the caller model. */
+export type RuntimeHandle = {
+	pending(): boolean;
+	wait(signal: AbortSignal): Promise<void>;
+	ids(): string[];
+	/** Compact read-only diagnostics; depth counts generations below these direct children. */
+	status?(depth: number): Record<string, unknown>[];
+	/** Native running children, including descendants. Pending results count zero. */
+	runningCounts(): RunningCounts;
+	resume?(signal: AbortSignal, recoveredOnly?: boolean): Promise<number>;
+	settle?(aborted: boolean): void;
+	abortAll(): void;
+	close(): void;
+};
 
 export const DEFAULT_WAIT_MS = 300000;
 export type Target = { id: string; run: string; active(): boolean; checkpoint?(): Map<string, number>; alertVersion?(): number; snapshot(messages?: number, checkpoint?: Map<string, number>, depth?: number): Record<string, unknown> };
@@ -18,8 +34,8 @@ export function waitTimeout(value?: number | null) {
 	return value;
 }
 export function targetIds(ids: unknown): string[] {
-	if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== "string" || !/^(agent|code_writer|shell_runner)#[1-9]\d*$/.test(id)))
-		throw new Error("ids must be a nonempty array of full child IDs (agent#N, code_writer#N, shell_runner#N)");
+	if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== "string" || !/^agent#[1-9]\d*$/.test(id)))
+		throw new Error("ids must be a nonempty array of full child IDs (agent#N)");
 	return [...new Set(ids)];
 }
 export function messageCount(value?: number | null) {
@@ -375,7 +391,7 @@ export class Coordinator {
 	async observe(signal: AbortSignal, timeout = DEFAULT_WAIT_MS, pending?: () => boolean) {
 		const active = this.ids().filter(id => this.targets.get(id)?.active());
 		if ((!active.length && !pending?.()) || this.activeWaits) return;
-		// An idle caller can still owe a turn to an already-pushed worker result. Wait for that wakeup,
+		// An idle caller can still owe a turn to an already-pushed child result. Wait for that wakeup,
 		// rather than repeatedly awaiting an already-resolved Promise and starving the event loop.
 		const starts = this.nativeStarts;
 		const selected = new Map((active.length ? active : this.ids()).map(id => [id, this.results.get(id)?.delivery]));

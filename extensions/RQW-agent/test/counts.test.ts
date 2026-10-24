@@ -5,9 +5,9 @@ import { fauxToolCall } from "@earendil-works/pi-ai";
 import { createEventBus, type EventBus } from "@earendil-works/pi-coding-agent";
 import { COUNTS_OFFER, COUNTS_REQUEST, type CountsOffer, type CountsRequest, type CountsSource, createCountsProducer, type RunningCounts } from "../counts.ts";
 import { answer, fixture, gate, tick, until } from "./audit-fixture.ts";
-import { withWorkers } from "./metadata-fixture.ts";
+import { withAgents } from "./metadata-fixture.ts";
 
-const ZERO: RunningCounts = { agents: 0, workers: 0, reviews: 0 };
+const ZERO: RunningCounts = { agents: 0, reviews: 0 };
 const json = (counts: unknown) => JSON.stringify(counts);
 
 test("counts-producer: a late offer, subscribe, unsubscribe, end and no listener left behind", () => {
@@ -36,15 +36,15 @@ test("counts-producer: a late offer, subscribe, unsubscribe, end and no listener
 
 	const seen: (RunningCounts | null)[] = [];
 	const off = first.subscribe((counts) => seen.push(counts));
-	running = { agents: 1, workers: 0, reviews: 0 };
+	running = { agents: 1, reviews: 0 };
 	producer.refresh();
 	producer.refresh();
-	assert.deepEqual(seen, [{ agents: 1, workers: 0, reviews: 0 }], "changes only, once");
-	assert.deepEqual(first.snapshot(), { agents: 1, workers: 0, reviews: 0 });
+	assert.deepEqual(seen, [{ agents: 1, reviews: 0 }], "changes only, once");
+	assert.deepEqual(first.snapshot(), { agents: 1, reviews: 0 });
 	off();
-	running = { agents: 0, workers: 2, reviews: 0 };
+	running = { agents: 2, reviews: 0 };
 	producer.refresh();
-	assert.deepEqual(seen, [{ agents: 1, workers: 0, reviews: 0 }], "an unsubscribed listener hears nothing");
+	assert.deepEqual(seen, [{ agents: 1, reviews: 0 }], "an unsubscribed listener hears nothing");
 
 	const late: (RunningCounts | null)[] = [];
 	first.subscribe((counts) => late.push(counts));
@@ -69,7 +69,7 @@ test("counts-producer: a late offer, subscribe, unsubscribe, end and no listener
 	assert.deepEqual(second.snapshot(), ZERO);
 	const lastSeen: (RunningCounts | null)[] = [];
 	second.subscribe((counts) => lastSeen.push(counts));
-	running = { agents: 3, workers: 0, reviews: 0 };
+	running = { agents: 3, reviews: 0 };
 	producer.refresh();
 	assert.deepEqual(lastSeen, [null], "a stopped producer does not notify");
 });
@@ -87,10 +87,10 @@ test("counts-isolation: a throwing listener never breaks the producer, the other
 	const seen: (RunningCounts | null)[] = [];
 	source.subscribe(() => { throw new Error("consumer bug on change"); });
 	source.subscribe((counts) => seen.push(counts));
-	running = { agents: 1, workers: 0, reviews: 0 };
+	running = { agents: 1, reviews: 0 };
 	assert.doesNotThrow(() => producer.refresh());
-	assert.deepEqual(seen, [{ agents: 1, workers: 0, reviews: 0 }], "the other listener still hears the change");
-	assert.deepEqual(source.snapshot(), { agents: 1, workers: 0, reviews: 0 });
+	assert.deepEqual(seen, [{ agents: 1, reviews: 0 }], "the other listener still hears the change");
+	assert.deepEqual(source.snapshot(), { agents: 1, reviews: 0 });
 	source.subscribe(() => { throw new Error("consumer bug on subscribe to an ended source"); });
 	assert.doesNotThrow(() => producer.stop(), "a throwing listener does not stop the end");
 	assert.equal(seen.at(-1), null, "the other listener still gets null");
@@ -100,9 +100,9 @@ test("counts-isolation: a throwing listener never breaks the producer, the other
 	assert.equal(seen.length, count, "dispose after stop adds no notification");
 });
 
-test("counts-by-kind: running agents and workers from RQW-agent, one offer, running not pending", async () => {
+test("counts-concurrent: running agents from RQW-agent, one offer, running not pending", async () => {
 	const f = await fixture();
-	const replies = await withWorkers(f);
+	const replies = await withAgents(f);
 	const bus = f.bus as unknown as EventBus;
 	const sources: CountsSource[] = [];
 	const request: CountsRequest = { version: 1, reply: (source: CountsSource) => sources.push(source) };
@@ -118,23 +118,23 @@ test("counts-by-kind: running agents and workers from RQW-agent, one offer, runn
 	// A listener that throws is isolated: the run still completes and the other listeners hear every change.
 	source.subscribe(() => { throw new Error("consumer bug"); });
 	const agentGate = gate("AGENT");
-	const workerGate = gate("WORKER");
+	const secondGate = gate("SECOND_AGENT");
 	f.subReplies.push(agentGate.reply);
-	replies.push(workerGate.reply);
+	replies.push(secondGate.reply);
 	try {
 		await f.start("ONE");
 		await until(() => agentGate.entered(), "the agent running");
-		assert.deepEqual(source.snapshot(), { agents: 1, workers: 0, reviews: 0 });
+		assert.deepEqual(source.snapshot(), { agents: 1, reviews: 0 });
 
-		await f.session.getToolDefinition("code_writer")!.execute("worker", { task: "CODE" }, undefined, undefined, f.session.extensionRunner.createContext());
-		await until(() => workerGate.entered(), "the worker running");
-		assert.deepEqual(source.snapshot(), { agents: 1, workers: 1, reviews: 0 }, "agents and workers are counted by kind");
+		await f.call({ ...f.params("SECOND"), model: "anthropic/metadata-agent" });
+		await until(() => secondGate.entered(), "the second agent running");
+		assert.deepEqual(source.snapshot(), { agents: 2, reviews: 0 }, "both ordinary agents count as agents");
 
 		agentGate.release();
-		workerGate.release();
+		secondGate.release();
 		await until(() => json(source.snapshot()) === json(ZERO), "both runs ended");
-		assert.deepEqual(seen[0], { agents: 1, workers: 0, reviews: 0 });
-		assert.deepEqual(seen[1], { agents: 1, workers: 1, reviews: 0 });
+		assert.deepEqual(seen[0], { agents: 1, reviews: 0 });
+		assert.deepEqual(seen[1], { agents: 2, reviews: 0 });
 		assert.deepEqual(seen.at(-1), ZERO, "ended runs stop counting, even when their result is still undelivered or delivered");
 		assert.equal(source.snapshot().reviews, 0, "RQW-agent never counts reviews");
 		off();
@@ -150,29 +150,29 @@ test("counts-by-kind: running agents and workers from RQW-agent, one offer, runn
 	assert.deepEqual(afterShutdown, [null]);
 });
 
-test("counts-nested: a native-idle parent waiting for its worker counts zero agents and one worker", async () => {
+test("counts-nested: a native-idle parent waiting for its child counts only the running descendant", async () => {
 	const f = await fixture();
-	const replies = await withWorkers(f);
+	const replies = await withAgents(f);
 	const bus = f.bus as unknown as EventBus;
 	const sources: CountsSource[] = [];
 	bus.emit(COUNTS_REQUEST, { version: 1, reply: (source: CountsSource) => sources.push(source) });
 	const [source] = sources;
-	const worker = gate("NESTED_WORKER");
-	replies.push(worker.reply);
-	// The child calls code_writer, then answers while its worker is still running: its native run ends and it parks.
+	const child = gate("NESTED_AGENT");
+	replies.push(child.reply);
+	// The parent answers while its descendant is still running: its native run ends and it parks.
 	f.subReplies.push(
-		answer([fauxToolCall("code_writer", { task: "NESTED" })], { stopReason: "toolUse" }),
+		answer([fauxToolCall("agent", { ...f.params("NESTED"), model: "anthropic/metadata-agent" })], { stopReason: "toolUse" }),
 		answer("WAITING"),
 		answer("CHILD_DONE"),
 	);
 	try {
 		await f.start("PARENT");
-		await until(() => worker.entered(), "the nested worker running");
-		await until(() => json(source.snapshot()) === json({ agents: 0, workers: 1, reviews: 0 }), "the parked parent counts zero agents and one worker");
+		await until(() => child.entered(), "the nested agent running");
+		await until(() => json(source.snapshot()) === json({ agents: 1, reviews: 0 }), "the parked parent counts zero and its descendant counts one");
 		await tick();
-		assert.deepEqual(source.snapshot(), { agents: 0, workers: 1, reviews: 0 });
-		worker.release();
-		await until(() => json(source.snapshot()) === json(ZERO), "the nested worker and parent ended");
+		assert.deepEqual(source.snapshot(), { agents: 1, reviews: 0 });
+		child.release();
+		await until(() => json(source.snapshot()) === json(ZERO), "the descendant and parent ended");
 		await until(() => f.delivered().length === 1, "the parent's final answer");
 		assert.deepEqual(f.errors, []);
 	} finally {

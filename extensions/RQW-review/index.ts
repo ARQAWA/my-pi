@@ -654,7 +654,7 @@ export function registerReview(pi: ExtensionAPI, host: ReviewHost) {
 	/** Every job until its verdict is sent; print and JSON modes wait for them. */
 	const jobs = new Set<Promise<void>>();
 	// Running reviews of this session, offered on pi.events (see counts.ts).
-	const counts = createCountsProducer(() => ({ agents: 0, workers: 0, reviews: running.size }), host.events);
+	const counts = createCountsProducer(() => ({ agents: 0, reviews: running.size }), host.events);
 	const offCounts = host.events.on(COUNTS_REQUEST, (request) => {
 		const r = request as CountsRequest;
 		if (r?.version === COUNTS_VERSION) counts.reply(r);

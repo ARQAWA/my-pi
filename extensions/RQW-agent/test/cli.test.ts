@@ -13,14 +13,14 @@ const EXTENSION = join(ROOT, "extensions/RQW-agent/index.ts");
 const PROVIDER = join(import.meta.dirname, "cli-provider.ts");
 const PRELOAD = join(ROOT, "test/no-network.mjs");
 type Event = Record<string, any>;
-// Wait scenarios: the main tools, the final marker, the exact custom messages a caller may see, and the worker credential.
-const WAIT: Record<string, { tools: string; marker: string; customs: string[]; workers?: boolean }> = {
+// Wait scenarios: the main tools, the final marker and the exact custom messages a caller may see.
+const WAIT: Record<string, { tools: string; marker: string; customs: string[] }> = {
 	wait: { tools: "agent", marker: "CLI_WAIT_FINAL", customs: [] },
 	"codemode-wait": { tools: "agent,codemode", marker: "CLI_CODEMODE_WAIT_FINAL", customs: [] },
 	"codemode-error": { tools: "agent,codemode", marker: "CLI_ERROR_FINAL", customs: ["[agent#1] CLI_ERROR_CHILD"] },
 	"codemode-timeout": { tools: "agent,codemode", marker: "CLI_TIMEOUT_LATE", customs: ["[agent#1] CLI_TIMEOUT_CHILD"] },
-	"codemode-mixed": { tools: "agent,codemode,code_writer,shell_runner", marker: "CLI_MIXED_FINAL", customs: [], workers: true },
-	"nested-wait": { tools: "agent", marker: "CLI_NESTED_WAIT_FINAL", customs: [], workers: true },
+	"codemode-mixed": { tools: "agent,codemode", marker: "CLI_MIXED_FINAL", customs: [] },
+	"nested-wait": { tools: "agent", marker: "CLI_NESTED_WAIT_FINAL", customs: [] },
 	"codemode-abort": { tools: "agent,codemode", marker: "CLI_ABORT_WAIT_FINAL", customs: ["[agent#1] CLI_ABORT_CHILD"] },
 };
 
@@ -31,8 +31,7 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 	const env: Record<string, string> = {};
 	for (const key of ["PATH", "TMPDIR", "SystemRoot", "WINDIR"]) if (process.env[key]) env[key] = process.env[key]!;
 	Object.assign(env, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home,
-		PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", RQW_AGENT_SCENARIO: scenario,
-		...(WAIT[scenario]?.workers ? { ANTHROPIC_API_KEY: "wait-faux-worker" } : {}) });
+		PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", RQW_AGENT_SCENARIO: scenario });
 	const executable = BUN ? "bun" : process.execPath;
 	const args = [BUN ? "--preload" : "--import", BUN ? PRELOAD : pathToFileURL(PRELOAD).href,
 		join(ROOT, `node_modules/@earendil-works/pi-coding-agent/dist/${BUN ? "bun" : "bundle"}/cli.js`),
@@ -186,6 +185,6 @@ for (const mode of ["text", "json", "rpc"] as const) {
 	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: codemode start and wait in one script`, { timeout: 30000 }, () => cli(mode, "codemode-wait"));
 	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: codemode error after the wait result releases it once`, { timeout: 30000 }, () => cli(mode, "codemode-error"));
 	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: codemode script timeout ends the wait, the child keeps running`, { timeout: 30000 }, () => cli(mode, "codemode-timeout"));
-	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: codemode waits for mixed code_writer, shell_runner and agent`, { timeout: 30000 }, () => cli(mode, "codemode-mixed"));
-	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: subagent waits its own worker; main sees only the final answer`, { timeout: 30000 }, () => cli(mode, "nested-wait"));
+	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: codemode waits for three ordinary agents`, { timeout: 30000 }, () => cli(mode, "codemode-mixed"));
+	test(`real ${BUN ? "Bun" : "Node"} CLI ${mode}: subagent waits its own child; main sees only the final answer`, { timeout: 30000 }, () => cli(mode, "nested-wait"));
 }

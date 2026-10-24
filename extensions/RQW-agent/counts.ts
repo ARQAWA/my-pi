@@ -1,5 +1,5 @@
 // Running counts by kind for one top-level Pi session, offered on pi.events. RQW-agent counts only its own
-// children: agents and workers in native activity (their Pi session is not idle), nested children included; not
+// children: agents in native activity (their Pi session is not idle), nested children included; not
 // logical active runs. RQW-review offers its own reviews in the same shape (no import).
 //
 // Contract, version 1. Producer and consumer may load in either order:
@@ -19,7 +19,7 @@ export const COUNTS_VERSION = 1;
 export const COUNTS_REQUEST = "rqw:running-counts:request";
 export const COUNTS_OFFER = "rqw:running-counts:offer";
 
-export type RunningCounts = { agents: number; workers: number; reviews: number };
+export type RunningCounts = { agents: number; reviews: number };
 export type CountsListener = (counts: RunningCounts | null) => void;
 export type CountsSource = {
 	readonly version: typeof COUNTS_VERSION;
@@ -30,8 +30,8 @@ export type CountsSource = {
 export type CountsRequest = { version: typeof COUNTS_VERSION; reply(source: CountsSource): void };
 export type CountsOffer = { version: typeof COUNTS_VERSION; source: CountsSource };
 
-const ZERO: RunningCounts = { agents: 0, workers: 0, reviews: 0 };
-const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents && a.workers === b.workers && a.reviews === b.reviews;
+const ZERO: RunningCounts = { agents: 0, reviews: 0 };
+const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents && a.reviews === b.reviews;
 // A consumer's error stays with the consumer: it must never reach the run that changed the counts.
 const deliver = (listener: CountsListener, counts: RunningCounts | null) => {
 	try {

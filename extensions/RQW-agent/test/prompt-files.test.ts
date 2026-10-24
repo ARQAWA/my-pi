@@ -111,7 +111,7 @@ test("prompt-file provenance appears under results[].display on explicit wait, w
 	} finally { held.release(); await f.cleanup(); }
 });
 
-test("text/file and system/role conflicts fail before creation; explorers reject file overrides, workers expose no F3 params", async () => {
+test("text/file and system/role conflicts fail before creation; explorers reject file overrides", async () => {
 	const f = await fixture();
 	try {
 		const { system: _inline, ...params } = f.params();
@@ -126,10 +126,6 @@ test("text/file and system/role conflicts fail before creation; explorers reject
 		}
 		await assert.rejects(f.call({ ...params, system_file: "" }), /must name a text file/);
 		await assert.rejects(f.call({ ...params, system_file: "missing" }), /ENOENT/);
-		for (const worker of ["code_writer", "shell_runner"]) {
-			const properties = f.session.getToolDefinition(worker)!.parameters.properties;
-			for (const key of ["system_file", "role_file", "include"]) assert.equal(key in properties, false);
-		}
 		assert.equal(f.requests.sub.length, 0);
 	} finally { await f.cleanup(); }
 });

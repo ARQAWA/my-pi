@@ -31,15 +31,15 @@ test("own writes are attributed to the session; a foreign session's write gives 
   recordSeen("main", f);
   assert.equal(changeNote("main", f, "a.ts", []), undefined, "seen version: no note");
   touch(f, "22");
-  const unwatch = watchOwnWrites("code_writer#2");
-  recordWrite("code_writer#2", "code_writer#2", "edit", f);
-  assert.match(changeNote("main", f, "a.ts", [])!, /^note: a\.ts was changed by code_writer#2 \(edit, \d\d:\d\d:\d\d\) after you last saw it\.$/);
-  assert.equal(changeNote("code_writer#2", f, "a.ts", []), undefined, "its own write: no note");
-  const mine = ownWritesBetween("code_writer#2", 0, Date.now() + 1);
+  const unwatch = watchOwnWrites("agent#2");
+  recordWrite("agent#2", "agent#2", "edit", f);
+  assert.match(changeNote("main", f, "a.ts", [])!, /^note: a\.ts was changed by agent#2 \(edit, \d\d:\d\d:\d\d\) after you last saw it\.$/);
+  assert.equal(changeNote("agent#2", f, "a.ts", []), undefined, "its own write: no note");
+  const mine = ownWritesBetween("agent#2", 0, Date.now() + 1);
   assert.deepEqual(mine.map((m) => [m.file, m.write.tool]), [[f, "edit"]]);
   assert.deepEqual(ownWritesBetween("main", 0, Date.now() + 1), []);
   unwatch();
-  assert.equal(keptOwnWrites("code_writer#2"), undefined, "no watching job: nothing kept");
+  assert.equal(keptOwnWrites("agent#2"), undefined, "no watching job: nothing kept");
 });
 
 test("own-write history: kept only while a job watches; another session's later write does not erase it", () => {
@@ -54,7 +54,7 @@ test("own-write history: kept only while a job watches; another session's later 
   touch(f, "main's");
   recordWrite("main", "main", "edit", f);
   touch(f, "other's, longer", 10);
-  recordWrite("code_writer#2", "code_writer#2", "write", f);
+  recordWrite("agent#2", "agent#2", "write", f);
   const mine = ownWritesBetween("main", 0, Date.now() + 1);
   assert.deepEqual(mine.map((m) => m.write.tool), ["edit"]);
   assert.equal(overwritten(mine[0].write), true);
@@ -96,8 +96,8 @@ test("P1: a write over a seen file someone else changed is a conflict; own write
   recordSeen("main", f);
   assert.equal(writeConflict("main", f, "c.ts", []), undefined);
   touch(f, "other");
-  recordWrite("shell_runner#1", "shell_runner#1", "write", f);
-  assert.match(writeConflict("main", f, "c.ts", [])!, /^c\.ts changed after you last read it \(by shell_runner#1 \(write, /);
+  recordWrite("agent#1", "agent#1", "write", f);
+  assert.match(writeConflict("main", f, "c.ts", [])!, /^c\.ts changed after you last read it \(by agent#1 \(write, /);
   recordSeen("main", f);
   assert.equal(writeConflict("main", f, "c.ts", []), undefined, "read again: no conflict");
   touch(f, "outside!", 10);
@@ -227,7 +227,7 @@ test("inside git, a folder git cannot open and a listed file that cannot be chec
 test("claims across sessions: a hold waits for earlier holds and uses of its resource; uses wait only for holds", async () => {
   resetLedger();
   const signal = new AbortController().signal;
-  const install = claim(["pkg:/r"], [], () => "job#1 of code_writer#2 (holds package folder .)", signal);
+  const install = claim(["pkg:/r"], [], () => "job#1 of agent#2 (holds package folder .)", signal);
   await install.ready;
   const test1 = claim([], ["pkg:/r"], () => "main", signal);
   const other = claim([], ["pkg:/other"], () => "main", signal);
@@ -236,7 +236,7 @@ test("claims across sessions: a hold waits for earlier holds and uses of its res
   await other.ready;
   await drain();
   assert.equal(ran, false);
-  assert.deepEqual(test1.blockers(), ["job#1 of code_writer#2 (holds package folder .)"]);
+  assert.deepEqual(test1.blockers(), ["job#1 of agent#2 (holds package folder .)"]);
   install.release();
   await drain();
   assert.equal(ran, true);
@@ -330,8 +330,8 @@ test("aliases: a symlink and another case spelling share one file's records", ()
   symlinkSync(real, link);
   recordSeen("main", link);
   touch(real, "changed");
-  recordWrite("code_writer#2", "code_writer#2", "write", real);
-  assert.match(writeConflict("main", link, "link.txt", [])!, /changed after you last read it \(by code_writer#2/);
+  recordWrite("agent#2", "agent#2", "write", real);
+  assert.match(writeConflict("main", link, "link.txt", [])!, /changed after you last read it \(by agent#2/);
   // A case-insensitive volume (macOS default, Windows): another case spelling is the same file.
   if (existsSync(join(d, "real.txt"))) {
     assert.match(writeConflict("main", join(d, "real.txt"), "real.txt", [])!, /changed after you last read it/);
@@ -343,17 +343,17 @@ test("owners are registries, labels only names: a restarted session with the sam
   const d = dir();
   const f = join(d, "x.ts");
   writeFileSync(f, "1");
-  recordSeen("code_writer#2~old", f);
-  recordWrite("code_writer#2~old", "code_writer#2", "edit", f);
-  forgetOwner("code_writer#2~old");
+  recordSeen("agent#2~old", f);
+  recordWrite("agent#2~old", "agent#2", "edit", f);
+  forgetOwner("agent#2~old");
   touch(f, "outside");
-  assert.equal(writeConflict("code_writer#2~new", f, "x.ts", []), undefined, "the new registry never saw the file");
+  assert.equal(writeConflict("agent#2~new", f, "x.ts", []), undefined, "the new registry never saw the file");
   touch(f, "again", 10);
-  recordWrite("code_writer#2~old2", "code_writer#2", "edit", f);
-  recordSeen("code_writer#2~new", f);
+  recordWrite("agent#2~old2", "agent#2", "edit", f);
+  recordSeen("agent#2~new", f);
   touch(f, "third", 15);
-  recordWrite("code_writer#2~old2", "code_writer#2", "edit", f);
-  assert.match(changeNote("code_writer#2~new", f, "x.ts", [])!, /changed by code_writer#2 \(edit/, "same label, other registry: not its own write");
+  recordWrite("agent#2~old2", "agent#2", "edit", f);
+  assert.match(changeNote("agent#2~new", f, "x.ts", [])!, /changed by agent#2 \(edit/, "same label, other registry: not its own write");
 });
 
 test("codemode slots: the third script waits for a free worker; abort stops waiting", async () => {

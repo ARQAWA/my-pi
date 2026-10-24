@@ -117,7 +117,7 @@ What came from where in the merged text:
 | `extensions/tools/edit/description.md`, `write/description.md` | Batching across files, per-file locks, busy refusal; write long files (> about 400 lines) in parts (reason: bench35 single write hit the 128 000-token output limit, DEC-M). |
 | `eval`, `load_tools`, `lsp`, `ast_grep` descriptions | When each tool beats grep; load in the first response; eval not for searching/reading. |
 | `todo/description.md` (master only) | Plan for multi-stage work, ops in the `todo` field of work calls, never a todo-only response. |
-| `code_writer`, `shell_runner`, `codebase_explorer`, `review`, `custom` descriptions + `agents/*.md` | Brief and trust rules, "brief about as long as the code" threshold, explorer only for an extra independent area. |
+| `codebase_explorer`, `review`, `custom` descriptions + `agents/*.md` | Brief and trust rules, explorer only for an extra independent area. |
 | `settings/config.yml` | `textVerbosity: low` and read/tool limits. |
 
 ### 3.2 What a harness with only `read`, `bash`, `edit`, `write` needs in its prompt

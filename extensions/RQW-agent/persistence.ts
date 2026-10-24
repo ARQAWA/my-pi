@@ -28,7 +28,7 @@ function retainChild(parent: ReadonlySessionManager, kind: string, id: number, m
 const INTERRUPTED = "Interrupted before a durable result was recorded. The tool may already have had side effects; inspect state before deciding what to do. This call was not replayed.";
 
 function childDirectory(parent: ReadonlySessionManager, kind: string, id: number): string | undefined {
-	if (!["agent", "code_writer", "shell_runner"].includes(kind) || !Number.isSafeInteger(id) || id < 1) {
+	if (kind !== "agent" || !Number.isSafeInteger(id) || id < 1) {
 		throw new Error("Invalid child kind or id");
 	}
 	const parentFile = parent.getSessionFile();

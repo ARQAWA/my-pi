@@ -75,8 +75,8 @@ describe("coordinator validation", () => {
 	});
 
 	it("ids must be nonempty full child IDs and are deduplicated", () => {
-		assert.deepEqual(targetIds(["agent#1", "code_writer#2", "agent#1", "shell_runner#10"]), ["agent#1", "code_writer#2", "shell_runner#10"]);
-		for (const value of [[], "agent#1", undefined, [1], ["agent"], ["agent#0"], ["agent#01"], ["worker#1"], ["agent#1", ""]])
+		assert.deepEqual(targetIds(["agent#1", "agent#2", "agent#1", "agent#10"]), ["agent#1", "agent#2", "agent#10"]);
+		for (const value of [[], "agent#1", undefined, [1], ["agent"], ["agent#0"], ["agent#01"], ["unknown#1"], ["agent#1", ""]])
 			assert.throws(() => targetIds(value as never), /ids must be a nonempty array of full child IDs/);
 	});
 
@@ -90,17 +90,17 @@ describe("coordinator validation", () => {
 });
 
 describe("coordinator wait", () => {
-	it("first result among mixed IDs is reserved for the wait, not sent as a message", async () => {
+	it("first result among multiple agents is reserved for the wait, not sent as a message", async () => {
 		const { pi, coord, pushes, push } = session();
 		coord.add(target("agent#1"));
-		coord.add(target("code_writer#1"));
-		const pending = coord.wait(["agent#1", "code_writer#1"], 10000, signal(), "outer#1");
-		coord.publish("code_writer#1", "r1", "done", "ok", push);
+		coord.add(target("agent#2"));
+		const pending = coord.wait(["agent#1", "agent#2"], 10000, signal(), "outer#1");
+		coord.publish("agent#2", "r1", "done", "ok", push);
 		const { details } = await pending;
 		assert.equal(details.reason, "result");
 		assert.equal(details.timed_out, false);
 		assert.equal(details.results.length, 1);
-		assert.equal(details.results[0].id, "code_writer#1");
+		assert.equal(details.results[0].id, "agent#2");
 		assert.equal(details.results[0].text, "done");
 		assert.equal(pushes.length, 0);
 		assert.equal(pi.sent.length, 0);
@@ -109,10 +109,10 @@ describe("coordinator wait", () => {
 	it("a result for an unrelated ID does not release the wait", async () => {
 		const { coord, pushes, push } = session();
 		coord.add(target("agent#1"));
-		coord.add(target("code_writer#1"));
+		coord.add(target("agent#2"));
 		let settled = false;
 		const pending = coord.wait(["agent#1"], 10000, signal(), "outer#1").then(r => { settled = true; return r; });
-		coord.publish("code_writer#1", "r1", "other", "ok", push);
+		coord.publish("agent#2", "r1", "other", "ok", push);
 		await flush();
 		assert.equal(settled, false);
 		assert.equal(pushes.length, 1, "unrelated result keeps its normal message path");
@@ -126,11 +126,11 @@ describe("coordinator wait", () => {
 	it("timeout returns the status of every selected child and stops nothing", async (t) => {
 		const clock = virtualClock(t);
 		const { coord, pushes, push } = session();
-		const agent = target("agent#1");
-		const writer = target("code_writer#1");
-		coord.add(agent);
-		coord.add(writer);
-		const pending = coord.wait(["agent#1", "code_writer#1"], 1000, signal(), "outer#1");
+		const first = target("agent#1");
+		const second = target("agent#2");
+		coord.add(first);
+		coord.add(second);
+		const pending = coord.wait(["agent#1", "agent#2"], 1000, signal(), "outer#1");
 		clock.advance(999);
 		await flush();
 		clock.advance(1);
@@ -138,10 +138,10 @@ describe("coordinator wait", () => {
 		assert.equal(details.reason, "timeout");
 		assert.equal(details.timed_out, true);
 		assert.deepEqual(details.results, []);
-		assert.deepEqual(details.statuses.map((s: any) => s.id), ["agent#1", "code_writer#1"]);
+		assert.deepEqual(details.statuses.map((s: any) => s.id), ["agent#1", "agent#2"]);
 		assert.ok(details.statuses.every((s: any) => s.run === "r1" && s.state === "running"));
-		assert.equal(agent.active(), true);
-		assert.equal(writer.active(), true);
+		assert.equal(first.active(), true);
+		assert.equal(second.active(), true);
 		// The children keep working: their later result still goes through the normal path.
 		coord.publish("agent#1", "r1", "late", "ok", push);
 		assert.equal(pushes.length, 1);
@@ -217,8 +217,8 @@ describe("coordinator wait", () => {
 		assert.equal(unknown.reason, "idle");
 		assert.equal(unknown.timed_out, false);
 		assert.equal(unknown.statuses[0].error, "Unknown or closed child ID");
-		coord.add(target("code_writer#1", "r1", false));
-		const inactive = (await coord.wait(["code_writer#1"], 10000, signal(), "outer#1")).details;
+		coord.add(target("agent#1", "r1", false));
+		const inactive = (await coord.wait(["agent#1"], 10000, signal(), "outer#1")).details;
 		assert.equal(inactive.reason, "idle");
 	});
 
@@ -393,18 +393,18 @@ describe("coordinator reserved results across runs", () => {
 
 describe("coordinator implicit observe", () => {
 	function gatedTargets(coord: Coordinator) {
-		const agent = target("agent#1");
-		const writer = target("code_writer#1");
-		const shell = target("shell_runner#1");
-		const idle = target("code_writer#2", "r1", false);
-		for (const item of [agent, writer, shell, idle]) coord.add(item);
-		return { agent, writer, shell, idle };
+		const first = target("agent#1");
+		const second = target("agent#2");
+		const third = target("agent#3");
+		const idle = target("agent#4", "r1", false);
+		for (const item of [first, second, third, idle]) coord.add(item);
+		return { first, second, third, idle };
 	}
 
 	it("observe(1000) uses one clock deadline and its diagnostic lists only the active selected IDs", async (t) => {
 		const clock = virtualClock(t);
 		const { pi, coord } = session();
-		const { agent, writer, shell } = gatedTargets(coord);
+		const { first, second, third } = gatedTargets(coord);
 		const observed = coord.observe(signal(), 1000);
 		clock.advance(999);
 		await flush();
@@ -419,11 +419,11 @@ describe("coordinator implicit observe", () => {
 		assert.equal(content.reason, "timeout");
 		assert.equal(content.timed_out, true);
 		assert.deepEqual(content.results, []);
-		assert.deepEqual(content.statuses.map((s: any) => s.id), ["agent#1", "code_writer#1", "shell_runner#1"]);
+		assert.deepEqual(content.statuses.map((s: any) => s.id), ["agent#1", "agent#2", "agent#3"]);
 		assert.ok(content.statuses.every((s: any) => s.state === "running"));
-		assert.equal(agent.active(), true);
-		assert.equal(writer.active(), true);
-		assert.equal(shell.active(), true);
+		assert.equal(first.active(), true);
+		assert.equal(second.active(), true);
+		assert.equal(third.active(), true);
 	});
 
 	it("observe expiring while agent_end is settling defers the diagnostic to agent_before_settle with continuation and flushes once", async (t) => {
@@ -498,10 +498,10 @@ describe("coordinator implicit observe", () => {
 		assert.equal(pi.sent.length, 0);
 	});
 
-	it("an idle retained worker with an unconsumed result waits for a native wakeup, not a resolved-Promise spin", async (t) => {
+	it("an idle retained agent with an unconsumed result waits for a native wakeup, not a resolved-Promise spin", async (t) => {
 		const clock = virtualClock(t);
 		const { pi, coord } = session();
-		coord.add(target("code_writer#1", "r1", false));
+		coord.add(target("agent#1", "r1", false));
 		let finished = false;
 		const observed = coord.observe(signal(), 1000, () => true).then(() => { finished = true; });
 		await flush();
@@ -515,7 +515,7 @@ describe("coordinator implicit observe", () => {
 	it("an idle caller still owing a result turn receives bounded diagnostics if no wakeup arrives", async (t) => {
 		const clock = virtualClock(t);
 		const { pi, coord } = session();
-		coord.add(target("code_writer#1", "r1", false));
+		coord.add(target("agent#1", "r1", false));
 		const observed = coord.observe(signal(), 1000, () => true);
 		clock.advance(1000);
 		await observed;
@@ -526,7 +526,7 @@ describe("coordinator implicit observe", () => {
 	it("aborting observe rejects, clears its timer and leaves targets active", async (t) => {
 		const clock = virtualClock(t);
 		const { pi, coord } = session();
-		const { agent } = gatedTargets(coord);
+		const { first } = gatedTargets(coord);
 		const controller = new AbortController();
 		const observed = coord.observe(controller.signal, 1000);
 		controller.abort();
@@ -534,7 +534,7 @@ describe("coordinator implicit observe", () => {
 		clock.advance(1000);
 		await flush();
 		assert.equal(pi.sent.length, 0);
-		assert.equal(agent.active(), true);
+		assert.equal(first.active(), true);
 	});
 
 	it("aborting wait rejects, clears its timer and leaves a later result on the normal path", async (t) => {

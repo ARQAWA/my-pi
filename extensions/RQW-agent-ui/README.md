@@ -6,21 +6,21 @@ exports) and changes nothing in Pi. It never changes stored messages, details or
 No Pi patches, method replacement or wrapping, private fields, component-tree splicing or production deep imports
 are allowed. Only public extension and TUI APIs are used.
 
-Current state: the agent/worker card (`card.ts`, `fit.ts`) and its wiring to both ways a result arrives (`index.ts`,
+Current state: the agent card (`card.ts`, `fit.ts`) and its wiring to both ways a result arrives (`index.ts`,
 `wait.ts` and `self.ts`, below), plus the review custom-message card (`review.ts`). The package registers it in
 `pi.extensions` before RQW-tool-ui. The upper-input activity indicator is not here (RQW-statusbar).
 
 ## Wiring (`index.ts`, `wait.ts`, `self.ts`)
 
-A subagent or worker result reaches the transcript in one of two ways, and both get the card. Everything is display
+A subagent result reaches the transcript in one of two ways, and both get the card. Everything is display
 only: stored messages, tool results, their details and what the model sees are never changed.
 
-- **Custom message** `[<name>#<id>] ...` (types `agent`, `code_writer`, `shell_runner`): `index.ts` registers the card
-  with `pi.registerMessageRenderer` for the three types. The display details are the message's own `details`
+- **Custom message** `[<name>#<id>] ...` (type `agent`): `index.ts` registers the card
+  with `pi.registerMessageRenderer` for that type. The display details are the message's own `details`
   (`id`, `outcome`, `model`, `thinking`, `seconds`, optional `title` and `prompt_file`, beside `delivery` and `run`).
   `prompt_file` provenance (`kind`, absolute `path`, `sha256`) and delivery tokens stay stored but are not card text.
-- **`wait` result** of the tools `agent`, `code_writer`, `shell_runner`: `index.ts` registers one
-  `pi.registerToolRenderer` resolver. For these three tools it returns the renderers of whatever comes after it
+- **`wait` result** of the `agent` tool: `index.ts` registers one
+  `pi.registerToolRenderer` resolver. For this tool it returns the renderers of whatever comes after it
   (`next()`: another extension's, else the tool's). Without a self shell, only `renderResult` is replaced (`wait.ts`):
   a finished, collapsed call with `action: "wait"` shows one card per delivered result of `details.results[i]`, with that item's
   `display` details (the RQW-agent metadata), its `id` and its `text`. Results without metadata still get a card
@@ -60,7 +60,7 @@ only: stored messages, tool results, their details and what the model sees are n
 
 ## Layout and Markdown (`fit.ts`, `card.ts`)
 
-The cards drawn as custom messages (`agent`, `code_writer`, `shell_runner`, `child_wait`, `review`, and the dev `qa-status`) keep
+The cards drawn as custom messages (`agent`, `child_wait`, `review`, and the dev `qa-status`) keep
 Pi's output padding: `padded` in `fit.ts` leaves `options.outputPad` cells free at both sides, so a header and its body line up
 with the text blocks around the card, collapsed and expanded, and the wrapping uses the narrower width. A width at or below
 the padding is drawn without it. Cards inside a tool result are already inside Pi's own box and are not padded again.
@@ -70,8 +70,8 @@ original text unchanged.
 
 ## The card (`card.ts`)
 
-`createAgentCard` is a Pi `MessageRenderer` for the custom message types `agent`, `code_writer` and `shell_runner`, as
-`extensions/RQW-agent` delivers them (content `[<name>#<id>] <text>`). Any other type returns `undefined`, so Pi renders
+`createAgentCard` is a Pi `MessageRenderer` for the custom message type `agent`, as
+`extensions/RQW-agent` delivers it (content `[<name>#<id>] <text>`). Any other type returns `undefined`, so Pi renders
 it as before.
 
 Collapsed, two rows:
@@ -147,7 +147,7 @@ and ANSI); at width 0 nothing is rendered.
   faux model and only this extension: both delivery paths, Ctrl+O and back, off = stock, `/reload` and a new session
   register the cards again, the extension has no handler or subscription. The delivery shapes are stand-ins for
   RQW-agent's, as its README describes them.
-- `node --test test/agent-ui-delivery.test.ts`: the same two paths for `agent`, `code_writer` and `shell_runner` on
+- `node --test test/agent-ui-delivery.test.ts`: the same two paths for `agent` on
   what the real RQW-agent delivers (faux providers, isolated directory), drawn by Pi's exported host components;
   current wait-for-all, status/alert shapes and composition with tool-ui. Also tests merged `verdictMessage` review
   custom messages with both UI extensions independently absent or present, not review tool results.

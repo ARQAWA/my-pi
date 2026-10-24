@@ -12,7 +12,7 @@ import { CLEAN_VERDICT } from "./codex-wire.ts";
 import { COUNTS_OFFER, COUNTS_REQUEST, type CountsOffer, type CountsRequest, type CountsSource, createCountsProducer, type RunningCounts } from "../counts.ts";
 
 const EXTENSION = join(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
-const ZERO: RunningCounts = { agents: 0, workers: 0, reviews: 0 };
+const ZERO: RunningCounts = { agents: 0, reviews: 0 };
 const json = (counts: unknown) => JSON.stringify(counts);
 
 async function until(check: () => boolean, label: string, ms = 5000) {
@@ -26,7 +26,7 @@ async function until(check: () => boolean, label: string, ms = 5000) {
 test("review-counts: running reviews are offered as reviews, and an ended source counts nothing", () => {
 	const bus = createEventBus();
 	const running = new Set<number>();
-	const producer = createCountsProducer(() => ({ agents: 0, workers: 0, reviews: running.size }), bus);
+	const producer = createCountsProducer(() => ({ agents: 0, reviews: running.size }), bus);
 	bus.on(COUNTS_REQUEST, (request) => producer.reply(request as CountsRequest));
 	const offers: CountsOffer[] = [];
 	bus.on(COUNTS_OFFER, (offer) => offers.push(offer as CountsOffer));
@@ -38,11 +38,11 @@ test("review-counts: running reviews are offered as reviews, and an ended source
 	producer.refresh();
 	running.add(2);
 	producer.refresh();
-	assert.deepEqual(offer.source.snapshot(), { agents: 0, workers: 0, reviews: 2 });
+	assert.deepEqual(offer.source.snapshot(), { agents: 0, reviews: 2 });
 	running.delete(1);
 	running.delete(2);
 	producer.refresh();
-	assert.deepEqual(seen, [{ agents: 0, workers: 0, reviews: 1 }, { agents: 0, workers: 0, reviews: 2 }, { agents: 0, workers: 0, reviews: 0 }]);
+	assert.deepEqual(seen, [{ agents: 0, reviews: 1 }, { agents: 0, reviews: 2 }, { agents: 0, reviews: 0 }]);
 	running.add(3);
 	producer.stop();
 	assert.deepEqual(offer.source.snapshot(), ZERO, "stopped: zero");
@@ -127,16 +127,16 @@ test("review-session-counts: a running review counts from its job start until it
 	try {
 		await session.prompt("GO");
 		await until(() => reviewerGates.length === 1, "the first reviewer started");
-		assert.deepEqual(source.snapshot(), { agents: 0, workers: 0, reviews: 1 }, "running from the job start");
+		assert.deepEqual(source.snapshot(), { agents: 0, reviews: 1 }, "running from the job start");
 		reviewerGates[0].release();
 		await until(() => json(source.snapshot()) === json(ZERO), "the first review ended");
 		await until(() => verdicts("[review#1] CLEAN"), "the first verdict delivered");
 		await session.waitForIdle();
-		assert.deepEqual(seen, [{ agents: 0, workers: 0, reviews: 1 }, ZERO], "start, then end at the verdict");
+		assert.deepEqual(seen, [{ agents: 0, reviews: 1 }, ZERO], "start, then end at the verdict");
 
 		await session.prompt("AGAIN");
 		await until(() => reviewerGates.length === 2, "the second reviewer started");
-		assert.deepEqual(source.snapshot(), { agents: 0, workers: 0, reviews: 1 });
+		assert.deepEqual(source.snapshot(), { agents: 0, reviews: 1 });
 		assert.deepEqual(errors, []);
 	} finally {
 		// Shutdown ends the second review's job: the source gives null and counts nothing.

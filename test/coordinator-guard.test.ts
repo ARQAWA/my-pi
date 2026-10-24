@@ -10,18 +10,17 @@ import { parseRules } from "../.pi/extensions/coordinator-guard/rules.ts";
 
 describe("coordinator-guard local development tooling", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 const RULES = {
-	workerModels: {
+	agentModels: {
 		simple: [["anthropic/claude-sonnet-5-5", "medium"], ["openai-codex/gpt-6.1-sol", "low"]],
 		complex: [["anthropic/claude-sonnet-5-5", "high"], ["openai-codex/gpt-6.1-sol", "medium"]],
 		hardest: [["anthropic/claude-opus-5-5", "medium"], ["openai-codex/gpt-6.1-sol", "high"]],
 	},
-	fixedWorkers: "block",
 	temporaryOpusRestriction: { until: "2026-10-28T16:00:00Z", arbiterTitlePrefix: "Арбитр замера" },
 };
 // Clocks around the restriction; every test outside the restriction block runs at the exact expiry, the normal table.
 const UNTIL = Date.parse(RULES.temporaryOpusRestriction.until);
 const BEFORE = UNTIL - 1;
-const processMd = (json: unknown) => `# Development process\n\n## Worker models\n\n\`\`\`json coordinator-rules\n${typeof json === "string" ? json : JSON.stringify(json, null, 2)}\n\`\`\`\n\nMore prose.\n`;
+const processMd = (json: unknown) => `# Development process\n\n## Subagent models\n\n\`\`\`json coordinator-rules\n${typeof json === "string" ? json : JSON.stringify(json, null, 2)}\n\`\`\`\n\nMore prose.\n`;
 
 // Layout: <tmp>/my-pi (main checkout, .git folder), <tmp>/my-pi-worktrees/wt (this worktree, root of the guard),
 // <tmp>/elsewhere/wt2 (a second registered worktree outside my-pi-worktrees), <tmp>/my-pi-evidence.
@@ -76,7 +75,7 @@ const passed = (r: { result: any }) => assert.equal(r.result, undefined, `unexpe
 
 describe("coordinator-guard: agent model and thinking", () => {
 	const g = load();
-	for (const [model, thinking] of Object.values(RULES.workerModels).flat()) {
+	for (const [model, thinking] of Object.values(RULES.agentModels).flat()) {
 		it(`allows ${model} ${thinking} and appends the child instruction`, () => {
 			const r = g.call("agent", { action: "start", model, thinking, task: "do it" });
 			passed(r);
@@ -89,7 +88,7 @@ describe("coordinator-guard: agent model and thinking", () => {
 	];
 	for (const [model, thinking] of denied) {
 		it(`blocks ${model} ${thinking} on start and restart`, () => {
-			blocked(g.call("agent", { action: "start", model, thinking, task: "x" }), /is not an allowed pair; allowed: simple: .*PROCESS\.md#worker-models/);
+			blocked(g.call("agent", { action: "start", model, thinking, task: "x" }), /is not an allowed pair; allowed: simple: .*PROCESS\.md#subagent-models/);
 			blocked(g.call("agent", { action: "restart", id: "agent#1", model, thinking }), /is not an allowed pair/);
 		});
 	}
@@ -114,11 +113,11 @@ describe("coordinator-guard: agent model and thinking", () => {
 		for (const action of ["wait", "status", "interrupt", "stop"]) passed(g.call("agent", { action, id: "agent#1", ids: ["agent#1"] }));
 		passed(g.call("agent", { action: "send", id: "agent#1", task: "more" }));
 	});
-	it("the child instruction keeps fixed workers, explore and review open for children", () => {
+	it("the child instruction keeps explore and review open for children", () => {
 		const line = childInstruction(parseRules(processMd(RULES)), UNTIL);
 		assert.match(line, /ordinary `agent` subagent, give model and thinking explicitly/);
 		assert.match(line, /simple: anthropic\/claude-sonnet-5-5 medium, openai-codex\/gpt-6\.1-sol low; complex: .*; hardest: anthropic\/claude-opus-5-5 medium, openai-codex\/gpt-6\.1-sol high/);
-		assert.match(line, /You may use code_writer, shell_runner, explore and review yourself/);
+		assert.match(line, /You may use explore and review yourself/);
 		assert.doesNotMatch(line, /«|»/);
 	});
 });
@@ -153,7 +152,7 @@ describe("coordinator-guard: temporary Opus restriction", () => {
 		blocked(restricted.call("agent", opus({ title: "Арбитр замера", model: "anthropic/claude-haiku-5-5" })), /is not an allowed pair/);
 	});
 	it("allows Sonnet and Sol as before, with or without a title", () => {
-		for (const [model, thinking] of Object.values(RULES.workerModels).flat().filter(([m]) => m !== OPUS)) {
+		for (const [model, thinking] of Object.values(RULES.agentModels).flat().filter(([m]) => m !== OPUS)) {
 			passed(restricted.call("agent", { action: "start", model, thinking, task: "x" }));
 			passed(restricted.call("agent", { action: "start", model, thinking, task: "x", title: "Арбитр замера" }));
 		}
@@ -195,7 +194,7 @@ describe("coordinator-guard: temporary Opus restriction", () => {
 		assert.equal(call(), undefined);
 	});
 	it("an absent restriction key means no temporary restriction: the base table at any time", () => {
-		writeFileSync(PROCESS, processMd({ workerModels: RULES.workerModels, fixedWorkers: "block" }));
+		writeFileSync(PROCESS, processMd({ agentModels: RULES.agentModels }));
 		try {
 			assert.equal(parseRules(readFileSync(PROCESS, "utf8")).temporaryOpusRestriction, undefined);
 			const g = load([], BEFORE);
@@ -218,35 +217,12 @@ describe("coordinator-guard: temporary Opus restriction", () => {
 	});
 });
 
-describe("coordinator-guard: fixed workers", () => {
-	it("blocks every code_writer and shell_runner action under block", () => {
-		const g = load();
-		for (const tool of ["code_writer", "shell_runner"]) {
-			for (const input of [{ task: "x" }, { action: "start", task: "x" }, { action: "restart", id: `${tool}#1` }, { action: "send", id: `${tool}#1`, task: "y" }, { action: "wait", ids: [`${tool}#1`] }, { action: "status", ids: [`${tool}#1`] }, { action: "stop", id: `${tool}#1` }]) {
-				blocked(g.call(tool, input), new RegExp(`Main never uses ${tool} \\(fixedWorkers: block`));
-			}
-		}
-	});
-	it("allow lets them through, still quote-checked", () => {
-		setRules({ ...RULES, fixedWorkers: "allow" });
-		try {
-			const g = load([user("сделай так")]);
-			passed(g.call("code_writer", { task: "go" }));
-			passed(g.call("shell_runner", { action: "wait", ids: ["shell_runner#1"] }));
-			passed(g.call("code_writer", { task: "owner: «сделай так»" }));
-			blocked(g.call("shell_runner", { action: "send", id: "shell_runner#1", task: "«сделай иначе»" }), /not the owner's exact words: «сделай иначе»/);
-		} finally {
-			setRules(RULES);
-		}
-	});
-});
-
 describe("coordinator-guard: rules are read fresh and fail closed", () => {
 	it("a changed block takes effect on the next call without reload", () => {
 		const g = load();
 		const pair = { action: "start", model: "anthropic/claude-opus-5-5", thinking: "high", task: "x" };
 		blocked(g.call("agent", { ...pair }), /not an allowed pair/);
-		setRules({ ...RULES, workerModels: { ...RULES.workerModels, extra: [["anthropic/claude-opus-5-5", "high"]] } });
+		setRules({ ...RULES, agentModels: { ...RULES.agentModels, extra: [["anthropic/claude-opus-5-5", "high"]] } });
 		try {
 			passed(g.call("agent", { ...pair }));
 			assert.match(g.prompt(), /extra: anthropic\/claude-opus-5-5 high/);
@@ -258,13 +234,13 @@ describe("coordinator-guard: rules are read fresh and fail closed", () => {
 	const broken: [string, string, RegExp][] = [
 		["missing block", "# Development process\n\nno rules\n", /no ```json coordinator-rules block found/],
 		["two blocks", processMd(RULES) + processMd(RULES), /2 coordinator-rules blocks found/],
-		["bad JSON", processMd("{ workerModels: "), /not valid JSON/],
-		["no classes", processMd({ workerModels: {}, fixedWorkers: "block" }), /no classes/],
-		["empty class", processMd({ workerModels: { simple: [] }, fixedWorkers: "block" }), /non-empty array/],
-		["bad pair", processMd({ workerModels: { simple: [["anthropic/claude-sonnet-5-5"]] }, fixedWorkers: "block" }), /must be \[model, thinking\]/],
-		["model without provider", processMd({ workerModels: { simple: [["sonnet", "high"]] }, fixedWorkers: "block" }), /provider\/id/],
-		["bad thinking", processMd({ workerModels: { simple: [["a/b", "ultra"]] }, fixedWorkers: "block" }), /thinking must be one of/],
-		["missing fixedWorkers", processMd({ workerModels: RULES.workerModels, temporaryOpusRestriction: RULES.temporaryOpusRestriction }), /fixedWorkers must be/],
+		["bad JSON", processMd("{ agentModels: "), /not valid JSON/],
+		["no classes", processMd({ agentModels: {} }), /no classes/],
+		["empty class", processMd({ agentModels: { simple: [] } }), /non-empty array/],
+		["bad pair", processMd({ agentModels: { simple: [["anthropic/claude-sonnet-5-5"]] } }), /must be \[model, thinking\]/],
+		["model without provider", processMd({ agentModels: { simple: [["sonnet", "high"]] } }), /provider\/id/],
+		["bad thinking", processMd({ agentModels: { simple: [["a/b", "ultra"]] } }), /thinking must be one of/],
+		["missing agentModels", processMd({ temporaryOpusRestriction: RULES.temporaryOpusRestriction }), /agentModels must be/],
 		["null restriction", processMd({ ...RULES, temporaryOpusRestriction: null }), /temporaryOpusRestriction must be an object/],
 		["array restriction", processMd({ ...RULES, temporaryOpusRestriction: [] }), /temporaryOpusRestriction must be an object/],
 		["missing until", processMd({ ...RULES, temporaryOpusRestriction: { arbiterTitlePrefix: "Арбитр замера" } }), /until must be a UTC time/],
@@ -276,13 +252,12 @@ describe("coordinator-guard: rules are read fresh and fail closed", () => {
 		["blank prefix", processMd({ ...RULES, temporaryOpusRestriction: { until: RULES.temporaryOpusRestriction.until, arbiterTitlePrefix: "  " } }), /arbiterTitlePrefix must be a non-empty string/],
 	];
 	for (const [label, text, error] of broken) {
-		it(`${label}: blocks agent starts and fixed workers, shows the error in the prompt and status`, () => {
+		it(`${label}: blocks agent starts, shows the error in the prompt and status`, () => {
 			writeFileSync(PROCESS, text);
 			try {
 				const g = load();
 				blocked(g.call("agent", { action: "start", model: "anthropic/claude-opus-5-5", thinking: "medium", task: "x" }), error);
 				blocked(g.call("agent", { action: "start", model: "anthropic/claude-opus-5-5", thinking: "medium", task: "x" }), /coordinator-rules in .*PROCESS\.md is unreadable/);
-				blocked(g.call("code_writer", { task: "x" }), error);
 				passed(g.call("agent", { action: "wait", ids: ["agent#1"] }));
 				const section = g.prompt();
 				assert.match(section, /ERROR: the coordinator-rules block in .* is unreadable/);
@@ -409,8 +384,8 @@ describe("coordinator-guard: prompt reinjection", () => {
 		const first = g.prompt();
 		assert.match(first, /binds Main, the top-level coordinator session/);
 		assert.match(first, /simple: anthropic\/claude-sonnet-5-5 medium, openai-codex\/gpt-6\.1-sol low; complex: anthropic\/claude-sonnet-5-5 high, openai-codex\/gpt-6\.1-sol medium; hardest: anthropic\/claude-opus-5-5 medium, openai-codex\/gpt-6\.1-sol high/);
-		assert.match(first, /never uses code_writer or shell_runner and never starts an explore subagent/);
-		assert.match(first, /Subagents Main starts may use them/);
+		assert.match(first, /never starts an explore subagent/);
+		assert.match(first, /Subagents Main starts may use it/);
 		assert.match(first, /When the owner asks Main to do such work personally \(for example "ты сам" or "you do it"\), Main objects and proposes a subagent for it; only an explicit owner override lets Main do that work itself/);
 		assert.match(first, /Main never edits or writes files in the checkout or its worktrees \(edit and write there are blocked\)/);
 		assert.doesNotMatch(first, /Temporary rule/, "no temporary rule at the exact expiry");
@@ -435,8 +410,7 @@ describe("coordinator-guard: placement", () => {
 	});
 	it("the real PROCESS.md block parses with the guard's parser", () => {
 		const rules = parseRules(readFileSync(join(ROOT, "PROCESS.md"), "utf8"));
-		assert.deepEqual(rules.workerModels, RULES.workerModels);
-		assert.equal(rules.fixedWorkers, RULES.fixedWorkers);
+		assert.deepEqual(rules.agentModels, RULES.agentModels);
 		assert.deepEqual({ until: rules.temporaryOpusRestriction.until, arbiterTitlePrefix: rules.temporaryOpusRestriction.arbiterTitlePrefix }, RULES.temporaryOpusRestriction);
 	});
 });

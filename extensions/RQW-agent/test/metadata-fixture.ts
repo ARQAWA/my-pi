@@ -1,15 +1,13 @@
-// Worker runs for the metadata and count tests: a faux anthropic provider answers code_writer and shell_runner.
-// No Pi method is mocked: the provider is registered through the runtime, and its credential is an isolated fake key
-// set with setRuntimeApiKey (in memory, never the owner's auth). Every reply is scripted, else "done".
+// Faux ordinary agents for metadata, count and root integration tests. No network or saved credentials.
 import { fauxProvider, type AssistantMessage, type SimpleStreamOptions, type TranscriptContext } from "@earendil-works/pi-ai";
 import { answer, type fixture } from "./audit-fixture.ts";
 
-export type WorkerReply = AssistantMessage | ((context: TranscriptContext, options?: SimpleStreamOptions) => Promise<AssistantMessage>);
+export type AgentReply = AssistantMessage | ((context: TranscriptContext, options?: SimpleStreamOptions) => Promise<AssistantMessage>);
 
-/** Registers the faux anthropic worker model, gives it a fake runtime key, and returns the queue of scripted worker replies. */
-export async function withWorkers(f: Awaited<ReturnType<typeof fixture>>): Promise<WorkerReply[]> {
-	const replies: WorkerReply[] = [];
-	const faux = fauxProvider({ provider: "anthropic", api: "rqw-agent-worker-faux", models: [{ id: "claude-haiku-5-5", reasoning: true }] });
+/** Registers a separate faux agent provider and returns its scripted replies. Start with model anthropic/metadata-agent. */
+export async function withAgents(f: Awaited<ReturnType<typeof fixture>>): Promise<AgentReply[]> {
+	const replies: AgentReply[] = [];
+	const faux = fauxProvider({ provider: "anthropic", api: "rqw-agent-metadata-faux", models: [{ id: "metadata-agent", reasoning: true }] });
 	faux.setResponses(Array.from({ length: 30 }, () => async (context: TranscriptContext, options?: SimpleStreamOptions) => {
 		const next = replies.shift();
 		return typeof next === "function" ? await next(context, options) : next ?? answer("done");

@@ -30,7 +30,7 @@ describe("live", () => {
 				ok("> node --test\nsuite: input\nstarting checks\nok 1 - empty idle status\nok 2 - static normal borders\ntests 2; failures 0\n"), ctx(), 1234),
 			edit: live("edit", { path: "/Users/demo/ai-project/my-pi/src/app.ts" }, ok("Successfully replaced text", { diff: "-12 const padding = 8;\n+12 const padding = 3;\n 13 const x = 1;\n-14 const idle = \"Ready\";\n+14 const idle = \"\";" }), ctx(), 400),
 			read: live("read", { path: "src/app.ts", offset: 10, limit: 5 }, undefined, ctx({ isPartial: true })),
-			wait: live("agent", { action: "wait", ids: ["agent#1", "code_writer#2"] }, ok("[agent#1] done"), ctx(), 65_000),
+			wait: live("agent", { action: "wait", ids: ["agent#1", "agent#2"] }, ok("[agent#1] done"), ctx(), 65_000),
 		};
 		const got: Record<string, Record<string, string[]>> = {};
 		for (const [name, call] of Object.entries(cases))

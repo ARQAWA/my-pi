@@ -5,7 +5,7 @@ import type { AssistantMessage, AssistantMessageEvent, Usage } from "@earendil-w
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { deadlineTimer } from "./coordinator.ts";
 
-export type AlertKind = "error" | "repetition" | "long_turn" | "schema_rejection_repeated" | "scope_block";
+export type AlertKind = "error" | "repetition" | "long_turn" | "schema_rejection_repeated";
 export type ActivityAlert = { kind: AlertKind; at: string; detail: string };
 export type ActivityOptions = { alert_after_ms?: number };
 const ALERTS = 32;
@@ -226,11 +226,6 @@ export class Activity {
 		if (this.lastError === key) return;
 		this.lastError = key;
 		this.alert("error", detail);
-	}
-
-	/** Called only by a hook that actually refused the call; never guesses from tool error prose. */
-	observeRefusal(toolCallId: string, reason: string): void {
-		this.alert("scope_block", `${toolCallId}: ${reason}`);
 	}
 
 	private alert(kind: AlertKind, detail: string): void {

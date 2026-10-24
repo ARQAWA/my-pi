@@ -517,18 +517,18 @@ describe("RQW-codex registration: per-operation turn provenance", () => {
 			const [root] = f.controllers;
 			root.snap.snapshot = { threadId: root.threadId, rootSessionId: root.threadId, turnId: "A", rootTurnId: "A" };
 			const first = await openChild(f);
-			const firstReq = request(first, root.threadId, "worker#1");
+			const firstReq = request(first, root.threadId, "agent#1");
 			f.emit(firstReq);
 			const c1 = f.controllers.find((x) => x.threadId === first.sessionId)!;
-			c1.snap.snapshot = { threadId: c1.threadId, rootSessionId: root.threadId, agentName: "main/worker#1", turnId: "C1-t1", rootTurnId: "A" };
+			c1.snap.snapshot = { threadId: c1.threadId, rootSessionId: root.threadId, agentName: "main/agent#1", turnId: "C1-t1", rootTurnId: "A" };
 			const nested = await openChild(f);
-			const nestedReq = request(nested, c1.threadId, "worker#1");
+			const nestedReq = request(nested, c1.threadId, "agent#1");
 			f.emit(nestedReq);
 			const c2 = f.controllers.find((x) => x.threadId === nested.sessionId)!;
 			assert.equal(effective(c2).parentTurnId, "C1-t1");
 			assert.equal(effective(c2).rootTurnId, "A", "the ancestor's root, not the immediate parent's turn");
-			assert.equal(effective(c2).agentName, "main/worker#1/worker#1");
-			c1.snap.snapshot = { threadId: c1.threadId, rootSessionId: root.threadId, agentName: "main/worker#1", turnId: "C1-t2", rootTurnId: "A" };
+			assert.equal(effective(c2).agentName, "main/agent#1/agent#1");
+			c1.snap.snapshot = { threadId: c1.threadId, rootSessionId: root.threadId, agentName: "main/agent#1", turnId: "C1-t2", rootTurnId: "A" };
 			nestedReq.captureRun!(c1.threadId);
 			assert.deepEqual(c2.origins.at(-1), { rootTurnId: "A" });
 		} finally { await f.dispose(); }

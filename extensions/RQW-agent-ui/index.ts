@@ -1,6 +1,6 @@
-// RQW-agent-ui: result cards for subagents and workers (README.md). Two wirings, both display only:
+// RQW-agent-ui: result cards for subagents (README.md). Two wirings, both display only:
 //  - the custom messages `[<name>#<id>] ...` RQW-agent delivers get the card (Pi message renderers);
-//  - the results of a `wait` call of agent / code_writer / shell_runner show one card per delivered result;
+//  - the results of an agent `wait` call show one card per delivered result;
 //  - RQW-agent's `child_wait` notification with delivered results shows the same cards (other `child_wait` stay stock).
 // Ctrl+O shows the full answer: expanded cards over tool-ui, original result text standalone. Only per-call public
 // renderer state is kept; no subscription, timer, process or session reference survives a switch or /reload.

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Activity } from "../activity.ts";
-import { installGitGuard, registerWorkers } from "../workers.ts";
 
 class Session {
 	listeners = new Set<(event: any) => void>();
@@ -107,20 +106,7 @@ test("exact Pi schema/format failures count by diagnostic, not received argument
 	end("7", 'Invalid arguments for tool "submit": Tool threw', 0);
 	end("8", "Tool execution was blocked");
 	end("9", "Tool execution was blocked");
-	assert.equal(f.alerts().length, 2, "ordinary tool errors are neither schema failures nor scope blocks");
-	f.activity.close();
-});
-
-test("guard observer reports only actual refusals without changing guard decisions", () => {
-	const f = setup();
-	let handler: any;
-	installGitGuard({ on(_name: string, h: any) { handler = h; } } as never,
-		(id, reason) => f.activity.observeRefusal(id, reason));
-	assert.equal(handler({ toolCallId: "r", toolName: "bash", input: { command: "git status --short" } }), undefined);
-	const blocked = handler({ toolCallId: "w", toolName: "bash", input: { command: "git commit -m changed" } });
-	assert.equal(blocked.block, true);
-	assert.equal(typeof blocked.reason, "string");
-	assert.deepEqual(f.alerts().map(a => [a.kind, a.detail]), [["scope_block", `w: ${blocked.reason}`]]);
+	assert.equal(f.alerts().length, 2, "ordinary tool errors are not schema failures");
 	f.activity.close();
 });
 
@@ -166,7 +152,7 @@ test("endRun and native settlement cancel the active-turn timer; threshold rejec
 
 test("alert history is bounded and copied while checkpoints preserve every new event", () => {
 	const f = setup();
-	for (let i = 0; i < 40; i++) f.activity.observeRefusal(String(i), "x".repeat(500));
+	for (let i = 0; i < 40; i++) f.activity.reportError(`${i}: ${"x".repeat(500)}`);
 	assert.equal(f.activity.alertVersion(), 40);
 	assert.equal(f.alerts().length, 32);
 	assert.equal(f.alerts()[0].detail.length, 300);
@@ -174,16 +160,4 @@ test("alert history is bounded and copied while checkpoints preserve every new e
 	const copy = f.alerts(); copy[0].detail = "mutated";
 	assert.notEqual(f.alerts()[0].detail, "mutated");
 	f.activity.close();
-});
-
-test("worker status is optional for legacy handles and forwards depth without an arbitrary cap", () => {
-	let index = 0;
-	const seen: number[] = [];
-	const runtime = registerWorkers({} as never, () => ({ pending: () => false, wait: async () => {}, ids: () => [],
-		runningCounts: () => ({ agents: 0, workers: 0, reviews: 0 }), abortAll() {}, close() {},
-		...(index++ === 0 ? { status(depth: number) { seen.push(depth); return [{ id: "code_writer#1" }]; } } : {}),
-	}));
-	assert.deepEqual(runtime.status!(Number.MAX_SAFE_INTEGER), [{ id: "code_writer#1" }]);
-	assert.deepEqual(seen, [Number.MAX_SAFE_INTEGER]);
-	assert.throws(() => runtime.status!(-1), /depth/);
 });

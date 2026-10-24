@@ -4,7 +4,7 @@ Every item is the coordinator's record of the owner's requests at that time. Thi
 work; reviewers checked against it.
 
 Status: frozen evidence, the agreement of the first RQW-tools task (2026-10-20). Later decisions override parts of
-it; the current rules are in [DECISIONS.md, Tools](../DECISIONS.md#tools), and current development worker models are
+it; the current rules are in [DECISIONS.md, Tools](../DECISIONS.md#tools), and current development subagent models are
 in `PROCESS.md`, not item 11. Convention: text marked `[coordinator record: "..."]` reproduces wording from the omp
 session of that day as the coordinator recorded it. It is coordinator text, not an owner quotation: it was not
 verified against the my-pi Pi session files.

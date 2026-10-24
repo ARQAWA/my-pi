@@ -1,11 +1,11 @@
-// The agent / worker result card: a pure component factory for the custom messages `agent`, `code_writer` and
-// `shell_runner` that RQW-agent delivers (content `[<name>#<id>] <text>`). Registration and wiring are not here.
+// The agent result card: a pure component factory for custom `agent` messages RQW-agent delivers
+// (content `[agent#<id>] <text>`). Registration and wiring are not here.
 import type { MessageRenderer, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 import { Markdown, type MarkdownTheme, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { clean, fit, padded, wrap } from "./fit.ts";
 
-export const CARD_TYPES = ["agent", "code_writer", "shell_runner"] as const;
+export const CARD_TYPES = ["agent"] as const;
 
 /** The display details RQW-agent may attach (any part can be missing); other fields are ignored. */
 export interface CardDetails {
@@ -182,7 +182,7 @@ export function cardLines(card: ParsedCard, expanded: boolean, theme: CardTheme,
 	return rows;
 }
 
-/** The renderer for the three custom types; any other type is left to Pi (undefined). */
+/** The renderer for agent messages; any other type is left to Pi (undefined). */
 export const createAgentCard: MessageRenderer<CardDetails> = (message, options, theme) => {
 	if (!(CARD_TYPES as readonly string[]).includes(message.customType)) return undefined;
 	const card = parseCard(message);

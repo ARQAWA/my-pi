@@ -248,7 +248,7 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 				return jobs.run(spec, (job) =>
 					nested.schedule(id, scope, async () => {
 						if (job.signal.aborted) throw new Error("Operation aborted");
-						// git and package folders are held across sessions of this process (main, subagents, workers).
+						// git and package folders are held across sessions of this process (main, subagents).
 						const release = await claimFor(footprint, () => job.describe(), job.signal, (blockers) => job.waitingOn(blockers));
 						// A server naming a port a running job serves: the note goes into the handoff or the result.
 						const portNotes = (footprint?.server ? footprint.ports : []).flatMap((port) => {

@@ -1925,7 +1925,7 @@ export default function (pi) {
 			assert.equal(run.results[1].text, blockedGit(DENIED), "the exact blockedGit reason");
 			assert.ok(blockedGit(DENIED));
 
-			assert.doesNotMatch(run.results[2].text, /Workers may not/, "read-only git is not blocked");
+			assert.doesNotMatch(run.results[2].text, /Reviewers may not/, "read-only git is not blocked");
 			assert.equal(blockedGit(ALLOWED), undefined);
 
 			if (withOffer) {

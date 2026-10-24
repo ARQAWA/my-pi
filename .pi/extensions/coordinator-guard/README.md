@@ -66,10 +66,10 @@ bound by the rules, and the owner could not ask a plain question there.
 
 ## Source of rules
 
-The fenced block `json coordinator-rules` in `PROCESS.md`, section "Worker models": `workerModels` (classes of
-exact `[model, thinking]` pairs) and `fixedWorkers` (`"block"` or `"allow"`). A missing block, several blocks,
-bad JSON or a bad schema is an error state: the guard then blocks every `agent` start and restart and every
-`code_writer` / `shell_runner` call, and shows the error in Main's prompt and status.
+The fenced block `json coordinator-rules` in `PROCESS.md`, section [Subagent models](../../../PROCESS.md#subagent-models):
+`agentModels` holds classes of exact `[model, thinking]` pairs. A missing block, several blocks,
+bad JSON or a bad schema is an error state: the guard then blocks every `agent` start and restart
+and shows the error in Main's prompt and status.
 
 ## Temporary Opus restriction
 
@@ -91,10 +91,9 @@ bans `anthropic/claude-opus-5-5` for every `agent` start and restart while the c
 - `tool_call` on `agent` `start` and `restart` (a missing `action` counts as `start`): `model` and
   `thinking` are required and must be one exact allowed pair. Every `explore` start or restart is blocked,
   since an explorer runs on Main's own model. An allowed call with a `task` gets one generated line
-  appended: ordinary nested `agent` starts need an explicit allowed pair, and the child may use `code_writer`,
-  `shell_runner`, `explore` and `review` itself.
-- `code_writer` and `shell_runner`: with `"fixedWorkers": "block"` every action is blocked.
-- Quotes: on `agent`, `code_writer` and `shell_runner` `start`, `restart` and `send`, every guillemet span in
+  appended: ordinary nested `agent` starts need an explicit allowed pair, and the child may use
+  `explore` and `review` itself.
+- Quotes: on `agent` `start`, `restart` and `send`, every guillemet span in
   `task`, `role` and `system` must be one exact contiguous span of one user message of the current session
   (`ctx.sessionManager.getEntries()`), after Unicode NFC and whitespace normalisation. Unbalanced guillemets and
   empty spans fail. The check is `scripts/owner-quotes.mjs`, shared with `deliver-check`.

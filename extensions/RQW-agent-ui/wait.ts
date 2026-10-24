@@ -1,10 +1,10 @@
-// Cards for the results a `wait` call of agent / code_writer / shell_runner returns, and the stock result view that
+// Cards for the results an agent `wait` call returns, and the stock result view that
 // stays reachable through Ctrl+O. Pure functions over public Pi types; the wiring is index.ts.
 import { keyHint, type ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { type Component, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
 import { type CardTheme, cardLines, cardParts, type ParsedCard } from "./card.ts";
 
-export const WAIT_TOOLS = ["agent", "code_writer", "shell_runner"] as const;
+export const WAIT_TOOLS = ["agent"] as const;
 
 type ResultRenderer = NonNullable<ToolRenderers["renderResult"]>;
 type ToolResult = Parameters<ResultRenderer>[0];

@@ -69,7 +69,7 @@ on their own and the short-timeout bash snapshot exclusion described above are a
 
 ## Review in subagents
 
-RQW-agent's general subagents (not its explorers or workers) get a `review` tool of their own, offered over
+RQW-agent's general subagents (not its explorers) get a `review` tool of their own, offered over
 `pi.events` channel `rqw-review:subagent-review` without any import: RQW-agent emits `{ offer(register) }` for each
 such child, and RQW-review answers with a function that registers the tool in that child's own `ExtensionAPI`, with
 the main session's bus (RQW-tools offer, running counts), the child's GPT Fast and the child's lifetime signal. There

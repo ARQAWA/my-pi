@@ -94,10 +94,10 @@ Neither harness gives complete persisted per-child token telemetry:
   the hypothesis that this flag disabled subagent prompt caching. Exact yesterday's in-memory child hits are not
   recoverable from these parent entries.
 - Some persisted omp sessions have `parentSession` headers, but these can be forks and are not attributable to
-  the harness's in-memory workers; their copied messages must not be counted twice or relabeled as those workers.
+  the harness's in-memory subagents; their copied messages must not be counted twice or relabeled as those subagents.
 - Read-only SQLite connection: `file:~/.omp/agent/agent.db?mode=ro` (expanded absolute path). `client_usage` has
   zero rows. `usage_history` has account quota snapshots, not per-child token usage. No credential rows were read.
-  The 504 dated `model_usage` session entries were `judge_batch`, not worker or cache-warmer attribution.
+  The 504 dated `model_usage` session entries were `judge_batch`, not subagent or cache-warmer attribution.
 
 Available timing, not guessed per-child request intervals:
 

@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-// GPT Fast for the children of RQW-agent, subagents and workers (OpenAI priority processing: body.service_tier
+// GPT Fast for RQW-agent children (OpenAI priority processing: body.service_tier
 // "priority" on every openai-codex request, never on Anthropic). A child inherits its caller's state at start (the main chat's, read with `inheritedFastGpt` from RQW-settings,
 // which owns /fast-gpt, through the query channel on `pi.events`; a nested child gets its direct caller's) and keeps
 // it for its life unless the caller's `fast_gpt` parameter overrides it. Without RQW-settings nobody answers and

@@ -9,9 +9,9 @@ const mutations = [
 	"cherry-pick abc123", "revert abc123", "am patch.mbox", "apply patch.diff", "stash", "stash pop",
 	"tag v1", "tag -a v1 -m release", "tag -d v1", "tag --delete v1", "tag -f v1", "push",
 	"pull", "fetch", "clean -fd", "worktree add ../copy", "submodule update --init",
-	"submodule add https://example.test/repo", "config user.name Worker", "config --global user.name Worker",
+	"submodule add https://example.test/repo", "config user.name Reviewer", "config --global user.name Reviewer",
 	"config --add remote.origin.url somewhere", "config --unset user.name", "config --edit",
-	"config set user.name Worker", "gc", "update-ref refs/heads/main abc123",
+	"config set user.name Reviewer", "gc", "update-ref refs/heads/main abc123",
 ];
 
 const reads = [
@@ -24,7 +24,7 @@ const reads = [
 	"tag -l", "submodule status", "submodule summary", "--version", "--help",
 ];
 
-describe("worker git guard", () => {
+describe("reviewer git guard", () => {
 	for (const args of mutations) it(`blocks git ${args}`, () => {
 		assert.match(blockedGit(`git ${args}`) ?? "", /may not change git state/);
 	});
@@ -84,16 +84,16 @@ describe("worker git guard", () => {
 			"git branch --list -d topic", "git branch --list --delete topic", "git branch --list --move topic",
 			"git tag --list -d v1", "git tag --list --force v1", "git branch --contains -d topic",
 			"git tag --contains -d v1", "git tag --merged --delete v1", "git config --get --unset user.name",
-			"git config --list --add user.name Worker", "git config get --edit",
+			"git config --list --add user.name Reviewer", "git config get --edit",
 		]) assert.ok(blockedGit(command), command);
 	});
 	it("unwraps launchers recursively before inspecting git", () => {
 		for (const launcher of [
 			"time", "time -p", "time -f %C -o /tmp/time-log", "nohup", "nice -n 5", "nice --adjustment=5",
 			"ionice -c 2 -n 7", "setsid -f", "stdbuf -oL", "stdbuf --output L", "watch -n 1",
-			"command -p", "sudo -u worker", "sudo --user=worker", "timeout -k 1s -s TERM 3s", "/usr/bin/timeout.exe 3s",
+			"command -p", "sudo -u reviewer", "sudo --user=reviewer", "timeout -k 1s -s TERM 3s", "/usr/bin/timeout.exe 3s",
 			"timeout --foreground --kill-after=1s -- 3s", "xargs -0 -r", "xargs -n 1 -P 2", "xargs -I{}", "xargs --replace", "xargs --replace={}",
-			"env FOO=bar timeout 3s nice -n 2 sudo -u worker command -p",
+			"env FOO=bar timeout 3s nice -n 2 sudo -u reviewer command -p",
 		]) {
 			assert.ok(blockedGit(`${launcher} git add .`), launcher);
 			assert.equal(blockedGit(`${launcher} git status`), undefined, launcher);
@@ -114,7 +114,7 @@ describe("worker git guard", () => {
 	});
 	it("skips redirections and operands when locating git through assignments and launchers", () => {
 		for (const redirection of [
-			">/tmp/worker-git.log", "> /tmp/worker-git.log", ">>/tmp/log", ">> /tmp/log",
+			">/tmp/reviewer-git.log", "> /tmp/reviewer-git.log", ">>/tmp/log", ">> /tmp/log",
 			"</tmp/input", "< /tmp/input", "2>/tmp/log", "2> /tmp/log", "&>/tmp/log", "&> /tmp/log",
 			"&>>/tmp/log", "&>> /tmp/log", "2>&1", "2>& 1", "9>&8", "0<&3", "0<& 3", "2>&-",
 			"<<<input", "<<< input", "<<<'git reset --hard'",
@@ -251,7 +251,7 @@ describe("worker git guard", () => {
 	it("inspects find executable actions including chained launchers", () => {
 		for (const action of ["-exec", "-execdir", "-ok", "-okdir"]) for (const end of ["\\;", "+"]) {
 			assert.ok(blockedGit(`find . ${action} git add {} ${end}`));
-			assert.ok(blockedGit(`find . ${action} timeout 3s sudo -u worker git add {} ${end}`));
+			assert.ok(blockedGit(`find . ${action} timeout 3s sudo -u reviewer git add {} ${end}`));
 			assert.equal(blockedGit(`find . ${action} git status ${end}`), undefined);
 		}
 		assert.ok(blockedGit("find . -exec echo {} \\; -exec git add . \\;"));

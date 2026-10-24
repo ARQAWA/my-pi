@@ -180,7 +180,7 @@ const READ_ONLY = new Set(["status", "diff", "log", "show", "blame", "ls-files",
 const GLOBAL_VALUE = new Set(["-C", "--git-dir", "--work-tree", "--namespace"]);
 const GLOBAL_FLAG = new Set(["--no-pager", "-P", "--bare", "--no-replace-objects", "--literal-pathspecs", "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks"]);
 const executable = (word: string) => word.split(/[\\/]/).at(-1)?.toLowerCase().replace(/\.exe$/, "");
-const denied = (detail: string) => `Workers may not change git state: ${detail}. Ask the caller to run it.`;
+const denied = (detail: string) => `Reviewers may not change git state: ${detail}. Ask the caller to run it.`;
 const assignment = (word: string) => /^([A-Za-z_][A-Za-z_0-9]*)=/.exec(word);
 const dangerousEnv = (name: string) => /^GIT_(?:EXTERNAL_DIFF|SSH_COMMAND|EDITOR|CONFIG_(?:COUNT|KEY_.*|VALUE_.*|PARAMETERS))$/.test(name);
 
@@ -303,7 +303,7 @@ function inspect(words: string[], input: ShellInput, inherited: string[]): strin
 		}
 		// A script operand is an external file, not commands from stdin; do not inspect its arguments as flags.
 		if (script) return undefined;
-		if (input) return `Workers may not execute an unchecked ${input} shell without -c. Ask the caller to run it.`;
+		if (input) return `Reviewers may not execute an unchecked ${input} shell without -c. Ask the caller to run it.`;
 		return undefined;
 	}
 	if (name === "eval") return checkShell(args.join(" "), environment, input);
@@ -334,7 +334,7 @@ function inspect(words: string[], input: ShellInput, inherited: string[]): strin
 
 function checkShell(command: string, environment: string[], input?: ShellInput): string | undefined {
 	const { tokens, substitutions, unchecked } = shellWords(command);
-	if (unchecked) return `Workers may not execute an unchecked heredoc (${unchecked}). Ask the caller to run it.`;
+	if (unchecked) return `Reviewers may not execute an unchecked heredoc (${unchecked}). Ask the caller to run it.`;
 	for (const sub of substitutions) {
 		const reason = checkShell(sub, environment);
 		if (reason) return reason;

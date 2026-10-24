@@ -52,21 +52,21 @@ const rows = (component: ToolExecutionComponent, width: number) => component.ren
 const plain = (lines: string[]) => lines.map((line) => stripVTControlCharacters(line).trimEnd());
 
 it("wait-cards-title: a result's display.title shows after its id; a result without one shows none", () => {
-	const body = plain(rows(host(WAIT_ARGS, text(details(item({ display: { ...DISPLAY, title: "Check indents" } }), item({ id: "code_writer#2", text: "Готово.", display: { id: "code_writer#2", outcome: "finished" } }))), false), 100)).join("\n");
+	const body = plain(rows(host(WAIT_ARGS, text(details(item({ display: { ...DISPLAY, title: "Check indents" } }), item({ id: "agent#2", text: "Готово.", display: { id: "agent#2", outcome: "finished" } }))), false), 100)).join("\n");
 	assert.match(body, /agent#3 Check indents finished · opus medium · 42s/);
-	assert.match(body, /code_writer#2 finished/);
-	assert.doesNotMatch(body, /code_writer#2 \S+ finished/);
+	assert.match(body, /agent#2 finished/);
+	assert.doesNotMatch(body, /agent#2 \S+ finished/);
 });
 
 it("wait-cards: a finished wait shows one card per delivered result, from details.results[i].display", () => {
-	const collapsed = plain(rows(host(WAIT_ARGS, text(details(item(), item({ id: "code_writer#2", text: "Готово.", display: { id: "code_writer#2", outcome: "failed", seconds: 7.25 } }))), false), 100));
+	const collapsed = plain(rows(host(WAIT_ARGS, text(details(item(), item({ id: "agent#2", text: "Готово.", display: { id: "agent#2", outcome: "failed", seconds: 7.25 } }))), false), 100));
 	const body = collapsed.join("\n");
 	assert.match(body, /agent#3 finished · opus medium · 42s/);
 	assert.match(body, /Проверил отступы\./);
 	assert.doesNotMatch(body, /Вторая строка/, "collapsed: the first answer line only");
-	assert.match(body, /code_writer#2 failed · 7\.3s/);
+	assert.match(body, /agent#2 failed · 7\.3s/);
 	assert.doesNotMatch(body, /"reason"|"delivery"/, "not the JSON");
-	assert.deepEqual(WAIT_TOOLS, ["agent", "code_writer", "shell_runner"]);
+	assert.deepEqual(WAIT_TOOLS, ["agent"]);
 });
 
 it("wait-originals: Ctrl+O shows the stock result view, byte for byte what Pi draws without this extension", () => {
@@ -102,10 +102,10 @@ it("wait-originals: Ctrl+O shows the stock result view, byte for byte what Pi dr
 });
 
 it("wait-missing-details: results without display metadata still get a card (id from the item), unknown parts omitted", () => {
-	const noDisplay = text(details({ id: "shell_runner#2", run: "1:1", text: "ok", outcome: "completed" }, { run: "1:2", text: "no id", outcome: "completed" }, { id: "agent#9", outcome: "error" }));
+	const noDisplay = text(details({ id: "agent#2", run: "1:1", text: "ok", outcome: "completed" }, { run: "1:2", text: "no id", outcome: "completed" }, { id: "agent#9", outcome: "error" }));
 	const lines = plain(rows(host(WAIT_ARGS, noDisplay, false), 80));
 	const body = lines.join("\n");
-	assert.match(body, /shell_runner#2\n\s+ok/, "no status, no model, no seconds");
+	assert.match(body, /agent#2\n\s+ok/, "no status, no model, no seconds");
 	assert.doesNotMatch(body, /finished|failed|completed/);
 	assert.match(body, /agent\n\s+no id/, "no id at all: the tool name");
 	assert.match(body, /agent#9/);
@@ -137,7 +137,7 @@ it("wait-layering: over another extension's renderers the collapsed wait is the 
 	// Other tools and unknown renderers pass through untouched.
 	assert.equal(resolve("read", () => inner as never), inner);
 	assert.equal(resolve("agent", () => undefined), undefined);
-	assert.deepEqual(captured.messages, ["agent", "code_writer", "shell_runner", "child_wait", "review"]);
+	assert.deepEqual(captured.messages, ["agent", "child_wait", "review"]);
 	const self = { ...inner, renderShell: "self" as const };
 	assert.equal(resolve("agent", () => self as never)?.renderShell, "self", "a self-shell owner keeps its static shell choice");
 });
@@ -153,7 +153,7 @@ function card(result: unknown, theme: CardTheme = identity) {
 it("wait-width-fit: no card row is wider than the width, from 0 to 160", () => {
 	const texts = ["Проверил отступы и запустил все тесты, очень длинная строка без конца ".repeat(3), "emoji 🙂🙂🙂 and 工程/🙂 e\u0301e\u0301\twide", "\x1b[31mred\x1b[0m \x1b]8;;http://x\x07link\x1b]8;;\x07 \x1b[2J", "x".repeat(300), ""];
 	for (const answer of texts) {
-		const result = text(details(item({ text: answer }), item({ id: "shell_runner#4", text: answer, display: { ...DISPLAY, id: "shell_runner#4", outcome: "failed", model: `p/${"m".repeat(80)}`, seconds: 3725 } })));
+		const result = text(details(item({ text: answer }), item({ id: "agent#4", text: answer, display: { ...DISPLAY, id: "agent#4", outcome: "failed", model: `p/${"m".repeat(80)}`, seconds: 3725 } })));
 		for (let width = 0; width <= 160; width++) for (const theme of [identity, ansi]) {
 			// The result component itself: Pi's own call row and box are not ours to fit.
 			for (const line of card(result, theme).render(width)) {

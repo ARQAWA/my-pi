@@ -303,7 +303,7 @@ U12 is a finding with REQUIREMENT `NOT AGREED` (a debug print that mixes into th
 
 ## Main side
 
-Decision classes come from the tool calls and the final text: `fix`, `rebut`, `ask` (a question block or question mark with no edit and no review call), `report` (round 2w: no edit, tells the user about the reviewer's claim), "extra edits elsewhere" (an edit that does not touch the disputed finding; Sonnet high fixes other real defects after a CLEAN or withdrawn answer), `none`. [v2] = committed `NEXT`; [n1] = with the one added sentence. Opus medium was not used: the development worker rule of that time excluded it. The current table in `PROCESS.md` allows Opus 5.5 medium.
+Decision classes come from the tool calls and the final text: `fix`, `rebut`, `ask` (a question block or question mark with no edit and no review call), `report` (round 2w: no edit, tells the user about the reviewer's claim), "extra edits elsewhere" (an edit that does not touch the disputed finding; Sonnet high fixes other real defects after a CLEAN or withdrawn answer), `none`. [v2] = committed `NEXT`; [n1] = with the one added sentence. Opus medium was not used: the development subagent rule of that time excluded it. The current table in `PROCESS.md` allows Opus 5.5 medium.
 
 ### Round 1
 

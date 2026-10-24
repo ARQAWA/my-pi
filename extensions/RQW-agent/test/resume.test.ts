@@ -135,11 +135,8 @@ async function world(options: { subContextWindow?: number } = {}) {
 	await Promise.all([agentDir, cwd, sessions].map(dir => mkdir(dir)));
 	const hub = new Hub();
 	const main = scripted(hub, "main", "m"), sub = scripted(hub, "sub", "s", undefined, options.subContextWindow), deep = scripted(hub, "deep", "g");
-	// Workers pick anthropic/claude-haiku-5-5; the key is a fake runtime key and the provider is faux.
-	const worker = scripted(hub, "worker", "claude-haiku-5-5", "anthropic");
 	const runtime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
-	for (const p of [main, sub, deep, worker]) runtime.registerNativeProvider(p.faux.provider);
-	await runtime.setRuntimeApiKey("anthropic", "fake-key");
+	for (const p of [main, sub, deep]) runtime.registerNativeProvider(p.faux.provider);
 	const offered: { tools: unknown[]; review: boolean; policy?: string } = { tools: [], review: false };
 	const open = new Set<Run>();
 
@@ -198,7 +195,7 @@ async function world(options: { subContextWindow?: number } = {}) {
 		return run;
 	}
 	return {
-		root, cwd, hub, main, sub, deep, worker, launch, close, launchPersisted, offered,
+		root, cwd, hub, main, sub, deep, launch, close, launchPersisted, offered,
 		model: (p: Scripted, id: string) => `${p.faux.provider.id}/${id}`,
 		start: (run: Run, task = "FIRST", extra: Record<string, unknown> = {}) => run.call({ action: "start", system: SYSTEM, task, model: `${sub.faux.provider.id}/s`, thinking: "high", tools: ["read", "grep"], ...extra }),
 		cleanup: async () => { for (const run of open) await close(run); await rm(root, { recursive: true, force: true }); },
@@ -229,7 +226,7 @@ function assertFirstContext(request: Request, task = "FIRST") {
 	assert.deepEqual(request.system, [SYSTEM]);
 	assert.equal(request.model, "s");
 	assert.equal(request.reasoning, "high");
-	assert.deepEqual(request.tools, ["agent", "code_writer", "grep", "read", "shell_runner"]);
+	assert.deepEqual(request.tools, ["agent", "grep", "read"]);
 }
 /** A parent with child agent#1 whose first request is pending, shut down while it waits; returns the parent file. */
 async function interruptedChild(w: World, task = "FIRST", extra: Record<string, unknown> = {}) {
@@ -515,49 +512,49 @@ test("repeated interrupt and resume of the same id in one process: every resume 
 	} finally { await w.cleanup(); }
 });
 
-test("durable code_writer and shell_runner keep their ids and history and resume without a new user message", async () => {
+test("durable sibling agents keep their ids and history and resume without a new user message", async () => {
 	const w = await world();
 	try {
-		const roles = ["code_writer", "shell_runner"] as const;
+		const ids = ["agent#1", "agent#2"];
 		const first = await w.launchPersisted();
-		const holds = roles.map(() => hold(w.hub));
-		w.worker.queue.push(...holds.map(h => h.reply));
-		const call = (run: Run, role: string, params: Record<string, unknown>) => run.session.getToolDefinition(role)!
-			.execute("worker", params as never, undefined, undefined, run.session.extensionRunner.createContext())
-			.then(result => result.content.map(c => c.type === "text" ? c.text : "").join(""));
-		for (const [i, role] of roles.entries()) {
-			assert.equal(await call(first, role, { task: `WORK ${role}` }), `${role}#1 started`);
-			await w.hub.until(holds[i].entered, `${role} request pending`);
+		const holds = ids.map(() => hold(w.hub));
+		w.sub.queue.push(...holds.map(h => h.reply));
+		for (const [i, id] of ids.entries()) {
+			assert.equal(await w.start(first, `WORK ${id}`), `${id} started`);
+			await w.hub.until(holds[i].entered, `${id} request pending`);
 		}
-		const original = new Map(w.worker.requests.map(r => [r.texts[0], r]));
+		const original = new Map(w.sub.requests.map(r => [r.texts[0], r]));
 		assert.equal(original.size, 2);
 		await w.close(first);
 
 		const parent = await w.launch(first.file);
 		await settle();
-		assert.equal(w.worker.requests.length, 2, "reopening starts no worker");
-		const again = roles.map(() => hold(w.hub, "WORKER DONE"));
-		w.worker.queue.push(...again.map(h => h.reply));
-		const delivered = (role: string) => parent.session.messages.flatMap(m => m.role === "custom" && m.customType === role && typeof m.content === "string" ? [m.content] : []);
-		// Both are resumed before either finishes: a finished worker wakes main, and a main turn resumes unfinished children itself.
-		for (const [i, role] of roles.entries()) {
-			assert.match(await call(parent, role, { action: "resume", id: `${role}#1` }), new RegExp(`${role}#1`));
-			await w.hub.until(again[i].entered, `${role} resumed request`);
-			const request = w.worker.requests.at(-1)!, before = original.get(`WORK ${role}`)!;
-			assert.deepEqual(request.roles, ["user"]);
-			assert.deepEqual(request.texts, [`WORK ${role}`]);
-			assert.deepEqual([request.system, request.model, request.reasoning, request.tools], [before.system, "claude-haiku-5-5", "low", before.tools]);
-			await assert.rejects(call(parent, role, { action: "resume", id: `${role}#1` }), /active|running|already|cancel/i);
+		assert.equal(w.sub.requests.length, 2, "reopening starts no child");
+		const again = ids.map(id => hold(w.hub, `${id} DONE`));
+		w.sub.queue.push(...again.map(h => h.reply));
+		// Resume both before either finishes, so a completion wake cannot resume its sibling first.
+		for (const [i, id] of ids.entries()) {
+			assert.match(await parent.call({ action: "resume", id }), new RegExp(id));
+			await w.hub.until(again[i].entered, `${id} resumed request`);
+			const request = w.sub.requests.at(-1)!, before = original.get(`WORK ${id}`)!;
+			assertFirstContext(request, `WORK ${id}`);
+			assert.deepEqual([request.system, request.model, request.reasoning, request.tools], [before.system, before.model, before.reasoning, before.tools]);
+			await assert.rejects(parent.call({ action: "resume", id }), /active|running|already|cancel/i);
 		}
-		for (const [i, role] of roles.entries()) {
+		for (const [i, id] of ids.entries()) {
 			again[i].release();
-			await w.hub.until(() => delivered(role).length === 1, `${role} delivery`);
-			assert.equal(delivered(role)[0], `[${role}#1] WORKER DONE`);
+			await w.hub.until(() => parent.delivered().includes(`[${id}] ${id} DONE`), `${id} delivery`);
+			assert.equal(parent.delivered().filter(text => text === `[${id}] ${id} DONE`).length, 1);
 		}
 		await settle();
-		assert.equal(w.worker.requests.length, 4, "each worker made exactly one resumed request");
+		assert.equal(w.sub.requests.length, 4, "each child made exactly one resumed request");
 		const histories = await childHistories(first.file);
-		assert.deepEqual(histories.map(h => h.file.includes("code_writer-1") ? "code_writer" : "shell_runner").sort(), ["code_writer", "shell_runner"]);
+		assert.equal(histories.length, 2, "each sibling keeps its own history");
+		const tasks = histories.flatMap(h => userMessages(h.entries).map(e => {
+			const content = e.message.content;
+			return typeof content === "string" ? content : content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+		}));
+		assert.deepEqual(tasks.sort(), ["WORK agent#1", "WORK agent#2"]);
 		for (const h of histories) assert.equal(userMessages(h.entries).length, 1);
 		assert.deepEqual(parent.errors, []);
 	} finally { await w.cleanup(); }
@@ -702,6 +699,38 @@ for (const loss of ["missing", "empty"] as const) test(`${loss === "empty" ? "an
 const savedRecord = (manager: SessionManager, id: number) => manager.getEntries()
 	.filter((e: any) => e.type === "custom" && e.customType === "rqw-agent-child" && e.data.id === id).at(-1) as any;
 
+test("an unknown persisted kind is ignored without spawning or deleting its saved data", async () => {
+	const w = await world();
+	try {
+		const first = await w.launchPersisted();
+		w.sub.queue.push(answer("DONE"));
+		await w.start(first);
+		await w.hub.until(() => first.delivered().length === 1, "the known child's delivery");
+		await w.hub.until(() => w.main.requests.length === 2, "the completion wake");
+		await w.close(first);
+
+		const manager = SessionManager.open(first.file, dirname(first.file), w.cwd);
+		const { result: _result, ...saved } = savedRecord(manager, 1).data;
+		const unknown = { ...saved, kind: "unknown-kind", id: 77, state: "running", task: "UNKNOWN TASK" };
+		const history = await readFile(unknown.sessionFile, "utf8");
+		manager.appendCustomEntry("rqw-agent-child", unknown);
+		const persisted = savedRecord(manager, 77);
+		const before = w.sub.requests.length;
+
+		const parent = await w.launch(first.file);
+		await parent.command("resume-agents");
+		await parent.session.prompt("continue");
+		await settle();
+		await assert.rejects(parent.call({ action: "resume", id: "agent#77" }), /Unknown agent id: agent#77/);
+		assert.equal(w.sub.requests.length, before, "the unknown kind never starts inference");
+		assert.deepEqual(savedRecord(parent.session.sessionManager, 77), persisted, "the ignored entry remains unchanged in the session");
+		const entries = (await readFile(first.file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
+		assert.deepEqual(entries.find(entry => entry.id === persisted.id), persisted, "the original entry remains on disk");
+		assert.equal(await readFile(unknown.sessionFile, "utf8"), history, "the referenced child history remains unchanged on disk");
+		assert.deepEqual(parent.errors, []);
+	} finally { await w.cleanup(); }
+});
+
 test("saved history above the compaction threshold is summarized before the resumed request, with no synthetic message", async () => {
 	const w = await world({ subContextWindow: 20000 });
 	try {
@@ -736,7 +765,7 @@ test("saved history above the compaction threshold is summarized before the resu
 		assert.deepEqual(actual.system, [SYSTEM]);
 		assert.equal(actual.model, "s");
 		assert.equal(actual.reasoning, "high");
-		assert.deepEqual(actual.tools, ["agent", "code_writer", "grep", "read", "shell_runner"]);
+		assert.deepEqual(actual.tools, ["agent", "grep", "read"]);
 		assert.equal(actual.roles[0], "user");
 		assert.ok(actual.texts[0].includes("SUMMARY"), "the summary opens the context");
 		assert.equal(actual.texts.at(-1), "PENDING");
@@ -890,8 +919,13 @@ test("one bad saved child does not block the healthy one: bad is diagnosed, neve
 		assert.deepEqual(w.sub.requests[2].texts, ["GOOD"]);
 		assert.match(JSON.stringify(await statusOf(parent, "agent#2")), /missing-model|error|recover|unavailable|cannot/i);
 
+		w.sub.queue.push(answer("THIRD DONE"));
 		assert.equal(await w.start(parent, "THIRD"), "agent#3 started");
 		await w.hub.until(() => w.sub.requests.length === 4, "the new child's request");
+		// Delivery starts a parent turn; wait for that wake to settle before sending owner prompts.
+		await w.hub.until(() => parent.delivered().includes("[agent#3] THIRD DONE")
+			&& w.main.requests.length === 3 && parent.session.isIdle, "both completion wakes have settled");
+		assert.equal(w.sub.requests.length, 4, "the new child completed without retrying the bad sibling");
 		await parent.session.prompt("again");
 		await parent.session.prompt("once more");
 		await parent.command("resume-agents");
