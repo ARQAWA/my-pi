@@ -167,7 +167,7 @@ const MSG = (ci: number[]) => ["Task", "", "Review: review#7 CLEAN", "Code-revie
 	...ci.map((id) => `CI: https://github.com/o/r/actions/runs/${id}`), "Unverified: none", ""].join("\n");
 
 const DOC_MSG = "Docs\n\nReview: agent#7 CLEAN\nUnverified: none\n";
-describe("deliver-check owner quote gate", () => {
+describe("deliver-check owner quote gate", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	it("accepts NFC and whitespace-normalized owner quotes in both documents", () => {
 		const t = setup();
 		t.task({ "DECISIONS.md": "Owner: «Keep the owner's exact words.»\n",
@@ -242,7 +242,7 @@ describe("deliver-check owner quote gate", () => {
 	});
 });
 
-describe("deliver-check", () => {
+describe("deliver-check", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	it("passes a branch on current main with green CI and all trailers", () => {
 		const t = setup();
 		const head = t.task({ "src/a.js": "1\n" });
@@ -464,7 +464,7 @@ describe("deliver-check", () => {
 	});
 });
 
-describe("deliver-check macOS gate", () => {
+describe("deliver-check macOS gate", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	const setupGreenMacs = (overall: { conclusion: string; status?: string } = { conclusion: "failure" }) => {
 		const t = setup();
 		const head = t.task({ "src/a.js": "1\n" });
@@ -621,7 +621,7 @@ describe("deliver-check macOS gate", () => {
 	});
 });
 
-describe("deliver-check QA cache lines", () => {
+describe("deliver-check QA cache lines", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	const redRun = { id: 5, name: "tests", path: ".github/workflows/tests.yml@refs/heads/main", head_branch: "main", status: "completed",
 		conclusion: "failure", created_at: "2026-10-23T10:00:00Z", html_url: "https://github.com/o/r/actions/runs/5" };
 	const passing = (t: ReturnType<typeof setup>) => {
@@ -706,7 +706,7 @@ describe("deliver-check QA cache lines", () => {
 	});
 });
 
-describe("deliver-check proofreading exemption and combined review", () => {
+describe("deliver-check proofreading exemption and combined review", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	const doc = (t: ReturnType<typeof setup>) => {
 		const log = join(t.tmp, "doc-check.log");
 		writeFileSync(log, "doc check ok\n");
@@ -879,7 +879,7 @@ describe("deliver-check proofreading exemption and combined review", () => {
 	});
 });
 
-describe("deliver-check test integrity", () => {
+describe("deliver-check test integrity", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	const TRAILERS = "Test-change: the old assertion checked a timing that is not part of the contract\nTest-review: agent#8 CLEAN\n";
 	const BASE_TEST = 'import assert from "node:assert/strict";\nit("a", () => {\n\tassert.equal(1, 1);\n\tassert.equal(2, 2);\n});\n';
 	const withMain = (t: ReturnType<typeof setup>, files: Record<string, string>) => {

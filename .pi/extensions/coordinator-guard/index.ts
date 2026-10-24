@@ -5,13 +5,20 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractOwnerMessages, findNonVerbatimQuotes } from "../../../scripts/owner-quotes.mjs";
-import { canonical, isInside, protectedRoots, resolveToolPath } from "./paths.ts";
+import { acquireLock, LOCK_NAME, processStart, releaseLock } from "./lock.ts";
+import { canonical, gitCommonDir, isInside, protectedRoots, resolveToolPath } from "./paths.ts";
 import { describePairs, isAllowed, loadRules, OPUS_MODEL, restrictionText, type Loaded, type Rules } from "./rules.ts";
 
 const LINK = "PROCESS.md#worker-models";
 const QUOTED_FIELDS = ["task", "role", "system"] as const;
 const FIXED_WORKERS = new Set(["code_writer", "shell_runner"]);
 const SECTION = "coordinator_rules";
+const NOTE_SECTION = "coordinator_note";
+// Pi builds a new instance of this extension (and may load the module afresh) on /new, /resume, /fork and /reload,
+// so what must outlive them lives on globalThis: the role this chat chose at its start, and this process's start time.
+const SHARED = Symbol.for("my-pi.coordinator-guard.shared");
+type Shared = { role?: "coordinator" | "direct"; holderPid?: number; start?: string | null };
+const shared = (): Shared => ((globalThis as Record<symbol, unknown>)[SHARED] ??= {}) as Shared;
 
 /** `now` is the clock in ms; tests inject it, the default is the real time. */
 export type GuardOptions = { root: string; processFile?: string; now?: () => number };
@@ -51,6 +58,12 @@ export function promptSection(loaded: Loaded, processFile: string, now: number =
 	].join("\n");
 }
 
+/** The short system note of a session that is not the coordinator: the coordinator rules do not bind it. */
+export function directNote(holderPid: number | undefined): string {
+	const who = holderPid === undefined ? "Another Pi session" : `Another Pi session (pid ${holderPid})`;
+	return `${who} holds the coordinator lock of this repository, so this session is a normal direct agent and stays one for its whole life. The coordinator rules of AGENTS.md and PROCESS.md (delegate all work to subagents, allowed model pairs, no direct edits, owner-quote checks) do not apply here: work with your own tools as the user asks.`;
+}
+
 function quoteProblem(input: Record<string, unknown>, ctx: ExtensionContext): string | undefined {
 	const owner = extractOwnerMessages(ctx.sessionManager.getEntries());
 	for (const field of QUOTED_FIELDS) {
@@ -81,16 +94,65 @@ export function createCoordinatorGuard(options: GuardOptions) {
 	const clock = options.now ?? Date.now;
 
 	return function coordinatorGuard(pi: ExtensionAPI) {
-		pi.on("session_start", (_event, ctx) => {
-			const loaded = loadRules(processFile);
-			if (ctx.hasUI) ctx.ui.setStatus("coordinator-guard", loaded.ok ? "coordinator-guard on" : "coordinator-guard: rules unreadable");
+		// Enforcing until session_start shows another live process holds the lock; a missing lock or a failed lock
+		// operation also keeps the guard on. The role is chosen once, when a chat starts: a chat that began as a
+		// normal direct agent stays normal through /new, /resume, /fork and /reload, even after the coordinator quits;
+		// only a chat started afterwards takes the lock (see SHARED above for how it survives the new instance).
+		const saved = shared();
+		let coordinator = saved.role !== "direct";
+		let holderPid = saved.holderPid;
+		const common = gitCommonDir(root);
+		// The lock is macOS only; elsewhere there is no lock and the guard works as it did before it.
+		const lockFile = common && process.platform === "darwin" ? join(common, LOCK_NAME) : undefined;
+		const self = () => ({ pid: process.pid, start: (shared().start ??= processStart(process.pid) ?? null) ?? undefined });
+
+		pi.on("session_start", (event, ctx) => {
+			const reason = (event as { reason?: string }).reason ?? "startup";
+			const state = shared();
+			let notice: string | undefined;
+			if (lockFile && reason !== "startup" && state.role === "direct") {
+				coordinator = false; // a normal chat keeps its role; the lock is not touched
+			} else if (lockFile) {
+				try {
+					const got = acquireLock(lockFile, { ...self(), sessionId: ctx.sessionManager.getSessionId() });
+					coordinator = got.held;
+					holderPid = got.held ? undefined : got.holder?.pid;
+					state.role = coordinator ? "coordinator" : "direct";
+					state.holderPid = holderPid;
+					if (got.held && (got.fresh || reason === "startup")) notice = "coordinator-guard: this session is the coordinator (exclusive lock taken).";
+					else if (!got.held) notice = `coordinator-guard: another session (pid ${holderPid ?? "unknown"}) is the coordinator; this chat is a normal direct agent. Already-open normal chats stay normal when the coordinator quits; only a chat started afterwards takes the coordinator role.`;
+				} catch (error) {
+					coordinator = true;
+					notice = `coordinator-guard: coordinator lock failed (${(error as Error).message}); guard stays on.`;
+				}
+			}
+			if (!ctx.hasUI) return;
+			if (!coordinator) ctx.ui.setStatus("coordinator-guard", "coordinator-guard: direct agent");
+			else {
+				const loaded = loadRules(processFile);
+				ctx.ui.setStatus("coordinator-guard", loaded.ok ? "coordinator-guard on" : "coordinator-guard: rules unreadable");
+			}
+			if (notice) ctx.ui.notify(notice, "info");
+		});
+
+		// Only a quit releases the lock (Ctrl+D, double Ctrl+C, /quit and the SIGTERM/SIGHUP path all end in
+		// session_shutdown with reason "quit"); /new, /resume, /fork and /reload shut down with another reason.
+		pi.on("session_shutdown", (event) => {
+			if ((event as { reason?: string }).reason !== "quit") return;
+			if (lockFile) releaseLock(lockFile, self());
+			shared().role = undefined;
 		});
 
 		pi.on("before_agent_start", (event) => {
+			if (!coordinator) {
+				event.systemPromptOptions.sections[NOTE_SECTION] = directNote(holderPid);
+				return;
+			}
 			event.systemPromptOptions.sections[SECTION] = promptSection(loadRules(processFile), processFile, clock());
 		});
 
 		pi.on("tool_call", (event, ctx) => {
+			if (!coordinator) return undefined;
 			const name = event.toolName;
 			const input = event.input as Record<string, any>;
 

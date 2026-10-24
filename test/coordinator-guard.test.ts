@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { childInstruction, createCoordinatorGuard, ROOT } from "../.pi/extensions/coordinator-guard/index.ts";
 import { parseRules } from "../.pi/extensions/coordinator-guard/rules.ts";
 
+describe("coordinator-guard local development tooling", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 const RULES = {
 	workerModels: {
 		simple: [["anthropic/claude-sonnet-5-5", "medium"], ["openai-codex/gpt-6.1-sol", "low"]],
@@ -51,7 +52,7 @@ function load(entries: unknown[] = [], now: number = UNTIL) {
 	const status: Record<string, string | undefined> = {};
 	const pi = { on: (name: string, h: Handler) => void handlers.set(name, [...(handlers.get(name) ?? []), h]) };
 	createCoordinatorGuard({ root: WT, now: () => now })(pi as never);
-	const ctx = { cwd: WT, hasUI: true, ui: { setStatus: (k: string, v?: string) => void (status[k] = v) }, sessionManager: { getEntries: () => entries } };
+	const ctx = { cwd: WT, hasUI: true, ui: { setStatus: (k: string, v?: string) => void (status[k] = v), notify: () => {} }, sessionManager: { getEntries: () => entries, getSessionId: () => "unit" } };
 	const call = (toolName: string, input: Record<string, unknown>) => {
 		const event = { type: "tool_call", toolName, toolCallId: "t1", input };
 		let result: any;
@@ -438,4 +439,5 @@ describe("coordinator-guard: placement", () => {
 		assert.equal(rules.fixedWorkers, RULES.fixedWorkers);
 		assert.deepEqual({ until: rules.temporaryOpusRestriction.until, arbiterTitlePrefix: rules.temporaryOpusRestriction.arbiterTitlePrefix }, RULES.temporaryOpusRestriction);
 	});
+});
 });

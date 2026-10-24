@@ -161,8 +161,27 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «Да, он как техлид/тимлид, координатор, но не исполнитель самостоятельный.»
   Reason: orchestration and acceptance stay with Main, execution with worker subagents.
   Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution). Since: `4d8c004`.
-
-
+- **Exclusive coordinator** `[D-WORK-EXCLUSIVE]`. Only the Pi session holding `coordinator.lock` in the repository's
+  Git common directory is the coordinator. Other chats work directly as normal agents, without coordinator blocking
+  or coordinator rules. Owner (`16-27-59:4710`):
+  «Короче, надо как-то супер кратко замутить, супер просто и максимально простым способом, без заморочек. Как сделать так, чтобы координатор был эксклюзивный? Допустим, ты сейчас работаешь координатором, а я хочу в соседней папочке, в соседнем чатике задать какие-то вопросы по репозиторию. Мне надо, чтобы агент открылся в обычном режиме, не в режиме координатора, а он открывает каждый чат в режиме координатора. А мне нужно как-то сделать так, что если один координатор уже работает, то второй, третий и четвёртый уже не будут больше координатором. Понимаешь идею?»
+  Reason: one coordinator per repository, including its worktrees, without a manual mode switch. Atomic acquisition
+  records the process ID, process start identity and session ID; dead-process or reused-PID locks can be reclaimed
+  using `ps`, including after terminal closure or forced termination. The lock is macOS-only, following
+  [local development scope](#work-policy), and is not shipped. Shutdown releases ownership; `/new` and `/resume` keep it.
+  Already-open normal chats stay normal after release; only a newly started chat can acquire the free lock.
+  Each session announces coordinator or normal mode at start.
+  Carriers: `.pi/extensions/coordinator-guard/`, `AGENTS.md`, [PROCESS.md](PROCESS.md#isolated-parallel-execution).
+- **Local development scope** `[D-WORK-LOCAL-MAC]`. Repository-work tooling targets only the owner's macOS laptop:
+  repo-local `.pi/extensions/`, including `coordinator-guard` and `qa-status`, and local agent scripts such as
+  `deliver-check` and `owner-quotes`. No Windows or Linux handling or cross-platform tests are required for them;
+  their tests run only on macOS and explicitly skip elsewhere. Shipped `RQW-*` extensions and `pcli-vscode` retain
+  their cross-platform contract, and GitHub Actions scripts retain their runner support. Existing development
+  platform code is not refactored by this change. Owner (`16-27-59:4749`, `16-27-59:4753`):
+  «это только под мак никакой винды это локальная история она только тут работает»
+  «мы нигде кроме этого ноута это не запускаем, все что КАСАЕТСЯ РАБОТЫ В ЭТОМ РЕПО - только локальная тема»
+  Reason: local orchestration has no other deployment target; product and CI portability remain separate.
+  Carriers: [PROCESS.md](PROCESS.md#isolated-parallel-execution), local development test suites.
 - **Development worker models** `[D-WORK-MODELS]`. Rule for developing this repository with agents only, as the
   owner confirmed; it is not a product model setting and not a rule for the rest of Pi. Three task classes:
   ordinary, complex, and the hardest and most important. The classes, their model and reasoning pairs and the

@@ -7,6 +7,7 @@ Before every task, read and follow [PROCESS.md](PROCESS.md). Restore it after co
 continuing. This is mandatory lazy loading, not optional background reading. Give subagents the relevant process
 rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
 Coordinator personal-work objections and explicit overrides: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
+Coordinator rules bind only the session that holds the repository's `coordinator.lock`; every other session is a normal direct agent.
 At most three tasks in active execution follow the owner's priority queue; tasks waiting for CI, review, the merge queue or
 the owner hold no slot, and a fourth lane for tests only is outside the limit; pause is `agent` `interrupt`, resume is `agent` `send`, with no pause files:
 [PROCESS.md](PROCESS.md#task-pipeline).

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, it } from "node:test";
+import { after, describe, it } from "node:test";
 import { networkAttempts } from "./no-network.mjs";
 
 const { fauxAssistantMessage, fauxProvider, fauxToolCall } = await import("@earendil-works/pi-ai");
@@ -13,6 +13,7 @@ const { createAgentSession, createCodemodeExtension, DefaultResourceLoader, Mode
 	await import("@earendil-works/pi-coding-agent");
 const { Type } = await import("typebox");
 
+describe("coordinator-guard Pi local development tooling", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 const ROOT = join(import.meta.dirname, "..");
 // A copy of the checkout parts the guard needs, so its root (three levels above its file) is this fixture.
 const TMP = realpathSync(mkdtempSync(join(tmpdir(), "coordinator-guard-pi-")));
@@ -119,4 +120,5 @@ it("a codemode tools.agent call with a disallowed pair is blocked; an allowed on
 		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
 		session.dispose();
 	}
+});
 });

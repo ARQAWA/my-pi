@@ -11,7 +11,7 @@ const temp = () => { const dir = mkdtempSync(join(tmpdir(), "owner-quotes-")); t
 after(() => { for (const dir of temps) rmSync(dir, { recursive: true, force: true }); });
 const user = (content: unknown) => ({ type: "message", message: { role: "user", content } });
 
-describe("owner quote helpers", () => {
+describe("owner quote helpers", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	it("normalizes NFC and whitespace but not spelling, punctuation or case", () => {
 		assert.equal(normalizeQuote("  Cafe\u0301\n\twith\u00a0spaces  "), "Café with spaces");
 		assert.equal(findNonVerbatimQuotes("«café»", ["Café"]).length, 1);

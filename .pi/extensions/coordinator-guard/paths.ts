@@ -47,6 +47,20 @@ function readGitLink(file: string, base: string): string | undefined {
 	return m ? resolve(base, m[1]) : undefined;
 }
 
+/** The git common dir of a checkout (the `.git` folder of the main checkout, shared by its worktrees), read from files. */
+export function gitCommonDir(root: string): string | undefined {
+	try {
+		const dotGit = join(root, ".git");
+		if (statSync(dotGit).isDirectory()) return dotGit;
+		const gitdir = readGitLink(dotGit, root);
+		if (!gitdir) return undefined;
+		const commondir = join(gitdir, "commondir");
+		return existsSync(commondir) ? resolve(gitdir, readFileSync(commondir, "utf8").trim()) : gitdir;
+	} catch {
+		return undefined;
+	}
+}
+
 /**
  * The protected roots for a checkout `root` (the folder that holds `.pi/extensions/coordinator-guard`). Git is read from
  * its files, not by running git: `.git` as a folder (main checkout) or as a `gitdir:` file (worktree).
@@ -55,16 +69,7 @@ export function protectedRoots(root: string): string[] {
 	const roots = new Set<string>([root]);
 	let main = root;
 	try {
-		const dotGit = join(root, ".git");
-		let common: string | undefined;
-		if (statSync(dotGit).isDirectory()) common = dotGit;
-		else {
-			const gitdir = readGitLink(dotGit, root);
-			if (gitdir) {
-				const commondir = join(gitdir, "commondir");
-				common = existsSync(commondir) ? resolve(gitdir, readFileSync(commondir, "utf8").trim()) : gitdir;
-			}
-		}
+		const common = gitCommonDir(root);
 		if (common) {
 			if (basename(common) === ".git") main = dirname(common);
 			roots.add(main);

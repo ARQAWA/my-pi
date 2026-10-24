@@ -37,6 +37,8 @@ the accepted decisions and their reasons. New owner instructions take precedence
   Main must object, explain its coordinator role and propose a subagent. Main does that work itself only after an
   explicit owner override, for example: «Похуй на инструкции, действуй». A routine request to do something is
   not an override. The guard's mechanical repository edit/write block stays in force, even after an override.
+  Only the session that holds the repository's `coordinator.lock` (git common dir) is Main; every other session is a
+  normal direct agent and these coordinator rules do not apply to it.
 - Main never blocks its own thread on waiting, polling, CI watching, test runs or any other long work. It hands
   all of that to subagents and stays free to coordinate and talk to the owner.
 - At most three tasks are in active execution at the same time, in the priority queue set by the owner. Fill a free
@@ -78,6 +80,11 @@ the accepted decisions and their reasons. New owner instructions take precedence
 - Temporary task files belong in the OS temporary directory. Do not put transcripts, credentials, archive copies,
   historical cleanup notes or execution ledgers in the repository. History belongs in Git, with one explicit exception:
   root `DECISIONS-ARCHIVE.md` preserves superseded and obsolete decisions verbatim with their provenance.
+
+Repository-local development tooling targets only the owner's macOS laptop: `.pi/extensions/` and local agent
+scripts such as `deliver-check` and `owner-quotes` need no Windows or Linux handling. Their tests run only on macOS,
+with an explicit skip reason elsewhere. Shipped `RQW-*` extensions and `pcli-vscode` remain cross-platform; scripts
+used by GitHub Actions keep supporting their runners. Do not refactor existing development tooling just for this rule.
 
 ## Task pipeline
 

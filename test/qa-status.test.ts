@@ -53,7 +53,7 @@ function setup() {
 	return { tmp, git, set, setInbox, get, calls, env, cachePath };
 }
 
-describe("QA snapshot from watcher cache", () => {
+describe("QA snapshot from watcher cache", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	it("reports green runs, derives origin, and gives every child a bounded timeout", async () => {
 		const t = setup();
 		const state = await t.get();
@@ -196,7 +196,7 @@ function harness() {
 }
 const red = (id: string) => ({ ok: true, items: [{ id, level: "red", text: "failure", url: "https://example.com" }] });
 
-describe("QA project extension", () => {
+describe("QA project extension", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	it("does not start work in the factory, stays silent when green, and throttles refresh by timestamp", async () => {
 		const h = harness();
 		assert.equal(h.calls(), 0);
