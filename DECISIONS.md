@@ -1813,15 +1813,21 @@ in the approved proposal (not stored in this repository). The loop reads only pu
   Since: `3bdac4f`.
 - **Awareness through the shared watcher** `[D-QA-STATUS]`. Owner: «Новую задачу ставишь, и чтобы автоматически тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть постоянный, перманентно висящий процесс». Later owner answer (`16-27-59:5060`, entry `46a9e546`): «Окей, насчёт одного скрипта раз в минуту я согласен.» Decision: no timer or local cron; the watcher of [D-PIPELINE-CI-WATCHER] is started on demand and shared. `scripts/qa-status.mjs` (`npm run qa-status`, for subagents) and the dev-only, repo-local `.pi/extensions/qa-status/` read its file instead of making their own `gh` rounds; the extension shows a message on session start and on a changed red state, and `/qa` shows the full view. Main reads the status at task start, tells the owner in one line about a red scheduled `main` and triages it. Reason: the extension is useless outside this repository and must not ship in the package, so it is not an `RQW-*` extension and is not in `pi.extensions`; an unreadable or stale cache is reported as unavailable, never as green. Carrier: `.pi/extensions/qa-status/index.ts`, `scripts/qa-status.mjs`, `scripts/ci-watch.mjs`, [PROCESS.md](PROCESS.md#quality-control-loop).
   Since: `3bdac4f`.
+- **Scoped test-review profile** `[D-QA-TEST-REVIEWER]`. Owner: «они должны быть на Sol 6.1 Low, должны работать супербыстро и суперчётко» and «без перфекционизма, без удушья, без жёсткой ёбки».
+  Source: the owner's test/code-review prompt request in this repository session, 2026-10-24.
+  Decision: use the project Codex TOML profile `test-reviewer` for read-only, bounded test review, inspecting every
+  scoped line and reporting real detection gaps or regressions by severity, without invented requirements or nits.
+  Reason: tests verify requirements, not a green badge; explicit scope keeps review focused.
+  Carrier: `.pi/agents/test-reviewer.toml`; invocation and trigger: [PROCESS.md](PROCESS.md#quality-control-loop).
 - **Test integrity** `[D-QA-TEST-INTEGRITY]`. Owner: «нужно именно обеспечивать качество, а не фальсифицировать работу, чтобы тесты были зелёные. Это супер критически важно, потому что эти тесты и вся наша работа — это всё обеспечение контроля качества.» and «Можно даже ревьюера поднимать, который перепроверяет тесты.» Decision: before any fix Main records a triage
   class (product bug, test bug, infra, drift) with evidence; a fixed list of weakening changes is forbidden without
   proof; a fix needs red-before/green-after in CI logs, and an intermittent one repeat runs with (1-p)^n < 0.05 (generic repeat harness `codemode-stress.yml`).
-  A reviewer subagent with `.agents/reviewers/test-integrity.md` as its whole `system` checks only a test or workflow
+  A reviewer subagent with `agent_type: "test-reviewer"` checks only a test or workflow
   change that `deliver-check` mechanically detects as weakening a check (skip, todo, retry, raised timeout,
   continue-on-error, fewer assertions), not every QA fix ([D-PIPELINE-TEST-LANE]); the gate then requires the trailers
   `Test-change:` and `Test-review: agent#N CLEAN` (exact conditions: [PROCESS.md](PROCESS.md#quality-control-loop)). Reason: the aim is a working
   product, not a green badge; a weakened assertion turns a real failure into silence. Carrier: `PROCESS.md`,
-  `.agents/reviewers/test-integrity.md`, `scripts/deliver-check.mjs`.
+  `.pi/agents/test-reviewer.toml`, `scripts/deliver-check.mjs`.
   Since: `3bdac4f`.
 - **Daily Codex oracle** `[D-QA-CODEX-SCHEDULE]`. `.github/workflows/codex-oracle.yml` runs daily on `main` at
   `03:43 UTC` with the normal pinned oracle, capture integrity and native differential checks. Manual diagnostic

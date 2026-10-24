@@ -135,8 +135,8 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   `--refresh-inbox` computes that with `scripts/qa-inbox-snapshot.mjs`.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all. Its `qa-status` message has a compact card (`card.ts`); Ctrl+O shows every line with its link.
-- `.agents/reviewers/test-integrity.md`: the read-only reviewer prompt for mechanically detected weakened tests, used
-  through `agent` as the whole `system`.
+- `.pi/agents/test-reviewer.toml`: the project test-review profile, used through `agent` with
+  `agent_type: "test-reviewer"`; trigger and evidence rules: [PROCESS.md](PROCESS.md#quality-control-loop).
 - `.agents/roles/test-fixer.md`: the short role of the test-fix lane agents, passed as the `role` of an `agent`, not as
   the whole `system` ([PROCESS.md](PROCESS.md#task-pipeline)).
 - `extensions/RQW-thinking/`: extension 16, hides main-transcript thinking text and the hidden-thinking label,

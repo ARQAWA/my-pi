@@ -217,7 +217,7 @@ for (const w of weak) {
 	const missing = [];
 	if (!hasTestChange) missing.push('"Test-change: <text>"');
 	if (!hasTestReview) missing.push('"Test-review: agent#N CLEAN"');
-	if (missing.length) fail(`test integrity: ${w.file} ${w.rules.join("; ")}: missing trailer ${missing.join(" and ")}`);
+	if (missing.length) fail(`test integrity: ${w.file} ${w.rules.join("; ")}: missing trailer ${missing.join(" and ")}; review with agent_type: "test-reviewer"`);
 }
 const qaIssues = [];
 for (const l of lines.filter((x) => x.startsWith("QA:"))) {

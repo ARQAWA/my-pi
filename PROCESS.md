@@ -376,7 +376,7 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
   When this review contract changes, validate it against known defective, corrected and missing-source examples before
   claiming improved detection; these checks are not extra rounds in ordinary task reviews.
 - Code-review, test-integrity and `Combined-review` findings (`.agents/reviewers/code.md`,
-  `.agents/reviewers/test-integrity.md`; the combined reviewer also uses `code.md`): admit
+  `agent_type: "test-reviewer"`; the combined reviewer also uses `code.md`): admit
   real evidenced defects, not taste or unlikely hypotheticals. Check findings rather than accepting them just because a
   quote exists. Main validates real findings and routes admitted fixes to subagents in one batch; explain rejected
   findings with evidence. Subagents recheck affected parts and checks, not untouched parts. The result-review quote and
@@ -453,9 +453,10 @@ needs a fresh owner decision ([D-PIPELINE-FLAKE-SKIP](DECISIONS.md#task-pipeline
 
 **Test-integrity review.** For every test or workflow change that weakens a check, as `deliver-check` mechanically
 detects it (`skip`, `todo`, retry, raised timeout, `continue-on-error`, fewer assertions), and not for every QA fix, a
-reviewer subagent runs with `.agents/reviewers/test-integrity.md` as its whole
-`system`, model and reasoning from the [subagent table](#subagent-models), in parallel with the result and code reviews.
-Its brief has the issue, the triage claim, the diff and the red/green and repeat evidence.
+reviewer subagent runs through `agent` with `agent_type: "test-reviewer"`, in parallel with the result and code reviews.
+The project profile `.pi/agents/test-reviewer.toml` owns its prompt and Sol 6.1 low defaults.
+Its brief names the exact review scope and supplies the issue, the triage claim, the diff and the red/green and repeat
+evidence when applicable; without an inbox issue, supply `Test-change:` and its supporting contract and evidence.
 
 **Trailers** of the squash message. `QA: #N` marks a fix of inbox issue N. `deliver-check` requires
 `Test-change: <why the old test was wrong or what it proves now>` and `Test-review: agent#N CLEAN` when the

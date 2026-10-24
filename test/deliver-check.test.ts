@@ -664,6 +664,7 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 		assert.match(bad.out, /FAIL test integrity: test\/a\.test\.ts adds skip\/todo: missing trailer "Test-change: <text>" and "Test-review: agent#N CLEAN"/);
 		const partial = t.run(MSG() + "Test-change: why\n");
 		assert.match(partial.out, /FAIL test integrity: test\/a\.test\.ts adds skip\/todo: missing trailer "Test-review: agent#N CLEAN"/);
+		assert.match(partial.out, /review with agent_type: "test-reviewer"/);
 		const good = t.run(MSG() + TRAILERS);
 		assert.equal(good.code, 0, good.out);
 		assert.match(good.out, /test integrity: 1 weakening file\(s\) accepted/);
