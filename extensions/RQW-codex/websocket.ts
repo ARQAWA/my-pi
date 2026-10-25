@@ -348,7 +348,11 @@ class Connection implements CodexSocket {
 		ws.on("message", (data: Buffer | string, isBinary: boolean) => this.onMessage(data, isBinary));
 		ws.on("error", (error: Error) => {
 			if (this.phase === "connecting") {
-				if (!this.rejectionPending) this.rejectOpen(transportError(error));
+				if (!this.rejectionPending) {
+					const failure = transportError(error);
+					if (error.message === "Opening handshake has timed out") failure.kind = "connect-timeout";
+					this.rejectOpen(failure);
+				}
 				return;
 			}
 			this.fail(transportError(error));

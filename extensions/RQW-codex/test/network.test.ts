@@ -2,6 +2,7 @@
 // Raw HTTP/WebSocket servers on 127.0.0.1 give deterministic handshakes, frames, ping, binary and idle cases.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import http from "node:http";
 import { createServer, connect as netConnect } from "node:net";
 import type { AddressInfo } from "node:net";
 import type { Server, Socket } from "node:net";
@@ -404,6 +405,31 @@ describe("websocket connector", () => {
 				connectTimeoutMs: 50,
 			}),
 			(error: unknown) => error instanceof SocketError && error.kind === "connect-timeout",
+		);
+	});
+
+	it("classifies the ws handshake timeout before the connector timer as connect-timeout", async (t) => {
+		const port = await serve(() => undefined);
+		const request = http.request;
+		let timeoutEmitted = false;
+		t.mock.method(http, "request", (...args: Parameters<typeof http.request>) => {
+			const req = Reflect.apply(request, http, args);
+			// Trigger ws's own timeout handler after connect installs its listeners, before timers run.
+			queueMicrotask(() => {
+				timeoutEmitted = true;
+				req.emit("timeout");
+			});
+			return req;
+		});
+		await assert.rejects(
+			connect({ url: wsUrl(port), headers: {}, signal: new AbortController().signal, onResponse: noopResponse() }),
+			(error: unknown) => {
+				assert.ok(error instanceof SocketError);
+				assert.equal(timeoutEmitted, true);
+				assert.match(error.message, /Opening handshake has timed out/);
+				assert.equal(error.kind, "connect-timeout");
+				return true;
+			},
 		);
 	});
 
