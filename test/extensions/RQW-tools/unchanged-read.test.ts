@@ -1,7 +1,9 @@
 // Tests of the unchanged-read note, DECISIONS.md Tools `D-TOOLS-UNCHANGED-READ` (unchanged.ts, index.ts checkedFiles).
 // Unit lane: tools from createTools() with a fake session branch. Pipeline lane: real AgentSession, faux provider.
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, afterEach, before, describe, it } from "node:test";
@@ -245,6 +247,42 @@ describe("unchanged read (unit)", () => {
 		await utimes(file, when, when);
 		assert.equal((await stat(file)).mtimeMs, when.getTime(), "mtime restored");
 		assert.match(textOf(await read(tools, s, { path: "f.txt" })), /ALPHA/);
+	});
+
+	it("6: a change between stock read and cache fill never binds new bytes to the old result", async (t) => {
+		for (const preserveMtime of [false, true]) {
+			const { tools, s, file } = await setup();
+			await writeFile(file, "OLD CONTENT\n");
+			const when = new Date(1_700_000_000_000);
+			await utimes(file, when, when);
+			const originalOpen = fs.open;
+			let opens = 0;
+			const mocked = t.mock.method(fs, "open", async (path: any, ...args: any[]) => {
+				// Stock read opens its image detector first; the cache's detector opens second,
+				// after stock read has already returned the old text.
+				if (String(path) === file && ++opens === 2) {
+					await writeFile(file, "NEW CONTENT\n");
+					const changed = preserveMtime ? when : new Date(when.getTime() + 5000);
+					await utimes(file, changed, changed);
+				}
+				return (originalOpen as any)(path, ...args);
+			});
+			syncBuiltinESMExports();
+			let first: any;
+			try {
+				first = await read(tools, s, { path: "f.txt" });
+			} finally {
+				mocked.mock.restore();
+				syncBuiltinESMExports();
+			}
+			assert.equal(opens, 2, "the change ran in the cache image detector");
+			assert.equal(textOf(first), "OLD CONTENT\n");
+			assert.equal(await readFile(file, "utf-8"), "NEW CONTENT\n");
+			const second = textOf(await read(tools, s, { path: "f.txt" }));
+			assert.match(second, /NEW CONTENT/);
+			assert.doesNotMatch(second, /unchanged since/);
+			assert.match(textOf(await read(tools, s, { path: "f.txt" })), NOTE);
+		}
 	});
 
 	it("6: the session's own edit or write in between gives content", async () => {
