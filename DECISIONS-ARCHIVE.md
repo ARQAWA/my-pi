@@ -6272,3 +6272,35 @@ Superseded verbatim passage:
 >   8.59375 cells/s. Gold compaction uses the same single bouncing glint over each full strip and activity label, with the same travel speed. Double silver and gold travel speed relative to origin/main
 >   `0521318324f9c22707c7b1ff3d0cc725392f6e55`; the lightning keeps its 120 ms colour step.
 
+
+## Full Anthropic-model ban restored - superseded 2026-10-25
+
+Status: Haiku allowance and Anthropic/GPT balance SUPERSEDED by `[D-WORK-MODELS]`.
+Source: `c2a45b3:DECISIONS.md`, verbatim entries below.
+Replacement: anthropic-model-ban delivery; commit provenance:
+`git log -S'Full Anthropic-model ban restored' -- DECISIONS-ARCHIVE.md`.
+
+> - **Development subagent models** `[D-WORK-MODELS]`. In force now and permanently, Main must not use any
+>   Anthropic model as a subagent except exactly `anthropic/claude-haiku-5-5`, at every reasoning level actually
+>   supported by the installed Pi catalogue. The GPT task-class pairs remain unchanged. The only pair list lives in the
+>   `coordinator-rules` JSON block of [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
+>   Main names `model` and `thinking` explicitly on every ordinary `agent` start and restart; specialized roles
+>   use `agent_type` on that same lifecycle. Balance the allowed Anthropic and GPT models over the run.
+>   This is repository development policy, not a product model setting; product reviewer profiles stay separate.
+>   Owner (`16-27-59:6618`, entry `0fb9fd91`, 2026-10-25):
+>   «Надо скорректировать правила, чтобы было с 1 октября, что тебе нельзя пользоваться моделями Sonnet и Opus в качестве subagent, а моделью Haiku можно пользоваться»
+>   «Модель Haiku 5.5 имеет и Extra High, и Max Rising»
+>   Owner clarification (`16-27-59:6624`, entry `14c062d8`, 2026-10-25), replacing the earlier date emphasis:
+>   «Я имел в виду, что просто чтобы тебе нельзя было пользоваться моделями Anthropic, кроме Haiku 5.5. Haiku 5.5 в любом виде можно использовать»
+>   Reason: replace the temporary ban on all Anthropic subagents and the old Sonnet/Opus permissions with the
+>   owner's permanent model policy. Public installed Pi 1.4.0 catalogue APIs confirm Extra High and Max;
+>   the guard already accepts arbitrary classes of exact pairs, so its code stays unchanged.
+>   Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), `.pi/extensions/coordinator-guard/`, `AGENTS.md`.
+>   Superseded `[D-WORK-TEMP-GPT]` and the former `[D-WORK-MODELS]` entry are preserved verbatim in
+>   `DECISIONS-ARCHIVE.md` with source commit and replacement provenance.
+>
+> - **Anthropic/GPT balance** `[D-WORK-BALANCE]`. Owner (`16-27-59:351`):
+>   «Смотри, надо скорректировать так, чтобы ты как координатор поровну поднимал модели из Anthropic и GPT, чтобы не было перевеса в другим, дисбаланса. Поднимай саб-агенты и те, и те, чтобы лимит расходовался равномерно.»
+>   «И зафиксирую это в процесс.nd файле, эту информацию на будущее»
+>   Reason: even use of both subscriptions' limits. Carrier: [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
+>   Since: `a7146ae`.

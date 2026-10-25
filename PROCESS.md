@@ -118,14 +118,6 @@ The guard reads this block from the root file. Its policy is in [Subagent models
     ],
     "hardest": [
       ["openai-codex/gpt-6.1-sol", "high"]
-    ],
-    "haiku": [
-      ["anthropic/claude-haiku-5-5", "off"],
-      ["anthropic/claude-haiku-5-5", "low"],
-      ["anthropic/claude-haiku-5-5", "medium"],
-      ["anthropic/claude-haiku-5-5", "high"],
-      ["anthropic/claude-haiku-5-5", "xhigh"],
-      ["anthropic/claude-haiku-5-5", "max"]
     ]
   }
 }

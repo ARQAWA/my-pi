@@ -405,14 +405,18 @@ describe("coordinator-guard: placement", () => {
 	});
 	it("the real PROCESS.md block parses with the guard's parser", () => {
 		const rules = parseRules(readFileSync(join(ROOT, "PROCESS.md"), "utf8"));
-		assert.deepEqual(rules.agentModels, RULES.agentModels);
+		assert.deepEqual(rules.agentModels, {
+			simple: [["openai-codex/gpt-6.1-sol", "low"]],
+			complex: [["openai-codex/gpt-6.1-sol", "medium"]],
+			hardest: [["openai-codex/gpt-6.1-sol", "high"]],
+		});
 		assert.equal(rules.temporaryGptOnly, undefined);
 		for (const now of [Date.parse("2026-10-01T00:00:00Z"), Date.parse("2026-10-28T16:00:00Z"), UNTIL + 1]) {
 			setRules({ agentModels: rules.agentModels });
 			const g = load([], now);
 			for (const action of ["start", "restart"]) {
 				for (const [model, thinking] of Object.values(rules.agentModels).flat()) passed(g.call("agent", { action, model, thinking }));
-				for (const model of ["anthropic/claude-sonnet-5-5", "anthropic/claude-opus-5-5"]) {
+				for (const model of ["anthropic/claude-haiku-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-opus-5-5"]) {
 					blocked(g.call("agent", { action, model, thinking: "medium", title: "Арбитр замера" }), /not an allowed pair/);
 				}
 			}

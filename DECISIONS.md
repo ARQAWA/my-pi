@@ -184,30 +184,20 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «мы нигде кроме этого ноута это не запускаем, все что КАСАЕТСЯ РАБОТЫ В ЭТОМ РЕПО - только локальная тема»
   Reason: local orchestration has no other deployment target; product and CI portability remain separate.
   Carriers: [PROCESS.md](PROCESS.md#isolated-parallel-execution), local development test suites.
-- **Development subagent models** `[D-WORK-MODELS]`. In force now and permanently, Main must not use any
-  Anthropic model as a subagent except exactly `anthropic/claude-haiku-5-5`, at every reasoning level actually
-  supported by the installed Pi catalogue. The GPT task-class pairs remain unchanged. The only pair list lives in the
-  `coordinator-rules` JSON block of [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
-  Main names `model` and `thinking` explicitly on every ordinary `agent` start and restart; specialized roles
-  use `agent_type` on that same lifecycle. Balance the allowed Anthropic and GPT models over the run.
-  This is repository development policy, not a product model setting; product reviewer profiles stay separate.
-  Owner (`16-27-59:6618`, entry `0fb9fd91`, 2026-10-25):
-  «Надо скорректировать правила, чтобы было с 1 октября, что тебе нельзя пользоваться моделями Sonnet и Opus в качестве subagent, а моделью Haiku можно пользоваться»
-  «Модель Haiku 5.5 имеет и Extra High, и Max Rising»
-  Owner clarification (`16-27-59:6624`, entry `14c062d8`, 2026-10-25), replacing the earlier date emphasis:
-  «Я имел в виду, что просто чтобы тебе нельзя было пользоваться моделями Anthropic, кроме Haiku 5.5. Haiku 5.5 в любом виде можно использовать»
-  Reason: replace the temporary ban on all Anthropic subagents and the old Sonnet/Opus permissions with the
-  owner's permanent model policy. Public installed Pi 1.4.0 catalogue APIs confirm Extra High and Max;
-  the guard already accepts arbitrary classes of exact pairs, so its code stays unchanged.
-  Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), `.pi/extensions/coordinator-guard/`, `AGENTS.md`.
-  Superseded `[D-WORK-TEMP-GPT]` and the former `[D-WORK-MODELS]` entry are preserved verbatim in
-  `DECISIONS-ARCHIVE.md` with source commit and replacement provenance.
+- **Development subagent models** `[D-WORK-MODELS]`. The full Anthropic-model ban is in force for Main and
+  subagents, including Haiku, Sonnet and Opus, without expiry or a benchmark exception. Main's subagent task-class
+  pairs remain unchanged; the only pair list lives in the `coordinator-rules` JSON block of
+  [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly on every
+  ordinary `agent` start and restart; specialized roles use `agent_type` on that same lifecycle.
+  Owner (`16-27-59:7665`, entry `29908fc1`, 2026-10-25):
+  «Возобнови полный запрет использования антропиков»
+  Reason: restore the owner's full model prohibition, superseding the later Haiku allowance and the
+  Anthropic/GPT balance rule. Earlier separately owner-ordered Kimi benchmark work remains historical evidence,
+  not new model permission. This is model-use policy for Main and subagents, not a ban on Anthropic transport or
+  subscription quota implementation, auth, provider visibility or product model settings.
+  Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), its coordinator JSON block and
+  [test lane](process/task-pipeline.md). Superseded entries are preserved verbatim in `DECISIONS-ARCHIVE.md`.
 
-- **Anthropic/GPT balance** `[D-WORK-BALANCE]`. Owner (`16-27-59:351`):
-  «Смотри, надо скорректировать так, чтобы ты как координатор поровну поднимал модели из Anthropic и GPT, чтобы не было перевеса в другим, дисбаланса. Поднимай саб-агенты и те, и те, чтобы лимит расходовался равномерно.»
-  «И зафиксирую это в процесс.nd файле, эту информацию на будущее»
-  Reason: even use of both subscriptions' limits. Carrier: [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
-  Since: `a7146ae`.
 - **Process file and manifesto** `[D-WORK-PROCESS-LINK]`. The reading contract is carried in
   [PROCESS.md](PROCESS.md), with its task-loaded sections, and linked from `AGENTS.md`.
   The owner accepted the split in [D-WORK-PROCESS-SPLIT] below. `WORKFLOW-MANIFEST.md` is the owner's
@@ -505,7 +495,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Since: local-delivery-gate squash.
 
 - **Test lane** `[D-PIPELINE-TEST-LANE]`. Three main work lanes and a fourth lane for tests only, usable for nothing else and
-  outside the three active slots. Its agents are ordinary `agent`s on the simple GPT pair or an allowed Haiku pair under
+  outside the three active slots. Its agents are ordinary `agent`s on the simple GPT pair under
   [the development model policy](PROCESS.md#subagent-models), with `.agents/roles/test-fixer.md` as the `role`.
   They take the tail items of [WINDOWS-TEST-FAILURES](BACKLOG.md#windows-test-failures) and
   [QA-FLAKES-LAST](BACKLOG.md#qa-flakes-last) and own all test work: every failing test, reruns and the full restoration
