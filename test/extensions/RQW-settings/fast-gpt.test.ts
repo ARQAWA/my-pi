@@ -126,18 +126,27 @@ describe("GPT Fast, main chat", () => {
 		} finally { session.dispose(); }
 	});
 
-	it("/fast-gpt toggles, takes on and off, reaches the next request and survives a new session; usage on bad input", async () => {
+	it("/fast-gpt toggles, takes on and off, reaches the next request and survives a new session and reload; usage on bad input", async () => {
 		delete (globalThis as any)[STATE];
 		const session = await open();
+		const sessionBus = bus;
 		const notes: string[] = [];
 		try {
 			await command(session, "", notes);
 			assert.equal((await body(session)).service_tier, "priority", "no argument toggles off to on");
 			await command(session, "on", notes);
 			assert.equal((await body(session)).service_tier, "priority");
-			await command(session, "off", notes);
 			const second = await open();
-			try { assert.ok(!("service_tier" in await body(second)), "off holds for a new session of the process"); } finally { second.dispose(); }
+			try { assert.equal((await body(second)).service_tier, "priority", "on holds for a new session of the process"); } finally { second.dispose(); }
+			const runner = session.extensionRunner;
+			await session.reload();
+			assert.notEqual(session.extensionRunner, runner, "reload built a new extension runtime");
+			assert.equal((await body(session)).service_tier, "priority", "on holds for the next request after reload");
+			const query: { fastGpt?: boolean } = {};
+			sessionBus.emit("rqw-settings:fast-gpt-query", query);
+			assert.equal(query.fastGpt, true, "the reloaded extension answers the query synchronously");
+			await command(session, "off", notes);
+			assert.ok(!("service_tier" in await body(session)), "off reaches the next request after reload");
 			await command(session, "maybe", notes);
 			assert.ok(!("service_tier" in await body(session)), "bad input changes nothing");
 			assert.deepEqual(notes, ["GPT Fast on (main chat, GPT only)", "GPT Fast on (main chat, GPT only)",
