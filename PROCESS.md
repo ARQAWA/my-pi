@@ -57,16 +57,23 @@ Standing requirement for designing and reviewing the harness and the development
 
 ## Code quality
 
-Provisional until the AI-maintainability research lands: every change and every review must keep extension source
-as clean, short, readable and easy to extend as possible.
-Quality means ease of maintenance: even a junior should understand what the code does by reading its structure.
-Use the minimal code needed for the agreed result, without garbage. Prefer well-decomposed, straightforward code
-rather than clever one-liners or dense compound expressions. Brevity must not hide structure or understanding.
-These are provisional implementation and review criteria, not permission for unrelated refactoring or scope expansion.
-The manifesto describes the owner's own work; this AI repository needs an adaptation for AI agents. Research must
-establish what actually helps them, including whether one-liners are more effective, before this principle is rewritten.
-Do not present the owner's preferred decomposition plus fast search as a proven result for AI agents.
-Owner's principle and source: [DECISIONS.md, Work policy](DECISIONS.md#work-policy); personal wording:
+Every change and every review must keep extension source clean, readable, minimal and easy to extend.
+Quality means ease of maintenance by agents and people through clear structure and meaningful decomposition.
+Use the minimal code needed for the agreed result, without garbage. Prefer straightforward code over clever
+one-liners or dense compound expressions. Brevity must not hide structure or understanding.
+This is a standing implementation and review principle, with no numeric limits and no permission for unrelated
+refactoring or scope expansion.
+
+Use the same extension framework: `index.ts` with meaning-named modules and resources beside it, subfolders
+where needed, and no `src/` layer. Tests belong in the separate mirrored
+`test/extensions/<extension>/` tree, not inside extensions.
+Root `INDEX.md` is the repository navigation map; every extension README has a generated file map.
+After relevant file, manifest or map changes, run `node scripts/repo-index.mjs --write`.
+Freshness is checked by `node scripts/repo-index.mjs --check` through root `test/repo-index.test.ts`
+in `npm test`. This delivery maps large files without splitting them; it adds no runtime changes,
+mandatory file headers, numeric size limits, new search tooling or audits.
+Accepted choices and sources: [DECISIONS.md, Work policy](DECISIONS.md#work-policy),
+`D-WORK-CODE-QUALITY` and `D-WORK-REPO-INDEX`; personal wording:
 [WORKFLOW-MANIFEST.md](WORKFLOW-MANIFEST.md#качество-и-объём-работы).
 
 <a id="sufficient-proof-without-idle-reruns"></a>

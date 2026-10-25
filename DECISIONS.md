@@ -52,20 +52,34 @@ Provenance:
   Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution), `BACKLOG.md`.
   Since: process-rules-oct23 squash.
 
-- **Maintainable minimal code, provisional** `[D-WORK-CODE-QUALITY]`. Until the AI-maintainability research lands,
-  every change and review checks clean, short, readable,
-  easy-to-extend source, minimal code without garbage, and clear decomposition rather than clever one-liners or
-  dense expressions. This does not authorize unrelated refactoring. Owner (`16-27-59:4872`, entry `249fcb3b`):
-  «Я хочу, чтобы исходный код наших extension был максимально чистый, приятный, короткий, легко читаемый, легко дорабатываемый.»
-  «Качество значит лёгкость поддерживания. Даже джун тупой поймёт, что делает код, просто читая его по структуре. Он должен быть максимально красивым, коротким, чистым, минималистичным. Это значит никаких сложных one-line, comprehend выражений и прочей хуйни, а именно хороший декомпозированный код, который поймёт любой.»
-  Reason: quality is ease of maintenance, including maintenance by AI agents. Carriers:
-  [PROCESS.md, Code quality](PROCESS.md#code-quality), personal wording in `WORKFLOW-MANIFEST.md`.
-  Owner clarification (`16-27-59:4880`, entry `c47e60b3`):
-  «Workflow manifest — это принцип того, как я работаю. Надо дать пояснение, что так как это AI-репозиторий, то этот принцип надо адаптировать под AI-агентов.»
-  «Когда мы всё это исследуем, принцип надо будет переделать, потому что мы не знаем, как для AI-агентов более эффективно. Может, AI-агентам более эффективно работать с ванлайнерами.»
-  Research must adapt the personal principle to AI agents rather than assume decomposition is already proven best.
-  Research, architecture reorganisation and a mechanically checkable repository index are queued in `BACKLOG.md`;
-  detailed design still needs agreement before implementation. Since: process-rules-oct23 squash.
+- **Maintainable minimal code** `[D-WORK-CODE-QUALITY]`. Every change and review keeps source clean,
+  readable, minimal and easy to extend. Prefer clear structure and meaningful decomposition over dense expressions;
+  brevity must not hide understanding. This is a standing principle, not a provisional research placeholder.
+  It imposes no numeric limits and authorizes no unrelated refactoring.
+  Source: coordinator question 7, accepted option 7a in the repo-code-index second-delivery agreement.
+  This records the accepted option's meaning, not verbatim owner wording.
+  Reason: maintainability for agents needs navigable structure without arbitrary size thresholds.
+  Carrier: [PROCESS.md, Code quality](PROCESS.md#code-quality).
+  Replaces the provisional entry preserved verbatim in [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md),
+  under "Provisional code quality". Since: repo-code-index second delivery.
+
+- **Extension framework and generated repository maps** `[D-WORK-REPO-INDEX]`.
+  Source: coordinator questions 4, 5 and 6, accepted options 4a, 5a and 6a in the repo-code-index
+  second-delivery agreement. The following records coordinator question/accepted-option meanings,
+  not verbatim owner wording:
+  - 4a: keep one framework per extension: `index.ts` with meaning-named modules and resources beside it;
+    use subfolders where needed, with no `src/` layer. Tests live in the separate mirrored
+    `test/extensions/<extension>/` tree, delivered by `17d729c`.
+  - 5a: root `INDEX.md` provides repository navigation; every extension README contains a generated file map.
+    Agents regenerate after relevant file, manifest or map changes with `node scripts/repo-index.mjs --write`.
+    `node scripts/repo-index.mjs --check` checks freshness through root `test/repo-index.test.ts`
+    in `npm test`.
+  - 6a: map existing large files without splitting them in this delivery.
+  Reason: agents can locate implementation and tests without imposing a new runtime architecture.
+  Carriers: `INDEX.md`, extension READMEs, `scripts/repo-index.mjs`, `test/repo-index.test.ts`,
+  [PROCESS.md, Code quality](PROCESS.md#code-quality), `AGENTS.md`.
+  No runtime changes, mandatory file headers, numeric size limits, new search tooling or audits are authorized.
+  Since: repo-code-index second delivery.
 
 - **Golden rule: no avoidable token spending** `[D-WORK-GOLDEN-RULE]`. A standing design and review requirement for the
   harness and for the development workflow: spend no tokens where they can be avoided (no polling, no model turns

@@ -6214,3 +6214,26 @@ From `[D-AGENT-API]`:
 
 > - **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `resume`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `blocking`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `agent_type`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus recursive `agent` delegation for every child. Profile selection and defaults are defined in `[D-AGENT-PROFILES]`. Sessions run in-process at caller cwd with in-memory settings; the history is in memory for an in-memory caller and in the owned `<parent.jsonl>.children/` tree for a persisted one (`[D-AGENT-PERSIST]`), using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
 >   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/test/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`; `blocking` since the final squash of branch `agent-async`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0265.
+
+## Provisional code quality · archived 2026-10-25
+
+Status: SUPERSEDED by standing `[D-WORK-CODE-QUALITY]` and `[D-WORK-REPO-INDEX]` in DECISIONS.md.
+Source: `61b81a3:DECISIONS.md`, provisional D-WORK-CODE-QUALITY entry, verbatim below.
+Introduced: process-rules-oct23 squash, as recorded in the source entry.
+Replacement: repo-code-index second delivery; commit provenance:
+`git log -S'Provisional code quality · archived' -- DECISIONS-ARCHIVE.md`.
+
+> - **Maintainable minimal code, provisional** `[D-WORK-CODE-QUALITY]`. Until the AI-maintainability research lands,
+>   every change and review checks clean, short, readable,
+>   easy-to-extend source, minimal code without garbage, and clear decomposition rather than clever one-liners or
+>   dense expressions. This does not authorize unrelated refactoring. Owner (`16-27-59:4872`, entry `249fcb3b`):
+>   «Я хочу, чтобы исходный код наших extension был максимально чистый, приятный, короткий, легко читаемый, легко дорабатываемый.»
+>   «Качество значит лёгкость поддерживания. Даже джун тупой поймёт, что делает код, просто читая его по структуре. Он должен быть максимально красивым, коротким, чистым, минималистичным. Это значит никаких сложных one-line, comprehend выражений и прочей хуйни, а именно хороший декомпозированный код, который поймёт любой.»
+>   Reason: quality is ease of maintenance, including maintenance by AI agents. Carriers:
+>   [PROCESS.md, Code quality](PROCESS.md#code-quality), personal wording in `WORKFLOW-MANIFEST.md`.
+>   Owner clarification (`16-27-59:4880`, entry `c47e60b3`):
+>   «Workflow manifest — это принцип того, как я работаю. Надо дать пояснение, что так как это AI-репозиторий, то этот принцип надо адаптировать под AI-агентов.»
+>   «Когда мы всё это исследуем, принцип надо будет переделать, потому что мы не знаем, как для AI-агентов более эффективно. Может, AI-агентам более эффективно работать с ванлайнерами.»
+>   Research must adapt the personal principle to AI agents rather than assume decomposition is already proven best.
+>   Research, architecture reorganisation and a mechanically checkable repository index are queued in `BACKLOG.md`;
+>   detailed design still needs agreement before implementation. Since: process-rules-oct23 squash.
