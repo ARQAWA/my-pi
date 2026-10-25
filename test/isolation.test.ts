@@ -134,11 +134,11 @@ describe("isolation: the package with one extension switched off", () => {
 					const agent = full.tools.find(t => t.name === "agent" && t.by === "RQW-agent")!;
 					const parts = agent.description.split(marker);
 					assert.equal(parts.length, 2, "agent has exactly one profile catalogue");
-					assert.deepEqual(parts[1].split("\n").map(line => line.split(":")[0]), ["bossy", "spotty"]);
+					assert.deepEqual(parts[1].split("\n").map(line => line.split(":")[0]), ["bossy", "requirements-test-reviewer", "spotty"]);
 					const description = `${parts[0]}${marker}No profiles discovered.`;
 					for (const disabled of [r, viaReload]) {
 						const tool = disabled.tools.find(t => t.name === "agent" && t.by === "RQW-agent")!;
-						assert.equal(tool.description, description, "spotty and bossy disappear; the base description stays exact");
+						assert.equal(tool.description, description, "all offered reviewer profiles disappear; the base description stays exact");
 					}
 					expected = { ...full, tools: full.tools.map(t => t === agent ? { ...t, description } : t) };
 				}

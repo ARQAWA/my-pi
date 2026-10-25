@@ -77,7 +77,10 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
 - `extensions/RQW-review/`: extension 6, a provider of Codex profiles and native Agent Skills, not a separate runtime.
   `profiles/spotty.toml` defaults to `gpt-6.1-sol` low; `profiles/bossy.toml` defaults to the same model medium. Both embed the same
   reviewer role in `developer_instructions`. `rqw-agent:profiles` offers their paths to RQW-agent; public
-  `resources_discover` supplies `skills/reviewer`, `skills/blindreview` and `skills/highreview`. The common skill
+  `resources_discover` supplies `skills/reviewer`, `skills/blindreview`, `skills/highreview` and `skills/testreview`.
+  `testreview` selects `requirements-test-reviewer` on Sol low to review test code against supplied requirements,
+  test plan and conversation without execution or mandatory commit pairs. It is separate from the project
+  `test-reviewer` mechanical integrity gate. The common blind/high skill
   carries only the review section of the owner's Codex skill, and the wrappers select Spotty or Bossy. Each pass
   starts a fresh ordinary `agent` with `agent_type` and `include: ["user_messages"]`; results are `agent#N` results.
   Read-only is an instruction, with no git guard or sandbox. Lifecycle, settings, Fast, caching and delivery are

@@ -1289,6 +1289,24 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 ## Review
 
+- **Requirements-based test review** `[D-REVIEW-TEST-REQUIREMENTS]`. Owner R11 source: session
+  `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER `3d0e39ae`, line 1568:
+  «Мне надо, чтобы в этой ситуации reviewer закрывал такие моменты, что код проверок соответствует требованиям, соответствует тест-плану, acceptance критериям.»
+  USER `f5193077`, line 1602: «Нет, я думаю, что в автотестах тесты сами не надо запускать, когда он review делает.»
+  and «Я могу достать переписку. Я смогу достать код, но я не смогу достать коммит до и коммит после, скорее всего. Я хз.»
+  USER `96dc3500`, line 1606: «Просто не надо запускать сами тесты, блядь.»
+  The owner explicitly resumed R11 in the 2026-10-25 execution request; its earlier hold is no longer active.
+  Decision: the optional `testreview` native skill collects supplied requirements, test plan, acceptance criteria
+  and conversation references and starts the ordinary `requirements-test-reviewer` profile on Sol 6.1 low.
+  It reads test code and directly relevant exercised code, checks requirement coverage and concrete false confidence,
+  and reports missing primary evidence as incomplete. External transcripts include user and assistant turns;
+  `include: ["user_messages"]` separately appends the caller's raw user messages. No test/code execution, mandatory
+  commit pairs, new runtime, permissions or automatic review. The existing project `test-reviewer` and its mechanical
+  integrity gate remain unchanged. Reason: test code is itself the deliverable, so repository check execution does
+  not establish whether its assertions implement the agreed plan.
+  Carriers: `extensions/RQW-review/profiles/requirements-test-reviewer.toml`,
+  `extensions/RQW-review/skills/testreview/SKILL.md`, `extensions/RQW-review/index.ts`.
+
 - **Codex reviewer port** `[D-REVIEW-PORT]`. `RQW-review` carries the owner's working Codex CLI reviewer over to Pi, adapted
   to this harness. The base is his existing cycle, not a newly invented workflow: the original Codex reviewer profiles
   (`agents/*.toml`) and the Main-side skills `subagents`, `blindreview` and `highreview` of his Codex CLI plugin

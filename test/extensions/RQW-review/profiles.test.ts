@@ -13,11 +13,11 @@ import { parse } from "smol-toml";
 import reviewProfiles from "../../../extensions/RQW-review/index.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../extensions/RQW-review");
-const PROFILES = ["spotty", "bossy"].map((name) => join(ROOT, "profiles", `${name}.toml`));
-const SKILLS = ["reviewer", "blindreview", "highreview"];
+const PROFILES = ["spotty", "bossy", "requirements-test-reviewer"].map((name) => join(ROOT, "profiles", `${name}.toml`));
+const SKILLS = ["reviewer", "blindreview", "highreview", "testreview"];
 const text = (path: string) => readFileSync(join(ROOT, path), "utf8");
 
-it("offers both absolute native profile paths without registering a tool or runner", () => {
+it("offers all absolute native profile paths without registering a tool or runner", () => {
 	const events = createEventBus();
 	const handlers = new Map<string, () => { skillPaths: string[] }>();
 	// A data provider needs only these APIs; any tool/session API call fails this harness.
@@ -31,7 +31,7 @@ it("offers both absolute native profile paths without registering a tool or runn
 });
 
 it("pins source descriptions, bare Codex model and efforts with byte-identical canonical instructions", () => {
-	const profiles = PROFILES.map((path) => parse(readFileSync(path, "utf8")));
+	const profiles = PROFILES.slice(0, 2).map((path) => parse(readFileSync(path, "utf8")));
 	const description = "Blind reviewer: checks one object or one part of it from primary requirements and evidence that everything agreed is done, nothing unagreed is added and the brief's criterion holds; decides nothing and returns CLEAN or every finding at once.";
 	for (const [i, profile] of profiles.entries()) {
 		assert.deepEqual(Object.keys(profile).sort(), ["description", "developer_instructions", "model", "model_reasoning_effort", "name"]);
