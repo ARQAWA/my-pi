@@ -6343,3 +6343,14 @@ Verbatim superseded clause from `99f69e5:DECISIONS.md`; replacement commit:
 > Prefer `anthropic/claude-haiku-5-5`, otherwise authenticated `openai-codex/gpt-6-luna`,
 >   at the model's lowest supported reasoning.
 
+## Silver 640 ms flight and 2000 ms pause - superseded 2026-10-25
+
+Source: `261a72dc56400fa43ebcc7f82f121710fe554198:DECISIONS.md`, `[D-STATUSBAR-ANIMATION]`.
+Replaced by the owner's `statusbar-silver-1250-2500` task: 1250 ms flight and 2500 ms pause.
+Replacement provenance: `git log -S'Silver 640 ms flight and 2000 ms pause' -- DECISIONS-ARCHIVE.md`.
+Verbatim superseded timing clause and source:
+
+>   then remaining absent for exactly 2000 ms before repeating. Flight duration is 640 ms, exactly twice the previous 320 ms.
+>   Owner source: `statusbar-silver-640ms` task request, 2026-10-25:
+>   "Change the silver one-way visible flight duration from 320 ms to 640 ms." The three-cell peak and soft silver gradient stay unchanged.
+

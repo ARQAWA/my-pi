@@ -97,33 +97,33 @@ describe("cell-based shimmer", () => {
 });
 
 describe("single silver glint", () => {
-	it("flies right at constant speed for 640 ms, then pauses for exactly 2000 ms", () => {
+	it("flies right at constant speed for 1250 ms, then pauses for exactly 2500 ms", () => {
 		for (const width of [0, 1, 2, 3, 19, 100, 240]) {
 			const end = width + 5;
 			assert.equal(silverGlintPosition(width, 0), 1);
-			assert.equal(silverGlintPosition(width, 8), end);
-			assert.equal(silverGlintPosition(width, 33), 1);
-			assert.equal(8 * STATUS_FRAME_MS, 640);
-			assert.equal(25 * STATUS_FRAME_MS, 2000);
-			for (const elapsed of [0.125, 1, 7, 33.333, 80, 160, 320, 639.999]) {
-				const expected = 1 + (end - 1) * elapsed / 640;
+			assert.equal(silverGlintPosition(width, 15.625), end);
+			assert.equal(silverGlintPosition(width, 46.875), 1);
+			assert.equal(15.625 * STATUS_FRAME_MS, 1250);
+			assert.equal(31.25 * STATUS_FRAME_MS, 2500);
+			for (const elapsed of [0.125, 1, 7, 33.333, 80, 160, 625, 1249.999]) {
+				const expected = 1 + (end - 1) * elapsed / 1250;
 				assert.ok(Math.abs(silverGlintPosition(width, elapsed / STATUS_FRAME_MS) - expected) < 1e-12);
-				assert.ok(Math.abs(silverGlintPosition(width, 33 + elapsed / STATUS_FRAME_MS) - expected) < 1e-12);
-				assert.ok(Math.abs(silverGlintPosition(width, 66 + elapsed / STATUS_FRAME_MS) - expected) < 1e-12);
+				assert.ok(Math.abs(silverGlintPosition(width, 46.875 + elapsed / STATUS_FRAME_MS) - expected) < 1e-12);
+				assert.ok(Math.abs(silverGlintPosition(width, 93.75 + elapsed / STATUS_FRAME_MS) - expected) < 1e-12);
 			}
-			for (const elapsed of [640, 641, 1000, 2639.999]) {
+			for (const elapsed of [1250, 1251, 2500, 3749.999]) {
 				assert.equal(silverGlintPosition(width, elapsed / STATUS_FRAME_MS), end);
 				assert.equal(shimmerText("x".repeat(width), 0, elapsed / STATUS_FRAME_MS, SILVER),
 					hexSgr(SILVER[0], false, "x").repeat(width));
 			}
-			assert.equal(shimmerText("x".repeat(width), 0, 33, SILVER), shimmerText("x".repeat(width), 0, 0, SILVER));
+			assert.equal(shimmerText("x".repeat(width), 0, 46.875, SILVER), shimmerText("x".repeat(width), 0, 0, SILVER));
 		}
 	});
 
 	it("has one three-cell silver crest until it passes the right edge", () => {
 		for (const width of [19, 40, 100, 240]) {
-			const edge = 8 * (width - 3) / (width + 4);
-			for (const frame of [0, edge / 4, edge / 2, edge * 0.75, 33, 33 + edge / 2]) {
+			const edge = 15.625 * (width - 3) / (width + 4);
+			for (const frame of [0, edge / 4, edge / 2, edge * 0.75, 46.875, 46.875 + edge / 2]) {
 				const line = shimmerText("x".repeat(width), 1, frame, SILVER);
 				const cells = [...line.matchAll(/\x1b\[(1;)?38;2;(\d+);(\d+);(\d+)mx\x1b\[22;39m/g)];
 				assert.equal(cells.length, width);
@@ -137,7 +137,7 @@ describe("single silver glint", () => {
 
 	it("changes shoulder colours at fine sub-character steps rather than rounding the moving center", () => {
 		const width = 80;
-		const frames = [0, 0.0005, 0.001, 0.0015, 0.002];
+		const frames = [0, 0.0005, 0.001, 0.0015, 0.002].map((frame) => frame * 1250 / 640);
 		const position = frames.map((frame) => silverGlintPosition(width, frame));
 		for (let i = 1; i < position.length; i++) {
 			assert.ok(position[i] > position[i - 1]);
@@ -151,7 +151,7 @@ describe("single silver glint", () => {
 	it("keeps the delivered silver gradient bytes at the new linear position", () => {
 		for (const width of [3, 19, 100, 240]) {
 			for (const frame of [0, 0.125, 1, 12.5, 100, 250.75]) {
-				const center = 1 + (width + 4) * Math.min((frame % 33) / 8, 1);
+				const center = 1 + (width + 4) * Math.min((frame % 46.875) / 15.625, 1);
 				const expected = Array.from({ length: width }, (_, column) => {
 					const position = column - center;
 					const t = Math.max(0, Math.min(1, (Math.abs(position) - 1.5) / 4.5));
