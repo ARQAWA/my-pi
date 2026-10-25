@@ -22,6 +22,7 @@ import { connect as tlsConnect } from "node:tls";
 import type { TLSSocket } from "node:tls";
 import WebSocket from "ws";
 import { CookieJar, assertTransportOrigin, sharedCookieJar } from "./cookies.ts";
+import { classifyEvent } from "./errors.ts";
 
 // Actual WS beta (client.rs:1401-1405). The connector sends it when the caller did not set OpenAI-Beta.
 export const WS_BETA_HEADER = "responses_websockets=2026-02-06";
@@ -441,6 +442,8 @@ class Connection implements CodexSocket {
 		}
 		if (!isRecord(value)) return;
 		const type = typeof value.type === "string" ? value.type : "";
+		// Native ignores unclassified wrappers without ending the read or interrupt drain.
+		if (type === "error" && classifyEvent(value) === null) return;
 		if (TERMINAL_TYPES.has(type)) this.stopIdle();
 		this.push({ kind: "event", event: { text, value } });
 		this.observeInterrupt(type, value);

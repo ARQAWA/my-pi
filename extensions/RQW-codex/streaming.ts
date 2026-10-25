@@ -417,6 +417,7 @@ export class LiveResponsesPump {
 		const type = String(event.type);
 		const response = asRecord(event.response);
 		const classified = type === "response.incomplete" || type === "response.failed" || type === "error" ? classifyEvent(event) : null;
+		if (type === "error" && classified === null) return;
 
 		if (type === "response.failed" || type === "error" || (type === "response.incomplete" && classified !== null)) {
 			// Control, not display: these never reach processResponsesStream (it would throw on them).

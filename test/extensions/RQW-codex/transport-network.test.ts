@@ -83,7 +83,7 @@ type Loopback = {
 	close(): Promise<void>;
 };
 
-async function startLoopback(closeAfterCreated = false, errors: (Frame | undefined)[] = []): Promise<Loopback> {
+async function startLoopback(closeAfterCreated = false, errors: (Frame | undefined)[] = [], beforeCompletion: Frame[] = []): Promise<Loopback> {
 	const wss = new WebSocketServer({ host: "127.0.0.1", port: 0, path: "/backend-api/codex/responses", perMessageDeflate: true });
 	await new Promise<void>((resolve) => wss.on("listening", () => resolve()));
 	const port = (wss.address() as AddressInfo).port;
@@ -153,6 +153,7 @@ async function startLoopback(closeAfterCreated = false, errors: (Frame | undefin
 				output_index: 0,
 				item: { type: "message", id: item, role: "assistant", status: "completed", content: [{ type: "output_text", text, annotations: [] }] },
 			});
+			for (const frame of beforeCompletion) send(frame);
 			send({ type: "response.completed", response: completed(id) });
 		});
 	});
@@ -252,6 +253,68 @@ describe("owned WebSocket reuse over a real loopback server", () => {
 			await loop.close();
 		}
 	});
+});
+
+// Source oracle: Codex 0.163.0 (83086188), responses_websocket.rs:649-699,787-792.
+// No status and successful status return None; only Some(ApiError) terminates the native stream.
+for (const wrapper of [
+	{ type: "error", status: 200, error: { code: "server_error", message: "ignored success wrapper" } },
+	{ type: "error", error: { code: "server_error", message: "unknown wrapper without status" } },
+] satisfies Frame[]) {
+	it(`native ignored wrapper ${JSON.stringify(wrapper)} keeps completed text and one WebSocket request`, { timeout: 15000 }, async () => {
+		const loop = await startLoopback(false, [], [wrapper]);
+		let sseCalls = 0;
+		const sleeps: number[] = [];
+		const transport = new CodexThreadTransport({
+			identity: IDENTITY,
+			store: await seededStore(fakeAccess()),
+			dependencies: {
+				connect: (options) => connect({ ...options, url: loop.url }),
+				sleep: async (ms) => { sleeps.push(ms); },
+				postEvents: (() => { sseCalls++; throw new Error("no fallback for ignored wrapper"); }) as any,
+			},
+		});
+		try {
+			const events = await collectEvents(transport.stream(MODEL, USER_1));
+			assert.equal(events.at(-1).type, "done");
+			assert.deepEqual(events.at(-1).message.content.map((block: any) => block.text), ["text-1"]);
+			assert.equal(loop.requests.length, 1);
+			assert.equal(loop.handshakes.length, 1);
+			assert.equal(sseCalls, 0);
+			assert.deepEqual(sleeps, []);
+		} finally {
+			transport.dispose();
+			await loop.close();
+		}
+	});
+}
+
+it("native terminal quota wrapper keeps completed text without retry or accepting later completion", { timeout: 15000 }, async () => {
+	const loop = await startLoopback(false, [], [{ type: "error", status: 429, error: { code: "insufficient_quota" } }]);
+	let sseCalls = 0;
+	const sleeps: number[] = [];
+	const transport = new CodexThreadTransport({
+		identity: IDENTITY,
+		store: await seededStore(fakeAccess()),
+		dependencies: {
+			connect: (options) => connect({ ...options, url: loop.url }),
+			sleep: async (ms) => { sleeps.push(ms); },
+			postEvents: (() => { sseCalls++; throw new Error("no fallback for quota"); }) as any,
+		},
+	});
+	try {
+		const events = await collectEvents(transport.stream(MODEL, USER_1));
+		assert.equal(events.at(-1).type, "error");
+		assert.match(events.at(-1).error.errorMessage, /quota/i);
+		assert.deepEqual(events.at(-1).error.content.map((block: any) => block.text), ["text-1"]);
+		assert.equal(events.some((event) => event.type === "done"), false);
+		assert.equal(loop.requests.length, 1);
+		assert.equal(sseCalls, 0);
+		assert.deepEqual(sleeps, []);
+	} finally {
+		transport.dispose();
+		await loop.close();
+	}
 });
 
 it("established WebSocket status_code 401 uses bounded reload then refresh recovery", { timeout: 15000 }, async () => {

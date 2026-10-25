@@ -1098,8 +1098,8 @@ export class CodexThreadTransport {
 		const { terminal, events } = result;
 		const rawItems = completedRawItems(events);
 		const responseId = result.responseId ?? (typeof (terminal.response as { id?: unknown } | undefined)?.id === "string" ? (terminal.response as { id: string }).id : undefined);
-		if (terminal.type === "response.failed" || terminal.type === "error") {
-			const error = classifyEvent(terminal, this.#clock.now()) ?? new CodexError({ kind: "stream" });
+		const error = terminal.type === "response.failed" || terminal.type === "error" ? classifyEvent(terminal, this.#clock.now()) : null;
+		if (error) {
 			throw error.withPartial(rawItems, normalizeUsage((terminal.response as { usage?: unknown } | undefined)?.usage));
 		}
 		if (responseId === undefined) throw new CodexError({ kind: "stream" });
@@ -1373,6 +1373,7 @@ export class CodexThreadTransport {
 					if (signal.aborted) throw abortError();
 					throw new LocalRequestError("RQW-codex: the onProviderStreamEvent hook failed. Request stopped.");
 				}
+				if (event.type === "error" && classifyEvent(event, this.#clock.now()) === null) continue;
 				// Deltas are not kept: the display parser has them, and the raw ledger needs only controls and completed items.
 				if (typeof event.type === "string" && !event.type.endsWith(".delta")) state.events.push(event);
 				if (event.type === "response.metadata") this.#captureTurnState(event.headers);
