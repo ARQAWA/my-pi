@@ -6333,3 +6333,13 @@ Replacement: anthropic-model-ban delivery; commit provenance:
 >   «И зафиксирую это в процесс.nd файле, эту информацию на будущее»
 >   Reason: even use of both subscriptions' limits. Carrier: [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
 >   Since: `a7146ae`.
+
+## Automatic naming model chain - superseded 2026-10-25
+
+Replaced by the owner's Kimi K2.8 Preview low direction in `[D-UI-NAMING]`.
+Verbatim superseded clause from `99f69e5:DECISIONS.md`; replacement commit:
+`git log -S'Owner correction' -- DECISIONS.md`.
+
+> Prefer `anthropic/claude-haiku-5-5`, otherwise authenticated `openai-codex/gpt-6-luna`,
+>   at the model's lowest supported reasoning.
+

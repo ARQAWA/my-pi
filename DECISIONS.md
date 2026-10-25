@@ -695,8 +695,11 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   32 Unicode code points. Prompt and validation enforce both; overlong candidates are rejected, never truncated.
   Background generation runs once after first user input and after every successful compaction, using all available
   projected context including summary and kept messages. Generate ten candidates and automatically select the best
-  valid candidate by meaning. Prefer `anthropic/claude-haiku-5-5`, otherwise authenticated `openai-codex/gpt-6-luna`,
-  at the model's lowest supported reasoning. No valid candidate is a failed attempt. Initial attempt plus up to
+  valid candidate by meaning. Both calls use only `kimi-coding/kimi-for-coding` (Kimi K2.8 Preview) with `low`
+  reasoning, independent of the main chat model, without fallback. Owner correction, `16-27-59` session,
+  USER entry `5b9c32fe`, 2026-10-25: «надо это делать через модель 2.8 preview low reasoning.»
+  Reason: the owner's explicit naming-model choice, not a proven diagnosis of the earlier warning.
+  No valid candidate is a failed attempt. Initial attempt plus up to
   three retries; final warning through public `ctx.ui.notify` preserves the old name. `/rename-gen` uses the same
   pipeline. New triggers/session switch cancel old generation; a native name change cancels the pending old trigger.
   Public `pi.setSessionName` persists the name in native history and `/resume`. Native `/name` stays unchanged;

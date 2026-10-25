@@ -23,7 +23,7 @@ function fakeRegistry(steps: Step[]) {
 	const calls: { prompt: string; signal: AbortSignal; reasoning: unknown; model: string }[] = [];
 	const registry = {
 		getAvailableOfType: async (_type: string, provider?: string) =>
-			provider === "anthropic" ? [{ id: "claude-haiku-5-5", provider: "anthropic", reasoning: false, thinkingLevelMap: {} }] : [],
+			provider === "kimi-coding" ? [{ id: "kimi-for-coding", provider: "kimi-coding", reasoning: true }] : [],
 		streamSimple: (model: any, context: any, options: any) => {
 			const text = context.messages.map((m: any) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content))).join("\n");
 			calls.push({ prompt: text, signal: options.signal, reasoning: options.reasoning, model: model.id });

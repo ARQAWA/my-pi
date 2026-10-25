@@ -1,16 +1,17 @@
 import {
-	type AssistantMessage, type Context, contentText, getSupportedThinkingLevels, type Model,
+	type AssistantMessage, type Context, contentText, type Model,
 } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
-/** Preferred first, then fallback; `provider/model-id`. */
-export const NAMING_MODELS = ["anthropic/claude-haiku-5-5", "openai-codex/gpt-6-luna"] as const;
+/** Owner-selected Kimi K2.8 Preview, independent of the main chat model. */
+export const NAMING_MODEL = "kimi-coding/kimi-for-coding";
+export const NAMING_REASONING = "low" as const;
 export const NAME_COUNT = 10;
 export const MAX_NAME_WORDS = 4;
 export const MAX_NAME_CODE_POINTS = 32;
 
 export type NamingRegistry = Pick<ModelRegistry, "getAvailableOfType" | "streamSimple">;
-export type NamingSelection = { model: Model<any>; reasoning: "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | undefined };
+export type NamingSelection = { model: Model<any>; reasoning: typeof NAMING_REASONING };
 
 const SYSTEM = "You name chat sessions. Follow the reply format exactly.";
 
@@ -23,27 +24,15 @@ export function isValidSessionName(name: string): boolean {
 	return Array.from(trimmed).length <= MAX_NAME_CODE_POINTS;
 }
 
-/** Lowest supported level of the model; `off` means no reasoning parameter. */
-export function lowestReasoning(model: Model<any>): NamingSelection["reasoning"] {
-	const level = getSupportedThinkingLevels(model)[0];
-	return level === undefined || level === "off" ? undefined : level;
-}
-
-/** First authenticated model from NAMING_MODELS, via the public registry only. */
+/** Resolve only the selected model through the public registry; there is no fallback. */
 export async function selectNamingModel(registry: NamingRegistry, signal: AbortSignal): Promise<NamingSelection> {
-	for (const key of NAMING_MODELS) {
-		const slash = key.indexOf("/");
-		const provider = key.slice(0, slash);
-		const id = key.slice(slash + 1);
-		if (signal.aborted) throw new Error("Naming aborted");
-		let models: readonly Model<any>[];
-		try { models = await registry.getAvailableOfType("chat", provider, { signal }); }
-		catch { continue; } // A broken provider must not disable the fallback.
-		signal.throwIfAborted();
-		const model = models.find((m) => m.id === id);
-		if (model) return { model, reasoning: lowestReasoning(model) };
-	}
-	throw new Error("No authenticated naming model");
+	signal.throwIfAborted();
+	const [provider, id] = NAMING_MODEL.split("/");
+	const models = await registry.getAvailableOfType("chat", provider, { signal });
+	signal.throwIfAborted();
+	const model = models.find((m) => m.id === id);
+	if (!model) throw new Error("No authenticated naming model");
+	return { model, reasoning: NAMING_REASONING };
 }
 
 function generationPrompt(context: string): string {
