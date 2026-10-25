@@ -288,6 +288,88 @@ test("real Pi runtime replacement closes the outgoing session, deletes its JSONL
 	} finally { await runtime.dispose(); await f.close(); }
 });
 
+test("remove preserves surviving references written after preflight", async t => {
+	for (const fresh of [false, true]) await t.test(fresh ? "fresh generated-name session discovery" : "existing survivor late reference", async () => {
+		const f = await fixture();
+		const modelRuntime = await ModelRuntime.create({ authPath: join(f.agent, "auth.json"), modelsPath: null, refreshOnCreate: false });
+		const faux = fauxProvider({ api: "faux-stale-session", provider: "test", models: [{ id: "test", contextWindow: 10000, maxTokens: 1000 }] });
+		modelRuntime.registerNativeProvider(faux.provider);
+		const shared = join(f.root, "pi-output-00000000000000a1.log");
+		const own = join(f.root, "pi-bash-00000000000000a2.log");
+		const childArtifact = join(f.root, "pi-mcp-00000000000000a3.bin");
+		const other = join(f.dir, "other.jsonl");
+		const discovered = join(f.dir, "pi-output-00000000000000a4.jsonl");
+		const tree = `${f.file}.children`;
+		const child = join(tree, "agent-1", "session.jsonl");
+		const sidecar = join(tree, "agent-1", "meta.json");
+		const lookalike = `${tree}-x`;
+		const sibling = join(lookalike, "keep.jsonl");
+		const bytes = Buffer.from("shared artifact\u0000unchanged\n");
+		const order: string[] = [];
+		let otherAfter: Buffer;
+		let discoveredAfter: Buffer;
+		let runtime: Awaited<ReturnType<typeof createAgentSessionRuntime>> | undefined;
+		try {
+			await writeFile(shared, bytes); await writeFile(own, "parent"); await writeFile(childArtifact, "child");
+			await f.save(f.file, [f.header, { text: [shared, own, ...(fresh ? [discovered] : [])].join("\n") }]);
+			await f.save(other, [{ ...f.header, id: "other" }]);
+			const otherBefore = await readFile(other);
+			await mkdir(dirname(child), { recursive: true });
+			await f.save(child, [{ ...f.header, id: "child" }, { text: childArtifact }]);
+			await writeFile(sidecar, "child metadata");
+			await mkdir(lookalike); await f.save(sibling, [{ ...f.header, id: "lookalike" }]);
+			const siblingBefore = await readFile(sibling);
+			const settingsManager = SettingsManager.inMemory({});
+			runtime = await createAgentSessionRuntime(async options => {
+				const services = await createAgentSessionServices({ cwd: options.cwd, agentDir: options.agentDir, modelRuntime, settingsManager,
+					resourceLoaderOptions: { noExtensions: true, noSkills: true, noThemes: true, noContextFiles: true, noPromptTemplates: true,
+						extensionFactories: [(pi: ExtensionAPI) => {
+							registerSessionCommands(pi, async () => {}, f.agent);
+							pi.on("session_before_switch", async () => {
+								order.push("before-switch");
+								assert.deepEqual(await readFile(other), otherBefore, "survivor has no reference during preflight");
+								assert.equal(existsSync(discovered), false);
+							});
+							pi.on("session_shutdown", async event => {
+								if (event.reason !== "new") return;
+								order.push("shutdown");
+								SessionManager.open(other).appendCustomEntry("late-shared-reference", { fullOutputPath: shared });
+								otherAfter = await readFile(other);
+								if (fresh) {
+									await f.save(discovered, [{ ...f.header, id: "discovered" }]);
+									SessionManager.open(discovered).appendCustomEntry("late-session", { text: "surviving session" });
+									discoveredAfter = await readFile(discovered);
+								}
+							});
+						}] } });
+				const created = await createAgentSessionFromServices({ services, sessionManager: options.sessionManager, sessionStartEvent: options.sessionStartEvent, model: faux.getModel("test") });
+				await created.session.bindExtensions({ mode: "tui", uiContext: {
+					select: async () => "2. Yes", notify: () => {},
+				} as ExtensionCommandContext["ui"], commandContextActions: {
+					newSession: async options => {
+						order.push("after-preflight");
+						return runtime!.newSession(options);
+					},
+				} as Parameters<typeof created.session.bindExtensions>[0]["commandContextActions"] });
+				return { ...created, services, diagnostics: services.diagnostics };
+			}, { cwd: f.root, agentDir: f.agent, sessionManager: SessionManager.open(f.file) });
+			await runtime.session.prompt("/remove");
+			assert.deepEqual(order, ["after-preflight", "before-switch", "shutdown"]);
+			assert.deepEqual(await readFile(other), otherAfter!);
+			assert.equal(SessionManager.open(other).getEntries().some(e => e.type === "custom" && e.customType === "late-shared-reference" && e.data.fullOutputPath === shared), true);
+			for (const path of [f.file, tree, child, sidecar, own, childArtifact]) assert.equal(existsSync(path), false, path);
+			assert.deepEqual(await readFile(sibling), siblingBefore);
+			assert.ok(existsSync(lookalike));
+			if (fresh) {
+				assert.ok(existsSync(discovered), "session JSONL created after preflight must survive outgoing artifact references");
+				assert.deepEqual(await readFile(discovered), discoveredAfter!);
+			}
+			assert.ok(existsSync(shared), "artifact referenced by surviving other.jsonl after preflight must survive");
+			assert.deepEqual(await readFile(shared), bytes);
+		} finally { await runtime?.dispose(); await f.close(); }
+	});
+});
+
 test("remove deletes the exact `<file>.children` tree, nested descendants, sidecars and their unshared artifacts", async () => {
 	const f = await fixture();
 	try {

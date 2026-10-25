@@ -20,6 +20,7 @@ named below. All pre-reset tasks are DEFERRED / ON HOLD outside the execution qu
 resumes each task. Requirements, sources, retained branches and dependencies are preserved. A delivered prerequisite
 or an old due date never lifts the hold. The current parallel cap is governed by
 [PROCESS.md](PROCESS.md#isolated-parallel-execution), not the earlier number in this reset quotation.
+Requested HTML artifacts are separate from this queue, not product tasks; discarded work stays discarded.
 
 ## Windows advisory follow-ups
 
@@ -57,12 +58,11 @@ Run state and triage are coordinator evidence, not owner quotations.
 
 Owner current queue corrections, 2026-10-25, supersede the earlier reset only for these named items.
 Operational bookkeeping is not a task or slot. No other held task is resumed.
-Audits and R11 are queued, but must not start yet.
+Audits are queued, but must not start yet.
 
 | ID | Work | Status/branch | Source |
 | --- | --- | --- | --- |
 | <a id="u13"></a>U13 / U18 | Remaining physical-terminal appearance verification only: actual display/font rendering and perceived animation smoothness. Scripted real-Pi composition and load-order proof is in `test/ui-e2e.test.ts` and `test/ui-e2e.py`; PTY escape output is not a physical-display claim. | Physical checks NOT PERFORMED; no implementation branch. Automated P11/U13 scope is delivered; this does not resume unrelated held UI work. | Backlog U13/U18; handoff 30/49-50/100; completeness 55; UI execution brief P11 T19 and evidence limits G8; explicit P11 resumption. |
-| <a id="r11"></a>R11 | Reviewer checking test code against requirements and test plan, including conversation collection; distinct from repository checks reviewers may already run. | NEAR QUEUE, NOT STARTED by owner current queue correction, 2026-10-25; no branch. Earlier hold source below is superseded for queue placement only. | Backlog R11; completeness 147; `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl:1602`. |
 | <a id="extension-audits"></a>EXTENSION-AUDITS | Full independent re-check of each listed implemented extension, one queued task each; criteria and simplest-first reference task list below. | QUEUED, NOT STARTED by owner current queue correction, 2026-10-25. After small near-ready merges, preserving remaining prerequisites below; fix tasks follow audits; auditor never fixes. | Owner `16-27-59:4864/4868/4872/4892`, entries `c7934716`, `6e47c19b`, `249fcb3b`, `40d49370`. |
 
 ## Test-lane queue
@@ -78,6 +78,7 @@ All existing evidence and unresolved causes are retained.
 
 | ID | Work | Status/branch | Source |
 | --- | --- | --- | --- |
+| <a id="provider-limits"></a>PROVIDER-LIMITS | Future statusbar provider-limit badges; accepted colors are [D-STATUSBAR-LIMIT-COLORS](DECISIONS.md#status-bar). The direct Anthropic quota provider is delivered, not remaining work here. | PENDING, statusbar badge implementation NOT STARTED by this operational record; no implementation branch. No audit, test queue or held topic is resumed. | Owner `16-27-59:7409`, entry `e65a800e`; definitive CC bronze choice `16-27-59:9432`, entry `d7037e66`. |
 | <a id="composer-predictions"></a>COMPOSER-PREDICTIONS | Next-prompt prediction: Codex-style suggestion of the next user message as gray text in the empty input; Tab accepts. Discuss implementation with the owner before any design or code. The [draft reference](file:///Users/arkadijcukavin/ai-project/my-pi-evidence/composer-predictions/DRAFT-TZ.md) is material for discussion only, not an agreed specification. | OPEN; awaiting discussion with the owner; no implementation branch. | Owner: «Эту хуйню в soft complete надо добавить в задачу, но обсудить, как она будет у нас имплементирована. Это просто рандомный агент написал текст задачи. Это не сама задача, это на подумать.» |
 
 ## Waiting for owner
@@ -104,17 +105,6 @@ deferrals and all prerequisite constraints still apply; prerequisite delivery ne
 | <a id="u14"></a><a id="todo-panel"></a>U14 / TODO-PANEL | Todo-list producer and agent working-memory list; compact three-line panel above input, sub-steps, expand, history and completion check. Open choices: skill name and activation duration; three-line layout with sub-steps; expand method and depth; behaviour on blocker, wait or cancel. Task-list overlap with I05 is owned here. [Full owner text and details](#u14-details). | DEFERRED / ON HOLD; historical coordinator record of owner deferral. The referenced older session was unavailable for independent quote verification. Retains prerequisites in the held UI work P5/P10/P11: U05, U12, U13; not authorised for implementation; no branch. | Backlog U14/I05; handoff 103; UI execution brief section 2 item 1; DECISIONS Scope. USER entry `2026-10-21T18-16-12-433Z_01a15fad-8f91-7306-bd46-1528008fbdc6.jsonl:901`; owner message "Вот еще принес задачек запиши" in session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`. |
 | <a id="a01"></a>A01 | Remaining Codex-style child capabilities: parent-history fork, web search and MCP. Durable resume is delivered, see [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume). | DEFERRED / ON HOLD, coordinator record of owner deferral; no authenticated quote supplied. Not delivered by in-process sessions; no branch. | Backlog A01; DECISIONS Agent deferred-capabilities entry. |
 | <a id="i05"></a>I05 | `custom`, `define-goal` and work orders. Task list is [U14](#u14). | DEFERRED / ON HOLD, coordinator record of owner deferral; no authenticated quote supplied. Not abolished; no new implementation permission or branch. | Backlog I05; active `D-SCOPE-POSTPONED`; DECISIONS Scope postponed-items entry. |
-
-R11 exact USER entry from the session above. Session files are under
-`/Users/arkadijcukavin/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`.
-
-```text
-Нет, я думаю, что в автотестах тесты сами не надо запускать, когда он review делает.
-
- Я могу достать переписку. Я смогу достать код, но я не смогу достать коммит до и коммит после, скорее всего. Я хз.
-
- Давай пока скипнем тему с автотестами, потом к этому вернёмся.
-```
 
 ### AGENT-STATES-UI details
 

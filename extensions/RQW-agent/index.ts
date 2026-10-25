@@ -861,7 +861,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		a.activity.startRun();
 		const identity = target(a);
 		coordinator.begin(identity);
-		const texts: string[] = [];
+		// Keep error provenance with each contribution so retry/delegation trimming removes both together.
+		const outputs: { text: string; error?: true }[] = [];
 		// This logical run's record: fresh here, updated by every assistant message_end below, retries and wakeups included.
 		const meta: RunMeta = {};
 		let lastPushed = 0;
@@ -872,13 +873,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
 			if (event.type === "agent_start") {
 				// Multiple background wakeups may be deferred at settlement. Keep only their final native run's answer.
-				if (delegatedRunStart !== undefined) { texts.splice(delegatedRunStart); lastPushed = 0; }
-				nativeRunStart = texts.length;
+				if (delegatedRunStart !== undefined) { outputs.splice(delegatedRunStart); lastPushed = 0; }
+				nativeRunStart = outputs.length;
 			}
 			if (event.type === "agent_end" && (a.children?.pending() || a.bridge.pending())) {
 				// This native run ended before all delegated results were consumed. It is not a final answer to main.
 				delegatedRunStart ??= nativeRunStart;
-				texts.splice(nativeRunStart);
+				outputs.splice(nativeRunStart);
 				lastPushed = 0;
 			}
 			if (event.type === "compaction_start") {
@@ -888,11 +889,11 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				accept();
 			}
 			if (event.type === "auto_retry_start" || (event.type === "compaction_end" && event.willRetry)) {
-				if (lastPushed) texts.splice(texts.length - lastPushed, lastPushed);
+				if (lastPushed) outputs.splice(outputs.length - lastPushed, lastPushed);
 				lastPushed = 0;
 			}
 			if (event.type === "compaction_end" && !event.willRetry && event.errorMessage) {
-				texts.push(`error: ${event.errorMessage}`);
+				outputs.push({ text: `error: ${event.errorMessage}`, error: true });
 				lastPushed = 0;
 			}
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
@@ -902,14 +903,14 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			recordRunMessage(meta, m);
 			lastPushed = 0;
 			if (m.stopReason === "error") {
-				texts.push(`error: ${m.errorMessage ?? "unknown error"}`);
+				outputs.push({ text: `error: ${m.errorMessage ?? "unknown error"}`, error: true });
 				lastPushed = 1;
 			} else if (m.stopReason === "stop" || m.stopReason === "length") {
 				const text = textOf(m);
-				if (text) { texts.push(text); lastPushed++; }
+				if (text) { outputs.push({ text }); lastPushed++; }
 				if (m.stopReason === "length") {
 					a.activity.reportError("Response was truncated: the model reached its output token limit.");
-					texts.push("error: Response was truncated: the model reached its output token limit.");
+					outputs.push({ text: "error: Response was truncated: the model reached its output token limit.", error: true });
 					lastPushed++;
 				}
 			}
@@ -978,15 +979,15 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					else break;
 				}
 				if (!run.quiet && !a.guard.signal?.aborted) {
-					const outcome = texts.some(t => t.startsWith("error:")) ? "error" : "completed";
-					publishRun(a, identity, texts.join("\n\n") || "(no text)", outcome, meta);
+					const outcome = outputs.some(output => output.error) ? "error" : "completed";
+					publishRun(a, identity, outputs.map(output => output.text).join("\n\n") || "(no text)", outcome, meta);
 				}
 			} catch (error) {
 				if (!run.quiet && !a.guard.signal?.aborted) {
 					const detail = error instanceof Error ? error.message : String(error);
 					a.activity.reportError(detail);
-					texts.push(`error: ${detail}`);
-					publishRun(a, identity, texts.join("\n\n"), "error", meta);
+					outputs.push({ text: `error: ${detail}`, error: true });
+					publishRun(a, identity, outputs.map(output => output.text).join("\n\n"), "error", meta);
 				}
 			} finally {
 				a.progress.invalidate();
@@ -996,7 +997,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				// Pi would reject a new prompt then, so pending sends wait for it. This run stays current meanwhile.
 				if (a.run === run && a.next?.length && !a.controller.signal.aborted) await (a.core.on ? session.agent.waitForIdle() : session.waitForIdle()).catch(() => {});
 				if (a.run === run) {
-					a.activity.endRun(run.quiet ? "interrupted" : texts.some(t => t.startsWith("error:")) ? "error" : "completed");
+					a.activity.endRun(run.quiet ? "interrupted" : outputs.some(output => output.error) ? "error" : "completed");
 					// `send` with `interrupt` (and sends after it) made while this run was stopping: start them now, once.
 					// a.next keeps the child active until startRun has set the new a.run (synchronously), so wait and
 					// the caller's fallback never see it idle in between.

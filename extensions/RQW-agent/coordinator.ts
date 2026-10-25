@@ -82,6 +82,8 @@ export class Coordinator {
 	private nativeStarts = 0;
 	private settling = false;
 	private callerAborted = false;
+	private caller?: ExtensionContext;
+	private unansweredNotifications = new Set<string>();
 	private endSignal?: AbortSignal;
 	private diagnostics: { customType: string; content: string; display: boolean }[] = [];
 	private markAborted = () => { this.callerAborted = true; this.cancelNotificationWaits(true); };
@@ -89,6 +91,9 @@ export class Coordinator {
 	private send: ExtensionAPI["sendMessage"];
 	constructor(pi: ExtensionAPI, send: ExtensionAPI["sendMessage"] = (message, options) => pi.sendMessage(message, options)) {
 		this.send = send;
+		pi.on("session_start", (_event, ctx) => { this.caller = ctx; });
+		pi.on("before_agent_start", (_event, ctx) => { this.caller = ctx; });
+		pi.on("session_tree", (_event, ctx) => { this.caller = ctx; this.unansweredNotifications.clear(); });
 		// Real parentToolCallId links, independent of nestedCalls' bounded presentation log and ID spelling.
 		pi.on("tool_call", event => { if (event.parentToolCallId) this.parents.set(event.toolCallId, event.parentToolCallId); });
 		pi.on("tool_execution_end", event => {
@@ -106,11 +111,11 @@ export class Coordinator {
 			if (ctx.signal?.aborted) this.callerAborted = true;
 			else ctx.signal?.addEventListener("abort", this.markAborted, { once: true });
 		});
-		pi.on("agent_before_settle", () => {
+		pi.on("agent_before_settle", (_event, ctx) => {
 			const notifications = this.flushNotifications(false);
 			const messages = this.diagnostics.splice(0);
 			for (const message of messages) this.send(message, { triggerTurn: false });
-			if ((notifications || messages.length) && !this.callerAborted) return { continue: true };
+			if ((notifications || messages.length || this.needsNotificationTurn(ctx)) && !this.callerAborted) return { continue: true };
 			this.settling = true;
 		});
 		pi.on("agent_settled", (event, ctx) => this.settleCore(ctx, event.aborted));
@@ -135,6 +140,18 @@ export class Coordinator {
 		messages.forEach((message, i) => this.send(message, { triggerTurn: !aborted && !notifications && i === messages.length - 1 }));
 		this.flushNotifications(!aborted);
 		this.notify();
+	}
+	/** Busy notifications persist after the current turn; continue once unless a later answer already saw them. */
+	private needsNotificationTurn(ctx: ExtensionContext) {
+		if (!this.unansweredNotifications.size) return false;
+		const branch = ctx.sessionManager.getBranch();
+		const lastAnswer = branch.findLastIndex(e => e.type === "message" && e.message.role === "assistant");
+		for (const id of this.unansweredNotifications) {
+			const at = branch.findIndex(e => e.type === "custom_message" && e.customType === "child_wait"
+				&& (e.details as { wait_id?: string } | undefined)?.wait_id === id);
+			if (at >= 0 && at < lastAnswer) this.unansweredNotifications.delete(id);
+		}
+		return this.unansweredNotifications.size > 0;
 	}
 	private cancelNotificationWaits(uncommittedOnly = false) {
 		for (const wait of [...this.notificationWaits.values()]) wait.cancel(uncommittedOnly);
@@ -377,8 +394,12 @@ export class Coordinator {
 				const claimed = outcome!.pending.filter(r => r.state === "held" && r.claimed_by === owner);
 				for (const r of claimed) { r.state = "message"; this.uncommitted.delete(r); selection.held.delete(r); }
 				cleanup();
-				try { this.send(message, { triggerTurn }); }
+				// Pi retains triggerTurn:false custom messages through clearQueue/Esc and persists them at turn end.
+				const busy = this.caller?.isIdle() === false;
+				if (busy && triggerTurn) this.unansweredNotifications.add(owner);
+				try { this.send(message, { triggerTurn: triggerTurn && !busy }); }
 				catch {
+					this.unansweredNotifications.delete(owner);
 					for (const r of claimed) { r.state = "held"; this.uncommitted.add(r); selection.held.add(r); }
 					selection.release(); return;
 				}

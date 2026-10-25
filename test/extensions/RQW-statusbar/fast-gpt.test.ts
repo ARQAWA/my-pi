@@ -21,9 +21,9 @@ const plain = (text: string) => stripVTControlCharacters(text);
 describe("GPT Fast lightning render", () => {
 	it("idle: the static bright yellow bolt right after the model name, before the level; no state: no bolt", () => {
 		const row = modelRow({ ...base, fast: {} }, 60);
-		// The bolt's own colour sits right after the name; the high level's effort colour follows it, the visible text is plain.
+		// The bolt's own colour sits right after the name; high retains its bold weight under plain paint.
 		assert.equal(row.startsWith(` ${ICON.model} GPT 6.1 Sol ${sgr(FAST_YELLOW)} `), true, JSON.stringify(row));
-		assert.equal(row.includes(` \x1b[1;38;2;201;162;39mhi\x1b[22;39m`), true, JSON.stringify(row));
+		assert.equal(row.includes(` \x1b[1mhi\x1b[22m`), true, JSON.stringify(row));
 		assert.equal(plain(row).startsWith(` ${ICON.model} GPT 6.1 Sol ${ICON.fast} hi`), true, JSON.stringify(row));
 		const left = ` ${ICON.model} GPT 6.1 Sol ${ICON.fast} hi`;
 		assert.equal(plain(row), `${left}${" ".repeat(60 - left.length - "cmp 0".length)}cmp 0`);
@@ -91,7 +91,8 @@ async function mount() {
 	await session.bindExtensions({ mode: "tui", uiContext: {
 		setFooter(factory) {
 			component?.dispose?.();
-			component = factory?.({ requestRender() { counter.renders++; } } as never, { fg: (_role: string, text: string) => text } as never,
+			component = factory?.({ requestRender() { counter.renders++; } } as never, { fg: (_role: string, text: string) => text,
+				getThinkingBorderColor: pi.Theme.prototype.getThinkingBorderColor } as never,
 				{ getExtensionStatuses: () => new Map(), onBranchChange: () => () => {} } as never);
 		}, notify() {},
 		setEditorComponent(factory) { editor = factory; }, getEditorComponent: () => editor,

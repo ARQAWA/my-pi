@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { it } from "node:test";
 import { stripVTControlCharacters as strip } from "node:util";
 import { activityRows, GOLD, SILVER, shimmerText, silverGlintPosition } from "../../../extensions/RQW-statusbar/render.ts";
@@ -17,8 +19,8 @@ it("renders silver flights, complete exit and the 2500 ms absence without changi
 			evidence.push(`width=${text.length} t=${ms}ms center=${silverGlintPosition(text.length, ms / 80)} ${absent ? "absent" : "flight"}`, line);
 		}
 	}
-	writeFileSync("/tmp/statusbar-silver-loop-flight.ansi", evidence.join("\n") + "\n");
-	writeFileSync("/tmp/statusbar-silver-loop-flight.txt", strip(evidence.join("\n")) + "\n");
+	writeFileSync(join(tmpdir(), "statusbar-silver-loop-flight.ansi"), evidence.join("\n") + "\n");
+	writeFileSync(join(tmpdir(), "statusbar-silver-loop-flight.txt"), strip(evidence.join("\n")) + "\n");
 });
 
 it("keeps gold bytes identical to the delivered bounce, including tiny widths and reverse legs", () => {

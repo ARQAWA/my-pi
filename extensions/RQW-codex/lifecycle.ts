@@ -208,6 +208,37 @@ function isOwnedCodexDiagnostic(message: unknown): boolean {
 		&& Array.isArray(m.diagnostics) && m.diagnostics.some(item => isRetryOwnedDiagnostic(item));
 }
 
+/** Pi's standalone summary helper retries returned errors separately from AgentSession._isRetryableError. */
+function suppressSummaryRetries(session: AgentSession): Cleanup {
+	const agent = session.agent;
+	const original = agent.streamFunction;
+	let active = true;
+	const wrapped: typeof original = async (model, context, options) => {
+		const stream = await original.call(agent, model, context, options);
+		if (!active || model.provider !== CODEX_PROVIDER || model.api !== CODEX_API || options?.cacheRetention !== "none"
+			|| options.sessionId === session.sessionId) return stream;
+		const result = stream.result.bind(stream);
+		stream.result = async () => {
+			const message = await result();
+			if (active && isOwnedCodexDiagnostic(message)) {
+				// Reject outside Pi's lazy provider streams, before retryAssistantCall can reuse its budget.
+				// Keep Pi 1.4.0's error label for both history and split-turn prefix summaries.
+				const content = context.messages.find(item => item.role === "user")?.content;
+				const text = typeof content === "string" ? content : content?.find(item => item.type === "text")?.text;
+				const label = text?.startsWith("# Conversation\n") ? "Turn prefix summarization" : "Summarization";
+				throw new Error(`${label} failed: ${message.errorMessage || "Unknown error"}`);
+			}
+			return message;
+		};
+		return stream;
+	};
+	agent.streamFunction = wrapped;
+	return () => {
+		active = false;
+		if (agent.streamFunction === wrapped) agent.streamFunction = original;
+	};
+}
+
 /**
  * Bind one policy to one exact session. Instance-level patches only; the prototype is untouched except
  * for the shared reference-counted binder. Returns the release for this binding; it is idempotent.
@@ -223,6 +254,7 @@ export function bindSession(session: AgentSession, policy: SessionPolicy): Clean
 	state.bindings.set(session, binding);
 	const restores: Cleanup[] = [];
 	let unsubscribe: Cleanup = () => {};
+	let releaseSummary: Cleanup = () => {};
 	let runActive = false;
 	let ownFirstInput = false;
 	let released = false;
@@ -233,6 +265,7 @@ export function bindSession(session: AgentSession, policy: SessionPolicy): Clean
 		try { policy.release?.(); }
 		finally {
 			unsubscribe();
+			releaseSummary();
 			for (const restore of restores.reverse()) restore();
 			if (state.bindings.get(session) === binding) state.bindings.delete(session);
 			releaseAcquire();
@@ -251,7 +284,13 @@ export function bindSession(session: AgentSession, policy: SessionPolicy): Clean
 		unsubscribe = session.subscribe(event => {
 			if (!binding.active) return;
 			const type = (event as { type: string }).type;
-			if (type === "agent_start") {
+			if (type === "compaction_start") {
+				releaseSummary();
+				releaseSummary = suppressSummaryRetries(session);
+			} else if (type === "compaction_end") {
+				releaseSummary();
+				releaseSummary = () => {};
+			} else if (type === "agent_start") {
 				runActive = true;
 				ownFirstInput = true;
 				policy.beginRun?.({ kind: "run" });

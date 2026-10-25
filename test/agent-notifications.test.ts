@@ -213,6 +213,66 @@ test("a model-called wait ends the turn with a receipt; owner input proceeds; th
 	} finally { await w.cleanup(); }
 });
 
+for (const abort of [false, true]) {
+	test(`a saved wait completing in a new busy parent run survives cleared queues, abort=${abort}`, async () => {
+		const w = await world();
+		try {
+			const parent = await w.launchPersisted();
+			const child = hold(w.hub, "RECOVERED WAIT RESULT");
+			w.sub.queue.push(child.reply);
+			w.main.queue.push(toolUse("agent", w.startParams("FIRST"), "s1"),
+				toolUse("agent", { action: "wait", ids: ["agent#1"] }, "w1"));
+			await parent.session.prompt("subscribe");
+			const receipt = lastResult(parent).details;
+			assert.equal(receipt.reason, "waiting");
+			const saved = parent.session.sessionManager.getBranch().findLast(e => e.type === "message"
+				&& e.message.role === "toolResult" && e.message.toolCallId === "w1");
+			assert.ok(saved, "the subscription receipt persisted before the new owner run");
+
+			const busyReply = hold(w.hub, "BUSY ANSWER");
+			w.main.queue.push(busyReply.reply);
+			const base = w.main.requests.length;
+			const busy = parent.session.prompt("new owner input");
+			await w.hub.until(busyReply.entered, "the new parent request is busy");
+			child.release();
+			await settle();
+			assert.deepEqual(waitMessages(parent), [], "the completion arrived during the request, before persistence");
+			assert.equal(w.main.requests.length, base + 1, "the busy request has not consumed the result");
+			const pending = (parent.session as unknown as { _pendingCustomMessages: { customType: string; content: string }[] })._pendingCustomMessages;
+			assert.equal(pending.filter(message => message.customType === "child_wait"
+				&& message.content.includes("RECOVERED WAIT RESULT")).length, 1, "the real SDK already holds the completion outside its clearable queues");
+
+			// Esc clears Pi's steering/follow-up queues before aborting the running request.
+			parent.session.clearQueue();
+			if (abort) await parent.session.abort();
+			else busyReply.release();
+			await busy;
+			await settle();
+			assert.equal(waitMessages(parent).length, 1, "the completed wait survives queue clearing exactly once");
+			const notification = waitMessages(parent)[0];
+			assert.equal(notification.wait_id, receipt.wait_id);
+			assert.equal(notification.results[0].text, "RECOVERED WAIT RESULT");
+			const disk = (await readFile(parent.file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
+			const persisted = disk.filter(entry => entry.type === "custom_message" && entry.customType === "child_wait"
+				&& entry.details?.wait_id === receipt.wait_id);
+			assert.equal(persisted.length, 1, "the recovered text is durably saved, not merely a broker receipt");
+			assert.equal(persisted[0].details.results[0].text, "RECOVERED WAIT RESULT");
+			assert.deepEqual(parent.delivered(), [], "no competing ordinary agent delivery");
+			if (abort) {
+				assert.equal(w.main.requests.length, base + 1, "Esc does not start a new request");
+				await parent.session.prompt("continue after Esc");
+			}
+			assert.equal(w.main.requests.length, base + 2, "one continuation sees the retained result");
+			assert.ok(w.main.requests.at(-1)!.texts.some(text => text.includes("RECOVERED WAIT RESULT")));
+			const again = await parent.execute({ action: "wait", ids: ["agent#1"] });
+			assert.equal(again.details.reason, "receipt");
+			assert.deepEqual(again.details.results, []);
+			assert.equal(waitMessages(parent).length, 1, "the receipt refers to the still-recoverable persisted text");
+			assert.deepEqual(parent.errors, []);
+		} finally { await w.cleanup(); }
+	});
+}
+
 test("a persisted child_wait completion is not republished after reopening the parent", async () => {
 	const w = await world();
 	try {

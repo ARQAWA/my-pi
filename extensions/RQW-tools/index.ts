@@ -349,6 +349,8 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 			const note = await unchanged.check(call.ctx, files[0], params);
 			if (note) return { content: [{ type: "text", text: note }] };
 		}
+		// Bind the cache to bytes from before stock read, not a new version seen only by its later image check.
+		const version = name === "read" && top && call ? await unchanged.version(files[0]) : undefined;
 		let result: any;
 		try {
 			result = await work();
@@ -364,7 +366,7 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 			} else {
 				recordSeen(owner, files[0], after);
 				// A read that went to the background hands the model a job placeholder, not this content.
-				if (top && call && !call.job?.backgrounded()) await unchanged.remember(call.ctx, files[0], params, call.id, result);
+				if (top && call && !call.job?.backgrounded()) await unchanged.remember(call.ctx, files[0], params, call.id, result, version);
 			}
 		} else {
 			const tool = top ? name : `${name} in a codemode script`;

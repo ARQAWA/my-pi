@@ -1,7 +1,9 @@
 # RQW-anthropic
 
 Subscription transport for stock Pi 1.4.0. `/login anthropic` still uses Pi's browser or copy-code login.
-The builtin model catalog and Pi's message/tool parser stay intact. Plain API-key requests pass through unchanged.
+The builtin model catalog and Pi's message/tool parser stay intact. Plain API-key requests pass through unchanged,
+including native custom SDK clients. OAuth requests ignore `options.client` and use Pi's OAuth builder with the
+protected subscription fetch, so a custom client's origin or fetch cannot bypass signing, origin checks or recovery.
 This extension is the Anthropic transport only. Hiding the other providers (only `anthropic` and `openai-codex`
 stay visible) is the separate [RQW-providers](../RQW-providers/README.md); each works with the other switched off.
 
@@ -145,10 +147,13 @@ Focused offline coverage: `test/extensions/RQW-anthropic/context-fork.test.ts`.
   a refresh that already started finishes and persists its rotated token instead of losing it. Native OAuth source
   and bearer are captured per request before async payload hooks, including native compact, branch and bug-report
   summaries that forward resolved auth as an explicit key. Explicit or ambient credentials cannot borrow the saved
-  account. A concurrent changed bearer is reusable only through refresh transitions proven in this process. Up to
-  256 SHA-256 access/refresh hash edges are shared across module copies and reloads, with no secret token history
-  or new credential fields. An unrelated login, unknown external rotation or evicted proof fails with new-turn
-  and login guidance instead of switching accounts. A fresh turn can resolve the currently saved login.
+  account. A concurrent changed bearer is reusable only through proven refresh transitions. The OAuth credential's
+  `rqwAnthropicRefresh` metadata retains up to 256 previous bearer SHA-256 hashes, bound to hashes of the current
+  access and refresh tokens. Pi persists this proof with the rotated credential under the same lock, so independent
+  Pi processes can reuse it without secret token history or a separate file. An unrelated login, unknown external
+  rotation or evicted proof fails with new-turn and login guidance instead of switching accounts. A fresh turn
+  can resolve the currently saved login. `cross-process-refresh.test.ts` exercises a real sibling process calling
+  `refreshCredential()` against shared fake file-backed credentials and the unknown-login rejection control.
 - An explicit `claude_code_version_too_old` HTTP 400 may adopt the newer required version and replay once per
   request, including when another concurrent request already adopted a sufficient newer version.
   The default is `2.1.280`, as in the inspected omp source. `PI_AI_CLAUDE_CODE_VERSION=major.minor.patch` pins it

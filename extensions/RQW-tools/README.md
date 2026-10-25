@@ -4,6 +4,13 @@ Base tools, ordered execution and background jobs.
 
 Modules and resources live beside `index.ts`; subfolders group needed resources.
 
+## Unchanged reads
+
+The unchanged-read cache compares the file's mtime and content hash from before
+stock read with its version after the asynchronous image check. A changed version
+is not remembered, so a later read returns the new content rather than the note.
+The full contract is `D-TOOLS-UNCHANGED-READ` in `DECISIONS.md`.
+
 ## Background activity counts
 
 The main registry offers a version-1 source on `rqw:running-counts:offer` at each

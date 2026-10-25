@@ -124,7 +124,10 @@ function fakeSocketFactory(scripts: unknown[][][], options: { connectErrors?: Er
 			events() {
 				const batch = current;
 				return (async function* () {
-					for (const value of batch) yield { text: JSON.stringify(value), value: value as Record<string, unknown> };
+					for (const value of batch) {
+						if (value instanceof Error) throw value;
+						yield { text: JSON.stringify(value), value: value as Record<string, unknown> };
+					}
 				})();
 			},
 			async send(object: unknown) {
@@ -298,6 +301,50 @@ test("WebSocket connection failures retry unbounded with 5s then 10s, then conti
 	assert.deepEqual(timing.sleeps, [5000, 10000]);
 	assert.equal(transport.transport, "websocket");
 });
+
+for (const [kind, failureAt] of (["transport", "closed"] as const).flatMap((kind) =>
+	(["send", "before-created", "after-created"] as const).map((phase) => [kind, phase] as const))) {
+	test(`established WebSocket ${kind} at ${failureAt} exhausts five stream retries, then succeeds over SSE`, async () => {
+		const failure = () => new SocketError(undefined, {}, "established socket failed", kind);
+		const scripts = Array.from({ length: 6 }, (_, i) => [[
+			...(failureAt === "after-created" ? [{ type: "response.created", response: { id: `resp_failed_${i}` } }] : []),
+			failure(),
+		]]);
+		const sockets = fakeSocketFactory(scripts);
+		const sse = sseScript([{ events: textEvents("resp_fallback", "recovered") }]);
+		const timing = clockAndSleep();
+		const controller = new AbortController();
+		const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: {
+			...timing.dependencies,
+			connect: async (options) => {
+				// Stop the broken unbounded path without leaving a hung test.
+				if (sockets.connects.length === 6) controller.abort();
+				const socket = await sockets.connect(options);
+				if (failureAt === "send") {
+					const send = socket.send.bind(socket);
+					socket.send = async (object: unknown) => {
+						await send(object);
+						throw failure();
+					};
+				}
+				return socket;
+			},
+			postEvents: sse.fn,
+		} });
+		try {
+			const events = await collect(transport.stream(MODEL, USER_1, { signal: controller.signal }));
+			assert.equal(events.at(-1)?.type, "done");
+			assert.equal(sockets.connects.length, 6);
+			assert.equal(sockets.sent.length, 6);
+			assert.equal(sse.calls.length, 1);
+			assert.equal(transport.transport, "sse");
+			assert.deepEqual(timing.sleeps, [200, 400, 800, 1600, 3200]);
+			assert.equal((events.at(-1) as any).message.content[0].text, "recovered");
+		} finally {
+			transport.dispose();
+		}
+	});
+}
 
 test("WebSocket: second turn is incremental (previous_response_id + suffix only) on the same socket", async () => {
 	const sockets = fakeSocketFactory([[textEvents("resp_w1", "one")], [textEvents("resp_w2", "two")]]);

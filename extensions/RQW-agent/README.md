@@ -308,7 +308,11 @@ ready now returns at once as before. Otherwise it returns `reason: "waiting"` wi
 so the caller's turn ends with no further model request. The one later notification (the first or all selected results,
 an alert, or the `timeout_ms` deadline) is delivered once through the existing broker as the usual `[agent#N]` message and
 wakes an idle caller; a busy caller gets it at its settlement boundary. No model request, timer poll or network request
-is made merely to wait. The notification is a `child_wait` message. A persisted child that waits for its own children keeps it as an `rqw-agent-inbox` entry of its own session, acknowledged by that persisted message and not by a clearable steering queue. Owner messages, Esc and send-now reach the caller without cancelling accepted children.
+is made merely to wait. The notification is a `child_wait` message. While the parent is busy, Pi retains it outside
+its clearable steering/follow-up queues and persists it at turn end, including after Esc. A successful busy run
+continues once to read it; an aborted run leaves the persisted text for the next owner turn without waking itself.
+A repeated wait returns only a receipt for that retained delivery, not another copy.
+A persisted child that waits for its own children keeps it as an `rqw-agent-inbox` entry of its own session, acknowledged by that persisted message and not by a clearable steering queue. Owner messages, Esc and send-now reach the caller without cancelling accepted children.
 A wait inside a codemode script stays blocking because the outer script owns its result. The blocking fallback for print and json is only
 for external hosts: a root session that Pi itself runs in print or json mode ends with its run, so no notification can wake
 it. An in-process child agent whose offered factory got the `notify`/`retain` bridge gets notifications whatever mode its SDK
@@ -537,8 +541,8 @@ Delivered custom messages keep their original content byte-for-byte. Their `deta
 `{ id, outcome: "finished" | "failed", model?, thinking?, seconds }` beside `delivery` and `run`.
 `model` is the last assistant response's actual `provider/id`, omitted before any assistant response;
 `thinking` is the selected level when known. Runtime is monotonic, rounded to 0.1 seconds.
-Final errors, aborts and truncation are failed; a recovered retry is finished. Quiet cancellation still
-suppresses delivery as before. These fields do not change execution, steering or delivery ownership.
+Final errors, aborts and truncation are failed; a recovered retry is finished. Answer text, including
+an `error:` prefix, does not mark a run as failed. Quiet cancellation still suppresses delivery as before. These fields do not change execution, steering or delivery ownership.
 
 For wait, the same metadata is at `result.details.results[i].display`. The existing result item's
 `outcome` remains `completed`/`error`, and the entire original wait `content` is unchanged. Consumers

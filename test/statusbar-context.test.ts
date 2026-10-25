@@ -16,7 +16,8 @@ const bundle: typeof library = await import(new URL("./bundle/index.js", import.
 const { FooterDataProvider } = await import(new URL("./core/footer-data-provider.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 
 type EditorFactory = Parameters<ExtensionUIContext["setEditorComponent"]>[0];
-const plainTheme = { fg: (_role: string, text: string) => text };
+const plainTheme = { fg: (_role: string, text: string) => text,
+	getThinkingBorderColor: library.Theme.prototype.getThinkingBorderColor };
 const ACTIVITY_KEY = "rqw-statusbar-activity";
 /** Pi's ANSI and APC cursor marks removed, so visible text is compared without terminal control bytes. */
 const plain = (line: string) => stripVTControlCharacters(line.replace(/\x1b_[^\x07]*\x07/g, ""));

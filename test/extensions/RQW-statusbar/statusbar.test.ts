@@ -19,7 +19,8 @@ const bundle: typeof library = await import(new URL("./bundle/index.js", import.
 const { FooterDataProvider } = await import(new URL("./core/footer-data-provider.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 
 type EditorFactory = Parameters<ExtensionUIContext["setEditorComponent"]>[0];
-const plainTheme = { fg: (_role: string, text: string) => text };
+const plainTheme = { fg: (_role: string, text: string) => text,
+	getThinkingBorderColor: library.Theme.prototype.getThinkingBorderColor };
 
 /** Pi's extension UI slots in miniature: footer and editor factories, as interactive mode calls them. */
 function uiHarness(footer?: InstanceType<typeof FooterDataProvider>) {
@@ -111,10 +112,10 @@ for (const [label, pi] of [["library", library], ["bundle", bundle]] as const) {
 			// Direct state replacement is deliberately not a model_select event: external sources must also work.
 			session.agent.state.model = { ...model, id: "other", name: "Other", contextWindow: 272000 } as never;
 			session.setThinkingLevel("high");
-			// The effort colour is an intentional SGR around `hi`: the visible text is matched plain, the colour placed exactly.
+			// The plain theme resolves effort without colour; the footer retains high's existing bold weight.
 			const high = h.render()![0];
 			assert.match(stripVTControlCharacters(high), /Other hi/);
-			assert.ok(high.includes(" \x1b[1;38;2;201;162;39mhi\x1b[22;39m"), JSON.stringify(high));
+			assert.ok(high.includes(" \x1b[1mhi\x1b[22m"), JSON.stringify(high));
 			session.agent.state.thinkingLevel = "low";
 			assert.match(stripVTControlCharacters(h.render()![0]), /Other lo/);
 			assert.ok(h.border()!.endsWith("/222k"));

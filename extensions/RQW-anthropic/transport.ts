@@ -101,7 +101,8 @@ export function createOverlay(
 				} }, { status: error.status, headers: { "x-should-retry": "false" } });
 			}
 		};
-		return protectPartialStream(delegate(model, context, { ...subscriptionCacheOptions(options), maxRetries: 0, fetch }));
+		// A supplied SDK client skips Pi's OAuth builder and ignores this protected fetch.
+		return protectPartialStream(delegate(model, context, { ...subscriptionCacheOptions(options), client: undefined, maxRetries: 0, fetch }));
 	};
 	Object.assign(handler, { [OVERLAY]: true });
 	return { api: "anthropic-messages", streamSimple: handler, forks };

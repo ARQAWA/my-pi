@@ -9,8 +9,8 @@ sections after compaction or a handoff before continuing. This is mandatory lazy
 loading, not optional background reading. Give subagents the relevant process rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
 Coordinator personal-work objections and explicit overrides: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
 Coordinator rules bind only the session that holds the repository's `coordinator.lock`; every other session is a normal direct agent.
-At most three tasks in active execution follow the owner's priority queue; tasks waiting for CI, review, the merge queue or
-the owner hold no slot, and a fourth lane for tests only is outside the limit; pause is `agent` `interrupt`, resume of the interrupted request is `agent` `resume` (`send` only carries a new message), with no pause files:
+At most two main tasks in active execution follow the owner's priority queue; tasks waiting for CI, review, the merge queue or
+the owner hold no slot, and a separate lane for tests only is outside the limit; pause is `agent` `interrupt`, resume of the interrupted request is `agent` `resume` (`send` only carries a new message), with no pause files:
 [PROCESS.md](PROCESS.md#task-pipeline).
 Golden rule, no avoidable token spending and simplest engineered solutions: [PROCESS.md](PROCESS.md#golden-rule).
 Task timebox, at most 2 hours of substantive work, then a pause and a report: [PROCESS.md](PROCESS.md#task-timebox).
@@ -77,7 +77,10 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
 - `extensions/RQW-review/`: extension 6, a provider of Codex profiles and native Agent Skills, not a separate runtime.
   `profiles/spotty.toml` defaults to `gpt-6.1-sol` low; `profiles/bossy.toml` defaults to the same model medium. Both embed the same
   reviewer role in `developer_instructions`. `rqw-agent:profiles` offers their paths to RQW-agent; public
-  `resources_discover` supplies `skills/reviewer`, `skills/blindreview` and `skills/highreview`. The common skill
+  `resources_discover` supplies `skills/reviewer`, `skills/blindreview`, `skills/highreview` and `skills/testreview`.
+  `testreview` selects `requirements-test-reviewer` on Sol low to review test code against supplied requirements,
+  test plan and conversation without execution or mandatory commit pairs. It is separate from the project
+  `test-reviewer` mechanical integrity gate. The common blind/high skill
   carries only the review section of the owner's Codex skill, and the wrappers select Spotty or Bossy. Each pass
   starts a fresh ordinary `agent` with `agent_type` and `include: ["user_messages"]`; results are `agent#N` results.
   Read-only is an instruction, with no git guard or sandbox. Lifecycle, settings, Fast, caching and delivery are

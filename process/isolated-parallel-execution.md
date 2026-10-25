@@ -21,7 +21,7 @@
   normal direct agent and these coordinator rules do not apply to it.
 - Main never blocks its own thread on waiting, polling, CI watching, test runs or any other long work. It hands
   all of that to subagents and stays free to coordinate and talk to the owner.
-- At most three tasks are in active execution at the same time, in the priority queue set by the owner. Fill a free
+- At most two main tasks are in active execution at the same time, in the priority queue set by the owner. Fill a free
   slot from that queue, not from Main's preferred order; a priority change from the owner steers the queue. This is
   a task limit, not a count of first-level subagents. A task that waits for CI, a reviewer, the merge queue or the
   owner holds no slot, and the test lane is outside the limit ([Task pipeline](../PROCESS.md#task-pipeline)). Parallel subagents inside an active task do not create extra

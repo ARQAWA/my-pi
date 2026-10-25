@@ -24,12 +24,14 @@ const ACTIVITY_KEY = "rqw-statusbar-activity";
 // RQW-settings owns /fast-gpt. Its channels on pi.events are the only coupling; nobody answering means no lightning.
 const FAST_GPT_QUERY = "rqw-settings:fast-gpt-query";
 const FAST_GPT_CHANGED = "rqw-settings:fast-gpt";
-const COLORS: Record<Role, ThemeColor> = {
+const COLORS: Record<Exclude<Role, "effort">, ThemeColor> = {
 	bar: "text", barEmpty: "dim", label: "muted", model: "text", path: "text",
 	gitClean: "success", gitDirty: "warning", staged: "success", unstaged: "warning",
 	untracked: "muted", sep: "dim", info: "muted",
 };
-const themePaint = (theme: Theme): Paint => (role, text) => theme.fg(COLORS[role], text);
+export const themePaint = (theme: Theme): Paint => (role, text, level) => role === "effort"
+	? theme.getThinkingBorderColor((level ?? "off") as Parameters<Theme["getThinkingBorderColor"]>[0])(text)
+	: theme.fg(COLORS[role], text);
 
 function scratchRoots(): string[] {
 	const roots = new Set([tmpdir(), join(homedir(), "tmp")]);

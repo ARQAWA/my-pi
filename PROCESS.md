@@ -29,7 +29,8 @@ restore those sections too. A section link is navigation, not permission to omit
    owner has explicitly requested execution, start. Keep the minimal necessary agreed scope, not a smaller scope.
 
 <a id="isolated-parallel-execution"></a>
-[Isolated parallel execution](process/isolated-parallel-execution.md): Before development work; Main also loads this before coordination.
+[Isolated parallel execution](process/isolated-parallel-execution.md): At most two main tasks in active execution.
+Before development work; Main also loads this before coordination.
 
 <a id="task-pipeline"></a>
 [Task pipeline](process/task-pipeline.md): When scheduling, pausing, resuming, integrating, tracking CI or choosing wait behavior.

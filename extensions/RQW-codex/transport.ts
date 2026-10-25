@@ -238,7 +238,7 @@ function nativeErrorBody(control: ErrorControl | undefined, now: number): { erro
 }
 
 /** Maps any transport/parser failure to a typed Codex error. Caller aborts are rethrown by the caller. */
-export function toCodexError(error: unknown, now: number = Date.now()): CodexError {
+export function toCodexError(error: unknown, now: number = Date.now(), phase: "connecting" | "established" = "connecting"): CodexError {
 	if (error instanceof CodexError) return error;
 	if (error instanceof SocketError) {
 		switch (error.kind) {
@@ -252,9 +252,10 @@ export function toCodexError(error: unknown, now: number = Date.now()): CodexErr
 			case "interrupt-timeout":
 				return new CodexError({ kind: "fatal", status: error.status, transport: true });
 			case "connect-timeout":
+				return classifyTransport("connection");
 			case "transport":
 			case "closed":
-				return classifyTransport("connection");
+				return classifyTransport(phase === "established" ? "network" : "connection");
 			case "idle-timeout":
 				return classifyTransport("timeout");
 			case "binary-frame":
@@ -1244,7 +1245,7 @@ export class CodexThreadTransport {
 		} catch (error) {
 			// A failed or aborted send leaves the socket in an unknown state: it is never reused.
 			this.#retire(socket);
-			throw error;
+			throw error instanceof SocketError ? toCodexError(error, this.#clock.now(), "established") : error;
 		}
 	}
 
@@ -1376,7 +1377,8 @@ export class CodexThreadTransport {
 		} catch (error) {
 			if (error instanceof LocalRequestError) throw error;
 			if (isAbort(error, signal)) throw abortError();
-			throw toCodexError(error, this.#clock.now()).withPartial(completedRawItems(state.events));
+			// A socket here already passed the upgrade, even if response.created has not arrived yet.
+			throw toCodexError(error, this.#clock.now(), socket ? "established" : "connecting").withPartial(completedRawItems(state.events));
 		} finally {
 			// Any exit before the terminal was accepted (hook or parser refusal, early consumer return, end or failure of the source,
 			// abort) can leave unread frames on the socket: it is retired and never reused.

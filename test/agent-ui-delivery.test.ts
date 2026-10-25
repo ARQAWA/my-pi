@@ -111,6 +111,59 @@ test("agent-ui on real deliveries: agent custom message and external print wait 
 	}
 });
 
+test("real child outcomes and cards use runtime errors, not an error-prefixed answer", async () => {
+	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-outcome-"));
+	initTheme("dark", false);
+	const literal = "error: connection refused";
+	const failure = answer("", { stopReason: "error", errorMessage: "bad request" });
+	const scenarios = [
+		{ name: "literal answer", replies: [answer(literal, { stopReason: "stop" })], text: literal, outcome: "completed" },
+		{ name: "provider failure", replies: [failure], text: "error: bad request", outcome: "error" },
+		{ name: "recovered retry", replies: [answer("", { stopReason: "error", errorMessage: "overloaded_error" }), answer(literal)], text: literal, outcome: "completed" },
+		{ name: "failed follow-up", replies: [answer(literal), failure], followUp: true, text: `${literal}\n\nerror: bad request`, outcome: "error" },
+		{ name: "earlier failure survives follow-up retry", replies: [failure, answer("", { stopReason: "error", errorMessage: "overloaded_error" }), answer("RECOVERED")], followUp: true, text: "error: bad request\n\nRECOVERED", outcome: "error" },
+	];
+	for (const path of ["message", "wait"] as const) {
+		const f = await fixture("print", undefined, [], [AGENT_UI]);
+		try {
+			for (const [index, scenario] of scenarios.entries()) {
+				const id = `agent#${index + 1}`, held = gate();
+				const [first, ...rest] = scenario.replies;
+				f.subReplies.push(async (context, options) => { await held.reply(context, options); return first; }, ...rest);
+				await f.start(scenario.name);
+				await until(held.entered, "the child request");
+				if (scenario.followUp) await f.call({ action: "send", id, task: "FOLLOW_UP" });
+				const args = { action: "wait", ids: [id], timeout_ms: 60000, wake_on_alert: false };
+				const waiting = path === "wait" ? call(f, "agent", args) : undefined;
+				await tick();
+				held.release();
+				const displayOutcome = scenario.outcome === "completed" ? "finished" : "failed";
+				if (waiting) {
+					const result = await waiting;
+					const item = (result.details as { results: { text: string; outcome: string; display: { outcome: string } }[] }).results[0];
+					assert.equal(item.text, scenario.text, scenario.name);
+					assert.equal(item.outcome, scenario.outcome, scenario.name);
+					assert.equal(item.display.outcome, displayOutcome, scenario.name);
+					assert.match(plain(resultHost(f, "agent", args, result).render(100)), new RegExp(`${id} ${displayOutcome} ·`));
+				} else {
+					await until(() => f.delivered().length === index + 1, "the child delivery", 15000);
+					const stored = f.session.messages.findLast(m => m.role === "custom" && m.customType === "agent")!;
+					assert.equal((stored as { content: string }).content, `[${id}] ${scenario.text}`);
+					assert.equal((stored as { details: { outcome: string } }).details.outcome, displayOutcome, scenario.name);
+					assert.match(messageRows(f, "agent", stored, false), new RegExp(`${id} ${displayOutcome} ·`));
+				}
+				await tick();
+				const status = JSON.parse(await f.call({ action: "status", ids: [id] })).statuses[0];
+				assert.equal(status.state, "idle", scenario.name);
+				assert.equal(status.outcome, scenario.outcome, scenario.name);
+				if (scenario.name === "literal answer") assert.deepEqual(status.alerts, []);
+				if (scenario.name === "provider failure") assert.ok(status.alerts.some((alert: { kind: string }) => alert.kind === "error"));
+			}
+			assert.deepEqual(f.errors, []);
+		} finally { await f.cleanup(); }
+	}
+});
+
 test("real TUI wait terminates with a receipt and delivers one expandable notification without an ordinary duplicate", async () => {
 	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-notification-"));
 	initTheme("dark", false);

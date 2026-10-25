@@ -27,14 +27,14 @@ const CONTENT = [
 ].join("\n");
 
 describe("qa-status card rows", { skip }, () => {
-	it("collapsed: a count and one row per item without links or the triage note", () => {
-		const rows = qaLines(CONTENT, false, identity, 200);
-		assert.deepEqual(rows, [
-			"qa-status · 2 red",
-			"  #3 [qa] RQW-tools background.test.ts: port-note fixture race (test bug) [qa-inbox, qa:claimed]",
-			"  #2 [qa] RQW-agent Windows Bun 1.4.3 RPC mixed agents: CLI exited before event",
+	it("collapsed: exactly one line with only red and green item counts and their colors", () => {
+		const content = `${CONTENT}\nGREEN run 123 at 2026-10-25 https://x.test/123\nGREEN passed test\nGREEN latest main\nPENDING waiting\nINFO rate 20%`;
+		assert.deepEqual(qaLines(content, false, identity, 200), ["qa-status · 2 red · 3 green"]);
+		assert.deepEqual(qaLines(content, false, tagged, 200), [
+			"<muted>qa-status</muted><dim> · </dim><error>2 red</error><dim> · </dim><success>3 green</success>",
 		]);
-		assert.match(qaLines(CONTENT, false, tagged, 200).join("\n"), /<error>2 red<\/error>/);
+		assert.deepEqual(qaLines(CONTENT, false, identity, 200), ["qa-status · 2 red · 0 green"]);
+		assert.deepEqual(qaLines("GREEN ok", false, identity, 200), ["qa-status · 0 red · 1 green"]);
 	});
 
 	it("expanded: every line in full, links included, the triage note kept", () => {
@@ -47,11 +47,13 @@ describe("qa-status card rows", { skip }, () => {
 		]);
 	});
 
-	it("an unavailable status is a warning row, not hidden; mixed levels are counted; widths hold", () => {
+	it("unavailable and informational details remain expanded only; widths hold", () => {
 		const down = "QA status unavailable: ENOENT; start npm run ci-watch";
-		assert.deepEqual(qaLines(down, false, identity, 80), ["qa-status", `  ${down}`]);
-		assert.match(qaLines(down, false, tagged, 80)[1], /<warning>QA status unavailable/);
-		assert.equal(qaLines(`RED a\nINFO b https://x.test/1`, false, identity, 80)[0], "qa-status · 1 red · 1 info");
+		assert.deepEqual(qaLines(down, false, identity, 80), ["qa-status · 0 red · 0 green"]);
+		assert.deepEqual(qaLines(down, true, identity, 80), ["qa-status", `  ${down}`]);
+		assert.match(qaLines(down, true, tagged, 80)[1], /<warning>QA status unavailable/);
+		assert.deepEqual(qaLines(`RED a\nINFO b https://x.test/1`, false, identity, 80), ["qa-status · 1 red · 0 green"]);
+		assert.deepEqual(qaLines("", false, identity, 80), ["qa-status · 0 red · 0 green"]);
 		assert.deepEqual(parseQa(`GREEN ok\n\nnote`), { items: [{ level: "green", text: "ok", url: "" }], notes: ["note"] });
 		for (const width of [0, 1, 7, 8, 30]) for (const expanded of [false, true]) {
 			for (const row of qaLines(CONTENT, expanded, identity, width)) assert.ok(stripVTControlCharacters(row).length <= width, `${width}: ${row}`);
@@ -154,9 +156,9 @@ describe("qa-status card in Pi's real interactive mode", { skip }, () => {
 		try {
 			await deliver(h);
 			const collapsed = await h.screen();
-			assert.match(collapsed, /qa-status · 2 red/);
-			assert.match(collapsed, /#2 \[qa\] RQW-agent Windows Bun/);
-			assert.doesNotMatch(collapsed, /\[qa-status\]|https:\/\/github\.com|Triage per/);
+			assert.match(collapsed, /qa-status · 2 red · 0 green/);
+			assert.doesNotMatch(collapsed, /#2 \[qa\] RQW-agent Windows Bun/);
+			assert.doesNotMatch(collapsed, /\[qa-status\]|https:\/\/github\.com|Triage per|#3|background\.test\.ts|qa:claimed/);
 
 			h.terminal.onInput!("\x0f");
 			await settle();

@@ -4,6 +4,13 @@ Terminal footer, editor borders and activity display.
 
 Modules and resources live beside `index.ts`; subfolders group needed resources.
 
+## Effort colour
+
+The footer resolves all seven thinking levels through the supplied Pi theme's
+`Theme.getThinkingBorderColor`, the same `thinking*` roles used by the model/effort picker.
+It has no separate effort palette. Existing labels and bold levels stay unchanged.
+The picker, theme palette, animation and other footer colours do not change.
+
 ## Activity and waits
 
 While Main is active, retain its existing thinking or tool activity text and agent-count suffix.

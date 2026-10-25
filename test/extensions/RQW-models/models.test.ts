@@ -615,6 +615,51 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 			} finally { restored.dispose(); }
 		}
 	});
+	it("unlisted replacements prefer authenticated Opus over Kimi, else the strongest authenticated listed model", async () => {
+		const savedEnv = { ...process.env };
+		const savedFetch = globalThis.fetch;
+		let requests = 0;
+		for (const key of Object.keys(process.env)) if (/(?:_API_KEY|_TOKEN|_SECRET)$/.test(key)) delete process.env[key];
+		globalThis.fetch = async () => { requests++; throw new Error("Network forbidden in model fallback regression"); };
+		try {
+			for (const withOpus of [true, false]) {
+				const own = await ModelRuntime.create({ authPath: join(root, `auth-opus-priority-${withOpus}.json`), modelsPath: null, refreshOnCreate: false });
+				own.registerNativeProvider(codex.provider);
+				for (const provider of ["kimi-coding", "openai-codex", ...(withOpus ? ["anthropic"] : [])]) await own.setRuntimeApiKey(provider, "faux-test-key");
+				await own.getAvailable();
+				assert.equal(own.hasConfiguredAuth("anthropic"), withOpus);
+				assert.equal(own.hasConfiguredAuth("kimi-coding"), true);
+				assert.equal(pickerModels(own.getAvailableSnapshot())[0].id, "kimi-for-coding-highspeed");
+				const cases: { reason: SessionStartEvent["reason"]; history?: boolean; flags?: string[] }[] = [
+					{ reason: "resume", history: true }, { reason: "reload" }, { reason: "fork" },
+					{ reason: "startup", history: true }, { reason: "startup", flags: ["--continue"] },
+					{ reason: "startup", flags: ["--model", "gpt-5.3-codex-spark", "--thinking", "high"] },
+					{ reason: "startup", flags: ["--models", "gpt-5.3-codex-spark"] },
+					{ reason: "new", flags: ["--model", "gpt-5.3-codex-spark"] },
+				];
+				for (const scenario of cases) {
+					const manager = SessionManager.inMemory(root);
+					if (scenario.history) {
+						manager.appendModelChange("openai-codex", "gpt-5.3-codex-spark");
+						manager.appendThinkingLevelChange("high");
+						manager.appendMessage({ role: "user", content: "saved history", timestamp: 0 });
+					}
+					const notes: string[] = [];
+					const session = await realSession({ modelRuntime: own, manager, model: scenario.history ? undefined : unlisted(), ...scenario, ui: ui(notes) });
+					try {
+						assert.equal(session.model?.provider, withOpus ? "anthropic" : "kimi-coding");
+						assert.equal(session.model?.id, withOpus ? "claude-opus-5-5" : "kimi-for-coding-highspeed", JSON.stringify(scenario));
+						if (withOpus) assert.equal(session.thinkingLevel, scenario.flags?.includes("--thinking") ? "high" : "medium");
+						assert.deepEqual(notes, [`openai-codex/gpt-5.3-codex-spark is not in the RQW models list. Allowed: ${FAMILIES.join(", ")}. Switched to ${session.model.provider}/${session.model.id} (${session.thinkingLevel}).`]);
+					} finally { session.dispose(); }
+				}
+			}
+			assert.equal(requests, 0);
+		} finally {
+			globalThis.fetch = savedFetch;
+			Object.assign(process.env, savedEnv);
+		}
+	});
 	it("refuses a subagent-style session on the shared runtime with a clear error naming the allowed models", async () => {
 		const main = await realSession();
 		const settings = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false }, cacheWarming: "off" });
@@ -703,6 +748,44 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 			session.dispose();
 			laterGate.resolve();
 			await laterPass;
+		}
+	});
+	it("startup reads authenticated providers without imposing a timeout and selects Opus medium", async () => {
+		const session = await realSession({ reason: "reload" });
+		const getAvailable = runtime.getAvailable.bind(runtime);
+		const calls: { provider: string | undefined; signal: AbortSignal | undefined }[] = [];
+		runtime.getAvailable = (provider, options) => {
+			calls.push({ provider, signal: options?.signal });
+			return getAvailable(provider, options);
+		};
+		try {
+			await session.extensionRunner.emit({ type: "session_start", reason: "startup" });
+			assert.deepEqual(calls.map((call) => call.provider), runtime.getProviders().map((provider) => provider.id));
+			assert.deepEqual(calls.map((call) => call.signal), calls.map(() => undefined));
+			assert.equal(session.model?.id, "claude-opus-5-5");
+			assert.equal(session.thinkingLevel, "medium");
+		} finally {
+			Reflect.deleteProperty(runtime, "getAvailable");
+			session.dispose();
+		}
+	});
+	it("startup reports provider errors through Pi instead of selecting from a stale snapshot", async () => {
+		const session = await realSession({ reason: "reload" });
+		const errors: { event?: string; error: string }[] = [];
+		const unsubscribe = session.extensionRunner.onError((error) => errors.push(error));
+		const getAvailable = runtime.getAvailable.bind(runtime);
+		assert.ok(ModelRuntime.prototype.getAvailableSnapshot.call(runtime).some((m) => m.id === "claude-opus-5-5"));
+		runtime.getAvailable = (provider, options) => provider === "anthropic"
+			? Promise.reject(new Error("Faux availability failed")) : getAvailable(provider, options);
+		try {
+			await session.extensionRunner.emit({ type: "session_start", reason: "startup" });
+			assert.deepEqual(errors.map(({ event, error }) => ({ event, error })), [{ event: "session_start", error: "Faux availability failed" }]);
+			assert.equal(session.model?.id, "gpt-6-sol");
+			assert.equal(session.thinkingLevel, "high");
+		} finally {
+			Reflect.deleteProperty(runtime, "getAvailable");
+			unsubscribe();
+			session.dispose();
 		}
 	});
 	it("keeps an unlisted model with a warning when no listed model is authenticated, and refuses its requests", async () => {

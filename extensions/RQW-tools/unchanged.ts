@@ -24,7 +24,8 @@ export function createReadSchema(stockParameters: any) {
 }
 
 /** What the last full read of one range looked like: the call that returned it, and the file version it showed. */
-type Seen = { callId: string; mtimeMs: number; hash: string };
+type Version = { mtimeMs: number; hash: string };
+type Seen = Version & { callId: string };
 
 const hashOf = async (file: string): Promise<string | undefined> => {
 	try {
@@ -33,6 +34,14 @@ const hashOf = async (file: string): Promise<string | undefined> => {
 		return undefined;
 	}
 };
+
+/** A stable version to compare across the stock read and the asynchronous cache checks. */
+async function versionOf(file: string): Promise<Version | undefined> {
+	const version = stat(file);
+	const hash = await hashOf(file);
+	if (!version || !hash || stat(file)?.mtimeMs !== version.mtimeMs) return undefined;
+	return { mtimeMs: version.mtimeMs, hash };
+}
 
 /** The session of this tool call, or undefined when the context offers no session entries (then nothing is skipped). */
 const sessionOf = (ctx: any): { id: string; branch: any[] } | undefined => {
@@ -99,6 +108,7 @@ export function createUnchangedReads() {
 	const keyOf = (sessionId: string, file: string, params: any) => JSON.stringify([sessionId, file, params?.offset ?? null, params?.limit ?? null]);
 
 	return {
+		version: versionOf,
 		/** The note replacing the content of this read, or undefined when the content must be returned. */
 		async check(ctx: any, file: string, params: any): Promise<string | undefined> {
 			const session = sessionOf(ctx);
@@ -113,15 +123,14 @@ export function createUnchangedReads() {
 		 * stock tool could not process and answered with text only) and a file that changed while it was read are not
 		 * remembered. The image test is the stock tool's own detector, so both always agree.
 		 */
-		async remember(ctx: any, file: string, params: any, callId: string, result: any): Promise<void> {
+		async remember(ctx: any, file: string, params: any, callId: string, result: any, before: Version | undefined): Promise<void> {
 			const session = sessionOf(ctx);
 			const content = result?.content;
 			if (!session || result?.isError || !Array.isArray(content)) return;
 			if (await detectSupportedImageMimeTypeFromFile(file)) return;
-			const version = stat(file);
-			const hash = await hashOf(file);
-			if (!version || !hash || stat(file)?.mtimeMs !== version.mtimeMs) return;
-			seen.set(keyOf(session.id, file, params), { callId, mtimeMs: version.mtimeMs, hash });
+			const after = await versionOf(file);
+			if (!before || !after || before.mtimeMs !== after.mtimeMs || before.hash !== after.hash) return;
+			seen.set(keyOf(session.id, file, params), { callId, ...before });
 		},
 	};
 }

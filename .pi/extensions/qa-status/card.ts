@@ -1,5 +1,5 @@
 // The transcript card for the `qa-status` message (display only; the stored content stays the scripts/qa-status.mjs
-// text). Collapsed: a count and one row per item without its link. Ctrl+O: every line in full, links included.
+// text). Collapsed: one line of red and green counts. Ctrl+O: every line in full, links included.
 import type { MessageRenderer, Theme } from "@earendil-works/pi-coding-agent";
 import { clean, fit, padded, wrap } from "../../../extensions/RQW-agent-ui/fit.ts";
 
@@ -35,12 +35,13 @@ export function qaLines(content: string, expanded: boolean, theme: CardTheme, wi
 	const { items, notes } = parseQa(content);
 	const indent = width >= 8 ? "  " : "";
 	const head = (text: string) => fit(theme.fg("muted", "qa-status") + (text ? theme.fg("dim", " · ") + theme.fg(items.some((i) => i.level === "red") ? "error" : "muted", text) : ""), width);
-	const rows = [head(summary(items))];
 	if (!expanded) {
-		for (const item of items) rows.push(fit(indent + theme.fg(color(item.level), item.text), width));
-		if (!items.length && notes[0]) rows.push(fit(indent + theme.fg("warning", notes[0]), width));
-		return rows;
+		const count = (level: string) => items.filter((item) => item.level === level).length;
+		return [fit(theme.fg("muted", "qa-status") + theme.fg("dim", " · ")
+			+ theme.fg("error", `${count("red")} red`) + theme.fg("dim", " · ")
+			+ theme.fg("success", `${count("green")} green`), width)];
 	}
+	const rows = [head(summary(items))];
 	const paint = (line: string, tone: "error" | "muted" | "warning") => wrap(line, width - indent.length).map((row) => indent + theme.fg(tone, row));
 	for (const item of items) {
 		rows.push(...paint(`${item.level.toUpperCase()} ${item.text}`, color(item.level)));

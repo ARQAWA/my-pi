@@ -38,6 +38,10 @@ Provenance:
   «любые такие предложения идут ко мне вопросами, а идут предложения только которые ты считаешь критом. Просто так предлагать мне нахуй не надо»
   The latter entry accepts the four-point proposal in assistant entry `40a7eaef`, line 6383, with the critical-only
   proposal amendment. Reason: Main's or an agent's technical approval must not become permission for extra behavior.
+  Latest reaffirmation, owner (`16-27-59:9432`, entry `d7037e66`, 2026-10-25):
+  «Вообще всё несогласованное нахуй убираем. Ты что, прикалываешься, блядь? Не должно быть ничего, что я не согласовал. Если ты считаешь, что у нас есть какой-то функционал, который я не согласовал с кретом, то ты можешь мне привести доказательство и задать мне вопрос, но не более того. И только если я дам добро оставить, тогда оставляем.»
+  All unapproved functionality is removed. Main may present evidence and ask whether to retain a specific item;
+  it stays only after explicit owner approval. This reaffirms the same rule, not a new mechanical blocker.
   The reviewer prompt itself is unchanged. Since: rule-only-ordered.
 
 - **Task dependency graph** `[D-WORK-DEPENDENCIES]`. Main identifies, links and blocks dependent tasks itself,
@@ -112,11 +116,16 @@ Provenance:
   Reason: the owner may forget the coordinator role; a direct request alone must not silently bypass it.
   Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution), guard prompt.
   Since: process-rules-oct23 squash.
-- **Three active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most three tasks
-  run in active execution at once in the owner's priority queue, not ten first-level agents; waiting tasks hold
-  no slot ([D-PIPELINE-SLOTS]); the test lane is the one exception ([D-PIPELINE-TEST-LANE]). The current order belongs in the handoff.
-  Owner (`16-27-59:4782`, entry `f73155f0`):
-  «Еще надо сузить количество одновременно выполняемых задач до трех и приоритеты расставить правильно, чтобы они в определенном порядке очереди шли»
+- **Two active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most two main tasks
+  run in active execution at once in the owner's priority queue, not a count of first-level agents; waiting tasks hold
+  no slot ([D-PIPELINE-SLOTS]); the separate test lane stays outside the two ([D-PIPELINE-TEST-LANE]).
+  Coordinator operational bookkeeping holds no slot ([D-WORK-TASK-BOOKKEEPING]). The current order belongs in the handoff.
+  Owner (`16-27-59:10462`, entry `57e7df57`, 2026-10-25): «А количество задач одновременных надо согратить до двух».
+  This supersedes only the six-task cap, not the queue, wait or hold rules; no held or discarded work is resumed.
+  The superseded six-task entry is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0359, from `ce0fa4d`.
+  Requested HTML artifacts are separate outside the queue, not product tasks. Owner (`16-27-59:10375`, entry
+  `541e58af`, 2026-10-25): «Это не типовая задача а отдельная вне очереди то что я написал выше».
+  Source for both: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
   Owner (`16-27-59:4813`, entry `8f53ebc4`):
   «Замер этого. Reviewer — это топ один приоритет. Надо закрыть reviewer как можно быстрее, довести его до финального состояния. Потом следующий по приоритету идёт транспорт кодекса. Затем идёт разведчик, как в курсоре, затем идёт веб-поиск новый. Потом идёт уже новый интерфейс, мелкие, почти готовые слияния одно с другим в конце и потом в конце уже починка нестабильных тестов — это вообще самый последний приоритет. Когда делать нехуй, ты уже занимаешься тестами.»
   Reason: focus execution on the owner's priorities. Carrier:
@@ -379,13 +388,14 @@ questions `16-27-59:5043`, entry `605c1e21`) in `16-27-59:5060`, entry `46a9e546
 only the slot summary of [D-PIPELINE-SLOTS]; the other points of that coordinator reply ("Остальное принял") follow his
 numbered answers and are coordinator text. The owner answered items 2 and 3 with «2а 3а».
 
-- **Active slots and waiting tasks** `[D-PIPELINE-SLOTS]`. Only active execution holds one of the three slots. A task
+- **Active slots and waiting tasks** `[D-PIPELINE-SLOTS]`. Only active execution holds one of the two main slots under [D-WORK-PARALLEL]. A task
   that waits for CI, a reviewer, the merge queue or the owner holds none. A failed local delivery test under [D-PIPELINE-LOCAL-GATE] sends the task to the top of the
   queue; at the next free active slot its existing agent is resumed, and another is started only if its
   session no longer exists. Owner (`16-27-59:5060`): «7 надо чет пиздатое придумать, по типу пятого пункта или же делать всегда но не делать из этого блокер, т.е. не ждать, свичиться на след задачу и переключаться интелекетуально как релаьный прогер»
   «Работа должна быть суперконвейерная, суперэффективная, производительная, супербыстрая, без дрочи.»
   Owner (`16-27-59:5068`) answered the quoted coordinator text with: «Делаем, да»
-  Coordinator text, the slot summary the owner quoted: "Получается так: три места только для активной работы. Задачи, которые ждут CI, проверку или тебя, места не занимают. Агент слияний и скрипт CI идут сбоку."
+  The original three-slot summary is archived verbatim in `DECISIONS-ARCHIVE.md`, Active-execution cap;
+  only its numeric cap is superseded by [D-WORK-PARALLEL].
   Reason: waits for CI, review and the owner idled slots; the analysis found CI and queue waits to be the largest
   removable delay. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and
   [Isolated parallel execution](PROCESS.md#isolated-parallel-execution), replacing the former plain "three tasks at the
@@ -501,18 +511,19 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   [Task pipeline](PROCESS.md#task-pipeline), `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`.
   Since: local-delivery-gate squash.
 
-- **Test lane** `[D-PIPELINE-TEST-LANE]`. Three main work lanes and a fourth lane for tests only, usable for nothing else and
-  outside the three active slots. Its agents are ordinary `agent`s on the simple GPT pair under
+- **Test lane** `[D-PIPELINE-TEST-LANE]`. Two main work lanes under [D-WORK-PARALLEL] and a separate lane for tests only,
+  usable for nothing else and outside the two active slots. Its agents are ordinary `agent`s on the simple GPT pair under
   [the development model policy](PROCESS.md#subagent-models), with `.agents/roles/test-fixer.md` as the `role`.
   They take the tail items of [WINDOWS-TEST-FAILURES](BACKLOG.md#windows-test-failures) and
   [QA-FLAKES-LAST](BACKLOG.md#qa-flakes-last) and own all test work: every failing test, reruns and the full restoration
   of Windows. The lane starts only after this pipeline change is delivered, and then follows all its agreements and
   tooling (CI watcher, merge agent, queue); it is not launched in this branch. Reruns follow a fix or a new head, not blind
   retries to get green, unless the owner decides otherwise later. Red before and green after, and no weakening of a check,
-  stay. Owner (`16-27-59:5327`, entry `f293eaf1`): «Просто зафиксируй, что у нас есть три основных рабочих потока и четвёртый поток чисто для тестов, больше ни для чего непригодный.»
+  stay. The original lane-count quotation (`16-27-59:5327`, entry `f293eaf1`) is archived verbatim in
+  `DECISIONS-ARCHIVE.md`, Active-execution cap; only the main-task count is superseded by [D-WORK-PARALLEL].
   Owner (`16-27-59:5331`, entry `de8294bf`): «И пусть этот отдельный поток всеми тестами занимается: чинит всё, перезапускает. Он починит все упавшие тесты, всю Windows починит.» «После того, как конвейер будет готов, переработан, чтобы он в рамках всех договорённостей и всего tooling конвейера работал.»
   Owner (`16-27-59:5323`, entry `6256b148`), the prompt: «Ты нормальный пром дай, нормально сконфигурируй, выдай ему рамки, ограничения, и он нормально работу сделает»
-  Reason: Windows and flaky failures would otherwise wait for the three slots. Carrier:
+  Reason: Windows and flaky failures must not wait for main-task slots. Carrier:
   [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), `.agents/roles/test-fixer.md`. Since: process-pipeline squash.
 - **Tests exist to check behavior** `[D-PIPELINE-TEST-PURPOSE]`. Every agent that writes, generates or fixes tests has one
   purpose: to check that the behavior matches the requirements, not to turn the run green, with the same bound as the
@@ -1289,6 +1300,24 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 ## Review
 
+- **Requirements-based test review** `[D-REVIEW-TEST-REQUIREMENTS]`. Owner R11 source: session
+  `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER `3d0e39ae`, line 1568:
+  «Мне надо, чтобы в этой ситуации reviewer закрывал такие моменты, что код проверок соответствует требованиям, соответствует тест-плану, acceptance критериям.»
+  USER `f5193077`, line 1602: «Нет, я думаю, что в автотестах тесты сами не надо запускать, когда он review делает.»
+  and «Я могу достать переписку. Я смогу достать код, но я не смогу достать коммит до и коммит после, скорее всего. Я хз.»
+  USER `96dc3500`, line 1606: «Просто не надо запускать сами тесты, блядь.»
+  The owner explicitly resumed R11 in the 2026-10-25 execution request; its earlier hold is no longer active.
+  Decision: the optional `testreview` native skill collects supplied requirements, test plan, acceptance criteria
+  and conversation references and starts the ordinary `requirements-test-reviewer` profile on Sol 6.1 low.
+  It reads test code and directly relevant exercised code, checks requirement coverage and concrete false confidence,
+  and reports missing primary evidence as incomplete. External transcripts include user and assistant turns;
+  `include: ["user_messages"]` separately appends the caller's raw user messages. No test/code execution, mandatory
+  commit pairs, new runtime, permissions or automatic review. The existing project `test-reviewer` and its mechanical
+  integrity gate remain unchanged. Reason: test code is itself the deliverable, so repository check execution does
+  not establish whether its assertions implement the agreed plan.
+  Carriers: `extensions/RQW-review/profiles/requirements-test-reviewer.toml`,
+  `extensions/RQW-review/skills/testreview/SKILL.md`, `extensions/RQW-review/index.ts`.
+
 - **Codex reviewer port** `[D-REVIEW-PORT]`. `RQW-review` carries the owner's working Codex CLI reviewer over to Pi, adapted
   to this harness. The base is his existing cycle, not a newly invented workflow: the original Codex reviewer profiles
   (`agents/*.toml`) and the Main-side skills `subagents`, `blindreview` and `highreview` of his Codex CLI plugin
@@ -1573,13 +1602,19 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «И это должно быть строго в концепте Terminal UI Pi, и при этом чтобы это было в цветовой гамме и в согласованности с нашим новым дизайном, который ты сейчас имитируешь. Решение остается за тобой конечное.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3238)
   Carrier: `extensions/RQW-models/{index,picker}.ts`, `test/`, real Pi composition in `test/model-effort-picker.test.ts`.
   The effort colours of the footer are RQW-statusbar's (`[D-STATUSBAR-ACTIVITY]`). Since: `d0160cf`.
-- **Startup availability** `[D-MODELS-STARTUP]`. Coordinator engineering choice, without its own owner quote: startup
-  reads provider-scoped availability and uses the owning session's async-auth `setModel`. Before the startup choice
-  `session_start` awaits Pi's provider-scoped `getAvailable(provider.id)` in parallel for the visible providers, sharing
-  one 15 s deadline like Pi's model selector; on timeout or error the snapshot is used; without a choice nothing waits.
-  Reason: Pi can discard a whole-runtime availability pass superseded by a background refresh, and `pi.setModel` checks
-  that snapshot's configured-auth state first. Carrier: `extensions/RQW-models/index.ts`; `test/extensions/RQW-models/models.test.ts` gates a
-  superseding pass deterministically. Since: `230e8d0`.
+- **Startup availability** `[D-MODELS-STARTUP]`. Startup reads provider-scoped authenticated availability and uses the
+  owning session's async-auth `setModel`. Before a startup choice, `session_start` awaits Pi's
+  `getAvailable(provider.id)` in parallel; without a choice nothing waits. No extension-imposed deadline or stale
+  snapshot substitution on failure: provider errors reach Pi's existing extension-error reporting path.
+  Owner: «Вообще всё несогласованное нахуй убираем.» Source: USER entry `d7037e66`, line 9432 of
+  `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, 2026-10-25, in
+  `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`. His answer 3 accepted the startup-timeout
+  and stale-list removal proposed at line 9416. Audit finding: `MODELS-STARTUP-SCOPE`; the other model audit
+  findings remain separate tasks.
+  Reason: preserve authenticated model acquisition and overlapping-refresh correctness without unapproved behavior.
+  Carrier: `extensions/RQW-models/index.ts`; `test/extensions/RQW-models/models.test.ts` covers the removal and
+  deterministically gates a superseding pass. Supersedes the deadline and snapshot clause from `230e8d0`, preserved
+  verbatim in [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md#models-startup-deadline-and-snapshot---removed-2026-10-25).
 - **Independent module** `[D-MODELS-MODULE]`. `extensions/RQW-models/index.ts` imports only Pi and has its own
   `pi.extensions` entry; disable it in `pi config`, then `/reload`. It writes no settings and registers no tool; its
   instance-level masks are removed when it is off. Coordinator text (owner quotes C:3113, an omp session, not found in the
@@ -1664,6 +1699,14 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   [decisions evidence](notes/decisions-evidence.md#models-ci-fixture). Since: `071df1e`.
 
 ## Status bar
+
+- **Pending provider-limit badge colors** `[D-STATUSBAR-LIMIT-COLORS]`. Owner (`16-27-59:7409`, entry
+  `e65a800e`, 2026-10-25): «Codex будет золотого цвета, Kimi будет платинового цвета, а CloudCode будет бронзового цвета.»
+  Definitive `CC` choice, owner (`16-27-59:9432`, entry `d7037e66`): «2 бронза».
+  This answers the bronze/orange question in assistant entry `05b22f2b`, `16-27-59:9416`.
+  Decision: `CC` bronze, Codex gold, Kimi platinum. Reason: distinguish provider-limit badges by color.
+  Carrier: pending [PROVIDER-LIMITS](BACKLOG.md#provider-limits). The direct Anthropic quota provider is delivered
+  ([D-ANTHROPIC-QUOTA](#anthropic-subscription-adapter)); statusbar badge implementation is NOT STARTED by this record.
 
 - **Independent extension** `[D-STATUSBAR-EXT]`. `extensions/RQW-statusbar/` has its own `pi.extensions` entry and
   imports nothing from another extension folder. Coordinator text (owner quote C:3133, an omp session, not found in the
@@ -1948,6 +1991,13 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Carrier: `extensions/RQW-theme/theme.json`, `test/extensions/RQW-theme/schema.test.ts` (`approved-surfaces-exact`), `extensions/RQW-theme/README.md`. The theme is registered in `package.json` `pi.themes` ([Native theme](#native-theme)); the owner selects it once through `/settings` -> Theme.
 
 ## Quality control
+
+- **QA #13 cancellation and quality-focused tests** `[D-QA-13-CANCELED]`. Owner (`16-27-59:9432`, entry
+  `d7037e66`, 2026-10-25): «Надо сделать максимально инженерно и просто в соотвествии с нашим манифестом, чтобы это ничего не ломало. Тесты не должны быть суперудушливыми, максимально перфекционистами, анально блокирующими и карающими. Тесты должны проверять качество, не более того.»
+  This accepts `await canceled` instead of `assert.rejects` for [QA #13](https://github.com/ARQAWA/my-pi/issues/13),
+  asked in assistant entry `05b22f2b`, `16-27-59:9416`. Reason: simple engineering and tests that check quality,
+  not perfectionist blocking. Carrier: the existing test-lane QA #13 work; its agent has received the decision.
+  This operational record changes no tests or QA issues and claims no QA fix or delivery.
 
 The rules for Main and subagents are in [PROCESS.md](PROCESS.md#quality-control-loop); the design and its evidence are
 in the approved proposal (not stored in this repository). The loop reads only public GitHub state.

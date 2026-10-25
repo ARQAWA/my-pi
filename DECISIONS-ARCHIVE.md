@@ -6354,3 +6354,96 @@ Verbatim superseded timing clause and source:
 >   Owner source: `statusbar-silver-640ms` task request, 2026-10-25:
 >   "Change the silver one-way visible flight duration from 320 ms to 640 ms." The three-cell peak and soft silver gradient stay unchanged.
 
+## Models startup deadline and snapshot - removed 2026-10-25
+
+Source: `34e6bd3d12fbb3939457f5987be9c950c34e62f2:DECISIONS.md`, introduced by `230e8d0`.
+Replaced by the owner's explicit `MODELS-STARTUP-SCOPE` removal in the `models-remove-unapproved-startup` task.
+Replacement provenance: `git log -S'Models startup deadline and snapshot' -- DECISIONS-ARCHIVE.md`.
+Verbatim superseded entry:
+
+> - **Startup availability** `[D-MODELS-STARTUP]`. Coordinator engineering choice, without its own owner quote: startup
+>   reads provider-scoped availability and uses the owning session's async-auth `setModel`. Before the startup choice
+>   `session_start` awaits Pi's provider-scoped `getAvailable(provider.id)` in parallel for the visible providers, sharing
+>   one 15 s deadline like Pi's model selector; on timeout or error the snapshot is used; without a choice nothing waits.
+>   Reason: Pi can discard a whole-runtime availability pass superseded by a background refresh, and `pi.setModel` checks
+>   that snapshot's configured-auth state first. Carrier: `extensions/RQW-models/index.ts`; `test/extensions/RQW-models/models.test.ts` gates a
+>   superseding pass deterministically. Since: `230e8d0`.
+
+
+
+## A-0356 · archived 2026-10-25 · Active-execution cap · D-WORK-PARALLEL
+
+Status: SUPERSEDED in numeric cap by `[D-WORK-PARALLEL]` (DECISIONS.md#work-policy).
+Superseded and archived by: the operational-cc-bronze squash. Source commit: `34e6bd3`.
+Verbatim text as it was in DECISIONS.md at `34e6bd3`:
+
+> - **Three active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most three tasks
+>   run in active execution at once in the owner's priority queue, not ten first-level agents; waiting tasks hold
+>   no slot ([D-PIPELINE-SLOTS]); the test lane is the one exception ([D-PIPELINE-TEST-LANE]). The current order belongs in the handoff.
+>   Owner (`16-27-59:4782`, entry `f73155f0`):
+>   «Еще надо сузить количество одновременно выполняемых задач до трех и приоритеты расставить правильно, чтобы они в определенном порядке очереди шли»
+>   Owner (`16-27-59:4813`, entry `8f53ebc4`):
+>   «Замер этого. Reviewer — это топ один приоритет. Надо закрыть reviewer как можно быстрее, довести его до финального состояния. Потом следующий по приоритету идёт транспорт кодекса. Затем идёт разведчик, как в курсоре, затем идёт веб-поиск новый. Потом идёт уже новый интерфейс, мелкие, почти готовые слияния одно с другим в конце и потом в конце уже починка нестабильных тестов — это вообще самый последний приоритет. Когда делать нехуй, ты уже занимаешься тестами.»
+>   Reason: focus execution on the owner's priorities. Carrier:
+>   [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
+>   Since: process-rules-oct23 squash.
+
+
+## A-0357 · archived 2026-10-25 · Active-execution cap · D-PIPELINE-SLOTS
+
+Status: SUPERSEDED in numeric cap by `[D-WORK-PARALLEL]` (DECISIONS.md#work-policy).
+Superseded and archived by: the operational-cc-bronze squash. Source commit: `34e6bd3`.
+Verbatim text as it was in DECISIONS.md at `34e6bd3`:
+
+> - **Active slots and waiting tasks** `[D-PIPELINE-SLOTS]`. Only active execution holds one of the three slots. A task
+>   that waits for CI, a reviewer, the merge queue or the owner holds none. A failed local delivery test under [D-PIPELINE-LOCAL-GATE] sends the task to the top of the
+>   queue; at the next free active slot its existing agent is resumed, and another is started only if its
+>   session no longer exists. Owner (`16-27-59:5060`): «7 надо чет пиздатое придумать, по типу пятого пункта или же делать всегда но не делать из этого блокер, т.е. не ждать, свичиться на след задачу и переключаться интелекетуально как релаьный прогер»
+>   «Работа должна быть суперконвейерная, суперэффективная, производительная, супербыстрая, без дрочи.»
+>   Owner (`16-27-59:5068`) answered the quoted coordinator text with: «Делаем, да»
+>   Coordinator text, the slot summary the owner quoted: "Получается так: три места только для активной работы. Задачи, которые ждут CI, проверку или тебя, места не занимают. Агент слияний и скрипт CI идут сбоку."
+>   Reason: waits for CI, review and the owner idled slots; the analysis found CI and queue waits to be the largest
+>   removable delay. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and
+>   [Isolated parallel execution](PROCESS.md#isolated-parallel-execution), replacing the former plain "three tasks at the
+>   same time" wording of [D-WORK-PARALLEL].
+>   Since: process-pipeline squash.
+
+
+## A-0358 · archived 2026-10-25 · Active-execution cap · D-PIPELINE-TEST-LANE
+
+Status: SUPERSEDED in numeric cap by `[D-WORK-PARALLEL]` (DECISIONS.md#work-policy).
+Superseded and archived by: the operational-cc-bronze squash. Source commit: `34e6bd3`.
+Verbatim text as it was in DECISIONS.md at `34e6bd3`:
+
+> - **Test lane** `[D-PIPELINE-TEST-LANE]`. Three main work lanes and a fourth lane for tests only, usable for nothing else and
+>   outside the three active slots. Its agents are ordinary `agent`s on the simple GPT pair under
+>   [the development model policy](PROCESS.md#subagent-models), with `.agents/roles/test-fixer.md` as the `role`.
+>   They take the tail items of [WINDOWS-TEST-FAILURES](BACKLOG.md#windows-test-failures) and
+>   [QA-FLAKES-LAST](BACKLOG.md#qa-flakes-last) and own all test work: every failing test, reruns and the full restoration
+>   of Windows. The lane starts only after this pipeline change is delivered, and then follows all its agreements and
+>   tooling (CI watcher, merge agent, queue); it is not launched in this branch. Reruns follow a fix or a new head, not blind
+>   retries to get green, unless the owner decides otherwise later. Red before and green after, and no weakening of a check,
+>   stay. Owner (`16-27-59:5327`, entry `f293eaf1`): «Просто зафиксируй, что у нас есть три основных рабочих потока и четвёртый поток чисто для тестов, больше ни для чего непригодный.»
+>   Owner (`16-27-59:5331`, entry `de8294bf`): «И пусть этот отдельный поток всеми тестами занимается: чинит всё, перезапускает. Он починит все упавшие тесты, всю Windows починит.» «После того, как конвейер будет готов, переработан, чтобы он в рамках всех договорённостей и всего tooling конвейера работал.»
+>   Owner (`16-27-59:5323`, entry `6256b148`), the prompt: «Ты нормальный пром дай, нормально сконфигурируй, выдай ему рамки, ограничения, и он нормально работу сделает»
+>   Reason: Windows and flaky failures would otherwise wait for the three slots. Carrier:
+>   [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), `.agents/roles/test-fixer.md`. Since: process-pipeline squash.
+
+## A-0359 · archived 2026-10-25 · Active-execution cap · D-WORK-PARALLEL
+
+Status: SUPERSEDED in numeric cap by `[D-WORK-PARALLEL]` (DECISIONS.md#work-policy).
+Superseded and archived by: the process-two-active-tasks squash. Source commit: `ce0fa4d`.
+Verbatim text as it was in DECISIONS.md at `ce0fa4d`:
+
+> - **Six active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most six main tasks
+>   run in active execution at once in the owner's priority queue, not a count of first-level agents; waiting tasks hold
+>   no slot ([D-PIPELINE-SLOTS]); the separate test lane stays outside the six ([D-PIPELINE-TEST-LANE]).
+>   Coordinator operational bookkeeping holds no slot ([D-WORK-TASK-BOOKKEEPING]). The current order belongs in the handoff.
+>   Owner (`16-27-59:9478`, entry `257f200e`, 2026-10-25): «И делаешь паралельно до 6 задач».
+>   This supersedes only the three-task cap, not the queue, wait or hold rules; no held work is resumed.
+>   The superseded entries are preserved verbatim in `DECISIONS-ARCHIVE.md`, Active-execution cap, from `34e6bd3`.
+>   Owner (`16-27-59:4813`, entry `8f53ebc4`):
+>   «Замер этого. Reviewer — это топ один приоритет. Надо закрыть reviewer как можно быстрее, довести его до финального состояния. Потом следующий по приоритету идёт транспорт кодекса. Затем идёт разведчик, как в курсоре, затем идёт веб-поиск новый. Потом идёт уже новый интерфейс, мелкие, почти готовые слияния одно с другим в конце и потом в конце уже починка нестабильных тестов — это вообще самый последний приоритет. Когда делать нехуй, ты уже занимаешься тестами.»
+>   Reason: focus execution on the owner's priorities. Carrier:
+>   [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
+>   Since: process-rules-oct23 squash.
