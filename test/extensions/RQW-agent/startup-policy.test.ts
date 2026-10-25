@@ -9,9 +9,7 @@ import { after, before, describe, it } from "node:test";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import {
 	createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ExtensionAPI,
-	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
 import { SUBAGENT_REMINDER } from "../../../extensions/RQW-agent/prompt.ts";
 
 const EXTENSION = join(import.meta.dirname, "../../../extensions/RQW-agent/index.ts");
@@ -63,15 +61,8 @@ async function open() {
 	const main = fauxProvider({ provider: `startup-main-${counter}`, api: `startup-main-${counter}`, models: [{ id: "m", reasoning: true }] });
 	runtime.registerNativeProvider(main.provider);
 	const seen: Request[] = [];
-	// The agent tool is called from inside a main run, as a real tool call is: the probe tool runs the queued action with that run's context.
-	const probe: { queue: ((ctx: ExtensionContext) => Promise<void>)[] } = { queue: [] };
 	const stand = (pi: ExtensionAPI) => {
 		pi.on("before_agent_start", () => ({ systemPrompt: MAIN_FORCED }));
-		pi.registerTool({ name: "probe", label: "probe", description: "test probe", parameters: Type.Object({}),
-			execute: async (_id, _params, _signal, _update, ctx) => {
-				await probe.queue.shift()?.(ctx);
-				return { content: [{ type: "text" as const, text: "probed" }], details: {} };
-			} });
 		pi.events.on("rqw-codex:session-policy", (raw) => {
 			const request = raw as Request;
 			seen.push(request);
@@ -89,17 +80,21 @@ async function open() {
 	// The listed agent calls run in order inside one main run, so no background delivery run can overlap them.
 	const call = async (...list: Record<string, unknown>[]): Promise<string[]> => {
 		const texts: string[] = [];
-		probe.queue.push(async (ctx) => {
-			for (const params of list) {
-				const result = await session.getToolDefinition("agent")!.execute("t", params as never, undefined, undefined, ctx);
-				texts.push(result.content.map((c) => (c.type === "text" ? c.text : "")).join(""));
-			}
-		});
+		const waits: { index: number; id: string }[] = [];
 		main.setResponses([
-			() => fauxAssistantMessage([fauxToolCall("probe", {})], { stopReason: "toolUse" }),
+			...list.map(params => () => fauxAssistantMessage([fauxToolCall("agent", params)], { stopReason: "toolUse" })),
 			...Array.from({ length: 20 }, () => () => fauxAssistantMessage("main ok")),
 		]);
 		await session.prompt("go");
+		for (const result of session.messages.filter(m => m.role === "toolResult" && m.toolName === "agent")) {
+			if (result.details?.reason === "waiting") waits.push({ index: texts.length, id: result.details.wait_id });
+			texts.push(result.content.map(c => c.type === "text" ? c.text : "").join(""));
+		}
+		for (const wait of waits) {
+			const notification = () => session.messages.find((m) => m.role === "custom" && m.customType === "child_wait" && m.details?.wait_id === wait.id);
+			await until(() => !!notification(), "startup wait notification");
+			texts[wait.index] = String(notification()!.content);
+		}
 		return texts;
 	};
 	const close = async () => { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); session.dispose(); };
@@ -111,7 +106,7 @@ describe("RQW-agent: startup prompt of a child against the prompt the provider r
 		wire.length = 0;
 		const f = await open();
 		try {
-			const [started, waited] = await f.call({ action: "start", task: "go", model: "anthropic/claude-opus-5-5", tools: [] }, { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
+			const [started, waited] = await f.call({ action: "start", task: "go", model: "anthropic/claude-opus-5-5", tools: [] }, { action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
 			assert.equal(started, "agent#1 started");
 			assert.match(waited, /ok/);
 			assert.equal(wire.length, 1);
@@ -130,7 +125,7 @@ describe("RQW-agent: startup prompt of a child against the prompt the provider r
 		wire.length = 0;
 		const f = await open();
 		try {
-			const [started, waited] = await f.call({ action: "start", task: "go", role: "You test.", model: "anthropic/claude-opus-5-5", tools: [] }, { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
+			const [started, waited] = await f.call({ action: "start", task: "go", role: "You test.", model: "anthropic/claude-opus-5-5", tools: [] }, { action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
 			assert.equal(started, "agent#1 started");
 			assert.match(waited, /ok/);
 			const expected = `${MAIN_FORCED}\n\n${SUBAGENT_REMINDER}\n\n<role>\nYou test.\n</role>`;

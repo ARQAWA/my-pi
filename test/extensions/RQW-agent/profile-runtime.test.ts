@@ -407,8 +407,8 @@ test("unknown profile keys are silent and add no diagnostic fields to results or
 	} finally { p.off(); await f.cleanup(); }
 });
 
-test("status and blocking wait retain profile provenance but do not use nickname metadata as title", async () => {
-	const f = await fixture(), held = gate("PROFILE_WAIT_RESULT");
+test("status and held wait retain profile provenance but do not use nickname metadata as title", async () => {
+	const f = await fixture("print"), held = gate("PROFILE_WAIT_RESULT");
 	const p = await profile(f, { nickname_candidates: ["Wait Profile"] });
 	f.subReplies.push(held.reply);
 	try {
@@ -417,7 +417,7 @@ test("status and blocking wait retain profile provenance but do not use nickname
 		const status = JSON.parse(await f.call({ action: "status", ids: ["agent#1"] })).statuses[0];
 		assert.deepEqual(status.profile, p.ref);
 		assert.equal(status.title, undefined);
-		const waiting = execute(f, { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 10000 });
+		const waiting = execute(f, { action: "wait", ids: ["agent#1"], timeout_ms: 10000 });
 		await tick();
 		held.release();
 		const result = await waiting;

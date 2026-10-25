@@ -1,5 +1,5 @@
 // Root integration test: the cards of RQW-agent-ui on what the real RQW-agent delivers (a custom `[<name>#<id>]` message
-// and a `wait` result, with the T15 display details), for generic agents. Real Pi sessions, faux
+// and a `child_wait` notification or external print wait result, with the T15 display details), for generic agents. Real Pi sessions, faux
 // providers, isolated agent directory; Pi's exported host components draw the transcript. RQW-agent-ui's own tests load
 // only that extension; this one composes the two.
 import assert from "node:assert/strict";
@@ -30,21 +30,40 @@ function messageRows(f: Fixture, kind: string, message: unknown, expanded: boole
 	return plain(component.render(100));
 }
 
-/** The wait result as Pi's ToolExecutionComponent draws it with the renderers the runner resolves for the tool. */
-function waitRows(f: Fixture, kind: string, result: { content: unknown; details: unknown }, expanded: boolean): string {
-	const definition = f.session.extensionRunner.resolveToolRenderers(kind, () => f.session.getToolDefinition(kind) as never);
-	const component = new ToolExecutionComponent(kind, "call", { action: "wait", ids: [`${kind}#2`] }, {}, definition as never, ui, process.cwd());
-	component.setExpanded(expanded);
-	component.updateResult({ ...result, isError: false } as never, false);
-	return plain(component.render(100));
+/** Persist a model-called wait so its notification subscription is committed by the real host. */
+async function subscribeWait(f: Fixture, args: Record<string, unknown>) {
+	const id = "notification-wait";
+	f.mainReplies.push(answer([fauxToolCall("agent", args, { id })], { stopReason: "toolUse" }));
+	await f.session.prompt("Wait for the children");
+	const receipt = f.session.messages.find(message => message.role === "toolResult" && message.toolCallId === id);
+	assert.ok(receipt && receipt.role === "toolResult");
+	const details = receipt.details as { reason: string; wait_id: string; results: unknown[] };
+	assert.equal(details.reason, "waiting");
+	assert.equal(typeof details.wait_id, "string");
+	assert.deepEqual(details.results, []);
+	assert.equal(f.requests.main.length, 1, "waiting receipt terminates the model turn before any continuation");
+	return details.wait_id;
 }
 
-test("agent-ui on real deliveries: agent custom message and wait result, collapsed and Ctrl+O", async () => {
+async function notification(f: Fixture, waitId: string) {
+	const matches = () => f.session.messages.filter(message => message.role === "custom" && message.customType === "child_wait"
+		&& (message.details as { wait_id?: string })?.wait_id === waitId);
+	await until(() => matches().length > 0, "committed wait notification");
+	await f.session.waitForIdle();
+	assert.equal(matches().length, 1, "one notification for the committed subscription");
+	const message = matches()[0];
+	assert.ok(message.role === "custom" && typeof message.content === "string");
+	assert.deepEqual(JSON.parse(message.content), message.details, "stored notification JSON preserves the actual wait payload");
+	return message;
+}
+
+test("agent-ui on real deliveries: agent custom message and external print wait result, collapsed and Ctrl+O", async () => {
 	// Pi reads keybindings and settings from here, never from the owner's ~/.pi.
 	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-delivery-"));
 	initTheme("dark", false);
 	for (const kind of KINDS) {
-		const f = await fixture("tui", undefined, [], [AGENT_UI]);
+		// External print waits retain their supported direct-result metadata and renderer.
+		const f = await fixture("print", undefined, [], [AGENT_UI]);
 		try {
 			const model = `${f.sub.provider.id}/s`;
 			f.subReplies.push(answer("Первый ответ.\nВторая строка."));
@@ -63,23 +82,27 @@ test("agent-ui on real deliveries: agent custom message and wait result, collaps
 			assert.match(expanded, /Вторая строка\./, "Ctrl+O: the full original text");
 			assert.equal((stored as { content: string }).content, `[${kind}#1] Первый ответ.\nВторая строка.`, "stored content untouched");
 
-			// Delivery path 2: the wait result of a second run.
+			// Delivery path 2: the external print host's held wait result.
 			const g = gate("Ответ через wait.\nХвост.");
 			f.subReplies.push(g.reply);
 			await f.start("TWO");
 			await until(() => g.entered(), `the second ${kind} running`);
-			const waiting = call(f, kind, { action: "wait", blocking: true, ids: [`${kind}#2`], timeout_ms: 60000 });
-			await tick(20);
-			g.release();
+			const args = { action: "wait", ids: [`${kind}#2`], timeout_ms: 60000 };
+			const waiting = call(f, kind, args);
+			await tick(); g.release();
 			const result = await waiting;
-			const waitCollapsed = waitRows(f, kind, result, false);
+			const host = resultHost(f, kind, args, result);
+			const waitCollapsed = plain(host.render(100));
 			assert.match(waitCollapsed, new RegExp(`${kind}#2 finished · ${short} low · \\d+(\\.\\d)?s`), waitCollapsed);
 			assert.match(waitCollapsed, /Ответ через wait\./);
 			assert.doesNotMatch(waitCollapsed, /"reason"|Хвост/, "the card, not the JSON");
-			const waitExpanded = waitRows(f, kind, result, true);
-			assert.match(waitExpanded, /"reason":"result"/, "Ctrl+O: the original result");
+			const original = JSON.stringify(result);
+			host.setExpanded(true);
+			const waitExpanded = plain(host.render(100));
+			assert.match(waitExpanded, /"reason":"result"/, "Ctrl+O: the original held result");
 			assert.match(waitExpanded, /Хвост/);
 			assert.doesNotMatch(waitExpanded, new RegExp(`${kind}#2 finished`));
+			assert.equal(JSON.stringify(result), original, "rendering preserves the real held result");
 			assert.equal(f.session.messages.filter((m) => m.role === "custom" && m.customType === kind).length, 1, "a waited result is not also delivered as a message");
 			assert.deepEqual(f.errors, []);
 		} finally {
@@ -88,10 +111,46 @@ test("agent-ui on real deliveries: agent custom message and wait result, collaps
 	}
 });
 
+test("real TUI wait terminates with a receipt and delivers one expandable notification without an ordinary duplicate", async () => {
+	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-notification-"));
+	initTheme("dark", false);
+	const f = await fixture("tui", undefined, [], [AGENT_UI, TOOL_UI]);
+	const held = gate("NOTIFICATION_FIRST\nNOTIFICATION_MIDDLE\nNOTIFICATION_TAIL");
+	try {
+		f.subReplies.push(held.reply);
+		await f.start();
+		await until(held.entered, "notification child running");
+		const waitId = await subscribeWait(f, { action: "wait", ids: ["agent#1"], wake_on_alert: false });
+		assert.equal(f.session.messages.some(message => message.role === "custom" && message.customType === "child_wait"), false);
+		held.release();
+		const stored = await notification(f, waitId);
+		const details = stored.details as { reason: string; results: { id: string; text: string; outcome: string }[] };
+		assert.equal(details.reason, "result");
+		assert.deepEqual(details.results.map(({ id, text, outcome }) => ({ id, text, outcome })), [
+			{ id: "agent#1", text: "NOTIFICATION_FIRST\nNOTIFICATION_MIDDLE\nNOTIFICATION_TAIL", outcome: "completed" },
+		]);
+		const original = JSON.stringify(stored);
+		const collapsed = messageRows(f, "child_wait", stored, false);
+		assert.match(collapsed, /child_wait · agent#1 finished/);
+		assert.match(collapsed, /NOTIFICATION_FIRST/);
+		assert.doesNotMatch(collapsed, /NOTIFICATION_MIDDLE|NOTIFICATION_TAIL|"reason"/);
+		const expanded = messageRows(f, "child_wait", stored, true);
+		assert.match(expanded, /child_wait · agent#1 finished/);
+		for (const line of details.results[0].text.split("\n")) {
+			assert.equal(expanded.split("\n").filter(row => row.trim() === line).length, 1, "every full body line appears once on Ctrl+O");
+		}
+		assert.doesNotMatch(expanded, /"reason"|"results"/);
+		assert.equal(messageRows(f, "child_wait", stored, false), collapsed, "folding restores the same summary");
+		assert.equal(JSON.stringify(stored), original, "rendering leaves the actual notification untouched");
+		assert.deepEqual(f.delivered(), [], "the subscribed result is not also delivered as an ordinary agent message");
+		assert.deepEqual(f.errors, []);
+	} finally { held.release(); await f.cleanup(); }
+});
+
 test("profile agent deliveries keep stored provenance and ordinary message and wait cards without a separate review runtime", async () => {
 	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-profile-"));
 	initTheme("dark", false);
-	const f = await fixture("tui", undefined, [], [AGENT_UI, TOOL_UI]);
+	const f = await fixture("print", undefined, [], [AGENT_UI, TOOL_UI]);
 	const path = join(f.root, "ui-checker.toml");
 	const source = 'name = "ui-checker"\ndescription = "UI fixture"\ndeveloper_instructions = "Return the scripted answer."\n';
 	writeFileSync(path, source);
@@ -111,10 +170,11 @@ test("profile agent deliveries keep stored provenance and ordinary message and w
 		f.subReplies.push(held.reply);
 		await call(f, "agent", { ...params, agent_type: profile.name, task: "PROFILE_WAIT" });
 		await until(held.entered, "profile child held");
-		const args = { action: "wait", blocking: true, ids: ["agent#2"], wake_on_alert: false };
+		const args = { action: "wait", ids: ["agent#2"], wake_on_alert: false };
 		const waiting = call(f, "agent", args);
 		await tick(); held.release();
 		const result = await waiting;
+		await f.session.bindExtensions({ mode: "tui", onError: event => f.errors.push(`${event.event}: ${event.error}`) });
 		const details = result.details as { results: { display: { profile: unknown } }[] };
 		assert.deepEqual(details.results[0].display.profile, profile);
 		const host = resultHost(f, "agent", args, result);
@@ -123,6 +183,7 @@ test("profile agent deliveries keep stored provenance and ordinary message and w
 		assert.match(expanded, /agent#2 finished · s low · \d+(\.\d)?s/);
 		assert.match(expanded, /PROFILE_TAIL/);
 		assert.doesNotMatch(expanded, /ui-checker\.toml|sha256/);
+		assert.equal(f.delivered().length, 1, "the subscribed profile result is not also pushed as an ordinary message");
 		assert.equal(f.session.getToolDefinition("review"), undefined);
 		assert.deepEqual(f.errors, []);
 	} finally { off(); held.release(); await f.cleanup(); }
@@ -139,7 +200,7 @@ function resultHost(f: Fixture, kind: string, args: Record<string, unknown>, res
 test("agent-ui renders every real multi-agent until all result with title and prompt-file metadata", async () => {
 	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-all-"));
 	initTheme("dark", false);
-	const f = await fixture("tui", undefined, [], [AGENT_UI]);
+	const f = await fixture("print", undefined, [], [AGENT_UI]);
 	const agent = gate("AGENT_FIRST\nAGENT_TAIL"), second = gate("SECOND_FIRST\nSECOND_TAIL");
 	const prompt = "A temporary exact system prompt.\n";
 	const promptPath = join(f.root, "system.md");
@@ -151,7 +212,7 @@ test("agent-ui renders every real multi-agent until all result with title and pr
 		await until(agent.entered, "first agent reply assigned");
 		await call(f, "agent", { ...f.params("SECOND_AGENT"), title: "Named second child" });
 		await until(() => agent.entered() && second.entered(), "both agents running");
-		const args = { action: "wait", blocking: true, ids: ["agent#1", "agent#2"], until: "all", wake_on_alert: false, timeout_ms: 60000 };
+		const args = { action: "wait", ids: ["agent#1", "agent#2"], until: "all", wake_on_alert: false, timeout_ms: 60000 };
 		let settled = false;
 		const waiting = call(f, "agent", args).then(result => { settled = true; return result; });
 		await tick();
@@ -207,10 +268,10 @@ test("agent-ui leaves real alert and status results identical to stock across ho
 	try {
 		await f.start();
 		await until(held.entered, "alert child running");
-		const args = { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60000 };
-		const waiting = call(f, "agent", args);
-		await tick(); held.release();
-		const alert = await waiting;
+		const args = { action: "wait", ids: ["agent#1"], timeout_ms: 60000 };
+		const waitId = await subscribeWait(f, args);
+		held.release();
+		const alert = await notification(f, waitId);
 		assert.equal((alert.details as { reason: string }).reason, "alert");
 		assert.deepEqual((alert.details as { results: unknown[] }).results, []);
 		await until(() => f.delivered().length === 1, "terminal result after the alert");
@@ -218,8 +279,10 @@ test("agent-ui leaves real alert and status results identical to stock across ho
 		const status = await call(f, "agent", statusArgs);
 		for (const [input, result] of [[args, alert], [statusArgs, status]] as const) {
 			const untouched = JSON.stringify(result);
-			const host = resultHost(f, "agent", input, result);
-			const stock = resultHost(f, "agent", input, result, "stock-host", true);
+			const host = input === args
+				? new CustomMessageComponent(alert, f.session.extensionRunner.getMessageRenderer("child_wait"))
+				: resultHost(f, "agent", input, result);
+			const stock = input === args ? new CustomMessageComponent(alert) : resultHost(f, "agent", input, result, "stock-host", true);
 			for (const expanded of [false, true, false]) {
 				host.setExpanded(expanded); stock.setExpanded(expanded);
 				const rendered = plain(host.render(120));
@@ -331,9 +394,10 @@ test("agent-ui before tool-ui keeps the exact folded summary and expands an agen
 	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-compose-"));
 	initTheme("dark", false);
 	for (const kind of KINDS) {
-		const f = await fixture("tui", undefined, [], [AGENT_UI, TOOL_UI]);
+		// External print hosts still hold waits: exercise the tool-result renderer composition there.
+		const f = await fixture("print", undefined, [], [AGENT_UI, TOOL_UI]);
 		const held = gate("COMPOSE_FIRST\nCOMPOSE_MIDDLE\nCOMPOSE_TAIL");
-		const args = { action: "wait", blocking: true, ids: [`${kind}#1`], timeout_ms: 60000, wake_on_alert: false };
+		const args = { action: "wait", ids: [`${kind}#1`], timeout_ms: 60000, wake_on_alert: false };
 		try {
 			f.subReplies.push(held.reply);
 			await call(f, kind, { ...f.params(), title: "Named composition child" });
@@ -342,6 +406,8 @@ test("agent-ui before tool-ui keeps the exact folded summary and expands an agen
 			const run = f.session.prompt("Wait for the child");
 			await until(() => f.session.messages.some(message => message.role === "assistant" && message.content.some(block => block.type === "toolCall" && block.id === "composed-wait")), "native wait call");
 			await tick(); held.release(); await run;
+			// Reopen the real print transcript in the TUI, where tool-ui groups are installed.
+			await f.session.bindExtensions({ mode: "tui", onError: event => f.errors.push(`${event.event}: ${event.error}`) });
 			const result = f.session.messages.find(message => message.role === "toolResult" && message.toolCallId === "composed-wait");
 			assert.ok(result && result.role === "toolResult");
 			const details = result.details as { reason: string; results: DeliveredCard[] };
@@ -373,7 +439,8 @@ test("agent-ui before tool-ui keeps the exact folded summary and expands an agen
 test("agent-ui before tool-ui expands mixed results in leader and nonleader calls without duplicate cards", async () => {
 	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "rqw-agent-ui-compose-mixed-"));
 	initTheme("dark", false);
-	const f = await fixture("tui", undefined, [], [AGENT_UI, TOOL_UI]);
+	// Preserve leader/nonleader held-result cards in the existing external print path.
+	const f = await fixture("print", undefined, [], [AGENT_UI, TOOL_UI]);
 	const gates = [gate("AGENT_FIRST\nAGENT_TAIL"), gate("WRITER_FIRST\nWRITER_TAIL"), gate("SHELL_FIRST\nSHELL_TAIL")];
 	let mixedFinished = false;
 	const unsubscribe = f.session.subscribe(event => {
@@ -388,8 +455,8 @@ test("agent-ui before tool-ui expands mixed results in leader and nonleader call
 		await call(f, "agent", { ...f.params("MIXED_SHELL"), title: "Named mixed shell" });
 		await until(() => gates.every(held => held.entered()), "all mixed children running");
 		const calls = [
-			{ kind: "agent", id: "mixed-wait", args: { action: "wait", blocking: true, ids: ["agent#1", "agent#2"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
-			{ kind: "agent", id: "shell-wait", args: { action: "wait", blocking: true, ids: ["agent#3"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
+			{ kind: "agent", id: "mixed-wait", args: { action: "wait", ids: ["agent#1", "agent#2"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
+			{ kind: "agent", id: "shell-wait", args: { action: "wait", ids: ["agent#3"], until: "all", timeout_ms: 60000, wake_on_alert: false } },
 		];
 		f.mainReplies.push(answer(calls.map(item => fauxToolCall(item.kind, item.args, { id: item.id })), { stopReason: "toolUse" }), answer("MIXED_COMPOSITION_DONE"));
 		const run = f.session.prompt("Collect all three children");
@@ -398,6 +465,7 @@ test("agent-ui before tool-ui expands mixed results in leader and nonleader call
 		// Pi persists the batch after its tools finish; the public end event exposes this handoff before then.
 		await until(() => mixedFinished, "mixed wait execution finished");
 		await tick(); gates[2].release(); await run;
+		await f.session.bindExtensions({ mode: "tui", onError: event => f.errors.push(`${event.event}: ${event.error}`) });
 		const hosts = calls.map(item => {
 			const result = f.session.messages.find(message => message.role === "toolResult" && message.toolCallId === item.id);
 			assert.ok(result && result.role === "toolResult");
@@ -437,7 +505,7 @@ test("agent-ui before tool-ui leaves a no-results receipt diagnostic stock-ident
 		await f.start();
 		await until(() => f.delivered().length === 1, "the result already delivered as a custom message");
 		await f.session.waitForIdle();
-		const args = { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1 };
+		const args = { action: "wait", ids: ["agent#1"], timeout_ms: 1 };
 		f.mainReplies.push(answer([fauxToolCall("agent", args, { id: "receipt-wait" })], { stopReason: "toolUse" }), answer("DIAGNOSTIC_DONE"));
 		await f.session.prompt("Check the delivery receipt");
 		const result = f.session.messages.find(message => message.role === "toolResult" && message.toolCallId === "receipt-wait");

@@ -36,14 +36,14 @@ async function fixture(web: boolean) {
 	main.setResponses([
 		...(web ? [() => call("web", { queries: ["parent"] })] : []),
 		() => call("agent", { action: "start", task: "child task", model: "anthropic/claude-sonnet-5-5", thinking: "high", fast_gpt: false }),
-		() => call("agent", { action: "wait", ids: ["agent#1"], blocking: true, timeout_ms: 10000 }),
+		() => call("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 10000 }),
 		answer("parent done"),
 	]);
 	child.setResponses([
 		first("child", "child"),
 		...(web ? [
 			() => call("agent", { action: "start", task: "grand task", model: "web-unknown/custom", thinking: "medium", fast_gpt: false }),
-			() => call("agent", { action: "wait", ids: ["agent#1"], blocking: true, timeout_ms: 10000 }),
+			() => call("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 10000 }),
 			answer("child done"),
 		] : []),
 	]);
@@ -61,7 +61,13 @@ async function fixture(web: boolean) {
 		thinkingLevel: "low", resourceLoader: loader, sessionManager: SessionManager.inMemory(dir),
 		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }) });
 	await session.bindExtensions({ mode: "tui" });
-	return { session, runs, seen, async close() {
+	const completed = Promise.withResolvers<void>();
+	const unsubscribe = session.subscribe(event => {
+		if (event.type === "agent_end" && session.messages.some(message => message.role === "assistant"
+			&& message.content.some(block => block.type === "text" && block.text === "parent done"))) completed.resolve();
+	});
+	return { session, runs, seen, completed: completed.promise, async close() {
+		unsubscribe();
 		try { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); session.dispose(); }
 		finally {
 			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
@@ -71,10 +77,11 @@ async function fixture(web: boolean) {
 	} };
 }
 
-it("web reaches a real child and grandchild with each caller's model and thinking, without RQW-tools or RQW-codex", async () => {
+it("web reaches a real child and grandchild with each caller's model and thinking, without RQW-tools or RQW-codex", { timeout: 10000 }, async () => {
 	const h = await fixture(true);
 	try {
 		await h.session.prompt("Run the scripted searches");
+		await h.completed;
 		assert.deepEqual(h.seen, [{ depth: "child", web: true }, { depth: "grandchild", web: true }]);
 		assert.deepEqual(h.runs.map(run => [run.target.value, run.model, run.effort]), [
 			["parent", "gpt-6.1-sol", "low"], ["child", "gpt-6-sol", "high"], ["grandchild", "gpt-6.1-sol", "low"],
@@ -82,11 +89,12 @@ it("web reaches a real child and grandchild with each caller's model and thinkin
 	} finally { await h.close(); }
 });
 
-it("with RQW-web absent neither the main session nor its child receives web", async () => {
+it("with RQW-web absent neither the main session nor its child receives web", { timeout: 10000 }, async () => {
 	const h = await fixture(false);
 	try {
 		assert.equal(h.session.getToolDefinition("web"), undefined);
 		await h.session.prompt("Run the scripted child");
+		await h.completed;
 		assert.deepEqual(h.seen, [{ depth: "child", web: false }]);
 		assert.deepEqual(h.runs, []);
 	} finally { await h.close(); }

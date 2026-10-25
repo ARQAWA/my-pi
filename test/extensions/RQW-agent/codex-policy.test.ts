@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import {
 	createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
@@ -106,7 +106,22 @@ async function open(binder: boolean) {
 		settingsManager: SettingsManager.inMemory({ compaction: { enabled: false, keepRecentTokens: 0 }, retry: { enabled: false }, transport: "sse" }) });
 	await session.bindExtensions({ mode: "tui" });
 	const call = async (params: Record<string, unknown>) => {
-		const result = await session.getToolDefinition("agent")!.execute("t", params as never, undefined, undefined, session.extensionRunner.createContext());
+		if (params.action !== "wait") {
+			const result = await session.getToolDefinition("agent")!.execute("t", params as never, undefined, undefined, session.extensionRunner.createContext());
+			return result.content.map((c) => c.type === "text" ? c.text : "").join("");
+		}
+		main.setResponses([
+			() => fauxAssistantMessage([fauxToolCall("agent", params)], { stopReason: "toolUse" }),
+			...Array.from({ length: 20 }, () => () => fauxAssistantMessage("main ok")),
+		]);
+		await session.prompt("wait for child");
+		const result = session.messages.findLast((m) => m.role === "toolResult" && m.toolName === "agent")!;
+		if (result.details?.reason === "waiting") {
+			const notification = () => session.messages.find((m) => m.role === "custom" && m.customType === "child_wait" && m.details?.wait_id === result.details.wait_id);
+			await until(() => !!notification(), "wait notification");
+			return String(notification()!.content);
+		}
+		if (result.isError) throw new Error(result.content.map((c) => c.type === "text" ? c.text : "").join(""));
 		return result.content.map((c) => (c.type === "text" ? c.text : "")).join("");
 	};
 	const child = (task = "go", system = "EXACT") => ({ action: "start", system, task, model: "anthropic/claude-opus-5-5", tools: [] });
@@ -120,7 +135,7 @@ describe("RQW-agent: optional rqw-codex:session-policy request", () => {
 		const f = await open(true);
 		try {
 			await f.call(f.child());
-			await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
+			await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
 			assert.equal(f.hookInstalls.length, 1);
 			const child = f.seen[0].request.session;
 			assert.equal(f.hookInstalls[0].session, child);
@@ -159,7 +174,7 @@ describe("RQW-agent: optional rqw-codex:session-policy request", () => {
 			assert.notEqual(request.session, f.session, "the request carries the child, not the main session");
 			assert.equal(wireAtEmit, 0, "no request reached the provider when the binder saw it");
 			assert.equal(messagesAtEmit, 0, "no child prompt had been recorded");
-			assert.match(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 }), /ok/);
+			assert.match(await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 60_000 }), /ok/);
 			assert.equal(wire.length, 1);
 			assert.deepEqual(systemOf(wire[0].body), ["EXACT"], "the request carries exactly the caller's prompt");
 			assert.equal(f.policy.releases, 0, "a live child is not released before stop");
@@ -179,10 +194,8 @@ describe("RQW-agent: optional rqw-codex:session-policy request", () => {
 			assert.equal(outer.childName, "agent#1");
 			assert.equal(inner.childName, "agent#1", "Codex gets only the local kind#id, not the tools' parent path");
 			assert.notEqual(inner.session, outer.session);
-			await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
-			await outer.session.getToolDefinition("agent")!.execute("nested-wait", {
-				action: "wait", ids: ["agent#1"], blocking: true, timeout_ms: 60_000,
-			} as never, undefined, undefined, outer.session.extensionRunner.createContext());
+			await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
+			await until(() => outer.session.messages.some((m) => m.role === "custom" && m.customType === "agent"), "nested child delivery");
 			await outer.session.getToolDefinition("agent")!.execute("nested-restart", {
 				action: "restart", id: "agent#1", task: "fresh nested run",
 			} as never, undefined, undefined, outer.session.extensionRunner.createContext());
@@ -196,7 +209,7 @@ describe("RQW-agent: optional rqw-codex:session-policy request", () => {
 		const f = await open(false);
 		try {
 			assert.equal(await f.call(f.child()), "agent#1 started");
-			assert.match(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 }), /ok/);
+			assert.match(await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 60_000 }), /ok/);
 			assert.equal(wire.length, 1);
 		} finally { await f.close(); }
 	});
@@ -258,7 +271,7 @@ describe("RQW-agent: optional rqw-codex:session-policy request", () => {
 			assert.equal(f.seen[0].request.childName, "agent#1");
 			assert.deepEqual(f.captures.map((c) => c.callerThreadId), [f.mainId()]);
 			assert.equal(f.captures[0].wireAtCapture, 0, "the capture precedes the first request");
-			await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60_000 });
+			await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 60_000 });
 			const before = wire.length;
 			await f.call({ action: "send", id: "agent#1", task: "next" });
 			assert.equal(f.captures.length, 2);

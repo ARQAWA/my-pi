@@ -32,7 +32,7 @@ restore those sections too. A section link is navigation, not permission to omit
 [Isolated parallel execution](process/isolated-parallel-execution.md): Before development work; Main also loads this before coordination.
 
 <a id="task-pipeline"></a>
-[Task pipeline](process/task-pipeline.md): When scheduling, pausing, resuming, integrating or tracking CI.
+[Task pipeline](process/task-pipeline.md): When scheduling, pausing, resuming, integrating, tracking CI or choosing wait behavior.
 
 <a id="task-timebox"></a>
 [Task timebox](process/task-timebox.md): Before substantive development work.

@@ -143,13 +143,34 @@ async function cli(mode: "text" | "json" | "rpc", scenario: string) {
 						.map(e => JSON.stringify(e)).join("");
 					for (const needle of NEEDLES) assert.equal(text.split(needle).length - 1, 1, needle);
 					assert.ok(customs.every(content => NEEDLES.some(needle => content.includes(needle))), customs.join("\n"));
+				} else if (mode === "rpc" && (scenario === "wait" || scenario === "nested-wait")) {
+					const receipts = events.filter(e => e.type === "tool_execution_end" && e.toolName === "agent" && !e.parentToolCallId && e.result?.details?.reason === "waiting");
+					assert.equal(receipts.length, 1, "one waiting receipt");
+					const receipt = receipts[0].result.details;
+					assert.equal(typeof receipt.wait_id, "string");
+					assert.notEqual(receipt.wait_id, "");
+					assert.deepEqual(receipt.results, [], "the receipt does not deliver the child result");
+					const notifications = events.filter(e => e.type === "message_end" && e.message?.role === "custom");
+					assert.equal(notifications.length, 1, "exactly one notification and no duplicate ordinary agent message");
+					assert.equal(notifications[0].message.customType, "child_wait");
+					assert.ok(events.indexOf(receipts[0]) < events.indexOf(notifications[0]), "receipt precedes notification");
+					const payload = JSON.parse(notifications[0].message.content);
+					assert.deepEqual(payload, notifications[0].message.details);
+					assert.equal(payload.wait_id, receipt.wait_id);
+					assert.equal(payload.reason, "result");
+					assert.equal(payload.timed_out, false);
+					assert.deepEqual(payload.receipts, []);
+					assert.deepEqual(payload.results.map((r: Event) => ({ id: r.id, text: r.text, outcome: r.outcome })), [
+						{ id: "agent#1", text: scenario === "wait" ? "CLI_WAIT_CHILD" : "SUB_FINAL_ANSWER", outcome: "completed" },
+					]);
+					assert.equal(events.filter(final).length, 1, "one final answer after notification");
 				} else assert.deepEqual(customs, WAIT[scenario].customs);
 				if (scenario === "codemode-abort") {
 					// The nested wait may be reported on its start event; when it carries a parent id it is the codemode call.
 					for (const e of events) if (e.type === "tool_execution_start" && e.toolName === "agent" && "parentToolCallId" in e) assert.equal(e.parentToolCallId, "codemode-abort");
 					assert.equal(events.filter(e => e.type === "message_end" && e.message?.role === "toolResult" && e.message.toolName === "agent").length, 0, "no raw nested toolResult");
 				}
-				if (scenario === "wait" || scenario === "nested-wait")
+				if (mode !== "rpc" && (scenario === "wait" || scenario === "nested-wait"))
 					assert.ok(events.some(e => e.type === "tool_execution_end" && e.toolName === "agent" && !e.parentToolCallId && e.result?.details?.reason === "result"));
 			}
 		} else {

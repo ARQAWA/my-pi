@@ -1007,8 +1007,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `until` match, or the `timeout_ms` deadline; ends within 250 ms join one notification) later arrives as a `[job]`
   message that wakes an idle caller. A busy caller gets it at the settlement boundary, held outside Pi's steering queue so
   Esc and send-now do not drop it. A newer wait on the same job replaces the older one; a result already shown by
-  `status`, `wait` or `kill` is not announced again. `blocking: true` keeps the old held wait. Calls inside a codemode
-  script stay blocking. The print/json fallback is for external hosts only: a root session run by Pi in print or json mode ends
+  `status`, `wait` or `kill` is not announced again. There is no explicit held-wait parameter; see `[D-TOOLS-NO-BLOCKING-FLAG]`.
+  Calls inside a codemode script stay blocking. The print/json fallback is for external hosts only: a root session run by Pi in print or json mode ends
   with its run, so its waits block; an in-process child agent with the `notify`/`retain` bridge keeps notifications even when its SDK mode reads print.
   Any caller without a `notify` callback keeps the blocking wait. Reviewer profiles use the ordinary child bridge. The `notify` callback
   of the job registry is the same one subagent waits use, so no second delivery registry exists. A child's offered factory also
@@ -1021,7 +1021,27 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Reason: the owner wants a waiting agent not to hold a call and owner messages not to kill background work.
   Carrier: `extensions/RQW-tools/jobs.ts` (`watch`, `notify`), `extensions/RQW-tools/index.ts` (`installNotifications`),
   `extensions/RQW-tools/descriptions/job.md`. Proof: `test/extensions/RQW-tools/notify.test.ts`, `notify-sdk.test.ts`, `background.test.ts`.
-  Since: the final squash of branch `agent-async`.
+  Since: the final squash of branch `agent-async`; explicit held waits removed by `[D-TOOLS-NO-BLOCKING-FLAG]`.
+
+- **Remove the explicit held-wait option** `[D-TOOLS-NO-BLOCKING-FLAG]`. Owner:
+  «Не синхронный, а АСИНХРОННЫЙ тулинг я заказывал что бы никто никогда не мог физически заблокироваться»
+  Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry `9987ee04`, line 6807.
+  After the remaining blocking paths were reported, the owner narrowed this delivery:
+  «Да только блокинг тру пока»
+  Source: the same session, USER entry `811f5ec6`, line 6832.
+  Remove `blocking` from both `agent` and `job`, including its schema, explicit held-wait branch and instructions.
+  Direct waits with notifications use the existing immediate `waiting` receipt and later notification.
+  Known remaining blocking paths are deferred by the owner and unchanged in this delivery:
+  1. The shared agent operation queue and long `start`/`restart`/`resume` control calls, including hydration,
+     authorization and session preflight (`extensions/RQW-agent/index.ts`, `execute`, `resolveConfig`, `createSession`, `startRun`).
+  2. Waits inside codemode scripts (`toolCallId.includes("/")` in RQW-agent and `id.includes("/")` in RQW-tools).
+  3. External root print/json hosts and callers without a notification callback, including the implicit
+     `Coordinator.observe` host wait (`extensions/RQW-tools/index.ts`, `installNotifications`; RQW-agent host lifecycle).
+  Reason: remove the explicitly selectable blocker now without adding an unapproved background mechanism.
+  Carriers: `extensions/RQW-agent/index.ts`, `extensions/RQW-tools/jobs.ts`, their descriptions, READMEs and tests;
+  `AGENTS.md`, `PROCESS.md`. Superseded coordinator-default text is preserved verbatim in
+  [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), Explicit held-wait option.
+  Since: the nonblocking-waits delivery.
 
 ## Context
 
@@ -1175,9 +1195,9 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Reason: readable child identity without changing caller-local lifecycle IDs.
   Carrier: `extensions/RQW-agent/index.ts`. Since: subagent-profiles.
 
-- **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `resume`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `blocking`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `agent_type`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus recursive `agent` delegation for every child. Profile selection and defaults are defined in `[D-AGENT-PROFILES]`. Sessions run in-process at caller cwd with in-memory settings; the history is in memory for an in-memory caller and in the owned `<parent.jsonl>.children/` tree for a persisted one (`[D-AGENT-PERSIST]`), using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
+- **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `resume`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `agent_type`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus recursive `agent` delegation for every child. Profile selection and defaults are defined in `[D-AGENT-PROFILES]`. Sessions run in-process at caller cwd with in-memory settings; the history is in memory for an in-memory caller and in the owned `<parent.jsonl>.children/` tree for a persisted one (`[D-AGENT-PERSIST]`), using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
   Coordinator text. Reason: reuse Pi sessions and the caller's provider runtime without subprocesses or duplicate resource loading.
-  Carrier: `extensions/RQW-agent/index.ts`, `test/extensions/RQW-agent/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`; `blocking` since the final squash of branch `agent-async`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0265.
+  Carrier: `extensions/RQW-agent/index.ts`, `test/extensions/RQW-agent/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`; explicit held-wait option removed by `[D-TOOLS-NO-BLOCKING-FLAG]`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0265.
 - **Optional RQW-tools offer** `[D-AGENT-TOOLS-OFFER]`. At start/restart RQW-agent emits `rqw-tools:subagent-tools` with `{ offer(factory) }` on the shared synchronous `pi.events` bus; loaded RQW-tools answers with fresh definitions and a child-local barrier/job registry, otherwise stock tools are used. The consumer type is `(cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition }) => ToolDefinition[]`; the provider's exact function is `createTools(cwd: string, settings: () => any, nested = createNestedBarrier(), options: JobsOptions & { jobs?: Jobs; codemode?: ToolDefinition<any, any, any> } = {}): ToolDefinition[]`. The factory provides seven tools, six base tools plus job, and optionally a grouped child codemode; the consumer filters the base subset but retains job and offered codemode. Child codemode shares process-wide Pi worker slots. No cross-extension import or mandatory dependency is added; reload/dispose invalidates stale handlers.
   Coordinator text. Reason: children follow the RQW-tools switch while retaining their own ordering and job ownership.
   Carrier: `extensions/RQW-agent/index.ts` (`ToolsFactory`, `offeredTools`), `extensions/RQW-tools/index.ts` (`createTools`), `test/agent-tools.test.ts`. Pi 1.4.0 event API: `docs/extensions.md:186`, `dist/core/extensions/types.d.ts:1406`; invalidation: `dist/core/extensions/loader.js:144-152`, `dist/core/agent-session.js:1022,3002`; stock tool settings: `dist/core/agent-session.js:2964-2974`. Since: `90700ad`.
@@ -1221,8 +1241,9 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 - **Notification waits for children** `[D-AGENT-NOTIFY]`. Owner quotes: `[D-TOOLS-NOTIFY]` (`16-27-59:4876`, `16-27-59:4937`). Taken by default (coordinator text, not an owner quote): where the caller can
   receive notifications, `wait` on `agent` returns a `waiting` receipt at once with
-  `terminate: true` and the result later wakes the caller once through the existing delivery broker; `blocking: true`
-  keeps the held wait, and a wait inside a codemode script stays blocking, as does an external root print/json host and any caller without a `notify` callback (an in-process child agent with the bridge
+  `terminate: true` and the result later wakes the caller once through the existing delivery broker.
+  There is no explicit held-wait option (`[D-TOOLS-NO-BLOCKING-FLAG]`). A wait inside a codemode script stays blocking,
+  as does an external root print/json host and any caller without a `notify` callback (an in-process child agent with the bridge
   is not affected by its SDK mode). A timeout or alert
   is one notification, not periodic polling, and no model request is made merely to wait. Owner messages reach the agent
   without cancelling accepted children. Same callback as `[D-TOOLS-NOTIFY]`. Reason: a waiting agent must not hold a call.

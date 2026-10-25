@@ -43,7 +43,7 @@ const call = (f: Awaited<ReturnType<typeof fixture>>, name: string, params: Reco
 	f.session.getToolDefinition(name)!.execute("meta", params, undefined, undefined, f.session.extensionRunner.createContext());
 
 const waitFor = (f: Awaited<ReturnType<typeof fixture>>, ids: string[]) =>
-	call(f, "agent", { action: "wait", blocking: true, ids, timeout_ms: 60000 });
+	call(f, "agent", { action: "wait", ids, timeout_ms: 60000 });
 
 /** A separate SDK caller in the fixture's isolated home, loading only the ordinary agent runtime. */
 async function callerSession(f: Awaited<ReturnType<typeof fixture>>): Promise<AgentSession> {
@@ -135,7 +135,7 @@ test("meta-missing-model-omitted: with no executed assistant message the model f
 
 test("meta-both-paths: the custom message and the wait result carry the same display details", async (t) => {
 	const c = clock(t);
-	const f = await fixture();
+	const f = await fixture("print");
 	try {
 		f.subReplies.push(async () => {
 			c.now += 1000;
@@ -170,7 +170,7 @@ test("meta-models: ordinary agents on distinct models preserve display details t
 	for (const separateModel of [false, true]) {
 		const role = "agent";
 		const c = clock(t);
-		const f = await fixture();
+		const f = await fixture("print");
 		try {
 			const replies = separateModel ? await withAgents(f) : f.subReplies;
 			const model = separateModel ? "anthropic/metadata-agent" : `${f.sub.provider.id}/s`;
@@ -191,7 +191,7 @@ test("meta-models: ordinary agents on distinct models preserve display details t
 			replies.push(g.reply);
 			await start("WAIT_BRIEF");
 			await until(() => g.entered(), `the ${role} running`);
-			const waiting = call(f, role, { action: "wait", blocking: true, ids: [`${role}#2`], timeout_ms: 60000 });
+			const waiting = waitFor(f, [`${role}#2`]);
 			await tick(20);
 			c.now += 2500;
 			g.release();
@@ -256,7 +256,7 @@ test("delivery-unchanged: content, delivery token, quiet, queued and retry deliv
 			assert.deepEqual(Object.keys(message.details).sort(), ["delivery", "id", "model", "outcome", "run", "seconds", "thinking"]);
 			assert.equal(message.details.outcome, "finished");
 			// A public wait after the pushed delivery: a receipt carrying the same delivery token, with no second copy.
-			const receipt = JSON.parse(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1 }));
+			const receipt = JSON.parse(await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 1 }));
 			assert.equal(receipt.reason, "receipt");
 			assert.equal(receipt.receipts.length, 1);
 			assert.equal(receipt.receipts[0].delivered_via, "message");

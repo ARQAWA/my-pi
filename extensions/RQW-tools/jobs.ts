@@ -264,7 +264,6 @@ export function createJobTool(jobs: Jobs, description: string): any {
 			timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Chosen wait duration, slightly longer than the estimated remaining work; default 300000 only when omitted" })),
 			lines: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "Output lines shown per job; default 20" })),
 			until: Type.Optional(Type.String({ description: "wait: also return when a job's output matches this JavaScript regular expression (readiness); a leading (?i) ignores case" })),
-			blocking: Type.Optional(Type.Boolean({ description: "wait: true holds this call until a job ends, the deadline or readiness. Default: a wait returns reason waiting at once, your turn ends, and the result arrives later as a notification message (always blocking where notifications are unavailable)" })),
 		}),
 		// A blocking wait ends on abort; background jobs are independent of the caller's abort (they die on `kill`, shutdown).
 		async execute(id: string, raw: any, signal: AbortSignal | undefined) {
@@ -286,8 +285,8 @@ export function createJobTool(jobs: Jobs, description: string): any {
 					}
 					const waitIds = ids(params.ids, true)!;
 					const timeout = waitTimeout(params.timeout_ms);
-					// A script's own call (id with "/") and an explicit `blocking` hold the call; so does a caller with no notify.
-					if (params.blocking === true || id.includes("/") || !jobs.canNotify()) return json(await jobs.wait(waitIds, timeout, lines, signal, until));
+					// A script's own call (id with "/") and a caller with no notify still hold the call.
+					if (id.includes("/") || !jobs.canNotify()) return json(await jobs.wait(waitIds, timeout, lines, signal, until));
 					const watched = jobs.watch(waitIds, timeout, lines, until);
 					return json(watched.result, watched.waiting);
 				}

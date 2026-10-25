@@ -144,18 +144,29 @@ describe("notification wait in a real session", () => {
 		} finally { await close(c); }
 	});
 
-	for (const [name, mode, extra] of [["print mode", "print", {}], ["explicit blocking: true", undefined, { blocking: true }]] as const) {
-		it(`${name}: the wait blocks as before and sends no notification`, async () => {
+	for (const mode of ["print", undefined] as const) {
+		it(`${mode ?? "rpc"} mode: wait uses the host's existing delivery path`, async () => {
 			const c = await start(mode);
 			try {
 				faux.state.callCount = 0;
-				faux.setResponses([bashGated(), waitForJob(extra), say("done")]);
+				faux.setResponses([bashGated(), waitForJob(), say("done")]);
 				const run = c.session.prompt("go");
-				setTimeout(() => void c.open(), 500);
-				await run;
-				assert.equal(faux.state.callCount, 3);
-				assert.match(c.toolResults.at(-1)!, /"reason":"exit".*"exit_code":0/);
-				assert.equal(c.jobMessages.length, 0);
+				if (mode === "print") {
+					setTimeout(() => void c.open(), 500);
+					await run;
+					assert.equal(faux.state.callCount, 3);
+					assert.match(c.toolResults.at(-1)!, /"reason":"exit".*"exit_code":0/);
+					assert.equal(c.jobMessages.length, 0);
+				} else {
+					await run;
+					assert.equal(faux.state.callCount, 2);
+					assert.match(c.toolResults.at(-1)!, /"reason":"waiting"/);
+					assert.equal(c.jobMessages.length, 0);
+					await c.open();
+					await until("the notification turn", () => c.jobMessages.length === 1 && c.settled() === 2);
+					assert.equal(faux.state.callCount, 3);
+					assert.match(c.jobMessages[0].content, /"reason":"exit".*"exit_code":0/);
+				}
 			} finally { await close(c); }
 		});
 	}

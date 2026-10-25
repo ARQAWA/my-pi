@@ -35,7 +35,7 @@ export const DESCRIPTION = [
 	"Use it for complex multi-step work that can run on its own, or for independent areas in parallel: start them all in one response. Do not use it for a narrow question, one or two known files or a single search: call the tools directly.",
 	"The child sees neither the user nor your history: give it the full context and say exactly what to return. Trust its result rather than redoing the work; the user does not see it, so pass on what matters.",
 	"Work in parallel while children run. When blocked, estimate their remaining duration and set timeout_ms somewhat longer on each wait; 300000 is only the omitted default, not an interval or maximum.",
-	"wait: ids (full IDs of your direct agents), optional timeout_ms, until first (default) or all, wake_on_alert (default true). By default returns a waiting receipt, ends this turn, and wakes you later with a child_wait notification. Do not poll or spend a turn only to wait. Children keep running while you receive owner messages. blocking:true keeps the call open; nested codemode calls and external print/json hosts always block. A new alert wakes without consuming a result; false waits for terminal delivery. until all waits until every selected target is terminal.",
+	"wait: ids (full IDs of your direct agents), optional timeout_ms, until first (default) or all, wake_on_alert (default true). By default returns a waiting receipt, ends this turn, and wakes you later with a child_wait notification. Do not poll or spend a turn only to wait. Children keep running while you receive owner messages. Nested codemode calls and external print/json hosts still hold the wait call. A new alert wakes without consuming a result; false waits for terminal delivery. until all waits until every selected target is terminal.",
 	"status: ids, optional messages (5-10, default 8), depth (default 0); last trimmed messages, in-flight tool calls and structured alerts. Positive depth adds read-only descendant status; it grants no descendant control. Decide whether to wait, send, interrupt, stop or restart. Do not busy-poll.",
 	"start/restart: optional alert_after_ms, a positive safe integer, emits long_turn alerts for active turns after that duration; omitted means disabled, restart inherits the previous threshold. Alerts never stop work.",
 	"Results arrive once, through wait or a later [agent#N] message; already-delivered results give a receipt.",
@@ -56,7 +56,6 @@ const PARAMETERS = Type.Object({
 	id: Type.Optional(Type.String({ description: "agent#N or N; management actions" })),
 	ids: Type.Optional(Type.Array(Type.String(), { description: "Full direct child IDs for wait/status: agent#N" })),
 	timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Chosen wait duration, slightly longer than estimated remaining work; default 300000 only when omitted" })),
-	blocking: Type.Optional(Type.Boolean({ description: "wait: keep the call open instead of ending this turn and notifying later; nested codemode and external print/json hosts always block" })),
 	messages: Type.Optional(Type.Integer({ minimum: 5, maximum: 10, description: "Status peek length; default 8" })),
 	until: Type.Optional(StringEnum(["first", "all"], { description: "wait: first terminal result (default), or hold results until all selected targets are terminal" })),
 	wake_on_alert: Type.Optional(Type.Boolean({ description: "wait: return on a new structured alert without consuming a result; default true" })),
@@ -1139,7 +1138,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					await hydrate(ctx, signal);
 					const ids = targetIds(params.ids), timeout = waitTimeout(params.timeout_ms);
 					const options = { until: params.until, wake_on_alert: params.wake_on_alert };
-					const blocking = params.blocking === true || toolCallId.includes("/") || (!backgroundCaller && (ctx.mode === "print" || ctx.mode === "json"));
+					const blocking = toolCallId.includes("/") || (!backgroundCaller && (ctx.mode === "print" || ctx.mode === "json"));
 					return { waiting: blocking ? coordinator.wait(ids, timeout, signal, toolCallId, options)
 						: coordinator.notificationWait(ids, timeout, signal, toolCallId, options) };
 				});

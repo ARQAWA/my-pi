@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import zlib from "node:zlib";
-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import {
 	createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
@@ -133,9 +133,9 @@ async function open(providers: ("openai-codex" | "anthropic")[]) {
 		const result = await session.getToolDefinition(tool)!.execute("t", params as never, undefined, undefined, session.extensionRunner.createContext());
 		return result.content.map((c) => (c.type === "text" ? c.text : "")).join("");
 	};
-	const delivered = () => session.messages.flatMap((m) => m.role === "custom" && typeof m.content === "string" && m.customType !== undefined ? [m.content] : []);
+	const delivered = () => session.messages.flatMap((m) => m.role === "custom" && typeof m.content === "string" && m.customType === "agent" ? [m.content] : []);
 	const close = async () => { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); session.dispose(); };
-	return { session: session as AgentSession, state, call, delivered, close };
+	return { session: session as AgentSession, state, call, delivered, close, main };
 }
 const tiers = () => wire.map(({ body }) => body.service_tier);
 const model = "openai-codex/gpt-6.1-sol";
@@ -197,7 +197,15 @@ describe("GPT Fast, RQW-agent children", () => {
 			assert.equal(f.delivered().length, 0);
 			assert.equal(wire[0].body.service_tier, PRIORITY);
 			await f.call("agent", { action: "interrupt", id: "agent#1" });
-			await f.call("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 5000, blocking: true });
+			f.main.setResponses([
+				() => fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 5000 })], { stopReason: "toolUse" }),
+				...Array.from({ length: 20 }, () => () => fauxAssistantMessage("main ok")),
+			]);
+			await f.session.prompt("wait for interruption");
+			const wait = f.session.messages.findLast(m => m.role === "toolResult" && m.toolName === "agent")!.details;
+			if (wait.reason === "waiting") {
+				await until(() => f.session.messages.some(m => m.role === "custom" && m.customType === "child_wait" && m.details?.wait_id === wait.wait_id), "interrupted wait notification");
+			}
 			f.state.fast = false;
 			heldCodexInstructions = undefined;
 			assert.equal(await f.call("agent", { action: "resume", id: "agent#1" }), "agent#1 resumed");

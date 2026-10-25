@@ -8,6 +8,9 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](../DECIS
 - When a task's local checks are clean, its branch is pushed and the required reviews start in the background;
   the task becomes waiting. Its agent finishes its turn or is paused, keeps its session and history, and frees the slot;
   Main's coordination is never blocked. The merge agent and CI watcher follow any CI runs in the background.
+- Use the default notification waits of `agent` and `job`: a direct wait returns `waiting` and the result wakes the
+  caller later. Neither tool has an explicit held-wait option. Remaining blocking paths are deferred by the owner,
+  not fixed by this rule; see `DECISIONS.md`, `[D-TOOLS-NO-BLOCKING-FLAG]`.
 - One merge agent, an ordinary agent started by Main, owns integration. Main fixes the train order in the current
   session queue, from the owner's queue. The agent takes waiting branches in that order, rebases each onto current
   delivery destination and pushes it, following [Delivery](../PROCESS.md#delivery) for the base, checks and merge conditions.

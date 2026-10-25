@@ -93,7 +93,7 @@ describe("registration", () => {
 	it("registers the six tools with stock names and parameter names, and the job tool", () => {
 		const { tools } = load();
 		assert.deepEqual(Object.keys(tools).sort(), ["bash", "edit", "find", "grep", "job", "read", "write"]);
-		assert.deepEqual(Object.keys(tools.job.parameters.properties).sort(), ["action", "blocking", "id", "ids", "lines", "timeout_ms", "until"]);
+		assert.deepEqual(Object.keys(tools.job.parameters.properties).sort(), ["action", "id", "ids", "lines", "timeout_ms", "until"]);
 		assert.equal(tools.job.defaultActive, false, "job follows the selection (session_start)");
 		const cwd = process.cwd();
 		const stock: Record<string, any> = {

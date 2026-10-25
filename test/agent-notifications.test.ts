@@ -248,14 +248,14 @@ test("a persisted child_wait completion is not republished after reopening the p
 });
 
 /** Starts agent#n held, runs the wait directly, and proves it stays pending until the child ends. */
-async function assertBlocks(w: World, run: Run, n: number, toolCallId: string, extra: Record<string, unknown>) {
+async function assertBlocks(w: World, run: Run, n: number, toolCallId: string) {
 	const child = hold(w.hub, `BLOCKED ${n}`);
 	w.sub.queue.push(child.reply);
 	assert.equal((await run.execute(w.startParams(`TASK ${n}`), `start-${n}`)).text, `agent#${n} started`);
 	await w.hub.until(child.entered, `child ${n} request pending`);
 	const mainBefore = w.main.requests.length;
 	let settled = false;
-	const pending = run.execute({ action: "wait", ids: [`agent#${n}`], ...extra }, toolCallId).finally(() => { settled = true; });
+	const pending = run.execute({ action: "wait", ids: [`agent#${n}`] }, toolCallId).finally(() => { settled = true; });
 	await settle();
 	assert.equal(settled, false, `the wait ${toolCallId} is still pending while the child runs`);
 	child.release();
@@ -271,12 +271,13 @@ async function assertBlocks(w: World, run: Run, n: number, toolCallId: string, e
 	assert.deepEqual(waitMessages(run), [], "no notification for a blocking wait");
 }
 
-test("explicit blocking:true and a nested codemode tool call id keep the old blocking wait", async () => {
+test("agent exposes no blocking option; a nested codemode tool call id keeps the held wait", async () => {
 	const w = await world();
 	try {
 		const parent = await w.launchPersisted();
-		await assertBlocks(w, parent, 1, "direct-blocking", { blocking: true });
-		await assertBlocks(w, parent, 2, "codemode-outer/3", {});
+		const parameters = parent.session.getToolDefinition("agent")!.parameters;
+		assert.equal(Object.hasOwn(parameters.properties, "blocking"), false);
+		await assertBlocks(w, parent, 1, "codemode-outer/3");
 		assert.deepEqual(parent.errors, []);
 	} finally { await w.cleanup(); }
 });
@@ -286,7 +287,7 @@ for (const mode of ["print", "json"] as const) {
 		const w = await world();
 		try {
 			const parent = await w.launchPersisted(mode);
-			await assertBlocks(w, parent, 1, "plain-call", {});
+			await assertBlocks(w, parent, 1, "plain-call");
 			assert.deepEqual(parent.errors, []);
 		} finally { await w.cleanup(); }
 	});

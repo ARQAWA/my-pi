@@ -31,7 +31,9 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   `read` answers an identical repeat of an unchanged range with a one-line note unless `force: true`, under strict
   turn and token limits (`unchanged.ts`, `DECISIONS.md` Tools, Unchanged-read note).
   An eligible call still running after 12 s returns as a background job `job#N`; `job` waits for or checks it and
-  kills process or queued jobs. A `job wait` returns `waiting` at once and ends the turn; its result comes later as a notification (`blocking: true` holds the call), and a handed-off job survives Esc and new owner messages (`DECISIONS.md` Tools, `D-TOOLS-NOTIFY`). By approved design, a running file-tool job such as `read`, `grep` or `find` cannot
+  kills process or queued jobs. Where notifications work, a direct `job wait` returns `waiting` at once and ends the turn;
+  its result comes later as a notification, and a handed-off job survives Esc and new owner messages (`DECISIONS.md` Tools,
+  `D-TOOLS-NOTIFY`). Remaining held-wait paths are listed in `D-TOOLS-NO-BLOCKING-FLAG`. By approved design, a running file-tool job such as `read`, `grep` or `find` cannot
   be killed: `job kill` reports `cannot_kill`, and it finishes on its own. A bash call with its own timeout of 13 s
   or less stays in the foreground and takes no pre-start snapshot; eligible bash calls take an exact snapshot
   before starting. The approved contract holds only what the command certainly changes and reports changes
@@ -57,7 +59,7 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   execution slots.
   Details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). The tool offers caller-chosen mechanical wait and diagnostic status;
   results arrive once through wait or `[kind#N]` messages. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Children retain history until stop for explicit follow-ups.
-  A persisted parent stores child sessions in `<parent.jsonl>.children/`; `resume` retries the interrupted request with no new message, also after a Pi restart, and `/resume-agents` resumes the children only. Where notifications work, `wait` returns `waiting` at once and ends the turn, the result wakes the caller later (`blocking: true` holds); see [persistence](extensions/RQW-agent/README.md#persistence-and-resume) and `DECISIONS.md` Agent.
+  A persisted parent stores child sessions in `<parent.jsonl>.children/`; `resume` retries the interrupted request with no new message, also after a Pi restart, and `/resume-agents` resumes the children only. Where notifications work, a direct `wait` returns `waiting` at once and ends the turn, the result wakes the caller later; see [persistence](extensions/RQW-agent/README.md#persistence-and-resume) and `DECISIONS.md` Agent.
   Agent start/restart supports `system_file`/`role_file` and `include: ["user_messages"]`; task text stays in `task`.
   The tool supports `until: "all"`, `wake_on_alert`, read-only status `depth` and optional `alert_after_ms`
   diagnostics without stopping work; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management).

@@ -246,8 +246,7 @@ so the caller's turn ends with no further model request. The one later notificat
 an alert, or the `timeout_ms` deadline) is delivered once through the existing broker as the usual `[agent#N]` message and
 wakes an idle caller; a busy caller gets it at its settlement boundary. No model request, timer poll or network request
 is made merely to wait. The notification is a `child_wait` message. A persisted child that waits for its own children keeps it as an `rqw-agent-inbox` entry of its own session, acknowledged by that persisted message and not by a clearable steering queue. Owner messages, Esc and send-now reach the caller without cancelling accepted children.
-`blocking: true` keeps the held wait for hosts and scripts that need the result in the same call. A wait inside a
-codemode script stays blocking because the outer script owns its result. The blocking fallback for print and json is only
+A wait inside a codemode script stays blocking because the outer script owns its result. The blocking fallback for print and json is only
 for external hosts: a root session that Pi itself runs in print or json mode ends with its run, so no notification can wake
 it. An in-process child agent whose offered factory got the `notify`/`retain` bridge gets notifications whatever mode its SDK
 reports, print included. A caller without a `notify` callback keeps the blocking wait. A new wait on the same targets replaces the older notification, so a result is never

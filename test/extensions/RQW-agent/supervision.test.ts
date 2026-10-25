@@ -6,11 +6,32 @@ import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { answer, fixture, gate, tick, until, texts } from "./audit-fixture.ts";
 
 function waits(session: AgentSession) {
-	return session.messages.flatMap(m => {
-		if (m.role !== "toolResult" || m.toolName !== "agent") return [];
-		const text = m.content.filter(c => c.type === "text").map(c => c.text).join("");
-		return text.startsWith("{") ? [JSON.parse(text)] : [];
-	});
+	return session.messages.flatMap(m => m.role === "custom" && m.customType === "child_wait" && typeof m.content === "string" ? [JSON.parse(m.content)] : []);
+}
+
+async function notification(session: AgentSession) {
+	await until(() => waits(session).length === 1, "wait notification");
+	const saved = session.messages.findLast(m => m.role === "toolResult" && m.toolName === "agent")!;
+	const receipt = JSON.parse(saved.content.filter(c => c.type === "text").map(c => c.text).join(""));
+	assert.equal(receipt.reason, "waiting");
+	assert.equal(waits(session)[0].wait_id, receipt.wait_id);
+	return waits(session)[0];
+}
+
+async function waitFor(f: Awaited<ReturnType<typeof fixture>>, params: Record<string, unknown>, advance: () => void) {
+	const before = waits(f.session).length;
+	f.mainReplies.push(answer([fauxToolCall("agent", { action: "wait", ...params })], { stopReason: "toolUse" }));
+	await f.session.prompt("WAIT");
+	const message = f.session.messages.findLast(m => m.role === "toolResult" && m.toolName === "agent")!;
+	const receipt = JSON.parse(message.content.filter(c => c.type === "text").map(c => c.text).join(""));
+	assert.equal(receipt.reason, "waiting");
+	assert.equal(typeof receipt.wait_id, "string");
+	advance();
+	await until(() => waits(f.session).length === before + 1, "wait notification");
+	await f.session.waitForIdle();
+	const result = waits(f.session)[before];
+	assert.equal(result.wait_id, receipt.wait_id);
+	return result;
 }
 
 test("default error alert wakes without consuming terminal result; its later push and receipt survive", async () => {
@@ -22,21 +43,21 @@ test("default error alert wakes without consuming terminal result; its later pus
 	});
 	f.mainReplies.push(
 		answer([fauxToolCall("agent", f.params())], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 10000 })], { stopReason: "toolUse" }),
+		answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 10000 })], { stopReason: "toolUse" }),
 		answer("ALERT_ACKNOWLEDGED"),
 	);
 	try {
 		const run = f.session.prompt("GO");
 		await until(() => held.entered() && f.requests.main.length === 2, "wait before provider failure");
-		await tick(); held.release(); await run;
-		const [alert] = waits(f.session);
+		await run; await tick(); held.release();
+		const alert = await notification(f.session);
 		assert.equal(alert.reason, "alert");
 		assert.deepEqual(alert.results, []);
 		assert.deepEqual(alert.receipts, []);
 		assert.ok(alert.statuses[0].alerts.some((a: any) => a.kind === "error" && a.detail === failure));
 		await until(() => f.delivered().length === 1, "terminal error delivery after alert");
 		assert.deepEqual(f.delivered(), [`[agent#1] error: ${failure}`]);
-		const receipt = JSON.parse(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1 }));
+		const receipt = JSON.parse(await f.call({ action: "wait", ids: ["agent#1"], timeout_ms: 1 }));
 		assert.equal(receipt.reason, "receipt");
 		assert.equal(receipt.receipts[0].delivered_via, "message");
 		assert.deepEqual(receipt.results, []);
@@ -52,14 +73,14 @@ test("wake_on_alert false retains terminal wait delivery and makes no duplicate 
 	});
 	f.mainReplies.push(
 		answer([fauxToolCall("agent", f.params())], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 10000, wake_on_alert: false })], { stopReason: "toolUse" }),
+		answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 10000, wake_on_alert: false })], { stopReason: "toolUse" }),
 		answer("GOT_TERMINAL"),
 	);
 	try {
 		const run = f.session.prompt("GO");
 		await until(() => held.entered() && f.requests.main.length === 2, "terminal-only wait");
-		await tick(); held.release(); await run;
-		const [result] = waits(f.session);
+		await run; await tick(); held.release();
+		const result = await notification(f.session);
 		assert.equal(result.reason, "result");
 		assert.equal(result.results.length, 1);
 		assert.equal(result.results[0].outcome, "error");
@@ -77,21 +98,21 @@ test("until all holds multiple agent completions without pushing the first resul
 			fauxToolCall("agent", f.params(), { id: "start-agent" }),
 			fauxToolCall("agent", f.params("SECOND_TASK"), { id: "start-second" }),
 		], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1", "agent#2"], timeout_ms: 10000, until: "all", wake_on_alert: false })], { stopReason: "toolUse" }),
+		answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1", "agent#2"], timeout_ms: 10000, until: "all", wake_on_alert: false })], { stopReason: "toolUse" }),
 		answer("GOT_BOTH"),
 	);
 	try {
 		const run = f.session.prompt("GO");
 		await until(() => child.entered() && second.entered() && f.requests.main.length === 2, "multiple agent all wait");
-		await tick(); child.release();
+		await run; await tick(); child.release();
 		await tick();
 		const firstStatus = JSON.parse(await f.call({ action: "status", ids: ["agent#1"] })).statuses[0];
 		assert.equal(firstStatus.state, "idle");
 		assert.equal(f.requests.main.length, 2, "caller stays mechanically parked after first completion");
 		assert.deepEqual(f.delivered(), []);
 		assert.equal(f.session.messages.some(m => m.role === "custom" && m.customType === "agent"), false);
-		second.release(); await run;
-		const [result] = waits(f.session);
+		second.release();
+		const result = await notification(f.session);
 		assert.equal(result.reason, "result");
 		assert.deepEqual(result.results.map((r: any) => [r.id, r.text]), [["agent#1", "FIRST_DONE"], ["agent#2", "SECOND_DONE"]]);
 		assert.equal(f.session.messages.some(m => m.role === "custom" && m.customType === "agent"), false);
@@ -127,26 +148,30 @@ test("descendant status is read-only, depth zero omits children and depth one ex
 	} finally { grandchild.release(); await f.cleanup(); }
 });
 
-test("long-turn alerts are opt-in, wake wait, reset on restart and inherited threshold still applies", async () => {
+test("long-turn alerts are opt-in, wake wait, reset on restart and inherited threshold still applies", async t => {
 	const f = await fixture(), first = gate("FIRST"), second = gate("SECOND"), unconfigured = gate("DEFAULT");
+	let now = performance.now();
+	t.mock.method(performance, "now", () => now);
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const advance = (ms: number) => { now += ms; t.mock.timers.tick(ms); };
 	f.subReplies.push(first.reply, second.reply, unconfigured.reply);
 	try {
 		await f.call({ ...f.params(), alert_after_ms: 10 });
-		const alert = JSON.parse(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1000 }));
+		const alert = await waitFor(f, { ids: ["agent#1"], timeout_ms: 1000 }, () => advance(10));
 		assert.equal(alert.reason, "alert");
 		assert.ok(alert.statuses[0].alerts.some((a: any) => a.kind === "long_turn"));
 		assert.equal(first.aborted(), false, "alert is observational only");
 		await assert.rejects(f.call({ action: "restart", id: "agent#1", alert_after_ms: 0 }), /positive finite safe integer/);
 		assert.equal(first.aborted(), false, "invalid threshold cannot destroy existing child");
 		await f.call({ action: "restart", id: "agent#1", task: "FRESH" });
-		const inherited = JSON.parse(await f.call({ action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1000 }));
+		const inherited = await waitFor(f, { ids: ["agent#1"], timeout_ms: 1000 }, () => advance(10));
 		assert.equal(inherited.reason, "alert");
 		assert.equal(inherited.statuses[0].alerts.filter((a: any) => a.kind === "long_turn").length, 1);
 		assert.equal(second.aborted(), false);
 		await f.call({ action: "stop", id: "agent#1" });
 		await f.call(f.params("NO_THRESHOLD"));
 		await until(unconfigured.entered, "default child");
-		const timeout = JSON.parse(await f.call({ action: "wait", blocking: true, ids: ["agent#2"], timeout_ms: 25 }));
+		const timeout = await waitFor(f, { ids: ["agent#2"], timeout_ms: 25 }, () => advance(25));
 		assert.equal(timeout.reason, "timeout");
 		assert.deepEqual(timeout.statuses[0].alerts, []);
 		assert.equal(unconfigured.aborted(), false);
@@ -181,7 +206,7 @@ test("actual SDK schema rejections alert on the second rejection before tool_cal
 	);
 	f.mainReplies.push(
 		answer([fauxToolCall("agent", { ...f.params(), tools: ["read"] })], { stopReason: "toolUse" }),
-		answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 1000 })], { stopReason: "toolUse" }),
+		answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 1000 })], { stopReason: "toolUse" }),
 		answer("SCHEMA_ALERT_ACK"),
 	);
 	try {
@@ -194,8 +219,8 @@ test("actual SDK schema rejections alert on the second rejection before tool_cal
 			if (args[0].toolName === "read") readHooks++;
 			return emitToolCall.apply(child.extensionRunner, args);
 		});
-		await tick(); begin.release(); await run;
-		const [result] = waits(f.session);
+		await run; await tick(); begin.release();
+		const result = await notification(f.session);
 		assert.equal(result.reason, "alert");
 		assert.deepEqual(result.results, []);
 		const alerts = result.statuses[0].alerts;

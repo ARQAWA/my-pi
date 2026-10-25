@@ -55,13 +55,17 @@ async function background(f: Awaited<ReturnType<typeof fresh>>, command: string)
 }
 async function running(f: Awaited<ReturnType<typeof fresh>>, id: string) {
 	// Handoff may precede the start snapshot; output proves the gated command has begun.
-	const ready = body(await call(f.tools.job, { action: "wait", ids: [id], until: "started", blocking: true }, f.dir));
+	let ready = body(await call(f.tools.job, { action: "wait", ids: [id], until: "started" }, f.dir));
+	if (ready.reason === "waiting") {
+		await until("the readiness notification", () => f.notes.length === 1);
+		ready = JSON.parse(f.notes.shift()!.text);
+	}
 	assert.equal(ready.reason, "match");
 	assert.equal(ready.statuses[0].state, "running");
 }
 
 describe("notification wait", () => {
-	it("returns waiting at once with terminate; one notification follows when the job ends, same body as a blocking wait", async () => {
+	it("returns waiting at once with terminate; one notification follows with the completed job result", async () => {
 		const f = await fresh();
 		const id = await background(f, gated("gate", "end"));
 		await running(f, id);
@@ -185,17 +189,15 @@ describe("notification wait", () => {
 		assert.equal(f.notes.length, 0);
 	});
 
-	it("blocks as before: with blocking: true, inside a codemode script, without a callback, and after setNotify(undefined)", async () => {
+	it("still holds waits inside a codemode script, without a callback, and after setNotify(undefined)", async () => {
 		const f = await fresh();
 		const id = await background(f, gated("gate", "end"));
-		const blocked = call(f.tools.job, { action: "wait", ids: [id], timeout_ms: 60000, blocking: true }, f.dir);
 		const nested = call(f.tools.job, { action: "wait", ids: [id], timeout_ms: 60000 }, f.dir, "script/1");
 		await sleep(150);
 		await open(f.dir);
-		for (const result of await Promise.all([blocked, nested])) {
-			assert.equal(result.terminate, undefined);
-			assert.equal(body(result).reason, "exit");
-		}
+		const nestedResult = await nested;
+		assert.equal(nestedResult.terminate, undefined);
+		assert.equal(body(nestedResult).reason, "exit");
 		assert.equal(f.notes.length, 0);
 
 		const bare = await fresh(false);

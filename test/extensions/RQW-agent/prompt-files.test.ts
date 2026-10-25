@@ -89,15 +89,15 @@ test("role_file preserves whitespace, restart keeps and re-reads it, system repl
 	} finally { await f.cleanup(); }
 });
 
-test("prompt-file provenance appears under results[].display on explicit wait, without changing delivered text", async () => {
-	const f = await fixture(), held = gate("WAIT_FILE_RESULT"), path = join(f.root, "role.txt");
+test("prompt-file provenance appears under results[].display on an external print wait, without changing delivered text", async () => {
+	const f = await fixture("print"), held = gate("WAIT_FILE_RESULT"), path = join(f.root, "role.txt");
 	f.subReplies.push(held.reply);
 	try {
 		await writeFile(path, " role ");
 		const { system: _inline, ...params } = f.params();
 		f.mainReplies.push(
 			answer([fauxToolCall("agent", { ...params, role_file: "role.txt" })], { stopReason: "toolUse" }),
-			answer([fauxToolCall("agent", { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 10000 })], { stopReason: "toolUse" }),
+			answer([fauxToolCall("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 10000 })], { stopReason: "toolUse" }),
 			answer("DONE"),
 		);
 		const run = f.session.prompt("GO");

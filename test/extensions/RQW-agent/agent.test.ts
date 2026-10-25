@@ -230,6 +230,8 @@ describe("agent tool", () => {
 		const m = await startMain();
 		const tool = m.session.getToolDefinition("agent") as ToolDefinition;
 		assert.doesNotThrow(() => makeStrictJsonSchema(tool.parameters));
+		assert.equal(Object.hasOwn(tool.parameters.properties, "blocking"), false);
+		assert.doesNotMatch(tool.description, /blocking\s*:\s*true/);
 		assert.match(tool.description, /By default its system prompt is yours plus a short subagent reminder and your optional role; system replaces the whole prompt/);
 		assert.match(tool.description, /Do not use it for a narrow question/);
 		assert.match(tool.description, /sees neither the user nor your history/);

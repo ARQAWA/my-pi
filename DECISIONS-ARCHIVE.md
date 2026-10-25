@@ -6189,3 +6189,28 @@ final squash provenance: `git log -S'superseded note cadence paragraphs' -- DECI
 > In `render.ts`, `SHIMMER_PERIOD_CELLS = 2 * Math.PI / 0.32` and `SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32`.
 > Silver uses a three-cell plateau, 4.5-cell cubic falloff and `#ffffff` peak; gold uses a 6.5-cell plateau,
 > six-cell quintic falloff and `#fff4c2` peak. These are spatial profiles, not a higher redraw frequency.
+
+## Explicit held-wait option · archived 2026-10-25
+
+Status: explicit `blocking` option SUPERSEDED by `[D-TOOLS-NO-BLOCKING-FLAG]` in DECISIONS.md.
+Source: `664e4d0f49239b2cc619bcabb82aa772430860c7:DECISIONS.md`, coordinator-default passages below, verbatim.
+The codemode, external-host and no-notify paths remain unchanged by the owner's narrowed order.
+Replacement commit: `git log -S'D-TOOLS-NO-BLOCKING-FLAG' -- DECISIONS.md`.
+
+From `[D-TOOLS-NOTIFY]`:
+
+>   `status`, `wait` or `kill` is not announced again. `blocking: true` keeps the old held wait. Calls inside a codemode
+>   script stay blocking. The print/json fallback is for external hosts only: a root session run by Pi in print or json mode ends
+>   with its run, so its waits block; an in-process child agent with the `notify`/`retain` bridge keeps notifications even when its SDK mode reads print.
+>   Any caller without a `notify` callback keeps the blocking wait. Reviewer profiles use the ordinary child bridge. The `notify` callback
+
+From `[D-AGENT-NOTIFY]`:
+
+>   `terminate: true` and the result later wakes the caller once through the existing delivery broker; `blocking: true`
+>   keeps the held wait, and a wait inside a codemode script stays blocking, as does an external root print/json host and any caller without a `notify` callback (an in-process child agent with the bridge
+>   is not affected by its SDK mode). A timeout or alert
+
+From `[D-AGENT-API]`:
+
+> - **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `resume`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `blocking`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `agent_type`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus recursive `agent` delegation for every child. Profile selection and defaults are defined in `[D-AGENT-PROFILES]`. Sessions run in-process at caller cwd with in-memory settings; the history is in memory for an in-memory caller and in the owned `<parent.jsonl>.children/` tree for a persisted one (`[D-AGENT-PERSIST]`), using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
+>   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/test/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`; `blocking` since the final squash of branch `agent-async`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0265.

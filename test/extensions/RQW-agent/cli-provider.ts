@@ -92,7 +92,7 @@ function waitScenarios(pi: ExtensionAPI, scenario: string) {
 	const count = (value: string, needle: string) => value.split(needle).length - 1;
 	const ticks = async (n: number) => { for (let i = 0; i < n; i++) await new Promise<void>(resolve => setImmediate(resolve)); };
 	const start = (task: string) => ({ action: "start", system: "AUDIT_EXACT_SYSTEM", task, model: "agent-audit-cli/child", thinking: "high", tools: [] });
-	const wait = { action: "wait", blocking: true, ids: ["agent#1"], timeout_ms: 60000 };
+	const wait = { action: "wait", ids: ["agent#1"], timeout_ms: 60000 };
 	const CHILD: Record<string, string> = { WAIT_CHILD: "CLI_WAIT_CHILD", CODEMODE_WAIT_CHILD: "CLI_CODEMODE_CHILD", ERROR_CHILD: "CLI_ERROR_CHILD", TIMEOUT_CHILD: "CLI_TIMEOUT_CHILD", MIXED_AGENT: "CHILD_MIXED_DONE", ABORT_CHILD: "CLI_ABORT_CHILD" };
 	const SCRIPT: Record<string, string> = {
 		"codemode-abort": `await tools.agent(${JSON.stringify(start("ABORT_CHILD"))});\nreturn await tools.agent(${JSON.stringify({ ...wait, timeout_ms: 900000 })});`,
@@ -106,7 +106,7 @@ function waitScenarios(pi: ExtensionAPI, scenario: string) {
 			`await tools.agent(${JSON.stringify(start("SHELL_MIXED"))});`,
 			`const got = [], seen = new Set();`,
 			`while (seen.size < 3) {`,
-			`  const r = JSON.parse(await tools.agent({ action: "wait", blocking: true, ids: ids.filter(id => !seen.has(id)), timeout_ms: 60000 }));`,
+			`  const r = JSON.parse(await tools.agent({ action: "wait", ids: ids.filter(id => !seen.has(id)), timeout_ms: 60000 }));`,
 			`  if (r.reason !== "result" && r.reason !== "receipt") break;`,
 			`  for (const x of r.results) { got.push(x.text); seen.add(x.id); }`,
 			`  for (const x of r.receipts) seen.add(x.id);`,
@@ -126,8 +126,11 @@ function waitScenarios(pi: ExtensionAPI, scenario: string) {
 			grandchildGate.resolve();
 			return answer([fauxToolCall("agent", wait)], { stopReason: "toolUse" });
 		}
-		assert.match(code[1], /"reason":"result"/);
-		assert.equal(count(code[1], "GRANDCHILD_RAW"), 1, "the subagent receives the raw child result once");
+		const receipt = JSON.parse(code[1]);
+		const notified = context.messages.find((m: any) => m.role === "user" && body(m).includes(`"wait_id":"${receipt.wait_id}"`));
+		assert.match(code[1], /"reason":"waiting"/);
+		if (!notified) return answer("");
+		assert.equal(count(body(notified), "GRANDCHILD_RAW"), 1, "the subagent receives the raw child result once");
 		return answer("SUB_FINAL_ANSWER");
 	}
 
@@ -154,12 +157,16 @@ function waitScenarios(pi: ExtensionAPI, scenario: string) {
 			const agent = results(context, "agent");
 			if (agent.length === 0) return answer([fauxToolCall("agent", start(scenario === "wait" ? "WAIT_CHILD" : "NESTED_SUB"))], { stopReason: "toolUse" });
 			if (agent.length === 1) return answer([fauxToolCall("agent", wait)], { stopReason: "toolUse" });
-			assert.match(agent[1], /"reason":"result"/);
+			const receipt = JSON.parse(agent[1]);
+			const notified = context.messages.find((m: any) => m.role === "user" && body(m).includes(`"wait_id":"${receipt.wait_id}"`));
+			if (receipt.reason === "waiting" && !notified) return answer("");
+			const delivered = receipt.reason === "waiting" ? body(notified) : agent[1];
+			assert.match(delivered, /"reason":"result"/);
 			if (scenario === "wait") {
-				assert.equal(count(agent[1], "CLI_WAIT_CHILD"), 1);
+				assert.equal(count(delivered, "CLI_WAIT_CHILD"), 1);
 				return answer("CLI_WAIT_FINAL");
 			}
-			assert.equal(count(agent[1], "SUB_FINAL_ANSWER"), 1);
+			assert.equal(count(delivered, "SUB_FINAL_ANSWER"), 1);
 			assert.ok(!everything(context).includes("GRANDCHILD_RAW"), "main never sees the raw grandchild result");
 			return answer("CLI_NESTED_WAIT_FINAL");
 		}
