@@ -6,6 +6,8 @@ Independent ChatGPT-subscription overlay of Pi 1.4.0's `openai-codex` / `openai-
 
 Keep an existing valid `openai-codex` OAuth credential in place. New `/login openai-codex` starts device code directly: open the displayed URL and approve the displayed code. No browser-login selector, callback listener, pasted authorization-code alternative or silent fallback. Failed/canceled login does not replace the existing grant. No automatic import from `openai`, another adapter's slot, `~/.codex`, keychain or browser cookies. Token rotation remains in Pi's credential-store transaction; diagnostics never include bearer/refresh tokens or upstream auth bodies. A failed proactive refresh returns the current bearer while its JWT remains unexpired, without writing or disabling the grant. Genuine expiry still fails closed, and 401 recovery keeps its bounded reload-then-refresh sequence.
 
+Grants whose `id_token` auth claim has `chatgpt_account_is_fedramp: true` are rejected as unsupported before subscription use. The same eligibility check applies to saved credentials, device login and refreshed grants; it adds no FedRAMP endpoint or fallback.
+
 Run only one Codex adapter. Preserve credentials when disabling an old adapter. Disable RQW-codex independently with the package filter `-extensions/RQW-codex/index.ts` (see [INSTALL](../../INSTALL.md#switch-one-extension-off)); reload/restart. It does not own provider visibility or depend on [RQW-providers](../RQW-providers/README.md). RQW-providers is extension 14; RQW-codex follows it as extension 15 in `pi.extensions`.
 
 ## Protocol contract
