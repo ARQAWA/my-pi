@@ -65,7 +65,7 @@ process.exit(process.env.FAKE_NODE_MODE === "fail" ? 23 : 0);
 	copyFileSync(join(ROOT, ".github", "workflows", "tests.yml"), join(repo, ".github", "workflows", "tests.yml"));
 	writeFileSync(join(repo, "README.md"), "x\n");
 	mkdirSync(join(repo, "test"), { recursive: true });
-	writeFileSync(join(repo, "test/relevant.test.ts"), '"src/a.js"; "README.md"; "pcli-vscode/x.js";\n');
+	writeFileSync(join(repo, "test/relevant.test.ts"), "\"../src/a.js\"; \"../README.md\"; \"../pcli-vscode/x.js\"; \"../AGENTS.md\"; \"../INSTALL.md\"; \"../SYSTEM.md\"; \"../.agents/reviewers/x.md\"; \"../.agents/roles/x.md\"; \"../.pi/agents/x.toml\"; \"../extensions/RQW-prompt/SYSTEM.md\"; \"../extensions/RQW-review/profiles/x.toml\"; \"../extensions/RQW-review/skills/x/SKILL.md\"; \"../extensions/RQW-tools/descriptions/read.md\"; \"../package.json\"; \"../.github/workflows/x.yml\"; \"../scripts/x.mjs\"; \"../PROCESS.md\"; \"../process/subagent-models.md\"; \"../scripts/run.js\"; \"../notes/run.md\";\n");
 	git("add", ".");
 	git("commit", "--quiet", "-m", "base");
 	git("push", "--quiet", "origin", "release");
@@ -166,7 +166,7 @@ describe("deliver-check owner quote gate", { skip: process.platform !== "darwin"
 		assert.equal(result.code, 0, result.out);
 	});
 
-	it("reads the branch head, not main's or the working tree's document", () => {
+	it("reads the branch head, not release's or the working tree's document", () => {
 		const t = setup();
 		t.commit("release", { "DECISIONS.md": "Owner: «Keep the owner's exact words.»\n" });
 		t.git("push", "--quiet", "origin", "release");
@@ -276,13 +276,18 @@ describe("deliver-check", { skip: process.platform !== "darwin" && "Local develo
 
 
 
-	it("runs local tests but needs no code review for a docs-only change", () => {
+	it("checks documents without a test child and keeps agent roles on the targeted-test path", () => {
 		const t = setup();
-		t.task({ "README.md": "y\n", "notes/n.md": "n\n", ".agents/reviewers/x.md": "r\n" });
+		t.task({ "README.md": "y\n", "notes/n.md": "n\n" });
 		const r = t.run("Docs\n\nReview: review#3 CLEAN\nUnverified: none\n");
 		assert.equal(r.code, 0, r.out);
-		assert.match(r.out, /targeted tests: PASS/);
-		assert.equal(t.nodeCalls().length, 1);
+		assert.match(r.out, /document checks: PASS/);
+		assert.equal(t.nodeCalls().length, 0);
+		const u = setup();
+		u.task({ ".agents/reviewers/x.md": "r\n" });
+		const roles = u.run(DOC_MSG);
+		assert.equal(roles.code, 0, roles.out);
+		assert.deepEqual(u.nodeCalls(), [{ args: ["--test", "test/relevant.test.ts"], cwd: realpathSync(u.worktree), head: u.git("-C", u.worktree, "rev-parse", "HEAD") }]);
 	});
 
 	it("counts both sides of a move: code into notes/ needs code review", () => {
@@ -393,6 +398,169 @@ describe("deliver-check targeted tests", { skip: process.platform !== "darwin" &
 			assert.match(r.out, /FAIL cannot read (?:paths-ignore from )?\.github\/workflows\/tests\.yml/);
 			assert.deepEqual(t.nodeCalls(), []);
 		}
+	});
+});
+
+describe("deliver-check mechanical document path", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
+	const block = '```json coordinator-rules\n{"v": 1}\n```\n';
+	const base = (t: ReturnType<typeof setup>, files: Record<string, string>) => {
+		t.commit("release", files);
+		t.git("push", "--quiet", "origin", "release");
+	};
+	const savedLog = (out: string) => {
+		const path = /document checks log: (.+)/.exec(out)?.[1];
+		assert.ok(path, out);
+		return readFileSync(path, "utf8");
+	};
+
+	it("checks meaning changes, doc adds/deletes, extension READMEs and moved process sections", () => {
+		const t = setup();
+		base(t, { "PROCESS.md": block + "old rule\n", "notes/removed.md": "old\n" });
+		t.task({ "PROCESS.md": block + "# Process\nNew mandatory rule.\n", "process/subagent-models.md": "old rule\n",
+			"process/delivery.md": "# Delivery\nNew rule.\n", "notes/removed.md": null,
+			"notes/new.md": "new\n", "extensions/RQW-x/README.md": "# Extension\n",
+			"cli/web/README.md": "# CLI\n", "vendor/THIRD-PARTY-NOTICES.md": "# Notices\n" });
+		const r = t.run(MSG());
+		assert.equal(r.code, 0, r.out);
+		assert.deepEqual(t.nodeCalls(), []);
+		assert.match(savedLog(r.out), /Document checks PASS/);
+		assert.match(savedLog(r.out), /external URL syntax only, no network requests/);
+	});
+
+	it("still requires a result review and extension README code review", () => {
+		const t = setup();
+		t.task({ "README.md": "A new rule.\n" });
+		assert.match(t.run("Docs\n\nUnverified: none\n").out, /missing trailer "Review:/);
+		const u = setup();
+		u.task({ "extensions/RQW-x/README.md": "A new rule.\n" });
+		assert.match(u.run(DOC_MSG).out, /missing trailer "Code-review:/);
+	});
+
+	it("runs targeted tests for every excluded runtime/config path and mixed changes", () => {
+		for (const file of ["AGENTS.md", "INSTALL.md", "SYSTEM.md", ".agents/reviewers/x.md", ".agents/roles/x.md",
+			".pi/agents/x.toml", "extensions/RQW-prompt/SYSTEM.md", "extensions/RQW-review/profiles/x.toml",
+			"extensions/RQW-review/skills/x/SKILL.md", "extensions/RQW-tools/descriptions/read.md",
+			"package.json", ".github/workflows/x.yml", "scripts/x.mjs"]) {
+			const t = setup();
+			t.task({ [file]: "runtime\n", "README.md": "doc\n" });
+			const r = t.run(MSG());
+			assert.equal(r.code, 0, `${file}\n${r.out}`);
+			assert.deepEqual(t.nodeCalls(), [{ args: ["--test", "test/relevant.test.ts"], cwd: realpathSync(t.worktree), head: t.git("-C", t.worktree, "rev-parse", "HEAD") }], file);
+		}
+	});
+
+	it("runs targeted tests for changed or removed coordinator blocks, including split process sections", () => {
+		for (const file of ["PROCESS.md", "process/subagent-models.md"]) {
+			for (const text of [block.replace("1", "2"), "Rule without block.\n"]) {
+				const t = setup();
+				base(t, { [file]: block });
+				t.task({ [file]: text });
+				const r = t.run(MSG());
+				assert.equal(r.code, 0, r.out);
+				assert.deepEqual(t.nodeCalls(), [{ args: ["--test", "test/relevant.test.ts"], cwd: realpathSync(t.worktree), head: t.git("-C", t.worktree, "rev-parse", "HEAD") }], file);
+			}
+		}
+	});
+
+	it("runs targeted tests when an unchanged coordinator block moves away from root PROCESS.md", () => {
+		for (const root of ["# Process\n", null]) {
+			const t = setup();
+			base(t, { "PROCESS.md": block });
+			t.task({ "PROCESS.md": root, "process/subagent-models.md": block });
+			const r = t.run(MSG());
+			assert.equal(r.code, 0, r.out);
+			assert.deepEqual(t.nodeCalls(), [{ args: ["--test", "test/relevant.test.ts"], cwd: realpathSync(t.worktree), head: t.git("-C", t.worktree, "rev-parse", "HEAD") }], root === null ? "deleted root" : "removed root block");
+			assert.doesNotMatch(r.out, /document checks: PASS/);
+		}
+	});
+
+	it("checks touched owner quotes in every eligible document but preserves historical quotes", () => {
+		for (const file of ["README.md", "notes/quotes.md", "docs/quotes.md", "extensions/RQW-x/README.md"]) {
+			const t = setup();
+			base(t, { [file]: "Owner: «historical invention».\n\nOld text.\n" });
+			t.task({ [file]: "Owner: «historical invention».\n\nOwner: «Keep the owner's exact words.»\n" });
+			const good = t.run(MSG());
+			assert.equal(good.code, 0, `${file}\n${good.out}`);
+			assert.match(savedLog(good.out), /Document checks PASS/);
+			writeFileSync(join(t.worktree, file), "Owner: «historical invention».\n\nOwner: «fabricated touched owner requirement».\n");
+			t.git("-C", t.worktree, "add", file);
+			t.git("-C", t.worktree, "commit", "--quiet", "-m", "fabricated touched quote");
+			const bad = t.run(MSG());
+			assert.equal(bad.code, 1, `${file}\n${bad.out}`);
+			assert.match(bad.out, /quote is not verbatim.*fabricated touched owner requirement/);
+			assert.match(savedLog(bad.out), /Document checks FAIL/);
+			assert.deepEqual(t.nodeCalls(), []);
+		}
+	});
+
+	it("keeps the existing process owner-quote gate on mixed executable changes", () => {
+		const t = setup();
+		t.task({ "PROCESS.md": "Owner: «fabricated mixed requirement».\n", "scripts/run.mjs": "export {};\n" });
+		const r = t.run(MSG());
+		assert.equal(r.code, 1, r.out);
+		assert.match(r.out, /PROCESS\.md:1 quote is not verbatim/);
+	});
+
+	it("rejects newly broken existing links in touched documents and saves failures", () => {
+		for (const mode of ["same document heading", "target heading", "deleted target"]) {
+			const t = setup();
+			base(t, { "README.md": "[existing](#before)\n\n# Before\nOld prose.\n",
+				"notes/source.md": "[existing](target.md#before)\n\nOld prose.\n",
+				"notes/target.md": "# Before\n" });
+			if (mode === "same document heading") t.task({ "README.md": "[existing](#before)\n\n# After\nOld prose.\n" });
+			else t.task({ "notes/source.md": "[existing](target.md#before)\n\nNew prose.\n",
+				"notes/target.md": mode === "deleted target" ? null : "# After\n" });
+			const r = t.run(MSG());
+			assert.equal(r.code, 1, `${mode}\n${r.out}`);
+			assert.match(r.out, /missing (?:Markdown anchor|local target)/);
+			assert.match(savedLog(r.out), /Document checks FAIL/);
+			assert.deepEqual(t.nodeCalls(), []);
+		}
+	});
+
+	it("counts deleted executable paths and Markdown modes/shebangs on both sides of a move", () => {
+		for (const kind of ["script move", "executable markdown", "removed shebang", "new shebang"]) {
+			const t = setup();
+			if (kind === "script move") {
+				base(t, { "scripts/run.js": "console.log(1);\n" });
+				t.task({ "scripts/run.js": null, "notes/run.md": "console.log(1);\n" });
+			} else if (kind === "executable markdown") {
+				t.task({ "notes/run.md": "doc\n" });
+				t.git("-C", t.worktree, "update-index", "--chmod=+x", "notes/run.md");
+				chmodSync(join(t.worktree, "notes/run.md"), 0o755);
+				t.git("-C", t.worktree, "commit", "--quiet", "-m", "mode");
+			} else if (kind === "removed shebang") {
+				base(t, { "notes/run.md": "#!/usr/bin/env node\ncode\n" });
+				t.task({ "notes/run.md": "doc\n" });
+			} else t.task({ "notes/run.md": "#!/usr/bin/env node\ncode\n" });
+			const r = t.run(MSG());
+			assert.equal(r.code, 0, `${kind}\n${r.out}`);
+			assert.deepEqual(t.nodeCalls(), [{ args: ["--test", "test/relevant.test.ts"], cwd: realpathSync(t.worktree), head: t.git("-C", t.worktree, "rev-parse", "HEAD") }], kind);
+		}
+	});
+
+	it("fails broken links, anchors, formatting and invented touched quotes despite a claimed log", () => {
+		for (const [file, text] of [["README.md", "[missing](absent.md)\n"],
+			["README.md", "[missing](README.md#absent)\n"], ["README.md", "trailing  \t\n"],
+			["README.md", "```js\nunclosed\n"], ["process/delivery.md", "Owner: «invented requirement».\n"]]) {
+			const t = setup();
+			t.task({ [file]: text });
+			const fake = join(t.tmp, "claimed.log");
+			writeFileSync(fake, "everything passed\n");
+			const r = t.run(MSG() + `Doc-check: ${fake}\n`);
+			assert.equal(r.code, 1, `${file}: ${text}\n${r.out}`);
+			assert.match(savedLog(r.out), /Document checks FAIL/);
+			assert.deepEqual(t.nodeCalls(), []);
+		}
+	});
+
+	it("ignores untouched historical archive links", () => {
+		const t = setup();
+		base(t, { "DECISIONS-ARCHIVE.md": "[historical](../gone.md#old)\n\nUnchanged.\n" });
+		t.task({ "DECISIONS-ARCHIVE.md": "[historical](../gone.md#old)\n\nNew text.\n" });
+		const r = t.run(DOC_MSG);
+		assert.equal(r.code, 0, r.out);
+		assert.deepEqual(t.nodeCalls(), []);
 	});
 });
 
@@ -557,14 +725,14 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 		return log;
 	};
 	const PROOF = (log: string) => `Fix typos\n\nChange-class: proofreading\nDoc-check: ${log}\nUnverified: none\n`;
-	const withMain = (t: ReturnType<typeof setup>, files: Record<string, string>) => {
+	const withRelease = (t: ReturnType<typeof setup>, files: Record<string, string>) => {
 		t.commit("release", files);
 		t.git("push", "--quiet", "origin", "release");
 	};
 
 	it("accepts proofreading of passive documents with a Doc-check log and no review trailers", () => {
 		const t = setup();
-		withMain(t, { "DECISIONS.md": "a\n", "notes/n.md": "n\n" });
+		withRelease(t, { "DECISIONS.md": "a\n", "notes/n.md": "n\n" });
 		t.task({ "DECISIONS.md": "b\n", "notes/n.md": "m\n" });
 		const r = t.run(PROOF(doc(t)));
 		assert.equal(r.code, 0, r.out);
@@ -615,13 +783,13 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 	it("allows PROCESS.md prose but not a change of the coordinator-rules JSON", () => {
 		const block = (v: string) => `intro\n\n\`\`\`json coordinator-rules\n{"v": ${v}}\n\`\`\`\n\nouter prose\n`;
 		const t = setup();
-		withMain(t, { "PROCESS.md": block("1") });
+		withRelease(t, { "PROCESS.md": block("1") });
 		t.task({ "PROCESS.md": block("1").replace("outer prose", "outer proza") });
 		const ok1 = t.run(PROOF(doc(t)));
 		assert.equal(ok1.code, 0, ok1.out);
 
 		const u = setup();
-		withMain(u, { "PROCESS.md": block("1") });
+		withRelease(u, { "PROCESS.md": block("1") });
 		u.task({ "PROCESS.md": block("2") });
 		const bad = u.run(PROOF(doc(u)));
 		assert.equal(bad.code, 1, bad.out);
@@ -630,7 +798,7 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 
 	it("rejects proofreading together with a QA line and keeps the owner quote gate", () => {
 		const t = setup();
-		withMain(t, { "DECISIONS.md": "a\n" });
+		withRelease(t, { "DECISIONS.md": "a\n" });
 		t.task({ "DECISIONS.md": "Owner: \u00abinvented words\u00bb\n" });
 		const quote = t.run(PROOF(doc(t)));
 		assert.equal(quote.code, 1, quote.out);
@@ -642,7 +810,7 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 	const EXT = "extensions/RQW-x";
 	const lines = (n: number, tag = "n") => Array.from({ length: n }, (_, i) => `${tag}${i}\n`).join(""); // distinct lines, so a rewrite counts both sides
 	const COMBINED = (extra = "") => `Task\n\nCombined-review: agent#7 CLEAN\n${extra}Unverified: none\n`;
-	// Runs one combined-review change; `base` files are first committed to main.
+	// Runs one combined-review change; `base` files are first committed to release.
 	const combined = (files: Record<string, string | null>, base: Record<string, string> = {}, extra = "") => {
 		const t = setup();
 		if (Object.keys(base).length) { t.commit("release", base); t.git("push", "--quiet", "origin", "release"); }
@@ -723,14 +891,14 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 describe("deliver-check test integrity", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	const TRAILERS = "Test-change: the old assertion checked a timing that is not part of the contract\nTest-review: agent#8 CLEAN\n";
 	const BASE_TEST = 'import assert from "node:assert/strict";\nit("a", () => {\n\tassert.equal(1, 1);\n\tassert.equal(2, 2);\n});\n';
-	const withMain = (t: ReturnType<typeof setup>, files: Record<string, string>) => {
+	const withRelease = (t: ReturnType<typeof setup>, files: Record<string, string>) => {
 		t.commit("release", files);
 		t.git("push", "--quiet", "origin", "release");
 	};
 
 	it("fails an added skip without trailers and passes with both", () => {
 		const t = setup();
-		withMain(t, { "test/a.test.ts": BASE_TEST });
+		withRelease(t, { "test/a.test.ts": BASE_TEST });
 		t.task({ "test/a.test.ts": BASE_TEST.replace('it("a"', 'it.skip("a"') });
 		const bad = t.run(MSG());
 		assert.equal(bad.code, 1, bad.out);
@@ -788,7 +956,7 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 
 	it("fails a raised timeout in a test file but not a moved or new one", () => {
 		const t = setup();
-		withMain(t, { "test/d.test.ts": "it(\"d\", { timeout: 5000 }, () => {});\nconst timeoutMs = 100;\n" });
+		withRelease(t, { "test/d.test.ts": "it(\"d\", { timeout: 5000 }, () => {});\nconst timeoutMs = 100;\n" });
 		t.task({ "test/d.test.ts": "const timeoutMs = 100;\nit(\"d\", { timeout: 60_000 }, () => {});\n" });
 		const r = t.run(MSG());
 		assert.equal(r.code, 1, r.out);
@@ -796,14 +964,14 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 		assert.doesNotMatch(r.out, /timeoutMs/);
 
 		const u = setup();
-		withMain(u, { "test/d.test.ts": "it(\"d\", { timeout: 5000 }, () => {});\nconst timeoutMs = 100;\n" });
+		withRelease(u, { "test/d.test.ts": "it(\"d\", { timeout: 5000 }, () => {});\nconst timeoutMs = 100;\n" });
 		u.task({ "test/d.test.ts": "const timeoutMs = 100;\nit(\"d\", { timeout: 5000 }, () => {});\nit(\"e\", { timeout: 90000 }, () => {});\n" });
 		assert.equal(u.run(MSG()).code, 0);
 	});
 
 	it("fails when a test file loses assertions and passes when the count holds", () => {
 		const t = setup();
-		withMain(t, { "test/a.test.ts": BASE_TEST });
+		withRelease(t, { "test/a.test.ts": BASE_TEST });
 		t.task({ "test/a.test.ts": 'import assert from "node:assert/strict";\nit("a", () => {\n\tassert.equal(1, 1);\n});\n' });
 		const bad = t.run(MSG());
 		assert.equal(bad.code, 1, bad.out);
@@ -811,12 +979,12 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 		assert.equal(t.run(MSG() + TRAILERS).code, 0);
 
 		const u = setup();
-		withMain(u, { "test/a.test.ts": BASE_TEST });
+		withRelease(u, { "test/a.test.ts": BASE_TEST });
 		u.task({ "test/a.test.ts": BASE_TEST.replace("assert.equal(2, 2)", "assert.deepEqual([2], [2])") });
 		assert.equal(u.run(MSG()).code, 0);
 
 		const d = setup();
-		withMain(d, { "test/a.test.ts": BASE_TEST });
+		withRelease(d, { "test/a.test.ts": BASE_TEST });
 		d.task({ "test/a.test.ts": null });
 		assert.match(d.run(MSG()).out, /FAIL test integrity: test\/a\.test\.ts removes assertions \(removed 2, added 0\)/);
 	});
@@ -870,7 +1038,7 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 
 	it("detected weakening requires both integrity trailers with or without a QA flag", () => {
 		const t = setup();
-		withMain(t, { "test/a.test.ts": BASE_TEST });
+		withRelease(t, { "test/a.test.ts": BASE_TEST });
 		t.task({ "test/a.test.ts": BASE_TEST.replace('it("a"', 'it.skip("a"') });
 		t.issues({ view: { "6": inbox } });
 		for (const qa of ["", "QA: #6\n"]) {

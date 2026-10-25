@@ -5567,6 +5567,147 @@ Archived by: rule-only-ordered; exact commit: `git log -S'A-0323' -- DECISIONS-A
 >     `rejected_earlier` (each rejected finding with its reason). These task sections keep that order, then
 >     `<user_messages>` follows. No file, search, tool-call or turn quotas.
 
+
+## A-0327 · archived 2026-10-25 · Unconditional full local delivery test assertion
+
+Status: SUPERSEDED by [D-PIPELINE-DOC-GATE] in DECISIONS.md.
+Source: `0521318:DECISIONS.md`, replaced passage verbatim.
+Archived by: process-speed-delivery; exact commit: `git log -S'A-0327' -- DECISIONS-ARCHIVE.md`.
+
+>   The full local delivery `npm test` is the exception under [D-PIPELINE-LOCAL-GATE].
+
+## A-0328 · archived 2026-10-25 · Unconditional full local delivery test assertion
+
+Status: SUPERSEDED by [D-PIPELINE-DOC-GATE] in DECISIONS.md.
+Source: `0521318:DECISIONS.md`, replaced passage verbatim.
+Archived by: process-speed-delivery; exact commit: `git log -S'A-0328' -- DECISIONS-ARCHIVE.md`.
+
+>   unchanged, except for the full local delivery run under [D-PIPELINE-LOCAL-GATE]; no Linux requirement;
+
+## A-0329 · archived 2026-10-25 · Unconditional full local delivery test assertion
+
+Status: SUPERSEDED by [D-PIPELINE-DOC-GATE] in DECISIONS.md.
+Source: `0521318:DECISIONS.md`, replaced passage verbatim.
+Archived by: process-speed-delivery; exact commit: `git log -S'A-0329' -- DECISIONS-ARCHIVE.md`.
+
+>   Coordinator text, the approved proposal in short (the verbatim text is in `DECISIONS-ARCHIVE.md`, A-0246): 1. test exactly
+>   what is merged, rebased onto a fresh `main`, with full local `npm test` on the final commit ([D-PIPELINE-LOCAL-GATE]); 2. a review covers only the commit it checked; 3. before every merge `deliver-check` checks the
+>   branch contains current `main`, full local `npm test` on that exact commit, the review
+>   numbers with CLEAN and the list of what was not verified live; 4. every report carries an evidence table and an honest
+>   "not verified live" section.
+>   Coordinator text, interpretation of rule 2: a conflict-free rebase onto `main` needs the full local delivery test on the new head
+>   but no new review; places changed while resolving conflicts go back to review.
+
+## A-0330 · archived 2026-10-25 · Unconditional full local delivery test assertion
+
+Status: SUPERSEDED by [D-PIPELINE-DOC-GATE] in DECISIONS.md.
+Source: `0521318:DECISIONS.md`, replaced passage verbatim.
+Archived by: process-speed-delivery; exact commit: `git log -S'A-0330' -- DECISIONS-ARCHIVE.md`.
+
+>   `deliver-check` passes, including full local `npm test` on the exact committed head ([D-PIPELINE-LOCAL-GATE]). Owner:
+
+## A-0331 · archived 2026-10-25 · Unconditional full local delivery test assertion
+
+Status: SUPERSEDED by [D-PIPELINE-DOC-GATE] in DECISIONS.md.
+Source: `0521318:DECISIONS.md`, replaced passage verbatim.
+Archived by: process-speed-delivery; exact commit: `git log -S'A-0331' -- DECISIONS-ARCHIVE.md`.
+
+>   review; the full local delivery test still applies ([D-PIPELINE-LOCAL-GATE]); a change of meaning gets review; runtime prompts are checked by agent behavior. Owner:
+
+## A-0332 · archived 2026-10-25 · Unconditional full local delivery test assertion
+
+Status: SUPERSEDED by [D-PIPELINE-DOC-GATE] in DECISIONS.md.
+Source: `0521318:DECISIONS.md`, replaced passage verbatim.
+Archived by: process-speed-delivery; exact commit: `git log -S'A-0332' -- DECISIONS-ARCHIVE.md`.
+
+> - **Local delivery test gate** `[D-PIPELINE-LOCAL-GATE]`. The only delivery test condition is full local `npm test`
+>   passing on the exact committed branch head on the owner's macOS. `deliver-check` runs it in the existing clean
+>   task worktree, checking cleanliness and the head before and after the run; no receipt or new mechanism.
+
+## A-0333 · archived 2026-10-25 · Process reading contract
+
+Status: SUPERSEDED by [D-WORK-PROCESS-SPLIT] in DECISIONS.md.
+Source: `0521318:DECISIONS.md`, replaced passage verbatim.
+Archived by: process-speed-delivery; exact commit: `git log -S'A-0333' -- DECISIONS-ARCHIVE.md`.
+
+> - **Process file and manifesto** `[D-WORK-PROCESS-LINK]`. `AGENTS.md` links `PROCESS.md` with mandatory lazy reading at
+>   every task and context restoration; procedural rules belong in `PROCESS.md`.
+
+## A-0334 · archived 2026-10-25 · Delivery gate and process-layout reference wording
+
+Status: SUPERSEDED wording under [D-PIPELINE-DOC-GATE] and [D-WORK-PROCESS-SPLIT] in DECISIONS.md. Only the accepted document-only gate changes policy; the split preserves the other rules.
+Source: `0521318:PROCESS.md`, replaced passages verbatim.
+Archived by: process-speed-delivery; exact commit: `git log -S'A-0334' -- DECISIONS-ARCHIVE.md`.
+
+Replaced fragment 1:
+
+> full local `npm test` on the exact committed branch head on the owner's macOS.
+
+Replaced fragment 2:
+
+> except for the mandatory local delivery run below.
+
+Replaced fragment 3:
+
+> The delivery exception is full local `npm test` on the exact committed branch head, run by `deliver-check`.
+
+Replaced fragment 4:
+
+> `deliver-check` runs full local `npm test` on that final committed head, whose squash has the same
+>   tree.
+
+Replaced fragment 5:
+
+> the full local delivery run still applies.
+
+Replaced fragment 6:
+
+> it needs the full local delivery test on the new head, not new review;
+
+Replaced fragment 7:
+
+> The only delivery test
+>    condition is full local `npm test` on that exact committed head on the owner's macOS, run by `deliver-check`.
+
+Replaced fragment 8:
+
+> It runs full `npm test`
+>    in the branch's existing clean task worktree on the owner's macOS, at the exact committed branch head, and
+>    checks worktree cleanliness and the head before and after the run.
+
+Replaced fragment 9:
+
+> In `DECISIONS.md` and `PROCESS.md` text
+
+Replaced fragment 10:
+
+> `PROCESS.md` against the owner sessions
+
+Replaced fragment 11:
+
+> The block below is the only place that lists the pairs, and the source of truth for the dev guard.
+
+## A-0335 · archived 2026-10-25 · Mandatory process reading preamble
+
+Status: SUPERSEDED reading contract by [D-WORK-PROCESS-SPLIT] in DECISIONS.md.
+Source: `0521318:PROCESS.md`, replaced passages verbatim.
+Archived by: process-speed-delivery; exact commit: `git log -S'A-0335' -- DECISIONS-ARCHIVE.md`.
+
+> This is the working procedure for agents developing my-pi. Read it before every task and restore it after
+> compaction or a context handoff. `WORKFLOW-MANIFEST.md` is the owner's personal record of his working principles
+> and aspirations, not a procedural gate. This file carries the agreed execution rules; `DECISIONS.md` carries
+> the accepted decisions and their reasons. New owner instructions take precedence over older agreements.
+
+## A-0336 · archived 2026-10-25 · AGENTS mandatory process reading contract
+
+Status: SUPERSEDED reading contract by [D-WORK-PROCESS-SPLIT] in DECISIONS.md.
+Source: `0521318:AGENTS.md`, replaced passages verbatim.
+Archived by: process-speed-delivery; exact commit: `git log -S'A-0336' -- DECISIONS-ARCHIVE.md`.
+
+> Before every task, read and follow [PROCESS.md](PROCESS.md). Restore it after compaction or a handoff before
+> continuing. This is mandatory lazy loading, not optional background reading. Give subagents the relevant process
+> rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
+
 ## A-0324 · archived 2026-10-25 · D-CONTEXT-ROUTING
 
 Status: SUPERSEDED by [D-CONTEXT-ROUTING] in the context-simplify delivery.
@@ -5957,6 +6098,49 @@ Verbatim replaced runtime prompt paragraphs:
 - When the user explicitly asks for an explanation or detail: the bold main point first, then two to five small blocks separated like paragraphs, each one idea in one to five short sentences opening with a bold label of one to four words; a question, when needed, ends the last block.
 
 - Questions go into the chat; end the turn after them. Ask only what files and the request cannot settle; each question names the actual decision or missing fact and its consequence and is answerable from the chat alone, since a filename, link or quotation does not explain it. One focused question may simply end a short message. Several open questions go in one message, in this format: a bold line «**Вопросы · N**»; per question a bold line «**1 · Короткий заголовок**» with a title of two to four words, one line of context, options as list items **a)**, **b)**, ... each with its consequence in a few words, the recommended one marked «— *рекомендую*», or one line when there are no real options; a closing line «> Ответь одной строкой, например `1a 2b`, или своими словами. На что не ответишь, возьму рекомендованное.» When an invoked procedure asks to accept a whole goal or plan, its go line comes last, after the closing line. Match his free-text answer by meaning, treat a reply that fits no option as his own requirement, give an unanswered question the recommended option; his answer starts the work.
+
+## A-0353 · archived 2026-10-25 · Release task document-check exception
+
+Status: SUPERSEDED by [D-PIPELINE-DOC-GATE] in DECISIONS.md; release batching and other rules remain unchanged.
+Source: `83a91db:PROCESS.md` on `origin/release`, replaced passages verbatim.
+Archived by: process-speed-delivery second delivery; exact commit: `git log -S'A-0353' -- DECISIONS-ARCHIVE.md`.
+
+Replaced fragment 1:
+
+> proof, only the task's scoped tests, and the required clean reviews for the final head commit on current
+
+Replaced fragment 2:
+
+>    contains current `origin/release` and the release checkout's HEAD, the merge destination. Changed paths
+>    mechanically select affected extension tests, isolation, changed tests and root tests loading changed files.
+>    It runs those tests on that exact committed branch head in its existing clean task worktree on the owner's
+>    macOS, and verifies worktree cleanliness and the head before and after the run. No new receipt or test trailer
+>    is required. No full suite runs per task.
+
+## A-0354 · archived 2026-10-25 · Release process mandatory reading contract
+
+Status: SUPERSEDED by [D-WORK-PROCESS-SPLIT] in DECISIONS.md; release batching and other rules remain unchanged.
+Source: `83a91db:PROCESS.md` on `origin/release`, replaced passages verbatim.
+Archived by: process-speed-delivery second delivery; exact commit: `git log -S'A-0354' -- DECISIONS-ARCHIVE.md`.
+
+Replaced fragment 1:
+
+> This is the working procedure for agents developing my-pi. Read it before every task and restore it after
+> compaction or a context handoff. `WORKFLOW-MANIFEST.md` is the owner's personal record of his working principles
+> and aspirations, not a procedural gate. This file carries the agreed execution rules; `DECISIONS.md` carries
+> the accepted decisions and their reasons. New owner instructions take precedence over older agreements.
+
+## A-0355 · archived 2026-10-25 · Release AGENTS mandatory reading contract
+
+Status: SUPERSEDED by [D-WORK-PROCESS-SPLIT] in DECISIONS.md; release batching and other rules remain unchanged.
+Source: `83a91db:AGENTS.md` on `origin/release`, replaced passages verbatim.
+Archived by: process-speed-delivery second delivery; exact commit: `git log -S'A-0355' -- DECISIONS-ARCHIVE.md`.
+
+Replaced fragment 1:
+
+> Before every task, read and follow [PROCESS.md](PROCESS.md). Restore it after compaction or a handoff before
+> continuing. This is mandatory lazy loading, not optional background reading. Give subagents the relevant process
+> rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
 
 ## Statusbar 30 FPS and single silver glint · archived 2026-10-25
 

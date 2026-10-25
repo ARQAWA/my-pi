@@ -3,9 +3,10 @@
 A Pi package (`@earendil-works/pi-coding-agent` 1.4.0) that carries the omp-lite behaviour into stock Pi step by step.
 Stock Pi tools stay as they are. Everything is an extension, one folder per extension under `extensions/`.
 
-Before every task, read and follow [PROCESS.md](PROCESS.md). Restore it after compaction or a handoff before
-continuing. This is mandatory lazy loading, not optional background reading. Give subagents the relevant process
-rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
+Before every task, read the mandatory part of [PROCESS.md](PROCESS.md), which ends before Delivery, then load
+its applicable task sections from `process/` or the root Delivery section. Restore the mandatory part and applicable
+sections after compaction or a handoff before continuing. This is mandatory lazy
+loading, not optional background reading. Give subagents the relevant process rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
 Coordinator personal-work objections and explicit overrides: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
 Coordinator rules bind only the session that holds the repository's `coordinator.lock`; every other session is a normal direct agent.
 At most three tasks in active execution follow the owner's priority queue; tasks waiting for CI, review, the merge queue or
@@ -168,7 +169,8 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `notes/`: research notes, such as how the omp-lite prompt was built.
 - `WORKFLOW-MANIFEST.md`: the owner's personal working principles and aspirations, written in Russian for him.
-- `PROCESS.md`: the mandatory development procedure, from research and questions to autonomous squash delivery.
+- `PROCESS.md`: the short mandatory procedure and section index; `process/` holds task-loaded sections, from
+  parallel execution to autonomous squash delivery. The root keeps the coordinator guard's JSON block.
 - `scripts/deliver-check.mjs`: the pre-merge gate, `npm run deliver-check -- <branch> <message-file>`; see `PROCESS.md` Delivery.
 - `.pi/agents/code-reviewer.toml`: the read-only bug and code-quality profile, used through `agent_type: "code-reviewer"`.
 - `DECISIONS.md`: active accepted decisions with their reason, verbatim owner source and carrier.

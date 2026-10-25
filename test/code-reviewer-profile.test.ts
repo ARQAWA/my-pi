@@ -20,7 +20,7 @@ test("project code reviewer is discovered with its native model and bounded read
 	assert.match(profile.developer_instructions!, /Do not edit files, change state, run programs or tests, or spawn agents/);
 	assert.match(profile.developer_instructions!, /On rechecks, inspect fixes and affected dependencies only/);
 	assert.match(profile.developer_instructions!, /If none qualify, return CLEAN/);
-	const process = await fs.readFile(join(root, "PROCESS.md"), "utf8");
+	const process = await fs.readFile(join(root, "process/independent-review.md"), "utf8");
 	assert.match(process, /agent_type: "code-reviewer"/);
 	assert.doesNotMatch(process, /\.agents\/reviewers\/code\.md/);
 	await assert.rejects(fs.access(join(root, ".agents/reviewers/code.md")), { code: "ENOENT" });

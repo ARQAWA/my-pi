@@ -194,8 +194,9 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «И зафиксирую это в процесс.nd файле, эту информацию на будущее»
   Reason: even use of both subscriptions' limits. Carrier: [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
   Since: `a7146ae`.
-- **Process file and manifesto** `[D-WORK-PROCESS-LINK]`. `AGENTS.md` links `PROCESS.md` with mandatory lazy reading at
-  every task and context restoration; procedural rules belong in `PROCESS.md`. `WORKFLOW-MANIFEST.md` is the owner's
+- **Process file and manifesto** `[D-WORK-PROCESS-LINK]`. The reading contract is carried in
+  [PROCESS.md](PROCESS.md), with its task-loaded sections, and linked from `AGENTS.md`.
+  The owner accepted the split in [D-WORK-PROCESS-SPLIT] below. `WORKFLOW-MANIFEST.md` is the owner's
   personal lifelong record and aspiration, not package behavior, a gate or an overriding procedure. Owner (`13-49-40:204`):
   «Манифест того, как я делаю свою личную работу.»
   Reason: one procedure that agents reload; the manifesto stays the owner's own. Carriers: `AGENTS.md`, `PROCESS.md`,
@@ -308,6 +309,28 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   and the CI policy: [notes/codemode-native-crash.md](notes/codemode-native-crash.md).
 
 ## Task pipeline
+
+- **Document and process delivery gate** `[D-PIPELINE-DOC-GATE]`. Owner answer: `1a`.
+  Source: the active owner instruction relayed in this task and its appended `user_messages`; no raw session ID
+  is asserted. Original coordinator question text, restated from that supplied instruction, not owner words:
+  "For document and process-only changes, replace the full test gate with saved checks of touched owner quotes,
+  links and formatting, keeping the existing reviews?"
+  Applied to task-scoped checks under the owner's later release decision, not to the batch full-test gate.
+  Reason: application regression adds delivery time without checking passive text. The accepted scope and exclusions,
+  the replacement checks and the unchanged review obligations live only in
+  [PROCESS.md, Delivery](PROCESS.md#delivery). Carriers: `scripts/deliver-check.mjs`,
+  `test/deliver-check.test.ts`. Superseded assertions from base `0521318` are preserved verbatim in
+  `DECISIONS-ARCHIVE.md`, A-0327 through A-0332.
+
+- **Short mandatory process and task-loaded sections** `[D-WORK-PROCESS-SPLIT]`. Owner answer: `2a`.
+  Source: the active owner instruction relayed in this task and its appended `user_messages`; no raw session ID
+  is asserted. Coordinator question text, restated from that supplied instruction, not owner words:
+  "Split PROCESS.md into a short mandatory part and sections loaded per task, preserving every rule and old anchor,
+  with the coordinator-rules block kept in the root file?"
+  Reason: every agent need not load the entire procedure for an unrelated task. Carrier:
+  [PROCESS.md](PROCESS.md), its linked task sections and `AGENTS.md`. This is a layout change, not permission
+  to change the rules. The superseded reading-contract passage from base `0521318` is preserved verbatim in
+  `DECISIONS-ARCHIVE.md`, A-0333.
 
 - **Release delivery** `[D-PIPELINE-RELEASE]`. The policy is carried once in
   [PROCESS.md, Delivery](PROCESS.md#delivery). Source session:

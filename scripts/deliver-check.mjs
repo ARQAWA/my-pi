@@ -3,7 +3,9 @@
 //   npm run deliver-check -- <branch> <message-file>
 // <message-file> is the planned squash commit message. Every failed check prints one line; any failure exits 1.
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { checkDocuments } from "./doc-check.mjs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { findNonVerbatimQuotes, loadOwnerMessages, ownerSessionDirs } from "./owner-quotes.mjs";
 import { selectTargetedTests } from "./targeted-tests.mjs";
@@ -250,9 +252,30 @@ const combinedLines = lines.filter((l) => /^Combined-review: (?:review|agent)#\d
 const COMBINED_MAX_LINES = 100;
 const isPassiveDoc = (f) => /^[^/]+\.md$/.test(f) && !["AGENTS.md", "INSTALL.md"].includes(f) || /^notes\/.+\.md$/.test(f);
 const rulesBlock = (rev) => {
-	try { return /^```json coordinator-rules\r?\n([\s\S]*?)^```/m.exec(git("show", `${rev}:PROCESS.md`))?.[1]; } catch { return undefined; }
+	const files = git("ls-tree", "-r", "--name-only", rev, "--", "PROCESS.md", "process/").split("\n")
+		.filter((file) => file.endsWith(".md"));
+	return JSON.stringify(files.flatMap((file) => [...git("show", `${rev}:${file}`)
+		.matchAll(/^```json coordinator-rules\r?\n([\s\S]*?)^```/gm)].map((match) => [file, match[1]])));
 };
 const existsAt = (rev, f) => spawnSync("git", ["cat-file", "-e", `${rev}:${f}`]).status === 0;
+// An allowlist, independent of workflow review filters. Both sides of deletions and moves count.
+const isDocumentPath = (file) => {
+	if (/^(?:\.agents|\.pi)\//.test(file) || /(?:^|\/)(?:SYSTEM|AGENTS|INSTALL)\.md$/.test(file)
+		|| /^extensions\/RQW-tools\/descriptions\//.test(file)
+		|| /^extensions\/RQW-review\/skills\//.test(file)) return false;
+	return isPassiveDoc(file) || /^(?:docs|process)\/.+\.md$/.test(file)
+		|| /(?:^|\/)(?:README|THIRD-PARTY-NOTICES)\.md$/.test(file)
+		|| /^extensions\/[^/]+\/docs\/.+\.md$/.test(file);
+};
+function isPlainDocument(rev, file) {
+	const entry = git("ls-tree", rev, "--", file);
+	if (!entry) return true; // Additions/deletions are checked on the side where they exist.
+	if (!entry.startsWith("100644 blob ")) return false;
+	return !git("show", `${rev}:${file}`).startsWith("#!");
+}
+const documentOnly = changed.length > 0 && changed.every((file) => isDocumentPath(file)
+	&& [release, head].every((rev) => isPlainDocument(rev, file)))
+	&& rulesBlock(release) === rulesBlock(head);
 function proofreadingProblems() {
 	const problems = [];
 	if (changeClasses.length !== 1 || changeClasses[0] !== "Change-class: proofreading") {
@@ -264,12 +287,13 @@ function proofreadingProblems() {
 		try { size = statSync(docChecks[0]).isFile() ? statSync(docChecks[0]).size : 0; } catch { /* missing */ }
 		if (!size) problems.push(`Doc-check log ${docChecks[0]} is missing or empty`);
 	}
-	const bad = changed.filter((f) => !isPassiveDoc(f));
+	const bad = changed.filter((f) => !isPassiveDoc(f) || !isDocumentPath(f)
+		|| ![release, head].every((rev) => isPlainDocument(rev, f)));
 	if (bad.length) problems.push(`not passive documents: ${bad.slice(0, 5).join(", ")}`);
 	if (!changed.length) problems.push("no changed files");
 	const moved = changed.filter((f) => !existsAt(release, f) || !existsAt(head, f));
 	if (moved.length) problems.push(`added or deleted files: ${moved.slice(0, 5).join(", ")}`);
-	if (changed.includes("PROCESS.md") && (rulesBlock(release) === undefined || rulesBlock(release) !== rulesBlock(head))) {
+	if (changed.includes("PROCESS.md") && (rulesBlock(release) === "[]" || rulesBlock(release) !== rulesBlock(head))) {
 		problems.push("PROCESS.md coordinator-rules block changed or unreadable");
 	}
 	if (codeChanged) problems.push("code review is required for this change");
@@ -316,13 +340,15 @@ if (needsCodeReview) fail('message: missing trailer "Code-review: CLEAN" (non-do
 if (!has(/^Unverified: \S/)) fail('message: missing trailer "Unverified: <text or none>"');
 
 // 5. Only head-version quote spans touching added lines need provenance. Historical quotes stay untouched.
+const docCheckStart = failures.length;
 try {
 	const common = resolve(root, git("rev-parse", "--git-common-dir"));
 	const mainCheckout = dirname(common);
 	const checkouts = [mainCheckout, ...git("worktree", "list", "--porcelain", "-z").split("\0")
 		.filter((field) => field.startsWith("worktree ")).map((field) => field.slice(9))];
 	const messages = loadOwnerMessages(ownerSessionDirs(checkouts));
-	for (const file of ["DECISIONS.md", "PROCESS.md"]) {
+	for (const file of changed.filter((file) => documentOnly || file === "DECISIONS.md" || file === "PROCESS.md"
+		|| /^process\/.+\.md$/.test(file))) {
 		const diff = git("diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "-U0",
 			`${release}...${head}`, "--", file);
 		const ranges = [...diff.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)]
@@ -338,6 +364,26 @@ try {
 	}
 } catch (error) {
 	fail(`owner quotes: ${error.message}`);
+}
+
+let documentLog;
+if (documentOnly) {
+	try {
+		for (const issue of checkDocuments({ git, base: release, head, files: changed })) fail(issue);
+	} catch (error) { fail(`document checks: ${error.message}`); }
+	documentLog = join(mkdtempSync(join(tmpdir(), "my-pi-doc-check-")), "checks.log");
+	const issues = failures.slice(docCheckStart);
+	writeFileSync(documentLog, [
+		`Document checks at ${head}; base ${release}`,
+		`Files: ${changed.join(", ")}`,
+		"Owner quotes: touched spans in all changed documents, checked against owner sessions.",
+		"Links: touched links and newly broken existing links in changed documents; local targets and anchors; external URL syntax only, no network requests.",
+		"Format: git diff --check and Markdown fences.",
+		...issues.map((issue) => `FAIL ${issue}`),
+		issues.length ? "Document checks FAIL" : "Document checks PASS",
+		"",
+	].join("\n"));
+	console.log(`  document checks log: ${documentLog}`);
 }
 
 // Use the existing task checkout, never create a worktree or install dependencies.
@@ -366,20 +412,23 @@ function checkTaskHead(when) {
 checkTaskHead("before tests");
 finish();
 let selected = [];
-try { selected = selectTargetedTests({ root: taskWorktree, changed }); }
-catch (error) { fail(`targeted tests: cannot select tests: ${error.message}`); }
-finish();
-console.log(`  targeted tests at ${head}: ${selected.length ? selected.join(", ") : "none discovered; no runtime tests executed"}`);
-console.log("  selection covers extension owners and static local references; dynamic dependencies are not proven");
-if (selected.length) {
-	const tests = spawnSync("node", ["--test", ...selected], { cwd: taskWorktree, stdio: "inherit" });
-	if (tests.status !== 0) fail(`targeted tests failed: ${tests.error?.message ?? tests.signal ?? `exit ${tests.status}`}`);
+if (!documentOnly) {
+	try { selected = selectTargetedTests({ root: taskWorktree, changed }); }
+	catch (error) { fail(`targeted tests: cannot select tests: ${error.message}`); }
+	finish();
+	console.log(`  targeted tests at ${head}: ${selected.length ? selected.join(", ") : "none discovered; no runtime tests executed"}`);
+	console.log("  selection covers extension owners and static local references; dynamic dependencies are not proven");
+	if (selected.length) {
+		const tests = spawnSync("node", ["--test", ...selected], { cwd: taskWorktree, stdio: "inherit" });
+		if (tests.status !== 0) fail(`targeted tests failed: ${tests.error?.message ?? tests.signal ?? `exit ${tests.status}`}`);
+	}
 }
 checkTaskHead("after tests");
 finish();
 console.log(`deliver-check PASS ${branch} ${short(head)}`);
 console.log(`  contains origin/release ${short(release)}; ${changed.length} changed file(s)`);
-console.log(`  targeted tests: ${selected.length ? "PASS" : "NONE"} ${head} in ${taskWorktree}`);
+if (documentOnly) console.log(`  document checks: PASS ${head}; targeted tests not required; ${documentLog}`);
+else console.log(`  targeted tests: ${selected.length ? "PASS" : "NONE"} ${head} in ${taskWorktree}`);
 if (proofreading) console.log(`  reviews: exempt (proofreading, Doc-check ${docChecks[0]})`);
 else if (combined && !reviews.length) console.log(`  reviews: combined ${combinedLines.join(", ")} (result and code review)`);
 else console.log(`  reviews: ${reviews.join(", ")}${codeChanged ? "; code review CLEAN" : ""}`);
