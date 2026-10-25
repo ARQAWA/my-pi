@@ -287,11 +287,11 @@ describe("branch mark on the place row", () => {
 });
 
 describe("effort colours", () => {
-	it("low stays plain; medium green, high gold, xhigh bright purple, max bright red, all bold", () => {
+	it("retains existing bold levels while delegating every colour to the supplied paint", () => {
 		assert.equal(effortText("low", "lo", plain), "lo");
-		assert.ok(effortText("medium", "md", plain).startsWith(`${ESC}1;32m`));
-		assert.ok(effortText("high", "hi", plain).startsWith(`${ESC}1;38;2;201;162;39m`));
-		assert.ok(effortText("xhigh", "xh", plain).startsWith(`${ESC}1;95m`));
-		assert.ok(effortText("max", "mx", plain).startsWith(`${ESC}1;91m`));
+		assert.equal(effortText("medium", "md", plain), `${ESC}1mmd${ESC}22m`);
+		assert.equal(effortText("high", "hi", plain), `${ESC}1mhi${ESC}22m`);
+		assert.equal(effortText("xhigh", "xh", plain), `${ESC}1mxh${ESC}22m`);
+		assert.equal(effortText("max", "mx", plain), `${ESC}1mmx${ESC}22m`);
 	});
 });

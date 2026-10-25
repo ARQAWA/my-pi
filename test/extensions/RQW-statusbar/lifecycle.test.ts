@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, it, type TestContext } from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import { type ExtensionAPI, type ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, SessionManager, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import statusbar from "../../../extensions/RQW-statusbar/index.ts";
 import { GOLD, SILVER, shimmerText, titleRow } from "../../../extensions/RQW-statusbar/render.ts";
@@ -164,7 +164,8 @@ class FakePi {
 	}
 }
 
-const plainTheme = { fg: (_color: string, text: string) => text };
+const plainTheme = { fg: (_color: string, text: string) => text,
+	getThinkingBorderColor: Theme.prototype.getThinkingBorderColor };
 const editorTheme = { borderColor: (text: string) => text, selectList: {} };
 const keybindings = { matches: () => false };
 const footerData = {

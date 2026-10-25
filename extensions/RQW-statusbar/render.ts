@@ -35,8 +35,9 @@ export type Role =
 	| "unstaged"
 	| "untracked"
 	| "sep"
-	| "info";
-export type Paint = (role: Role, text: string) => string;
+	| "info"
+	| "effort";
+export type Paint = (role: Role, text: string, level?: string) => string;
 export const plain: Paint = (_role, text) => text;
 
 /** Metadata must not create terminal rows or carry terminal commands. */
@@ -204,18 +205,10 @@ export function fastMark(frame: number | undefined): string {
 	return `\x1b[1;${color}m${ICON.fast}\x1b[22;39m`;
 }
 
-/** Effort colours of the footer: low plain, medium bold green, high bold gold, xhigh bold bright purple, max bold red. */
-const EFFORT: Record<string, (text: string) => string> = {
-	medium: (text) => `\x1b[1;32m${text}\x1b[22;39m`,
-	high: (text) => `\x1b[1;38;2;201;162;39m${text}\x1b[22;39m`,
-	xhigh: (text) => `\x1b[1;95m${text}\x1b[22;39m`,
-	max: (text) => `\x1b[1;91m${text}\x1b[22;39m`,
-};
-
-/** The thinking label in its effort colour; levels without one keep the model colour. */
+/** Theme-resolved effort colour, retaining the footer's existing bold levels. */
 export function effortText(level: string | undefined, label: string, paint: Paint): string {
-	const style = level ? EFFORT[level] : undefined;
-	return style ? style(label) : paint("model", label);
+	const text = paint("effort", label, level ?? "off");
+	return ["medium", "high", "xhigh", "max"].includes(level ?? "") ? `\x1b[1m${text}\x1b[22m` : text;
 }
 
 /** Row 2: model and thinking level on the left (then other extensions' statuses), `cmp N · R tok/s` on the right. */
