@@ -27,31 +27,30 @@ export const TOKEN_URL = "https://api.anthropic.com/v1/oauth/token";
 const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 export const LOGIN_HELP = "RQW-anthropic: subscription authentication failed. Retry the turn; if it persists, use /login anthropic. Saved credentials were not removed.";
 export const AUTH_FAILURE = Symbol.for("rqw-anthropic/auth-failure");
-const ROTATIONS = Symbol.for("rqw-anthropic/proven-refresh-rotations/v1");
 const MAX_ROTATIONS = 256;
-type Rotation = { access: string; refresh: string };
-// Shared across module copies and reloads. Only bounded, non-secret hashes survive a request.
-const processState = globalThis as typeof globalThis & { [ROTATIONS]?: Map<string, Rotation> };
-const rotations = processState[ROTATIONS] ??= new Map<string, Rotation>();
+const TokenHash = Type.String({ pattern: "^[a-f0-9]{64}$" });
+const RefreshProof = Compile(Type.Object({
+	previous: Type.Array(TokenHash, { maxItems: MAX_ROTATIONS }),
+	access: TokenHash, refresh: TokenHash,
+}));
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 
+function refreshHistory(credential: OAuthCredential): string[] {
+	const proof = credential.rqwAnthropicRefresh;
+	if (!RefreshProof.Check(proof) || proof.access !== hash(credential.access) || proof.refresh !== hash(credential.refresh)) return [];
+	return proof.previous;
+}
+
 function recordRotation(previous: OAuthCredential, next: OAuthCredential): void {
-	const key = hash(previous.access);
-	rotations.delete(key);
-	rotations.set(key, { access: hash(next.access), refresh: hash(next.refresh) });
-	if (rotations.size > MAX_ROTATIONS) rotations.delete(rotations.keys().next().value!);
+	// Pi persists proof and the rotated grant together under its cross-process store lock.
+	next.rqwAnthropicRefresh = {
+		previous: [...refreshHistory(previous), hash(previous.access)].slice(-MAX_ROTATIONS),
+		access: hash(next.access), refresh: hash(next.refresh),
+	};
 }
 
 function provenRotation(previous: string, current: OAuthCredential): boolean {
-	const target = hash(current.access), refresh = hash(current.refresh);
-	let access = hash(previous);
-	for (let depth = 0; depth < MAX_ROTATIONS; depth++) {
-		const next = rotations.get(access);
-		if (!next) return false;
-		if (next.access === target && next.refresh === refresh) return true;
-		access = next.access;
-	}
-	return false;
+	return refreshHistory(current).includes(hash(previous));
 }
 
 export class AuthRecoveryError extends Error {
@@ -131,7 +130,7 @@ export async function recoverCredential(
 			if (current?.type !== "oauth") throw new AuthRecoveryError();
 			if (current.access !== rejected) {
 				if (!provenRotation(rejected, current)) {
-					throw new AuthRecoveryError(`${LOGIN_HELP} Saved login changed without a refresh proven in this process. Start a new turn to use the current login.`);
+					throw new AuthRecoveryError(`${LOGIN_HELP} Saved login changed without a proven refresh. Start a new turn to use the current login.`);
 				}
 				return undefined;
 			}

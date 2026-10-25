@@ -1,5 +1,6 @@
 import "./recovery-offline.mjs";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { it } from "node:test";
 import { createAssistantMessageEventStream, normalizeContext, type AssistantMessage } from "@earendil-works/pi-ai";
 import { refreshCredential, recoverCredential, TOKEN_URL } from "../../../extensions/RQW-anthropic/auth.ts";
@@ -8,6 +9,7 @@ import { entries } from "./pi-entrypoints.ts";
 import { ACCESS, NEXT, credential, AuthStorage, base, model, context, setup, refreshed, within,
 	start, textEvents, finish, response, sse, subscriptionFetch, versionState, url, request, type SseEvent } from "./recovery-fixtures.ts";
 
+const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const retrySettings = { retry: { enabled: true, maxRetries: 1, baseDelayMs: 1 } };
 const marker = (message: AssistantMessage) => message.diagnostics?.some(item => item.type === "rqw_anthropic_partial_stream") === true;
 const last = (session: { messages: readonly { role: string }[] }) => session.messages.filter(m => m.role === "assistant").at(-1) as AssistantMessage;
@@ -80,7 +82,7 @@ for (const [label, entry] of entries) {
 		}
 	}
 
-	it(`${label}: eight mixed native/simple requests use one proven refresh, without changing credential shape`, async () => {
+	it(`${label}: eight mixed native/simple requests use one proven refresh and persist hash-only proof`, async () => {
 		const { runtime, store, session } = await setup(undefined, entry);
 		let old = 0, refreshes = 0;
 		const sent = Promise.withResolvers<void>();
@@ -92,7 +94,8 @@ for (const [label, entry] of entries) {
 				}
 				const saved = await store.read("anthropic");
 				assert.equal(saved?.access, NEXT); assert.equal(saved?.refresh, "audit-rotated");
-				assert.deepEqual(Object.keys(saved!).sort(), Object.keys(credential).sort());
+				assert.deepEqual(Object.keys(saved!).sort(), [...Object.keys(credential), "rqwAnthropicRefresh"].sort());
+				assert.deepEqual(saved!.rqwAnthropicRefresh, { previous: [hash(ACCESS)], access: hash(NEXT), refresh: hash("audit-rotated") });
 				return response([...textEvents, ...finish]);
 			};
 			const results = await within(Promise.all(Array.from({ length: 8 }, (_, i) =>
@@ -221,6 +224,11 @@ it("proof spans independent auth module copies and multiple refresh edges, but n
 	assert.equal(await recoverCredential(store, old.access, signal, noFetch), "sk-ant-oat01-copy-final");
 	await store.modify("anthropic", async current => ({ ...current!, refresh: "unknown-current-grant" }));
 	await assert.rejects(recoverCredential(store, old.access, signal, noFetch), /Saved login changed.*Start a new turn/);
+	await store.modify("anthropic", async current => refreshCredential(current!, signal, async () => refreshed("sk-ant-oat01-copy-after-unknown-grant")));
+	await assert.rejects(recoverCredential(store, old.access, signal, noFetch), /Saved login changed.*Start a new turn/);
+	assert.deepEqual((await store.read("anthropic"))!.rqwAnthropicRefresh, {
+		previous: [hash("sk-ant-oat01-copy-final")], access: hash("sk-ant-oat01-copy-after-unknown-grant"), refresh: hash("audit-rotated"),
+	});
 });
 
 it("unknown external rotation fails without HTTP; bounded shared metadata contains hashes only and evicts old proof safely", async () => {
@@ -230,11 +238,16 @@ it("unknown external rotation fails without HTTP; bounded shared metadata contai
 	const store = AuthStorage.inMemory({ anthropic: next });
 	const noFetch: typeof globalThis.fetch = async () => { throw new Error("must not send HTTP"); };
 	assert.equal(await recoverCredential(store, old.access, signal, noFetch), next.access);
-	for (let i = 0; i < 256; i++) await refreshCredential({ ...old, access: `sk-ant-oat01-bound-${i}` }, signal, async () => refreshed(`sk-ant-oat01-bound-new-${i}`));
+	for (let i = 0; i < 256; i++) await store.modify("anthropic", async current =>
+		refreshCredential(current!, signal, async () => refreshed(`sk-ant-oat01-bound-new-${i}`)));
 	await assert.rejects(recoverCredential(store, old.access, signal, noFetch), /Saved login changed/);
-	const metadata = (globalThis as Record<symbol, unknown>)[Symbol.for("rqw-anthropic/proven-refresh-rotations/v1")] as Map<string, { access: string; refresh: string }>;
-	assert.equal(metadata.size, 256);
-	for (const [key, edge] of metadata) for (const value of [key, edge.access, edge.refresh]) assert.match(value, /^[a-f0-9]{64}$/);
+	assert.equal(await recoverCredential(store, next.access, signal, noFetch), "sk-ant-oat01-bound-new-255");
+	const saved = (await store.read("anthropic"))!;
+	const metadata = saved.rqwAnthropicRefresh as { previous: string[]; access: string; refresh: string };
+	assert.deepEqual(metadata.previous, [next.access, ...Array.from({ length: 255 }, (_, i) => `sk-ant-oat01-bound-new-${i}`)].map(hash));
+	assert.equal(metadata.previous.length, 256);
+	assert.equal(metadata.access, hash(saved.access)); assert.equal(metadata.refresh, hash(saved.refresh));
+	for (const value of [...metadata.previous, metadata.access, metadata.refresh]) assert.match(value, /^[a-f0-9]{64}$/);
 	await store.modify("anthropic", async () => ({ ...old, access: "sk-ant-oat01-external-unknown", refresh: "external-unknown-refresh" }));
 	await assert.rejects(recoverCredential(store, old.access, signal, noFetch), /Saved login changed/);
 });
