@@ -12,7 +12,7 @@ Run only one Codex adapter. Preserve credentials when disabling an old adapter. 
 
 - Own native request/metadata codec, WS-first/SSE, socket-local continuation and raw completed-item history. Application-level identity is `codex_cli_rs` 0.163.0 with actual host/terminal and sanitized truthful git/workspace facts, not imported Codex installation identity.
 - Native `generate:false` startup/prepared-idle prewarm, no periodic replay or synthetic assistant answer; RQW-settings' generic warmer remains off.
-- Native retry/error distinctions and cancel controls; connection-failed sampling retries without a count limit with 5–60 s backoff until canceled. After a successful WebSocket upgrade, send/read transport errors and premature closes use the finite stream budget: five retries, then sticky SSE fallback. Subscription exhaustion/policy/auth failure is not an infinite network retry. Own Codex failures do not get Pi's overlapping retry budget.
+- Native retry/error distinctions and cancel controls; connection-failed sampling retries without a count limit with 5–60 s backoff until canceled. After a successful WebSocket upgrade, send/read transport errors and premature closes use the finite stream budget: five retries, then sticky SSE fallback. Subscription exhaustion/policy/auth failure is not an infinite network retry. Own Codex failures do not get Pi's overlapping retry budget, including stock summary calls. During compaction a session-local stream-result boundary rejects only marked Codex failures before Pi's separate summary retry helper; other providers and unmarked errors retain Pi retries.
 - Stable effort override is **off**; capability-gated `configuration_update` is only for an explicitly enabled feature profile. Preserve actual RQW prompt/tools and requested effort, exact raw encrypted items, argument strings and phases.
 - No `/models` requests. The offline 0.163.0 snapshot covers only our listed GPT models; unknown capabilities fail clearly. Pi/RQW catalog, model picker and context limits stay authoritative. Upgrades are manual reviewed protocol migrations, never startup downloads.
 - RQW-settings alone owns `/fast-gpt`, default off; priority is taken from the final payload hook. Children keep their inherited/overridden Fast state, actual lineage and independent sockets/turn state while sharing root cache affinity.
@@ -37,7 +37,7 @@ Codex sessions use **stock Pi compaction**: Pi runs its own compaction with its 
 
 **RQW-context still owns the trigger**, W = min(contextWindow, 500000), R = round(W/10), threshold W−R, with the existing explicit-reserve precedence. After a compaction every original entry stays in the session file, but the active context is Pi's summary plus the kept tail, also with RQW-codex disabled or for another provider. The full original history is not replayed to other models.
 
-**Not fully public.** Compaction no longer patches Pi, but other parts of this extension (session lifecycle, auth layers, prompt projection) still use private Pi internals. Migrating them where possible is the backlog task [CODEX-PUBLIC-INTERNALS](../../BACKLOG.md#codex-public-internals).
+**Not fully public.** Pi's compaction methods stay untouched; retry ownership uses a temporary wrapper of the public agent stream callback. Other parts of this extension (session lifecycle, auth layers, prompt projection) still use private Pi internals. Migrating them where possible is the backlog task [CODEX-PUBLIC-INTERNALS](../../BACKLOG.md#codex-public-internals).
 
 ## Independence and verification
 
