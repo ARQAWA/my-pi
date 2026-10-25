@@ -44,7 +44,7 @@ export const DESCRIPTION = [
 	"include: [user_messages] on start/restart appends caller-session user-role text verbatim in a <user_messages> block after the task, from the caller's current branch; images and non-user messages are omitted. It is not inherited on restart.",
 	"agent_type on start/restart selects a named Codex TOML profile from the catalogue below. Its developer_instructions are a role after the root prompt and reminder, not a sandbox. Profile model, effort and instructions are defaults; explicit model, thinking, role, role_file, system and system_file use ordinary API semantics. Unset fields use ordinary defaults. Profiles keep the same tools and recursive delegation as generic agents.",
 	"send: id, task; reaches a running child after its current tool call, without aborting anything (a child parked in its own wait gets it after that call returns), or starts a new run with its history when idle; interrupt: true on send aborts a running child's turn and starts task as soon as it has stopped.",
-	"resume: id; retry an interrupted request from saved history without adding a task message. Active or cancellation-pending children cannot be resumed. Completed children stay idle. Child sessions survive Pi restarts with the same caller-local id.",
+	"resume: id; retry an interrupted request or one that ended in a provider error from saved history without adding a task message. Active or cancellation-pending children cannot be resumed. Successfully completed children stay idle. Child sessions survive Pi restarts with the same caller-local id.",
 	"interrupt: id; requests cancellation, keeps history; inspect status while cancellation is pending. stop: id; closes it.",
 	"restart: id, optional task, title and new role/system/model/thinking/tools; a fresh session; a selected agent_type is inherited and re-read unless changed.",
 	"Defaults: your system prompt with the reminder, this session's model and thinking, all tools.",
@@ -653,7 +653,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 
 	async function resumeOne(old: Agent, ctx: ExtensionContext, signal: AbortSignal, recoveredOnly = false): Promise<boolean> {
 		if (old.run || old.session.agent.state.isStreaming) throw new Error(`${name}#${old.id}: active or cancellation pending; cannot resume`);
-		if (!["interrupted", "running", "paused"].includes(old.state)) throw new Error(`${name}#${old.id}: not interrupted; use send for a new message`);
+		const failed = old.state === "completed" && old.result?.meta.stop === "error";
+		if (!["interrupted", "running", "paused"].includes(old.state) && !failed) throw new Error(`${name}#${old.id}: not interrupted or failed; use send for a new message`);
 		const manager = old.session.sessionManager;
 		let replacement: Agent | undefined;
 		try {

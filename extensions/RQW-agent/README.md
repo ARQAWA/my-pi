@@ -184,7 +184,7 @@ The generic `RuntimeHandle` in [coordinator.ts](coordinator.ts) connects the cal
 to the session runtime in [index.ts](index.ts). Registration takes the direct caller's API explicitly; there is no
 global caller session. Completed agents stay idle with history until `stop` or caller shutdown. Idle retained sessions
 do not keep the parent assignment pending. Each `start` is clean; explicit `send` reuses history, and `resume` retries
-an interrupted request without adding a message. Retained history costs memory; send pays its input tokens and may
+an interrupted or failed provider request without adding a message. Retained history costs memory; send pays its input tokens and may
 trigger Pi compaction or a new cache write after expiry. There is no automatic eviction/cap. Caller shutdown aborts
 and disposes live sessions while preserving durable child histories and recovery metadata for persisted parents.
 Caller Esc leaves accepted agents running and keeps late answers without waking the aborted caller; see
@@ -400,9 +400,12 @@ the same caller-local ids available. Stopped mappings are tombstoned; restart cr
 resurrecting the old generation. Old child files remain inside the owned tree until parent removal.
 Persisted entries with unknown child kinds are ignored without deleting their history files.
 
-`agent({action:"resume", id:"agent#1"})` retries an interrupted request without a new task message.
+`agent({action:"resume", id:"agent#1"})` retries an interrupted request or a last request that failed with a
+network/provider error, from saved history without a new task message. The caller explicitly chooses to retry after
+seeing the failure; this adds no automatic retry loop. Failed requests stay idle on parent continuation and
+`/resume-agents`; only the explicit `resume` action retries them.
 Active or cancellation-pending children cannot be resumed;
-completed children stay idle and require `send` for a new task. A child paused by hand with `interrupt` gets a durable
+successfully completed children stay idle and require `send` for a new task. A child paused by hand with `interrupt` gets a durable
 `paused` state with its reason. It stays paused after reload, session switch and Pi restart until an explicit `resume` or
 `/resume-agents`. The parent's continuation restores only unfinished children that were active or interrupted by a shutdown.
 A fork or clone copies the parent transcript but not the children's files: it does not claim the original `.children` tree,

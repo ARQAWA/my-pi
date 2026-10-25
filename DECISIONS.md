@@ -1239,6 +1239,16 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Carrier: `extensions/RQW-agent/persistence.ts`, `index.ts`, `coordinator.ts`; contract: [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume);
   proof: `test/extensions/RQW-agent/persistence.test.ts`, `resume.test.ts`. Since: `dd93a40`.
 
+- **Explicit retry after a child request fails** `[D-AGENT-RESUME-ERROR]`. Owner: «Надо, чтобы ты мог самостоятельно агента, допустим, упавшего заретраить, если вдруг он по какой-то причине из-за сети или ещё из-за чего-то упадёт.»
+  Source: session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, line 6929, user entry `4dfc1788`.
+  The caller can explicitly use `agent` action `resume` after the child's last network/provider request fails.
+  It retries from the saved child history without a new task message, also after a Pi restart. No automatic retry loop is added;
+  successful completion, active runs and cancellation-pending runs do not become resumable. `/resume-agents` and parent
+  continuation keep their existing behavior and do not retry failed requests.
+  Reason: the caller can recover a failed child without rebuilding its task or sending another message.
+  Carrier: `extensions/RQW-agent/index.ts`; proof: `test/extensions/RQW-agent/resume.test.ts`;
+  contract: [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume).
+
 - **Notification waits for children** `[D-AGENT-NOTIFY]`. Owner quotes: `[D-TOOLS-NOTIFY]` (`16-27-59:4876`, `16-27-59:4937`). Taken by default (coordinator text, not an owner quote): where the caller can
   receive notifications, `wait` on `agent` returns a `waiting` receipt at once with
   `terminate: true` and the result later wakes the caller once through the existing delivery broker.

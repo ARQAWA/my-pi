@@ -267,6 +267,129 @@ test("resume action: an interrupted first request is retried with the original s
 	} finally { await w.cleanup(); }
 });
 
+test("explicit resume retries each provider failure only on request and adds no user message", async () => {
+	const w = await world();
+	try {
+		const parent = await w.launchPersisted();
+		parent.session.settingsManager.setRetryEnabled(false);
+		const success = hold(w.hub, "RECOVERED");
+		w.sub.queue.push(
+			answer("", { stopReason: "error", errorMessage: "NETWORK DOWN" }),
+			answer("", { stopReason: "error", errorMessage: "PROVIDER STILL DOWN" }),
+			success.reply,
+		);
+		await w.start(parent);
+		for (const [index, error] of ["NETWORK DOWN", "PROVIDER STILL DOWN"].entries()) {
+			await w.hub.until(() => parent.delivered().length === index + 1 && parent.session.isIdle, "failure delivered and main settled");
+			assert.equal(parent.delivered()[index], `[agent#1] error: ${error}`);
+			const saved = savedRecord(parent.session.sessionManager, 1).data;
+			assert.equal(saved.state, "completed");
+			assert.equal(saved.result.outcome, "error");
+			assert.equal(saved.result.meta.stop, "error");
+			await parent.command("resume-agents");
+			await parent.session.prompt("unrelated parent request");
+			await settle();
+			assert.equal(w.sub.requests.length, index + 1, "neither failure delivery, bulk resume nor parent input retries a failed child");
+			await assert.rejects(parent.call({ action: "resume", id: "agent#1", task: "NEW" }), /resume does not accept task/);
+			assert.equal(await parent.call({ action: "resume", id: "agent#1" }), "agent#1 resumed");
+		}
+		await w.hub.until(success.entered, "the explicitly requested successful attempt");
+		await assert.rejects(parent.call({ action: "resume", id: "agent#1" }), /active or cancellation pending/);
+		assert.equal(w.sub.requests.length, 3);
+		for (const request of w.sub.requests) assertFirstContext(request);
+		success.release();
+		await w.hub.until(() => parent.delivered().includes("[agent#1] RECOVERED") && parent.session.isIdle, "success delivered");
+		await assert.rejects(parent.call({ action: "resume", id: "agent#1" }), /not interrupted/);
+		assert.equal(w.sub.requests.length, 3, "successful completion is not resumable");
+		const [history] = await childHistories(parent.file);
+		assert.equal(userMessages(history.entries).length, 1, "all attempts use the original user message");
+		assert.equal(history.entries.filter(e => e.type === "message" && e.message?.stopReason === "error").length, 2, "failed attempts remain in append-only history");
+		assert.deepEqual(parent.errors, []);
+	} finally { await w.cleanup(); }
+});
+
+test("explicit resume after durable provider failure preserves earlier turns and tool results without replay", async () => {
+	const w = await world();
+	try {
+		const first = await w.launchPersisted();
+		first.session.settingsManager.setRetryEnabled(false);
+		const write = createWriteToolDefinition(w.cwd);
+		let writes = 0;
+		w.offered.tools = [{ ...write, execute: async (...args: Parameters<typeof write.execute>) => {
+			writes++;
+			return write.execute(...args);
+		} }];
+		w.sub.queue.push(answer("EARLIER ANSWER"));
+		await w.start(first, "EARLIER TASK", { tools: ["write"] });
+		await w.hub.until(() => first.delivered().length === 1 && first.session.isIdle, "earlier turn completed");
+		w.sub.queue.push(
+			toolUse("write", { path: "kept.txt", content: "KEPT RESULT" }, "kept-call"),
+			answer("FAILED PARTIAL", { stopReason: "error", errorMessage: "CONNECTION LOST" }),
+		);
+		await first.call({ action: "send", id: "agent#1", task: "LATEST TASK" });
+		await w.hub.until(() => first.delivered().length === 2 && first.session.isIdle, "provider failure after the tool result");
+		assert.equal(writes, 1);
+		const failedRequest = w.sub.requests.at(-1)!;
+		assert.deepEqual(failedRequest.roles, ["user", "assistant", "user", "assistant", "toolResult"]);
+		const before = savedRecord(first.session.sessionManager, 1).data;
+		const rawBefore = await readFile(before.sessionFile, "utf8");
+		await w.close(first);
+
+		const parent = await w.launch(first.file);
+		await parent.command("resume-agents");
+		await parent.session.prompt("unrelated after reload");
+		await settle();
+		assert.equal(w.sub.requests.length, 3, "reloading, bulk resume and unrelated input leave the failed child idle");
+		assert.equal(await readFile(before.sessionFile, "utf8"), rawBefore, "no child transcript changes before explicit resume");
+		const success = hold(w.hub, "DURABLE RECOVERY");
+		w.sub.queue.push(success.reply);
+		assert.equal(await parent.call({ action: "resume", id: "agent#1" }), "agent#1 resumed");
+		await w.hub.until(success.entered, "resumed request from durable history");
+		const request = w.sub.requests[3];
+		// Reload recreates the system timestamp and JSON persistence omits undefined fields.
+		const durableContext = (r: Request) => JSON.parse(JSON.stringify({ ...r,
+			messages: r.messages.map(m => m.role === "system" ? { ...m, timestamp: undefined } : m),
+		}));
+		assert.deepEqual(durableContext(request), durableContext(failedRequest), "same complete context, settings and tool results; no failed partial or synthetic user message");
+		assert.equal(writes, 1, "the saved tool result prevents replay");
+		assert.equal(await readFile(join(w.cwd, "kept.txt"), "utf8"), "KEPT RESULT");
+		success.release();
+		await w.hub.until(() => parent.delivered().includes("[agent#1] DURABLE RECOVERY") && parent.session.isIdle, "durable recovery delivered");
+		const after = savedRecord(parent.session.sessionManager, 1).data;
+		assert.equal(after.sessionFile, before.sessionFile);
+		assert.equal(after.runNumber, before.runNumber + 1);
+		assert.equal(after.result.outcome, "completed");
+		const rawAfter = await readFile(after.sessionFile, "utf8");
+		assert.ok(rawAfter.startsWith(rawBefore), "recovery only appends to the durable transcript");
+		const [history] = await childHistories(parent.file);
+		assert.equal(userMessages(history.entries).length, 2, "only the two explicitly sent tasks exist");
+		assert.equal(history.entries.filter(e => e.type === "message" && e.message?.role === "toolResult").length, 1);
+		await assert.rejects(parent.call({ action: "resume", id: "agent#1" }), /not interrupted/);
+		assert.deepEqual(parent.errors, []);
+	} finally { await w.cleanup(); }
+});
+
+test("explicit resume rejects cancellation pending while a tool ignores the abort", async () => {
+	const w = await world();
+	const release = Promise.withResolvers<void>();
+	try {
+		const parent = await w.launchPersisted();
+		let entered = false;
+		w.offered.tools = [{ ...createWriteToolDefinition(w.cwd), execute: async () => {
+			entered = true;
+			w.hub.notify();
+			await release.promise;
+			return { content: [{ type: "text", text: "TOOL_DONE" }], details: undefined };
+		} }];
+		w.sub.queue.push(toolUse("write", { path: "unused.txt", content: "unused" }, "pending-call"));
+		await w.start(parent, "FIRST", { tools: ["write"] });
+		await w.hub.until(() => entered, "the abort-ignoring tool entered");
+		assert.equal(JSON.parse(await parent.call({ action: "interrupt", id: "agent#1" })).cancellation_requested, true);
+		await assert.rejects(parent.call({ action: "resume", id: "agent#1" }), /active or cancellation pending/);
+		assert.equal(w.sub.requests.length, 1, "cancellation pending cannot start another request");
+	} finally { release.resolve(); await w.cleanup(); }
+});
+
 test("completed children are not resumed when the parent continues or by /resume-agents", async () => {
 	const w = await world();
 	try {
