@@ -50,5 +50,5 @@ cache) works with all providers visible, and this extension hides providers with
   it; an inactive pass-through may remain rather than clobbering that foreign wrapper.
 - Another extension that registers a provider other than the two allowed ones registers it, but it is not listed.
 
-Tests: `extensions/RQW-providers/test/providers.test.ts` (real Pi library and CLI bundle, fake credentials, no network, the
+Tests: `test/extensions/RQW-providers/providers.test.ts` (real Pi library and CLI bundle, fake credentials, no network, the
 actual `pi --list-models`), `npm test`. Mechanism research: `notes/anthropic-adapter.md`, "Provider visibility".

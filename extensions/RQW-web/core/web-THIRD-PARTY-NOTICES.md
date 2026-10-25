@@ -2,9 +2,9 @@
 
 # Native web declaration provenance
 
-The local snapshot copies `extensions/RQW-codex/web-native-tools.json` byte-for-byte from repository commit `a85b810e924010f35387045fc0cbbd9a1e7173cc`. Its provenance fixture copies `extensions/RQW-codex/test/fixtures/web-schema-provenance.json` from the same commit into `../test/web-schema-provenance.json`. JSON data stays unchanged so the original snapshot digest remains verifiable.
+The local snapshot copies `extensions/RQW-codex/web-native-tools.json` byte-for-byte from repository commit `a85b810e924010f35387045fc0cbbd9a1e7173cc`. Its provenance fixture copies `extensions/RQW-codex/test/fixtures/web-schema-provenance.json` from the same commit into `../../../test/extensions/RQW-web/web-schema-provenance.json`. JSON data stays unchanged so the original snapshot digest remains verifiable.
 
-`web-native-tools.json` contains the full reserved `web.run` declaration from OpenAI Codex, Copyright 2025 OpenAI, Apache License 2.0. It is generated from official `rust-v0.164.0`, commit `6aaac694803004a63c6f393d153c96d22521a6b9`. The source files and their SHA-256 hashes are recorded in `../test/web-schema-provenance.json`. The complete license is included in `../vendor/LICENSE-CODEX`.
+`web-native-tools.json` contains the full reserved `web.run` declaration from OpenAI Codex, Copyright 2025 OpenAI, Apache License 2.0. It is generated from official `rust-v0.164.0`, commit `6aaac694803004a63c6f393d153c96d22521a6b9`. The source files and their SHA-256 hashes are recorded in `../../../test/extensions/RQW-web/web-schema-provenance.json`. The complete license is included in `../vendor/LICENSE-CODEX`.
 
 The schema comes from `codex-rs/codex-api/src/search.rs` and `codex-rs/ext/web-search/src/schema.rs`, generated with schemars 0.8.22, serde 1.0.228 and serde_json 1.0.149. The official draft-2019-09 settings inline subschemas and omit nullable Option types. The schema then passes through `codex-rs/tools/src/json_schema.rs` without compaction and the `JsonSchema` representation in `codex-rs/tools/src/json_schema/types.rs`. That representation intentionally drops `format` and `minimum`, retains field descriptions and sorted required names, and does not add `additionalProperties: false`.
 

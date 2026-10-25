@@ -239,7 +239,7 @@ before(() => {
 	// A temporary copy of the extension folder without its test folder, loaded as a package from settings.
 	root = mkdtempSync(join(tmpdir(), "rqw-tool-ui смоук-"));
 	pkg = join(root, "pkg");
-	const testDir = join(TOOL_UI, "test");
+	const testDir = join(REPO, "test", "extensions", "RQW-tool-ui");
 	cpSync(TOOL_UI, join(pkg, "extensions", "RQW-tool-ui"), {
 		recursive: true,
 		filter: (src) => src !== testDir && !src.startsWith(testDir + sep),

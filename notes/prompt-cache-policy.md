@@ -62,7 +62,7 @@ This proves subscription requests can write 1h entries and read them on the next
 These are SDK configurations matching the roles, not a performance benchmark of complete agent/review tool runs.
 The live fixture uses a large artificial prefix and cannot establish typical production prompt size, 5m expiry
 behavior, subscription quota accounting, or the historical cause of a limit exhaustion. Offline adapter tests
-capture the child wire markers and TTL independently (`extensions/RQW-anthropic/test/cache.test.ts`).
+capture the child wire markers and TTL independently (`test/extensions/RQW-anthropic/cache.test.ts`).
 
 ## Historical host evidence and its boundaries
 

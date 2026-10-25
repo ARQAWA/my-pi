@@ -10,5 +10,5 @@ model context keep every thinking block unchanged.
   thinking are an accepted native limit, not a zero-row promise. No Pi patch, no private state.
 
 Registered in `package.json` under `pi.extensions`, so normal package loading enables it. Switch it independently
-through Pi's package filter and `/reload`. Tests: `node --test extensions/RQW-thinking/test/`
+through Pi's package filter and `/reload`. Tests: `node --test test/extensions/RQW-thinking/`
 (real interactive mode, scripted faux model, isolated temporary folders).

@@ -119,7 +119,7 @@ refresh, billing and auth recovery follow the inspected omp behavior. No account
 Offline coverage uses fake credentials, a mocked official Anthropic origin and faux providers. The adapter tests
 cover signing, API-key bypass, refresh persistence/concurrency and file-backed locking, transient versus permanent
 errors, retry bounds, abort and rotated-token persistence, invalid responses, native conflict diagnostics, reload and
-disposal. Provider visibility is covered separately by `extensions/RQW-providers/test/providers.test.ts`. Exact owner cleanup includes shared-runtime child disposal and surviving owners.
+disposal. Provider visibility is covered separately by `test/extensions/RQW-providers/providers.test.ts`. Exact owner cleanup includes shared-runtime child disposal and surviving owners.
 These fixtures are not proof of live subscription acceptance or billing, nor a claim of execution on Windows/Linux.
 
 ## Recovery mechanisms and proof limits
@@ -137,7 +137,7 @@ blocks automatic replay and overflow recovery, but internal partial summaries ke
 callbacks. Pi applies its native minimum-validity check to refreshed credentials; the adapter does not subtract
 another five minutes from the saved TTL. Regression fixtures include concurrent getAuth calls with a 540-second TTL.
 
-Current coverage is in `extensions/RQW-anthropic/test/`, including native summary recovery, credential TTL,
+Current coverage is in `test/extensions/RQW-anthropic/`, including native summary recovery, credential TTL,
 auth-boundary and shared-runtime lifecycle fixtures. Test definitions are coverage descriptions, not a report of
 execution on the assembled revision.
 No real-account login/refresh, live Claude acceptance, subscription billing or complete omp SDK/streaming parity is

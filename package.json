@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test \"extensions/*/test/*.test.ts\" \"test/*.test.ts\"",
-    "test:bun": "node extensions/RQW-tools/test/bun/codemode-check.mjs",
+    "test": "node --test \"test/extensions/*/*.test.ts\" \"test/*.test.ts\"",
+    "test:bun": "node test/extensions/RQW-tools/bun/codemode-check.mjs",
     "deliver-check": "node scripts/deliver-check.mjs",
     "qa-status": "node scripts/qa-status.mjs",
     "ci-watch": "node scripts/ci-watch.mjs"

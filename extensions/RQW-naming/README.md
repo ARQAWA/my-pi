@@ -70,7 +70,7 @@ records the accepted contract and package registration.
 
 ## Verification
 
-Focused tests live under `test/`. They load only this extension and public Pi
+Focused tests live under `test/extensions/RQW-naming/`. They load only this extension and public Pi
 exports, with scripted faux models and isolated temporary storage. No real
 Haiku/Luna calls or owner settings are used. Run the focused files with Node's
 `--test` runner; full suites and Windows checks belong to GitHub Actions.

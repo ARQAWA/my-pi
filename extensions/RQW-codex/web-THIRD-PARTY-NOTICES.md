@@ -1,6 +1,6 @@
 # Native web declaration provenance
 
-`web-native-tools.json` contains the full reserved `web.run` declaration from OpenAI Codex, Copyright 2025 OpenAI, Apache License 2.0. It is generated from official `rust-v0.164.0`, commit `6aaac694803004a63c6f393d153c96d22521a6b9`. The source files and their SHA-256 hashes are recorded in `test/fixtures/web-schema-provenance.json`. The complete license is included in `LICENSE-CODEX`.
+`web-native-tools.json` contains the full reserved `web.run` declaration from OpenAI Codex, Copyright 2025 OpenAI, Apache License 2.0. It is generated from official `rust-v0.164.0`, commit `6aaac694803004a63c6f393d153c96d22521a6b9`. The source files and their SHA-256 hashes are recorded in `test/extensions/RQW-codex/fixtures/web-schema-provenance.json`. The complete license is included in `LICENSE-CODEX`.
 
 The schema comes from `codex-rs/codex-api/src/search.rs` and `codex-rs/ext/web-search/src/schema.rs`, generated with schemars 0.8.22, serde 1.0.228 and serde_json 1.0.149. The official draft-2019-09 settings inline subschemas and omit nullable Option types. The schema then passes through `codex-rs/tools/src/json_schema.rs` without compaction and the `JsonSchema` representation in `codex-rs/tools/src/json_schema/types.rs`. That representation intentionally drops `format` and `minimum`, retains field descriptions and sorted required names, and does not add `additionalProperties: false`.
 

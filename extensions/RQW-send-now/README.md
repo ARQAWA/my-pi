@@ -69,7 +69,7 @@ Like every RQW extension: `-extensions/RQW-send-now/index.ts` in the package ent
 
 ## Tests
 
-`extensions/RQW-send-now/test/send-now.test.ts`, in `npm test`: Pi's real `InteractiveMode` on a scripted
+`test/extensions/RQW-send-now/send-now.test.ts`, in `npm test`: Pi's real `InteractiveMode` on a scripted
 terminal with a faux streaming model and only this extension loaded. Force-send with the interrupted text replayed
 (also after `/reload`), nothing queued, follow-up only, dialog focus, a `CustomEditor` subclass, extension off,
 session end before the send (also with keys batched in one chunk), several messages, keys batched in one chunk,

@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const fixtures = join(here, "..", "test", "fixtures");
+const fixtures = join(here, "..", "..", "..", "test", "extensions", "RQW-codex", "fixtures");
 const errors = [];
 const fail = (message) => errors.push(message);
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");

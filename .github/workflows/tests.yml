@@ -126,16 +126,16 @@ jobs:
       - run: npm ci
 
       - name: Codex connectors under Bun (zstd, WebSocket deflate and ping, SSE, abort; loopback only)
-        run: bun extensions/RQW-codex/test/bun-check.mjs
+        run: bun test/extensions/RQW-codex/bun-check.mjs
 
       - name: RQW-codex CLI under Bun (real CLI, fake Codex connector and SSE, no network)
-        run: RQW_CODEX_BUN=1 node --test extensions/RQW-codex/test/cli.test.ts
+        run: RQW_CODEX_BUN=1 node --test test/extensions/RQW-codex/cli.test.ts
 
       - name: Codemode script under Bun (write then read, 60 s limit)
         run: npm run test:bun
 
       - name: RQW-agent wait and codemode CLI under Bun (real CLI, faux models, no network)
-        run: RQW_AGENT_BUN=1 node --import ./test/no-network.mjs --test extensions/RQW-agent/test/cli.test.ts
+        run: RQW_AGENT_BUN=1 node --import ./test/no-network.mjs --test test/extensions/RQW-agent/cli.test.ts
 
   # Pi's official pi.exe 1.4.0 (Bun-compiled release binary, not the Node bundle). Only the bootstrap step downloads;
   # the child CLI's network guard blocks everything else. fetch-pi.mjs runs from RUNNER_TEMP so its zip and pi.exe stay out of the worktree.
@@ -163,7 +163,7 @@ jobs:
           test -f "$RUNNER_TEMP/bundled-pi/pi/pi.exe"
 
       - name: RQW-codex CLI with the compiled pi.exe (real binary, fake Codex connector and SSE, no network)
-        run: RQW_CODEX_EXE="$RUNNER_TEMP/bundled-pi/pi/pi.exe" node --test extensions/RQW-codex/test/cli.test.ts
+        run: RQW_CODEX_EXE="$RUNNER_TEMP/bundled-pi/pi/pi.exe" node --test test/extensions/RQW-codex/cli.test.ts
 
   windows-portable-git:
     name: windows-portable-git (node 22.19.0)

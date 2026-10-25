@@ -100,7 +100,7 @@ re-reads and validates the selected profile before closing the old child; failed
 The profile path and SHA identify the bytes loaded for that child, not the latest file contents. Status and
 message `details.profile` expose the same provenance; waits expose it under `results[i].display.profile`.
 
-Proof: `test/profiles.test.ts` covers TOML discovery, layers, metadata and invalid files; `test/profile-runtime.test.ts`
+Proof: `test/extensions/RQW-agent/profiles.test.ts` covers TOML discovery, layers, metadata and invalid files; `test/extensions/RQW-agent/profile-runtime.test.ts`
 covers actual child configuration, explicit overrides, prompt composition, restart, resume and result provenance.
 
 RQW-review is one optional provider: it offers `spotty` and `bossy` and discovers native review skills.
@@ -128,7 +128,7 @@ Text parts are joined with newlines; images and non-user messages are omitted. A
 session's messages, not the root session's. The block is not prefixed to the task, and inclusion is not inherited on
 restart. Without a task, restart remains idle.
 
-Proof: `test/prompt-files.test.ts` covers exact system/role text and byte hashes, push/wait provenance,
+Proof: `test/extensions/RQW-agent/prompt-files.test.ts` covers exact system/role text and byte hashes, push/wait provenance,
 file re-reading and failed replacement, caller-branch inclusion and nested callers.
 
 ## Child tools and settings
@@ -171,8 +171,8 @@ file re-reading and failed replacement, caller-branch inclusion and nested calle
   and `symbolic-ref` and `reflog` writes hold the repository. Deletions are reported since the start, by comparing
   the exact pre-start and end states.
 
-Proof: `test/agent.test.ts` ("subagent parity" and the default-prompt, role and error tests),
-`test/cli.test.ts`. Decision: [DECISIONS.md, Agent](../../DECISIONS.md#agent).
+Proof: `test/extensions/RQW-agent/agent.test.ts` ("subagent parity" and the default-prompt, role and error tests),
+`test/extensions/RQW-agent/cli.test.ts`. Decision: [DECISIONS.md, Agent](../../DECISIONS.md#agent).
 
 ## Recursive lifecycle
 
@@ -202,7 +202,7 @@ Session state and delivery remain caller-local. The ordered edit/check barrier i
 There is no child-specific execution, turn, token, output-growth or wall-clock limit; provider limits and explicit
 management cancellation still apply. Wait timeout limits the caller's pause, never the child's lifetime.
 
-Proof: `test/agent.test.ts`, `test/nested-agents.test.ts` and `test/cli.test.ts`.
+Proof: `test/extensions/RQW-agent/agent.test.ts`, `test/extensions/RQW-agent/nested-agents.test.ts` and `test/extensions/RQW-agent/cli.test.ts`.
 
 ## GPT Fast
 
@@ -214,7 +214,7 @@ without it children stay on the standard tier. The optional boolean `fast_gpt` i
 `fast_gpt`, `send` keeps the child's state and `restart` carries the old state over; the child's own agents follow its
 state. `fast-gpt.ts` sets `service_tier: "priority"` on the child's openai-codex requests
 through `before_provider_request`; Anthropic requests are untouched. Default, rule and quotes:
-[DECISIONS.md, Settings](../../DECISIONS.md#settings). Proof: `test/fast-gpt.test.ts` covers `start`, `send` and
+[DECISIONS.md, Settings](../../DECISIONS.md#settings). Proof: `test/extensions/RQW-agent/fast-gpt.test.ts` covers `start`, `send` and
 `restart` of `agent`.
 
 ## Wait, status and management
@@ -432,7 +432,7 @@ synchronously without fsync: this is restart recovery, not a power-loss or exter
 Operating-system jobs are not restored after the Pi process ends. Disabling RQW-agent leaves the saved files intact;
 RQW-session independently removes the exact owned child tree with the confirmed parent `/remove` command.
 
-Proof: `test/persistence.test.ts` and the persistence integration tests plus session cleanup tests use temporary
+Proof: `test/extensions/RQW-agent/persistence.test.ts` and the persistence integration tests plus session cleanup tests use temporary
 directories and real Pi SDK sessions with faux providers. No owner session is used or deleted.
 
 ## Offline proof
@@ -441,8 +441,8 @@ All tests use real Pi 1.4.0 SDK sessions or its actual CLI with faux providers. 
 are required. Use Node 22.19.0 or the current Node runtime from the repository root:
 
 ```sh
-node --import ./test/no-network.mjs --test --test-concurrency=1 extensions/RQW-agent/test/*.test.ts test/agent-tools.test.ts
-RQW_AGENT_BUN=1 node --import ./test/no-network.mjs --test extensions/RQW-agent/test/cli.test.ts
+node --import ./test/no-network.mjs --test --test-concurrency=1 test/extensions/RQW-agent/*.test.ts test/agent-tools.test.ts
+RQW_AGENT_BUN=1 node --import ./test/no-network.mjs --test test/extensions/RQW-agent/cli.test.ts
 ```
 
 The second command requires an installed Bun. CLI children use a temporary HOME and agent directory, an allowlisted
@@ -450,11 +450,11 @@ environment, offline flags and the same transport-denying preload before Pi load
 main cancellation during text/JSON waiting, late-after-abort RPC, and actual builtin codemode nested ids. The CLI faux
 provider asserts that an empty base-tool subset declares exactly `agent` (plus `codemode` in the
 scenario where main has it active), matching [Recursive lifecycle](#recursive-lifecycle).
-`test/coordinator.test.ts` covers broker races, handoff, caller-chosen deadlines, implicit fallback and explicit-wait
-priority with virtual time. `test/activity.test.ts` covers live diagnostics, usage, trimming and argument growth.
-`test/supervision-activity.test.ts` and `test/supervision-coordinator.test.ts` cover alert detection and timer cleanup,
-fresh-alert wakeups, all-target result holds and release. `test/supervision.test.ts` covers the native SDK integration.
-`test/wait.test.ts` uses real sessions for multi-agent waits, retention, history, cancellation-pending tools and hook failure.
+`test/extensions/RQW-agent/coordinator.test.ts` covers broker races, handoff, caller-chosen deadlines, implicit fallback and explicit-wait
+priority with virtual time. `test/extensions/RQW-agent/activity.test.ts` covers live diagnostics, usage, trimming and argument growth.
+`test/extensions/RQW-agent/supervision-activity.test.ts` and `test/extensions/RQW-agent/supervision-coordinator.test.ts` cover alert detection and timer cleanup,
+fresh-alert wakeups, all-target result holds and release. `test/extensions/RQW-agent/supervision.test.ts` covers the native SDK integration.
+`test/extensions/RQW-agent/wait.test.ts` uses real sessions for multi-agent waits, retention, history, cancellation-pending tools and hook failure.
 CLI scenarios cover direct/nested waits, recursive agents, codemode handoff and outer error/timeout/abort; the same focused
 CLI file runs under Bun in CI. SDK regressions cover auth/queue/loader/factory/creation/preflight cancellation, failed replacement, unrecovered
 length/summary failure, safe ids, reload, shutdown and TUI/RPC late-after-abort. Coverage also includes successful retry,
@@ -478,7 +478,7 @@ suppresses delivery as before. These fields do not change execution, steering or
 For wait, the same metadata is at `result.details.results[i].display`. The existing result item's
 `outcome` remains `completed`/`error`, and the entire original wait `content` is unchanged. Consumers
 must read display metadata from details, not parse it from the model-visible JSON text. A receipt is
-not another delivered answer and adds no duplicate tool-use count. Proof: `test/ui-metadata.test.ts`;
+not another delivered answer and adds no duplicate tool-use count. Proof: `test/extensions/RQW-agent/ui-metadata.test.ts`;
 metadata fixtures use `withAgents`.
 
 <a id="contract-for-p6"></a>
@@ -513,7 +513,7 @@ Counts read existing Activity native state and the existing runtime ownership tr
 or logical assignment IDs. A native-idle parent contributes zero agents while its
 running nested agent contributes one agent. Reviewer profiles count as ordinary agents; the compatibility
 `reviews` field is zero for this producer. This extension adds no timer, card or second child registry.
-Proof: `test/counts.test.ts`; full extension isolation remains `test/isolation.test.ts` in CI.
+Proof: `test/extensions/RQW-agent/counts.test.ts`; full extension isolation remains `test/isolation.test.ts` in CI.
 
 Provenance: the contract comes from a coordinator proposal. That proposal is coordinator text, not an owner
 quotation; no verbatim owner message for it is recorded.

@@ -42,7 +42,7 @@ Shift+Tab and unrelated editor controls stay stock. The visual chooser is termin
 open it. It adds no setting or dependency and remains independently disableable through `pi config`, then `/reload`.
 
 The terminal sends Shift+arrow as `CSI 1;2A`..`D` (Kitty modified keys also work); no terminal setup is needed.
-Tests: `test/models.test.ts`, `test/picker.test.ts`; root `test/model-effort-picker.test.ts` drives Pi's actual
+Tests: `test/extensions/RQW-models/models.test.ts`, `test/extensions/RQW-models/picker.test.ts`; root `test/model-effort-picker.test.ts` drives Pi's actual
 interactive input with the current RQW-prompt/statusbar hooks and scripted faux providers, without paid calls.
 The rendering tests cover widths 0..160. Run the focused files with Node's test runner; full platform coverage is CI.
 

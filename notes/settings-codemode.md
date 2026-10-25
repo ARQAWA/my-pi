@@ -2,7 +2,7 @@
 
 RQW-settings also disables background prompt-cache warming, without disabling prompt caching or writing user
 settings. Config values cannot enable warming; switching the extension off restores stock Pi behavior. The policy and
-mechanism live in [DECISIONS.md, Settings](../DECISIONS.md#settings); tests: `extensions/RQW-settings/test/cache-warming.test.ts`.
+mechanism live in [DECISIONS.md, Settings](../DECISIONS.md#settings); tests: `test/extensions/RQW-settings/cache-warming.test.ts`.
 
 Decision: `extensions/RQW-settings/index.ts` adds `codemode` and `tool_search` to the active tools at `session_start`
 when the user made no tool selection (owner request, `DECISIONS.md` section Settings). Pi 1.4.0. Source paths and measurements below were taken on
@@ -153,7 +153,7 @@ milliseconds to start its worker, reached `write`. The model order said codemode
 - Registering at `session_start` has no such problem: with `-builtin:codemode`, or with the tool excluded, no
   `codemode` is registered, so nothing is taken over and there is no `codemode` at all. Tests: "`-builtin:codemode`
   leaves no codemode at all" (with the whole package in `test/package.test.ts`, with RQW-settings alone in
-  `settings.test.ts`, and with RQW-tools alone in `extensions/RQW-tools/test/codemode.test.ts`).
+  `settings.test.ts`, and with RQW-tools alone in `test/extensions/RQW-tools/codemode.test.ts`).
 - The registry takes the first registration per name: "Get all registered tools from all extensions (first
   registration per name wins)" (`core/extensions/runner.js:410`), in extension load order. Pi loads built-ins last:
   "Built-in extensions load after file and package extensions, whichever scope enables them."
@@ -195,32 +195,32 @@ real 1.3.0 binary printed `tool_execution_start c0 codemode`, `tool_execution_st
 Tests that prove the routing, on Node 22.19 and Node 26, and on Bun 1.3.14 (the runtime inside the Pi 1.4.0 binaries, read from the Windows release's `pi.exe`)
 and Bun 1.4.3:
 
-- `extensions/RQW-tools/test/bun/codemode-check.mjs` (`npm run test:bun`, CI job `bun-codemode` on Windows, both
+- `test/extensions/RQW-tools/bun/codemode-check.mjs` (`npm run test:bun`, CI job `bun-codemode` on Windows, both
   Bun versions): runs Pi's own CLI under Bun (`dist/bun/cli.js`, the entry of the release binary) with
-  this package and a faux model (`test/bun/faux-codemode.ts`). The script is
+  this package and a faux model (`test/extensions/RQW-tools/bun/faux-codemode.ts`). The script is
   `await tools.write({ path: "f.txt", content: "NEW\n" }); return await tools.read({ path: "f.txt" });`. It passes
   when the turn ends within 60 s, `c0/2 read` returns `NEW`, and f.txt is `NEW`. On the AsyncLocalStorage version
   (feefe18) it fails on both Bun versions: `FAIL after 20.0 s: no end after 20 s (hang)`, f.txt still `old`. The same
   package also passes on the Pi 1.3.0 darwin-arm64 release binary.
-- `extensions/RQW-tools/test/nested.test.ts`: the barrier without Pi, by ids: a call of a call (`c0/1/1`) finds the
+- `test/extensions/RQW-tools/nested.test.ts`: the barrier without Pi, by ids: a call of a call (`c0/1/1`) finds the
   group `c0`, a group inside a group, removal when the group ends, a call from a worker's `message` callback lands in
   the group's barrier, and a nested id with no group either runs at once (an ancestor is live in the outer barrier) or
   is ordered in the outer barrier (an ancestor that is not ours).
-- `extensions/RQW-tools/test/codemode.test.ts`, "the id Pi gives a script's call leads to its script through Pi's
-  sandbox": a test extension (`test/fixtures/probe.ts`) takes over `codemode` with the production function and
+- `test/extensions/RQW-tools/codemode.test.ts`, "the id Pi gives a script's call leads to its script through Pi's
+  sandbox": a test extension (`test/extensions/RQW-tools/fixtures/probe.ts`) takes over `codemode` with the production function and
   registers a `probe` tool that reports `nested.groupOf(id)`. Results: a model call of `probe` -> `no-group`; one
   script calling `probe` directly, through a tool that runs `ctx.executeTool` (a nested call of a nested call), and in
   `Promise.all` -> `group-1,group-1,group-1,group-1`; a second script -> `group-2`.
 
 ### Tests of the semantics
 
-`extensions/RQW-tools/test/codemode.test.ts`, describe "the codemode call is one call of the barrier, with scope all
+`test/extensions/RQW-tools/codemode.test.ts`, describe "the codemode call is one call of the barrier, with scope all
 like bash": `[codemode(write f), read f]` (10 of 10), `[write f 500 KB, codemode(script: bash wc -c f)]` (10 of 10),
 `[bash sleep 0.3 && echo > g, codemode(read g)]`, `[codemode(bash sleep 0.3 && echo > g), read g]`,
 `[codemode(write f), codemode(read f)]`, `[codemode(read f), write f]` (the script still sees the old content), a nested
 `Promise.all` with a bash before and a read after, and nested calls of nested calls without deadlock. Every run has a
 5 s watchdog that aborts the session. With the take-over switched off, six of them fail; the older describe "the
-RQW-tools barrier holds for calls made from a codemode script" stays green. `extensions/RQW-tools/test/nested.test.ts`
+RQW-tools barrier holds for calls made from a codemode script" stays green. `test/extensions/RQW-tools/nested.test.ts`
 tests the barrier without Pi (order, scope all, no wait for the group's entry, still-running calls, routing by id,
 `groupOf()`).
 

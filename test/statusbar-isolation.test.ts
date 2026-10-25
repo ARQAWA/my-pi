@@ -27,7 +27,8 @@ it("statusbar tests pass from a physical copy that holds only this extension fol
 		const manifest = JSON.parse(readFileSync(join(temp, "package.json"), "utf8"));
 		assert.equal(manifest.type, "module");
 		assert.ok(manifest.pi.extensions.includes("./extensions/RQW-statusbar/index.ts"));
-		const copiedTests = join(temp, "extensions", "RQW-statusbar", "test");
+		const copiedTests = join(temp, "test", "extensions", "RQW-statusbar");
+		await cp(join(repo, "test", "extensions", "RQW-statusbar"), copiedTests, { recursive: true });
 		const copied = join(copiedTests, "statusbar.test.ts");
 		const allTests = readdirSync(copiedTests).filter((f) => f.endsWith(".test.ts")).map((f) => join(copiedTests, f));
 		const env = { ...process.env, PI_OFFLINE: "1" };

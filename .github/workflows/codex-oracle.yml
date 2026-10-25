@@ -1,7 +1,7 @@
 name: codex-oracle
 
 # Stage 1: executes the pinned upstream codex-core tests (fake loopback servers, fake auth) on a temp copy and
-# captures the requests they build. Source-digest fixtures are checked separately (extensions/RQW-codex/test).
+# captures the requests they build. Source-digest fixtures are checked separately (test/extensions/RQW-codex).
 on:
   push:
     branches-ignore: [main]
@@ -48,7 +48,7 @@ jobs:
 
       - name: Run the focused diagnostic regression tests (diagnostic dispatch only)
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.diagnostic_case != '' || inputs.diagnostic_probe) }}
-        run: node --test extensions/RQW-codex/test/oracle-diagnostic.test.ts
+        run: node --test test/extensions/RQW-codex/oracle-diagnostic.test.ts
 
       - name: Verify the release tag peels to the pinned commit (read-only)
         run: |
@@ -154,7 +154,7 @@ jobs:
             --run "$RUN_URL" \
             --head "$GITHUB_SHA" \
             --out "$RUNNER_TEMP/native-differential.json" \
-            --check extensions/RQW-codex/test/fixtures/native-differential.json
+            --check test/extensions/RQW-codex/fixtures/native-differential.json
 
       - name: Upload captures and test logs
         if: ${{ always() && !(github.event_name == 'workflow_dispatch' && (inputs.diagnostic_case != '' || inputs.diagnostic_probe)) }}

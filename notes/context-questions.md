@@ -57,7 +57,7 @@ back to R. Removing summary-reserve rebinding leaves native requests and results
 The library and CLI-bundle split/non-split comparison is saved in `/tmp/context-simplify-proof.mjs` and
 `/tmp/context-simplify-proof.log`, with fixed sessionId and normalized timestamps.
 
-Tests: `context.test.ts`, `audit.test.ts`, `state.test.ts` and `routing.test.ts` in `extensions/RQW-context/test/`.
+Tests: `context.test.ts`, `audit.test.ts`, `state.test.ts` and `routing.test.ts` in `test/extensions/RQW-context/`.
 Library and actual CLI bundle use synthetic providers and local HTTP. No cloud or interactive-terminal proof is
 claimed. Unsupported private SDK boundaries fail at load; implementation updates require restarting Pi.
 Last-owner removal restores stock physical lookup identity and settings.

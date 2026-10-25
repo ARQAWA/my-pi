@@ -2,7 +2,7 @@ name: codemode-stress
 
 # Manual repeat harness: runs one test file `runs` times on one OS and Node version, with no retries, counts the failed
 # runs (k/n) and fails when any run failed. It measures an intermittent failure rate before and after a fix; the defaults
-# reproduce the 12 MB codemode case (extensions/RQW-tools/test/codemode.test.ts, pattern "12 MB", macOS, Node 24, 30
+# reproduce the 12 MB codemode case (test/extensions/RQW-tools/codemode.test.ts, pattern "12 MB", macOS, Node 24, 30
 # runs), a silent death of that test file seen once on macOS Node 24. Each run records its exit code and seconds (and the
 # peak RSS on macOS); the TAP copy of every run and the output of failed runs are kept as evidence, crash reports of the job are collected
 # too. GitHub dispatches only workflows that exist on the default branch, so a push to the branch `codemode-stress`
@@ -15,7 +15,7 @@ on:
       test:
         description: Test file to repeat (repository path)
         type: string
-        default: extensions/RQW-tools/test/codemode.test.ts
+        default: test/extensions/RQW-tools/codemode.test.ts
       name_pattern:
         description: Optional --test-name-pattern; empty runs the whole file
         type: string
@@ -87,7 +87,7 @@ jobs:
         env:
           # A push has no inputs: it runs the 12 MB defaults. On dispatch an empty pattern means no pattern.
           RUNS: ${{ inputs.runs || '30' }}
-          TEST_FILE: ${{ inputs.test || 'extensions/RQW-tools/test/codemode.test.ts' }}
+          TEST_FILE: ${{ inputs.test || 'test/extensions/RQW-tools/codemode.test.ts' }}
           PATTERN: ${{ github.event_name == 'push' && '12 MB' || inputs.name_pattern }}
           NO_SPARKPLUG: ${{ inputs.no_sparkplug || false }}
           # Set only when a Bun version is chosen: the test runner stays Node, the CLI child it spawns uses Bun.

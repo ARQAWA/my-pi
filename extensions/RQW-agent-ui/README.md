@@ -143,14 +143,14 @@ and ANSI); at width 0 nothing is rendered.
 
 ## Tests
 
-- `node --test extensions/RQW-agent-ui/test/card.test.ts`: the card (pure).
-- `node --test extensions/RQW-agent-ui/test/review.test.ts`: legacy stored verdict fixtures, source-aware counts,
+- `node --test test/extensions/RQW-agent-ui/card.test.ts`: the card (pure).
+- `node --test test/extensions/RQW-agent-ui/review.test.ts`: legacy stored verdict fixtures, source-aware counts,
   full body and appended advice, width and purity.
-- `node --test extensions/RQW-agent-ui/test/child-wait.test.ts`: the `child_wait` card rows (pure).
-- `node --test extensions/RQW-agent-ui/test/wait.test.ts`: the wait cards, the stock view parity, layering, width, purity.
-- `node --test extensions/RQW-agent-ui/test/self.test.ts`: a tool-ui-like self shell, exact folded delegation, full
+- `node --test test/extensions/RQW-agent-ui/child-wait.test.ts`: the `child_wait` card rows (pure).
+- `node --test test/extensions/RQW-agent-ui/wait.test.ts`: the wait cards, the stock view parity, layering, width, purity.
+- `node --test test/extensions/RQW-agent-ui/self.test.ts`: a tool-ui-like self shell, exact folded delegation, full
   expanded cards, native box parity, output padding, diagnostics, invalidation and repeated expansion.
-- `node --test extensions/RQW-agent-ui/test/wire.test.ts`: Pi's real `InteractiveMode` on a scripted terminal with a
+- `node --test test/extensions/RQW-agent-ui/wire.test.ts`: Pi's real `InteractiveMode` on a scripted terminal with a
   faux model and only this extension: both delivery paths, Ctrl+O and back, off = stock, `/reload` and a new session
   register the cards again, the extension has no handler or subscription. The delivery shapes are stand-ins for
   RQW-agent's, as its README describes them.

@@ -23,7 +23,7 @@ export const PIN_RELEASE = 'rust-v0.163.0';
 export const PIN_VERSION = '0.163.0';
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const DEFAULT_MANIFEST = resolve(here, '../test/fixtures/oracle-source.json');
+export const DEFAULT_MANIFEST = resolve(here, '../../../test/extensions/RQW-codex/fixtures/oracle-source.json');
 
 // Pre-edit digest of the one upstream file the harness instruments (not listed in oracle-source.json).
 export const RESPONSES_RS = 'core/tests/common/responses.rs';

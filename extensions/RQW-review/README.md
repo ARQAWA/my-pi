@@ -32,4 +32,4 @@ Claude reviewer measurement and comparison with the original plugin are discarde
 [BACKLOG.md, Discarded](../../BACKLOG.md#claude-reviewer),
 [reviewer comparison](../../BACKLOG.md#codex-reviewer-comparison). No live model quality measurement is claimed.
 
-Focused offline checks: `node --test extensions/RQW-review/test/profiles.test.ts`.
+Focused offline checks: `node --test test/extensions/RQW-review/profiles.test.ts`.

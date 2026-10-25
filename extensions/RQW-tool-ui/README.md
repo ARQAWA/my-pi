@@ -40,7 +40,7 @@ The theme is distributed separately through `pi.themes`, not as an extension.
 - Pi's fallback formatting (a call without `renderCall`, a result without `renderResult` or whose renderer throws, or
   a tool without a definition, such as an unavailable tool in stored session history) is not exported by Pi, so
   `fallback.ts` holds a small copy of it, approved by the owner, pinned to Pi 1.4.0 with its sources cited in
-  its header. Maintenance: on a Pi upgrade, `test/original.test.ts` fails on the version pin; compare `fallback.ts`
+  its header. Maintenance: on a Pi upgrade, `test/extensions/RQW-tool-ui/original.test.ts` fails on the version pin; compare `fallback.ts`
   with the cited Pi sources, update it and the pin. The same test compares every case with Pi's own
   `ToolExecutionComponent.render()` (whole rows, colours included), so a drift in the shell shows there too.
 - The original renderers are called where Pi calls this row's renderers: their call side from the start of execution
@@ -105,11 +105,11 @@ profiles and skills for the ordinary `agent` runtime.
   stream as after a reload. Matching compact RQW-tools metadata adds confirmed edit counts and bash exit codes
   (see below); a call left `unfinished` stays unconfirmed even with metadata (no success, failure or counts).
   A nested call's failure and a write's lines (from saved arguments) still count.
-- `test/harness.ts`: width sweep (`assertFits`, 0..160 columns), wide and styled samples, identity and colored theme
-  painters, fixed clock. `test/transcript.ts`: saved messages in a public in-memory session and Pi's render context.
-- Tests: `test/render.test.ts` (the renderers), `test/original.test.ts` (the expanded original against Pi's own
-  component, the fallbacks and the bash timer), `test/host.test.ts` (a transcript of Pi's exported assistant and tool
-  components), `test/lifecycle.test.ts` (package filter and `/reload`, non-TUI modes, session switch); the terminal smoke
+- `test/extensions/RQW-tool-ui/harness.ts`: width sweep (`assertFits`, 0..160 columns), wide and styled samples, identity and colored theme
+  painters, fixed clock. `test/extensions/RQW-tool-ui/transcript.ts`: saved messages in a public in-memory session and Pi's render context.
+- Tests: `test/extensions/RQW-tool-ui/render.test.ts` (the renderers), `test/extensions/RQW-tool-ui/original.test.ts` (the expanded original against Pi's own
+  component, the fallbacks and the bash timer), `test/extensions/RQW-tool-ui/host.test.ts` (a transcript of Pi's exported assistant and tool
+  components), `test/extensions/RQW-tool-ui/lifecycle.test.ts` (package filter and `/reload`, non-TUI modes, session switch); the terminal smoke
   of the real Pi TUI at 80 columns is `test/tool-ui-smoke.test.ts` and, on a Mac, `python3 test/tool-ui-smoke.py`
   at the repository root.
 

@@ -1,7 +1,7 @@
 // Focused isolation check for the real Codex transport (RQW-codex). Only three child sessions run here: everything on,
 // RQW-codex off at start, and RQW-codex switched off with /reload. Each child is bounded to 30 seconds. The full
 // per-extension matrix stays in isolation.test.ts. The faux provider in isolation-run.ts is a fixture on API "faux-iso",
-// outside the owned Codex wire profile; the real Codex transport has its own focused tests in extensions/RQW-codex/test.
+// outside the owned Codex wire profile; the real Codex transport has its own focused tests in test/extensions/RQW-codex.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";

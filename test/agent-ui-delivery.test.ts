@@ -11,7 +11,7 @@ import { test } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { CustomMessageComponent, initTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { fauxToolCall } from "@earendil-works/pi-ai";
-import { answer, fixture, gate, tick, until } from "../extensions/RQW-agent/test/audit-fixture.ts";
+import { answer, fixture, gate, tick, until } from "./extensions/RQW-agent/audit-fixture.ts";
 
 const AGENT_UI = join(import.meta.dirname, "../extensions/RQW-agent-ui/index.ts");
 const TOOL_UI = join(import.meta.dirname, "../extensions/RQW-tool-ui/index.ts");

@@ -25,4 +25,4 @@ user messages keep `card`.
 
 ## Tests
 
-`test/schema.test.ts` checks the asset against Pi's theme schema and pins the four card backgrounds.
+`test/extensions/RQW-theme/schema.test.ts` checks the asset against Pi's theme schema and pins the four card backgrounds.

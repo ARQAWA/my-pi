@@ -21,7 +21,7 @@ GPT Fast colour-step timing and all layout behavior are unchanged.
 Only public Pi APIs are used, and the extension remains independent.
 
 Rules and owner sources: [DECISIONS.md, Status bar](../DECISIONS.md#status-bar).
-Deterministic tests in `extensions/RQW-statusbar/test/` cover layout, peak widths, monotone falloff and doubled
+Deterministic tests in `test/extensions/RQW-statusbar/` cover layout, peak widths, monotone falloff and doubled
 speed. `native-working-layout.test.ts` mounts real Pi `InteractiveMode` with a held faux-provider response,
 checks suppression of the native working row, exact widget gaps, title placement and idle removal, and saves
 `/tmp/statusbar-single-working.txt` and `/tmp/statusbar-single-compaction.txt`. The latter drives extension compaction events,
@@ -204,7 +204,7 @@ with the 20 ms timer a chunk can wait up to about one 16 ms slot (p95 about 15 m
 
 ## Proof
 
-`extensions/RQW-statusbar/test/render.snap.json` is the fixed plain-text rendering at widths 80, 48, 24, 8, 1 and 0.
+`test/extensions/RQW-statusbar/render.snap.json` is the fixed plain-text rendering at widths 80, 48, 24, 8, 1 and 0.
 `render.test.ts` compares it deterministically and checks every width 0..160, wide/combining Unicode, ANSI metadata,
 no-model/unknown context, overflow, thinking labels, Windows and UNC paths, porcelain records and the rate rules above.
 It also checks the editor border at every width 0..160 with and without hidden lines: exact width, the hint first,
@@ -235,7 +235,7 @@ the repository, and checks tool/agent refresh, polling and shutdown cleanup with
 turns and reset by tree change, session start and toggle. These tests join existing `npm test`
 and the existing macOS/Windows CI matrix without adding a new dependency.
 
-Historical PTY smoke evidence: `python3 extensions/RQW-statusbar/test/tui-smoke.py [node]` runs the actual CLI in an isolated agent
+Historical PTY smoke evidence: `python3 test/extensions/RQW-statusbar/tui-smoke.py [node]` runs the actual CLI in an isolated agent
 directory with no credentials, a local `models.json` model (200k window, never called) and `PI_OFFLINE=1`, and sends
 only slash commands and editor keys. A small terminal emulator in the script replays the output. It checks that
 the bar row (`0% 0k/183.6k`) is the editor's bottom border directly above the two footer rows, that off shows Pi's
@@ -304,7 +304,7 @@ line 11
 
 - macOS, Node 26.7.0: `npm test -- --test-reporter=dot`, 1078 tests, 1070 passed, 0 failed, 8 skipped (all eight are
   Windows-only tests outside this extension).
-- The focused statusbar files (`extensions/RQW-statusbar/test/*.test.ts`, `test/statusbar-context.test.ts`,
+- The focused statusbar files (`test/extensions/RQW-statusbar/*.test.ts`, `test/statusbar-context.test.ts`,
   `test/statusbar-isolation.test.ts`) pass; the isolation test reruns all of this extension's tests from a copy
   holding only its folder.
 - Real CLI PTY smoke passed on Node 26.7.0: bar as the editor's bottom border, session ID in the top border,

@@ -420,7 +420,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Reason: chasing a fix without an obvious bug blocked unrelated work. This is the owner-approved exception to the
   forbidden list of [D-QA-TEST-INTEGRITY]; retries, raised timeouts and whole-file skips stay forbidden. Carrier:
   [PROCESS.md, Quality control loop](PROCESS.md#quality-control-loop), [BACKLOG.md](BACKLOG.md#qa-flakes-last),
-  `extensions/RQW-tools/test/background.test.ts`. Since: process-pipeline squash.
+  `test/extensions/RQW-tools/background.test.ts`. Since: process-pipeline squash.
   Retired: the causal fix landed as `2b9c088` and no skip exists in the tests; the exception is not in force.
 
 - **Pause is interrupt, resume is `resume`** `[D-PIPELINE-PAUSE-RESUME]`. Pausing a task is an `agent` `interrupt` of its agent:
@@ -771,7 +771,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   The review of the effect is [TOKEN-EFFICIENCY-REVIEW](BACKLOG.md#token-efficiency-review).
   The one-line prompt rule for a successful edit or write already ships ([D-WORK-GOLDEN-RULE](#work-policy)).
   Carriers: `extensions/RQW-tools/{unchanged.ts,index.ts,descriptions/read.md}`, tests
-  `extensions/RQW-tools/test/unchanged-read.test.ts`.
+  `test/extensions/RQW-tools/unchanged-read.test.ts`.
 
 - **Nested codemode display facts** `[D-TOOLS-NESTED-DISPLAY]`. Owner (`16-27-59:3117`): «3а».
   Meaning: assistant question 3, option a at line 3116 proposed later saving nested edit counts and bash exit codes
@@ -797,13 +797,13 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Coordinator text, option 1a: "Отдельной задачей разобрать, почему тест кодмода на Windows иногда не укладывается в 5
   секунд, и исправить причину." This entry is an engineering follow-up under that precedent. Reason: elapsed start
   latency includes host descheduling and garbage collection, which a percentile cutoff cannot tell from false
-  dependencies. Carrier: `extensions/RQW-tools/test/barrier.test.ts`; test design:
+  dependencies. Carrier: `test/extensions/RQW-tools/barrier.test.ts`; test design:
   [notes/analysis-races.md, Test plan](notes/analysis-races.md#7-test-plan-synthetic-no-model-node---test-under-extensionsrqw-toolstest).
   Since: `f95be18`.
 - **Shell timing in comparisons** `[D-TOOLS-SHELL-TIME]`. The stock-versus-wrapper shell-path test compares every result
   field except `structuredContent.wall_time_seconds`; both timings must still be nonnegative numbers. Engineering
   follow-up under the same precedent as [D-TOOLS-BARRIER-TESTS]. Reason: a rounded elapsed time is not shell-path
-  behavior. Carrier: `extensions/RQW-tools/test/behavior.test.ts`. Since: `230e8d0`.
+  behavior. Carrier: `test/extensions/RQW-tools/behavior.test.ts`. Since: `230e8d0`.
 - **Wrapped stock tools** `[D-TOOLS-WRAPPERS]`. `extensions/RQW-tools/` replaces `read`, `bash`, `edit`, `write`, `grep`
   and `find` and adds `job`. Each tool spreads the stock definition (parameters, renderers) with our description and
   wraps its `execute`: the wrapper schedules the call in the barrier, may hand it to a background job, takes resource
@@ -820,7 +820,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Reason: strict sampling garbled edit arguments where Cyrillic text began, while a strict write of Cyrillic text came
   through intact; the replay and probe numbers are in
   [notes/decisions-evidence.md](notes/decisions-evidence.md#tools-edit-strict-sampling-replay). Carriers:
-  `extensions/RQW-tools/index.ts`, `extensions/RQW-tools/test/tools.test.ts` (the Anthropic request has no `strict` on
+  `extensions/RQW-tools/index.ts`, `test/extensions/RQW-tools/tools.test.ts` (the Anthropic request has no `strict` on
   edit and keeps it on write). Since: `886b677`.
 - **Ordered conflict barrier** `[D-TOOLS-BARRIER]`. A call waits only for earlier calls it conflicts with: bash
   conflicts with every call, read never with read, otherwise an equal path key or an ancestor conflicts. Within one
@@ -833,7 +833,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   [D-TOOLS-BARRIER-TESTS]. Coordinator text, option 1a, the task wording: "Отдельной задачей разобрать, почему тест
   кодмода на Windows иногда не укладывается в 5 секунд, и исправить причину". Reason: the test spent its watchdog
   budget streaming tiny deltas before tools could run, not waiting in the barrier. Carrier:
-  `extensions/RQW-tools/test/codemode.test.ts`; analysis and proof:
+  `test/extensions/RQW-tools/codemode.test.ts`; analysis and proof:
   [notes/settings-codemode.md, Test watchdog](notes/settings-codemode.md#test-watchdog). Since: `9a4068c`.
 - **In-place writes with Windows retry** `[D-TOOLS-WIN-RETRY]`. In-place writes stay; on Windows `EBUSY`/`EPERM`/`EACCES`
   are retried for about 1.5 s. Reason: temp file plus rename fails on Windows when another process holds the file.
@@ -841,28 +841,28 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Search and output limits** `[D-TOOLS-LIMITS]`. grep and find get no match cap by default (`limit` 100000 when unset);
   the stock 50KB output cap stays; read and bash keep the stock 2000 lines / 50KB. Reason: Pi's default 100 grep matches
   cuts the broad first search wave; omp-lite's 51 200-character budget equals 50KB for ASCII. Carriers:
-  `extensions/RQW-tools/index.ts`, `extensions/RQW-tools/test/tools.test.ts`, the descriptions. Since: `8889fdf`.
+  `extensions/RQW-tools/index.ts`, `test/extensions/RQW-tools/tools.test.ts`, the descriptions. Since: `8889fdf`.
   GREP-NULL correction: every optional grep/find field equal to JSON `null`, `undefined` or the string `"null"`
   is removed before argument validation, preserving required `pattern`, explicit booleans, zero and other values.
   Reason: a literal `"null"` otherwise becomes a glob/path or an invalid option. Source: GREP-NULL audit section 5
   and the owner's 2026-10-24 fix request. Carrier: `extensions/RQW-tools/index.ts`; proof:
-  `extensions/RQW-tools/test/search-null.test.ts`.
+  `test/extensions/RQW-tools/search-null.test.ts`.
 - **Search method section** `[D-TOOLS-SEARCH-METHOD]`. The search wave method lives in the grep description; RQW-tools
   supplies the one-line `<search_method>` section through its own `before_agent_start` hook when read, grep and find
   are declared. Carriers: `extensions/RQW-tools/descriptions/grep.md`, `extensions/RQW-tools/index.ts`. Since: `04aa50f`.
 - **Caller's shell and image settings** `[D-TOOLS-SHELL-SETTINGS]`. read and bash are built with the user's settings
   (`shellPath`, `shellCommandPrefix`, `images.autoResize`), as stock Pi builds them. Reason: without `shellPath` a
   Windows setup with Git outside Program Files finds no bash. Carriers: `extensions/RQW-tools/index.ts`,
-  `extensions/RQW-tools/test/behavior.test.ts`. Since: `f8cd7e9`.
+  `test/extensions/RQW-tools/behavior.test.ts`. Since: `f8cd7e9`.
 - **Offered tool factory** `[D-TOOLS-FACTORY]`. `createTools(cwd, settings, nested?, options?)` in `index.ts` builds the
   six base tools and `job` with a barrier and a job registry of their own, plus the caller's `codemode` as one barrier
   call when `options.codemode` is given. The extension registers one set for the session and answers a request on
   `pi.events` channel `rqw-tools:subagent-tools` with `createTools` itself ([Agent](#agent)). Nothing in RQW-tools
-  depends on RQW-agent. Carriers: `extensions/RQW-tools/index.ts`; `extensions/RQW-tools/test/tools.test.ts` checks the
+  depends on RQW-agent. Carriers: `extensions/RQW-tools/index.ts`; `test/extensions/RQW-tools/tools.test.ts` checks the
   answer and that each call gives fresh definitions. Since: `90700ad`.
 - **Read key spellings** `[D-TOOLS-READ-KEY]`. The read key mirrors stock `resolveReadPath` (NFD, curly quote and AM/PM
   variants), so a read and a write of the same file spelled differently still meet in the barrier. Carriers:
-  `extensions/RQW-tools/keys.ts`, `extensions/RQW-tools/test/paths-barrier.test.ts`. Since: `f8cd7e9`.
+  `extensions/RQW-tools/keys.ts`, `test/extensions/RQW-tools/paths-barrier.test.ts`. Since: `f8cd7e9`.
 - **Implicit order not described** `[D-TOOLS-HIDDEN-ORDER]`. The tool descriptions do not explain the automatic barrier
   order (bash waits for earlier calls, a read waits for an earlier write); explicit waits on background jobs are
   described. Reason: with those lines gpt-6.1-sol made one call per response; without them it batched
@@ -991,8 +991,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Carriers: `extensions/RQW-tools/jobs.ts`, `barrier.ts`, `nested.ts`, `footprint.ts`, `ledger.ts`, `keys.ts`,
   `index.ts`, `codemode.ts`, `descriptions/bash.md`, `descriptions/job.md`, `descriptions/write.md`;
   `extensions/RQW-agent/index.ts`;
-  `notes/prompt-tools-isolation.md`. Proof: `extensions/RQW-tools/test/background.test.ts`, `barrier-detach.test.ts`,
-  `footprint.test.ts`, `ledger.test.ts`; `extensions/RQW-agent/test/wait.test.ts`,
+  `notes/prompt-tools-isolation.md`. Proof: `test/extensions/RQW-tools/background.test.ts`, `barrier-detach.test.ts`,
+  `footprint.test.ts`, `ledger.test.ts`; `test/extensions/RQW-agent/wait.test.ts`,
   `agent.test.ts`;
   `test/prompt-tools-isolation.test.ts`. Since: `e5440f2`; scan and footprint safeguards since `e1cca48`; handoff independence and notification waits since the final squash of branch `agent-async`. Earlier wording (Esc killed jobs, polling only): [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0264.
 
@@ -1020,7 +1020,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `[D-TOOLS-BG]`; no owner quote for D5 is repeated here.
   Reason: the owner wants a waiting agent not to hold a call and owner messages not to kill background work.
   Carrier: `extensions/RQW-tools/jobs.ts` (`watch`, `notify`), `extensions/RQW-tools/index.ts` (`installNotifications`),
-  `extensions/RQW-tools/descriptions/job.md`. Proof: `extensions/RQW-tools/test/notify.test.ts`, `notify-sdk.test.ts`, `background.test.ts`.
+  `extensions/RQW-tools/descriptions/job.md`. Proof: `test/extensions/RQW-tools/notify.test.ts`, `notify-sdk.test.ts`, `background.test.ts`.
   Since: the final squash of branch `agent-async`.
 
 ## Context
@@ -1035,13 +1035,13 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Carrier: `extensions/RQW-context/index.ts` (`wrapAgentState`, `wrapRouting`, `wrapCompactionSettings`), `extensions/RQW-context/README.md`; details: `notes/context-questions.md`. Proof: `/tmp/context-simplify-proof.mjs`, `/tmp/context-simplify-proof.log` compare native library and bundle split/non-split compaction with varied reserves, fixed sessionId and normalized timestamps. Since: context-simplify delivery; supersedes the entry introduced by `6eb01a7`, archived from `0521318` in `DECISIONS-ARCHIVE.md`.
 - **Explicit settings and accepted limits** `[D-CONTEXT-SETTINGS]`. Pi's global `compaction.reserveTokens` and per-selection `compaction.modelOverrides["provider/id"].reserveTokens` retain their precedence when below W; a reserve of W or more falls back to R. `compaction.enabled: false` still disables threshold and overflow compaction. A positive models.json window is honored up to the cap; absent or nonpositive windows retain Pi's behavior. The catalog, `model_select.model` and RPC `set_model` show the declared window, while session state and the footer show the capped window; reconciling them requires a Pi API.
   Coordinator text. Reason: preserve explicit user choices without producing a nonpositive threshold.
-  Carrier: `extensions/RQW-context/index.ts` (`reserveFor`, `userSetReserve`); `extensions/RQW-context/test/context.test.ts`. Since: `a03eb47`.
+  Carrier: `extensions/RQW-context/index.ts` (`reserveFor`, `userSetReserve`); `test/extensions/RQW-context/context.test.ts`. Since: `a03eb47`.
 - **Output and summary limits** `[D-CONTEXT-LIMITS]`. Pi 1.4.0 summary requests use the summarizing model's output limit, not R. pi-ai also clamps output to the window minus estimated input minus 4096, with a floor of one token; capping the window can therefore make oversized input or prose-heavy summary requests unrecoverable. Tool-result truncation in summaries can make tool-heavy histories behave differently. Threshold compaction and native overflow recovery remain Pi's responsibility; this extension adds no provider window field or recovery algorithm. Historical Pi 1.3.0 measurements are evidence, not current Pi 1.4.0 measurements, in [context limits evidence](notes/decisions-evidence.md#context-limits).
   Coordinator text. Reason: the owner's window cap does not remove native output and summary constraints.
-  Carrier: `extensions/RQW-context/index.ts`, `extensions/RQW-context/test/context.test.ts`, `extensions/RQW-context/test/routing.test.ts`; Pi 1.4.0 `pi-ai/dist/api/simple-options.js` and `dist/core/compaction/utils.js`. Since: `a03eb47`.
+  Carrier: `extensions/RQW-context/index.ts`, `test/extensions/RQW-context/context.test.ts`, `test/extensions/RQW-context/routing.test.ts`; Pi 1.4.0 `pi-ai/dist/api/simple-options.js` and `dist/core/compaction/utils.js`. Since: `a03eb47`.
 - **Checked process-wide lifecycle** `[D-CONTEXT-LIFECYCLE]`. Native method descriptors, arities, model getter and prototype extensibility are checked before static installation; unsupported shapes fail without static changes. Hooks are installed once per process and apply while `Symbol.for("rqw-context/owner")` holds any live owner token. Each `session_shutdown` removes only its own token; the last removal restores stock behavior, including physical lookup identity. SDK `dispose()` alone does not emit this lifecycle event, and sessions that excluded the extension still receive the rule while another owner remains. Updating the hook implementation requires restarting Pi, not only `/reload`.
   Coordinator text. Reason: independent sessions must not disable each other's universal context policy.
-  Carrier: `extensions/RQW-context/index.ts`, `extensions/RQW-context/test/context.test.ts`, `extensions/RQW-context/test/routing.test.ts`; restart instructions: `INSTALL.md`; [context proof](notes/decisions-evidence.md#context-proof). Since: `e1fa03d`.
+  Carrier: `extensions/RQW-context/index.ts`, `test/extensions/RQW-context/context.test.ts`, `test/extensions/RQW-context/routing.test.ts`; restart instructions: `INSTALL.md`; [context proof](notes/decisions-evidence.md#context-proof). Since: `e1fa03d`.
 
 ## Prompt
 
@@ -1062,28 +1062,32 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Background cache warming** `[D-SETTINGS-WARMING]`. Background warming is off inside RQW-settings regardless of user configuration; normal inference still writes and reads prompt caches. A reversible session-owned `getCacheWarmingMode` policy leaves settings files, environment and cache-miss notices unchanged, restores the native getter on shutdown, and preserves other owners and foreign hooks through reload. All children, including reviewer profiles, carry the policy owned by RQW-agent.
   Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 440, in `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`.
   Reason: no synthetic keepalive inference before the first real request.
-  Carrier: `extensions/RQW-settings/cache-warming.ts`, `extensions/RQW-settings/test/cache-warming.test.ts`, `test/cache-warming-reload.test.ts`; evidence: `notes/prompt-cache-policy.md`. Since: `b91f832`.
+  Carrier: `extensions/RQW-settings/cache-warming.ts`, `test/extensions/RQW-settings/cache-warming.test.ts`, `test/cache-warming-reload.test.ts`; evidence: `notes/prompt-cache-policy.md`. Since: `b91f832`.
 - **Default tools and reload** `[D-SETTINGS-DEFAULT-TOOLS]`. RQW-settings activates registered built-in `codemode` and `tool_search` at `session_start` only without an explicit CLI or `defaultTools` selection, using the same selection policy as RQW-tools for grep/find. Disabled built-ins are not added. The default codemode mode stays `on`; Pi adds codemode call signatures to the seven RQW-tools descriptions, including `job`. On `/reload` both extensions leave the existing active set alone, preserving user changes.
   Coordinator text: the historical CodeMode/Tool Search owner quotation is not verified in the permitted Pi USER sources.
   Reason: useful defaults must not override explicit selections.
   Carrier: `extensions/RQW-settings/index.ts`, `extensions/RQW-settings/selection.ts`, `extensions/RQW-tools/index.ts`, `extensions/RQW-tools/selection.ts`; details: `notes/settings-codemode.md`. Since: `3720200`.
 - **Codemode barrier and capacity** `[D-SETTINGS-CODEMODE]`. With RQW-tools loaded, the registered Pi `codemode` definition is wrapped as one outer barrier call with scope all; its script tools use that call's own barrier. Nested calls find the group through `<codemode id>/<n>` ancestry, not AsyncLocalStorage, so Bun worker callbacks do not lose the grouping. Unregistered ancestors fall back without waiting on themselves. Pi 1.4.0 has process-wide codemode worker slots, `PI_CODEMODE_MAX_WORKERS` default 2, a FIFO slot wait capped at 60 seconds or the remaining script deadline, and a 256 MB VM limit; nested scripts can exhaust slots and time out. The wrapper adds no unlimited capacity and respects `-builtin:codemode`.
   Coordinator text. Reason: nested execution must preserve ordering on Node and Bun without self-deadlock.
-  Carrier: `extensions/RQW-tools/nested.ts`, `extensions/RQW-tools/codemode.ts`, `extensions/RQW-tools/index.ts`, `extensions/RQW-tools/test/bun/codemode-check.mjs`; CI: `.github/workflows/tests.yml` covers Node 22.19.0 and 24, Bun 1.3.14 and 1.4.3. Evidence: `notes/settings-codemode.md`, [codemode history](notes/decisions-evidence.md#codemode-history). Since: `b98baec`.
+  Carrier: `extensions/RQW-tools/nested.ts`, `extensions/RQW-tools/codemode.ts`, `extensions/RQW-tools/index.ts`, `test/extensions/RQW-tools/bun/codemode-check.mjs`; CI: `.github/workflows/tests.yml` covers Node 22.19.0 and 24, Bun 1.3.14 and 1.4.3. Evidence: `notes/settings-codemode.md`, [codemode history](notes/decisions-evidence.md#codemode-history). Since: `b98baec`.
 - **GPT Fast** `[D-SETTINGS-GPT-FAST]`. `/fast-gpt [on|off]` toggles the main chat's OpenAI priority processing, with no argument toggling it; `FAST_GPT_DEFAULT = false`. Only matching `openai-codex` request bodies receive `service_tier: "priority"` through `before_provider_request`; Anthropic is untouched. State survives reload and new sessions in the process, not restarts, and has no settings key. The hook applies to SSE and WebSocket request bodies; Pi accounts for the response's service tier. The main-chat indicator belongs to [Status bar](#status-bar).
   Owner: «Режим Fast должен действовать только на основной чат. И по умолчанию он должен передаваться сабогентам. Но если я запрещу исполнителю сабогенты запускать в режиме Fast, то он должен этому повиноваться. Так это должно работать»
   Owner: «В CloudCode у нас режима Fast нет, потому что у меня нет кредитов, чтобы режим Fast поддерживать в CloudCode. Поэтому наш режим Fast распространяется только на GPT. Можно даже называть его GPT Fast.»
   Source for both exact spans: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 2170, in the Pi session directory named above.
   Reason: expose GPT-only priority without changing provider transports or Anthropic requests.
-  Carrier: `extensions/RQW-settings/fast-gpt.ts`; tests: `extensions/RQW-settings/test/fast-gpt.test.ts`, `extensions/RQW-statusbar/test/fast-gpt.test.ts`. Since: `fa05edf`; default off since `7ad7de8`.
+  Carrier: `extensions/RQW-settings/fast-gpt.ts`; tests: `test/extensions/RQW-settings/fast-gpt.test.ts`, `test/extensions/RQW-statusbar/fast-gpt.test.ts`. Since: `fa05edf`; default off since `7ad7de8`.
 - **GPT Fast inheritance** `[D-SETTINGS-GPT-FAST-CHILDREN]`. Subagents and reviewers inherit their caller's GPT Fast state at start; nested children inherit from their direct caller. Later main-chat toggles do not update running children. Optional boolean `fast_gpt` overrides inheritance, and agent `send` or `restart` may explicitly change a child's state; omitted restart keeps it. A strict-schema null means omitted. The `agent` description tells callers to pass `fast_gpt: false` when the user forbids Fast. Reviewer profiles use the same agent implementation. The extension-local `fast-gpt.ts` queries `rqw-settings:fast-gpt-query` synchronously; `rqw-settings:fast-gpt` notifies changes. Without a settings responder, inherited main-chat Fast is off.
   Owner: the exact inheritance instruction is recorded in GPT Fast above.
   Reason: child tier follows the caller's choice without live coupling or cross-extension imports.
-  Carrier: `extensions/RQW-agent/fast-gpt.ts`, `index.ts` and `test/fast-gpt.test.ts`. Since: `fa05edf`.
+  Carrier: `extensions/RQW-agent/fast-gpt.ts`, `index.ts` and `test/extensions/RQW-agent/fast-gpt.test.ts`. Since: `fa05edf`.
 
 ## Isolation
 
-- **Self-contained extensions** `[D-ISOLATION-SELF-CONTAINED]`. Each RQW extension is independently switchable and imports no file outside its folder, including in local tests. Shared helpers are copied: both `selection.ts` copies are 127 lines, and Fast event-channel constants are repeated in three extension-local files. Extension-local tests load only that extension; multi-extension tests live under root `test/`. Disabling an extension removes its owned behavior; process-wide Context and PCLI hooks stay active while any owner remains.
+- **Separate mirrored extension tests** `[D-STRUCT-TEST-LAYOUT]`. Coordinator question and accepted option 3a, not an owner quotation: move `extensions/*/test/**` to `test/extensions/RQW-<name>/**`, preserving the tree and keeping root `test/`. Source: owner's architecture answers `3a 4a 5a 6a 7a` and subsequent explicit delivery order in this repository session, 2026-10-25. First delivery is only the mechanical move and necessary path fixes, with assertions and behavior unchanged. The index, generator, README maps, extension-structure alignment and code-quality principle are deferred to the second delivery.
+  Reason: keep shipped extension folders free of tests without losing independent isolation coverage.
+  Carriers: `test/extensions/`, `test/isolation.test.ts`, `package.json`, affected workflows and test scripts. Superseded isolation wording: `DECISIONS-ARCHIVE.md`, A-0327. Since: the delivering squash of `test-layout-move`.
+
+- **Self-contained extensions** `[D-ISOLATION-SELF-CONTAINED]`. Each RQW extension is independently switchable; its runtime source imports no file outside its folder. Its test tooling may also import its own mirrored test tree, but no other extension or test tree. Shared helpers are copied: both `selection.ts` copies are 127 lines, and Fast event-channel constants are repeated in three extension-local files. Its tests live under `test/extensions/RQW-<name>/`, import only their own test tree and extension folder, and load only that extension; multi-extension tests remain directly under root `test/`. Disabling an extension removes its owned behavior; process-wide Context and PCLI hooks stay active while any owner remains.
   Coordinator text: the historical isolation quote is not verified in the permitted Pi USER sources.
   Reason: one feature flag must not require another extension to exist.
   Carrier: `extensions/`, `test/isolation.test.ts`, `test/isolation-run.ts`. Since: `81cafe3`.
@@ -1133,20 +1137,20 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   All locators name the `16-27-59` session in Provenance. Reason: reuse native Codex role files and one existing
   runtime while preserving Pi behavior. Carriers: `extensions/RQW-agent/profiles.ts`, `index.ts`, `prompt.ts`,
   `extensions/RQW-review/`, `package.json`; contract: [RQW-agent README](extensions/RQW-agent/README.md#codex-profiles).
-  Focused proof: `extensions/RQW-agent/test/profiles.test.ts`, `profile-runtime.test.ts`. Since: subagent-profiles.
+  Focused proof: `test/extensions/RQW-agent/profiles.test.ts`, `profile-runtime.test.ts`. Since: subagent-profiles.
 
 - **Native prompt files** `[D-AGENT-PROMPT-FILES]`. Agent start/restart accepts `system_file` or `role_file` instead of the corresponding inline prompt; paths resolve relative to the caller's cwd. A regular file supplies exact UTF-8 text, including whitespace and a literal BOM; invalid UTF-8, matching inline/file options, or mixing any system option with any role option is rejected. Restart inherits the prompt choice and re-reads a file before replacing the child, so failed validation leaves the old child intact. Push `details.prompt_file` and wait `details.results[i].display.prompt_file` carry the same `{kind, path, sha256}` for the absolute resolved path and bytes actually loaded. Profile prompt defaults use this same explicit override API (`[D-AGENT-PROFILES]`).
   Owner: «Всё должно быть нативно. Подумай, как можно максимально интеллектуально прокачать этот функционал.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at physical line 3963, requested at 2026-10-23T13:01:47.145Z.
   Reason: native prompt inputs replace manually copied prompt text without losing byte provenance.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts`, `extensions/RQW-agent/prompt.ts`; proof: `extensions/RQW-agent/test/prompt-files.test.ts`; [file contract](extensions/RQW-agent/README.md#prompt-files-and-caller-messages). Since: `dc4f32e`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts`, `extensions/RQW-agent/prompt.ts`; proof: `test/extensions/RQW-agent/prompt-files.test.ts`; [file contract](extensions/RQW-agent/README.md#prompt-files-and-caller-messages). Since: `dc4f32e`.
 - **Verbatim caller messages** `[D-AGENT-CALLER-MESSAGES]`. Agent start/restart may pass `include: ["user_messages"]` to append a `<user_messages>` block after the task. It contains user-role text from the caller's selected branch, including entries before compaction, in branch order; text parts are joined with newlines, images and non-user messages are omitted. Nested callers contribute their own session messages, not the root session's. Inclusion is not inherited on restart, and restart without task stays idle; the required start task remains the inline `task` field.
   Coordinator text: technical realization of the native-input agreement in `[D-AGENT-PROMPT-FILES]`.
   Reason: forward actual caller messages rather than summaries or retyped quotations.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts` (`appendUserMessages`); proof: `extensions/RQW-agent/test/prompt-files.test.ts`. Since: `dc4f32e`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts` (`appendUserMessages`); proof: `test/extensions/RQW-agent/prompt-files.test.ts`. Since: `dc4f32e`.
 - **Native supervision** `[D-AGENT-SUPERVISION]`. The `agent` tool supports native wait/status options and optional `alert_after_ms` on start/restart; prompt-file and caller-message options remain agent configuration. Status alerts are `{kind, at, detail}`: `error`, `repetition`, `long_turn` and `schema_rejection_repeated`; the latest 32 are presentation history, not an execution limit. The optional positive finite safe-integer threshold is disabled by default and inherited on restart; it reports a long native turn without stopping it, and turn end, logical run end and close cancel the timer, leaving none while idle. Repetition is diagnostic suspicion; schema alerts require a second matching detectable Pi argument-parsing/schema rejection. This F1/F3 work adds no F5 guard or sandbox, `stalled_tool` alert, F2 run manifest or F4 structured-output feature.
   Coordinator text: technical realization of the native-supervision agreement in `[D-AGENT-PROMPT-FILES]`.
   Reason: make supervision caller-controlled without polling wrappers or automatic cancellation.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/activity.ts`, `extensions/RQW-agent/coordinator.ts` and descriptions; proof: `extensions/RQW-agent/test/supervision-activity.test.ts`, `extensions/RQW-agent/test/supervision-coordinator.test.ts`, `extensions/RQW-agent/test/supervision.test.ts`; [supervision contract](extensions/RQW-agent/README.md#wait-status-and-management). Since: `dc4f32e`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/activity.ts`, `extensions/RQW-agent/coordinator.ts` and descriptions; proof: `test/extensions/RQW-agent/supervision-activity.test.ts`, `test/extensions/RQW-agent/supervision-coordinator.test.ts`, `test/extensions/RQW-agent/supervision.test.ts`; [supervision contract](extensions/RQW-agent/README.md#wait-status-and-management). Since: `dc4f32e`.
 
 - **Caller-chosen wait and status** `[D-AGENT-WAIT]`. The `agent` tool provides caller-local mechanical wait/status for direct-child IDs; `timeout_ms` defaults to 300000 only when omitted, and expiry never cancels a child. `until: "first"` is the default; `"all"` holds early completions until every selected target has a result, receipt or inactive state, releasing held results to the message path on alert, timeout or caller abort. `wake_on_alert` defaults to true and wakes only for alerts created on selected children after wait registration, without consuming a result. Status uses `messages` 5-10, default 8; `depth` defaults to 0, with positive safe-integer depth adding compact read-only descendant snapshots without message previews or descendant management. Waiting makes no caller model turns; results still arrive exactly once through wait or messages with receipts for delivery races. No execution, turn, token, output-growth, child-count or automatic-management limits are added; Pi provider timeouts and retries still apply.
   Owner: «Если они работают долго, пусть работают.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 1849.
@@ -1155,15 +1159,15 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Child cache policy** `[D-AGENT-CACHE]`. Every child has in-memory `cacheWarming: "off"`, independent of RQW-settings and the user's warming mode. Prompt caching stays on; the guarded stream wrapper sets `cacheRetention: "short"` for Anthropic Messages before OAuth fallback, giving built-in five-minute retention without a new config knob. Other APIs retain their options.
   Owner: «Потому что если мы вообще выключим им кэш, то они будут пиздец жрать токенов нахуй.» Source: the same session, USER entry at line 440.
   Reason: disable background requests without sacrificing ordinary prompt-cache reuse.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/test/agent.test.ts`, `test/prompt-cache.test.ts`; evidence: `notes/prompt-cache-policy.md`. Since: `b91f832`.
+  Carrier: `extensions/RQW-agent/index.ts`, `test/extensions/RQW-agent/agent.test.ts`, `test/prompt-cache.test.ts`; evidence: `notes/prompt-cache-policy.md`. Since: `b91f832`.
 - **Subagent parity** `[D-AGENT-PARITY]`. General subagents use the main run's built prompt from public `ctx.getSystemPrompt()`, followed by a short subagent reminder and optional `role`; nested subagents receive the main prompt handed down, not their parent's role. Optional `system` or `system_file` replaces that whole prompt exactly; file alternatives and validation are defined in `[D-AGENT-PROMPT-FILES]`. Every subagent, including a selected profile, gets `agent` recursively with no depth or concurrency limit. Repository coordinator rules are not product policy, and the reminder excludes instructions addressed to the main agent or coordinator.
   Owner: «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи свои предложения» Source: the same session, USER entry at line 2608.
   Reason: share main's rules and context while allowing short role configuration and independent decomposition.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`, `extensions/RQW-agent/test/agent.test.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). Since: `c86e9bb`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`, `test/extensions/RQW-agent/agent.test.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). Since: `c86e9bb`.
 - **Child settings** `[D-AGENT-CHILD-SETTINGS]`. Children inherit session shell, image handling, retries, provider and transport timeouts, compaction, thinking budgets, queue modes and codemode settings, except warming stays off. Stock tools use the child's copied shell/image settings; offered RQW-tools read the caller's effective settings per call. Children get built-in codemode/tool_search when active for their caller; nested callers select the same profile catalog through `agent_type`. Reviewer profiles inherit the ordinary child settings, including queue modes. Parent-history fork, web search and MCP for children are deferred in [BACKLOG](BACKLOG.md), not present features; durable resume is delivered (`[D-AGENT-PERSIST]`).
   Coordinator text: technical realization of the parity agreement.
   Reason: children must not silently lose relevant caller capabilities.
-  Carrier: `extensions/RQW-agent/index.ts` (`childSettings`), `extensions/RQW-agent/prompt.ts`; `extensions/RQW-agent/test/agent.test.ts`. Since: `c86e9bb`.
+  Carrier: `extensions/RQW-agent/index.ts` (`childSettings`), `extensions/RQW-agent/prompt.ts`; `test/extensions/RQW-agent/agent.test.ts`. Since: `c86e9bb`.
 - **Child titles** `[D-AGENT-TITLE]`. Optional `title` on start/restart appears in status,
   `results[i].display.title` and message `details.title`; delivered text keeps its `[agent#N]` form.
   Card rendering is `RQW-agent-ui`, see [Agent cards](#agent-cards).
@@ -1173,20 +1177,20 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 - **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `resume`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `blocking`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `agent_type`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus recursive `agent` delegation for every child. Profile selection and defaults are defined in `[D-AGENT-PROFILES]`. Sessions run in-process at caller cwd with in-memory settings; the history is in memory for an in-memory caller and in the owned `<parent.jsonl>.children/` tree for a persisted one (`[D-AGENT-PERSIST]`), using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
   Coordinator text. Reason: reuse Pi sessions and the caller's provider runtime without subprocesses or duplicate resource loading.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/test/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`; `blocking` since the final squash of branch `agent-async`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0265.
+  Carrier: `extensions/RQW-agent/index.ts`, `test/extensions/RQW-agent/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`; `blocking` since the final squash of branch `agent-async`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0265.
 - **Optional RQW-tools offer** `[D-AGENT-TOOLS-OFFER]`. At start/restart RQW-agent emits `rqw-tools:subagent-tools` with `{ offer(factory) }` on the shared synchronous `pi.events` bus; loaded RQW-tools answers with fresh definitions and a child-local barrier/job registry, otherwise stock tools are used. The consumer type is `(cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition }) => ToolDefinition[]`; the provider's exact function is `createTools(cwd: string, settings: () => any, nested = createNestedBarrier(), options: JobsOptions & { jobs?: Jobs; codemode?: ToolDefinition<any, any, any> } = {}): ToolDefinition[]`. The factory provides seven tools, six base tools plus job, and optionally a grouped child codemode; the consumer filters the base subset but retains job and offered codemode. Child codemode shares process-wide Pi worker slots. No cross-extension import or mandatory dependency is added; reload/dispose invalidates stale handlers.
   Coordinator text. Reason: children follow the RQW-tools switch while retaining their own ordering and job ownership.
   Carrier: `extensions/RQW-agent/index.ts` (`ToolsFactory`, `offeredTools`), `extensions/RQW-tools/index.ts` (`createTools`), `test/agent-tools.test.ts`. Pi 1.4.0 event API: `docs/extensions.md:186`, `dist/core/extensions/types.d.ts:1406`; invalidation: `dist/core/extensions/loader.js:144-152`, `dist/core/agent-session.js:1022,3002`; stock tool settings: `dist/core/agent-session.js:2964-2974`. Since: `90700ad`.
 - **Result delivery and identity** `[D-AGENT-DELIVERY]`. Every final answer and final error of a run is delivered in order to its direct caller, once; intermediate runs awaiting children and attempts Pi retries are not final results. `auto_retry_start` and `compaction_end` with `willRetry: true` remove only the retried message's contribution, preserving earlier answers. Invalid IDs/models, missing credentials or required task fail immediately, using auth snapshot then `runtime.checkAuth`. Idle callers are woken; busy callers retain results outside abort-cleared queues, and settle races produce one continuation seeing all held results. Abort preserves delivered text without starting another turn; manual-compaction arrivals are seen on the next turn. Delivery uses UUIDs, and `agent#N` counters recover the session's maximum across reload/resume/fork/continuation.
   Coordinator text. Reason: retries, cancellation and session continuation must neither lose nor duplicate results.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `extensions/RQW-agent/test/agent.test.ts`; [historical proof](notes/decisions-evidence.md#agent-proof). Since: `7a9f505`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `test/extensions/RQW-agent/agent.test.ts`; [historical proof](notes/decisions-evidence.md#agent-proof). Since: `7a9f505`.
 - **Steering and interrupting sends** `[D-AGENT-SEND]`. Sending to a running child uses `session.steer`, arriving after the current assistant turn's tool calls and before the next request without abort; an idle child starts a new run with history. `send` with `interrupt: true` clears queued steering/follow-ups, aborts the run and records one next task that starts when cancellation settles; later sends join in order. An uncooperative tool can delay that start, shown as `pending_sends`; wait remains running and reports `target_changed` when the run changes. Plain send during cancellation is rejected unless an interrupting send is already pending. `interrupt` retains history without a result message; stop forgets the session; restart creates a fresh session with retained or explicitly replaced configuration. Interrupt/stop/restart discard pending tasks and cascade cancellation to descendants.
   Coordinator text: the steering proposal was accepted by the owner; the quoted proposal is not an owner quotation.
   Reason: follow-ups should steer promptly without forcing cancellation, while redirection remains explicit.
-  Carrier: `extensions/RQW-agent/index.ts` (`requestInterrupt`, `Agent.next`), `extensions/RQW-agent/test/steer.test.ts`. Since: `029160d`.
+  Carrier: `extensions/RQW-agent/index.ts` (`requestInterrupt`, `Agent.next`), `test/extensions/RQW-agent/steer.test.ts`. Since: `029160d`.
 - **Ordered management and shutdown** `[D-AGENT-MANAGEMENT]`. Agent management calls register in call order; wait releases that queue after subscription. Start, idle send and restart with task return once prompt preflight starts the run or `compaction_start` makes cancellation effective. Closing clears queues, calls abort and only then disposes, preventing requests after stop or shutdown. External print/json hosts use a caller-wide non-consuming fallback wait in `agent_end`, bounded by the default `timeout_ms` and subordinate to explicit waits. A native-idle child waits for its active subagents by their completion events with no implicit timeout, and only when no run is active does it use the bounded wait. TUI/RPC retain push wakeups. `session_shutdown` closes all descendants without result messages.
   Coordinator text. Reason: parallel tool batches, pre-run compaction and disposal must not leave unowned requests.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `extensions/RQW-agent/test/agent.test.ts`; [historical proof](notes/decisions-evidence.md#agent-proof). Since: `fe0e375`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `test/extensions/RQW-agent/agent.test.ts`; [historical proof](notes/decisions-evidence.md#agent-proof). Since: `fe0e375`.
 - **Accepted limits** `[D-AGENT-LIMITS]`. Results arriving after the caller session ended are lost; a persisted child keeps its history and the same id after a restart, but a running operating-system process, tool call or provider request is not restored, and a power loss can lose unflushed history (no fsync). Children share the TUI process and may read files the main agent is editing; in-process cancellation cannot forcibly end an uncooperative tool. The process-wide [Context](#context) rule applies while an RQW-context owner exists. GPT Fast inheritance and overrides are defined once under [Settings](#settings).
   Coordinator text. Reason: these are boundaries of the in-process session design, not unimplemented promises.
   Carrier: `extensions/RQW-agent/index.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management). Since: `7a9f505`; restart persistence since `dd93a40`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0266.
@@ -1213,7 +1217,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Chosen over a global registry or a handoff file: the adjacent tree needs no shared state and lets RQW-session recognize it by name.
   Reason: the owner wants an agent resumed by its id after a Pi restart with its full history.
   Carrier: `extensions/RQW-agent/persistence.ts`, `index.ts`, `coordinator.ts`; contract: [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume);
-  proof: `extensions/RQW-agent/test/persistence.test.ts`, `resume.test.ts`. Since: `dd93a40`.
+  proof: `test/extensions/RQW-agent/persistence.test.ts`, `resume.test.ts`. Since: `dd93a40`.
 
 - **Notification waits for children** `[D-AGENT-NOTIFY]`. Owner quotes: `[D-TOOLS-NOTIFY]` (`16-27-59:4876`, `16-27-59:4937`). Taken by default (coordinator text, not an owner quote): where the caller can
   receive notifications, `wait` on `agent` returns a `waiting` receipt at once with
@@ -1384,7 +1388,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   (`INSTALL.md`). It brings the mouse commands to VS Code; the VDI's own wheel handling is not verified. The extension
   throws a load error when `TuiAltScreen.beforeTerminalStart` or the base `afterTerminalStart` hook is missing.
   Since: `8f6251a`.
-- **Wheel fix proof** `[D-PCLI-MOUSE-PROOF]`. `extensions/RQW-mouse/test/mouse.test.ts` (in `npm test`, macOS and Windows
+- **Wheel fix proof** `[D-PCLI-MOUSE-PROOF]`. `test/extensions/RQW-mouse/mouse.test.ts` (in `npm test`, macOS and Windows
   CI): Pi's real `TuiAltScreen` on a recording terminal, Windows simulated through `process.platform` elsewhere; the
   write right after `terminal.start` equals Pi's earlier set for each multiplexer variant and repeats after every restart;
   Pi's disable runs on every stop; nothing is added with the mouse off, in regular mode or on non-Windows platforms;
@@ -1423,7 +1427,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   unchanged; warming policy lives in [Settings](#settings).
   Owner: «Почему ты не юзаешь какой-то часовой cash?» (session `2026-10-21T12-13-54-289Z_01a15e61`, line 275); «Это надо будет пофиксить тоже.» (session `2026-10-21T12-13-54-289Z_01a15e61`, line 281)
   Reference (TTL, timing, pricing, Pi's prospective warmer-cost limitation): `extensions/RQW-anthropic/README.md`,
-  Prompt cache. Proof: `test/cache.test.ts`. Since: `ebf7bc1`.
+  Prompt cache. Proof: `test/extensions/RQW-anthropic/cache.test.ts`. Since: `ebf7bc1`.
 - **Isolated extension** `[D-ANTHROPIC-EXT]`. `extensions/RQW-anthropic/`, listed in `package.json`, owns transport and
   OAuth recovery only; provider visibility is [Providers](#providers). Disable and reload unregisters only its overlay and
   restores in-memory hooks; no node_modules edits or credential deletion. Coordinator text (owner quote C:3046, an omp
@@ -1456,7 +1460,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   the adapter rejects subscription Authorization headers before delegation and keeps ordinary API-key gateway behavior
   (`auth-boundary.ts`, `transport.ts`). Each request records its sent version, also under concurrency, with one bounded
   replay when an effective newer version meets a rejection; a pinned `PI_AI_CLAUDE_CODE_VERSION` forbids adaptation
-  (`wire.ts`, `transport.ts`). Proof: `test/regressions.test.ts`. Since: `071df1e`.
+  (`wire.ts`, `transport.ts`). Proof: `test/extensions/RQW-anthropic/regressions.test.ts`. Since: `071df1e`.
 
 ## Models
 
@@ -1481,7 +1485,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `session_start` awaits Pi's provider-scoped `getAvailable(provider.id)` in parallel for the visible providers, sharing
   one 15 s deadline like Pi's model selector; on timeout or error the snapshot is used; without a choice nothing waits.
   Reason: Pi can discard a whole-runtime availability pass superseded by a background refresh, and `pi.setModel` checks
-  that snapshot's configured-auth state first. Carrier: `extensions/RQW-models/index.ts`; `test/models.test.ts` gates a
+  that snapshot's configured-auth state first. Carrier: `extensions/RQW-models/index.ts`; `test/extensions/RQW-models/models.test.ts` gates a
   superseding pass deterministically. Since: `230e8d0`.
 - **Independent module** `[D-MODELS-MODULE]`. `extensions/RQW-models/index.ts` imports only Pi and has its own
   `pi.extensions` entry; disable it in `pi config`, then `/reload`. It writes no settings and registers no tool; its
@@ -1512,7 +1516,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   context, refreshed on resume and reload, not a queued TUI snapshot. Movement stops at either end. Entry rule: from
   outside the list Shift+Up enters at the strongest available model and Shift+Down at the weakest.
   Owner: «Надо вернуть старое управление моделями: Shift + Вверх/Вниз будет смена модели, Shift + Вверх — к более сильным, Shift + Вниз — к более слабым. А Shift + Влево/Вправо — это будет смена ризенинга, так же, как и раньше это было в ОМП.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 2361)
-  Carrier: `extensions/RQW-models/index.ts`. Proof: `test/models.test.ts` (key bytes through Pi's matcher, direction,
+  Carrier: `extensions/RQW-models/index.ts`. Proof: `test/extensions/RQW-models/models.test.ts` (key bytes through Pi's matcher, direction,
   limits). Since: `ac33dcc`.
 - **`/rqw-models`** `[D-MODELS-COMMAND]`. The extension's authenticated listed-model picker via `ctx.ui.select`. Pi's
   built-in model shortcuts stay reserved and are emptied, not replaced; Shift+Tab and provider definitions stay stock. In
@@ -1544,7 +1548,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   no suffix is parsed again. Without an explicit model, `--thinking` applies through Pi's native clamping, else medium.
   CLI overrides apply to `/new` too; no defaults are persisted. An SDK host must pass reason `resume` for an empty
   restored session. Coordinator text (owner quote C:3113, an omp session, not found in the Pi sessions): "И базовая модель всегда при запуске — это Opus-Medium. Это от провайдера не зависит". CLI precedence and resumed-session
-  preservation are coordinator choices (C:3123, C:3274). Proof: `test/models.test.ts`. Since: `071df1e`.
+  preservation are coordinator choices (C:3123, C:3274). Proof: `test/extensions/RQW-models/models.test.ts`. Since: `071df1e`.
 - **Harness effort lists** `[D-MODELS-EFFORT]`. `FAMILY_LEVELS` intersected with Pi's `getSupportedThinkingLevels`:
   Opus low, medium, high; Sonnet low, medium, high, xhigh; GPT-6.1 Sol, GPT-6 Sol, both Luna models and Haiku low,
   medium, high, xhigh, max. No minimal, no off. A model switch keeps the previous effort if allowed, else the nearest
@@ -1552,7 +1556,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   unlisted model (current only while no listed model is authenticated) keeps Pi-supported levels minus off and minimal.
   Owner: «Нет, ты не понял: уровни effort будут не те, что в стоковом выборе Pi, а те, что в нашем MyOMPHarness были. Там они были перенастроены кастомно. Допустим, у Opus были low, medium, high, у Sonnet были low, medium, high, extra high. Такие же должны быть, только без no reasoning.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 134)
   Carrier: `extensions/RQW-models/index.ts`. Source evidence: [notes/models-omp.md](notes/models-omp.md). Since: `0def125`.
-- **Model tests** `[D-MODELS-TESTS]`. `extensions/RQW-models/test/models.test.ts`, faux only: standalone loading and
+- **Model tests** `[D-MODELS-TESTS]`. `test/extensions/RQW-models/models.test.ts`, faux only: standalone loading and
   disabling, real SDK sessions, model/thinking changes, history restore and reload, no persisted defaults, CLI flags
   (also through Pi's CLI bundle), missing Anthropic auth, the listed-models rule, a provider `filterModels` dropping a
   family, a pending startup availability pass, a subagent-style session, rapid snapshot contexts and reasoning queued
@@ -1560,7 +1564,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   are negative cases. `test/anthropic-models.test.ts` switches RQW-models and RQW-anthropic off in turn. This is parser
   testing, not manual terminal testing. CI runs on macOS and Windows (`tests.yml`); Linux is out of scope. Historical
   local reports: [decisions evidence](notes/decisions-evidence.md#models-reports). Since: `e6c21e2`.
-- **CI auth fixture** `[D-MODELS-CI-FIXTURE]`. `test/models.test.ts` seeds `models.json` with
+- **CI auth fixture** `[D-MODELS-CI-FIXTURE]`. `test/extensions/RQW-models/models.test.ts` seeds `models.json` with
   `providers.openai-codex.apiKey: faux-only` before spawning Pi, so the no-Opus-auth fallback test has a deterministic
   initial model on Pi 1.4.0 (native-provider registration refreshes availability asynchronously while `findInitialModel`
   reads the synchronous snapshot). Fixture auth only, no production change. Investigation and numbers:
@@ -1672,8 +1676,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner: «Мне нравится вариант Fork 2, только надо решетку сделать: fork #2, и все»
   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entries at physical lines 4044, 4049 and 4090.
   Reason: use the owner's chosen English marker without changing its placement or rendering rules.
-  Carrier: `placeRow` in `extensions/RQW-statusbar/render.ts`; proof: `extensions/RQW-statusbar/test/chrome.test.ts`,
-  `extensions/RQW-statusbar/test/lifecycle.test.ts`; contract: `notes/statusbar-omp.md`. Since: `21179e1`.
+  Carrier: `placeRow` in `extensions/RQW-statusbar/render.ts`; proof: `test/extensions/RQW-statusbar/chrome.test.ts`,
+  `test/extensions/RQW-statusbar/lifecycle.test.ts`; contract: `notes/statusbar-omp.md`. Since: `21179e1`.
 
 ## Anthropic package integration
 
@@ -1711,7 +1715,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Limits** `[D-SCROLL-LIMITS]`. A custom editor not extending `CustomEditor` gets stock Escape. With search open, the
   first Escape closes search and the second jumps. The keybinding registry is process-global; the facade follows its
   owning interactive renderer. Since: `72873eb`.
-- **Proof** `[D-SCROLL-TESTS]`. `extensions/RQW-scroll/test/scroll.test.ts` (in `npm test`) with Pi's real renderers and
+- **Proof** `[D-SCROLL-TESTS]`. `test/extensions/RQW-scroll/scroll.test.ts` (in `npm test`) with Pi's real renderers and
   proxy, chat viewport, `CustomEditor`, `ExtensionSelectorComponent`, overlay and search, loaded by Pi's resource loader:
   scrolled up Escape jumps and is consumed, then interrupts; at the bottom it interrupts; Ctrl+End jumps; selector,
   overlay, autocomplete and search keep their Escape; inline mode, unloaded and after shutdown are stock; the hint lines
@@ -1731,7 +1735,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `ExtensionSelectorComponent` starts at index 0, so deletion needs Down then Enter. The deleted session is gone without a
   trash and a new empty session opens.
   Owner: «После remove сессия удаляется, но совсем, полностью без корзины, и сразу открывается новая пустая сессия, как ты предложил. Потом подтверждение удалению один раз. Просто на экране поднять визуально, как в кодексе открыть диалог с вопросом «да/нет?». Циферка один по дефолту — нет, по не дефолту — да. То есть циферка один — нет, циферка два — да. И мне, чтобы удалить, надо нажать стрелочку вниз и Enter. Это если у тебя есть SDK для того, чтобы такие диалоги открывать.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 203)
-  Carrier: `extensions/RQW-session/index.ts`, README. Proof: `test/session.test.ts` drives the real component.
+  Carrier: `extensions/RQW-session/index.ts`, README. Proof: `test/extensions/RQW-session/session.test.ts` drives the real component.
   Since: `db5ab64`.
 - **Deletion scope** `[D-SESSION-SCOPE]`. Coordinator-approved scope, not an owner quotation: delete the current JSONL
   plus referenced artifact files not referenced by other sessions, keeping user forks and shared artifacts. Only
@@ -1751,8 +1755,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   imports nothing from RQW-agent. A symlink, special entry or non-directory at the tree refuses removal before the session switch;
   descendant artifact references join the removal candidates, removed children do not count as sharing, and artifacts of surviving
   sessions stay. Descendants go before the parent JSONL, so a failure leaves the parent as marker. Reason: removal must not leave
-  orphan child histories. Carrier: `extensions/RQW-session/artifacts.ts` (`childTree`), `index.ts`; proof: `test/session.test.ts`. Since: `dd93a40`.
-- **Proof** `[D-SESSION-TESTS]`. `extensions/RQW-session/test/session.test.ts`: temp agent directories, a stub clipboard,
+  orphan child histories. Carrier: `extensions/RQW-session/artifacts.ts` (`childTree`), `index.ts`; proof: `test/extensions/RQW-session/session.test.ts`. Since: `dd93a40`.
+- **Proof** `[D-SESSION-TESTS]`. `test/extensions/RQW-session/session.test.ts`: temp agent directories, a stub clipboard,
   refusal paths, artifact and fork preservation, path safety, a real Pi runtime replaced before its JSONL is deleted.
   Mechanics only, not VDI clipboard redirection, forensic erasure or remote deletion. Since: `db5ab64`.
 
@@ -1777,7 +1781,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Limits and proof** `[D-SENDNOW-LIMITS]`. Several queued messages go as one, joined by blank lines; images and custom
   messages in Pi's queue are dropped as with Escape; a steering input swallowed by another extension's `input` handler
   can leave the count stale until the queue empties. Proof: Pi's real `InteractiveMode` on a scripted terminal with a
-  faux streaming model, `extensions/RQW-send-now/test/send-now.test.ts`, in `npm test` on macOS and Windows CI.
+  faux streaming model, `test/extensions/RQW-send-now/send-now.test.ts`, in `npm test` on macOS and Windows CI.
   Since: `d1f8b16`.
 
 ## Providers
@@ -1787,7 +1791,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   question "Скрытие лишних провайдеров. Сейчас его делает расширение Anthropic. Если его выключить, скрытие пропадёт. a) Вынести скрытие в отдельное расширение": «1a 2a 3a 4a 5a 6b 7a 8a ответы по транспорту» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 2394). Carrier:
   `extensions/RQW-providers/index.ts`, after RQW-anthropic in `pi.extensions`; RQW-codex follows it. Since: `2bf5eac`.
 - **Visible providers** `[D-PROVIDERS-ALLOW]`. Only `anthropic` and legacy `openai-codex` are visible in login, pickers,
-  `--list-models` and scoped models (`ALLOWED`); Pi 1.4.0's `openai` ("Sign in with ChatGPT", `OPENAI_API_KEY`) stays hidden. Saved credentials stay; previously selected models and explicit SDK lookups are not erased; public `unregisterProvider` is not used because it restores builtins. The policy covers only a runtime with an owning session of this extension, so loading it alone or an unrelated runtime keeps Pi's lists. RQW-anthropic filters nothing; its `registration.ts` and `auth-boundary.ts` carry the conflict guard, credential-store binding and request auth boundary. Owner: «Смотри, в нашем Pi должен быть старый OpenAI кодекс и всё, блядь. Legacy, который через девайс. А новый OpenAI нахуй не нужен, блядь. Я не знаю, что там за глупость новый OpenAI. У нас должен быть вход именно такой же, как сейчас это работает в текущем OpenAI кодексе, и всё, больше никак.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 134) Coordinator text (owner quotes C:3171, an omp session, not found in the Pi sessions): "Это именно отключить"; "Когда мы заходим в логин, там должны быть только кодекс, авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё". Proof: `extensions/RQW-providers/test/providers.test.ts`. Since: `2bf5eac`.
+  `--list-models` and scoped models (`ALLOWED`); Pi 1.4.0's `openai` ("Sign in with ChatGPT", `OPENAI_API_KEY`) stays hidden. Saved credentials stay; previously selected models and explicit SDK lookups are not erased; public `unregisterProvider` is not used because it restores builtins. The policy covers only a runtime with an owning session of this extension, so loading it alone or an unrelated runtime keeps Pi's lists. RQW-anthropic filters nothing; its `registration.ts` and `auth-boundary.ts` carry the conflict guard, credential-store binding and request auth boundary. Owner: «Смотри, в нашем Pi должен быть старый OpenAI кодекс и всё, блядь. Legacy, который через девайс. А новый OpenAI нахуй не нужен, блядь. Я не знаю, что там за глупость новый OpenAI. У нас должен быть вход именно такой же, как сейчас это работает в текущем OpenAI кодексе, и всё, больше никак.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 134) Coordinator text (owner quotes C:3171, an omp session, not found in the Pi sessions): "Это именно отключить"; "Когда мы заходим в логин, там должны быть только кодекс, авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё". Proof: `test/extensions/RQW-providers/providers.test.ts`. Since: `2bf5eac`.
 - **Binding and order** `[D-PROVIDERS-BIND]`. Engineering choices: ownership comes from the patched
   `AgentSession._bindExtensionCore`, because Pi emits no event before `--list-models` and a bindingless `/reload` emits
   no `session_start`; liveness is read from Pi's extension API going stale; the patched `AgentSession.dispose` releases
@@ -1806,7 +1810,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner, keep grey and red, find analogues: «А когда запущено то, что было зелёное и фиолетовое, надо придумать им какие-то аналоги.» Source: `16-27-59:4544`.
   Owner, the choice: «По дизайню - бирюза сланец вибираю ответ C» Source: `16-27-59:4654`.
   Reason: option C of the comparison page gave the coolest pair with the least decoration; every text pair on the four cards meets WCAG AA 4.5:1 (minimum 4.56:1).
-  Carrier: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/test/schema.test.ts` (`approved-surfaces-exact`), `extensions/RQW-theme/README.md`. The theme is registered in `package.json` `pi.themes` ([Native theme](#native-theme)); the owner selects it once through `/settings` -> Theme.
+  Carrier: `extensions/RQW-theme/theme.json`, `test/extensions/RQW-theme/schema.test.ts` (`approved-surfaces-exact`), `extensions/RQW-theme/README.md`. The theme is registered in `package.json` `pi.themes` ([Native theme](#native-theme)); the owner selects it once through `/settings` -> Theme.
 
 ## Quality control
 
@@ -1925,11 +1929,11 @@ Owner transport answers (verbatim, `16-27-59:2394`): «1a 2a 3a 4a 5a 6b 7a 8a �
   - No native `compaction_trigger`, opaque compaction item or checkpoint entry is produced while Pi has no public native compaction hook. The six replacements of `AgentSession` compaction methods (`compact`, `_runAutoCompaction`, `_exceedsCompactionThreshold`, `_checkCompaction`, `_compactBeforeNextAssistantResponse`, `getContextUsage`) are removed, not kept beside it. Native V2 request building and checkpoint code, if it stays in the tree, is non-running source: not registered, not run, not an active behavior and not evidence of compaction parity.
   - Pi's own threshold, compaction animation, chat summary entry and `session_compact` events apply unchanged. RQW-context still owns the trigger: W = min(contextWindow, 500000), R = round(W/10), threshold W−R, existing explicit reserve precedence.
   - Portability: the session keeps every original physical entry, but after a compaction the active context is Pi's summary plus the kept tail, for Codex and, with RQW-codex disabled or another provider, for every model. The full original history is no longer replayed to other providers; stock Pi behavior replaces the earlier retained-history promise.
-  - Parity exception: Codex backend V2 compaction is not matched. The native fixture and oracle captures stay unchanged (ten provenance cases) and the oracle still runs the full native reference. The active adapter differential replays the transport and retry cases only (7); the three native compaction cases are no longer replayed against the adapter, and stock compaction is checked by `test/standard-compaction.test.ts` and `test/stock-compaction-history.test.ts` (see [Native differential checks](#native-differential-checks)).
+  - Parity exception: Codex backend V2 compaction is not matched. The native fixture and oracle captures stay unchanged (ten provenance cases) and the oracle still runs the full native reference. The active adapter differential replays the transport and retry cases only (7); the three native compaction cases are no longer replayed against the adapter, and stock compaction is checked by `test/extensions/RQW-codex/standard-compaction.test.ts` and `test/extensions/RQW-codex/stock-compaction-history.test.ts` (see [Native differential checks](#native-differential-checks)).
   - Reason: Pi 1.4.0 has no public native compaction hook. A public result is only `{cancel?, compaction?}`, the interactive `compaction_end` handler requires a Pi `compaction` entry first in the context (`dist/modes/interactive/interactive-mode.js:2963-2966`, error `Completed compaction is missing from the session context`, which the former hook triggered), and Pi has no public way to take an effective wire token count: coordinator probes of 2026-10-24 show repeated compaction and a physical estimate of 64 109 tokens against a threshold of 18 000 after a native-style compaction (temporary logs `/tmp/codex-public-compaction-probe.log`, `/tmp/codex-option-p-probe.log`, outside the repository; a stock simulation with a fake summary transport, not an RQW-codex integration run). An upstream request for a public native compaction and context-accounting hook exists only as the unfiled draft `/Users/arkadijcukavin/ai-project/my-pi-evidence/codex-parity/PI-NATIVE-COMPACTION-ISSUE-DRAFT.md`.
   - Not claimed: RQW-codex is not fully on public Pi API. Lifecycle, auth and prompt seams still use private Pi internals; migrating them is the separate backlog task [CODEX-PUBLIC-INTERNALS](BACKLOG.md#codex-public-internals), not part of this decision.
   - Carriers under `extensions/RQW-codex/`: `session-compaction.ts` (the public `session_before_compact` handler that prepares the auxiliary transport and payload callbacks, and the `session_compact` handler that resets state; the summary is Pi's own), `registration.ts` (routing of Pi's summary request to the direct transport only during an active Pi compaction), `session.ts` (`afterPiCompaction`: drop prepared work and refresh the owned state when a new Pi compaction entry appears), `history.ts`, `session-history.ts` and `portable-history.ts` (native wire state retired at a persisted Pi compaction boundary), `README.md`; RQW-context stays the threshold owner. Supersedes `[D-CODEX-COMPACTION]` and `[D-CODEX-HISTORY]` (archived verbatim as A-0259 and A-0260 in `DECISIONS-ARCHIVE.md`), the compaction parts of the native differential paragraph (A-0261) and the former ledger row (A-0262).
-- **Offline capabilities** `[D-CODEX-OFFLINE]`. Owner answer (verbatim) «1а 2б» (user message `92037bbf`, physical JSONL line 2414 of the same external session). Coordinator option 2b summary, not an owner quotation: use only the pinned model list, without server discovery requests. No `/models` discovery requests. Pin the 0.163.0 wire-capability records for our listed GPT models; unknown capability is a clear error, never guessed from a prefix. Pi/RQW model lists and picker stay authoritative. Reason: accepted 2b deliberately excludes this native startup network request. Carriers: `profile.ts`, `test/fixtures/stable-models.json`.
+- **Offline capabilities** `[D-CODEX-OFFLINE]`. Owner answer (verbatim) «1а 2б» (user message `92037bbf`, physical JSONL line 2414 of the same external session). Coordinator option 2b summary, not an owner quotation: use only the pinned model list, without server discovery requests. No `/models` discovery requests. Pin the 0.163.0 wire-capability records for our listed GPT models; unknown capability is a clear error, never guessed from a prefix. Pi/RQW model lists and picker stay authoritative. Reason: accepted 2b deliberately excludes this native startup network request. Carriers: `profile.ts`, `test/extensions/RQW-codex/fixtures/stable-models.json`.
 - **Ownership/coexistence** `[D-CODEX-OWNERSHIP]`. Provider hiding lives in the independently switchable `extensions/RQW-providers`, not in Anthropic or Codex transport registration. RQW-providers remains extension 14; RQW-codex is extension 15 immediately after it in `pi.extensions`. RQW-settings alone owns `/fast-gpt`, default off, priority through final payload hooks; child inheritance/overrides, including reviewer profiles, remain in RQW-agent. Children share native root cache affinity but never socket continuation, sticky turn state or opaque history. Reason: accepted 7a and extension isolation. Carriers: RQW-codex registration/lifecycle, optional `rqw-codex:session-policy` event in child factories; existing Fast owners unchanged.
 
 ### macOS oracle fixture
@@ -1938,13 +1942,13 @@ Coordinator technical decision, not an owner quotation: adapt only the temporary
 
 The pinned retry fixture holds a bound socket without listening until recovery. On the CI macOS runner this stalls TCP connection establishment instead of producing the connection refusal the test needs. The [one-shot native connect evidence](https://github.com/ARQAWA/my-pi/actions/runs/39951670171) records both raw TCP and direct HTTP pending beyond 12 seconds while held, then `ConnectionRefused` with errno 61 immediately after release; the listening control succeeds. This establishes the socket-state cause behind the coordinator's fixture-only technical decision, not a subscription transport change or broader owner permission to modify native tests.
 
-Only the temporary `core/tests/suite/retry_after.rs` copy on `darwin` is adapted. Its pinned preimage SHA-256 `2437e45336c5d3e811158aeb43963992860499cc1e9e66b939ad223d9e4d12af` and exact-once anchors are checked. Release the unavailable socket immediately after reading its address; at recovery create a fresh `TcpSocket`, bind that same address and retain the existing `listen(128)`. Native assertions, retry counts, delays and timeouts are unchanged. Other platforms and original source checkouts remain unchanged. Address reuse fails explicitly rather than choosing another port. Carriers: `extensions/RQW-codex/scripts/capture-oracle.mjs`, `extensions/RQW-codex/test/oracle-harness.test.ts`; `run.json` declares `adaptedFixtures` with identity, platform, reason, source/adapted hashes and the evidence URL, checked by `checkOutput`. Diagnostic success is not full oracle acceptance; the corrected case is verified inside the normal full oracle run on the final head.
+Only the temporary `core/tests/suite/retry_after.rs` copy on `darwin` is adapted. Its pinned preimage SHA-256 `2437e45336c5d3e811158aeb43963992860499cc1e9e66b939ad223d9e4d12af` and exact-once anchors are checked. Release the unavailable socket immediately after reading its address; at recovery create a fresh `TcpSocket`, bind that same address and retain the existing `listen(128)`. Native assertions, retry counts, delays and timeouts are unchanged. Other platforms and original source checkouts remain unchanged. Address reuse fails explicitly rather than choosing another port. Carriers: `extensions/RQW-codex/scripts/capture-oracle.mjs`, `test/extensions/RQW-codex/oracle-harness.test.ts`; `run.json` declares `adaptedFixtures` with identity, platform, reason, source/adapted hashes and the evidence URL, checked by `checkOutput`. Diagnostic success is not full oracle acceptance; the corrected case is verified inside the normal full oracle run on the final head.
 
 ### Native differential checks
 
-Coordinator technical implementation, not an owner quotation: replay pinned native responses through the real RQW-codex extension in a Pi `AgentSession` and compare the adapter's ordered request projection with the native capture projection. Reason: native oracle success alone does not establish adapter parity. `test/fixtures/native-differential.json` pins [normal oracle run 39956439677](https://github.com/ARQAWA/my-pi/actions/runs/39956439677), my-pi head `fe3e9ec554070811a76eb5403934b753825e67df`, with 10 cases: transport 4, retry 3, compaction 3. The shared projection checks transport/endpoint, turn state, request kind, turn grouping, retry-body identity and conversation replay; selected cases also compare content encoding. Since `[D-CODEX-SIMPLE-COMPACTION]` the fixture, the pin script and the oracle workflow are unchanged, and the oracle still runs the full native reference with all ten cases. The active adapter test `test/native-differential.test.ts` replays the transport and retry cases only (7); the three compaction cases stay in the fixture as provenance of the native mechanism, which the adapter no longer runs, and are not replayed against it. The adapter's stock compaction is covered by `test/standard-compaction.test.ts` and `test/stock-compaction-history.test.ts`.
+Coordinator technical implementation, not an owner quotation: replay pinned native responses through the real RQW-codex extension in a Pi `AgentSession` and compare the adapter's ordered request projection with the native capture projection. Reason: native oracle success alone does not establish adapter parity. `test/extensions/RQW-codex/fixtures/native-differential.json` pins [normal oracle run 39956439677](https://github.com/ARQAWA/my-pi/actions/runs/39956439677), my-pi head `fe3e9ec554070811a76eb5403934b753825e67df`, with 10 cases: transport 4, retry 3, compaction 3. The shared projection checks transport/endpoint, turn state, request kind, turn grouping, retry-body identity and conversation replay; selected cases also compare content encoding. Since `[D-CODEX-SIMPLE-COMPACTION]` the fixture, the pin script and the oracle workflow are unchanged, and the oracle still runs the full native reference with all ten cases. The active adapter test `test/extensions/RQW-codex/native-differential.test.ts` replays the transport and retry cases only (7); the three compaction cases stay in the fixture as provenance of the native mechanism, which the adapter no longer runs, and are not replayed against it. The adapter's stock compaction is covered by `test/extensions/RQW-codex/standard-compaction.test.ts` and `test/extensions/RQW-codex/stock-compaction-history.test.ts`.
 
-Carriers under `extensions/RQW-codex/`: `scripts/pin-native-differential.mjs`, `test/native-differential.mjs`, `test/native-differential.test.ts` and the fixture above. Normal `.github/workflows/codex-oracle.yml` runs regenerate the fixture projection and reject drift in the case list, cited source digests, scripted stimuli, native request projections and selected encodings. Capture hashes retain baseline provenance; per-run UUIDs and timestamps are not required to match. Replay uses injected network seams and fake credentials. Source-backed `Retry-After` sleeps are compared with a deterministic clock rather than elapsed wall time; explicit fallback cases check upgrade order/count, and the drift contract includes all stable replay configuration fields. Actual WebSocket frame replay is not covered, nor is live subscription acceptance; the baseline native run is not a claim that the new differential checks have already passed CI.
+Carriers: `extensions/RQW-codex/scripts/pin-native-differential.mjs`, `test/extensions/RQW-codex/native-differential.mjs`, `test/extensions/RQW-codex/native-differential.test.ts` and the fixture above. Normal `.github/workflows/codex-oracle.yml` runs regenerate the fixture projection and reject drift in the case list, cited source digests, scripted stimuli, native request projections and selected encodings. Capture hashes retain baseline provenance; per-run UUIDs and timestamps are not required to match. Replay uses injected network seams and fake credentials. Source-backed `Retry-After` sleeps are compared with a deterministic clock rather than elapsed wall time; explicit fallback cases check upgrade order/count, and the drift contract includes all stable replay configuration fields. Actual WebSocket frame replay is not covered, nor is live subscription acceptance; the baseline native run is not a claim that the new differential checks have already passed CI.
 
 ### Codex exception ledger
 

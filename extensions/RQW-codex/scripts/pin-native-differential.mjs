@@ -15,10 +15,10 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { PIN_COMMIT, PIN_RELEASE } from './capture-oracle.mjs';
-import { projectSequence } from '../test/native-differential.mjs';
+import { projectSequence } from '../../../test/extensions/RQW-codex/native-differential.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const DEFAULT_OUT = resolve(here, '../test/fixtures/native-differential.json');
+export const DEFAULT_OUT = resolve(here, '../../../test/extensions/RQW-codex/fixtures/native-differential.json');
 
 // expectedSleeps: half-open [min, max) ranges in ms, one per retry wait, in order (native `min..max` bounds).
 const overloaded = (code) => ({ status: 503, headers: { 'retry-after': '1', 'content-type': 'application/json' }, body: JSON.stringify({ error: { code } }) });

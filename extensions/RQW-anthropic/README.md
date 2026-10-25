@@ -78,7 +78,7 @@ or (for explicit-mode models) 30m, subject to model compatibility and ChatGPT-si
 `openai-codex-responses` does not read that env for retention; only explicit option `none` removes its session
 cache key. Neither provider is changed by this adapter's request-local Anthropic default.
 
-Proof: `test/cache.test.ts` uses fake OAuth, real Pi SDK/library and CLI-bundle sessions, captured payloads and fake
+Proof: `test/extensions/RQW-anthropic/cache.test.ts` uses fake OAuth, real Pi SDK/library and CLI-bundle sessions, captured payloads and fake
 timers. It covers 1h TTL, no warm at 4m30s, generic shared-runtime children, explicit preferences, API keys and disable/reload.
 Package `test/prompt-cache.test.ts` exercises actual RQW-agent and RQW-review sessions: 5m markers, main 1h,
 adapter on/off, and a conflicting `PI_CACHE_RETENTION=long`, in the library and CLI-bundle SDKs.
@@ -143,5 +143,5 @@ Research, mechanisms and risks: `notes/anthropic-adapter.md`. TTL evidence and t
 Tests: `npm test`, using fake credentials and mock fetch only. No live OAuth or model calls.
 The unsupported co-load regression uses a portable competing-registration fixture with a temporary home and
 `PI_OFFLINE=1`; it expects native diagnostics, not a mandatory early-fatal policy.
-Targeted `bun test extensions/RQW-anthropic/test/` still runs library, transport and lifecycle tests on Bun 1.3.14;
+Targeted `bun test test/extensions/RQW-anthropic/` still runs library, transport and lifecycle tests on Bun 1.3.14;
 only bundle-dependent tests explicitly skip its known stock Pi npm-bundle import failure. Other import errors fail.

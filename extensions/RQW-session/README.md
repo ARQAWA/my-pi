@@ -66,7 +66,7 @@ extensions. Package isolation discovers this extension from `package.json`; its 
 a stub clipboard, real Pi runtime replacement and no live models. Run:
 
 ```sh
-node --test extensions/RQW-session/test/session.test.ts
+node --test test/extensions/RQW-session/session.test.ts
 npm test
 ```
 

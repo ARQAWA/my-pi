@@ -12,7 +12,7 @@ Only web.run is available. Only search_query, open, click and find may be execut
 Omit unused parameters. Use at most four search_query entries per call; four require medium or long response_length.`;
 
 // Reserved web.run requires the complete official declaration, even though execution stays text-only.
-// Source and generation details: web-THIRD-PARTY-NOTICES.md and ../test/web-schema-provenance.json.
+// Source and generation details: web-THIRD-PARTY-NOTICES.md and ../../../test/extensions/RQW-web/web-schema-provenance.json.
 export const WEB_TOOLS = JSON.parse(readFileSync(new URL("./web-native-tools.json", import.meta.url), "utf8"));
 
 export function record(value: unknown): value is Record<string, unknown> {

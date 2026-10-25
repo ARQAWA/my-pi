@@ -88,13 +88,17 @@ it("isolation: a swallowed external fetch is blocked and still fails the helper"
 
 describe("isolation: no extension reaches into another extension's folder", () => {
 	for (const name of NAMES) {
-		it(`${name}: every relative import, tests included, stays inside extensions/${name}/`, () => {
+		it(`${name}: every relative import, tests included, stays inside its extension or test tree`, () => {
 			const own = join(ROOT, "extensions", name) + sep;
+			const tests = join(ROOT, "test", "extensions", name) + sep;
 			const outside: string[] = [];
-			for (const file of files(own)) {
+			for (const file of [...files(own), ...files(tests)]) {
 				const text = readFileSync(file, "utf8");
 				for (const m of text.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)["'](\.{1,2}\/[^"']+)["']/g)) {
-					if (!resolve(dirname(file), m[1]).startsWith(own)) outside.push(`${file.slice(own.length)} -> ${m[1]}`);
+					const target = resolve(dirname(file), m[1]);
+					const testTooling = file.startsWith(tests) || file.startsWith(join(own, "scripts") + sep);
+					const allowed = target.startsWith(own) || (testTooling && target.startsWith(tests));
+					if (!allowed) outside.push(`${file.slice(ROOT.length + 1)} -> ${m[1]}`);
 				}
 			}
 			assert.deepEqual(outside, []);

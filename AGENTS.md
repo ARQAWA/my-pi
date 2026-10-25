@@ -82,14 +82,14 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   footer when off. Its upper input border shows the gold session title at the left and session ID at the right.
   Activity is a separate line above it, with a one-space left gap and blank lines above and below, absent idle.
   Busy letters shimmer silver; compaction shimmers gold over the title.
-  Elements, evidence and limits: `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
+  Elements, evidence and limits: `notes/statusbar-omp.md`. Tests and deterministic renders: `test/extensions/RQW-statusbar/`, included in `npm test`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
   Shift+arrows open a model/effort draft chooser and take the first step before rendering: Up/Down stronger/weaker,
   Right/Left effort up/down. Plain or Shift arrows navigate; Enter commits once, Esc closes without setters.
   Two compact wheel columns use supplied theme/thinking roles. Commit uses public Pi APIs, not an atomic request lock;
   scope and limitation: [RQW-models README](extensions/RQW-models/README.md). `/rqw-models` and stock picker restrictions stay.
   Only listed models can be selected or requested; Pi's stock model lists are empty (`DECISIONS.md` Models, owner quotes/carriers).
-  Disable separately in `pi config`. Tests: `extensions/RQW-models/test/`, `test/model-effort-picker.test.ts`, `npm test`.
+  Disable separately in `pi config`. Tests: `test/extensions/RQW-models/`, `test/model-effort-picker.test.ts`, `npm test`.
 - `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery, nothing else (no
   provider hiding: that is extension 14). Toggle, migration and limits:
   `extensions/RQW-anthropic/README.md`; research: `notes/anthropic-adapter.md`. Tests use fake credentials: `npm test`.
@@ -118,7 +118,7 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   the optional `rqw-search:subagent-web` offer on `pi.events`. Large normalized results use ordinary OS temporary files
   with an exact continuation. Description teaches batching, evidence, sources and untrusted web text.
   Contract: [RQW-web README](extensions/RQW-web/README.md), [Web search decision](DECISIONS.md#web-search).
-  Tests: `extensions/RQW-web/test/`, `test/web-subagents.test.ts`.
+  Tests: `test/extensions/RQW-web/`, `test/web-subagents.test.ts`.
 - Quality control loop: scheduled full regression on `main` (`tests.yml` every 2 h, `pcli.yml` daily), failures kept as
   `qa-inbox` issues, a failures-only mail digest, and triage and test-integrity rules. Rules: `PROCESS.md` section
   Quality control loop; decisions: `DECISIONS.md` section Quality control. Parts below.
@@ -142,23 +142,23 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   the whole `system` ([PROCESS.md](PROCESS.md#task-pipeline)).
 - `extensions/RQW-thinking/`: extension 16, hides main-transcript thinking text and the hidden-thinking label,
   without changing stored messages or model context. Native blank rows remain. Independent package filter and
-  `/reload`; tests: `extensions/RQW-thinking/test/`.
+  `/reload`; tests: `test/extensions/RQW-thinking/`.
 - `extensions/RQW-naming/`: extension 17, background native session names after first input and each successful
   compaction, from all available context. Ten candidates, semantic auto-selection by `anthropic/claude-haiku-5-5`,
   else authenticated `openai-codex/gpt-6-luna`, at the lowest supported reasoning. At most four words and 32 Unicode
   code points, overlong names rejected, never truncated; initial attempt plus up to three retries, then a warning
   preserving the old name. `/rename-gen` regenerates; native
   `/name` stays unchanged. RQW-statusbar displays the native name in the top input border, gold and shimmering during compaction.
-  Details: [Naming and thinking](DECISIONS.md#naming-and-thinking); tests: `extensions/RQW-naming/test/`.
+  Details: [Naming and thinking](DECISIONS.md#naming-and-thinking); tests: `test/extensions/RQW-naming/`.
 - `extensions/RQW-agent-ui/`: extension 18, compact delivered result cards for `agent`, including reviewer profiles,
   and for delivered `child_wait` results, full originals
   through Ctrl+O. Loaded before tool-ui. With both loaded, a collapsed wait result is tool-ui's (`Waited for N agents`,
   live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards; with tool-ui off, agent-ui shows its
   collapsed wait cards. No activity-count producer, statusbar indicator or agent list here.
-  Tests: `extensions/RQW-agent-ui/test/`; independent package filter and `/reload`.
+  Tests: `test/extensions/RQW-agent-ui/`; independent package filter and `/reload`.
 - `extensions/RQW-tool-ui/`: extension 19, between-answer tool summaries, current call header plus last four output
   rows and status, immediate folding on answer text, Ctrl+O originals. Native thinking spacing and stock image output
-  remain. Details: [Compact tool display](DECISIONS.md#compact-tool-display); tests: its `test/` and root
+  remain. Details: [Compact tool display](DECISIONS.md#compact-tool-display); tests: `test/extensions/RQW-tool-ui/` and root
   `test/tool-ui-smoke.test.ts`. Independent package filter and `/reload`.
 - `extensions/RQW-theme/theme.json`: native theme resource named `RQW-theme`, registered only in `pi.themes`, not
   an extension. Select once through `/settings` -> Theme; Pi persists the choice across reload and restart.

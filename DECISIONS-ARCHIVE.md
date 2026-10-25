@@ -5718,6 +5718,14 @@ Archived by: context-simplify delivery; exact commit: `git log -S'A-0324' -- DEC
 >   Coordinator text. Reason: physical limits must not leak across concurrent operations or alter native selection identity.
 >   Carrier: `extensions/RQW-context/index.ts` (`wrapAgentState`, `wrapRouting`, `wrapCompactionSettings`, `reserveIntents`); details: `notes/context-questions.md`. Since: `6eb01a7`.
 
+## A-0327 · archived 2026-10-25 · Isolation · Tests beside extension code
+
+Status: SUPERSEDED by `[D-STRUCT-TEST-LAYOUT]` and `[D-ISOLATION-SELF-CONTAINED]` in DECISIONS.md.
+Source: `0521318:DECISIONS.md`, first paragraph of the isolation entry, verbatim.
+Archived by: `test-layout-move`; exact commit: `git log -S'A-0327' -- DECISIONS-ARCHIVE.md`.
+
+> - **Self-contained extensions** `[D-ISOLATION-SELF-CONTAINED]`. Each RQW extension is independently switchable and imports no file outside its folder, including in local tests. Shared helpers are copied: both `selection.ts` copies are 127 lines, and Fast event-channel constants are repeated in three extension-local files. Extension-local tests load only that extension; multi-extension tests live under root `test/`. Disabling an extension removes its owned behavior; process-wide Context and PCLI hooks stay active while any owner remains.
+
 
 ## Archived 2026-10-25 · Work policy · Temporary GPT-only development subagents
 
