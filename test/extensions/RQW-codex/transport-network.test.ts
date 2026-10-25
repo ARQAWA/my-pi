@@ -83,7 +83,7 @@ type Loopback = {
 	close(): Promise<void>;
 };
 
-async function startLoopback(closeAfterCreated = false): Promise<Loopback> {
+async function startLoopback(closeAfterCreated = false, errors: (Frame | undefined)[] = []): Promise<Loopback> {
 	const wss = new WebSocketServer({ host: "127.0.0.1", port: 0, path: "/backend-api/codex/responses", perMessageDeflate: true });
 	await new Promise<void>((resolve) => wss.on("listening", () => resolve()));
 	const port = (wss.address() as AddressInfo).port;
@@ -133,6 +133,11 @@ async function startLoopback(closeAfterCreated = false): Promise<Loopback> {
 				ws.close();
 				return;
 			}
+			const error = errors[requests.length - 1];
+			if (error !== undefined) {
+				send(error);
+				return;
+			}
 			if (loop.hangNext) {
 				loop.hangNext = false;
 				return;
@@ -156,6 +161,10 @@ async function startLoopback(closeAfterCreated = false): Promise<Loopback> {
 
 function completed(id: string) {
 	return { id, status: "completed", usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } };
+}
+
+function wrappedError(status: number, field: "status" | "status_code" = "status_code"): Frame {
+	return { type: "error", [field]: status, error: { code: "server_error", message: "fake upstream failure" } };
 }
 
 describe("owned WebSocket reuse over a real loopback server", () => {
@@ -243,6 +252,164 @@ describe("owned WebSocket reuse over a real loopback server", () => {
 			await loop.close();
 		}
 	});
+});
+
+it("established WebSocket status_code 401 uses bounded reload then refresh recovery", { timeout: 15000 }, async () => {
+	const initial = fakeAccess();
+	const refreshed = `${fakeAccess()}-refreshed`;
+	const loop = await startLoopback(false, [wrappedError(401), wrappedError(401, "status")]);
+	const store = await seededStore(initial);
+	let refreshes = 0;
+	let sseCalls = 0;
+	const sleeps: number[] = [];
+	const transport = new CodexThreadTransport({
+		identity: IDENTITY,
+		store,
+		dependencies: {
+			random: () => 0.5,
+			sleep: async (ms) => { sleeps.push(ms); },
+			connect: (options) => connect({ ...options, url: loop.url }),
+			fetch: async () => {
+				refreshes++;
+				return Response.json({ access_token: refreshed, refresh_token: "refresh-2", expires_in: 3600 });
+			},
+			postEvents: (() => {
+				sseCalls++;
+				throw new Error("SSE fallback must not run");
+			}) as any,
+		},
+	});
+	try {
+		const events = await collectTypes(transport.stream(MODEL, USER_1));
+		assert.equal(events.at(-1), "done");
+		assert.equal(loop.requests.length, 3);
+		assert.equal(loop.handshakes.length, 3);
+		assert.equal(refreshes, 1);
+		assert.equal(sseCalls, 0);
+		assert.deepEqual(sleeps, []);
+		assert.deepEqual(loop.handshakes.map(({ authorization }) => authorization), [
+			`Bearer ${initial}`,
+			`Bearer ${initial}`,
+			`Bearer ${refreshed}`,
+		]);
+		assert.equal(((await store.read("openai-codex")) as any).access, refreshed);
+	} finally {
+		transport.dispose();
+		await loop.close();
+	}
+});
+
+it("established WebSocket status_code 401 stops after a failed bounded refresh", { timeout: 15000 }, async () => {
+	const initial = fakeAccess();
+	const loop = await startLoopback(false, [wrappedError(401), wrappedError(401)]);
+	const store = await seededStore(initial);
+	let refreshes = 0;
+	let sseCalls = 0;
+	const sleeps: number[] = [];
+	const transport = new CodexThreadTransport({
+		identity: IDENTITY,
+		store,
+		dependencies: {
+			random: () => 0.5,
+			sleep: async (ms) => { sleeps.push(ms); },
+			connect: (options) => connect({ ...options, url: loop.url }),
+			fetch: async () => {
+				refreshes++;
+				return Response.json({ error: { code: "refresh_token_invalidated" } }, { status: 401 });
+			},
+			postEvents: (() => {
+				sseCalls++;
+				throw new Error("SSE fallback must not run");
+			}) as any,
+		},
+	});
+	try {
+		const events = await collectEvents(transport.stream(MODEL, USER_1));
+		const terminal = events.at(-1);
+		assert.equal(terminal.type, "error");
+		assert.match(terminal.error.errorMessage, /refresh token was revoked/);
+		assert.equal(loop.requests.length, 2, "reload allows one retry; failed refresh allows no third request");
+		assert.equal(refreshes, 1);
+		assert.equal(sseCalls, 0);
+		assert.deepEqual(sleeps, []);
+		assert.equal(((await store.read("openai-codex")) as any).access, initial);
+	} finally {
+		transport.dispose();
+		await loop.close();
+	}
+});
+
+it("established WebSocket status_code 500 keeps five stream retries then SSE fallback", { timeout: 15000 }, async () => {
+	const loop = await startLoopback(false, Array.from({ length: 6 }, () => wrappedError(500)));
+	let refreshes = 0;
+	let sseCalls = 0;
+	const sleeps: number[] = [];
+	const transport = new CodexThreadTransport({
+		identity: IDENTITY,
+		store: await seededStore(fakeAccess()),
+		dependencies: {
+			random: () => 0.5,
+			sleep: async (ms) => { sleeps.push(ms); },
+			connect: (options) => connect({ ...options, url: loop.url }),
+			fetch: async () => {
+				refreshes++;
+				throw new Error("non-401 must not refresh");
+			},
+			postEvents: (options) => (async function* () {
+				sseCalls++;
+				options.onResponse({ status: 200, headers: {} });
+				const value = { type: "response.completed", response: completed("resp_sse") };
+				yield { text: JSON.stringify(value), value };
+			})(),
+		},
+	});
+	try {
+		const events = await collectTypes(transport.stream(MODEL, USER_1));
+		assert.equal(events.at(-1), "done");
+		assert.equal(loop.requests.length, 6);
+		assert.equal(loop.handshakes.length, 6);
+		assert.equal(sseCalls, 1);
+		assert.equal(refreshes, 0);
+		assert.deepEqual(sleeps, [200, 400, 800, 1600, 3200]);
+	} finally {
+		transport.dispose();
+		await loop.close();
+	}
+});
+
+it("established WebSocket status_code 400 stays terminal without auth recovery or fallback", { timeout: 15000 }, async () => {
+	const loop = await startLoopback(false, [wrappedError(400)]);
+	let refreshes = 0;
+	let sseCalls = 0;
+	const sleeps: number[] = [];
+	const transport = new CodexThreadTransport({
+		identity: IDENTITY,
+		store: await seededStore(fakeAccess()),
+		dependencies: {
+			random: () => 0.5,
+			sleep: async (ms) => { sleeps.push(ms); },
+			connect: (options) => connect({ ...options, url: loop.url }),
+			fetch: async () => {
+				refreshes++;
+				throw new Error("non-401 must not refresh");
+			},
+			postEvents: (() => {
+				sseCalls++;
+				throw new Error("terminal non-401 must not fall back");
+			}) as any,
+		},
+	});
+	try {
+		const events = await collectEvents(transport.stream(MODEL, USER_1));
+		assert.equal(events.at(-1).type, "error");
+		assert.equal(loop.requests.length, 1);
+		assert.equal(refreshes, 0);
+		assert.equal(sseCalls, 0);
+		assert.deepEqual(sleeps, []);
+	} finally {
+		transport.dispose();
+		await loop.close();
+	}
 });
 
 it("real SocketError after response.created uses six WebSocket attempts then reaches SSE", { timeout: 15000 }, async () => {
