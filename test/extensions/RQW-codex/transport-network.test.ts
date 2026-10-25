@@ -83,7 +83,7 @@ type Loopback = {
 	close(): Promise<void>;
 };
 
-async function startLoopback(): Promise<Loopback> {
+async function startLoopback(closeAfterCreated = false): Promise<Loopback> {
 	const wss = new WebSocketServer({ host: "127.0.0.1", port: 0, path: "/backend-api/codex/responses", perMessageDeflate: true });
 	await new Promise<void>((resolve) => wss.on("listening", () => resolve()));
 	const port = (wss.address() as AddressInfo).port;
@@ -129,6 +129,10 @@ async function startLoopback(): Promise<Loopback> {
 			const id = `resp_${requests.length}`;
 			const send = (frame: Frame) => ws.send(JSON.stringify(frame));
 			send({ type: "response.created", response: { id } });
+			if (closeAfterCreated) {
+				ws.close();
+				return;
+			}
 			if (loop.hangNext) {
 				loop.hangNext = false;
 				return;
@@ -239,6 +243,52 @@ describe("owned WebSocket reuse over a real loopback server", () => {
 			await loop.close();
 		}
 	});
+});
+
+it("real SocketError after response.created uses six WebSocket attempts then reaches SSE", { timeout: 15000 }, async () => {
+	const loop = await startLoopback(true);
+	const controller = new AbortController();
+	const sleeps: number[] = [];
+	const createdIds: string[] = [];
+	let dials = 0;
+	let sseCalls = 0;
+	const transport = new CodexThreadTransport({
+		identity: IDENTITY,
+		store: await seededStore(fakeAccess()),
+		dependencies: {
+			random: () => 0.5,
+			sleep: async (ms) => { sleeps.push(ms); },
+			connect: (options) => {
+				if (++dials === 7) controller.abort();
+				return connect({ ...options, url: loop.url });
+			},
+			postEvents: (options) => (async function* () {
+				sseCalls++;
+				options.onResponse({ status: 200, headers: {} });
+				const value = { type: "response.completed", response: completed("resp_sse") };
+				yield { text: JSON.stringify(value), value };
+			})(),
+		},
+	});
+	try {
+		const events = await collectEvents(transport.stream(MODEL, USER_1, {
+			signal: controller.signal,
+			onProviderStreamEvent: (event: any) => {
+				if (event.type === "response.created") createdIds.push(event.response.id);
+			},
+		}));
+		assert.equal(events.at(-1)?.type, "done");
+		assert.equal(loop.handshakes.length, 6);
+		assert.equal(loop.requests.length, 6);
+		assert.deepEqual(createdIds, ["resp_1", "resp_2", "resp_3", "resp_4", "resp_5", "resp_6"]);
+		assert.equal(sseCalls, 1);
+		assert.equal(dials, 6);
+		assert.equal(transport.transport, "sse");
+		assert.deepEqual(sleeps, [200, 400, 800, 1600, 3200]);
+	} finally {
+		transport.dispose();
+		await loop.close();
+	}
 });
 
 async function collectTypes(stream: AsyncIterable<{ type: string }>): Promise<string[]> {
