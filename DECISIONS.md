@@ -2086,7 +2086,14 @@ The shipped independent `web` tool lives in `extensions/RQW-web/`; Contract: [RQ
   | `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | Same level |
   | `anthropic/claude-sonnet-5-5` | `gpt-6-sol` | Same level |
   | `anthropic/claude-opus-5-5` | `gpt-6.1-sol` | low -> low, medium -> high, high -> xhigh, above high -> max |
+  | `kimi-coding/*`, including future caller models | `gpt-6.1-sol` | low -> low, high -> medium, max -> high |
   | Unknown or missing model, including unknown GPT slug | `gpt-6.1-sol` | low |
+
+  Owner, current task session `web-kimi-sol-effort`, 2026-10-25: «Kimi `low` -> `openai-codex/gpt-6.1-sol` `low`.»
+  «Kimi `high` -> `openai-codex/gpt-6.1-sol` `medium`.» «Kimi `max` -> `openai-codex/gpt-6.1-sol` `high`.»
+  Reason: align Kimi caller reasoning with Sol 6.1 while retaining the existing web-only Codex subscription engine.
+  Owner clarification, same task session: «the mapping is by PROVIDER, not a hardcoded list of four model IDs.»
+  The mapping applies to every current or future `kimi-coding/*` caller; it changes neither the caller model nor session naming.
 
   Owner's fallback (`16-27-59:6331`, entry `e3aba5d4`): «если короче это модель не опознанная то всегда по дефолту 6.1 сол лоу юзать» Known callers with unsupported thinking fail explicitly; Claude `off` and `minimal` stay unmapped. Carrier: `extensions/RQW-web/core/model-map.ts`.
 - **Engine** `[D-WEB-ENGINE]`. The existing Codex CLI 0.164.0 source research selected the Responses Lite path `web.run -> POST alpha/search -> function_call_output -> sourced answer`, not hosted-only `web_search`. Each target has an ephemeral web-only loop, no Pi AgentSession, stored history, provider registration, prewarm or compaction. Pure transport/auth code is a minimal local snapshot with original path and commit headers; no import reaches another extension. The snapshot retains the existing 0.163.0 transport pin. Reason: preserve the researched subscription mechanism while keeping RQW-web independently switchable. Carrier: `extensions/RQW-web/core/`, `vendor/`.

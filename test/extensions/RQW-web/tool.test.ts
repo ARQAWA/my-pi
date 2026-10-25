@@ -57,8 +57,30 @@ describe("web tool", () => {
 		assert.equal(h.calls[1].responseLength, "long");
 	});
 
+	it("maps every Kimi caller level to the exact Sol 6.1 engine plan", async () => {
+		for (const id of ["kimi-for-coding", "kimi-for-coding-highspeed", "k3.1-pro", "k3.1-pro-highspeed", "future-arbitrary-model"]) {
+			for (const [thinking, effort] of Object.entries({ low: "low", high: "medium", max: "high" })) {
+				const h = harness(`kimi-coding/${id}`, thinking);
+				await h.call({ queries: ["query"] });
+				assert.equal(h.calls.length, 1);
+				assert.equal(h.calls[0].model, "gpt-6.1-sol", `${id}/${thinking}`);
+				assert.equal(h.calls[0].effort, effort, `${id}/${thinking}`);
+			}
+		}
+	});
+
+	it("rejects unsupported thinking for each recognized Kimi caller before engine work", async () => {
+		for (const id of ["kimi-for-coding", "kimi-for-coding-highspeed", "k3.1-pro", "k3.1-pro-highspeed", "future-arbitrary-model"]) {
+			for (const thinking of ["off", "minimal", "medium", "xhigh", "ultra", "invalid"]) {
+				const h = harness(`kimi-coding/${id}`, thinking);
+				await assert.rejects(h.call({ queries: ["query"] }), /Unsupported: Kimi thinking/);
+				assert.equal(h.calls.length, 0);
+			}
+		}
+	});
+
 	it("falls back for unknown GPT, other providers, unknown Claude and absent models", async () => {
-		for (const caller of ["openai-codex/gpt-future", "other/custom", "anthropic/claude-future", ""]) {
+		for (const caller of ["openai-codex/gpt-future", "other/custom", "anthropic/claude-future", "other/k3.1-pro", ""]) {
 			const h = harness(caller, "high");
 			await h.call({ queries: ["x"] });
 			assert.equal(h.calls[0].model, "gpt-6.1-sol", caller);
