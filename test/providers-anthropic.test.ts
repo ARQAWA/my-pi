@@ -97,7 +97,10 @@ describe("RQW-providers with RQW-anthropic", () => {
 		const alone = await session([ANTHROPIC]);
 		try {
 			assert.ok(alone.runtime.getRegisteredProviderConfig("anthropic"));
-			assert.ok(alone.runtime.getProviders().length > 2);
+			assert.ok(alone.runtime.getProviders().some(provider => provider.id === "openrouter"));
+			assert.ok(alone.runtime.getModels().some(model => model.provider === "openrouter"));
+			assert.ok(alone.runtime.getAvailableSnapshot().some(model => model.provider === "openrouter"));
+			assert.ok((await alone.runtime.getAvailable()).some(model => model.provider === "openrouter"));
 			assert.equal(alone.session.scopedModels.length, 0);
 		} finally { alone.session.dispose(); }
 		assert.deepEqual(slots(), native);
