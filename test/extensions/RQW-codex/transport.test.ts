@@ -189,6 +189,7 @@ test("SSE: onPayload runs once, Fast priority survives, bytes are zstd and carry
 	assert.equal(hookCalls, 1);
 	assert.equal(events.filter((e) => e.type === "done").length, 1);
 	assert.equal(events.at(-1)?.type, "done");
+	assert.deepEqual((events.at(-1) as any).message.content.map(({ type, text }: any) => ({ type, text })), [{ type: "text", text: "Hi" }], "successful completion still keeps its text");
 	const body = decodeBody(sse.calls[0].body);
 	assert.equal(body.service_tier, "priority");
 	assert.equal(body.store, false);
@@ -283,6 +284,106 @@ test("quota is terminal: one request, one error event with the safe quota messag
 	assert.equal(terminals[0].type, "error");
 	assert.match(String((terminals[0] as any).error.errorMessage), /Quota exceeded/);
 	assert.doesNotMatch(String((terminals[0] as any).error.errorMessage), /raw server text/);
+	assert.deepEqual((terminals[0] as any).error.content, [], "an error without completed output stays empty");
+	assert.equal((terminals[0] as any).error.diagnostics[0].type, "rqw_codex_retry_owned");
+});
+
+test("completed text survives a terminal error without turning the failure into success", async () => {
+	const events = textEvents("resp_terminal_text", "COMPLETED TEXT");
+	events[events.length - 1] = {
+		type: "response.failed",
+		response: { id: "resp_terminal_text", status: "failed", error: { code: "insufficient_quota", message: "raw server text must not leak", type: "x" } },
+	};
+	const sse = sseScript([{ events }]);
+	const timing = clockAndSleep();
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing.dependencies, connect: upgradeRequired, postEvents: sse.fn } });
+	const stream = await collect(transport.stream(MODEL, USER_1));
+	const terminal = stream.at(-1) as any;
+	assert.equal(terminal.type, "error");
+	assert.equal(terminal.error.stopReason, "error");
+	assert.deepEqual(terminal.error.content.map(({ type, text }: any) => ({ type, text })), [{ type: "text", text: "COMPLETED TEXT" }]);
+	assert.match(terminal.error.errorMessage, /Quota exceeded/);
+	assert.doesNotMatch(terminal.error.errorMessage, /raw server text/);
+	assert.equal(terminal.error.diagnostics[0].type, "rqw_codex_retry_owned");
+	assert.equal(terminal.error.responseId, "resp_terminal_text");
+	assert.equal(terminal.error.providerThinkingLevel, "medium");
+	assert.equal(sse.calls.length, 1);
+	assert.deepEqual(timing.sleeps, []);
+});
+
+test("completed text also survives when the native retry budget is already exhausted", async () => {
+	const events = textEvents("resp_retry_terminal_text", "COMPLETED TEXT");
+	events[events.length - 1] = {
+		type: "response.failed",
+		response: { id: "resp_retry_terminal_text", status: "failed", error: { code: "server_error", message: "temporary upstream failure" } },
+	};
+	const sse = sseScript([{ events }]);
+	const timing = clockAndSleep();
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing.dependencies, providerRetries: { streamMaxRetries: 0 }, connect: upgradeRequired, postEvents: sse.fn } });
+	const terminal = (await collect(transport.stream(MODEL, USER_1))).at(-1) as any;
+	assert.equal(terminal.type, "error");
+	assert.equal(terminal.error.stopReason, "error");
+	assert.deepEqual(terminal.error.content.map(({ type, text }: any) => ({ type, text })), [{ type: "text", text: "COMPLETED TEXT" }]);
+	assert.match(terminal.error.errorMessage, /stream disconnected before completion/);
+	assert.equal(terminal.error.diagnostics[0].type, "rqw_codex_retry_owned");
+	assert.equal(sse.calls.length, 1);
+	assert.deepEqual(timing.sleeps, []);
+});
+
+test("completed text survives a terminal auth recovery failure with the recovery error", async () => {
+	let posts = 0;
+	let refreshes = 0;
+	const postEvents = (options: any) => {
+		posts++;
+		return (async function* () {
+			options.onResponse({ status: 200, headers: {} });
+			if (posts === 1) {
+				for (const value of textEvents("resp_auth_terminal_text", "COMPLETED TEXT").slice(0, -1)) yield { text: JSON.stringify(value), value };
+			}
+			throw new SseError(401, {}, "request failed with HTTP 401", "status");
+		})();
+	};
+	const timing = clockAndSleep();
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing.dependencies, connect: upgradeRequired, postEvents, fetch: async () => {
+		refreshes++;
+		return Response.json({ error: { code: "refresh_token_invalidated" } }, { status: 401 });
+	} } });
+	const terminal = (await collect(transport.stream(MODEL, USER_1))).at(-1) as any;
+	assert.equal(terminal.type, "error");
+	assert.equal(terminal.error.stopReason, "error");
+	assert.deepEqual(terminal.error.content.map(({ type, text }: any) => ({ type, text })), [{ type: "text", text: "COMPLETED TEXT" }]);
+	assert.match(terminal.error.errorMessage, /refresh token was revoked/);
+	assert.equal(terminal.error.responseId, "resp_auth_terminal_text");
+	assert.equal(terminal.error.providerThinkingLevel, "medium");
+	assert.equal(terminal.error.diagnostics[0].type, "rqw_codex_retry_owned");
+	assert.equal(posts, 2, "reload and refresh each allow exactly one retry");
+	assert.equal(refreshes, 1);
+	assert.deepEqual(timing.sleeps, []);
+});
+
+test("completed text survives a local refusal on the attempt after a retry", async () => {
+	const failed = textEvents("resp_local_terminal_text", "COMPLETED TEXT");
+	failed[failed.length - 1] = {
+		type: "response.failed",
+		response: { id: "resp_local_terminal_text", status: "failed", error: { code: "server_error", message: "temporary upstream failure" } },
+	};
+	const sse = sseScript([{ events: failed }, { events: [] }]);
+	const timing = clockAndSleep();
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing.dependencies, connect: upgradeRequired, postEvents: sse.fn } });
+	let heads = 0;
+	const terminal = (await collect(transport.stream(MODEL, USER_1, { onResponse: () => {
+		heads++;
+		if (heads === 2) throw new Error("local secret must not leak");
+	} } as any))).at(-1) as any;
+	assert.equal(terminal.type, "error");
+	assert.equal(terminal.error.stopReason, "error");
+	assert.deepEqual(terminal.error.content.map(({ type, text }: any) => ({ type, text })), [{ type: "text", text: "COMPLETED TEXT" }]);
+	assert.equal(terminal.error.errorMessage, "RQW-codex: the onResponse hook failed. Request stopped.");
+	assert.equal(terminal.error.responseId, "resp_local_terminal_text");
+	assert.equal(terminal.error.providerThinkingLevel, "medium");
+	assert.equal(terminal.error.diagnostics, undefined, "a local refusal keeps its existing non-Codex metadata");
+	assert.equal(sse.calls.length, 2);
+	assert.deepEqual(timing.sleeps, [200]);
 });
 
 test("usage accounting: terminal failure after a retry counts each attempt exactly once", async () => {
