@@ -137,16 +137,23 @@ function sessionOf(ctx: ExtensionContext): AgentSession | undefined {
 
 function maskRuntime(runtime: ModelRuntime) {
 	const prototype = () => Object.getPrototypeOf(runtime) as ModelRuntime;
-	return lease(runtime, RUNTIME_MASK, () => override(runtime, {
-		// Stock /model, Ctrl+L, Ctrl+P, autocomplete, /scoped-models, /settings and RPC read this snapshot.
-		getAvailableSnapshot: { value: () => [], writable: true },
-		// Every request on this runtime, including in-process subagents and reviewers, passes here.
-		prepareRequest: { writable: true, value: async function(this: ModelRuntime, ...args: Parameters<ModelRuntime["prepareRequest"]>) {
-			const [model] = args;
-			if ((model.type ?? "chat") === "chat" && !isListed(model)) throw new Error(`RQW-models refused the request: ${notListed(model)}`);
-			return prototype().prepareRequest.apply(this, args);
-		} },
-	}));
+	return lease(runtime, RUNTIME_MASK, () => {
+		const restore = override(runtime, {
+			// Stock /model, Ctrl+L, Ctrl+P, autocomplete, /scoped-models, /settings and RPC read this snapshot.
+			getAvailableSnapshot: { value: () => [], writable: true },
+			// Every request on this runtime, including in-process subagents and reviewers, passes here.
+			prepareRequest: { writable: true, value: async function(this: ModelRuntime, ...args: Parameters<ModelRuntime["prepareRequest"]>) {
+				const [model] = args;
+				if ((model.type ?? "chat") === "chat" && !isListed(model)) throw new Error(`RQW-models refused the request: ${notListed(model)}`);
+				return prototype().prepareRequest.apply(this, args);
+			} },
+		});
+		return () => {
+			restore();
+			// The catalog has the same owners; the registering session's API may already be inactive.
+			runtime.unregisterProvider("kimi-coding");
+		};
+	});
 }
 
 function maskSession(session: AgentSession) {
@@ -387,6 +394,5 @@ export default function modelsExtension(pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		invalidateSession();
 		unbind();
-		pi.unregisterProvider("kimi-coding");
 	});
 }

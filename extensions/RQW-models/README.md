@@ -12,6 +12,8 @@ K2.7 Code Highspeed shows `high` as a visual label only, without selecting or se
 The other three Kimi models offer `low`, `high`, `max`. The two K3.1 models are registered through Pi's public
 provider API, preserving its built-in OAuth. Their cached output limit is `131072`; the official docs do not
 independently state a server output ceiling. Source details are recorded in the same decision.
+The Kimi catalog registration shares the runtime's existing owner count: disabling or disposing one session
+keeps it for the others; the last owner's shutdown or SDK dispose restores the built-in catalog and OAuth.
 
 ## Draft chooser
 
@@ -52,7 +54,8 @@ Shift+Tab and unrelated editor controls stay stock. The visual chooser is termin
 open it. It adds no setting or dependency and remains independently disableable through `pi config`, then `/reload`.
 
 The terminal sends Shift+arrow as `CSI 1;2A`..`D` (Kitty modified keys also work); no terminal setup is needed.
-Tests: `test/extensions/RQW-models/models.test.ts`, `test/extensions/RQW-models/picker.test.ts`; root `test/model-effort-picker.test.ts` drives Pi's actual
+Tests: `test/extensions/RQW-models/` includes two-session Kimi ownership through real SDK reload and dispose;
+root `test/model-effort-picker.test.ts` drives Pi's actual
 interactive input with the current RQW-prompt/statusbar hooks and scripted faux providers, without paid calls.
 The rendering tests cover widths 0..160. Run the focused files with Node's test runner; full platform coverage is CI.
 
