@@ -61,7 +61,7 @@ Audits and R11 are queued, but must not start yet.
 
 | ID | Work | Status/branch | Source |
 | --- | --- | --- | --- |
-| <a id="u13"></a>U13 | Real-Pi scripted faux-provider end-to-end tests for tool-ui, thinking hiding, activity indicator and cards; composition, load order and remaining physical-terminal appearance checks from U18. | ACTIVE P11/U13; branch `p11-ui-e2e-resumed`; registration and cards are delivered. Isolated tests do not prove composition. | Backlog U13/U18; handoff 30/49-50/100; completeness 55; UI execution brief P11 T19. |
+| <a id="u13"></a>U13 / U18 | Remaining physical-terminal appearance verification only: actual display/font rendering and perceived animation smoothness. Scripted real-Pi composition and load-order proof is in `test/ui-e2e.test.ts` and `test/ui-e2e.py`; PTY escape output is not a physical-display claim. | Physical checks NOT PERFORMED; no implementation branch. Automated P11/U13 scope is delivered; this does not resume unrelated held UI work. | Backlog U13/U18; handoff 30/49-50/100; completeness 55; UI execution brief P11 T19 and evidence limits G8; explicit P11 resumption. |
 | TASK-LIST-CLEANUP | Old task-list cleanup, without duplicating another agent's work. | ACTIVE in another agent; branch `task-list-revision-resumed`. | Owner current queue correction, 2026-10-25; original branch `task-list-revision` is not another queued task. |
 | <a id="r11"></a>R11 | Reviewer checking test code against requirements and test plan, including conversation collection; distinct from repository checks reviewers may already run. | NEAR QUEUE, NOT STARTED by owner current queue correction, 2026-10-25; no branch. Earlier hold source below is superseded for queue placement only. | Backlog R11; completeness 147; `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl:1602`. |
 | <a id="extension-audits"></a>EXTENSION-AUDITS | Full independent re-check of each listed implemented extension, one queued task each; criteria and simplest-first reference task list below. | QUEUED, NOT STARTED by owner current queue correction, 2026-10-25. After small near-ready merges, preserving remaining prerequisites below; fix tasks follow audits; auditor never fixes. | Owner `16-27-59:4864/4868/4872/4892`, entries `c7934716`, `6e47c19b`, `249fcb3b`, `40d49370`. |
@@ -157,8 +157,7 @@ Task-list cleanup is active in `task-list-revision-resumed`, as recorded above.
 Reviewer terminal parity is discarded, not a pending small merge.
 
 Blocked by: none beyond the prerequisites below.
-If explicitly resumed, New UI still includes the end-to-end tests U13. Small near-ready merges are the
-existing task branches named in the handoff, not permission to invent new work.
+Small near-ready merges are the existing task branches named in the handoff, not permission to invent new work.
 
 ### EXTENSION-AUDITS and every audit fix task
 
