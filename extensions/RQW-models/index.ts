@@ -375,7 +375,8 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		// CLI --model/--models, a saved default or a restored session may name a model outside the list.
 		const current = liveContext.model;
 		if (!current || isListed(current)) return;
-		const fallback = (await models())[0];
+		const authenticated = await models();
+		const fallback = authenticated.find((model) => FAMILIES[familyOf(model)] === "claude-opus-5-5") ?? authenticated[0];
 		if (!fallback || !(await setStartupModel(fallback))) {
 			warn(ctx, `${notListed(current)} No listed model is authenticated; its requests are refused.`, true);
 			return;
