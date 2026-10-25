@@ -1471,6 +1471,20 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 ## Anthropic subscription adapter
 
+- **Direct provider quota** `[D-ANTHROPIC-QUOTA]`. Owner (`16-27-59:7462`, 2026-10-25):
+  «Насчет лимитов — нет, это полная хуйня. Ты должен разобраться, как в Anthropic получать лимиты так же, как это делает Cloud Code. Может, даже reverse придётся, но меня не ебёт. Никаких зависимостей внешних. У нас на других рабочих компьютерах Cloud Code не стоит. Мы не должны от него зависеть вообще никак.
+
+  Надо за реверс разобраться, как Cloud Code получает эти данные, и сделать такую же штуку в нашем Cloud Code провайдере».
+  Reason: acquire subscription quota directly through our existing provider credentials on every workstation,
+  without an installed/running Claude Code or its statusLine. The delegated implementation requirement keeps
+  display/color decisions out, forbids auth writes and token-generating requests, and gives the later UI its own
+  five-minute cadence. Carrier: `extensions/RQW-anthropic/quota.ts`, the public `pi.events`
+  `rqw-anthropic:quota:v1` offer boundary and [quota protocol evidence](notes/anthropic-quota.md).
+  The provider reads only its bound Pi credential store, caches successful percentage/reset windows, and sends
+  nothing until a consumer explicitly refreshes. No new dependency, scheduler, option or setting. Primary
+  Claude Code 2.1.310 source and a sanitized authorized read-only HTTP 200 establish the protocol; this is an
+  undocumented client endpoint, not a public API guarantee.
+
 - **Main 1h, children 5m** `[D-ANTHROPIC-TTL]`. Anthropic offers 5m and 1h, not 10m or 15m. The main OAuth default stays
   1h; the independent Agent extension owns its 5m request policy ([Agent](#agent)); the reviewer runs no Anthropic model ([Review](#review)). Its explicit
   `short` wins in `cache.ts` and `transport.ts`, so cache markers stay on without `ttl: "1h"`, with or without this
