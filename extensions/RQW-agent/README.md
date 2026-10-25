@@ -541,8 +541,8 @@ Delivered custom messages keep their original content byte-for-byte. Their `deta
 `{ id, outcome: "finished" | "failed", model?, thinking?, seconds }` beside `delivery` and `run`.
 `model` is the last assistant response's actual `provider/id`, omitted before any assistant response;
 `thinking` is the selected level when known. Runtime is monotonic, rounded to 0.1 seconds.
-Final errors, aborts and truncation are failed; a recovered retry is finished. Quiet cancellation still
-suppresses delivery as before. These fields do not change execution, steering or delivery ownership.
+Final errors, aborts and truncation are failed; a recovered retry is finished. Answer text, including
+an `error:` prefix, does not mark a run as failed. Quiet cancellation still suppresses delivery as before. These fields do not change execution, steering or delivery ownership.
 
 For wait, the same metadata is at `result.details.results[i].display`. The existing result item's
 `outcome` remains `completed`/`error`, and the entire original wait `content` is unchanged. Consumers
