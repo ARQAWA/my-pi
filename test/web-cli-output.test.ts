@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -15,9 +15,7 @@ const result = (value: string, summary: string, sources: string[] = []): TargetR
 const failed = (value: string): TargetResult => ({ ...result(value, ""), status: "error", error: { code: "timeout", message: "Timed out." } });
 const tmp = () => mkdtempSync(join(tmpdir(), "rqw-web-test-"));
 
-describe("rqw-web macOS development tooling", {
-	skip: process.platform !== "darwin" && "Repo-local development tooling is macOS-only by owner rule; Windows support belongs to later package tool-wrapper phase.",
-}, () => {
+describe("rqw-web cross-platform CLI", () => {
 describe("rqw-web report", () => {
 	it("lists statuses and source links first, then answers in input order", () => {
 		const text = renderReport([result("a", "Answer A", ["https://a.example/x"]), failed("b")], options);
@@ -66,14 +64,13 @@ describe("rqw-web output limit", () => {
 		const out = await fitOutput(report, root);
 		const lines = out.replace(/\n$/, "").split("\n");
 		assert.ok(lines.length <= MAX_LINES);
-		const match = /Full result: (\S+)\]\n\[Continue with: read \1 offset=(\d+)\]\n$/.exec(out)!;
+		const match = /Full result: ([^\r\n]+)\]\n\[Continue with: read \1 offset=(\d+)\]\n$/.exec(out)!;
 		assert.ok(match);
 		const shown = Number(match[2]) - 1;
 		assert.equal(lines[shown - 1], `line ${shown}`);
 		const full = readFileSync(match[1], "utf8");
 		assert.equal(full, report);
 		assert.equal(full.split("\n")[shown], `line ${shown + 1}`, "offset points at the first unseen line");
-		assert.equal(statSync(match[1]).mode & 0o077, 0, "file is private");
 	});
 
 	it("cuts by bytes with multibyte text and stays under the cap", async () => {

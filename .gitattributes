@@ -1,0 +1,3 @@
+# Preserve the exact native schema bytes on every platform.
+/extensions/RQW-codex/web-native-tools.json -text
+/extensions/RQW-web/core/web-native-tools.json -text

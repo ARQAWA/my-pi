@@ -34,7 +34,7 @@ const ORIGINAL_ARGV = process.argv;
 const OUR_SIX = ["bash", "edit", "find", "grep", "read", "write"];
 // RQW-tools' job tool comes with any of its tools (background jobs).
 const DEFAULT_ON = [...OUR_SIX, "job", "codemode", "tool_search"].sort();
-const PACKAGE_ON = [...DEFAULT_ON, "agent"].sort();
+const PACKAGE_ON = [...DEFAULT_ON, "agent", "web"].sort();
 
 let root: string;
 let agentDir: string;
@@ -151,7 +151,7 @@ async function run(o: Options = {}): Promise<Run> {
 }
 
 describe("package: RQW-settings and RQW-tools on one active tool set", () => {
-	it("the whole package gives our six tools plus agent, codemode and tool_search", async () => {
+	it("the whole package gives our six tools plus agent, web, codemode and tool_search", async () => {
 		const r = await run();
 		assert.deepEqual(r.active, PACKAGE_ON);
 		assert.deepEqual(r.errors, []);
@@ -176,7 +176,7 @@ describe("package: RQW-settings and RQW-tools on one active tool set", () => {
 	it("`-builtin:codemode` leaves no codemode at all", async () => {
 		const r = await run({ userSettings: { extensions: ["-builtin:codemode"] } });
 		assert.equal(r.codemode, false, "no codemode tool is registered");
-		assert.deepEqual(r.active, [...OUR_SIX, "job", "agent", "tool_search"].sort());
+		assert.deepEqual(r.active, [...OUR_SIX, "job", "agent", "web", "tool_search"].sort());
 		assert.deepEqual(r.errors, []);
 	});
 
@@ -189,7 +189,7 @@ describe("package: RQW-settings and RQW-tools on one active tool set", () => {
 			},
 		});
 		assert.deepEqual(r.started, PACKAGE_ON);
-		assert.deepEqual(r.active, ["agent", "bash", "edit", "job", "read", "write"]);
+		assert.deepEqual(r.active, ["agent", "bash", "edit", "job", "read", "web", "write"]);
 		assert.deepEqual(r.errors, []);
 	});
 });

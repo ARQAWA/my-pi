@@ -13,9 +13,7 @@ const run = (...extra: string[]) => {
 };
 const refuses = (argv: string[], pattern: RegExp) => assert.throws(() => parseCommandLine(argv), error => error instanceof UsageError && pattern.test(error.message));
 
-describe("rqw-web macOS development tooling", {
-	skip: process.platform !== "darwin" && "Repo-local development tooling is macOS-only by owner rule; Windows support belongs to later package tool-wrapper phase.",
-}, () => {
+describe("rqw-web cross-platform CLI", () => {
 describe("rqw-web arguments", () => {
 	it("repeats --query in input order with defaults", () => {
 		const options = run("--query", "first", "--query", "second");
@@ -106,9 +104,17 @@ describe("rqw-web caller mapping", () => {
 		assert.throws(() => mapCaller("openai-codex/gpt-6-luna", "ultra"), /does not support/);
 	});
 
-	it("refuses unknown callers", () => {
-		for (const caller of ["gpt-6-sol", "openai-codex/gpt-9", "anthropic/claude-sonnet-4", "openrouter/claude-sonnet-5-5", "/x", "x/"]) {
-			assert.throws(() => mapCaller(caller, "high"), UsageError);
+	it("uses the fixed low-effort fallback for unknown and missing callers regardless of thinking", () => {
+		for (const caller of ["", "gpt-6-sol", "openai-codex/gpt-9", "anthropic/claude-sonnet-4", "openrouter/claude-sonnet-5-5", "/x", "x/"]) {
+			for (const thinking of ["", "high", "unknown"]) {
+				assert.deepEqual(mapCaller(caller, thinking), { model: "gpt-6.1-sol", effort: "low" });
+			}
+		}
+	});
+
+	it("rejects unknown thinking for known callers, including Opus", () => {
+		for (const caller of ["openai-codex/gpt-6.1-sol", "anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5"]) {
+			assert.throws(() => mapCaller(caller, "unexpected"), UsageError);
 		}
 	});
 });

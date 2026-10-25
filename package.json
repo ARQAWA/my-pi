@@ -33,6 +33,7 @@
       "./extensions/RQW-mouse/index.ts",
       "./extensions/RQW-providers/index.ts",
       "./extensions/RQW-codex/index.ts",
+      "./extensions/RQW-web/index.ts",
       "./extensions/RQW-thinking/index.ts",
       "./extensions/RQW-naming/index.ts",
       "./extensions/RQW-agent-ui/index.ts",

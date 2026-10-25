@@ -12,9 +12,7 @@ const answer = (run: TargetRun, summary = `answer ${run.target.value}`): TargetR
 });
 const live = new AbortController().signal;
 
-describe("rqw-web macOS development tooling", {
-	skip: process.platform !== "darwin" && "Repo-local development tooling is macOS-only by owner rule; Windows support belongs to later package tool-wrapper phase.",
-}, () => {
+describe("rqw-web cross-platform CLI", () => {
 describe("rqw-web pool", () => {
 	it("never exceeds the limit, really overlaps, and keeps input order", async () => {
 		let active = 0;

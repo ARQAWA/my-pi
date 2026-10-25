@@ -16,9 +16,7 @@ function authFile(content: unknown): string {
 }
 const oauth = { type: "oauth", access: FAKE_ACCESS, refresh: FAKE_REFRESH, expires: Date.now() + 3_600_000 };
 
-describe("rqw-web macOS development tooling", {
-	skip: process.platform !== "darwin" && "Repo-local development tooling is macOS-only by owner rule; Windows support belongs to later package tool-wrapper phase.",
-}, () => {
+describe("rqw-web cross-platform CLI", () => {
 describe("rqw-web read-only credential store", () => {
 	it("reads only a saved openai-codex OAuth login", async () => {
 		const path = authFile({ "openai-codex": oauth, anthropic: { type: "api_key", key: "fake-key" } });

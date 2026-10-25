@@ -8,7 +8,8 @@ Required:
   --caller-model  Your own exact model, e.g. anthropic/claude-sonnet-5-5 or openai-codex/gpt-6.1-sol.
   --thinking      Your own thinking level: off, minimal, low, medium, high, xhigh, max, ultra.
                   The search model follows from these two. Do not pick a cheaper model.
-                  Claude callers need low or higher; off and minimal are refused, not downgraded.
+                  Unknown models use openai-codex/gpt-6.1-sol with low thinking.
+                  Known Claude callers need low or higher; off and minimal are refused, not downgraded.
 
 Targets (repeat one kind, never mix):
   --query TEXT    One independent question. Use distinct angles; add product, version and date.

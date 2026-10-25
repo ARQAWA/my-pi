@@ -39,9 +39,7 @@ function safeError(error: unknown): boolean {
 	return true;
 }
 
-describe("rqw-web macOS development tooling", {
-	skip: process.platform !== "darwin" && "Repo-local development tooling is macOS-only by owner rule; Windows support belongs to later package tool-wrapper phase.",
-}, () => {
+describe("rqw-web shared native mechanism", () => {
 describe("alpha/search JSON adapter", () => {
 	it("sends native JSON to the fixed official endpoint with safe search headers and opaque results", async () => {
 		const results = [{ future: { nested: [null, 4, { extra: "kept" }] } }, "opaque", false];

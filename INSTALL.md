@@ -96,6 +96,18 @@ excludes nothing.
 - Pi's built-in extensions are not part of the package. Switch one off with the top-level `extensions` setting:
   `"extensions": ["-builtin:codemode"]` (names: `codemode`, `tool-search`, `mcp`, `llama.cpp`).
 
+## Web search and URL reading
+
+Normal package loading exposes the independent `web` tool to the main agent and subagents on macOS and Windows.
+It uses the saved Codex subscription login read-only; no API key or second login is needed. Missing or expired login:
+use Pi to refresh it or run `/login openai-codex`, then retry. Model and thinking follow the caller automatically;
+unknown models use `openai-codex/gpt-6.1-sol` with `low`. Each search spends subscription usage.
+
+The tool batches `queries` or reads `urls` with a `focus`, returns short sourced summaries, and supports `mode: live`
+for fresh facts. Overflow is an ordinary OS temporary file with exact continuation. Disable independently with
+`-extensions/RQW-web/index.ts`, then reload or restart. Existing child sessions keep their startup tools until restarted.
+The local shell command is not globally installed. Full contract: [RQW-web README](extensions/RQW-web/README.md).
+
 ## Codex subscription transport
 
 RQW-codex targets stock Pi 1.4.0 and Codex CLI stable 0.163.0. Its native `generate:false` startup and automatic one-shot idle prewarm are the explicit Codex exception to the general no-cache-warming rule; no host event or extra setting is required, and no periodic keepalive is installed. Keep a valid existing `openai-codex` login; new `/login openai-codex` logins use device code only. Do not export tokens, import `~/.codex`, copy the different `openai` grant, or configure API-key billing. If another Codex adapter is enabled, stop and ask the owner to disable it in its installed scope before loading this overlay; preserve credentials and unrelated settings.

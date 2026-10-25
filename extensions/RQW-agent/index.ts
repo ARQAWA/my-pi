@@ -255,6 +255,14 @@ const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
  */
 type ToolsFactory = (cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition; notify?: (notification: JobNotification) => void; retain?: () => () => void }) => ToolDefinition[];
 
+type WebRegistrar = (child: ExtensionAPI) => void;
+
+function offeredWeb(events: ExtensionAPI["events"]): WebRegistrar | undefined {
+	let register: WebRegistrar | undefined;
+	events.emit("rqw-web:subagent-web", { offer: (value: WebRegistrar) => { register = value; } });
+	return register;
+}
+
 const PROFILES = "rqw-agent:profiles";
 
 type OwnSettings = ReturnType<ExtensionAPI["getSettings"]>;
@@ -725,6 +733,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const check = () => { controller.signal.throwIfAborted(); guard.signal?.throwIfAborted(); };
 		let children: RuntimeHandle | undefined;
 		let activity: Activity | undefined;
+		const web = offeredWeb(toolEvents);
 		// codemode and tool_search as the caller has them: Pi's own built-in factories, active only when the caller's are.
 		const active = new Set(pi.getActiveTools());
 		const builtins = config.builtins ?? BUILTIN_TOOLS.filter(name => active.has(name));
@@ -766,6 +775,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						return { systemPrompt: config.system };
 					});
 					children = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost);
+					web?.(sub);
 				},
 			],
 		});
@@ -781,7 +791,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			signal.throwIfAborted();
 			creating = createAgentSession({
 				cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
-				tools: [...config.tools, ...(jobTool ? ["job"] : []), "agent", ...builtins],
+				tools: [...config.tools, ...(jobTool ? ["job"] : []), "agent", ...(web ? ["web"] : []), ...builtins],
 				customTools, resourceLoader,
 				sessionManager: manager, settingsManager,
 			}).then(async ({ session }) => {

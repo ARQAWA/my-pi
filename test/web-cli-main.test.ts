@@ -25,9 +25,7 @@ async function cli(argv: string[], runner?: TargetRunner) {
 	return { code, stdout, stderr };
 }
 
-describe("rqw-web macOS development tooling", {
-	skip: process.platform !== "darwin" && "Repo-local development tooling is macOS-only by owner rule; Windows support belongs to later package tool-wrapper phase.",
-}, () => {
+describe("rqw-web cross-platform CLI", () => {
 describe("rqw-web main", () => {
 	it("exit 0 when every target succeeds, with the mapped model in the report", async () => {
 		const out = await cli([...caller, "--query", "one", "--query", "two"], async run => ok(run));
@@ -131,7 +129,7 @@ function assertExpiredLoginRun(): void {
 }
 
 describe("rqw-web repository development dependencies", () => {
-	it("keeps exact development dependencies without exposing a package command or extension", () => {
+	it("keeps exact development dependencies without exposing a package command or CLI extension", () => {
 		assert.equal(MANIFEST.devDependencies["@earendil-works/pi-coding-agent"], "1.4.0");
 		assert.equal(MANIFEST.devDependencies["@earendil-works/pi-ai"], "1.4.0");
 		assert.equal(MANIFEST.devDependencies.jiti, "2.7.0");
@@ -140,7 +138,7 @@ describe("rqw-web repository development dependencies", () => {
 		assert.deepEqual(LOCK.packages[""].dependencies, MANIFEST.dependencies);
 		assert.deepEqual(LOCK.packages[""].devDependencies, MANIFEST.devDependencies);
 		assert.equal(MANIFEST.bin, undefined);
-		assert.equal(MANIFEST.pi.extensions.some((path: string) => /web|cli/.test(path)), false);
+		assert.equal(MANIFEST.pi.extensions.some((path: string) => /(?:^|\/)cli\//.test(path)), false);
 	});
 
 	it("runs a repository target from another cwd with fake expired auth: login hint, no network, secrets hidden and auth unchanged", () => {
