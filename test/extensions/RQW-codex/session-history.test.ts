@@ -235,23 +235,58 @@ describe("SessionWireState checkpoints, reopen, fork and invalidation", () => {
 		assert.equal(afterEntries, windowEntries);
 	});
 
-	it("fork with a new id adopts the parent's proven history, and gets its own window", () => {
+	it("repeated forks adopt the whole proven raw history and reject a broken ancestor chain", () => {
 		const { manager } = newManager();
 		manager.appendMessage(userMsg("a") as never);
 		const parentFile = manager.getSessionFile() as string;
 		const parent = new SessionWireState({ session: agent(manager), ownerId: "acct-A", modelHash: MODEL_HASH });
 		sendRequest(parent, ctx([userMsg("a") as never]));
-		parent.rawHistory.recordItem?.("resp-p", { type: "function_call", call_id: "c1", name: "bash", arguments: "{}" } as WireItem);
+		const raw = [
+			{ type: "reasoning", id: "rs_raw_a", summary: [], encrypted_content: "EXACT-RAW-A" },
+			{ type: "function_call", id: "fc_raw_a", call_id: "c1", name: "bash", arguments: '{"command": "printf EXACT-RAW-A"}' },
+		] as WireItem[];
+		for (const item of raw) parent.rawHistory.recordItem?.("resp-p", item);
 		const parentInput = parent.nativeInput(args(ctx([userMsg("a") as never])));
+		const parentPrefix = builtInput(ctx([]), parent.history.scope.threadId).length;
+		const parentHistory = parentInput?.slice(parentPrefix);
+
 		const childId = "019a0000-0000-7000-8000-000000000001";
 		const child = SessionManager.forkFrom(parentFile, root, join(root, "fork-dir"), { id: childId });
-		assert.equal(child.getSessionId(), childId);
 		const childState = new SessionWireState({ session: agent(child), ownerId: "acct-A", modelHash: MODEL_HASH });
 		assert.notEqual(childState.window.id, parent.window.id, "child has its own window");
-		// The prefix ids depend on the thread (fresh per thread); the replayed history after it must be identical.
 		const childPrefix = builtInput(ctx([]), childId).length;
-		const parentPrefix = builtInput(ctx([]), parent.history.scope.threadId).length;
-		assert.deepEqual(childState.nativeInput(args(ctx([userMsg("a") as never])))?.slice(childPrefix), parentInput?.slice(parentPrefix), "proven parent history replays");
+		assert.deepEqual(childState.nativeInput(args(ctx([userMsg("a") as never])))?.slice(childPrefix), parentHistory, "the first fork replays the parent");
+
+		const grandchildId = "019a0000-0000-7000-8000-000000000004";
+		const grandchild = SessionManager.forkFrom(child.getSessionFile()!, root, join(root, "fork-dir-2"), { id: grandchildId });
+		const grandchildState = new SessionWireState({ session: agent(grandchild), ownerId: "acct-A", modelHash: MODEL_HASH });
+		const grandchildPrefix = builtInput(ctx([]), grandchildId).length;
+		const grandchildInput = grandchildState.nativeInput(args(ctx([userMsg("a") as never])));
+		assert.deepEqual(grandchildInput?.slice(grandchildPrefix), parentHistory, "the second fork replays every ancestor exactly once");
+		assert.deepEqual(grandchildInput?.filter((item) => item.id === "rs_raw_a" || item.id === "fc_raw_a"), raw);
+
+		const beforeParentCompaction = child.getLeafId();
+		const kept = child.appendMessage(userMsg("later parent tail") as never);
+		child.appendCompaction("LATER PARENT SUMMARY", kept, 100);
+		const parentBytes = readFileSync(child.getSessionFile()!, "utf8");
+		const afterParentCompaction = new SessionWireState({ session: agent(grandchild), ownerId: "acct-A", modelHash: MODEL_HASH });
+		assert.deepEqual(afterParentCompaction.nativeInput(args(ctx([userMsg("a") as never])))?.slice(grandchildPrefix), parentHistory, "proof uses the copied parent branch, not its later leaf");
+		assert.equal(readFileSync(child.getSessionFile()!, "utf8"), parentBytes, "proof does not rewrite the parent");
+
+		const rolledBack = SessionManager.forkFrom(child.getSessionFile()!, root, join(root, "fork-dir-rollback"), { id: "019a0000-0000-7000-8000-000000000005" });
+		rolledBack.branch(beforeParentCompaction);
+		const rollbackState = new SessionWireState({ session: agent(rolledBack), ownerId: "acct-A", modelHash: MODEL_HASH });
+		const rollbackPrefix = builtInput(ctx([]), rolledBack.getSessionId()).length;
+		assert.deepEqual(rollbackState.nativeInput(args(ctx([userMsg("a") as never])))?.slice(rollbackPrefix), parentHistory, "the copied active branch, not a physical compaction on another branch, proves ancestry");
+
+		const original = readFileSync(parentFile, "utf8");
+		writeFileSync(parentFile, original.replace('"version":3', '"version":2'));
+		const legacyBytes = readFileSync(parentFile, "utf8");
+		new SessionWireState({ session: agent(grandchild), ownerId: "acct-A", modelHash: MODEL_HASH });
+		assert.equal(readFileSync(parentFile, "utf8"), legacyBytes, "proof never migrates an ancestor file");
+		writeFileSync(parentFile, legacyBytes.replace("EXACT-RAW-A", "TAMPERED-RAW-A"));
+		const unproven = new SessionWireState({ session: agent(grandchild), ownerId: "acct-A", modelHash: MODEL_HASH });
+		assert.equal(unproven.nativeInput(args(ctx([userMsg("a") as never]))), undefined, "a changed ancestor entry breaks adoption");
 	});
 
 	it("fork ancestry is not proven for another owner: no sibling replay, fresh seed", () => {

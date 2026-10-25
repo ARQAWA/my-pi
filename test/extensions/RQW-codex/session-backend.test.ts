@@ -26,6 +26,14 @@ const textEvents = (id: string, text: string, input = 10) => [
 	{ type: "response.output_item.done", output_index: 0, item: { type: "message", id: `msg_${id}`, role: "assistant", status: "completed", content: [{ type: "output_text", text, annotations: [] }] } },
 	completed(id, input),
 ];
+const rawReasoning = { type: "reasoning", id: "rs_raw_a", summary: [], encrypted_content: "EXACT-RAW-A" };
+const rawCall = { type: "function_call", id: "fc_raw_a", call_id: "call_raw_a", name: "bash", arguments: '{"command": "printf EXACT-RAW-A", "timeout": 1000}', status: "completed" };
+const rawCallEvents = [
+	{ type: "response.created", response: { id: "resp_raw_a" } },
+	{ type: "response.output_item.done", output_index: 0, item: rawReasoning },
+	{ type: "response.output_item.done", output_index: 1, item: rawCall },
+	completed("resp_raw_a"),
+];
 const failed = (id: string, code = "invalid_prompt") => [
 	{ type: "response.created", response: { id } },
 	{ type: "response.failed", response: { id, status: "failed", error: { code, message: code === "context_length_exceeded" ? "Your input exceeds the context window of this model." : "bad summary" } } },
@@ -36,11 +44,13 @@ type Call = { body: Record<string, any>; headers: Record<string, string> };
 type Step = unknown[] | ((options: any) => AsyncIterable<unknown>);
 
 async function withSession(steps: Step[], run: (h: {
-	session: pi.AgentSession; controller: ReturnType<typeof createSessionController>; calls: Call[];
+	session: pi.AgentSession; fork: (source: pi.AgentSession) => Promise<pi.AgentSession>;
+	controller: ReturnType<typeof createSessionController>; calls: Call[];
 	lifecycle: any[]; hooks: any[]; release: () => void; dir: string;
 }) => Promise<void>, seed = true) {
 	const dir = mkdtempSync(join(tmpdir(), "rqw-codex-stock-facade-"));
 	let session: pi.AgentSession | undefined;
+	const sessions: pi.AgentSession[] = [];
 	const controllers: ReturnType<typeof createSessionController>[] = [];
 	let releaseRegistration = () => {};
 	let releaseAuth = () => {};
@@ -94,17 +104,23 @@ async function withSession(steps: Step[], run: (h: {
 			manager.appendMessage(assistant("old answer") as never);
 			manager.appendMessage(userMsg("KEPT_TAIL ".repeat(100)) as never);
 		}
-		({ session } = await pi.createAgentSession({ cwd: dir, agentDir: dir, resourceLoader: loader, modelRuntime: runtime, model: MODEL, sessionManager: manager, settingsManager: pi.SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: true, reserveTokens: 10000, keepRecentTokens: 100 } }) }));
-		await session.bindExtensions({ mode: "tui" });
+		const open = async (sessionManager: pi.SessionManager) => {
+			const opened = (await pi.createAgentSession({ cwd: dir, agentDir: dir, resourceLoader: loader, modelRuntime: runtime, model: MODEL, sessionManager, settingsManager: pi.SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: true, reserveTokens: 10000, keepRecentTokens: 100 } }) })).session;
+			sessions.push(opened);
+			await opened.bindExtensions({ mode: "tui" });
+			return opened;
+		};
+		session = await open(manager);
+		const fork = (source: pi.AgentSession) => open(pi.SessionManager.forkFrom(source.sessionManager.getSessionFile()!, dir, dir));
 		const controller = controllers[0];
 		assert.ok(controller, "production registration binds the session controller");
 		const lifecycle: any[] = [];
 		const unsubscribe = session.subscribe((event) => lifecycle.push(event));
-		try { await run({ session, controller, calls, lifecycle, hooks, release: releaseRegistration, dir }); }
+		try { await run({ session, fork, controller, calls, lifecycle, hooks, release: releaseRegistration, dir }); }
 		finally { unsubscribe(); }
 	} finally {
 		releaseRegistration();
-		session?.dispose();
+		for (const opened of sessions.reverse()) opened.dispose();
 		releaseAuth();
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -340,4 +356,37 @@ it("[stock facade] public lifecycle reports manual, threshold and overflow reaso
 			for (const call of calls) assert.equal(JSON.parse(call.headers["x-codex-turn-metadata"] ?? "{}").compaction, undefined);
 		}, reason !== "overflow");
 	}
+});
+
+it("[stock facade] two real forks preserve exact raw items once, then ordinary compaction supersedes them", async () => {
+	const summary = "EXACT STOCK SUMMARY";
+	await withSession([
+		rawCallEvents,
+		textEvents("resp_a_final", "A done"),
+		textEvents("resp_b", "B done"),
+		textEvents("resp_c", "C done"),
+		textEvents("resp_summary", summary),
+		textEvents("resp_after", "after compaction"),
+	], async ({ session, fork, calls }) => {
+		await session.prompt("turn A");
+		const originalUsers = session.sessionManager.getBranch().filter((entry) => entry.type === "message" && entry.message.role === "user");
+		const exactRaw = (index: number) => calls[index]!.body.input.filter((item: any) => item.id === rawReasoning.id || item.id === rawCall.id);
+		assert.deepEqual(exactRaw(1), [rawReasoning, rawCall]);
+
+		const child = await fork(session);
+		await child.prompt("turn B ".repeat(100));
+		assert.deepEqual(exactRaw(2), [rawReasoning, rawCall], "the first fork sends the original raw items once");
+		const grandchild = await fork(child);
+		await grandchild.prompt("turn C ".repeat(100));
+		assert.deepEqual(exactRaw(3), [rawReasoning, rawCall], "the second fork keeps exact raw reasoning and arguments");
+		assert.deepEqual(session.sessionManager.getBranch().filter((entry) => entry.type === "message" && entry.message.role === "user"), originalUsers, "forks do not rewrite the parent users");
+		assert.equal(calls.length, 4);
+
+		const compacted = await grandchild.compact();
+		assert.equal(compacted.summary, summary, "stock summary text is unchanged");
+		await grandchild.prompt("after compaction");
+		assert.equal(calls.length, 6);
+		assert.deepEqual(exactRaw(5), [], "the stock summary boundary retires earlier raw history");
+		assert.equal(JSON.stringify(calls[5]!.body.input).split(summary).length - 1, 1, "the exact summary is sent once");
+	});
 });
