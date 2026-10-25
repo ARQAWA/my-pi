@@ -1764,15 +1764,15 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   working and the steady yellow idle follow the coordinator description the owner accepted. Carrier:
   `extensions/RQW-statusbar/{render,index}.ts`. Proof: `test/fast-gpt.test.ts`. Since: `fa05edf`.
 - **Compaction sheen** `[D-STATUSBAR-SHEEN]`. Gold shimmer runs over the session title in the top input border.
-  Gold retains its doubled travel speed; silver timing follows `[D-STATUSBAR-ANIMATION]`. Neither has a slant. Silver has a bright
-  three-cell peak; gold also has a bright three-cell peak. Both have wide, soft, monotone falloff between
+  Gold and silver timing follow `[D-STATUSBAR-ANIMATION]`. Neither has a slant. Silver has a weak
+  three-cell highlight; gold retains its bright three-cell peak. Both have wide, soft, monotone falloff between
   neighbouring letters; gold is the smoothest. No unrelated animation behavior changes.
   Owner: «Да, и во время compaction анимация должна идти поверх заголовка, поверх названия сессии.»
   «Надо серебряный сделать более плавным и золотой нужно сделать максимально плавным А пиковые цвета чтобы были на серебре в три символа, а на золоте в шесть-семь символов»
   «Надо, чтобы пиковые цвета были очень яркие, но при этом спуск вниз до базового цвета был довольно размазанным.»
   «Надо вообще блик ускорить в два раза по скорости или даже в два раза ровно ускорить его.»
   Source: the same local owner session as `[D-STATUSBAR-ACTIVITY]`, USER entries at lines 6399 and 6413;
-  verified by `scripts/owner-quotes.mjs`. The current task explicitly confirms doubled speed for both shimmers and no slant. Reason: smoother highlights with the owner's peak widths.
+  verified by `scripts/owner-quotes.mjs`. The earlier sheen task confirmed doubled speed for both shimmers and no slant; current timing follows `[D-STATUSBAR-ANIMATION]`. Reason: smoother highlights with the owner's peak widths.
   Gold correction, owner task request on 2026-10-25, source: current `statusbar-compaction-glint` task:
   "Replace this with ONE glint, matching the silver status animation's approach, travelling across the whole strip AND the `Compaction` label."
   "Use the final width clarification: THREE characters at the peak, not seven."
@@ -1786,9 +1786,17 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   then remaining absent for exactly 2500 ms before repeating. Flight duration is 1250 ms; the pause is twice the flight.
   Owner source: `statusbar-silver-1250-2500` task request, 2026-10-25:
   "ONLY change the silver glint's one-way left-to-right flight to 1250 ms and its subsequent fully absent pause to 2500 ms."
-  The three-cell peak and soft silver gradient stay unchanged.
-  Gold compaction keeps its single bouncing glint over each full strip and activity label at
-  8.59375 cells/s. The lightning keeps its 120 ms colour step.
+  Silver stops change from `#5f5e5c, #8d8d8c, #ffffff` to `#5f5e5c, #6b6a68, #878685`:
+  each channel is `base + Math.round((oldStop - base) / 4)` above the unchanged base.
+  Relative gradient shape, three-cell crest, width, falloff, label and all silver mechanics stay unchanged.
+  Gold compaction has one left-to-right glint across each full strip and the `Compaction` label.
+  Each complete flight takes 1250 ms and the next starts immediately: period 1250 ms, no pause or reverse.
+  Gold palette, intensity, width, gradient, crest, softness, label and scope are unchanged.
+  Owner source: current `statusbar-silver-gold-cycle` task, 2026-10-25:
+  «Надо сделать блик серебряной анимации статуса немного ярче, чем базовый цвет. Такая слабая подсветка. Всё то же самое, просто интенсивность подсветки ослабить. У золота оставить всё на месте. Единственное, что сейчас там подсветка туда-сюда ездит, а надо сделать, чтобы она ездила так же, как в серебряной — слева направо, но без паузы в двойном размере, а сразу же в цикле: 1250 на полный пролёт и потом через 1250 снова 1250 на полный пролёт. Пусть будет так.»
+  Reason: a weak silver highlight and continuous one-way gold flights, without changing their other visuals.
+  Superseded animation text: [A-0360](DECISIONS-ARCHIVE.md#a-0360--archived-2026-10-25--status-bar--silver-intensity-and-gold-bounce).
+  The lightning keeps its 120 ms colour step.
   Silver correction source: current `statusbar-silver-loop` task, owner steering on 2026-10-25:
   "the silver glint at the top must appear at the left, fly VERY FAST left-to-right at one constant linear speed, fully disappear after passing the right edge, then remain absent for exactly 2 seconds before the next flight."
   "The owner explicitly leaves the flight duration to our visual judgment; choose a genuinely fast duration and show deterministic timing/render evidence."
@@ -1802,7 +1810,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `activityRows` supplies status and trailing blank; Pi supplies the leading spacer. Idle returns `[]`.
   Owner: «Сделай анимацию блика 30фпс, 50 ту мач и сделай ее более плавной и что бы был 1 блик на статусе который катается туда сюда, а не бесконечное количество»
   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6774,
-  verified by `scripts/owner-quotes.mjs`. Colours, soft falloff, layout and static title stay unchanged; the later gold correction is recorded in `[D-STATUSBAR-SHEEN]`.
+  verified by `scripts/owner-quotes.mjs`. Soft falloff, layout and static title stay unchanged; silver intensity and gold timing follow the current amendment above.
   Doubled-speed source: `[D-STATUSBAR-SHEEN]`.
   Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
 - **Own git discovery** `[D-STATUSBAR-GIT]`. Git branch and counts use the extension's own repository discovery and

@@ -13,7 +13,7 @@ import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf
 const GIT_POLL_MS = 10_000;
 /** Thirty nominal redraws per second; travel follows elapsed time independently of this timer. */
 const SHIMMER_MS = 1000 / 30;
-/** Elapsed-time phase unit; gold retains its delivered travel speed. */
+/** Elapsed-time phase unit, independent of the redraw timer. */
 export const STATUS_FRAME_MS = 80;
 /** The lightning keeps its owner-accepted pulse of one colour step per 120 ms of elapsed time. */
 const FAST_STEP_MS = 120;

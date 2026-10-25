@@ -26,16 +26,21 @@ Owner sources and scope: [D-STATUSBAR-WAITS](../DECISIONS.md#status-bar).
 
 Silver activity text has one glint appearing at the left and flying right at constant linear speed in
 1250 ms, fully clearing its shoulder beyond the right edge, then remaining absent for exactly 2500 ms.
-The next flight starts at 3750 ms. Gold compaction keeps its single bouncing glint across each
-complete strip and activity label at 8.59375 cells/s. Both retain three very bright peak cells and no slant.
-The shared timer requests 30 nominal redraws/s. The wide, soft, monotone falloff and colours are unchanged;
+The next silver flight starts at 3750 ms. Gold compaction has one left-to-right glint across each
+complete strip and the `Compaction` label: 1250 ms per full flight, repeated immediately with a 1250 ms
+period, no absence, pause or reverse. Both retain three-cell crests and no slant.
+Silver's RGB stops change from `#5f5e5c, #8d8d8c, #ffffff` to `#5f5e5c, #6b6a68, #878685`:
+each channel is `base + Math.round((oldStop - base) / 4)`, preserving the relative gradient.
+All other silver mechanics and visuals remain unchanged. Gold's palette, intensity, width, gradient,
+crest, softness, label and strip-plus-Compaction scope remain unchanged.
+The shared timer requests 30 nominal redraws/s. The wide, soft, monotone falloff stays unchanged;
 gold retains its gentler quintic shoulder.
 GPT Fast colour-step timing and all layout behavior are unchanged.
 Only public Pi APIs are used, and the extension remains independent.
 
 Rules and owner sources: [DECISIONS.md, Status bar](../DECISIONS.md#status-bar).
-Deterministic tests in `test/extensions/RQW-statusbar/` cover layout, peak widths, monotone falloff and doubled
-speed. `native-working-layout.test.ts` mounts real Pi `InteractiveMode` with a held faux-provider response,
+Deterministic tests in `test/extensions/RQW-statusbar/` cover layout, peak widths, monotone falloff and animation
+timing. `native-working-layout.test.ts` mounts real Pi `InteractiveMode` with a held faux-provider response,
 checks suppression of the native working row, exact widget gaps, title placement and idle removal, and saves
 `/tmp/statusbar-single-working.txt` and `/tmp/statusbar-single-compaction.txt`. The latter drives extension compaction events,
 not a live compaction request.
@@ -43,16 +48,16 @@ not a live compaction request.
 `STATUS_FRAME_MS = 80` and `FAST_STEP_MS = 120` are unchanged; `SHIMMER_MS = 1000 / 30` ms.
 In `render.ts`, `SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32` remains unchanged.
 `silverGlintPosition(width, frame)` supplies the fractional silver flight and pause position;
-`goldGlintPosition` retains the delivered width-aware ping-pong position. The existing elapsed-time
+`goldGlintPosition` supplies the continuous width-aware left-to-right flight position. The existing elapsed-time
 phase uses `SILVER_FLIGHT_FRAMES = 15.625` and `SILVER_PAUSE_FRAMES = 31.25`, with 80 ms per phase unit.
 The top border is painted as one full row so title, hint, ID and rules cannot clone the crest.
 `test/extensions/RQW-statusbar/chrome.test.ts` pins the silver flight, pause and unchanged gradient;
-`silver-flight.test.ts` checks delivered gold bytes and saves timing and ANSI render evidence as
+`silver-flight.test.ts` checks silver timing and saves timing and ANSI render evidence as
 `/tmp/statusbar-silver-loop-flight.{txt,ansi}`;
-`gold-glint.test.ts` checks one three-cell gold crest in both directions across wide strips and the
+`gold-glint.test.ts` checks one three-cell gold crest across wide strips and the
 `Compaction` label, saving deterministic ANSI renders in the OS temporary directory under
 `statusbar-compaction-glint-renders/`. Silver uses a three-cell plateau, 4.5-cell cubic falloff and
-`#ffffff` peak; gold uses a three-cell plateau, six-cell quintic falloff and `#fff4c2` peak.
+`#878685` peak; gold uses a three-cell plateau, six-cell quintic falloff and `#fff4c2` peak.
 These are spatial profiles, not a higher redraw frequency.
 
 ## Read-only sources

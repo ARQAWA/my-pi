@@ -393,8 +393,8 @@ export class RateMeter {
 export const GOLD: readonly string[] = ["#8a6d1c", "#c9a227", "#fff4c2"];
 /** The static title keeps its original palette, independent of the brighter compaction crest. */
 const TITLE_GOLD: readonly string[] = ["#8a6d1c", "#c9a227", "#e3c45a"];
-/** Silver busy letters, from the dim base to the bright white crest. */
-export const SILVER: readonly string[] = ["#5f5e5c", "#8d8d8c", "#ffffff"];
+/** Silver busy letters: one quarter of the former RGB lift above the unchanged base. */
+export const SILVER: readonly string[] = ["#5f5e5c", "#6b6a68", "#878685"];
 /** The ordinary top rule: a fixed silver, independent of the editor's thinking colour. */
 export const RULE_SILVER = "#b6b6b4";
 
@@ -442,12 +442,10 @@ export function silverGlintPosition(width: number, frame: number): number {
 	return 1 + (end - 1) * Math.min(phase / SILVER_FLIGHT_FRAMES, 1);
 }
 
-/** Gold keeps its delivered bounce and travel speed. */
+/** Gold clears its shoulder in 1250 ms, then immediately starts the next rightward flight. */
 function goldGlintPosition(width: number, frame: number): number {
-	if (width <= SILVER_PLATEAU_CELLS) return Math.max(0, (width - 1) / 2);
-	const travel = width - SILVER_PLATEAU_CELLS;
-	const distance = frame * SHIMMER_CELLS_PER_FRAME % (2 * travel);
-	return 1 + (distance <= travel ? distance : 2 * travel - distance);
+	const end = width - 1 + GOLD_PLATEAU_CELLS / 2 + GOLD_FALLOFF_CELLS;
+	return 1 + (end - 1) * (frame % SILVER_FLIGHT_FRAMES) / SILVER_FLIGHT_FRAMES;
 }
 
 /** Paint one crest by terminal column, without italics. */

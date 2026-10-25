@@ -25,7 +25,7 @@ describe("cell-based shimmer", () => {
 	it("has a bright flat three-cell peak for both silver and gold", () => {
 		assert.equal(SILVER_PLATEAU_CELLS, 3);
 		assert.equal(GOLD_PLATEAU_CELLS, 3);
-		assert.equal(SILVER.at(-1), "#ffffff");
+		assert.deepEqual(SILVER, ["#5f5e5c", "#6b6a68", "#878685"]);
 		assert.equal(GOLD.at(-1), "#fff4c2");
 		const peakCells = (center: number, gold: boolean) => Array.from({ length: 19 }, (_, i) => i - 9)
 			.filter((i) => shimmerPhase(i, center / SHIMMER_CELLS_PER_FRAME, gold) === 1).length;
@@ -67,7 +67,7 @@ describe("cell-based shimmer", () => {
 			< 1 - shimmerPhase(SILVER_PLATEAU_CELLS / 2 + 1, 0));
 	});
 
-	it("retains the spatial phase unit and gold speed, independent of redraw cadence", () => {
+	it("retains the spatial shoulder phase unit, independent of redraw cadence", () => {
 		assert.equal(STATUS_FRAME_MS, 80);
 		assert.equal(SHIMMER_CELLS_PER_FRAME, 0.22 / 0.32);
 		assert.equal(SHIMMER_PERIOD_CELLS, 2 * Math.PI / 0.32);
@@ -127,9 +127,20 @@ describe("single silver glint", () => {
 				const line = shimmerText("x".repeat(width), 1, frame, SILVER);
 				const cells = [...line.matchAll(/\x1b\[(1;)?38;2;(\d+);(\d+);(\d+)mx\x1b\[22;39m/g)];
 				assert.equal(cells.length, width);
-				const peaks = cells.map((cell, i) => cell[2] === "255" && cell[3] === "255" && cell[4] === "255" ? i : -1).filter((i) => i >= 0);
-				assert.equal(peaks.length, 3, `${width} ${frame}`);
-				assert.equal(peaks[2] - peaks[0], 2, "a single contiguous plateau, no repeated crests");
+				const peaks = cells.map((cell, i) => cell[2] === "135" && cell[3] === "134" && cell[4] === "133" ? i : -1).filter((i) => i >= 0);
+				const center = 1 + (width + 4) * ((frame % 46.875) / 15.625);
+				const plateau = Array.from({ length: width }, (_, i) => i)
+					.filter((i) => i - center >= -1.5 && i - center < 1.5);
+				assert.equal(plateau.length, 3, `${width} ${frame}`);
+				for (const i of plateau) assert.ok(peaks.includes(i));
+				// At the reduced contrast an adjacent shoulder can round to the crest RGB too.
+				const expectedPeaks = Array.from({ length: width }, (_, i) => i).filter((i) => {
+					const t = Math.max(0, Math.min(1, (Math.abs(i - center) - 1.5) / 4.5));
+					const phase = plateau.includes(i) ? 1 : Math.min(254 / 255, 1 - t * t * (3 - 2 * t));
+					return mix(SILVER, phase) === "#878685";
+				});
+				assert.deepEqual(peaks, expectedPeaks);
+				assert.equal(peaks.at(-1)! - peaks[0], peaks.length - 1, "a single contiguous plateau, no repeated crests");
 				assert.doesNotMatch(line, /\x1b\[(?:3|23)m/);
 			}
 		}
@@ -137,7 +148,8 @@ describe("single silver glint", () => {
 
 	it("changes shoulder colours at fine sub-character steps rather than rounding the moving center", () => {
 		const width = 80;
-		const frames = [0, 0.0005, 0.001, 0.0015, 0.002].map((frame) => frame * 1250 / 640);
+		// The dimmer palette needs slightly wider sub-cell samples to cross an RGB quantum.
+		const frames = [0, 0.005, 0.01, 0.015, 0.02];
 		const position = frames.map((frame) => silverGlintPosition(width, frame));
 		for (let i = 1; i < position.length; i++) {
 			assert.ok(position[i] > position[i - 1]);

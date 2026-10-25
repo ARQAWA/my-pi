@@ -6,6 +6,17 @@ import { it } from "node:test";
 import { stripVTControlCharacters as strip } from "node:util";
 import { activityRows, GOLD, SILVER, shimmerText, silverGlintPosition } from "../../../extensions/RQW-statusbar/render.ts";
 
+it("renders the quarter-lift silver palette above the unchanged base", () => {
+	const line = activityRows(100, { text: "x".repeat(60), compacting: false, frame: 0 })[0];
+	const colors = [...line.matchAll(/38;2;(\d+);(\d+);(\d+)m/g)].map((m) => m.slice(1, 4).map(Number));
+	assert.deepEqual(colors.slice(0, 3), Array(3).fill([135, 134, 133]));
+	assert.deepEqual(colors.at(-1), [95, 94, 92]);
+	for (const rgb of colors) {
+		rgb.forEach((channel, i) => assert.ok(channel >= [95, 94, 92][i] && channel <= [135, 134, 133][i]));
+	}
+	assert.ok(colors.some((rgb) => rgb[0] > 95 && rgb[0] < 135));
+});
+
 it("renders silver flights, complete exit and the 2500 ms absence without changing the label", () => {
 	const evidence: string[] = ["Silver: 1250 ms constant-speed flight, 2500 ms pause, 3750 ms cycle."];
 	for (const text of ["Planning next moves", "x".repeat(100)]) {
@@ -23,7 +34,7 @@ it("renders silver flights, complete exit and the 2500 ms absence without changi
 	writeFileSync(join(tmpdir(), "statusbar-silver-loop-flight.txt"), strip(evidence.join("\n")) + "\n");
 });
 
-it("keeps gold bytes identical to the delivered bounce, including tiny widths and reverse legs", () => {
+it("renders the 1250 ms forward-only gold cycle with unchanged palette and shoulder, including tiny widths", () => {
 	const hex = (color: string, bold: boolean) => {
 		const rgb = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16)).join(";");
 		return `\x1b[${bold ? "1;" : ""}38;2;${rgb}mx\x1b[22;39m`;
@@ -36,9 +47,7 @@ it("keeps gold bytes identical to the delivered bounce, including tiny widths an
 	};
 	for (const width of [0, 1, 2, 3, 10, 40, 100, 240]) {
 		for (const frame of [0, 0.125, 1, 12.5, 100, 250.75, 1000]) {
-			const travel = width - 3;
-			const distance = frame * (0.22 / 0.32) % (2 * travel);
-			const center = width <= 3 ? Math.max(0, (width - 1) / 2) : 1 + (distance <= travel ? distance : 2 * travel - distance);
+			const center = 1 + (width - 1 + 1.5 + 6 - 1) * (frame % 15.625) / 15.625;
 			const expected = Array.from({ length: width }, (_, column) => {
 				const position = column - center;
 				const t = Math.max(0, Math.min(1, (Math.abs(position) - 1.5) / 6));
