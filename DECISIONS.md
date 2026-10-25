@@ -1689,7 +1689,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `extensions/RQW-statusbar/{render,index}.ts`. Proof: `test/fast-gpt.test.ts`. Since: `fa05edf`.
 - **Compaction sheen** `[D-STATUSBAR-SHEEN]`. Gold shimmer runs over the session title in the top input border.
   Both silver and gold shimmers run exactly twice their previous speed, without a slant. Silver has a bright
-  three-cell peak; gold has a bright six-to-seven-cell peak. Both have wide, soft, monotone falloff between
+  three-cell peak; gold also has a bright three-cell peak. Both have wide, soft, monotone falloff between
   neighbouring letters; gold is the smoothest. No unrelated animation behavior changes.
   Owner: «Да, и во время compaction анимация должна идти поверх заголовка, поверх названия сессии.»
   «Надо серебряный сделать более плавным и золотой нужно сделать максимально плавным А пиковые цвета чтобы были на серебре в три символа, а на золоте в шесть-семь символов»
@@ -1697,11 +1697,17 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «Надо вообще блик ускорить в два раза по скорости или даже в два раза ровно ускорить его.»
   Source: the same local owner session as `[D-STATUSBAR-ACTIVITY]`, USER entries at lines 6399 and 6413;
   verified by `scripts/owner-quotes.mjs`. The current task explicitly confirms doubled speed for both shimmers and no slant. Reason: smoother highlights with the owner's peak widths.
+  Gold correction, owner task request on 2026-10-25, source: current `statusbar-compaction-glint` task:
+  "Replace this with ONE glint, matching the silver status animation's approach, travelling across the whole strip AND the `Compaction` label."
+  "Use the final width clarification: THREE characters at the peak, not seven."
+  "Keep the current animation speed exactly; the owner explicitly likes it."
+  "Make the falloff very soft, distributed and smooth, with an expensive-looking continuous gradient."
+  This replaces the earlier gold peak width and periodic motion, not silver or the existing layout and labels.
   Carrier: `extensions/RQW-statusbar/render.ts`; proof: deterministic statusbar render and animation tests.
 - **Animation cadence** `[D-STATUSBAR-ANIMATION]`. Redraw at 30 nominal frames per second,
   using monotonic elapsed time and fractional positions for smooth motion. Silver activity text has exactly one
   glint moving back and forth across the status, not periodically repeated glints. Its travel speed stays
-  8.59375 cells/s. Gold compaction title motion remains periodic and unchanged apart from the shared 30 FPS timer. Double silver and gold travel speed relative to origin/main
+  8.59375 cells/s. Gold compaction uses the same single bouncing glint over each full strip and activity label, with the same travel speed. Double silver and gold travel speed relative to origin/main
   `0521318324f9c22707c7b1ff3d0cc725392f6e55`; the lightning keeps its 120 ms colour step.
   The title animates during compaction, not otherwise. Input text and effort colours do not animate.
   `STATUS_FRAME_MS = 80` and `FAST_STEP_MS = 120` remain unchanged; the shared redraw interval becomes `1000 / 30` ms.
@@ -1712,7 +1718,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `activityRows` supplies status and trailing blank; Pi supplies the leading spacer. Idle returns `[]`.
   Owner: «Сделай анимацию блика 30фпс, 50 ту мач и сделай ее более плавной и что бы был 1 блик на статусе который катается туда сюда, а не бесконечное количество»
   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6774,
-  verified by `scripts/owner-quotes.mjs`. Existing peak widths, colours, soft falloff, layout and static title stay unchanged.
+  verified by `scripts/owner-quotes.mjs`. Colours, soft falloff, layout and static title stay unchanged; the later gold correction is recorded in `[D-STATUSBAR-SHEEN]`.
   Doubled-speed source: `[D-STATUSBAR-SHEEN]`.
   Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
 - **Own git discovery** `[D-STATUSBAR-GIT]`. Git branch and counts use the extension's own repository discovery and

@@ -6249,3 +6249,15 @@ Verbatim superseded clauses from `61b81a3:DECISIONS.md`; replacement commit:
 
 > - **Visible providers** `[D-PROVIDERS-ALLOW]`. Only `anthropic` and legacy `openai-codex` are visible in login, pickers,
 
+## Gold compaction glint - superseded 2026-10-25
+
+Replaced by the owner's three-cell single-glint correction in `[D-STATUSBAR-SHEEN]` and
+`[D-STATUSBAR-ANIMATION]`. Verbatim superseded clauses from `4d0812e:DECISIONS.md`;
+replacement commit: `git log -S'Gold correction, owner task request' -- DECISIONS.md`.
+
+> three-cell peak; gold has a bright six-to-seven-cell peak.
+
+> 8.59375 cells/s. Gold compaction title motion remains periodic and unchanged apart from the shared 30 FPS timer.
+
+> verified by `scripts/owner-quotes.mjs`. Existing peak widths, colours, soft falloff, layout and static title stay unchanged.
+

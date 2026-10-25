@@ -424,15 +424,13 @@ const styled = (hex: string, bold: boolean, text: string) =>
 export const SHIMMER_PERIOD_CELLS = 2 * Math.PI / 0.32;
 export const SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32;
 export const SILVER_PLATEAU_CELLS = 3;
-export const GOLD_PLATEAU_CELLS = 6.5;
+export const GOLD_PLATEAU_CELLS = 3;
 export const SILVER_FALLOFF_CELLS = 4.5;
 export const GOLD_FALLOFF_CELLS = 6;
 
 /** A flat bright crest and a broad monotone shoulder; gold has the gentler, twice-differentiable shoulder. */
 export function shimmerPhase(index: number, frame: number, gold = false): number {
-	const period = SHIMMER_PERIOD_CELLS;
-	const offset = index - frame * SHIMMER_CELLS_PER_FRAME;
-	const position = gold ? ((offset + period / 2) % period + period) % period - period / 2 : offset;
+	const position = index - frame * SHIMMER_CELLS_PER_FRAME;
 	const plateau = gold ? GOLD_PLATEAU_CELLS : SILVER_PLATEAU_CELLS;
 	if (position >= -plateau / 2 && position < plateau / 2) return 1;
 	const falloff = gold ? GOLD_FALLOFF_CELLS : SILVER_FALLOFF_CELLS;
@@ -450,11 +448,11 @@ export function silverGlintPosition(width: number, frame: number): number {
 	return 1 + (distance <= travel ? distance : 2 * travel - distance);
 }
 
-/** Paint by terminal column, without italics. Silver has one bouncing crest; gold retains its periodic global wave. */
+/** Paint by terminal column, without italics, using the same single bouncing crest for silver and gold. */
 export function shimmerText(text: string, startColumn: number, frame: number, stops: readonly string[]): string {
 	const content = stripVTControlCharacters(text);
 	const gold = stops === GOLD;
-	const phaseFrame = gold ? frame : (startColumn + silverGlintPosition(visibleWidth(content), frame)) / SHIMMER_CELLS_PER_FRAME;
+	const phaseFrame = (startColumn + silverGlintPosition(visibleWidth(content), frame)) / SHIMMER_CELLS_PER_FRAME;
 	let column = startColumn;
 	return Array.from(content).map((ch) => {
 		const f = shimmerPhase(column, phaseFrame, gold);
@@ -538,16 +536,14 @@ function topHead(width: number, hiddenLineCount: number, name: string):
 
 /** Global columns keep the compaction gold synchronized over title, hint, ID and rules. */
 function paintTop(segments: TopSegment[], chrome: ActivityChrome | undefined, paint: Paint): string {
-	let x = 0;
+	if (chrome?.compacting) return shimmerText(segments.map((segment) => segment.text).join(""), 0, chrome.frame, GOLD);
 	let out = "";
 	for (const segment of segments) {
 		if (segment.text) {
-			if (chrome?.compacting) out += shimmerText(segment.text, x, chrome.frame, GOLD);
-			else if (segment.kind === "title") out += titleRow(segment.text, visibleWidth(segment.text));
+			if (segment.kind === "title") out += titleRow(segment.text, visibleWidth(segment.text));
 			else if (segment.kind === "id") out += paint("label", segment.text);
 			else out += styled(RULE_SILVER, false, segment.text);
 		}
-		x += visibleWidth(segment.text);
 	}
 	return out;
 }

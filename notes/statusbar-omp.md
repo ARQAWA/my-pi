@@ -14,9 +14,10 @@ empty line above and below, separating it from Pi's native current-action row an
 the activity widget returns no rows; only Pi's original spacer remains.
 
 Silver activity text has exactly one glint moving back and forth at the delivered speed of 8.59375 cells/s,
-with smooth fractional positions and no slant. Gold compaction title motion stays periodic at its delivered speed.
-The shared timer requests 30 nominal redraws/s instead of 50. Silver keeps three very bright peak cells; gold
-keeps six to seven. The wide, soft, monotone falloff and colours are unchanged; gold remains the smoothest.
+with smooth fractional positions and no slant. Gold compaction reuses that single bouncing glint across each
+complete strip and activity label at the same speed. Both have three very bright peak cells.
+The shared timer requests 30 nominal redraws/s. The wide, soft, monotone falloff and colours are unchanged;
+gold retains its gentler quintic shoulder.
 GPT Fast colour-step timing and all layout behavior are unchanged.
 Only public Pi APIs are used, and the extension remains independent.
 
@@ -28,12 +29,15 @@ checks suppression of the native working row, exact widget gaps, title placement
 not a live compaction request.
 
 `STATUS_FRAME_MS = 80` and `FAST_STEP_MS = 120` are unchanged; `SHIMMER_MS = 1000 / 30` ms.
-In `render.ts`, gold retains `SHIMMER_PERIOD_CELLS = 2 * Math.PI / 0.32` and
-`SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32`. `silverGlintPosition(width, frame)` supplies the fractional,
-width-aware ping-pong position instead of that periodic wave. `test/chrome.test.ts` checks both directions,
-a single crest on long statuses, fine sub-character colour steps and unchanged periodic gold output.
-Silver uses a three-cell plateau, 4.5-cell cubic falloff and `#ffffff` peak; gold uses a 6.5-cell plateau,
-six-cell quintic falloff and `#fff4c2` peak. These are spatial profiles, not a higher redraw frequency.
+In `render.ts`, `SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32` remains unchanged.
+`silverGlintPosition(width, frame)` supplies the shared fractional, width-aware ping-pong position.
+The top border is painted as one full row so title, hint, ID and rules cannot clone the crest.
+`test/extensions/RQW-statusbar/chrome.test.ts` pins the unchanged silver bytes and smooth shoulders;
+`gold-glint.test.ts` checks one three-cell gold crest in both directions across wide strips and the
+`Compaction` label, saving deterministic ANSI renders in the OS temporary directory under
+`statusbar-compaction-glint-renders/`. Silver uses a three-cell plateau, 4.5-cell cubic falloff and
+`#ffffff` peak; gold uses a three-cell plateau, six-cell quintic falloff and `#fff4c2` peak.
+These are spatial profiles, not a higher redraw frequency.
 
 ## Read-only sources
 
