@@ -71,11 +71,13 @@ The fenced block `json coordinator-rules` in `PROCESS.md`, section [Subagent mod
 bad JSON or a bad schema is an error state: the guard then blocks every `agent` start and restart
 and shows the error in Main's prompt and status.
 
-## Temporary GPT-only override
+## Optional temporary override format
 
-The optional key `temporaryGptOnly` of the rules block, `{"until": "2026-10-28T16:00:00Z"}`, permits only
-the table's `openai-codex/gpt-6.1-sol` pairs for every `agent` start and restart before `until`.
-All Anthropic models are blocked, including named benchmark arbiters. Product profiles are unchanged.
+The active policy is permanent and has no `temporaryGptOnly` key; see
+[Subagent models](../../../PROCESS.md#subagent-models). The guard needs no policy-specific code.
+Its generic parser still supports an optional `temporaryGptOnly` object with a UTC `until` deadline.
+When present, it permits only the table's `openai-codex/gpt-6.1-sol` pairs before that deadline.
+This optional format is not an active repository rule. Product profiles are unchanged.
 
 - `until` is a real UTC time with seconds and a `Z`. At that exact instant the normal table applies again.
   The clock is read on every call, so expiry needs no reload or edit of `PROCESS.md`.

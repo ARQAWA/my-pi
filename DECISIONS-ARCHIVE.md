@@ -5578,6 +5578,70 @@ Archived by: context-simplify delivery; exact commit: `git log -S'A-0324' -- DEC
 >   Carrier: `extensions/RQW-context/index.ts` (`wrapAgentState`, `wrapRouting`, `wrapCompactionSettings`, `reserveIntents`); details: `notes/context-questions.md`. Since: `6eb01a7`.
 
 
+## Archived 2026-10-25 · Work policy · Temporary GPT-only development subagents
+
+Status: superseded by `[D-WORK-MODELS]`, permanent policy effective 2026-10-01.
+Source: `DECISIONS.md` at `d443f435e82d459be26c81f941ee7da279d9fc34`, lines 111-116.
+Introducing commits: `7afb688e` for the task-class policy, `689da9c9` for the temporary override and profile update.
+Replacement: rule-haiku-subagents commit, identifiable with `git log -S'Effective permanently from 2026-10-01' -- PROCESS.md`.
+
+- **Temporary GPT-only development subagents** `[D-WORK-TEMP-GPT]`. Until 2026-10-28 19:00 Moscow time,
+  `2026-10-28T16:00:00Z`, development subagents use only the GPT pairs of the task-class table. No Anthropic
+  subagents run during this override; after expiry the normal table applies. Owner (`16-27-59:6096`, entry `bda4ad42`):
+  «вот саб агенты будут толко GPT до среды 19:00 мск.»
+  Reason: the owner's newer restriction replaces the earlier Sonnet-only Anthropic exception.
+  Carrier: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), coordinator guard. Since: subagent-profiles.
+
+
+## Archived 2026-10-25 · Work policy · Development subagent models before permanent Haiku policy
+
+Status: superseded by `[D-WORK-MODELS]`, permanent policy effective 2026-10-01.
+Source: `DECISIONS.md` at `d443f435e82d459be26c81f941ee7da279d9fc34`, lines 179-219.
+Introducing commits: `7afb688e` for the task-class policy, `689da9c9` for the temporary override and profile update.
+Replacement: rule-haiku-subagents commit, identifiable with `git log -S'Effective permanently from 2026-10-01' -- PROCESS.md`.
+
+- **Development subagent models** `[D-WORK-MODELS]`. Rule for developing this repository with agents only, as the
+  owner confirmed; it is not a product model setting and not a rule for the rest of Pi. Three task classes:
+  ordinary, complex, and the hardest and most important. The classes, their model and reasoning pairs and the
+  machine-readable settings live only in the `coordinator-rules` JSON block of
+  [PROCESS.md, Subagent models](PROCESS.md#subagent-models); this entry does not repeat the pairs. Main starts only
+  ordinary `agent` subagents and gives `model` and `thinking` explicitly on every start and restart. Specialized
+  roles use `agent_type` on that same lifecycle. The even Anthropic/GPT balance stays outside the temporary
+  GPT-only override `[D-WORK-TEMP-GPT]`. Product reviewer profiles are separate settings under [Review](#review).
+  Owner's messages or contiguous spans from the session file
+  `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`; the physical JSONL line is named before
+  each. The second message cancels the Opus 5.5 low part of the first; the last message is the final table.
+  Line 4162:
+«Короче, по моделям. Сейчас, смотри, как я тебе скажу. Новые модели сабоагентов используешь для сложных задач: Sol-6.1 High и Opus Medium. Для простых задач используешь Opus Low и Sonnet High. Смотри, самая тупая модель — Opus Low, потом идёт Sonnet High. Это для простых задач. Для сложных задач — Opus Medium. Теперь по чату GPT-6.1. Sol Low для простых задач, Sol Medium для простых задач. Нет, не так. Смотри, по-другому. Для простых задач Opus Low и Sol Low. Для сложных задач это Sol Medium, Sol High либо Sonnet High, Opus Medium. Как понял, подтверди, пожалуйста.»
+  Line 4179:
+«Не, нихуя отмена! Простые задачи не Opus 5.5 low, а Sonnet 5.5 medium. У тебя Sonnet 5.5 medium и Sol 6.1 low. Вот так.
+
+Opus 5.5 Low — это слишком дорого»
+  Line 4183, the scope:
+«Но это касается только нашего с тобой Process MD. Это не на весь наш Pi, а именно на нашу репозиторию текущую, по нашему Process MD. Ты же понимаешь это, да или нет?»
+  Line 4188:
+«Да, и надо ещё чётко сконфигурировать, записать, отразить в правилах работы агента, что сложные задачи OPUS 5.5 Medium, Sonnet High и Sol 6.1 Medium, Sol 6.1 High. Я не знаю, понятно тебе это или нет, но OPUS 5.5 Medium в разы сильнее, чем Sonnet High. Если сложные делить на простые и ещё более сложные, если делить сложные на задачи попроще и посложнее, то посложнее делает Medium, а Sonnet High делает попроще. Ты это понимаешь, надеюсь, или нет? Потому что с Sol 6.1 всё понятно: там Medium слабее, а High сильнее.
+
+Это очень важно, чтобы не было такого, что ты на сложные задачи захуяриваешь solve high, а на более простые solve medium, блядь.
+
+Мне важно в этом плане с тобой, чтобы у нас была согласованность полная»
+  Line 4203, the final answer:
+«Да, ты прав. Это противоречие очень жёсткое и важное. Давай так сделаем. Смотри: Opus Medium и Soul High работают с самыми сложными задачами, а просто со сложными задачами работает Sonnet High и Soul Medium. Давай сделаем.
+
+У нас есть обычные задачи, сложные задачи и очень сложные, очень важные задачи. Так яснее?
+Я решил конфликт или еще нет?
+
+А почему у тебя дети молча получают родительскую модель? Такого не должно быть. Ты детей назначаешь сам. У тебя единственный, кто получает родительскую модель — это Explorer. Explorer получает родительскую модель, но это в обычной работе. А ты координатор, ты работаешь отдельно, у тебя другой flow, свой собственный. Понимаешь разницу?»
+  Final table, a separate contiguous span of the same message:
+«Ответы на твои вопросы. Простые задачи: Sonnet Medium и Sol 6.1 Low. Сложные задачи: Sonnet 5.5 High, Sol 6.1 Medium. И самые тяжёлые и самые важные задачи: Opus 5.5 Medium и Sol 6.1 High.»
+  Coordinator reading (agent text, not owner words): the final table is in the line 4203 message; it adds the third
+  class, the hardest and most important tasks; the Opus 5.5 low of line 4162 is cancelled. The historical
+  Explorer exception in the quoted message is superseded by `[D-AGENT-PROFILES]`; no explorer is provided.
+  Reason: owner decision, and the rule must not be lost again, so it has one source and a mechanical guard.
+  Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models) (the JSON block and the rules); the dev-only
+  project extension `.pi/extensions/coordinator-guard/` (Main's top-level session in this checkout only).
+  Superseded earlier entries: `DECISIONS-ARCHIVE.md`, A-0001 to A-0004.
+
 ## A-WEB-CLI-REMOVED - archived 2026-10-25
 
 Replacement: the shipped `web` tool in `extensions/RQW-web/`, decision D-WEB-REMOVE-CLI.

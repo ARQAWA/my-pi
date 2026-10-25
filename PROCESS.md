@@ -106,7 +106,7 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](DECISION
   polling turns. A later Windows failure then gets its tail `BACKLOG.md` item or linked issue and is not lost when
   the branch is deleted. Delivery never waits for Windows or green macOS CI; no workflow result gates a merge.
 - Test lane. Besides the three main work lanes, a fourth lane for tests only, outside the three active slots, owns all
-  test work: ordinary `agent`s on the simple pairs of the [subagent table](#subagent-models), with
+  test work: ordinary `agent`s on the simple GPT pair or allowed Haiku pairs of the [subagent table](#subagent-models), with
   `.agents/roles/test-fixer.md` as the `role`. It starts only after this pipeline change is delivered and follows all
   pipeline agreements. Decisions: [DECISIONS.md](DECISIONS.md#task-pipeline).
 - A failed task-scoped delivery check or a conflicting rebase sends the task back to the top of the queue. Full-run
@@ -159,47 +159,50 @@ These rules are for developing this repository with agents. They are not product
 profiles supplied by `RQW-review` keep their own models. The decision,
 the owner's messages and the history are in [DECISIONS.md, Work policy](DECISIONS.md#work-policy).
 
-Main picks one task class and starts an ordinary `agent` subagent with a model and reasoning pair of that class:
-`simple` for ordinary tasks, `complex` for complex tasks, `hardest` for the hardest and most important tasks.
-The block below is the only place that lists the pairs, and the source of truth for the dev guard. To change
-a rule, edit the block; no other file repeats it.
+Main must not use any Anthropic model for subagents except exactly `anthropic/claude-haiku-5-5`.
+This permanent rule is in force now.
+Main starts an ordinary `agent` subagent with an explicit model and reasoning pair from the block below.
+The GPT task classes remain `simple` for ordinary tasks, `complex` for complex tasks, and `hardest` for the
+hardest and most important tasks. The separate `haiku` class permits every reasoning level supported by the
+installed Pi catalogue, without assigning Haiku a relative task strength. The block is the only list of pairs
+and the source of truth for the dev guard. To change a rule, edit the block; no other file repeats it.
 
 ```json coordinator-rules
 {
   "agentModels": {
     "simple": [
-      ["anthropic/claude-sonnet-5-5", "medium"],
       ["openai-codex/gpt-6.1-sol", "low"]
     ],
     "complex": [
-      ["anthropic/claude-sonnet-5-5", "high"],
       ["openai-codex/gpt-6.1-sol", "medium"]
     ],
     "hardest": [
-      ["anthropic/claude-opus-5-5", "medium"],
       ["openai-codex/gpt-6.1-sol", "high"]
+    ],
+    "haiku": [
+      ["anthropic/claude-haiku-5-5", "off"],
+      ["anthropic/claude-haiku-5-5", "low"],
+      ["anthropic/claude-haiku-5-5", "medium"],
+      ["anthropic/claude-haiku-5-5", "high"],
+      ["anthropic/claude-haiku-5-5", "xhigh"],
+      ["anthropic/claude-haiku-5-5", "max"]
     ]
-  },
-  "temporaryGptOnly": {
-    "until": "2026-10-28T16:00:00Z"
   }
 }
 ```
 
-Temporary override: until 2026-10-28 19:00 Moscow time, `2026-10-28T16:00:00Z`, no subagent working on this
-project uses Anthropic. Only the GPT pairs of the task-class table are allowed, including for benchmark arbiters.
-At the timestamp the normal table applies again automatically. The guard checks the clock on every Main
-start/restart and passes the restriction into child briefs. This development override does not change product profiles.
+This permanent rule replaces the temporary GPT-only override. There is no expiry that permits other Anthropic models.
+The supported Haiku levels are verified through the installed Pi 1.4.0 public `ModelRuntime.create` catalogue
+and `getSupportedThinkingLevels` from its `@earendil-works/pi-ai` dependency; `minimal` is not supported.
 
 1. Every `start` and `restart` by Main names `model` and `thinking` explicitly from the chosen class. Nothing is
    inherited from Main's own model or reasoning.
 2. Main starts ordinary `agent` subagents. Specialized roles, including reviewers, use the same tool with
    `agent_type`; profiles do not add a separate execution lifecycle.
-3. Choose the class by the task. Opus 5.5 medium (`hardest`) is far stronger than Sonnet 5.5 high (`complex`), and
-   Sol high (`hardest`) is stronger than Sol medium (`complex`). Keep `hardest` pairs for the hardest and most
-   important tasks and never give the stronger pair to the easier task.
-4. Outside the temporary GPT-only override, spread subagents evenly between Anthropic (Opus 5.5, Sonnet 5.5)
-   and GPT-6.1-Sol so both subscriptions' limits are spent evenly. Balance over the run, not per single call.
+3. Choose the GPT class by the task. Keep `hardest` for the hardest and most important tasks, not easier work.
+   Haiku may use any pair in its separate class.
+4. Spread subagents evenly between the allowed Anthropic and GPT models so both subscriptions' limits are spent
+   evenly. Balance over the run, not per single call.
 5. No other models or reasoning levels. A pause of a named benchmark campaign pauses that campaign only; it does
    not pause unrelated work or prohibit the authorized subagent models.
 6. Dev guard: the project extension `.pi/extensions/coordinator-guard/` reads this block on every call of Main's

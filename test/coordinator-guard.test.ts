@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { after, describe, it } from "node:test";
+import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { pathToFileURL } from "node:url";
 import { childInstruction, createCoordinatorGuard, ROOT } from "../.pi/extensions/coordinator-guard/index.ts";
 import { parseRules } from "../.pi/extensions/coordinator-guard/rules.ts";
@@ -11,14 +11,15 @@ import { parseRules } from "../.pi/extensions/coordinator-guard/rules.ts";
 describe("coordinator-guard local development tooling", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 const RULES = {
 	agentModels: {
-		simple: [["anthropic/claude-sonnet-5-5", "medium"], ["openai-codex/gpt-6.1-sol", "low"]],
-		complex: [["anthropic/claude-sonnet-5-5", "high"], ["openai-codex/gpt-6.1-sol", "medium"]],
-		hardest: [["anthropic/claude-opus-5-5", "medium"], ["openai-codex/gpt-6.1-sol", "high"]],
+		simple: [["openai-codex/gpt-6.1-sol", "low"]],
+		complex: [["openai-codex/gpt-6.1-sol", "medium"]],
+		hardest: [["openai-codex/gpt-6.1-sol", "high"]],
+		haiku: ["off", "low", "medium", "high", "xhigh", "max"].map((level) => ["anthropic/claude-haiku-5-5", level]),
 	},
-	temporaryGptOnly: { until: "2026-10-28T16:00:00Z" },
 };
-// Clocks around the restriction; every test outside the restriction block runs at the exact expiry, the normal table.
-const UNTIL = Date.parse(RULES.temporaryGptOnly.until);
+// Optional-format coverage only, not active repository policy.
+const OPTIONAL_RULES = { ...RULES, temporaryGptOnly: { until: "2999-01-01T00:00:00Z" } };
+const UNTIL = Date.parse(OPTIONAL_RULES.temporaryGptOnly.until);
 const BEFORE = UNTIL - 1;
 const processMd = (json: unknown) => `# Development process\n\n## Subagent models\n\n\`\`\`json coordinator-rules\n${typeof json === "string" ? json : JSON.stringify(json, null, 2)}\n\`\`\`\n\nMore prose.\n`;
 
@@ -83,8 +84,10 @@ describe("coordinator-guard: agent model and thinking", () => {
 		});
 	}
 	const denied: [string, string][] = [
-		["anthropic/claude-opus-5-5", "high"], ["anthropic/claude-opus-5-5", "low"], ["openai-codex/gpt-6.1-sol", "xhigh"],
-		["anthropic/claude-sonnet-5-5", "low"], ["claude-opus-5-5", "medium"], ["anthropic/claude-haiku-5-5", "low"],
+		...["claude-sonnet-5-5", "claude-opus-5-5", "claude-sonnet-4-6", "claude-opus-4-7"].flatMap((id) =>
+			["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((level): [string, string] => [`anthropic/${id}`, level])),
+		["openai-codex/gpt-6.1-sol", "xhigh"], ["openai-codex/gpt-6.1-sol", "max"],
+		["claude-haiku-5-5", "medium"], ["anthropic/claude-haiku-5-5", "minimal"],
 	];
 	for (const [model, thinking] of denied) {
 		it(`blocks ${model} ${thinking} on start and restart`, () => {
@@ -97,7 +100,7 @@ describe("coordinator-guard: agent model and thinking", () => {
 		blocked(g.call("agent", { action: "start", model: "anthropic/claude-opus-5-5", task: "x" }), /explicitly/);
 		blocked(g.call("agent", { action: "start", thinking: "medium", task: "x" }), /explicitly/);
 		blocked(g.call("agent", { action: "restart", id: "agent#1" }), /explicitly on agent restart/);
-		passed(g.call("agent", { model: "anthropic/claude-opus-5-5", thinking: "medium", task: "x" }));
+		passed(g.call("agent", { model: "anthropic/claude-haiku-5-5", thinking: "max", task: "x" }));
 	});
 	it("restart without a task passes unchanged", () => {
 		const r = g.call("agent", { action: "restart", id: "agent#1", model: "openai-codex/gpt-6.1-sol", thinking: "low" });
@@ -115,30 +118,32 @@ describe("coordinator-guard: agent model and thinking", () => {
 	it("the child instruction carries only the ordinary agent model rules", () => {
 		const line = childInstruction(parseRules(processMd(RULES)), UNTIL);
 		assert.match(line, /ordinary `agent` subagent, give model and thinking explicitly/);
-		assert.match(line, /simple: anthropic\/claude-sonnet-5-5 medium, openai-codex\/gpt-6\.1-sol low; complex: .*; hardest: anthropic\/claude-opus-5-5 medium, openai-codex\/gpt-6\.1-sol high/);
+		assert.match(line, /simple: openai-codex\/gpt-6\.1-sol low; complex: .*; hardest: openai-codex\/gpt-6\.1-sol high; haiku: anthropic\/claude-haiku-5-5 off, .*anthropic\/claude-haiku-5-5 max/);
 		assert.doesNotMatch(line, /explore|review tool/);
 		assert.doesNotMatch(line, /«|»/);
 	});
 });
 
-describe("coordinator-guard: temporary GPT-only override", () => {
+describe("coordinator-guard: optional GPT-only override format", () => {
+	beforeEach(() => setRules(OPTIONAL_RULES));
+	afterEach(() => setRules(RULES));
 	it("allows all three Sol levels on start and restart before expiry", () => {
 		const g = load([], BEFORE);
 		for (const thinking of ["low", "medium", "high"]) {
 			for (const action of ["start", "restart"]) {
 				const r = g.call("agent", { action, model: "openai-codex/gpt-6.1-sol", thinking, task: "x" });
 				passed(r);
-				assert.match(r.input.task as string, /Temporary rule until 2026-10-28T16:00:00Z/);
+				assert.match(r.input.task as string, /Temporary rule until 2999-01-01T00:00:00Z/);
 			}
 		}
 	});
-	it("blocks both Sonnet pairs and Opus even with an arbiter title on start and restart", () => {
+	it("blocks every table Haiku pair even with an arbiter title on start and restart", () => {
 		const g = load([], BEFORE);
 		for (const [model, thinking] of Object.values(RULES.agentModels).flat().filter(([m]) => m.startsWith("anthropic/"))) {
 			for (const action of ["start", "restart"]) {
 				for (const title of [undefined, "Арбитр замера", "Арбитр замера 3: reviewer A"]) {
 					const r = g.call("agent", { action, model, thinking, title, task: "x" });
-					blocked(r, /Temporary rule until 2026-10-28T16:00:00Z/);
+					blocked(r, /Temporary rule until 2999-01-01T00:00:00Z/);
 					assert.match(r.result.reason, /All Anthropic models are blocked, including benchmark arbiters/);
 					assert.doesNotMatch(r.result.reason.split("allowed:")[1], /anthropic\//);
 				}
@@ -152,15 +157,15 @@ describe("coordinator-guard: temporary GPT-only override", () => {
 		}
 	});
 	it("states GPT-only restriction and expiry in Main's prompt and child instruction", () => {
-		for (const text of [load([], BEFORE).prompt(), childInstruction(parseRules(processMd(RULES)), BEFORE)]) {
-			assert.match(text, /Temporary rule until 2026-10-28T16:00:00Z: only the allowed openai-codex\/gpt-6\.1-sol task pairs may be used/);
+		for (const text of [load([], BEFORE).prompt(), childInstruction(parseRules(processMd(OPTIONAL_RULES)), BEFORE)]) {
+			assert.match(text, /Temporary rule until 2999-01-01T00:00:00Z: only the allowed openai-codex\/gpt-6\.1-sol task pairs may be used/);
 			assert.match(text, /All Anthropic models are blocked, including benchmark arbiters/);
 			assert.match(text, /After that time the normal table applies again/);
 			assert.match(text, /simple: openai-codex\/gpt-6\.1-sol low; complex: openai-codex\/gpt-6\.1-sol medium; hardest: openai-codex\/gpt-6\.1-sol high/);
 			assert.doesNotMatch(text, /anthropic\/|Only a start whose title|«|»/);
 		}
 	});
-	it("restores every original normal pair at exact expiry and afterwards", () => {
+	it("restores every table pair at exact expiry and afterwards", () => {
 		for (const now of [UNTIL, UNTIL + 1, UNTIL + 86_400_000]) {
 			const g = load([], now);
 			for (const [model, thinking] of Object.values(RULES.agentModels).flat()) {
@@ -170,7 +175,7 @@ describe("coordinator-guard: temporary GPT-only override", () => {
 					assert.doesNotMatch(r.input.task as string, /Temporary rule/);
 				}
 			}
-			assert.match(g.prompt(), /hardest: anthropic\/claude-opus-5-5 medium/);
+			assert.match(g.prompt(), /haiku: anthropic\/claude-haiku-5-5 off/);
 			assert.doesNotMatch(g.prompt(), /Temporary rule/);
 			blocked(g.call("agent", { model: "anthropic/claude-opus-5-5", thinking: "high" }), /is not an allowed pair/);
 		}
@@ -213,12 +218,12 @@ describe("coordinator-guard: temporary GPT-only override", () => {
 describe("coordinator-guard: rules are read fresh and fail closed", () => {
 	it("a changed block takes effect on the next call without reload", () => {
 		const g = load();
-		const pair = { action: "start", model: "anthropic/claude-opus-5-5", thinking: "high", task: "x" };
+		const pair = { action: "start", model: "fixture/custom", thinking: "high", task: "x" };
 		blocked(g.call("agent", { ...pair }), /not an allowed pair/);
-		setRules({ ...RULES, agentModels: { ...RULES.agentModels, extra: [["anthropic/claude-opus-5-5", "high"]] } });
+		setRules({ ...RULES, agentModels: { ...RULES.agentModels, extra: [["fixture/custom", "high"]] } });
 		try {
 			passed(g.call("agent", { ...pair }));
-			assert.match(g.prompt(), /extra: anthropic\/claude-opus-5-5 high/);
+			assert.match(g.prompt(), /extra: fixture\/custom high/);
 		} finally {
 			setRules(RULES);
 		}
@@ -233,7 +238,7 @@ describe("coordinator-guard: rules are read fresh and fail closed", () => {
 		["bad pair", processMd({ agentModels: { simple: [["anthropic/claude-sonnet-5-5"]] } }), /must be \[model, thinking\]/],
 		["model without provider", processMd({ agentModels: { simple: [["sonnet", "high"]] } }), /provider\/id/],
 		["bad thinking", processMd({ agentModels: { simple: [["a/b", "ultra"]] } }), /thinking must be one of/],
-		["missing agentModels", processMd({ temporaryGptOnly: RULES.temporaryGptOnly }), /agentModels must be/],
+		["missing agentModels", processMd({ temporaryGptOnly: OPTIONAL_RULES.temporaryGptOnly }), /agentModels must be/],
 		["null restriction", processMd({ ...RULES, temporaryGptOnly: null }), /temporaryGptOnly must be an object/],
 		["array restriction", processMd({ ...RULES, temporaryGptOnly: [] }), /temporaryGptOnly must be an object/],
 		["missing until", processMd({ ...RULES, temporaryGptOnly: {} }), /until must be a UTC time/],
@@ -374,11 +379,11 @@ describe("coordinator-guard: prompt reinjection", () => {
 		const g = load();
 		const first = g.prompt();
 		assert.match(first, /binds Main, the top-level coordinator session/);
-		assert.match(first, /simple: anthropic\/claude-sonnet-5-5 medium, openai-codex\/gpt-6\.1-sol low; complex: anthropic\/claude-sonnet-5-5 high, openai-codex\/gpt-6\.1-sol medium; hardest: anthropic\/claude-opus-5-5 medium, openai-codex\/gpt-6\.1-sol high/);
+		assert.match(first, /simple: openai-codex\/gpt-6\.1-sol low; complex: openai-codex\/gpt-6\.1-sol medium; hardest: openai-codex\/gpt-6\.1-sol high; haiku: anthropic\/claude-haiku-5-5 off, .*anthropic\/claude-haiku-5-5 max/);
 		assert.doesNotMatch(first, /explore|review tool/);
 		assert.match(first, /When the owner asks Main to do such work personally \(for example "ты сам" or "you do it"\), Main objects and proposes a subagent for it; only an explicit owner override lets Main do that work itself/);
 		assert.match(first, /Main never edits or writes files in the checkout or its worktrees \(edit and write there are blocked\)/);
-		assert.doesNotMatch(first, /Temporary rule/, "no temporary rule at the exact expiry");
+		assert.doesNotMatch(first, /Temporary rule|claude-sonnet|claude-opus/, "permanent policy has no temporary override or forbidden model");
 		assert.match(first, /one exact contiguous span of one owner message: no inserted omissions, cuts or paraphrase; only Unicode NFC and whitespace runs are normalised/);
 		assert.doesNotMatch(first, /copied whole/);
 		assert.equal(g.prompt(), first, "a fresh run gets the same section again");
@@ -401,7 +406,19 @@ describe("coordinator-guard: placement", () => {
 	it("the real PROCESS.md block parses with the guard's parser", () => {
 		const rules = parseRules(readFileSync(join(ROOT, "PROCESS.md"), "utf8"));
 		assert.deepEqual(rules.agentModels, RULES.agentModels);
-		assert.deepEqual(rules.temporaryGptOnly, { ...RULES.temporaryGptOnly, untilMs: UNTIL });
+		assert.equal(rules.temporaryGptOnly, undefined);
+		for (const now of [Date.parse("2026-10-01T00:00:00Z"), Date.parse("2026-10-28T16:00:00Z"), UNTIL + 1]) {
+			setRules({ agentModels: rules.agentModels });
+			const g = load([], now);
+			for (const action of ["start", "restart"]) {
+				for (const [model, thinking] of Object.values(rules.agentModels).flat()) passed(g.call("agent", { action, model, thinking }));
+				for (const model of ["anthropic/claude-sonnet-5-5", "anthropic/claude-opus-5-5"]) {
+					blocked(g.call("agent", { action, model, thinking: "medium", title: "Арбитр замера" }), /not an allowed pair/);
+				}
+			}
+			assert.doesNotMatch(g.prompt(), /Temporary rule|claude-sonnet|claude-opus/);
+		}
+		setRules(RULES);
 	});
 });
 });

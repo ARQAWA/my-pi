@@ -13,7 +13,7 @@ the owner hold no slot, and a fourth lane for tests only is outside the limit; p
 [PROCESS.md](PROCESS.md#task-pipeline).
 Golden rule, no avoidable token spending and simplest engineered solutions: [PROCESS.md](PROCESS.md#golden-rule).
 Task timebox, at most 2 hours of substantive work, then a pause and a report: [PROCESS.md](PROCESS.md#task-timebox).
-Temporary subagent model restriction and expiry: [PROCESS.md](PROCESS.md#subagent-models).
+Permanent subagent model policy: [PROCESS.md](PROCESS.md#subagent-models).
 Search ready-made solutions before new features or mechanisms: [PROCESS.md](PROCESS.md#research-and-agreement).
 Third-party installs go into the owner's Pi first, then the package: [PROCESS.md](PROCESS.md#third-party-installation-fast-path).
 Task bases, scoped checks, release batching and the owner's Pi update source: [PROCESS.md Delivery](PROCESS.md#delivery).

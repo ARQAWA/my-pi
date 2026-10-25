@@ -108,12 +108,6 @@ Provenance:
   Reason: focus execution on the owner's priorities. Carrier:
   [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
   Since: process-rules-oct23 squash.
-- **Temporary GPT-only development subagents** `[D-WORK-TEMP-GPT]`. Until 2026-10-28 19:00 Moscow time,
-  `2026-10-28T16:00:00Z`, development subagents use only the GPT pairs of the task-class table. No Anthropic
-  subagents run during this override; after expiry the normal table applies. Owner (`16-27-59:6096`, entry `bda4ad42`):
-  «вот саб агенты будут толко GPT до среды 19:00 мск.»
-  Reason: the owner's newer restriction replaces the earlier Sonnet-only Anthropic exception.
-  Carrier: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), coordinator guard. Since: subagent-profiles.
 - **Ready-made solutions first** `[D-WORK-READY-MADE]`. Search Pi packages, npm, GitHub and other agents before
   building new features or mechanisms; report license, maintenance, size and dependency risk. Build our own only
   with owner consent recorded here. Small changes, bug fixes and test fixes are excluded.
@@ -176,47 +170,25 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «мы нигде кроме этого ноута это не запускаем, все что КАСАЕТСЯ РАБОТЫ В ЭТОМ РЕПО - только локальная тема»
   Reason: local orchestration has no other deployment target; product and CI portability remain separate.
   Carriers: [PROCESS.md](PROCESS.md#isolated-parallel-execution), local development test suites.
-- **Development subagent models** `[D-WORK-MODELS]`. Rule for developing this repository with agents only, as the
-  owner confirmed; it is not a product model setting and not a rule for the rest of Pi. Three task classes:
-  ordinary, complex, and the hardest and most important. The classes, their model and reasoning pairs and the
-  machine-readable settings live only in the `coordinator-rules` JSON block of
-  [PROCESS.md, Subagent models](PROCESS.md#subagent-models); this entry does not repeat the pairs. Main starts only
-  ordinary `agent` subagents and gives `model` and `thinking` explicitly on every start and restart. Specialized
-  roles use `agent_type` on that same lifecycle. The even Anthropic/GPT balance stays outside the temporary
-  GPT-only override `[D-WORK-TEMP-GPT]`. Product reviewer profiles are separate settings under [Review](#review).
-  Owner's messages or contiguous spans from the session file
-  `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`; the physical JSONL line is named before
-  each. The second message cancels the Opus 5.5 low part of the first; the last message is the final table.
-  Line 4162:
-«Короче, по моделям. Сейчас, смотри, как я тебе скажу. Новые модели сабоагентов используешь для сложных задач: Sol-6.1 High и Opus Medium. Для простых задач используешь Opus Low и Sonnet High. Смотри, самая тупая модель — Opus Low, потом идёт Sonnet High. Это для простых задач. Для сложных задач — Opus Medium. Теперь по чату GPT-6.1. Sol Low для простых задач, Sol Medium для простых задач. Нет, не так. Смотри, по-другому. Для простых задач Opus Low и Sol Low. Для сложных задач это Sol Medium, Sol High либо Sonnet High, Opus Medium. Как понял, подтверди, пожалуйста.»
-  Line 4179:
-«Не, нихуя отмена! Простые задачи не Opus 5.5 low, а Sonnet 5.5 medium. У тебя Sonnet 5.5 medium и Sol 6.1 low. Вот так.
+- **Development subagent models** `[D-WORK-MODELS]`. In force now and permanently, Main must not use any
+  Anthropic model as a subagent except exactly `anthropic/claude-haiku-5-5`, at every reasoning level actually
+  supported by the installed Pi catalogue. The GPT task-class pairs remain unchanged. The only pair list lives in the
+  `coordinator-rules` JSON block of [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
+  Main names `model` and `thinking` explicitly on every ordinary `agent` start and restart; specialized roles
+  use `agent_type` on that same lifecycle. Balance the allowed Anthropic and GPT models over the run.
+  This is repository development policy, not a product model setting; product reviewer profiles stay separate.
+  Owner (`16-27-59:6618`, entry `0fb9fd91`, 2026-10-25):
+  «Надо скорректировать правила, чтобы было с 1 октября, что тебе нельзя пользоваться моделями Sonnet и Opus в качестве subagent, а моделью Haiku можно пользоваться»
+  «Модель Haiku 5.5 имеет и Extra High, и Max Rising»
+  Owner clarification (`16-27-59:6624`, entry `14c062d8`, 2026-10-25), replacing the earlier date emphasis:
+  «Я имел в виду, что просто чтобы тебе нельзя было пользоваться моделями Anthropic, кроме Haiku 5.5. Haiku 5.5 в любом виде можно использовать»
+  Reason: replace the temporary ban on all Anthropic subagents and the old Sonnet/Opus permissions with the
+  owner's permanent model policy. Public installed Pi 1.4.0 catalogue APIs confirm Extra High and Max;
+  the guard already accepts arbitrary classes of exact pairs, so its code stays unchanged.
+  Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), `.pi/extensions/coordinator-guard/`, `AGENTS.md`.
+  Superseded `[D-WORK-TEMP-GPT]` and the former `[D-WORK-MODELS]` entry are preserved verbatim in
+  `DECISIONS-ARCHIVE.md` with source commit and replacement provenance.
 
-Opus 5.5 Low — это слишком дорого»
-  Line 4183, the scope:
-«Но это касается только нашего с тобой Process MD. Это не на весь наш Pi, а именно на нашу репозиторию текущую, по нашему Process MD. Ты же понимаешь это, да или нет?»
-  Line 4188:
-«Да, и надо ещё чётко сконфигурировать, записать, отразить в правилах работы агента, что сложные задачи OPUS 5.5 Medium, Sonnet High и Sol 6.1 Medium, Sol 6.1 High. Я не знаю, понятно тебе это или нет, но OPUS 5.5 Medium в разы сильнее, чем Sonnet High. Если сложные делить на простые и ещё более сложные, если делить сложные на задачи попроще и посложнее, то посложнее делает Medium, а Sonnet High делает попроще. Ты это понимаешь, надеюсь, или нет? Потому что с Sol 6.1 всё понятно: там Medium слабее, а High сильнее.
-
-Это очень важно, чтобы не было такого, что ты на сложные задачи захуяриваешь solve high, а на более простые solve medium, блядь.
-
-Мне важно в этом плане с тобой, чтобы у нас была согласованность полная»
-  Line 4203, the final answer:
-«Да, ты прав. Это противоречие очень жёсткое и важное. Давай так сделаем. Смотри: Opus Medium и Soul High работают с самыми сложными задачами, а просто со сложными задачами работает Sonnet High и Soul Medium. Давай сделаем.
-
-У нас есть обычные задачи, сложные задачи и очень сложные, очень важные задачи. Так яснее?
-Я решил конфликт или еще нет?
-
-А почему у тебя дети молча получают родительскую модель? Такого не должно быть. Ты детей назначаешь сам. У тебя единственный, кто получает родительскую модель — это Explorer. Explorer получает родительскую модель, но это в обычной работе. А ты координатор, ты работаешь отдельно, у тебя другой flow, свой собственный. Понимаешь разницу?»
-  Final table, a separate contiguous span of the same message:
-«Ответы на твои вопросы. Простые задачи: Sonnet Medium и Sol 6.1 Low. Сложные задачи: Sonnet 5.5 High, Sol 6.1 Medium. И самые тяжёлые и самые важные задачи: Opus 5.5 Medium и Sol 6.1 High.»
-  Coordinator reading (agent text, not owner words): the final table is in the line 4203 message; it adds the third
-  class, the hardest and most important tasks; the Opus 5.5 low of line 4162 is cancelled. The historical
-  Explorer exception in the quoted message is superseded by `[D-AGENT-PROFILES]`; no explorer is provided.
-  Reason: owner decision, and the rule must not be lost again, so it has one source and a mechanical guard.
-  Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models) (the JSON block and the rules); the dev-only
-  project extension `.pi/extensions/coordinator-guard/` (Main's top-level session in this checkout only).
-  Superseded earlier entries: `DECISIONS-ARCHIVE.md`, A-0001 to A-0004.
 - **Anthropic/GPT balance** `[D-WORK-BALANCE]`. Owner (`16-27-59:351`):
   «Смотри, надо скорректировать так, чтобы ты как координатор поровну поднимал модели из Anthropic и GPT, чтобы не было перевеса в другим, дисбаланса. Поднимай саб-агенты и те, и те, чтобы лимит расходовался равномерно.»
   «И зафиксирую это в процесс.nd файле, эту информацию на будущее»
@@ -496,9 +468,9 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Since: local-delivery-gate squash.
 
 - **Test lane** `[D-PIPELINE-TEST-LANE]`. Three main work lanes and a fourth lane for tests only, usable for nothing else and
-  outside the three active slots. Its agents are ordinary `agent`s on the simple pairs of the subagent table, Sonnet 5.5
-  medium or Sol 6.1 low (coordinator interpretation of the owner's wording), with `.agents/roles/test-fixer.md` as the
-  `role`. They take the tail items of [WINDOWS-TEST-FAILURES](BACKLOG.md#windows-test-failures) and
+  outside the three active slots. Its agents are ordinary `agent`s on the simple GPT pair or an allowed Haiku pair under
+  [the development model policy](PROCESS.md#subagent-models), with `.agents/roles/test-fixer.md` as the `role`.
+  They take the tail items of [WINDOWS-TEST-FAILURES](BACKLOG.md#windows-test-failures) and
   [QA-FLAKES-LAST](BACKLOG.md#qa-flakes-last) and own all test work: every failing test, reruns and the full restoration
   of Windows. The lane starts only after this pipeline change is delivered, and then follows all its agreements and
   tooling (CI watcher, merge agent, queue); it is not launched in this branch. Reruns follow a fix or a new head, not blind
