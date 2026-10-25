@@ -1599,13 +1599,19 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «И это должно быть строго в концепте Terminal UI Pi, и при этом чтобы это было в цветовой гамме и в согласованности с нашим новым дизайном, который ты сейчас имитируешь. Решение остается за тобой конечное.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3238)
   Carrier: `extensions/RQW-models/{index,picker}.ts`, `test/`, real Pi composition in `test/model-effort-picker.test.ts`.
   The effort colours of the footer are RQW-statusbar's (`[D-STATUSBAR-ACTIVITY]`). Since: `d0160cf`.
-- **Startup availability** `[D-MODELS-STARTUP]`. Coordinator engineering choice, without its own owner quote: startup
-  reads provider-scoped availability and uses the owning session's async-auth `setModel`. Before the startup choice
-  `session_start` awaits Pi's provider-scoped `getAvailable(provider.id)` in parallel for the visible providers, sharing
-  one 15 s deadline like Pi's model selector; on timeout or error the snapshot is used; without a choice nothing waits.
-  Reason: Pi can discard a whole-runtime availability pass superseded by a background refresh, and `pi.setModel` checks
-  that snapshot's configured-auth state first. Carrier: `extensions/RQW-models/index.ts`; `test/extensions/RQW-models/models.test.ts` gates a
-  superseding pass deterministically. Since: `230e8d0`.
+- **Startup availability** `[D-MODELS-STARTUP]`. Startup reads provider-scoped authenticated availability and uses the
+  owning session's async-auth `setModel`. Before a startup choice, `session_start` awaits Pi's
+  `getAvailable(provider.id)` in parallel; without a choice nothing waits. No extension-imposed deadline or stale
+  snapshot substitution on failure: provider errors reach Pi's existing extension-error reporting path.
+  Owner: «Вообще всё несогласованное нахуй убираем.» Source: USER entry `d7037e66`, line 9432 of
+  `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, 2026-10-25, in
+  `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`. His answer 3 accepted the startup-timeout
+  and stale-list removal proposed at line 9416. Audit finding: `MODELS-STARTUP-SCOPE`; the other model audit
+  findings remain separate tasks.
+  Reason: preserve authenticated model acquisition and overlapping-refresh correctness without unapproved behavior.
+  Carrier: `extensions/RQW-models/index.ts`; `test/extensions/RQW-models/models.test.ts` covers the removal and
+  deterministically gates a superseding pass. Supersedes the deadline and snapshot clause from `230e8d0`, preserved
+  verbatim in [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md#models-startup-deadline-and-snapshot---removed-2026-10-25).
 - **Independent module** `[D-MODELS-MODULE]`. `extensions/RQW-models/index.ts` imports only Pi and has its own
   `pi.extensions` entry; disable it in `pi config`, then `/reload`. It writes no settings and registers no tool; its
   instance-level masks are removed when it is off. Coordinator text (owner quotes C:3113, an omp session, not found in the

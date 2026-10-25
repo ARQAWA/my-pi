@@ -2,6 +2,8 @@
 
 Independent model picker and shortcuts. A new session starts on Opus medium. Authenticated models, their
 strongest-first order and supported effort lists: [DECISIONS.md, Models](../../DECISIONS.md#models).
+Startup choices await provider-scoped authenticated availability, without an extension-imposed deadline or a stale
+snapshot on failure. Errors follow Pi's existing extension-error reporting path.
 
 The four Kimi Code entries appear first in the owner's order; see `[D-MODELS-KIMI]` in the linked decision.
 K2.7 Code Highspeed shows `high` as a visual label only, without selecting or sending a reasoning level.

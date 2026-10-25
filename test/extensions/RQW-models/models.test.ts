@@ -705,6 +705,44 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 			await laterPass;
 		}
 	});
+	it("startup reads authenticated providers without imposing a timeout and selects Opus medium", async () => {
+		const session = await realSession({ reason: "reload" });
+		const getAvailable = runtime.getAvailable.bind(runtime);
+		const calls: { provider: string | undefined; signal: AbortSignal | undefined }[] = [];
+		runtime.getAvailable = (provider, options) => {
+			calls.push({ provider, signal: options?.signal });
+			return getAvailable(provider, options);
+		};
+		try {
+			await session.extensionRunner.emit({ type: "session_start", reason: "startup" });
+			assert.deepEqual(calls.map((call) => call.provider), runtime.getProviders().map((provider) => provider.id));
+			assert.deepEqual(calls.map((call) => call.signal), calls.map(() => undefined));
+			assert.equal(session.model?.id, "claude-opus-5-5");
+			assert.equal(session.thinkingLevel, "medium");
+		} finally {
+			Reflect.deleteProperty(runtime, "getAvailable");
+			session.dispose();
+		}
+	});
+	it("startup reports provider errors through Pi instead of selecting from a stale snapshot", async () => {
+		const session = await realSession({ reason: "reload" });
+		const errors: { event?: string; error: string }[] = [];
+		const unsubscribe = session.extensionRunner.onError((error) => errors.push(error));
+		const getAvailable = runtime.getAvailable.bind(runtime);
+		assert.ok(ModelRuntime.prototype.getAvailableSnapshot.call(runtime).some((m) => m.id === "claude-opus-5-5"));
+		runtime.getAvailable = (provider, options) => provider === "anthropic"
+			? Promise.reject(new Error("Faux availability failed")) : getAvailable(provider, options);
+		try {
+			await session.extensionRunner.emit({ type: "session_start", reason: "startup" });
+			assert.deepEqual(errors.map(({ event, error }) => ({ event, error })), [{ event: "session_start", error: "Faux availability failed" }]);
+			assert.equal(session.model?.id, "gpt-6-sol");
+			assert.equal(session.thinkingLevel, "high");
+		} finally {
+			Reflect.deleteProperty(runtime, "getAvailable");
+			unsubscribe();
+			session.dispose();
+		}
+	});
 	it("keeps an unlisted model with a warning when no listed model is authenticated, and refuses its requests", async () => {
 		const savedEnv = { ...process.env };
 		for (const key of Object.keys(process.env)) if (/(?:_API_KEY|_TOKEN|_SECRET)$/.test(key)) delete process.env[key];

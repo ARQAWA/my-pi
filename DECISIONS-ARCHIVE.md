@@ -6354,6 +6354,21 @@ Verbatim superseded timing clause and source:
 >   Owner source: `statusbar-silver-640ms` task request, 2026-10-25:
 >   "Change the silver one-way visible flight duration from 320 ms to 640 ms." The three-cell peak and soft silver gradient stay unchanged.
 
+## Models startup deadline and snapshot - removed 2026-10-25
+
+Source: `34e6bd3d12fbb3939457f5987be9c950c34e62f2:DECISIONS.md`, introduced by `230e8d0`.
+Replaced by the owner's explicit `MODELS-STARTUP-SCOPE` removal in the `models-remove-unapproved-startup` task.
+Replacement provenance: `git log -S'Models startup deadline and snapshot' -- DECISIONS-ARCHIVE.md`.
+Verbatim superseded entry:
+
+> - **Startup availability** `[D-MODELS-STARTUP]`. Coordinator engineering choice, without its own owner quote: startup
+>   reads provider-scoped availability and uses the owning session's async-auth `setModel`. Before the startup choice
+>   `session_start` awaits Pi's provider-scoped `getAvailable(provider.id)` in parallel for the visible providers, sharing
+>   one 15 s deadline like Pi's model selector; on timeout or error the snapshot is used; without a choice nothing waits.
+>   Reason: Pi can discard a whole-runtime availability pass superseded by a background refresh, and `pi.setModel` checks
+>   that snapshot's configured-auth state first. Carrier: `extensions/RQW-models/index.ts`; `test/extensions/RQW-models/models.test.ts` gates a
+>   superseding pass deterministically. Since: `230e8d0`.
+
 
 
 ## A-0356 · archived 2026-10-25 · Active-execution cap · D-WORK-PARALLEL

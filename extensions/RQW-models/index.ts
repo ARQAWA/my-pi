@@ -190,14 +190,10 @@ export default function modelsExtension(pi: ExtensionAPI) {
 	// session_start can run while an availability pass started by a provider registration is pending;
 	// query each provider directly: a whole-runtime getAvailable pass can be superseded by a background
 	// refresh and return the old shared snapshot. Provider-scoped reads return their own auth/filter results.
-	// At most 15 s like Pi's model selector; on a timeout or error the snapshot is used.
 	const settled = async (ctx: ExtensionContext) => {
 		const runtime = bound?.session.modelRuntime;
 		if (!runtime) return available(ctx);
-		try {
-			const signal = AbortSignal.timeout(15_000);
-			return pickerModels((await Promise.all(runtime.getProviders().map((provider) => runtime.getAvailable(provider.id, { signal })))).flat());
-		} catch { return available(ctx); }
+		return pickerModels((await Promise.all(runtime.getProviders().map((provider) => runtime.getAvailable(provider.id)))).flat());
 	};
 	const warn = (ctx: ExtensionContext, text: string, fallback = false) => {
 		try {
