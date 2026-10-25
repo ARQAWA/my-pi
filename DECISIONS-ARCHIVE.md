@@ -5957,3 +5957,43 @@ Verbatim replaced runtime prompt paragraphs:
 - When the user explicitly asks for an explanation or detail: the bold main point first, then two to five small blocks separated like paragraphs, each one idea in one to five short sentences opening with a bold label of one to four words; a question, when needed, ends the last block.
 
 - Questions go into the chat; end the turn after them. Ask only what files and the request cannot settle; each question names the actual decision or missing fact and its consequence and is answerable from the chat alone, since a filename, link or quotation does not explain it. One focused question may simply end a short message. Several open questions go in one message, in this format: a bold line «**Вопросы · N**»; per question a bold line «**1 · Короткий заголовок**» with a title of two to four words, one line of context, options as list items **a)**, **b)**, ... each with its consequence in a few words, the recommended one marked «— *рекомендую*», or one line when there are no real options; a closing line «> Ответь одной строкой, например `1a 2b`, или своими словами. На что не ответишь, возьму рекомендованное.» When an invoked procedure asks to accept a whole goal or plan, its go line comes last, after the closing line. Match his free-text answer by meaning, treat a reply that fits no option as his own requirement, give an unanswered question the recommended option; his answer starts the work.
+
+## Statusbar 30 FPS and single silver glint · archived 2026-10-25
+
+Status: the 50 FPS cadence and repeated silver motion are SUPERSEDED by
+`[D-STATUSBAR-ANIMATION]` in the statusbar-single-glint delivery; other rules in the entry remain current.
+Verbatim prior entry from `DECISIONS.md` at origin/release `83a91dbcaf37bad6886e5709457ff6159f337fcd`.
+Origin: `081d914` for the 50 FPS title-layout entry, with later native-row correction retained below.
+Replacement commit: `git log -S'Statusbar 30 FPS and single silver glint' -- DECISIONS-ARCHIVE.md`.
+
+> - **Animation cadence** `[D-STATUSBAR-ANIMATION]`. Keep the 20 ms redraw timer, 50 nominal frames per second,
+>   and monotonic elapsed-time animation. Double silver and gold travel speed relative to origin/main
+>   `0521318324f9c22707c7b1ff3d0cc725392f6e55`; the lightning keeps its 120 ms colour step.
+>   The title animates during compaction, not otherwise. Input text and effort colours do not animate.
+>   `STATUS_FRAME_MS = 80`, previously 160; `SHIMMER_MS = 20`, `FAST_STEP_MS = 120`.
+>   `ContextEditor` uses `embedWorkingStatus: true` and `setWorkingIndicator({ frames: [] })` while our editor
+>   is installed, restoring the pre-`081d914` suppression of Pi's native working row. Off, shutdown and another
+>   editor restore the default indicator. The layout is tool block, one blank, shimmer status, one blank, title border.
+>   Owner correction: «1а», supplied by Main in this task on 2026-10-25: hide the stock row as before the change.
+>   `activityRows` supplies status and trailing blank; Pi supplies the leading spacer. Idle returns `[]`.
+>   Owner: «Давай попробуем сделать 50 FPS для начала.»
+>   Source: session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3662; doubled-speed source: `[D-STATUSBAR-SHEEN]`.
+>   Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
+
+## Statusbar 30 FPS · superseded note cadence paragraphs
+
+Status: 20 ms redraw cadence and repeated silver motion SUPERSEDED by `[D-STATUSBAR-ANIMATION]`
+and the current title/activity contract in `notes/statusbar-omp.md`; unchanged details remain current.
+Verbatim source: `notes/statusbar-omp.md` at base `83a91dbcaf37bad6886e5709457ff6159f337fcd`.
+Replacement: statusbar-single-glint delivery, initial task commit `09ac9b30c7c144e362972123693bd36a3e379c24`;
+final squash provenance: `git log -S'superseded note cadence paragraphs' -- DECISIONS-ARCHIVE.md`.
+
+> Both silver and gold highlights travel exactly twice as fast as before this change, with no slant. Silver has
+> three very bright peak cells; gold has six to seven. The falloff to the base colour is wide, soft and monotone
+> between letters, with gold the smoothest. The redraw timer remains 20 ms; GPT Fast is unchanged.
+> Only public Pi APIs are used, and the extension remains independent.
+
+> `STATUS_FRAME_MS = 80` replaces 160; `SHIMMER_MS = 20` and `FAST_STEP_MS = 120` are unchanged.
+> In `render.ts`, `SHIMMER_PERIOD_CELLS = 2 * Math.PI / 0.32` and `SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32`.
+> Silver uses a three-cell plateau, 4.5-cell cubic falloff and `#ffffff` peak; gold uses a 6.5-cell plateau,
+> six-cell quintic falloff and `#fff4c2` peak. These are spatial profiles, not a higher redraw frequency.

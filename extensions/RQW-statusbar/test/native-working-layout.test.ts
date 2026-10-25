@@ -12,6 +12,7 @@ import {
 	createAgentSessionFromServices, createAgentSessionRuntime, createAgentSessionServices,
 	type ExtensionAPI, initTheme, InteractiveMode, ModelRuntime, SessionManager, SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { GOLD, SILVER, shimmerText } from "../render.ts";
 
 const STATUSBAR = resolve(dirname(fileURLToPath(import.meta.url)), "../index.ts");
 const ACTIVITY_KEY = "rqw-statusbar-activity";
@@ -37,7 +38,9 @@ interface ModeInternals {
 	activeStatusIndicator?: Component & { kind: string; frames: string[]; intervalMs: number };
 }
 
-it("Pi hides its native Working row, keeping only activity with exact gaps and the title border", async () => {
+it("Pi hides its native Working row, keeping only activity with exact gaps and the title border", async (t) => {
+	let now = 1000;
+	t.mock.method(performance, "now", () => now);
 	const root = mkdtempSync(join(tmpdir(), "rqw-native-working-"));
 	const savedEnv = { ...process.env };
 	process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -54,7 +57,7 @@ it("Pi hides its native Working row, keeping only activity with exact gaps and t
 	const modelRuntime = await ModelRuntime.create({ authPath: join(root, "agent/auth.json"), modelsPath: null, refreshOnCreate: false });
 	modelRuntime.registerNativeProvider(faux.provider);
 	await modelRuntime.setRuntimeApiKey("faux-statusbar-layout", "fake");
-	const manager = SessionManager.inMemory(root);
+	const manager = SessionManager.inMemory(root, { id: "12345678" });
 	manager.appendSessionInfo("Layout fixture");
 	const listeners = new Set<(counts: { agents: number }) => void>();
 	let agents = 0;
@@ -100,9 +103,13 @@ it("Pi hides its native Working row, keeping only activity with exact gaps and t
 		assert.deepEqual([...actual.extensionWidgetsAbove.keys()], [ACTIVITY_KEY]);
 		const initialBorder = actual.editor.render(100)[0];
 		assert.match(strip(initialBorder), /^── Layout fixture /);
+		assert.match(strip(initialBorder), / 12345678 ──$/);
 
 		prompt = runtime.session.prompt("hold the response");
 		await responseStarted;
+		now = 1040;
+		assert.equal(actual.extensionWidgetsAbove.get(ACTIVITY_KEY)!.render(100)[0],
+			` ${shimmerText("Planning next moves", 1, 0.5, SILVER)}`, "real Pi renders a fractional silver phase");
 		const indicator = actual.activeStatusIndicator!;
 		assert.equal(indicator.kind, "working");
 		assert.deepEqual(indicator.frames, [], "our editor suppresses Pi's native spinner as before 081d914");
@@ -115,7 +122,7 @@ it("Pi hides its native Working row, keeping only activity with exact gaps and t
 		assert.deepEqual(screen.slice(activityRow - 1, activityRow + 3), ["", " Planning next moves", "", strip(initialBorder)],
 			"one blank above and below activity, one left space and the title in the border");
 		const renderDir = process.platform === "win32" ? tmpdir() : "/tmp";
-		writeFileSync(join(renderDir, "statusbar-working.txt"), `${screen.slice(activityRow - 1).join("\n")}\n`);
+		writeFileSync(join(renderDir, "statusbar-single-working.txt"), `${screen.slice(activityRow - 1).join("\n")}\n`);
 
 		assert.equal(listeners.size, 1, "the extension adopted the real event-bus counts source");
 		push(2);
@@ -128,13 +135,18 @@ it("Pi hides its native Working row, keeping only activity with exact gaps and t
 			type: "session_before_compact", reason: "manual", willRetry: false,
 			preparation: {} as never, branchEntries: [], signal: new AbortController().signal,
 		});
+		now = 1200;
+		assert.equal(actual.extensionWidgetsAbove.get(ACTIVITY_KEY)!.render(100)[0],
+			` ${shimmerText("Compacting context", 1, 2.5, GOLD)}`, "gold keeps its elapsed-time phase");
+		assert.equal(actual.editor.render(100)[0], shimmerText(strip(initialBorder), 0, 2.5, GOLD),
+			"gold still covers the complete native title border");
 		const compactionScreen = actual.ui.render(100).map(strip);
 		assert.equal(compactionScreen.some((row) => /Working/.test(row)), false);
 		const compactingRow = compactionScreen.findIndex((row) => /Compacting context/.test(row));
 		assert.ok(compactingRow >= 0);
 		assert.deepEqual(compactionScreen.slice(compactingRow - 1, compactingRow + 3),
 			["", " Compacting context", "", strip(initialBorder)]);
-		writeFileSync(join(renderDir, "statusbar-compaction.txt"), `${compactionScreen.slice(compactingRow - 1).join("\n")}\n`);
+		writeFileSync(join(renderDir, "statusbar-single-compaction.txt"), `${compactionScreen.slice(compactingRow - 1).join("\n")}\n`);
 		await runtime.session.extensionRunner!.emit({
 			type: "session_compact", reason: "manual", willRetry: false, fromExtension: false, compactionEntry: {} as never,
 		});

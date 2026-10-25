@@ -6,7 +6,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	activityRows, contextLabel, effortText, GOLD, GOLD_FALLOFF_CELLS, GOLD_PLATEAU_CELLS,
 	mix, placeRow, RULE_SILVER, SHIMMER_CELLS_PER_FRAME, SHIMMER_PERIOD_CELLS,
-	SILVER, SILVER_FALLOFF_CELLS, SILVER_PLATEAU_CELLS, shimmerPhase, shimmerText,
+	SILVER, SILVER_FALLOFF_CELLS, SILVER_PLATEAU_CELLS, shimmerPhase, shimmerText, silverGlintPosition,
 	sheenRow, titleRow, topBorder,
 } from "../render.ts";
 import { STATUS_FRAME_MS } from "../index.ts";
@@ -86,9 +86,90 @@ describe("cell-based shimmer", () => {
 
 	it("uses terminal cells across segments, wide glyphs and combining marks; spaces stay plain", () => {
 		assert.equal(shimmerText("x".repeat(20), 0, 2, GOLD), shimmerText("x".repeat(8), 0, 2, GOLD) + shimmerText("x".repeat(12), 8, 2, GOLD));
-		assert.equal(shimmerText("界e\u0301x", 0, 2, SILVER), shimmerText("界", 0, 2, SILVER)
-			+ shimmerText("e", 2, 2, SILVER) + shimmerText("\u0301x", 3, 2, SILVER));
+		const frame = silverGlintPosition(4, 2) / SHIMMER_CELLS_PER_FRAME;
+		const silverAt = (text: string, column: number) => {
+			const phase = shimmerPhase(column, frame);
+			return hexSgr(mix(SILVER, phase), phase > 0.85, text);
+		};
+		assert.equal(shimmerText("界e\u0301x", 0, 2, SILVER), silverAt("界", 0)
+			+ silverAt("e", 2) + silverAt("\u0301", 3) + silverAt("x", 3));
 		assert.equal(shimmerText("A B", 3, 7, GOLD).split(" ").length, 2);
+	});
+});
+
+describe("single silver glint", () => {
+	it("bounces at both text ends with fractional positions and the retained 8.59375 cells/s speed", () => {
+		const width = 100;
+		const travel = width - 3;
+		const turnFrame = travel / SHIMMER_CELLS_PER_FRAME;
+		assert.equal(silverGlintPosition(width, 0), 1);
+		assert.equal(silverGlintPosition(width, turnFrame), width - 2);
+		assert.equal(silverGlintPosition(width, turnFrame * 2), 1);
+		assert.equal(SHIMMER_CELLS_PER_FRAME * 1000 / STATUS_FRAME_MS, 8.59375);
+		for (const elapsed of [0.125, 1, 7, 33.333, 80, 1000]) {
+			const moved = elapsed / STATUS_FRAME_MS * SHIMMER_CELLS_PER_FRAME;
+			assert.ok(Math.abs(silverGlintPosition(width, elapsed / STATUS_FRAME_MS) - 1 - moved) < 1e-12);
+			assert.ok(Math.abs(silverGlintPosition(width, turnFrame + elapsed / STATUS_FRAME_MS) - (width - 2 - moved)) < 1e-12);
+			assert.ok(Math.abs(silverGlintPosition(width, turnFrame * 2 + elapsed / STATUS_FRAME_MS) - 1 - moved) < 1e-12);
+		}
+		for (const turn of [turnFrame, turnFrame * 2]) {
+			assert.ok(Math.abs(silverGlintPosition(width, turn - 0.001) - silverGlintPosition(width, turn + 0.001)) < 1e-12);
+		}
+		for (const tiny of [0, 1, 2, 3]) {
+			assert.equal(silverGlintPosition(tiny, 0), Math.max(0, (tiny - 1) / 2));
+			assert.equal(silverGlintPosition(tiny, 100), silverGlintPosition(tiny, 0));
+		}
+	});
+
+	it("has exactly one three-cell silver crest on texts much wider than the old period, in both directions", () => {
+		for (const width of [19, 40, 100, 240]) {
+			const leg = (width - 3) / SHIMMER_CELLS_PER_FRAME;
+			for (const frame of [0, 0.5, leg / 3, leg, leg + 0.5, leg * 1.5, leg * 2]) {
+				const line = shimmerText("x".repeat(width), 1, frame, SILVER);
+				const cells = [...line.matchAll(/\x1b\[(1;)?38;2;(\d+);(\d+);(\d+)mx\x1b\[22;39m/g)];
+				assert.equal(cells.length, width);
+				const peaks = cells.map((cell, i) => cell[2] === "255" && cell[3] === "255" && cell[4] === "255" ? i : -1).filter((i) => i >= 0);
+				assert.equal(peaks.length, 3, `${width} ${frame}`);
+				assert.equal(peaks[2] - peaks[0], 2, "a single contiguous plateau, no repeated crests");
+				assert.doesNotMatch(line, /\x1b\[(?:3|23)m/);
+			}
+		}
+	});
+
+	it("changes shoulder colours at fine sub-character steps rather than rounding the moving center", () => {
+		const width = 80;
+		const frames = [0, 0.05, 0.1, 0.15, 0.2];
+		const position = frames.map((frame) => silverGlintPosition(width, frame));
+		for (let i = 1; i < position.length; i++) {
+			assert.ok(position[i] > position[i - 1]);
+			assert.ok(position[i] - position[i - 1] < 0.04);
+		}
+		const lines = frames.map((frame) => shimmerText("x".repeat(width), 1, frame, SILVER));
+		assert.equal(new Set(lines).size, frames.length);
+		assert.equal(shimmerPhase(40, 0), 0, "no distant second crest");
+	});
+
+	it("leaves the delivered periodic gold profile and its global-column bytes unchanged", () => {
+		const deliveredPhase = (column: number, frame: number) => {
+			const period = 2 * Math.PI / 0.32;
+			const offset = column - frame * (0.22 / 0.32);
+			const position = ((offset + period / 2) % period + period) % period - period / 2;
+			if (position >= -3.25 && position < 3.25) return 1;
+			const t = Math.max(0, Math.min(1, (Math.abs(position) - 3.25) / 6));
+			return Math.max(0, Math.min(254 / 255, 1 - t ** 3 * (t * (t * 6 - 15) + 10)));
+		};
+		const deliveredText = (text: string, start: number, frame: number) => Array.from(text).map((ch, i) => {
+			const phase = deliveredPhase(start + i, frame);
+			return ch === " " ? ch : hexSgr(mix(["#8a6d1c", "#c9a227", "#fff4c2"], phase), phase > 0.85, ch);
+		}).join("");
+		for (const frame of [0, 0.125, 1, 12.5, 100, 250.75]) {
+			for (let column = 0; column < 160; column++) assert.equal(shimmerPhase(column, frame, true), deliveredPhase(column, frame));
+			assert.equal(shimmerText("x".repeat(100), 3, frame, GOLD), deliveredText("x".repeat(100), 3, frame));
+			const top = topBorder(120, id, chrome("Compacting context", true, frame), 8, plain, "Title");
+			assert.equal(top, deliveredText(strip(top), 0, frame));
+			const bottom = sheenRow({ tokens: 13000, limit: 450000 }, 120, frame, 8);
+			assert.equal(bottom, deliveredText(strip(bottom), 0, frame));
+		}
 	});
 });
 

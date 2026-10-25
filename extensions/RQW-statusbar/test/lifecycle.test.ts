@@ -19,8 +19,8 @@ const TITLE_KEY = "rqw-statusbar-title";
 // The running-counts contract (version 1) as the README of the producer states it; spelled here, nothing imported.
 const COUNTS_REQUEST = "rqw:running-counts:request";
 const COUNTS_OFFER = "rqw:running-counts:offer";
-/** The animation timer: 50 nominal redraws per second. */
-const SHIMMER_MS = 20;
+/** The animation timer: 30 nominal redraws per second. */
+const SHIMMER_MS = 1000 / 30;
 /** The former timer, one phase frame per tick: the travel speed the new time basis is compared with. */
 const OLD_SHIMMER_MS = 120;
 /** Activity and compaction move twice as fast as the previous 160 ms phase frame. */
@@ -356,7 +356,7 @@ it("main planning, tool action phrases and the latest running tool drive the act
 	assert.equal(top(h), idleTop(h), "tool text never enters the border");
 });
 
-it("the animation redraws 50 times a second, at least twice the old cadence, and its phase follows elapsed time, not ticks", (t) => {
+it("the animation redraws at 30 fps with fractional intervals, and its phase follows elapsed time, not ticks", (t) => {
 	const h = harness(t);
 	new Producer(h.bus, { agents: 0 });
 	h.fire("session_start", { reason: "startup" });
@@ -364,25 +364,28 @@ it("the animation redraws 50 times a second, at least twice the old cadence, and
 	const raw = () => h.ui.widgets.get(ACTIVITY_KEY)!.render(80)[0];
 	assert.ok(raw().includes(shimmerText("Planning next moves", 1, 0, SILVER)), "agent_start is phase frame 0");
 	const start = h.ui.renders;
-	h.tick(1000);
+	h.tick(SHIMMER_MS - 0.5);
+	assert.equal(h.ui.renders, start, "no redraw before the fractional interval expires");
+	h.tick(1);
+	assert.equal(h.ui.renders, start + 1, "one redraw just after 1000 / 30 ms");
+	// Stop just beyond a second to avoid floating-point ambiguity at the thirtieth tick.
+	h.tick(1001 - (SHIMMER_MS + 0.5));
 	const perSecond = h.ui.renders - start;
-	assert.equal(perSecond, 1000 / SHIMMER_MS, "one redraw request per 20 ms tick");
+	assert.equal(perSecond, 30, "30 redraws after 1001 ms");
 	assert.ok(perSecond >= 2 * Math.floor(1000 / OLD_SHIMMER_MS), "at least twice the old 8 redraws per second");
-	// 1000 ms is 50 ticks but 12.5 phase frames; cadence and travel speed are independent.
-	const frame = 1000 / STATUS_FRAME_MS;
+	// 1001 ms is 30 ticks but 12.5125 phase frames; cadence and travel speed are independent.
+	const frame = 1001 / STATUS_FRAME_MS;
 	assert.ok(raw().includes(shimmerText("Planning next moves", 1, frame, SILVER)), "phase = elapsed / 80 ms");
-	assert.ok(!raw().includes(shimmerText("Planning next moves", 1, 50, SILVER)), "not one frame per tick");
-	assert.equal(frame / (1000 / 160), 2, "travel is twice the previous 160 ms speed");
-	// Between ticks the phase still follows the clock: a render at any moment shows its own time.
-	h.tick(SHIMMER_MS * 4);
-	assert.ok(raw().includes(shimmerText("Planning next moves", 1, (1000 + SHIMMER_MS * 4) / STATUS_FRAME_MS, SILVER)));
-	// A redraw from elsewhere (Pi's own render) 7 ms after a tick: the same clock, so the same speed at any redraw rate.
-	h.tick(7);
-	assert.ok(raw().includes(shimmerText("Planning next moves", 1, 1087 / STATUS_FRAME_MS, SILVER)), "phase between ticks");
+	assert.ok(!raw().includes(shimmerText("Planning next moves", 1, 30, SILVER)), "not one frame per tick");
+	assert.equal(frame / (1001 / 160), 2, "travel is twice the previous 160 ms speed");
+	// A render between timer ticks still uses fractional elapsed time.
+	h.tick(0.5);
+	const between = 1001.5 / STATUS_FRAME_MS;
+	assert.ok(raw().includes(shimmerText("Planning next moves", 1, between, SILVER)), "fractional phase between ticks");
 	// Compaction activity has no rule and follows the same clock, with fractional frames.
 	h.fire("session_before_compact", before());
 	h.tick(13);
-	const gold = 1100 / STATUS_FRAME_MS;
+	const gold = 1014.5 / STATUS_FRAME_MS;
 	assert.equal(raw(), ` ${shimmerText("Compacting context", 1, gold, GOLD)}`);
 	h.fire("session_compact", { reason: "manual", willRetry: false, fromExtension: false, compactionEntry: {} });
 	h.fire("agent_settled", { aborted: false });

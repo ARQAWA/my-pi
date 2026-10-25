@@ -13,20 +13,25 @@ runs over the title. The activity status is a separate line above the border, wi
 empty line above and below, separating it from Pi's native current-action row and the input border. When idle,
 the activity widget returns no rows; only Pi's original spacer remains.
 
-Both silver and gold highlights travel exactly twice as fast as before this change, with no slant. Silver has
-three very bright peak cells; gold has six to seven. The falloff to the base colour is wide, soft and monotone
-between letters, with gold the smoothest. The redraw timer remains 20 ms; GPT Fast is unchanged.
+Silver activity text has exactly one glint moving back and forth at the delivered speed of 8.59375 cells/s,
+with smooth fractional positions and no slant. Gold compaction title motion stays periodic at its delivered speed.
+The shared timer requests 30 nominal redraws/s instead of 50. Silver keeps three very bright peak cells; gold
+keeps six to seven. The wide, soft, monotone falloff and colours are unchanged; gold remains the smoothest.
+GPT Fast colour-step timing and all layout behavior are unchanged.
 Only public Pi APIs are used, and the extension remains independent.
 
 Rules and owner sources: [DECISIONS.md, Status bar](../DECISIONS.md#status-bar).
 Deterministic tests in `extensions/RQW-statusbar/test/` cover layout, peak widths, monotone falloff and doubled
 speed. `native-working-layout.test.ts` mounts real Pi `InteractiveMode` with a held faux-provider response,
 checks suppression of the native working row, exact widget gaps, title placement and idle removal, and saves
-`/tmp/statusbar-working.txt` and `/tmp/statusbar-compaction.txt`. The latter drives extension compaction events,
+`/tmp/statusbar-single-working.txt` and `/tmp/statusbar-single-compaction.txt`. The latter drives extension compaction events,
 not a live compaction request.
 
-`STATUS_FRAME_MS = 80` replaces 160; `SHIMMER_MS = 20` and `FAST_STEP_MS = 120` are unchanged.
-In `render.ts`, `SHIMMER_PERIOD_CELLS = 2 * Math.PI / 0.32` and `SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32`.
+`STATUS_FRAME_MS = 80` and `FAST_STEP_MS = 120` are unchanged; `SHIMMER_MS = 1000 / 30` ms.
+In `render.ts`, gold retains `SHIMMER_PERIOD_CELLS = 2 * Math.PI / 0.32` and
+`SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32`. `silverGlintPosition(width, frame)` supplies the fractional,
+width-aware ping-pong position instead of that periodic wave. `test/chrome.test.ts` checks both directions,
+a single crest on long statuses, fine sub-character colour steps and unchanged periodic gold output.
 Silver uses a three-cell plateau, 4.5-cell cubic falloff and `#ffffff` peak; gold uses a 6.5-cell plateau,
 six-cell quintic falloff and `#fff4c2` peak. These are spatial profiles, not a higher redraw frequency.
 

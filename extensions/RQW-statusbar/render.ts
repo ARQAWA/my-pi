@@ -432,7 +432,7 @@ export const GOLD_FALLOFF_CELLS = 6;
 export function shimmerPhase(index: number, frame: number, gold = false): number {
 	const period = SHIMMER_PERIOD_CELLS;
 	const offset = index - frame * SHIMMER_CELLS_PER_FRAME;
-	const position = ((offset + period / 2) % period + period) % period - period / 2;
+	const position = gold ? ((offset + period / 2) % period + period) % period - period / 2 : offset;
 	const plateau = gold ? GOLD_PLATEAU_CELLS : SILVER_PLATEAU_CELLS;
 	if (position >= -plateau / 2 && position < plateau / 2) return 1;
 	const falloff = gold ? GOLD_FALLOFF_CELLS : SILVER_FALLOFF_CELLS;
@@ -442,11 +442,22 @@ export function shimmerPhase(index: number, frame: number, gold = false): number
 	return Math.max(0, Math.min(254 / 255, 1 - fade));
 }
 
-/** Paint by terminal column, without italics; spaces and zero-width combining marks do not shift the wave. */
+/** One crest bounces across the text, keeping its three bright cells inside the ends whenever they fit. */
+export function silverGlintPosition(width: number, frame: number): number {
+	if (width <= SILVER_PLATEAU_CELLS) return Math.max(0, (width - 1) / 2);
+	const travel = width - SILVER_PLATEAU_CELLS;
+	const distance = frame * SHIMMER_CELLS_PER_FRAME % (2 * travel);
+	return 1 + (distance <= travel ? distance : 2 * travel - distance);
+}
+
+/** Paint by terminal column, without italics. Silver has one bouncing crest; gold retains its periodic global wave. */
 export function shimmerText(text: string, startColumn: number, frame: number, stops: readonly string[]): string {
+	const content = stripVTControlCharacters(text);
+	const gold = stops === GOLD;
+	const phaseFrame = gold ? frame : (startColumn + silverGlintPosition(visibleWidth(content), frame)) / SHIMMER_CELLS_PER_FRAME;
 	let column = startColumn;
-	return Array.from(stripVTControlCharacters(text)).map((ch) => {
-		const f = shimmerPhase(column, frame, stops === GOLD);
+	return Array.from(content).map((ch) => {
+		const f = shimmerPhase(column, phaseFrame, gold);
 		column += visibleWidth(ch);
 		return ch === " " ? ch : styled(mix(stops, f), f > 0.85, ch);
 	}).join("");

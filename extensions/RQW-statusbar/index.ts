@@ -11,8 +11,8 @@ import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
 import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar, activityRows } from "./render.ts";
 
 const GIT_POLL_MS = 10_000;
-/** The animation timer: 50 nominal redraws per second (Pi 1.4 batches renders at most every 16 ms, so 20 ms passes through). */
-const SHIMMER_MS = 20;
+/** Thirty nominal redraws per second; travel follows elapsed time independently of this timer. */
+const SHIMMER_MS = 1000 / 30;
 /** Half the previous 160 ms phase frame: silver and gold travel exactly twice as fast. */
 export const STATUS_FRAME_MS = 80;
 /** The lightning keeps its owner-accepted pulse of one colour step per 120 ms of elapsed time. */

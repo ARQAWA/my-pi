@@ -1592,18 +1592,22 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Source: the same local owner session as `[D-STATUSBAR-ACTIVITY]`, USER entries at lines 6399 and 6413;
   verified by `scripts/owner-quotes.mjs`. The current task explicitly confirms doubled speed for both shimmers and no slant. Reason: smoother highlights with the owner's peak widths.
   Carrier: `extensions/RQW-statusbar/render.ts`; proof: deterministic statusbar render and animation tests.
-- **Animation cadence** `[D-STATUSBAR-ANIMATION]`. Keep the 20 ms redraw timer, 50 nominal frames per second,
-  and monotonic elapsed-time animation. Double silver and gold travel speed relative to origin/main
+- **Animation cadence** `[D-STATUSBAR-ANIMATION]`. Redraw at 30 nominal frames per second,
+  using monotonic elapsed time and fractional positions for smooth motion. Silver activity text has exactly one
+  glint moving back and forth across the status, not periodically repeated glints. Its travel speed stays
+  8.59375 cells/s. Gold compaction title motion remains periodic and unchanged apart from the shared 30 FPS timer. Double silver and gold travel speed relative to origin/main
   `0521318324f9c22707c7b1ff3d0cc725392f6e55`; the lightning keeps its 120 ms colour step.
   The title animates during compaction, not otherwise. Input text and effort colours do not animate.
-  `STATUS_FRAME_MS = 80`, previously 160; `SHIMMER_MS = 20`, `FAST_STEP_MS = 120`.
+  `STATUS_FRAME_MS = 80` and `FAST_STEP_MS = 120` remain unchanged; the shared redraw interval becomes `1000 / 30` ms.
   `ContextEditor` uses `embedWorkingStatus: true` and `setWorkingIndicator({ frames: [] })` while our editor
   is installed, restoring the pre-`081d914` suppression of Pi's native working row. Off, shutdown and another
   editor restore the default indicator. The layout is tool block, one blank, shimmer status, one blank, title border.
   Owner correction: «1а», supplied by Main in this task on 2026-10-25: hide the stock row as before the change.
   `activityRows` supplies status and trailing blank; Pi supplies the leading spacer. Idle returns `[]`.
-  Owner: «Давай попробуем сделать 50 FPS для начала.»
-  Source: session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3662; doubled-speed source: `[D-STATUSBAR-SHEEN]`.
+  Owner: «Сделай анимацию блика 30фпс, 50 ту мач и сделай ее более плавной и что бы был 1 блик на статусе который катается туда сюда, а не бесконечное количество»
+  Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6774,
+  verified by `scripts/owner-quotes.mjs`. Existing peak widths, colours, soft falloff, layout and static title stay unchanged.
+  Doubled-speed source: `[D-STATUSBAR-SHEEN]`.
   Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
 - **Own git discovery** `[D-STATUSBAR-GIT]`. Git branch and counts use the extension's own repository discovery and
   asynchronous git refresh, not Pi's cached `getGitBranch()`, which caches absent metadata when a session starts outside
