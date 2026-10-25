@@ -14,8 +14,8 @@ empty line above and below, separating it from Pi's native current-action row an
 the activity widget returns no rows; only Pi's original spacer remains.
 
 Silver activity text has one glint appearing at the left and flying right at constant linear speed in
-320 ms, fully clearing its shoulder beyond the right edge, then remaining absent for exactly 2000 ms.
-The next flight starts at 2320 ms. Gold compaction keeps its single bouncing glint across each
+640 ms, fully clearing its shoulder beyond the right edge, then remaining absent for exactly 2000 ms.
+The next flight starts at 2640 ms. Gold compaction keeps its single bouncing glint across each
 complete strip and activity label at 8.59375 cells/s. Both retain three very bright peak cells and no slant.
 The shared timer requests 30 nominal redraws/s. The wide, soft, monotone falloff and colours are unchanged;
 gold retains its gentler quintic shoulder.
@@ -33,7 +33,7 @@ not a live compaction request.
 In `render.ts`, `SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32` remains unchanged.
 `silverGlintPosition(width, frame)` supplies the fractional silver flight and pause position;
 `goldGlintPosition` retains the delivered width-aware ping-pong position. The existing elapsed-time
-phase uses `SILVER_FLIGHT_FRAMES = 4` and `SILVER_PAUSE_FRAMES = 25`, with 80 ms per phase unit.
+phase uses `SILVER_FLIGHT_FRAMES = 8` and `SILVER_PAUSE_FRAMES = 25`, with 80 ms per phase unit.
 The top border is painted as one full row so title, hint, ID and rules cannot clone the crest.
 `test/extensions/RQW-statusbar/chrome.test.ts` pins the silver flight, pause and unchanged gradient;
 `silver-flight.test.ts` checks delivered gold bytes and saves timing and ANSI render evidence as

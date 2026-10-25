@@ -368,6 +368,7 @@ it("the animation redraws at 30 fps with fractional intervals, and its phase fol
 	assert.equal(h.ui.renders, start, "no redraw before the fractional interval expires");
 	h.tick(1);
 	assert.equal(h.ui.renders, start + 1, "one redraw just after 1000 / 30 ms");
+	assert.ok(!raw().includes(shimmerText("Planning next moves", 1, 1, SILVER)), "not one frame per tick during the visible flight");
 	// Stop just beyond a second to avoid floating-point ambiguity at the thirtieth tick.
 	h.tick(1001 - (SHIMMER_MS + 0.5));
 	const perSecond = h.ui.renders - start;
@@ -376,7 +377,6 @@ it("the animation redraws at 30 fps with fractional intervals, and its phase fol
 	// 1001 ms is 30 ticks but 12.5125 phase frames; cadence and travel speed are independent.
 	const frame = 1001 / STATUS_FRAME_MS;
 	assert.ok(raw().includes(shimmerText("Planning next moves", 1, frame, SILVER)), "phase = elapsed / 80 ms");
-	assert.ok(!raw().includes(shimmerText("Planning next moves", 1, 30, SILVER)), "not one frame per tick");
 	assert.equal(frame / (1001 / 160), 2, "travel is twice the previous 160 ms speed");
 	// A render between timer ticks still uses fractional elapsed time.
 	h.tick(0.5);

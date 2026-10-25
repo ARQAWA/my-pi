@@ -440,8 +440,8 @@ export function shimmerPhase(index: number, frame: number, gold = false): number
 	return Math.max(0, Math.min(254 / 255, 1 - fade));
 }
 
-/** Silver crosses in 320 ms, clears its entire shoulder, then rests for exactly 2000 ms. */
-export const SILVER_FLIGHT_FRAMES = 4;
+/** Silver crosses in 640 ms, clears its entire shoulder, then rests for exactly 2000 ms. */
+export const SILVER_FLIGHT_FRAMES = 8;
 export const SILVER_PAUSE_FRAMES = 25;
 export function silverGlintPosition(width: number, frame: number): number {
 	const phase = frame % (SILVER_FLIGHT_FRAMES + SILVER_PAUSE_FRAMES);

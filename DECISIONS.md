@@ -1711,8 +1711,9 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Animation cadence** `[D-STATUSBAR-ANIMATION]`. Redraw at 30 nominal frames per second,
   using monotonic elapsed time and fractional positions for smooth motion. Silver activity text has exactly one
   glint appearing at the left, flying right at constant linear speed, fully clearing the right edge,
-  then remaining absent for exactly 2000 ms before repeating. Flight duration is 320 ms, chosen under
-  the owner's explicit visual discretion. The three-cell peak and soft silver gradient stay unchanged.
+  then remaining absent for exactly 2000 ms before repeating. Flight duration is 640 ms, exactly twice the previous 320 ms.
+  Owner source: `statusbar-silver-640ms` task request, 2026-10-25:
+  "Change the silver one-way visible flight duration from 320 ms to 640 ms." The three-cell peak and soft silver gradient stay unchanged.
   Gold compaction keeps its single bouncing glint over each full strip and activity label at
   8.59375 cells/s. The lightning keeps its 120 ms colour step.
   Silver correction source: current `statusbar-silver-loop` task, owner steering on 2026-10-25:
