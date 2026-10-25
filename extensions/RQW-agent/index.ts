@@ -980,6 +980,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				}
 				if (!run.quiet && !a.guard.signal?.aborted) {
 					const outcome = outputs.some(output => output.error) ? "error" : "completed";
+					// A core result can be claimed synchronously by wait; publish only after its diagnostics are final.
+					if (a.core.on) a.activity.endRun(outcome, meta.stop !== undefined);
 					publishRun(a, identity, outputs.map(output => output.text).join("\n\n") || "(no text)", outcome, meta);
 				}
 			} catch (error) {
@@ -987,6 +989,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					const detail = error instanceof Error ? error.message : String(error);
 					a.activity.reportError(detail);
 					outputs.push({ text: `error: ${detail}`, error: true });
+					if (a.core.on) a.activity.endRun("error", meta.stop !== undefined);
 					publishRun(a, identity, outputs.map(output => output.text).join("\n\n"), "error", meta);
 				}
 			} finally {
@@ -997,7 +1000,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				// Pi would reject a new prompt then, so pending sends wait for it. This run stays current meanwhile.
 				if (a.run === run && a.next?.length && !a.controller.signal.aborted) await (a.core.on ? session.agent.waitForIdle() : session.waitForIdle()).catch(() => {});
 				if (a.run === run) {
-					a.activity.endRun(run.quiet ? "interrupted" : outputs.some(output => output.error) ? "error" : "completed");
+					a.activity.endRun(run.quiet ? "interrupted" : outputs.some(output => output.error) ? "error" : "completed",
+						a.core.on && meta.stop !== undefined);
 					// `send` with `interrupt` (and sends after it) made while this run was stopping: start them now, once.
 					// a.next keeps the child active until startRun has set the new a.run (synchronously), so wait and
 					// the caller's fallback never see it idle in between.

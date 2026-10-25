@@ -269,7 +269,7 @@ test("usage: unknown before settle, run delta from session stats, live usage cle
 	s = snap();
 	assert.equal(s.tokens.in_flight_usage?.input, 7);
 	assert.equal(s.tokens.in_flight_usage?.output, 3);
-	session.emit({ type: "message_end", message: live });
+	session.emit({ type: "message_end", message: { ...live, usage: usage(7, 3) } });
 	assert.equal(snap().tokens.in_flight_usage, null);
 	assert.equal(snap().usage_complete, false);
 

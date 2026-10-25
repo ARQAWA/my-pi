@@ -9,6 +9,8 @@ import { setImmediate } from "node:timers/promises";
 import { test } from "node:test";
 import {
 	type AssistantMessage,
+	createAssistantMessageEventStream,
+	type Model,
 	fauxAssistantMessage as answer,
 	fauxProvider,
 	fauxToolCall,
@@ -78,7 +80,7 @@ type Reply = AssistantMessage | ((signal?: AbortSignal) => Promise<AssistantMess
 type Scripted = ReturnType<typeof scripted>;
 let serial = 0;
 /** A faux provider: `rule` decides from the request, else the next queued reply, else `OK`. */
-function scripted(hub: Hub, name: string, id: string, provider = `resume-${name}-${serial}`, contextWindow?: number) {
+function scripted(hub: Hub, name: string, id: string, provider = `resume-${name}-${serial}`, contextWindow?: number, exactUsage = false) {
 	const n = serial++;
 	const faux = fauxProvider({ provider, api: `resume-${name}-${n}`, models: [{ id, reasoning: true, ...(contextWindow ? { contextWindow } : {}) }] });
 	const state = { faux, requests: [] as Request[], queue: [] as Reply[], rule: undefined as undefined | ((request: Request) => Reply | undefined) };
@@ -90,12 +92,33 @@ function scripted(hub: Hub, name: string, id: string, provider = `resume-${name}
 		if (!reply) return answer("OK");
 		return typeof reply === "function" ? reply(options?.signal) : reply;
 	};
-	faux.setResponses(Array.from({ length: 500 }, () => step));
+	if (exactUsage) {
+		// The regular faux transport estimates usage. This transport preserves the scripted response's actual usage, including zero.
+		const stream = (model: Model<string>, context: TranscriptContext, options?: SimpleStreamOptions) => {
+			const events = createAssistantMessageEventStream();
+			queueMicrotask(async () => {
+				try {
+					const response = await step(context, options, undefined, model);
+					const message = { ...response, api: model.api, provider: model.provider, model: model.id,
+						...(options?.signal?.aborted ? { stopReason: "aborted" as const } : {}) };
+					if (message.stopReason === "error" || message.stopReason === "aborted") events.push({ type: "error", reason: message.stopReason, error: message });
+					else events.push({ type: "done", reason: message.stopReason, message });
+					events.end(message);
+				} catch (error) {
+					const message = answer("", { stopReason: "error", errorMessage: String(error) });
+					events.push({ type: "error", reason: "error", error: message });
+					events.end(message);
+				}
+			});
+			return events;
+		};
+		Object.assign(faux.provider, { stream, streamSimple: stream });
+	} else faux.setResponses(Array.from({ length: 500 }, () => step));
 	return state;
 }
 
 /** A reply that waits for `release()` or for the abort, which Pi turns into an aborted assistant message. */
-function hold(hub: Hub, text = "DONE") {
+function hold(hub: Hub, text = "DONE", usage?: AssistantMessage["usage"]) {
 	const waiting = Promise.withResolvers<AssistantMessage>();
 	let entered = false, aborted = false;
 	return {
@@ -105,7 +128,7 @@ function hold(hub: Hub, text = "DONE") {
 			hub.notify();
 			return waiting.promise;
 		},
-		release: () => waiting.resolve(answer(text)), entered: () => entered, aborted: () => aborted,
+		release: () => waiting.resolve({ ...answer(text), ...(usage ? { usage } : {}) }), entered: () => entered, aborted: () => aborted,
 	};
 }
 
@@ -131,12 +154,12 @@ function heldTool(hub: Hub, cwd: string) {
 	return { state, definition };
 }
 
-async function world(options: { subContextWindow?: number } = {}) {
+async function world(options: { subContextWindow?: number; exactUsage?: boolean } = {}) {
 	const root = await mkdtemp(join(tmpdir(), "rqw-agent-resume-"));
 	const agentDir = join(root, "home"), cwd = join(root, "work"), sessions = join(root, "sessions");
 	await Promise.all([agentDir, cwd, sessions].map(dir => mkdir(dir)));
 	const hub = new Hub();
-	const main = scripted(hub, "main", "m"), sub = scripted(hub, "sub", "s", undefined, options.subContextWindow), deep = scripted(hub, "deep", "g");
+	const main = scripted(hub, "main", "m"), sub = scripted(hub, "sub", "s", undefined, options.subContextWindow, options.exactUsage), deep = scripted(hub, "deep", "g");
 	const runtime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
 	for (const p of [main, sub, deep]) runtime.registerNativeProvider(p.faux.provider);
 	const offered: { tools: unknown[]; policy?: string; fork?: (request: ContextForkRequest) => void; session?: (session: AgentSession) => void } = { tools: [] };
@@ -1097,6 +1120,73 @@ test("a child interrupted by hand in this process is not resumed by a later pare
 });
 
 const statusOf = async (run: Run, id: string) => JSON.parse(await run.call({ action: "status", ids: [id] })).statuses[0];
+
+async function armChildWait(w: World, parent: Run): Promise<string> {
+	w.main.queue.push(toolUse("agent", { action: "wait", ids: ["agent#1"], timeout_ms: 10000, wake_on_alert: false }, "usage-wait"));
+	await parent.session.prompt("WAIT");
+	const saved = parent.session.messages.findLast(m => m.role === "toolResult" && m.toolCallId === "usage-wait");
+	assert.ok(saved, "the wait receipt is persisted before the child completes");
+	const receipt = JSON.parse(saved.content.map(c => c.type === "text" ? c.text : "").join(""));
+	assert.equal(receipt.reason, "waiting");
+	return receipt.wait_id;
+}
+
+function childWaitDelivery(parent: Run, waitId: string): any {
+	return parent.session.messages.findLast(m => m.role === "custom" && m.customType === "child_wait" && (m.details as any)?.wait_id === waitId)?.details;
+}
+
+test("successful core resume delivers final metadata with the actual provider usage marked complete", async () => {
+	const w = await world({ exactUsage: true });
+	try {
+		const file = await interruptedChild(w);
+		const parent = await w.launch(file);
+		const usage = {
+			input: 17, output: 5, cacheRead: 3, cacheWrite: 2, totalTokens: 27,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		};
+		const resumed = hold(w.hub, "USAGE RESUMED", usage);
+		w.sub.queue.push(resumed.reply);
+		await parent.call({ action: "resume", id: "agent#1" });
+		await w.hub.until(resumed.entered, "the resumed core request");
+		assert.equal((await statusOf(parent, "agent#1")).usage_complete, false, "live usage stays explicitly incomplete");
+		const waitId = await armChildWait(w, parent);
+		resumed.release();
+		await w.hub.until(() => !!childWaitDelivery(parent, waitId), "the final wait delivery");
+		const delivered = childWaitDelivery(parent, waitId);
+		assert.equal(delivered.results[0].outcome, "completed");
+		assert.equal(delivered.results[0].text, "USAGE RESUMED");
+		const status = delivered.statuses[0];
+		assert.equal(status.state, "idle");
+		assert.equal(status.outcome, "completed");
+		assert.deepEqual(status.tokens.session, { input: 17, output: 5, cacheRead: 3, cacheWrite: 2, total: 27 });
+		assert.deepEqual(status.tokens.run, status.tokens.session);
+		assert.equal(status.tokens.in_flight_usage, null);
+		assert.equal(status.usage_complete, true);
+		assert.deepEqual(parent.errors, []);
+	} finally { await w.cleanup(); }
+});
+
+test("core resume keeps final usage incomplete when the provider reported no usage", async () => {
+	const w = await world({ exactUsage: true });
+	try {
+		const file = await interruptedChild(w);
+		const parent = await w.launch(file);
+		const resumed = hold(w.hub, "NO USAGE");
+		w.sub.queue.push(resumed.reply);
+		await parent.call({ action: "resume", id: "agent#1" });
+		await w.hub.until(resumed.entered, "the resumed request without usage");
+		const waitId = await armChildWait(w, parent);
+		resumed.release();
+		await w.hub.until(() => !!childWaitDelivery(parent, waitId), "the final wait delivery without usage");
+		const status = childWaitDelivery(parent, waitId).statuses[0];
+		assert.equal(status.state, "idle");
+		assert.equal(status.outcome, "completed");
+		assert.deepEqual(status.tokens.session, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
+		assert.deepEqual(status.tokens.run, status.tokens.session);
+		assert.equal(status.usage_complete, false);
+		assert.deepEqual(parent.errors, []);
+	} finally { await w.cleanup(); }
+});
 
 test("a parent file copied to a new path cannot open the original child files; it reports a diagnostic and still works", async () => {
 	const w = await world();
