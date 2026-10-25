@@ -6,6 +6,7 @@ import { subscriptionCacheOptions } from "./cache.ts";
 import { AUTH_ORIGIN, protectPartialStream, STREAM_CONTRACT, type AuthOrigin } from "./retry.ts";
 import { billingBody, versionState, type VersionState } from "./wire.ts";
 import { OVERLAY } from "./registration.ts";
+import { contextForks } from "./context-fork.ts";
 
 /** Retries HTTP rejections only, before any stream bytes can escape to the agent. */
 export function subscriptionFetch(
@@ -69,6 +70,11 @@ export function createOverlay(
 	base: Provider, getStore: () => CredentialStore | undefined, deviceId: string,
 	version = versionState(),
 ) {
+	const forks = contextForks(() => {
+		const store = getStore();
+		const isolated = createOverlay(base, () => store, deviceId, versionState(version.value));
+		return (model, context, options) => isolated.streamSimple(model, context as Parameters<Provider["streamSimple"]>[1], options);
+	});
 	const handler = (model: Parameters<Provider["streamSimple"]>[0], context: Parameters<Provider["streamSimple"]>[1], options?: SimpleStreamOptions) => {
 		// Pi merges both entrypoints into this handler; retain the original options contract.
 		const provenance = options as (SimpleStreamOptions & { [STREAM_CONTRACT]?: string; [AUTH_ORIGIN]?: AuthOrigin }) | undefined;
@@ -79,8 +85,13 @@ export function createOverlay(
 		const transport = options?.fetch ?? globalThis.fetch;
 		const subscription = subscriptionFetch(transport, getStore(), version, options?.sessionId ?? randomUUID(), deviceId,
 			options?.signal, provenance?.[AUTH_ORIGIN]);
+		const effective = subscriptionCacheOptions(options);
+		const retention = effective?.cacheRetention ??
+			((effective?.env?.PI_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION) === "long" ? "long" : "short");
 		const fetch: typeof globalThis.fetch = async (input, init) => {
-			try { return await subscription(input, init); }
+			const request = new Request(input, init);
+			forks.capture(model, context, { ...effective, cacheRetention: retention, fetch: transport }, await request.clone().text());
+			try { return await subscription(request); }
 			catch (error) {
 				options?.signal?.throwIfAborted();
 				if (!(error instanceof AuthRecoveryError)) throw error;
@@ -93,5 +104,5 @@ export function createOverlay(
 		return protectPartialStream(delegate(model, context, { ...subscriptionCacheOptions(options), maxRetries: 0, fetch }));
 	};
 	Object.assign(handler, { [OVERLAY]: true });
-	return { api: "anthropic-messages", streamSimple: handler };
+	return { api: "anthropic-messages", streamSimple: handler, forks };
 }

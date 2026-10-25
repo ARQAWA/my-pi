@@ -1,5 +1,6 @@
 // Extension 5: asynchronous subagents with caller-local lifecycle and recursive delegation.
 import { randomUUID } from "node:crypto";
+import { ProgressReports, PROGRESS_SKILL_PATH } from "./progress.ts";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { getCurrentTools, getSupportedThinkingLevels, StringEnum } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, ExtensionAPI, ExtensionContext, ModelRuntime, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -83,7 +84,7 @@ type Params = Static<typeof PARAMETERS>;
  */
 type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; prompt_file?: PromptFile; profile?: ProfileRef; profile_defaults?: { model: boolean; thinking: boolean; role: boolean }; alert_after_ms?: number; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
 type SavedResult = { run: string; text: string; outcome: "completed" | "error"; meta: RunMeta };
-type SavedChild = { version: 1; kind: string; id: number; epoch: string; sessionFile?: string; runNumber: number; state: "idle" | "running" | "interrupted" | "paused" | "completed" | "stopped"; config: Omit<Config, "model"> & { model: { provider: string; id: string } }; fast: boolean; title?: string; task?: string; result?: SavedResult };
+type SavedChild = { version: 1; kind: string; id: number; epoch: string; sessionFile?: string; runNumber: number; state: "idle" | "running" | "interrupted" | "paused" | "completed" | "stopped"; config: Omit<Config, "model"> & { model: { provider: string; id: string } }; fast: boolean; title?: string; task?: string; result?: SavedResult; progressSteps?: number };
 type CallerHost = { busy(): boolean; send: ExtensionAPI["sendMessage"] };
 type JobNotification = { id: string; text: string; details: Record<string, unknown> };
 type InboxMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
@@ -153,7 +154,7 @@ class NotificationBridge {
 type Display = { id: string; outcome: "finished" | "failed"; model?: string; thinking?: string; seconds: number; title?: string; prompt_file?: PromptFile; profile?: ProfileRef };
 /** Control of a child's background jobs, carried by RQW-tools' offered `job` definition when it offers one. */
 type JobControl = { abortAll(): void; dispose(): void };
-type Child = { session: AgentSession; controller: AbortController; guard: { signal?: AbortSignal }; children?: RuntimeHandle; activity: Activity; jobs?: JobControl; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean; wake?: () => void } };
+type Child = { session: AgentSession; progress: ProgressReports; controller: AbortController; guard: { signal?: AbortSignal }; children?: RuntimeHandle; activity: Activity; jobs?: JobControl; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean; wake?: () => void } };
 type Agent = Child & {
 	id: number;
 	/** The caller's optional short title, shown in status and result details. */
@@ -343,6 +344,7 @@ const isAssistant = (m: { role: string }): m is AssistantMessage => m.role === "
 const runtimeOf = (ctx: ExtensionContext) => (ctx.modelRegistry as unknown as { runtime: ModelRuntime }).runtime;
 
 export default function agent(pi: ExtensionAPI) {
+	pi.on("resources_discover", () => ({ skillPaths: [PROGRESS_SKILL_PATH] }));
 	registerCaller(pi, pi.events, false, true, () => inheritedFastGpt(pi.events));
 }
 
@@ -521,7 +523,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const branch = ctx.sessionManager.getBranch();
 		const lastAnswer = branch.findLastIndex((e) => e.type === "message" && e.message.role === "assistant");
 		const isResult = (n: string) => (e: (typeof entries)[number]) =>
-			e.type === "custom_message" && e.customType === name && (e.details as { delivery?: unknown } | undefined)?.delivery === n;
+			e.type === "custom_message" && (e.customType === name || e.customType === "agent_progress") && (e.details as { delivery?: unknown } | undefined)?.delivery === n;
 		for (const n of unanswered) {
 			if (!entries.some(isResult(n))) continue; // still held by Pi until the turn ends
 			const at = branch.findIndex(isResult(n));
@@ -562,7 +564,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			version: 1, kind: name, id: a.id, epoch: a.epoch,
 			sessionFile: a.session.sessionManager.getSessionFile(), runNumber: a.runNumber, state: a.state,
 			config: { ...config, model: { provider: model.provider, id: model.id } },
-			fast: a.fast.on, ...(a.title ? { title: a.title } : {}), ...(a.task !== undefined ? { task: a.task } : {}),
+			fast: a.fast.on, progressSteps: a.progress.steps, ...(a.title ? { title: a.title } : {}), ...(a.task !== undefined ? { task: a.task } : {}),
 			...(a.result ? { result: a.result } : {}),
 		};
 		pi.appendEntry(CHILD_ENTRY, data);
@@ -600,6 +602,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					|| !["completed", "error"].includes(data.result.outcome) || !data.result.meta || typeof data.result.meta !== "object"))
 				|| !c.model || typeof c.model.provider !== "string" || typeof c.model.id !== "string"
 				|| typeof data.fast !== "boolean" || typeof data.epoch !== "string" || !Number.isSafeInteger(data.runNumber)
+				|| (data.progressSteps !== undefined && (!Number.isSafeInteger(data.progressSteps) || data.progressSteps < 0))
 				|| !["idle", "running", "interrupted", "paused", "completed"].includes(data.state))
 				throw new Error(`Invalid persisted configuration for ${name}#${data.id}`);
 			const model = ctx.modelRegistry.find(c.model.provider, c.model.id);
@@ -620,6 +623,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const config: Config = { ...c, model };
 			const fast = { on: data.fast };
 			const child = await createSession(config, ctx, signal, fast, labelOf(data.id), `${name}#${data.id}`, manager, true);
+			child.progress.steps = data.progressSteps ?? 0;
 			const a: Agent = { ...child, id: data.id, config, fast, epoch: data.epoch, runNumber: data.runNumber,
 				state: data.state === "running" ? "interrupted" : data.state, title: data.title, task: data.task, result: data.result };
 			agents.set(a.id, a);
@@ -659,6 +663,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		let replacement: Agent | undefined;
 		try {
 			const child = await createSession(old.config, ctx, signal, old.fast, labelOf(old.id), `${name}#${old.id}`, manager, true, old.bridge);
+			child.progress.steps = old.progress.steps;
 			const a: Agent = { ...old, ...child, next: undefined, run: undefined };
 			replacement = a;
 			if (!manager.buildSessionProjection().messages.some(m => m.role !== "system") && a.task !== undefined)
@@ -721,12 +726,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const guard: Child["guard"] = {};
 		const core: Child["core"] = { on: coreMode, active: false };
 		let childSession: AgentSession | undefined;
+		let progress: ProgressReports | undefined;
 		const childHost: CallerHost = {
 			busy: () => core.on ? core.active || !!childSession?.agent.state.isStreaming : childSession?.isStreaming ?? false,
 			send: (message, options) => {
 				if (bridge.lifetime.signal.aborted) return;
 				if (!childSession) throw new Error("Child session is not bound");
-				if (!core.on) { void childSession.sendCustomMessage(message, options).catch(error => activity?.reportError(String(error))); return; }
+				if (!core.on && message.customType !== "agent_progress") { void childSession.sendCustomMessage(message, options).catch(error => activity?.reportError(String(error))); return; }
 				bridge.deliver(message, options);
 			},
 		};
@@ -765,6 +771,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					childApi = sub;
 					fastGpt(sub, () => fast.on);
 					installExecutionIntent(sub, manager);
+					sub.on("model_select", () => progress?.invalidate());
 					sub.on("context_with_system", event => {
 						if (!core.on) return;
 						const tools = getCurrentTools(event.messages.filter(m => m.role === "system"));
@@ -804,14 +811,23 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				const policy = bindSessionPolicy(toolEvents, session, parent, "collab_spawn", config.system, childName, true, childApi);
 				if (signal.aborted) { jobs?.dispose(); policy.release(); session.dispose(); signal.throwIfAborted(); }
 				// prompt() may finish auth after abort()/dispose(). Never let an abandoned preflight reach inference.
+				progress = new ProgressReports(toolEvents, childName, manager.getSessionId(), (message, current, delivered) => {
+					const delivery = randomUUID();
+					coordinator.notification({ ...message, details: { ...(message.details as Record<string, unknown> | undefined), delivery } }, current, delivered, (notice, options) => {
+						// Like final results, busy-parent notices stay outside Pi's clearable follow-up queue.
+						if (!callerIdle()) unanswered.add(delivery);
+						send(notice, { triggerTurn: options?.triggerTurn === true && callerIdle() && !mainAborted });
+					});
+				});
 				const stream = session.agent.streamFunction;
 				session.agent.streamFunction = (model, context, options) => {
 					check();
+					progress!.capture(model, context);
 					// Child Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
 					return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 				};
 				activity = new Activity(session, () => { onRunning(); coordinator.notify(); }, { alert_after_ms: config.alert_after_ms });
-				return { session, controller, guard, children, activity, jobs, release: policy.release, captureRun: policy.capture, core, bridge };
+				return { session, progress, controller, guard, children, activity, jobs, release: policy.release, captureRun: policy.capture, core, bridge };
 			});
 			return await untilAborted(creating, signal);
 		} catch (error) {
@@ -824,10 +840,15 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	}
 
 	/** Wait only for an active SDK run, not its answer. Caller cancellation ends only an unaccepted run. */
-	async function startRun(a: Agent, task: string | undefined, signal: AbortSignal, skipRequest = false): Promise<void> {
+	async function startRun(a: Agent, task: string | undefined, signal: AbortSignal, skipRequest = false, communication = false): Promise<void> {
 		signal.throwIfAborted();
 		const started = Promise.withResolvers<void>();
+		const accept = () => {
+			if (communication) { a.progress.reset(); communication = false; }
+			started.resolve();
+		};
 		const session = a.session;
+		a.progress.onCount = () => persist(a);
 		a.runNumber++;
 		a.state = "running";
 		recoveryErrors.delete(a.id);
@@ -861,9 +882,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				lastPushed = 0;
 			}
 			if (event.type === "compaction_start") {
+				a.progress.invalidate();
 				// A late prompt preflight may enter compaction after cancellation; stop its summary too.
 				if (a.guard.signal?.aborted || a.controller.signal.aborted) void session.abort().catch(() => {});
-				started.resolve();
+				accept();
 			}
 			if (event.type === "auto_retry_start" || (event.type === "compaction_end" && event.willRetry)) {
 				if (lastPushed) texts.splice(texts.length - lastPushed, lastPushed);
@@ -875,6 +897,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			}
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
 			const m = event.message;
+			if (m.stopReason !== "toolUse") a.progress.invalidate();
+			else a.progress.response(m, session.thinkingLevel);
 			recordRunMessage(meta, m);
 			lastPushed = 0;
 			if (m.stopReason === "error") {
@@ -901,6 +925,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 						a.guard.signal?.throwIfAborted();
 					}
 					const notifications = a.bridge.messages();
+					accept();
 					const pending = task !== undefined ? session.agent.prompt(task)
 						: notifications.length ? session.agent.prompt(notifications.map(message => ({ role: "custom", ...message, timestamp: Date.now() })))
 						: session.agent.continue();
@@ -908,7 +933,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					await pending;
 					a.bridge.reconcile();
 					a.children?.settle?.(a.guard.signal?.aborted ?? false);
-				} else await session.prompt(task!, { preflightResult: () => started.resolve() });
+				} else await session.prompt(task!, { preflightResult: accept });
 				while (!run.quiet && !a.guard.signal?.aborted) {
 					const signal = a.guard.signal ?? a.controller.signal;
 					// A child may have woken a new native run after the original prompt settled.
@@ -964,6 +989,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					publishRun(a, identity, texts.join("\n\n"), "error", meta);
 				}
 			} finally {
+				a.progress.invalidate();
 				unsubscribe();
 				started.resolve();
 				// The abort can end this loop while a child-woken native run still streams (a tool ignoring abort):
@@ -1001,6 +1027,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	}
 
 	function close(a: Agent, preserveBridge = false) {
+		a.progress.invalidate();
 		if (!preserveBridge) a.bridge.close();
 		a.next = undefined;
 		if (a.run) { a.run.quiet = true; a.run.controller.abort(); }
@@ -1026,6 +1053,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 
 	/** Request cancellation of the current run: the shared body of `interrupt` and `send` with `interrupt: true`. */
 	function requestInterrupt(a: Agent, run: NonNullable<Agent["run"]>) {
+		a.progress.invalidate();
 		recoveryPending.delete(a.id);
 		a.children?.abortAll();
 		a.jobs?.abortAll();
@@ -1209,6 +1237,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					// finally of its run), after any earlier pending sends. No time limit: an uncooperative tool just delays it.
 					if (!a.run.quiet) requestInterrupt(a, a.run);
 					(a.next ??= []).push(params.task);
+					a.progress.reset();
 					return ok(`${name}#${a.id}: ${params.interrupt ? "interrupted, sent" : "sent"}`);
 				}
 				if (a.run) {
@@ -1216,12 +1245,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					const run = a.run;
 					if (a.core.on) a.session.agent.steer({ role: "user", content: [{ type: "text", text: params.task }], timestamp: Date.now() });
 					else await untilAborted(a.session.steer(params.task), signal);
+					a.progress.reset();
 					// The native run ended and the loop waits for this child's own children: wake it for steering.
 					const parked = run.parked && !a.session.agent.state.isStreaming;
 					run.parked?.abort();
 					return ok(`${name}#${a.id}: ${parked ? "sent" : "queued after the current tool call"}`);
 				}
-				await startRun(a, params.task, signal);
+				await startRun(a, params.task, signal, false, true);
 				signal.throwIfAborted();
 				a.guard.signal = a.run?.controller.signal;
 				return ok(`${name}#${a.id}: sent`);

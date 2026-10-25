@@ -204,6 +204,69 @@ management cancellation still apply. Wait timeout limits the caller's pause, nev
 
 Proof: `test/extensions/RQW-agent/agent.test.ts`, `test/extensions/RQW-agent/nested-agents.test.ts` and `test/extensions/RQW-agent/cli.test.ts`.
 
+## Background progress notifications
+
+After 50 non-final assistant responses containing at least one `toolCall`, a child starts one background progress
+summary from its own cached context. Counting happens at `message_end`, before the tools finish: one response is
+one step, regardless of how many tools or nested codemode calls it contains. Text-only responses and terminal
+`stop`, `error`, `length` or `aborted` responses do not count. Only a successful parent `send` or delivered progress
+report resets the counter. `status` and `wait` do not. `progressSteps` lives in the existing `rqw-agent-child`
+metadata and survives Pi restart and explicit resume; there is no additional state file.
+
+The model supplies summary prose only. Counting, triggering, cancellation, stale-report rejection and delivery are
+code-owned. The child never waits for the summary and receives no report instruction, summary message or extra
+session entry. The fork preserves the previous complete provider request's prompt, tools and conversation, then
+appends a text-only summary instruction and the latest response's tool intent. Pending tool calls are described as
+text, not sent as unmatched tool-call messages. Session hooks are not replayed. No fork tool is executed.
+
+The direct parent receives a notification from the notification mechanism, not an answer from the child:
+`customType: "agent_progress"`, beginning `[notification] agent#N has worked 50 tool-call steps without communication.`
+It includes the summary and says the agent continues working. Fixed code text and the embedded skill both ask:
+"Check whether this child has drifted outside its task and still follows the plan in its brief. Decide whether to send
+a correction." The parent decides whether to send anything. This notice neither completes a wait nor claims or
+publishes a final result. Nested agents notify only their direct parent through its durable `rqw-agent-inbox` bridge.
+Busy-parent notices use the existing context-only delivery and settlement continuation, outside the clearable
+follow-up queue. Caller abort preserves the notice without automatically waking the aborted caller.
+
+`resources_discover` offers [agent-progress](skills/agent-progress/SKILL.md). The notification also embeds that actual
+short skill text because child parents use `noSkills: true`. Its reminder covers only agreed scope, simple engineering
+and no avoidable token spending. It asks for no reviewer, separate model turn, child instructions or mandatory
+repository-specific manifesto path. Decision and owner source: `D-AGENT-PROGRESS` in
+[DECISIONS.md, Agent](../../DECISIONS.md#agent).
+
+### Provider fork offer
+
+`progress.ts` emits the shared public `pi.events` request `rqw:context-fork:v1`:
+
+```ts
+{
+  sessionId: string,
+  model: Model<Api>,
+  context: Context,
+  reasoning?: ThinkingLevel,
+  signal: AbortSignal,
+  offer(infer: () => Promise<AssistantMessage>): void
+}
+```
+
+A provider offers synchronously, capturing independent cloned cache state before the child's next request advances
+it; inference runs asynchronously. The request's context is a cloned snapshot, not a live session object. The provider
+owns its inherited request timeout and cancellation. Without an offer there is no unsafe fresh-request fallback.
+Errors, provider timeouts or unavailable cache do not affect the child or trigger a per-turn retry loop: another
+attempt can start only at the next 50-step boundary. No new setting, timer, execution limit or retry is added.
+
+Parent send, final response, failure, interrupt, stop, restart or shutdown invalidates an in-flight or queued report;
+it can be delivered before a final answer, never after it. Compaction and model selection also invalidate the snapshot
+but preserve the counter. Later qualifying responses reach the next 50-step boundary normally. Ongoing ordinary
+turns do not invalidate an in-flight report. Provider failures and stale results never change final-result ownership.
+
+Deterministic proof: `test/extensions/RQW-agent/progress.test.ts`, `progress-runtime.test.ts`, and the progress cases
+in `resume.test.ts` cover counting before long tools finish, cache-prefix preservation, fixed wording and actual skill
+discovery, no child pause or transcript write, send and terminal races, compaction and model changes, concurrent
+children, direct-parent-only recursion, provider error/timeout/no-offer behavior, parent busy/idle/wait/abort settlement,
+stale queued notices, final ownership and persisted counters across restart/resume. These tests use faux providers,
+not live subscription transports.
+
 ## GPT Fast
 
 A child agent inherits its caller's GPT Fast state when it starts; a nested child
@@ -540,8 +603,10 @@ Generated by `node scripts/repo-index.mjs --write` from the repository root.
 | [`index.ts`](index.ts) | Pi extension entrypoint: Recursive subagents, profiles and persisted sessions |
 | [`persistence.ts`](persistence.ts) | Child session storage and restoration |
 | [`profiles.ts`](profiles.ts) | Codex TOML profile discovery and resolution |
+| [`progress.ts`](progress.ts) | progress module or resource |
 | [`prompt-files.ts`](prompt-files.ts) | Prompt file loading and caller message inclusion |
 | [`prompt.ts`](prompt.ts) | Child prompt composition |
+| [`skills/agent-progress/SKILL.md`](skills/agent-progress/SKILL.md) | agent-progress native Agent Skill instructions |
 
 Tests: [`test/extensions/RQW-agent/`](../../test/extensions/RQW-agent/).
 <!-- repo-index:end -->

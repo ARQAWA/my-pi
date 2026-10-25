@@ -9,11 +9,12 @@
 // the branch and, after a new one, drops its prepared work and transport (afterPiCompaction).
 // Imports: Pi SDK types/runtime, this folder and npm packages only.
 import { convertToLlm, type AgentSession, type ExtensionAPI, type NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
-import { getCurrentTools, lazyStream, type Api, type AssistantMessageEventStream, type Context, type CredentialStore, type Model } from "@earendil-works/pi-ai";
+import { getCurrentTools, lazyStream, type Api, type AssistantMessage, type AssistantMessageEventStream, type Context, type CredentialStore, type Model } from "@earendil-works/pi-ai";
 
 import { resolveStoredCredential } from "./auth-boundary.ts";
 import { credentialIdentity, PROVIDER_ID, validateCredential } from "./auth.ts";
 import { uuidv7 } from "./compaction.ts";
+import type { ContextForkRequest } from "./context-fork.ts";
 import { canonicalJson, HISTORY_CUSTOM_TYPE, HISTORY_VERSION, scopeDigest, sha256Hex } from "./history.ts";
 import { collectWorkspaceMetadata, type CodexIdentity, type HistoryInitialization, type WorkspaceMetadata } from "./metadata.ts";
 import { CODEX_API, CODEX_PROVIDER, CODEX_STABLE_FEATURES, codexModelCapabilities } from "./profile.ts";
@@ -36,6 +37,7 @@ export interface SessionTransport {
 	updateMetadata?(update: Partial<CodexIdentity>): void;
 	/** Raw native send of one caller-built request (compaction). Required for backend compaction; absent means compaction refuses. */
 	sendRaw?(args: SendRawOptions): AsyncIterable<Record<string, unknown>>;
+	contextFork?(request: ContextForkRequest): (() => Promise<AssistantMessage>) | undefined;
 	dispose(): void;
 }
 
@@ -97,6 +99,7 @@ export interface SessionController {
 	start(): Promise<void>;
 	updateLineage(lineage: SessionLineage): void;
 	stream(model: Model<Api>, context: Context, options?: CodexStreamOptions): AssistantMessageEventStream;
+	contextFork(request: ContextForkRequest): (() => Promise<AssistantMessage>) | undefined;
 	release(): void;
 	readonly threadId: string;
 	readonly rootSessionId: string;
@@ -917,6 +920,10 @@ export function createSessionController(options: SessionControllerOptions): Sess
 				lineage.rootTurnId = next.rootTurnId;
 				pendingOrigin = next.rootTurnId === undefined ? undefined : { rootTurnId: next.rootTurnId };
 			}
+		},
+		contextFork(request) {
+			if (released || request.sessionId !== threadId) return;
+			return transport?.contextFork?.(request);
 		},
 		stream(model, context, streamOptions) {
 			if (released) throw new Error("RQW-codex: session controller is released");

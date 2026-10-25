@@ -10,6 +10,7 @@ import { installRecoveryHooks } from "./retry.ts";
 import { createOverlay } from "./transport.ts";
 import { installRegistrationGuard, BIND_STORE } from "./registration.ts";
 import { versionState } from "./wire.ts";
+import type { ContextForkRequest } from "./context-fork.ts";
 
 export default function anthropic(pi: ExtensionAPI) {
 	if (VERSION !== "1.4.0") throw new Error("RQW-anthropic requires Pi 1.4.0; nothing was changed");
@@ -27,13 +28,16 @@ export default function anthropic(pi: ExtensionAPI) {
 	let store: CredentialStore | undefined;
 	let runtime: ModelRuntime | undefined;
 	let cleaned = false;
+	let lifecycle: Lifecycle | undefined;
 	const overlay = createOverlay(base, () => store, deviceId, version);
 	const release = installRegistrationGuard();
+	const releaseFork = pi.events.on("rqw:context-fork:v1", data => overlay.forks.offer(data as ContextForkRequest));
 	let releaseRecovery: (() => void) | undefined;
-	let lifecycle: Lifecycle | undefined;
 	function cleanup() {
 		if (cleaned) return;
 		cleaned = true;
+		releaseFork();
+		overlay.forks.clear();
 		try { lifecycle?.release(); }
 		finally {
 			releaseRecovery?.();
@@ -52,7 +56,7 @@ export default function anthropic(pi: ExtensionAPI) {
 		Object.assign(overlay.streamSimple, { [BIND_STORE]: (credentials: CredentialStore, boundRuntime: ModelRuntime) => {
 			store = credentials;
 			runtime = boundRuntime;
-			return lifecycle!.bind(boundRuntime, overlay.streamSimple);
+			return lifecycle!.bind(boundRuntime, overlay.streamSimple, overlay.forks);
 		} });
 		pi.registerProvider("anthropic", {
 			...overlay,

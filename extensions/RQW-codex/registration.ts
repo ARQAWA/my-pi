@@ -4,13 +4,14 @@
 // leases and listeners. The owner's root is its first actual root binding; disposing that root closes the owner.
 // Session controllers are supplied by the caller (createController); this module never builds a transport itself.
 // Imports: this folder, Pi SDK types/runtime and npm packages only.
-import type { AssistantMessageEventStream, Api, Context, CredentialStore, Model, OAuthCredential, OAuthCredentials, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, AssistantMessageEventStream, Api, Context, CredentialStore, Model, OAuthCredential, OAuthCredentials, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { VERSION, type AgentSession, type ExtensionAPI, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 
 import { installRuntimeAuth } from "./auth-runtime.ts";
 import { loginDevice, refreshCredential } from "./auth.ts";
 import { installLifecycle, type Lifecycle, type SessionPolicy } from "./lifecycle.ts";
 import { CODEX_API, CODEX_PROVIDER } from "./profile.ts";
+import { CONTEXT_FORK_CHANNEL, type ContextForkRequest } from "./context-fork.ts";
 import { installSessionCompaction } from "./session-compaction.ts";
 
 /** Child request channel of RQW-agent (same literal; no import across folders). */
@@ -46,6 +47,7 @@ export type RegisteredController = {
 	start(): Promise<void>;
 	updateLineage(lineage: ControllerLineage): void;
 	stream(model: Model<Api>, context: Context, options?: unknown): AssistantMessageEventStream;
+	contextFork?(request: ContextForkRequest): (() => Promise<AssistantMessage>) | undefined;
 	release(): void;
 	readonly threadId: string;
 	readonly rootSessionId: string;
@@ -425,6 +427,7 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 		offCompaction();
 		offChild();
 		offPrewarm();
+		offFork();
 		all.owners.delete(owner);
 		for (const record of owner.records) record.owners.delete(owner);
 		owner.records.clear();
@@ -461,6 +464,17 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 		const snapshot = caller.controller.lineageSnapshot;
 		child.controller.captureRunOrigin?.(snapshot?.turnId === undefined ? {} : { rootTurnId: snapshot.rootTurnId ?? snapshot.turnId });
 	};
+
+	const offFork = pi.events.on(CONTEXT_FORK_CHANNEL, (raw) => {
+		if (closed) return;
+		const request = raw as ContextForkRequest;
+		if (request.model?.provider !== CODEX_PROVIDER || request.model.api !== CODEX_API || request.signal.aborted) return;
+		const entry = owner.entries.get(request.sessionId);
+		if (!entry || entry.done) return;
+		let infer;
+		try { infer = entry.controller.contextFork?.(request); } catch { return; }
+		if (infer) request.offer(infer);
+	});
 
 	const offPrewarm = pi.events.on(PREWARM_HISTORY_CHANNEL, (raw) => {
 		if (closed) return;

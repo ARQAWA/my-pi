@@ -12,18 +12,20 @@ type Cleanup = () => void;
 type Fn = (this: unknown, ...args: unknown[]) => unknown;
 type Link = Fn & Record<symbol, unknown>;
 type Chain = { stock: PropertyDescriptor; owners: Set<object> };
-type Lease = { streamSimple: unknown; restore?: Cleanup };
+type SessionSources = { registerSource(sessionId: string): void; release(sessionId: string): void };
+type Lease = { streamSimple: unknown; restore?: Cleanup; sources?: SessionSources };
+type CacheBinding = { release: Cleanup; sessionId: string };
 type PatchState = {
 	active: boolean;
 	count: number;
-	cacheBindings: Map<AgentSession, Cleanup>;
+	cacheBindings: Map<AgentSession, CacheBinding>;
 	callbacks: WeakMap<object, Set<Cleanup>>;
 	leases: WeakMap<ModelRuntime, Map<Cleanup, Lease>>;
 };
 
 export type Lifecycle = {
 	bindSession(identity: object, session: object): void;
-	bind(runtime: ModelRuntime, streamSimple: unknown): (restore: Cleanup) => void;
+	bind(runtime: ModelRuntime, streamSimple: unknown, sources?: SessionSources): (restore: Cleanup) => void;
 	isActive(identity: object, runtime: ModelRuntime): boolean;
 	release(): void;
 };
@@ -97,16 +99,27 @@ export function installLifecycle(cleanup: Cleanup, Session = AgentSession): Life
 		for (const name of PATCHED_NAMES) {
 			const wrapped: Link = name === "dispose" ? function(this: AgentSession) {
 				if (!installed.active) return (wrapped[INNER] as Fn).call(this);
+				const binding = installed.cacheBindings.get(this);
 				try {
+					for (const lease of installed.leases.get(this.modelRuntime)?.values() ?? []) lease.sources?.release(binding?.sessionId ?? this.sessionId);
 					for (const release of [...(installed.callbacks.get(this) ?? [])]) release();
 				} finally {
-					installed.cacheBindings.get(this)?.();
+					binding?.release();
 					installed.cacheBindings.delete(this);
 					(wrapped[INNER] as Fn).call(this);
 				}
 			} : function(this: AgentSession, ...args: unknown[]) {
 				if (!installed.active) return (wrapped[INNER] as Fn).apply(this, args);
-				if (!installed.cacheBindings.has(this)) installed.cacheBindings.set(this, bindSessionCache(this));
+				let binding = installed.cacheBindings.get(this);
+				if (!binding) {
+					binding = { release: bindSessionCache(this), sessionId: this.sessionId };
+					installed.cacheBindings.set(this, binding);
+				}
+				for (const lease of installed.leases.get(this.modelRuntime)?.values() ?? []) {
+					if (binding.sessionId !== this.sessionId) lease.sources?.release(binding.sessionId);
+					lease.sources?.registerSource(this.sessionId);
+				}
+				binding.sessionId = this.sessionId;
 				// SDK callers may omit session_start. Bind the exact session before native registration.
 				const ctx = this.extensionRunner.createContext();
 				for (const extension of this.resourceLoader.getExtensions().extensions) {
@@ -134,13 +147,16 @@ export function installLifecycle(cleanup: Cleanup, Session = AgentSession): Life
 			callbacks.add(cleanup);
 			installed.callbacks.set(session, callbacks);
 		},
-		bind(runtime: ModelRuntime, streamSimple: unknown) {
+		bind(runtime: ModelRuntime, streamSimple: unknown, sources?: SessionSources) {
 			if (released) throw new Error("RQW-anthropic: disposed adapter cannot be rebound; reload the extension");
 			const leases = installed.leases.get(runtime) ?? new Map<Cleanup, Lease>();
-			const lease = bindings.get(runtime) ?? { streamSimple };
+			const lease = bindings.get(runtime) ?? { streamSimple, sources };
 			leases.set(cleanup, lease);
 			installed.leases.set(runtime, leases);
 			bindings.set(runtime, lease);
+			for (const [session, binding] of installed.cacheBindings) {
+				if (session.modelRuntime === runtime) sources?.registerSource(binding.sessionId);
+			}
 			return (restore: Cleanup) => { lease.restore = restore; };
 		},
 		isActive(identity: object, runtime: ModelRuntime) {
@@ -168,7 +184,7 @@ export function installLifecycle(cleanup: Cleanup, Session = AgentSession): Life
 			} finally {
 				bindings.clear();
 				if (--installed.count === 0) {
-					for (const restore of installed.cacheBindings.values()) restore();
+					for (const binding of installed.cacheBindings.values()) binding.release();
 					installed.cacheBindings.clear();
 					installed.active = false;
 					// Rebase or remove only our own layers; a surviving competitor keeps its layer and its inner link.

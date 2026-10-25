@@ -26,6 +26,7 @@ import { PROVIDER_ID, credentialIdentity, validateCredential } from "./auth.ts";
 import { CODEX_AUTH_ORIGIN, type CodexAuthOrigin } from "./auth-runtime.ts";
 import { compressRequest } from "./compression.ts";
 import { Continuation } from "./continuation.ts";
+import { prepareContextFork, type ContextForkRequest, type PreparedTurn } from "./context-fork.ts";
 import { CodexError, classifyEvent, classifyHttp, classifyTransport, normalizeUsage, type CodexUsage } from "./errors.ts";
 import { mergeHeaders } from "./headers.ts";
 import { clientMetadata, identityHeaders, localPlatform, validateExtraMetadata, type CodexIdentity, type RequestKind } from "./metadata.ts";
@@ -397,6 +398,7 @@ export class CodexThreadTransport {
 	#recovery: "reload" | "refresh" | undefined;
 	/** Retry delay owed before the next backend request after a tool handoff (scheduled after Pi's tools). */
 	#handoffDelayMs = 0;
+	#lastTurn: PreparedTurn | undefined;
 
 	constructor(options: TransportOptions) {
 		// This transport is the ordinary subscription login (storeOAuth, account validated): the auth profile is fixed here.
@@ -481,6 +483,44 @@ export class CodexThreadTransport {
 			},
 		);
 		return outer;
+	}
+
+	/** Capture synchronously; inference owns a fresh transport and in-memory ledger, not this thread's continuation. */
+	contextFork(request: ContextForkRequest): (() => Promise<AssistantMessage>) | undefined {
+		if (this.#disposed || !this.#lastTurn || this.#owner === undefined) return;
+		const captured = prepareContextFork({
+			turn: this.#lastTurn, request, identity: this.identity, capabilities: wireCapabilities(this.#lastTurn.model),
+			rawOutputs: this.#rawOutputs(request.context),
+		});
+		if (!captured) return;
+		const owner = this.#owner;
+		const store = this.#store;
+		const dependencies = { ...this.#deps, providerRetries: { requestMaxRetries: 0 } };
+		const signal = request.signal;
+		let used = false;
+		return async () => {
+			if (used) throw new Error("RQW-codex: context fork is one-shot");
+			used = true;
+			signal.throwIfAborted();
+			const fork = new CodexThreadTransport({ identity: captured.identity, store, dependencies });
+			const pump = new LiveResponsesPump({ model: captured.model, stream: createAssistantMessageEventStream(),
+				parserOptions: { grammarToolInputProperties: grammarToolInputProperties(captured.model, captured.context) } });
+			pump.setServiceTier(captured.body.service_tier);
+			try {
+				for await (const event of fork.sendRaw({ request: captured.body, model: captured.model, requestKind: "turn", signal, options: { preparedOwner: owner } })) {
+					await pump.push(event);
+				}
+				const message = await pump.finish();
+				signal.throwIfAborted();
+				if (message.stopReason === "error" || message.stopReason === "aborted") throw new Error(message.errorMessage ?? "RQW-codex: context fork failed");
+				return message;
+			} catch (error) {
+				await pump.finish({ error, reason: signal.aborted ? "aborted" : undefined });
+				throw error;
+			} finally {
+				fork.dispose();
+			}
+		};
 	}
 
 	/**
@@ -688,6 +728,7 @@ export class CodexThreadTransport {
 		this.#lifetime.abort();
 		this.#dropSocket();
 		this.#ledger.clear();
+		this.#lastTurn = undefined;
 		this.#turnState = undefined;
 	}
 
@@ -907,6 +948,7 @@ export class CodexThreadTransport {
 		const { socketId, cred: initial } = await this.#authorize(options, signal);
 		let cred = initial;
 		const body = await this.#hookedBody(model, context, options, "turn", undefined, this.identity, signal);
+		this.#lastTurn = structuredClone({ model, context, body });
 		// Actual effort of the final validated body (after any onPayload change), as Pi persists the thinking level.
 		const effort = (body.reasoning as { effort?: unknown } | undefined)?.effort;
 		if (typeof effort === "string") pump.output.providerThinkingLevel = effort;

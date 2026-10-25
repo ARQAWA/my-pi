@@ -64,6 +64,9 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   Agent start/restart supports `system_file`/`role_file` and `include: ["user_messages"]`; task text stays in `task`.
   The tool supports `until: "all"`, `wake_on_alert`, read-only status `depth` and optional `alert_after_ms`
   diagnostics without stopping work; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management).
+  Every 50 non-final tool-call responses without parent communication trigger an isolated background context-fork
+  summary. The parent receives a notification and workflow skill reminder, never a subagent final answer; the child
+  keeps working and its chat is unchanged. Contract: `DECISIONS.md` `[D-AGENT-PROGRESS]`.
   Imports nothing from another extension folder: subagents get RQW-tools only when
   RQW-tools is loaded and offers them on `pi.events` channel `rqw-tools:subagent-tools`, otherwise Pi's stock
   tools. Child background cache warming is off; Anthropic prompt caching uses built-in 5m (`DECISIONS.md`, Agent).

@@ -75,6 +75,7 @@ export class Coordinator {
 	private changes = new Map<string, { run: string; change: string }>();
 	private reservations = new Map<string, Reservation>();
 	private notificationWaits = new Map<string, NotificationWait>();
+	private notices: { message: Parameters<ExtensionAPI["sendMessage"]>[0]; current(): boolean; delivered(): void; send: ExtensionAPI["sendMessage"] }[] = [];
 	private parents = new Map<string, string>();
 	private completed = new Map<string, boolean>();
 	private activeWaits = 0;
@@ -115,6 +116,7 @@ export class Coordinator {
 		pi.on("agent_settled", (event, ctx) => this.settleCore(ctx, event.aborted));
 		pi.on("session_shutdown", () => {
 			this.callerAborted = true; this.cancelNotificationWaits();
+			this.notices.length = 0;
 			this.diagnostics.length = 0; this.endSignal?.removeEventListener("abort", this.markAborted);
 		});
 	}
@@ -129,7 +131,7 @@ export class Coordinator {
 		this.endSignal?.removeEventListener("abort", this.markAborted); this.endSignal = undefined;
 		this.callerAborted = aborted; this.settling = false;
 		const messages = this.diagnostics.splice(0);
-		const notifications = [...this.notificationWaits.values()].some(wait => wait.ready());
+		const notifications = this.notices.some(notice => notice.current()) || [...this.notificationWaits.values()].some(wait => wait.ready());
 		messages.forEach((message, i) => this.send(message, { triggerTurn: !aborted && !notifications && i === messages.length - 1 }));
 		this.flushNotifications(!aborted);
 		this.notify();
@@ -141,10 +143,21 @@ export class Coordinator {
 		for (const wait of [...this.notificationWaits.values()])
 			if (wait !== replacement && wait.key === key) wait.cancel();
 	}
+	/** Side-channel notices use the same settlement-safe sender as wait notifications, never result ownership. */
+	notification(message: Parameters<ExtensionAPI["sendMessage"]>[0], current: () => boolean, delivered: () => void, send = this.send): void {
+		this.notices.push({ message, current, delivered, send });
+		if (!this.settling) this.flushNotifications(!this.callerAborted);
+	}
 	private flushNotifications(triggerTurn: boolean) {
+		const notices = this.notices.splice(0).filter(notice => notice.current());
 		const ready = [...this.notificationWaits.values()].filter(wait => wait.ready());
+		for (const [i, notice] of notices.entries()) {
+			if (!notice.current()) continue;
+			notice.send(notice.message, { triggerTurn: triggerTurn && !ready.length && i === notices.length - 1 });
+			notice.delivered();
+		}
 		ready.forEach((wait, i) => wait.flush(triggerTurn && i === ready.length - 1));
-		return ready.length;
+		return notices.length + ready.length;
 	}
 	private root(call: string) {
 		const seen = new Set<string>();

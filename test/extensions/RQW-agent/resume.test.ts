@@ -26,6 +26,8 @@ import {
 	type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 
+import { CONTEXT_FORK, type ContextForkRequest } from "../../../extensions/RQW-agent/progress.ts";
+
 const EXTENSION = join(import.meta.dirname, "../../../extensions/RQW-agent/index.ts");
 const SYSTEM = "EXACT";
 
@@ -137,7 +139,7 @@ async function world(options: { subContextWindow?: number } = {}) {
 	const main = scripted(hub, "main", "m"), sub = scripted(hub, "sub", "s", undefined, options.subContextWindow), deep = scripted(hub, "deep", "g");
 	const runtime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null, refreshOnCreate: false });
 	for (const p of [main, sub, deep]) runtime.registerNativeProvider(p.faux.provider);
-	const offered: { tools: unknown[]; policy?: string } = { tools: [] };
+	const offered: { tools: unknown[]; policy?: string; fork?: (request: ContextForkRequest) => void; session?: (session: AgentSession) => void } = { tools: [] };
 	const open = new Set<Run>();
 
 	async function launch(file?: string): Promise<Run> {
@@ -145,12 +147,14 @@ async function world(options: { subContextWindow?: number } = {}) {
 		const loader = new DefaultResourceLoader({ cwd, agentDir, additionalExtensionPaths: [EXTENSION],
 			// Public offer channel of RQW-tools: the fixture hands the children its own tool definitions.
 			extensionFactories: [pi => {
+				pi.events.on(CONTEXT_FORK, request => offered.fork?.(request as ContextForkRequest));
 				pi.events.on("rqw-tools:subagent-tools", request => {
 					if (offered.tools.length) (request as { offer(factory: () => unknown[]): void }).offer(() => offered.tools);
 				});
 				// The public session-policy channel: a refusal makes the next child session creation fail.
 				pi.events.on("rqw-codex:session-policy", request => {
 					if (offered.policy) (request as { error?: string }).error = offered.policy;
+					offered.session?.((request as { session: AgentSession }).session);
 				});
 			}],
 			noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
@@ -199,6 +203,110 @@ async function world(options: { subContextWindow?: number } = {}) {
 }
 type Run = { session: AgentSession; errors: string[]; file: string; closed: boolean; call(params: Record<string, unknown>): Promise<string>; delivered(): string[]; command(name: string, args?: string): Promise<void> };
 type World = Awaited<ReturnType<typeof world>>;
+
+test("accepted idle send during held preflight compaction persists zero steps across shutdown and resume", async () => {
+	const w = await world({ subContextWindow: 20000 });
+	const children: AgentSession[] = []; const forks: ContextForkRequest[] = [];
+	const summary = Promise.withResolvers<AssistantMessage>();
+	w.offered.session = session => { children.push(session); session.subscribe(() => w.hub.notify()); };
+	w.offered.fork = request => { forks.push(request); request.offer(() => summary.promise); w.hub.notify(); };
+	const progress = (run: Run) => savedRecord(run.session.sessionManager, 1).data.progressSteps;
+	try {
+		const first = await w.launchPersisted();
+		first.session.settingsManager.applyOverrides({ compaction: { enabled: false, reserveTokens: 2000, keepRecentTokens: 1 } });
+		const seed = hold(w.hub);
+		w.sub.queue.push(...Array.from({ length: 50 }, (_, i) => toolUse("read", { path: "missing" }, `seed-${i}`)), seed.reply);
+		await w.start(first, `COUNTED ${"x".repeat(100000)}`, { tools: [] });
+		await w.hub.until(() => seed.entered() && forks.length === 1, "50 qualifying responses and pending report");
+		assert.equal(progress(first), 50);
+		await first.call({ action: "interrupt", id: "agent#1" });
+		await w.hub.until(() => children[0].isIdle, "interrupted child becomes idle"); await settle();
+		assert.equal(progress(first), 50); assert.equal(forks[0].signal.aborted, true);
+		children[0].settingsManager.applyOverrides({ compaction: { enabled: true, reserveTokens: 2000, keepRecentTokens: 1 } });
+		const compact = hold(w.hub, "COMPACTION"); w.sub.queue.push(compact.reply);
+		assert.equal(await w.hub.within(first.call({ action: "send", id: "agent#1", task: "ACCEPTED DURING COMPACTION" }), "idle send accepted before held compaction finishes"), "agent#1: sent");
+		await w.hub.until(compact.entered, "real SDK preflight compaction provider request held");
+		assert.equal(progress(first), 0, "accepted communication resets the counter before preflightResult");
+		const disk = SessionManager.open(first.file, dirname(first.file), w.cwd);
+		assert.equal(savedRecord(disk, 1).data.progressSteps, 0, "reset is durable while compaction remains unfinished");
+		summary.resolve(answer("STALE PRE-SEND REPORT")); await settle();
+		assert.equal(first.session.messages.some(m => m.role === "custom" && m.customType === "agent_progress"), false);
+		assert.equal(compact.aborted(), false, "counter persistence does not interrupt SDK compaction");
+		await w.close(first); assert.equal(compact.aborted(), true);
+		const second = await w.launch(first.file); const resumed = hold(w.hub);
+		w.sub.queue.push(toolUse("read", { path: "missing" }, "fresh-after-resume"), resumed.reply);
+		await second.call({ action: "resume", id: "agent#1" });
+		await w.hub.until(resumed.entered, "resumed child makes one fresh qualifying response");
+		assert.equal(progress(second), 1, "resume starts from the persisted communication reset, not the old 50");
+		assert.equal(forks.length, 1); assert.equal(JSON.stringify(second.session.messages).includes("STALE PRE-SEND REPORT"), false);
+		assert.deepEqual(second.errors, []);
+	} finally { summary.resolve(answer("cleanup")); await w.cleanup(); }
+});
+
+test("progress counter survives persisted shutdown/resume and delivered report resets the saved counter", async () => {
+	const w = await world();
+	const forks: ContextForkRequest[] = [];
+	const summary = Promise.withResolvers<AssistantMessage>();
+	w.offered.fork = request => { forks.push(request); request.offer(() => summary.promise); w.hub.notify(); };
+	const savedSteps = (run: Run) => (run.session.sessionManager.getBranch().findLast(e => e.type === "custom" && e.customType === "rqw-agent-child") as any)?.data.progressSteps;
+	try {
+		const first = await w.launchPersisted();
+		const held = hold(w.hub);
+		w.sub.queue.push(...Array.from({ length: 49 }, (_, i) => toolUse("read", { path: "missing" }, `before-${i}`)), held.reply);
+		await w.start(first, "COUNTED", { tools: [] });
+		await w.hub.until(held.entered, "49 tool-call responses followed by pending model request");
+		assert.equal(savedSteps(first), 49); assert.equal(forks.length, 0);
+		await w.close(first);
+		const second = await w.launch(first.file);
+		const next = hold(w.hub);
+		w.sub.queue.push(toolUse("read", { path: "missing" }, "after-restart"), next.reply);
+		await second.call({ action: "resume", id: "agent#1" });
+		await w.hub.until(() => forks.length === 1 && next.entered(), "50th response after Pi restart");
+		assert.equal(savedSteps(second), 50);
+		assert.equal(forks[0].sessionId, (await childHistories(first.file)).map(h => h.entries.find(e => e.type === "session")?.id)[0]);
+		summary.resolve(answer("PERSISTED PROGRESS"));
+		await w.hub.until(() => second.session.messages.some(m => m.role === "custom" && m.customType === "agent_progress"), "report delivery");
+		assert.equal(savedSteps(second), 0);
+		const histories = await childHistories(first.file);
+		assert.equal(histories.length, 1);
+		assert.equal(JSON.stringify(histories[0].entries).includes("PERSISTED PROGRESS"), false);
+		assert.equal(JSON.stringify(histories[0].entries).includes("Summarize what you did"), false);
+		await w.close(second);
+		const third = await w.launch(first.file); const last = hold(w.hub);
+		w.sub.queue.push(toolUse("read", { path: "missing" }, "new-block"), last.reply);
+		await third.call({ action: "resume", id: "agent#1" });
+		await w.hub.until(last.entered, "new block after another restart");
+		assert.equal(savedSteps(third), 1); assert.equal(forks.length, 1);
+		assert.deepEqual(third.errors, []);
+	} finally { summary.resolve(answer("cleanup")); await w.cleanup(); }
+});
+
+test("persisted restart drops an in-flight summary, preserves 50 steps and next triggers only at 100", async () => {
+	const w = await world(); const forks: ContextForkRequest[] = [];
+	const summaries: ReturnType<typeof Promise.withResolvers<AssistantMessage>>[] = [];
+	w.offered.fork = request => {
+		const summary = Promise.withResolvers<AssistantMessage>(); summaries.push(summary); forks.push(request);
+		request.offer(() => summary.promise); w.hub.notify();
+	};
+	try {
+		const first = await w.launchPersisted(); const held = hold(w.hub);
+		w.sub.queue.push(...Array.from({ length: 50 }, (_, i) => toolUse("read", { path: "missing" }, `first-${i}`)), held.reply);
+		await w.start(first, "COUNTED", { tools: [] });
+		await w.hub.until(() => held.entered() && forks.length === 1, "summary in flight at 50");
+		await w.close(first); assert.equal(forks[0].signal.aborted, true);
+		summaries[0].resolve(answer("STALE BEFORE RESTART")); await settle();
+		const second = await w.launch(first.file); const next = hold(w.hub);
+		w.sub.queue.push(...Array.from({ length: 50 }, (_, i) => toolUse("read", { path: "missing" }, `second-${i}`)), next.reply);
+		await second.call({ action: "resume", id: "agent#1" });
+		await w.hub.until(() => next.entered() && forks.length === 2, "next 50-step boundary after restart");
+		const saved = second.session.sessionManager.getBranch().findLast(e => e.type === "custom" && e.customType === "rqw-agent-child") as any;
+		assert.equal(saved.data.progressSteps, 100);
+		assert.equal(second.session.messages.some(m => m.role === "custom" && m.customType === "agent_progress"), false);
+		summaries[1].resolve(answer("CURRENT REPORT"));
+		await w.hub.until(() => second.session.messages.some(m => m.role === "custom" && m.customType === "agent_progress"), "current summary delivered");
+		assert.equal(JSON.stringify(second.session.messages).includes("STALE BEFORE RESTART"), false);
+	} finally { for (const summary of summaries) summary.resolve(answer("cleanup")); await w.cleanup(); }
+});
 
 const exists = (path: string) => access(path).then(() => true, () => false);
 async function filesUnder(dir: string): Promise<string[]> {
