@@ -122,6 +122,13 @@ Provenance:
   Reason: focus execution on the owner's priorities. Carrier:
   [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
   Since: process-rules-oct23 squash.
+- **Task-list bookkeeping is coordinator operations** `[D-WORK-TASK-BOOKKEEPING]`.
+  The rule is carried in [Isolated parallel execution](process/isolated-parallel-execution.md).
+  Owner (`16-27-59`, entries `69d42f11`, `8be98ccd`, 2026-10-25):
+  «Блядь, удаление задачи из списка задач не должно быть задачей, блядь. Это просто обычная операция для тебя»
+  «Это твоя личная операционка. У тебя есть задача, есть операционка, связанная с задачами. И эта операционка не должна занимать слот задачи. Слот задачи выполняют сами задачи, заполняют сами задачи.»
+  Reason: task-list operations belong to coordination, not the active task queue. Product task and review
+  requirements remain unchanged.
 - **Ready-made solutions first** `[D-WORK-READY-MADE]`. Search Pi packages, npm, GitHub and other agents before
   building new features or mechanisms; report license, maintenance, size and dependency risk. Build our own only
   with owner consent recorded here. Small changes, bug fixes and test fixes are excluded.
