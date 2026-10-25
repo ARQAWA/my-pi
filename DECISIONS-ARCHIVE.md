@@ -6249,3 +6249,97 @@ Verbatim superseded clauses from `61b81a3:DECISIONS.md`; replacement commit:
 
 > - **Visible providers** `[D-PROVIDERS-ALLOW]`. Only `anthropic` and legacy `openai-codex` are visible in login, pickers,
 
+## Gold compaction glint - superseded 2026-10-25
+
+Replaced by the owner's three-cell single-glint correction in `[D-STATUSBAR-SHEEN]` and
+`[D-STATUSBAR-ANIMATION]`. Verbatim superseded clauses from `4d0812e:DECISIONS.md`;
+replacement commit: `git log -S'Gold correction, owner task request' -- DECISIONS.md`.
+
+> three-cell peak; gold has a bright six-to-seven-cell peak.
+
+> 8.59375 cells/s. Gold compaction title motion remains periodic and unchanged apart from the shared 30 FPS timer.
+
+> verified by `scripts/owner-quotes.mjs`. Existing peak widths, colours, soft falloff, layout and static title stay unchanged.
+
+## Silver motion superseded on 2026-10-25 by statusbar-silver-loop
+
+Source: `DECISIONS.md` at `99f69e5`, `[D-STATUSBAR-ANIMATION]`.
+Replacement: current `[D-STATUSBAR-ANIMATION]`, rapid rightward flight followed by a two-second pause.
+Replacement commit: `git log -S'Silver correction source:' -- DECISIONS.md`.
+Superseded verbatim passage:
+
+>   glint moving back and forth across the status, not periodically repeated glints. Its travel speed stays
+>   8.59375 cells/s. Gold compaction uses the same single bouncing glint over each full strip and activity label, with the same travel speed. Double silver and gold travel speed relative to origin/main
+>   `0521318324f9c22707c7b1ff3d0cc725392f6e55`; the lightning keeps its 120 ms colour step.
+
+
+
+## Silver flight duration · archived 2026-10-25
+
+Superseded by D-STATUSBAR-ANIMATION in statusbar-silver-640ms: owner requests exactly twice the flight duration. Previous text at 9a9c6d2, preserved verbatim:
+
+> - **Animation cadence** `[D-STATUSBAR-ANIMATION]`. Redraw at 30 nominal frames per second,
+>   using monotonic elapsed time and fractional positions for smooth motion. Silver activity text has exactly one
+>   glint appearing at the left, flying right at constant linear speed, fully clearing the right edge,
+>   then remaining absent for exactly 2000 ms before repeating. Flight duration is 320 ms, chosen under
+>   the owner's explicit visual discretion. The three-cell peak and soft silver gradient stay unchanged.
+>   Gold compaction keeps its single bouncing glint over each full strip and activity label at
+>   8.59375 cells/s. The lightning keeps its 120 ms colour step.
+>   Silver correction source: current `statusbar-silver-loop` task, owner steering on 2026-10-25:
+>   "the silver glint at the top must appear at the left, fly VERY FAST left-to-right at one constant linear speed, fully disappear after passing the right edge, then remain absent for exactly 2 seconds before the next flight."
+>   "The owner explicitly leaves the flight duration to our visual judgment; choose a genuinely fast duration and show deterministic timing/render evidence."
+>   This supersedes silver's earlier back-and-forth motion and retained speed, not gold or other UI.
+>   The title animates during compaction, not otherwise. Input text and effort colours do not animate.
+>   `STATUS_FRAME_MS = 80` and `FAST_STEP_MS = 120` remain unchanged; the shared redraw interval becomes `1000 / 30` ms.
+>   `ContextEditor` uses `embedWorkingStatus: true` and `setWorkingIndicator({ frames: [] })` while our editor
+>   is installed, restoring the pre-`081d914` suppression of Pi's native working row. Off, shutdown and another
+>   editor restore the default indicator. The layout is tool block, one blank, shimmer status, one blank, title border.
+>   Owner correction: «1а», supplied by Main in this task on 2026-10-25: hide the stock row as before the change.
+>   `activityRows` supplies status and trailing blank; Pi supplies the leading spacer. Idle returns `[]`.
+>   Owner: «Сделай анимацию блика 30фпс, 50 ту мач и сделай ее более плавной и что бы был 1 блик на статусе который катается туда сюда, а не бесконечное количество»
+>   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6774,
+>   verified by `scripts/owner-quotes.mjs`. Colours, soft falloff, layout and static title stay unchanged; the later gold correction is recorded in `[D-STATUSBAR-SHEEN]`.
+>   Doubled-speed source: `[D-STATUSBAR-SHEEN]`.
+>   Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
+
+## Full Anthropic-model ban restored - superseded 2026-10-25
+
+Status: Haiku allowance and Anthropic/GPT balance SUPERSEDED by `[D-WORK-MODELS]`.
+Source: `c2a45b3:DECISIONS.md`, verbatim entries below.
+Replacement: anthropic-model-ban delivery; commit provenance:
+`git log -S'Full Anthropic-model ban restored' -- DECISIONS-ARCHIVE.md`.
+
+> - **Development subagent models** `[D-WORK-MODELS]`. In force now and permanently, Main must not use any
+>   Anthropic model as a subagent except exactly `anthropic/claude-haiku-5-5`, at every reasoning level actually
+>   supported by the installed Pi catalogue. The GPT task-class pairs remain unchanged. The only pair list lives in the
+>   `coordinator-rules` JSON block of [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
+>   Main names `model` and `thinking` explicitly on every ordinary `agent` start and restart; specialized roles
+>   use `agent_type` on that same lifecycle. Balance the allowed Anthropic and GPT models over the run.
+>   This is repository development policy, not a product model setting; product reviewer profiles stay separate.
+>   Owner (`16-27-59:6618`, entry `0fb9fd91`, 2026-10-25):
+>   «Надо скорректировать правила, чтобы было с 1 октября, что тебе нельзя пользоваться моделями Sonnet и Opus в качестве subagent, а моделью Haiku можно пользоваться»
+>   «Модель Haiku 5.5 имеет и Extra High, и Max Rising»
+>   Owner clarification (`16-27-59:6624`, entry `14c062d8`, 2026-10-25), replacing the earlier date emphasis:
+>   «Я имел в виду, что просто чтобы тебе нельзя было пользоваться моделями Anthropic, кроме Haiku 5.5. Haiku 5.5 в любом виде можно использовать»
+>   Reason: replace the temporary ban on all Anthropic subagents and the old Sonnet/Opus permissions with the
+>   owner's permanent model policy. Public installed Pi 1.4.0 catalogue APIs confirm Extra High and Max;
+>   the guard already accepts arbitrary classes of exact pairs, so its code stays unchanged.
+>   Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), `.pi/extensions/coordinator-guard/`, `AGENTS.md`.
+>   Superseded `[D-WORK-TEMP-GPT]` and the former `[D-WORK-MODELS]` entry are preserved verbatim in
+>   `DECISIONS-ARCHIVE.md` with source commit and replacement provenance.
+>
+> - **Anthropic/GPT balance** `[D-WORK-BALANCE]`. Owner (`16-27-59:351`):
+>   «Смотри, надо скорректировать так, чтобы ты как координатор поровну поднимал модели из Anthropic и GPT, чтобы не было перевеса в другим, дисбаланса. Поднимай саб-агенты и те, и те, чтобы лимит расходовался равномерно.»
+>   «И зафиксирую это в процесс.nd файле, эту информацию на будущее»
+>   Reason: even use of both subscriptions' limits. Carrier: [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
+>   Since: `a7146ae`.
+
+## Automatic naming model chain - superseded 2026-10-25
+
+Replaced by the owner's Kimi K2.8 Preview low direction in `[D-UI-NAMING]`.
+Verbatim superseded clause from `99f69e5:DECISIONS.md`; replacement commit:
+`git log -S'Owner correction' -- DECISIONS.md`.
+
+> Prefer `anthropic/claude-haiku-5-5`, otherwise authenticated `openai-codex/gpt-6-luna`,
+>   at the model's lowest supported reasoning.
+

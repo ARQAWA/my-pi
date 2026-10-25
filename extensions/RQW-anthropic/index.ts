@@ -11,6 +11,7 @@ import { createOverlay } from "./transport.ts";
 import { installRegistrationGuard, BIND_STORE } from "./registration.ts";
 import { versionState } from "./wire.ts";
 import type { ContextForkRequest } from "./context-fork.ts";
+import { createQuotaCache, QUOTA_EVENT, type QuotaRequest } from "./quota.ts";
 
 export default function anthropic(pi: ExtensionAPI) {
 	if (VERSION !== "1.4.0") throw new Error("RQW-anthropic requires Pi 1.4.0; nothing was changed");
@@ -29,14 +30,22 @@ export default function anthropic(pi: ExtensionAPI) {
 	let runtime: ModelRuntime | undefined;
 	let cleaned = false;
 	let lifecycle: Lifecycle | undefined;
+	let sessionId: string | undefined;
+	const quota = createQuotaCache(() => store);
 	const overlay = createOverlay(base, () => store, deviceId, version);
 	const release = installRegistrationGuard();
 	const releaseFork = pi.events.on("rqw:context-fork:v1", data => overlay.forks.offer(data as ContextForkRequest));
+	const releaseQuota = pi.events.on(QUOTA_EVENT, data => {
+		const request = data as QuotaRequest;
+		if (!cleaned && store && sessionId !== undefined && request.sessionId === sessionId) request.offer(quota);
+	});
 	let releaseRecovery: (() => void) | undefined;
 	function cleanup() {
 		if (cleaned) return;
 		cleaned = true;
 		releaseFork();
+		releaseQuota();
+		quota.dispose();
 		overlay.forks.clear();
 		try { lifecycle?.release(); }
 		finally {
@@ -51,7 +60,11 @@ export default function anthropic(pi: ExtensionAPI) {
 		lifecycle = installLifecycle(cleanup);
 		// Pi 1.4.0's native handler map carries this private exact-session binder.
 		pi.on(SESSION_BIND as "session_start", (event, ctx) => {
-			if (!cleaned) lifecycle!.bindSession(ctx.sessionManager, (event as unknown as { session: object }).session);
+			if (!cleaned) {
+				const session = (event as unknown as { session: { sessionId: string } }).session;
+				lifecycle!.bindSession(ctx.sessionManager, session);
+				sessionId = session.sessionId;
+			}
 		});
 		Object.assign(overlay.streamSimple, { [BIND_STORE]: (credentials: CredentialStore, boundRuntime: ModelRuntime) => {
 			store = credentials;

@@ -25,7 +25,7 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](../DECIS
   polling turns. A later Windows failure then gets its tail `BACKLOG.md` item or linked issue and is not lost when
   the branch is deleted. Delivery never waits for Windows or green macOS CI; no workflow result gates a merge.
 - Test lane. Besides the three main work lanes, a fourth lane for tests only, outside the three active slots, owns all
-  test work: ordinary `agent`s on the simple GPT pair or allowed Haiku pairs of the [subagent table](../PROCESS.md#subagent-models), with
+  test work: ordinary `agent`s on the simple GPT pair of the [subagent table](../PROCESS.md#subagent-models), with
   `.agents/roles/test-fixer.md` as the `role`. It starts only after this pipeline change is delivered and follows all
   pipeline agreements. Decisions: [DECISIONS.md](../DECISIONS.md#task-pipeline).
 - A failed task-scoped delivery check or a conflicting rebase sends the task back to the top of the queue. Full-run

@@ -184,30 +184,20 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «мы нигде кроме этого ноута это не запускаем, все что КАСАЕТСЯ РАБОТЫ В ЭТОМ РЕПО - только локальная тема»
   Reason: local orchestration has no other deployment target; product and CI portability remain separate.
   Carriers: [PROCESS.md](PROCESS.md#isolated-parallel-execution), local development test suites.
-- **Development subagent models** `[D-WORK-MODELS]`. In force now and permanently, Main must not use any
-  Anthropic model as a subagent except exactly `anthropic/claude-haiku-5-5`, at every reasoning level actually
-  supported by the installed Pi catalogue. The GPT task-class pairs remain unchanged. The only pair list lives in the
-  `coordinator-rules` JSON block of [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
-  Main names `model` and `thinking` explicitly on every ordinary `agent` start and restart; specialized roles
-  use `agent_type` on that same lifecycle. Balance the allowed Anthropic and GPT models over the run.
-  This is repository development policy, not a product model setting; product reviewer profiles stay separate.
-  Owner (`16-27-59:6618`, entry `0fb9fd91`, 2026-10-25):
-  «Надо скорректировать правила, чтобы было с 1 октября, что тебе нельзя пользоваться моделями Sonnet и Opus в качестве subagent, а моделью Haiku можно пользоваться»
-  «Модель Haiku 5.5 имеет и Extra High, и Max Rising»
-  Owner clarification (`16-27-59:6624`, entry `14c062d8`, 2026-10-25), replacing the earlier date emphasis:
-  «Я имел в виду, что просто чтобы тебе нельзя было пользоваться моделями Anthropic, кроме Haiku 5.5. Haiku 5.5 в любом виде можно использовать»
-  Reason: replace the temporary ban on all Anthropic subagents and the old Sonnet/Opus permissions with the
-  owner's permanent model policy. Public installed Pi 1.4.0 catalogue APIs confirm Extra High and Max;
-  the guard already accepts arbitrary classes of exact pairs, so its code stays unchanged.
-  Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), `.pi/extensions/coordinator-guard/`, `AGENTS.md`.
-  Superseded `[D-WORK-TEMP-GPT]` and the former `[D-WORK-MODELS]` entry are preserved verbatim in
-  `DECISIONS-ARCHIVE.md` with source commit and replacement provenance.
+- **Development subagent models** `[D-WORK-MODELS]`. The full Anthropic-model ban is in force for Main and
+  subagents, including Haiku, Sonnet and Opus, without expiry or a benchmark exception. Main's subagent task-class
+  pairs remain unchanged; the only pair list lives in the `coordinator-rules` JSON block of
+  [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly on every
+  ordinary `agent` start and restart; specialized roles use `agent_type` on that same lifecycle.
+  Owner (`16-27-59:7665`, entry `29908fc1`, 2026-10-25):
+  «Возобнови полный запрет использования антропиков»
+  Reason: restore the owner's full model prohibition, superseding the later Haiku allowance and the
+  Anthropic/GPT balance rule. Earlier separately owner-ordered Kimi benchmark work remains historical evidence,
+  not new model permission. This is model-use policy for Main and subagents, not a ban on Anthropic transport or
+  subscription quota implementation, auth, provider visibility or product model settings.
+  Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), its coordinator JSON block and
+  [test lane](process/task-pipeline.md). Superseded entries are preserved verbatim in `DECISIONS-ARCHIVE.md`.
 
-- **Anthropic/GPT balance** `[D-WORK-BALANCE]`. Owner (`16-27-59:351`):
-  «Смотри, надо скорректировать так, чтобы ты как координатор поровну поднимал модели из Anthropic и GPT, чтобы не было перевеса в другим, дисбаланса. Поднимай саб-агенты и те, и те, чтобы лимит расходовался равномерно.»
-  «И зафиксирую это в процесс.nd файле, эту информацию на будущее»
-  Reason: even use of both subscriptions' limits. Carrier: [PROCESS.md, Subagent models](PROCESS.md#subagent-models).
-  Since: `a7146ae`.
 - **Process file and manifesto** `[D-WORK-PROCESS-LINK]`. The reading contract is carried in
   [PROCESS.md](PROCESS.md), with its task-loaded sections, and linked from `AGENTS.md`.
   The owner accepted the split in [D-WORK-PROCESS-SPLIT] below. `WORKFLOW-MANIFEST.md` is the owner's
@@ -505,7 +495,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Since: local-delivery-gate squash.
 
 - **Test lane** `[D-PIPELINE-TEST-LANE]`. Three main work lanes and a fourth lane for tests only, usable for nothing else and
-  outside the three active slots. Its agents are ordinary `agent`s on the simple GPT pair or an allowed Haiku pair under
+  outside the three active slots. Its agents are ordinary `agent`s on the simple GPT pair under
   [the development model policy](PROCESS.md#subagent-models), with `.agents/roles/test-fixer.md` as the `role`.
   They take the tail items of [WINDOWS-TEST-FAILURES](BACKLOG.md#windows-test-failures) and
   [QA-FLAKES-LAST](BACKLOG.md#qa-flakes-last) and own all test work: every failing test, reruns and the full restoration
@@ -705,8 +695,11 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   32 Unicode code points. Prompt and validation enforce both; overlong candidates are rejected, never truncated.
   Background generation runs once after first user input and after every successful compaction, using all available
   projected context including summary and kept messages. Generate ten candidates and automatically select the best
-  valid candidate by meaning. Prefer `anthropic/claude-haiku-5-5`, otherwise authenticated `openai-codex/gpt-6-luna`,
-  at the model's lowest supported reasoning. No valid candidate is a failed attempt. Initial attempt plus up to
+  valid candidate by meaning. Both calls use only `kimi-coding/kimi-for-coding` (Kimi K2.8 Preview) with `low`
+  reasoning, independent of the main chat model, without fallback. Owner correction, `16-27-59` session,
+  USER entry `5b9c32fe`, 2026-10-25: «надо это делать через модель 2.8 preview low reasoning.»
+  Reason: the owner's explicit naming-model choice, not a proven diagnosis of the earlier warning.
+  No valid candidate is a failed attempt. Initial attempt plus up to
   three retries; final warning through public `ctx.ui.notify` preserves the old name. `/rename-gen` uses the same
   pipeline. New triggers/session switch cancel old generation; a native name change cancels the pending old trigger.
   Public `pi.setSessionName` persists the name in native history and `/resume`. Native `/name` stays unchanged;
@@ -1471,6 +1464,20 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 ## Anthropic subscription adapter
 
+- **Direct provider quota** `[D-ANTHROPIC-QUOTA]`. Owner (`16-27-59:7462`, 2026-10-25):
+  «Насчет лимитов — нет, это полная хуйня. Ты должен разобраться, как в Anthropic получать лимиты так же, как это делает Cloud Code. Может, даже reverse придётся, но меня не ебёт. Никаких зависимостей внешних. У нас на других рабочих компьютерах Cloud Code не стоит. Мы не должны от него зависеть вообще никак.
+
+  Надо за реверс разобраться, как Cloud Code получает эти данные, и сделать такую же штуку в нашем Cloud Code провайдере».
+  Reason: acquire subscription quota directly through our existing provider credentials on every workstation,
+  without an installed/running Claude Code or its statusLine. The delegated implementation requirement keeps
+  display/color decisions out, forbids auth writes and token-generating requests, and gives the later UI its own
+  five-minute cadence. Carrier: `extensions/RQW-anthropic/quota.ts`, the public `pi.events`
+  `rqw-anthropic:quota:v1` offer boundary and [quota protocol evidence](notes/anthropic-quota.md).
+  The provider reads only its bound Pi credential store, caches successful percentage/reset windows, and sends
+  nothing until a consumer explicitly refreshes. No new dependency, scheduler, option or setting. Primary
+  Claude Code 2.1.310 source and a sanitized authorized read-only HTTP 200 establish the protocol; this is an
+  undocumented client endpoint, not a public API guarantee.
+
 - **Main 1h, children 5m** `[D-ANTHROPIC-TTL]`. Anthropic offers 5m and 1h, not 10m or 15m. The main OAuth default stays
   1h; the independent Agent extension owns its 5m request policy ([Agent](#agent)); the reviewer runs no Anthropic model ([Review](#review)). Its explicit
   `short` wins in `cache.ts` and `transport.ts`, so cache markers stay on without `ttl: "1h"`, with or without this
@@ -1688,8 +1695,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   working and the steady yellow idle follow the coordinator description the owner accepted. Carrier:
   `extensions/RQW-statusbar/{render,index}.ts`. Proof: `test/fast-gpt.test.ts`. Since: `fa05edf`.
 - **Compaction sheen** `[D-STATUSBAR-SHEEN]`. Gold shimmer runs over the session title in the top input border.
-  Both silver and gold shimmers run exactly twice their previous speed, without a slant. Silver has a bright
-  three-cell peak; gold has a bright six-to-seven-cell peak. Both have wide, soft, monotone falloff between
+  Gold retains its doubled travel speed; silver timing follows `[D-STATUSBAR-ANIMATION]`. Neither has a slant. Silver has a bright
+  three-cell peak; gold also has a bright three-cell peak. Both have wide, soft, monotone falloff between
   neighbouring letters; gold is the smoothest. No unrelated animation behavior changes.
   Owner: «Да, и во время compaction анимация должна идти поверх заголовка, поверх названия сессии.»
   «Надо серебряный сделать более плавным и золотой нужно сделать максимально плавным А пиковые цвета чтобы были на серебре в три символа, а на золоте в шесть-семь символов»
@@ -1697,12 +1704,25 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «Надо вообще блик ускорить в два раза по скорости или даже в два раза ровно ускорить его.»
   Source: the same local owner session as `[D-STATUSBAR-ACTIVITY]`, USER entries at lines 6399 and 6413;
   verified by `scripts/owner-quotes.mjs`. The current task explicitly confirms doubled speed for both shimmers and no slant. Reason: smoother highlights with the owner's peak widths.
+  Gold correction, owner task request on 2026-10-25, source: current `statusbar-compaction-glint` task:
+  "Replace this with ONE glint, matching the silver status animation's approach, travelling across the whole strip AND the `Compaction` label."
+  "Use the final width clarification: THREE characters at the peak, not seven."
+  "Keep the current animation speed exactly; the owner explicitly likes it."
+  "Make the falloff very soft, distributed and smooth, with an expensive-looking continuous gradient."
+  This replaces the earlier gold peak width and periodic motion, not silver or the existing layout and labels.
   Carrier: `extensions/RQW-statusbar/render.ts`; proof: deterministic statusbar render and animation tests.
 - **Animation cadence** `[D-STATUSBAR-ANIMATION]`. Redraw at 30 nominal frames per second,
   using monotonic elapsed time and fractional positions for smooth motion. Silver activity text has exactly one
-  glint moving back and forth across the status, not periodically repeated glints. Its travel speed stays
-  8.59375 cells/s. Gold compaction title motion remains periodic and unchanged apart from the shared 30 FPS timer. Double silver and gold travel speed relative to origin/main
-  `0521318324f9c22707c7b1ff3d0cc725392f6e55`; the lightning keeps its 120 ms colour step.
+  glint appearing at the left, flying right at constant linear speed, fully clearing the right edge,
+  then remaining absent for exactly 2000 ms before repeating. Flight duration is 640 ms, exactly twice the previous 320 ms.
+  Owner source: `statusbar-silver-640ms` task request, 2026-10-25:
+  "Change the silver one-way visible flight duration from 320 ms to 640 ms." The three-cell peak and soft silver gradient stay unchanged.
+  Gold compaction keeps its single bouncing glint over each full strip and activity label at
+  8.59375 cells/s. The lightning keeps its 120 ms colour step.
+  Silver correction source: current `statusbar-silver-loop` task, owner steering on 2026-10-25:
+  "the silver glint at the top must appear at the left, fly VERY FAST left-to-right at one constant linear speed, fully disappear after passing the right edge, then remain absent for exactly 2 seconds before the next flight."
+  "The owner explicitly leaves the flight duration to our visual judgment; choose a genuinely fast duration and show deterministic timing/render evidence."
+  This supersedes silver's earlier back-and-forth motion and retained speed, not gold or other UI.
   The title animates during compaction, not otherwise. Input text and effort colours do not animate.
   `STATUS_FRAME_MS = 80` and `FAST_STEP_MS = 120` remain unchanged; the shared redraw interval becomes `1000 / 30` ms.
   `ContextEditor` uses `embedWorkingStatus: true` and `setWorkingIndicator({ frames: [] })` while our editor
@@ -1712,7 +1732,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `activityRows` supplies status and trailing blank; Pi supplies the leading spacer. Idle returns `[]`.
   Owner: «Сделай анимацию блика 30фпс, 50 ту мач и сделай ее более плавной и что бы был 1 блик на статусе который катается туда сюда, а не бесконечное количество»
   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6774,
-  verified by `scripts/owner-quotes.mjs`. Existing peak widths, colours, soft falloff, layout and static title stay unchanged.
+  verified by `scripts/owner-quotes.mjs`. Colours, soft falloff, layout and static title stay unchanged; the later gold correction is recorded in `[D-STATUSBAR-SHEEN]`.
   Doubled-speed source: `[D-STATUSBAR-SHEEN]`.
   Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
 - **Own git discovery** `[D-STATUSBAR-GIT]`. Git branch and counts use the extension's own repository discovery and
@@ -1883,6 +1903,15 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `extensions/RQW-providers/README.md`; research: `notes/anthropic-adapter.md`. Since: `2bf5eac`.
 
 ## Theme
+
+- **Thinking greens** `[D-THEME-THINKING-GREENS]`. Owner request in the delegated task, 2026-10-25:
+  > in the model/effort chooser's expanded dropdown, `low` should be based on the current `medium` green but twice as pale; `medium` should remain green in the same family as now but noticeably juicier/more saturated.
+  Only `thinkingLow` and `thinkingMedium` change. Low is `#80ffc4`, the previous medium `#00ff88` mixed
+  halfway toward white in RGB. Medium is `#00df77`, a deeper green at the same hue within RGB rounding.
+  The old medium already had maximum HSL/HSV saturation, so richness is obtained by darkening, not by
+  claiming a numerical saturation increase. High, xhigh, max, off and unrelated colours stay unchanged.
+  Reason: distinguish the two greens without changing the chooser. Carrier: `extensions/RQW-theme/theme.json`;
+  the native data-only theme and existing thinking-role rendering remain unchanged.
 
 - **Card background colours** `[D-THEME-CARD-COLORS]`. The four card surfaces of `RQW-theme` are `toolPendingBg` `#222222` (running, dark grey), `toolSuccessBg` `#062b29` (finished, turquoise), `toolErrorBg` `#351c22` (failed, dark red) and `customMessageBg` `#192538` (agent answer, slate). Grey and red keep the owner's choice; turquoise and slate are the analogues of the old green and purple, shifted from green toward blue and tied to the cool text of the source layout. All four have equal OKLCH lightness of about 26 %. They are direct hex values, so no other token changes: `infoBg` keeps `panel`, `selectedBg` keeps `cardHi`, `userMessageBg` keeps `card`; the unused variable `coal` is removed.
   Owner, what he liked: «Мне нравится, что когда ты запускаешь карточки рабочие, у них есть цвета: зелёные — это какие-то команды, фиолетовые — ответы от агентов, серые — это запуски, красные — это отказы.» Source: `16-27-59:4251` (see Provenance above).
@@ -2057,7 +2086,14 @@ The shipped independent `web` tool lives in `extensions/RQW-web/`; Contract: [RQ
   | `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | Same level |
   | `anthropic/claude-sonnet-5-5` | `gpt-6-sol` | Same level |
   | `anthropic/claude-opus-5-5` | `gpt-6.1-sol` | low -> low, medium -> high, high -> xhigh, above high -> max |
+  | `kimi-coding/*`, including future caller models | `gpt-6.1-sol` | low -> low, high -> medium, max -> high |
   | Unknown or missing model, including unknown GPT slug | `gpt-6.1-sol` | low |
+
+  Owner, current task session `web-kimi-sol-effort`, 2026-10-25: «Kimi `low` -> `openai-codex/gpt-6.1-sol` `low`.»
+  «Kimi `high` -> `openai-codex/gpt-6.1-sol` `medium`.» «Kimi `max` -> `openai-codex/gpt-6.1-sol` `high`.»
+  Reason: align Kimi caller reasoning with Sol 6.1 while retaining the existing web-only Codex subscription engine.
+  Owner clarification, same task session: «the mapping is by PROVIDER, not a hardcoded list of four model IDs.»
+  The mapping applies to every current or future `kimi-coding/*` caller; it changes neither the caller model nor session naming.
 
   Owner's fallback (`16-27-59:6331`, entry `e3aba5d4`): «если короче это модель не опознанная то всегда по дефолту 6.1 сол лоу юзать» Known callers with unsupported thinking fail explicitly; Claude `off` and `minimal` stay unmapped. Carrier: `extensions/RQW-web/core/model-map.ts`.
 - **Engine** `[D-WEB-ENGINE]`. The existing Codex CLI 0.164.0 source research selected the Responses Lite path `web.run -> POST alpha/search -> function_call_output -> sourced answer`, not hosted-only `web_search`. Each target has an ephemeral web-only loop, no Pi AgentSession, stored history, provider registration, prewarm or compaction. Pure transport/auth code is a minimal local snapshot with original path and commit headers; no import reaches another extension. The snapshot retains the existing 0.163.0 transport pin. Reason: preserve the researched subscription mechanism while keeping RQW-web independently switchable. Carrier: `extensions/RQW-web/core/`, `vendor/`.

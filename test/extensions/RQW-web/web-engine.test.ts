@@ -7,6 +7,8 @@ import { AUTH_REFRESH_MESSAGE, researchTarget } from "../../../extensions/RQW-we
 import { parseCommands, WEB_TOOLS } from "../../../extensions/RQW-web/core/web-commands.ts";
 import type { ResearchTargetOptions, WebTransport } from "../../../extensions/RQW-web/core/web-types.ts";
 import type { SendRawOptions } from "../../../extensions/RQW-web/vendor/transport.ts";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { createWebTool } from "../../../extensions/RQW-web/tool.ts";
 
 const call = (commands: unknown, id = "call-1", extra = {}) => ({ type: "function_call", namespace: "web", name: "run", call_id: id, arguments: JSON.stringify(commands), status: "completed", ...extra });
 const search = { search_query: [{ q: "Pi documentation" }] };
@@ -247,6 +249,40 @@ test("actual CodexThreadTransport SSE seam uses native replay without Fast or in
 		assert.equal(new Headers(entry.headers).has("service_tier"), false);
 		assert.equal(entry.body.store, false);
 		assert.equal(entry.body.input[0].type, "additional_tools");
+	}
+});
+
+test("public Kimi tool calls serialize the exact Sol 6.1 model and reasoning through Codex transport", async () => {
+	const { SocketError } = await import("../../../extensions/RQW-web/vendor/websocket.ts");
+	for (const id of ["kimi-for-coding", "kimi-for-coding-highspeed", "k3.1-pro", "k3.1-pro-highspeed", "future-arbitrary-model"]) {
+		for (const [thinking, effort] of Object.entries({ low: "low", high: "medium", max: "high" })) {
+			const s = await setup();
+			delete s.options.network!.createTransport;
+			const sent: any[] = [];
+			const scripts = [events(call(search)), events(message())];
+			s.options.network!.transportDependencies = {
+				postEvents: ((args: any) => {
+					sent.push(JSON.parse(zstdDecompressSync(args.body).toString()));
+					return (async function* () {
+						args.onResponse({ status: 200, headers: {} });
+						for (const value of scripts.shift() ?? []) yield { text: JSON.stringify(value), value };
+					})();
+				}) as any,
+				connect: async () => { throw new SocketError(426, {}, "upgrade", "upgrade-rejected"); },
+			};
+			const tool = createWebTool({ getThinkingLevel: () => thinking as never }, {
+				runner: run => researchTarget({ ...s.options, ...run }),
+			});
+			const result = await tool.execute("kimi", { queries: ["Pi documentation"] }, undefined, undefined,
+				{ model: { provider: "kimi-coding", id } } as ExtensionContext);
+			assert.match((result.content[0] as { text: string }).text, /1 ok, 0 failed/);
+			assert.equal(sent.length, 2, `${id}/${thinking}`);
+			for (const body of sent) {
+				assert.equal(body.model, "gpt-6.1-sol", `${id}/${thinking}`);
+				assert.deepEqual(body.reasoning, { effort, context: "all_turns" }, `${id}/${thinking}`);
+				assert.equal(body.service_tier, undefined);
+			}
+		}
 	}
 });
 

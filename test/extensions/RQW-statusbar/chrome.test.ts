@@ -22,21 +22,20 @@ const id = "0b6f1d2e-9c1a-4f7e-8a3b-5d2c7e9f1a04";
 const chrome = (text: string, compacting = false, frame = 0) => ({ text, compacting, frame });
 
 describe("cell-based shimmer", () => {
-	it("has a bright flat three-cell silver peak and a six-to-seven-cell gold peak", () => {
+	it("has a bright flat three-cell peak for both silver and gold", () => {
 		assert.equal(SILVER_PLATEAU_CELLS, 3);
-		assert.equal(GOLD_PLATEAU_CELLS, 6.5);
+		assert.equal(GOLD_PLATEAU_CELLS, 3);
 		assert.equal(SILVER.at(-1), "#ffffff");
 		assert.equal(GOLD.at(-1), "#fff4c2");
 		const peakCells = (center: number, gold: boolean) => Array.from({ length: 19 }, (_, i) => i - 9)
 			.filter((i) => shimmerPhase(i, center / SHIMMER_CELLS_PER_FRAME, gold) === 1).length;
 		for (const center of [0, 0.1, 0.4, 0.5, 0.6, 0.9]) {
 			assert.equal(peakCells(center, false), 3);
-			const painted = shimmerText("x".repeat(19), -9, center / SHIMMER_CELLS_PER_FRAME, SILVER);
+			const painted = shimmerText("x".repeat(19), -9, center / 6, SILVER);
 			assert.equal(painted.split(hexSgr(SILVER.at(-1)!, true, "x")).length - 1, 3);
 		}
-		assert.equal(peakCells(0, true), 7);
-		assert.equal(peakCells(0.5, true), 6);
-		for (const [stops, count] of [[SILVER, 3], [GOLD, 7]] as const) {
+		for (const center of [0, 0.1, 0.4, 0.5, 0.6, 0.9]) assert.equal(peakCells(center, true), 3);
+		for (const [stops, count] of [[SILVER, 3], [GOLD, 3]] as const) {
 			const painted = shimmerText("x".repeat(19), -9, 0, stops);
 			assert.equal(painted.split(hexSgr(stops.at(-1)!, true, "x")).length - 1, count);
 			assert.doesNotMatch(painted, /\x1b\[(?:3|23)m/, "no slant");
@@ -68,7 +67,7 @@ describe("cell-based shimmer", () => {
 			< 1 - shimmerPhase(SILVER_PLATEAU_CELLS / 2 + 1, 0));
 	});
 
-	it("travels exactly twice the previous speed for silver and gold, independent of redraw cadence", () => {
+	it("retains the spatial phase unit and gold speed, independent of redraw cadence", () => {
 		assert.equal(STATUS_FRAME_MS, 80);
 		assert.equal(SHIMMER_CELLS_PER_FRAME, 0.22 / 0.32);
 		assert.equal(SHIMMER_PERIOD_CELLS, 2 * Math.PI / 0.32);
@@ -85,7 +84,7 @@ describe("cell-based shimmer", () => {
 	});
 
 	it("uses terminal cells across segments, wide glyphs and combining marks; spaces stay plain", () => {
-		assert.equal(shimmerText("x".repeat(20), 0, 2, GOLD), shimmerText("x".repeat(8), 0, 2, GOLD) + shimmerText("x".repeat(12), 8, 2, GOLD));
+		assert.equal(shimmerText("x".repeat(20), 0, 2, GOLD), shimmerText("x".repeat(20), 8, 2, GOLD), "start column does not clone or offset the local glint");
 		const frame = silverGlintPosition(4, 2) / SHIMMER_CELLS_PER_FRAME;
 		const silverAt = (text: string, column: number) => {
 			const phase = shimmerPhase(column, frame);
@@ -98,33 +97,33 @@ describe("cell-based shimmer", () => {
 });
 
 describe("single silver glint", () => {
-	it("bounces at both text ends with fractional positions and the retained 8.59375 cells/s speed", () => {
-		const width = 100;
-		const travel = width - 3;
-		const turnFrame = travel / SHIMMER_CELLS_PER_FRAME;
-		assert.equal(silverGlintPosition(width, 0), 1);
-		assert.equal(silverGlintPosition(width, turnFrame), width - 2);
-		assert.equal(silverGlintPosition(width, turnFrame * 2), 1);
-		assert.equal(SHIMMER_CELLS_PER_FRAME * 1000 / STATUS_FRAME_MS, 8.59375);
-		for (const elapsed of [0.125, 1, 7, 33.333, 80, 1000]) {
-			const moved = elapsed / STATUS_FRAME_MS * SHIMMER_CELLS_PER_FRAME;
-			assert.ok(Math.abs(silverGlintPosition(width, elapsed / STATUS_FRAME_MS) - 1 - moved) < 1e-12);
-			assert.ok(Math.abs(silverGlintPosition(width, turnFrame + elapsed / STATUS_FRAME_MS) - (width - 2 - moved)) < 1e-12);
-			assert.ok(Math.abs(silverGlintPosition(width, turnFrame * 2 + elapsed / STATUS_FRAME_MS) - 1 - moved) < 1e-12);
-		}
-		for (const turn of [turnFrame, turnFrame * 2]) {
-			assert.ok(Math.abs(silverGlintPosition(width, turn - 0.001) - silverGlintPosition(width, turn + 0.001)) < 1e-12);
-		}
-		for (const tiny of [0, 1, 2, 3]) {
-			assert.equal(silverGlintPosition(tiny, 0), Math.max(0, (tiny - 1) / 2));
-			assert.equal(silverGlintPosition(tiny, 100), silverGlintPosition(tiny, 0));
+	it("flies right at constant speed for 640 ms, then pauses for exactly 2000 ms", () => {
+		for (const width of [0, 1, 2, 3, 19, 100, 240]) {
+			const end = width + 5;
+			assert.equal(silverGlintPosition(width, 0), 1);
+			assert.equal(silverGlintPosition(width, 8), end);
+			assert.equal(silverGlintPosition(width, 33), 1);
+			assert.equal(8 * STATUS_FRAME_MS, 640);
+			assert.equal(25 * STATUS_FRAME_MS, 2000);
+			for (const elapsed of [0.125, 1, 7, 33.333, 80, 160, 320, 639.999]) {
+				const expected = 1 + (end - 1) * elapsed / 640;
+				assert.ok(Math.abs(silverGlintPosition(width, elapsed / STATUS_FRAME_MS) - expected) < 1e-12);
+				assert.ok(Math.abs(silverGlintPosition(width, 33 + elapsed / STATUS_FRAME_MS) - expected) < 1e-12);
+				assert.ok(Math.abs(silverGlintPosition(width, 66 + elapsed / STATUS_FRAME_MS) - expected) < 1e-12);
+			}
+			for (const elapsed of [640, 641, 1000, 2639.999]) {
+				assert.equal(silverGlintPosition(width, elapsed / STATUS_FRAME_MS), end);
+				assert.equal(shimmerText("x".repeat(width), 0, elapsed / STATUS_FRAME_MS, SILVER),
+					hexSgr(SILVER[0], false, "x").repeat(width));
+			}
+			assert.equal(shimmerText("x".repeat(width), 0, 33, SILVER), shimmerText("x".repeat(width), 0, 0, SILVER));
 		}
 	});
 
-	it("has exactly one three-cell silver crest on texts much wider than the old period, in both directions", () => {
+	it("has one three-cell silver crest until it passes the right edge", () => {
 		for (const width of [19, 40, 100, 240]) {
-			const leg = (width - 3) / SHIMMER_CELLS_PER_FRAME;
-			for (const frame of [0, 0.5, leg / 3, leg, leg + 0.5, leg * 1.5, leg * 2]) {
+			const edge = 8 * (width - 3) / (width + 4);
+			for (const frame of [0, edge / 4, edge / 2, edge * 0.75, 33, 33 + edge / 2]) {
 				const line = shimmerText("x".repeat(width), 1, frame, SILVER);
 				const cells = [...line.matchAll(/\x1b\[(1;)?38;2;(\d+);(\d+);(\d+)mx\x1b\[22;39m/g)];
 				assert.equal(cells.length, width);
@@ -138,7 +137,7 @@ describe("single silver glint", () => {
 
 	it("changes shoulder colours at fine sub-character steps rather than rounding the moving center", () => {
 		const width = 80;
-		const frames = [0, 0.05, 0.1, 0.15, 0.2];
+		const frames = [0, 0.0005, 0.001, 0.0015, 0.002];
 		const position = frames.map((frame) => silverGlintPosition(width, frame));
 		for (let i = 1; i < position.length; i++) {
 			assert.ok(position[i] > position[i - 1]);
@@ -149,26 +148,18 @@ describe("single silver glint", () => {
 		assert.equal(shimmerPhase(40, 0), 0, "no distant second crest");
 	});
 
-	it("leaves the delivered periodic gold profile and its global-column bytes unchanged", () => {
-		const deliveredPhase = (column: number, frame: number) => {
-			const period = 2 * Math.PI / 0.32;
-			const offset = column - frame * (0.22 / 0.32);
-			const position = ((offset + period / 2) % period + period) % period - period / 2;
-			if (position >= -3.25 && position < 3.25) return 1;
-			const t = Math.max(0, Math.min(1, (Math.abs(position) - 3.25) / 6));
-			return Math.max(0, Math.min(254 / 255, 1 - t ** 3 * (t * (t * 6 - 15) + 10)));
-		};
-		const deliveredText = (text: string, start: number, frame: number) => Array.from(text).map((ch, i) => {
-			const phase = deliveredPhase(start + i, frame);
-			return ch === " " ? ch : hexSgr(mix(["#8a6d1c", "#c9a227", "#fff4c2"], phase), phase > 0.85, ch);
-		}).join("");
-		for (const frame of [0, 0.125, 1, 12.5, 100, 250.75]) {
-			for (let column = 0; column < 160; column++) assert.equal(shimmerPhase(column, frame, true), deliveredPhase(column, frame));
-			assert.equal(shimmerText("x".repeat(100), 3, frame, GOLD), deliveredText("x".repeat(100), 3, frame));
-			const top = topBorder(120, id, chrome("Compacting context", true, frame), 8, plain, "Title");
-			assert.equal(top, deliveredText(strip(top), 0, frame));
-			const bottom = sheenRow({ tokens: 13000, limit: 450000 }, 120, frame, 8);
-			assert.equal(bottom, deliveredText(strip(bottom), 0, frame));
+	it("keeps the delivered silver gradient bytes at the new linear position", () => {
+		for (const width of [3, 19, 100, 240]) {
+			for (const frame of [0, 0.125, 1, 12.5, 100, 250.75]) {
+				const center = 1 + (width + 4) * Math.min((frame % 33) / 8, 1);
+				const expected = Array.from({ length: width }, (_, column) => {
+					const position = column - center;
+					const t = Math.max(0, Math.min(1, (Math.abs(position) - 1.5) / 4.5));
+					const phase = position >= -1.5 && position < 1.5 ? 1 : Math.max(0, Math.min(254 / 255, 1 - t * t * (3 - 2 * t)));
+					return hexSgr(mix(SILVER, phase), phase > 0.85, "x");
+				}).join("");
+				assert.equal(shimmerText("x".repeat(width), 0, frame, SILVER), expected);
+			}
 		}
 	});
 });
@@ -237,9 +228,10 @@ describe("title in top border", () => {
 	it("compaction shimmers the title, rules, hint and full ID in synchronized gold columns", () => {
 		const line = topBorder(120, id, chrome("Compacting context", true, 4), 8, plain, "Title");
 		assert.equal(strip(line), `── Title ${rule(26)} ↑ 8 more ${rule(35)} ${id} ──`);
-		assert.ok(line.includes(shimmerText("Title", 3, 4, GOLD)));
-		assert.ok(line.includes(shimmerText(" ↑ 8 more ", 35, 4, GOLD)));
-		assert.ok(line.includes(shimmerText(id, 81, 4, GOLD)));
+		assert.equal(line, shimmerText(strip(line), 0, 4, GOLD));
+		assert.equal(line.match(/38;2;255;244;194m/g)?.length, 3);
+		assert.equal(topBorder(120, id, chrome("Compacting context", true, 80), 8, plain, "Title"),
+			shimmerText(strip(line), 0, 80, GOLD));
 		assert.notEqual(line, topBorder(120, id, chrome("Compacting context", true, 8), 8, plain, "Title"));
 	});
 });
@@ -268,8 +260,8 @@ describe("static title", () => {
 		assert.equal(titleRow("ABC", 40), hexSgr("#8a6d1c", true, "A")
 			+ hexSgr("#c9a227", true, "B") + hexSgr("#e3c45a", true, "C"));
 		assert.ok(topBorder(80, id, undefined, 0, plain, "ABC").includes(titleRow("ABC", 40)));
-		assert.ok(topBorder(80, id, chrome("Compacting context", true), 0, plain, "ABC")
-			.includes(shimmerText("ABC", 3, 0, GOLD)));
+		const compacting = topBorder(80, id, chrome("Compacting context", true), 0, plain, "ABC");
+		assert.equal(compacting, shimmerText(strip(compacting), 0, 0, GOLD));
 		assert.equal(strip(titleRow("Long name here", 6)), "Long …");
 		assert.equal(strip(titleRow("Long name here", 1)), "…");
 		assert.equal(visibleWidth(titleRow("Тест имени", 40)), 10);

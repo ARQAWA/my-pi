@@ -13,10 +13,10 @@ Native `/name` remains unchanged.
   repeat the first-message trigger.
 - Use all currently available projected context, including the compaction summary
   and kept messages; do not recover discarded context or shorten it locally.
-- Prefer `anthropic/claude-haiku-5-5`, otherwise use authenticated
-  `openai-codex/gpt-6-luna`.
-  Credential availability is checked through the public model registry, not its
-  private runtime field. Each request uses the model's lowest supported reasoning.
+- Use only `kimi-coding/kimi-for-coding`, Kimi K2.8 Preview, with `low`
+  reasoning for both generation and semantic selection, independent of the main
+  chat model. There is no fallback to another model. Credential availability is
+  checked through the public model registry, not its private runtime field.
 - Ask for ten candidates, reject invalid names, then ask the model to select the
   best valid candidate by meaning. There is no user picker. Every generated name
   must have at most four whitespace-separated words AND 32 Unicode code points;
@@ -42,8 +42,8 @@ native `/name`. `session_start`, `message_end`, `session_compact`, and
 compaction-aware context, serialized in full (Pi's summarization serializer
 would truncate tool results). The first-user event message is included explicitly
 because Pi persists it only after notifying extensions. Public registry
-availability/streaming and pi-ai supported-thinking metadata provide the model
-request path. No other extension needs to import this folder.
+availability/streaming provide the model request path with explicit `low`
+reasoning. No other extension needs to import this folder.
 
 ## Decisions / authority
 
@@ -72,7 +72,7 @@ records the accepted contract and package registration.
 
 Focused tests live under `test/extensions/RQW-naming/`. They load only this extension and public Pi
 exports, with scripted faux models and isolated temporary storage. No real
-Haiku/Luna calls or owner settings are used. Run the focused files with Node's
+Kimi calls or owner settings are used. Run the focused files with Node's
 `--test` runner; full suites and Windows checks belong to GitHub Actions.
 Model output quality on live providers is not claimed by these deterministic tests.
 

@@ -82,11 +82,16 @@ describe("RQW-theme strict native schema", () => {
 	// P.purple). Pi colours the editor border by level with these tokens, and the RQW-agent-ui card paints the effort with them.
 	it("effort-colours-pinned", () => {
 		const resolve = (key: string) => theme.vars[theme.colors[key]] ?? theme.colors[key];
-		assert.equal(theme.colors.thinkingLow, "steel");
+		assert.equal(resolve("thinkingLow"), "#80ffc4");
+		// Halfway from the previous medium RGB to white, rounded to terminal RGB bytes.
+		const previousMedium = [0, 255, 136];
+		const low = resolve("thinkingLow").slice(1).match(/../g).map((byte: string) => parseInt(byte, 16));
+		assert.deepEqual(low, previousMedium.map((channel) => Math.round((channel + 255) / 2)));
 		assert.equal(theme.colors.thinkingOff, "graphite");
 		assert.equal(theme.colors.thinkingMinimal, "#4a4846");
-		assert.equal(resolve("thinkingMedium"), theme.vars.readoutGreen);
-		assert.equal(resolve("thinkingMedium"), "#00ff88");
+		assert.equal(resolve("thinkingMedium"), "#00df77");
+		assert.equal(theme.vars.readoutGreen, "#00ff88");
+		assert.equal(resolve("success"), "#00ff88");
 		assert.equal(resolve("thinkingHigh"), "#c9a227");
 		assert.equal(resolve("thinkingXhigh"), "#b97cff");
 		assert.equal(resolve("thinkingMax"), theme.vars.alertRed);
@@ -145,7 +150,6 @@ describe("RQW-theme fidelity to the OMP source theme", () => {
 		"syntaxPunctuation": "#8d8d8c",
 		"thinkingOff": "#3a3836",
 		"thinkingMinimal": "#4a4846",
-		"thinkingLow": "#5f5e5c",
 		"bashMode": "#00ff88"
 	};
 	const resolve = (key: string) => (theme.colors[key] === "" ? "" : theme.vars[theme.colors[key]] ?? theme.colors[key]);
@@ -157,7 +161,7 @@ describe("RQW-theme fidelity to the OMP source theme", () => {
 	});
 
 	it("no colour outside the source set and the agreed overrides appears", () => {
-		const agreed = ["customMessageBg", "toolPendingBg", "toolSuccessBg", "toolErrorBg", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "thinkingMax"];
+		const agreed = ["customMessageBg", "toolPendingBg", "toolSuccessBg", "toolErrorBg", "thinkingLow", "thinkingMedium", "thinkingHigh", "thinkingXhigh", "thinkingMax"];
 		assert.deepEqual(Object.keys(theme.colors).filter((key) => !(key in SOURCE) && !agreed.includes(key)), []);
 	});
 });

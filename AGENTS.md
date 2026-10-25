@@ -150,8 +150,8 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   without changing stored messages or model context. Native blank rows remain. Independent package filter and
   `/reload`; tests: `test/extensions/RQW-thinking/`.
 - `extensions/RQW-naming/`: extension 17, background native session names after first input and each successful
-  compaction, from all available context. Ten candidates, semantic auto-selection by `anthropic/claude-haiku-5-5`,
-  else authenticated `openai-codex/gpt-6-luna`, at the lowest supported reasoning. At most four words and 32 Unicode
+  compaction, from all available context. Ten candidates, semantic auto-selection only by
+  `kimi-coding/kimi-for-coding` (Kimi K2.8 Preview) at `low`, without fallback. At most four words and 32 Unicode
   code points, overlong names rejected, never truncated; initial attempt plus up to three retries, then a warning
   preserving the old name. `/rename-gen` regenerates; native
   `/name` stays unchanged. RQW-statusbar displays the native name in the top input border, gold and shimmering during compaction.

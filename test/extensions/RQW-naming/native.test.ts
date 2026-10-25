@@ -45,8 +45,8 @@ async function open(sessionFile?: string) {
 	const runtime = await ModelRuntime.create({ authPath: join(agent, "auth.json"), modelsPath: null, modelsStorePath: join(agent, "models-cache.json"), refreshOnCreate: false });
 	await runtime.refresh({ allowNetwork: false });
 
-	// Authenticated naming provider: anthropic/claude-haiku-5-5. Generation gets ten names; selection picks index 3.
-	const namer = fauxProvider({ provider: "anthropic", api: "rqw-naming-faux", models: [{ id: "claude-haiku-5-5", reasoning: true }] });
+	// Authenticated naming provider: Kimi K2.8 Preview. Generation gets ten names; selection picks index 3.
+	const namer = fauxProvider({ provider: "kimi-coding", api: "rqw-naming-faux", models: [{ id: "kimi-for-coding", reasoning: true }] });
 	namer.provider.auth.apiKey = { name: "Faux", resolve: async () => ({ auth: { apiKey: "faux-only" } }) };
 	namer.setResponses(Array.from({ length: 50 }, () => (context) => {
 		naming.calls++;
