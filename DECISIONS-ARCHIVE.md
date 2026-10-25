@@ -5577,6 +5577,65 @@ Archived by: context-simplify delivery; exact commit: `git log -S'A-0324' -- DEC
 >   Coordinator text. Reason: physical limits must not leak across concurrent operations or alter native selection identity.
 >   Carrier: `extensions/RQW-context/index.ts` (`wrapAgentState`, `wrapRouting`, `wrapCompactionSettings`, `reserveIntents`); details: `notes/context-questions.md`. Since: `6eb01a7`.
 
+## Statusbar title layout · archived 2026-10-25
+
+Status: SUPERSEDED by the current `[D-STATUSBAR-ACTIVITY]`, `[D-STATUSBAR-TOP]`,
+`[D-STATUSBAR-SHEEN]` and `[D-STATUSBAR-ANIMATION]`.
+Verbatim source: `DECISIONS.md` at origin/main `0521318324f9c22707c7b1ff3d0cc725392f6e55`.
+Replacement: statusbar-title-layout task, delivered by its squash commit.
+Origin commits are retained in the quoted entries where recorded.
+
+> - **Activity chrome (UI port P6)** `[D-STATUSBAR-ACTIVITY]`. The editor's top border shows the activity status after
+>   `── `: the running tool's action (`Running <command>`, `Editing <file>`, `Searching files`) or `Planning next moves`,
+>   then running counts (`2 agents`) from the `rqw:running-counts:request`/`offer` channels, or
+>   `Waiting for <counts>` when only background work runs, and `Compacting context` in gold during compaction; idle it is
+>   the plain rule. Ordinary rules are silver, busy letters shimmer silver, compaction letters, chrome and context row shimmer
+>   gold with the busy-letter mechanics (`[D-STATUSBAR-SHEEN]`). A static bold gold session title widget (`rqw-statusbar-title`) shows the session name above the
+>   input. Off the original first branch the place row shows the English `⑂ fork #N` marker from the public session
+>   tree, as defined in `[D-STATUSBAR-BRANCH-MARK]`. Footer effort colours: low plain, medium bold green, high bold
+>   gold, xhigh bold bright purple, max bold red. Carrier: `extensions/RQW-statusbar/{activity,branch,render,editor,index}.ts`.
+>   No owner quote for P6 is recorded here; the commit message lists the cross-extension native integration as not
+>   verified. Since: `d84b541`.
+
+> - **Compaction sheen** `[D-STATUSBAR-SHEEN]`. The compaction sheen uses exactly the mechanics of the working-status
+>   sheen: `shimmerText` and `shimmerPhase` (global column, the 160 ms elapsed-time phase, the same width and gradient),
+>   only with the gold stops `GOLD` instead of silver. The separate six-cell metallic run is removed. The lightning pulse and
+>   everything else are unchanged. Owner: «Смотри, как у нас идёт анимация блика подсветки в статусе. Надо с такой же скоростью сделать, чтобы был блик в compaction, потому что сейчас в compaction блик выглядит по-ублюдски.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, last user message)
+>   Carrier: `extensions/RQW-statusbar/render.ts`. Proof: `test/{chrome,lifecycle}.test.ts`.
+
+> - **Animation cadence** `[D-STATUSBAR-ANIMATION]`. The status animation (busy letters, compaction gold shimmer, the
+>   lightning) redraws every 20 ms, 50 nominal frames per second, and follows elapsed monotonic time, not tick counts.
+>   Letters and compaction shimmer take one phase frame per 160 ms of elapsed time; the lightning keeps one colour step per 120 ms. The phase is read at render time. The
+>   static gold title, the input text and the effort colours do not animate. The timer runs only while an animated status
+>   or the working lightning is shown. While our editor owns the top border, Pi's hidden working spinner gets no frames
+>   (`ctx.ui.setWorkingIndicator({ frames: [] })`); off, shutdown, reinstall and a foreign editor restore Pi's default,
+>   checked on every tick and activity change. Pi 1.4 batches paints at most every 16 ms. Cost: every paint re-renders Pi's
+>   component tree; terminal, GPU, remote and visible frame rate are not measured.
+>   Owner: «Не ускорить, а сделать более плавной, в два раза плавнее.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3636);
+>   «Давай попробуем сделать 50 FPS для начала.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3662); «Даже можно скорость блика сделать медленнее, чтобы она шла более медленно, более плавно.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3662)
+>   Carrier: `extensions/RQW-statusbar/{index,render}.ts`. Proof: `test/{lifecycle,chrome,fast-gpt}.test.ts`; numbers in
+>   `notes/statusbar-omp.md`. Since: `e3b3566`.
+
+> - **Session ID in the top border** `[D-STATUSBAR-TOP]`. With our editor installed the whole top border is ours:
+>   `render.ts` `topBorder`, called from `editor.ts` `renderTopBorder`, draws the silver rule, the activity status
+>   (`[D-STATUSBAR-ACTIVITY]`) at the left, Pi's `↑ N more` hint centred, and the full session ID at the right end as
+>   ` <id> ──` in the muted label colour; Pi's native working indicator is not drawn there. The ID is Pi's
+>   `sessionManager.getSessionId()`, read on every render, with one plain space on each side so a selection copies it
+>   whole; when the status or hint would be cut it is dropped whole. With the bar off or a foreign editor Pi's own border
+>   returns and there is no ID. `sessionTopBorder` in `render.ts` is used only by `test/render.test.ts`.
+>   Owner: «Можно добавить его в верхнюю часть там, где working крутится, хуйня. С левой стороны сделать также вставку id сессий с пробелами: идёт чёрточка, потом id, потом снова чёрточка. Прямо по левому краю.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 191);
+>   «Я бы так сделал, чтобы это было симметрично по левому краю именно, и чтобы между чёрточками и ID был какой-то пробел, хотя бы по одному, чтобы можно было нормально вырезать и вставить, скопировать и вставить.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 191)
+>   Correction: «По визуальному он должен стоять справа. Я ошибся: не с левого края, а с правого края. Слева working, справа ID сессии. Он прижат должен быть к правому краю, а ID к левому краю прижат. Если места нету, то он и не отображается, его просто не видно.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 203)
+>   Carrier: `extensions/RQW-statusbar/{editor,render,index}.ts`. Contract: `notes/statusbar-omp.md`. Since: `c6b642c`.
+
+Superseded passage, same source SHA:
+
+> compaction status and synchronized chrome shimmer gold; fully idle is a continuous rule. Title stays static gold.
+
+Superseded passage, same source SHA:
+
+> native name as a static gold title, empty before a name exists, with its rule retained.
+
 ## A-0337 · archived 2026-10-25 · Per-task main delivery wording
 
 Status: SUPERSEDED by [D-PIPELINE-RELEASE] in DECISIONS.md.

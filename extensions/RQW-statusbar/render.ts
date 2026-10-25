@@ -394,12 +394,14 @@ export class RateMeter {
 	}
 }
 
-// ---- Activity: silver busy letters, gold compaction letters and chrome, the static gold session title.
+// ---- Activity: silver busy letters, gold compaction letters and chrome, the session title.
 
-/** Gold of the compaction status: the source stops (not the browser calibration); its sheen is the busy-letter shimmer in these colours. */
-export const GOLD: readonly string[] = ["#8a6d1c", "#c9a227", "#e3c45a"];
-/** Silver of the ordinary busy letters: dim, muted, then the foreground. */
-export const SILVER: readonly string[] = ["#5f5e5c", "#8d8d8c", "#e5efff"];
+/** Gold compaction stops, from the dim base to the bright warm crest. */
+export const GOLD: readonly string[] = ["#8a6d1c", "#c9a227", "#fff4c2"];
+/** The static title keeps its original palette, independent of the brighter compaction crest. */
+const TITLE_GOLD: readonly string[] = ["#8a6d1c", "#c9a227", "#e3c45a"];
+/** Silver busy letters, from the dim base to the bright white crest. */
+export const SILVER: readonly string[] = ["#5f5e5c", "#8d8d8c", "#ffffff"];
 /** The ordinary top rule: a fixed silver, independent of the editor's thinking colour. */
 export const RULE_SILVER = "#b6b6b4";
 
@@ -418,17 +420,35 @@ export function mix(stops: readonly string[], t: number): string {
 const styled = (hex: string, bold: boolean, text: string) =>
 	`\x1b[${bold ? "1;" : ""}38;2;${rgbOf(hex).join(";")}m${text}\x1b[22;39m`;
 
-/** The shimmer phase of letter or global column `index` at `frame`: f = (.5 + .5 cos(i*.32 - frame*.22))**2. */
-export function shimmerPhase(index: number, frame: number): number {
-	return (0.5 + 0.5 * Math.cos(index * 0.32 - frame * 0.22)) ** 2;
+/** Keep the old travel distance per phase frame; the elapsed-time frame is now twice as fast. */
+export const SHIMMER_PERIOD_CELLS = 2 * Math.PI / 0.32;
+export const SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32;
+export const SILVER_PLATEAU_CELLS = 3;
+export const GOLD_PLATEAU_CELLS = 6.5;
+export const SILVER_FALLOFF_CELLS = 4.5;
+export const GOLD_FALLOFF_CELLS = 6;
+
+/** A flat bright crest and a broad monotone shoulder; gold has the gentler, twice-differentiable shoulder. */
+export function shimmerPhase(index: number, frame: number, gold = false): number {
+	const period = SHIMMER_PERIOD_CELLS;
+	const offset = index - frame * SHIMMER_CELLS_PER_FRAME;
+	const position = ((offset + period / 2) % period + period) % period - period / 2;
+	const plateau = gold ? GOLD_PLATEAU_CELLS : SILVER_PLATEAU_CELLS;
+	if (position >= -plateau / 2 && position < plateau / 2) return 1;
+	const falloff = gold ? GOLD_FALLOFF_CELLS : SILVER_FALLOFF_CELLS;
+	const t = Math.max(0, Math.min(1, (Math.abs(position) - plateau / 2) / falloff));
+	const fade = gold ? t ** 3 * (t * (t * 6 - 15) + 10) : t * t * (3 - 2 * t);
+	// One colour quantum separates the shoulder from the flat crest, even at a half-cell boundary.
+	return Math.max(0, Math.min(254 / 255, 1 - fade));
 }
 
-/** Status letters by their global column: colour by phase along the stops, bold on the crest (phase above .85); spaces stay plain. */
+/** Paint by terminal column, without italics; spaces and zero-width combining marks do not shift the wave. */
 export function shimmerText(text: string, startColumn: number, frame: number, stops: readonly string[]): string {
-	return Array.from(stripVTControlCharacters(text)).map((ch, i) => {
-		if (ch === " ") return ch;
-		const f = shimmerPhase(startColumn + i, frame);
-		return styled(mix(stops, f), f > 0.85, ch);
+	let column = startColumn;
+	return Array.from(stripVTControlCharacters(text)).map((ch) => {
+		const f = shimmerPhase(column, frame, stops === GOLD);
+		column += visibleWidth(ch);
+		return ch === " " ? ch : styled(mix(stops, f), f > 0.85, ch);
 	}).join("");
 }
 
@@ -451,7 +471,7 @@ export function titleRow(name: string | undefined, width: number): string {
 	const text = singleLine(name ?? "");
 	if (!text || width <= 0) return "";
 	const points = Array.from(fitPlain(text, width));
-	return points.map((ch, i) => styled(mix(GOLD, points.length > 1 ? i / (points.length - 1) : 0.5), true, ch)).join("");
+	return points.map((ch, i) => styled(mix(TITLE_GOLD, points.length > 1 ? i / (points.length - 1) : 0.5), true, ch)).join("");
 }
 
 /** What the top border shows of the activity: the status text and whether it is the compaction. */
@@ -462,19 +482,26 @@ export interface ActivityChrome {
 	frame: number;
 }
 
-/** A run of the top border: a rule, the hint, the status letters or the session ID. */
+/** The activity widget's two rows; Pi supplies its single leading spacer, even when this component is empty. */
+export function activityRows(width: number, chrome: ActivityChrome | undefined): string[] {
+	if (!chrome) return [];
+	const text = fitPlain(singleLine(chrome.text), Math.max(0, width - 1));
+	return [width > 0 ? " " + shimmerText(text, 1, chrome.frame, chrome.compacting ? GOLD : SILVER) : "", ""];
+}
+
+/** A run of the top border: a rule, the hint, the title or the session ID. */
 interface TopSegment {
 	text: string;
-	kind: "rule" | "hint" | "status" | "id";
+	kind: "rule" | "hint" | "title" | "id";
 }
 
 const rule = (text: string): TopSegment => ({ text, kind: "rule" });
 
 /**
- * The left part of the top border in `width` cells: the status after `── ` and the hint centred the way Pi centres it.
- * `whole` is false when the status or the hint had to be cut; the session ID is then dropped, never the status cut for it.
+ * The left part of the top border: title after `── ` and the hint centred the way Pi centres it.
+ * `whole` is false when the title or hint had to be cut; the session ID gives way first.
  */
-function topHead(width: number, hiddenLineCount: number, chrome: ActivityChrome | undefined):
+function topHead(width: number, hiddenLineCount: number, name: string):
 	{ segments: TopSegment[]; whole: boolean } {
 	if (width <= 0) return { segments: [], whole: true };
 	const hint = hiddenLineCount > 0 ? ` ↑ ${hiddenLineCount} more ` : "";
@@ -486,26 +513,26 @@ function topHead(width: number, hiddenLineCount: number, chrome: ActivityChrome 
 	}
 	const cells = hint ? Math.floor((width - hintWidth) / 2) : width;
 	const after: TopSegment[] = hint ? [{ text: hint, kind: "hint" }, rule("─".repeat(width - cells - hintWidth))] : [];
-	if (!chrome) return { segments: [rule("─".repeat(cells)), ...after], whole: true };
-	// Without a hint the status keeps two rule cells at its right end; before a hint it keeps one space.
+	if (!name) return { segments: [rule("─".repeat(cells)), ...after], whole: true };
+	// Without a hint the title keeps two rule cells at its right end; before a hint it keeps one space.
 	const room = hint ? cells - 4 : width - 6;
 	if (room < 1) return { segments: [rule("─".repeat(cells)), ...after], whole: false };
-	const text = fitPlain(chrome.text, room);
+	const text = fitPlain(name, room);
 	const lw = visibleWidth(text);
 	return {
-		segments: [rule("── "), { text, kind: "status" }, rule(` ${"─".repeat(cells - 4 - lw)}`), ...after],
-		whole: text === chrome.text,
+		segments: [rule("── "), { text, kind: "title" }, rule(` ${"─".repeat(cells - 4 - lw)}`), ...after],
+		whole: text === name,
 	};
 }
 
-/** Paints the segments in global columns: ordinary rules silver, status letters shimmer silver, the ID muted; compaction all gold shimmer, the same phase as the busy letters. */
+/** Global columns keep the compaction gold synchronized over title, hint, ID and rules. */
 function paintTop(segments: TopSegment[], chrome: ActivityChrome | undefined, paint: Paint): string {
 	let x = 0;
 	let out = "";
 	for (const segment of segments) {
 		if (segment.text) {
-			if (segment.kind === "status" && chrome) out += shimmerText(segment.text, x, chrome.frame, chrome.compacting ? GOLD : SILVER);
-			else if (chrome?.compacting) out += shimmerText(segment.text, x, chrome.frame, GOLD);
+			if (chrome?.compacting) out += shimmerText(segment.text, x, chrome.frame, GOLD);
+			else if (segment.kind === "title") out += titleRow(segment.text, visibleWidth(segment.text));
 			else if (segment.kind === "id") out += paint("label", segment.text);
 			else out += styled(RULE_SILVER, false, segment.text);
 		}
@@ -515,17 +542,18 @@ function paintTop(segments: TopSegment[], chrome: ActivityChrome | undefined, pa
 }
 
 /**
- * The editor's top border in `width` cells: the rule with Pi's hint when lines are hidden above, the activity status after
- * `── ` and the session ID whole at the right end. The ID is shown only when the whole status and hint fit beside it.
+ * The editor's top border: session title on the left, Pi's hidden-lines hint, and the full ID on the right.
+ * The ID is shown only when the whole title and hint fit beside it.
  */
 export function topBorder(width: number, sessionId: string | undefined, chrome: ActivityChrome | undefined,
-	hiddenLineCount = 0, paint: Paint = plain): string {
+	hiddenLineCount = 0, paint: Paint = plain, sessionName?: string): string {
 	if (width <= 0) return "";
+	const name = singleLine(sessionName ?? "");
 	const id = singleLine(sessionId ?? "");
 	const rest = width - visibleWidth(id) - 4;
 	if (id && !id.includes(" ") && rest >= 2) {
-		const head = topHead(rest, hiddenLineCount, chrome);
+		const head = topHead(rest, hiddenLineCount, name);
 		if (head.whole) return paintTop([...head.segments, rule(" "), { text: id, kind: "id" }, rule(" ──")], chrome, paint);
 	}
-	return paintTop(topHead(width, hiddenLineCount, chrome).segments, chrome, paint);
+	return paintTop(topHead(width, hiddenLineCount, name).segments, chrome, paint);
 }

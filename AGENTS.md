@@ -78,8 +78,9 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   Contract: `DECISIONS.md` section Review, `extensions/RQW-review/README.md`. Tests: `npm test`.
 - `extensions/RQW-statusbar/`: extension 7, an independent TUI footer in the owners omp layout, with the context bar as
   the input editor's bottom border and the session ID at the right end of its top border. Shows the GPT Fast lightning after the model name (main chat, `openai-codex` model, shimmer while working). On by default; `/statusbar [on|off]` toggles it and restores the stock editor and
-  footer when off. Its upper border shows the actual running agent counts, including reviewer agents, from the activity
-  producer: ordinary busy letters shimmer silver, compaction shimmers gold, a fully idle rule is continuous.
+  footer when off. Its upper input border shows the gold session title at the left and session ID at the right.
+  Activity is a separate line above it, with a one-space left gap and blank lines above and below, absent idle.
+  Busy letters shimmer silver; compaction shimmers gold over the title.
   Elements, evidence and limits: `notes/statusbar-omp.md`. Tests and deterministic renders: `extensions/RQW-statusbar/test/`, included in `npm test`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
   Shift+arrows open a model/effort draft chooser and take the first step before rendering: Up/Down stronger/weaker,
@@ -149,7 +150,7 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   else authenticated `openai-codex/gpt-6-luna`, at the lowest supported reasoning. At most four words and 32 Unicode
   code points, overlong names rejected, never truncated; initial attempt plus up to three retries, then a warning
   preserving the old name. `/rename-gen` regenerates; native
-  `/name` stays unchanged. RQW-statusbar displays the native name as a static gold title.
+  `/name` stays unchanged. RQW-statusbar displays the native name in the top input border, gold and shimmering during compaction.
   Details: [Naming and thinking](DECISIONS.md#naming-and-thinking); tests: `extensions/RQW-naming/test/`.
 - `extensions/RQW-agent-ui/`: extension 18, compact delivered result cards for `agent`, including reviewer profiles,
   and for delivered `child_wait` results, full originals

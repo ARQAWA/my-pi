@@ -5,12 +5,30 @@ feed, title, task panel or action rows. omp's theme colors are not reproduced. T
 semantic theme colors through `COLORS` and `themePaint` in `extensions/RQW-statusbar/index.ts`.
 The GPT Fast lightning is the exception: `fastMark` in `render.ts` uses fixed ANSI colors.
 
-Status: the top border and activity parts below describe the contract before the UI port P6 (`d84b541`) and are
-frozen evidence. Since P6 the top border is fully ours when the bar is on: `topBorder` in `render.ts`, called from
-`editor.ts`, draws the rule, the hint, the activity chrome from `activity.ts` (the main agent's planning or tool
-action, running background work by kind from the RQW-agent and RQW-review `pi.events` count offers, compaction) and
-the session ID; Pi's native working indicator is not drawn there. `sessionTopBorder` remains only for tests.
-`extensions/RQW-statusbar/{index,git,render}.ts` started as uncommitted predecessor files; this work builds on them.
+## Current title and activity contract
+
+The gold session title is at the left of the input editor's top border, between rule cells. The session ID
+remains at the right. There is no separate title widget above the input. During compaction the gold shimmer
+runs over the title. The activity status is a separate line above the border, with one leading space and one
+empty line above and below, separating it from Pi's native current-action row and the input border. When idle,
+the activity widget returns no rows; only Pi's original spacer remains.
+
+Both silver and gold highlights travel exactly twice as fast as before this change, with no slant. Silver has
+three very bright peak cells; gold has six to seven. The falloff to the base colour is wide, soft and monotone
+between letters, with gold the smoothest. The redraw timer remains 20 ms; GPT Fast is unchanged.
+Only public Pi APIs are used, and the extension remains independent.
+
+Rules and owner sources: [DECISIONS.md, Status bar](../DECISIONS.md#status-bar).
+Deterministic tests in `extensions/RQW-statusbar/test/` cover layout, peak widths, monotone falloff and doubled
+speed. `native-working-layout.test.ts` mounts real Pi `InteractiveMode` with a held faux-provider response,
+checks the unchanged native working row, exact widget gaps, title placement and idle removal, and saves
+`/tmp/statusbar-working.txt` and `/tmp/statusbar-compaction.txt`. The latter drives extension compaction events,
+not a live compaction request.
+
+`STATUS_FRAME_MS = 80` replaces 160; `SHIMMER_MS = 20` and `FAST_STEP_MS = 120` are unchanged.
+In `render.ts`, `SHIMMER_PERIOD_CELLS = 2 * Math.PI / 0.32` and `SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32`.
+Silver uses a three-cell plateau, 4.5-cell cubic falloff and `#ffffff` peak; gold uses a 6.5-cell plateau,
+six-cell quintic falloff and `#fff4c2` peak. These are spatial profiles, not a higher redraw frequency.
 
 ## Read-only sources
 
@@ -65,17 +83,10 @@ Read on 2026-10-21; no source repository or agent configuration was modified.
    (the branch glyph and the sibling number, `⑂ fork #2`, `⑂ fork #3`); the mark is dropped whole when it does not fit.
    The whole interface text is English (owner, see `DECISIONS.md` Status bar, «Session branch mark»).
 
-Above the input, the editor's top border ends with the full session ID (`ctx.sessionManager.getSessionId()`,
-a UUIDv7 in Pi 1.3.0, also with `--no-session`), framed by rule cells with one plain space on each side:
-`── <working…> ─────── <session-id> ──`; idle, the left part is only rule cells. The left part is Pi's own top
-border (`CustomEditor.renderTopBorder`: the embedded working, retry or compaction status and the up-arrow
-`N more` hint) drawn at the width minus the 40 cells of ` <id> ──`. The ID is shown only when that narrower stock
-border keeps exactly its full-width text and still ends in at least two rule cells; otherwise the ID is dropped
-whole and Pi's border is drawn at the full width, so the ID is never cut and Pi's status never gives way to it.
-For the 36-character ID this means at least 42 columns idle and 58 with `⠋ Working...`. The ID is one uninterrupted
-run of text in the `muted` color between border-colored spaces and rules, so a terminal selection copies it as a
-single word. It is read on every render; `/new`, resume, fork and `/reload` also reinstall through `session_start`.
-With the bar off or another extension's editor in place there is no ID: Pi's top border is unchanged.
+Above the input, `topBorder` draws `── <session-title> ─────── <session-id> ──`, with the hidden-lines hint
+centred. The ID comes from `ctx.sessionManager.getSessionId()` on every render and has one plain space on each
+side. If the title or hint would be cut, the ID is dropped whole. `/new`, resume, fork and `/reload` reinstall
+through `session_start`. With the bar off or another extension's editor in place there is no extension title or ID.
 
 Both columns retain their edge. When they overlap, the left column yields first, just like omp's `rowLeftRight`.
 Every row is fitted with Pi TUI's ANSI-aware `visibleWidth` and `truncateToWidth`. Width zero is supported.
@@ -90,10 +101,9 @@ built-in footer, `setEditorComponent(undefined)` its default editor.
 
 The editor (`editor.ts`) extends Pi's exported `CustomEditor`, as `docs/tui.md` recommends for replacing the main
 editor, and overrides only `renderBottomBorder(width, hiddenLineCount)` (stock: `pi-tui`
-`dist/components/editor.js:389-392`) and `renderTopBorder(width, hiddenLineCount)`, which calls Pi's own
-(`dist/modes/interactive/components/custom-editor.js:24-56`, falling back to `pi-tui` `editor.js:385-388`) and
-only appends the session ID. It keeps `embedWorkingStatus: true`, as Pi's default editor, so the working
-status stays in the top border. When Pi installs it (`dist/modes/interactive/interactive-mode.js:2243-2307`), Pi
+`dist/components/editor.js:389-392`) and `renderTopBorder(width, hiddenLineCount)`, which calls our `topBorder`
+for the title, hint and session ID. `embedWorkingStatus: false` lets Pi render its unchanged native working row
+above the activity widget. There is no native-spinner suppression or `setWorkingIndicator` call. When Pi installs it (`dist/modes/interactive/interactive-mode.js:2243-2307`), Pi
 carries over the text, callbacks, border color, padding, autocomplete and app key handlers; thinking/bash border
 colors keep applying to the top border and the hint. The bar itself keeps its own colors.
 One editor factory per extension instance identifies ours through `ctx.ui.getEditorComponent()`:
@@ -162,11 +172,11 @@ already set by another extension is not replaced.
   not in its bottom status bar. They are not copied; the session ID in the top border is the owner's own request
   (DECISIONS.md, Status bar). Apart from its borders, the Pi editor stays stock;
 loading rows and other widgets stay unchanged.
-- The compaction sheen is the busy-letter shimmer (`shimmerText`, same 160 ms phase, width and gradient) in gold stops; no separate metallic run.
+- Compaction uses `shimmerText` with the gold spatial profile described above, including the title and existing chrome.
 - Theme colors and compaction color animation are intentionally not copied. Nerd icons require the same kind of
   Nerd Font as the owner's `symbolPreset: nerd` setup.
 
-## Animation cadence and cost
+## Historical animation cadence and cost
 
 Rule and owner quotes: [DECISIONS.md, Status bar](../DECISIONS.md#status-bar). Timer 20 ms (50 nominal redraws/s),
 phase = elapsed monotonic ms / 160 (letters 4.30 columns/s, period 4.57 s; formerly 120 ms ticks, 5.73 columns/s,
@@ -191,13 +201,17 @@ with the 20 ms timer a chunk can wait up to about one 16 ms slot (p95 about 15 m
 `render.test.ts` compares it deterministically and checks every width 0..160, wide/combining Unicode, ANSI metadata,
 no-model/unknown context, overflow, thinking labels, Windows and UNC paths, porcelain records and the rate rules above.
 It also checks the editor border at every width 0..160 with and without hidden lines: exact width, the hint first,
-then the context row. `editor.test.ts` renders the real `ContextEditor` above the two footer rows and compares
+then the context row.
+
+Historical editor-border coverage before the title-layout change: `editor.test.ts` rendered the real `ContextEditor` above the two footer rows and compared
 `editor.snap.json` (widths 80, 48, 24, with and without hidden lines below or above, idle and with a working
 status); without a source it draws Pi's stock borders. It also checks every width 1..160 idle, working, with a
 70-character status, with hidden lines above and with both: the top border is exactly the width, and it is
 either Pi's own border at the reduced width followed by ` <id> ──` or, below the computed threshold, Pi's border
 unchanged. `render.test.ts` checks the ID rule on its own (styling, terminal controls, an ID with spaces, a status
-that would change at the reduced width).
+that would change at the reduced width). Current title-layout coverage is described at the start of this note
+and in `test/{chrome,editor,lifecycle,native-working-layout}.test.ts`.
+
 `fast-gpt.test.ts` checks the GPT Fast lightning: its place after the model name and before the thinking level, the
 static idle yellow, the shimmer frames while working, one cell width at every width 0..120, and in a real session the
 rule (fast on and an `openai-codex` model), the change event, the timer and a footer installed mid-run
@@ -214,7 +228,7 @@ the repository, and checks tool/agent refresh, polling and shutdown cleanup with
 turns and reset by tree change, session start and toggle. These tests join existing `npm test`
 and the existing macOS/Windows CI matrix without adding a new dependency.
 
-Real PTY smoke: `python3 extensions/RQW-statusbar/test/tui-smoke.py [node]` runs the actual CLI in an isolated agent
+Historical PTY smoke evidence: `python3 extensions/RQW-statusbar/test/tui-smoke.py [node]` runs the actual CLI in an isolated agent
 directory with no credentials, a local `models.json` model (200k window, never called) and `PI_OFFLINE=1`, and sends
 only slash commands and editor keys. A small terminal emulator in the script replays the output. It checks that
 the bar row (`0% 0k/183.6k`) is the editor's bottom border directly above the two footer rows, that off shows Pi's
@@ -223,7 +237,7 @@ on the first show `↓ 6 more` followed by the bar, that the top border ends wit
 then resizes 80 -> 24, where the top border is a plain rule without the ID, and exits cleanly. This is not a live model
 run. An absent model is rendered as `no-model` in deterministic tests.
 
-### Sample renders
+### Historical sample renders
 
 Exact plain snapshots from `editor.snap.json`: Pi's editor (top border, input, the bar as bottom border), then the
 footer. Nerd Font glyph display depends on the reader's font.
@@ -279,7 +293,7 @@ line 11
   my-pi/statusbar                                       rqw-statusbar *1 +2 ?3
 ```
 
-### Local results
+### Historical local results
 
 - macOS, Node 26.7.0: `npm test -- --test-reporter=dot`, 1078 tests, 1070 passed, 0 failed, 8 skipped (all eight are
   Windows-only tests outside this extension).

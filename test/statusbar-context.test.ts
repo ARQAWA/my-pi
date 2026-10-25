@@ -17,7 +17,7 @@ const { FooterDataProvider } = await import(new URL("./core/footer-data-provider
 
 type EditorFactory = Parameters<ExtensionUIContext["setEditorComponent"]>[0];
 const plainTheme = { fg: (_role: string, text: string) => text };
-const TITLE_KEY = "rqw-statusbar-title";
+const ACTIVITY_KEY = "rqw-statusbar-activity";
 /** Pi's ANSI and APC cursor marks removed, so visible text is compared without terminal control bytes. */
 const plain = (line: string) => stripVTControlCharacters(line.replace(/\x1b_[^\x07]*\x07/g, ""));
 
@@ -65,8 +65,9 @@ function uiHarness(footer?: InstanceType<typeof FooterDataProvider>) {
 		theme: plainTheme,
 	} as unknown as ExtensionUIContext;
 	return { ui, statuses, order, render: (width = 80) => component?.render(width),
-		/** The title row rendered by the public widget factory; undefined when no widget is up. */
-		title: (width = 80) => widgets.get(TITLE_KEY)?.render(width),
+		/** Activity has no rows while idle; the native session title belongs to the editor border. */
+		activity: (width = 80) => widgets.get(ACTIVITY_KEY)?.render(width),
+		top: (width = 80) => editor?.render(width)[0],
 		/** The editor's bottom border, undefined for Pi's stock editor. */
 		border: (width = 80) => editor?.render(width).at(-1),
 		get editor() { return editor; },
@@ -94,9 +95,9 @@ for (const [label, pi] of [["library", library], ["bundle", bundle]] as const) {
 				settingsManager: pi.SettingsManager.inMemory({ compaction: {} }) }));
 			await session.bindExtensions({ uiContext: h.ui, mode: "tui" });
 			assert.equal(session.model?.contextWindow, 500000);
-			// Normal Pi order: the title widget is registered before the footer, and the footer really draws.
-			assert.ok(h.order.indexOf("setWidget") >= 0, "the title widget is registered");
-			assert.ok(h.order.indexOf("setWidget") < h.order.indexOf("setFooter"), "title widget before footer");
+			// Normal Pi order: the activity widget is registered before the footer, and the footer really draws.
+			assert.ok(h.order.indexOf("setWidget") >= 0, "the activity widget is registered");
+			assert.ok(h.order.indexOf("setWidget") < h.order.indexOf("setFooter"), "activity widget before footer");
 			assert.ok(h.render()!.length > 0, "the footer is installed and non-empty");
 			assert.match(plain(h.render()![0]), /Fixture no/);
 			assert.match(h.border()!, /\/450k$/);
@@ -112,9 +113,10 @@ for (const [label, pi] of [["library", library], ["bundle", bundle]] as const) {
 			assert.ok(h.border()!.endsWith("?/244.8k"));
 			h.statuses.set("z", "last"); h.statuses.set("a", "first\nsecond");
 			assert.match(plain(h.render()![0]), /first second · last/);
-			// The public session name reaches the title row through the session_info_changed event.
+			// The public session name reaches the top border through session_info_changed, not a title widget.
 			session.setSessionName("Capped title");
-			assert.match(plain(h.title()![0]), /Capped title/);
+			assert.match(plain(h.top()!), /^── Capped title /);
+			assert.deepEqual(h.activity(), [], "idle reserves no activity rows");
 			const command = session.extensionRunner.getCommand("statusbar")!;
 			await command.handler("off", session.extensionRunner.createCommandContext());
 			assert.equal(h.render(), undefined); assert.equal(h.subscriptions, 0);

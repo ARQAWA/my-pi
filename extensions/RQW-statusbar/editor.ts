@@ -8,8 +8,9 @@ import { type ActivityChrome, type BarState, editorBorder, type Paint, topBorder
 export interface BorderSource {
 	context(): BarState["context"];
 	sessionId(): string | undefined;
+	sessionName?(): string | undefined;
 	paint(): Paint;
-	/** The activity status for the top border and the compaction sheen; undefined when idle (the ordinary chrome). */
+	/** Activity controls the compaction sheen; its text lives in the separate widget. */
 	activity?(): ActivityChrome | undefined;
 }
 
@@ -17,17 +18,16 @@ export class ContextEditor extends CustomEditor {
 	private readonly source: () => BorderSource | undefined;
 
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, source: () => BorderSource | undefined) {
-		// Pi's default editor embeds the working status in its top border; with our source that border is ours and the
-		// native indicator is not drawn in it (see `renderTopBorder`).
-		super(tui, theme, keybindings, { embedWorkingStatus: true });
+		// Pi places its unchanged native working/action row above the widgets when it is not embedded.
+		super(tui, theme, keybindings, { embedWorkingStatus: false });
 		this.source = source;
 	}
 
-	/** With a source the top border is ours (rule, hint, status, ID); without one Pi's own border, native status included. */
+	/** With a source the top border is ours (rule, title, hint, ID); otherwise Pi draws its plain border. */
 	protected override renderTopBorder(width: number, hiddenLineCount: number): string {
 		const source = this.source();
 		if (!source) return super.renderTopBorder(width, hiddenLineCount);
-		return topBorder(width, source.sessionId(), source.activity?.(), hiddenLineCount, source.paint());
+		return topBorder(width, source.sessionId(), source.activity?.(), hiddenLineCount, source.paint(), source.sessionName?.());
 	}
 
 	protected override renderBottomBorder(width: number, hiddenLineCount: number): string {

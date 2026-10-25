@@ -1,5 +1,5 @@
-// Interactive-only footer and editor borders (session ID on top, context bar at the bottom), the activity status on the
-// top border and the session title above the input. All displayed session values are read through Pi's live context getters.
+// Interactive footer and editor borders: title and session ID on top, context bar at the bottom.
+// Activity is a separate widget below Pi's native working/action row. Session values use public getters.
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
@@ -8,19 +8,19 @@ import { actionPhrase, CountsWatch, statusText } from "./activity.ts";
 import { branchNumber } from "./branch.ts";
 import { type BorderSource, ContextEditor } from "./editor.ts";
 import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
-import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar, titleRow } from "./render.ts";
+import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar, activityRows } from "./render.ts";
 
 const GIT_POLL_MS = 10_000;
 /** The animation timer: 50 nominal redraws per second (Pi 1.4 batches renders at most every 16 ms, so 20 ms passes through). */
 const SHIMMER_MS = 20;
-/** Letters and compaction sheen move one phase frame per 160 ms of elapsed time: 0.75 of the old one frame per 120 ms tick. */
-const STATUS_FRAME_MS = 160;
+/** Half the previous 160 ms phase frame: silver and gold travel exactly twice as fast. */
+export const STATUS_FRAME_MS = 80;
 /** The lightning keeps its owner-accepted pulse of one colour step per 120 ms of elapsed time. */
 const FAST_STEP_MS = 120;
 /** Monotonic milliseconds; the animation phase is read from it at render time, not counted per timer tick. */
 const now = () => performance.now();
-/** The title row above the input: one widget of this extension, removed when it is off. */
-const TITLE_KEY = "rqw-statusbar-title";
+/** Activity only; the session title belongs to the editor's top border. */
+const ACTIVITY_KEY = "rqw-statusbar-activity";
 // RQW-settings owns /fast-gpt. Its channels on pi.events are the only coupling; nobody answering means no lightning.
 const FAST_GPT_QUERY = "rqw-settings:fast-gpt-query";
 const FAST_GPT_CHANGED = "rqw-settings:fast-gpt";
@@ -91,10 +91,9 @@ export default function statusbar(pi: ExtensionAPI) {
 	 * re-checked on every tick. The phase comes from the elapsed time at render, so Pi's other redraws show it too. */
 	const wantsShimmer = () => active && (chromeNow() !== undefined || (working && lit(lightCtx)));
 	const syncShimmer = () => {
-		syncSpinner();
 		if (!wantsShimmer()) return stopShimmer();
 		if (shimmer) return;
-		shimmer = setInterval(() => { syncSpinner(); if (!wantsShimmer()) stopShimmer(); redraw?.(); }, SHIMMER_MS);
+		shimmer = setInterval(() => { if (!wantsShimmer()) stopShimmer(); redraw?.(); }, SHIMMER_MS);
 		shimmer.unref?.();
 	};
 	/** Read-only: the branch number of the leaf from the public tree, recomputed when the leaf or the entry count changes. */
@@ -114,46 +113,8 @@ export default function statusbar(pi: ExtensionAPI) {
 	const editorFactory: NonNullable<Parameters<ExtensionUIContext["setEditorComponent"]>[0]> =
 		(tui, theme, keybindings) => new ContextEditor(tui, theme, keybindings, () => border);
 
-	// The UI on which Pi's working spinner was set to no frames; released restores Pi's default.
-	let spinnerUi: ExtensionUIContext | undefined;
-	const hideNativeSpinner = (ctx: ExtensionContext): void => {
-		try {
-			ctx.ui.setWorkingIndicator({ frames: [] });
-			spinnerUi = ctx.ui;
-		} catch {
-			// Without the setter Pi's spinner keeps its own timer; the bar still works.
-		}
-	};
-	const showNativeSpinner = (): void => {
-		const ui = spinnerUi;
-		spinnerUi = undefined;
-		try {
-			ui?.setWorkingIndicator(undefined);
-		} catch {
-			// A UI that is gone keeps nothing to restore.
-		}
-	};
-	/**
-	 * Pi's spinner is hidden exactly while our editor is installed. Pi has no event for another extension taking the editor
-	 * slot, so this runs on install, on every activity change (`syncShimmer`) and on every shimmer tick, never inside a
-	 * render; the setter is called only when the state flips.
-	 */
-	const syncSpinner = (): void => {
-		const ctx = lightCtx;
-		if (!ctx) return;
-		let ours: boolean;
-		try {
-			ours = ctx.ui.getEditorComponent() === editorFactory;
-		} catch {
-			return;
-		}
-		if (ours && !spinnerUi) hideNativeSpinner(ctx);
-		else if (!ours && spinnerUi) showNativeSpinner();
-	};
-
 	/** Drops what this extension holds for the session: the GPT Fast subscription, the counts, timers, footer and border source. */
 	function release(): void {
-		showNativeSpinner();
 		unsubscribeFast?.();
 		unsubscribeFast = undefined;
 		dispose?.();
@@ -174,13 +135,13 @@ export default function statusbar(pi: ExtensionAPI) {
 		tools.clear();
 	}
 
-	/** The title row above the input. Best effort: a widget error or an absent setWidget never stops the footer or the stock restore. */
-	const setTitle = (ctx: ExtensionContext, show: boolean): void => {
+	/** Pi supplies one leading spacer. The active widget adds the status and one trailing empty line, idle adds nothing. */
+	const setActivity = (ctx: ExtensionContext, show: boolean): void => {
 		try {
-			ctx.ui.setWidget(TITLE_KEY, show ? () => ({ render: (width: number) => [titleRow(sessionName, width)], invalidate() {} }) : undefined,
+			ctx.ui.setWidget(ACTIVITY_KEY, show ? () => ({ render: (width: number) => activityRows(width, chromeNow()), invalidate() {} }) : undefined,
 				show ? { placement: "aboveEditor" } : undefined);
 		} catch {
-			// The title row is skipped; the footer and the editor are still installed or restored.
+			// A widget error must not prevent the footer/editor install or stock restore.
 		}
 	};
 
@@ -190,7 +151,7 @@ export default function statusbar(pi: ExtensionAPI) {
 		lightCtx = ctx;
 		unsubscribeFast = pi.events.on(FAST_GPT_CHANGED, () => { syncShimmer(); redraw?.(); });
 		jobs.start();
-		setTitle(ctx, true);
+		setActivity(ctx, true);
 		let cacheKey: unknown[] = [];
 		let cached: Pick<BarState, "context" | "compactions"> = { compactions: 0 };
 		const contextState = (): Pick<BarState, "context" | "compactions"> => {
@@ -210,12 +171,9 @@ export default function statusbar(pi: ExtensionAPI) {
 		};
 		// The ID is read on every render; /new, resume, fork and /reload also reinstall through session_start.
 		border = { context: () => contextState().context, sessionId: () => ctx.sessionManager.getSessionId(),
-			paint: () => themePaint(ctx.ui.theme), activity: () => chromeNow() };
+			sessionName: () => sessionName, paint: () => themePaint(ctx.ui.theme), activity: () => chromeNow() };
 		// Another extension's editor is kept; the context row then stays in the footer.
 		if (ctx.ui.getEditorComponent() === undefined) ctx.ui.setEditorComponent(editorFactory);
-		// Our top border replaces the place where Pi draws its working spinner, so the spinner is invisible but its 80 ms timer
-		// would still repaint the screen. With our editor in place, the public empty-frames indicator stops that timer.
-		syncSpinner();
 		ctx.ui.setFooter((tui, theme, footer) => {
 			let disposed = false;
 			let cwd: string | undefined;
@@ -319,7 +277,7 @@ export default function statusbar(pi: ExtensionAPI) {
 				working = false;
 				compacting = false;
 				tools.clear();
-				setTitle(ctx, false);
+				setActivity(ctx, false);
 				ctx.ui.setFooter(undefined);
 				if (ctx.ui.getEditorComponent() === editorFactory) ctx.ui.setEditorComponent(undefined);
 			}
@@ -339,7 +297,7 @@ export default function statusbar(pi: ExtensionAPI) {
 		tools.clear();
 		sessionName = undefined;
 		branchKey = undefined;
-		if (ctx.mode === "tui") setTitle(ctx, false);
+		if (ctx.mode === "tui") setActivity(ctx, false);
 	});
 	pi.on("session_tree", (_event, ctx) => {
 		if (ctx.mode !== "tui") return;

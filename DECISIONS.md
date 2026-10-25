@@ -649,7 +649,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   result as finished or failed, never a live agent state. There is no agent list, board or child-log view.
   T17 cards belong to agent-ui, T18 indicator to statusbar: actual running agent counts, including reviewers, come
   from the existing activity producer, not a second registry in the cards. Ordinary busy letters shimmer silver;
-  compaction status and synchronized chrome shimmer gold; fully idle is a continuous rule. Title stays static gold.
+  compaction status and synchronized chrome shimmer gold; the title shimmers gold during compaction.
+  Title and activity placement follow [D-STATUSBAR-ACTIVITY](#status-bar).
   The indicator's existing decision is [D-STATUSBAR-ACTIVITY](#status-bar).
   Reason: readable delivered answers, independently switchable from activity. Carriers: `extensions/RQW-agent-ui/`,
   `extensions/RQW-agent/activity.ts`, `extensions/RQW-statusbar/`, `package.json`, `INSTALL.md`.
@@ -693,7 +694,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   pipeline. New triggers/session switch cancel old generation; a native name change cancels the pending old trigger.
   Public `pi.setSessionName` persists the name in native history and `/resume`. Native `/name` stays unchanged;
   only the next automatic trigger or `/rename-gen` may overwrite a manual name. RQW-statusbar displays the current
-  native name as a static gold title, empty before a name exists, with its rule retained.
+  native name as a gold title in the top input border, shimmering during compaction, empty before a name exists.
+  Placement follows [D-STATUSBAR-ACTIVITY](#status-bar).
   Reason: meaningful short names without blocking main work or a user candidate picker. Carriers:
   `extensions/RQW-naming/{index,core}.ts`, `extensions/RQW-statusbar/index.ts`, `package.json`, `INSTALL.md`.
 - **Hide reasoning text only** `[D-UI-THINKING]`. Owner: "+".
@@ -1577,17 +1579,17 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **No invented data** `[D-STATUSBAR-SCOPE]`. omp data without a stock Pi API is not shown: modes, collaboration,
   streaming/recording and PR metadata. Running agent counts, including reviewer profiles, are shown, read from RQW-agent over `pi.events` (`[D-STATUSBAR-ACTIVITY]`). Colours are the extension's own ANSI and truecolour values, not
   stock theme roles. Limits and samples: `notes/statusbar-omp.md`. Since: `0f356c4`.
-- **Activity chrome (UI port P6)** `[D-STATUSBAR-ACTIVITY]`. The editor's top border shows the activity status after
-  `── `: the running tool's action (`Running <command>`, `Editing <file>`, `Searching files`) or `Planning next moves`,
-  then running counts (`2 agents`) from the `rqw:running-counts:request`/`offer` channels, or
-  `Waiting for <counts>` when only background work runs, and `Compacting context` in gold during compaction; idle it is
-  the plain rule. Ordinary rules are silver, busy letters shimmer silver, compaction letters, chrome and context row shimmer
-  gold with the busy-letter mechanics (`[D-STATUSBAR-SHEEN]`). A static bold gold session title widget (`rqw-statusbar-title`) shows the session name above the
-  input. Off the original first branch the place row shows the English `⑂ fork #N` marker from the public session
-  tree, as defined in `[D-STATUSBAR-BRANCH-MARK]`. Footer effort colours: low plain, medium bold green, high bold
-  gold, xhigh bold bright purple, max bold red. Carrier: `extensions/RQW-statusbar/{activity,branch,render,editor,index}.ts`.
-  No owner quote for P6 is recorded here; the commit message lists the cross-extension native integration as not
-  verified. Since: `d84b541`.
+- **Activity chrome** `[D-STATUSBAR-ACTIVITY]`. The existing activity text and running counts occupy a separate
+  line above the editor's top border, with one leading space and one empty line above and below.
+  Idle removes all extension-added activity rows; only Pi's original widget spacer remains. The session title occupies the left of the top
+  border between rules; the session ID remains at the right. The title is gold and gains the gold shimmer during
+  compaction. The activity remains separate from Pi's native current-action row.
+  Existing activity wording, count sources, branch marker and footer effort colours are unchanged.
+  Owner: «Надо, чтобы заголовок сессии был там, где сейчас статус, в этой строке между чёрточкой разделения.»
+  «А статус — чтобы он был отдельной строкой, как будто это сообщение в чате.»
+  Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6378;
+  verified by `scripts/owner-quotes.mjs`. Layout acceptance and spacing are in the task's included owner messages. Reason: the owner's requested title and status placement.
+  Carrier: `extensions/RQW-statusbar/{index,editor,render}.ts`; contract: `notes/statusbar-omp.md`.
 - **GPT Fast lightning** `[D-STATUSBAR-FAST]`. The main chat's GPT Fast state ([Settings](#settings), "GPT Fast") shows as
   a bright yellow lightning after the model name, before the thinking level, when it is on and the model's provider is
   `openai-codex`. While the agent works a shimmer runs over the bolt (bright yellow, paler yellow, white, back; 120 ms per
@@ -1599,23 +1601,28 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «Нет, лучше значок молнии пририсовывать после имени модели между моделью и резонингом.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 2175) The shimmer while
   working and the steady yellow idle follow the coordinator description the owner accepted. Carrier:
   `extensions/RQW-statusbar/{render,index}.ts`. Proof: `test/fast-gpt.test.ts`. Since: `fa05edf`.
-- **Compaction sheen** `[D-STATUSBAR-SHEEN]`. The compaction sheen uses exactly the mechanics of the working-status
-  sheen: `shimmerText` and `shimmerPhase` (global column, the 160 ms elapsed-time phase, the same width and gradient),
-  only with the gold stops `GOLD` instead of silver. The separate six-cell metallic run is removed. The lightning pulse and
-  everything else are unchanged. Owner: «Смотри, как у нас идёт анимация блика подсветки в статусе. Надо с такой же скоростью сделать, чтобы был блик в compaction, потому что сейчас в compaction блик выглядит по-ублюдски.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, last user message)
-  Carrier: `extensions/RQW-statusbar/render.ts`. Proof: `test/{chrome,lifecycle}.test.ts`.
-- **Animation cadence** `[D-STATUSBAR-ANIMATION]`. The status animation (busy letters, compaction gold shimmer, the
-  lightning) redraws every 20 ms, 50 nominal frames per second, and follows elapsed monotonic time, not tick counts.
-  Letters and compaction shimmer take one phase frame per 160 ms of elapsed time; the lightning keeps one colour step per 120 ms. The phase is read at render time. The
-  static gold title, the input text and the effort colours do not animate. The timer runs only while an animated status
-  or the working lightning is shown. While our editor owns the top border, Pi's hidden working spinner gets no frames
-  (`ctx.ui.setWorkingIndicator({ frames: [] })`); off, shutdown, reinstall and a foreign editor restore Pi's default,
-  checked on every tick and activity change. Pi 1.4 batches paints at most every 16 ms. Cost: every paint re-renders Pi's
-  component tree; terminal, GPU, remote and visible frame rate are not measured.
-  Owner: «Не ускорить, а сделать более плавной, в два раза плавнее.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3636);
-  «Давай попробуем сделать 50 FPS для начала.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3662); «Даже можно скорость блика сделать медленнее, чтобы она шла более медленно, более плавно.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3662)
-  Carrier: `extensions/RQW-statusbar/{index,render}.ts`. Proof: `test/{lifecycle,chrome,fast-gpt}.test.ts`; numbers in
-  `notes/statusbar-omp.md`. Since: `e3b3566`.
+- **Compaction sheen** `[D-STATUSBAR-SHEEN]`. Gold shimmer runs over the session title in the top input border.
+  Both silver and gold shimmers run exactly twice their previous speed, without a slant. Silver has a bright
+  three-cell peak; gold has a bright six-to-seven-cell peak. Both have wide, soft, monotone falloff between
+  neighbouring letters; gold is the smoothest. No unrelated animation behavior changes.
+  Owner: «Да, и во время compaction анимация должна идти поверх заголовка, поверх названия сессии.»
+  «Надо серебряный сделать более плавным и золотой нужно сделать максимально плавным А пиковые цвета чтобы были на серебре в три символа, а на золоте в шесть-семь символов»
+  «Надо, чтобы пиковые цвета были очень яркие, но при этом спуск вниз до базового цвета был довольно размазанным.»
+  «Надо вообще блик ускорить в два раза по скорости или даже в два раза ровно ускорить его.»
+  Source: the same local owner session as `[D-STATUSBAR-ACTIVITY]`, USER entries at lines 6399 and 6413;
+  verified by `scripts/owner-quotes.mjs`. The current task explicitly confirms doubled speed for both shimmers and no slant. Reason: smoother highlights with the owner's peak widths.
+  Carrier: `extensions/RQW-statusbar/render.ts`; proof: deterministic statusbar render and animation tests.
+- **Animation cadence** `[D-STATUSBAR-ANIMATION]`. Keep the 20 ms redraw timer, 50 nominal frames per second,
+  and monotonic elapsed-time animation. Double silver and gold travel speed relative to origin/main
+  `0521318324f9c22707c7b1ff3d0cc725392f6e55`; the lightning keeps its 120 ms colour step.
+  The title animates during compaction, not otherwise. Input text and effort colours do not animate.
+  `STATUS_FRAME_MS = 80`, previously 160; `SHIMMER_MS = 20`, `FAST_STEP_MS = 120`.
+  `ContextEditor` uses `embedWorkingStatus: false`, so Pi draws its unchanged native working row above widgets.
+  The extension no longer suppresses the native spinner or calls `setWorkingIndicator`.
+  `activityRows` supplies status and trailing blank; Pi supplies the leading spacer. Idle returns `[]`.
+  Owner: «Давай попробуем сделать 50 FPS для начала.»
+  Source: session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3662; doubled-speed source: `[D-STATUSBAR-SHEEN]`.
+  Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
 - **Own git discovery** `[D-STATUSBAR-GIT]`. Git branch and counts use the extension's own repository discovery and
   asynchronous git refresh, not Pi's cached `getGitBranch()`, which caches absent metadata when a session starts outside
   git. Engineering choice. Carrier: `extensions/RQW-statusbar/{git,index}.ts`. Evidence: `notes/statusbar-omp.md`.
@@ -1629,13 +1636,10 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner: «Я бы хотел, чтобы бар контекстного окна был вместо нижней чёрточки.» (session `2026-10-21T12-13-54-289Z_01a15e61`, line 136)
   Carrier: `extensions/RQW-statusbar/{editor,index}.ts`, `render.ts` `editorBorder`. Contract: `notes/statusbar-omp.md`.
   Since: `1a2adb2`.
-- **Session ID in the top border** `[D-STATUSBAR-TOP]`. With our editor installed the whole top border is ours:
-  `render.ts` `topBorder`, called from `editor.ts` `renderTopBorder`, draws the silver rule, the activity status
-  (`[D-STATUSBAR-ACTIVITY]`) at the left, Pi's `↑ N more` hint centred, and the full session ID at the right end as
-  ` <id> ──` in the muted label colour; Pi's native working indicator is not drawn there. The ID is Pi's
-  `sessionManager.getSessionId()`, read on every render, with one plain space on each side so a selection copies it
-  whole; when the status or hint would be cut it is dropped whole. With the bar off or a foreign editor Pi's own border
-  returns and there is no ID. `sessionTopBorder` in `render.ts` is used only by `test/render.test.ts`.
+- **Session ID in the top border** `[D-STATUSBAR-TOP]`. With our editor installed, the top border shows
+  the gold session title at the left between rules and the full session ID at the right as ` <id> ──`.
+  Activity is above the border, not embedded in it. The ID retains its existing source, spacing and whole-ID
+  hiding behavior. Off or a foreign editor retains Pi's editor behavior. Current placement: `[D-STATUSBAR-ACTIVITY]`.
   Owner: «Можно добавить его в верхнюю часть там, где working крутится, хуйня. С левой стороны сделать также вставку id сессий с пробелами: идёт чёрточка, потом id, потом снова чёрточка. Прямо по левому краю.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 191);
   «Я бы так сделал, чтобы это было симметрично по левому краю именно, и чтобы между чёрточками и ID был какой-то пробел, хотя бы по одному, чтобы можно было нормально вырезать и вставить, скопировать и вставить.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 191)
   Correction: «По визуальному он должен стоять справа. Я ошибся: не с левого края, а с правого края. Слева working, справа ID сессии. Он прижат должен быть к правому краю, а ID к левому краю прижат. Если места нету, то он и не отображается, его просто не видно.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 203)

@@ -70,18 +70,18 @@ it("deterministic editor and footer renders match the committed snapshots", () =
 	assert.deepEqual(actual, expected);
 });
 
-it("without a source the border is Pi's stock one, and the editor is a CustomEditor with an embedded status", () => {
+it("without a source the border is Pi's stock one, and native status uses Pi's separate row", () => {
 	const stock = editor(undefined, "hello");
 	assert.ok(stock instanceof CustomEditor);
-	assert.equal(stock.embedWorkingStatus, true);
+	assert.equal(stock.embedWorkingStatus, false);
 	assert.equal(stock.render(20).at(-1), "\u2500".repeat(20));
 	assert.match(editor(undefined, many, 19).render(40).at(-1)!, /^\u2500+ \u2193 8 more \u2500+$/);
 	assert.equal(stock.render(80)[0], "\u2500".repeat(80), "no session ID without a source");
 });
 
-it("sourceundefined: Pi's native working status still draws in the top border", () => {
+it("without a source the editor does not embed Pi's native indicator", () => {
 	const stock = stripVTControlCharacters(editor(undefined, "hello", 0, "Working...").render(80)[0]);
-	assert.ok(stock.includes("\u280b Working..."), stock);
+	assert.equal(stock, rule(80));
 });
 
 it("with a source the native indicator is never drawn: an injected status is ignored at every width", () => {
@@ -110,9 +110,10 @@ it("with hidden lines above the hint is centred as Pi centres it, the ID kept wh
 	assert.equal(plainTop(80, source, many), `${rule(15)} \u2191 8 more ${rule(15)} ${id} \u2500\u2500`);
 });
 
-it("an activity status sits after `── `; the ID is dropped before the status is cut", () => {
+it("the session title sits after `── `; the ID is dropped before the title is cut", () => {
 	const active = (text: string, compacting = false): BorderSource => ({ ...source,
-		activity: (): ActivityChrome => ({ text, compacting, frame: 0 }) });
+		sessionName: () => text,
+		activity: (): ActivityChrome => ({ text: "Not in border", compacting, frame: 0 }) });
 	assert.equal(plainTop(80, active("Planning next moves")),
 		`\u2500\u2500 Planning next moves ${rule(17)} ${id} \u2500\u2500`);
 	assert.equal(plainTop(65, active("Planning next moves")), `\u2500\u2500 Planning next moves \u2500\u2500 ${id} \u2500\u2500`);

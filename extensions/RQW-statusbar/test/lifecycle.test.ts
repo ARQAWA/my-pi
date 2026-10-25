@@ -1,6 +1,6 @@
 // P6 lifecycle acceptance, deterministic: the statusbar is driven only through its public extension events and the
 // public ExtensionAPI/UI contract, with a fake UI that really builds Pi's CustomEditor-derived editor and the footer
-// and title factories. The running-counts producer is a stand-in that speaks the counts channel contract only; no
+// and activity factories. The running-counts producer is a stand-in that speaks the counts channel contract only; no
 // other extension is imported. Time is a mock clock (setInterval and Date, with performance.now following it), git is never touched (temp cwd outside any repo),
 // and session branches come from the public SessionManager (in memory).
 import assert from "node:assert/strict";
@@ -12,8 +12,9 @@ import { stripVTControlCharacters } from "node:util";
 import { type ExtensionAPI, type ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import statusbar from "../index.ts";
-import { GOLD, SILVER, shimmerText } from "../render.ts";
+import { GOLD, SILVER, shimmerText, titleRow } from "../render.ts";
 
+const ACTIVITY_KEY = "rqw-statusbar-activity";
 const TITLE_KEY = "rqw-statusbar-title";
 // The running-counts contract (version 1) as the README of the producer states it; spelled here, nothing imported.
 const COUNTS_REQUEST = "rqw:running-counts:request";
@@ -22,8 +23,8 @@ const COUNTS_OFFER = "rqw:running-counts:offer";
 const SHIMMER_MS = 20;
 /** The former timer, one phase frame per tick: the travel speed the new time basis is compared with. */
 const OLD_SHIMMER_MS = 120;
-/** One phase frame of the letters and the sheen per 160 ms of elapsed time (0.75 of the old speed). */
-const STATUS_FRAME_MS = 160;
+/** Activity and compaction move twice as fast as the previous 160 ms phase frame. */
+const STATUS_FRAME_MS = 80;
 const GIT_POLL_MS = 10_000;
 const MODEL = { provider: "anthropic", id: "claude-fixture", name: "Claude Fixture", reasoning: true, contextWindow: 200000 };
 
@@ -293,7 +294,8 @@ const bottom = (h: Harness, width = 80) => {
 	const rows = h.ui.editor!.render(width);
 	return strip(rows[rows.length - 1]);
 };
-const title = (h: Harness, width = 80) => h.ui.widgets.get(TITLE_KEY)!.render(width).map(strip);
+const activityRows = (h: Harness, width = 80) => h.ui.widgets.get(ACTIVITY_KEY)!.render(width).map(strip);
+const activity = (h: Harness, width = 80) => activityRows(h, width)[0] ?? "";
 const footerRow = (h: Harness, index: number, width = 80) => strip(h.ui.footerComponent!.render(width)[index] ?? "");
 const place = (h: Harness, width = 80) => footerRow(h, 1, width);
 /** The stock top border with the session ID at its right end: the idle rule, nothing else. */
@@ -321,36 +323,37 @@ it("producer offers and requests load in either order and count agents once per 
 	const first = new Producer(a.bus, { agents: 2 });
 	a.fire("session_start", { reason: "startup" });
 	assert.equal(first.requests, 1, "the bar asks a producer that is already listening");
-	assert.match(top(a), /── Waiting for 2 agents /);
+	assert.match(activity(a), /^ Waiting for 2 agents$/);
 
 	const b = harness(t);
 	b.fire("session_start", { reason: "startup" });
 	const late = new Producer(b.bus, { agents: 2 }, false);
 	late.offer();
 	late.offer();
-	assert.match(top(b), /── Waiting for 2 agents /);
+	assert.match(activity(b), /^ Waiting for 2 agents$/);
 	assert.equal(b.bus.listeners(COUNTS_OFFER), 1, "the bar keeps one offer listener");
 	assert.equal(late.source.listeners.size, 1, "the same source is adopted once");
 });
 
-it("main planning, tool action phrases and the latest running tool drive the top border", (t) => {
+it("main planning, tool action phrases and the latest running tool drive the activity widget", (t) => {
 	const h = harness(t);
 	new Producer(h.bus, { agents: 0 });
 	h.fire("session_start", { reason: "startup" });
 	h.fire("agent_start");
-	assert.match(top(h), /── Planning next moves /);
+	assert.match(activity(h), /^ Planning next moves$/);
 	const busy = h.ui.renders;
 	h.tick(SHIMMER_MS);
 	assert.ok(h.ui.renders > busy, "the shimmer runs while the main agent works");
 	h.fire("tool_execution_start", { toolCallId: "t1", toolName: "bash", args: { command: "npm test" } });
-	assert.match(top(h), /── Running npm test /);
+	assert.match(activity(h), /^ Running npm test$/);
 	h.fire("tool_execution_start", { toolCallId: "t2", toolName: "edit", args: { path: "/work/src/app.ts", edits: [] } });
-	assert.match(top(h), /── Editing app\.ts /, "the latest running tool");
+	assert.match(activity(h), /^ Editing app\.ts$/, "the latest running tool");
 	h.fire("tool_execution_end", { toolCallId: "t2", toolName: "edit", isError: false, result: {} });
-	assert.match(top(h), /── Running npm test /, "the earlier tool is shown again");
+	assert.match(activity(h), /^ Running npm test$/, "the earlier tool is shown again");
 	h.fire("tool_execution_end", { toolCallId: "t1", toolName: "bash", isError: false, result: {} });
-	assert.match(top(h), /── Planning next moves /, "tool end restores planning");
-	assert.doesNotMatch(top(h), /Running|Editing/);
+	assert.match(activity(h), /^ Planning next moves$/, "tool end restores planning");
+	assert.doesNotMatch(activity(h), /Running|Editing/);
+	assert.equal(top(h), idleTop(h), "tool text never enters the border");
 });
 
 it("the animation redraws 50 times a second, at least twice the old cadence, and its phase follows elapsed time, not ticks", (t) => {
@@ -358,29 +361,29 @@ it("the animation redraws 50 times a second, at least twice the old cadence, and
 	new Producer(h.bus, { agents: 0 });
 	h.fire("session_start", { reason: "startup" });
 	h.fire("agent_start");
-	const raw = () => h.ui.editor!.render(80)[0];
-	assert.ok(raw().includes(shimmerText("Planning next moves", 3, 0, SILVER)), "agent_start is phase frame 0");
+	const raw = () => h.ui.widgets.get(ACTIVITY_KEY)!.render(80)[0];
+	assert.ok(raw().includes(shimmerText("Planning next moves", 1, 0, SILVER)), "agent_start is phase frame 0");
 	const start = h.ui.renders;
 	h.tick(1000);
 	const perSecond = h.ui.renders - start;
 	assert.equal(perSecond, 1000 / SHIMMER_MS, "one redraw request per 20 ms tick");
 	assert.ok(perSecond >= 2 * Math.floor(1000 / OLD_SHIMMER_MS), "at least twice the old 8 redraws per second");
-	// 1000 ms is 50 ticks but 6.25 phase frames: the letters moved by elapsed time, 0.75 of the old frame-per-120-ms speed.
+	// 1000 ms is 50 ticks but 12.5 phase frames; cadence and travel speed are independent.
 	const frame = 1000 / STATUS_FRAME_MS;
-	assert.ok(raw().includes(shimmerText("Planning next moves", 3, frame, SILVER)), "phase = elapsed / 160 ms");
-	assert.ok(!raw().includes(shimmerText("Planning next moves", 3, 50, SILVER)), "not one frame per tick");
-	assert.equal(frame / (1000 / OLD_SHIMMER_MS), 0.75, "travel is 0.75 of the old speed");
+	assert.ok(raw().includes(shimmerText("Planning next moves", 1, frame, SILVER)), "phase = elapsed / 80 ms");
+	assert.ok(!raw().includes(shimmerText("Planning next moves", 1, 50, SILVER)), "not one frame per tick");
+	assert.equal(frame / (1000 / 160), 2, "travel is twice the previous 160 ms speed");
 	// Between ticks the phase still follows the clock: a render at any moment shows its own time.
 	h.tick(SHIMMER_MS * 4);
-	assert.ok(raw().includes(shimmerText("Planning next moves", 3, (1000 + SHIMMER_MS * 4) / STATUS_FRAME_MS, SILVER)));
+	assert.ok(raw().includes(shimmerText("Planning next moves", 1, (1000 + SHIMMER_MS * 4) / STATUS_FRAME_MS, SILVER)));
 	// A redraw from elsewhere (Pi's own render) 7 ms after a tick: the same clock, so the same speed at any redraw rate.
 	h.tick(7);
-	assert.ok(raw().includes(shimmerText("Planning next moves", 3, 1087 / STATUS_FRAME_MS, SILVER)), "phase between ticks");
-	// The compaction gold and its rule follow the same clock, with fractional frames.
+	assert.ok(raw().includes(shimmerText("Planning next moves", 1, 1087 / STATUS_FRAME_MS, SILVER)), "phase between ticks");
+	// Compaction activity has no rule and follows the same clock, with fractional frames.
 	h.fire("session_before_compact", before());
 	h.tick(13);
 	const gold = 1100 / STATUS_FRAME_MS;
-	assert.ok(raw().startsWith(`${shimmerText("\u2500\u2500 ", 0, gold, GOLD)}${shimmerText("Compacting context", 3, gold, GOLD)}`));
+	assert.equal(raw(), ` ${shimmerText("Compacting context", 1, gold, GOLD)}`);
 	h.fire("session_compact", { reason: "manual", willRetry: false, fromExtension: false, compactionEntry: {} });
 	h.fire("agent_settled", { aborted: false });
 	const idle = h.ui.renders;
@@ -393,36 +396,37 @@ it("children count after the main reply: agent_settled shows Waiting until zero,
 	const p = new Producer(h.bus, { agents: 2 });
 	h.fire("session_start", { reason: "startup" });
 	h.fire("agent_start");
-	assert.match(top(h), /── Planning next moves · 2 agents /);
+	assert.match(activity(h), /^ Planning next moves · 2 agents$/);
 	h.fire("agent_end", { messages: [] });
 	h.fire("agent_settled", { aborted: false });
-	assert.match(top(h), /── Waiting for 2 agents /);
-	assert.doesNotMatch(top(h), /Planning/, "the main agent is idle once settled");
+	assert.match(activity(h), /^ Waiting for 2 agents$/);
+	assert.doesNotMatch(activity(h), /Planning/, "the main agent is idle once settled");
 	end(p.source);
-	assert.equal(top(h), idleTop(h), "zero children: no label, no reserved gap, continuous rule");
+	assert.equal(top(h), idleTop(h), "zero children: continuous rule");
+	assert.deepEqual(activityRows(h), [], "zero children: no activity rows or gaps");
 	assert.equal(p.source.listeners.size, 0, "a source that ended is released");
 	const quiet = h.ui.renders;
 	h.tick(1000);
 	assert.equal(h.ui.renders, quiet, "fully idle: no shimmer tick");
 });
 
-it("no Working text, native working indicator or spinner appears in any activity state", (t) => {
+it("activity contains no duplicate Working text or native spinner in any state", (t) => {
 	const h = harness(t);
 	const p = new Producer(h.bus, { agents: 1 });
 	h.fire("session_start", { reason: "startup" });
 	const seen: string[] = [];
 	h.fire("agent_start");
-	seen.push(top(h));
+	seen.push(activity(h));
 	h.fire("tool_execution_start", { toolCallId: "t1", toolName: "bash", args: { command: "npm test" } });
-	seen.push(top(h));
+	seen.push(activity(h));
 	h.fire("session_before_compact", before());
-	seen.push(top(h));
+	seen.push(activity(h));
 	h.fire("session_compact", { reason: "manual", willRetry: false, fromExtension: false, compactionEntry: {} });
 	h.fire("tool_execution_end", { toolCallId: "t1", toolName: "bash", isError: false, result: {} });
 	h.fire("agent_settled", { aborted: false });
-	seen.push(top(h));
+	seen.push(activity(h));
 	push(p.source, { agents: 0 });
-	seen.push(top(h));
+	seen.push(activity(h));
 	for (const line of seen) {
 		assert.doesNotMatch(line, /Working/);
 		assert.doesNotMatch(line, /[\u2800-\u28ff]/, "no braille spinner frame");
@@ -433,12 +437,13 @@ it("compaction completion clears the gold status, and the shimmer stops once ful
 	const h = harness(t);
 	h.fire("session_start", { reason: "startup" });
 	h.fire("session_before_compact", before());
-	assert.match(top(h), /── Compacting context /);
+	assert.match(activity(h), /^ Compacting context$/);
 	const busy = h.ui.renders;
 	h.tick(SHIMMER_MS);
 	assert.ok(h.ui.renders > busy, "the gold shimmer runs while compacting");
 	h.fire("session_compact", { reason: "manual", willRetry: false, fromExtension: false, compactionEntry: {} });
 	assert.equal(top(h), idleTop(h));
+	assert.deepEqual(activityRows(h), [], "successful compaction removes the activity rows");
 	const idle = h.ui.renders;
 	h.tick(1000);
 	assert.equal(h.ui.renders, idle, "the shimmer stopped with the status");
@@ -448,13 +453,15 @@ it("compaction cancel and abort clear the status through session_compact_failed"
 	const h = harness(t);
 	h.fire("session_start", { reason: "startup" });
 	h.fire("session_before_compact", before("manual"));
-	assert.match(top(h), /── Compacting context /);
+	assert.match(activity(h), /^ Compacting context$/);
 	h.fire("session_compact_failed", { reason: "manual", aborted: true, willRetry: false, fromExtension: true });
 	assert.equal(top(h), idleTop(h), "cancelled");
+	assert.deepEqual(activityRows(h), [], "cancelled compaction removes the activity rows");
 	h.fire("session_before_compact", before("overflow", true));
-	assert.match(top(h), /── Compacting context /);
+	assert.match(activity(h), /^ Compacting context$/);
 	h.fire("session_compact_failed", { reason: "overflow", aborted: true, willRetry: true, fromExtension: false });
 	assert.equal(top(h), idleTop(h), "aborted");
+	assert.deepEqual(activityRows(h), [], "aborted compaction removes the activity rows");
 	assert.match(bottom(h), /─/, "the meter is ordinary again, not the busy full meter");
 });
 
@@ -466,6 +473,8 @@ it("compaction error clears the status and its text never reaches the border", (
 		reason: "threshold", aborted: false, errorMessage: "provider down", willRetry: false, fromExtension: false,
 	});
 	assert.equal(top(h), idleTop(h));
+	assert.deepEqual(activityRows(h), [], "failed compaction removes the activity rows");
+	assert.doesNotMatch(activity(h), /provider down/);
 	assert.doesNotMatch(top(h), /provider down/);
 	assert.doesNotMatch(bottom(h), /provider down/);
 });
@@ -475,6 +484,7 @@ it("a compaction failure without a before event leaves no status and no shimmer"
 	h.fire("session_start", { reason: "startup" });
 	h.fire("session_compact_failed", { reason: "manual", aborted: false, errorMessage: "x", willRetry: false, fromExtension: false });
 	assert.equal(top(h), idleTop(h));
+	assert.deepEqual(activityRows(h), [], "failure without a before-event leaves no activity");
 	// The failure itself may ask for one plain redraw; the baseline is taken after it, so only a started timer would count.
 	const quiet = h.ui.renders;
 	h.tick(1000);
@@ -502,14 +512,14 @@ it("install, off, on and shutdown count subscriptions and release every listener
 	h.fire("session_start", { reason: "startup" });
 	assert.equal(h.bus.listeners(COUNTS_OFFER), 1);
 	assert.equal(p.source.listeners.size, 1);
-	assert.ok(h.ui.widgets.has(TITLE_KEY));
-	assert.equal(h.ui.placements.get(TITLE_KEY), "aboveEditor");
+	assert.ok(h.ui.widgets.has(ACTIVITY_KEY));
+	assert.equal(h.ui.placements.get(ACTIVITY_KEY), "aboveEditor");
 	const footer = h.ui.footerComponent!;
 
 	await h.command("off");
 	assert.equal(h.bus.listeners(COUNTS_OFFER), 0, "the offer listener is gone");
 	assert.equal(p.source.listeners.size, 0, "the source listener is gone");
-	assert.equal(h.ui.widgets.has(TITLE_KEY), false, "the title widget is removed");
+	assert.equal(h.ui.widgets.has(ACTIVITY_KEY), false, "the activity widget is removed");
 	assert.equal(h.ui.footerComponent, undefined, "the footer is restored to stock");
 	assert.equal(h.ui.editor, undefined, "our editor is restored to stock");
 	assert.deepEqual(footer.render(80), [], "the disposed footer draws nothing");
@@ -520,12 +530,12 @@ it("install, off, on and shutdown count subscriptions and release every listener
 	await h.command("on");
 	assert.equal(h.bus.listeners(COUNTS_OFFER), 1, "on subscribes once");
 	assert.equal(p.source.listeners.size, 1);
-	assert.ok(h.ui.widgets.has(TITLE_KEY));
+	assert.ok(h.ui.widgets.has(ACTIVITY_KEY));
 
 	h.fire("session_shutdown", { reason: "quit" });
 	assert.equal(h.bus.listeners(COUNTS_OFFER), 0, "shutdown releases the offer listener");
 	assert.equal(p.source.listeners.size, 0, "shutdown releases the source listener");
-	assert.equal(h.ui.widgets.has(TITLE_KEY), false, "shutdown clears the title widget");
+	assert.equal(h.ui.widgets.has(ACTIVITY_KEY), false, "shutdown clears the activity widget");
 	const after = h.ui.renders;
 	h.tick(GIT_POLL_MS * 2);
 	assert.equal(h.ui.renders, after, "no timer survives shutdown");
@@ -536,7 +546,7 @@ it("reinstall makes a fresh producer handshake and ignores the old source callba
 	const h = harness(t);
 	const p = new Producer(h.bus, { agents: 1 });
 	h.fire("session_start", { reason: "startup" });
-	assert.match(top(h), /── Waiting for 1 agent /);
+	assert.match(activity(h), /^ Waiting for 1 agent$/);
 	const old = p.source;
 	const stale = [...old.listeners];
 	p.source = source({ agents: 3 });
@@ -545,9 +555,9 @@ it("reinstall makes a fresh producer handshake and ignores the old source callba
 	assert.equal(p.requests, requests + 1, "reinstall asks the producer again");
 	assert.equal(h.bus.listeners(COUNTS_OFFER), 1);
 	assert.equal(old.listeners.size, 0, "the old source is released at reinstall");
-	assert.match(top(h), /── Waiting for 3 agents /, "the fresh source answers");
+	assert.match(activity(h), /^ Waiting for 3 agents$/, "the fresh source answers");
 	for (const listener of stale) listener({ agents: 9 });
-	assert.match(top(h), /── Waiting for 3 agents /, "late callbacks of the old source change nothing");
+	assert.match(activity(h), /^ Waiting for 3 agents$/, "late callbacks of the old source change nothing");
 	assert.equal(old.disposed, 0);
 });
 
@@ -571,51 +581,68 @@ it("install samples ctx.isIdle(), and a new session_start resets stale activity"
 	const h = harness(t);
 	h.idle(false);
 	h.fire("session_start", { reason: "startup" });
-	assert.match(top(h), /── Planning next moves /, "a busy main agent at install shows planning");
+	assert.match(activity(h), /^ Planning next moves$/, "a busy main agent at install shows planning");
 	h.fire("tool_execution_start", { toolCallId: "t1", toolName: "bash", args: { command: "npm test" } });
 	h.idle(true);
 	h.fire("session_start", { reason: "new" });
 	assert.equal(top(h), idleTop(h), "the new session starts from idle, tools cleared");
+	assert.deepEqual(activityRows(h), [], "new session clears stale tool activity");
 });
 
-it("title is an empty row until named, follows session_info_changed and clears on an undefined name", (t) => {
+it("the native title lives in the top border, follows name changes and disappears when cleared", (t) => {
 	const h = harness(t);
 	h.fire("session_start", { reason: "startup" });
-	assert.deepEqual(title(h), [""], "one empty row keeps the rule");
+	assert.equal(top(h), idleTop(h));
+	assert.deepEqual(activityRows(h), [], "idle widget adds no rows");
+	assert.equal(h.ui.widgets.has(TITLE_KEY), false, "there is no title widget");
 	h.pi.sessionName = "Fix login bug";
 	h.fire("session_info_changed", { name: "Fix login bug" });
-	assert.deepEqual(title(h), ["Fix login bug"]);
+	assert.match(top(h), /^── Fix login bug /);
+	assert.ok(h.ui.editor!.render(80)[0].includes(titleRow("Fix login bug", 13)), "static title keeps its gold ANSI");
 	h.pi.sessionName = undefined;
 	h.fire("session_info_changed", { name: undefined });
-	assert.deepEqual(title(h), [""]);
+	assert.equal(top(h), idleTop(h));
 });
 
-it("title takes the current native name on install, with no truncation of a long native name", (t) => {
+it("install samples a long native title without the naming extension's 32-character limit", (t) => {
 	const name = "Refactor the statusbar lifecycle and its long native title";
 	const h = harness(t, { name });
 	h.fire("session_start", { reason: "startup" });
-	assert.deepEqual(title(h, 100), [name]);
+	assert.match(top(h, 120), new RegExp(`^── ${name} ─+ ${h.manager.getSessionId()} ──$`));
 	assert.ok(name.length > 32);
+	assert.equal(visibleWidth(top(h, 120)), 120);
 });
 
-it("title is static across frames and states, with the same ANSI bytes", (t) => {
-	const h = harness(t, { name: "Refactor the statusbar lifecycle and its long native title" });
+it("the title is static during ordinary activity; compaction shimmers the entire top border gold", (t) => {
+	const name = "Fix login bug";
+	const h = harness(t, { name });
 	new Producer(h.bus, { agents: 1 });
 	h.fire("session_start", { reason: "startup" });
-	const widget = () => h.ui.widgets.get(TITLE_KEY)!.render(100)[0];
-	const frames = [widget()];
+	const raw = () => h.ui.editor!.render(100)[0];
+	const initial = raw();
 	h.fire("agent_start");
 	h.tick(SHIMMER_MS);
-	frames.push(widget());
+	assert.equal(raw(), initial);
 	h.fire("tool_execution_start", { toolCallId: "t1", toolName: "bash", args: { command: "npm test" } });
-	frames.push(widget());
+	assert.equal(raw(), initial);
 	h.fire("session_before_compact", before());
 	h.tick(SHIMMER_MS * 3);
-	frames.push(widget());
+	const compacting = raw();
+	assert.equal(strip(compacting), strip(initial), "activity never replaces the title");
+	assert.equal(compacting, shimmerText(strip(initial), 0, SHIMMER_MS * 4 / STATUS_FRAME_MS, GOLD), "rules, title and ID share the gold shimmer");
 	h.fire("session_compact", { reason: "manual", willRetry: false, fromExtension: false, compactionEntry: {} });
-	frames.push(widget());
-	for (const frame of frames) assert.equal(frame, frames[0]);
-	assert.equal(strip(frames[0]), "Refactor the statusbar lifecycle and its long native title");
+	assert.equal(raw(), initial);
+});
+
+it("active widget has exactly one leading space, no rules, one trailing empty row and no idle rows", (t) => {
+	const h = harness(t);
+	h.fire("session_start", { reason: "startup" });
+	assert.deepEqual(activityRows(h), []);
+	h.fire("agent_start");
+	assert.deepEqual(activityRows(h), [" Planning next moves", ""]);
+	assert.equal(top(h), idleTop(h), "activity does not enter the editor border");
+	h.fire("agent_settled", { aborted: false });
+	assert.deepEqual(activityRows(h), []);
 });
 
 it("the session ID appears once, on the top border only", (t) => {
@@ -625,7 +652,7 @@ it("the session ID appears once, on the top border only", (t) => {
 	const screen = [
 		...h.ui.editor!.render(80),
 		...h.ui.footerComponent!.render(80),
-		...h.ui.widgets.get(TITLE_KEY)!.render(80),
+		...h.ui.widgets.get(ACTIVITY_KEY)!.render(80),
 	].map(strip).join("\n");
 	assert.equal(screen.split(id).length - 1, 1);
 	assert.match(top(h), new RegExp(` ${id} ──$`));
@@ -732,57 +759,38 @@ it("a foreign editor replacing ours is never taken over and survives /statusbar 
 	assert.equal(h.ui.calls.includes("setEditorComponent"), false);
 });
 
-it("with our editor Pi's hidden spinner gets no frames (no 80 ms timer); off, shutdown and a foreign editor keep Pi's default", async (t) => {
+it("our editor leaves native working status outside the border and never configures its indicator", async (t) => {
 	const h = harness(t);
 	h.fire("session_start", { reason: "startup" });
-	assert.deepEqual(h.ui.workingIndicator, { frames: [] }, "installed with our editor: no spinner frames");
+	assert.equal((h.ui.editor as unknown as { embedWorkingStatus: boolean }).embedWorkingStatus, false);
 	await h.command("off");
-	assert.equal(h.ui.workingIndicator, undefined, "off restores Pi's default spinner");
 	await h.command("on");
-	assert.deepEqual(h.ui.workingIndicator, { frames: [] });
 	h.fire("session_shutdown", { reason: "quit" });
-	assert.equal(h.ui.workingIndicator, undefined, "shutdown restores it");
+	assert.equal(h.ui.calls.includes("setWorkingIndicator"), false);
 
 	const f = harness(t);
 	f.ui.setEditorComponent(() => ({ render: () => ["foreign"] }));
-	f.ui.calls.splice(0);
 	f.fire("session_start", { reason: "startup" });
-	assert.equal(f.ui.calls.includes("setWorkingIndicator"), false, "a foreign editor keeps Pi's spinner untouched");
+	assert.equal(f.ui.calls.includes("setWorkingIndicator"), false);
 });
 
-it("a foreign editor replacing ours restores Pi's spinner on the next tick or agent_start, and ours coming back hides it again", (t) => {
+it("editor replacement and restoration leave native indicator settings untouched on every activity tick", (t) => {
 	const h = harness(t);
-	new Producer(h.bus, { agents: 0 });
 	h.fire("session_start", { reason: "startup" });
 	const ours = h.ui.editorFactory;
-	const foreign = () => ({ render: () => ["foreign"] });
-	const setterCalls = () => h.ui.calls.filter((call) => call === "setWorkingIndicator").length;
 	h.fire("agent_start");
-	assert.deepEqual(h.ui.workingIndicator, { frames: [] }, "ours: hidden");
-
-	// Replaced mid-run: the shimmer tick notices it.
-	h.ui.setEditorComponent(foreign);
-	h.tick(SHIMMER_MS);
-	assert.equal(h.ui.workingIndicator, undefined, "foreign editor: Pi's spinner restored on the tick");
-	const restored = setterCalls();
+	h.ui.setEditorComponent(() => ({ render: () => ["foreign"] }));
 	h.tick(SHIMMER_MS * 10);
-	assert.equal(setterCalls(), restored, "the setter is called once per change, not per tick");
-
-	// Ours comes back: hidden again on the next tick.
 	h.ui.setEditorComponent(ours);
 	h.tick(SHIMMER_MS);
-	assert.deepEqual(h.ui.workingIndicator, { frames: [] }, "ours again: hidden");
-
-	// Replaced while idle (no timer): agent_start restores it before the next turn's spinner matters.
 	h.fire("agent_settled", { aborted: false });
-	h.ui.setEditorComponent(foreign);
+	h.ui.setEditorComponent(() => ({ render: () => ["foreign"] }));
 	h.tick(1000);
 	h.fire("agent_start");
-	assert.equal(h.ui.workingIndicator, undefined, "agent_start with a foreign editor restores it");
-	h.fire("agent_settled", { aborted: false });
+	assert.equal(h.ui.calls.includes("setWorkingIndicator"), false);
 });
 
-it("the bar never calls setWorkingVisible or any global status setter besides the spinner frames", async (t) => {
+it("the bar never calls setWorkingVisible or any global status setter", async (t) => {
 	const h = harness(t);
 	const p = new Producer(h.bus, { agents: 1 });
 	h.fire("session_start", { reason: "startup" });
@@ -795,7 +803,7 @@ it("the bar never calls setWorkingVisible or any global status setter besides th
 	await h.command("off");
 	await h.command("on");
 	h.fire("session_shutdown", { reason: "quit" });
-	const allowed = ["setWidget", "setFooter", "setEditorComponent", "getEditorComponent", "setWorkingIndicator"];
+	const allowed = ["setWidget", "setFooter", "setEditorComponent", "getEditorComponent"];
 	assert.deepEqual([...new Set(h.ui.calls)].filter((call) => !allowed.includes(call)), []);
 });
 
@@ -825,13 +833,13 @@ it("non-TUI modes read no UI, session name, tree or settings and open no subscri
 	assert.equal(h.ui.renders, 0);
 });
 
-it("normal widget path: the title row is registered before the footer, and the footer is installed and drawn", async (t) => {
+it("normal widget path: the activity widget is registered before the footer, and the footer is installed and drawn", async (t) => {
 	const h = harness(t, { widget: "normal" });
 	new Producer(h.bus, { agents: 0 });
 	h.fire("session_start", { reason: "startup" });
 	const order = h.ui.calls.filter((call) => call === "setWidget" || call === "setFooter" || call === "setEditorComponent");
-	assert.deepEqual(order, ["setWidget", "setEditorComponent", "setFooter"], "title widget first, then editor and footer");
-	assert.ok(h.ui.widgets.has(TITLE_KEY), "the title widget is registered");
+	assert.deepEqual(order, ["setWidget", "setEditorComponent", "setFooter"], "activity widget first, then editor and footer");
+	assert.ok(h.ui.widgets.has(ACTIVITY_KEY), "the activity widget is registered");
 	assert.ok(h.ui.footerComponent, "the footer is installed");
 	assert.ok(h.ui.footerComponent.render(80).length > 0, "the footer draws rows");
 	assert.equal(top(h), idleTop(h), "the editor top border is ours");
@@ -841,13 +849,13 @@ it("throwing setWidget: the footer and the editor still install, off restores st
 	const h = harness(t, { widget: "throws" });
 	const p = new Producer(h.bus, { agents: 1 });
 	h.fire("session_start", { reason: "startup" });
-	assert.ok(h.ui.calls.includes("setWidget"), "the title call was attempted");
+	assert.ok(h.ui.calls.includes("setWidget"), "the activity call was attempted");
 	assert.ok(h.ui.calls.indexOf("setWidget") < h.ui.calls.indexOf("setFooter"), "the attempt came before the footer");
 	assert.ok(h.ui.footerComponent, "the footer is installed despite the widget error");
 	assert.ok(h.ui.footerComponent.render(80).length > 0, "the footer draws rows");
 	assert.ok(h.ui.editor, "our editor is installed despite the widget error");
-	assert.match(top(h), /── Waiting for 1 agent /, "activity survives a throwing title");
-	assert.equal(h.ui.widgets.has(TITLE_KEY), false, "no title widget was stored");
+	assert.equal(top(h), idleTop(h), "widget failure never moves activity into the border");
+	assert.equal(h.ui.widgets.has(ACTIVITY_KEY), false, "no activity widget was stored");
 	assert.equal(p.source.listeners.size, 1, "counts are still subscribed");
 
 	await h.command("off");
@@ -880,7 +888,7 @@ it("absent setWidget: the footer and the editor still install, off restores stoc
 	assert.ok(h.ui.footerComponent, "the footer is installed without setWidget");
 	assert.ok(h.ui.footerComponent.render(80).length > 0, "the footer draws rows");
 	assert.ok(h.ui.editor, "our editor is installed without setWidget");
-	assert.match(top(h), /── Waiting for 1 agent /, "activity survives a missing title");
+	assert.equal(top(h), idleTop(h), "a missing widget never moves activity into the border");
 	assert.equal(p.source.listeners.size, 1, "counts are still subscribed");
 
 	await h.command("off");
