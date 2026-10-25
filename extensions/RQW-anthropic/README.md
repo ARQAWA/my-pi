@@ -1,7 +1,9 @@
 # RQW-anthropic
 
 Subscription transport for stock Pi 1.4.0. `/login anthropic` still uses Pi's browser or copy-code login.
-The builtin model catalog and Pi's message/tool parser stay intact. Plain API-key requests pass through unchanged.
+The builtin model catalog and Pi's message/tool parser stay intact. Plain API-key requests pass through unchanged,
+including native custom SDK clients. OAuth requests ignore `options.client` and use Pi's OAuth builder with the
+protected subscription fetch, so a custom client's origin or fetch cannot bypass signing, origin checks or recovery.
 This extension is the Anthropic transport only. Hiding the other providers (only `anthropic` and `openai-codex`
 stay visible) is the separate [RQW-providers](../RQW-providers/README.md); each works with the other switched off.
 
