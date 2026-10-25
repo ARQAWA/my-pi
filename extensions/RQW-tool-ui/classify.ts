@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { ToolRenderContext } from "./index.ts";
 
 export type Kind = "read" | "search" | "run" | "wait" | "other" | "edit";
-export type Status = "running" | "done" | "error";
+export type Status = "running" | "done" | "error" | "aborted";
 
 export interface Classified {
 	kind: Kind;
@@ -24,7 +24,9 @@ export interface Classified {
 }
 
 /** The fields of Pi's render context the classifiers read; every one may be missing. */
-export type CallContext = Partial<Pick<ToolRenderContext, "toolCallId" | "isPartial" | "isError" | "cwd">>;
+export type CallContext = Partial<Pick<ToolRenderContext, "toolCallId" | "isPartial" | "isError" | "cwd">> & {
+	stopReason?: "aborted" | "error";
+};
 
 /** The fields of a tool result the classifiers read. */
 export interface CallResult {
@@ -126,6 +128,7 @@ function exitCodeOf(result: CallResult | undefined): number | undefined {
 
 // Not `argsComplete`: Pi leaves it false for calls replayed from history, which do have their result.
 export function statusOf(result: CallResult | undefined, context: CallContext, failed = false): Status {
+	if (context.stopReason) return context.stopReason;
 	if (context.isPartial) return "running";
 	if (context.isError || result?.isError || failed) return "error";
 	return result ? "done" : "running";

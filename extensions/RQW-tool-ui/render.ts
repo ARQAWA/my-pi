@@ -44,7 +44,7 @@ const EMPTY: Component = { render: () => [], invalidate: () => {} };
 
 /** A classified member of a group, as the summary and the live block take it. */
 export function classifyMember(m: Member, cwd: string | undefined): Classified | ChangeClassified {
-	const context = { toolCallId: m.id, isPartial: m.isPartial, isError: m.isError === true, ...(cwd ? { cwd } : {}) };
+	const context = { toolCallId: m.id, isPartial: m.isPartial, isError: m.isError === true, stopReason: m.stopReason, ...(cwd ? { cwd } : {}) };
 	return m.toolName === "edit" || m.toolName === "write" ? classifyChange(m.toolName, m.args, m.result, context) : classify(m.toolName, m.args, m.result, context);
 }
 

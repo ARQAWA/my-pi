@@ -3,7 +3,7 @@
 // the content of a confirmed write); never from the requested old/new text, never from the disk.
 import { type CallContext, type CallResult, type Classified, normalizePath, oneLine, outputOf, record, statusOf, str } from "./classify.ts";
 
-export type FileStatus = "running" | "done" | "error" | "possibly_changed";
+export type FileStatus = "running" | "done" | "error" | "aborted" | "possibly_changed";
 
 export interface FileChange {
 	path: string;

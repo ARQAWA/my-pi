@@ -41,7 +41,9 @@ export interface Member {
 	parentId?: string;
 	result?: CallResult;
 	isError?: boolean;
-	/** True while the call has no final result. */
+	/** The assistant stopped before this call could receive an execution result. */
+	stopReason?: "aborted" | "error";
+	/** True while the call has no terminal outcome. */
 	isPartial: boolean;
 	/** A nested call the saved record left `unfinished`: it stopped with its parent, its outcome is unknown. It has
 	 * no result; the wiring must not show it as running, succeeded or failed, nor count its changes. */
@@ -158,7 +160,7 @@ export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveS
 	const groups: Building[] = [];
 	let open: Building | undefined;
 	const seenCalls = new Set<string>();
-	const addCall = (call: Record<string, unknown>) => {
+	const addCall = (call: Record<string, unknown>, assistantStopReason: unknown) => {
 		const id = call.id as string;
 		if (seenCalls.has(id)) return;
 		seenCalls.add(id);
@@ -172,13 +174,14 @@ export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveS
 		const saved = results.get(id);
 		const run = executions.get(id);
 		const final = saved ?? (run?.ended ? { ...run.result, isError: run.isError } : undefined);
+		const stopReason = !final && (assistantStopReason === "aborted" || assistantStopReason === "error") ? assistantStopReason : undefined;
 		const nested = nestedOf(id, saved, executions, topOf);
 		open.started.push(id, ...nested.map((n) => n.id));
-		if (!final) open.pending.push(id);
+		if (!final && !stopReason) open.pending.push(id);
 		if (nested.length === 0) {
 			const result = resultOf(final ?? run?.partialResult);
 			g.members.push({ id, toolName: String(call.name ?? ""), args: call.arguments ?? {}, ...(result ? { result } : {}),
-				...(final ? { isError: final.isError === true } : {}), isPartial: !final,
+				...(final ? { isError: final.isError === true } : {}), ...(stopReason ? { stopReason } : {}), isPartial: !final && !stopReason,
 				...(typeof saved?.durationMs === "number" ? { durationMs: saved.durationMs } : typeof run?.durationMs === "number" ? { durationMs: run.durationMs } : {}) });
 		} else g.members.push(...nested);
 	};
@@ -189,7 +192,7 @@ export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveS
 			for (const c of Array.isArray(r.content) ? r.content : []) {
 				const block = record(c);
 				if (block.type === "text" && typeof block.text === "string" && block.text.trim() !== "") open = undefined;
-				else if (block.type === "toolCall" && typeof block.id === "string" && block.id !== "") addCall(block);
+				else if (block.type === "toolCall" && typeof block.id === "string" && block.id !== "") addCall(block, r.stopReason);
 			}
 		} else if (role === "user" || role === "bashExecution" || role === "branchSummary" || role === "compactionSummary" || role === "break") open = undefined;
 		else if (role === "custom" && r.display === true) open = undefined;

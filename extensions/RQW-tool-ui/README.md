@@ -91,7 +91,10 @@ profiles and skills for the ordinary `agent` runtime.
 - `live.ts`: `renderLive(call, width, theme)`, the live card of the current call under the line, indented three
   columns: header (`$ <command>`, `read`/`grep`/`find`/`edit`/`write <target>`, `wait <ids>`, `<tool> <arg>`, cut
   at the start so the end stays visible), the last four output rows (an edit's confirmed diff when there is one)
-  and a status row (`running`, `✓ 1.2s`, `✗ exit 2 · 3.1s`, `✗ error`; the time only from Pi's final duration).
+  and a status row (`running`, `✓ 1.2s`, `✗ exit 2 · 3.1s`, `✗ error`, `aborted`; the time only from Pi's final duration).
+  An assistant stopped with `aborted` or `error` before execution gives its calls that terminal status, in the live
+  stream and saved history, without inventing a tool result. Aborted status uses the theme's error foreground and
+  tool surface, not the tool-title color. Confirmed execution results keep their own status.
   One solid card on Pi's pending, success or error tool surface; title, output, diff and status roles from the theme.
 - `groups.ts`: `buildGroups(contextEntries, live)` from `ctx.sessionManager.buildContextEntries()` (the entries Pi draws:
   after a compaction only the compaction and the kept entries) plus the streaming state of public events:
