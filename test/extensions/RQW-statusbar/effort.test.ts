@@ -7,7 +7,7 @@ import { effortText, modelRow, type Role } from "../../../extensions/RQW-statusb
 
 const { loadThemeFromPath } = await import(new URL("./modes/interactive/theme/theme.js",
 	import.meta.resolve("@earendil-works/pi-coding-agent")).href);
-const asset = fileURLToPath(new URL("../../../extensions/RQW-theme/theme.json", import.meta.url));
+const asset = fileURLToPath(new URL("./effort-theme.json", import.meta.url));
 const levels = { off: "no", minimal: "min", low: "lo", medium: "md", high: "hi", xhigh: "xh", max: "mx" } as const;
 const tokens = { off: "thinkingOff", minimal: "thinkingMinimal", low: "thinkingLow", medium: "thinkingMedium",
 	high: "thinkingHigh", xhigh: "thinkingXhigh", max: "thinkingMax" } as const;
