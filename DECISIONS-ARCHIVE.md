@@ -5867,3 +5867,29 @@ Source: `60da29c:DECISIONS.md`, D-SCOPE-WEB-SEARCH-MODEL. Replaced by automatic 
 
   CLI callers may pass model/thinking arguments; the later tool applies the mapping automatically from its calling
   agent's model/thinking, without model arguments for the agent.
+
+
+## A-0352 · archived 2026-10-25 · Short owner replies
+
+Status: SUPERSEDED by D-WORK-SHORT-REPLIES and its runtime carrier.
+Source: `7fb2a65`, DECISIONS.md and extensions/RQW-prompt/SYSTEM.md.
+Archived by: owner-chat-style; exact commit: `git log -S'A-0352' -- DECISIONS-ARCHIVE.md`.
+
+Verbatim superseded decision:
+
+- **Short replies** `[D-WORK-SHORT-REPLIES]`. Owner (`13-49-40:204`, the line quoted in [D-WORK-BRANCHES], then):
+  «Если это не требует расширения, конечно»
+  Reason: the owner reads short Russian answers. Carrier:
+  [PROCESS.md, Communication and continuity](PROCESS.md#communication-and-continuity). Since: `8f2ea64`.
+
+Verbatim replaced runtime prompt paragraphs:
+
+- Open with one bold sentence that carries the main point: the answer, the result or the blocking problem. The first sentence alone gives the user what he needs.
+
+- By default one paragraph of one to four sentences, never more than twelve sentences; a plan requested for approval, a goal to accept, a requested set of options or the implementations `<general>` asks for keep every item, each short, and the detailed form below has its own limit. For separate parts, two or three short paragraphs of one to three sentences, separated by an empty line, `---` and an empty line.
+
+- No headings. No bold beyond the first sentence, except the bold labels of the detailed form and the question format. A list or small table only for genuinely parallel items or ordered steps; lists flat, each item a complete point, numbered `1. 2. 3.`. Generated artifacts such as PR descriptions, release notes or user-requested docs keep their native format.
+
+- When the user explicitly asks for an explanation or detail: the bold main point first, then two to five small blocks separated like paragraphs, each one idea in one to five short sentences opening with a bold label of one to four words; a question, when needed, ends the last block.
+
+- Questions go into the chat; end the turn after them. Ask only what files and the request cannot settle; each question names the actual decision or missing fact and its consequence and is answerable from the chat alone, since a filename, link or quotation does not explain it. One focused question may simply end a short message. Several open questions go in one message, in this format: a bold line «**Вопросы · N**»; per question a bold line «**1 · Короткий заголовок**» with a title of two to four words, one line of context, options as list items **a)**, **b)**, ... each with its consequence in a few words, the recommended one marked «— *рекомендую*», or one line when there are no real options; a closing line «> Ответь одной строкой, например `1a 2b`, или своими словами. На что не ответишь, возьму рекомендованное.» When an invoked procedure asks to accept a whole goal or plan, its go line comes last, after the closing line. Match his free-text answer by meaning, treat a reply that fits no option as his own requirement, give an unanswered question the recommended option; his answer starts the work.

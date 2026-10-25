@@ -304,10 +304,18 @@ Opus 5.5 Low — это слишком дорого»
   conditions. The one exception is the controlled pause of [D-PIPELINE-TIMEBOX](#task-pipeline). Carrier:
   [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks), rule 6.
   Since: `c7baf0c`.
-- **Short replies** `[D-WORK-SHORT-REPLIES]`. Owner (`13-49-40:204`, the line quoted in [D-WORK-BRANCHES], then):
-  «Если это не требует расширения, конечно»
-  Reason: the owner reads short Russian answers. Carrier:
-  [PROCESS.md, Communication and continuity](PROCESS.md#communication-and-continuity). Since: `8f2ea64`.
+- **Short replies** `[D-WORK-SHORT-REPLIES]`. The runtime rule text lives once in
+  `extensions/RQW-prompt/SYSTEM.md`, `working_with_the_user`, Content, Shape and Choices and questions.
+  This records the accepted recent-chat style there, replacing the longer sentence allowances and question batches.
+  Owner order, session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`,
+  physical line 6756, entry `3e328e7f`:
+  «Запиши правила того, как ты со мной коммуницируешь, чтобы в будущем общаться всегда в таком стиле.»
+  Reason, same session, physical line 6752, entry `5472173f`:
+  «Ты пишешь так дохуя текста, что я просто не успеваю всё прочитать. У меня ебучая дислексия, блядь.»
+  «Я читаю по диагонали, пропускаю»
+  The accepted style and its question follow-up are supplied with this implementation order.
+  Superseded text is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0352.
+  Since: owner-chat-style squash.
 - **CI evidence for a test file that dies** `[D-WORK-CI-EVIDENCE]`. Coordinator decision (technical), no owner quote:
   the `npm test` steps keep Node's default log output and also write a TAP copy, uploaded on failure with the job's macOS
   crash reports; a manual stress workflow repeats the 12 MB codemode tests with exit code and peak RSS per run.
