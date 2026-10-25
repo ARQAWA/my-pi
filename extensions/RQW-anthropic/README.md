@@ -108,7 +108,7 @@ cadence; this provider has no timer. Refresh errors reject with a sanitized `Quo
 `http`, `response` or `network`; HTTP errors carry `status` and optional raw `retryAfter`. They do not erase
 or re-date the last successful snapshot. Callers must use `fetchedAt` to distinguish cached data from a fresh
 result. Upstream bodies and credential values are never exposed. Abort cancels this quota read; provider
-disposal aborts pending reads and clears the cache. A late earlier refresh cannot overwrite a newer result.
+disposal aborts pending reads and clears the cache. A late earlier refresh cannot overwrite a newer successful result.
 No statusbar display, colors, scheduler, options or settings are added here.
 
 ## One-shot context fork
