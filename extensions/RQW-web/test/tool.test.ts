@@ -10,7 +10,7 @@ import type { TargetResult, TargetRun, TargetRunner } from "../core/types.ts";
 
 const roots: string[] = [];
 after(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
-const root = () => { const path = mkdtempSync(join(tmpdir(), "rqw-web-tool-")); roots.push(path); return path; };
+const root = () => { const path = mkdtempSync(join(tmpdir(), "rqw-search-tool-")); roots.push(path); return path; };
 const ok = (run: TargetRun): TargetResult => ({
 	target: run.target, model: run.model, effort: run.effort, mode: run.mode, responseLength: run.responseLength,
 	status: "ok", summary: `Answer for ${run.target.value}: [Docs](https://example.com/docs)`,

@@ -38,7 +38,7 @@ async function setup(scripts = [events(call(search)), events(message())]) {
 	return { options, requests, alpha, counts, store, transport, onSend: (fn: typeof onSend) => { onSend = fn; } };
 }
 
-describe("rqw-web shared native mechanism", () => {
+describe("rqw-search shared native mechanism", () => {
 test("native Lite prefix, exact raw replay, sourced summary and opaque annotations/results", async () => {
 	const reasoning = { type: "reasoning", id: "reason-1", encrypted_content: "cipher-only-in-memory", future: 42 };
 	const webCall = call(search);

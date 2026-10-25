@@ -1,4 +1,3 @@
-// Adapted from cli/web/engine.ts at git a85b810e924010f35387045fc0cbbd9a1e7173cc.
 import { researchTarget } from "./web-engine.ts";
 import { createReadOnlyCredentialStore } from "./credentials.ts";
 import type { TargetRunner } from "./types.ts";

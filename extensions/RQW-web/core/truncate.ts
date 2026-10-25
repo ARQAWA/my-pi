@@ -1,4 +1,3 @@
-// Adapted from cli/web/truncate.ts at git a85b810e924010f35387045fc0cbbd9a1e7173cc.
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,7 +9,7 @@ const bytes = (text: string) => Buffer.byteLength(text, "utf8");
 
 /** Saves the full text in a new temp directory and returns the file path. */
 export async function saveFullResult(text: string, root: string = tmpdir()): Promise<string> {
-	const dir = await mkdtemp(join(root, "rqw-web-"));
+	const dir = await mkdtemp(join(root, "rqw-search-"));
 	const path = join(dir, "result.md");
 	await writeFile(path, text);
 	return path;

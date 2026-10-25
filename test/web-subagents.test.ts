@@ -13,7 +13,7 @@ const call = (name: string, args: object) => fauxAssistantMessage([fauxToolCall(
 const answer = (text: string) => () => fauxAssistantMessage(text);
 
 async function fixture(web: boolean) {
-	const dir = await mkdtemp(join(tmpdir(), "rqw-web-subagents-"));
+	const dir = await mkdtemp(join(tmpdir(), "rqw-search-subagents-"));
 	await writeFile(join(dir, "auth.json"), "{}");
 	const previous = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;

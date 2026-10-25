@@ -1,4 +1,3 @@
-// Adapted from cli/web/model-map.ts at git a85b810e924010f35387045fc0cbbd9a1e7173cc.
 import { codexModelCapabilities } from "../vendor/profile.ts";
 import { UsageError, type SearchPlan } from "./types.ts";
 

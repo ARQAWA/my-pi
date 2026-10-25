@@ -6,7 +6,7 @@ export function createWebExtension(deps: WebDependencies = {}) {
 	const register = (pi: ExtensionAPI) => pi.registerTool(createWebTool(pi, deps));
 	return (pi: ExtensionAPI): void => {
 		register(pi);
-		pi.events.on("rqw-web:subagent-web", request => {
+		pi.events.on("rqw-search:subagent-web", request => {
 			(request as { offer?: (register: typeof register) => void })?.offer?.(register);
 		});
 	};

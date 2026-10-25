@@ -1,4 +1,3 @@
-// Adapted from cli/web/safe-text.ts at git a85b810e924010f35387045fc0cbbd9a1e7173cc.
 /** Redacts anything that looks like a credential before text reaches stdout, stderr or a file. */
 export function redact(text: string): string {
 	return text

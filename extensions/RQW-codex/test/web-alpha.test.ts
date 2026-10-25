@@ -39,7 +39,7 @@ function safeError(error: unknown): boolean {
 	return true;
 }
 
-describe("rqw-web shared native mechanism", () => {
+describe("rqw-search shared native mechanism", () => {
 describe("alpha/search JSON adapter", () => {
 	it("sends native JSON to the fixed official endpoint with safe search headers and opaque results", async () => {
 		const results = [{ future: { nested: [null, 4, { extra: "kept" }] } }, "opaque", false];

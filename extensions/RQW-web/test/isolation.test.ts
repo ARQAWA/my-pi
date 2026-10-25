@@ -30,7 +30,7 @@ describe("RQW-web independence", () => {
 	});
 
 	it("loads only this extension without either tools or Codex extensions", async () => {
-		const dir = await mkdtemp(join(tmpdir(), "rqw-web-isolation-"));
+		const dir = await mkdtemp(join(tmpdir(), "rqw-search-isolation-"));
 		try {
 			const loader = new DefaultResourceLoader({ cwd: dir, agentDir: dir, noExtensions: true, additionalExtensionPaths: [EXTENSION],
 				noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
@@ -57,7 +57,7 @@ describe("RQW-web independence", () => {
 				status: "ok", summary: "[Docs](https://example.com)", sources: [{ url: "https://example.com" }], citations: [], actions: [], results: [] };
 		} });
 		extension({ registerTool: tool => { parentTool = tool; }, getThinkingLevel: () => "low",
-			events: { on: (name, callback) => { assert.equal(name, "rqw-web:subagent-web"); handler = callback; } } } as unknown as ExtensionAPI);
+			events: { on: (name, callback) => { assert.equal(name, "rqw-search:subagent-web"); handler = callback; } } } as unknown as ExtensionAPI);
 		assert.ok(parentTool);
 		let register: ((api: ExtensionAPI) => void) | undefined;
 		handler!({ offer: (value: typeof register) => { register = value; } });

@@ -1,4 +1,3 @@
-// Adapted from cli/web/types.ts at git a85b810e924010f35387045fc0cbbd9a1e7173cc.
 import type { TargetResult, WebMode, WebResponseLength, WebTarget, WebSource } from "./web-types.ts";
 
 export type { TargetResult, WebMode, WebResponseLength, WebTarget, WebSource };

@@ -259,7 +259,7 @@ type WebRegistrar = (child: ExtensionAPI) => void;
 
 function offeredWeb(events: ExtensionAPI["events"]): WebRegistrar | undefined {
 	let register: WebRegistrar | undefined;
-	events.emit("rqw-web:subagent-web", { offer: (value: WebRegistrar) => { register = value; } });
+	events.emit("rqw-search:subagent-web", { offer: (value: WebRegistrar) => { register = value; } });
 	return register;
 }
 

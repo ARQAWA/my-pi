@@ -5577,6 +5577,37 @@ Archived by: context-simplify delivery; exact commit: `git log -S'A-0324' -- DEC
 >   Coordinator text. Reason: physical limits must not leak across concurrent operations or alter native selection identity.
 >   Carrier: `extensions/RQW-context/index.ts` (`wrapAgentState`, `wrapRouting`, `wrapCompactionSettings`, `reserveIntents`); details: `notes/context-questions.md`. Since: `6eb01a7`.
 
+
+## A-WEB-CLI-REMOVED - archived 2026-10-25
+
+Replacement: the shipped `web` tool in `extensions/RQW-web/`, decision D-WEB-REMOVE-CLI.
+Source: origin/main 4c8ff26; preceding active Web search CLI decision preserved verbatim below.
+Owner order in the current repository session: «эту хуйню удалить - cli/web»; full owner message: «эту хуйню удалить - cli/web: прежняя команда поиска из терминала, её теперь заменяет web.»
+
+## Web search CLI
+
+The shipped independent `web` tool lives in `extensions/RQW-web/`; `bin/rqw-web.mjs` remains a compatible repository-local shell entry over the same core. Contract: [RQW-web README](extensions/RQW-web/README.md), [CLI README](cli/web/README.md). Research and ready-made alternatives: `/Users/arkadijcukavin/ai-project/my-pi-evidence/web-search/RESEARCH.md`. Superseded phase-1-only text is preserved in [the archive](DECISIONS-ARCHIVE.md#a-web-phase1--archived-2026-10-24--web-search-cli).
+
+- **Own thin implementation** `[D-WEB-CLI]`. Owner (`16-27-59:4782`): «Надо посмотреть ее кишки, взять ее базу, облегчить ее.» Owner (`16-27-59:4888`): «Это будет просто CLI, которую агент будет вызывать из shell.» Owner (`16-27-59:4917`): «Делаем клон Codex, чтобы наш агент работал с этой хуйнёй так же, как с Codex.» The owner ordered a lightweight own base. Researched alternatives were not adopted: actively maintained MIT `pi-web-access` 0.44.0 has 9 direct dependencies, 208 lock entries and about 10.3 MB unpacked, many unrelated providers and features, and a different normal OpenAI search path; a separate Codex CLI duplicates the agent environment/auth; API-key Responses has different billing. Only batching, sourced answers, explicit errors and overflow continuation ideas are reused. Carrier: `extensions/RQW-web/`.
+- **Tool and CLI interface** `[D-WEB-INTERFACE]`. Owner (`16-27-59:4917`): «Если для агента это будет тяжело, то сделай две команды. А если казуально, то оставь одну» One tool `web` takes nonempty `queries` OR `urls`, optional URL-only `focus`, `mode: cached|live|indexed` and `response_length: short|medium|long`. It returns concise summaries, supporting links, statuses and actual search model/thinking. The CLI preserves repeated `--query` OR `--url`, URL-only `--focus`, explicit required `--caller-model` and `--thinking`, `--mode` and `--response-length`. There is no npm bin or global command. Carrier: `extensions/RQW-web/tool.ts`, `description.md`, `cli/web/`, `bin/rqw-web.mjs`.
+- **Automatic model mapping** `[D-WEB-MAPPING]`. Owner (`16-27-59:4941`): «Да, всё именно так, как ты записал.» Owner (`16-27-59:4937`): «Давай так: для Haiku 5.5 будет Luna 5.6. Для Sonnet 5.5 будет Sol 6, а для Opus 5.5 будет Sol 6.1. Вот и всё.» Owner (`16-27-59:4945`): «Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться» The tool captures `ctx.model` and its own Pi API's `getThinkingLevel()` at each invocation, not the coordinator model; model arguments are absent. The model rule stays in [D-SCOPE-WEB-SEARCH-MODEL](#scope).
+
+  | Calling model | Search model | Thinking |
+  | --- | --- | --- |
+  | Recognized `openai-codex` GPT | Same exact model | Same level |
+  | `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | Same level |
+  | `anthropic/claude-sonnet-5-5` | `gpt-6-sol` | Same level |
+  | `anthropic/claude-opus-5-5` | `gpt-6.1-sol` | low -> low, medium -> high, high -> xhigh, above high -> max |
+  | Unknown or missing model, including unknown GPT slug | `gpt-6.1-sol` | low |
+
+  Owner's fallback (`16-27-59:6331`, entry `e3aba5d4`): «если короче это модель не опознанная то всегда по дефолту 6.1 сол лоу юзать» Known callers with unsupported thinking fail explicitly; Claude `off` and `minimal` stay unmapped. Carrier: `extensions/RQW-web/core/model-map.ts`.
+- **Engine** `[D-WEB-ENGINE]`. The existing Codex CLI 0.164.0 source research selected the Responses Lite path `web.run -> POST alpha/search -> function_call_output -> sourced answer`, not hosted-only `web_search`. Each target has an ephemeral web-only loop, no Pi AgentSession, stored history, provider registration, prewarm or compaction. Pure transport/auth code is a minimal local snapshot with original path and commit headers; no import reaches another extension. The snapshot retains the existing 0.163.0 transport pin. Reason: preserve the researched subscription mechanism while keeping RQW-web independently switchable. Carrier: `extensions/RQW-web/core/`, `vendor/`.
+- **Read-only credentials** `[D-WEB-AUTH]`. The public `readStoredCredential` supplies only saved `openai-codex` OAuth. No auth writes, copied auth files, refresh, private ModelRuntime credentials or API-key/other-provider fallback. Missing, expiring or rejected login returns a hint to use Pi for refresh or `/login openai-codex`, then retry. Carrier: `extensions/RQW-web/core/credentials.ts`.
+- **Defaults and bounds** `[D-WEB-DEFAULTS]`. The wrapper retains the existing CLI core's behavior: `cached`, `short`, three concurrent targets with the rest queued, target timeout 120000 ms, input-order results with independent errors. Normalized model-facing output is capped at 2000 lines or 48 KiB; overflow returns a full-result path and exact next line rather than another paid request. No raw reasoning, headers or secrets are written. Each target consumes subscription usage, with no requested GPT Fast. Carrier: `core/batch.ts`, `core/report.ts`, `core/truncate.ts`.
+- **All agents, independent loading** `[D-WEB-ACCESS]`. Owner (`16-27-59:4917`): «Это будет инструмент, который будет доступен всем агентам, и воркеры будут типа нашей матрицы агентов и исполнителей, она никак не меняется.» Normal package loading registers `web`. RQW-agent receives the optional `rqw-web:subagent-web` offer on `pi.events` and registers against each child's own API, recursively. It needs neither RQW-tools nor RQW-codex enabled. Disabling RQW-web removes its main tool and offer; existing children retain their startup tools until restarted. The shell entry remains repository-local after `npm ci`. Carrier: `package.json`, `extensions/RQW-web/index.ts`, `extensions/RQW-agent/index.ts`.
+- **Cross-platform ordinary temporary files** `[D-WEB-TEMP-FILES]`. Owner (`16-27-59:6372`, entry `f7f8b0ad`, 2026-10-24): «Насчет этой хуйни, заморочки с файлами на разных пользователей — поебать вообще» and «Не надо никаких заебов. Надо просто, чтобы все работало стабильно, быстро, производительно и эффективно». Overflow uses ordinary OS temporary files on every platform, with no explicit POSIX modes, per-user privacy contract, NTFS ACL handling or privacy assertions. This overrides the former phase-1 private-file requirement and the proposed NTFS treatment. Windows tests exercise actual behavior without mode-bit assumptions. `.gitattributes` pins `web-native-tools.json` with `-text` because the exact source-provenance hash must survive Windows checkout conversion. Carrier: `core/truncate.ts`, `.gitattributes`, web tests.
+
+Since: web-search-tool.
 ## Statusbar title layout · archived 2026-10-25
 
 Status: SUPERSEDED by the current `[D-STATUSBAR-ACTIVITY]`, `[D-STATUSBAR-TOP]`,
@@ -5828,3 +5859,11 @@ Source: `923ba22:DECISIONS.md`, replaced passage verbatim.
 Archived by: release-pipeline-priority; exact commit: `git log -S'A-0351' -- DECISIONS-ARCHIVE.md`.
 
 >   changes. Light self-review for unintended additions, commit and push main replace the full delivery pipeline,
+
+
+### Retired caller-argument wording
+
+Source: `60da29c:DECISIONS.md`, D-SCOPE-WEB-SEARCH-MODEL. Replaced by automatic shipped-tool mapping, D-WEB-REMOVE-CLI. Verbatim retired text:
+
+  CLI callers may pass model/thinking arguments; the later tool applies the mapping automatically from its calling
+  agent's model/thinking, without model arguments for the agent.

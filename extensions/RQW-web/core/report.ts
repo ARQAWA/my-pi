@@ -1,4 +1,3 @@
-// Adapted from cli/web/report.ts at git a85b810e924010f35387045fc0cbbd9a1e7173cc.
 import { normalizeText } from "./safe-text.ts";
 import type { RunOptions, TargetResult, WebSource } from "./types.ts";
 
@@ -80,7 +79,7 @@ function splitLongLines(text: string): string {
 export function renderReport(results: TargetResult[], options: RunOptions): string {
 	const ok = results.filter(result => result.status === "ok").length;
 	const head = [
-		`# rqw-web: ${results.length} target${results.length === 1 ? "" : "s"}, ${ok} ok, ${results.length - ok} failed`,
+		`# rqw-search: ${results.length} target${results.length === 1 ? "" : "s"}, ${ok} ok, ${results.length - ok} failed`,
 		`search model ${options.search.model}, effort ${options.search.effort}, mode ${options.mode}, response length ${options.responseLength}`,
 		"",
 		"## Targets",

@@ -4,7 +4,7 @@
 Optional `agent_type` selects a Codex TOML profile on this same lifecycle. Every subagent has `agent` itself,
 recursively and without a depth limit. This extension imports no other RQW extension. Optional RQW-tools definitions come exclusively from a fresh
 `rqw-tools:subagent-tools` factory offer on `pi.events`; with no offer, Pi supplies stock tools.
-When RQW-web is loaded, its optional `rqw-web:subagent-web` registration offer also supplies `web` to every child,
+When RQW-web is loaded, its optional `rqw-search:subagent-web` registration offer also supplies `web` to every child,
 including nested agents. Each call uses that child's model and thinking; no import reaches RQW-web.
 
 ## Prompt and title

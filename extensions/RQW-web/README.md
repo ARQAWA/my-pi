@@ -25,7 +25,7 @@ sources, cite the supporting links near claims, and read the evidence before sta
 ## Automatic model mapping
 
 `ctx.model` and the calling session's `getThinkingLevel()` are captured at invocation. There are no model arguments.
-The canonical table and owner sources are in [DECISIONS.md](../../DECISIONS.md#web-search-cli).
+The canonical table and owner sources are in [DECISIONS.md](../../DECISIONS.md#web-search).
 
 | Caller | Search model | Thinking |
 | --- | --- | --- |
@@ -47,11 +47,10 @@ use Pi to refresh the grant or run `/login openai-codex`, then retry.
 The ephemeral web-only loop preserves the CLI mechanism: Responses Lite `web.run`, `POST alpha/search`, function
 result, sourced answer. It creates no Pi session, history, provider registration, prewarm or compaction. Its pure
 transport/auth snapshot is local under `vendor/`, with original file and commit in each copied source header.
-The engine and mapping are shared with the repository-local [rqw-web CLI](../../cli/web/README.md).
 
 ## Subagents and switching off
 
-RQW-agent requests the optional `rqw-web:subagent-web` offer on `pi.events` and registers the tool in each child API.
+RQW-agent requests the optional `rqw-search:subagent-web` offer on `pi.events` and registers the tool in each child API.
 Nested agents use the same root bus and receive their own tool; model/thinking come from that child, not its parent.
 No extension imports another extension's folder.
 

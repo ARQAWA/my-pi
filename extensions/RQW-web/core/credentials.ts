@@ -1,11 +1,10 @@
-// Adapted from cli/web/credentials.ts at git a85b810e924010f35387045fc0cbbd9a1e7173cc.
 import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
 import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 
 const PROVIDER = "openai-codex";
 
 export const READ_ONLY_MESSAGE =
-	"rqw-web reads the saved openai-codex login read-only and never refreshes or rewrites it. "
+	"rqw-search reads the saved openai-codex login read-only and never refreshes or rewrites it. "
 	+ "If the login is missing or about to expire, run /login openai-codex in Pi and retry.";
 
 /**

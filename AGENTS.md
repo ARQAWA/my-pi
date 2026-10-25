@@ -112,15 +112,12 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   `DECISIONS.md` section PCLI; publishing: `.agents/skills/publish-pcli/SKILL.md`.
 - `extensions/RQW-web/`: independent shipped `web` tool for parallel independent queries or focused public URL reading,
   on macOS and Windows. Takes `queries` OR `urls`, `focus`, `mode` and `response_length`; the caller's model/thinking
-  are mapped automatically, unknown models use `openai-codex/gpt-6.1-sol` with `low`. Shares its web-only subscription
-  engine with the repo-local CLI; no RQW-codex/RQW-tools dependency, auth writes, prewarm or compaction. Subagents get
-  the optional `rqw-web:subagent-web` offer on `pi.events`. Large normalized results use ordinary OS temporary files
+  are mapped automatically, unknown models use `openai-codex/gpt-6.1-sol` with `low`. Owns its web-only subscription
+  engine; no RQW-codex/RQW-tools dependency, auth writes, prewarm or compaction. Subagents get
+  the optional `rqw-search:subagent-web` offer on `pi.events`. Large normalized results use ordinary OS temporary files
   with an exact continuation. Description teaches batching, evidence, sources and untrusted web text.
-  Contract: [RQW-web README](extensions/RQW-web/README.md), [Web search decision](DECISIONS.md#web-search-cli).
-  Tests: `extensions/RQW-web/test/`, `test/web-cli-*.test.ts`, `test/web-subagents.test.ts`.
-- `cli/web/`: compatible repository-local shell entry over RQW-web's core, with explicit `--caller-model` and `--thinking`.
-  After repository `npm ci`, use `node /absolute/repo/bin/rqw-web.mjs --help` from any cwd. No npm bin or global command;
-  normal agents use the shipped `web` tool. Details: [CLI README](cli/web/README.md).
+  Contract: [RQW-web README](extensions/RQW-web/README.md), [Web search decision](DECISIONS.md#web-search).
+  Tests: `extensions/RQW-web/test/`, `test/web-subagents.test.ts`.
 - Quality control loop: scheduled full regression on `main` (`tests.yml` every 2 h, `pcli.yml` daily), failures kept as
   `qa-inbox` issues, a failures-only mail digest, and triage and test-integrity rules. Rules: `PROCESS.md` section
   Quality control loop; decisions: `DECISIONS.md` section Quality control. Parts below.
