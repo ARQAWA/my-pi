@@ -45,6 +45,8 @@ No imports outside this extension folder; optional event-bus session policies bi
 
 Source assertions and the pinned model snapshot: `test/extensions/RQW-codex/fixtures/`. Compatibility spikes cover stock library/bundle seams, while fake-server tests cover owned mechanics. `.github/workflows/codex-oracle.yml` executes pinned upstream fake-server scenarios and saves captures/logs in CI. Source-derived fixtures are not runtime captures; reconstructed WS JSON is not raw WS control-frame evidence. Full suites, Rust fixture generation and macOS/Windows/Bun checks run in CI, not on the owner's laptop.
 
+The oracle's optional `--work <dir>` selects a parent directory inside OS temp, outside the source and protected checkouts. Every run creates a fresh `rqw-codex-oracle-*` child for its source copy and removes only that child on normal cleanup. The parent and its existing contents stay untouched. `--keep-work` retains the harness child instead.
+
 On macOS the oracle applies one SHA-guarded socket-lifecycle cleanup only to its temporary upstream retry fixture and records it in `run.json` as `adaptedFixtures`. Native assertions, timeouts and `listen(128)` stay unchanged; original sources and runtime transport are untouched. The cause and coordinator technical decision are in [macOS oracle fixture](../../DECISIONS.md#macos-oracle-fixture). Diagnostic runs are not full oracle acceptance.
 
 ### Deterministic native differential

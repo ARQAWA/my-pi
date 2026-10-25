@@ -5,6 +5,8 @@
 // Usage:
 //   node capture-oracle.mjs run   --source <clone>/codex-rs --commit <sha> --out <dir> [--work <dir>] [--keep-work]
 //   node capture-oracle.mjs check --out <dir> --commit <sha>
+// --work is a parent directory; only a fresh rqw-codex-oracle-* child is used and removed.
+// --keep-work retains that child. The parent and its existing contents are never cleaned up.
 //
 // Source digests come from test/fixtures/oracle-source.json (sourceFiles[].sha256, relative to codex-rs) and
 // the pre-edit digest of core/tests/common/responses.rs pinned below. Both are verified before any copy is edited.
@@ -201,7 +203,7 @@ export async function verifyDigests({
   return entries.length;
 }
 
-// The work copy must be a new directory under the OS temp directory, outside the source and outside the
+// The work location must be under the OS temp directory, outside the source and outside the
 // evidence and worktree folders.
 export async function assertTempWorkDir({ work, sourceRoot, tmp = tmpdir() }) {
   const realWork = await realpathOfExisting(resolve(work));
@@ -217,6 +219,22 @@ export async function assertTempWorkDir({ work, sourceRoot, tmp = tmpdir() }) {
     throw new Error(`work dir ${realWork} points into a protected checkout`);
   }
   return realWork;
+}
+
+// Keep cleanup bound to the fresh directory, never to the caller's parent directory.
+export async function createHarnessWork({ work, sourceRoot, keepWork = false }) {
+  const workParent = work ? await assertTempWorkDir({ work, sourceRoot }) : tmpdir();
+  await mkdir(workParent, { recursive: true });
+  const workRoot = await assertTempWorkDir({
+    work: await mkdtemp(join(workParent, 'rqw-codex-oracle-')),
+    sourceRoot,
+  });
+  return {
+    workRoot,
+    cleanup: async () => {
+      if (!keepWork) await rm(workRoot, { recursive: true, force: true });
+    },
+  };
 }
 
 // realpath of the longest existing ancestor, so /var and /private/var compare equal on macOS.
@@ -470,9 +488,7 @@ export async function runHarness({ source, commit, out, work, keepWork = false, 
   await mkdir(captures, { recursive: true });
   await mkdir(logs, { recursive: true });
 
-  const workParent = work ? resolve(work) : await mkdtemp(join(tmpdir(), 'rqw-codex-oracle-'));
-  const workRoot = await assertTempWorkDir({ work: workParent, sourceRoot });
-  await mkdir(workRoot, { recursive: true });
+  const { workRoot, cleanup } = await createHarnessWork({ work, sourceRoot, keepWork });
   const copy = join(workRoot, 'codex-rs');
   await cp(sourceRoot, copy, {
     recursive: true,
@@ -593,7 +609,7 @@ export async function runHarness({ source, commit, out, work, keepWork = false, 
     scenarios: results,
   };
   await writeFile(join(outDir, 'run.json'), JSON.stringify(run, null, 2) + '\n');
-  if (!keepWork) await rm(workRoot, { recursive: true, force: true });
+  await cleanup();
   const failed = results.filter((entry) => !entry.ok).map((entry) => entry.id);
   if (failed.length > 0) throw new Error(`scenario(s) failed: ${failed.join(', ')}`);
   return run;

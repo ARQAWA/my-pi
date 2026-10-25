@@ -2,7 +2,7 @@
 // redaction, instrumentation anchors, test filters, libtest parsing, raw capture semantics and capture integrity.
 // Synthetic fake source copies only; the pinned responses.rs is read-only evidence when present; no cargo, no network.
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as zlib from 'node:zlib';
@@ -30,6 +30,7 @@ import {
   childTestEnv,
   countCaptureKinds,
   countMatches,
+  createHarnessWork,
   instrumentResponsesRs,
   parseLibtestSummary,
   parseTestList,
@@ -176,6 +177,51 @@ describe('macOS temporary retry fixture adaptation', () => {
 });
 
 describe('temp work copy guard', () => {
+  it('cleans only its fresh harness directory inside an existing nonempty work root', async () => {
+    const source = await tempDir('rqw-oracle-source-');
+    const root = await tempDir('rqw-oracle-caller-');
+    await writeFile(join(root, 'unrelated.txt'), 'caller data');
+    await mkdir(join(root, 'codex-rs'));
+    await writeFile(join(root, 'codex-rs', 'unrelated.txt'), 'caller source');
+    const { workRoot, cleanup } = await createHarnessWork({ work: root, sourceRoot: source });
+    // Check the deletion boundary before invoking cleanup, including on the faulty implementation.
+    assert.equal(dirname(workRoot), await realpath(root));
+    assert.match(workRoot.slice(dirname(workRoot).length + 1), /^rqw-codex-oracle-/);
+    assert.deepEqual(await readdir(workRoot), []);
+    await mkdir(join(workRoot, 'codex-rs'));
+    await writeFile(join(workRoot, 'codex-rs', 'artifact.txt'), 'harness data');
+    const second = await createHarnessWork({ work: root, sourceRoot: source });
+    assert.notEqual(second.workRoot, workRoot);
+    await second.cleanup();
+    await cleanup();
+    await assert.rejects(readdir(workRoot), { code: 'ENOENT' });
+    assert.equal(await readFile(join(root, 'unrelated.txt'), 'utf8'), 'caller data');
+    assert.equal(await readFile(join(root, 'codex-rs', 'unrelated.txt'), 'utf8'), 'caller source');
+    assert.deepEqual((await readdir(root)).sort(), ['codex-rs', 'unrelated.txt']);
+  });
+
+  it('keeps only harness work when keep-work is requested and creates a missing work parent', async () => {
+    const source = await tempDir('rqw-oracle-source-');
+    const root = await tempDir('rqw-oracle-caller-');
+    const work = join(root, 'new-parent');
+    const { workRoot, cleanup } = await createHarnessWork({ work, sourceRoot: source, keepWork: true });
+    assert.equal(dirname(workRoot), await realpath(work));
+    await writeFile(join(workRoot, 'artifact.txt'), 'retained harness data');
+    await cleanup();
+    assert.equal(await readFile(join(workRoot, 'artifact.txt'), 'utf8'), 'retained harness data');
+    assert.deepEqual(await readdir(work), [workRoot.slice(dirname(workRoot).length + 1)]);
+  });
+
+  it('creates and cleans a default harness directory directly inside OS temp', async () => {
+    const source = await tempDir('rqw-oracle-source-');
+    const { workRoot, cleanup } = await createHarnessWork({ sourceRoot: source });
+    roots.push(workRoot);
+    assert.equal(dirname(workRoot), await realpath(tmpdir()));
+    assert.match(workRoot.slice(dirname(workRoot).length + 1), /^rqw-codex-oracle-/);
+    await cleanup();
+    await assert.rejects(readdir(workRoot), { code: 'ENOENT' });
+  });
+
   it('accepts a new directory inside the OS temp directory', async () => {
     const source = await tempDir('rqw-oracle-source-');
     const work = join(tmpdir(), 'rqw-oracle-work-check-not-created');
