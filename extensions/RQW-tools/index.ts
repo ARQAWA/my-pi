@@ -14,6 +14,7 @@ import {
 import { groupCodemode, takeOverBuiltinCodemode } from "./codemode.ts";
 import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { classifyBash, type Footprint } from "./footprint.ts";
+import { createCountsProducer } from "./counts.ts";
 import { commandOf, createJobs, createJobTool, filePaths, type JobHandle, type JobNotification, type Jobs, type JobsOptions } from "./jobs.ts";
 import { changeNote, claim, recordSeen, recordUncertain, recordWrite, servedBy, stat, withFileLock, writeConflict } from "./ledger.ts";
 import { readSpellings, scopeOf } from "./keys.ts";
@@ -127,6 +128,9 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 	// One job registry for the main session: its bash, codemode and file tool calls, and its `job` tool.
 	const jobs = createJobs({ enabled: () => pi.getActiveTools().includes("job"), backgroundAfterMs: options.backgroundAfterMs });
 	for (const tool of createTools(process.cwd(), () => pi.getSettings(), nested, { jobs })) pi.registerTool(tool);
+	const counts = createCountsProducer(jobs, pi.events);
+	pi.on("session_start", () => counts.start());
+	pi.on("session_shutdown", () => counts.stop());
 	// A background job belongs to the session, not to a run: Esc and new owner messages leave it alone. It dies on
 	// `job kill` and with the session. Foreground calls still abort with their run (jobs.ts `run`).
 	pi.on("session_shutdown", () => {

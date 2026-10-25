@@ -13,6 +13,17 @@ runs over the title. The activity status is a separate line above the border, wi
 empty line above and below, separating it from Pi's native current-action row and the input border. When idle,
 the activity widget returns no rows; only Pi's original spacer remains.
 
+Main's existing thinking or tool activity text and agent suffix remain while Main is active. After a full
+answer and run completion, pending work still shows as `Waiting for 2 agents, 1 background process`.
+RQW-agent counts active logical assignments, pending sends or native activity recursively, including a
+native-idle child waiting for jobs or children. A waiting parent and its active descendant each count;
+completed undelivered results and genuinely idle or AFK agents count zero. RQW-tools independently offers
+only Main's actual background jobs, without duplicating child jobs in the process category. Public
+`pi.events` v1 sources remain independent; missing `backgroundProcesses` in older sources means zero.
+There is no worker or separate reviewer category. At genuine idle the line disappears. This accounting
+change adds no agent list, cards, settings or dependencies and changes no visuals, timing or colours.
+Owner sources and scope: [D-STATUSBAR-WAITS](../DECISIONS.md#status-bar).
+
 Silver activity text has one glint appearing at the left and flying right at constant linear speed in
 1250 ms, fully clearing its shoulder beyond the right edge, then remaining absent for exactly 2500 ms.
 The next flight starts at 3750 ms. Gold compaction keeps its single bouncing glint across each
@@ -181,7 +192,7 @@ already set by another extension is not replaced.
   one, nothing is shown before the first, and it resets on session start, tree change and toggle. It does not
   reconstruct a rate from persisted history. This is explicitly **not omp's smoothed rate algorithm**.
 - Stock Pi has no matching Plan/Goal/Prewalk/Vibe/Loop state, collaboration, live stream/recording or PR metadata in
-  this API. Running background work counts come from RQW-agent and RQW-review offers, not from omp. Their conditional omp badges are not fabricated. No `gh` call, network lookup,
+  this API. Agent counts come from RQW-agent and Main background-process counts from RQW-tools offers, not from omp. Their conditional omp badges are not fabricated. No `gh` call, network lookup,
   cross-extension private import or new subsystem is added to synthesize them. Pi extension statuses occupy the
   corresponding status slot, sorted by key as in stock Pi. PR `#N` and file hyperlinks are not implemented.
 - omp's title/UUID/Worked row, current action, blocker and to-do panel live **above** its editor in `showTitle`,

@@ -554,15 +554,18 @@ The anchor `#contract-for-p6` is a stable alias of this section for existing ref
 needed. The consumer is RQW-statusbar (`activity.ts`, `CountsWatch`), which spells the
 channel names itself. Each enabled producer offers one **source object per session
 lifetime**. RQW-agent owns agent counts, including nested agents and reviewer-profile agents.
-RQW-review produces no separate review counts. There is no generic native-job registry or invented job count.
+RQW-review produces no separate review counts. RQW-tools independently offers Main's actual background jobs
+as `backgroundProcesses`; child jobs are represented by their owning agent, not counted again as Main jobs.
 
 - Listen on `rqw:running-counts:offer` for `{ version: 1, source }` **before** requesting existing sources.
 - Emit `rqw:running-counts:request` with `{ version: 1, reply(source) }`. Every live producer replies
   synchronously. This handshake supports either extension load order.
 - Deduplicate sources by object identity. Each source has `version: 1`, `snapshot()`,
   `subscribe(listener)` and `dispose()`.
-- `snapshot()` returns a fresh `{ agents: number, reviews: number }`. Sum the current
-  snapshots of distinct live sources by kind. Missing/disabled producers contribute zero.
+- RQW-agent's `snapshot()` returns a fresh `{ agents: number, reviews: number }`, with `reviews: 0`.
+  RQW-tools offers `{ agents: 0, backgroundProcesses: number }` through an independent v1 source.
+  Sum snapshots of distinct live sources by kind. The consumer accepts optional `backgroundProcesses`,
+  treating its absence in older v1 sources as zero. Missing/disabled producers contribute zero.
 - `subscribe(listener)` returns an idempotent unsubscribe function. Subscribe, then take a snapshot;
   a live subscription has no initial callback. Subsequent callbacks contain changed counts only.
   A `null` callback means the source has been disposed: remove it, not merely its current counts.
@@ -574,14 +577,16 @@ RQW-review produces no separate review counts. There is no generic native-job re
 - Consumer callbacks cannot interrupt producer execution. Offers and snapshots are presentation-only;
   no operation on a source starts, cancels or delivers a child result.
 
-Counts read existing Activity native state and the existing runtime ownership tree, not pending results
-or logical assignment IDs. A native-idle parent contributes zero agents while its
-running nested agent contributes one agent. Reviewer profiles count as ordinary agents; the compatibility
-`reviews` field is zero for this producer. This extension adds no timer, card or second child registry.
+An agent counts once when it has an active logical assignment (`a.run`), pending sends or native activity.
+A native-idle child waiting for its own jobs or children still counts. Counts recurse through the existing
+runtime ownership tree, so a waiting parent and its active descendant each count once. Completed undelivered
+results count zero; genuinely idle or AFK agents with no pending assignment do not linger.
+Reviewer profiles count as ordinary agents; the compatibility `reviews` field is zero for this producer.
+This extension adds no timer, card or second child registry.
 Proof: `test/extensions/RQW-agent/counts.test.ts`; full extension isolation remains `test/isolation.test.ts` in CI.
 
-Provenance: the contract comes from a coordinator proposal. That proposal is coordinator text, not an owner
-quotation; no verbatim owner message for it is recorded.
+Provenance: the original event-source contract comes from a coordinator proposal, not an owner quotation.
+The waiting categories and idle distinction follow [D-STATUSBAR-WAITS](../../DECISIONS.md#status-bar).
 Reason: expose real background activity without coupling independently switchable extensions or changing
 execution/delivery. Carriers: `activity.ts`, `index.ts`, `coordinator.ts` and `counts.ts`.
 Public Pi 1.4.0 seams: root-exported `EventBus`/`createEventBus`, `pi.events.emit/on`,

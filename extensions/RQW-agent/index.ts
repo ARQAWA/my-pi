@@ -484,11 +484,11 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		return { ...result, details: { ...details, results } };
 	}
 
-	/** Running children of this runtime by kind, plus those of their nested callers. Native activity only; pending results count zero. */
+	/** Active assignments, including notification waits, plus nested callers; completed results count zero. */
 	function runningCounts(): RunningCounts {
 		let running = 0;
 		for (const a of agents.values()) {
-			if (a.activity.isRunning()) running++;
+			if (a.activity.isRunning() || a.run || a.next?.length) running++;
 			running += a.children?.runningCounts().agents ?? 0;
 		}
 		return { agents: running, reviews: 0 };

@@ -64,6 +64,17 @@ describe("status text", () => {
 			"Waiting for 2 agents");
 	});
 
+	it("inactive waits have only agent and background-process categories; active main text stays unchanged", () => {
+		const counts = { agents: 2, backgroundProcesses: 3 };
+		assert.equal(statusText({ compacting: false, running: false, counts })?.text,
+			"Waiting for 2 agents, 3 background processes");
+		assert.equal(statusText({ compacting: false, running: false, counts: { agents: 0, backgroundProcesses: 1 } })?.text,
+			"Waiting for 1 background process");
+		assert.equal(statusText({ compacting: false, running: true, action: "Running npm test", counts })?.text,
+			"Running npm test · 2 agents");
+		assert.equal(statusText({ compacting: false, running: false, counts: { agents: 0, backgroundProcesses: 0 } }), undefined);
+	});
+
 	it("compaction is its own gold status, whatever runs", () => {
 		assert.deepEqual(statusText({ compacting: true, running: true, action: "Running npm test",
 			counts: { agents: 1 } }), { text: "Compacting context", compacting: true });

@@ -1683,6 +1683,25 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6378;
   verified by `scripts/owner-quotes.mjs`. Layout acceptance and spacing are in the task's included owner messages. Reason: the owner's requested title and status placement.
   Carrier: `extensions/RQW-statusbar/{index,editor,render}.ts`; contract: `notes/statusbar-omp.md`.
+- **Accurate waiting categories** `[D-STATUSBAR-WAITS]`. After Main's full answer and run completion,
+  keep real pending work visible, for example `Waiting for 2 agents, 1 background process`. While Main is active,
+  preserve its existing thinking or tool text and agent suffix. RQW-agent counts an active logical assignment
+  (`a.run`), pending sends or native activity once per agent, recursively. A native-idle child waiting for its
+  jobs or children counts; a waiting parent and its active descendant each count. Completed undelivered results
+  count zero, and genuine idle or AFK with no pending work removes the line.
+  RQW-tools independently offers only Main's actual background jobs as `{ agents: 0, backgroundProcesses: number }`
+  over the existing public `pi.events` v1 source protocol. Child jobs are not duplicated in that category.
+  The consumer accepts optional `backgroundProcesses`, treating its absence in older v1 sources as zero.
+  Reviewers remain ordinary agents, with no worker or separate review category. This authorizes only the statusbar
+  portion of AGENT-STATES-UI, not agent lists or cards, and changes no visuals, timing, colours, settings or dependencies.
+  Owner requirements and exact sources: [BACKLOG AGENT-STATES-UI](BACKLOG.md#agent-states-ui), owner entries
+  `16-27-59:5085` (`04f64a5e`), `5087`, `6301` (`a8793e4c`) and `6305` (`217beed6`), in the session named in Provenance.
+  Coordinator record: the current forwarded owner correction resumes only the statusbar portion of the hold at
+  `6313` (`f148804a`); no new authenticated owner-session locator was supplied. No new verbatim quote is asserted here.
+  Reason: native turn completion is not logical assignment completion; real waits must remain visible without
+  retaining idle agents or spending model turns just to wait. Carriers: `extensions/RQW-agent/{index,counts}.ts`,
+  `extensions/RQW-tools/{index,jobs,counts}.ts`, `extensions/RQW-statusbar/activity.ts`; protocol:
+  [RQW-agent README](extensions/RQW-agent/README.md#contract-for-p6). Since: statusbar-wait-after-answer.
 - **GPT Fast lightning** `[D-STATUSBAR-FAST]`. The main chat's GPT Fast state ([Settings](#settings), "GPT Fast") shows as
   a bright yellow lightning after the model name, before the thinking level, when it is on and the model's provider is
   `openai-codex`. While the agent works a shimmer runs over the bolt (bright yellow, paler yellow, white, back; 120 ms per

@@ -4,6 +4,23 @@ Terminal footer, editor borders and activity display.
 
 Modules and resources live beside `index.ts`; subfolders group needed resources.
 
+## Activity and waits
+
+While Main is active, retain its existing thinking or tool activity text and agent-count suffix.
+After Main's full answer and run completion, pending work remains visible, for example
+`Waiting for 2 agents, 1 background process`. The two categories are agents and background processes;
+reviewer profiles are ordinary agents, with no worker or separate review category.
+
+RQW-agent counts active logical assignments, pending sends or native activity recursively. A native-idle
+child waiting for its jobs or children still counts, and its active descendant counts separately.
+Completed undelivered results count zero. RQW-tools independently counts only Main's actual background jobs,
+not child jobs again. Both producers use public `pi.events` v1 running-count sources; the consumer accepts
+missing `backgroundProcesses` from older v1 sources as zero. Either producer may be disabled alone.
+
+At genuine idle there is no activity line. This changes no visuals, timing, colours, agent lists, cards,
+settings or dependencies. Contract and owner sources: [Status bar](../../DECISIONS.md#status-bar).
+Source protocol: [Running-count contract](../RQW-agent/README.md#contract-for-p6).
+
 <!-- repo-index:start -->
 ## File map
 
