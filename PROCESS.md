@@ -27,8 +27,8 @@ the accepted decisions and their reasons. New owner instructions take precedence
 
 ## Isolated parallel execution
 
-- Start each change task from up-to-date `main` in its own branch and git worktree:
-  `git worktree add -b <task> ../my-pi-worktrees/<task> main`. Make all task edits there, never in the main checkout.
+- Start each change task in its own branch and git worktree under [Delivery](#delivery).
+  Make all task edits there, never in the main checkout.
 - Main is the coordinator, not an independent implementer: it owns requirement compilation, owner questions,
   task decomposition, subagent model selection, scheduling, acceptance and integration of results, review organization,
   delivery/git and reports. Main may read sources and results to coordinate and accept work, but must delegate actual
@@ -94,9 +94,7 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](DECISION
   Main's coordination is never blocked. The merge agent and CI watcher follow any CI runs in the background.
 - One merge agent, an ordinary agent started by Main, owns integration. Main fixes the train order in the current
   session queue, from the owner's queue. The agent takes waiting branches in that order, rebases each onto current
-  `main` and pushes it. It merges only when the required reviews are clean and `deliver-check` passes, including
-  full local `npm test` on the exact committed branch head on the owner's macOS. When `main` moves, remaining
-  branches rebase and pass the gate on their new heads. No green GitHub run is required, including for `pcli-vscode`.
+  delivery destination and pushes it, following [Delivery](#delivery) for the base, checks and merge conditions.
 - Windows jobs keep running and are not cancelled in the final run, but they are advisory. A red Windows job is
   not fixed before the merge and does not block delivery. An agent explicitly creates or triages a `qa-inbox` issue for
   it, or a failed scheduled or dispatched `main` run is picked up by `qa-inbox.yml`; nothing here creates issues
@@ -111,7 +109,8 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](DECISION
   test work: ordinary `agent`s on the simple pairs of the [subagent table](#subagent-models), with
   `.agents/roles/test-fixer.md` as the `role`. It starts only after this pipeline change is delivered and follows all
   pipeline agreements. Decisions: [DECISIONS.md](DECISIONS.md#task-pipeline).
-- A failed local delivery test or a conflicting rebase sends the task back to the top of the queue. GitHub CI does
+- A failed task-scoped delivery check or a conflicting rebase sends the task back to the top of the queue. Full-run
+  failures follow [Delivery](#delivery). GitHub CI does
   not gate delivery. At the next free active slot,
   ahead of tasks not yet started, resume its existing agent; start another only if its session no longer exists.
 - Pause and resume. Pausing a task is an `agent` `interrupt` of its agent, which keeps the session and history.
@@ -255,20 +254,19 @@ Owner's principle and source: [DECISIONS.md, Work policy](DECISIONS.md#work-poli
   Do not burn tokens on live compaction when the owner requests documentation-only proof.
 - Run existing relevant checks once, in the background where possible. Repeat after a relevant fix or a changed
   tested input, not merely for confidence, staging, a commit ID or a squash merge. Reuse valid evidence while the
-  tested code, configuration and document contracts remain unchanged, except for the mandatory local delivery run below.
+  tested code, configuration and document contracts remain unchanged, subject to the delivery checks in [Delivery](#delivery).
 - CPU-heavy work (repeat loops, pressure runs and load probes) runs in GitHub Actions, not on the owner's MacBook
-  Air. The delivery exception is full local `npm test` on the exact committed branch head, run by `deliver-check`.
+  Air. The local delivery checks follow [Delivery](#delivery).
   Other local checks stay focused on the change. Windows checks run in CI too,
   including relevant Node, Bun and PortableGit coverage, but they are advisory and do not gate a merge
   ([Task pipeline](#task-pipeline)). Linux is out of scope.
 - Run `npm run test:bun` in CI when Bun/codemode behavior is affected. Test extension isolation when affected.
 - Subagents save their check and probe logs. Every number in a report or documentation must point to a CI run URL
   or a named saved log file; never report counts from memory. Save local logs in OS temporary storage.
-- Test exactly what gets merged. If `main` moved since the branch was created, the subagent rebases the branch onto
-  current `main`; `deliver-check` runs full local `npm test` on that final committed head, whose squash has the same
-  tree. This is the only delivery test condition; no GitHub run needs to be triggered or awaited for a merge.
+- Test exactly what gets merged. The base, rebase and final-head delivery checks follow [Delivery](#delivery).
+  No GitHub run needs to be triggered or awaited for a merge.
 - Root documentation, notes and development instructions alone do not justify extra application tests or model runs;
-  the full local delivery run still applies. A workflow change does require validating its triggers and affected
+  the delivery checks in [Delivery](#delivery) still apply. A workflow change does require validating its triggers and affected
   Windows jobs. Do not claim a queued or incomplete run passed.
 - Everyone who writes, generates or fixes tests, a subagent, a reviewer or the test-fix lane, has one purpose: to check
   that the behavior matches the requirements, never to turn the run green. The bound is the reviewer's: no
@@ -383,8 +381,9 @@ Runs exist to find and fix defects, not to tick a box. Every measurement or benc
   findings with evidence. Subagents recheck affected parts and checks, not untouched parts. The result-review quote and
   `CHECKED:` rules above, and the prompt formats they name, do not apply to these reviewers.
 - A CLEAN covers only the commit it reviewed. Any commit after CLEAN sends the places it changed back to review:
-  result review, and code review when the path-based requirement above applies. A conflict-free rebase onto `main`
-  changes no task places: it needs the full local delivery test on the new head, not new review; places changed
+  result review, and code review when the path-based requirement above applies. A conflict-free rebase onto the
+  delivery destination changes no task places: it needs the checks in [Delivery](#delivery) on the new head,
+  not new review; places changed
   while resolving conflicts go back to review.
   Otherwise reuse CLEAN only while its commit is unchanged. Stop when the required reviews are clean; do not
   invent either a one-pass cap that leaves known bugs or endless fresh passes for confidence.
@@ -470,7 +469,8 @@ files changed, and `Test-review:` only when the weakening rule above triggers. A
 For an agreed third-party library or Pi extension, first install it into the owner's Pi so it works immediately,
 then add it to the `my-pi` package. At first use, consult Pi's documentation to decide how one Pi package bundles
 another; do not preselect a packaging mechanism. Preserve credentials and unrelated settings.
-Self-review the config and exact diff for unintended additions, commit and push to `main`. This narrow path
+Self-review the config and exact diff for unintended additions, commit and push to the destination in
+[Delivery](#delivery). This narrow path
 replaces the full Delivery pipeline, including the local test gate and independent reviews, for third-party installation
 and package configuration only. It does not apply to building our own features or mechanisms or to this process
 and guard change. Record the accepted choice in `DECISIONS.md`.
@@ -483,17 +483,22 @@ and guard change. Record the accepted choice in `DECISIONS.md`.
    replacement and commit provenance, not routine agent reading. `BACKLOG.md` is the canonical list of open and
    owner-deferred work with source, status and branch; remove done and dead tasks instead of keeping a second ledger; owner-discarded tasks move to `BACKLOG.md` Discarded.
    Current docs describe current facts, not a history ledger.
-2. Push the task branch; continue independent work during required reviews. Before merging, require sufficient
-   proof and the required clean reviews for the final head commit on current `main`. The only delivery test
-   condition is full local `npm test` on that exact committed head on the owner's macOS, run by `deliver-check`.
+2. Bootstrap this release-pipeline change first by squashing it into `main` under the owner's explicit targeted-check
+   exception, without full `npm test`. Then create `release` from that `main`, push it, and switch the clean
+   integration checkout to `release`. Start each new task from up-to-date `origin/release` in its own branch and worktree:
+   `git worktree add -b <task> ../my-pi-worktrees/<task> origin/release`.
+   Push the task branch; continue independent work during required reviews. Before merging, require sufficient
+   proof, only the task's scoped tests, and the required clean reviews for the final head commit on current
+   `release`. Rebase remaining task branches when `release` moves and check their new heads.
    No green GitHub Actions run is required, including `pcli.yml`; CI evidence trailers are not required.
 3. Before every squash merge, the merge agent ([Task pipeline](#task-pipeline)) writes the planned squash message
-   and runs, from the clean main checkout,
-   `npm run deliver-check -- <branch> <message-file>` (`scripts/deliver-check.mjs`; it fails in any checkout
-   without `main` checked out). It requires: the branch
-   contains current `origin/main` and the main checkout's HEAD, the merge destination. It runs full `npm test`
-   in the branch's existing clean task worktree on the owner's macOS, at the exact committed branch head, and
-   checks worktree cleanliness and the head before and after the run. No receipt or extra worktree is needed.
+   and runs, from the clean `release` checkout,
+   `npm run deliver-check -- <branch> <message-file>` (`scripts/deliver-check.mjs`). It requires: the branch
+   contains current `origin/release` and the release checkout's HEAD, the merge destination. Changed paths
+   mechanically select affected extension tests, isolation, changed tests and root tests loading changed files.
+   It runs those tests on that exact committed branch head in its existing clean task worktree on the owner's
+   macOS, and verifies worktree cleanliness and the head before and after the run. No new receipt or test trailer
+   is required. No full suite runs per task.
    The message carries the
    trailers `Review: agent#N CLEAN` (at least one clean profile-based result review under
    [Independent review](#independent-review)), `Code-review: CLEAN` (any path outside
@@ -507,20 +512,32 @@ and guard change. Record the accepted choice in `DECISIONS.md`.
    `Test-change:` when test or workflow files changed, and issue N must carry the `qa-inbox`
    label ([Quality control loop](#quality-control-loop)). It lists the open `qa-inbox` issues as information:
    a red `main` does not block a merge. Any failure: no merge.
-4. Squash merge into `main`: one task, one commit, with that message. Never merge the task's stage commits into main
-   as a merge commit. Push main autonomously; the squash tree equals the tested head, so it is not retested.
+4. Squash merge into `release`: one task, one commit, with that message. Never merge the task's stage commits into
+   release as a merge commit. Push release autonomously; the squash tree equals the tested head, so it is not retested.
+   Main determines when a release is due from Git alone: the first-parent task commits in
+   `git log --first-parent --reverse --format='%H %ct' origin/main..origin/release` and the first commit's committer
+   timestamp. After 10 task commits or 2 hours from the first task since the prior release merge, whichever comes
+   first, Main starts a test-lane agent to run full local `npm test` on the exact committed `release` head on the
+   owner's macOS. Serialize merges while that full run is in progress so the release head stays the tested head.
+   An empty batch never runs. No counters, state files, daemon or new lock are added.
+   If the full run fails, do not move `main`: a separate test-lane agent finds the guilty task and fixes it, then the
+   full suite runs again. After a clean full run, merge that tested release head into `main` by an ordinary merge or
+   fast-forward, preserving the per-task commits, and push `main`. Switch the integration checkout to `main` for
+   that merge, then return it to `release`. Never squash the batch or promote an untested head.
+   Scheduled GitHub runs on `main` remain unchanged.
 5. Run a completeness check for the session once after 7 merges or 120 minutes, whichever comes first, counted from
    the previous check or the session start, and always before the final report: a fresh independent profile reviewer
    through `agent`, following the `reviewer` skill and [Independent review](#independent-review), with
-   `include: ["user_messages"]`. Object: `main`'s git log since the session
+   `include: ["user_messages"]`. Object: `release`'s and `main`'s git logs since the session
    start, plus the in-progress branches and worktrees and the items the owner cancelled. Criterion: every owner
    request is marked done (by which commit), in progress (by which branch) or cancelled by the owner. A request
    with no mark is a finding: do it, or ask the owner.
-6. Update the locally installed Pi when a runtime/package change requires it, preserving auth and other settings;
-   restart when process-wide patches require it. Documentation-only work needs no package update or restart.
+6. The owner's locally installed Pi follows `release` immediately after every task merge. Once `release` exists,
+   point the installed package at it with `pi install git:github.com/ARQAWA/my-pi@release`, preserving auth,
+   package filters and other settings. Restart when process-wide patches require it.
 7. After successful delivery, and after every ignored Windows failure is recorded and any still-running Windows run is
    handed to background tracking ([Task pipeline](#task-pipeline)), remove this task's worktree, its local branch and
-   its branch on `origin`. Do not remove other tasks' worktrees or branches.
+   its branch on `origin`. Keep `release`; do not remove other tasks' worktrees or branches.
    Publishing a release or Marketplace version requires the owner's direct request.
 8. Report the result once, unprompted with an evidence table (claim, check, result or run link) and an honest
    "not verified live" section, plus any real limitation and manual commands only when useful.

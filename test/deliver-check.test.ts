@@ -1,4 +1,4 @@
-// Throwaway repositories with fake npm and gh; never runs the real npm test.
+// Throwaway repositories with fake node and gh; never runs the real targeted tests.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -27,17 +27,17 @@ const one = JSON.parse(readFileSync(process.env.FAKE_GH_ISSUES, "utf8")).view[a[
 if (!one) { process.stderr.write("GraphQL: Could not resolve to an Issue\\n"); process.exit(1); }
 process.stdout.write(JSON.stringify(one));
 `);
-	writeFileSync(join(bin, "npm.mjs"), `
+	writeFileSync(join(bin, "node.mjs"), `
 import { appendFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 const git = (...a) => execFileSync("git", a, { encoding: "utf8" }).trim();
-appendFileSync(process.env.FAKE_NPM_LOG, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), head: git("rev-parse", "HEAD") }) + "\\n");
-if (process.env.FAKE_NPM_MODE === "dirty") writeFileSync("stray.txt", "test output");
-if (process.env.FAKE_NPM_MODE === "head") git("commit", "--quiet", "--allow-empty", "-m", "changed during tests");
-if (process.env.FAKE_NPM_MODE === "detach") git("checkout", "--quiet", "--detach");
-process.exit(process.env.FAKE_NPM_MODE === "fail" ? 23 : 0);
+appendFileSync(process.env.FAKE_NODE_LOG, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), head: git("rev-parse", "HEAD") }) + "\\n");
+if (process.env.FAKE_NODE_MODE === "dirty") writeFileSync("stray.txt", "test output");
+if (process.env.FAKE_NODE_MODE === "head") git("commit", "--quiet", "--allow-empty", "-m", "changed during tests");
+if (process.env.FAKE_NODE_MODE === "detach") git("checkout", "--quiet", "--detach");
+process.exit(process.env.FAKE_NODE_MODE === "fail" ? 23 : 0);
 `);
-	for (const name of ["npm", "gh"]) {
+	for (const name of ["node", "gh"]) {
 		writeFileSync(join(bin, name), `#!/bin/sh\nexec "${process.execPath}" "${join(bin, name + ".mjs")}" "$@"\n`);
 		chmodSync(join(bin, name), 0o755);
 	}
@@ -54,26 +54,28 @@ process.exit(process.env.FAKE_NPM_MODE === "fail" ? 23 : 0);
 	const env = {
 		...process.env, [pathKey]: bin + delimiter + process.env[pathKey],
 		GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: gitconfig,
-		FAKE_GH_ISSUES: issuesFile, MY_PI_SESSIONS: sessions, FAKE_GH_LOG: join(tmp, "gh.log"), FAKE_NPM_LOG: join(tmp, "npm.log"), FAKE_NPM_MODE: "",
+		FAKE_GH_ISSUES: issuesFile, MY_PI_SESSIONS: sessions, FAKE_GH_LOG: join(tmp, "gh.log"), FAKE_NODE_LOG: join(tmp, "node.log"), FAKE_NODE_MODE: "",
 	};
 	const repo = join(tmp, "checkout");
 	const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, env, encoding: "utf8" }).trim();
-	execFileSync("git", ["init", "--quiet", "--bare", "-b", "main", join(tmp, "origin.git")], { env });
+	execFileSync("git", ["init", "--quiet", "--bare", "-b", "release", join(tmp, "origin.git")], { env });
 	execFileSync("git", ["clone", "--quiet", join(tmp, "origin.git"), repo], { env, stdio: "ignore" });
-	git("symbolic-ref", "HEAD", "refs/heads/main");
+	git("symbolic-ref", "HEAD", "refs/heads/release");
 	mkdirSync(join(repo, ".github", "workflows"), { recursive: true });
 	copyFileSync(join(ROOT, ".github", "workflows", "tests.yml"), join(repo, ".github", "workflows", "tests.yml"));
 	writeFileSync(join(repo, "README.md"), "x\n");
+	mkdirSync(join(repo, "test"), { recursive: true });
+	writeFileSync(join(repo, "test/relevant.test.ts"), '"src/a.js"; "README.md"; "pcli-vscode/x.js";\n');
 	git("add", ".");
 	git("commit", "--quiet", "-m", "base");
-	git("push", "--quiet", "origin", "main");
+	git("push", "--quiet", "origin", "release");
 
 	const worktree = join(tmp, "task-worktree");
 	const commit = (on: string, files: Record<string, string | null>) => {
-		if (on !== "main" && !git("worktree", "list", "--porcelain").includes(`branch refs/heads/${on}\n`)) {
+		if (on !== "release" && !git("worktree", "list", "--porcelain").includes(`branch refs/heads/${on}\n`)) {
 			git("worktree", "add", "--quiet", worktree, on);
 		}
-		const cwd = on === "main" ? repo : worktree;
+		const cwd = on === "release" ? repo : worktree;
 		const localGit = (...args: string[]) => execFileSync("git", args, { cwd, env, encoding: "utf8" }).trim();
 		for (const [f, text] of Object.entries(files)) {
 			if (text === null) { localGit("rm", "--quiet", f); continue; }
@@ -85,7 +87,7 @@ process.exit(process.env.FAKE_NPM_MODE === "fail" ? 23 : 0);
 		return localGit("rev-parse", "HEAD");
 	};
 	const task = (files: Record<string, string | null>) => {
-		git("branch", "task", "main");
+		git("branch", "task", "release");
 		return commit("task", files);
 	};
 	const issues = (data: { view?: Record<string, { labels: { name: string }[]; state: string }> }) =>
@@ -108,8 +110,8 @@ process.exit(process.env.FAKE_NPM_MODE === "fail" ? 23 : 0);
 		return { code: r.status, out: r.stdout + r.stderr };
 	};
 	const ghCalls = () => { try { return readFileSync(join(tmp, "gh.log"), "utf8"); } catch { return ""; } };
-	const npmCalls = () => { try { return readFileSync(env.FAKE_NPM_LOG, "utf8").trim().split("\n").map((l) => JSON.parse(l)); } catch { return []; } };
-	return { tmp, repo, worktree, bin, env, git, commit, task, issues, cache, inbox, ghCalls, npmCalls, run, sessions };
+	const nodeCalls = () => { try { return readFileSync(env.FAKE_NODE_LOG, "utf8").trim().split("\n").map((l) => JSON.parse(l)); } catch { return []; } };
+	return { tmp, repo, worktree, bin, env, git, commit, task, issues, cache, inbox, ghCalls, nodeCalls, run, sessions };
 }
 
 const MSG = () => "Task\n\nReview: review#7 CLEAN\nCode-review: CLEAN\nUnverified: none\n";
@@ -147,8 +149,8 @@ describe("deliver-check owner quote gate", { skip: process.platform !== "darwin"
 
 	it("checks entire multiline spans when only an interior line is added", () => {
 		const t = setup();
-		t.commit("main", { "PROCESS.md": "  Owner: «First line\nsecond line.»\n" });
-		t.git("push", "--quiet", "origin", "main");
+		t.commit("release", { "PROCESS.md": "  Owner: «First line\nsecond line.»\n" });
+		t.git("push", "--quiet", "origin", "release");
 		t.task({ "PROCESS.md": "  Owner: «First line\ninvented middle\nsecond line.»\n" });
 		const result = t.run(DOC_MSG);
 		assert.equal(result.code, 1, result.out);
@@ -157,8 +159,8 @@ describe("deliver-check owner quote gate", { skip: process.platform !== "darwin"
 
 	it("ignores unchanged historical spans and deletion-only hunks", () => {
 		const t = setup();
-		t.commit("main", { "DECISIONS.md": "«historical invention»\nremove me\nuntouched\n" });
-		t.git("push", "--quiet", "origin", "main");
+		t.commit("release", { "DECISIONS.md": "«historical invention»\nremove me\nuntouched\n" });
+		t.git("push", "--quiet", "origin", "release");
 		t.task({ "DECISIONS.md": "«historical invention»\nuntouched\nnew plain text\n" });
 		const result = t.run(DOC_MSG);
 		assert.equal(result.code, 0, result.out);
@@ -166,8 +168,8 @@ describe("deliver-check owner quote gate", { skip: process.platform !== "darwin"
 
 	it("reads the branch head, not main's or the working tree's document", () => {
 		const t = setup();
-		t.commit("main", { "DECISIONS.md": "Owner: «Keep the owner's exact words.»\n" });
-		t.git("push", "--quiet", "origin", "main");
+		t.commit("release", { "DECISIONS.md": "Owner: «Keep the owner's exact words.»\n" });
+		t.git("push", "--quiet", "origin", "release");
 		t.task({ "DECISIONS.md": "Owner: «invented quote»\n" });
 		assert.match(t.run(DOC_MSG).out, /FAIL DECISIONS\.md:1 quote is not verbatim/);
 	});
@@ -191,17 +193,17 @@ describe("deliver-check owner quote gate", { skip: process.platform !== "darwin"
 });
 
 describe("deliver-check", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
-	it("passes a branch on current main with local tests and review trailers", () => {
+	it("passes a branch on current release with local tests and review trailers", () => {
 		const t = setup();
 		const head = t.task({ "src/a.js": "1\n" });
 		const r = t.run(MSG());
 		assert.equal(r.code, 0, r.out);
 		assert.match(r.out, /deliver-check PASS task/);
-		assert.match(r.out, /local npm test: PASS/);
+		assert.match(r.out, /targeted tests: PASS/);
 		assert.equal(t.ghCalls(), "");
-		assert.deepEqual(t.npmCalls(), [{ args: ["test"], cwd: realpathSync(t.worktree), head }]);
+		assert.deepEqual(t.nodeCalls(), [{ args: ["--test", "test/relevant.test.ts"], cwd: realpathSync(t.worktree), head }]);
 		assert.equal(t.run(MSG()).code, 0);
-		assert.equal(t.npmCalls().length, 2);
+		assert.equal(t.nodeCalls().length, 2);
 	});
 
 	it("passes an agent result-review trailer", () => {
@@ -222,53 +224,53 @@ describe("deliver-check", { skip: process.platform !== "darwin" && "Local develo
 		}
 	});
 
-	it("fails a branch that does not contain the current origin/main", () => {
+	it("fails a branch that does not contain the current origin/release", () => {
 		const t = setup();
 		t.task({ "src/a.js": "1\n" });
-		t.commit("main", { "src/b.js": "2\n" });
-		t.git("push", "--quiet", "origin", "main");
+		t.commit("release", { "src/b.js": "2\n" });
+		t.git("push", "--quiet", "origin", "release");
 		const r = t.run(MSG());
 		assert.equal(r.code, 1);
-		assert.match(r.out, /FAIL task \(\w+\) does not contain origin\/main/);
+		assert.match(r.out, /FAIL task \(\w+\) does not contain origin\/release/);
 	});
 
-	it("fails when the local main has an unpushed commit the branch does not contain", () => {
+	it("fails when the local release has an unpushed commit the branch does not contain", () => {
 		const t = setup();
 		t.task({ "src/a.js": "1\n" });
-		t.commit("main", { "src/b.js": "2\n" }); // advanced locally, not pushed
+		t.commit("release", { "src/b.js": "2\n" }); // advanced locally, not pushed
 		const r = t.run(MSG());
 		assert.equal(r.code, 1);
-		assert.match(r.out, /FAIL main checkout HEAD \(\w+\) is not origin\/main \(\w+\) and not contained in task/);
-		assert.doesNotMatch(r.out, /does not contain origin\/main/);
+		assert.match(r.out, /FAIL release checkout HEAD \(\w+\) is not origin\/release \(\w+\) and not contained in task/);
+		assert.doesNotMatch(r.out, /does not contain origin\/release/);
 	});
 
-	it("fails when the local main diverged from origin/main", () => {
+	it("fails when the local release diverged from origin/release", () => {
 		const t = setup();
-		t.commit("main", { "src/b.js": "2\n" });
-		t.git("push", "--quiet", "origin", "main");
+		t.commit("release", { "src/b.js": "2\n" });
+		t.git("push", "--quiet", "origin", "release");
 		t.git("reset", "--quiet", "--hard", "HEAD~1");
-		t.commit("main", { "src/c.js": "3\n" }); // local main: base + c; origin/main: base + b
-		t.git("branch", "task", "origin/main");
+		t.commit("release", { "src/c.js": "3\n" }); // local release: base + c; origin/release: base + b
+		t.git("branch", "task", "origin/release");
 		t.commit("task", { "src/a.js": "1\n" });
 		const r = t.run(MSG());
 		assert.equal(r.code, 1);
-		assert.match(r.out, /FAIL main checkout HEAD .* not contained in task/);
+		assert.match(r.out, /FAIL release checkout HEAD .* not contained in task/);
 	});
 
 
-	it("fails unless the checkout it runs in has main checked out", () => {
+	it("fails unless the checkout it runs in has release checked out", () => {
 		const t = setup();
 		t.task({ "src/a.js": "1\n" });
 		const worktree = t.worktree;
 		const inTask = t.run(MSG(), worktree);
 		assert.equal(inTask.code, 1);
-		assert.match(inTask.out, /FAIL .*task-worktree does not have refs\/heads\/main checked out/);
+		assert.match(inTask.out, /FAIL .*task-worktree does not have refs\/heads\/release checked out/);
 		assert.doesNotMatch(inTask.out, /PASS/);
-		t.git("checkout", "--quiet", "--detach", "main");
+		t.git("checkout", "--quiet", "--detach", "release");
 		const detached = t.run(MSG());
 		assert.equal(detached.code, 1);
-		assert.match(detached.out, /FAIL .* does not have refs\/heads\/main checked out/);
-		t.git("checkout", "--quiet", "main");
+		assert.match(detached.out, /FAIL .* does not have refs\/heads\/release checked out/);
+		t.git("checkout", "--quiet", "release");
 		assert.equal(t.run(MSG()).code, 0);
 	});
 
@@ -279,15 +281,15 @@ describe("deliver-check", { skip: process.platform !== "darwin" && "Local develo
 		t.task({ "README.md": "y\n", "notes/n.md": "n\n", ".agents/reviewers/x.md": "r\n" });
 		const r = t.run("Docs\n\nReview: review#3 CLEAN\nUnverified: none\n");
 		assert.equal(r.code, 0, r.out);
-		assert.match(r.out, /local npm test: PASS/);
-		assert.equal(t.npmCalls().length, 1);
+		assert.match(r.out, /targeted tests: PASS/);
+		assert.equal(t.nodeCalls().length, 1);
 	});
 
 	it("counts both sides of a move: code into notes/ needs code review", () => {
 		const t = setup();
 		const code = "export const a = 1;\nexport const b = 2;\n";
-		t.commit("main", { "src/a.js": code });
-		t.git("push", "--quiet", "origin", "main");
+		t.commit("release", { "src/a.js": code });
+		t.git("push", "--quiet", "origin", "release");
 		t.task({ "src/a.js": null, "notes/a.js": code });
 		const r = t.run("Move\n\nReview: review#3 CLEAN\nUnverified: none\n");
 		assert.equal(r.code, 1);
@@ -303,17 +305,17 @@ describe("deliver-check", { skip: process.platform !== "darwin" && "Local develo
 			/"Code-review: CLEAN"/, /"Unverified: <text or none>"/]) assert.match(r.out, re);
 	});
 
-	it("fails when the main checkout has uncommitted changes", () => {
+	it("fails when the release checkout has uncommitted changes", () => {
 		const t = setup();
 		t.task({ "src/a.js": "1\n" });
 		writeFileSync(join(t.repo, "stray.txt"), "x\n");
 		const r = t.run(MSG());
 		assert.equal(r.code, 1);
-		assert.match(r.out, /FAIL main checkout .* has uncommitted or untracked changes/);
+		assert.match(r.out, /FAIL release checkout .* has uncommitted or untracked changes/);
 	});
 });
 
-describe("deliver-check local npm test", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
+describe("deliver-check targeted tests", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	it("fails closed without an existing task worktree", () => {
 		const t = setup();
 		t.task({ "src/a.js": "1\n" });
@@ -321,10 +323,10 @@ describe("deliver-check local npm test", { skip: process.platform !== "darwin" &
 		const r = t.run(MSG());
 		assert.equal(r.code, 1, r.out);
 		assert.match(r.out, /FAIL no existing worktree for task/);
-		assert.deepEqual(t.npmCalls(), []);
+		assert.deepEqual(t.nodeCalls(), []);
 	});
 
-	it("rejects staged, unstaged and untracked task changes before npm starts", () => {
+	it("rejects staged, unstaged and untracked task changes before node starts", () => {
 		for (const mode of ["staged", "unstaged", "untracked"]) {
 			const t = setup();
 			t.task({ "src/a.js": "1\n" });
@@ -333,32 +335,32 @@ describe("deliver-check local npm test", { skip: process.platform !== "darwin" &
 			const r = t.run(MSG());
 			assert.equal(r.code, 1, r.out);
 			assert.match(r.out, /FAIL task checkout .* has uncommitted or untracked changes before tests/);
-			assert.deepEqual(t.npmCalls(), []);
+			assert.deepEqual(t.nodeCalls(), []);
 		}
 	});
 
-	it("fails closed on nonzero npm test", () => {
+	it("fails closed on nonzero targeted tests", () => {
 		const t = setup();
 		t.task({ "src/a.js": "1\n" });
-		t.env.FAKE_NPM_MODE = "fail";
+		t.env.FAKE_NODE_MODE = "fail";
 		const r = t.run(MSG());
 		assert.equal(r.code, 1, r.out);
-		assert.match(r.out, /FAIL local npm test failed: exit 23/);
-		assert.equal(t.npmCalls().length, 1);
+		assert.match(r.out, /FAIL targeted tests failed: exit 23/);
+		assert.equal(t.nodeCalls().length, 1);
 	});
 
-	it("rejects dirty output, a changed head and a detached task after successful npm test", () => {
+	it("rejects dirty output, a changed head and a detached task after successful targeted tests", () => {
 		for (const mode of ["dirty", "head", "detach"] as const) {
 			const t = setup();
 			const head = t.task({ "src/a.js": "1\n" });
-			t.env.FAKE_NPM_MODE = mode;
+			t.env.FAKE_NODE_MODE = mode;
 			const r = t.run(MSG());
 			assert.equal(r.code, 1, r.out);
 			const error = { dirty: /uncommitted or untracked changes after tests/, head: /head changed after tests/,
 				detach: /cannot verify task checkout after tests:.*symbolic-ref -q HEAD/ }[mode];
 			assert.match(r.out, error);
 			assert.doesNotMatch(r.out, /deliver-check PASS/);
-			assert.deepEqual(t.npmCalls(), [{ args: ["test"], cwd: realpathSync(t.worktree), head }]);
+			assert.deepEqual(t.nodeCalls(), [{ args: ["--test", "test/relevant.test.ts"], cwd: realpathSync(t.worktree), head }]);
 			assert.equal(t.ghCalls(), "");
 		}
 	});
@@ -368,7 +370,7 @@ describe("deliver-check local npm test", { skip: process.platform !== "darwin" &
 		const head = t.task({ "pcli-vscode/x.js": "1\n", ".github/workflows/pcli.yml": "no filter\n" });
 		const r = t.run(MSG());
 		assert.equal(r.code, 0, r.out);
-		assert.deepEqual(t.npmCalls(), [{ args: ["test"], cwd: realpathSync(t.worktree), head }]);
+		assert.deepEqual(t.nodeCalls(), [{ args: ["--test", "test/relevant.test.ts"], cwd: realpathSync(t.worktree), head }]);
 		assert.equal(t.ghCalls(), "");
 	});
 
@@ -389,8 +391,79 @@ describe("deliver-check local npm test", { skip: process.platform !== "darwin" &
 			const r = t.run(MSG());
 			assert.equal(r.code, 1, r.out);
 			assert.match(r.out, /FAIL cannot read (?:paths-ignore from )?\.github\/workflows\/tests\.yml/);
-			assert.deepEqual(t.npmCalls(), []);
+			assert.deepEqual(t.nodeCalls(), []);
 		}
+	});
+});
+
+describe("deliver-check targeted release integration", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
+	it("fails closed on a real selector filesystem read error without launching tests", () => {
+		const t = setup();
+		t.task({ "src/a.js": "1\n", ".gitignore": "unreadable/\n" });
+		const unreadable = join(t.worktree, "unreadable");
+		mkdirSync(unreadable);
+		chmodSync(unreadable, 0o000);
+		try {
+			const r = t.run(MSG());
+			assert.equal(r.code, 1, r.out);
+			assert.match(r.out, /FAIL targeted tests: cannot select tests: EACCES/);
+			assert.doesNotMatch(r.out, /deliver-check PASS/);
+			assert.deepEqual(t.nodeCalls(), []);
+		} finally {
+			chmodSync(unreadable, 0o700);
+		}
+	});
+
+	it("rejects a main destination even when release refs exist", () => {
+		const t = setup();
+		t.task({ "src/a.js": "1\n" });
+		t.git("checkout", "--quiet", "-b", "main");
+		const r = t.run(MSG());
+		assert.equal(r.code, 1, r.out);
+		assert.match(r.out, /does not have refs\/heads\/release checked out/);
+		assert.deepEqual(t.nodeCalls(), []);
+	});
+
+	it("does not fall back to main when origin/release is absent", () => {
+		const t = setup();
+		t.task({ "src/a.js": "1\n" });
+		t.git("push", "--quiet", "origin", "release:main");
+		t.git("-C", join(t.tmp, "origin.git"), "symbolic-ref", "HEAD", "refs/heads/main");
+		t.git("push", "--quiet", "origin", ":release");
+		t.git("update-ref", "-d", "refs/remotes/origin/release");
+		const r = t.run(MSG());
+		assert.equal(r.code, 1, r.out);
+		assert.match(r.out, /cannot resolve task, origin\/release/);
+		assert.deepEqual(t.nodeCalls(), []);
+	});
+
+	it("passes only concrete selected paths to node in the task worktree, supporting both layouts", () => {
+		const t = setup();
+		t.commit("release", {
+			"test/isolation.test.ts": "export {};\n",
+			"test/owner.test.ts": '"extensions/RQW-x/index.ts";\n',
+			"test/unrelated.test.ts": '"other/file.ts";\n',
+			"extensions/RQW-x/test/current.test.ts": "export {};\n",
+			"test/extensions/RQW-x/moved.test.ts": "export {};\n",
+			"extensions/RQW-y/test/unrelated.test.ts": "export {};\n",
+		});
+		t.git("push", "--quiet", "origin", "release");
+		const head = t.task({ "extensions/RQW-x/index.ts": "export {};\n" });
+		const r = t.run(MSG());
+		assert.equal(r.code, 0, r.out);
+		assert.deepEqual(t.nodeCalls(), [{ args: ["--test", "extensions/RQW-x/test/current.test.ts",
+			"test/extensions/RQW-x/moved.test.ts", "test/isolation.test.ts", "test/owner.test.ts"],
+			cwd: realpathSync(t.worktree), head }]);
+	});
+
+	it("reports no discovered coverage without running node's default full discovery", () => {
+		const t = setup();
+		t.task({ "unknown/no-static-owner.ts": "export {};\n" });
+		const r = t.run(MSG());
+		assert.equal(r.code, 0, r.out);
+		assert.match(r.out, /none discovered; no runtime tests executed/);
+		assert.match(r.out, /targeted tests: NONE/);
+		assert.deepEqual(t.nodeCalls(), []);
 	});
 });
 
@@ -471,7 +544,7 @@ describe("deliver-check QA cache lines", { skip: process.platform !== "darwin" &
 		const t = setup();
 		const head = t.task({ "src/a.js": "1\n" });
 		t.cache({ runs: [{ ...redRun, conclusion: "success", head_sha: head, head_branch: "task" }] });
-		t.env.FAKE_NPM_MODE = "fail";
+		t.env.FAKE_NODE_MODE = "fail";
 		const r = t.run(MSG());
 		assert.equal(r.code, 1);
 	});
@@ -485,8 +558,8 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 	};
 	const PROOF = (log: string) => `Fix typos\n\nChange-class: proofreading\nDoc-check: ${log}\nUnverified: none\n`;
 	const withMain = (t: ReturnType<typeof setup>, files: Record<string, string>) => {
-		t.commit("main", files);
-		t.git("push", "--quiet", "origin", "main");
+		t.commit("release", files);
+		t.git("push", "--quiet", "origin", "release");
 	};
 
 	it("accepts proofreading of passive documents with a Doc-check log and no review trailers", () => {
@@ -572,7 +645,7 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 	// Runs one combined-review change; `base` files are first committed to main.
 	const combined = (files: Record<string, string | null>, base: Record<string, string> = {}, extra = "") => {
 		const t = setup();
-		if (Object.keys(base).length) { t.commit("main", base); t.git("push", "--quiet", "origin", "main"); }
+		if (Object.keys(base).length) { t.commit("release", base); t.git("push", "--quiet", "origin", "release"); }
 		t.task(files);
 		t.issues({ view: { "6": { labels: [{ name: "qa-inbox" }], state: "OPEN" } } });
 		return t.run(COMBINED(extra));
@@ -651,8 +724,8 @@ describe("deliver-check test integrity", { skip: process.platform !== "darwin" &
 	const TRAILERS = "Test-change: the old assertion checked a timing that is not part of the contract\nTest-review: agent#8 CLEAN\n";
 	const BASE_TEST = 'import assert from "node:assert/strict";\nit("a", () => {\n\tassert.equal(1, 1);\n\tassert.equal(2, 2);\n});\n';
 	const withMain = (t: ReturnType<typeof setup>, files: Record<string, string>) => {
-		t.commit("main", files);
-		t.git("push", "--quiet", "origin", "main");
+		t.commit("release", files);
+		t.git("push", "--quiet", "origin", "release");
 	};
 
 	it("fails an added skip without trailers and passes with both", () => {

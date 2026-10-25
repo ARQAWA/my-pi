@@ -128,7 +128,7 @@ Provenance:
   Since: process-rules-oct23 squash.
 - **Third-party installation fast path** `[D-WORK-THIRD-PARTY]`. Install agreed third-party libraries/extensions
   into the owner's Pi immediately, then add them to the my-pi package; this alone authorizes the needed ~/.pi
-  changes. Light self-review for unintended additions, commit and push main replace the full delivery pipeline,
+  changes. Light self-review and delivery under [PROCESS.md, Delivery](PROCESS.md#delivery) replace the full pipeline,
   local test gate and independent reviews for this narrow configuration path, not our own implementations.
   Owner (`16-27-59:4782`, entry `f73155f0`):
   «Я хочу, чтобы ты так же, как мы работаем над нашими задачами по этому репозиторию, мог ставить в этот репозиторий, в нашу сборку MyPy сторонние библиотеки, сторонние экстеншены. И мне надо, чтобы ты делал это суперреактивно: чтобы ты сначала ставил локально, чтобы оно локально уже работало прямо сейчас, а потом чтобы ты уже её парковал именно в репозитории, добавлял в сетап. И там не надо делать какой-то жёсткий pipeline всяких проверок, тестов и прочей хуйни. Надо просто добавить config, сделать commit push и лёгким саморевьюром проверить, что всё заебись, что нет никакой хуйни лишней.»
@@ -234,8 +234,8 @@ Opus 5.5 Low — это слишком дорого»
   «Да, по договоренности вопросам. Когда я работаю, я всегда все довожу до полной однозначности. В моей работе никогда нет никаких спорных моментов, которые мне приходится самому разрешать. Я всегда у заказчика работы разрешаю все конфликтные ситуации, которые есть, опираясь только на решение владельца задачи, а не на свое личное решение. Я сам лично не принимаю решения за заказчика, потому что я не имею на это permission.»
   Reason: decisions belong to the owner. Carrier: [PROCESS.md, Research and agreement](PROCESS.md#research-and-agreement).
   Since: `8f2ea64`.
-- **Branches, squash and history** `[D-WORK-BRANCHES]`. Each task works on its own branch and worktree, commits stages
-  without an extra gate, finishes with one squash into `main` and cleans up; history belongs in Git. Owner (`13-49-40:204`):
+- **Branches, squash and history** `[D-WORK-BRANCHES]`. Branch bases, task squash destination, release promotion
+  and cleanup follow [PROCESS.md, Delivery](PROCESS.md#delivery); history belongs in Git. Owner (`13-49-40:204`):
   «Насчет документации. Да, тут тоже все верно. И в документации не должно быть никаких исторических данных. История хранится в гиде. По общению агент отвечает владельцу кратко на русском языке всегда, не на моем языке, а именно на русском. Он отвечает не больше трех абзацев по максимум две строки в абзаце.»
   Reason: current documents carry current facts; Git keeps the history ([D-WORK-ARCHIVE] is the one exception for
   decisions). Carriers: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution) and
@@ -248,13 +248,13 @@ Opus 5.5 Low — это слишком дорого»
   «Ты запускаешь тесты или что? Ты не можешь проверить это? Это что за хуйня? Почему так, блядь?»
   «Если ты делаешь какие-то тесты, пробы, нагрузки тяжёлые, именно процессорные, то их лучше прогонять в CI/CD, чтобы наш MacBook Air не охуевал. Не лучше, а надо их прогонять в CI/CD.»
   «Нет нихуя не надо это была корректировка именно процесса на будущеее и того что что бы у тебя сохранялись логи»
-  The full local delivery `npm test` is the exception under [D-PIPELINE-LOCAL-GATE].
+  The local delivery exception follows [PROCESS.md, Delivery](PROCESS.md#delivery).
   Reason: other CPU-heavy verification stays off the owner's MacBook Air and every reported number has an auditable log; a
   future work policy, not a measurement request. Carriers:
   [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns), [Delivery](PROCESS.md#delivery),
   `.github/workflows/tests.yml`. Since: `fb322d9`.
 - **Checks once** `[D-WORK-CHECKS-ONCE]`. Relevant checks run once and their evidence is reused while inputs are
-  unchanged, except for the full local delivery run under [D-PIPELINE-LOCAL-GATE]; no Linux requirement;
+  unchanged, except for the release gate in [PROCESS.md, Delivery](PROCESS.md#delivery); no Linux requirement;
   docs-only work needs no extra tests; a squash of the tested head is not retested. Windows
   Node tooling runs through Git Bash; the existing CI `pwsh` bootstrap is allowed infrastructure. Reason: no idle
   reruns. Carrier: [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns). Since: `8f2ea64`.
@@ -266,20 +266,18 @@ Opus 5.5 Low — это слишком дорого»
   Carrier: `.pi/agents/code-reviewer.toml`; source: the owner's messages supplied with this task.
 - **Final checks and code reviewer** `[D-WORK-FINAL-CHECK]`. Work ends with an independent completeness-and-consistency
   check; large code changes also get a separate bug/quality reviewer through `agent_type: "code-reviewer"`,
-  small ones one combined review ([D-PIPELINE-COMBINED-REVIEW]). Installed Pi is updated only for relevant runtime changes.
+  small ones one combined review ([D-PIPELINE-COMBINED-REVIEW]). Installed Pi updates follow
+  [PROCESS.md, Delivery](PROCESS.md#delivery).
   Reason: independent proof without new product tools. Carriers:
   [PROCESS.md, Independent review](PROCESS.md#independent-review), `.pi/agents/code-reviewer.toml`.
   Since: `8f2ea64`.
 - **Deterministic delivery quality** `[D-WORK-DELIVER-CHECK]`. Owner (`16-27-59:440`, approval `16-27-59:450`):
   «Теперь смотри насчет выполнения задач и пробелов, которые ты нашел. Я же не буду всегда тебя переспрашивать. Если бы я не спросил, ты бы об этом не узнал. Надо поэтому сделать какой-то процесс, как детерминированно эту проблему решить на постоянке, чтобы мне не надо было тебя постоянно переспрашивать, чтобы ты сам следил за качеством. Надо твое предложение по тому, как мы этот пробел будем закрывать.»
   «Правила по Process MD я одобряю»
-  Coordinator text, the approved proposal in short (the verbatim text is in `DECISIONS-ARCHIVE.md`, A-0246): 1. test exactly
-  what is merged, rebased onto a fresh `main`, with full local `npm test` on the final commit ([D-PIPELINE-LOCAL-GATE]); 2. a review covers only the commit it checked; 3. before every merge `deliver-check` checks the
-  branch contains current `main`, full local `npm test` on that exact commit, the review
-  numbers with CLEAN and the list of what was not verified live; 4. every report carries an evidence table and an honest
-  "not verified live" section.
-  Coordinator text, interpretation of rule 2: a conflict-free rebase onto `main` needs the full local delivery test on the new head
-  but no new review; places changed while resolving conflicts go back to review.
+  Coordinator text: the original approved proposal is preserved in `DECISIONS-ARCHIVE.md`, A-0246.
+  The current gate and integration base are carried in [PROCESS.md, Delivery](PROCESS.md#delivery);
+  review coverage stays in [PROCESS.md, Independent review](PROCESS.md#independent-review).
+  Reports retain the evidence table and honest "not verified live" section.
   Reason: branches tested alone were squashed onto a moved `main`, and a code-review CLEAN once covered an earlier commit
   while two later fixes landed unreviewed. Carriers: [PROCESS.md](PROCESS.md) (Sufficient proof, Independent review,
   Delivery), `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`. Since: `47868b0`.
@@ -331,6 +329,35 @@ Opus 5.5 Low — это слишком дорого»
 
 ## Task pipeline
 
+- **Release delivery** `[D-PIPELINE-RELEASE]`. The policy is carried once in
+  [PROCESS.md, Delivery](PROCESS.md#delivery). Source session:
+  `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`.
+  Owner, physical line 6654, entry `4514ebf7`:
+  «Короче смотрии новое правило, мы тесты полные запускаем раз в 2 часа или каждые 10 слияний
+И слияние будем делать через релиз ветку
+т.е. создается релиз ветка в ней копятся 10 задач или проходит 2 часа и полный набор прогоняется на этот релиз
+А по каждой отдельной задаче прогоняются точечно только тесты этой отдельной задачи»
+  Coordinator questions and selected options, physical line 6657, assistant entry `62173a73`, not owner words:
+  1. "От чего начинать задачи". Selected option: "Новые задачи стартуют от релиз-ветки, а не от `main`."
+  2. "История в `main`". Question: "Как релиз попадает в `main`?" Selected option:
+     "Обычным слиянием, каждая задача остаётся отдельным коммитом."
+  3. "Полный набор упал". Question: "Что делаем, когда на релизе падают тесты?" Selected option:
+     "Релиз не идёт в `main`, отдельный агент находит виновную задачу и чинит, затем полный набор идёт снова."
+  4. "Твой Pi". Question: "Откуда обновляется твой локальный Pi?" Selected option:
+     "Из релиз-ветки сразу после влития каждой задачи, так ты получаешь новое раньше."
+  5. "Старт таймера". Question: "Когда начинаются 2 часа?" Selected option:
+     "С влития первой задачи в пустой релиз; пустой релиз не запускается."
+  Owner answers, physical line 6679, user entry `7d2d40b1`: `1а 2а 3а 4а 5а`.
+  The coordinator's implementation brief at physical line 6680, assistant entry `73d884ca`, supplies the
+  exact-head test-lane execution and Git-derived batch accounting; it is coordinator text, not an owner quote.
+  Owner urgency, physical line 6683, entry `9a6cb0a8`:
+  «Смотри эта история про релиз это ультра крит и ее надо делать выше всех и сразу внедрять что бы тесты паралельные не ебали ни цпу ни процесс»
+  Reason: give the owner completed tasks promptly without concurrent per-task full regressions; keep a checked
+  release boundary for `main`. Carriers: `PROCESS.md`, `scripts/deliver-check.mjs`,
+  `test/deliver-check.test.ts` and the owner's installed Pi package source. Scheduled GitHub checks on `main`,
+  independent reviews and the substantive-work timebox are unchanged. Superseded passages from `923ba22`
+  are preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0337 through A-0351.
+
 Rules: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline). Evidence: the speed analysis report outside the repository,
 `my-pi-evidence/process-speed/REPORT.md`. The owner answered the chat version of its seven questions (coordinator
 questions `16-27-59:5043`, entry `605c1e21`) in `16-27-59:5060`, entry `46a9e546`; the coordinator replied in
@@ -351,8 +378,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   same time" wording of [D-WORK-PARALLEL].
   Since: process-pipeline squash.
 - **One merge agent, fixed order** `[D-PIPELINE-MERGE-TRAIN]`. One agent integrates branches in an order fixed in
-  the current session queue. It rebases onto current `main`, merges only when required reviews are clean and
-  `deliver-check` passes, including full local `npm test` on the exact committed head ([D-PIPELINE-LOCAL-GATE]). Owner: «2а 3а» (item 3 a). Coordinator text, option 3a: "Слияниями занимается один агент в заранее заданном порядке. Повторов меньше, каждая итоговая версия проверяется."
+  the current session queue. Integration and its gate follow [PROCESS.md, Delivery](PROCESS.md#delivery),
+  with the required reviews unchanged. Owner: «2а 3а» (item 3 a). Coordinator text, option 3a: "Слияниями занимается один агент в заранее заданном порядке. Повторов меньше, каждая итоговая версия проверяется."
   Reason: moved `main` forced repeated final CI on ready branches. The exact-head local test gate keeps untested code out of `main`. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and [Delivery](PROCESS.md#delivery).
   Since: process-pipeline squash.
 - **Shared CI watcher** `[D-PIPELINE-CI-WATCHER]`. Owner (`16-27-59:5060`): «Окей, насчёт одного скрипта раз в минуту я согласен.»
@@ -366,7 +393,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `scripts/deliver-check.mjs`, `.pi/extensions/qa-status/`, [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline).
   Since: process-pipeline squash.
 - **Three classes of text change** `[D-PIPELINE-TEXT-CLASSES]`. Proofreading is checked locally with no independent
-  review; the full local delivery test still applies ([D-PIPELINE-LOCAL-GATE]); a change of meaning gets review; runtime prompts are checked by agent behavior. Owner:
+  review; the delivery gate follows [PROCESS.md, Delivery](PROCESS.md#delivery); a change of meaning gets review; runtime prompts are checked by agent behavior. Owner:
   «2а 3а» (item 2 a). Coordinator text, option 2a: "Опечатки и правки формулировок проверяются локально. Изменения смысла идут на проверку. Рабочие промпты проверяются по поведению агента. Быстрее, а контроль остаётся."
   The report's extra idea of dropping extension READMEs from application CI was not part of the chat option and is not
   adopted; READMEs still need code review. GitHub CI is not a delivery gate ([D-PIPELINE-LOCAL-GATE]). Reason: the 39-file documentation cleanup spent at least 50 minutes
@@ -442,9 +469,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Reason: the reviewer work cost a day and many tokens on tests with no result. Carrier:
   [PROCESS.md, Task timebox](PROCESS.md#task-timebox) and `AGENTS.md`. Since: process-pipeline squash.
 
-- **Local delivery test gate** `[D-PIPELINE-LOCAL-GATE]`. The only delivery test condition is full local `npm test`
-  passing on the exact committed branch head on the owner's macOS. `deliver-check` runs it in the existing clean
-  task worktree, checking cleanliness and the head before and after the run; no receipt or new mechanism.
+- **Local delivery test gate** `[D-PIPELINE-LOCAL-GATE]`. The current task and release gates are carried once in
+  [PROCESS.md, Delivery](PROCESS.md#delivery), following [D-PIPELINE-RELEASE] below.
   No green GitHub Actions run is required before a merge, including `pcli.yml` for `pcli-vscode`; no `CI:` evidence
   trailer is required. Required reviews and the other delivery checks remain.
   Owner, urgent order in the current conversation, 2026-10-24:

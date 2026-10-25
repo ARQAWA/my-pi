@@ -5576,3 +5576,196 @@ Archived by: context-simplify delivery; exact commit: `git log -S'A-0324' -- DEC
 > - **Native routing and reserve** `[D-CONTEXT-ROUTING]`. Stable capped copies are exposed through Agent state, `createLoopConfig`, `_buildRuntime` and native `ModelRuntime.getPhysicalModel`; registry entries are not mutated. Virtual selections keep their native identity, callback, thinking and declared or unknown window. Session/request-local `AsyncLocalStorage` supplies the physical target's W/R: automatic preparation uses its triggering target, manual preparation the latest successful response after abort. Default summaries preserve interception preparation and route once from the captured selection, retaining the original explicit reserve intent. On Pi 1.4.0 reserve rebinding does not size summary output; optional removal is tracked in [BACKLOG](BACKLOG.md).
 >   Coordinator text. Reason: physical limits must not leak across concurrent operations or alter native selection identity.
 >   Carrier: `extensions/RQW-context/index.ts` (`wrapAgentState`, `wrapRouting`, `wrapCompactionSettings`, `reserveIntents`); details: `notes/context-questions.md`. Since: `6eb01a7`.
+
+## A-0337 · archived 2026-10-25 · Per-task main delivery wording
+
+Status: SUPERSEDED by [D-PIPELINE-RELEASE] in DECISIONS.md.
+Source: `923ba22:DECISIONS.md`, replaced passage verbatim.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0337' -- DECISIONS-ARCHIVE.md`.
+
+> - **Branches, squash and history** `[D-WORK-BRANCHES]`. Each task works on its own branch and worktree, commits stages
+>   without an extra gate, finishes with one squash into `main` and cleans up; history belongs in Git.
+
+## A-0338 · archived 2026-10-25 · Per-task main delivery wording
+
+Status: SUPERSEDED by [D-PIPELINE-RELEASE] in DECISIONS.md.
+Source: `923ba22:DECISIONS.md`, replaced passage verbatim.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0338' -- DECISIONS-ARCHIVE.md`.
+
+>   The full local delivery `npm test` is the exception under [D-PIPELINE-LOCAL-GATE].
+
+## A-0339 · archived 2026-10-25 · Per-task main delivery wording
+
+Status: SUPERSEDED by [D-PIPELINE-RELEASE] in DECISIONS.md.
+Source: `923ba22:DECISIONS.md`, replaced passage verbatim.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0339' -- DECISIONS-ARCHIVE.md`.
+
+>   unchanged, except for the full local delivery run under [D-PIPELINE-LOCAL-GATE]; no Linux requirement;
+
+## A-0340 · archived 2026-10-25 · Per-task main delivery wording
+
+Status: SUPERSEDED by [D-PIPELINE-RELEASE] in DECISIONS.md.
+Source: `923ba22:DECISIONS.md`, replaced passage verbatim.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0340' -- DECISIONS-ARCHIVE.md`.
+
+>   small ones one combined review ([D-PIPELINE-COMBINED-REVIEW]). Installed Pi is updated only for relevant runtime changes.
+
+## A-0341 · archived 2026-10-25 · Per-task main delivery wording
+
+Status: SUPERSEDED by [D-PIPELINE-RELEASE] in DECISIONS.md.
+Source: `923ba22:DECISIONS.md`, replaced passage verbatim.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0341' -- DECISIONS-ARCHIVE.md`.
+
+>   Coordinator text, the approved proposal in short (the verbatim text is in `DECISIONS-ARCHIVE.md`, A-0246): 1. test exactly
+>   what is merged, rebased onto a fresh `main`, with full local `npm test` on the final commit ([D-PIPELINE-LOCAL-GATE]); 2. a review covers only the commit it checked; 3. before every merge `deliver-check` checks the
+>   branch contains current `main`, full local `npm test` on that exact commit, the review
+>   numbers with CLEAN and the list of what was not verified live; 4. every report carries an evidence table and an honest
+>   "not verified live" section.
+>   Coordinator text, interpretation of rule 2: a conflict-free rebase onto `main` needs the full local delivery test on the new head
+>   but no new review; places changed while resolving conflicts go back to review.
+
+## A-0342 · archived 2026-10-25 · Per-task main delivery wording
+
+Status: SUPERSEDED by [D-PIPELINE-RELEASE] in DECISIONS.md.
+Source: `923ba22:DECISIONS.md`, replaced passage verbatim.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0342' -- DECISIONS-ARCHIVE.md`.
+
+>   the current session queue. It rebases onto current `main`, merges only when required reviews are clean and
+>   `deliver-check` passes, including full local `npm test` on the exact committed head ([D-PIPELINE-LOCAL-GATE]).
+
+## A-0343 · archived 2026-10-25 · Per-task main delivery wording
+
+Status: SUPERSEDED by [D-PIPELINE-RELEASE] in DECISIONS.md.
+Source: `923ba22:DECISIONS.md`, replaced passage verbatim.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0343' -- DECISIONS-ARCHIVE.md`.
+
+>   review; the full local delivery test still applies ([D-PIPELINE-LOCAL-GATE]); a change of meaning gets review; runtime prompts are checked by agent behavior.
+
+## A-0344 · archived 2026-10-25 · Per-task main delivery wording
+
+Status: SUPERSEDED by [D-PIPELINE-RELEASE] in DECISIONS.md.
+Source: `923ba22:DECISIONS.md`, replaced passage verbatim.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0344' -- DECISIONS-ARCHIVE.md`.
+
+> - **Local delivery test gate** `[D-PIPELINE-LOCAL-GATE]`. The only delivery test condition is full local `npm test`
+>   passing on the exact committed branch head on the owner's macOS. `deliver-check` runs it in the existing clean
+>   task worktree, checking cleanliness and the head before and after the run; no receipt or new mechanism.
+
+## A-0345 · archived 2026-10-25 · PROCESS Isolated parallel execution
+
+Status: SUPERSEDED delivery wording by [D-PIPELINE-RELEASE] in DECISIONS.md; other section rules remain in force.
+Source: `923ba22:PROCESS.md`, removed fragments verbatim from the replaced section.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0345' -- DECISIONS-ARCHIVE.md`.
+
+Replaced fragment 1:
+
+> - Start each change task from up-to-date `main` in its own branch and git worktree:
+>   `git worktree add -b <task> ../my-pi-worktrees/<task> main`. Make all task edits there, never in the main checkout.
+
+## A-0346 · archived 2026-10-25 · PROCESS Task pipeline
+
+Status: SUPERSEDED delivery wording by [D-PIPELINE-RELEASE] in DECISIONS.md; other section rules remain in force.
+Source: `923ba22:PROCESS.md`, removed fragments verbatim from the replaced section.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0346' -- DECISIONS-ARCHIVE.md`.
+
+Replaced fragment 1:
+
+>   `main` and pushes it. It merges only when the required reviews are clean and `deliver-check` passes, including
+>   full local `npm test` on the exact committed branch head on the owner's macOS. When `main` moves, remaining
+>   branches rebase and pass the gate on their new heads. No green GitHub run is required, including for `pcli-vscode`.
+
+Replaced fragment 2:
+
+> - A failed local delivery test or a conflicting rebase sends the task back to the top of the queue. GitHub CI does
+
+## A-0347 · archived 2026-10-25 · PROCESS Sufficient proof, without idle reruns
+
+Status: SUPERSEDED delivery wording by [D-PIPELINE-RELEASE] in DECISIONS.md; other section rules remain in force.
+Source: `923ba22:PROCESS.md`, removed fragments verbatim from the replaced section.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0347' -- DECISIONS-ARCHIVE.md`.
+
+Replaced fragment 1:
+
+>   tested code, configuration and document contracts remain unchanged, except for the mandatory local delivery run below.
+
+Replaced fragment 2:
+
+>   Air. The delivery exception is full local `npm test` on the exact committed branch head, run by `deliver-check`.
+
+Replaced fragment 3:
+
+> - Test exactly what gets merged. If `main` moved since the branch was created, the subagent rebases the branch onto
+>   current `main`; `deliver-check` runs full local `npm test` on that final committed head, whose squash has the same
+>   tree. This is the only delivery test condition; no GitHub run needs to be triggered or awaited for a merge.
+
+Replaced fragment 4:
+
+>   the full local delivery run still applies. A workflow change does require validating its triggers and affected
+
+## A-0348 · archived 2026-10-25 · PROCESS Independent review
+
+Status: SUPERSEDED delivery wording by [D-PIPELINE-RELEASE] in DECISIONS.md; other section rules remain in force.
+Source: `923ba22:PROCESS.md`, removed fragments verbatim from the replaced section.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0348' -- DECISIONS-ARCHIVE.md`.
+
+Replaced fragment 1:
+
+>   result review, and code review when the path-based requirement above applies. A conflict-free rebase onto `main`
+>   changes no task places: it needs the full local delivery test on the new head, not new review; places changed
+
+## A-0349 · archived 2026-10-25 · PROCESS Third-party installation fast path
+
+Status: SUPERSEDED delivery wording by [D-PIPELINE-RELEASE] in DECISIONS.md; other section rules remain in force.
+Source: `923ba22:PROCESS.md`, removed fragments verbatim from the replaced section.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0349' -- DECISIONS-ARCHIVE.md`.
+
+Replaced fragment 1:
+
+> Self-review the config and exact diff for unintended additions, commit and push to `main`. This narrow path
+
+## A-0350 · archived 2026-10-25 · PROCESS Delivery
+
+Status: SUPERSEDED delivery wording by [D-PIPELINE-RELEASE] in DECISIONS.md; other section rules remain in force.
+Source: `923ba22:PROCESS.md`, removed fragments verbatim from the replaced section.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0350' -- DECISIONS-ARCHIVE.md`.
+
+Replaced fragment 1:
+
+> 2. Push the task branch; continue independent work during required reviews. Before merging, require sufficient
+>    proof and the required clean reviews for the final head commit on current `main`. The only delivery test
+>    condition is full local `npm test` on that exact committed head on the owner's macOS, run by `deliver-check`.
+
+Replaced fragment 2:
+
+>    and runs, from the clean main checkout,
+>    `npm run deliver-check -- <branch> <message-file>` (`scripts/deliver-check.mjs`; it fails in any checkout
+>    without `main` checked out). It requires: the branch
+>    contains current `origin/main` and the main checkout's HEAD, the merge destination. It runs full `npm test`
+>    in the branch's existing clean task worktree on the owner's macOS, at the exact committed branch head, and
+>    checks worktree cleanliness and the head before and after the run. No receipt or extra worktree is needed.
+
+Replaced fragment 3:
+
+> 4. Squash merge into `main`: one task, one commit, with that message. Never merge the task's stage commits into main
+>    as a merge commit. Push main autonomously; the squash tree equals the tested head, so it is not retested.
+
+Replaced fragment 4:
+
+>    `include: ["user_messages"]`. Object: `main`'s git log since the session
+
+Replaced fragment 5:
+
+> 6. Update the locally installed Pi when a runtime/package change requires it, preserving auth and other settings;
+>    restart when process-wide patches require it. Documentation-only work needs no package update or restart.
+
+Replaced fragment 6:
+
+>    its branch on `origin`. Do not remove other tasks' worktrees or branches.
+
+## A-0351 · archived 2026-10-25 · Third-party delivery destination
+
+Status: SUPERSEDED destination wording by [D-PIPELINE-RELEASE] in DECISIONS.md; the narrow fast path is unchanged.
+Source: `923ba22:DECISIONS.md`, replaced passage verbatim.
+Archived by: release-pipeline-priority; exact commit: `git log -S'A-0351' -- DECISIONS-ARCHIVE.md`.
+
+>   changes. Light self-review for unintended additions, commit and push main replace the full delivery pipeline,

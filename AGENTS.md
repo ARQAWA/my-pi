@@ -16,6 +16,7 @@ Task timebox, at most 2 hours of substantive work, then a pause and a report: [P
 Temporary subagent model restriction and expiry: [PROCESS.md](PROCESS.md#subagent-models).
 Search ready-made solutions before new features or mechanisms: [PROCESS.md](PROCESS.md#research-and-agreement).
 Third-party installs go into the owner's Pi first, then the package: [PROCESS.md](PROCESS.md#third-party-installation-fast-path).
+Task bases, scoped checks, release batching and the owner's Pi update source: [PROCESS.md Delivery](PROCESS.md#delivery).
 
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
 - `extensions/RQW-settings/`: extension 1, the harness settings. Turns on Pi's built-in `codemode` and `tool_search` by

@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// Pre-merge gate (PROCESS.md, Delivery). Run from the main checkout before every squash merge:
+// Pre-merge gate (PROCESS.md, Delivery). Run from the release checkout before every squash merge:
 //   npm run deliver-check -- <branch> <message-file>
 // <message-file> is the planned squash commit message. Every failed check prints one line; any failure exits 1.
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { findNonVerbatimQuotes, loadOwnerMessages, ownerSessionDirs } from "./owner-quotes.mjs";
+import { selectTargetedTests } from "./targeted-tests.mjs";
 
 const [branch, messageFile] = process.argv.slice(2);
 if (!branch || !messageFile) {
@@ -85,13 +86,13 @@ if (process.platform !== "darwin") {
 
 const root = git("rev-parse", "--show-toplevel");
 
-// The script gates a merge into main: it must run in the checkout that has main checked out, never in the task worktree.
-let onMain = false;
-try { onMain = git("symbolic-ref", "-q", "HEAD") === "refs/heads/main"; } catch { /* detached HEAD */ }
-if (!onMain) fail(`${root} does not have refs/heads/main checked out: run deliver-check from the main checkout`);
+// The script gates a merge into release: it must run in the checkout that has release checked out, never in the task worktree.
+let onRelease = false;
+try { onRelease = git("symbolic-ref", "-q", "HEAD") === "refs/heads/release"; } catch { /* detached HEAD */ }
+if (!onRelease) fail(`${root} does not have refs/heads/release checked out: run deliver-check from the release checkout`);
 
-// 4. The main checkout has no uncommitted or untracked changes.
-if (git("status", "--porcelain")) fail(`main checkout ${root} has uncommitted or untracked changes`);
+// 4. The release checkout has no uncommitted or untracked changes.
+if (git("status", "--porcelain")) fail(`release checkout ${root} has uncommitted or untracked changes`);
 
 try {
 	git("fetch", "--quiet", "origin");
@@ -99,24 +100,24 @@ try {
 	fail(`git fetch origin failed: ${String(e.stderr || e.message).trim()}`);
 	finish();
 }
-let head, main, local;
+let head, release, local;
 try {
 	head = git("rev-parse", "--verify", `${branch}^{commit}`);
-	main = git("rev-parse", "--verify", "origin/main^{commit}");
+	release = git("rev-parse", "--verify", "origin/release^{commit}");
 	local = git("rev-parse", "--verify", "HEAD^{commit}");
 } catch {
-	fail(`cannot resolve ${branch}, origin/main or HEAD of the main checkout`);
+	fail(`cannot resolve ${branch}, origin/release or HEAD of the release checkout`);
 	finish();
 }
 
-// 1. The branch head contains the current origin/main and the merge destination (this checkout's HEAD),
+// 1. The branch head contains the current origin/release and the merge destination (this checkout's HEAD),
 // so the tested tree is the tree that gets merged.
 const contains = (base) => spawnSync("git", ["merge-base", "--is-ancestor", base, head]).status === 0;
-if (!contains(main)) {
-	fail(`${branch} (${short(head)}) does not contain origin/main (${short(main)}): rebase on current main and retest`);
+if (!contains(release)) {
+	fail(`${branch} (${short(head)}) does not contain origin/release (${short(release)}): rebase on current release and retest`);
 }
-if (local !== main && !contains(local)) {
-	fail(`main checkout HEAD (${short(local)}) is not origin/main (${short(main)}) and not contained in ${branch}: `
+if (local !== release && !contains(local)) {
+	fail(`release checkout HEAD (${short(local)}) is not origin/release (${short(release)}) and not contained in ${branch}: `
 		+ "push or drop the local commits, then rebase and retest");
 }
 
@@ -141,9 +142,9 @@ const globRe = (glob) => new RegExp(`^${glob.split(/(\*\*|\*|\?)/).map((p) =>
 	p === "**" ? ".*" : p === "*" ? "[^/]*" : p === "?" ? "[^/]" : p.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("")}$`);
 const matchesAny = (file, globs) => globs.some((g) => globRe(g).test(file));
 
-// --no-renames: a move lists both its source and its destination, so moving code into notes/ is not docs-only.
-const changed = git("diff", "-z", "--no-renames", "--name-only", `${main}...${head}`).split("\0").filter(Boolean);
-const ignoredBy = [main, head].map((rev) => workflowPaths(rev, "tests.yml", "paths-ignore"));
+// --no-renames keeps both sides of moves in the review and targeted-test classification.
+const changed = git("diff", "-z", "--no-renames", "--name-only", `${release}...${head}`).split("\0").filter(Boolean);
+const ignoredBy = [release, head].map((rev) => workflowPaths(rev, "tests.yml", "paths-ignore"));
 const codeChanged = changed.some((f) => !ignoredBy.every((globs) => matchesAny(f, globs)));
 
 // 3. The squash message records clean reviews and what was not verified live.
@@ -174,7 +175,7 @@ const timeouts = (texts) => {
 function weakeningRules(file) {
 	let diff;
 	try {
-		diff = execFileSync("git", ["diff", "--no-renames", "--no-color", "-U0", `${main}...${head}`, "--", file],
+		diff = execFileSync("git", ["diff", "--no-renames", "--no-color", "-U0", `${release}...${head}`, "--", file],
 			{ encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
 	} catch (e) {
 		fail(`test integrity: cannot diff ${file}: ${String(e.stderr || e.message).trim()}`);
@@ -266,9 +267,9 @@ function proofreadingProblems() {
 	const bad = changed.filter((f) => !isPassiveDoc(f));
 	if (bad.length) problems.push(`not passive documents: ${bad.slice(0, 5).join(", ")}`);
 	if (!changed.length) problems.push("no changed files");
-	const moved = changed.filter((f) => !existsAt(main, f) || !existsAt(head, f));
+	const moved = changed.filter((f) => !existsAt(release, f) || !existsAt(head, f));
 	if (moved.length) problems.push(`added or deleted files: ${moved.slice(0, 5).join(", ")}`);
-	if (changed.includes("PROCESS.md") && (rulesBlock(main) === undefined || rulesBlock(main) !== rulesBlock(head))) {
+	if (changed.includes("PROCESS.md") && (rulesBlock(release) === undefined || rulesBlock(release) !== rulesBlock(head))) {
 		problems.push("PROCESS.md coordinator-rules block changed or unreadable");
 	}
 	if (codeChanged) problems.push("code review is required for this change");
@@ -284,7 +285,7 @@ if (changeClasses.length) {
 // Added plus deleted lines of the whole change; null when a binary or non-numeric entry makes the size unknowable.
 function changedLineCount() {
 	let total = 0;
-	for (const row of git("diff", "--numstat", "--no-renames", `${main}...${head}`).split(/\r?\n/).filter(Boolean)) {
+	for (const row of git("diff", "--numstat", "--no-renames", `${release}...${head}`).split(/\r?\n/).filter(Boolean)) {
 		const [add, del] = row.split("\t");
 		if (!/^\d+$/.test(add) || !/^\d+$/.test(del)) return null;
 		total += Number(add) + Number(del);
@@ -323,7 +324,7 @@ try {
 	const messages = loadOwnerMessages(ownerSessionDirs(checkouts));
 	for (const file of ["DECISIONS.md", "PROCESS.md"]) {
 		const diff = git("diff", "--no-ext-diff", "--no-textconv", "--no-color", "--no-renames", "-U0",
-			`${main}...${head}`, "--", file);
+			`${release}...${head}`, "--", file);
 		const ranges = [...diff.matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)]
 			.map((match) => ({ start: Number(match[1]), count: Number(match[2] ?? 1) }))
 			.filter((range) => range.count > 0);
@@ -355,23 +356,30 @@ function checkTaskHead(when) {
 	try {
 		if (taskGit("rev-parse", "HEAD") !== head || git("rev-parse", branchRef) !== head
 			|| taskGit("symbolic-ref", "-q", "HEAD") !== branchRef) {
-			fail(`local npm test: ${branch} head changed ${when}; expected ${head}`);
+			fail(`targeted tests: ${branch} head changed ${when}; expected ${head}`);
 		}
 		if (taskGit("status", "--porcelain")) fail(`task checkout ${taskWorktree} has uncommitted or untracked changes ${when}`);
 	} catch (error) {
-		fail(`local npm test: cannot verify task checkout ${when}: ${error.message}`);
+		fail(`targeted tests: cannot verify task checkout ${when}: ${error.message}`);
 	}
 }
 checkTaskHead("before tests");
 finish();
-console.log(`  running local npm test at ${head} in ${taskWorktree}`);
-const tests = spawnSync("npm", ["test"], { cwd: taskWorktree, stdio: "inherit" });
-if (tests.status !== 0) fail(`local npm test failed: ${tests.error?.message ?? tests.signal ?? `exit ${tests.status}`}`);
+let selected = [];
+try { selected = selectTargetedTests({ root: taskWorktree, changed }); }
+catch (error) { fail(`targeted tests: cannot select tests: ${error.message}`); }
+finish();
+console.log(`  targeted tests at ${head}: ${selected.length ? selected.join(", ") : "none discovered; no runtime tests executed"}`);
+console.log("  selection covers extension owners and static local references; dynamic dependencies are not proven");
+if (selected.length) {
+	const tests = spawnSync("node", ["--test", ...selected], { cwd: taskWorktree, stdio: "inherit" });
+	if (tests.status !== 0) fail(`targeted tests failed: ${tests.error?.message ?? tests.signal ?? `exit ${tests.status}`}`);
+}
 checkTaskHead("after tests");
 finish();
 console.log(`deliver-check PASS ${branch} ${short(head)}`);
-console.log(`  contains origin/main ${short(main)}; ${changed.length} changed file(s)`);
-console.log(`  local npm test: PASS ${head} in ${taskWorktree}`);
+console.log(`  contains origin/release ${short(release)}; ${changed.length} changed file(s)`);
+console.log(`  targeted tests: ${selected.length ? "PASS" : "NONE"} ${head} in ${taskWorktree}`);
 if (proofreading) console.log(`  reviews: exempt (proofreading, Doc-check ${docChecks[0]})`);
 else if (combined && !reviews.length) console.log(`  reviews: combined ${combinedLines.join(", ")} (result and code review)`);
 else console.log(`  reviews: ${reviews.join(", ")}${codeChanged ? "; code review CLEAN" : ""}`);
