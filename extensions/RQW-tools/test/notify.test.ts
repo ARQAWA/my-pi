@@ -53,11 +53,18 @@ async function background(f: Awaited<ReturnType<typeof fresh>>, command: string)
 	completions.push(f.jobs.settled(id));
 	return id;
 }
+async function running(f: Awaited<ReturnType<typeof fresh>>, id: string) {
+	// Handoff may precede the start snapshot; output proves the gated command has begun.
+	const ready = body(await call(f.tools.job, { action: "wait", ids: [id], until: "started", blocking: true }, f.dir));
+	assert.equal(ready.reason, "match");
+	assert.equal(ready.statuses[0].state, "running");
+}
 
 describe("notification wait", () => {
 	it("returns waiting at once with terminate; one notification follows when the job ends, same body as a blocking wait", async () => {
 		const f = await fresh();
 		const id = await background(f, gated("gate", "end"));
+		await running(f, id);
 		const started = performance.now();
 		const waiting = await call(f.tools.job, { action: "wait", ids: [id], timeout_ms: 60000 }, f.dir);
 		assert.ok(performance.now() - started < 1000);
@@ -94,6 +101,7 @@ describe("notification wait", () => {
 	it("the deadline sends one timeout notification and the job keeps running", async () => {
 		const f = await fresh();
 		const id = await background(f, gated("gate", "late"));
+		await running(f, id);
 		await call(f.tools.job, { action: "wait", ids: [id], timeout_ms: 100 }, f.dir);
 		await until("the deadline notification", () => f.notes.length === 1);
 		assert.equal(JSON.parse(f.notes[0].text).reason, "timeout");

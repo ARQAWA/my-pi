@@ -60,18 +60,25 @@ after(async () => {
 
 const textOf = (content: readonly { type: string; text?: string }[]) => content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
 
-// The watchdog of every run that sends calls: a deadlock fails the test after 5 s instead of hanging the run (the one
-// real timer here). The sessions still running are aborted, which also stops their script's worker thread; otherwise
-// it would keep the process alive.
-function guard<T>(promise: Promise<T>): Promise<T> {
+// The watchdog aborts live sessions, including their script workers. The large write/read case watches tool
+// progress: its real work can exceed 5 s on a loaded host without the barrier being deadlocked.
+function guard<T>(promise: Promise<T>, progress?: AgentSession): Promise<T> {
 	let timer: NodeJS.Timeout;
+	let unsubscribe: (() => void) | undefined;
 	const watchdog = new Promise<never>((_, reject) => {
-		timer = setTimeout(() => {
-			for (const session of live) void session.abort();
-			reject(new Error("no result after 5 s (deadlock?)"));
-		}, 5000);
+		const arm = () => {
+			clearTimeout(timer);
+			timer = setTimeout(() => {
+				for (const session of live) void session.abort();
+				reject(new Error(progress ? "no tool progress after 5 s (deadlock?)" : "no result after 5 s (deadlock?)"));
+			}, 5000);
+		};
+		unsubscribe = progress?.subscribe((event) => {
+			if (event.type === "tool_execution_start" || event.type === "tool_execution_end") arm();
+		});
+		arm();
 	});
-	return Promise.race([promise, watchdog]).finally(() => clearTimeout(timer));
+	return Promise.race([promise, watchdog]).finally(() => { clearTimeout(timer); unsubscribe?.(); });
 }
 
 type Options = {
@@ -85,6 +92,8 @@ type Options = {
 	customTools?: ReturnType<typeof defineTool>[];
 	/** Runs once the extensions are bound and `started` is taken, before the assistant message of `calls`. */
 	drive?: (session: AgentSession) => Promise<void>;
+	/** Watch for a stalled tool pipeline rather than total duration of the large write/read fixture. */
+	watchToolProgress?: boolean;
 	calls?: [name: string, args: Record<string, unknown>][];
 };
 type Run = {
@@ -181,7 +190,7 @@ async function run(o: Options = {}): Promise<Run> {
 						});
 					}
 				});
-				await guard(session.prompt("go"));
+				await guard(session.prompt("go"), o.watchToolProgress ? session : undefined);
 			}
 		} finally {
 			live.delete(session);
@@ -243,6 +252,7 @@ describe("codemode: the RQW-tools barrier holds for calls made from a codemode s
 		for (let i = 0; i < 10; i++) {
 			const r = await run({
 				setup,
+				watchToolProgress: true,
 				calls: codemode(
 					`const [w, rd] = await Promise.all([tools.write({ path: "f.txt", content: "NEW-C\\n".repeat(2000000) }), tools.read({ path: "f.txt", offset: 1999990, limit: 3 })]);\nreturn rd;`,
 				),
