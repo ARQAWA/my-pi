@@ -107,7 +107,10 @@ profiles and skills for the ordinary `agent` runtime.
   Once the parent has its result, Pi's saved nested record determines membership, status and arguments, in the
   stream as after a reload. Matching compact RQW-tools metadata adds confirmed edit counts and bash exit codes
   (see below); a call left `unfinished` stays unconfirmed even with metadata (no success, failure or counts).
-  A nested call's failure and a write's lines (from saved arguments) still count.
+  A nested call's failure and a write's lines (from saved arguments) still count. A failed outer codemode keeps its
+  error output and status in the current card even when nested calls succeeded. Its failure remains in the folded
+  summary, without an extra parent tool count or recounting a propagated nested failure. Nested details and expanded
+  originals are unchanged.
 - `test/extensions/RQW-tool-ui/harness.ts`: width sweep (`assertFits`, 0..160 columns), wide and styled samples, identity and colored theme
   painters, fixed clock. `test/extensions/RQW-tool-ui/transcript.ts`: saved messages in a public in-memory session and Pi's render context.
 - Tests: `test/extensions/RQW-tool-ui/render.test.ts` (the renderers), `test/extensions/RQW-tool-ui/original.test.ts` (the expanded original against Pi's own

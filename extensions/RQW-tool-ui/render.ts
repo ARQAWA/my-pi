@@ -56,13 +56,19 @@ export function collapsedRows(g: CallGroup | undefined, width: number, theme: Th
 	const inner = width - margin;
 	const indent = " ".repeat(margin);
 	const calls = g.members.map((m) => classifyMember(m, cwd));
-	const rows = [indent + renderSummary(calls, inner, theme)];
+	const parentErrors = g.group.parentErrors ?? [];
+	// A propagated nested failure already counts once; a script's own failure must not disappear.
+	const extraErrors = parentErrors.filter((parent) => !g.members.some((m, i) => m.parentId === parent.id && calls[i].status === "error"))
+		.map((parent) => ({ ...classifyMember(parent, cwd), countKeys: [] }));
+	const rows = [indent + renderSummary([...calls, ...extraErrors], inner, theme)];
 	if (!g.active || g.members.length === 0) return rows;
 	// The current call is a member unless it is a parent whose nested calls count instead; then the latest member.
 	const found = g.members.findIndex((m) => m.id === g.currentCallId);
 	const at = found >= 0 ? found : g.members.length - 1;
-	const member = g.members[at];
-	const call = calls[at];
+	const nested = g.members[at];
+	const parent = parentErrors.find((m) => m.id === g.currentCallId || m.id === nested.parentId);
+	const member = parent ?? nested;
+	const call = parent ? classifyMember(parent, cwd) : calls[at];
 	const live = renderLive({ ...call, toolName: member.toolName, ...(member.durationMs !== undefined ? { durationMs: member.durationMs } : {}),
 		...(call.kind === "edit" ? { diff: diffOf(member.result) } : {}) }, inner, theme);
 	// A nested call whose saved record ended `unfinished` has no known outcome: no running, success or failure row.

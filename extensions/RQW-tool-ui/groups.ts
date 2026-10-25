@@ -65,6 +65,8 @@ export interface Group {
 	callIds: string[];
 	/** The counted calls, nested calls in place of their parent. */
 	members: Member[];
+	/** Failed codemode parents retained for outcome display, never counted as additional tool calls. */
+	parentErrors?: Member[];
 }
 
 /** Per top-level tool call ID. */
@@ -178,12 +180,15 @@ export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveS
 		const nested = nestedOf(id, saved, executions, topOf);
 		open.started.push(id, ...nested.map((n) => n.id));
 		if (!final && !stopReason) open.pending.push(id);
-		if (nested.length === 0) {
-			const result = resultOf(final ?? run?.partialResult);
-			g.members.push({ id, toolName: String(call.name ?? ""), args: call.arguments ?? {}, ...(result ? { result } : {}),
-				...(final ? { isError: final.isError === true } : {}), ...(stopReason ? { stopReason } : {}), isPartial: !final && !stopReason,
-				...(typeof saved?.durationMs === "number" ? { durationMs: saved.durationMs } : typeof run?.durationMs === "number" ? { durationMs: run.durationMs } : {}) });
-		} else g.members.push(...nested);
+		const result = resultOf(final ?? run?.partialResult);
+		const member: Member = { id, toolName: String(call.name ?? ""), args: call.arguments ?? {}, ...(result ? { result } : {}),
+			...(final ? { isError: final.isError === true } : {}), ...(stopReason ? { stopReason } : {}), isPartial: !final && !stopReason,
+			...(typeof saved?.durationMs === "number" ? { durationMs: saved.durationMs } : typeof run?.durationMs === "number" ? { durationMs: run.durationMs } : {}) };
+		if (nested.length === 0) g.members.push(member);
+		else {
+			g.members.push(...nested);
+			if (member.toolName === "codemode" && member.isError) (g.parentErrors ??= []).push(member);
+		}
 	};
 	for (const m of messages) {
 		const r = record(m);
