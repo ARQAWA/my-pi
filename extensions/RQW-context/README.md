@@ -8,6 +8,8 @@ Independent context-window and compaction policy for Pi 1.4.0.
   triggering target; manual preparation uses the latest successful response after native abort settles.
   Virtual selections keep their identity, routing state, thinking and declared or unknown window.
   Registry models are not mutated; physical windows above the cap use stable copies.
+  Queued prompts started by native `compaction_end` and their tool continuations do not overwrite the
+  inherited manual-compaction scope. Only an actual request scope receives routed physical limits.
 - Explicit global `compaction.reserveTokens` and per-selection
   `compaction.modelOverrides["provider/id"].reserveTokens` keep native precedence when below W.
   A reserve at or above W falls back to R. `compaction.enabled: false` keeps native disabling behavior.

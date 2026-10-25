@@ -20,7 +20,8 @@ let counter = 0;
 before(async () => { root = await mkdtemp(join(tmpdir(), "rqw-context-routing-")); });
 after(async () => { await rm(root, { recursive: true, force: true }); });
 
-type Reply = number | { input: number; stopReason: "length" | "stop"; output?: number };
+type Reply = number | { input: number; stopReason: "length" | "stop" | "toolUse"; output?: number;
+	toolCall?: { type: "toolCall"; id: string; name: string; arguments: Record<string, unknown> } };
 type Request = { id: string; window: number; supplied?: number; maxTokens: number; input: number; reasoning?: string };
 type RouteRequest = Parameters<Parameters<library.ModelRuntime["registerVirtualModel"]>[0]["route"]>[0];
 type Script = {
@@ -38,12 +39,12 @@ async function host(pi: typeof library): Promise<Host> {
 		const script = scripts.find((s) => JSON.stringify(context).includes(s.tag));
 		assert.ok(script, "request belongs to one fixture, including summaries");
 		const entry = script.next.shift() ?? 0;
-		const { input, stopReason = "stop", output = 0 } = typeof entry === "number" ? { input: entry } : entry;
+		const { input, stopReason = "stop", output = 0, toolCall } = typeof entry === "number" ? { input: entry } : entry;
 		const base = buildBaseOptions(model, context, options);
 		script.requests.push({ id: model.id, window: model.contextWindow, supplied: options?.maxTokens,
 			maxTokens: base.maxTokens, input, reasoning: options?.reasoning });
 		const message: AssistantMessage = {
-			role: "assistant", content: [{ type: "text", text: `${script.tag} ok` }],
+			role: "assistant", content: toolCall ? [toolCall] : [{ type: "text", text: `${script.tag} ok` }],
 			api: model.api, provider: model.provider, model: model.id,
 			usage: { input, output, cacheRead: 0, cacheWrite: 0, totalTokens: input + output,
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
@@ -392,6 +393,35 @@ for (const [entry, pi] of ENTRIES) {
 					assert.equal(f.session.model, f.selection);
 				} finally { await f.close(); }
 			}
+		});
+
+		it("manual compaction-end queued prompt continues after a successful tool call", async () => {
+			const f = await open(pi);
+			let queued: Promise<void> | undefined;
+			let unsubscribe = () => {};
+			try {
+				await f.session.setModel(f.runtime.getModel("routing-test", "big")!);
+				await f.prompt(1_000); await f.prompt(2_000);
+				unsubscribe = f.session.subscribe((event) => {
+					if (event.type !== "compaction_end" || event.reason !== "manual" || !event.result) return;
+					assert.equal(f.session.isCompacting, false);
+					f.script.requests = [];
+					f.script.next = [{ input: 3_000, stopReason: "toolUse", toolCall: {
+						type: "toolCall", id: "read-after-compact", name: "read", arguments: { path: EXTENSION, limit: 1 },
+					} }, 4_000];
+					queued = f.session.prompt(`${f.script.tag} queued during compaction`);
+				});
+				await f.session.compact();
+				assert.ok(queued, "native compaction_end dispatch starts the queued prompt");
+				await queued; await f.session.waitForIdle();
+				const tool = f.session.messages.find((m) => m.role === "toolResult" && m.toolCallId === "read-after-compact");
+				assert.ok(tool && tool.role === "toolResult" && !tool.isError, "tool succeeds before the next threshold check");
+				const last = f.session.messages.at(-1) as AssistantMessage;
+				assert.equal(last.stopReason, "stop", last.errorMessage);
+				assert.equal(last.errorMessage, undefined);
+				assert.deepEqual(f.script.requests.map((q) => q.window), [500_000, 500_000]);
+				assert.deepEqual(f.preparations, [50_000]);
+			} finally { unsubscribe(); await f.close(); }
 		});
 
 		it("manual summary routes once and both requests use its chosen physical model", async () => {

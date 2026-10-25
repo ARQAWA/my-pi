@@ -82,6 +82,7 @@ type SessionInternals = {
 	[WRAPPED_MODEL]?: GetModel;
 };
 type LimitScope = {
+	request?: true;
 	agent: NativeAgent;
 	session?: SessionInternals;
 	selectedModel?: CompactionModel;
@@ -97,7 +98,7 @@ function wrapPrepareRequest(agent: NativeAgent): void {
 	const original = agent.prepareRequest;
 	if (typeof original !== "function" || requestWrappers.has(original)) return;
 	const wrapped = function (this: NativeAgent, ...args: unknown[]) {
-		return owned() ? physicalScope.run({ agent }, () => original.apply(this, args)) : original.apply(this, args);
+		return owned() ? physicalScope.run({ agent, request: true }, () => original.apply(this, args)) : original.apply(this, args);
 	};
 	requestWrappers.add(wrapped);
 	agent.prepareRequest = wrapped;
@@ -251,8 +252,10 @@ function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<sym
 		if (!owned()) return original.call(this, model, projection);
 		const physical = capModel(model);
 		const request = physicalScope.getStore();
-		// This synchronous check binds only this prepareRequest, not the shared ModelRuntime or virtual entry.
-		if (request?.agent === this.agent) { request.session = this; request.selectedModel = this.model; request.physical = physical; }
+		// Bind only prepareRequest, never a compaction scope inherited by a queued prompt's continuation.
+		if (request?.request && request.agent === this.agent) {
+			request.session = this; request.selectedModel = this.model; request.physical = physical;
+		}
 		return withPhysical(this, physical, () => original.call(this, physical, projection));
 	});
 	wrap("_checkCompaction", (original) => function (message, ...args) {
