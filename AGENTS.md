@@ -9,7 +9,7 @@ sections after compaction or a handoff before continuing. This is mandatory lazy
 loading, not optional background reading. Give subagents the relevant process rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
 Coordinator personal-work objections and explicit overrides: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
 Coordinator rules bind only the session that holds the repository's `coordinator.lock`; every other session is a normal direct agent.
-At most six tasks in active execution follow the owner's priority queue; tasks waiting for CI, review, the merge queue or
+At most two main tasks in active execution follow the owner's priority queue; tasks waiting for CI, review, the merge queue or
 the owner hold no slot, and a separate lane for tests only is outside the limit; pause is `agent` `interrupt`, resume of the interrupted request is `agent` `resume` (`send` only carries a new message), with no pause files:
 [PROCESS.md](PROCESS.md#task-pipeline).
 Golden rule, no avoidable token spending and simplest engineered solutions: [PROCESS.md](PROCESS.md#golden-rule).

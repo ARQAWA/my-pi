@@ -20,6 +20,7 @@ named below. All pre-reset tasks are DEFERRED / ON HOLD outside the execution qu
 resumes each task. Requirements, sources, retained branches and dependencies are preserved. A delivered prerequisite
 or an old due date never lifts the hold. The current parallel cap is governed by
 [PROCESS.md](PROCESS.md#isolated-parallel-execution), not the earlier number in this reset quotation.
+Requested HTML artifacts are separate from this queue, not product tasks; discarded work stays discarded.
 
 ## Windows advisory follow-ups
 

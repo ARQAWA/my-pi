@@ -116,13 +116,16 @@ Provenance:
   Reason: the owner may forget the coordinator role; a direct request alone must not silently bypass it.
   Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution), guard prompt.
   Since: process-rules-oct23 squash.
-- **Six active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most six main tasks
+- **Two active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most two main tasks
   run in active execution at once in the owner's priority queue, not a count of first-level agents; waiting tasks hold
-  no slot ([D-PIPELINE-SLOTS]); the separate test lane stays outside the six ([D-PIPELINE-TEST-LANE]).
+  no slot ([D-PIPELINE-SLOTS]); the separate test lane stays outside the two ([D-PIPELINE-TEST-LANE]).
   Coordinator operational bookkeeping holds no slot ([D-WORK-TASK-BOOKKEEPING]). The current order belongs in the handoff.
-  Owner (`16-27-59:9478`, entry `257f200e`, 2026-10-25): «И делаешь паралельно до 6 задач».
-  This supersedes only the three-task cap, not the queue, wait or hold rules; no held work is resumed.
-  The superseded entries are preserved verbatim in `DECISIONS-ARCHIVE.md`, Active-execution cap, from `34e6bd3`.
+  Owner (`16-27-59:10462`, entry `57e7df57`, 2026-10-25): «А количество задач одновременных надо согратить до двух».
+  This supersedes only the six-task cap, not the queue, wait or hold rules; no held or discarded work is resumed.
+  The superseded six-task entry is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0359, from `ce0fa4d`.
+  Requested HTML artifacts are separate outside the queue, not product tasks. Owner (`16-27-59:10375`, entry
+  `541e58af`, 2026-10-25): «Это не типовая задача а отдельная вне очереди то что я написал выше».
+  Source for both: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
   Owner (`16-27-59:4813`, entry `8f53ebc4`):
   «Замер этого. Reviewer — это топ один приоритет. Надо закрыть reviewer как можно быстрее, довести его до финального состояния. Потом следующий по приоритету идёт транспорт кодекса. Затем идёт разведчик, как в курсоре, затем идёт веб-поиск новый. Потом идёт уже новый интерфейс, мелкие, почти готовые слияния одно с другим в конце и потом в конце уже починка нестабильных тестов — это вообще самый последний приоритет. Когда делать нехуй, ты уже занимаешься тестами.»
   Reason: focus execution on the owner's priorities. Carrier:
@@ -385,7 +388,7 @@ questions `16-27-59:5043`, entry `605c1e21`) in `16-27-59:5060`, entry `46a9e546
 only the slot summary of [D-PIPELINE-SLOTS]; the other points of that coordinator reply ("Остальное принял") follow his
 numbered answers and are coordinator text. The owner answered items 2 and 3 with «2а 3а».
 
-- **Active slots and waiting tasks** `[D-PIPELINE-SLOTS]`. Only active execution holds one of the six slots under [D-WORK-PARALLEL]. A task
+- **Active slots and waiting tasks** `[D-PIPELINE-SLOTS]`. Only active execution holds one of the two main slots under [D-WORK-PARALLEL]. A task
   that waits for CI, a reviewer, the merge queue or the owner holds none. A failed local delivery test under [D-PIPELINE-LOCAL-GATE] sends the task to the top of the
   queue; at the next free active slot its existing agent is resumed, and another is started only if its
   session no longer exists. Owner (`16-27-59:5060`): «7 надо чет пиздатое придумать, по типу пятого пункта или же делать всегда но не делать из этого блокер, т.е. не ждать, свичиться на след задачу и переключаться интелекетуально как релаьный прогер»
@@ -508,8 +511,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   [Task pipeline](PROCESS.md#task-pipeline), `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`.
   Since: local-delivery-gate squash.
 
-- **Test lane** `[D-PIPELINE-TEST-LANE]`. Six main work lanes under [D-WORK-PARALLEL] and a separate lane for tests only,
-  usable for nothing else and outside the six active slots. Its agents are ordinary `agent`s on the simple GPT pair under
+- **Test lane** `[D-PIPELINE-TEST-LANE]`. Two main work lanes under [D-WORK-PARALLEL] and a separate lane for tests only,
+  usable for nothing else and outside the two active slots. Its agents are ordinary `agent`s on the simple GPT pair under
   [the development model policy](PROCESS.md#subagent-models), with `.agents/roles/test-fixer.md` as the `role`.
   They take the tail items of [WINDOWS-TEST-FAILURES](BACKLOG.md#windows-test-failures) and
   [QA-FLAKES-LAST](BACKLOG.md#qa-flakes-last) and own all test work: every failing test, reruns and the full restoration

@@ -6428,3 +6428,22 @@ Verbatim text as it was in DECISIONS.md at `34e6bd3`:
 >   Owner (`16-27-59:5323`, entry `6256b148`), the prompt: «Ты нормальный пром дай, нормально сконфигурируй, выдай ему рамки, ограничения, и он нормально работу сделает»
 >   Reason: Windows and flaky failures would otherwise wait for the three slots. Carrier:
 >   [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), `.agents/roles/test-fixer.md`. Since: process-pipeline squash.
+
+## A-0359 · archived 2026-10-25 · Active-execution cap · D-WORK-PARALLEL
+
+Status: SUPERSEDED in numeric cap by `[D-WORK-PARALLEL]` (DECISIONS.md#work-policy).
+Superseded and archived by: the process-two-active-tasks squash. Source commit: `ce0fa4d`.
+Verbatim text as it was in DECISIONS.md at `ce0fa4d`:
+
+> - **Six active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most six main tasks
+>   run in active execution at once in the owner's priority queue, not a count of first-level agents; waiting tasks hold
+>   no slot ([D-PIPELINE-SLOTS]); the separate test lane stays outside the six ([D-PIPELINE-TEST-LANE]).
+>   Coordinator operational bookkeeping holds no slot ([D-WORK-TASK-BOOKKEEPING]). The current order belongs in the handoff.
+>   Owner (`16-27-59:9478`, entry `257f200e`, 2026-10-25): «И делаешь паралельно до 6 задач».
+>   This supersedes only the three-task cap, not the queue, wait or hold rules; no held work is resumed.
+>   The superseded entries are preserved verbatim in `DECISIONS-ARCHIVE.md`, Active-execution cap, from `34e6bd3`.
+>   Owner (`16-27-59:4813`, entry `8f53ebc4`):
+>   «Замер этого. Reviewer — это топ один приоритет. Надо закрыть reviewer как можно быстрее, довести его до финального состояния. Потом следующий по приоритету идёт транспорт кодекса. Затем идёт разведчик, как в курсоре, затем идёт веб-поиск новый. Потом идёт уже новый интерфейс, мелкие, почти готовые слияния одно с другим в конце и потом в конце уже починка нестабильных тестов — это вообще самый последний приоритет. Когда делать нехуй, ты уже занимаешься тестами.»
+>   Reason: focus execution on the owner's priorities. Carrier:
+>   [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
+>   Since: process-rules-oct23 squash.

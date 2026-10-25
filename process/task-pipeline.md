@@ -2,7 +2,7 @@
 
 Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](../DECISIONS.md#task-pipeline).
 
-- A task is active or waiting. Only active execution holds one of the six slots: a subagent implementing,
+- A task is active or waiting. Only active execution holds one of the two main slots: a subagent implementing,
   researching, fixing or measuring. Waiting for CI, a reviewer, the merge queue or the owner holds no slot. Main
   fills each free slot from the owner's queue and keeps every waiting task in the current session queue and state with what it waits for, in no file.
 - When a task's local checks are clean, its branch is pushed and the required reviews start in the background;
@@ -24,7 +24,7 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](../DECIS
   tracked in the background through the watcher cache or a notification, holding no active slot and spending no model
   polling turns. A later Windows failure then gets its tail `BACKLOG.md` item or linked issue and is not lost when
   the branch is deleted. Delivery never waits for Windows or green macOS CI; no workflow result gates a merge.
-- Test lane. Besides the six main work lanes, a separate lane for tests only, outside the six active slots, owns all
+- Test lane. Besides the two main work lanes, a separate lane for tests only, outside the two active slots, owns all
   test work: ordinary `agent`s on the simple GPT pair of the [subagent table](../PROCESS.md#subagent-models), with
   `.agents/roles/test-fixer.md` as the `role`. It starts only after this pipeline change is delivered and follows all
   pipeline agreements. Decisions: [DECISIONS.md](../DECISIONS.md#task-pipeline).
