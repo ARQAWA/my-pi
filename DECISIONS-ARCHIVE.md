@@ -6261,3 +6261,14 @@ replacement commit: `git log -S'Gold correction, owner task request' -- DECISION
 
 > verified by `scripts/owner-quotes.mjs`. Existing peak widths, colours, soft falloff, layout and static title stay unchanged.
 
+## Silver motion superseded on 2026-10-25 by statusbar-silver-loop
+
+Source: `DECISIONS.md` at `99f69e5`, `[D-STATUSBAR-ANIMATION]`.
+Replacement: current `[D-STATUSBAR-ANIMATION]`, rapid rightward flight followed by a two-second pause.
+Replacement commit: `git log -S'Silver correction source:' -- DECISIONS.md`.
+Superseded verbatim passage:
+
+>   glint moving back and forth across the status, not periodically repeated glints. Its travel speed stays
+>   8.59375 cells/s. Gold compaction uses the same single bouncing glint over each full strip and activity label, with the same travel speed. Double silver and gold travel speed relative to origin/main
+>   `0521318324f9c22707c7b1ff3d0cc725392f6e55`; the lightning keeps its 120 ms colour step.
+

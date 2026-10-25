@@ -1688,7 +1688,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   working and the steady yellow idle follow the coordinator description the owner accepted. Carrier:
   `extensions/RQW-statusbar/{render,index}.ts`. Proof: `test/fast-gpt.test.ts`. Since: `fa05edf`.
 - **Compaction sheen** `[D-STATUSBAR-SHEEN]`. Gold shimmer runs over the session title in the top input border.
-  Both silver and gold shimmers run exactly twice their previous speed, without a slant. Silver has a bright
+  Gold retains its doubled travel speed; silver timing follows `[D-STATUSBAR-ANIMATION]`. Neither has a slant. Silver has a bright
   three-cell peak; gold also has a bright three-cell peak. Both have wide, soft, monotone falloff between
   neighbouring letters; gold is the smoothest. No unrelated animation behavior changes.
   Owner: «Да, и во время compaction анимация должна идти поверх заголовка, поверх названия сессии.»
@@ -1706,9 +1706,15 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Carrier: `extensions/RQW-statusbar/render.ts`; proof: deterministic statusbar render and animation tests.
 - **Animation cadence** `[D-STATUSBAR-ANIMATION]`. Redraw at 30 nominal frames per second,
   using monotonic elapsed time and fractional positions for smooth motion. Silver activity text has exactly one
-  glint moving back and forth across the status, not periodically repeated glints. Its travel speed stays
-  8.59375 cells/s. Gold compaction uses the same single bouncing glint over each full strip and activity label, with the same travel speed. Double silver and gold travel speed relative to origin/main
-  `0521318324f9c22707c7b1ff3d0cc725392f6e55`; the lightning keeps its 120 ms colour step.
+  glint appearing at the left, flying right at constant linear speed, fully clearing the right edge,
+  then remaining absent for exactly 2000 ms before repeating. Flight duration is 320 ms, chosen under
+  the owner's explicit visual discretion. The three-cell peak and soft silver gradient stay unchanged.
+  Gold compaction keeps its single bouncing glint over each full strip and activity label at
+  8.59375 cells/s. The lightning keeps its 120 ms colour step.
+  Silver correction source: current `statusbar-silver-loop` task, owner steering on 2026-10-25:
+  "the silver glint at the top must appear at the left, fly VERY FAST left-to-right at one constant linear speed, fully disappear after passing the right edge, then remain absent for exactly 2 seconds before the next flight."
+  "The owner explicitly leaves the flight duration to our visual judgment; choose a genuinely fast duration and show deterministic timing/render evidence."
+  This supersedes silver's earlier back-and-forth motion and retained speed, not gold or other UI.
   The title animates during compaction, not otherwise. Input text and effort colours do not animate.
   `STATUS_FRAME_MS = 80` and `FAST_STEP_MS = 120` remain unchanged; the shared redraw interval becomes `1000 / 30` ms.
   `ContextEditor` uses `embedWorkingStatus: true` and `setWorkingIndicator({ frames: [] })` while our editor

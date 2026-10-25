@@ -440,19 +440,29 @@ export function shimmerPhase(index: number, frame: number, gold = false): number
 	return Math.max(0, Math.min(254 / 255, 1 - fade));
 }
 
-/** One crest bounces across the text, keeping its three bright cells inside the ends whenever they fit. */
+/** Silver crosses in 320 ms, clears its entire shoulder, then rests for exactly 2000 ms. */
+export const SILVER_FLIGHT_FRAMES = 4;
+export const SILVER_PAUSE_FRAMES = 25;
 export function silverGlintPosition(width: number, frame: number): number {
+	const phase = frame % (SILVER_FLIGHT_FRAMES + SILVER_PAUSE_FRAMES);
+	const end = width - 1 + SILVER_PLATEAU_CELLS / 2 + SILVER_FALLOFF_CELLS;
+	return 1 + (end - 1) * Math.min(phase / SILVER_FLIGHT_FRAMES, 1);
+}
+
+/** Gold keeps its delivered bounce and travel speed. */
+function goldGlintPosition(width: number, frame: number): number {
 	if (width <= SILVER_PLATEAU_CELLS) return Math.max(0, (width - 1) / 2);
 	const travel = width - SILVER_PLATEAU_CELLS;
 	const distance = frame * SHIMMER_CELLS_PER_FRAME % (2 * travel);
 	return 1 + (distance <= travel ? distance : 2 * travel - distance);
 }
 
-/** Paint by terminal column, without italics, using the same single bouncing crest for silver and gold. */
+/** Paint one crest by terminal column, without italics. */
 export function shimmerText(text: string, startColumn: number, frame: number, stops: readonly string[]): string {
 	const content = stripVTControlCharacters(text);
 	const gold = stops === GOLD;
-	const phaseFrame = (startColumn + silverGlintPosition(visibleWidth(content), frame)) / SHIMMER_CELLS_PER_FRAME;
+	const position = (gold ? goldGlintPosition : silverGlintPosition)(visibleWidth(content), frame);
+	const phaseFrame = (startColumn + position) / SHIMMER_CELLS_PER_FRAME;
 	let column = startColumn;
 	return Array.from(content).map((ch) => {
 		const f = shimmerPhase(column, phaseFrame, gold);
