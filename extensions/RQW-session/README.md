@@ -24,8 +24,9 @@ an extension. References may occur in any JSONL string, but a `fullOutputPath` k
 credentials, settings and arbitrary temp files are not artifacts. The only removable directory tree is the exact
 `<current-session.jsonl>.children` sibling, including nested descendants and regular sidecar files. A symlink,
 special entry or non-directory at that tree root refuses removal before switching. Before switching sessions it
-scans all JSONLs recursively below the agent's `sessions` directory and the current session's directory; artifacts
-referenced by a surviving session are retained. Descendant sessions being removed do not count as surviving
+scans all JSONLs recursively below the agent's `sessions` directory and the current session's directory. After
+shutdown, it repeats that discovery and shared-reference scan before deleting artifacts, so references saved by
+surviving sessions during replacement are retained. Descendant sessions being removed do not count as surviving
 references. User-created forks, unrelated sessions and similarly named trees remain unchanged.
 
 Only regular artifact files lexically and physically inside the OS temp directory are eligible. The agent directory

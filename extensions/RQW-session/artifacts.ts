@@ -189,7 +189,7 @@ export async function prepareRemoval(file: string | undefined, agentDir: string)
 
 /** Called after the old runtime shuts down. Read its final JSONL, including shutdown-hook output references. */
 export async function removeFiles(plan: RemovalPlan): Promise<{ artifacts: number; children: number }> {
-	const { file, agentDir, roots, shared, sessionPaths } = plan;
+	const { file, agentDir, roots } = plan;
 	if (!file) return { artifacts: 0, children: 0 };
 	await validateSessionFile(file, agentDir);
 	// Rescan the tree: descendants may have written final entries or sidecars since discovery.
@@ -198,6 +198,8 @@ export async function removeFiles(plan: RemovalPlan): Promise<{ artifacts: numbe
 	const candidates = await readReferences(file, scan);
 	const descendants = tree ? tree.files.filter(path => path.endsWith(".jsonl")) : [];
 	for (const path of descendants) for (const ref of await readReferences(path, scan)) candidates.add(ref);
+	// Replacement awaited shutdown hooks; surviving sessions may have saved new references or JSONLs meanwhile.
+	const { shared, sessionPaths } = await prepareRemoval(file, agentDir);
 	let removed = 0;
 	for (const path of candidates) {
 		const physical = await regular(path, roots);
