@@ -48,7 +48,9 @@ it("pins source descriptions, bare Codex model and efforts with byte-identical c
 
 it("skills use ordinary agent profiles, mechanical end-of-task inclusion and the source review cycle", () => {
 	const common = text("skills/reviewer/SKILL.md");
-	assert.match(common, /^---\nname: reviewer\ndescription: .+\n---\n/);
+	for (const newline of ["\n", "\r\n"]) {
+		assert.match(common.replace(/\r?\n/g, newline), /^---\r?\nname: reviewer\r?\ndescription: .+\r?\n---\r?\n/);
+	}
 	assert.ok(common.includes('agent({action: "start", agent_type: "spotty", include: ["user_messages"], task: ...})'));
 	assert.ok(common.includes('agent({action: "start", agent_type: "bossy", include: ["user_messages"], task: ...})'));
 	assert.ok(common.includes("Do not reproduce user messages yourself."));
