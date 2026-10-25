@@ -24,7 +24,7 @@ export type NestedBarrier = {
   /** Call synchronously at the top of a tool's `execute`, with the tool call id Pi passes to it. */
   schedule<T>(id: string, scope: Scope, run: () => Promise<T>, handle?: Detachable): Promise<T>;
   /** Runs the call `id` as a group: one "all" call where `schedule` puts it, with a barrier of its own for its calls. */
-  group<T>(id: string, run: () => Promise<T>, handle?: Detachable, finish?: (result: T, calls: NestedDisplayRecord[]) => T): Promise<T>;
+  group<T>(id: string, run: () => Promise<T>, handle?: Detachable, finish?: (result: T, calls: NestedDisplayRecord[]) => T, settle?: () => Promise<void>): Promise<T>;
   /** Capture only final results in the nearest live group, returning other results by identity. */
   observe<T>(id: string, tool: string, params: unknown, result: T): T;
   /** Snapshot only completed display facts of this exact active group; never exposes its mutable records. */
@@ -90,7 +90,7 @@ export function createNestedBarrier(): NestedBarrier {
       const r = result as any;
       return { ...r, details: { ...r.details, rqwToolsNestedCall: display } };
     },
-    group<T>(id: string, run: () => Promise<T>, handle?: Detachable, finish?: (result: T, calls: NestedDisplayRecord[]) => T): Promise<T> {
+    group<T>(id: string, run: () => Promise<T>, handle?: Detachable, finish?: (result: T, calls: NestedDisplayRecord[]) => T, settle?: () => Promise<void>): Promise<T> {
       const own = createBarrier();
       const calls = new Map<string, NestedDisplayRecord | undefined>();
       if (finish) displays.set(own, calls);
@@ -106,6 +106,8 @@ export function createNestedBarrier(): NestedBarrier {
           // A call of the script that is still running when the script ends (not awaited) belongs to the
           // group: later calls wait for it too.
           await own(ALL, async () => undefined);
+          // Snapshot the completed group while its outer barrier entry still holds same-response followers.
+          await settle?.();
         }
         return finish ? finish(result, snapshot(calls)) : result;
       }, handle);
