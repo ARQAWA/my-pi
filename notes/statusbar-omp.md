@@ -21,7 +21,7 @@ Only public Pi APIs are used, and the extension remains independent.
 Rules and owner sources: [DECISIONS.md, Status bar](../DECISIONS.md#status-bar).
 Deterministic tests in `extensions/RQW-statusbar/test/` cover layout, peak widths, monotone falloff and doubled
 speed. `native-working-layout.test.ts` mounts real Pi `InteractiveMode` with a held faux-provider response,
-checks the unchanged native working row, exact widget gaps, title placement and idle removal, and saves
+checks suppression of the native working row, exact widget gaps, title placement and idle removal, and saves
 `/tmp/statusbar-working.txt` and `/tmp/statusbar-compaction.txt`. The latter drives extension compaction events,
 not a live compaction request.
 
@@ -102,8 +102,10 @@ built-in footer, `setEditorComponent(undefined)` its default editor.
 The editor (`editor.ts`) extends Pi's exported `CustomEditor`, as `docs/tui.md` recommends for replacing the main
 editor, and overrides only `renderBottomBorder(width, hiddenLineCount)` (stock: `pi-tui`
 `dist/components/editor.js:389-392`) and `renderTopBorder(width, hiddenLineCount)`, which calls our `topBorder`
-for the title, hint and session ID. `embedWorkingStatus: false` lets Pi render its unchanged native working row
-above the activity widget. There is no native-spinner suppression or `setWorkingIndicator` call. When Pi installs it (`dist/modes/interactive/interactive-mode.js:2243-2307`), Pi
+for the title, hint and session ID. `embedWorkingStatus: true` keeps Pi's native working row out of the
+widget layout; our border replaces its embedded indicator. `setWorkingIndicator({ frames: [] })` suppresses
+the native spinner while our editor is installed, as before `081d914`. Off, shutdown and another editor restore
+Pi's default indicator. The visible order is the tool block, one blank, the shimmer status, one blank, then the title border. When Pi installs it (`dist/modes/interactive/interactive-mode.js:2243-2307`), Pi
 carries over the text, callbacks, border color, padding, autocomplete and app key handlers; thinking/bash border
 colors keep applying to the top border and the hint. The bar itself keeps its own colors.
 One editor factory per extension instance identifies ours through `ctx.ui.getEditorComponent()`:

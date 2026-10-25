@@ -759,14 +759,17 @@ it("a foreign editor replacing ours is never taken over and survives /statusbar 
 	assert.equal(h.ui.calls.includes("setEditorComponent"), false);
 });
 
-it("our editor leaves native working status outside the border and never configures its indicator", async (t) => {
+it("our editor hides the native working row and restores the indicator on off and shutdown", async (t) => {
 	const h = harness(t);
 	h.fire("session_start", { reason: "startup" });
-	assert.equal((h.ui.editor as unknown as { embedWorkingStatus: boolean }).embedWorkingStatus, false);
+	assert.equal((h.ui.editor as unknown as { embedWorkingStatus: boolean }).embedWorkingStatus, true);
+	assert.deepEqual(h.ui.workingIndicator, { frames: [] });
 	await h.command("off");
+	assert.equal(h.ui.workingIndicator, undefined);
 	await h.command("on");
+	assert.deepEqual(h.ui.workingIndicator, { frames: [] });
 	h.fire("session_shutdown", { reason: "quit" });
-	assert.equal(h.ui.calls.includes("setWorkingIndicator"), false);
+	assert.equal(h.ui.workingIndicator, undefined);
 
 	const f = harness(t);
 	f.ui.setEditorComponent(() => ({ render: () => ["foreign"] }));
@@ -774,20 +777,22 @@ it("our editor leaves native working status outside the border and never configu
 	assert.equal(f.ui.calls.includes("setWorkingIndicator"), false);
 });
 
-it("editor replacement and restoration leave native indicator settings untouched on every activity tick", (t) => {
+it("editor replacement restores native indicator settings and our editor hides it again", (t) => {
 	const h = harness(t);
 	h.fire("session_start", { reason: "startup" });
 	const ours = h.ui.editorFactory;
 	h.fire("agent_start");
 	h.ui.setEditorComponent(() => ({ render: () => ["foreign"] }));
 	h.tick(SHIMMER_MS * 10);
+	assert.equal(h.ui.workingIndicator, undefined);
 	h.ui.setEditorComponent(ours);
 	h.tick(SHIMMER_MS);
+	assert.deepEqual(h.ui.workingIndicator, { frames: [] });
 	h.fire("agent_settled", { aborted: false });
 	h.ui.setEditorComponent(() => ({ render: () => ["foreign"] }));
 	h.tick(1000);
 	h.fire("agent_start");
-	assert.equal(h.ui.calls.includes("setWorkingIndicator"), false);
+	assert.equal(h.ui.workingIndicator, undefined);
 });
 
 it("the bar never calls setWorkingVisible or any global status setter", async (t) => {
@@ -803,7 +808,7 @@ it("the bar never calls setWorkingVisible or any global status setter", async (t
 	await h.command("off");
 	await h.command("on");
 	h.fire("session_shutdown", { reason: "quit" });
-	const allowed = ["setWidget", "setFooter", "setEditorComponent", "getEditorComponent"];
+	const allowed = ["setWidget", "setFooter", "setEditorComponent", "getEditorComponent", "setWorkingIndicator"];
 	assert.deepEqual([...new Set(h.ui.calls)].filter((call) => !allowed.includes(call)), []);
 });
 

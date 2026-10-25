@@ -1,5 +1,5 @@
 // Interactive footer and editor borders: title and session ID on top, context bar at the bottom.
-// Activity is a separate widget below Pi's native working/action row. Session values use public getters.
+// Activity is a separate widget; our editor hides Pi's native working row. Session values use public getters.
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
@@ -91,9 +91,10 @@ export default function statusbar(pi: ExtensionAPI) {
 	 * re-checked on every tick. The phase comes from the elapsed time at render, so Pi's other redraws show it too. */
 	const wantsShimmer = () => active && (chromeNow() !== undefined || (working && lit(lightCtx)));
 	const syncShimmer = () => {
+		syncSpinner();
 		if (!wantsShimmer()) return stopShimmer();
 		if (shimmer) return;
-		shimmer = setInterval(() => { if (!wantsShimmer()) stopShimmer(); redraw?.(); }, SHIMMER_MS);
+		shimmer = setInterval(() => { syncSpinner(); if (!wantsShimmer()) stopShimmer(); redraw?.(); }, SHIMMER_MS);
 		shimmer.unref?.();
 	};
 	/** Read-only: the branch number of the leaf from the public tree, recomputed when the leaf or the entry count changes. */
@@ -113,8 +114,28 @@ export default function statusbar(pi: ExtensionAPI) {
 	const editorFactory: NonNullable<Parameters<ExtensionUIContext["setEditorComponent"]>[0]> =
 		(tui, theme, keybindings) => new ContextEditor(tui, theme, keybindings, () => border);
 
+	// Hide Pi's spinner only while our editor owns the border; restore it for other editors and on release.
+	let spinnerUi: ExtensionUIContext | undefined;
+	const showNativeSpinner = (): void => {
+		const ui = spinnerUi;
+		spinnerUi = undefined;
+		try { ui?.setWorkingIndicator(undefined); } catch {}
+	};
+	const syncSpinner = (): void => {
+		const ctx = lightCtx;
+		if (!ctx) return;
+		try {
+			const ours = ctx.ui.getEditorComponent() === editorFactory;
+			if (ours && !spinnerUi) {
+				ctx.ui.setWorkingIndicator({ frames: [] });
+				spinnerUi = ctx.ui;
+			} else if (!ours && spinnerUi) showNativeSpinner();
+		} catch {}
+	};
+
 	/** Drops what this extension holds for the session: the GPT Fast subscription, the counts, timers, footer and border source. */
 	function release(): void {
+		showNativeSpinner();
 		unsubscribeFast?.();
 		unsubscribeFast = undefined;
 		dispose?.();

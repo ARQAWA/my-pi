@@ -37,7 +37,7 @@ interface ModeInternals {
 	activeStatusIndicator?: Component & { kind: string; frames: string[]; intervalMs: number };
 }
 
-it("Pi keeps its unchanged native Working row above activity, with exact widget gaps and no idle/title rows", async () => {
+it("Pi hides its native Working row, keeping only activity with exact gaps and the title border", async () => {
 	const root = mkdtempSync(join(tmpdir(), "rqw-native-working-"));
 	const savedEnv = { ...process.env };
 	process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -94,7 +94,7 @@ it("Pi keeps its unchanged native Working row above activity, with exact widget 
 	try {
 		await mode.init();
 		assert.deepEqual(runtime.session.resourceLoader.getExtensions().errors, []);
-		assert.equal(actual.editor.embedWorkingStatus, false);
+		assert.equal(actual.editor.embedWorkingStatus, true);
 		assert.deepEqual(actual.widgetContainerAbove.render(100), [""], "Pi alone supplies its normal idle spacer");
 		assert.equal(actual.extensionWidgetsAbove.has(TITLE_KEY), false);
 		assert.deepEqual([...actual.extensionWidgetsAbove.keys()], [ACTIVITY_KEY]);
@@ -105,24 +105,22 @@ it("Pi keeps its unchanged native Working row above activity, with exact widget 
 		await responseStarted;
 		const indicator = actual.activeStatusIndicator!;
 		assert.equal(indicator.kind, "working");
-		assert.deepEqual(indicator.frames, ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]);
-		assert.equal(indicator.intervalMs, 80, "Pi keeps its native timer");
-		const nativeRows = indicator.render(100);
-		assert.deepEqual(actual.statusContainer.render(100), nativeRows, "native component is rendered outside the editor");
-		assert.match(strip(nativeRows[1]), /^ [\u2800-\u28ff] Working\s*$/);
+		assert.deepEqual(indicator.frames, [], "our editor suppresses Pi's native spinner as before 081d914");
+		assert.deepEqual(actual.statusContainer.render(100), [], "no separate native row or spacer");
 		assert.deepEqual(actual.widgetContainerAbove.render(100).map(strip), ["", " Planning next moves", ""]);
 		const screen = actual.ui.render(100).map(strip);
-		const workingRow = screen.findIndex((row) => /Working/.test(row));
-		assert.ok(workingRow >= 0, "native Working row is present in the mounted Pi tree");
-		assert.deepEqual(screen.slice(workingRow + 1, workingRow + 5), ["", " Planning next moves", "", strip(initialBorder)],
+		assert.equal(screen.some((row) => /Working/.test(row)), false, "no native Working row in the mounted Pi tree");
+		const activityRow = screen.findIndex((row) => /Planning next moves/.test(row));
+		assert.ok(activityRow >= 0);
+		assert.deepEqual(screen.slice(activityRow - 1, activityRow + 3), ["", " Planning next moves", "", strip(initialBorder)],
 			"one blank above and below activity, one left space and the title in the border");
 		const renderDir = process.platform === "win32" ? tmpdir() : "/tmp";
-		writeFileSync(join(renderDir, "statusbar-working.txt"), `${screen.slice(workingRow).join("\n")}\n`);
+		writeFileSync(join(renderDir, "statusbar-working.txt"), `${screen.slice(activityRow - 1).join("\n")}\n`);
 
 		assert.equal(listeners.size, 1, "the extension adopted the real event-bus counts source");
 		push(2);
 		assert.equal(actual.activeStatusIndicator, indicator, "activity never replaces the native indicator");
-		assert.deepEqual(actual.statusContainer.render(100), nativeRows, "activity updates preserve native ANSI bytes");
+		assert.deepEqual(actual.statusContainer.render(100), [], "activity updates do not bring back the native row");
 		assert.deepEqual(actual.widgetContainerAbove.render(100).map(strip), ["", " Planning next moves · 2 agents", ""]);
 		push(0);
 		// Drive only extension chrome; no model call or real compaction is needed for this representative render.
@@ -131,11 +129,12 @@ it("Pi keeps its unchanged native Working row above activity, with exact widget 
 			preparation: {} as never, branchEntries: [], signal: new AbortController().signal,
 		});
 		const compactionScreen = actual.ui.render(100).map(strip);
-		const nativeRow = compactionScreen.findIndex((row) => /Working/.test(row));
-		assert.ok(nativeRow >= 0, "native Working row remains visible during extension compaction chrome");
-		assert.deepEqual(compactionScreen.slice(nativeRow + 1, nativeRow + 5),
+		assert.equal(compactionScreen.some((row) => /Working/.test(row)), false);
+		const compactingRow = compactionScreen.findIndex((row) => /Compacting context/.test(row));
+		assert.ok(compactingRow >= 0);
+		assert.deepEqual(compactionScreen.slice(compactingRow - 1, compactingRow + 3),
 			["", " Compacting context", "", strip(initialBorder)]);
-		writeFileSync(join(renderDir, "statusbar-compaction.txt"), `${compactionScreen.slice(nativeRow).join("\n")}\n`);
+		writeFileSync(join(renderDir, "statusbar-compaction.txt"), `${compactionScreen.slice(compactingRow - 1).join("\n")}\n`);
 		await runtime.session.extensionRunner!.emit({
 			type: "session_compact", reason: "manual", willRetry: false, fromExtension: false, compactionEntry: {} as never,
 		});

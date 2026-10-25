@@ -70,18 +70,18 @@ it("deterministic editor and footer renders match the committed snapshots", () =
 	assert.deepEqual(actual, expected);
 });
 
-it("without a source the border is Pi's stock one, and native status uses Pi's separate row", () => {
+it("without a source the border is Pi's stock one with embedded status", () => {
 	const stock = editor(undefined, "hello");
 	assert.ok(stock instanceof CustomEditor);
-	assert.equal(stock.embedWorkingStatus, false);
+	assert.equal(stock.embedWorkingStatus, true);
 	assert.equal(stock.render(20).at(-1), "\u2500".repeat(20));
 	assert.match(editor(undefined, many, 19).render(40).at(-1)!, /^\u2500+ \u2193 8 more \u2500+$/);
 	assert.equal(stock.render(80)[0], "\u2500".repeat(80), "no session ID without a source");
 });
 
-it("without a source the editor does not embed Pi's native indicator", () => {
+it("without a source the editor restores Pi's embedded native indicator", () => {
 	const stock = stripVTControlCharacters(editor(undefined, "hello", 0, "Working...").render(80)[0]);
-	assert.equal(stock, rule(80));
+	assert.match(stock, /⠋ Working\.\.\./);
 });
 
 it("with a source the native indicator is never drawn: an injected status is ignored at every width", () => {

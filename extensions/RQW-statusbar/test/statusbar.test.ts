@@ -50,6 +50,7 @@ function uiHarness(footer?: InstanceType<typeof FooterDataProvider>) {
 		notify() {},
 		setWidget() {},
 		setWorkingVisible() {},
+		setWorkingIndicator() {},
 		theme: plainTheme,
 	} as unknown as ExtensionUIContext;
 	return { ui, statuses, render: (width = 80) => component?.render(width),
@@ -95,8 +96,8 @@ for (const [label, pi] of [["library", library], ["bundle", bundle]] as const) {
 			session.sessionManager.newSession();
 			assert.notEqual(session.sessionManager.getSessionId(), firstId);
 			assert.equal(stripVTControlCharacters(h.top()), `${"\u2500".repeat(40)} ${session.sessionManager.getSessionId()} \u2500\u2500`);
-			assert.equal((h.editor as unknown as { embedWorkingStatus: boolean }).embedWorkingStatus, false,
-				"Pi places its unchanged native working/action row above the activity widget");
+			assert.equal((h.editor as unknown as { embedWorkingStatus: boolean }).embedWorkingStatus, true,
+				"our border replaces the embedded native working indicator, with no separate row");
 			// Twenty input lines in a 40-row terminal show 12; with the cursor on the first, 8 are hidden below.
 			h.editor!.setText(Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n"));
 			for (let i = 0; i < 19; i++) h.editor!.handleInput("\x1b[A");

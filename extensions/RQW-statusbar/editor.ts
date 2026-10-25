@@ -18,8 +18,8 @@ export class ContextEditor extends CustomEditor {
 	private readonly source: () => BorderSource | undefined;
 
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, source: () => BorderSource | undefined) {
-		// Pi places its unchanged native working/action row above the widgets when it is not embedded.
-		super(tui, theme, keybindings, { embedWorkingStatus: false });
+		// Keep Pi's status out of its separate row; our top border replaces the embedded indicator.
+		super(tui, theme, keybindings, { embedWorkingStatus: true });
 		this.source = source;
 	}
 

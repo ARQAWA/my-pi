@@ -1617,8 +1617,10 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `0521318324f9c22707c7b1ff3d0cc725392f6e55`; the lightning keeps its 120 ms colour step.
   The title animates during compaction, not otherwise. Input text and effort colours do not animate.
   `STATUS_FRAME_MS = 80`, previously 160; `SHIMMER_MS = 20`, `FAST_STEP_MS = 120`.
-  `ContextEditor` uses `embedWorkingStatus: false`, so Pi draws its unchanged native working row above widgets.
-  The extension no longer suppresses the native spinner or calls `setWorkingIndicator`.
+  `ContextEditor` uses `embedWorkingStatus: true` and `setWorkingIndicator({ frames: [] })` while our editor
+  is installed, restoring the pre-`081d914` suppression of Pi's native working row. Off, shutdown and another
+  editor restore the default indicator. The layout is tool block, one blank, shimmer status, one blank, title border.
+  Owner correction: «1а», supplied by Main in this task on 2026-10-25: hide the stock row as before the change.
   `activityRows` supplies status and trailing blank; Pi supplies the leading spacer. Idle returns `[]`.
   Owner: «Давай попробуем сделать 50 FPS для начала.»
   Source: session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3662; doubled-speed source: `[D-STATUSBAR-SHEEN]`.
