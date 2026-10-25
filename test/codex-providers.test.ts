@@ -18,7 +18,7 @@ import { SocketError } from "../extensions/RQW-codex/websocket.ts";
 import { CODEX_PROVIDER } from "../extensions/RQW-codex/profile.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const KEPT = ["anthropic", "openai-codex"];
+const KEPT = ["anthropic", "kimi-coding", "openai-codex"];
 const INSTALLATION = "11111111-2222-4333-8444-555555555555";
 const ACCOUNT = "acct_codex_providers_1";
 const GRANT_TOKEN = jwt({ exp: Math.floor(Date.now() / 1000) + 3600, "https://api.openai.com/auth": { chatgpt_account_id: ACCOUNT } });

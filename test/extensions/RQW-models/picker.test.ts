@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth, type KeyId } from "@earendil-works/pi-tui";
-import extension, { FAMILIES } from "../../../extensions/RQW-models/index.ts";
+import extension, { FAMILIES, pickerModels } from "../../../extensions/RQW-models/index.ts";
 import { ModelEffortPicker, stepDraft, type Draft, type PickerSpec } from "../../../extensions/RQW-models/picker.ts";
 
 // Standalone: only this extension and public Pi/TUI exports. Models are deterministic fixtures, no network.
@@ -11,7 +11,8 @@ const model = (id: string, provider = "anthropic", map: Record<string, string | 
 	id, provider, api: "test", name: id, baseUrl: "https://invalid.test", reasoning: true, input: ["text"],
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 8000, thinkingLevelMap: map,
 });
-const LISTED = FAMILIES.map((id) => model(id, id.startsWith("gpt") ? "openai-codex" : "anthropic"));
+const LISTED = FAMILIES.slice(4).map((id) => model(id, id.startsWith("gpt") ? "openai-codex" : "anthropic"));
+const KIMI = pickerModels(FAMILIES.slice(0, 4).map((id) => model(id, "kimi-coding")));
 const KEY = {
 	up: "\x1b[A", down: "\x1b[B", right: "\x1b[C", left: "\x1b[D", enter: "\r", escape: "\x1b",
 	shiftUp: "\x1b[1;2A", shiftDown: "\x1b[1;2B", shiftRight: "\x1b[1;2C", shiftLeft: "\x1b[1;2D",
@@ -37,7 +38,7 @@ const ansi: Theme = {
 
 type Dialog = { component: { render(width: number): string[]; handleInput(data: string): void }; done: (result: unknown) => void };
 
-function harness(models = LISTED, live = LISTED[0], thinking = "medium") {
+function harness(models = LISTED, live = LISTED[0], thinking = "medium", theme = roles) {
 	const shortcuts = new Map<KeyId, { description: string; handler: (ctx: ExtensionContext) => Promise<void> | void }>();
 	const commands = new Map<string, { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void }>();
 	const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => unknown>();
@@ -66,7 +67,7 @@ function harness(models = LISTED, live = LISTED[0], thinking = "medium") {
 				return new Promise((resolve) => {
 					const done = (result: unknown) => { if (dialog?.done === done) dialog = undefined; resolve(result); };
 					const run = () => {
-						const component = factory({ requestRender: () => {} }, roles, undefined, done) as Dialog["component"];
+						const component = factory({ requestRender: () => {} }, theme, undefined, done) as Dialog["component"];
 						firstFrames[customCalls - 1] = { lines: component.render(400), calls: [...calls] };
 						dialog = { component, done };
 					};
@@ -76,6 +77,8 @@ function harness(models = LISTED, live = LISTED[0], thinking = "medium") {
 		},
 	} as unknown as ExtensionContext;
 	const pi = {
+		registerProvider: () => {},
+		unregisterProvider: () => {},
 		registerShortcut: (key: KeyId, options: { description: string; handler: (ctx: ExtensionContext) => Promise<void> | void }) => shortcuts.set(key, options),
 		registerCommand: (name: string, options: { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void }) => commands.set(name, options),
 		// Requests must never be attempted by the chooser or /rqw-models; any attempt is recorded.
@@ -157,6 +160,59 @@ describe("first rendered draft: every initiating key updates the draft before th
 		assert.equal(h.current.provider, "proxy");
 		assert.equal(h.current.id, "anthropic/claude-sonnet-5.5");
 	});
+});
+
+describe("Kimi Highspeed visual effort", () => {
+	const plain = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as Theme;
+	it("shows high rather than off or none in narrow and wide layouts without changing live state", async () => {
+		const h = harness(KIMI, KIMI[0], "off", plain);
+		const pending = h.open("shift+right");
+		await flush();
+		for (const width of [40, 100]) {
+			const lines = h.dialog!.component.render(width);
+			const rendered = lines.join("\n");
+			assert.match(rendered, /high/);
+			assert.doesNotMatch(rendered, /\boff\b|\bnone\b/);
+			assert.match(rendered, /Kimi K2\.7 Code Highspeed/);
+			assert.ok(lines.every((line) => visibleWidth(line) <= width));
+		}
+		assert.deepEqual(h.calls, []);
+		assert.equal(h.level, "off");
+		h.input(KEY.escape);
+		await pending;
+	});
+	it("styles the visual high with the selected thinkingHigh role", async () => {
+		const h = harness(KIMI, KIMI[0], "off");
+		const pending = h.open("shift+left");
+		assert.ok(h.firstFrame().lines.some((line) => line.includes("<bold><thinkingHigh>high</></bold>")));
+		h.input(KEY.escape);
+		await pending;
+	});
+	it("committing the same Highspeed model never calls either setter after effort arrows", async () => {
+		const h = harness(KIMI, KIMI[0], "off");
+		const pending = h.open("shift+right");
+		await flush();
+		for (const key of [KEY.right, KEY.left, KEY.shiftRight, KEY.shiftLeft]) h.input(key);
+		h.input(KEY.enter);
+		await pending;
+		assert.deepEqual(h.calls, []);
+		assert.equal(h.level, "off");
+		assert.equal(h.current.id, KIMI[0].id);
+	});
+	for (const silent of [false, true]) {
+		it(`switching into Highspeed calls only setModel, model_select silent=${silent}`, async () => {
+			const h = harness(KIMI, KIMI[1], "max");
+			h.silent = silent;
+			const pending = h.open("shift+up");
+			await flush();
+			h.input(KEY.right); h.input(KEY.left); h.input(KEY.enter);
+			await pending;
+			assert.deepEqual(h.calls, ["model:kimi-coding/kimi-for-coding-highspeed"]);
+			assert.equal(h.current.id, KIMI[0].id);
+			assert.equal(h.level, "max");
+			assert.equal(h.modelSelect.length, 0);
+		});
+	}
 });
 
 describe("transaction: open, navigate and Esc never change live state", () => {

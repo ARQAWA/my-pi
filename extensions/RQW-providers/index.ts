@@ -1,7 +1,7 @@
 import { AgentSession, ModelRuntime, VERSION, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 // Only these providers stay in login and model lists; credentials of the others stay saved.
-export const ALLOWED = new Set(["anthropic", "openai-codex"]);
+export const ALLOWED = new Set(["anthropic", "openai-codex", "kimi-coding"]);
 // Pi 1.4.0's native handler map carries this private key: the patched `_bindExtensionCore` tells each loaded
 // instance which session (and so which runtime) it was bound to, before the session emits any event.
 const BIND = "rqw-providers:session-bind";

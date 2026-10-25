@@ -6237,3 +6237,15 @@ Replacement: repo-code-index second delivery; commit provenance:
 >   Research must adapt the personal principle to AI agents rather than assume decomposition is already proven best.
 >   Research, architecture reorganisation and a mechanically checkable repository index are queued in `BACKLOG.md`;
 >   detailed design still needs agreement before implementation. Since: process-rules-oct23 squash.
+
+## Kimi model order and provider visibility - superseded 2026-10-25
+
+Replaced by `[D-MODELS-KIMI]` and updated `[D-MODELS-ORDER]` / `[D-PROVIDERS-ALLOW]`.
+Verbatim superseded clauses from `61b81a3:DECISIONS.md`; replacement commit:
+`git log -S'D-MODELS-KIMI' -- DECISIONS.md`.
+
+> - **Model order and availability** `[D-MODELS-ORDER]`. `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`,
+>   `gpt-6.1-sol`, `gpt-6-sol`, `claude-haiku-5-5`, `gpt-5.6-luna`, `gpt-6-luna`, strongest first.
+
+> - **Visible providers** `[D-PROVIDERS-ALLOW]`. Only `anthropic` and legacy `openai-codex` are visible in login, pickers,
+

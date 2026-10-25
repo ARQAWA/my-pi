@@ -11,6 +11,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const MODELS = join(ROOT, "extensions/RQW-models/index.ts");
 const ADAPTER = join(ROOT, "extensions/RQW-anthropic/index.ts");
 const PROVIDERS = join(ROOT, "extensions/RQW-providers/index.ts");
+const KEPT = ["anthropic", "kimi-coding", "openai-codex"];
 // Resolve Pi internals from its installed entrypoint; package exports do not expose this class.
 const { InteractiveMode } = await import(new URL("./modes/interactive/interactive-mode.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 
@@ -67,9 +68,9 @@ for (const order of [[MODELS, ADAPTER, PROVIDERS], [PROVIDERS, ADAPTER, MODELS],
 				try {
 					await session.bindExtensions({ onError: error => errors.push(error.error) });
 					assert.deepEqual(errors, []);
-					assert.deepEqual(runtime.getProviders().map(provider => provider.id).sort(), ["anthropic", "openai-codex"]);
+					assert.deepEqual(runtime.getProviders().map(provider => provider.id).sort(), KEPT);
 					const login = () => [...new Set<string>(InteractiveMode.prototype.getLoginProviderOptions.call({ session }).map((provider: { id: string }) => provider.id))].sort();
-					assert.deepEqual(login(), ["anthropic", "openai-codex"]);
+					assert.deepEqual(login(), KEPT);
 					assert.ok(session.extensionRunner.getRegisteredCommands().some(command => command.name === "rqw-models"));
 					assert.equal(session.model?.id, authenticated ? "claude-opus-5-5" : "gpt-6-sol");
 					assert.equal(session.thinkingLevel, "medium");
@@ -88,8 +89,8 @@ for (const order of [[MODELS, ADAPTER, PROVIDERS], [PROVIDERS, ADAPTER, MODELS],
 					assert.deepEqual(loader.getExtensions().errors, []);
 					assert.ok(!session.extensionRunner.getRegisteredCommands().some(command => command.name === "rqw-models"));
 					assert.deepEqual(runtime.getAvailableSnapshot().map(model => model.id), available.map(model => model.id));
-					assert.deepEqual(runtime.getProviders().map(provider => provider.id).sort(), ["anthropic", "openai-codex"]);
-					assert.deepEqual(login(), ["anthropic", "openai-codex"]);
+					assert.deepEqual(runtime.getProviders().map(provider => provider.id).sort(), KEPT);
+					assert.deepEqual(login(), KEPT);
 					assert.ok(runtime.getRegisteredProviderConfig("anthropic"));
 					// Disable just RQW-providers: the Anthropic transport stays and hides nothing; RQW-models still masks.
 					await writeFile(settingsFile, JSON.stringify({ ...config, extensions: [ADAPTER, MODELS] }));
@@ -107,8 +108,8 @@ for (const order of [[MODELS, ADAPTER, PROVIDERS], [PROVIDERS, ADAPTER, MODELS],
 					assert.deepEqual(errors, []);
 					assert.deepEqual(loader.getExtensions().errors, []);
 					assert.equal(runtime.getRegisteredProviderConfig("anthropic"), undefined);
-					assert.deepEqual(runtime.getProviders().map(provider => provider.id).sort(), ["anthropic", "openai-codex"]);
-					assert.deepEqual(login(), ["anthropic", "openai-codex"]);
+					assert.deepEqual(runtime.getProviders().map(provider => provider.id).sort(), KEPT);
+					assert.deepEqual(login(), KEPT);
 					// Then RQW-models alone: it masks again and stock provider visibility returns.
 					await writeFile(settingsFile, JSON.stringify({ ...config, extensions: [MODELS] }));
 					await session.reload();

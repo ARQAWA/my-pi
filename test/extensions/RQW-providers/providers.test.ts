@@ -14,7 +14,7 @@ import { installVisibility } from "../../../extensions/RQW-providers/index.ts";
 // Pi hides its credential store behind package exports; resolve the installed internal entrypoint.
 const { AuthStorage } = await import(new URL("./core/auth-storage.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 const extensionPath = fileURLToPath(new URL("../../../extensions/RQW-providers/index.ts", import.meta.url));
-const KEPT = ["anthropic", "openai-codex"];
+const KEPT = ["anthropic", "kimi-coding", "openai-codex"];
 const base = builtinProviders().find(provider => provider.id === "anthropic")!;
 const entries: [string, typeof pi][] = [["library", pi]];
 try {
@@ -136,6 +136,24 @@ for (const [label, entry] of entries) describe(`real Pi: ${label}`, () => {
 		try {
 			assert.equal(runtime.getRegisteredProviderConfig("anthropic"), undefined);
 			assert.deepEqual(runtime.getProviders().map(provider => provider.id).sort(), KEPT);
+		} finally { session.dispose(); }
+	});
+
+	it("keeps kimi-coding in login, model, available and scoped lists", async () => {
+		const { session, runtime, other } = await setup({ credentials: {
+			anthropic: credential, "kimi-coding": credential, openrouter: credential,
+		} });
+		try {
+			await session.bindExtensions(bindings);
+			const kimi = runtime.getModels("kimi-coding")[0];
+			assert.ok(kimi);
+			session.setScopedModels([{ model: kimi }, { model: other }]);
+			assert.deepEqual(login(session), KEPT);
+			for (const list of [runtime.getModels(), await runtime.getAvailable(), runtime.getAvailableSnapshot(), session.scopedModels.map(item => item.model)]) {
+				assert.ok(list.some(model => model.provider === "kimi-coding"));
+				assert.ok(list.every(model => KEPT.includes(model.provider)));
+			}
+			assert.deepEqual(session.scopedModels.map(item => item.model), [kimi]);
 		} finally { session.dispose(); }
 	});
 

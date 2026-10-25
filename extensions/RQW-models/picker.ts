@@ -12,6 +12,7 @@ export type PickerSpec = {
 	family: (model: ChatModel) => number;
 	rank: (effort: string) => number;
 	levels: (model: ChatModel | undefined) => string[];
+	displayEffort?: (model: ChatModel | undefined) => string | undefined;
 	nearest: (model: ChatModel, effort: string) => string | undefined;
 };
 
@@ -52,7 +53,7 @@ export function stepDraft(spec: PickerSpec, draft: Draft, step: Step): Draft {
 }
 
 const sanitize = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/gu, " ");
-const modelLabel = (model: ChatModel) => sanitize(`${model.provider}/${model.id}`);
+const modelLabel = (model: ChatModel) => sanitize(model.provider === "kimi-coding" ? model.name : `${model.provider}/${model.id}`);
 
 export class ModelEffortPicker implements Component {
 	private current: Draft;
@@ -104,9 +105,12 @@ export class ModelEffortPicker implements Component {
 		const theme = this.theme;
 		const lines: string[] = [theme.bold(theme.fg("accent", "Model / effort"))];
 		const models = this.spec.models;
-		const { model, effort } = this.current;
+		const { model } = this.current;
+		// A fixed label is visual only: draft navigation and commit still see no reasoning level.
+		const fixedEffort = this.spec.displayEffort?.(model);
+		const effort = fixedEffort ?? this.current.effort;
 		const index = model ? models.findIndex((candidate) => this.spec.family(candidate) === this.spec.family(model)) : -1;
-		const levels = this.spec.levels(model);
+		const levels = fixedEffort ? [fixedEffort] : this.spec.levels(model);
 		const effortIndex = effort === undefined ? -1 : levels.indexOf(effort);
 		if (!models.length) lines.push(theme.fg("muted", "No authenticated RQW models"));
 		else if (width < WIDE) {

@@ -1509,6 +1509,26 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 ## Models
 
+- **Kimi Code models** `[D-MODELS-KIMI]`. The first four entries are `kimi-for-coding-highspeed`
+  (Kimi K2.7 Code Highspeed), `kimi-for-coding` (Kimi K2.8 Preview), `k3.1-pro-highspeed`
+  (Kimi K3.1 Pro Highspeed), `k3.1-pro` (Kimi K3.1 Pro), all on `kimi-coding`.
+  The first has no selectable reasoning level: the chooser renders `high` only, without a thinking setter.
+  The other three offer only `low`, `high`, `max`; none offers `off`. Opus medium remains the new-session default.
+  Owner: «Добавь их в самый верх списка в таком порядке.» and «Выключенное рассуждение (off) не предлагай ни для одной из них.»
+  (session `2026-10-21T16-27-59-062Z_01a15f4a`, 2026-10-25, Kimi task).
+  Owner authorized the provider visibility and missing model registration:
+  «да добавь в провайдеры и добавь модель кими к 3.1 и проресерч про нее инфу потому что другой агент нашел эту модель в провайдера и конфигах кимича»
+  (same session, line 7039). `RQW-providers` adds only `kimi-coding` to `ALLOWED`.
+  `RQW-models/kimi.ts` extends the built-in catalog through public `pi.registerProvider`, retaining built-in OAuth.
+  Both K3.1 definitions use context `1048576`, output `131072`, text/image inputs and reasoning `low/high/max`.
+  Source for every definition field, including compatibility, image preprocessing and cost: the exact two records
+  `kimi-coding.models[2]` and `[3]` in the host's `~/.pi/agent/models-store.json`, inspected 2026-10-25.
+  [Official model configuration](https://www.kimi.com/code/docs/en/kimi-code/models) confirms IDs, context,
+  image/video capability, reasoning levels and OpenAI-compatible `https://api.kimi.com/coding/v1`.
+  Pi exposes text/image input, not video. The `131072` output value is the cached client definition, not an independently
+  documented server ceiling: neither that page nor the [release notes](https://www.kimi.com/code/docs/en/kimi-code/whats-new.html)
+  specifies a maximum output. No installed Kimi CLI or exact local source definition was found.
+  Carriers: `extensions/RQW-models/{index,picker,kimi}.ts`, `extensions/RQW-providers/index.ts`, their scoped tests.
 - **Draft chooser** `[D-MODELS-CHOOSER]`. Shift+arrows open a model/effort draft chooser that performs one draft step
   before the first render; one transition is Shift+arrow then Enter. Plain and Shift arrows then share the same axes.
   Enter commits once; Esc closes with no setters or restoration. A draft model switch clamps effort to the nearest lower
@@ -1541,7 +1561,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   intersected with Pi support.
   Owner: «Надо подобрать сопостовимую модель на gpt, попробоуй 5.6 luna и более сильные модели типа medium ризонинг 6 и 6.1 sol, на время замеров добавь 5.6 luna в список моделей наших сразу после хайку и вообще хайку надо поставить над всеми в слабых моделях ь.е. порядок должен быть типа haiku 5.5, luna 5.6, luna 6» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1167); «Да» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1425)
   Carrier: `extensions/RQW-models/index.ts` (`FAMILIES`, `FAMILY_LEVELS`). Since: `7d6fdbf`.
-- **Model order and availability** `[D-MODELS-ORDER]`. `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`,
+- **Model order and availability** `[D-MODELS-ORDER]`. After the four Kimi entries in `[D-MODELS-KIMI]`, `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`,
   `gpt-6.1-sol`, `gpt-6-sol`, `claude-haiku-5-5`, `gpt-5.6-luna`, `gpt-6-luna`, strongest first. `pickerModels` takes
   Pi's credential-aware availability including provider `filterModels`: the runtime's unmasked `getAvailableSnapshot`
   through its prototype while the listed-models masks are set, otherwise `ctx.modelRegistry.getAvailable()`. Absent,
@@ -1835,7 +1855,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   transport is off; switching either off alone is the [Isolation](#isolation) rule. Owner answer «7a» to the coordinator
   question "Скрытие лишних провайдеров. Сейчас его делает расширение Anthropic. Если его выключить, скрытие пропадёт. a) Вынести скрытие в отдельное расширение": «1a 2a 3a 4a 5a 6b 7a 8a ответы по транспорту» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 2394). Carrier:
   `extensions/RQW-providers/index.ts`, after RQW-anthropic in `pi.extensions`; RQW-codex follows it. Since: `2bf5eac`.
-- **Visible providers** `[D-PROVIDERS-ALLOW]`. Only `anthropic` and legacy `openai-codex` are visible in login, pickers,
+- **Visible providers** `[D-PROVIDERS-ALLOW]`. Only `anthropic`, legacy `openai-codex` and `kimi-coding` (see `[D-MODELS-KIMI]`) are visible in login, pickers,
   `--list-models` and scoped models (`ALLOWED`); Pi 1.4.0's `openai` ("Sign in with ChatGPT", `OPENAI_API_KEY`) stays hidden. Saved credentials stay; previously selected models and explicit SDK lookups are not erased; public `unregisterProvider` is not used because it restores builtins. The policy covers only a runtime with an owning session of this extension, so loading it alone or an unrelated runtime keeps Pi's lists. RQW-anthropic filters nothing; its `registration.ts` and `auth-boundary.ts` carry the conflict guard, credential-store binding and request auth boundary. Owner: «Смотри, в нашем Pi должен быть старый OpenAI кодекс и всё, блядь. Legacy, который через девайс. А новый OpenAI нахуй не нужен, блядь. Я не знаю, что там за глупость новый OpenAI. У нас должен быть вход именно такой же, как сейчас это работает в текущем OpenAI кодексе, и всё, больше никак.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 134) Coordinator text (owner quotes C:3171, an omp session, not found in the Pi sessions): "Это именно отключить"; "Когда мы заходим в логин, там должны быть только кодекс, авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё". Proof: `test/extensions/RQW-providers/providers.test.ts`. Since: `2bf5eac`.
 - **Binding and order** `[D-PROVIDERS-BIND]`. Engineering choices: ownership comes from the patched
   `AgentSession._bindExtensionCore`, because Pi emits no event before `--list-models` and a bindingless `/reload` emits

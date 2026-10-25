@@ -9,6 +9,7 @@ import { after, before, describe, it } from "node:test";
 import { fauxAssistantMessage, fauxProvider, getSupportedThinkingLevels, type Model, type FauxProviderHandle } from "@earendil-works/pi-ai";
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext, type ExtensionFactory, type ExtensionUIContext, type SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { kimiCodingProvider } from "@earendil-works/pi-ai/providers/kimi-coding";
 import { matchesKey, setKittyProtocolActive, type KeyId } from "@earendil-works/pi-tui";
 import extension, { FAMILIES, familyOf, levelsFor, pickerModels } from "../../../extensions/RQW-models/index.ts";
 
@@ -18,7 +19,8 @@ const model = (id: string, provider = "anthropic", map: Record<string, string | 
 	id, provider, api: "test", name: id, baseUrl: "https://invalid.test", reasoning: true, input: ["text"],
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128000, maxTokens: 8000, thinkingLevelMap: map,
 });
-const LISTED = FAMILIES.map((id) => model(id, id.startsWith("gpt") ? "openai-codex" : "anthropic"));
+const LISTED = FAMILIES.slice(4).map((id) => model(id, id.startsWith("gpt") ? "openai-codex" : "anthropic"));
+const KIMI = FAMILIES.slice(0, 4).map((id) => model(id, "kimi-coding"));
 const EXPECTED_LEVELS = [
 	["low", "medium", "high"],
 	["low", "medium", "high", "xhigh"],
@@ -75,6 +77,8 @@ function harness(initialModels = LISTED, initial = LISTED[0], initialLevel: Thin
 	// Test double implements only the context and API surface used by this extension.
 	const ctx = context as unknown as ExtensionCommandContext;
 	const pi = {
+		registerProvider: () => {},
+		unregisterProvider: () => {},
 		registerShortcut: (key: KeyId, options: Shortcut) => shortcuts.set(key, options),
 		registerCommand: (key: string, options: Command) => commands.set(key, options),
 		on: (name: string, fn: StartHandler | ((event: { model: Model<string> }) => void)) => {
@@ -123,13 +127,13 @@ after(() => { process.argv = ORIGINAL_ARGV; setKittyProtocolActive(false); });
 
 describe("RQW model families and Pi thinking capabilities", () => {
 	it("offers exactly the listed generations in strongest-first order, no old Claude", () => {
-		assert.deepEqual(FAMILIES, ["claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna"]);
+		assert.deepEqual(FAMILIES, ["kimi-for-coding-highspeed", "kimi-for-coding", "k3.1-pro-highspeed", "k3.1-pro", "claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna"]);
 		const extra = [model("gpt-5.3-codex-spark"), model("claude-opus-4-8"), model("claude-opus-5"), model("claude-sonnet-5-50"), model("gpt-6-astra")];
 		assert.deepEqual(pickerModels([...extra, ...LISTED.toReversed()]), LISTED);
 	});
 	it("recognizes provider paths, dotted versions, dated aliases and Bedrock without inventing models", () => {
-		for (const id of ["anthropic/claude-opus-5.5", "claude-opus-5-5-20261001", "us.anthropic.claude-opus-5-5-v1:0"]) assert.equal(familyOf(model(id, "proxy")), 0, id);
-		assert.equal(familyOf(model("openai/gpt-6.1-sol", "proxy")), 2);
+		for (const id of ["anthropic/claude-opus-5.5", "claude-opus-5-5-20261001", "us.anthropic.claude-opus-5-5-v1:0"]) assert.equal(familyOf(model(id, "proxy")), 4, id);
+		assert.equal(familyOf(model("openai/gpt-6.1-sol", "proxy")), 6);
 		assert.equal(familyOf(model("gpt-6.1-sol-fast")), -1);
 		const alias = model("anthropic/claude-opus-5.5", "proxy");
 		assert.deepEqual(pickerModels([alias, LISTED[0]]), [LISTED[0]]);
@@ -154,6 +158,68 @@ describe("RQW model families and Pi thinking capabilities", () => {
 		assert.deepEqual(levelsFor(model("test", "proxy", { minimal: null })), ["low", "medium", "high"]);
 		assert.deepEqual(levelsFor({ ...LISTED[0], reasoning: false }), []);
 		assert.deepEqual(levelsFor(undefined), []);
+	});
+});
+
+describe("Kimi model families", () => {
+	it("puts all four Kimi families before legacy models with their display names", () => {
+		const selected = pickerModels([...LISTED, ...KIMI].toReversed());
+		assert.deepEqual(selected.map((m) => m.id), [...FAMILIES]);
+		assert.deepEqual(selected.slice(0, 4).map((m) => m.name), [
+			"Kimi K2.7 Code Highspeed", "Kimi K2.8 Preview", "Kimi K3.1 Pro Highspeed", "Kimi K3.1 Pro",
+		]);
+		assert.deepEqual(selected.slice(4), LISTED);
+	});
+	it("has no selectable level for K2.7 Highspeed and only low, high, max for the others", () => {
+		for (const [index, m] of KIMI.entries()) {
+			const expected = index === 0 ? [] : ["low", "high", "max"];
+			assert.deepEqual(levelsFor(m), expected, m.id);
+			assert.deepEqual(levelsFor({ ...m, id: `proxy/${m.id}`, provider: "proxy" }), expected);
+			assert.equal(levelsFor(m).includes("off"), false);
+		}
+	});
+	it("prefers kimi-coding over canonical and path aliases from other providers", () => {
+		for (const canonical of KIMI) {
+			const proxy = model(`proxy/${canonical.id}`, "proxy");
+			const other = model(canonical.id, "anthropic");
+			const preferred = pickerModels([proxy, other, canonical]);
+			assert.equal(preferred.length, 1);
+			assert.equal(preferred[0].provider, "kimi-coding");
+			assert.equal(preferred[0].id, canonical.id);
+			assert.deepEqual(pickerModels([proxy]), [proxy]);
+		}
+	});
+	it("builtin Highspeed transport omits reasoning_effort even with high thinking", async () => {
+		const provider = kimiCodingProvider();
+		const highspeed = provider.getModels().find((m) => m.id === "kimi-for-coding-highspeed")!;
+		assert.equal(highspeed.compat?.supportsReasoningEffort, false);
+		const requests: Record<string, unknown>[] = [];
+		const result = await provider.streamSimple(highspeed, {
+			messages: [{ role: "user", content: "offline probe", timestamp: 0 }],
+		}, {
+			apiKey: "faux-kimi-key", reasoning: "high",
+			fetch: async (_input, init) => {
+				requests.push(JSON.parse(String(init?.body)));
+				const chunk = { id: "offline-kimi", object: "chat.completion.chunk", created: 0,
+					model: highspeed.id, choices: [{ index: 0, delta: { role: "assistant", content: "offline reply" }, finish_reason: "stop" }] };
+				return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
+					headers: { "Content-Type": "text/event-stream" },
+				});
+			},
+		}).result();
+		assert.equal(requests.length, 1);
+		assert.equal(requests[0].model, highspeed.id);
+		assert.equal(Object.hasOwn(requests[0], "reasoning_effort"), false);
+		assert.equal(result.stopReason, "stop");
+		assert.deepEqual(result.content, [{ type: "text", text: "offline reply" }]);
+	});
+	it("keeps new-session Opus medium when the stronger Kimi families are available", async () => {
+		for (const reason of ["startup", "new"] as const) {
+			const h = harness([...KIMI, ...LISTED], KIMI[0], "high");
+			await h.start(reason);
+			assert.equal(h.current.id, "claude-opus-5-5");
+			assert.equal(h.thinking, "medium");
+		}
 	});
 });
 
@@ -401,7 +467,7 @@ describe("real Pi SDK and faux providers only", () => {
 			const pending = session.extensionRunner.getShortcuts({}).get("shift+down")!.handler({ ...session.extensionRunner.createContext() });
 			await flush(); sdkDialog?.handleInput(KEY_BYTES.down); sdkDialog?.handleInput(KEY_BYTES.down); sdkDialog?.handleInput(KEY_BYTES.enter); await pending;
 			const changes = session.sessionManager.getBranch().filter((entry) => entry.type === "model_change");
-			assert.deepEqual(changes.slice(-1).map((entry) => entry.modelId), FAMILIES.slice(3, 4));
+			assert.deepEqual(changes.slice(-1).map((entry) => entry.modelId), [LISTED[3].id]);
 			assert.equal(session.model?.id, "gpt-6-sol"); assert.equal(session.thinkingLevel, "medium");
 		} finally { session.dispose(); }
 	});
@@ -426,6 +492,58 @@ describe("real Pi SDK and faux providers only", () => {
 		const resumed = await realSession({ manager });
 		try { assert.equal(resumed.model?.id, "gpt-6.1-sol"); assert.equal(resumed.thinkingLevel, "high"); }
 		finally { resumed.dispose(); }
+	});
+});
+
+describe("public Kimi catalog registration", () => {
+	it("extends the actual SDK catalog with exact K3.1 metadata, preserves OAuth, and restores stock on disable", async () => {
+		const own = await ModelRuntime.create({ authPath: join(root, "auth-kimi-registration.json"), modelsPath: null, refreshOnCreate: false });
+		const builtin = kimiCodingProvider();
+		const original = builtin.getModels();
+		const originalIds = original.map((m) => m.id);
+		assert.ok(builtin.auth.oauth);
+		assert.equal(own.getModel("kimi-coding", "k3.1-pro"), undefined);
+		assert.equal(own.getModel("kimi-coding", "k3.1-pro-highspeed"), undefined);
+		let enabled = true;
+		const session = await realSession({ modelRuntime: own, model: own.getModel("anthropic", "claude-opus-5-5"), loaded: (loader) => {
+			const reload = loader.reload.bind(loader);
+			loader.reload = async () => { if (enabled) await reload(); else loader.getExtensions().extensions.length = 0; };
+		} });
+		try {
+			const provider = own.getProvider("kimi-coding")!;
+			assert.ok(provider.auth.oauth, "built-in OAuth remains available without credentials");
+			assert.deepEqual(Object.keys(provider.auth.oauth).sort(), Object.keys(builtin.auth.oauth!).sort());
+			assert.deepEqual(provider.getModels().map((m) => m.id), [...originalIds, "k3.1-pro", "k3.1-pro-highspeed"]);
+			for (const originalModel of original) assert.deepEqual(own.getModel("kimi-coding", originalModel.id), { ...originalModel, headers: undefined });
+			for (const [id, name, inputCost, outputCost] of [
+				["k3.1-pro", "Kimi K3.1 Pro", 2, 10],
+				["k3.1-pro-highspeed", "Kimi K3.1 Pro Highspeed", 4, 20],
+			] as const) {
+				const registered = own.getModel("kimi-coding", id)!;
+				assert.deepEqual(registered, {
+					id, name, provider: "kimi-coding", api: "openai-completions", headers: undefined,
+					baseUrl: "https://api.kimi.com/coding/v1",
+					reasoning: true, input: ["text", "image"],
+					cost: { input: inputCost, output: outputCost, cacheRead: 0.2, cacheWrite: 0 },
+					contextWindow: 1048576, maxTokens: 131072,
+					thinkingLevelMap: { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max" },
+					compat: {
+						supportsStrictMode: false, supportsStore: false, supportsDeveloperRole: false,
+						supportsReasoningEffort: true, maxTokensField: "max_tokens", thinkingFormat: "openai",
+						requiresReasoningContentOnAssistantMessages: true,
+						supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true,
+					},
+					inputLimits: { images: { resize: { maxWidth: 2000, maxHeight: 2000, maxBytes: 4718592, jpegQuality: 80 } } },
+				});
+				assert.deepEqual(levelsFor(registered), ["low", "high", "max"]);
+			}
+			enabled = false;
+			await session.reload();
+			assert.deepEqual(own.getProvider("kimi-coding")!.getModels(), original);
+			assert.ok(own.getProvider("kimi-coding")!.auth.oauth);
+			assert.equal(own.getModel("kimi-coding", "k3.1-pro"), undefined);
+			assert.equal(own.getModel("kimi-coding", "k3.1-pro-highspeed"), undefined);
+		} finally { session.dispose(); }
 	});
 });
 
@@ -470,7 +588,7 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 		try {
 			const entries = session.sessionManager.getBranch().length;
 			selects.length = 0;
-			const refusal = /openai-codex\/gpt-5\.3-codex-spark is not in the RQW models list\. Allowed: claude-opus-5-5, claude-sonnet-5-5, gpt-6\.1-sol, gpt-6-sol, claude-haiku-5-5, gpt-5\.6-luna, gpt-6-luna\./;
+			const refusal = /openai-codex\/gpt-5\.3-codex-spark is not in the RQW models list\. Allowed: kimi-for-coding-highspeed, kimi-for-coding, k3\.1-pro-highspeed, k3\.1-pro, claude-opus-5-5, claude-sonnet-5-5, gpt-6\.1-sol, gpt-6-sol, claude-haiku-5-5, gpt-5\.6-luna, gpt-6-luna\./;
 			await assert.rejects(api.setModel(unlisted()), refusal);
 			await assert.rejects(session.setModel(unlisted(), { persist: true }), refusal);
 			assert.equal(session.model?.id, "claude-opus-5-5"); assert.equal(session.thinkingLevel, "medium");
@@ -493,7 +611,7 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 			const restored = await realSession({ manager, reason, ui: ui(notes) });
 			try {
 				assert.equal(restored.model?.id, "claude-opus-5-5"); assert.equal(restored.thinkingLevel, "medium");
-				assert.deepEqual(notes, ["openai-codex/gpt-5.3-codex-spark is not in the RQW models list. Allowed: claude-opus-5-5, claude-sonnet-5-5, gpt-6.1-sol, gpt-6-sol, claude-haiku-5-5, gpt-5.6-luna, gpt-6-luna. Switched to anthropic/claude-opus-5-5 (medium)."]);
+				assert.deepEqual(notes, [`openai-codex/gpt-5.3-codex-spark is not in the RQW models list. Allowed: ${FAMILIES.join(", ")}. Switched to anthropic/claude-opus-5-5 (medium).`]);
 			} finally { restored.dispose(); }
 		}
 	});
@@ -509,7 +627,7 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 			await sub.prompt("hello");
 			const last = sub.messages.at(-1) as { role: string; stopReason?: string; errorMessage?: string };
 			assert.equal(last.role, "assistant"); assert.equal(last.stopReason, "error");
-			assert.equal(last.errorMessage, "RQW-models refused the request: openai-codex/gpt-5.3-codex-spark is not in the RQW models list. Allowed: claude-opus-5-5, claude-sonnet-5-5, gpt-6.1-sol, gpt-6-sol, claude-haiku-5-5, gpt-5.6-luna, gpt-6-luna.");
+			assert.equal(last.errorMessage, `RQW-models refused the request: openai-codex/gpt-5.3-codex-spark is not in the RQW models list. Allowed: ${FAMILIES.join(", ")}.`);
 			assert.equal(codex.getPendingResponseCount(), 1);
 			const listed = await child(codex.getModel("gpt-6-sol")!);
 			try { await listed.prompt("hello"); assert.equal(listed.getLastAssistantText(), "must not be requested"); }
@@ -530,6 +648,8 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 		const session = await realSession({ ui: ui([], (labels) => { offered = labels; return undefined; }) });
 		try {
 			assert.ok(runtime.hasConfiguredAuth("openai-codex"));
+			// Extension registration starts another availability refresh after the initial fixture pass.
+			await runtime.getAvailable();
 			await session.extensionRunner.getCommand("rqw-models")!.handler("", session.extensionRunner.createCommandContext());
 			assert.deepEqual(offered, LISTED.filter((m) => m.id !== "gpt-6-sol").map((m) => `${m.provider}/${m.id}`));
 			for (const id of ["claude-sonnet-5-5", "gpt-6.1-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna"]) { await press(session, "shift+down"); assert.equal(session.model?.id, id); }
@@ -597,7 +717,7 @@ describe("only RQW-listed models: stock selection closed, requests refused", () 
 		const session = await realSession({ modelRuntime: own, model: only.getModel("gpt-5.3-codex-spark"), ui: ui(notes) });
 		try {
 			assert.equal(session.model?.id, "gpt-5.3-codex-spark");
-			assert.deepEqual(notes, ["openai-codex/gpt-5.3-codex-spark is not in the RQW models list. Allowed: claude-opus-5-5, claude-sonnet-5-5, gpt-6.1-sol, gpt-6-sol, claude-haiku-5-5, gpt-5.6-luna, gpt-6-luna. No listed model is authenticated; its requests are refused."]);
+			assert.deepEqual(notes, [`openai-codex/gpt-5.3-codex-spark is not in the RQW models list. Allowed: ${FAMILIES.join(", ")}. No listed model is authenticated; its requests are refused.`]);
 			only.setResponses([fauxAssistantMessage("must not be requested")]);
 			await session.prompt("hello");
 			assert.match((session.messages.at(-1) as { errorMessage?: string }).errorMessage ?? "", /^RQW-models refused the request: openai-codex\/gpt-5\.3-codex-spark is not in the RQW models list/);
@@ -679,7 +799,7 @@ describe("real Pi CLI, no network and faux transport", () => {
 		assert.equal(cliStderr, "");
 	});
 	it("replaces a CLI --model or saved default outside the list with the default and a warning", async () => {
-		const warning = /Warning: openai-codex\/gpt-5\.3-codex-spark is not in the RQW models list\. Allowed: claude-opus-5-5, .*gpt-6-luna\. Switched to anthropic\/claude-opus-5-5 \(medium\)/;
+		const warning = /Warning: openai-codex\/gpt-5\.3-codex-spark is not in the RQW models list\. Allowed: kimi-for-coding-highspeed, kimi-for-coding, k3\.1-pro-highspeed, k3\.1-pro, claude-opus-5-5, .*gpt-6-luna\. Switched to anthropic\/claude-opus-5-5 \(medium\)/;
 		assert.deepEqual(await cli(["--model", "openai-codex/gpt-5.3-codex-spark"]), { provider: "anthropic", model: "claude-opus-5-5", thinking: "medium" });
 		assert.match(cliStderr, warning);
 		assert.deepEqual(await cli([], false, { defaultProvider: "openai-codex", defaultModel: "gpt-5.3-codex-spark", defaultThinkingLevel: "high" }),

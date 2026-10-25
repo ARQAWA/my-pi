@@ -1,15 +1,27 @@
 import { getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
 import { AgentSession, parseArgs, type ExtensionAPI, type ExtensionContext, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { ModelEffortPicker, sameModel, stepDraft, type Draft, type PickerSpec, type Step } from "./picker.ts";
+import { registerKimiModels } from "./kimi.ts";
 
 export const FAMILIES = [
+	"kimi-for-coding-highspeed", "kimi-for-coding", "k3.1-pro-highspeed", "k3.1-pro",
 	"claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna",
 ] as const;
+const KIMI_NAMES: Record<string, string> = {
+	"kimi-for-coding-highspeed": "Kimi K2.7 Code Highspeed",
+	"kimi-for-coding": "Kimi K2.8 Preview",
+	"k3.1-pro-highspeed": "Kimi K3.1 Pro Highspeed",
+	"k3.1-pro": "Kimi K3.1 Pro",
+};
 const ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type Level = typeof ORDER[number];
 type ChatModel = Model<string>;
 // OMP reasoning-arrows ORDER/CAPS intersected with its canonical model efforts.
 const FAMILY_LEVELS: Record<typeof FAMILIES[number], readonly Level[]> = {
+	"kimi-for-coding-highspeed": [],
+	"kimi-for-coding": ["low", "high", "max"],
+	"k3.1-pro-highspeed": ["low", "high", "max"],
+	"k3.1-pro": ["low", "high", "max"],
 	"claude-opus-5-5": ["low", "medium", "high"],
 	"claude-sonnet-5-5": ["low", "medium", "high", "xhigh"],
 	"gpt-6.1-sol": ["low", "medium", "high", "xhigh", "max"],
@@ -39,11 +51,13 @@ export function pickerModels(models: ChatModel[]): ChatModel[] {
 	const sorted = models.filter((model) => familyOf(model) >= 0).sort((a, b) => {
 		const family = familyOf(a) - familyOf(b);
 		if (family) return family;
-		const preferred = familyOf(a) === 0 || familyOf(a) === 1 || familyOf(a) === 4 ? "anthropic" : "openai-codex";
+		const id = FAMILIES[familyOf(a)];
+		const preferred = id in KIMI_NAMES ? "kimi-coding" : id.startsWith("claude-") ? "anthropic" : "openai-codex";
 		const rank = (model: ChatModel) => Number(model.provider !== preferred) * 2 + Number(model.id !== FAMILIES[familyOf(model)]);
 		return rank(a) - rank(b) || `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`, "en");
 	});
-	return sorted.filter((model, index) => index === 0 || familyOf(model) !== familyOf(sorted[index - 1]));
+	return sorted.filter((model, index) => index === 0 || familyOf(model) !== familyOf(sorted[index - 1]))
+		.map((model) => model.provider === "kimi-coding" && KIMI_NAMES[model.id] ? { ...model, name: KIMI_NAMES[model.id] } : model);
 }
 
 function nearestLevel(model: ChatModel, current: Level): Level | undefined {
@@ -56,6 +70,7 @@ const pickerSpec = (models: ChatModel[]): PickerSpec => ({
 	family: (model) => familyOf(model),
 	rank: (effort) => ORDER.indexOf(effort as Level),
 	levels: (model) => levelsFor(model),
+	displayEffort: (model) => model?.provider === "kimi-coding" && model.id === "kimi-for-coding-highspeed" ? "high" : undefined,
 	nearest: (model, effort) => nearestLevel(model, effort as Level),
 });
 
@@ -154,6 +169,7 @@ function maskSession(session: AgentSession) {
 }
 
 export default function modelsExtension(pi: ExtensionAPI) {
+	registerKimiModels(pi);
 	// Event contexts have live getters; the TUI shortcut dispatcher passes snapshots.
 	let liveContext: ExtensionContext;
 	// Pi invokes shortcut handlers without awaiting the previous press.
@@ -318,7 +334,7 @@ export default function modelsExtension(pi: ExtensionAPI) {
 				ctx.ui.notify("No authenticated RQW models available", "warning");
 				return;
 			}
-			const labels = models.map((model) => `${model.provider}/${model.id}`);
+			const labels = models.map((model) => model.provider === "kimi-coding" ? model.name : `${model.provider}/${model.id}`);
 			const chosen = await ctx.ui.select("RQW models", labels);
 			const model = models[labels.indexOf(chosen ?? "")];
 			if (model) await enqueue(() => select(ctx, model));
@@ -347,7 +363,7 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		}
 		// Pi has already resolved model patterns, scoped suffixes and thinking precedence.
 		if (args.model !== undefined || args.models !== undefined) return;
-		const opus = (await models()).find((model) => familyOf(model) === 0);
+		const opus = (await models()).find((model) => FAMILIES[familyOf(model)] === "claude-opus-5-5");
 		if (opus && !(await setStartupModel(opus))) return;
 		applyThinking(args.thinking);
 	};
@@ -374,5 +390,6 @@ export default function modelsExtension(pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		invalidateSession();
 		unbind();
+		pi.unregisterProvider("kimi-coding");
 	});
 }
