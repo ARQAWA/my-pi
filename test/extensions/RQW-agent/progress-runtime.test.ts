@@ -9,8 +9,9 @@ const toolUse = (id: string) => answer([fauxToolCall("bash", { command: "faux" }
 const reports = (session: AgentSession) => session.messages.filter(m => m.role === "custom" && m.customType === "agent_progress");
 const savedSteps = (session: AgentSession) => (session.sessionManager.getBranch().findLast(e => e.type === "custom" && e.customType === "rqw-agent-child") as any)?.data.progressSteps;
 
-async function runningChild() {
+async function runningChild(configure?: (f: Awaited<ReturnType<typeof fixture>>) => Record<string, unknown>) {
 	const f = await fixture();
+	const extra = configure?.(f) ?? {};
 	const children: AgentSession[] = [];
 	const listeners: Parameters<AgentSession["subscribe"]>[0][] = [];
 	f.bus.on("rqw-codex:session-policy", request => {
@@ -37,12 +38,28 @@ async function runningChild() {
 	}]) as never));
 	const final = gate("FINAL");
 	f.subReplies.push(...Array.from({ length: 50 }, (_, i) => toolUse(`t${i}`)), final.reply);
-	await f.call({ ...f.params(), tools: ["bash"] });
+	await f.call({ ...f.params(), ...extra, tools: ["bash"] });
 	const fork = await requested.promise;
 	await toolEntered.promise;
 	return { ...f, children, listeners, fork, forks, summary, final, executions: () => executions, releaseTool: () => toolReleased.resolve(),
 		cleanupAll: async () => { toolReleased.resolve(); final.release(); summary.resolve(answer("cleanup")); await f.cleanup(); } };
 }
+
+test("progress fork uses the routed request effort instead of the selected effort", async () => {
+	const f = await runningChild(f => {
+		f.runtime.registerVirtualModel({
+			provider: "progress-effort", id: "route", name: "Progress effort", thinkingLevels: ["off", "low", "medium"],
+			route: () => ({ model: f.sub.getModel("s")!, thinkingLevel: "medium" }),
+		});
+		return { model: "progress-effort/route", thinking: "low" };
+	});
+	try {
+		assert.equal(f.children[0].thinkingLevel, "low");
+		const responses = f.children[0].messages.filter(m => m.role === "assistant");
+		assert.equal(responses.at(-1)!.thinkingLevel, "medium");
+		assert.equal(f.fork.reasoning, "medium");
+	} finally { await f.cleanupAll(); }
+});
 
 test("50th message_end starts a nonblocking cache fork before its long tool finishes, with no child transcript injection", async () => {
 	const f = await runningChild();
