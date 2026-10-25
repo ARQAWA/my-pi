@@ -1,6 +1,7 @@
-// Running counts by kind for one top-level Pi session, offered on pi.events. RQW-agent counts only its own
-// children: agents in native activity (their Pi session is not idle), nested children included; not
-// logical active runs. RQW-review offers its own reviews in the same shape (no import).
+// Running counts for one top-level Pi session, offered on pi.events. RQW-agent counts its own
+// active logical assignments, pending sends or native activity, including nested children. A child
+// waiting for jobs or children still counts; completed undelivered results do not. Reviewer profiles
+// are ordinary agents. RQW-tools independently offers Main's backgroundProcesses on the same v1 channel.
 //
 // Contract, version 1. Producer and consumer may load in either order:
 // - request: a consumer emits COUNTS_REQUEST with { version, reply(source) }; a live producer replies synchronously.

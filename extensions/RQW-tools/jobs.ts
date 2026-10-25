@@ -316,6 +316,14 @@ export function createJobs(options: JobsOptions = {}) {
 	let notifyTo = options.notify;
 	/** Pending notification waits; each cancels itself when it fires, and `dispose` cancels all. */
 	const waiters = new Set<Waiter>();
+	const activityListeners = new Set<() => void>();
+	// Only handed-off, unfinished work counts. Wait registrations refer to these same jobs, not extra work.
+	const backgroundCount = () => disposed ? 0 : [...jobs.values()].filter((job) => job.ended === undefined).length;
+	function activityChanged() {
+		for (const listener of [...activityListeners]) {
+			try { listener(); } catch { /* A display consumer cannot break a job. */ }
+		}
+	}
 
 	function openLog(job: Job) {
 		if (job.stream) return;
@@ -510,7 +518,14 @@ export function createJobs(options: JobsOptions = {}) {
 		const done = new Promise<void>((resolve) => { finish = resolve; });
 		const job: Job = {
 			number: 0, tool, command, state: "queued", started: performance.now(), startedAt: Date.now(), killable, controller, done,
-			finish: () => { if (job.ended === undefined) { job.ended = performance.now(); job.endedAt = Date.now(); } finish(); },
+			finish: () => {
+				if (job.ended === undefined) {
+					job.ended = performance.now();
+					job.endedAt = Date.now();
+					if (job.number) activityChanged();
+				}
+				finish();
+			},
 			tail: "", bytes: 0, latest: "", pending: [], pendingBytes: 0, spec, listeners: new Set(), notes: [],
 		};
 		const notify = () => { for (const l of job.listeners) l(); };
@@ -588,6 +603,7 @@ export function createJobs(options: JobsOptions = {}) {
 		handle.barrier.handedOffAt = performance.now();
 		job.number = ++counter;
 		jobs.set(job.number, job);
+		activityChanged();
 		// D4 + H1: a bash or codemode job has an unknown footprint and may never end; calls registered from now on (later
 		// responses) wait for it only where they touch what it certainly holds. Calls of the same response registered
 		// before keep waiting for its real end. A file tool job keeps its paths.
@@ -783,6 +799,11 @@ export function createJobs(options: JobsOptions = {}) {
 	}
 
 	return {
+		backgroundCount,
+		subscribeActivity(listener: () => void) {
+			activityListeners.add(listener);
+			return () => { activityListeners.delete(listener); };
+		},
 		run,
 		wait,
 		watch,
@@ -800,7 +821,7 @@ export function createJobs(options: JobsOptions = {}) {
 		/** Kills every running job and cancels queued ones (an interrupt of a subagent; never an owner's Esc). */
 		abortAll,
 		/** The caller session ends: no more notifications; kill everything; new calls start aborted. */
-		dispose() { disposed = true; for (const w of [...waiters]) w.cancel(); life.abort(); abortAll(); forgetOwner(owner); },
+		dispose() { disposed = true; activityChanged(); activityListeners.clear(); for (const w of [...waiters]) w.cancel(); life.abort(); abortAll(); forgetOwner(owner); },
 		/** Ids continue above the highest `job#N` an earlier instance of this session reported. */
 		seen(n: number) { if (Number.isSafeInteger(n) && n > counter) counter = n; },
 		get size() { return jobs.size; },

@@ -11,6 +11,8 @@ export const COUNTS_OFFER = "rqw:running-counts:offer";
 
 export interface RunningCounts {
 	agents: number;
+	/** Optional on existing version-1 agent sources. Only the main session's jobs contribute here. */
+	backgroundProcesses?: number;
 }
 
 type CountsListener = (counts: RunningCounts | null) => void;
@@ -21,7 +23,7 @@ interface CountsSource {
 }
 
 const zero = (): RunningCounts => ({ agents: 0 });
-const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents;
+const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents && (a.backgroundProcesses ?? 0) === (b.backgroundProcesses ?? 0);
 
 /** Sums the live agent counts of this session; a source that ends (`null`) is dropped at once. */
 export class CountsWatch {
@@ -93,6 +95,7 @@ export class CountsWatch {
 		for (const source of this.sources.keys()) {
 			const counts = source.snapshot();
 			next.agents += counts.agents;
+			if (counts.backgroundProcesses) next.backgroundProcesses = (next.backgroundProcesses ?? 0) + counts.backgroundProcesses;
 		}
 		const changed = !same(next, this.total);
 		this.total = next;
@@ -102,7 +105,11 @@ export class CountsWatch {
 
 /** Agent count with the correct plural; zero is omitted. */
 export function countParts(counts: RunningCounts): string[] {
-	return counts.agents > 0 ? [`${counts.agents} ${counts.agents === 1 ? "agent" : "agents"}`] : [];
+	const parts: string[] = [];
+	if (counts.agents > 0) parts.push(`${counts.agents} ${counts.agents === 1 ? "agent" : "agents"}`);
+	const processes = counts.backgroundProcesses ?? 0;
+	if (processes > 0) parts.push(`${processes} background ${processes === 1 ? "process" : "processes"}`);
+	return parts;
 }
 
 export interface StatusInput {
@@ -117,7 +124,8 @@ export interface StatusInput {
 /** The status text of the upper border, or undefined when fully idle (no label, no reserved gap). */
 export function statusText(input: StatusInput): { text: string; compacting: boolean } | undefined {
 	if (input.compacting) return { text: "Compacting context", compacting: true };
-	const parts = countParts(input.counts);
+	// Main's active thinking/tool text keeps its existing agent suffix, not a background-job action.
+	const parts = countParts(input.running ? { agents: input.counts.agents } : input.counts);
 	if (input.running) {
 		const head = input.action ?? "Planning next moves";
 		return { text: parts.length > 0 ? `${head} · ${parts.join(", ")}` : head, compacting: false };

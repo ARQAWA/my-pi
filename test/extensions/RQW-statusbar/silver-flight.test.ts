@@ -4,15 +4,15 @@ import { it } from "node:test";
 import { stripVTControlCharacters as strip } from "node:util";
 import { activityRows, GOLD, SILVER, shimmerText, silverGlintPosition } from "../../../extensions/RQW-statusbar/render.ts";
 
-it("renders rapid silver flights, complete exit and the two-second absence without changing the label", () => {
-	const evidence: string[] = ["Silver: 640 ms constant-speed flight, 2000 ms pause, 2640 ms cycle."];
+it("renders silver flights, complete exit and the 2500 ms absence without changing the label", () => {
+	const evidence: string[] = ["Silver: 1250 ms constant-speed flight, 2500 ms pause, 3750 ms cycle."];
 	for (const text of ["Planning next moves", "x".repeat(100)]) {
-		for (const ms of [0, 80, 160, 240, 320, 400, 480, 560, 600, 640, 641, 1640, 2639.999, 2640, 2720, 2960, 3280]) {
+		for (const ms of [0, 80, 160, 240, 320, 400, 480, 560, 625, 1250, 1251, 2500, 3749.999, 3750, 3830, 4375, 5000]) {
 			const line = activityRows(120, { text, compacting: false, frame: ms / 80 })[0];
 			assert.equal(strip(line), " " + text);
 			assert.equal(line, " " + shimmerText(text, 1, ms / 80, SILVER));
 			const colors = [...line.matchAll(/38;2;(\d+;\d+;\d+)m/g)].map((m) => m[1]);
-			const absent = ms % 2640 >= 640;
+			const absent = ms % 3750 >= 1250;
 			assert.equal(colors.every((rgb) => rgb === "95;94;92"), absent);
 			evidence.push(`width=${text.length} t=${ms}ms center=${silverGlintPosition(text.length, ms / 80)} ${absent ? "absent" : "flight"}`, line);
 		}

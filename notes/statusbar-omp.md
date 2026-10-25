@@ -13,9 +13,20 @@ runs over the title. The activity status is a separate line above the border, wi
 empty line above and below, separating it from Pi's native current-action row and the input border. When idle,
 the activity widget returns no rows; only Pi's original spacer remains.
 
+Main's existing thinking or tool activity text and agent suffix remain while Main is active. After a full
+answer and run completion, pending work still shows as `Waiting for 2 agents, 1 background process`.
+RQW-agent counts active logical assignments, pending sends or native activity recursively, including a
+native-idle child waiting for jobs or children. A waiting parent and its active descendant each count;
+completed undelivered results and genuinely idle or AFK agents count zero. RQW-tools independently offers
+only Main's actual background jobs, without duplicating child jobs in the process category. Public
+`pi.events` v1 sources remain independent; missing `backgroundProcesses` in older sources means zero.
+There is no worker or separate reviewer category. At genuine idle the line disappears. This accounting
+change adds no agent list, cards, settings or dependencies and changes no visuals, timing or colours.
+Owner sources and scope: [D-STATUSBAR-WAITS](../DECISIONS.md#status-bar).
+
 Silver activity text has one glint appearing at the left and flying right at constant linear speed in
-640 ms, fully clearing its shoulder beyond the right edge, then remaining absent for exactly 2000 ms.
-The next flight starts at 2640 ms. Gold compaction keeps its single bouncing glint across each
+1250 ms, fully clearing its shoulder beyond the right edge, then remaining absent for exactly 2500 ms.
+The next flight starts at 3750 ms. Gold compaction keeps its single bouncing glint across each
 complete strip and activity label at 8.59375 cells/s. Both retain three very bright peak cells and no slant.
 The shared timer requests 30 nominal redraws/s. The wide, soft, monotone falloff and colours are unchanged;
 gold retains its gentler quintic shoulder.
@@ -33,7 +44,7 @@ not a live compaction request.
 In `render.ts`, `SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32` remains unchanged.
 `silverGlintPosition(width, frame)` supplies the fractional silver flight and pause position;
 `goldGlintPosition` retains the delivered width-aware ping-pong position. The existing elapsed-time
-phase uses `SILVER_FLIGHT_FRAMES = 8` and `SILVER_PAUSE_FRAMES = 25`, with 80 ms per phase unit.
+phase uses `SILVER_FLIGHT_FRAMES = 15.625` and `SILVER_PAUSE_FRAMES = 31.25`, with 80 ms per phase unit.
 The top border is painted as one full row so title, hint, ID and rules cannot clone the crest.
 `test/extensions/RQW-statusbar/chrome.test.ts` pins the silver flight, pause and unchanged gradient;
 `silver-flight.test.ts` checks delivered gold bytes and saves timing and ANSI render evidence as
@@ -181,7 +192,7 @@ already set by another extension is not replaced.
   one, nothing is shown before the first, and it resets on session start, tree change and toggle. It does not
   reconstruct a rate from persisted history. This is explicitly **not omp's smoothed rate algorithm**.
 - Stock Pi has no matching Plan/Goal/Prewalk/Vibe/Loop state, collaboration, live stream/recording or PR metadata in
-  this API. Running background work counts come from RQW-agent and RQW-review offers, not from omp. Their conditional omp badges are not fabricated. No `gh` call, network lookup,
+  this API. Agent counts come from RQW-agent and Main background-process counts from RQW-tools offers, not from omp. Their conditional omp badges are not fabricated. No `gh` call, network lookup,
   cross-extension private import or new subsystem is added to synthesize them. Pi extension statuses occupy the
   corresponding status slot, sorted by key as in stock Pi. PR `#N` and file hyperlinks are not implemented.
 - omp's title/UUID/Worked row, current action, blocker and to-do panel live **above** its editor in `showTitle`,

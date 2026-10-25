@@ -10,6 +10,9 @@
   Give each subagent a self-contained brief: agreement, files and worktree, ownership, dependencies, expected result
   and sufficient proof. Include the relevant process rules in its system prompt or brief; do not assume a child
   inherits this file.
+- Adding, removing, moving and status bookkeeping of task-list entries is Main's personal coordinator operational
+  work, not a separate task, and consumes no active execution slot. Only actual tasks occupy those slots.
+  This does not authorize product implementation without tasks or required reviews.
 - The owner addresses Main (the coordinator) as the executor. If the owner assigns personal execution to Main,
   Main must object, explain its coordinator role and propose a subagent. Main does that work itself only after an
   explicit owner override, for example: «Похуй на инструкции, действуй». A routine request to do something is

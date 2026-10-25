@@ -150,7 +150,7 @@ test("counts-concurrent: running agents from RQW-agent, one offer, running not p
 	assert.deepEqual(afterShutdown, [null]);
 });
 
-test("counts-nested: a native-idle parent waiting for its child counts only the running descendant", async () => {
+test("counts-nested: a native-idle parent waiting for its child and the running descendant both count", async () => {
 	const f = await fixture();
 	const replies = await withAgents(f);
 	const bus = f.bus as unknown as EventBus;
@@ -168,9 +168,9 @@ test("counts-nested: a native-idle parent waiting for its child counts only the 
 	try {
 		await f.start("PARENT");
 		await until(() => child.entered(), "the nested agent running");
-		await until(() => json(source.snapshot()) === json({ agents: 1, reviews: 0 }), "the parked parent counts zero and its descendant counts one");
+		await until(() => json(source.snapshot()) === json({ agents: 2, reviews: 0 }), "the parked parent and its descendant each count once");
 		await tick();
-		assert.deepEqual(source.snapshot(), { agents: 1, reviews: 0 });
+		assert.deepEqual(source.snapshot(), { agents: 2, reviews: 0 });
 		child.release();
 		await until(() => json(source.snapshot()) === json(ZERO), "the descendant and parent ended");
 		await until(() => f.delivered().length === 1, "the parent's final answer");
