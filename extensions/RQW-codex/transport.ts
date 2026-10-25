@@ -395,6 +395,8 @@ export class CodexThreadTransport {
 	#policy: { auth: AuthRecoveryPolicy; retry: RetryPolicy } | undefined;
 	/** Terminal error of a tool handoff: surfaced before the next backend request, without a query. */
 	#pendingGate = new PendingErrorGate();
+	/** Errors whose actual attempt usage was already carried, including an error pending after a tool handoff. */
+	#carriedUsageErrors = new WeakSet<CodexError>();
 	/** Auth recovery stage owed before the next backend request after a tool handoff. */
 	#recovery: "reload" | "refresh" | undefined;
 	/** Retry delay owed before the next backend request after a tool handoff (scheduled after Pi's tools). */
@@ -480,7 +482,7 @@ export class CodexThreadTransport {
 					return;
 				}
 				const codex = error instanceof LocalRequestError ? undefined : toCodexError(error, this.#clock.now());
-				await pump.finish({ error: codex ?? error, usage: codex?.usage });
+				await pump.finish({ error: codex ?? error, usage: codex && this.#carriedUsageErrors.has(codex) ? undefined : codex?.usage });
 			},
 		);
 		return outer;
@@ -1003,7 +1005,8 @@ export class CodexThreadTransport {
 				const error = toCodexError(raw, this.#clock.now());
 				this.#dropSocket();
 				// The failed attempt's display is closed here; its completed items and actual usage are kept by the pump.
-				await pump.retryBoundary();
+				const attemptFailure = await pump.retryBoundary();
+				if (attemptFailure) this.#carriedUsageErrors.add(error);
 				const handoff = decidePartialHandoff({
 					completedItems: pump.completedRawItems,
 					grammarToolInputProperties: pump.grammarToolInputProperties,
