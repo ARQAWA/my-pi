@@ -1890,6 +1890,15 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 ## Theme
 
+- **Thinking greens** `[D-THEME-THINKING-GREENS]`. Owner request in the delegated task, 2026-10-25:
+  > in the model/effort chooser's expanded dropdown, `low` should be based on the current `medium` green but twice as pale; `medium` should remain green in the same family as now but noticeably juicier/more saturated.
+  Only `thinkingLow` and `thinkingMedium` change. Low is `#80ffc4`, the previous medium `#00ff88` mixed
+  halfway toward white in RGB. Medium is `#00df77`, a deeper green at the same hue within RGB rounding.
+  The old medium already had maximum HSL/HSV saturation, so richness is obtained by darkening, not by
+  claiming a numerical saturation increase. High, xhigh, max, off and unrelated colours stay unchanged.
+  Reason: distinguish the two greens without changing the chooser. Carrier: `extensions/RQW-theme/theme.json`;
+  the native data-only theme and existing thinking-role rendering remain unchanged.
+
 - **Card background colours** `[D-THEME-CARD-COLORS]`. The four card surfaces of `RQW-theme` are `toolPendingBg` `#222222` (running, dark grey), `toolSuccessBg` `#062b29` (finished, turquoise), `toolErrorBg` `#351c22` (failed, dark red) and `customMessageBg` `#192538` (agent answer, slate). Grey and red keep the owner's choice; turquoise and slate are the analogues of the old green and purple, shifted from green toward blue and tied to the cool text of the source layout. All four have equal OKLCH lightness of about 26 %. They are direct hex values, so no other token changes: `infoBg` keeps `panel`, `selectedBg` keeps `cardHi`, `userMessageBg` keeps `card`; the unused variable `coal` is removed.
   Owner, what he liked: «Мне нравится, что когда ты запускаешь карточки рабочие, у них есть цвета: зелёные — это какие-то команды, фиолетовые — ответы от агентов, серые — это запуски, красные — это отказы.» Source: `16-27-59:4251` (see Provenance above).
   Owner, keep grey and red, find analogues: «А когда запущено то, что было зелёное и фиолетовое, надо придумать им какие-то аналоги.» Source: `16-27-59:4544`.

@@ -23,6 +23,15 @@ output text `#8d8d8c` on the turquoise), the main text `#d6d6dd` stays above 10:
 No other token reuses these values. The export info panel `infoBg` keeps `panel`, selected rows keep `cardHi`,
 user messages keep `card`.
 
+## Thinking greens
+
+`thinkingLow` is `#80ffc4`: the previous medium green `#00ff88` mixed halfway toward white in RGB,
+rounded to bytes. `thinkingMedium` is `#00df77`, a deeper green at effectively the same hue.
+The previous medium already had maximum HSL/HSV saturation; the richer appearance comes from darkening,
+not a numerical saturation increase. Native thinking roles share these colours wherever used, including the
+model/effort chooser's selected row. Muted neighbours, low's normal weight and other levels stay unchanged.
+The shared `readoutGreen` variable stays `#00ff88`, so unrelated green roles do not change.
+
 ## Tests
 
 `test/extensions/RQW-theme/schema.test.ts` checks the asset against Pi's theme schema and pins the four card backgrounds.
