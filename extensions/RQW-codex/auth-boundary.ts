@@ -1,6 +1,6 @@
 import type { Credential, CredentialStore, OAuthCredential } from "@earendil-works/pi-ai";
 
-import { AuthRecoveryError, LOGIN_HELP, PROVIDER_ID, credentialIdentity, needsRefresh, refreshCredential, validateCredential } from "./auth.ts";
+import { AuthRecoveryError, LOGIN_HELP, PROVIDER_ID, credentialIdentity, jwtExpiryMs, needsRefresh, refreshCredential, validateCredential } from "./auth.ts";
 
 /**
  * "reload": the saved login of the same account is revalidated under the lock and returned as the current
@@ -84,8 +84,15 @@ export async function resolveStoredCredential(
 		? await transact(store, signal, async latest => {
 			const fresh = requireOAuth(latest);
 			if (!needsRefresh(fresh, now())) return { credential: fresh, write: false };
-			const refreshed = await refreshCredential(fresh, new AbortController().signal, dependencies.fetch, { now });
-			return { credential: refreshed, write: true };
+			try {
+				const refreshed = await refreshCredential(fresh, new AbortController().signal, dependencies.fetch, { now });
+				return { credential: refreshed, write: true };
+			} catch (error) {
+				// Native proactive failure keeps a bearer that has not genuinely expired.
+				const exp = jwtExpiryMs(fresh.access);
+				if (exp === undefined || exp > now()) return { credential: fresh, write: false };
+				throw error;
+			}
 		})
 		: credential;
 	return { credential: current, accountId: credentialIdentity(current) };

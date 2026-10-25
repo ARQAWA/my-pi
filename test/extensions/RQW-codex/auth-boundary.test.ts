@@ -72,6 +72,40 @@ describe("resolveStoredCredential", () => {
 		assert.equal(store.value?.type === "oauth" && store.value.profile, "work");
 	});
 
+	it("keeps an unexpired bearer after proactive failure, then preserves expiry and 401 recovery ordering", async () => {
+		let now = START;
+		const stored = credential(accessFor("acct-1", START + 4 * 60_000));
+		const store = new MemoryStore(stored);
+		let fetches = 0;
+		const fetch = async () => {
+			fetches += 1;
+			if (fetches < 3) return tokenResponse({ error: "temporarily_unavailable" }, 503);
+			return tokenResponse({ access_token: accessFor("acct-1", START + DAY, "recovered"), refresh_token: "RT-RECOVERED" });
+		};
+		const dependencies = { fetch: fetch as typeof globalThis.fetch, now: () => now };
+		const signal = new AbortController().signal;
+
+		const proactive = await resolveStoredCredential(store, signal, dependencies);
+		assert.equal(proactive.credential, stored, "the still-valid bearer reaches the request");
+		assert.equal(store.value, stored, "proactive failure neither rotates nor removes the grant");
+		assert.equal(fetches, 1);
+
+		now = START + 4 * 60_000;
+		await assert.rejects(resolveStoredCredential(store, signal, dependencies), /Refresh failed \(HTTP 503\)/);
+		assert.equal(fetches, 2, "genuine expiry does not use the proactive fallback");
+		assert.equal(store.value, stored);
+
+		const rejected = { accountId: "acct-1", access: stored.type === "oauth" ? stored.access : "" };
+		const reloaded = await recoverCredential(store, rejected, "reload", signal, dependencies);
+		assert.equal(reloaded, stored);
+		assert.equal(fetches, 2, "401 reload does not refresh");
+		const recovered = await recoverCredential(store, rejected, "refresh", signal, dependencies);
+		assert.equal(fetches, 3);
+		assert.equal(recovered.access, accessFor("acct-1", START + DAY, "recovered"));
+		assert.equal(store.value, recovered, "successful rotation is persisted before recovery returns");
+		assert.equal(recovered.type === "oauth" && recovered.refresh, "RT-RECOVERED");
+	});
+
 	it("fails for a missing or non-OAuth slot", async () => {
 		await assert.rejects(resolveStoredCredential(new MemoryStore(undefined), new AbortController().signal, { now: () => START }), /No saved openai-codex login/);
 		await assert.rejects(resolveStoredCredential(new MemoryStore({ type: "api_key", key: "x" }), new AbortController().signal, { now: () => START }), /No saved openai-codex login/);
