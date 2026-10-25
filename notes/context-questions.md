@@ -14,8 +14,8 @@ ModelRuntime.getPhysicalModel exposes the stable capped physical copy; the regis
 Session/request-local context supplies the reserve for the actual pre-request target or checked response.
 Automatic preparation uses the triggering physical model. Manual preparation uses the latest successful physical
 response after native abort settles. The interception hook sees that preparation. Default native summarization
-keeps it intact and uses a copy whose reserve binds once to the summary's own direct-route physical target when
-that route is known. Both summary requests share that reserve. No extra route is made for limits, and cancelled
+keeps it intact and routes once from the captured selection. Pi 1.4.0 does not read preparation.settings in
+compact, so the extension does not rebind a reserve for summaries. No extra route is made for limits, and cancelled
 or custom compaction does not route a default summary. Explicit selection settings and disabled compaction keep
 native priority. Parallel sessions sharing one runtime do not share a last-physical-model slot.
 
@@ -51,9 +51,11 @@ Known limits of the 500 000 window (no code change, the window rule is the owner
 
 Implementation: `extensions/RQW-context/index.ts`. Existing Agent state/accessor and WeakMap round-trip fixes remain.
 Operation-local physical limits apply even if selection changes while native routing waits. Default summarization
-uses the captured selection and the original explicit reserve intent stored with preparation in `reserveIntents`.
-It does not reread live settings after interception or an awaited route. A reserve below the actual W is retained;
-a reserve at or above W falls back to R, even if an earlier physical window had already substituted its own R.
+uses Pi's captured selection and native output limits, without summary-reserve bookkeeping. Physical request/check
+scopes still supply preparation settings: an explicit reserve below W is retained; a reserve at or above W falls
+back to R. Removing summary-reserve rebinding leaves native requests and results unchanged in Pi 1.4.0.
+The library and CLI-bundle split/non-split comparison is saved in `/tmp/context-simplify-proof.mjs` and
+`/tmp/context-simplify-proof.log`, with fixed sessionId and normalized timestamps.
 
 Tests: `context.test.ts`, `audit.test.ts`, `state.test.ts` and `routing.test.ts` in `extensions/RQW-context/test/`.
 Library and actual CLI bundle use synthetic providers and local HTTP. No cloud or interactive-terminal proof is

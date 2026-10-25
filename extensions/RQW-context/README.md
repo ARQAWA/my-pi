@@ -1,0 +1,25 @@
+# RQW-context
+
+Independent context-window and compaction policy for Pi 1.4.0.
+
+- For each physical model, W = min(contextWindow, 500000), R = Math.round(W / 10).
+  Threshold compaction starts strictly above W - R, not at equality.
+- Physical request/check scopes supply the actual routed target's limits. Automatic preparation uses the
+  triggering target; manual preparation uses the latest successful response after native abort settles.
+  Virtual selections keep their identity, routing state, thinking and declared or unknown window.
+  Registry models are not mutated; physical windows above the cap use stable copies.
+- Explicit global `compaction.reserveTokens` and per-selection
+  `compaction.modelOverrides["provider/id"].reserveTokens` keep native precedence when below W.
+  A reserve at or above W falls back to R. `compaction.enabled: false` keeps native disabling behavior.
+- Native Pi compaction, summary routing and overflow recovery remain in charge. Pi 1.4.0 compact does not
+  read `preparation.settings`; there is no summary-reserve rebinding or reserve-intent bookkeeping.
+  Summary requests use the summarizing model's output limit, not R. Native pi-ai also clamps output to
+  the window minus estimated input minus 4096, with a floor of one token. Oversized input and prose-heavy
+  summaries can therefore remain unrecoverable; this extension adds no recovery algorithm.
+
+Hooks are process-wide while any extension owner remains. `session_shutdown` releases one owner;
+SDK `dispose()` alone does not. Unsupported private Pi boundaries fail at load. Restart Pi after updating
+hook implementations; `/reload` alone is insufficient. The extension can be disabled independently.
+
+Tests: `test/context.test.ts`, `test/audit.test.ts`, `test/state.test.ts`, `test/routing.test.ts`.
+See [context details](../../notes/context-questions.md) and [decisions](../../DECISIONS.md#context).

@@ -60,7 +60,6 @@ These pre-reset requests are also DEFERRED / ON HOLD outside the execution queue
 | ID | Work | Status/branch | Source |
 | --- | --- | --- | --- |
 | <a id="vdi-update"></a>VDI-UPDATE | Confirm whether the owner has completed the requested PCLI package update on the VDI. | DEFERRED / ON HOLD by owner, awaiting owner confirmation of completion, not a claim that installation is still pending; no branch. Publication is complete and is not an open task. Not the removed VDI wheel-check task. | Coordinator record of the approved release-then-VDI-update sequence in DECISIONS PCLI; AUDIT section 5 and `parts/decisions-C.md` one-off update entry. |
-| <a id="context-simplify"></a>CONTEXT-SIMPLIFY | Decide whether to remove summary-reserve rebinding that has no effect on Pi 1.4.0. | DEFERRED / ON HOLD by owner; proposal, optional simplification, not an approved runtime change; no branch. | AUDIT section 5, Context findings; `extensions/RQW-context/index.ts`. |
 
 ## Deferred by owner
 

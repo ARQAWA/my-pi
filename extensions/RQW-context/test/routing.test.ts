@@ -154,7 +154,7 @@ for (const [entry, pi] of ENTRIES) {
 				[pi.SettingsManager.prototype, "getCompactionSettings"],
 				[pi.AgentSession.prototype, "_buildRuntime"],
 				...["_exceedsCompactionThreshold", "_checkCompaction", "_runAutoCompaction", "compact",
-					"_runDefaultCompaction", "_getSummarizationRequestAuth", "_modelForMessage", "_limitsModel"].map((name) => [pi.AgentSession.prototype, name]),
+					"_modelForMessage", "_limitsModel"].map((name) => [pi.AgentSession.prototype, name]),
 			] as [object, string][]) for (const shape of ["missing", "readonly"]) {
 				const before = [pi.SettingsManager.prototype.getCompactionSettings,
 					(pi.AgentSession.prototype as unknown as Record<string, unknown>)._buildRuntime,
@@ -358,89 +358,6 @@ for (const [entry, pi] of ENTRIES) {
 					release.resolve(); await operation?.catch(() => {}); await f.close();
 				}
 			});
-		}
-
-		const reserveChanges = [
-			{ name: "explicit 20k to 30k", initial: 20_000, next: 30_000 },
-			{ name: "explicit old derived R stays explicit", initial: 50_000, next: 30_000 },
-			{ name: "explicit stock default stays explicit", initial: 16_384, next: 30_000 },
-			{ name: "explicit to undefined", initial: 20_000, next: undefined },
-			{ name: "implicit to explicit old derived R", initial: undefined, next: 50_000 },
-			{ name: "virtual override 20k to 30k", initial: 20_000, next: 30_000, override: true },
-			{ name: "virtual override removed to global fallback", initial: 20_000, next: undefined, override: true },
-			{ name: "explicit reserve equal to the summary model's window, valid for the chat window", initial: 272_000, next: 20_000 },
-			{ name: "explicit reserve above the chat window falls back to R", initial: 600_000, next: 20_000 },
-		] as const;
-		// Since Pi 1.4.0 R no longer sets a summary output limit, so the extension's summary-side reserve rebinding is
-		// kept but inert. What these cases still prove: the native preparation seen by the interception hook carries
-		// the reserve valid when compaction started, a live settings change during the operation does not rewrite it,
-		// the summaries still go to the one routed physical model, and later settings reads see the new policy.
-		for (const change of reserveChanges) for (const mode of ["manual", "automatic"] as const) {
-			for (const timing of ["before compact hook", "pending direct route"] as const) {
-				it(`235 F2: ${mode} preparation keeps its reserve, ${change.name}, when settings change in ${timing}`, async () => {
-					const override = "override" in change;
-					const chat = "big";
-					const summary = "small";
-					const initialCompaction = { keepRecentTokens: 0, ...(override
-						? { reserveTokens: 40_000, modelOverrides: { "routing/auto": { reserveTokens: change.initial } } }
-						: { reserveTokens: change.initial }) };
-					let stored = JSON.stringify({ retry: { enabled: false }, compaction: initialCompaction });
-					const manager = pi.SettingsManager.fromStorage({ withLock(scope, fn) {
-						const next = fn(scope === "global" ? stored : undefined);
-						if (scope === "global" && next !== undefined) stored = next;
-					} });
-					const f = await open(pi, { target: chat, manager });
-					const entered = Promise.withResolvers<void>();
-					const release = Promise.withResolvers<void>();
-					let operation: Promise<unknown> | undefined;
-					let hookSettings: { reserveTokens: number } | undefined;
-					const prepared = change.initial === undefined ? 50_000
-						: change.initial >= 500_000 ? 50_000 : change.initial;
-					try {
-						await f.prompt(1_000); await f.prompt(2_000);
-						f.script.summaryTarget = summary; f.script.requests = [];
-						const mutate = async () => {
-							stored = JSON.stringify({ retry: { enabled: false }, compaction: {
-								...initialCompaction, enabled: false, keepRecentTokens: 999_999,
-								...(override ? { modelOverrides: { "routing/auto": { reserveTokens: change.next } } }
-									: { reserveTokens: change.next }),
-							} });
-							await manager.reload();
-						};
-						f.script.beforeCompact = async (settings) => {
-							hookSettings = settings;
-							assert.equal(settings.reserveTokens, prepared);
-							if (timing === "before compact hook") await mutate();
-						};
-						if (timing === "pending direct route") f.script.routeGate = async (request) => {
-							if (request.reason !== "direct") return;
-							entered.resolve(); await release.promise;
-						};
-						operation = mode === "manual" ? f.session.compact() : f.prompt(500_000 - prepared + 1);
-						if (timing === "pending direct route") {
-							await entered.promise; await mutate(); release.resolve();
-						}
-						await operation;
-						const summaries = f.script.requests.slice(mode === "manual" ? 0 : 1);
-						assert.deepEqual(summaries.map((q) => q.supplied), [undefined, undefined]);
-						assert.deepEqual(summaries.map((q) => q.maxTokens), [128_000, 128_000], "native model output limit, not the frozen reserve");
-						assert.ok(summaries.every((q) => q.id === summary && q.window === 272_000));
-						assert.deepEqual(f.preparations, [prepared]);
-						assert.deepEqual(hookSettings, { enabled: true, reserveTokens: prepared, keepRecentTokens: 0 },
-							"live settings changes do not rewrite the native preparation");
-						const direct = f.script.routes.filter((q) => q.reason === "direct");
-						assert.equal(direct.length, 1); assert.equal(direct[0].model, f.selection);
-						const live = f.session.settingsManager.getCompactionSettings(f.selection);
-						assert.equal(live.reserveTokens, change.next ?? (override ? 40_000 : 16_384),
-							"subsequent settings reads retain the new user policy");
-						assert.equal(live.keepRecentTokens, 999_999);
-						assert.equal(f.session.settingsManager.getCompactionEnabled(), false);
-						assert.ok(f.ends[0].result); assert.equal(f.ends[0].errorMessage, undefined);
-					} finally {
-						release.resolve(); await operation?.catch(() => {}); await f.close();
-					}
-				});
-			}
 		}
 
 		it("native buildBaseOptions output cap and usage with automatic compaction disabled", async () => {

@@ -5566,3 +5566,13 @@ Archived by: rule-only-ordered; exact commit: `git log -S'A-0323' -- DECISIONS-A
 >     obligation; an exclusion cannot silently waive a governing requirement of this pass) and, from the second pass on,
 >     `rejected_earlier` (each rejected finding with its reason). These task sections keep that order, then
 >     `<user_messages>` follows. No file, search, tool-call or turn quotas.
+
+## A-0324 · archived 2026-10-25 · D-CONTEXT-ROUTING
+
+Status: SUPERSEDED by [D-CONTEXT-ROUTING] in the context-simplify delivery.
+Source base commit: `0521318:DECISIONS.md`, whole entry verbatim. Introduced: `6eb01a7`.
+Archived by: context-simplify delivery; exact commit: `git log -S'A-0324' -- DECISIONS-ARCHIVE.md`.
+
+> - **Native routing and reserve** `[D-CONTEXT-ROUTING]`. Stable capped copies are exposed through Agent state, `createLoopConfig`, `_buildRuntime` and native `ModelRuntime.getPhysicalModel`; registry entries are not mutated. Virtual selections keep their native identity, callback, thinking and declared or unknown window. Session/request-local `AsyncLocalStorage` supplies the physical target's W/R: automatic preparation uses its triggering target, manual preparation the latest successful response after abort. Default summaries preserve interception preparation and route once from the captured selection, retaining the original explicit reserve intent. On Pi 1.4.0 reserve rebinding does not size summary output; optional removal is tracked in [BACKLOG](BACKLOG.md).
+>   Coordinator text. Reason: physical limits must not leak across concurrent operations or alter native selection identity.
+>   Carrier: `extensions/RQW-context/index.ts` (`wrapAgentState`, `wrapRouting`, `wrapCompactionSettings`, `reserveIntents`); details: `notes/context-questions.md`. Since: `6eb01a7`.

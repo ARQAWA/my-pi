@@ -41,7 +41,9 @@ Third-party installs go into the owner's Pi first, then the package: [PROCESS.md
   see `DECISIONS.md` Prompt/tools isolation.
   Tests: `npm test`.
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
-  window W = min(contextWindow, 500000) and compacts above W - R, where R = round(W / 10). Tests: `npm test`.
+  physical window W = min(contextWindow, 500000) and compacts strictly above W - R, where R = round(W / 10).
+  Explicit settings and physical request scopes remain; Pi 1.4.0 summaries use native output limits, not R.
+  Contract: `extensions/RQW-context/README.md`. Tests: `npm test`.
 - `extensions/RQW-agent/`: extension 5, subagents. `agent`
   (start, wait, status, send, resume, interrupt, stop, restart) runs in-process Pi sessions. Optional `agent_type`
   selects a Codex TOML profile; without it the generic defaults stay. A profile's `developer_instructions` supplies the default role

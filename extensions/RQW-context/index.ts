@@ -2,8 +2,7 @@
 // Selection state and native canonical physical lookups expose stable capped copies, never mutate the catalog.
 // Virtual selection stays native, including its unknown window. Request/check-local context supplies the physical
 // reserve when Pi asks for the selection's settings. Preparation uses the triggering request/response (manual: latest
-// successful response); native default summaries bind R once to their actual direct-route target, after routing.
-// Explicit reserve intent/value is captured at the original settings read, before interception or routing.
+// successful response). Native Pi summaries use their model's output limit, not the compaction reserve.
 // Explicit selection settings and native compaction policy still win. No owners means stock Pi again.
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -60,13 +59,6 @@ const owned = () => (owners[OWNER]?.size ?? 0) > 0;
 
 type GetCompactionSettings = SettingsManager["getCompactionSettings"];
 type CompactionModel = Parameters<GetCompactionSettings>[0];
-type CompactionSettings = ReturnType<GetCompactionSettings>;
-type Preparation = { settings: CompactionSettings };
-type ReserveIntent = { explicitReserve?: number };
-// The native preparation keeps this exact settings object. Reloads share provenance, not live settings or models.
-const RESERVES = Symbol.for("rqw-context/reserve-intents");
-const reserves = globalThis as { [RESERVES]?: WeakMap<CompactionSettings, ReserveIntent> };
-const reserveIntents = (reserves[RESERVES] ??= new WeakMap<CompactionSettings, ReserveIntent>());
 type AgentState = { model: unknown };
 const cappedStates = new WeakSet<AgentState>();
 const WRAPPED_AGENT = Symbol.for("rqw-context/agent-state");
@@ -94,8 +86,6 @@ type LimitScope = {
 	session?: SessionInternals;
 	selectedModel?: CompactionModel;
 	physical?: CompactionModel;
-	preparation?: Preparation;
-	reserveIntent?: ReserveIntent;
 };
 const SCOPE = Symbol.for("rqw-context/physical-scope");
 const scopes = globalThis as { [SCOPE]?: AsyncLocalStorage<LimitScope> };
@@ -200,10 +190,8 @@ function wrapCompactionSettings(proto: SettingsPrototype): void {
 			? scope.physical : isVirtual(model) ? undefined : model;
 		const contextWindow = contextWindowOf(limits);
 		const explicitReserve = userSetReserve(this, model) ? settings.reserveTokens : undefined;
-		const effective = contextWindow === undefined || (limits && isVirtual(limits)) ? settings
+		return contextWindow === undefined || (limits && isVirtual(limits)) ? settings
 			: { ...settings, reserveTokens: reserveFor(contextWindow, explicitReserve) };
-		reserveIntents.set(effective, { explicitReserve });
-		return effective;
 	};
 	proto[WRAPPED_SETTINGS] = original;
 }
@@ -237,7 +225,7 @@ function wrapSessionModel(proto: SessionInternals): void {
 // Checked Pi 1.4.0 method boundaries, not rewritten compaction or routing implementations.
 const ROUTING_METHODS = {
 	_exceedsCompactionThreshold: 2, _checkCompaction: 1, _runAutoCompaction: 2, compact: 1,
-	_runDefaultCompaction: 5, _getSummarizationRequestAuth: 2, _modelForMessage: 1, _limitsModel: 0,
+	_modelForMessage: 1, _limitsModel: 0,
 };
 type NativeMethod = (this: SessionInternals, ...args: any[]) => any;
 type RoutingPrototype = SessionInternals & Record<string | symbol, any>;
@@ -286,25 +274,6 @@ function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<sym
 			return withPhysical(this, physical, () => original.apply(this, args));
 		});
 	}
-	wrap("_runDefaultCompaction", (original) => function (preparation: Preparation, model, ...args) {
-		if (!owned()) return original.call(this, preparation, model, ...args);
-		// Keep the interception hook's preparation intact. Only the native default summary rebinds its reserve.
-		const reserveIntent = reserveIntents.get(preparation.settings);
-		const summaryPreparation = { ...preparation, settings: { ...preparation.settings } };
-		// Pi captured this selection before interception; hooks and pending routing may change the live selection.
-		return physicalScope.run({ agent: this.agent, session: this, selectedModel: model, preparation: summaryPreparation, reserveIntent },
-			() => original.call(this, summaryPreparation, model, ...args));
-	});
-	wrap("_getSummarizationRequestAuth", (original) => async function (model, signal) {
-		const scope = physicalScope.getStore();
-		const request = await original.call(this, model, signal);
-		const contextWindow = contextWindowOf(request.model);
-		if (owned() && scope?.session === this && scope.selectedModel === model && scope.preparation && scope.reserveIntent &&
-			contextWindow !== undefined && !isVirtual(request.model)) {
-			scope.preparation.settings.reserveTokens = reserveFor(contextWindow, scope.reserveIntent.explicitReserve);
-		}
-		return request;
-	});
 	proto[WRAPPED_ROUTING] = true;
 }
 
