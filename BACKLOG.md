@@ -77,6 +77,7 @@ All existing evidence and unresolved causes are retained.
 
 | ID | Work | Status/branch | Source |
 | --- | --- | --- | --- |
+| <a id="provider-limits"></a>PROVIDER-LIMITS | Future statusbar provider-limit badges; accepted colors are [D-STATUSBAR-LIMIT-COLORS](DECISIONS.md#status-bar). The direct Anthropic quota provider is delivered, not remaining work here. | PENDING, statusbar badge implementation NOT STARTED by this operational record; no implementation branch. No audit, test queue or held topic is resumed. | Owner `16-27-59:7409`, entry `e65a800e`; definitive CC bronze choice `16-27-59:9432`, entry `d7037e66`. |
 | <a id="composer-predictions"></a>COMPOSER-PREDICTIONS | Next-prompt prediction: Codex-style suggestion of the next user message as gray text in the empty input; Tab accepts. Discuss implementation with the owner before any design or code. The [draft reference](file:///Users/arkadijcukavin/ai-project/my-pi-evidence/composer-predictions/DRAFT-TZ.md) is material for discussion only, not an agreed specification. | OPEN; awaiting discussion with the owner; no implementation branch. | Owner: «Эту хуйню в soft complete надо добавить в задачу, но обсудить, как она будет у нас имплементирована. Это просто рандомный агент написал текст задачи. Это не сама задача, это на подумать.» |
 
 ## Waiting for owner
