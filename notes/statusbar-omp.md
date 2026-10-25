@@ -205,6 +205,8 @@ already set by another extension is not replaced.
   (DECISIONS.md, Status bar). Apart from its borders, the Pi editor stays stock;
 loading rows and other widgets stay unchanged.
 - Compaction uses `shimmerText` with the gold spatial profile described above, including the title and existing chrome.
+  Gold and silver glints measure terminal columns per grapheme with `Intl.Segmenter` and Pi's `visibleWidth`,
+  keeping combining marks and compound emoji intact. This is a measured-column contract, not a physical font-rendering claim.
 - Theme colors and compaction color animation are intentionally not copied. Nerd icons require the same kind of
   Nerd Font as the owner's `symbolPreset: nerd` setup.
 

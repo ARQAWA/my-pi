@@ -108,7 +108,7 @@ export function fit(line: string, width: number): string {
 
 /**
  * Own plain chrome cut to width: the escape codes that Pi's cut may add are removed after the cut, so the text is plain
- * cells that can be repainted per code point.
+ * cells that can be repainted per grapheme.
  */
 export function fitPlain(text: string, width: number): string {
 	if (width <= 0) return "";
@@ -448,14 +448,16 @@ function goldGlintPosition(width: number, frame: number): number {
 	return 1 + (end - 1) * (frame % SILVER_FLIGHT_FRAMES) / SILVER_FLIGHT_FRAMES;
 }
 
-/** Paint one crest by terminal column, without italics. */
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** Paint one crest by terminal column, keeping each grapheme intact, without italics. */
 export function shimmerText(text: string, startColumn: number, frame: number, stops: readonly string[]): string {
 	const content = stripVTControlCharacters(text);
 	const gold = stops === GOLD;
 	const position = (gold ? goldGlintPosition : silverGlintPosition)(visibleWidth(content), frame);
 	const phaseFrame = (startColumn + position) / SHIMMER_CELLS_PER_FRAME;
 	let column = startColumn;
-	return Array.from(content).map((ch) => {
+	return Array.from(graphemes.segment(content), ({ segment: ch }) => {
 		const f = shimmerPhase(column, phaseFrame, gold);
 		column += visibleWidth(ch);
 		return ch === " " ? ch : styled(mix(stops, f), f > 0.85, ch);

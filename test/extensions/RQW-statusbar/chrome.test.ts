@@ -91,8 +91,54 @@ describe("cell-based shimmer", () => {
 			return hexSgr(mix(SILVER, phase), phase > 0.85, text);
 		};
 		assert.equal(shimmerText("界e\u0301x", 0, 2, SILVER), silverAt("界", 0)
-			+ silverAt("e", 2) + silverAt("\u0301", 3) + silverAt("x", 3));
+			+ silverAt("e\u0301", 2) + silverAt("x", 3));
 		assert.equal(shimmerText("A B", 3, 7, GOLD).split(" ").length, 2);
+	});
+});
+
+describe("Unicode glint terminal columns", () => {
+	// Decode actual renderer output by measured prefixes, not by summing code-point widths.
+	const paintedRuns = (line: string) => [...line.matchAll(/\x1b\[(1;)?38;2;(\d+;\d+;\d+)m([^\x1b]*)\x1b\[22;39m/g)]
+		.map((match) => ({
+			column: visibleWidth(strip(line.slice(0, match.index))),
+			text: match[3],
+			rgb: match[2],
+		}));
+
+	it("keeps complex graphemes intact and reaches the gold border's right edge", () => {
+		for (const name of ["ASCII", "界e\u0301", "👨‍👩‍👧‍👦", "👍🏽", "🇺🇳", "𝄞"]) {
+			const width = 80;
+			const frame = 15.625 * (78 - 1) / (width + 5.5);
+			const line = topBorder(width, "12345678", chrome("Compacting context", true, frame), 0, plain, name);
+			assert.equal(visibleWidth(line), width);
+			assert.ok(strip(line).includes(name));
+			const peaks = paintedRuns(line).filter((run) => run.rgb === "255;244;194");
+			assert.deepEqual(peaks.map((run) => run.column), [78, 79], name);
+			for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(name)) {
+				assert.ok(paintedRuns(line).some((run) => run.text === segment), segment);
+			}
+			assert.equal(peaks.at(-1)?.text, "─");
+		}
+	});
+
+	it("uses measured columns after Unicode in silver activity labels, with ASCII controls", () => {
+		for (const prefix of ["ASCII", "界e\u0301", "👨‍👩‍👧‍👦", "👍🏽", "🇺🇳", "𝄞"]) {
+			const text = prefix + "x".repeat(30);
+			const width = visibleWidth(text);
+			const center = width - 2;
+			const frame = 15.625 * (center - 1) / (width + 4);
+			const line = activityRows(100, chrome(text, false, frame))[0];
+			assert.equal(strip(line), " " + text);
+			const runs = paintedRuns(line);
+			for (const run of runs.filter((run) => run.text === "x")) {
+				const phase = shimmerPhase(run.column - 1, center / SHIMMER_CELLS_PER_FRAME);
+				assert.equal(run.rgb, [1, 3, 5].map((i) => parseInt(mix(SILVER, phase).slice(i, i + 2), 16)).join(";"));
+			}
+			for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(prefix)) {
+				assert.ok(runs.some((run) => run.text === segment), segment);
+			}
+			assert.equal(runs.at(-1)?.rgb, "135;134;133");
+		}
 	});
 });
 
