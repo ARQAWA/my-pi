@@ -1,4 +1,4 @@
-// Run with --expose-gc: weak bootstrap cleanup is observed on the next native bind, never promised at rejection.
+// Run with --expose-gc: exercise real collection during live binds, then deterministic orphan cleanup.
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -110,14 +110,16 @@ try {
 				Object.defineProperty(sdk.AgentSession.prototype, "bindExtensions", bootstrap);
 			}
 			await exercise();
-			// SDK 1.4.0 has no pre-constructor failure event. Collection is not synchronous with its rejection.
-			// Once orphan factories are collected, the next bind prunes weak registrations and restores native.
-			await new Promise<void>((resolve) => setImmediate(resolve));
-			gc();
-			await new Promise<void>((resolve) => setImmediate(resolve));
+			// GC does not promise when orphan targets disappear. Model that state without changing the
+			// registrations: the next real bind must prune them and restore the exact native descriptor.
+			const state = (sdk.AgentSession.prototype as unknown as { [HOOK]: { registrations: Set<WeakRef<object>> } })[HOOK];
+			for (const reference of state.registrations) {
+				Object.defineProperty(reference, "deref", { value: () => undefined });
+			}
 			const native = await create([]);
 			try {
 				await bind(native.session);
+				assert.equal(state.registrations.size, 0);
 				assert.deepEqual(Object.getOwnPropertyDescriptor(sdk.AgentSession.prototype, "bindExtensions"), descriptor);
 			} finally { await close(native.session); }
 			console.log(`${name} ${paths[0] === SETTINGS ? "settings-first" : "tools-first"}: failure, pending binds, shutdown, reload, off, weak cleanup PASS`);

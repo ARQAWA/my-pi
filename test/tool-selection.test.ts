@@ -108,8 +108,8 @@ for (const [name, sdk] of [["library", library], ["bundle", bundle]] as const) {
 	});
 }
 
-// Separate GC-enabled process keeps collection deterministic and never changes the SDK or process argv.
-it("failed factories leave only weak metadata, preserve delayed binds, and restore native after collection", async () => {
+// Separate process exercises GC without changing the SDK or process argv; orphan cleanup is modelled explicitly.
+it("failed factories leave only weak metadata, preserve delayed binds, and restore native for collected registrations", async () => {
 	const result = await promisify(execFile)(process.execPath, ["--expose-gc", join(ROOT, "test/fixtures/selection-gc.ts")], { timeout: 30000 });
 	assert.equal(result.stdout.trim().split("\n").length, 4);
 	assert.equal(result.stderr, "");
