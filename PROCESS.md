@@ -112,13 +112,16 @@ The guard reads this block from the root file. Its policy is in [Subagent models
 {
   "agentModels": {
     "simple": [
+      ["kimi-coding/k3.1-pro", "low"],
       ["openai-codex/gpt-6.1-sol", "low"]
     ],
     "complex": [
-      ["openai-codex/gpt-6.1-sol", "medium"]
+      ["kimi-coding/k3.1-pro", "low"],
+      ["openai-codex/gpt-6.1-sol", "low"]
     ],
     "hardest": [
-      ["openai-codex/gpt-6.1-sol", "high"]
+      ["kimi-coding/k3.1-pro", "high"],
+      ["openai-codex/gpt-6.1-sol", "medium"]
     ]
   }
 }

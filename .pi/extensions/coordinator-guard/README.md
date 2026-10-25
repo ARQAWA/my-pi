@@ -71,6 +71,12 @@ The fenced block `json coordinator-rules` in `PROCESS.md`, section [Subagent mod
 bad JSON or a bad schema is an error state: the guard then blocks every `agent` start and restart
 and shows the error in Main's prompt and status.
 
+The active table permits the Kimi/Sol executor pairs under [Subagent models](../../../PROCESS.md#subagent-models).
+Independent reviewers keep their approved profile pairs, which also remain allowed by the table. Main tracks the
+Kimi, Kimi, Sol assignment sequence in its operational task-list context across compaction; the guard adds no
+runtime counter or state file and does not alter running agents. The existing parser and enforcement are data-driven:
+changing the root block updates both the next turn's prompt and the next tool call without reloading guard code.
+
 ## Optional temporary override format
 
 The active policy is permanent and has no `temporaryGptOnly` key; see

@@ -6499,3 +6499,23 @@ Verbatim text as it was in DECISIONS.md at that source commit:
 >   verified by `scripts/owner-quotes.mjs`. Colours, soft falloff, layout and static title stay unchanged; the later gold correction is recorded in `[D-STATUSBAR-SHEEN]`.
 >   Doubled-speed source: `[D-STATUSBAR-SHEEN]`.
 >   Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
+
+## A-0361 · archived 2026-10-25 · Development executor models · D-WORK-MODELS
+
+Status: SUPERSEDED in executor selection by `[D-WORK-MODELS]` (DECISIONS.md#work-policy); Anthropic ban retained.
+Superseded and archived by: the process-executor-model-balance squash. Source commit: `1633d50`.
+Verbatim text as it was in DECISIONS.md at `1633d50`:
+
+> - **Development subagent models** `[D-WORK-MODELS]`. The full Anthropic-model ban is in force for Main and
+>   subagents, including Haiku, Sonnet and Opus, without expiry or a benchmark exception. Main's subagent task-class
+>   pairs remain unchanged; the only pair list lives in the `coordinator-rules` JSON block of
+>   [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly on every
+>   ordinary `agent` start and restart; specialized roles use `agent_type` on that same lifecycle.
+>   Owner (`16-27-59:7665`, entry `29908fc1`, 2026-10-25):
+>   «Возобнови полный запрет использования антропиков»
+>   Reason: restore the owner's full model prohibition, superseding the later Haiku allowance and the
+>   Anthropic/GPT balance rule. Earlier separately owner-ordered Kimi benchmark work remains historical evidence,
+>   not new model permission. This is model-use policy for Main and subagents, not a ban on Anthropic transport or
+>   subscription quota implementation, auth, provider visibility or product model settings.
+>   Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), its coordinator JSON block and
+>   [test lane](process/task-pipeline.md). Superseded entries are preserved verbatim in `DECISIONS-ARCHIVE.md`.

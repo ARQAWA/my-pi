@@ -6,9 +6,10 @@ import { join, relative } from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
 import { pathToFileURL } from "node:url";
 import { childInstruction, createCoordinatorGuard, ROOT } from "../.pi/extensions/coordinator-guard/index.ts";
-import { parseRules } from "../.pi/extensions/coordinator-guard/rules.ts";
+import { parseRules, THINKING } from "../.pi/extensions/coordinator-guard/rules.ts";
 
 describe("coordinator-guard local development tooling", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
+// Generic parser/optional-format fixture, not the active repository policy.
 const RULES = {
 	agentModels: {
 		simple: [["openai-codex/gpt-6.1-sol", "low"]],
@@ -112,7 +113,7 @@ describe("coordinator-guard: agent model and thinking", () => {
 		blocked(g.call("agent", { action: "start", agent_type: "spotty", task: "review" }), /give model and thinking explicitly/);
 	});
 	it("leaves management actions alone", () => {
-		for (const action of ["wait", "status", "interrupt", "stop"]) passed(g.call("agent", { action, id: "agent#1", ids: ["agent#1"] }));
+		for (const action of ["wait", "status", "interrupt", "resume", "stop"]) passed(g.call("agent", { action, id: "agent#1", ids: ["agent#1"] }));
 		passed(g.call("agent", { action: "send", id: "agent#1", task: "more" }));
 	});
 	it("the child instruction carries only the ordinary agent model rules", () => {
@@ -393,6 +394,22 @@ describe("coordinator-guard: prompt reinjection", () => {
 });
 
 describe("coordinator-guard: placement", () => {
+	it("loads the new executor pairs on the next tool call and turn without reloading the guard", () => {
+		const g = load();
+		passed(g.call("agent", { action: "start", model: "openai-codex/gpt-6.1-sol", thinking: "high" }));
+		blocked(g.call("agent", { action: "start", model: "kimi-coding/k3.1-pro", thinking: "low" }), /not an allowed pair/);
+		setRules(parseRules(readFileSync(join(ROOT, "PROCESS.md"), "utf8")));
+		try {
+			for (const action of ["start", "restart"]) {
+				passed(g.call("agent", { action, model: "kimi-coding/k3.1-pro", thinking: "low" }));
+				passed(g.call("agent", { action, model: "kimi-coding/k3.1-pro", thinking: "high" }));
+				passed(g.call("agent", { action, model: "openai-codex/gpt-6.1-sol", thinking: "medium" }));
+				blocked(g.call("agent", { action, model: "openai-codex/gpt-6.1-sol", thinking: "high" }), /not an allowed pair/);
+			}
+			assert.match(g.prompt(), /simple: kimi-coding\/k3\.1-pro low, openai-codex\/gpt-6\.1-sol low; complex: kimi-coding\/k3\.1-pro low, openai-codex\/gpt-6\.1-sol low; hardest: kimi-coding\/k3\.1-pro high, openai-codex\/gpt-6\.1-sol medium/);
+			assert.doesNotMatch(g.prompt(), /gpt-6\.1-sol high/);
+		} finally { setRules(RULES); }
+	});
 	it("derives its root from its own file and imports nothing from extensions/", () => {
 		assert.equal(ROOT, join(import.meta.dirname, ".."));
 		const dir = join(ROOT, ".pi", "extensions", "coordinator-guard");
@@ -406,9 +423,9 @@ describe("coordinator-guard: placement", () => {
 	it("the real PROCESS.md block parses with the guard's parser", () => {
 		const rules = parseRules(readFileSync(join(ROOT, "PROCESS.md"), "utf8"));
 		assert.deepEqual(rules.agentModels, {
-			simple: [["openai-codex/gpt-6.1-sol", "low"]],
-			complex: [["openai-codex/gpt-6.1-sol", "medium"]],
-			hardest: [["openai-codex/gpt-6.1-sol", "high"]],
+			simple: [["kimi-coding/k3.1-pro", "low"], ["openai-codex/gpt-6.1-sol", "low"]],
+			complex: [["kimi-coding/k3.1-pro", "low"], ["openai-codex/gpt-6.1-sol", "low"]],
+			hardest: [["kimi-coding/k3.1-pro", "high"], ["openai-codex/gpt-6.1-sol", "medium"]],
 		});
 		assert.equal(rules.temporaryGptOnly, undefined);
 		for (const now of [Date.parse("2026-10-01T00:00:00Z"), Date.parse("2026-10-28T16:00:00Z"), UNTIL + 1]) {
@@ -418,6 +435,18 @@ describe("coordinator-guard: placement", () => {
 				for (const [model, thinking] of Object.values(rules.agentModels).flat()) passed(g.call("agent", { action, model, thinking }));
 				for (const model of ["anthropic/claude-haiku-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-opus-5-5"]) {
 					blocked(g.call("agent", { action, model, thinking: "medium", title: "Арбитр замера" }), /not an allowed pair/);
+				}
+				const allowed = new Set(Object.values(rules.agentModels).flat().map(([model, thinking]) => `${model} ${thinking}`));
+				for (const model of ["kimi-coding/k3.1-pro", "openai-codex/gpt-6.1-sol", "kimi-coding/k3.1-pro-highspeed",
+					"kimi-coding/kimi-for-coding", "anthropic/claude-haiku-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-opus-5-5"]) {
+					for (const thinking of THINKING) {
+						const call = g.call("agent", { action, model, thinking });
+						if (allowed.has(`${model} ${thinking}`)) passed(call);
+						else blocked(call, /not an allowed pair/);
+					}
+				}
+				for (const [agent_type, thinking] of [["spotty", "low"], ["bossy", "medium"], ["code-reviewer", "low"], ["test-reviewer", "low"], ["requirements-test-reviewer", "low"]]) {
+					passed(g.call("agent", { action, agent_type, model: "openai-codex/gpt-6.1-sol", thinking, task: "review" }));
 				}
 			}
 			assert.doesNotMatch(g.prompt(), /Temporary rule|claude-sonnet|claude-opus/);

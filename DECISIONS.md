@@ -200,19 +200,29 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «мы нигде кроме этого ноута это не запускаем, все что КАСАЕТСЯ РАБОТЫ В ЭТОМ РЕПО - только локальная тема»
   Reason: local orchestration has no other deployment target; product and CI portability remain separate.
   Carriers: [PROCESS.md](PROCESS.md#isolated-parallel-execution), local development test suites.
-- **Development subagent models** `[D-WORK-MODELS]`. The full Anthropic-model ban is in force for Main and
-  subagents, including Haiku, Sonnet and Opus, without expiry or a benchmark exception. Main's subagent task-class
-  pairs remain unchanged; the only pair list lives in the `coordinator-rules` JSON block of
-  [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly on every
-  ordinary `agent` start and restart; specialized roles use `agent_type` on that same lifecycle.
-  Owner (`16-27-59:7665`, entry `29908fc1`, 2026-10-25):
-  «Возобнови полный запрет использования антропиков»
-  Reason: restore the owner's full model prohibition, superseding the later Haiku allowance and the
-  Anthropic/GPT balance rule. Earlier separately owner-ordered Kimi benchmark work remains historical evidence,
-  not new model permission. This is model-use policy for Main and subagents, not a ban on Anthropic transport or
-  subscription quota implementation, auth, provider visibility or product model settings.
-  Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), its coordinator JSON block and
-  [test lane](process/task-pipeline.md). Superseded entries are preserved verbatim in `DECISIONS-ARCHIVE.md`.
+- **Development executor models** `[D-WORK-MODELS]`. Future executor starts and restarts repeat two
+  `kimi-coding/k3.1-pro` assignments, then one `openai-codex/gpt-6.1-sol`. Simple and complex work uses low for
+  either model; hardest work uses Kimi high or Sol medium. Exact pairs live in the `coordinator-rules` JSON block of
+  [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly.
+  The sequence is across assignments, not three simultaneous tasks; [D-WORK-PARALLEL]'s two-main-task cap stays.
+  Main carries its next position and last counted assignment in the existing operational task-list decision context
+  through compaction and handoff, not a new runtime counter or state file. Pause/resume retains the agent and model,
+  consuming no assignment; current Sol agents are not restarted for balance. Explicit owner model requests override
+  the default. No silent model fallback. Independent reviewer profiles and their approved model/effort are unchanged
+  and do not consume the executor sequence. Recursive delegation and reviewer lifecycle stay unchanged; no new
+  nested non-review helper restriction is added.
+  Owner (`16-27-59:10630`, entry `6bb24615`, 2026-10-25):
+  «Пожалуйста в будущих задачах используй Kimi K3.1 Pro модели для решения задач - обычные и сложные Low ризоининг, сложнейшие high. Баланс следующий 2 кими к 1 гпт.»
+  Owner (`16-27-59:10759`, entry `8e9d2b57`, 2026-10-25):
+  «Надо ещё поменять, чтобы у нас воркеры, исполнители работали так же, как с Kimi. Для простых и сложных задач Sol low, 6.1 low, а для суперсложных задач Sol 6.1 medium.»
+  Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
+  The full Anthropic ban remains in force for Main and subagents, without expiry or benchmark exception.
+  Owner (`16-27-59:7665`, entry `29908fc1`): «Возобнови полный запрет использования антропиков».
+  This governs model use, not Anthropic transport, quota implementation, auth, provider visibility or product models.
+  Reason: apply the owner's executor balance and revised efforts without changing reviewers or running work.
+  Carriers: [Subagent models](process/subagent-models.md), the root coordinator block, `AGENTS.md`,
+  [test lane](process/task-pipeline.md) and `.pi/extensions/coordinator-guard/` with its tests. The former Sol-only
+  policy is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0361, from `1633d50`.
 
 - **Process file and manifesto** `[D-WORK-PROCESS-LINK]`. The reading contract is carried in
   [PROCESS.md](PROCESS.md), with its task-loaded sections, and linked from `AGENTS.md`.
@@ -512,7 +522,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Since: local-delivery-gate squash.
 
 - **Test lane** `[D-PIPELINE-TEST-LANE]`. Two main work lanes under [D-WORK-PARALLEL] and a separate lane for tests only,
-  usable for nothing else and outside the two active slots. Its agents are ordinary `agent`s on the simple GPT pair under
+  usable for nothing else and outside the two active slots. Its agents are ordinary `agent`s on a simple executor pair under
   [the development model policy](PROCESS.md#subagent-models), with `.agents/roles/test-fixer.md` as the `role`.
   They take the tail items of [WINDOWS-TEST-FAILURES](BACKLOG.md#windows-test-failures) and
   [QA-FLAKES-LAST](BACKLOG.md#qa-flakes-last) and own all test work: every failing test, reruns and the full restoration
