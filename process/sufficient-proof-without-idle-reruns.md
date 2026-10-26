@@ -20,7 +20,7 @@
 - Root documentation, notes and development instructions alone do not justify extra application tests or model runs;
   the delivery checks in [Delivery](../PROCESS.md#delivery) still apply. A workflow change does require validating its triggers and affected
   Windows jobs. Do not claim a queued or incomplete run passed.
-- Everyone who writes, generates or fixes tests, a subagent, a reviewer or the test-fix lane, has one purpose: to check
+- Everyone who writes, generates or fixes tests, a subagent, a reviewer or a test-work agent, has one purpose: to check
   that the behavior matches the requirements, never to turn the run green. The bound is the reviewer's: no
   fanaticism, perfectionism, polishing or taste.
 - Fix failures caused by the task, including assertions for deliberately changed behavior. Report unrelated failures

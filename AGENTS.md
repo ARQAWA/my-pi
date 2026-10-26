@@ -9,15 +9,19 @@ sections after compaction or a handoff before continuing. This is mandatory lazy
 loading, not optional background reading. Give subagents the relevant process rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
 Coordinator personal-work objections and explicit overrides: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
 Coordinator rules bind only the session that holds the repository's `coordinator.lock`; every other session is a normal direct agent.
-At most two main tasks in active execution follow the owner's priority queue; tasks waiting for CI, review, the merge queue or
-the owner hold no slot, and a separate lane for tests only is outside the limit; pause is `agent` `interrupt`, resume of the interrupted request is `agent` `resume` (`send` only carries a new message), with no pause files:
+Only one execution task is active at a time in the owner's priority queue. QA fixes, Windows work and full release
+regressions share that queue; there is no separate test lane. CI, review, merge-queue and owner waits are not active
+execution, so the next logical task may run then. Coordinator bookkeeping is operational and never permits concurrent
+implementation. After the listed queue items, only owner-ordered Windows CI failures resume; invented standalone PCLI
+verification and unrelated holds stay out. Pause is `agent` `interrupt`, resume is `agent` `resume` (`send` only carries a new message), with no pause files:
 [PROCESS.md](PROCESS.md#task-pipeline).
 Golden rule, no avoidable token spending and simplest engineered solutions: [PROCESS.md](PROCESS.md#golden-rule).
 Task timebox, at most 2 hours of substantive work, then a pause and a report: [PROCESS.md](PROCESS.md#task-timebox).
-Executor assignments repeat Kimi K3.1 Pro, Kimi K3.1 Pro, Sol 6.1; simple and complex use low, hardest uses
-Kimi high or Sol medium. Main carries the next position in its operational task-list context through compaction.
-Resume preserves the agent and model; reviewers keep their approved profiles outside the sequence. Owner model
-requests override the default; Anthropic stays forbidden. Policy: [PROCESS.md](PROCESS.md#subagent-models).
+Every new executor, work, research, test, QA, regression, operational or outside-queue agent uses only Kimi K3.1 Pro:
+simple and complex use low, hardest uses high. Existing Sol agents finish current tasks through send/resume and are
+not restarted merely to switch models. Independent reviewers keep their approved Sol profiles and are not executors.
+Owner model requests override the default; no silent fallback; Anthropic stays forbidden. The single execution queue
+stays unchanged. Policy: [PROCESS.md](PROCESS.md#subagent-models).
 Search ready-made solutions before new features or mechanisms: [PROCESS.md](PROCESS.md#research-and-agreement).
 Third-party installs go into the owner's Pi first, then the package: [PROCESS.md](PROCESS.md#third-party-installation-fast-path).
 Task bases, scoped checks, release batching and the owner's Pi update source: [PROCESS.md Delivery](PROCESS.md#delivery).
@@ -150,8 +154,8 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all. Its `qa-status` message has a compact card (`card.ts`); Ctrl+O shows every line with its link.
 - `.pi/agents/test-reviewer.toml`: the project test-review profile, used through `agent` with
   `agent_type: "test-reviewer"`; trigger and evidence rules: [PROCESS.md](PROCESS.md#quality-control-loop).
-- `.agents/roles/test-fixer.md`: the short role of the test-fix lane agents, passed as the `role` of an `agent`, not as
-  the whole `system` ([PROCESS.md](PROCESS.md#task-pipeline)).
+- `.agents/roles/test-fixer.md`: the short role of ordinary test-work agents in the single execution queue, passed as
+  the `role` of an `agent`, not as the whole `system` ([PROCESS.md](PROCESS.md#task-pipeline)).
 - `extensions/RQW-thinking/`: extension 16, hides main-transcript thinking text and the hidden-thinking label,
   without changing stored messages or model context. Native blank rows remain. Independent package filter and
   `/reload`; tests: `test/extensions/RQW-thinking/`.

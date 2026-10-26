@@ -6,12 +6,26 @@ export const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "ma
 export type Pair = [model: string, thinking: string];
 /** Optional GPT-only override, active while now < untilMs. */
 export type GptOnlyRestriction = { until: string; untilMs: number };
-export type Rules = { agentModels: Record<string, Pair[]>; temporaryGptOnly?: GptOnlyRestriction };
+export type Rules = {
+	agentModels: Record<string, Pair[]>;
+	reviewerProfiles: Record<string, Pair>;
+	temporaryGptOnly?: GptOnlyRestriction;
+};
 
 const GPT_MODEL = "openai-codex/gpt-6.1-sol";
 const UTC_SECONDS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 const FENCE = /^```json coordinator-rules[ \t]*\r?\n([\s\S]*?)^```[ \t]*$/gm;
+
+function parsePair(pair: any, where: string): Pair {
+	if (!Array.isArray(pair) || pair.length !== 2) throw new Error(`${where} must be [model, thinking]`);
+	const [model, thinking] = pair;
+	if (typeof model !== "string" || !/^[^/\s]+\/\S+$/.test(model)) throw new Error(`${where}: model must be "provider/id"`);
+	if (typeof thinking !== "string" || !(THINKING as readonly string[]).includes(thinking)) {
+		throw new Error(`${where}: thinking must be one of ${THINKING.join(", ")}`);
+	}
+	return [model, thinking];
+}
 
 export function parseRules(markdown: string): Rules {
 	const blocks = [...markdown.matchAll(FENCE)];
@@ -31,18 +45,18 @@ export function parseRules(markdown: string): Rules {
 	const agentModels: Record<string, Pair[]> = {};
 	for (const [name, pairs] of classes) {
 		if (!Array.isArray(pairs) || pairs.length === 0) throw new Error(`agentModels.${name} must be a non-empty array of [model, thinking] pairs`);
-		agentModels[name] = pairs.map((pair, i) => {
-			const where = `agentModels.${name}[${i}]`;
-			if (!Array.isArray(pair) || pair.length !== 2) throw new Error(`${where} must be [model, thinking]`);
-			const [model, thinking] = pair;
-			if (typeof model !== "string" || !/^[^/\s]+\/\S+$/.test(model)) throw new Error(`${where}: model must be "provider/id"`);
-			if (typeof thinking !== "string" || !(THINKING as readonly string[]).includes(thinking)) {
-				throw new Error(`${where}: thinking must be one of ${THINKING.join(", ")}`);
-			}
-			return [model, thinking] as Pair;
-		});
+		agentModels[name] = pairs.map((pair, i) => parsePair(pair, `agentModels.${name}[${i}]`));
 	}
-	const rules: Rules = { agentModels };
+	const reviewerProfiles: Record<string, Pair> = {};
+	if (data.reviewerProfiles !== undefined) {
+		if (!data.reviewerProfiles || typeof data.reviewerProfiles !== "object" || Array.isArray(data.reviewerProfiles)) {
+			throw new Error("reviewerProfiles must be an object of [model, thinking] pairs");
+		}
+		for (const [name, pair] of Object.entries(data.reviewerProfiles)) {
+			reviewerProfiles[name] = parsePair(pair, `reviewerProfiles.${name}`);
+		}
+	}
+	const rules: Rules = { agentModels, reviewerProfiles };
 	// An absent key means no temporary restriction; a present key must parse.
 	if (data.temporaryGptOnly !== undefined) rules.temporaryGptOnly = parseRestriction(data.temporaryGptOnly);
 	return rules;
@@ -75,10 +89,16 @@ export function loadRules(file: string): Loaded {
 	}
 }
 
-/** Only exact table pairs are allowed; the active override additionally requires GPT. */
-export function isAllowed(rules: Rules, model: string, thinking: string, now: number): boolean {
-	const inTable = Object.values(rules.agentModels).some((pairs) => pairs.some(([m, t]) => m === model && t === thinking));
-	return inTable && (!restrictionActive(rules, now) || model === GPT_MODEL);
+/** Executors use table pairs; a named reviewer profile may instead use its own exact pair. */
+export function isAllowed(rules: Rules, model: string, thinking: string, now: number, agentType?: string): boolean {
+	const reviewerPair = agentType === undefined ? undefined : rules.reviewerProfiles[agentType];
+	const inTable = reviewerPair === undefined && Object.values(rules.agentModels).some((pairs) => pairs.some(([m, t]) => m === model && t === thinking));
+	const inReviewerProfile = reviewerPair?.[0] === model && reviewerPair[1] === thinking;
+	return (inTable || inReviewerProfile) && (!restrictionActive(rules, now) || model === GPT_MODEL);
+}
+
+export function describeReviewerProfiles(rules: Rules): string {
+	return Object.entries(rules.reviewerProfiles).map(([name, [model, thinking]]) => `${name}: ${model} ${thinking}`).join("; ");
 }
 
 /** The one allowed-pair rendering used in reasons, the prompt and child tasks. */

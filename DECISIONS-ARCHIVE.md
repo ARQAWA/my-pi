@@ -6519,3 +6519,96 @@ Verbatim text as it was in DECISIONS.md at `1633d50`:
 >   subscription quota implementation, auth, provider visibility or product model settings.
 >   Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), its coordinator JSON block and
 >   [test lane](process/task-pipeline.md). Superseded entries are preserved verbatim in `DECISIONS-ARCHIVE.md`.
+
+## A-0362 · archived 2026-10-25 · Development executor models · D-WORK-MODELS
+
+Status: SUPERSEDED in executor selection and rotation by `[D-WORK-MODELS]` (DECISIONS.md#work-policy); Anthropic ban retained.
+Superseded and archived by: the process-kimi-only-executors squash. Source commit: `967769a`.
+Verbatim text as it was in DECISIONS.md at `967769a`:
+
+> - **Development executor models** `[D-WORK-MODELS]`. Future executor starts and restarts repeat two
+>   `kimi-coding/k3.1-pro` assignments, then one `openai-codex/gpt-6.1-sol`. Simple and complex work uses low for
+>   either model; hardest work uses Kimi high or Sol medium. Exact pairs live in the `coordinator-rules` JSON block of
+>   [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly.
+>   The sequence is across assignments, not three simultaneous tasks; [D-WORK-PARALLEL]'s two-main-task cap stays.
+>   Main carries its next position and last counted assignment in the existing operational task-list decision context
+>   through compaction and handoff, not a new runtime counter or state file. Pause/resume retains the agent and model,
+>   consuming no assignment; current Sol agents are not restarted for balance. Explicit owner model requests override
+>   the default. No silent model fallback. Independent reviewer profiles and their approved model/effort are unchanged
+>   and do not consume the executor sequence. Recursive delegation and reviewer lifecycle stay unchanged; no new
+>   nested non-review helper restriction is added.
+>   Owner (`16-27-59:10630`, entry `6bb24615`, 2026-10-25):
+>   «Пожалуйста в будущих задачах используй Kimi K3.1 Pro модели для решения задач - обычные и сложные Low ризоининг, сложнейшие high. Баланс следующий 2 кими к 1 гпт.»
+>   Owner (`16-27-59:10759`, entry `8e9d2b57`, 2026-10-25):
+>   «Надо ещё поменять, чтобы у нас воркеры, исполнители работали так же, как с Kimi. Для простых и сложных задач Sol low, 6.1 low, а для суперсложных задач Sol 6.1 medium.»
+>   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
+>   The full Anthropic ban remains in force for Main and subagents, without expiry or benchmark exception.
+>   Owner (`16-27-59:7665`, entry `29908fc1`): «Возобнови полный запрет использования антропиков».
+>   This governs model use, not Anthropic transport, quota implementation, auth, provider visibility or product models.
+>   Reason: apply the owner's executor balance and revised efforts without changing reviewers or running work.
+>   Carriers: [Subagent models](process/subagent-models.md), the root coordinator block, `AGENTS.md`,
+>   [test lane](process/task-pipeline.md) and `.pi/extensions/coordinator-guard/` with its tests. The former Sol-only
+>   policy is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0361, from `1633d50`.
+
+## A-0363 · archived 2026-10-25 · Active-execution cap · D-WORK-PARALLEL
+
+Status: SUPERSEDED in numeric cap and test-lane exception by `[D-WORK-PARALLEL]` and `[D-PIPELINE-SINGLE-QUEUE]`; queue priority and the HTML-artifact exception are retained.
+Superseded and archived by: the process-kimi-only-executors squash. Source commit: `4c66755`.
+Verbatim text as it was in DECISIONS.md at `70f2ea0`:
+
+> - **Two active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most two main tasks
+>   run in active execution at once in the owner's priority queue, not a count of first-level agents; waiting tasks hold
+>   no slot ([D-PIPELINE-SLOTS]); the separate test lane stays outside the two ([D-PIPELINE-TEST-LANE]).
+>   Coordinator operational bookkeeping holds no slot ([D-WORK-TASK-BOOKKEEPING]). The current order belongs in the handoff.
+>   Owner (`16-27-59:10462`, entry `57e7df57`, 2026-10-25): «А количество задач одновременных надо согратить до двух».
+>   This supersedes only the six-task cap, not the queue, wait or hold rules; no held or discarded work is resumed.
+>   The superseded six-task entry is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0359, from `ce0fa4d`.
+>   Requested HTML artifacts are separate outside the queue, not product tasks. Owner (`16-27-59:10375`, entry
+>   `541e58af`, 2026-10-25): «Это не типовая задача а отдельная вне очереди то что я написал выше».
+>   Source for both: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
+>   Owner (`16-27-59:4813`, entry `8f53ebc4`):
+>   «Замер этого. Reviewer — это топ один приоритет. Надо закрыть reviewer как можно быстрее, довести его до финального состояния. Потом следующий по приоритету идёт транспорт кодекса. Затем идёт разведчик, как в курсоре, затем идёт веб-поиск новый. Потом идёт уже новый интерфейс, мелкие, почти готовые слияния одно с другим в конце и потом в конце уже починка нестабильных тестов — это вообще самый последний приоритет. Когда делать нехуй, ты уже занимаешься тестами.»
+>   Reason: focus execution on the owner's priorities. Carrier:
+>   [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
+>   Since: process-rules-oct23 squash.
+
+## A-0364 · archived 2026-10-25 · Active-execution slots · D-PIPELINE-SLOTS
+
+Status: SUPERSEDED in numeric cap by `[D-WORK-PARALLEL]`; waiting and resume rules are retained.
+Superseded and archived by: the process-kimi-only-executors squash. Source commit: `4c66755`.
+Verbatim text as it was in DECISIONS.md at `70f2ea0`:
+
+> - **Active slots and waiting tasks** `[D-PIPELINE-SLOTS]`. Only active execution holds one of the two main slots under [D-WORK-PARALLEL]. A task
+>   that waits for CI, a reviewer, the merge queue or the owner holds none. A failed local delivery test under [D-PIPELINE-LOCAL-GATE] sends the task to the top of the
+>   queue; at the next free active slot its existing agent is resumed, and another is started only if its
+>   session no longer exists. Owner (`16-27-59:5060`): «7 надо чет пиздатое придумать, по типу пятого пункта или же делать всегда но не делать из этого блокер, т.е. не ждать, свичиться на след задачу и переключаться интелекетуально как релаьный прогер»
+>   «Работа должна быть суперконвейерная, суперэффективная, производительная, супербыстрая, без дрочи.»
+>   Owner (`16-27-59:5068`) answered the quoted coordinator text with: «Делаем, да»
+>   The original three-slot summary is archived verbatim in `DECISIONS-ARCHIVE.md`, Active-execution cap;
+>   only its numeric cap is superseded by [D-WORK-PARALLEL].
+>   Reason: waits for CI, review and the owner idled slots; the analysis found CI and queue waits to be the largest
+>   removable delay. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and
+>   [Isolated parallel execution](PROCESS.md#isolated-parallel-execution), replacing the former plain "three tasks at the
+>   same time" wording of [D-WORK-PARALLEL].
+>   Since: process-pipeline squash.
+
+## A-0365 · archived 2026-10-25 · Separate test lane · D-PIPELINE-TEST-LANE
+
+Status: SUPERSEDED by `[D-PIPELINE-SINGLE-QUEUE]`; test purpose, triage and evidence rules are retained.
+Superseded and archived by: the process-kimi-only-executors squash. Source commit: `4c66755`.
+Verbatim text as it was in DECISIONS.md at `70f2ea0`:
+
+> - **Test lane** `[D-PIPELINE-TEST-LANE]`. Two main work lanes under [D-WORK-PARALLEL] and a separate lane for tests only,
+>   usable for nothing else and outside the two active slots. Its agents are ordinary `agent`s on a simple executor pair under
+>   [the development model policy](PROCESS.md#subagent-models), with `.agents/roles/test-fixer.md` as the `role`.
+>   They take the tail items of [WINDOWS-TEST-FAILURES](BACKLOG.md#windows-test-failures) and
+>   [QA-FLAKES-LAST](BACKLOG.md#qa-flakes-last) and own all test work: every failing test, reruns and the full restoration
+>   of Windows. The lane starts only after this pipeline change is delivered, and then follows all its agreements and
+>   tooling (CI watcher, merge agent, queue); it is not launched in this branch. Reruns follow a fix or a new head, not blind
+>   retries to get green, unless the owner decides otherwise later. Red before and green after, and no weakening of a check,
+>   stay. The original lane-count quotation (`16-27-59:5327`, entry `f293eaf1`) is archived verbatim in
+>   `DECISIONS-ARCHIVE.md`, Active-execution cap; only the main-task count is superseded by [D-WORK-PARALLEL].
+>   Owner (`16-27-59:5331`, entry `de8294bf`): «И пусть этот отдельный поток всеми тестами занимается: чинит всё, перезапускает. Он починит все упавшие тесты, всю Windows починит.» «После того, как конвейер будет готов, переработан, чтобы он в рамках всех договорённостей и всего tooling конвейера работал.»
+>   Owner (`16-27-59:5323`, entry `6256b148`), the prompt: «Ты нормальный пром дай, нормально сконфигурируй, выдай ему рамки, ограничения, и он нормально работу сделает»
+>   Reason: Windows and flaky failures must not wait for main-task slots. Carrier:
+>   [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), `.agents/roles/test-fixer.md`. Since: process-pipeline squash.

@@ -2,11 +2,12 @@
 
 Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](../DECISIONS.md#task-pipeline).
 
-- A task is active or waiting. Only active execution holds one of the two main slots: a subagent implementing,
-  researching, fixing or measuring. Waiting for CI, a reviewer, the merge queue or the owner holds no slot. Main
-  fills each free slot from the owner's queue and keeps every waiting task in the current session queue and state with what it waits for, in no file.
+- A task is active or waiting. Only one task actively executes at a time: a subagent implementing, researching,
+  fixing or measuring. Waiting for CI, a reviewer, the merge queue or the owner is not active execution, so the next
+  logical task may run during a genuine external wait. Main keeps every waiting task in the current session queue
+  and state with what it waits for, in no file.
 - When a task's local checks are clean, its branch is pushed and the required reviews start in the background;
-  the task becomes waiting. Its agent finishes its turn or is paused, keeps its session and history, and frees the slot;
+  the task becomes waiting. Its agent finishes its turn or is paused, keeps its session and history, and ends its active execution;
   Main's coordination is never blocked. The merge agent and CI watcher follow any CI runs in the background.
 - Use the default notification waits of `agent` and `job`: a direct wait returns `waiting` and the result wakes the
   caller later. Neither tool has an explicit held-wait option. Remaining blocking paths are deferred by the owner,
@@ -21,17 +22,20 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](../DECIS
   issue exists. Every ignored Windows failure is recorded before the delivery closes, as a tail item of `BACKLOG.md` or a
   `main` `qa-inbox` issue linked from it; none is silently deferred or abandoned, so Windows support is finished
   later. If Windows jobs still run when the merge happens, the merge agent keeps that run
-  tracked in the background through the watcher cache or a notification, holding no active slot and spending no model
+  tracked in the background through the watcher cache or a notification, not counting as active execution and spending no model
   polling turns. A later Windows failure then gets its tail `BACKLOG.md` item or linked issue and is not lost when
   the branch is deleted. Delivery never waits for Windows or green macOS CI; no workflow result gates a merge.
-- Test lane. Besides the two main work lanes, a separate lane for tests only, outside the two active slots, owns all
-  test work: ordinary `agent`s on a simple executor pair under the [model policy](../PROCESS.md#subagent-models), with
-  `.agents/roles/test-fixer.md` as the `role`. It starts only after this pipeline change is delivered and follows all
-  pipeline agreements. Decisions: [DECISIONS.md](../DECISIONS.md#task-pipeline).
+- Test work. QA fixes, Windows work and full release regressions are ordinary tasks in the same single execution
+  queue as other work. There is no separate test lane and no independent concurrent test-fixer or regression agent.
+  Main sequences them logically by owner priority, dependencies, required gates and release triggers. After the
+  currently listed queue items, only owner-ordered Windows CI failure work resumes, with direct sources in `BACKLOG.md`.
+  Invented standalone PCLI verification, unrelated holds and discarded tasks stay out. Test agents remain ordinary
+  `agent`s on a simple executor pair under the [model policy](../PROCESS.md#subagent-models).
+  Decisions: [DECISIONS.md](../DECISIONS.md#task-pipeline).
 - A failed task-scoped delivery check or a conflicting rebase sends the task back to the top of the queue. Full-run
   failures follow [Delivery](../PROCESS.md#delivery). GitHub CI does
-  not gate delivery. At the next free active slot,
-  ahead of tasks not yet started, resume its existing agent; start another only if its session no longer exists.
+  not gate delivery. When it becomes the next active task, ahead of tasks not yet started, resume its existing agent;
+  start another only if its session no longer exists.
 - Pause and resume. Pausing a task is an `agent` `interrupt` of its agent, which keeps the session and history.
   Resuming is the `resume` action of the same agent, which retries the cut-off request with its full history and no new
   message; `send` is only for a new message. Child sessions are saved with the parent, so ids also resume after a Pi

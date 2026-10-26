@@ -116,21 +116,22 @@ Provenance:
   Reason: the owner may forget the coordinator role; a direct request alone must not silently bypass it.
   Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution), guard prompt.
   Since: process-rules-oct23 squash.
-- **Two active tasks and owner queue** `[D-WORK-PARALLEL]`. Main remains non-blocking; at most two main tasks
-  run in active execution at once in the owner's priority queue, not a count of first-level agents; waiting tasks hold
-  no slot ([D-PIPELINE-SLOTS]); the separate test lane stays outside the two ([D-PIPELINE-TEST-LANE]).
-  Coordinator operational bookkeeping holds no slot ([D-WORK-TASK-BOOKKEEPING]). The current order belongs in the handoff.
-  Owner (`16-27-59:10462`, entry `57e7df57`, 2026-10-25): «А количество задач одновременных надо согратить до двух».
-  This supersedes only the six-task cap, not the queue, wait or hold rules; no held or discarded work is resumed.
-  The superseded six-task entry is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0359, from `ce0fa4d`.
+- **One active execution task and owner queue** `[D-WORK-PARALLEL]`. Only one task is in active execution at a time
+  in the owner's priority queue. QA fixes, Windows work and full release regressions share that queue; there is no
+  separate test lane ([D-PIPELINE-SINGLE-QUEUE]). CI, review, merge-queue and owner waits are not active execution,
+  so the next logical task may run during a genuine external wait ([D-PIPELINE-SLOTS]). Coordinator bookkeeping is
+  operational, not a standalone queue task, and never permits concurrent implementation ([D-WORK-TASK-BOOKKEEPING]).
+  Owner (`16-27-59:12021`, entry `b5d1a538`, 2026-10-25):
+  «Кароче дальше в 1 поток задачи делаешь и отдельного потока на тесты нет чередуй по логике»
+  Existing paused tasks retain their history and resume one at a time. Other hold and discard rules stay unchanged.
   Requested HTML artifacts are separate outside the queue, not product tasks. Owner (`16-27-59:10375`, entry
   `541e58af`, 2026-10-25): «Это не типовая задача а отдельная вне очереди то что я написал выше».
-  Source for both: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
+  Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
   Owner (`16-27-59:4813`, entry `8f53ebc4`):
   «Замер этого. Reviewer — это топ один приоритет. Надо закрыть reviewer как можно быстрее, довести его до финального состояния. Потом следующий по приоритету идёт транспорт кодекса. Затем идёт разведчик, как в курсоре, затем идёт веб-поиск новый. Потом идёт уже новый интерфейс, мелкие, почти готовые слияния одно с другим в конце и потом в конце уже починка нестабильных тестов — это вообще самый последний приоритет. Когда делать нехуй, ты уже занимаешься тестами.»
-  Reason: focus execution on the owner's priorities. Carrier:
-  [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution).
-  Since: process-rules-oct23 squash.
+  Reason: focus execution on the owner's priorities without independent implementation or test lanes. Carrier:
+  [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution). The superseded two-task entry is
+  preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0363, from `4c66755`.
 - **Task-list bookkeeping is coordinator operations** `[D-WORK-TASK-BOOKKEEPING]`.
   The rule is carried in [Isolated parallel execution](process/isolated-parallel-execution.md).
   Owner (`16-27-59`, entries `69d42f11`, `8be98ccd`, 2026-10-25):
@@ -200,29 +201,26 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «мы нигде кроме этого ноута это не запускаем, все что КАСАЕТСЯ РАБОТЫ В ЭТОМ РЕПО - только локальная тема»
   Reason: local orchestration has no other deployment target; product and CI portability remain separate.
   Carriers: [PROCESS.md](PROCESS.md#isolated-parallel-execution), local development test suites.
-- **Development executor models** `[D-WORK-MODELS]`. Future executor starts and restarts repeat two
-  `kimi-coding/k3.1-pro` assignments, then one `openai-codex/gpt-6.1-sol`. Simple and complex work uses low for
-  either model; hardest work uses Kimi high or Sol medium. Exact pairs live in the `coordinator-rules` JSON block of
+- **Development executor models** `[D-WORK-MODELS]`. Every new Main-started executor, work, research, test, QA, regression,
+  operational or outside-queue agent uses only `kimi-coding/k3.1-pro`: simple and complex work uses low, hardest
+  work uses high. Exact executor pairs and reviewer-profile exceptions live in the `coordinator-rules` JSON block of
   [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly.
-  The sequence is across assignments, not three simultaneous tasks; [D-WORK-PARALLEL]'s two-main-task cap stays.
-  Main carries its next position and last counted assignment in the existing operational task-list decision context
-  through compaction and handoff, not a new runtime counter or state file. Pause/resume retains the agent and model,
-  consuming no assignment; current Sol agents are not restarted for balance. Explicit owner model requests override
-  the default. No silent model fallback. Independent reviewer profiles and their approved model/effort are unchanged
-  and do not consume the executor sequence. Recursive delegation and reviewer lifecycle stay unchanged; no new
-  nested non-review helper restriction is added.
-  Owner (`16-27-59:10630`, entry `6bb24615`, 2026-10-25):
-  «Пожалуйста в будущих задачах используй Kimi K3.1 Pro модели для решения задач - обычные и сложные Low ризоининг, сложнейшие high. Баланс следующий 2 кими к 1 гпт.»
-  Owner (`16-27-59:10759`, entry `8e9d2b57`, 2026-10-25):
-  «Надо ещё поменять, чтобы у нас воркеры, исполнители работали так же, как с Kimi. Для простых и сложных задач Sol low, 6.1 low, а для суперсложных задач Sol 6.1 medium.»
+  There is no executor rotation or ratio bookkeeping; [D-WORK-PARALLEL]'s single execution queue stays.
+  Already running or preserved Sol agents may finish their current tasks through ordinary `send` and `resume` and
+  are not restarted merely to switch models. A genuinely new task, new agent or new-session restart uses Kimi unless
+  it is a reviewer profile. Explicit owner model requests override the default. No silent model fallback.
+  Independent reviewer profiles keep their approved Sol model and effort; they are not an executor category.
+  Recursive delegation and reviewer lifecycle stay unchanged; no new nested non-review helper restriction is added.
+  Owner (`16-27-59:11912`, entry `8462d385`, 2026-10-25):
+  «В будущих задачах больше не используй GPT в саб агентах, только кими по нашим правилам. только для ревьюеров»
   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
   The full Anthropic ban remains in force for Main and subagents, without expiry or benchmark exception.
   Owner (`16-27-59:7665`, entry `29908fc1`): «Возобнови полный запрет использования антропиков».
   This governs model use, not Anthropic transport, quota implementation, auth, provider visibility or product models.
-  Reason: apply the owner's executor balance and revised efforts without changing reviewers or running work.
+  Reason: remove GPT from future executor assignments while preserving reviewer profiles and current agents.
   Carriers: [Subagent models](process/subagent-models.md), the root coordinator block, `AGENTS.md`,
-  [test lane](process/task-pipeline.md) and `.pi/extensions/coordinator-guard/` with its tests. The former Sol-only
-  policy is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0361, from `1633d50`.
+  [task pipeline](process/task-pipeline.md) and `.pi/extensions/coordinator-guard/` with its tests. The superseded 2:1
+  rotation is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0362, from `967769a`.
 
 - **Process file and manifesto** `[D-WORK-PROCESS-LINK]`. The reading contract is carried in
   [PROCESS.md](PROCESS.md), with its task-loaded sections, and linked from `AGENTS.md`.
@@ -382,7 +380,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
      "С влития первой задачи в пустой релиз; пустой релиз не запускается."
   Owner answers, physical line 6679, user entry `7d2d40b1`: `1а 2а 3а 4а 5а`.
   The coordinator's implementation brief at physical line 6680, assistant entry `73d884ca`, supplies the
-  exact-head test-lane execution and Git-derived batch accounting; it is coordinator text, not an owner quote.
+  exact-head single-queue execution and Git-derived batch accounting; it is coordinator text, not an owner quote.
   Owner urgency, physical line 6683, entry `9a6cb0a8`:
   «Смотри эта история про релиз это ультра крит и ее надо делать выше всех и сразу внедрять что бы тесты паралельные не ебали ни цпу ни процесс»
   Reason: give the owner completed tasks promptly without concurrent per-task full regressions; keep a checked
@@ -398,14 +396,14 @@ questions `16-27-59:5043`, entry `605c1e21`) in `16-27-59:5060`, entry `46a9e546
 only the slot summary of [D-PIPELINE-SLOTS]; the other points of that coordinator reply ("Остальное принял") follow his
 numbered answers and are coordinator text. The owner answered items 2 and 3 with «2а 3а».
 
-- **Active slots and waiting tasks** `[D-PIPELINE-SLOTS]`. Only active execution holds one of the two main slots under [D-WORK-PARALLEL]. A task
-  that waits for CI, a reviewer, the merge queue or the owner holds none. A failed local delivery test under [D-PIPELINE-LOCAL-GATE] sends the task to the top of the
-  queue; at the next free active slot its existing agent is resumed, and another is started only if its
+- **Active execution and waiting tasks** `[D-PIPELINE-SLOTS]`. Only one task actively executes under [D-WORK-PARALLEL]. A task
+  that waits for CI, a reviewer, the merge queue or the owner is not active. A failed local delivery test under [D-PIPELINE-LOCAL-GATE] sends the task to the top of the
+  queue; when it becomes the next active task its existing agent is resumed, and another is started only if its
   session no longer exists. Owner (`16-27-59:5060`): «7 надо чет пиздатое придумать, по типу пятого пункта или же делать всегда но не делать из этого блокер, т.е. не ждать, свичиться на след задачу и переключаться интелекетуально как релаьный прогер»
   «Работа должна быть суперконвейерная, суперэффективная, производительная, супербыстрая, без дрочи.»
   Owner (`16-27-59:5068`) answered the quoted coordinator text with: «Делаем, да»
-  The original three-slot summary is archived verbatim in `DECISIONS-ARCHIVE.md`, Active-execution cap;
-  only its numeric cap is superseded by [D-WORK-PARALLEL].
+  The original three-slot and two-slot summaries are archived verbatim in `DECISIONS-ARCHIVE.md`, A-0357 and A-0364;
+  their numeric caps are superseded by [D-WORK-PARALLEL], while the waiting rules stay.
   Reason: waits for CI, review and the owner idled slots; the analysis found CI and queue waits to be the largest
   removable delay. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and
   [Isolated parallel execution](PROCESS.md#isolated-parallel-execution), replacing the former plain "three tasks at the
@@ -446,7 +444,6 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   [PROCESS.md, Delivery](PROCESS.md#delivery) step 5. Since: process-pipeline squash.
 - **Interim Windows skips for flaky tests** `[D-PIPELINE-FLAKE-SKIP]`. Inbox issues #3, #4 and #5 get a narrow skip, and
   their causal fix goes to the end of the queue. Owner (`16-27-59:5060`): «4 - а может поставить им скип и в конец очереди на починку? что за дроч бежать чинить тесты срауз без бага явного?»
-  The test lane of [D-PIPELINE-TEST-LANE] works these items.
   Coordinator text (`16-27-59:5061`): "Нестабильные тесты пропускаются, а их починка уходит в конец очереди. Пропускать буду узко: только упавшие проверки и только на Windows, со ссылкой на задачу в копилке. Остальная часть тестов фоновых задач продолжит ловить настоящие ошибки."
   Reason: chasing a fix without an obvious bug blocked unrelated work. This is the owner-approved exception to the
   forbidden list of [D-QA-TEST-INTEGRITY]; retries, raised timeouts and whole-file skips stay forbidden. Carrier:
@@ -483,15 +480,16 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Since: process-pipeline squash; this wording since `dd93a40` and the final squash of branch `agent-async`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0263.
 
 - **Two hours of substantive work per task** `[D-PIPELINE-TIMEBOX]`. Each development task gets at most 2 hours of
-  substantive work, then a safe pause and a report; the freed active slot goes at once to the highest-priority runnable
-  waiting task; more work on the paused task needs the owner's decision. Owner (`16-27-59:5231`, entry `ce0d83d8`): «Надо поставить тайм-лимит на каждую задачу — не больше двух часов на исполнение. Если больше двух часов проходит, то ты должен дать summary за проведённые два часа, дорожную карту и причинно-следственную связь.»
+  substantive work, then a safe pause and a report; the highest-priority runnable waiting task starts next; more work
+  on the paused task needs the owner's decision. Owner (`16-27-59:5231`, entry `ce0d83d8`): «Надо поставить тайм-лимит на каждую задачу — не больше двух часов на исполнение. Если больше двух часов проходит, то ты должен дать summary за проведённые два часа, дорожную карту и причинно-следственную связь.»
   «Потому что на эту хуйню с review мы потратили день и кучу токенов сожгли на тесты, а в итоге получили хуй во рту.»
   Owner (`16-27-59:5237`, entry `859f9675`): «Причем не просто остановка, а ты задачу останавливаешь, даешь мне отчет в таком виде. А вместо этого паркуется другая задача из списка ожидания.»
   «Если я решу эту задачу продолжить, то ты их перетусуешь и вернёшь обратно задачу в работу»
   Owner clarification (`16-27-59:5241`, entry `e3c8d844`): «Когда я имею в виду, что не больше двух часов, это имеется в виду именно саму сдачу. Когда он начал делать до самого конца сдачи, а не всё вместе со всеми перепроверками анальными, всякими тестами, CI, CD и прочей залупой»
   Plain coordinator interpretation, not owner words: the limit counts research, design, implementation and fixes of
-  actual defects; it excludes check runs, review passes and external waits, which run asynchronously in the pipeline and
-  hold no active slot. Coordinator text (`16-27-59:5240`, entry `81302812`): "Да: через два часа задача встаёт на паузу, ты получаешь отчёт, а её место сразу занимает следующая готовая задача из очереди. Место под твой ответ не держим. Если разрешишь продолжить, пересоберу приоритеты и верну задачу в работу, при необходимости поставив менее важную на паузу. Сессии сохраняются."
+  actual defects; check runs, review passes and external waits are excluded only from substantive time. Genuine CI,
+  review and owner waits are not active execution. A scheduled local full-release regression is the single active task
+  while it runs, with its duration still excluded from substantive work. Coordinator text (`16-27-59:5240`, entry `81302812`): "Да: через два часа задача встаёт на паузу, ты получаешь отчёт, а её место сразу занимает следующая готовая задача из очереди. Место под твой ответ не держим. Если разрешишь продолжить, пересоберу приоритеты и верну задачу в работу, при необходимости поставив менее важную на паузу. Сессии сохраняются."
   Coordinator text (`16-27-59:5244`, entry `ecee6e20`): "Понял: два часа на выполнение самой задачи до передачи готового результата, а не на весь путь до слияния. Ревью, тесты, CI и ожидания в этот лимит не входят и идут отдельно. Реальные доработки считаются работой над задачей, таймер не обнуляют. В отчёте время работы и время проверок будут разделены."
   Rules of this entry: the clock belongs to the logical task, with all descendant agents and all earlier work; a retry,
   restart or helper never resets it; genuinely paused or externally waiting time is not counted. At 2 hours the
@@ -513,7 +511,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «Ты должен только delivery то, что я заказываю. Ничего сверх этого»
   Scheduled workflows, the watcher, QA inbox and digest are unchanged. Windows failures remain advisory and are
   recorded before delivery closes as tail `BACKLOG.md` items or linked `qa-inbox` issues. Still-running Windows
-  jobs stay tracked in the background without active slots or model polling turns, and later failures are recorded
+  jobs stay tracked in the background without counting as active execution or model polling turns, and later failures are recorded
   the same way. Delivery waits for neither Windows nor green macOS CI.
   Reason: remove duplicate pre-merge GitHub checks, not ongoing quality control. Supersedes [D-PIPELINE-MAC-GATE]
   and the pre-merge CI requirements of the related entries; verbatim originals at `a85b810` are in
@@ -521,20 +519,20 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   [Task pipeline](PROCESS.md#task-pipeline), `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`.
   Since: local-delivery-gate squash.
 
-- **Test lane** `[D-PIPELINE-TEST-LANE]`. Two main work lanes under [D-WORK-PARALLEL] and a separate lane for tests only,
-  usable for nothing else and outside the two active slots. Its agents are ordinary `agent`s on a simple executor pair under
-  [the development model policy](PROCESS.md#subagent-models), with `.agents/roles/test-fixer.md` as the `role`.
-  They take the tail items of [WINDOWS-TEST-FAILURES](BACKLOG.md#windows-test-failures) and
-  [QA-FLAKES-LAST](BACKLOG.md#qa-flakes-last) and own all test work: every failing test, reruns and the full restoration
-  of Windows. The lane starts only after this pipeline change is delivered, and then follows all its agreements and
-  tooling (CI watcher, merge agent, queue); it is not launched in this branch. Reruns follow a fix or a new head, not blind
-  retries to get green, unless the owner decides otherwise later. Red before and green after, and no weakening of a check,
-  stay. The original lane-count quotation (`16-27-59:5327`, entry `f293eaf1`) is archived verbatim in
-  `DECISIONS-ARCHIVE.md`, Active-execution cap; only the main-task count is superseded by [D-WORK-PARALLEL].
-  Owner (`16-27-59:5331`, entry `de8294bf`): «И пусть этот отдельный поток всеми тестами занимается: чинит всё, перезапускает. Он починит все упавшие тесты, всю Windows починит.» «После того, как конвейер будет готов, переработан, чтобы он в рамках всех договорённостей и всего tooling конвейера работал.»
-  Owner (`16-27-59:5323`, entry `6256b148`), the prompt: «Ты нормальный пром дай, нормально сконфигурируй, выдай ему рамки, ограничения, и он нормально работу сделает»
-  Reason: Windows and flaky failures must not wait for main-task slots. Carrier:
-  [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), `.agents/roles/test-fixer.md`. Since: process-pipeline squash.
+- **Single queue for test work** `[D-PIPELINE-SINGLE-QUEUE]`. QA fixes, Windows work and full release regressions
+  are ordinary tasks in the single execution queue under [D-WORK-PARALLEL], with no independent concurrent test-fixer
+  or regression agent. Main sequences them logically by owner priority, dependencies, required gates and release triggers.
+  After the currently listed queue items, only owner-ordered Windows CI failure work resumes, with a readable direct
+  source for every item in [BACKLOG.md](BACKLOG.md#windows-test-failures). The direct Windows-test instruction is owner
+  `16-27-59:5309`, entry `1bbe27c1`. Owner (`16-27-59:12041`, entry `da2328fd`, 2026-10-25):
+  «И потом в работу добавь все что связано с виндой»
+  Coordinator or auditor-invented standalone PCLI publication, VS Code, ConPTY and generic Windows verification tasks
+  are not resumed. Discarded tasks, unrelated holds, delivered fixes and issue-monitoring-only items stay out.
+  Owner (`16-27-59:12047`, entry `5cc4142a`, 2026-10-25): «Из них удали те задачи которые Я НЕ ЗАКАЗЫВАЛ».
+  Test triage, proven-cause, no-skip/no-weakening, red/green evidence and release-regression requirements stay unchanged.
+  Reason: sequence owner-ordered test and Windows work without creating unauthorized tasks or an independent lane.
+  Carriers: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), [Delivery](PROCESS.md#delivery) and `BACKLOG.md`.
+  The superseded test-lane entry is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0365, from `4c66755`.
 - **Tests exist to check behavior** `[D-PIPELINE-TEST-PURPOSE]`. Every agent that writes, generates or fixes tests has one
   purpose: to check that the behavior matches the requirements, not to turn the run green, with the same bound as the
   reviewer: no fanaticism, perfectionism, polishing or taste. Owner (`16-27-59:5319`, entry `826fc7dd`): «Надо записать workflow, что все агенты, которые работают с тестами, пишут тесты, генерируют тесты, их задача — проверить качество на совпадение с требованиями, а не просто покрасить тесты в зеленый цвет.»
@@ -2014,7 +2012,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `d7037e66`, 2026-10-25): «Надо сделать максимально инженерно и просто в соотвествии с нашим манифестом, чтобы это ничего не ломало. Тесты не должны быть суперудушливыми, максимально перфекционистами, анально блокирующими и карающими. Тесты должны проверять качество, не более того.»
   This accepts `await canceled` instead of `assert.rejects` for [QA #13](https://github.com/ARQAWA/my-pi/issues/13),
   asked in assistant entry `05b22f2b`, `16-27-59:9416`. Reason: simple engineering and tests that check quality,
-  not perfectionist blocking. Carrier: the existing test-lane QA #13 work; its agent has received the decision.
+  not perfectionist blocking. Carrier: the paused single-queue QA #13 work; its agent has received the decision.
   This operational record changes no tests or QA issues and claims no QA fix or delivery.
 
 The rules for Main and subagents are in [PROCESS.md](PROCESS.md#quality-control-loop); the design and its evidence are
@@ -2078,7 +2076,7 @@ in the approved proposal (not stored in this repository). The loop reads only pu
   proof; a fix needs red-before/green-after in CI logs, and an intermittent one repeat runs with (1-p)^n < 0.05 (generic repeat harness `codemode-stress.yml`).
   A reviewer subagent with `agent_type: "test-reviewer"` checks only a test or workflow
   change that `deliver-check` mechanically detects as weakening a check (skip, todo, retry, raised timeout,
-  continue-on-error, fewer assertions), not every QA fix ([D-PIPELINE-TEST-LANE]); the gate then requires the trailers
+  continue-on-error, fewer assertions), not every QA fix ([D-PIPELINE-SINGLE-QUEUE]); the gate then requires the trailers
   `Test-change:` and `Test-review: agent#N CLEAN` (exact conditions: [PROCESS.md](PROCESS.md#quality-control-loop)). Reason: the aim is a working
   product, not a green badge; a weakened assertion turns a real failure into silence. Carrier: `PROCESS.md`,
   `.pi/agents/test-reviewer.toml`, `scripts/deliver-check.mjs`.
