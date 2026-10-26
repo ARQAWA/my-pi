@@ -67,6 +67,7 @@ async function fresh() {
 
 const ctx = (cwd: string) => ({ cwd, sessionManager: { getSessionId: () => "bg", getSessionFile: () => undefined } });
 const text = (result: any) => result.content.map((c: any) => c.text).join("\n");
+const quote = (value: string) => "'" + (WIN ? value.replaceAll("\\", "/") : value).replaceAll("'", "'\\''") + "'";
 let ids = 0;
 const call = (tool: any, params: any, cwd: string, signal?: AbortSignal, id = `c${ids++}`) => tool.execute(id, params, signal, undefined, ctx(cwd));
 // The first block is the JSON; a piggyback note (N1) may follow as a second block.
@@ -498,6 +499,209 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 		const done = await job(tools, dir, { action: "wait", ids: [queuedId], timeout_ms: 20000 });
 		assert.equal(done.results[0].state, "exited");
 		assert.match(done.results[0].result, /npm test/);
+	});
+
+	it("a queued bash refreshes its symlink footprint and snapshots at its real start", async (t) => {
+		const { dir, tools } = await fresh();
+		await mkdir(join(dir, "old"));
+		await mkdir(join(dir, "new"));
+		await writeFile(join(dir, "old/out.txt"), "OLD TARGET\n");
+		await writeFile(join(dir, "old/remove.txt"), "OLD REMOVE\n");
+		await writeFile(join(dir, "new/out.txt"), "BEFORE\n");
+		await writeFile(join(dir, "new/remove.txt"), "REMOVE\n");
+		await writeFile(join(dir, "first-deleted.txt"), "FIRST\n");
+		const linkType = WIN ? "junction" : "dir";
+		await symlink(join(dir, "old"), join(dir, "link"), linkType);
+		const script = join(dir, "retarget.cjs");
+		await writeFile(script, `const fs = require('node:fs'); fs.unlinkSync('link'); fs.symlinkSync(fs.realpathSync('new'), 'link', '${linkType}');`);
+		t.after(async () => {
+			await writeFile(join(dir, "first-gate"), "");
+			await writeFile(join(dir, "second-gate"), "");
+		});
+		const firstCommand = `printf 'first-started\\n'; while [ ! -f first-gate ]; do sleep 0.02; done; ${quote(process.execPath)} ${quote(script)}; printf first > first-created.txt; rm first-deleted.txt`;
+		const secondCommand = "printf 'second-started\\n'; while [ ! -f second-gate ]; do sleep 0.02; done; printf 'NEW\\n' > link/out.txt; rm link/remove.txt; cat link/out.txt";
+		const [first, second] = await Promise.all([
+			call(tools.bash, { command: firstCommand }, dir),
+			call(tools.bash, { command: secondCommand }, dir),
+		]);
+		assert.match(text(first), /^job#1 \(bash\) is still (running|queued)/);
+		assert.match(text(second), /^job#2 \(bash\) is still queued/);
+		await running(tools, dir, "job#1", "first-started");
+		// These writes and the retarget happen while job#2 is queued. They are its baseline, not its effects.
+		await writeFile(join(dir, "first-gate"), "");
+		await running(tools, dir, "job#2", "second-started");
+		const later = await call(tools.write, { path: "new/out.txt", content: "LATER\n" }, dir);
+		assert.match(text(later), /^job#3 \(write\) is still queued/, "the refreshed hold covers the new symlink target");
+		await writeFile(join(dir, "second-gate"), "");
+		const done = await job(tools, dir, { action: "wait", ids: ["job#2"], timeout_ms: 20000 });
+		assert.match(done.results[0].result, /second-started\nNEW\n/);
+		const effects = done.results[0].effects;
+		assert.deepEqual(effects.created, ["second-gate"], JSON.stringify(effects));
+		assert.deepEqual(effects.changed, ["new/out.txt"], JSON.stringify(effects));
+		assert.deepEqual(effects.deleted, ["new/remove.txt"], JSON.stringify(effects));
+		const followed = await job(tools, dir, { action: "wait", ids: ["job#3"], timeout_ms: 20000 });
+		assert.equal(followed.results[0].state, "exited");
+		assert.equal(await readFile(join(dir, "old/out.txt"), "utf8"), "OLD TARGET\n");
+		assert.equal(await readFile(join(dir, "new/out.txt"), "utf8"), "LATER\n");
+	});
+
+	it("a refreshed bash scope follows target changes through every held wait", async (t) => {
+		const { dir, tools, jobs } = await fresh();
+		for (const name of ["old", "new", "third"]) await mkdir(join(dir, name));
+		await writeFile(join(dir, "old/out.txt"), "OLD\n");
+		await writeFile(join(dir, "new/out.txt"), "BEFORE\n");
+		await writeFile(join(dir, "third/out.txt"), "THIRD\n");
+		const linkType = WIN ? "junction" : "dir";
+		await symlink(join(dir, "old"), join(dir, "link"), linkType);
+		const retarget = (from: string, to: string) => {
+			const script = join(dir, `retarget-${from}.cjs`);
+			return writeFile(script, `const fs = require('node:fs'); fs.unlinkSync('link'); fs.symlinkSync(fs.realpathSync('${to}'), 'link', '${linkType}');`);
+		};
+		await retarget("old", "new");
+		await retarget("new", "third");
+		t.after(async () => {
+			for (const gate of ["a-gate", "d-gate", "b-gate", "c-gate"]) await writeFile(join(dir, gate), "");
+		});
+		const holderCommand = `printf 'A-started\\n'; while [ ! -f a-gate ]; do sleep 0.02; done; printf 'A\\n' > new/out.txt; ${quote(process.execPath)} ${quote(join(dir, "retarget-new.cjs"))}`;
+		await call(tools.bash, { command: holderCommand }, dir);
+		await running(tools, dir, "job#1", "A-started");
+		const thirdCommand = "printf 'D-started\\n'; while [ ! -f d-gate ]; do sleep 0.02; done; printf 'D\\n' > third/out.txt";
+		await call(tools.bash, { command: thirdCommand }, dir);
+		await running(tools, dir, "job#2", "D-started");
+		const retargetCommand = `printf 'B-started\\n'; while [ ! -f b-gate ]; do sleep 0.02; done; ${quote(process.execPath)} ${quote(join(dir, "retarget-old.cjs"))}`;
+		const nextCommand = "printf 'C-started\\n'; while [ ! -f c-gate ]; do sleep 0.02; done; printf 'C\\n' > link/out.txt";
+		const [retargeted, next] = await Promise.all([
+			call(tools.bash, { command: retargetCommand }, dir),
+			call(tools.bash, { command: nextCommand }, dir),
+		]);
+		assert.match(text(retargeted), /^job#3 \(bash\) is still (running|queued)/);
+		assert.match(text(next), /^job#4 \(bash\) is still queued/);
+		await writeFile(join(dir, "b-gate"), "");
+		await jobs.settled("job#3");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		const blocked = await job(tools, dir, { action: "status", ids: ["job#4"] });
+		assert.ok(blocked.statuses[0].waiting_for?.some((entry: string) => entry.includes("job#1") && entry.includes("new/out.txt")), JSON.stringify(blocked));
+		await writeFile(join(dir, "a-gate"), "");
+		await jobs.settled("job#1");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		const retargetedAgain = await job(tools, dir, { action: "status", ids: ["job#4"] });
+		assert.ok(retargetedAgain.statuses[0].waiting_for?.some((entry: string) => entry.includes("job#2") && entry.includes("third/out.txt")), JSON.stringify(retargetedAgain));
+		await writeFile(join(dir, "d-gate"), "");
+		await jobs.settled("job#2");
+		await running(tools, dir, "job#4", "C-started");
+		await writeFile(join(dir, "c-gate"), "");
+		const done = await job(tools, dir, { action: "wait", ids: ["job#4"], timeout_ms: 20000 });
+		assert.equal(done.results[0].state, "exited");
+		assert.equal(await readFile(join(dir, "old/out.txt"), "utf8"), "OLD\n");
+		assert.equal(await readFile(join(dir, "new/out.txt"), "utf8"), "A\n");
+		assert.equal(await readFile(join(dir, "third/out.txt"), "utf8"), "C\n");
+	});
+
+	it("a bash claim wait refreshes and reacquires the final resources", async (t) => {
+		const { dir, tools, jobs } = await fresh();
+		for (const name of ["old", "new", "third", "new/bin", "third/bin"]) await mkdir(join(dir, name), { recursive: true });
+		await writeFile(join(dir, "old/out.txt"), "OLD\n");
+		await writeFile(join(dir, "new/out.txt"), "NEW\n");
+		await writeFile(join(dir, "third/out.txt"), "THIRD\n");
+		const linkType = WIN ? "junction" : "dir";
+		await symlink(join(dir, "old"), join(dir, "link"), linkType);
+		for (const [from, to] of [["old", "new"], ["new", "third"]]) {
+			await writeFile(join(dir, `retarget-${from}.cjs`), `const fs = require('node:fs'); fs.unlinkSync('link'); fs.symlinkSync(fs.realpathSync('${to}'), 'link', '${linkType}');`);
+		}
+		await writeFile(join(dir, "retarget-old.sh"), `#!/bin/sh\n${quote(process.execPath)} ${quote(join(dir, "retarget-old.cjs"))}\n`);
+		await writeFile(join(dir, "new/bin/npm"), `#!/bin/sh\nprintf 'A-started\\n'\nwhile [ ! -f ../a-gate ]; do sleep 0.02; done\ncd ..\n${quote(process.execPath)} ${quote(join(dir, "retarget-new.cjs"))}\n`, { mode: 0o755 });
+		await writeFile(join(dir, "third/bin/npm"), "#!/bin/sh\nprintf 'E-started\\n'\nwhile [ ! -f ../e-gate ]; do sleep 0.02; done\n", { mode: 0o755 });
+		t.after(async () => {
+			for (const gate of ["a-gate", "e-gate", "b-gate", "c-gate"]) await writeFile(join(dir, gate), "");
+		});
+		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "agent#2" });
+		const other = Object.fromEntries(createTools(dir, () => ({}), createNestedBarrier(), { jobs: otherJobs }).map((tool) => [tool.name, tool as any]));
+		await call(other.bash, { command: "cd new; PATH=\"$PWD/bin:$PATH\" npm ci" }, dir);
+		await running(other, dir, "job#1", "A-started");
+		await call(other.bash, { command: "cd third; PATH=\"$PWD/bin:$PATH\" npm ci" }, dir);
+		await running(other, dir, "job#2", "E-started");
+		const retargetCommand = `printf 'B-started\\n'; while [ ! -f b-gate ]; do sleep 0.02; done; sh ${quote(join(dir, "retarget-old.sh"))}`;
+		const nextCommand = `cd link; ${quote(process.execPath)} -e ''; printf 'C-started\\n'; while [ ! -f ../c-gate ]; do sleep 0.02; done; printf 'C\\n' > out.txt`;
+		await Promise.all([
+			call(tools.bash, { command: retargetCommand }, dir),
+			call(tools.bash, { command: nextCommand }, dir),
+		]);
+		await writeFile(join(dir, "b-gate"), "");
+		await jobs.settled("job#1");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		const claiming = await job(tools, dir, { action: "status", ids: ["job#2"] });
+		assert.ok(claiming.statuses[0].waiting_for?.some((entry: string) => entry.includes("job#1") && entry.includes("package folder new")), JSON.stringify(claiming));
+		await writeFile(join(dir, "a-gate"), "");
+		await otherJobs.settled("job#1");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		const blocked = await job(tools, dir, { action: "status", ids: ["job#2"] });
+		assert.ok(blocked.statuses[0].waiting_for?.some((entry: string) => entry.includes("job#2") && entry.includes("package folder third")), JSON.stringify(blocked));
+		await writeFile(join(dir, "e-gate"), "");
+		await otherJobs.settled("job#2");
+		await running(tools, dir, "job#2", "C-started");
+		await writeFile(join(dir, "c-gate"), "");
+		const done = await job(tools, dir, { action: "wait", ids: ["job#2"], timeout_ms: 20000 });
+		assert.equal(done.results[0].state, "exited");
+		assert.equal(await readFile(join(dir, "new/out.txt"), "utf8"), "NEW\n");
+		assert.equal(await readFile(join(dir, "third/out.txt"), "utf8"), "C\n");
+	});
+
+	it("releases an acquired claim when aborted before execution", async (t) => {
+		const { dir, jobs } = await fresh();
+		await fakes(dir);
+		const controller = new AbortController();
+		const nested = createNestedBarrier();
+		const wrapped = {
+			...nested,
+			schedule(id, scope, run, handle) {
+				if (id === "abort") {
+					const acquire = scope.acquire;
+					scope.acquire = async () => {
+						const admission = await acquire?.();
+						controller.abort();
+						return admission;
+					};
+				}
+				return nested.schedule(id, scope, run, handle);
+			},
+		};
+		const tools = Object.fromEntries(createTools(dir, () => ({}), wrapped, { jobs }).map((tool) => [tool.name, tool as any]));
+		await assert.rejects(call(tools.bash, { command: P + "npm ci" }, dir, controller.signal, "abort"), /Operation aborted/);
+		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "agent#2" });
+		const other = Object.fromEntries(createTools(dir, () => ({}), createNestedBarrier(), { jobs: otherJobs }).map((tool) => [tool.name, tool as any]));
+		const otherController = new AbortController();
+		t.after(() => otherController.abort());
+		// A short own timeout disables handoff and its snapshot: only a leaked claim can hold this fake command.
+		const result = await within("the released package claim", call(other.bash, { command: P + "npm test", timeout: 1 }, dir, otherController.signal), 5000);
+		assert.match(text(result), /npm test/);
+	});
+
+	it("a direct nested bash still acquires the process-wide claim", async () => {
+		const dir = join(root, `t${counter++}`);
+		await mkdir(dir, { recursive: true });
+		await fakes(dir);
+		const otherJobs = trackedJobs({ backgroundAfterMs: THRESHOLD, label: "agent#2" });
+		const other = Object.fromEntries(createTools(dir, () => ({}), createNestedBarrier(), { jobs: otherJobs }).map((tool) => [tool.name, tool as any]));
+		await call(other.bash, { command: P + "npm ci" }, dir);
+		await running(other, dir, "job#1", "npm ci");
+		const nested = createNestedBarrier();
+		let directStarted = false;
+		const wrapped = {
+			...nested,
+			schedule(id, scope, run, handle) {
+				const tracked = id === "outer/1" ? async () => { directStarted = true; return run(); } : run;
+				return nested.schedule(id, scope, tracked, handle);
+			},
+		};
+		const jobs = trackedJobs({ enabled: () => false });
+		const tools = Object.fromEntries(createTools(dir, () => ({}), wrapped, { jobs }).map((tool) => [tool.name, tool as any]));
+		const result = wrapped.schedule("outer", { kind: "all", keys: [] }, async () =>
+			tools.bash.execute("outer/1", { command: P + "npm test" }, undefined, undefined, ctx(dir)));
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		assert.equal(directStarted, false, "the direct nested command waits for the other session's install");
+		await open(dir);
+		assert.match(text(await result), /npm test/);
+		assert.equal(directStarted, true);
 	});
 
 	it("#8: a file written right before a job starts, untouched by it, gets no note and is not in its report", async (t) => {

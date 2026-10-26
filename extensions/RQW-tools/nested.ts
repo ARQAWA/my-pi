@@ -62,7 +62,8 @@ export function createNestedBarrier(): NestedBarrier {
       if (calls && calls.size < 256 && !calls.has(id)) calls.set(id, undefined);
       return own(scope, run, handle);
     }
-    for (let p = parentOf(id); p !== undefined; p = parentOf(p)) if (inOuter.has(p)) return run();
+    // Bypass only the ancestor's ordering: a fresh barrier still performs admission and releases acquired claims.
+    for (let p = parentOf(id); p !== undefined; p = parentOf(p)) if (inOuter.has(p)) return createBarrier()(scope, run, handle);
     inOuter.add(id);
     const done = outer(scope, run, handle);
     const leave = () => void inOuter.delete(id);

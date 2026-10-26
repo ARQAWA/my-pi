@@ -7,6 +7,10 @@ export type Scope = {
   keys: string[];
   /** Optional late scope: resolve after earlier all calls settled, before collecting conflicts. */
   resolve?: () => Scope;
+  /** Refresh the resolved scope at execution, returning whether it changed; held entries are checked again. */
+  beforeRun?: () => boolean | void;
+  /** Acquire external resources; the scope is refreshed and held entries are checked again afterwards. */
+  acquire?: () => Promise<void | (() => void)>;
   /**
    * What an "all" call certainly touches (bash, footprint.ts): checked only against held entries of background jobs.
    * `tags` are `pkg:`/`git:` resources, `writes` file keys.
@@ -97,8 +101,32 @@ export function createBarrier(): Schedule {
       await Promise.allSettled(deps.map((e) => e.done));
       if (withdrawn) return;
       if (failure) throw failure.error;
+      let admission: void | (() => void);
+      try {
+        for (;;) {
+          scope.beforeRun?.();
+          let lateHeld = earlier.filter((e) => e.held && !deps.includes(e) && !e.handle.finished && heldConflicts(e.held, entry.scope));
+          if (!lateHeld.length) {
+            admission = await scope.acquire?.();
+            if (withdrawn) { admission?.(); return; }
+            const changed = scope.beforeRun?.();
+            lateHeld = earlier.filter((e) => e.held && !deps.includes(e) && !e.handle.finished && heldConflicts(e.held, entry.scope));
+            if (!lateHeld.length && !changed) break;
+            admission?.();
+            admission = undefined;
+            if (!lateHeld.length) continue;
+          }
+          deps.push(...lateHeld);
+          await Promise.allSettled(lateHeld.map((e) => e.done));
+          if (withdrawn) { admission?.(); return; }
+        }
+      } catch (error) {
+        admission?.();
+        throw error;
+      }
       handle.started = true;
-      return run();
+      try { return await run(); }
+      finally { admission?.(); }
     }).then((value) => { if (!withdrawn) outcome.resolve(value as T); }, (error) => { if (!withdrawn) outcome.reject(error); });
     const done = outcome.promise;
     handle.withdraw = () => {

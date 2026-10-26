@@ -18,6 +18,16 @@ running file operations that finish after their host call is cancelled. It finis
 before the outer barrier releases same-response followers. Background handoff and
 later-response resource holds keep the `D-TOOLS-BG` contract in `DECISIONS.md`.
 
+## Bash command-start state
+
+A Bash footprint is refreshed when its barrier scope resolves and at execution.
+Every held-file or process-wide resource wait triggers another refresh and dependency
+check until no new dependency remains. The same refreshed value supplies the explicit
+barrier scope, claims, detached background holds and foreground write attribution.
+Eligible process calls take their pre-start effects snapshot in `job.begin()` after
+barrier and resource waits. Changes made by queued predecessors are therefore the
+baseline, while the command's own changes and deletions appear in its effects report.
+
 ## Background activity counts
 
 The main registry offers a version-1 source on `rqw:running-counts:offer` at each

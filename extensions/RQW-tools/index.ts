@@ -238,41 +238,57 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 				const dir = ctx?.cwd || process.cwd();
 				// What a bash command certainly touches (holds H1): checked against the holds of background jobs.
 				const footprint = name === "bash" ? classifyBash(params?.command, dir) : undefined;
+				const refreshFootprint = () => {
+					if (!footprint) return false;
+					const next = classifyBash(params?.command, dir);
+					const same = (a: readonly (string | number)[], b: readonly (string | number)[]) => a.length === b.length && a.every((v, i) => v === b[i]);
+					const changed = footprint.server !== next.server || !same(footprint.held.files, next.held.files) || !same(footprint.held.tags, next.held.tags)
+						|| !same(footprint.explicit.tags, next.explicit.tags) || !same(footprint.explicit.writes, next.explicit.writes)
+						|| !same(footprint.written, next.written) || !same(footprint.ports, next.ports) || !same(footprint.holds, next.holds);
+					// A queued handoff may already have given these objects to the barrier: refresh them in place.
+					footprint.held.files.splice(0, footprint.held.files.length, ...next.held.files);
+					footprint.held.tags.splice(0, footprint.held.tags.length, ...next.held.tags);
+					footprint.explicit.tags.splice(0, footprint.explicit.tags.length, ...next.explicit.tags);
+					footprint.explicit.writes.splice(0, footprint.explicit.writes.length, ...next.explicit.writes);
+					footprint.written.splice(0, footprint.written.length, ...next.written);
+					footprint.ports.splice(0, footprint.ports.length, ...next.ports);
+					footprint.holds.splice(0, footprint.holds.length, ...next.holds);
+					footprint.server = next.server;
+					return changed;
+				};
 				// Resolve after earlier all calls: bash may have changed a symlink target while this call waited.
-				const scope = { kind: "all" as const, keys: [], resolve: () => {
-					const resolved = scopeOf(name, params, dir);
-					return footprint ? { ...resolved, explicit: footprint.explicit } : resolved;
-				} };
+				const scope = { kind: "all" as const, keys: [], beforeRun: refreshFootprint,
+					acquire: undefined as (() => Promise<void | (() => void)>) | undefined, resolve: () => {
+						refreshFootprint();
+						const resolved = scopeOf(name, params, dir);
+						return footprint ? { ...resolved, explicit: footprint.explicit } : resolved;
+					} };
 				// A call inside a codemode script never goes to the background: the script awaits its real result. Its bash
 				// takes the same process-wide git and package-folder claim as a top-level one (holds of other sessions and of
 				// background jobs), waiting inside the script.
 				if (id.includes("/")) {
+					scope.acquire = () => claimFor(footprint, () => `a codemode script call of ${label}`, signal ?? new AbortController().signal);
 					return nested.schedule(id, scope, async () => {
 						if (signal?.aborted) throw new Error("Operation aborted");
-						const release = await claimFor(footprint, () => `a codemode script call of ${label}`, signal ?? new AbortController().signal);
-						try {
-							const result = await withFiles(name, dir, params, false, () => run(id, params, signal, onUpdate, ctx));
-							return nested.observe(id, name, params, result);
-						} finally {
-							release?.();
-						}
+						const result = await withFiles(name, dir, params, false, () => run(id, params, signal, onUpdate, ctx));
+						return nested.observe(id, name, params, result);
 					});
 				}
 				// Registered synchronously here, inside `run`, before any await: barrier order stays message order.
 				const spec = { tool: name, command: commandOf(name, params), signal, onUpdate, process: name === "bash", cwd: dir, footprint,
 					timeoutSeconds: name === "bash" ? params?.timeout : undefined };
-				return jobs.run(spec, (job) =>
-					nested.schedule(id, scope, async () => {
-						if (job.signal.aborted) throw new Error("Operation aborted");
-						// git and package folders are held across sessions of this process (main, subagents).
-						const release = await claimFor(footprint, () => job.describe(), job.signal, (blockers) => job.waitingOn(blockers));
-						// A server naming a port a running job serves: the note goes into the handoff or the result.
-						const portNotes = (footprint?.server ? footprint.ports : []).flatMap((port) => {
-							const by = servedBy(port);
-							return by ? [`note: ${by} already serves port ${port}.`] : [];
-						});
-						for (const n of portNotes) job.note(n);
+				return jobs.run(spec, (job) => {
+					// git and package folders are held across sessions of this process (main, subagents).
+					scope.acquire = () => claimFor(footprint, () => job.describe(), job.signal, (blockers) => job.waitingOn(blockers));
+					return nested.schedule(id, scope, async () => {
 						try {
+							if (job.signal.aborted) throw new Error("Operation aborted");
+							// A server naming a port a running job serves: the note goes into the handoff or the result.
+							const portNotes = (footprint?.server ? footprint.ports : []).flatMap((port) => {
+								const by = servedBy(port);
+								return by ? [`note: ${by} already serves port ${port}.`] : [];
+							});
+							for (const n of portNotes) job.note(n);
 							await job.begin();
 							const result = await withFiles(name, dir, params, true, () => run(id, params, job.signal, job.onUpdate, ctx, job), { id, ctx, job });
 							// The files a foreground bash command certainly wrote are the caller's own writes (effects reports of
@@ -282,9 +298,9 @@ export function createTools(cwd: string, settings: () => any, nested = createNes
 						} finally {
 							// Before the barrier releases the calls queued behind it (they may write at once).
 							await job.settle();
-							release?.();
 						}
-					}, job.barrier)).then((result) => appendNotes(result, [jobs.piggyback()]));
+					}, job.barrier);
+				}).then((result) => appendNotes(result, [jobs.piggyback()]));
 			},
 		} as any);
 	}
