@@ -9,7 +9,7 @@ const END = "<!-- repo-index:end -->";
 const purposes = {
   "RQW-settings": "Harness defaults, tool selection and GPT Fast settings",
   "RQW-prompt": "System prompt replacement and environment context",
-  "RQW-tools": "Base tools, ordered execution and background jobs",
+  "RQW-tools": "Base tools and background jobs",
   "RQW-context": "Context window and compaction reserve policy",
   "RQW-agent": "Recursive subagents, profiles and persisted sessions",
   "RQW-review": "Reviewer profiles and native Agent Skills",
@@ -23,7 +23,6 @@ const purposes = {
   "RQW-providers": "Provider visibility without credential removal",
   "RQW-codex": "Codex subscription authentication and protocol overlay",
   "RQW-web": "Subscription web search and public URL reading",
-  "RQW-thinking": "Hide thinking in the transcript without changing context",
   "RQW-naming": "Background native session name generation",
   "RQW-agent-ui": "Compact delivered agent result cards",
   "RQW-tool-ui": "Compact tool calls and output rendering",
@@ -62,19 +61,17 @@ const modules = {
   render: "Terminal row and component rendering", changes: "Tool change summary extraction",
   classify: "Tool call classification", fallback: "Stock output rendering fallback",
   groups: "Tool call grouping", live: "Live tool output state", summary: "Collapsed tool summaries",
-  barrier: "Ordered tool execution barrier", codemode: "Built-in codemode integration",
-  edit: "Multi-file exact text edits", footprint: "Command write footprint inference",
-  hint: "Tool usage hints", jobs: "Background job lifecycle and notifications",
-  keys: "Execution resource keys", ledger: "Process-wide execution ownership ledger",
-  "nested-display": "Nested tool display metadata", nested: "Nested tool execution",
-  unchanged: "Unchanged read detection and forced reads", write: "Multi-file writes",
+  codemode: "Built-in codemode integration",
+  edit: "Multi-file exact text edits", hint: "Tool usage hints", jobs: "Background job lifecycle and notifications",
+  keys: "Multi-file filesystem identities",
+  write: "Multi-file writes",
   tool: "Web tool schema and registration", batch: "Parallel web request batches",
   credentials: "Read-only saved subscription credential loading", engine: "Web search and URL request execution",
   "model-map": "Caller model and reasoning mapping", pool: "Web request concurrency pool",
   report: "Web result report assembly", "safe-text": "Untrusted web text handling",
   truncate: "Web result length handling", types: "Web request and result types",
-  "capture-oracle": "Capture native Codex protocol evidence", "check-oracle": "Compare protocol evidence",
-  "oracle-diagnostic": "Diagnose native protocol evidence", "pin-native-differential": "Pinned native protocol comparison",
+  "capture-oracle": "Capture native Codex protocol evidence",
+  "oracle-diagnostic": "Diagnose native protocol evidence",
 };
 
 function description(file, name) {
@@ -139,12 +136,12 @@ function rootIndex(manifest) {
     "- [PROCESS.md](PROCESS.md): mandatory development procedure; [process/](process/) holds task-loaded rules.",
     "- [DECISIONS.md](DECISIONS.md): accepted choices; [BACKLOG.md](BACKLOG.md): open and held work.",
     "- [extensions/](extensions/): independent package extensions and native theme data.",
-    "- [test/extensions/](test/extensions/): mirrored extension tests; [test/](test/): repository integration tests.",
+    "- [test/extensions/](test/extensions/): mirrored extension tests; [test/](test/): repository tests.",
     "- [scripts/](scripts/): repository development and delivery tooling.",
     "- [pcli-vscode/](pcli-vscode/): bundled Windows VS Code terminal extension, outside pi.extensions.",
     "- [.pi/](.pi/): repository-only agent profiles and development extensions.",
     "- [.github/workflows/](.github/workflows/): CI and quality notifications.",
-    "- [notes/](notes/) and [INSTALL.md](INSTALL.md): research and installation.", "",
+    "- [INSTALL.md](INSTALL.md): installation.", "",
     "## Extension load order", "", "Derived from `package.json` -> `pi.extensions`. Each extension uses `index.ts` with meaning-named modules and resources beside it. Subfolders group needed resources; there is no `src/` layer. Large files are mapped, not split by this index.", "",
     "| Order | Extension and file map | Entrypoint | Tests | Purpose |", "| --- | --- | --- | --- | --- |", ...rows, "",
     "## Native theme resources", "",
@@ -153,7 +150,7 @@ function rootIndex(manifest) {
       return `- [\`${path}\`](${path}): native \`pi.themes\` data, not an extension and no fake entrypoint. [File map](${dirname(path)}/README.md).`;
     }), "", "## Keep this index current", "",
     "After changing the manifest or adding, removing or renaming extension files, run `node scripts/repo-index.mjs --write`. Update the generator's short descriptions when responsibilities change. Hand-written README content outside generated markers is preserved.",
-    "Run `node scripts/repo-index.mjs --check` to detect stale maps. `test/repo-index.test.ts` also checks freshness through `npm test`.", ""].join("\n");
+    "Run `node scripts/repo-index.mjs --check` to detect stale maps.", ""].join("\n");
 }
 
 export function generate(root = ROOT, mode = "--check") {

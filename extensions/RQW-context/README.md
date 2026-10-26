@@ -23,8 +23,8 @@ Hooks are process-wide while any extension owner remains. `session_shutdown` rel
 SDK `dispose()` alone does not. Unsupported private Pi boundaries fail at load. Restart Pi after updating
 hook implementations; `/reload` alone is insufficient. The extension can be disabled independently.
 
-Tests: `test/extensions/RQW-context/context.test.ts`, `test/extensions/RQW-context/audit.test.ts`, `test/extensions/RQW-context/state.test.ts`, `test/extensions/RQW-context/routing.test.ts`.
-See [context details](../../notes/context-questions.md) and [decisions](../../DECISIONS.md#context).
+Tests: `test/extensions/RQW-context/context.test.ts`.
+See [decisions](../../DECISIONS.md#context).
 
 <!-- repo-index:start -->
 ## File map

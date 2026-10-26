@@ -1,6 +1,6 @@
 import type { CredentialStore } from "@earendil-works/pi-ai";
 
-// Claude Code 2.1.310's plain usage read. Provenance: notes/anthropic-quota.md.
+// Claude Code 2.1.310's plain usage read.
 export const QUOTA_URL = "https://api.anthropic.com/api/oauth/usage";
 export const QUOTA_EVENT = "rqw-anthropic:quota:v1";
 export const QUOTA_WINDOWS = [

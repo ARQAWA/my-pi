@@ -3,12 +3,20 @@
 This is the canonical testing and proof rule. QA-specific triage and intermittent-failure evidence stay in
 [Quality control loop](quality-control-loop.md); delivery mechanics stay in [Delivery](../PROCESS.md#delivery).
 
-- Test risk and public behavior, not implementation details or coverage. Every test protects a concrete behavior:
-  real bugs get regression tests and critical scenarios get contract tests. There is no test without a risk,
-  no coverage target and no duplicate check of the same risk.
-- Use the cheapest adequate level: unit tests only for algorithms, integration tests for interactions and
-  end-to-end tests only for critical paths. Use controlled network doubles, but real files and real Pi where
-  applicable. Windows behavior is proven on Windows.
+1. For a new feature, write one happy-path test and only its critical branches tied to the target behavior.
+2. For a real bug, write one regression test.
+3. Call the module's public function.
+4. Assert only the returned result, never internal calls or call order.
+5. Use fakes only for the outside world: network, model, clock and Pi.
+6. Do not mock our own modules.
+7. Keep small test data inline in the test.
+8. A temporary folder is allowed.
+9. Use no sleeps, real timers, end-to-end tests or integration tests; all tests are synthetic.
+10. Use a fixed clock and fixed data, with no randomness; tests are independent of order.
+11. Write the test from the requirement, not the code. It must fail without the change; no tautologies.
+12. Compare bytes only for the exact static fragment that must be static, never a whole file or dynamic parts.
+13. One test runs in milliseconds; an extension's suite runs in about a second.
+14. Per task, run only the touched extension's tests. Run the full suite once before merging into main.
 - Do not use blind sleeps, arbitrary timeouts or reruns until green. Replace timing assumptions with observable
   events when the old timing was not a requirement.
 - Match proof to the change:
@@ -26,12 +34,11 @@ This is the canonical testing and proof rule. QA-specific triage and intermitten
 - CPU-heavy repeat loops, pressure runs and load probes run in GitHub Actions, not on the owner's MacBook Air.
   Other local checks stay focused. Windows checks run in CI too, including relevant Node, Bun and PortableGit
   coverage, but are advisory and do not gate a merge ([Task pipeline](task-pipeline.md)). Linux is out of scope.
-- Run `npm run test:bun` in CI when Bun/codemode behavior is affected. Test extension isolation when affected.
 - Save check and probe logs in OS temporary storage. Every number in a report or documentation points to a CI run
   URL or a named saved log; never report counts from memory.
 - Test exactly what gets merged. The base and final-head checks follow [Delivery](../PROCESS.md#delivery). No GitHub
   run needs to be triggered or awaited for a merge.
-- Root documentation, notes and development instructions alone do not justify application tests or model runs.
+- Root documentation and development instructions alone do not justify application tests or model runs.
   A workflow change requires validating its triggers and affected Windows jobs. Never claim a queued or incomplete
   run passed.
 - Everyone who writes, generates, fixes or reviews tests checks that behavior matches requirements, never that the

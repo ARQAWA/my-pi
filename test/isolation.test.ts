@@ -21,7 +21,7 @@ const NAMES: string[] = MANIFEST.pi.extensions.map(
 
 it("isolation: manifest resources are unique and agent cards precede compact tool rendering", () => {
 	assert.equal(new Set(MANIFEST.pi.extensions).size, MANIFEST.pi.extensions.length);
-	assert.deepEqual(NAMES.slice(-4), ["RQW-thinking", "RQW-naming", "RQW-agent-ui", "RQW-tool-ui"]);
+	assert.deepEqual(NAMES.slice(-3), ["RQW-naming", "RQW-agent-ui", "RQW-tool-ui"]);
 	assert.ok(NAMES.indexOf("RQW-agent-ui") < NAMES.indexOf("RQW-tool-ui"));
 	assert.deepEqual(MANIFEST.pi.themes, ["./extensions/RQW-theme/theme.json"]);
 	assert.ok(!NAMES.includes("RQW-theme"));

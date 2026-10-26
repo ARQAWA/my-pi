@@ -1,6 +1,6 @@
 # Third-party notices
 
-RQW-codex ports application-protocol mechanics from OpenAI Codex, stable `rust-v0.163.0`, commit `83086188ae0614bd882818ff1aa23f3194962012`, Copyright OpenAI. Upstream is licensed under Apache License 2.0: https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/LICENSE . The TypeScript adapter is a separately maintained implementation, not an OpenAI product or Pi fork. Source-file attribution and reproducibility digests are in `test/fixtures/oracle-source.json`; ported mechanics are identified in source comments and the decision ledger.
+RQW-codex ports application-protocol mechanics from OpenAI Codex, stable `rust-v0.163.0`, commit `83086188ae0614bd882818ff1aa23f3194962012`, Copyright OpenAI. Upstream is licensed under Apache License 2.0: https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/LICENSE . The TypeScript adapter is a separately maintained implementation, not an OpenAI product or Pi fork. Source-file attribution and ported mechanics are identified in source comments and the decision ledger.
 
 Pi 1.4.0 is consumed unmodified through its npm package exports. The packaged WebSocket connector dependency retains its own license. No upstream binaries are copied into the product by the oracle CI harness.
 

@@ -51,7 +51,7 @@ mechanical weakening trigger, evidence requirements and delivery trailers remain
 `.agents/reviewers/test-integrity.md` is not an active resource. Test review uses the same native profile and agent
 lifecycle, without a second runner, permission changes or automatic execution. Read-only is an instruction.
 
-Focused offline checks: `node --test test/extensions/RQW-review/*.test.ts`.
+Tests: `test/extensions/RQW-review/profiles.test.ts`.
 The testreview fixtures include defective, corrected and missing-conversation probe cases; static checks prove
 resource contracts, not model detection quality.
 

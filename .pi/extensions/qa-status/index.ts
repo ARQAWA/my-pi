@@ -60,7 +60,7 @@ export function createQaStatus({ pi, getSnapshot = snapshot, now = Date.now }: {
 		if (!last || now() - Date.parse(last.at) > 60_000) void refresh(ctx.cwd);
 	});
 	pi.registerCommand("qa", {
-		description: "Show current QA inbox and workflow status",
+		description: "Show current workflow status",
 		handler: async (_args, ctx) => {
 			if (inFlight) await inFlight;
 			const state = await refresh(ctx.cwd);

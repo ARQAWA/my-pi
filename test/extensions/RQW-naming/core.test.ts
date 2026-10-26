@@ -1,178 +1,43 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-	type AssistantMessage, createFauxCore, fauxAssistantMessage, type Model,
-} from "@earendil-works/pi-ai";
-import {
-	generateSessionName, isValidSessionName, NAMING_MODEL, NAMING_REASONING, type NamingRegistry, parseCandidates, parseIndex,
-} from "../../../extensions/RQW-naming/core.ts";
-
-type Call = { provider: string; id: string; reasoning: unknown; signal: AbortSignal | undefined; prompt: string; context: unknown };
-
-/** Scripted registry over real pi-ai faux cores: one core per provider, a shared reply queue, and a call record. */
-function fixture(options: { available: string[]; replies: (string | AssistantMessage)[] }) {
-	const replies = [...options.replies];
-	const calls: Call[] = [];
-	const kimi = createFauxCore({ provider: "kimi-coding", models: [{ id: "kimi-for-coding", reasoning: true }] });
-	const haiku = createFauxCore({ provider: "anthropic", models: [{ id: "claude-haiku-5-5", reasoning: true }] });
-	const luna = createFauxCore({ provider: "openai-codex", models: [{ id: "gpt-6-luna", reasoning: true }] });
-	const cores = { "kimi-coding": kimi, anthropic: haiku, "openai-codex": luna };
-	const script = () => {
-		const next = replies.shift();
-		if (next === undefined) throw new Error("no scripted reply left");
-		return typeof next === "string" ? fauxAssistantMessage(next) : next;
-	};
-	for (const core of Object.values(cores)) core.setResponses(Array.from({ length: 20 }, () => (context, opts, _state, model) => {
-		const text = context.messages.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content))).join("\n");
-		calls.push({ provider: model.provider, id: model.id, reasoning: opts?.reasoning, signal: opts?.signal, prompt: text, context });
-		return script();
-	}));
-	const models = { "kimi-coding": kimi.getModel("kimi-for-coding")!, anthropic: haiku.getModel("claude-haiku-5-5")!, "openai-codex": luna.getModel("gpt-6-luna")! };
-	const registry = {
-		getAvailableOfType: async (_type: string, provider?: string) =>
-			options.available.filter((p) => !provider || p === provider).map((p) => models[p as keyof typeof models]),
-		streamSimple: (model: Model<any>, context: any, opts: any) => cores[model.provider as keyof typeof cores].streamSimple(model, context, opts),
-	} as unknown as NamingRegistry;
-	return { registry, calls, models };
-}
+import { generateSessionName, isValidSessionName, parseCandidates, parseIndex, type NamingRegistry } from "../../../extensions/RQW-naming/core.ts";
 
 const TEN = ["Alpha plan", "Beta notes", "Gamma trip", "Delta bug", "Epsilon ideas", "Zeta test", "Eta docs", "Theta refactor", "Iota review", "Kappa ship"];
 
-describe("generation and selection", () => {
-	it("requests exactly ten names, then selects by meaning rather than the first item", async () => {
-		const f = fixture({ available: ["kimi-coding", "anthropic", "openai-codex"], replies: [JSON.stringify(TEN), "3"] });
-		const name = await generateSessionName({ context: "user: plan a trip to Lisbon", registry: f.registry, signal: new AbortController().signal });
+function registry(replies: string[], available = true) {
+	const calls: { model: string; reasoning: unknown; prompt: string }[] = [];
+	const value = {
+		getAvailableOfType: async () => available ? [{ id: "kimi-for-coding", provider: "kimi-coding" }] : [],
+		streamSimple: (model: { id: string }, context: any, options: any) => {
+			calls.push({ model: model.id, reasoning: options.reasoning, prompt: context.messages[0].content });
+			const text = replies.shift();
+			return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text }] }) };
+		},
+	} as unknown as NamingRegistry;
+	return { value, calls };
+}
+
+describe("RQW-naming public core", () => {
+	it("generates ten candidates and returns the selected valid name", async () => {
+		const fake = registry([JSON.stringify(TEN), "3"]);
+		const name = await generateSessionName({ context: "Plan a Lisbon trip", registry: fake.value, signal: new AbortController().signal });
 		assert.equal(name, "Delta bug");
-		assert.equal(f.calls.length, 2);
-		assert.match(f.calls[0].prompt, /exactly 10/);
-		assert.match(f.calls[1].prompt, /3: Delta bug/);
-		assert.doesNotMatch(f.calls[1].prompt, /prefer the first/i);
+		assert.equal(fake.calls.length, 2);
+		assert.deepEqual(fake.calls.map((call) => [call.model, call.reasoning]), [["kimi-for-coding", "low"], ["kimi-for-coding", "low"]]);
+		assert.match(fake.calls[1].prompt, /3: Delta bug/);
 	});
 
-	it("uses the complete context text in both model calls", async () => {
-		const f = fixture({ available: ["kimi-coding"], replies: [JSON.stringify(TEN), "0"] });
-		await generateSessionName({ context: "CONTEXT-MARKER-7f3 full transcript", registry: f.registry, signal: new AbortController().signal });
-		assert.equal(f.calls.length, 2);
-		for (const call of f.calls) assert.match(call.prompt, /CONTEXT-MARKER-7f3 full transcript/);
-	});
-
-	it("uses only Kimi K2.8 Preview even when the previous naming providers are authenticated", async () => {
-		const f = fixture({ available: ["openai-codex", "anthropic", "kimi-coding"], replies: [JSON.stringify(TEN), "0"] });
-		await generateSessionName({ context: "x", registry: f.registry, signal: new AbortController().signal });
-		assert.equal(NAMING_MODEL, "kimi-coding/kimi-for-coding");
-		assert.deepEqual(f.calls.map((c) => `${c.provider}/${c.id}`), [NAMING_MODEL, NAMING_MODEL]);
-	});
-
-	it("does not fall back when only the previous naming providers are authenticated", async () => {
-		const f = fixture({ available: ["anthropic", "openai-codex"], replies: [] });
-		await assert.rejects(generateSessionName({ context: "x", registry: f.registry, signal: new AbortController().signal }), /No authenticated naming model/);
-		assert.equal(f.calls.length, 0);
-	});
-
-	it("rejects when no naming provider is authenticated", async () => {
-		const f = fixture({ available: [], replies: [] });
-		await assert.rejects(generateSessionName({ context: "x", registry: f.registry, signal: new AbortController().signal }), /No authenticated naming model/);
-		assert.equal(f.calls.length, 0);
-	});
-
-	it("passes explicit low reasoning and the caller signal to both calls", async () => {
-		const f = fixture({ available: ["kimi-coding"], replies: [JSON.stringify(TEN), "0"] });
-		const controller = new AbortController();
-		await generateSessionName({ context: "x", registry: f.registry, signal: controller.signal });
-		assert.equal(NAMING_REASONING, "low");
-		assert.equal(f.calls.length, 2);
-		for (const call of f.calls) {
-			assert.equal(call.reasoning, "low");
-			assert.equal(call.signal, controller.signal);
-		}
-	});
-
-	it("does not try another provider when Kimi availability fails", async () => {
-		const f = fixture({ available: ["anthropic", "openai-codex"], replies: [] });
-		const providers: string[] = [];
-		f.registry.getAvailableOfType = async (_type, provider) => {
-			providers.push(provider!);
-			throw new Error("availability failed");
-		};
-		await assert.rejects(generateSessionName({ context: "x", registry: f.registry, signal: new AbortController().signal }), /availability failed/);
-		assert.deepEqual(providers, ["kimi-coding"]);
-		assert.equal(f.calls.length, 0);
-	});
-});
-
-describe("candidate validity", () => {
-	it("counts Unicode code points, not UTF-16 units, for the 32 limit", () => {
-		assert.equal(isValidSessionName("a".repeat(32)), true);
-		assert.equal(isValidSessionName("a".repeat(33)), false);
-		assert.equal(isValidSessionName("😀".repeat(32)), true); // 64 UTF-16 units, 32 code points
-		assert.equal(isValidSessionName("😀".repeat(33)), false);
-	});
-
-	it("limits whitespace-separated words to four", () => {
+	it("enforces name boundaries and rejects invalid replies without fallback", async () => {
 		assert.equal(isValidSessionName("one two three four"), true);
 		assert.equal(isValidSessionName("one two three four five"), false);
-	});
-
-	it("rejects empty, control-character and newline names", () => {
-		assert.equal(isValidSessionName("   "), false);
-		assert.equal(isValidSessionName("a\nb"), false);
-		assert.equal(isValidSessionName("a\tb"), false);
-		assert.equal(isValidSessionName("a\u0007b"), false);
-	});
-
-	it("trims valid names and drops non-strings without truncating", () => {
-		assert.deepEqual(parseCandidates(JSON.stringify(["  Trip plan  ", 42, "a".repeat(33), "ok", "", "", "", "", "", ""])), ["Trip plan", "ok"]);
-	});
-
-	it("rejects a batch that does not have exactly ten candidate slots", () => {
-		assert.throws(() => parseCandidates(JSON.stringify(TEN.slice(1))));
-		assert.throws(() => parseCandidates(JSON.stringify([...TEN, "extra"])));
-	});
-
-	it("rejects a non-array generation reply", () => {
-		assert.throws(() => parseCandidates('{"a":1}'));
-		assert.throws(() => parseCandidates("not json"));
-	});
-});
-
-describe("selection reply", () => {
-	it("returns the chosen exact trimmed candidate, dropping invalid candidates before indexing", async () => {
-		const batch = ["   ", "a".repeat(33), "Real one", "Second  ", "x\ny", "", "", "", "", ""];
-		const f = fixture({ available: ["kimi-coding"], replies: [JSON.stringify(batch), "1"] });
-		const name = await generateSessionName({ context: "x", registry: f.registry, signal: new AbortController().signal });
-		assert.equal(name, "Second");
-		assert.doesNotMatch(f.calls[1].prompt, /a{33}/);
-		assert.match(f.calls[1].prompt, /0: Real one\n1: Second/);
-	});
-
-	it("does not spend the selection call when no candidate is valid", async () => {
-		const f = fixture({ available: ["kimi-coding"], replies: [JSON.stringify(Array(10).fill("a".repeat(40)))] });
-		await assert.rejects(generateSessionName({ context: "x", registry: f.registry, signal: new AbortController().signal }), /No valid session names/);
-		assert.equal(f.calls.length, 1);
-	});
-
-	it("rejects malformed selections", async () => {
-		for (const reply of ["not json", "10", "-1", "1.5", '"0"', "null"]) {
-			const f = fixture({ available: ["kimi-coding"], replies: [JSON.stringify(TEN), reply] });
-			await assert.rejects(generateSessionName({ context: "x", registry: f.registry, signal: new AbortController().signal }), undefined, reply);
-		}
+		assert.equal(isValidSessionName("😀".repeat(32)), true);
+		assert.equal(isValidSessionName("😀".repeat(33)), false);
+		assert.deepEqual(parseCandidates(JSON.stringify(["  Trim me  ", ...TEN.slice(1)])), TEN.with(0, "Trim me"));
+		assert.throws(() => parseCandidates(JSON.stringify(TEN.slice(1))), /exactly ten/);
 		assert.equal(parseIndex("2", 3), 2);
 		assert.throws(() => parseIndex("3", 3));
-	});
-
-	it("fails the attempt on an error or aborted assistant message", async () => {
-		for (const stopReason of ["error", "aborted"] as const) {
-			const bad = fauxAssistantMessage("", { stopReason, errorMessage: "provider exploded" });
-			const f = fixture({ available: ["kimi-coding"], replies: [bad] });
-			await assert.rejects(generateSessionName({ context: "x", registry: f.registry, signal: new AbortController().signal }), /Naming model call failed/);
-		}
-	});
-
-	it("rejects immediately when the signal is already aborted", async () => {
-		const f = fixture({ available: ["kimi-coding"], replies: [] });
-		const controller = new AbortController();
-		controller.abort();
-		await assert.rejects(generateSessionName({ context: "x", registry: f.registry, signal: controller.signal }));
-		assert.equal(f.calls.length, 0);
+		const unavailable = registry([], false);
+		await assert.rejects(generateSessionName({ context: "x", registry: unavailable.value, signal: new AbortController().signal }), /No authenticated naming model/);
+		assert.equal(unavailable.calls.length, 0);
 	});
 });

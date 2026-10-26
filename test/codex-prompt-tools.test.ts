@@ -24,7 +24,7 @@ const CASE_TIMEOUT_MS = 15_000;
 // Actual strings of the RQW sources (SYSTEM.md first line; RQW-tools before_agent_start sections).
 const PREAMBLE = "You operate in pi.";
 const SEARCH = "- Search with the grep and find tools and read files with read, following the method in the grep description.";
-const BARRIER = "- A shell command waits for the calls before it and holds the calls after it; one still running after 12 seconds continues in the background as a job, which holds the later calls of the same response and, from later responses, only calls that change what it names as held: a package folder it installs, the git index, files it writes.";
+const BARRIER = "- Bash and codemode calls run independently of other tool calls; one still running after 12 seconds continues in the background as a job.";
 const SEARCH_SECTION = "search_method";
 const BARRIER_SECTION = "rqw_tools_execution";
 const HISTORY_USER = "HISTORY-USER-1";

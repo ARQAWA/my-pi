@@ -13,7 +13,7 @@
   1. Proofreading: typos, wording, quote spans, links and formatting of passive documents, with no change of meaning
      and no new or changed rule. Proof is local and saved under [Delivery](../PROCESS.md#delivery). The message
      carries `Change-class: proofreading` and `Doc-check: <absolute log path>`, with no review trailer. Never use it
-     for runtime prompts, the `coordinator-rules` block, `package.json`, a changed rule or a `QA: #N` fix.
+     for runtime prompts, the `coordinator-rules` block, `package.json` or a changed rule.
   2. Ordinary: one independent review covers both result and code, including requirement completeness, real bugs,
      regressions and meaningful quality. Use blind review with `agent_type: "spotty"` unless the owner explicitly
      requests high review. Record exactly one `Review: agent#N CLEAN`; no separate code review or size threshold.

@@ -65,16 +65,12 @@ Reason: short meaningful native names without blocking the main agent, a manual
 candidate picker, or loss of a previous name on failure. Carriers: `core.ts`
 (candidate generation/validation/selection) and `index.ts` (triggers, cancellation,
 retries, notification, native persistence). The approved variant is four words
-AND 32 Unicode code points. The root [naming decision](../../DECISIONS.md#naming-and-thinking)
+AND 32 Unicode code points. The root [naming decision](../../DECISIONS.md#naming)
 records the accepted contract and package registration.
 
 ## Verification
 
-Focused tests live under `test/extensions/RQW-naming/`. They load only this extension and public Pi
-exports, with scripted faux models and isolated temporary storage. No real
-Kimi calls or owner settings are used. Run the focused files with Node's
-`--test` runner; full suites and Windows checks belong to GitHub Actions.
-Model output quality on live providers is not claimed by these deterministic tests.
+Tests: `test/extensions/RQW-naming/`.
 
 <!-- repo-index:start -->
 ## File map

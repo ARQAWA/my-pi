@@ -10,20 +10,16 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](../DECIS
   the task becomes waiting. Its agent finishes its turn or is paused, keeps its session and history, and ends its active execution;
   Main's coordination is never blocked. The merge agent and CI watcher follow any CI runs in the background.
 - Use the default notification waits of `agent` and `job`: a direct wait returns `waiting` and the result wakes the
-  caller later. Neither tool has an explicit held-wait option. Remaining blocking paths are deferred by the owner,
-  not fixed by this rule; see `DECISIONS.md`, `[D-TOOLS-NO-BLOCKING-FLAG]`.
+  caller later. Do not poll a running job or child instead of waiting.
 - One merge agent, an ordinary agent started by Main, owns integration. Main fixes the train order in the current
   session queue, from the owner's queue. The agent takes waiting branches in that order, rebases each onto current
   delivery destination and pushes it, following [Delivery](../PROCESS.md#delivery) for the base, checks and merge conditions.
 - Windows jobs keep running and are not cancelled in the final run, but they are advisory. A red Windows job is
-  not fixed before the merge and does not block delivery. An agent explicitly creates or triages a `qa-inbox` issue for
-  it, or a failed scheduled or dispatched `main` run is picked up by `qa-inbox.yml`; nothing here creates issues
-  automatically. `ci-watch -- --refresh-inbox` only reads the existing issues into the local snapshot, after the
-  issue exists. Every ignored Windows failure is recorded before the delivery closes, as a tail item of `BACKLOG.md` or a
-  `main` `qa-inbox` issue linked from it; none is silently deferred or abandoned, so Windows support is finished
-  later. If Windows jobs still run when the merge happens, the merge agent keeps that run
+  not fixed before the merge and does not block delivery. Every ignored Windows failure is recorded before delivery
+  closes as a tail item of `BACKLOG.md`; none is silently deferred or abandoned, so Windows support is finished later.
+  If Windows jobs still run when the merge happens, the merge agent keeps that run
   tracked in the background through the watcher cache or a notification, not counting as active execution and spending no model
-  polling turns. A later Windows failure then gets its tail `BACKLOG.md` item or linked issue and is not lost when
+  polling turns. A later Windows failure then gets its tail `BACKLOG.md` item and is not lost when
   the branch is deleted. Delivery never waits for Windows or green macOS CI; no workflow result gates a merge.
 - Test work. QA fixes, Windows work and full release regressions are ordinary tasks in the same single execution
   queue as other work. There is no separate test lane and no independent concurrent test-fixer or regression agent.
@@ -53,7 +49,3 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](../DECIS
   logs are fetched with `gh` only for a failed or finished run that needs them; this is no ordinary polling.
   The watcher is a repo-local macOS development tool, never shipped and never merge evidence. `deliver-check`
   verifies the local test condition, not GitHub runs.
-- QA inbox snapshot. The watcher's minute poll reads workflow runs only. `npm run ci-watch -- --refresh-inbox` is a
-  separate explicit read of the open `qa-inbox` issues into `<git common dir>/ci-watch/inbox.json`. Run it once at
-  triage, when taking over a task, and after changing an inbox issue, never as per-agent polling. `qa-status` shows
-  the snapshot with its own `inboxFetchedAt`, or says it is unknown.

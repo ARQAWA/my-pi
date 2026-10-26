@@ -62,14 +62,7 @@ environment if the terminal/client requires and supports OSC 52. The extension d
 
 Follow [INSTALL.md](../../INSTALL.md#switch-one-extension-off) with
 `-extensions/RQW-session/index.ts`, then `/reload` or restart. Both commands disappear without changing other
-extensions. Package isolation discovers this extension from `package.json`; its static and runtime checks are in
-`test/isolation.test.ts`. Extension-local deterministic tests load only RQW-session and use OS-temp agent directories,
-a stub clipboard, real Pi runtime replacement and no live models. Run:
-
-```sh
-node --test test/extensions/RQW-session/session.test.ts
-npm test
-```
+extensions. Tests: `test/extensions/RQW-session/session.test.ts`, `test/isolation.test.ts`.
 
 Decision and research: [DECISIONS.md](../../DECISIONS.md#session-commands).
 

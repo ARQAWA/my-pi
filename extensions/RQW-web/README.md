@@ -67,7 +67,7 @@ headers and provider responses are not saved. Overflow results are ordinary OS t
 with no per-user permission or ACL management. The native schema's raw bytes are pinned with `.gitattributes`
 `-text` so the exact provenance hash is stable across Windows and macOS checkouts.
 
-Tests are under `test/extensions/RQW-web/`; root `test/web-cli-*.test.ts` covers the compatible shell entry. Development checks follow
+Tests are under `test/extensions/RQW-web/`. Development checks follow
 [PROCESS.md](../../PROCESS.md).
 
 <!-- repo-index:start -->

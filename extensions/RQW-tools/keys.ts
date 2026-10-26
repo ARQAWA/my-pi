@@ -1,9 +1,8 @@
-// Path key (notes/analysis-races.md section 4) and the scope of a tool call for the barrier.
+// Path resolution and batch-local filesystem identities for multi-file edit and write.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Scope } from "./barrier.ts";
 
 // Same spaces Pi folds to " " before it resolves a path.
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
@@ -72,24 +71,6 @@ export function resolvePath(p: string, cwd: string): string {
   return resolveLexical(p, cwd, process.platform);
 }
 
-/**
- * Every spelling stock `resolveReadPath` may open, whatever exists now: the resolved path, the AM/PM variant (narrow
- * no-break space), NFD, curly quote, NFD + curly quote. Stock picks one when the read runs, so the scope covers all.
- */
-export function readSpellings(p: string, cwd: string): string[] {
-  const resolved = resolvePath(p, cwd);
-  const nfd = resolved.normalize("NFD");
-  return [
-    ...new Set([
-      resolved,
-      resolved.replace(/ (AM|PM)\./gi, "\u202F$1."),
-      nfd,
-      resolved.replace(/'/g, "\u2019"),
-      nfd.replace(/'/g, "\u2019"),
-    ]),
-  ];
-}
-
 // Locale-independent casing closure, not an exact APFS/Windows collation table. In particular, lowercase alone
 // splits Sigma/final sigma; one upper/lower pass still splits capital sharp S from sharp S. The closure may merge
 // distinct Unicode names (e.g. dotless I and "i"): it orders those paths but is not a filesystem identity.
@@ -139,17 +120,6 @@ function resolvedKey(abs: string, platform: NodeJS.Platform, identity = false): 
     const P = platform === "win32" ? path.win32 : path.posix;
     const key = platform === process.platform ? canonical(abs, P).key : abs;
     return spellingKey(key, platform);
-  } catch {
-    return undefined;
-  }
-}
-
-// Path-shaped native identity, retained separately from leaf equality for ancestor checks. `identity = false`
-// exposes the conservative ordering key; production scopes pass already-resolved spellings directly.
-export function pathKey(p: string, cwd: string, platform: NodeJS.Platform = process.platform, identity = true): string | undefined {
-  try {
-    if (typeof p !== "string" || typeof cwd !== "string") return undefined;
-    return resolvedKey(resolveLexical(p, cwd, platform), platform, identity);
   } catch {
     return undefined;
   }
@@ -237,82 +207,4 @@ export function writePathKeys(paths: string[], cwd: string, signal?: AbortSignal
     }
   }
   return keys.map((key, i) => ({ key, leaf: entries[i].leaf }));
-}
-
-// A hardlinked regular file can be outside every lexical ancestor. A dangling component can create a different
-// target when stock runs. Use ALL locally; directory nlink counts are not evidence of file aliases.
-function scopeKey(abs: string): string | undefined {
-  const resolved = canonical(abs, path);
-  if (resolved.dangling) return undefined;
-  if (resolved.existing) {
-    const stat = fs.statSync(resolved.existing);
-    if (stat.isFile() && stat.nlink > 1) return undefined;
-  }
-  return spellingKey(resolved.key, process.platform);
-}
-
-type Fields = Record<string, unknown>;
-const isFields = (v: unknown): v is Fields => typeof v === "object" && v !== null;
-
-// `args` comes from the model and is not trusted: any odd shape means the scope "all".
-export function scopeOf(tool: string, args: unknown, cwd: string): Scope {
-  const all: Scope = { kind: "all", keys: [] };
-  try {
-    if (!isFields(args)) return all;
-    const pathOf = (v: unknown): unknown => (isFields(v) ? v.path : undefined);
-    let kind: "read" | "mutate";
-    let paths: unknown[];
-    switch (tool) {
-      case "read":
-        kind = "read";
-        paths = typeof args.path === "string" ? readSpellings(args.path, cwd) : [args.path];
-        break;
-      case "grep":
-      case "find":
-        kind = "read";
-        paths = [args.path ?? "."];
-        break;
-      case "write":
-        kind = "mutate";
-        paths = Array.isArray(args.files) && args.files.length > 0 ? args.files.map(pathOf) : [args.path];
-        break;
-      case "edit":
-        kind = "mutate";
-        // Entry paths are optional (they default to the top-level path), so absent ones are not keys.
-        paths = [args.path, ...(Array.isArray(args.edits) ? args.edits.map(pathOf) : [])].filter((x) => x != null);
-        break;
-      default:
-        return all;
-    }
-    // Empty-string paths (strict-mode filler) name no file; with none left the scope is "all".
-    if (kind === "mutate") paths = paths.filter((x) => x !== "");
-    // Read spellings have already passed user normalization. Their fallback spaces are real filesystem names.
-    const keys = paths.map((x) => typeof x !== "string" ? undefined
-      : scopeKey(tool === "read" ? x : resolvePath(x, cwd)));
-    if (keys.length === 0 || keys.includes(undefined)) return all;
-    return { kind, keys: [...new Set(keys as string[])] };
-  } catch {
-    return all;
-  }
-}
-
-/** The barrier key of a literal Bash path: Pi's @, Unicode-space and file-URL argument rules do not apply. */
-export function fileKey(p: string, cwd: string): string | undefined {
-  try { return scopeKey(resolveLexical(p, cwd, process.platform, false)); } catch { return undefined; }
-}
-
-/** The key of a directory (the git repository root or the package folder of a bash command). */
-export function dirKey(dir: string): string {
-  try { return scopeKey(dir) ?? dir; } catch { return dir; }
-}
-
-/**
- * The ledger identity of a file (ledger.ts): the native real path, which resolves symlinks and, on case-insensitive
- * file systems, gives the stored case and Unicode form of an existing file, so every alias of one file shares its
- * records. No folding of our own: two distinct files never share records (a false P1 refusal), unlike the barrier key
- * that may merge them on purpose. A missing file keys by its real parent and the name as given (it has no records yet).
- * It stays the same when the file is replaced by a rename (a new inode); a hardlinked file keeps its own path.
- */
-export function identityKey(abs: string): string {
-  try { return canonical(abs, path).key; } catch { return path.resolve(abs); }
 }

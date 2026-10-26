@@ -35,8 +35,7 @@ binds none of them itself.
 
 ## Compact interface and theme
 
-Normal package loading enables compact tool display, agent cards, thinking-text hiding and automatic
-session naming. Reviewer profiles `spotty` and `bossy` deliver ordinary `agent#N` results and use the same agent
+Normal package loading enables compact tool display, agent cards and automatic session naming. Reviewer profiles `spotty` and `bossy` deliver ordinary `agent#N` results and use the same agent
 cards and agent count category as other subagents. Standalone `[review#N]` cards remain only for legacy session
 history, not current reviewer delivery. With both agent-ui and tool-ui loaded, a collapsed wait result is tool-ui's (`Waited for N agents` in the summary, `wait <ids>` in the live block);
 with tool-ui off, agent-ui shows its collapsed wait cards. Ctrl+O shows full original tool and agent results,
@@ -76,11 +75,10 @@ excludes nothing.
 
 - It takes effect after `/reload` or a restart. To switch the extension on again, delete its line.
 - The compact UI switches independently with `-extensions/RQW-tool-ui/index.ts`,
-  `-extensions/RQW-agent-ui/index.ts`, `-extensions/RQW-thinking/index.ts` and
-  `-extensions/RQW-naming/index.ts`, one exclusion per extension. Tool-ui off restores stock old and new tool
-  calls, except that agent-ui then shows its collapsed wait cards; agent-ui off restores stock agent results, including
-  reviewer-profile results, and stock rendering of legacy review history; thinking off restores native reasoning display;
-  naming off stops automatic generation and removes `/rename-gen`, leaving the persisted native name and `/name`.
+  `-extensions/RQW-agent-ui/index.ts` and `-extensions/RQW-naming/index.ts`, one exclusion per extension.
+  Tool-ui off restores stock old and new tool calls, except that agent-ui then shows its collapsed wait cards;
+  agent-ui off restores stock agent results, including reviewer-profile results, and stock rendering of legacy review
+  history; naming off stops automatic generation and removes `/rename-gen`, leaving the persisted native name and `/name`.
   The separate activity indicator and static title belong to RQW-statusbar, switched with
   `-extensions/RQW-statusbar/index.ts` or `/statusbar off`; cards do not own that indicator. It shows the actual
   running agent counts, including reviewer profiles, with no separate review category; ordinary busy letters shimmer

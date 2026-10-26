@@ -245,15 +245,13 @@ function lastNumber(entries: readonly SessionEntry[], name: string): number {
 
 /**
  * Channel on `pi.events` where RQW-tools, when it is loaded, offers its tools for subagents: a request
- * `{ offer(factory) }` gets a factory of fresh definitions with a barrier of their own. Nothing here imports RQW-tools.
+ * `{ offer(factory) }` gets a factory of fresh definitions. Nothing here imports RQW-tools.
  */
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
 /**
- * `options.label` names the child in RQW-tools' notes of other sessions ("changed by agent#1/agent#2"); optional.
- * `options.codemode`: the child's own Pi `codemode` definition; the factory returns it as a call of the child's barrier
- * and a job of its registry (a factory that does not return it leaves the child Pi's definition as it is).
+ * `options.codemode`: the child's own Pi `codemode` definition, returned with background-job support.
  */
-type ToolsFactory = (cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition; notify?: (notification: JobNotification) => void; retain?: () => () => void }) => ToolDefinition[];
+type ToolsFactory = (cwd: string, settings: () => unknown, options?: { codemode?: ToolDefinition; notify?: (notification: JobNotification) => void; retain?: () => () => void }) => ToolDefinition[];
 
 type WebRegistrar = (child: ExtensionAPI) => void;
 
@@ -549,8 +547,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	 * offered set) and, when it has `codemode`, that one as a call of its barrier. Without a returned `codemode`, Pi's
 	 * own definition of the child stays.
 	 */
-	function offeredTools(factory: ToolsFactory, cwd: string, names: string[], label: string, codemode?: ToolDefinition, bridge?: NotificationBridge): ToolDefinition[] {
-		const tools = factory(cwd, () => pi.getSettings(), undefined, { label, ...(codemode ? { codemode } : {}), ...(bridge ? {
+	function offeredTools(factory: ToolsFactory, cwd: string, names: string[], codemode?: ToolDefinition, bridge?: NotificationBridge): ToolDefinition[] {
+		const tools = factory(cwd, () => pi.getSettings(), { ...(codemode ? { codemode } : {}), ...(bridge ? {
 			notify: (n: JobNotification) => bridge.deliver({ customType: "job", content: `[job] ${n.text}`, display: true, details: { delivery: n.id, ...n.details } }),
 			retain: () => bridge.retain(),
 		} : {}) })
@@ -745,7 +743,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const builtins = config.builtins ?? BUILTIN_TOOLS.filter(name => active.has(name));
 		const settingsManager = SettingsManager.inMemory(config.settings ?? childSettings(pi.getSettings()));
 		settingsManager.setProjectTrusted(ctx.isProjectTrusted());
-		// With RQW-tools, the child's codemode is its barrier's and job registry's, like the main session's: Pi's own
+		// With RQW-tools, the child's codemode uses its job registry, like the main session's: Pi's own
 		// definition built from the child's API, handed to the factory instead of being registered as it is. Without an
 		// offer it is registered exactly as Pi's built-in factory does. The offer is asked for at that point of the reload
 		// when the child has codemode, otherwise right after it.
@@ -792,7 +790,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		try {
 			await untilAborted(resourceLoader.reload(), signal);
 			if (!builtins.includes("codemode")) factory = offeredFactory();
-			const customTools = factory ? offeredTools(factory, cwd, config.tools, label, codemode, bridge) : [];
+			const customTools = factory ? offeredTools(factory, cwd, config.tools, codemode, bridge) : [];
 			const jobTool = customTools.find((d) => d.name === "job") as (ToolDefinition & { jobs?: JobControl }) | undefined;
 			jobs = jobTool?.jobs;
 			signal.throwIfAborted();

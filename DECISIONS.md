@@ -1,8 +1,8 @@
 # my-pi: decisions
 
 Decisions in force today, with the owner's words, the reason and the file that carries each. Superseded, obsolete and
-merged entries are kept word for word in [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md); measurement and probe ledgers
-live in [notes/decisions-evidence.md](notes/decisions-evidence.md); open and deferred work lives in [BACKLOG.md](BACKLOG.md).
+merged entries are kept word for word in [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md); open and deferred work lives in
+[BACKLOG.md](BACKLOG.md).
 
 Provenance:
 
@@ -76,11 +76,10 @@ Provenance:
     `test/extensions/<extension>/` tree, delivered by `17d729c`.
   - 5a: root `INDEX.md` provides repository navigation; every extension README contains a generated file map.
     Agents regenerate after relevant file, manifest or map changes with `node scripts/repo-index.mjs --write`.
-    `node scripts/repo-index.mjs --check` checks freshness through root `test/repo-index.test.ts`
-    in `npm test`.
+    `node scripts/repo-index.mjs --check` checks freshness.
   - 6a: map existing large files without splitting them in this delivery.
   Reason: agents can locate implementation and tests without imposing a new runtime architecture.
-  Carriers: `INDEX.md`, extension READMEs, `scripts/repo-index.mjs`, `test/repo-index.test.ts`,
+  Carriers: `INDEX.md`, extension READMEs, `scripts/repo-index.mjs`,
   [PROCESS.md, Code quality](PROCESS.md#code-quality), `AGENTS.md`.
   No runtime changes, mandatory file headers, numeric size limits, new search tooling or audits are authorized.
   Since: repo-code-index second delivery.
@@ -96,13 +95,6 @@ Provenance:
   Owner (`16-27-59:5119`, entry `f6282fe9`), no reread to verify an own successful edit: «Когда мы правки делаем, мы знаем, в каких строках что должно быть написано. И если справка легла правильно, то мы знаем о том, что у нас там всё исправлено и всё. Не надо вообще читать файл для этого.»
   This ships as one line in the `edit` and `write` descriptions and in `extensions/RQW-prompt/SYSTEM.md`: a successful
   edit or write means the file holds the new text; do not reread it only to verify.
-  Follow-up read cache, approved and built directly with no pre-build measurement or trial:
-  [D-TOOLS-UNCHANGED-READ](#tools), reviewed at merge plus 3 days in
-  [BACKLOG.md](BACKLOG.md#token-efficiency-review). Coordinator question (`16-27-59:5122`): "Его делаем после веб-поиска?"
-  Owner (`16-27-59:5123`, entry `d0a9a090`): «да» Owner (`16-27-59:5131`, entry `1b3abc69`) on the mechanism: «Эта механика должна быть абсолютно полностью инженерной.»
-  Owner (`16-27-59:5135`, entry `171f4d82`), no trials: «через три дня после merge надо будет сделать review всех старых сессий на предмет того, помогло нам это или нет. И всё. Не будем никаких делать испытаний и прочей хуйни.»
-  Coordinator text (`16-27-59:5138`): the unchanged note only if the last read of the same range was at most 10 turns
-  and at most 30000 context tokens ago, otherwise full content.
   Reason: tokens are a cost the owner wants spent only where nothing simpler works. Carriers:
   [PROCESS.md, Golden rule](PROCESS.md#golden-rule), the owner's own record in
   [WORKFLOW-MANIFEST.md](WORKFLOW-MANIFEST.md#золотое-правило), the code reviewer `.pi/agents/code-reviewer.toml`, the
@@ -169,12 +161,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 - **Archive of decisions** `[D-WORK-ARCHIVE]`. `DECISIONS.md` holds only decisions in force. A superseded, obsolete or
   merged entry moves word for word to the append-only root file `DECISIONS-ARCHIVE.md`, with its status, replacement ID,
-  introducing commit and original lines. Measurement and probe ledgers move to `notes/`, open and deferred work to
-  `BACKLOG.md`. This is the one exception to the "no archive copies in the repository" rule of
+  introducing commit and original lines. Open and deferred work moves to `BACKLOG.md`.
+  This is the one exception to the "no archive copies in the repository" rule of
   [PROCESS.md](PROCESS.md#isolated-parallel-execution). Owner (`16-27-59:4099`):
   «Еще задача такая: надо decision, всю нашу документацию чистить от старого мусора, проверить её на консистентность и выбросить старые решения, которые уже больше ни в каком виде не актуальны. Зачистить бэклог. Не удалять эти решения из репозитория — они же где-то сохранены, кроме этого decision, да? Или это и есть место, где они сохраняются? Я так понимаю, что у нас есть лог всех decision, на базе которого можно сверить каждую задачу. Или это и есть этот файл decision? Надо понять. Я хочу, чтобы у нас было такое место, где можно потом однозначно все decision проверить по истории, но при этом, чтобы наши документы, с которыми работает агент на постоянке, не были засраны хуйнёй. Не знаю, правильно ли понял ты меня, правильно ли я объяснил или нет.»
   Reason: every decision stays checkable by history while the documents agents read routinely carry only current
-  rules. Carriers: `DECISIONS.md`, `DECISIONS-ARCHIVE.md`, `BACKLOG.md`, `notes/decisions-evidence.md`, `PROCESS.md`.
+  rules. Carriers: `DECISIONS.md`, `DECISIONS-ARCHIVE.md`, `BACKLOG.md`, `PROCESS.md`.
   Since: the docs-cleanup squash (`git log -S'D-WORK-ARCHIVE' -- DECISIONS.md`).
 - **Coordinator** `[D-WORK-COORDINATOR]`. Main is the coordinator, not an independent implementer. Owner (`13-49-40:282`):
   «Да, он как техлид/тимлид, координатор, но не исполнитель самостоятельный.»
@@ -282,7 +274,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reports retain the evidence table and honest "not verified live" section.
   Reason: branches tested alone were squashed onto a moved `main`, and a code-review CLEAN once covered an earlier commit
   while two later fixes landed unreviewed. Carriers: [PROCESS.md](PROCESS.md) (Sufficient proof, Independent review,
-  Delivery), `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`. Since: `47868b0`.
+  Delivery), `scripts/deliver-check.mjs`. Since: `47868b0`.
 
 - **Measurements in waves** `[D-WORK-MEASURE-WAVES]`. Owner (`16-27-59:3044`; `16-27-59:3059` to the five-step plan
   whose step 5 is this rule; `16-27-59:3197`; `16-27-59:3202`):
@@ -322,7 +314,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   the `npm test` steps keep Node's default log output and also write a TAP copy, uploaded on failure with the job's macOS
   crash reports; a manual stress workflow repeats the 12 MB codemode tests with exit code and peak RSS per run.
   Reason: a test file once died silently on macOS Node 24 and its exit code or signal was not recoverable from the spec
-  reporter (run and details: [notes/decisions-evidence.md](notes/decisions-evidence.md#ci-dying-test-file)).
+  reporter.
   Carriers: `scripts/ci-npm-test.sh`, `.github/workflows/tests.yml` (artifact `test-evidence-*`, with
   `/Library/Logs/DiagnosticReports`), `.github/workflows/codemode-stress.yml` (input `runs`, `summary.tsv`).
   Since: `8547d59`.
@@ -332,10 +324,9 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   dispatches do not retry failures. CI floor, accepted by the owner and relayed by the coordinator (no verbatim owner
   message exists in the session files, so no quote): `tests.yml` keeps Node 22.19.0 and moves the Node 24
   jobs to a version spec that resolves to `>=24.22.0 <25`. The matrix labels `22.19.0` and `24` stay for artifact
-  names and the QA canary, and `actions/setup-node@v4` resolves the `24` label. Reason: require the shipped V8
+  names, and `actions/setup-node@v4` resolves the `24` label. Reason: require the shipped V8
   baseline fix without allowing a runner-cached 24.21.0; the incident's exact cause remains unproven. Evidence
-  collection and failure handling stay unchanged, with no reruns. Captured signature, isolation, upstream candidates
-  and the CI policy: [notes/codemode-native-crash.md](notes/codemode-native-crash.md).
+  collection and failure handling stay unchanged, with no reruns.
 
 ## Task pipeline
 
@@ -347,8 +338,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Applied to task-scoped checks under the owner's later release decision, not to the batch full-test gate.
   Reason: application regression adds delivery time without checking passive text. The accepted scope and exclusions,
   the replacement checks and the unchanged review obligations live only in
-  [PROCESS.md, Delivery](PROCESS.md#delivery). Carriers: `scripts/deliver-check.mjs`,
-  `test/deliver-check.test.ts`. Superseded assertions from base `0521318` are preserved verbatim in
+  [PROCESS.md, Delivery](PROCESS.md#delivery). Carriers: `scripts/deliver-check.mjs`.
+  Superseded assertions from base `0521318` are preserved verbatim in
   `DECISIONS-ARCHIVE.md`, A-0327 through A-0332.
 
 - **Short mandatory process and task-loaded sections** `[D-WORK-PROCESS-SPLIT]`. Owner answer: `2a`.
@@ -385,8 +376,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner urgency, physical line 6683, entry `9a6cb0a8`:
   «Смотри эта история про релиз это ультра крит и ее надо делать выше всех и сразу внедрять что бы тесты паралельные не ебали ни цпу ни процесс»
   Reason: give the owner completed tasks promptly without concurrent per-task full regressions; keep a checked
-  release boundary for `main`. Carriers: `PROCESS.md`, `scripts/deliver-check.mjs`,
-  `test/deliver-check.test.ts` and the owner's installed Pi package source. Scheduled GitHub checks on `main`,
+  release boundary for `main`. Carriers: `PROCESS.md`, `scripts/deliver-check.mjs`
+  and the owner's installed Pi package source. Scheduled GitHub checks on `main`,
   independent reviews and the substantive-work timebox are unchanged. Superseded passages from `923ba22`
   are preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0337 through A-0351.
 
@@ -418,9 +409,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Shared CI watcher** `[D-PIPELINE-CI-WATCHER]`. Owner (`16-27-59:5060`): «Окей, насчёт одного скрипта раз в минуту я согласен.»
   One repo-local script, `npm run ci-watch`, reads all recent runs once a minute and atomically writes
   `<git common dir>/ci-watch/status.json`. Agents read the file instead of calling `gh`; a file older than 3 minutes
-  is restarted with `npm run ci-watch -- --restart`. GitHub runs are not a merge gate ([D-PIPELINE-LOCAL-GATE]). The minute poll reads runs only; the open `qa-inbox` issues are an explicit separate read, `npm run ci-watch -- --refresh-inbox`
-  (`inbox.json`), run at triage, task takeover or after an issue change, not per agent. It replaces independent per-agent `gh` polling and the 10-minute per-process status cache of the
-  `qa-status` extension. Coordinator text, the explanation of how it works (`16-27-59:5061`): "Да, скрипт только для этого репозитория и только на твоём Mac, в наш продукт он не попадает. Помогает он так. Сейчас каждый агент сам спрашивает GitHub о своём прогоне, и десяток агентов съедают лимит. Скрипт одним запросом раз в минуту получает статус всех свежих прогонов репозитория и пишет его в файл, а агенты читают файл и в GitHub больше не ходят. Гонок не будет: скрипт запускается в одном экземпляре через метку, как координатор; файл он пишет целиком через переименование; если скрипт упал, файл устаревает, и следующий агент перезапускает скрипт."
+  is restarted with `npm run ci-watch -- --restart`. GitHub runs are not a merge gate ([D-PIPELINE-LOCAL-GATE]).
+  It replaces independent per-agent `gh` polling and the 10-minute per-process status cache of the `qa-status` extension. Coordinator text, the explanation of how it works (`16-27-59:5061`): "Да, скрипт только для этого репозитория и только на твоём Mac, в наш продукт он не попадает. Помогает он так. Сейчас каждый агент сам спрашивает GitHub о своём прогоне, и десяток агентов съедают лимит. Скрипт одним запросом раз в минуту получает статус всех свежих прогонов репозитория и пишет его в файл, а агенты читают файл и в GitHub больше не ходят. Гонок не будет: скрипт запускается в одном экземпляре через метку, как координатор; файл он пишет целиком через переименование; если скрипт упал, файл устаревает, и следующий агент перезапускает скрипт."
   Reason: independent pollers hit the GitHub limit and stopped every agent for at least 13 minutes (report). The file is
   awareness only, never merge proof. Carrier: `scripts/ci-watch.mjs`, `scripts/qa-status.mjs`,
   `scripts/deliver-check.mjs`, `.pi/extensions/qa-status/`, [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline).
@@ -438,42 +428,15 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Reason: the owner set the cadence against the coordinator's 3 merges or 30 minutes; checks mostly fixed marks and reread
   the same chat. Replaces the check after every merge (`DECISIONS-ARCHIVE.md`, A-0244). Carrier:
   [PROCESS.md, Delivery](PROCESS.md#delivery) step 5. Since: process-pipeline squash.
-- **Interim Windows skips for flaky tests** `[D-PIPELINE-FLAKE-SKIP]`. Inbox issues #3, #4 and #5 get a narrow skip, and
+- **Interim Windows skips for flaky tests** `[D-PIPELINE-FLAKE-SKIP]`. QA issues #3, #4 and #5 get a narrow skip, and
   their causal fix goes to the end of the queue. Owner (`16-27-59:5060`): «4 - а может поставить им скип и в конец очереди на починку? что за дроч бежать чинить тесты срауз без бага явного?»
   Coordinator text (`16-27-59:5061`): "Нестабильные тесты пропускаются, а их починка уходит в конец очереди. Пропускать буду узко: только упавшие проверки и только на Windows, со ссылкой на задачу в копилке. Остальная часть тестов фоновых задач продолжит ловить настоящие ошибки."
   Reason: chasing a fix without an obvious bug blocked unrelated work. This is the owner-approved exception to the
   forbidden list of [D-QA-TEST-INTEGRITY]; retries, raised timeouts and whole-file skips stay forbidden. Carrier:
-  [PROCESS.md, Quality control loop](PROCESS.md#quality-control-loop), [BACKLOG.md](BACKLOG.md#qa-flakes-last),
-  `test/extensions/RQW-tools/background.test.ts`. Since: process-pipeline squash.
+  [PROCESS.md, Quality control loop](PROCESS.md#quality-control-loop). Since: process-pipeline squash.
   Retired: the causal fix landed as `2b9c088` and no skip exists in the tests; the exception is not in force.
 
-- **Pause is interrupt, resume is `resume`** `[D-PIPELINE-PAUSE-RESUME]`. Pausing a task is an `agent` `interrupt` of its agent:
-  the session and its full history stay, on disk too for a persisted parent. Resuming it is the `resume` action of the same
-  agent: it retries the cut-off model request with no new message, and after a
-  Pi restart the same ids resume from the saved child sessions. `send` stays for a new message. No checkpoint, continuation or
-  handoff file is written for a pause or a resume, and an agent is `stop`ped only when its task is finished or cancelled.
-  The earlier exception, one short checkpoint right before a planned Pi restart, is removed because child sessions now
-  survive a restart. The current session queue stays the source of the task order, not a file.
-  Owner (`16-27-59:5087`, entry `ddd0ce47`): «Нет. Агент на паузе. Не надо писать никакой файл продолжения, надо просто уметь его возобновить. У нас же есть всё от него для того, чтобы его возобновить. У нас есть его сессия, есть его ID, есть всё от него. Надо просто, чтобы наш функционал саб-агентов мог возобновлять агентов и всё. Не надо никаких хендоффов делать.»
-  «И да, интерфейс должен разключать, когда агент стоит, когда он AFK, когда он работает.»
-  Owner (`16-27-59:5092`, entry `3c2122c8`), restart of the whole Pi process: «Я могу зайти в P, сделать resume и сказать: "Продолжай". И он должен уметь возобновить вообще всё: текущий чат возобновится, и агент основной текущего чата возобновит все предыдущие процессы.»
-  «В Kushore отдельная кнопка есть: можно основной чат не возобновлять, а возобновить только саб-агентов. И потом, когда они ответят, они сами дадут нотификацию основному чату, и основной чат сам продолжит работу.»
-  «основной чат не должен ни висеть, ни пулить, ничего. Он должен просто быть AFK, пока не придёт notification.»
-  Owner (`16-27-59:5103`, entry `8bb70dcd`), what resume means: «возобновить, значит просто retry тот запрос, на котором он был оборван. Вот и всё.»
-  Coordinator text (`16-27-59:5090`, entry `d044f551`, formatting marks removed): "Чего не хватает в самом функционале: 1. Сессии субагентов живут только в памяти, поэтому при перезапуске Pi они теряются. Их надо сохранять на диск со связью с родительской сессией. Тогда агента можно будет продолжить по номеру и после перезапуска, а `/remove` будет удалять их вместе с родителем. 2. В списке агентов будут видны три разных состояния: 'работает', 'ждёт' и 'простаивает'."
-  Coordinator design text, taken by default and not an owner quote (the delivered `resume`): a paused
-  or interrupted agent resumes by retrying the interrupted model request without a new message, also from a saved session
-  after a Pi restart. A cut-off model request is retried; a tool call that was interrupted and may have side effects is
-  never replayed blindly, the model sees it as interrupted and decides. `/resume-agents` resumes the children only,
-  without a main-model request; their results wake the main chat. Continuing a restored parent recovers its unfinished children that were active or interrupted by a shutdown; a child paused
-  by hand has a durable paused state and stays paused until an explicit `resume` or `/resume-agents`, also after reload. Contract: [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume).
-  Provenance of the stage plan: the coordinator delegated the task in the main session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`
-  (line 5356, assistant entry `7ce715fd`, tool call `task`): a 20-minute design note, then stages persistence/resume first and
-  notification waits second, reviews per PROCESS, a pause at the 2-hour limit. This is coordinator delegation, not an owner quotation;
-  the owner's own statements are the quotes above and those in `[D-TOOLS-NOTIFY]` (`16-27-59:4876`, `16-27-59:4937`).
-  Reason: closing paused agents lost their history; the owner wanted a resume from the saved session, not a handoff file.
-  Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline); `extensions/RQW-agent/persistence.ts`, `extensions/RQW-agent/index.ts`.
-  Since: process-pipeline squash; this wording since `dd93a40` and the final squash of branch `agent-async`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0263.
+- **Notification waits and independent jobs** `[D-TOOLS-NOTIFY]`. Where notifications are available, `job wait` returns `waiting` at once and one later notification carries the result. Inside codemode or without a notification callback it blocks. A newer wait on the same job replaces the older one.
 
 - **Two hours of substantive work per task** `[D-PIPELINE-TIMEBOX]`. Each development task gets at most 2 hours of
   substantive work, then a safe pause and a report; the highest-priority runnable waiting task starts next; more work
@@ -505,14 +468,14 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «Если у нас всё на нашем macOS работает, нахуй мы ещё на каком-то macOS проверки делаем?»
   «Так, блядь, надо удалить нахуй это. Это какой-то overhead, это просто двойная работа»
   «Ты должен только delivery то, что я заказываю. Ничего сверх этого»
-  Scheduled workflows, the watcher, QA inbox and digest are unchanged. Windows failures remain advisory and are
-  recorded before delivery closes as tail `BACKLOG.md` items or linked `qa-inbox` issues. Still-running Windows
+  Scheduled workflows and the watcher are unchanged. Windows failures remain advisory and are
+  recorded before delivery closes as tail `BACKLOG.md` items. Still-running Windows
   jobs stay tracked in the background without counting as active execution or model polling turns, and later failures are recorded
   the same way. Delivery waits for neither Windows nor green macOS CI.
   Reason: remove duplicate pre-merge GitHub checks, not ongoing quality control. Supersedes [D-PIPELINE-MAC-GATE]
   and the pre-merge CI requirements of the related entries; verbatim originals at `a85b810` are in
   `DECISIONS-ARCHIVE.md`, A-0268 through A-0276. Carriers: [PROCESS.md, Delivery](PROCESS.md#delivery),
-  [Task pipeline](PROCESS.md#task-pipeline), `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`.
+  [Task pipeline](PROCESS.md#task-pipeline), `scripts/deliver-check.mjs`.
   Since: local-delivery-gate squash.
 
 - **Single queue for test work** `[D-PIPELINE-SINGLE-QUEUE]`. QA fixes, Windows work and full release regressions
@@ -561,10 +524,10 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   implemented by this process task. Reason: finish newly approved work before re-triaging conserved work without
   losing artifacts or repeating finished work. Carriers: `BACKLOG.md`, [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline).
 
-- **Risk-based minimal testing** `[D-PIPELINE-RISK-TESTING]`. Test risk and public behavior, not implementation or
-  coverage. Use the cheapest adequate level, proof matched to change type, and no idle reruns. Do not mass-rewrite old
-  tests; clean a touched component, cancel standalone test-only P3/cosmetic work, and delete only demonstrably useless
-  tests with proof that needed risk coverage remains. Canonical rules:
+- **Risk-based minimal testing** `[D-PIPELINE-RISK-TESTING]`. Tests are small, deterministic and synthetic. They call
+  public functions and assert returned results. Do not mass-rewrite old tests; clean a touched component, cancel
+  standalone test-only P3/cosmetic work, and delete only demonstrably useless tests with proof that needed risk
+  coverage remains. Canonical rules:
   [Sufficient proof](process/sufficient-proof-without-idle-reruns.md), with QA specifics in
   [Quality control](process/quality-control-loop.md) and the release regression in [Delivery](PROCESS.md#delivery).
   Owner, same session, line 13403, entry `44f43a53`:
@@ -575,7 +538,6 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «Проведи изменения процессов под этот флоу тестирования и закрепи его high review»
   This approves Main's detailed proposal at line 13404, entry `c1068b80`, restated in the supplied execution task.
   Exact accepted-flow spans from that supplied task:
-  «Test risk and public behavior, not implementation details or coverage. Every test protects a concrete behavior. Real bugs get regression tests; critical scenarios get contract tests. No test without risk, no coverage targets, remove duplicates.»
   «Ordinary changes get one independent review covering both result and code. Critical/high-risk changes get a separate code review. Explicit owner-requested blind/high review still uses the requested profile.»
   «CLEAN requires concise concrete evidence, not a long bureaucratic checklist. If evidence is missing or output is malformed, resume/send the SAME reviewer to supply evidence from its retained inspection or mark UNCHECKED; do not start a fresh reviewer merely for format.»
   «Stop when critical scenarios pass, real findings are resolved and required review is complete. No additional checks without new information.»
@@ -585,12 +547,10 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Primary-source validation, read 2026-10-26:
   [Google: Test Behavior, Not Implementation](https://testing.googleblog.com/2013/08/testing-on-toilet-test-behavior-not.html)
   validates public behavior and refactor-safe checks;
-  [Google: Just Say No to More End-to-End Tests](https://testing.googleblog.com/2015/04/just-say-no-to-more-end-to-end-tests.html)
-  validates the pyramid and sparing end-to-end use without adopting its illustrative percentages;
   [Testing Library: Guiding Principles](https://testing-library.com/docs/guiding-principles/) validates testing as
   users exercise behavior and avoiding implementation details. No framework or dependency is added.
   Reason: spend checks on concrete failure risk and stop at sufficient evidence. Carriers: the process links above,
-  `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`, `BACKLOG.md` Discarded `TEST-ONLY-P3-COSMETIC`.
+  `scripts/deliver-check.mjs`, `BACKLOG.md` Discarded `TEST-ONLY-P3-COSMETIC`.
 
 - **Ordinary and critical review classes** `[D-PIPELINE-REVIEW-CLASSES]`. Ordinary changes get one independent review
   covering result and code. Critical/high-risk changes add separate code review. Explicit blind/high requests retain
@@ -602,7 +562,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   [Quality control](process/quality-control-loop.md). Mechanical trailers: `Change-class: ordinary` or `critical`,
   exactly one `Review: agent#N CLEAN`, plus `Code-review: CLEAN` for critical work. Proofreading keeps its narrow
   document-only exception. `Combined-review:` is removed, not retained as a compatibility alias. Carriers:
-  `PROCESS.md` Delivery, `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`,
+  `PROCESS.md` Delivery, `scripts/deliver-check.mjs`,
   `extensions/RQW-review/skills/reviewer/SKILL.md`, `profiles/spotty.toml`, `profiles/bossy.toml`.
 
 - **Tests exist to check behavior** `[D-PIPELINE-TEST-PURPOSE]`. Every agent that writes, generates or fixes tests has one
@@ -656,7 +616,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   (historical unverified attribution, not found in the session files above): "Мы делаем просто обвес вокруг
   оригинального Pi."; "Нет, никаких форков." Ported UI: `RQW-models`, `RQW-statusbar` and `RQW-send-now`
   ([Models](#models), [Status bar](#status-bar), [Send now](#send-now)); `RQW-scroll` adds one key behavior
-  ([Scroll](#scroll)). Compact tools, agent cards, thinking hiding and naming are registered in `pi.extensions`;
+  ([Scroll](#scroll)). Compact tools, agent cards and naming are registered in `pi.extensions`;
   the native `RQW-theme` resource is registered separately in `pi.themes` ([UI activation](#ui-activation)). omp-lite's own tool implementations are not carried over; RQW-tools wraps Pi's stock
   tools ([Tools](#tools)). Reason: keep Pi's own behavior and add only agreed extensions. Carriers: `package.json`,
   `extensions/`. Since: `9ef1519`.
@@ -686,7 +646,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `4035f0a6`, `2026-10-23T19:05:12Z`, under the repository session directory named in Provenance.
   Coordinator text, option a, assistant entry `60ca78d9`, `2026-10-23T19:03:52Z`:
   Включить сейчас всё готовое вместе с карточками агентов, а карточку ревьюера добавить позже, когда будет новый ревьюер. Ты получишь интерфейс в ближайшие часы.
-  Register thinking, naming, agent-ui and tool-ui now; statusbar is already registered.
+  Register naming, agent-ui and tool-ui now; statusbar is already registered.
   Change of circumstances, coordinator text, not an owner answer: the owner answered 1а while the new reviewer was
   still open. Since then the new reviewer has landed on `main` (`11b0fe2`), so the review card T14 is no longer
   deferred. It is part of the same switch-on and is delivered with `RQW-agent-ui`: cards for `agent`
@@ -694,7 +654,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Reason: deliver the ready interface at once; the one deferred part became ready before delivery.
   Carriers: `package.json`, `extensions/RQW-agent-ui/`.
 - **Renderer order** `[D-UI-RENDERER-ORDER]`. Technical decision under the activation approval above:
-  preserve the existing extension order, then append `RQW-thinking`, `RQW-naming`, `RQW-agent-ui`, `RQW-tool-ui`.
+  preserve the existing extension order, then append `RQW-naming`, `RQW-agent-ui`, `RQW-tool-ui`.
   Pi 1.4.0 `dist/core/extensions/loader.js` `loadExtensionsInternal` initializes paths in order;
   `runner.js` `resolveToolRenderers` calls resolvers in load order with `next()` delegating to later resolvers.
   Thus agent-ui is the outer resolver. With both agent-ui and tool-ui loaded, a collapsed wait result is
@@ -704,7 +664,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   agent-ui shows its collapsed wait cards. The order is explicit and tested, not a claim that reversing it
   gives the same result.
   `getMessageRenderer` returns the first matching extension renderer; agent-ui owns `agent`
-  results, including reviewer-profile agents. Thinking and naming register no competing tool/message renderer and keep the existing producers first.
+  results, including reviewer-profile agents. Naming registers no competing tool/message renderer and keeps the existing producers first.
   Reason: preserve independent cards and compact tools without changing execution. Carrier: `package.json`.
 
 ## Compact tool display
@@ -736,7 +696,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   and toggles back. Native thinking spacer rows remain; stock Pi image output is unchanged. Public APIs only,
   no Pi patch, private fields or method replacement. Unsupported nested-result details remain omitted, not invented.
   Reason: compact progress without losing original calls. Carriers: `extensions/RQW-tool-ui/{index,groups,render,summary,live}.ts`,
-  its README, `package.json`, `test/isolation.test.ts` and `test/tool-ui-smoke.test.ts`.
+  its README, `package.json` and `test/isolation.test.ts`.
   Accepted appearance: owner entry `f7d11547`, line 702: "Бля, заебись, вообще кайф нахуй" (owner words as recorded in the ledger);
   carrier `/tmp/my-pi-ui.html` and UI-port `browser-preview/index.html`. Visual approval is not runtime proof.
 
@@ -771,9 +731,9 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   and behavior; supported roles and terminal-default delegation only, no universal terminal-canvas promise.
   No `pi.extensions` entry, activation code, transient override or automatic restore-on-disable.
   Reason: native persistence without unsupported lifecycle hooks. Carriers: `package.json`,
-  `extensions/RQW-theme/theme.json`, `INSTALL.md`; native resource coverage: `test/isolation.test.ts`.
+  `extensions/RQW-theme/theme.json`, `INSTALL.md`.
 
-## Naming and thinking
+## Naming
 
 - **Automatic native session names** `[D-UI-NAMING]`. Owner sources in the `18-16-12` session file:
   entry `67c70729`, line 930:
@@ -806,27 +766,6 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Placement follows [D-STATUSBAR-ACTIVITY](#status-bar).
   Reason: meaningful short names without blocking main work or a user candidate picker. Carriers:
   `extensions/RQW-naming/{index,core}.ts`, `extensions/RQW-statusbar/index.ts`, `package.json`, `INSTALL.md`.
-- **Hide reasoning text only** `[D-UI-THINKING]`. Owner: "+".
-  Source: the `18-16-12` session file, USER entry `b3584b94`, line 886, accepting coordinator proposal
-  `227e51b7`, line 884 to hide reasoning text while retaining accepted native blank rows. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
-  `registerMarkdownTransformer` empties `assistant-thinking`; `setHiddenThinkingLabel("")` empties the hidden label.
-  Stored messages, history and model context remain unchanged; native spacer/click-region rows remain.
-  Reason: hide transcript reasoning without a Pi patch. Carriers: `extensions/RQW-thinking/index.ts`,
-  `package.json`, `INSTALL.md`; independently switchable through Pi's package filter and `/reload`.
-- **Accepted reload-label limitation** `[D-UI-THINKING-RELOAD-LIMIT]`. Owner: «по твоеу вопросы выбираю 1 пункт».
-  Source: session `2026-10-21T16-27-59-062Z_01a15f4a`, USER entry `d12947ed`, 2026-10-25,
-  choosing to retain the transient native `Thinking...` frame during `/reload` as a known limitation.
-  The fix is cancelled, not completed: no private interception and no upstream Pi work.
-  Pi 1.4.0 resets the label and renders before `session.reload()` emits `session_shutdown`; the next
-  `session_start` restores the empty label. The public Markdown transformer does not handle the hidden label's
-  separate native `Text` component. Existing faux-provider interactive evidence in `/tmp/thinking-reload-red.log`
-  reproduces the transition while history, context, new-message and native-spacing controls pass;
-  `/tmp/thinking-reload-lifecycle.log` records `LABEL_ALREADY_WRITTEN_BEFORE_SHUTDOWN=true`.
-  These are scripted-terminal checks, not live-model or physical-terminal verification.
-  Reason: retain public Pi interfaces and native behavior rather than add an interception mechanism.
-  Carrier: `extensions/RQW-thinking/README.md`. Runtime, tests, package filters and the owner's current
-  RQW-thinking exclusion remain unchanged; this accepted limit is not pending implementation.
-
 ## Structure
 
 - **Everything is an extension** `[D-STRUCT-EXTENSIONS]`. One folder per extension under `extensions/`; a shipped
@@ -838,9 +777,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **RQW- prefix** `[D-STRUCT-PREFIX]`. Every extension folder carries the prefix `RQW-`. Coordinator text (historical unverified attribution): "у всех наших extension был префикс типа RQW- и название". Carrier: `extensions/`.
   Since: `320e80e`.
 - **Tool names as in Pi** `[D-STRUCT-TOOL-NAMES]`. Tool and parameter names stay exactly as in Pi; no `apply_patch`, one
-  edit format for every model; requirements are compiled in `notes/tools-requirements.md`. Coordinator text (historical unverified attribution): "имена такие же, как в P... никакой хуйни не надо навяливать из ОМП лайта"; "Нет, не надо
-  для GPT patch делать. Пусть работает одинаково везде". Carriers: `extensions/RQW-tools/`,
-  `notes/tools-requirements.md`. Since: `320e80e`.
+  edit format for every model. Coordinator text (historical unverified attribution): "имена такие же, как в P... никакой хуйни не надо навяливать из ОМП лайта"; "Нет, не надо
+  для GPT patch делать. Пусть работает одинаково везде". Carrier: `extensions/RQW-tools/`. Since: `320e80e`.
 - **Install prompt** `[D-STRUCT-INSTALL]`. `INSTALL.md` is the install prompt: run inside an already installed Pi, that Pi
   installs this package into itself with `pi install`, then requests `/reload` or restart; after `pi update` it requires
   a restart so process-wide patches use updated code. Coordinator text (historical unverified attribution): "чтобы
@@ -850,316 +788,72 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 ## Tools
 
-- **Unchanged-read note** `[D-TOOLS-UNCHANGED-READ]`. `read` of RQW-tools answers an identical repeat of an unchanged range
-  with one line instead of the text, as one engineered, deterministic rule with no prompt-dependent behavior. Approved
-  by the owner and built directly, with no measurement and no trial before the build. Coordinator question
-  (`16-27-59:5122`): "Его делаем после веб-поиска?" Owner (`16-27-59:5123`, entry `d0a9a090`): «да»
-  Owner (`16-27-59:5131`, entry `1b3abc69`): «Эта механика должна быть абсолютно полностью инженерной.»
-  Owner (`16-27-59:5135`, entry `171f4d82`): «через три дня после merge надо будет сделать review всех старых сессий на предмет того, помогло нам это или нет. И всё. Не будем никаких делать испытаний и прочей хуйни.»
-  Owner (`16-27-59:5139`, entry `e7d58c49`): «У агента должна быть возможность зафорсить чтение.»
-  Owner (`16-27-59:5111`, entry `8295a6f4`): «И там уже агент сам разберётся, перечитывать ему заново или нет.»
-  Owner (`16-27-59:5119`, entry `f6282fe9`), no reread to verify an own successful edit: «Не надо вообще читать файл для этого.»
-  At the owner's explicit request, passed on by the coordinator, it is built now, ahead of the WEB-SEARCH
-  prerequisite; that message is not quoted here.
-  Coordinator text (`16-27-59:5138`, `5140`): the numbers and that the note names the flag. The rule, in
-  `extensions/RQW-tools/unchanged.ts` and `index.ts` (`checkedFiles`):
-  1. Per session and tool set, a full top-level text read is remembered by resolved file, `offset` and `limit`, with the
-     file's mtime, the sha256 of its bytes and the id of the tool call that returned it.
-  2. An identical repeat returns the note `unchanged since your last read of this range; its text is earlier in this
-     conversation. To get the content again, call read with force: true.` only when that tool result is still in the
-     session branch, no compaction entry follows it, no `context_edit` entry changed or removed that result (Pi
-     drops or replaces it in the model context then), at most 10 assistant messages (turns, the one making the call included) and at most
-     30000 tokens (Pi's `estimateTokens` over the message, `custom_message` and `branch_summary` entries after it) came
-     since, and the mtime and the hash are both unchanged. The latest `context_edit` of a later entry counts at the larger
-     of its raw and replacement tokens; an omitting edit counts the raw entry, which is only too high. Any other case, an external change included, returns the
-     normal content.
-  3. `force: true` always returns the normal content and counts as a full read. The stock tool never sees `force`.
-  4. Images, errors and a file that changed while it was read are never remembered. An image is what Pi's own
-     `detectSupportedImageMimeTypeFromFile` says it is, the detector the stock `read` uses, so an image the stock tool
-     could not process and answered with text only is never remembered either and the next read retries it. A truncated text read is remembered
-     like any text; its identical repeat shows the same truncated text, and the continuation `offset=N` is a different range.
-  5. Subagents are independent: each tool set has its own memory and its own session entries.
-  6. A read inside a codemode script (call id with `/`) always returns the content and is not remembered: the script
-     is a program that needs the data, the model never saw it. A context with no session entries gets the content.
-  7. A ledger note on the file (someone else changed it) also means content.
-  Taken by default, reversible by the owner: rules 4 to 7 and whole-file hashing were not asked for; they are the
-  conservative choice. The state lives in session entries Pi already keeps, so no extension event hook is needed and
-  compaction, branch changes and `/resume` need no extra handling. Reason: the model often rereads an unchanged file
-  within a few turns; the repeat costs the file's tokens again and the first copy is still in context.
-  The review of the effect is [TOKEN-EFFICIENCY-REVIEW](BACKLOG.md#token-efficiency-review).
-  The one-line prompt rule for a successful edit or write already ships ([D-WORK-GOLDEN-RULE](#work-policy)).
-  Carriers: `extensions/RQW-tools/{unchanged.ts,index.ts,descriptions/read.md}`, tests
-  `test/extensions/RQW-tools/unchanged-read.test.ts`.
+- **Wrapped stock tools** `[D-TOOLS-WRAPPERS]`. RQW-tools wraps read, bash, edit, write, grep and find. Read, write, edit, find and grep use stock parallel execution; bash and codemode run independently. Multi-file edit and write, bounded Windows retry, our descriptions and background jobs stay in `extensions/RQW-tools/`.
 
-- **Nested codemode display facts** `[D-TOOLS-NESTED-DISPLAY]`. Owner (`16-27-59:3117`): «3а».
-  Meaning: assistant question 3, option a at line 3116 proposed later saving nested edit counts and bash exit codes
-  through our tools instead of leaving the Pi limitation. Reason: keep confirmed display facts across replay without
-  patching Pi. RQW-tools adds compact public result `details.rqwToolsNestedCall` with `version: 1`, `tool: "edit"`
-  and `files: [{path, ok, outcome?, added?, removed?}]`, or `tool: "bash"` and `exitCode`; the parent's
-  `details.rqwToolsNested` has `version: 1` and `calls: [{id, ...marker}]`. Counts come from actual confirmed diff/patch
-  results; no requested replacement text, output or diffs are duplicated. RQW-tool-ui matches exact Pi nested IDs,
-  enriches only completed calls, and keeps saved membership/status and omitted-argument limits. An unfinished
-  background handoff stays unconfirmed; final metadata is available through job wait
-  `details.results[].details.rqwToolsNested`, not used to retrospectively confirm that old handoff.
-  Carriers: `extensions/RQW-tools/{nested-display.ts,nested.ts,codemode.ts,index.ts,jobs.ts}` and
-  `extensions/RQW-tool-ui/{groups.ts,changes.ts}`; limits: [tool UI README](extensions/RQW-tool-ui/README.md#nested-result-metadata-and-remaining-limits).
-  No settings change; registration of tool UI in the package manifest is in [UI activation](#ui-activation).
-  Since: this nested-codemode-counts squash.
-
-- **Barrier eligibility tests** `[D-TOOLS-BARRIER-TESTS]`. Fixed and randomized barrier batches check maximal
-  concurrency with held operations and an independent conflict oracle: after promise reactions drain, exactly the calls
-  without unfinished earlier conflicts must have started. Seeded gate rejections check prompt release after failure and
-  success; mutation checks reject ignored dependencies and needless serialization; real-timer batches and nested
-  scripts keep ordering, abort, rejection and deadlock checks; no test asserts an elapsed slack cutoff. Owner
-  (`16-27-59:591`): «Теперь по нестабильному тесту 1А: myIP на VDI, исправление прокрутки делаю расширением myIP. Да, насчёт myIP в VDI: это только если myIP установлен. Если он не установлен, то поебать вообще.»
-  Coordinator text, option 1a: "Отдельной задачей разобрать, почему тест кодмода на Windows иногда не укладывается в 5
-  секунд, и исправить причину." This entry is an engineering follow-up under that precedent. Reason: elapsed start
-  latency includes host descheduling and garbage collection, which a percentile cutoff cannot tell from false
-  dependencies. Carrier: `test/extensions/RQW-tools/barrier.test.ts`; test design:
-  [notes/analysis-races.md, Test plan](notes/analysis-races.md#7-test-plan-synthetic-no-model-node---test-under-extensionsrqw-toolstest).
-  Since: `f95be18`.
-- **Shell timing in comparisons** `[D-TOOLS-SHELL-TIME]`. The stock-versus-wrapper shell-path test compares every result
-  field except `structuredContent.wall_time_seconds`; both timings must still be nonnegative numbers. Engineering
-  follow-up under the same precedent as [D-TOOLS-BARRIER-TESTS]. Reason: a rounded elapsed time is not shell-path
-  behavior. Carrier: `test/extensions/RQW-tools/behavior.test.ts`. Since: `230e8d0`.
-- **Wrapped stock tools** `[D-TOOLS-WRAPPERS]`. `extensions/RQW-tools/` replaces `read`, `bash`, `edit`, `write`, `grep`
-  and `find` and adds `job`. Each tool spreads the stock definition (parameters, renderers) with our description and
-  wraps its `execute`: the wrapper schedules the call in the barrier, may hand it to a background job, takes resource
-  claims, appends file notes and checks the write precondition, and calls the stock execution inside; edit and write
-  add the multi-file form, and edit drops strict sampling ([D-TOOLS-EDIT-STRICT]). Which tools are on is decided in
-  [Settings](#settings). `ls` and other stock tools are not wrapped; Pi's `codemode` is one barrier call
-  ([Settings](#settings)). Design: `notes/tools-design.md`; analysis: `notes/analysis-*.md`. Carrier:
-  `extensions/RQW-tools/index.ts`. Since: `8889fdf`.
 - **edit without strict sampling** `[D-TOOLS-EDIT-STRICT]`. Our edit sets `constrainedSampling` to undefined, so Pi does
   not send it as an Anthropic `strict` tool; read, bash and write keep the stock `strict: "prefer"`. Owner
   (`16-27-59:208`):
   «01a15f4f-7b7e-70e6-b1e2-bb238ce75359»
   «Также в этой сессии поработал агент, и там дохуя ошибок записи. Он делает параллельные эдиты: проредактировал и потом снова делает через время параллельные эдиты. И там целая вереница эдитов красная, с ошибками. Он потом перепосчитал файлы и снова отредактировал. Надо разобраться, этот баг пофиксить.»
   Reason: strict sampling garbled edit arguments where Cyrillic text began, while a strict write of Cyrillic text came
-  through intact; the replay and probe numbers are in
-  [notes/decisions-evidence.md](notes/decisions-evidence.md#tools-edit-strict-sampling-replay). Carriers:
-  `extensions/RQW-tools/index.ts`, `test/extensions/RQW-tools/tools.test.ts` (the Anthropic request has no `strict` on
-  edit and keeps it on write). Since: `886b677`.
-- **Ordered conflict barrier** `[D-TOOLS-BARRIER]`. A call waits only for earlier calls it conflicts with: bash
-  conflicts with every call, read never with read, otherwise an equal path key or an ancestor conflicts. Within one
-  response this is the order; a background job of an earlier response holds later calls only as
-  [Background jobs](#tools) (D4, H1) says. Reason: prevent conflicting tool calls from racing; bash is serialized against bash because its footprint is
-  unknown. Evidence: [race analysis](notes/analysis-races.md). Carriers: `extensions/RQW-tools/barrier.ts`, `extensions/RQW-tools/index.ts`. Since: `8889fdf`.
-- **Codemode watchdog test** `[D-TOOLS-CODEMODE-WATCHDOG]`. The 500 KB codemode ordering test streams its faux-provider
-  fixture in fixed larger chunks and asserts the delta count; the 5 s deadlock watchdog, payload, ten repetitions and
-  ordering assertions stay; no runtime barrier or codemode change. Owner (`16-27-59:591`): the line quoted in
-  [D-TOOLS-BARRIER-TESTS]. Coordinator text, option 1a, the task wording: "Отдельной задачей разобрать, почему тест
-  кодмода на Windows иногда не укладывается в 5 секунд, и исправить причину". Reason: the test spent its watchdog
-  budget streaming tiny deltas before tools could run, not waiting in the barrier. Carrier:
-  `test/extensions/RQW-tools/codemode.test.ts`; analysis and proof:
-  [notes/settings-codemode.md, Test watchdog](notes/settings-codemode.md#test-watchdog). Since: `9a4068c`.
+  through intact. Carriers:
+  `extensions/RQW-tools/index.ts`. Since: `886b677`.
 - **In-place writes with Windows retry** `[D-TOOLS-WIN-RETRY]`. In-place writes stay; on Windows `EBUSY`/`EPERM`/`EACCES`
   are retried for about 1.5 s. Reason: temp file plus rename fails on Windows when another process holds the file.
   Carriers: `extensions/RQW-tools/retry.ts`, `edit.ts`, `write.ts`. Since: `8889fdf`.
 - **Search and output limits** `[D-TOOLS-LIMITS]`. grep and find get no match cap by default (`limit` 100000 when unset);
   the stock 50KB output cap stays; read and bash keep the stock 2000 lines / 50KB. Reason: Pi's default 100 grep matches
   cuts the broad first search wave; omp-lite's 51 200-character budget equals 50KB for ASCII. Carriers:
-  `extensions/RQW-tools/index.ts`, `test/extensions/RQW-tools/tools.test.ts`, the descriptions. Since: `8889fdf`.
+  `extensions/RQW-tools/index.ts`, the descriptions. Since: `8889fdf`.
   GREP-NULL correction: every optional grep/find field equal to JSON `null`, `undefined` or the string `"null"`
   is removed before argument validation, preserving required `pattern`, explicit booleans, zero and other values.
   Reason: a literal `"null"` otherwise becomes a glob/path or an invalid option. Source: GREP-NULL audit section 5
-  and the owner's 2026-10-24 fix request. Carrier: `extensions/RQW-tools/index.ts`; proof:
-  `test/extensions/RQW-tools/search-null.test.ts`.
+  and the owner's 2026-10-24 fix request. Carrier: `extensions/RQW-tools/index.ts`.
 - **Search method section** `[D-TOOLS-SEARCH-METHOD]`. The search wave method lives in the grep description; RQW-tools
   supplies the one-line `<search_method>` section through its own `before_agent_start` hook when read, grep and find
   are declared. Carriers: `extensions/RQW-tools/descriptions/grep.md`, `extensions/RQW-tools/index.ts`. Since: `04aa50f`.
 - **Caller's shell and image settings** `[D-TOOLS-SHELL-SETTINGS]`. read and bash are built with the user's settings
   (`shellPath`, `shellCommandPrefix`, `images.autoResize`), as stock Pi builds them. Reason: without `shellPath` a
-  Windows setup with Git outside Program Files finds no bash. Carriers: `extensions/RQW-tools/index.ts`,
-  `test/extensions/RQW-tools/behavior.test.ts`. Since: `f8cd7e9`.
-- **Offered tool factory** `[D-TOOLS-FACTORY]`. `createTools(cwd, settings, nested?, options?)` in `index.ts` builds the
-  six base tools and `job` with a barrier and a job registry of their own, plus the caller's `codemode` as one barrier
-  call when `options.codemode` is given. The extension registers one set for the session and answers a request on
-  `pi.events` channel `rqw-tools:subagent-tools` with `createTools` itself ([Agent](#agent)). Nothing in RQW-tools
-  depends on RQW-agent. Carriers: `extensions/RQW-tools/index.ts`; `test/extensions/RQW-tools/tools.test.ts` checks the
-  answer and that each call gives fresh definitions. Since: `90700ad`.
-- **Read key spellings** `[D-TOOLS-READ-KEY]`. The read key mirrors stock `resolveReadPath` (NFD, curly quote and AM/PM
-  variants), so a read and a write of the same file spelled differently still meet in the barrier. Carriers:
-  `extensions/RQW-tools/keys.ts`, `test/extensions/RQW-tools/paths-barrier.test.ts`. Since: `f8cd7e9`.
-- **Implicit order not described** `[D-TOOLS-HIDDEN-ORDER]`. The tool descriptions do not explain the automatic barrier
-  order (bash waits for earlier calls, a read waits for an earlier write); explicit waits on background jobs are
-  described. Reason: with those lines gpt-6.1-sol made one call per response; without them it batched
-  ([notes/decisions-evidence.md](notes/decisions-evidence.md#tools-barrier-order-lines)). Carriers:
-  `extensions/RQW-tools/descriptions/*.md`. Since: `0a2028e`.
+  Windows setup with Git outside Program Files finds no bash. Carrier: `extensions/RQW-tools/index.ts`. Since: `f8cd7e9`.
+- **Offered tool factory** `[D-TOOLS-FACTORY]`. `createTools(cwd, settings, options?)` builds fresh base tools and `job` with one job registry. `options.codemode` adds Pi's codemode definition with the same background-job lifecycle.
+
 - **Benchmark judging** `[D-TOOLS-JUDGING]`. A benchmark answer is judged with 5 judge votes, majority per checklist
-  point. Reason: with one vote the bench42 quality gap was judge noise on one point
-  ([notes/decisions-evidence.md](notes/decisions-evidence.md#tools-bench42)). Carrier: this rule; results in
-  `notes/bench42.csv`, `notes/bench44.csv` and the evidence note. Since: `52efad7`.
+  point. Reason: with one vote the bench42 quality gap was judge noise on one point. Carrier: this rule. Since: `52efad7`.
 - **Code answers in chat** `[D-TOOLS-ANSWER-IN-CHAT]`. `SYSTEM.md` says to answer a question about the code in the chat
   and to create or change files only when the task asks for it. Reason: a bench42 run hit the answer length limit and
-  moved its answer into a file ([notes/decisions-evidence.md](notes/decisions-evidence.md#tools-bench42)). Carrier:
+  moved its answer into a file. Carrier:
   `extensions/RQW-prompt/SYSTEM.md`. Since: `52efad7`.
 - **edit and write descriptions** `[D-TOOLS-EDIT-WRITE-DESC]`. The multi-file form comes first, and a rename gets one
   edit per occurrence with enough of its line. A line telling the model that bash sees the changed files again was
-  rejected. Reason: probes ([notes/decisions-evidence.md](notes/decisions-evidence.md#tools-description-probes),
-  `notes/refine/refine-editwrite.md`). Carriers: `extensions/RQW-tools/descriptions/edit.md`, `write.md`.
+  rejected. Carriers: `extensions/RQW-tools/descriptions/edit.md`, `write.md`.
   Since: `1628f8c`.
 - **read description** `[D-TOOLS-READ-DESC]`. Read a needed file whole in one call and read every file needed next in
-  one response; bash does not read or search files. Reason: probes
-  ([notes/decisions-evidence.md](notes/decisions-evidence.md#tools-description-probes),
-  `notes/refine/refine-readbash.md`). Carriers: `extensions/RQW-tools/descriptions/read.md`, `bash.md`.
+  one response; bash does not read or search files. Carriers: `extensions/RQW-tools/descriptions/read.md`, `bash.md`.
   Since: `a0bd1b1`.
 - **grep and find descriptions** `[D-TOOLS-SEARCH-DESC]`. The search wave names the spellings to try, reads every file
   the hits already justify in one response, and stops when, for every implementation, it is known where each value is
   set, used and what the code does with it; find shows brace alternatives. Reason: chosen by rule completeness, then
-  responses ([notes/decisions-evidence.md](notes/decisions-evidence.md#tools-description-probes),
-  `notes/refine/refine-search.md`). Carriers: `extensions/RQW-tools/descriptions/grep.md`, `find.md`. Since: `9e13b55`.
+  responses. Carriers: `extensions/RQW-tools/descriptions/grep.md`, `find.md`. Since: `9e13b55`.
 - **Description precision** `[D-TOOLS-DESC-PRECISION]`. grep respects .gitignore inside a git repository only; a grep
   glob with "/" matches from path; find also returns directories; the edit hint may be absent; a cut grep line is read
   around instead of narrowing; a tool result that names cat or sed overrides the ban; a long file written in parts is
-  the one exception to one edit call per file. Reason: the second description review
-  (`notes/review-descriptions-2.md`). Carriers: the six descriptions in `extensions/RQW-tools/descriptions/`.
+  the one exception to one edit call per file. Carriers: the six descriptions in `extensions/RQW-tools/descriptions/`.
   Since: `a56e291`.
 - **Implementations that do not run** `[D-TOOLS-INACTIVE-IMPL]`. The prompt asks, for an implementation that does not
   run, where its value is set, where it is used and what that code does; a line asking to name every setting on the
-  code path was rejected. Reason: probes
-  ([notes/decisions-evidence.md](notes/decisions-evidence.md#tools-inactive-implementation-probe)). Carrier:
+  code path was rejected. Carrier:
   `extensions/RQW-prompt/SYSTEM.md`. Since: `7890a8b`.
 - **Fully specified files** `[D-TOOLS-SPECIFIED-WRITE]`. A new file the task fully specifies needs no read of its
   neighbours (one line in `SYSTEM.md`, one in `read.md`); the find example shows that "app" returns the directory only
-  while "app/**" returns its files. Reason: probes
-  ([notes/decisions-evidence.md](notes/decisions-evidence.md#tools-faster-writing-probes),
-  `notes/refine/refine-write2.md`, `notes/refine/refine-find.md`). Carriers: `extensions/RQW-prompt/SYSTEM.md`,
+  while "app/**" returns its files. Carriers: `extensions/RQW-prompt/SYSTEM.md`,
   `extensions/RQW-tools/descriptions/read.md`, `find.md`. Since: `a0b6e75`.
 - **Compaction file lists** `[D-TOOLS-COMPACTION-LIMIT]`. Accepted limit: Pi's compaction summary lists changed files
   from `args.path` only, so files given in `write.files[]` or `edits[].path` are missing from that list. Fixing it needs
   a change in Pi itself; the files stay in the transcript and the tool results. The premise was read in Pi's source
   before 1.4.0 and is not re-verified for 1.4.0. Since: `bfb2712`.
-- **Background jobs** `[D-TOOLS-BG]`. Owner (`16-27-59:2561`, `16-27-59:2574`, design answers `16-27-59:2598`):
-  «Да, и надо, чтобы основной агент. Нет, знаешь как? Надо, чтобы длительные shell процессы сами уходили в фон. Если он работает больше 20 секунд, чтобы он превращался в фоновый процесс, а не оставался висячим активным процессом. Надо, чтобы всё, что висит больше 20 секунд, любая операция, которая висит больше 20 секунд, уходила в background, и можно было просто её пропинговать через какое-то время. Чтобы у агента был инструмент проверки состояния.»
-  «только надо время сократить до 12 секунд, после 12 секунд уходит в фон.»
-  «1а2а3а»
-  «4 - надо разобраться с рейс кондишенами и найти самое интелектальное производительное и эффективное решение марщрутизации и оркестрации тулколов»
-  «5б»
-  «6а с учетом 4 пункта добавочного»
-  Rule: a top-level call of `bash`, `codemode` (the whole script) or `read`, `edit`, `write`, `grep`, `find` that has
-  not settled 12 s after it started, barrier wait included, returns at once as `job#N` with the command, elapsed time,
-  the output so far and a log file in the OS temp dir, and keeps running; a call that settles sooner returns exactly the
-  stock result. Calls inside a codemode script never go to the background. The `job` tool (`wait`, `status`, `kill`; `ids`, `id`,
-  `timeout_ms` default 300000 when omitted, `lines` default 20) waits mechanically until one selected job ends or the
-  caller's deadline, keeps collecting for 250 ms after the first one ends, shows state, exit code, elapsed time, tail
-  and log path, and kills a process job with its process tree or cancels a queued one. Approved caveat: a running
-  file-tool job (`read`, `edit`, `write`, `grep`, `find`) cannot be interrupted safely; `job kill` reports
-  `cannot_kill` and it finishes on its own. This is a design limit, not a defect; queued file-tool jobs can be
-  cancelled. A wait may be a notification instead of a held call (`[D-TOOLS-NOTIFY]`); the descriptions say to kill jobs
-  one no longer needs before the final answer. A process job dies on `job kill`, its `timeout`, a child's management
-  interrupt and the caller's shutdown or reload, and after the handoff not on Esc or a new owner message; jobs belong to the session whose call started them (one registry per `createTools`; RQW-agent
-  calls the offered `job` definition's `jobs.abortAll()` on interrupt and `jobs.dispose()` on close). `job` is active
-  whenever one of these tools is; when Pi's allowlist keeps it off, nothing goes to the background. Reason: long
-  operations must not hold the agent, and the agent needs a tool to check them; Codex unified exec yields the same way;
-  the threshold is the owner's value.
-  Ordering (D4). Owner (`16-27-59:2705`): «1a + живай проверка на хайку и луна хай ризонинга»; option 1a of the ordering
-  proposal is named in coordinator text "ordered until handoff, free after". Calls of the same response keep the barrier
-  order: a call after a backgrounded job waits for its real end and itself becomes a queued job after 12 s. At the
-  handoff a bash or codemode job is detached from the barrier (`detach` in `barrier.ts`, through `nested.ts`); calls of
-  later responses wait for it only for the resources it holds (H1). A read, edit or write job keeps its paths. A
-  dependency on a background job is explicit: `job wait`, then the dependent call. While a bash or codemode job of the
-  caller runs, a read, edit or write of a file changed outside the caller's tools since that job started gets one note
-  naming the job.
-  Routing (FR-safe). Owner (`16-27-59:3117`, the answer to the routing question): «2а». Holds (H1): at the handoff a
-  bash job keeps what `footprint.ts` reads with certainty from its command text: the package folder an install changes,
-  the git index and refs of a repository a git command changes (every subcommand except known reading ones), and the
-  exact files it writes (redirects, `tee`, `sed -i`, `curl -o`, `rm`, `mkdir`, `touch`, `cp`/`mv`/`ln` destinations).
-  `footprint.ts` restores the outer working directory when a subshell closes. Mutating `git symbolic-ref` and
-  `git reflog` forms hold the repository; their read-only forms remain reads.
-  A later call waits only for these; reads never wait; any doubt holds nothing. Package-folder and git holds are
-  process-wide (`ledger.ts`) across main, subagents and reviewers; files are not ordered across sessions, they
-  get attributed notes. Effects report (O1): a top-level bash call that can become a job, or a top-level codemode call,
-  takes a snapshot of the working tree
-  (`git ls-files -co --exclude-standard`, or outside git a walk with one global limit of 20000 files, including
-  within a single wide directory, without .git, node_modules,
-  .next, target, .venv, __pycache__) right before its command starts, and a job takes another when it ends; what
-  changed is the difference of the two states, never a time cutoff. Approved caveat: a bash call with its own
-  positive `timeout` of 13 s or less never goes to the background, so it takes no pre-start snapshot. Calls with a
-  longer or absent timeout take the snapshot even if they finish before handoff; this is not a snapshot defect. Owner (`16-27-59:3621`), on the cost:
-  «Да, если это всего лишь 150 миллисекунд на 20 тыс. файлов, конечно, блядь, надо делать снимок файлов точный. Это 1А.»
-  The report lists files created and changed while the job ran (with the other session and tool), the caller's own
-  writes, own writes overwritten since, files deleted since the start, and the other jobs that ran alongside.
-  Unreadable directories, file-stat failures and git warnings recorded by either snapshot appear in `effects.errors`,
-  labelled before the start or at the end; failed or cancelled scans, git listing failures and the global walk bound
-  are reported in `effects.errors` or `scanned`. Unchecked paths are explicit, and an inaccessible file is not
-  classified as deleted. Write precondition (P1): a write over a file the session has read or written, changed
-  since by anyone else, is refused once with who changed it; the identical retry overwrites; a file never seen is
-  written without a check. Check, stock tool and ledger record run in one process-wide critical section per file
-  (`withFileLock`); files are keyed by native real path (`identityKey` in `keys.ts`); records belong to a registry
-  `owner`, the label is only shown. K1: `job kill` also cancels the queued same-response calls that wait for the killed
-  job and lists them in `cancelled_followers`; a killed queued call leaves the barrier at once (`withdraw`). N1: a job
-  that ended with an unseen non-empty effects report adds one note line to the caller's next top-level tool result.
-  W1: `job wait` takes `until`, a JavaScript regular expression on the output (a leading `(?i)` ignores case). S1: a
-  codemode script waits as a queued job for a free worker of the process (`PI_CODEMODE_MAX_WORKERS`, default 2). A
-  bash call inside a codemode script takes the same process-wide claims. Each session's label comes through the
-  optional `options.label` of the offered factory (`main`, `agent#1`, `agent#1/agent#2`, ...).
-  Children like main. Coordinator text, technical decision at the rebase onto subagent parity; the parity request,
-  owner (`16-27-59:2608`): «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи свои предложения».
-  With an RQW-tools offer, a child's `codemode` is Pi's definition built from that session's API, passed
-  as `options.codemode` and returned as one call of the child's barrier and a job of its registry, so a child script goes
-  to the background after 12 s like main's and S1 slots count main and every child together; without an offer the child
-  keeps Pi's stock codemode. Reviewer profiles are ordinary agents and get the same offered `job` tools,
-  notification bridge and management cancellation as every child. The prompt section `rqw_tools_execution` says that a
-  background job holds the later calls of its response and, from later responses, only calls that change what it holds.
-  Reason: a replay of recorded tool calls left D4 alone with silent overlaps between jobs and later calls; FR-safe
-  leaves none silent and keeps the same-response order; the owner chose it. Probes, replay, snapshot cost, pilot defects
-  and code-review fixes: [notes/decisions-evidence.md](notes/decisions-evidence.md#background-jobs-evidence); races
-  R16-R24: `notes/analysis-races.md` section 9.
-  Carriers: `extensions/RQW-tools/jobs.ts`, `barrier.ts`, `nested.ts`, `footprint.ts`, `ledger.ts`, `keys.ts`,
-  `index.ts`, `codemode.ts`, `descriptions/bash.md`, `descriptions/job.md`, `descriptions/write.md`;
-  `extensions/RQW-agent/index.ts`;
-  `notes/prompt-tools-isolation.md`. Proof: `test/extensions/RQW-tools/background.test.ts`, `barrier-detach.test.ts`,
-  `footprint.test.ts`, `ledger.test.ts`; `test/extensions/RQW-agent/wait.test.ts`,
-  `agent.test.ts`;
-  `test/prompt-tools-isolation.test.ts`. Since: `e5440f2`; scan and footprint safeguards since `e1cca48`; handoff independence and notification waits since the final squash of branch `agent-async`. Earlier wording (Esc killed jobs, polling only): [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0264.
+- **Background jobs** `[D-TOOLS-BG]`. A call still running after 12 seconds returns `job#N` with output and a log path. `job wait`, `status` and `kill` return results, status and exit codes; a completion wait sends one notification. Jobs survive Esc and new messages, and end on kill, child interrupt or session shutdown. Running file-tool calls finish on their own. There are no execution claims, resource holds, file snapshots or effects reports. Carriers: `extensions/RQW-tools/{index.ts,jobs.ts,codemode.ts,counts.ts}`.
 
-- **Notification waits and independent jobs** `[D-TOOLS-NOTIFY]`. Owner (`16-27-59:4876`, entry `85357ce9`) and (`16-27-59:4937`, entry `a8684155`):
-  Entry `16-27-59:4876` asked that waits wake the agent by notification and that owner steering stay possible without aborting
-  waits, children or jobs; its exact text is not kept in this repository, only the entry id and that summary. Entry
-  `16-27-59:4937` (the same spans are kept in [BACKLOG.md](BACKLOG.md#asynchronous-tool-research-sources)):
-  «Также добавь в список задач, что нам нужно сделать реализацию асинхронного tool calling, как в Codecs CLI, чтобы агент мог вызывать tool call и при этом асинхронно полностью работать, принимать от меня сообщения и не обрываться на этом.»
-  Rule, taken by default (coordinator text, not an owner quote): `job wait` registers its subscription and snapshot in one
-  synchronous step. A result that is ready now returns at once as before. Otherwise the call returns `reason: "waiting"`
-  with `terminate: true`, so the caller's turn ends with no further model request, and one notification (a job ended, an
-  `until` match, or the `timeout_ms` deadline; ends within 250 ms join one notification) later arrives as a `[job]`
-  message that wakes an idle caller. A busy caller gets it at the settlement boundary, held outside Pi's steering queue so
-  Esc and send-now do not drop it. A newer wait on the same job replaces the older one; a result already shown by
-  `status`, `wait` or `kill` is not announced again. There is no explicit held-wait parameter; see `[D-TOOLS-NO-BLOCKING-FLAG]`.
-  Calls inside a codemode script stay blocking. The print/json fallback is for external hosts only: a root session run by Pi in print or json mode ends
-  with its run, so its waits block; an in-process child agent with the `notify`/`retain` bridge keeps notifications even when its SDK mode reads print.
-  Any caller without a `notify` callback keeps the blocking wait. Reviewer profiles use the ordinary child bridge. The `notify` callback
-  of the job registry is the same one subagent waits use, so no second delivery registry exists. A child's offered factory also
-  gets the optional `retain` hook, taken only while a notification subscription is pending, so the child's assignment stays open;
-  both hooks are optional and keep the extensions independent.
-  A job that went to the background belongs to the session: Esc, abort of the run, a new owner message and send-now
-  do not kill it. `job kill`, a child's management interrupt (`jobs.abortAll()`), `stop`/`restart` and session shutdown
-  do. A foreground call still aborts with its run. This supersedes owner decision D5 (Esc kills all background jobs) of
-  `[D-TOOLS-BG]`; no owner quote for D5 is repeated here.
-  Reason: the owner wants a waiting agent not to hold a call and owner messages not to kill background work.
-  Carrier: `extensions/RQW-tools/jobs.ts` (`watch`, `notify`), `extensions/RQW-tools/index.ts` (`installNotifications`),
-  `extensions/RQW-tools/descriptions/job.md`. Proof: `test/extensions/RQW-tools/notify.test.ts`, `notify-sdk.test.ts`, `background.test.ts`.
-  Since: the final squash of branch `agent-async`; explicit held waits removed by `[D-TOOLS-NO-BLOCKING-FLAG]`.
-
-- **Remove the explicit held-wait option** `[D-TOOLS-NO-BLOCKING-FLAG]`. Owner:
-  «Не синхронный, а АСИНХРОННЫЙ тулинг я заказывал что бы никто никогда не мог физически заблокироваться»
-  Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry `9987ee04`, line 6807.
-  After the remaining blocking paths were reported, the owner narrowed this delivery:
-  «Да только блокинг тру пока»
-  Source: the same session, USER entry `811f5ec6`, line 6832.
-  Remove `blocking` from both `agent` and `job`, including its schema, explicit held-wait branch and instructions.
-  Direct waits with notifications use the existing immediate `waiting` receipt and later notification.
-  Known remaining blocking paths are deferred by the owner and unchanged in this delivery:
-  1. The shared agent operation queue and long `start`/`restart`/`resume` control calls, including hydration,
-     authorization and session preflight (`extensions/RQW-agent/index.ts`, `execute`, `resolveConfig`, `createSession`, `startRun`).
-  2. Waits inside codemode scripts (`toolCallId.includes("/")` in RQW-agent and `id.includes("/")` in RQW-tools).
-  3. External root print/json hosts and callers without a notification callback, including the implicit
-     `Coordinator.observe` host wait (`extensions/RQW-tools/index.ts`, `installNotifications`; RQW-agent host lifecycle).
-  Reason: remove the explicitly selectable blocker now without adding an unapproved background mechanism.
-  Carriers: `extensions/RQW-agent/index.ts`, `extensions/RQW-tools/jobs.ts`, their descriptions, READMEs and tests;
-  `AGENTS.md`, `PROCESS.md`. Superseded coordinator-default text is preserved verbatim in
-  [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), Explicit held-wait option.
-  Since: the nonblocking-waits delivery.
+- **Notification waits and independent jobs** `[D-TOOLS-NOTIFY]`. Where notifications are available, `job wait` returns `waiting` at once and one later notification carries the result. Inside codemode or without a notification callback it blocks. A newer wait on the same job replaces the older one.
 
 ## Context
 
@@ -1170,54 +864,48 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Native routing and reserve** `[D-CONTEXT-ROUTING]`. Stable capped copies are exposed through Agent state, `createLoopConfig`, `_buildRuntime` and native `ModelRuntime.getPhysicalModel`; registry entries are not mutated. Virtual selections keep their native identity, callback, thinking and declared or unknown window. Session/request-local `AsyncLocalStorage` supplies the physical target's W/R: automatic preparation uses its triggering target, manual preparation the latest successful response after abort. Default summaries preserve interception preparation and route once from Pi's captured selection. Summary-reserve rebinding is removed: Pi 1.4.0 compact does not read preparation.settings, and native summary output limits remain unchanged. The universal W/R rule, explicit settings and physical request scopes remain.
   Coordinator text: the owner accepted removal of inert summary-reserve rebinding in the CONTEXT-SIMPLIFY task brief; this is not an owner quotation.
   Reason: remove bookkeeping that changes neither summary requests nor results, without changing physical limits or native selection identity.
-  Carrier: `extensions/RQW-context/index.ts` (`wrapAgentState`, `wrapRouting`, `wrapCompactionSettings`), `extensions/RQW-context/README.md`; details: `notes/context-questions.md`. Proof: `/tmp/context-simplify-proof.mjs`, `/tmp/context-simplify-proof.log` compare native library and bundle split/non-split compaction with varied reserves, fixed sessionId and normalized timestamps. Since: context-simplify delivery; supersedes the entry introduced by `6eb01a7`, archived from `0521318` in `DECISIONS-ARCHIVE.md`.
+  Carrier: `extensions/RQW-context/index.ts` (`wrapAgentState`, `wrapRouting`, `wrapCompactionSettings`), `extensions/RQW-context/README.md`. Since: context-simplify delivery; supersedes the entry introduced by `6eb01a7`, archived from `0521318` in `DECISIONS-ARCHIVE.md`.
 - **Explicit settings and accepted limits** `[D-CONTEXT-SETTINGS]`. Pi's global `compaction.reserveTokens` and per-selection `compaction.modelOverrides["provider/id"].reserveTokens` retain their precedence when below W; a reserve of W or more falls back to R. `compaction.enabled: false` still disables threshold and overflow compaction. A positive models.json window is honored up to the cap; absent or nonpositive windows retain Pi's behavior. The catalog, `model_select.model` and RPC `set_model` show the declared window, while session state and the footer show the capped window; reconciling them requires a Pi API.
   Coordinator text. Reason: preserve explicit user choices without producing a nonpositive threshold.
-  Carrier: `extensions/RQW-context/index.ts` (`reserveFor`, `userSetReserve`); `test/extensions/RQW-context/context.test.ts`. Since: `a03eb47`.
-- **Output and summary limits** `[D-CONTEXT-LIMITS]`. Pi 1.4.0 summary requests use the summarizing model's output limit, not R. pi-ai also clamps output to the window minus estimated input minus 4096, with a floor of one token; capping the window can therefore make oversized input or prose-heavy summary requests unrecoverable. Tool-result truncation in summaries can make tool-heavy histories behave differently. Threshold compaction and native overflow recovery remain Pi's responsibility; this extension adds no provider window field or recovery algorithm. Historical Pi 1.3.0 measurements are evidence, not current Pi 1.4.0 measurements, in [context limits evidence](notes/decisions-evidence.md#context-limits).
+  Carrier: `extensions/RQW-context/index.ts` (`reserveFor`, `userSetReserve`). Since: `a03eb47`.
+- **Output and summary limits** `[D-CONTEXT-LIMITS]`. Pi 1.4.0 summary requests use the summarizing model's output limit, not R. pi-ai also clamps output to the window minus estimated input minus 4096, with a floor of one token; capping the window can therefore make oversized input or prose-heavy summary requests unrecoverable. Tool-result truncation in summaries can make tool-heavy histories behave differently. Threshold compaction and native overflow recovery remain Pi's responsibility; this extension adds no provider window field or recovery algorithm.
   Coordinator text. Reason: the owner's window cap does not remove native output and summary constraints.
-  Carrier: `extensions/RQW-context/index.ts`, `test/extensions/RQW-context/context.test.ts`, `test/extensions/RQW-context/routing.test.ts`; Pi 1.4.0 `pi-ai/dist/api/simple-options.js` and `dist/core/compaction/utils.js`. Since: `a03eb47`.
+  Carrier: `extensions/RQW-context/index.ts`; Pi 1.4.0 `pi-ai/dist/api/simple-options.js` and `dist/core/compaction/utils.js`. Since: `a03eb47`.
 - **Checked process-wide lifecycle** `[D-CONTEXT-LIFECYCLE]`. Native method descriptors, arities, model getter and prototype extensibility are checked before static installation; unsupported shapes fail without static changes. Hooks are installed once per process and apply while `Symbol.for("rqw-context/owner")` holds any live owner token. Each `session_shutdown` removes only its own token; the last removal restores stock behavior, including physical lookup identity. SDK `dispose()` alone does not emit this lifecycle event, and sessions that excluded the extension still receive the rule while another owner remains. Updating the hook implementation requires restarting Pi, not only `/reload`.
   Coordinator text. Reason: independent sessions must not disable each other's universal context policy.
-  Carrier: `extensions/RQW-context/index.ts`, `test/extensions/RQW-context/context.test.ts`, `test/extensions/RQW-context/routing.test.ts`; restart instructions: `INSTALL.md`; [context proof](notes/decisions-evidence.md#context-proof). Since: `e1fa03d`.
+  Carrier: `extensions/RQW-context/index.ts`; restart instructions: `INSTALL.md`. Since: `e1fa03d`.
 
 ## Prompt
 
-- **Custom prompt** `[D-PROMPT-CUSTOM]`. RQW-prompt sets `systemPromptOptions.customPrompt` in `before_agent_start` from `extensions/RQW-prompt/SYSTEM.md` plus workstation, critical, environment and date blocks. It does not force the full prompt: Pi still appends project context, skills and cwd, and records sections. The date block does not duplicate cwd. The concept is documented in `notes/prompt-concept.md`; historical benchmark results are recorded in [prompt history](notes/decisions-evidence.md#prompt-history), not a claim that the original template is the only measured version.
+- **Custom prompt** `[D-PROMPT-CUSTOM]`. RQW-prompt sets `systemPromptOptions.customPrompt` in `before_agent_start` from `extensions/RQW-prompt/SYSTEM.md` plus workstation, critical, environment and date blocks. It does not force the full prompt: Pi still appends project context, skills and cwd, and records sections. The date block does not duplicate cwd.
   Coordinator text: the historical initial owner quote has not been verified in the permitted Pi USER sources.
   Reason: replace the prompt prefix while retaining Pi's context assembly.
   Carrier: `extensions/RQW-prompt/index.ts`, `extensions/RQW-prompt/SYSTEM.md`. Since: `17c21eb`.
 
 ### Prompt/tools isolation
 
-- **Conditional tool instructions** `[D-PROMPT-TOOL-ISOLATION]`. RQW-prompt makes no RQW-tools-specific search or execution assumptions. RQW-tools adds `systemPromptOptions.sections.search_method` only when read, grep and find are declared, and `rqw_tools_execution` only when bash is declared, checking `selectedTools` minus `hiddenTools`. This uses native sections, without an import or handshake between the two extensions, and works with either extension disabled or either load order. The same pure section function also answers the optional read-only `rqw-prompt:startup-projection` channel, so Codex can project the next prefix without invoking turn hooks; either extension still works with the others off. The write-in-parts rule belongs only to `extensions/RQW-tools/descriptions/write.md`; `forceSystemPrompt` bypasses native sections and is not overridden. Native section placement was accepted despite measured changes, not claimed to be behaviorally neutral.
-  Coordinator text: the isolation requirement is recorded in [Isolation](#isolation); its historical quote is not verified in the permitted Pi USER sources.
-  Reason: instructions must follow available tools without coupling extensions.
-  Carrier: `extensions/RQW-tools/index.ts`, `extensions/RQW-prompt/SYSTEM.md`, `test/prompt-tools-isolation.test.ts`. Evidence: `notes/prompt-tools-isolation.md`, [source proof](notes/decisions-evidence.md#prompt-isolation-source), [accepted measurements](notes/decisions-evidence.md#prompt-isolation-measurements). Since: `04aa50f`.
+- **Conditional tool instructions** `[D-PROMPT-TOOL-ISOLATION]`. RQW-tools supplies the search-method section only when read, grep and find are visible, and the independent-execution/background-job section only when bash is visible. The same sections join the startup projection without an RQW-prompt dependency.
 
 ## Settings
 
 - **Background cache warming** `[D-SETTINGS-WARMING]`. Background warming is off inside RQW-settings regardless of user configuration; normal inference still writes and reads prompt caches. A reversible session-owned `getCacheWarmingMode` policy leaves settings files, environment and cache-miss notices unchanged, restores the native getter on shutdown, and preserves other owners and foreign hooks through reload. All children, including reviewer profiles, carry the policy owned by RQW-agent.
   Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 440, in `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`.
   Reason: no synthetic keepalive inference before the first real request.
-  Carrier: `extensions/RQW-settings/cache-warming.ts`, `test/extensions/RQW-settings/cache-warming.test.ts`, `test/cache-warming-reload.test.ts`; evidence: `notes/prompt-cache-policy.md`. Since: `b91f832`.
+  Carrier: `extensions/RQW-settings/cache-warming.ts`. Since: `b91f832`.
 - **Default tools and reload** `[D-SETTINGS-DEFAULT-TOOLS]`. RQW-settings activates registered built-in `codemode` and `tool_search` at `session_start` only without an explicit CLI or `defaultTools` selection, using the same selection policy as RQW-tools for grep/find. Disabled built-ins are not added. The default codemode mode stays `on`; Pi adds codemode call signatures to the seven RQW-tools descriptions, including `job`. On `/reload` both extensions leave the existing active set alone, preserving user changes.
   Coordinator text: the historical CodeMode/Tool Search owner quotation is not verified in the permitted Pi USER sources.
   Reason: useful defaults must not override explicit selections.
-  Carrier: `extensions/RQW-settings/index.ts`, `extensions/RQW-settings/selection.ts`, `extensions/RQW-tools/index.ts`, `extensions/RQW-tools/selection.ts`; details: `notes/settings-codemode.md`. Since: `3720200`.
-- **Codemode barrier and capacity** `[D-SETTINGS-CODEMODE]`. With RQW-tools loaded, the registered Pi `codemode` definition is wrapped as one outer barrier call with scope all; its script tools use that call's own barrier. Nested calls find the group through `<codemode id>/<n>` ancestry, not AsyncLocalStorage, so Bun worker callbacks do not lose the grouping. Unregistered ancestors fall back without waiting on themselves. Pi 1.4.0 has process-wide codemode worker slots, `PI_CODEMODE_MAX_WORKERS` default 2, a FIFO slot wait capped at 60 seconds or the remaining script deadline, and a 256 MB VM limit; nested scripts can exhaust slots and time out. The wrapper adds no unlimited capacity and respects `-builtin:codemode`.
-  Coordinator text. Reason: nested execution must preserve ordering on Node and Bun without self-deadlock.
-  Carrier: `extensions/RQW-tools/nested.ts`, `extensions/RQW-tools/codemode.ts`, `extensions/RQW-tools/index.ts`, `test/extensions/RQW-tools/bun/codemode-check.mjs`; CI: `.github/workflows/tests.yml` covers Node 22.19.0 and 24, Bun 1.3.14 and 1.4.3. Evidence: `notes/settings-codemode.md`, [codemode history](notes/decisions-evidence.md#codemode-history). Since: `b98baec`.
+  Carrier: `extensions/RQW-settings/index.ts`, `extensions/RQW-settings/selection.ts`, `extensions/RQW-tools/index.ts`, `extensions/RQW-tools/selection.ts`. Since: `3720200`.
 - **GPT Fast** `[D-SETTINGS-GPT-FAST]`. `/fast-gpt [on|off]` toggles the main chat's OpenAI priority processing, with no argument toggling it; `FAST_GPT_DEFAULT = false`. Only matching `openai-codex` request bodies receive `service_tier: "priority"` through `before_provider_request`; Anthropic is untouched. State survives reload and new sessions in the process, not restarts, and has no settings key. The hook applies to SSE and WebSocket request bodies; Pi accounts for the response's service tier. The main-chat indicator belongs to [Status bar](#status-bar).
   Owner: «Режим Fast должен действовать только на основной чат. И по умолчанию он должен передаваться сабогентам. Но если я запрещу исполнителю сабогенты запускать в режиме Fast, то он должен этому повиноваться. Так это должно работать»
   Owner: «В CloudCode у нас режима Fast нет, потому что у меня нет кредитов, чтобы режим Fast поддерживать в CloudCode. Поэтому наш режим Fast распространяется только на GPT. Можно даже называть его GPT Fast.»
   Source for both exact spans: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 2170, in the Pi session directory named above.
   Reason: expose GPT-only priority without changing provider transports or Anthropic requests.
-  Carrier: `extensions/RQW-settings/fast-gpt.ts`; tests: `test/extensions/RQW-settings/fast-gpt.test.ts`, `test/extensions/RQW-statusbar/fast-gpt.test.ts`. Since: `fa05edf`; default off since `7ad7de8`.
+  Carrier: `extensions/RQW-settings/fast-gpt.ts`. Since: `fa05edf`; default off since `7ad7de8`.
 - **GPT Fast inheritance** `[D-SETTINGS-GPT-FAST-CHILDREN]`. Subagents and reviewers inherit their caller's GPT Fast state at start; nested children inherit from their direct caller. Later main-chat toggles do not update running children. Optional boolean `fast_gpt` overrides inheritance, and agent `send` or `restart` may explicitly change a child's state; omitted restart keeps it. A strict-schema null means omitted. The `agent` description tells callers to pass `fast_gpt: false` when the user forbids Fast. Reviewer profiles use the same agent implementation. The extension-local `fast-gpt.ts` queries `rqw-settings:fast-gpt-query` synchronously; `rqw-settings:fast-gpt` notifies changes. Without a settings responder, inherited main-chat Fast is off.
   Owner: the exact inheritance instruction is recorded in GPT Fast above.
   Reason: child tier follows the caller's choice without live coupling or cross-extension imports.
-  Carrier: `extensions/RQW-agent/fast-gpt.ts`, `index.ts` and `test/extensions/RQW-agent/fast-gpt.test.ts`. Since: `fa05edf`.
+  Carrier: `extensions/RQW-agent/fast-gpt.ts`, `index.ts`. Since: `fa05edf`.
 
 ## Isolation
 
@@ -1229,9 +917,9 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Coordinator text: the historical isolation quote is not verified in the permitted Pi USER sources.
   Reason: one feature flag must not require another extension to exist.
   Carrier: `extensions/`, `test/isolation.test.ts`, `test/isolation-run.ts`. Since: `81cafe3`.
-- **Registered resource coverage** `[D-ISOLATION-COVERAGE]`. `test/isolation.test.ts` derives its tested extension list from `package.json` `pi.extensions`, checking local imports, independent loading, tool behavior and package-filter reload, including naming, thinking, agent-ui and tool-ui. It also checks unique resource registration, agent-ui before tool-ui and native package-loader discovery of `RQW-theme` with extensions disabled.
+- **Registered resource coverage** `[D-ISOLATION-COVERAGE]`. Tests: `test/isolation.test.ts`.
   Coordinator text. Reason: registration and independent resource delivery need manifest-driven coverage; this is not a claim of physical-terminal or end-to-end proof.
-  Carrier: `package.json`, `test/isolation.test.ts`, `test/isolation-run.ts`; [historical coverage](notes/decisions-evidence.md#isolation-coverage-history); `test/tool-ui-smoke.test.ts` separately tests tool UI. Since: `81cafe3`.
+  Carrier: `package.json`, `test/isolation.test.ts`, `test/isolation-run.ts`. Since: `81cafe3`.
 - **Package switch and native limits** `[D-ISOLATION-SWITCH]`. Switch one extension off with the object-form package entry and the exact file exclusion `"extensions": ["-extensions/RQW-<name>/index.ts"]`, keeping the same source `git:github.com/ARQAWA/my-pi`; a directory-only exclusion does not match the file. The filter takes effect after reload or restart. `pi -e <dir>` bypasses package filters; choose individual entrypoint files and use `-ne` to avoid an installed copy. Built-ins use `-builtin:<name>`, not package filters. Pi preserves active tools on reload, so stock grep/find or codemode/tool_search may remain active after their RQW extension is disabled until a new session or restart.
   Coordinator text. Reason: use Pi's package controls without inventing a second switch mechanism.
   Carrier: `INSTALL.md`, `test/isolation.test.ts`; Pi 1.4.0 `dist/core/package-manager.js`, `dist/core/resource-loader.js`, `dist/core/agent-session.js`. Since: `81cafe3`.
@@ -1275,16 +963,16 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   All locators name the `16-27-59` session in Provenance. Reason: reuse native Codex role files and one existing
   runtime while preserving Pi behavior. Carriers: `extensions/RQW-agent/profiles.ts`, `index.ts`, `prompt.ts`,
   `extensions/RQW-review/`, `package.json`; contract: [RQW-agent README](extensions/RQW-agent/README.md#codex-profiles).
-  Focused proof: `test/extensions/RQW-agent/profiles.test.ts`, `profile-runtime.test.ts`. Since: subagent-profiles.
+  Since: subagent-profiles.
 
 - **Native prompt files** `[D-AGENT-PROMPT-FILES]`. Agent start/restart accepts `system_file` or `role_file` instead of the corresponding inline prompt; paths resolve relative to the caller's cwd. A regular file supplies exact UTF-8 text, including whitespace and a literal BOM; invalid UTF-8, matching inline/file options, or mixing any system option with any role option is rejected. Restart inherits the prompt choice and re-reads a file before replacing the child, so failed validation leaves the old child intact. Push `details.prompt_file` and wait `details.results[i].display.prompt_file` carry the same `{kind, path, sha256}` for the absolute resolved path and bytes actually loaded. Profile prompt defaults use this same explicit override API (`[D-AGENT-PROFILES]`).
   Owner: «Всё должно быть нативно. Подумай, как можно максимально интеллектуально прокачать этот функционал.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at physical line 3963, requested at 2026-10-23T13:01:47.145Z.
   Reason: native prompt inputs replace manually copied prompt text without losing byte provenance.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts`, `extensions/RQW-agent/prompt.ts`; proof: `test/extensions/RQW-agent/prompt-files.test.ts`; [file contract](extensions/RQW-agent/README.md#prompt-files-and-caller-messages). Since: `dc4f32e`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts`, `extensions/RQW-agent/prompt.ts`; [file contract](extensions/RQW-agent/README.md#prompt-files-and-caller-messages). Since: `dc4f32e`.
 - **Verbatim caller messages** `[D-AGENT-CALLER-MESSAGES]`. Agent start/restart may pass `include: ["user_messages"]` to append a `<user_messages>` block after the task. It contains user-role text from the caller's selected branch, including entries before compaction, in branch order; text parts are joined with newlines, images and non-user messages are omitted. Nested callers contribute their own session messages, not the root session's. Inclusion is not inherited on restart, and restart without task stays idle; the required start task remains the inline `task` field.
   Coordinator text: technical realization of the native-input agreement in `[D-AGENT-PROMPT-FILES]`.
   Reason: forward actual caller messages rather than summaries or retyped quotations.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts` (`appendUserMessages`); proof: `test/extensions/RQW-agent/prompt-files.test.ts`. Since: `dc4f32e`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt-files.ts` (`appendUserMessages`). Since: `dc4f32e`.
 - **Automatic child progress notifications** `[D-AGENT-PROGRESS]`. A step is one non-final assistant response containing one or more tool calls, not an individual tool execution. After 50 such responses without communication, deterministic code starts one background one-shot summary of the child's own context. Parent `send` and a delivered report reset the count; `status` and `wait` do not. The child never waits for the summary and receives no report prompt, skill or session entry. The summary uses an isolated cache fork, with the same model, effort and prompt/tool prefix; Codex owns a separate transport and ledger, never the child's controller or socket continuation. No tools execute in the fork. Cache affinity is preserved where supported, not a promise of a server cache hit.
   The direct parent receives a notification through the existing notification delivery mechanism, not a subagent answer or final result. Fixed short wording asks it to check for work outside the assigned task and whether the child still follows the plan in its brief; the parent alone decides whether to send a correction. The notification triggers the supplied skill's reminder of the workflow-manifest principles. Counter, trigger, cancellation, staleness and delivery are code, not model judgments; only the summary prose is generated. Obvious lifecycle, communication, compaction/model, persistence/resume, concurrent/nested and inference-failure intersections are covered by focused tests. No automatic child interrupt, retry or new child execution limit is added.
   Owner, session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry `a15f7172`, physical line 6895:
@@ -1297,12 +985,12 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Engineering source: USER entry `b3bc9466`, physical line 6900: «Главное, чтобы это всё работало максимально инженерно: не на токенах, а на инженерии стопроцентной.» «Соответственно, надо будет предусмотреть все очевидные corner case и сценарии пересечений.»
   Notification wording source: USER entry `985e611a`, physical line 6907: «сообщение notification для основного агента должно быть сформулировано таким образом, чтобы основной агент задумался: а не начал ли заниматься какой-то хуйнёй саб-агент? Точно ли он соответствует, но всё ещё движется плану, который ему передали вот»
   Reason: let the parent spot task drift during long work without pausing the child, polling it or asking it to spend a working turn writing a report. Ready-made progress/heartbeat packages did not establish the required cache-fork isolation, so the owner authorized this addition to the existing runtime.
-  Carriers: `extensions/RQW-agent/`, `extensions/RQW-codex/`, `extensions/RQW-anthropic/` and their mirrored `test/extensions/` tests; [runtime contract](extensions/RQW-agent/README.md). This completes the progress-report part of TIMEBOX-PRACTICES, not its remaining professional-practices research.
+  Carriers: `extensions/RQW-agent/`, `extensions/RQW-codex/`, `extensions/RQW-anthropic/`; [runtime contract](extensions/RQW-agent/README.md). This completes the progress-report part of TIMEBOX-PRACTICES, not its remaining professional-practices research.
 
 - **Native supervision** `[D-AGENT-SUPERVISION]`. The `agent` tool supports native wait/status options and optional `alert_after_ms` on start/restart; prompt-file and caller-message options remain agent configuration. Status alerts are `{kind, at, detail}`: `error`, `repetition`, `long_turn` and `schema_rejection_repeated`; the latest 32 are presentation history, not an execution limit. The optional positive finite safe-integer threshold is disabled by default and inherited on restart; it reports a long native turn without stopping it, and turn end, logical run end and close cancel the timer, leaving none while idle. Repetition is diagnostic suspicion; schema alerts require a second matching detectable Pi argument-parsing/schema rejection. This F1/F3 work adds no F5 guard or sandbox, `stalled_tool` alert, F2 run manifest or F4 structured-output feature.
   Coordinator text: technical realization of the native-supervision agreement in `[D-AGENT-PROMPT-FILES]`.
   Reason: make supervision caller-controlled without polling wrappers or automatic cancellation.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/activity.ts`, `extensions/RQW-agent/coordinator.ts` and descriptions; proof: `test/extensions/RQW-agent/supervision-activity.test.ts`, `test/extensions/RQW-agent/supervision-coordinator.test.ts`, `test/extensions/RQW-agent/supervision.test.ts`; [supervision contract](extensions/RQW-agent/README.md#wait-status-and-management). Since: `dc4f32e`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/activity.ts`, `extensions/RQW-agent/coordinator.ts` and descriptions; [supervision contract](extensions/RQW-agent/README.md#wait-status-and-management). Since: `dc4f32e`.
 
 - **Caller-chosen wait and status** `[D-AGENT-WAIT]`. The `agent` tool provides caller-local mechanical wait/status for direct-child IDs; `timeout_ms` defaults to 300000 only when omitted, and expiry never cancels a child. `until: "first"` is the default; `"all"` holds early completions until every selected target has a result, receipt or inactive state, releasing held results to the message path on alert, timeout or caller abort. `wake_on_alert` defaults to true and wakes only for alerts created on selected children after wait registration, without consuming a result. Status uses `messages` 5-10, default 8; `depth` defaults to 0, with positive safe-integer depth adding compact read-only descendant snapshots without message previews or descendant management. Waiting makes no caller model turns; results still arrive exactly once through wait or messages with receipts for delivery races. No execution, turn, token, output-growth, child-count or automatic-management limits are added; Pi provider timeouts and retries still apply.
   Owner: «Если они работают долго, пусть работают.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 1849.
@@ -1311,15 +999,15 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Child cache policy** `[D-AGENT-CACHE]`. Every child has in-memory `cacheWarming: "off"`, independent of RQW-settings and the user's warming mode. Prompt caching stays on; the guarded stream wrapper sets `cacheRetention: "short"` for Anthropic Messages before OAuth fallback, giving built-in five-minute retention without a new config knob. Other APIs retain their options.
   Owner: «Потому что если мы вообще выключим им кэш, то они будут пиздец жрать токенов нахуй.» Source: the same session, USER entry at line 440.
   Reason: disable background requests without sacrificing ordinary prompt-cache reuse.
-  Carrier: `extensions/RQW-agent/index.ts`, `test/extensions/RQW-agent/agent.test.ts`, `test/prompt-cache.test.ts`; evidence: `notes/prompt-cache-policy.md`. Since: `b91f832`.
+  Carrier: `extensions/RQW-agent/index.ts`. Since: `b91f832`.
 - **Subagent parity** `[D-AGENT-PARITY]`. General subagents use the main run's built prompt from public `ctx.getSystemPrompt()`, followed by a short subagent reminder and optional `role`; nested subagents receive the main prompt handed down, not their parent's role. Optional `system` or `system_file` replaces that whole prompt exactly; file alternatives and validation are defined in `[D-AGENT-PROMPT-FILES]`. Every subagent, including a selected profile, gets `agent` recursively with no depth or concurrency limit. Repository coordinator rules are not product policy, and the reminder excludes instructions addressed to the main agent or coordinator.
   Owner: «Надо что бы саб агенты были как в куросре посмотри реверз инжинеринг и скажи свои предложения» Source: the same session, USER entry at line 2608.
   Reason: share main's rules and context while allowing short role configuration and independent decomposition.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`, `test/extensions/RQW-agent/agent.test.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). Since: `c86e9bb`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). Since: `c86e9bb`.
 - **Child settings** `[D-AGENT-CHILD-SETTINGS]`. Children inherit session shell, image handling, retries, provider and transport timeouts, compaction, thinking budgets, queue modes and codemode settings, except warming stays off. Stock tools use the child's copied shell/image settings; offered RQW-tools read the caller's effective settings per call. Children get built-in codemode/tool_search when active for their caller; nested callers select the same profile catalog through `agent_type`. Reviewer profiles inherit the ordinary child settings, including queue modes. Parent-history fork, web search and MCP for children are deferred in [BACKLOG](BACKLOG.md), not present features; durable resume is delivered (`[D-AGENT-PERSIST]`).
   Coordinator text: technical realization of the parity agreement.
   Reason: children must not silently lose relevant caller capabilities.
-  Carrier: `extensions/RQW-agent/index.ts` (`childSettings`), `extensions/RQW-agent/prompt.ts`; `test/extensions/RQW-agent/agent.test.ts`. Since: `c86e9bb`.
+  Carrier: `extensions/RQW-agent/index.ts` (`childSettings`), `extensions/RQW-agent/prompt.ts`. Since: `c86e9bb`.
 - **Child titles** `[D-AGENT-TITLE]`. Optional `title` on start/restart appears in status,
   `results[i].display.title` and message `details.title`; delivered text keeps its `[agent#N]` form.
   Card rendering is `RQW-agent-ui`, see [Agent cards](#agent-cards).
@@ -1329,20 +1017,19 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 - **API and in-process runtime** `[D-AGENT-API]`. One `agent` tool offers `start`, `wait`, `status`, `send`, `resume`, `interrupt`, `stop`, `restart`; fields are `id`, `ids`, `timeout_ms`, `messages`, `until`, `wake_on_alert`, `depth`, `alert_after_ms`, `system`, `role`, `system_file`, `role_file`, `include`, `title`, `agent_type`, `task`, `model`, `thinking`, `tools`, `fast_gpt`, `interrupt`. Optional null fields mean omitted; start/send require task, not system. Defaults are the caller's model and thinking and all six base tools, plus recursive `agent` delegation for every child. Profile selection and defaults are defined in `[D-AGENT-PROFILES]`. Sessions run in-process at caller cwd with in-memory settings; the history is in memory for an in-memory caller and in the owned `<parent.jsonl>.children/` tree for a persisted one (`[D-AGENT-PERSIST]`), using `createAgentSession` and the caller's `ctx.modelRegistry.runtime` for credentials, OAuth and extension providers. Resources, context files, skills and external extensions are not independently loaded; the inherited prompt carries main's text. An inline forced `before_agent_start` prompt prevents Pi from appending cwd or other sections again.
   Coordinator text. Reason: reuse Pi sessions and the caller's provider runtime without subprocesses or duplicate resource loading.
-  Carrier: `extensions/RQW-agent/index.ts`, `test/extensions/RQW-agent/agent.test.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`; explicit held-wait option removed by `[D-TOOLS-NO-BLOCKING-FLAG]`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0265.
-- **Optional RQW-tools offer** `[D-AGENT-TOOLS-OFFER]`. At start/restart RQW-agent emits `rqw-tools:subagent-tools` with `{ offer(factory) }` on the shared synchronous `pi.events` bus; loaded RQW-tools answers with fresh definitions and a child-local barrier/job registry, otherwise stock tools are used. The consumer type is `(cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition }) => ToolDefinition[]`; the provider's exact function is `createTools(cwd: string, settings: () => any, nested = createNestedBarrier(), options: JobsOptions & { jobs?: Jobs; codemode?: ToolDefinition<any, any, any> } = {}): ToolDefinition[]`. The factory provides seven tools, six base tools plus job, and optionally a grouped child codemode; the consumer filters the base subset but retains job and offered codemode. Child codemode shares process-wide Pi worker slots. No cross-extension import or mandatory dependency is added; reload/dispose invalidates stale handlers.
-  Coordinator text. Reason: children follow the RQW-tools switch while retaining their own ordering and job ownership.
-  Carrier: `extensions/RQW-agent/index.ts` (`ToolsFactory`, `offeredTools`), `extensions/RQW-tools/index.ts` (`createTools`), `test/agent-tools.test.ts`. Pi 1.4.0 event API: `docs/extensions.md:186`, `dist/core/extensions/types.d.ts:1406`; invalidation: `dist/core/extensions/loader.js:144-152`, `dist/core/agent-session.js:1022,3002`; stock tool settings: `dist/core/agent-session.js:2964-2974`. Since: `90700ad`.
+  Carrier: `extensions/RQW-agent/index.ts`. Since: `7a9f505`; inherited defaults since `c86e9bb`; `resume` since `dd93a40`.
+- **Optional RQW-tools offer** `[D-AGENT-TOOLS-OFFER]`. RQW-agent emits `rqw-tools:subagent-tools`; loaded RQW-tools answers with fresh definitions and a child-local job registry, otherwise stock tools are used. The factory is `(cwd, settings, options?)`; `options.codemode` adds background-job support and the optional notification hooks bridge child waits.
+
 - **Result delivery and identity** `[D-AGENT-DELIVERY]`. Every final answer and final error of a run is delivered in order to its direct caller, once; intermediate runs awaiting children and attempts Pi retries are not final results. `auto_retry_start` and `compaction_end` with `willRetry: true` remove only the retried message's contribution, preserving earlier answers. Invalid IDs/models, missing credentials or required task fail immediately, using auth snapshot then `runtime.checkAuth`. Idle callers are woken; busy callers retain results outside abort-cleared queues, and settle races produce one continuation seeing all held results. Abort preserves delivered text without starting another turn; manual-compaction arrivals are seen on the next turn. Delivery uses UUIDs, and `agent#N` counters recover the session's maximum across reload/resume/fork/continuation.
   Coordinator text. Reason: retries, cancellation and session continuation must neither lose nor duplicate results.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `test/extensions/RQW-agent/agent.test.ts`; [historical proof](notes/decisions-evidence.md#agent-proof). Since: `7a9f505`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`. Since: `7a9f505`.
 - **Steering and interrupting sends** `[D-AGENT-SEND]`. Sending to a running child uses `session.steer`, arriving after the current assistant turn's tool calls and before the next request without abort; an idle child starts a new run with history. `send` with `interrupt: true` clears queued steering/follow-ups, aborts the run and records one next task that starts when cancellation settles; later sends join in order. An uncooperative tool can delay that start, shown as `pending_sends`; wait remains running and reports `target_changed` when the run changes. Plain send during cancellation is rejected unless an interrupting send is already pending. `interrupt` retains history without a result message; stop forgets the session; restart creates a fresh session with retained or explicitly replaced configuration. Interrupt/stop/restart discard pending tasks and cascade cancellation to descendants.
   Coordinator text: the steering proposal was accepted by the owner; the quoted proposal is not an owner quotation.
   Reason: follow-ups should steer promptly without forcing cancellation, while redirection remains explicit.
-  Carrier: `extensions/RQW-agent/index.ts` (`requestInterrupt`, `Agent.next`), `test/extensions/RQW-agent/steer.test.ts`. Since: `029160d`.
+  Carrier: `extensions/RQW-agent/index.ts` (`requestInterrupt`, `Agent.next`). Since: `029160d`.
 - **Ordered management and shutdown** `[D-AGENT-MANAGEMENT]`. Agent management calls register in call order; wait releases that queue after subscription. Start, idle send and restart with task return once prompt preflight starts the run or `compaction_start` makes cancellation effective. Closing clears queues, calls abort and only then disposes, preventing requests after stop or shutdown. External print/json hosts use a caller-wide non-consuming fallback wait in `agent_end`, bounded by the default `timeout_ms` and subordinate to explicit waits. A native-idle child waits for its active subagents by their completion events with no implicit timeout, and only when no run is active does it use the bounded wait. TUI/RPC retain push wakeups. `session_shutdown` closes all descendants without result messages.
   Coordinator text. Reason: parallel tool batches, pre-run compaction and disposal must not leave unowned requests.
-  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `test/extensions/RQW-agent/agent.test.ts`; [historical proof](notes/decisions-evidence.md#agent-proof). Since: `fe0e375`.
+  Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`. Since: `fe0e375`.
 - **Accepted limits** `[D-AGENT-LIMITS]`. Results arriving after the caller session ended are lost; a persisted child keeps its history and the same id after a restart, but a running operating-system process, tool call or provider request is not restored, and a power loss can lose unflushed history (no fsync). Children share the TUI process and may read files the main agent is editing; in-process cancellation cannot forcibly end an uncooperative tool. The process-wide [Context](#context) rule applies while an RQW-context owner exists. GPT Fast inheritance and overrides are defined once under [Settings](#settings).
   Coordinator text. Reason: these are boundaries of the in-process session design, not unimplemented promises.
   Carrier: `extensions/RQW-agent/index.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#wait-status-and-management). Since: `7a9f505`; restart persistence since `dd93a40`. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0266.
@@ -1369,7 +1056,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Chosen over a global registry or a handoff file: the adjacent tree needs no shared state and lets RQW-session recognize it by name.
   Reason: the owner wants an agent resumed by its id after a Pi restart with its full history.
   Carrier: `extensions/RQW-agent/persistence.ts`, `index.ts`, `coordinator.ts`; contract: [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume);
-  proof: `test/extensions/RQW-agent/persistence.test.ts`, `resume.test.ts`. Since: `dd93a40`.
+  Since: `dd93a40`.
 
 - **Explicit retry after a child request fails** `[D-AGENT-RESUME-ERROR]`. Owner: «Надо, чтобы ты мог самостоятельно агента, допустим, упавшего заретраить, если вдруг он по какой-то причине из-за сети или ещё из-за чего-то упадёт.»
   Source: session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, line 6929, user entry `4dfc1788`.
@@ -1378,13 +1065,13 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   successful completion, active runs and cancellation-pending runs do not become resumable. `/resume-agents` and parent
   continuation keep their existing behavior and do not retry failed requests.
   Reason: the caller can recover a failed child without rebuilding its task or sending another message.
-  Carrier: `extensions/RQW-agent/index.ts`; proof: `test/extensions/RQW-agent/resume.test.ts`;
+  Carrier: `extensions/RQW-agent/index.ts`;
   contract: [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume).
 
 - **Notification waits for children** `[D-AGENT-NOTIFY]`. Owner quotes: `[D-TOOLS-NOTIFY]` (`16-27-59:4876`, `16-27-59:4937`). Taken by default (coordinator text, not an owner quote): where the caller can
   receive notifications, `wait` on `agent` returns a `waiting` receipt at once with
   `terminate: true` and the result later wakes the caller once through the existing delivery broker.
-  There is no explicit held-wait option (`[D-TOOLS-NO-BLOCKING-FLAG]`). A wait inside a codemode script stays blocking,
+  A wait inside a codemode script stays blocking,
   as does an external root print/json host and any caller without a `notify` callback (an in-process child agent with the bridge
   is not affected by its SDK mode). A timeout or alert
   is one notification, not periodic polling, and no model request is made merely to wait. Owner messages reach the agent
@@ -1426,7 +1113,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `extensions/RQW-review/index.ts`, [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md, Independent review](PROCESS.md#independent-review).
   The whole-cycle comparison with the original plugin is discarded by the owner, not queued: [BACKLOG.md](BACKLOG.md#codex-reviewer-comparison).
 - **Reviewer prompt** `[D-REVIEW-PROMPT]`. `extensions/RQW-review/REVIEWER.md` is the canonical reviewer role.
-  `profiles/spotty.toml` and `bossy.toml` retain byte-identical `developer_instructions` for direct profile use;
+  `profiles/spotty.toml` and `profiles/bossy.toml` retain byte-identical `developer_instructions` for direct profile use;
   the common skill explicitly passes the absolute `REVIEWER.md` path through `role_file`, so a same-name personal
   or project profile cannot replace the package review contract. RQW-agent appends the selected role to the main
   system prompt and subagent reminder under `[D-AGENT-PROFILES]`; profile discovery and precedence stay unchanged.
@@ -1443,7 +1130,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Existing profile precedence remains governed by `[D-AGENT-PROFILES]`.
   Reason: preserve the working reviewer while making sufficient evidence explicit and concise, including when a
   higher-precedence personal profile still demands a bare verdict. Carriers: `extensions/RQW-review/REVIEWER.md`,
-  `profiles/spotty.toml`, `bossy.toml`, `skills/reviewer/SKILL.md`; the shared runtime appends the explicit role unchanged.
+  `profiles/spotty.toml`, `profiles/bossy.toml`, `skills/reviewer/SKILL.md`; the shared runtime appends the explicit role unchanged.
   Since: subagent-profiles; evidence wording updated by process-minimal-testing-review; explicit package role on
   `fix-reviewer-evidence-output`.
 
@@ -1508,8 +1195,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   hard-coded SHA256 `0f7256ea8bdac3af20012b94fdc1252a31cc6dc0d2f9b9eb539555d22e3e321b` and extracts into
   `pcli-vscode/pi/` (git-ignored). A new Pi version needs new VERSION, URL and SHA256 there and a new VSIX; the root npm
   dependency does not change the bundled `pi.exe`. Coordinator text (owner quotes not found in the Pi sessions): "мы не будем автоматически обновлять PCLai. Как есть 1.3 версия, так и есть."; "1 да давай 2 да давай". The pin moved from
-  1.3.0 to 1.4.0 with the package upgrade ([Scope](#scope)). Build observations:
-  [decisions evidence](notes/decisions-evidence.md#pcli-bundle). Since: `3b6d6c1`.
+  1.3.0 to 1.4.0 with the package upgrade ([Scope](#scope)). Since: `3b6d6c1`.
 - **Release binary, not npm** `[D-PCLI-BINARY]`. Pi from npm is a Node program and would run inside `Code.exe` with
   `ELECTRON_RUN_AS_NODE=1`, which leaks into every bash command and depends on VS Code's Node; `pi.exe` carries its own
   runtime, the path omp-vscode already uses on the VDI. Carrier: `pcli-vscode/fetch-pi.mjs`. Since: `3b6d6c1`.
@@ -1528,8 +1214,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   LICENSE; `pcli.yml` asserts an empty VSIX description. Coordinator text (owner quote not found in the Pi sessions):
   "При публикации в маркетплейс там НЕ ДОЛЖНО БЫТЬ НИКАКОГО ОПИСАНИЯ". Since: `3b6d6c1`.
 - **End-to-end proof** `[D-PCLI-E2E]`. `.github/workflows/pcli.yml` on `windows-latest` builds the VSIX, installs it into
-  a real VS Code and runs `pcli-vscode/test/run.mjs` and `test/suite.cjs`: Pi answers through a local proxy
-  `test/proxy.cjs` with a fake HTTPS model, with the proxy from the environment under a hostile Git Bash profile and from
+  a real VS Code and runs `pcli-vscode/test/run.mjs` and `pcli-vscode/test/suite.cjs`: Pi answers through a local proxy
+  `pcli-vscode/test/proxy.cjs` with a fake HTTPS model, with the proxy from the environment under a hostile Git Bash profile and from
   VS Code settings; strict TLS fails and `http.proxyStrictSSL: false` works; CONNECT with proxy credentials; paths with
   Cyrillic, spaces and an apostrophe; no `pi.exe` left after closing tabs, `/quit` or VS Code. Not covered: a real model
   call and the corporate VDI restrictions. Since: `3b6d6c1`.
@@ -1539,7 +1225,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   mode and Windows VT input; ConPTY loses that early write, so VS Code never learns the app wants the mouse and the wheel
   becomes arrow keys. The same start path runs after the external editor, a TUI mode switch and suspend/resume.
   Owner: «Еще знаешь, какая проблема? У нас есть наш PCLI для Windows VDI тачки. Там такая проблема, что не работает скроллинг. Когда я пытаюсь скроллить в терминале, у меня прокручиваются последние сообщения вместо того, чтобы скроллился чат. А когда я запустил коды в CLI своим extension, там скролл нормально работает. Посмотри эту проблему, пожалуйста.» (session `2026-10-21T12-13-54-289Z_01a15e61`, line 158)
-  Source lines and upstream history: [decisions evidence](notes/decisions-evidence.md#pcli-mouse-sources). Since: `8f6251a`.
+  Since: `8f6251a`.
 - **Wheel fix** `[D-PCLI-MOUSE-FIX]`. A my-pi extension that matters only where my-pi is installed in PCLI's Pi
   ("myIP" is the speech-to-text spelling of my-pi). Engineering choice: only on Windows and only in fullscreen, enable
   the mouse again after the terminal started and after every TUI restart, with exactly Pi's set (multiplexer variant
@@ -1562,9 +1248,9 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Pi's disable runs on every stop; nothing is added with the mouse off, in regular mode or on non-Windows platforms;
   owner counting, `/reload`, a hook Pi defines on the class and a foreign wrapper; loading through Pi's resource loader
   with the same `TuiAltScreen` class. Capture: job `mouse` of `.github/workflows/pcli.yml` (`workflow_dispatch` or a
-  push to branch `pcli`) runs `pcli-vscode/test/mouse.mjs` and `test/mouse-suite.cjs` in a real VS Code, starting the
+  push to branch `pcli`) runs `pcli-vscode/test/mouse.mjs` and `pcli-vscode/test/mouse-suite.cjs` in a real VS Code, starting the
   PCLI chain stock and with `-e extensions/RQW-mouse/index.ts`; expected `?1000h` count 0 stock and 1 with the extension.
-  Measured run: [decisions evidence](notes/decisions-evidence.md#pcli-mouse-capture). Since: `8f6251a`.
+  Since: `8f6251a`.
 - **Publishing** `[D-PCLI-PUBLISH]`. Skill `publish-pcli` (`.agents/skills/publish-pcli/SKILL.md`): `vsce publish
   --target win32-x64` from `pcli-vscode/` under publisher `arqawa`, `version` raised before each publish, only on a direct
   owner request. Since: `3b6d6c1`.
@@ -1588,7 +1274,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   without an installed/running Claude Code or its statusLine. The delegated implementation requirement keeps
   display/color decisions out, forbids auth writes and token-generating requests, and gives the later UI its own
   five-minute cadence. Carrier: `extensions/RQW-anthropic/quota.ts`, the public `pi.events`
-  `rqw-anthropic:quota:v1` offer boundary and [quota protocol evidence](notes/anthropic-quota.md).
+  `rqw-anthropic:quota:v1` offer boundary.
   The provider reads only its bound Pi credential store, caches successful percentage/reset windows, and sends
   nothing until a consumer explicitly refreshes. No new dependency, scheduler, option or setting. Primary
   Claude Code 2.1.310 source and a sanitized authorized read-only HTTP 200 establish the protocol; this is an
@@ -1599,8 +1285,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `short` wins in `cache.ts` and `transport.ts`, so cache markers stay on without `ttl: "1h"`, with or without this
   adapter. No new config knobs or process env changes.
   Owner: «По поводу кэшей вопрос-ответ A: основному агенту час А под основным 5 минут ещё какие-то варианты есть? Может, 10 минут? Или это замеренная цифра? Если это замеренная цифра и 5 минут будет заебись в большинстве случаев, то пусть будет 5 минут. Если можно больше и это будет более эффективно, то можно 10 минут поставить или 15. Я не знаю.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 583)
-  Reason: short review and resend gaps favour cheaper short writes. Evidence: [measurements](notes/prompt-cache-policy.md).
-  Proof: package `test/prompt-cache.test.ts`. Since: `b91f832`.
+  Reason: short review and resend gaps favour cheaper short writes.
+  Since: `b91f832`.
 - **OAuth 1h default** `[D-ANTHROPIC-OAUTH-TTL]`. OAuth subscription requests default to 1-hour prompt caching;
   explicit request retention and user-set `PI_CACHE_RETENTION` win. Engineering choice: request-local options before
   the SDK warmer starts, not a process-wide env write (which also changes OpenAI retention). `cache.ts` resolves Pi auth
@@ -1609,7 +1295,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   unchanged; warming policy lives in [Settings](#settings).
   Owner: «Почему ты не юзаешь какой-то часовой cash?» (session `2026-10-21T12-13-54-289Z_01a15e61`, line 275); «Это надо будет пофиксить тоже.» (session `2026-10-21T12-13-54-289Z_01a15e61`, line 281)
   Reference (TTL, timing, pricing, Pi's prospective warmer-cost limitation): `extensions/RQW-anthropic/README.md`,
-  Prompt cache. Proof: `test/extensions/RQW-anthropic/cache.test.ts`. Since: `ebf7bc1`.
+  Prompt cache. Since: `ebf7bc1`.
 - **Isolated extension** `[D-ANTHROPIC-EXT]`. `extensions/RQW-anthropic/`, listed in `package.json`, owns transport and
   OAuth recovery only; provider visibility is [Providers](#providers). Disable and reload unregisters only its overlay and
   restores in-memory hooks; no node_modules edits or credential deletion. Coordinator text (owner quote C:3046, an omp
@@ -1619,7 +1305,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   exact-body XXH64 checksum. MIT attribution: `THIRD-PARTY-NOTICES.md`; no installed fork code is copied. Subscription
   acceptance and billing, account rotation and all omp SDK headers are not claimed. Coordinator text (owner quotes C:3133,
   an omp session, not found in the Pi sessions): "чтобы он был такой же, как в OMP, чтобы у него был self-healing";
-  "И чтобы можно было через него авторизоваться". Evidence and risks: `notes/anthropic-adapter.md`. Since: `071df1e`.
+  "И чтобы можно было через него авторизоваться". Since: `071df1e`.
 - **Bounded refresh and replay** `[D-ANTHROPIC-REFRESH]`. `auth.ts` refreshes under Pi's runtime credential-store lock,
   rechecks the rejected bearer, reuses a concurrent update and persists rotation before replay. One HTTP 401 replay, at
   most two transient refresh attempts and one explicit newer-version replay; no auth retry for 403/quota, no replay after
@@ -1633,16 +1319,15 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   on the next launch. Another competing adapter must be switched off; mixed configurations are not supported
   (`registration.ts` rejects a competing overlay). Coordinator text (owner quote not found in the Pi sessions): "Просто старый адаптер выкидываешь, который есть уже, и ставишь наш адаптер". Carrier: `INSTALL.md`, `extensions/RQW-anthropic/`.
   Since: `9ef1519`.
-- **Proof boundary** `[D-ANTHROPIC-PROOF]`. Adapter and package-integration tests use fake credentials, mock fetch,
-  file-backed lock fixtures and both Pi library and CLI-bundle entrypoints; they do not prove live subscription
-  acceptance, billing or actual Windows execution. The status of old Claude benchmark campaigns is recorded once in
-  [Work policy](#work-policy). Independent review follows `PROCESS.md`. Evidence: `notes/anthropic-adapter.md`,
-  `notes/anthropic-integration.md`. Since: `8a1f2ed`.
+- **Proof boundary** `[D-ANTHROPIC-PROOF]`. Tests: `test/extensions/RQW-anthropic/adapter.test.ts`,
+  `test/extensions/RQW-anthropic/quota.test.ts`. They do not prove live subscription acceptance, billing or actual
+  Windows execution. The status of old Claude benchmark campaigns is recorded once in
+  [Work policy](#work-policy). Independent review follows `PROCESS.md`. Since: `8a1f2ed`.
 - **Header boundary, per-request version** `[D-ANTHROPIC-HEADERS]`. Engineering follow-up to four review findings:
   the adapter rejects subscription Authorization headers before delegation and keeps ordinary API-key gateway behavior
   (`auth-boundary.ts`, `transport.ts`). Each request records its sent version, also under concurrency, with one bounded
   replay when an effective newer version meets a rejection; a pinned `PI_AI_CLAUDE_CODE_VERSION` forbids adaptation
-  (`wire.ts`, `transport.ts`). Proof: `test/extensions/RQW-anthropic/regressions.test.ts`. Since: `071df1e`.
+  (`wire.ts`, `transport.ts`). Since: `071df1e`.
 
 ## Models
 
@@ -1665,7 +1350,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Pi exposes text/image input, not video. The `131072` output value is the cached client definition, not an independently
   documented server ceiling: neither that page nor the [release notes](https://www.kimi.com/code/docs/en/kimi-code/whats-new.html)
   specifies a maximum output. No installed Kimi CLI or exact local source definition was found.
-  Carriers: `extensions/RQW-models/{index,picker,kimi}.ts`, `extensions/RQW-providers/index.ts`, their scoped tests.
+  Carriers: `extensions/RQW-models/{index,picker,kimi}.ts`, `extensions/RQW-providers/index.ts`.
 - **Draft chooser** `[D-MODELS-CHOOSER]`. Shift+arrows open a model/effort draft chooser that performs one draft step
   before the first render; one transition is Shift+arrow then Enter. Plain and Shift arrows then share the same axes.
   Enter commits once; Esc closes with no setters or restoration. A draft model switch clamps effort to the nearest lower
@@ -1680,7 +1365,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Clarification: «когда ты нажимаешь первый раз Shift и стрелочку, у тебя открывается интерфейс уже с новой, будущей моделью измененной, чтобы я не делал дополнительные клики.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3238);
   «Если я нажимаю Shift+Влево или Shift+Вправо, то он сразу открывает пикер с измененным состоянием, чтобы мне нажать, а потом Enter. Нажать и Enter, если нужен один переход. А если несколько, то я нажал, довел до нужного состояния, нажал Enter.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3238);
   «И это должно быть строго в концепте Terminal UI Pi, и при этом чтобы это было в цветовой гамме и в согласованности с нашим новым дизайном, который ты сейчас имитируешь. Решение остается за тобой конечное.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3238)
-  Carrier: `extensions/RQW-models/{index,picker}.ts`, `test/`, real Pi composition in `test/model-effort-picker.test.ts`.
+  Carrier: `extensions/RQW-models/{index,picker}.ts`.
   The effort colours of the footer are RQW-statusbar's (`[D-STATUSBAR-ACTIVITY]`). Since: `d0160cf`.
 - **Startup availability** `[D-MODELS-STARTUP]`. Startup reads provider-scoped authenticated availability and uses the
   owning session's async-auth `setModel`. Before a startup choice, `session_start` awaits Pi's
@@ -1692,8 +1377,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   and stale-list removal proposed at line 9416. Audit finding: `MODELS-STARTUP-SCOPE`; the other model audit
   findings remain separate tasks.
   Reason: preserve authenticated model acquisition and overlapping-refresh correctness without unapproved behavior.
-  Carrier: `extensions/RQW-models/index.ts`; `test/extensions/RQW-models/models.test.ts` covers the removal and
-  deterministically gates a superseding pass. Supersedes the deadline and snapshot clause from `230e8d0`, preserved
+  Carrier: `extensions/RQW-models/index.ts`. Supersedes the deadline and snapshot clause from `230e8d0`, preserved
   verbatim in [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md#models-startup-deadline-and-snapshot---removed-2026-10-25).
 - **Independent module** `[D-MODELS-MODULE]`. `extensions/RQW-models/index.ts` imports only Pi and has its own
   `pi.extensions` entry; disable it in `pi config`, then `/reload`. It writes no settings and registers no tool; its
@@ -1724,8 +1408,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   context, refreshed on resume and reload, not a queued TUI snapshot. Movement stops at either end. Entry rule: from
   outside the list Shift+Up enters at the strongest available model and Shift+Down at the weakest.
   Owner: «Надо вернуть старое управление моделями: Shift + Вверх/Вниз будет смена модели, Shift + Вверх — к более сильным, Shift + Вниз — к более слабым. А Shift + Влево/Вправо — это будет смена ризенинга, так же, как и раньше это было в ОМП.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 2361)
-  Carrier: `extensions/RQW-models/index.ts`. Proof: `test/extensions/RQW-models/models.test.ts` (key bytes through Pi's matcher, direction,
-  limits). Since: `ac33dcc`.
+  Carrier: `extensions/RQW-models/index.ts`. Since: `ac33dcc`.
 - **`/rqw-models`** `[D-MODELS-COMMAND]`. The extension's authenticated listed-model picker via `ctx.ui.select`. Pi's
   built-in model shortcuts stay reserved and are emptied, not replaced; Shift+Tab and provider definitions stay stock. In
   print/JSON mode it does nothing; RPC can supply the standard select dialog. Since: `e6c21e2`.
@@ -1747,7 +1430,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
     reference-counted and removed on `session_shutdown` or `session.dispose()`.
   - Limits: Ctrl+P still prints "Only one model available"; `/scoped-models` shows saved patterns as unavailable rows;   after `/login` Pi suggests `/model`; if the session cannot be borrowed RQW-models warns and stock lists stay. Owner: «Смотри, про выбор модели, где через стрелочки вверх, вниз, через плюс-минус мы меняем модели, меняем effort. Там меняются только модели из нашего списка. И вообще другие модели выбрать нельзя, только модели в этом списке. Дефолтный Model Picker работать не должен. Там должен быть пустой список моделей.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 335); «Да, делай» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 344) to the coordinator option "a) Закрыть и эти пути. Модель вне списка не выбирается нигде, Pi покажет предупреждение." The
   strongest-listed fallback without Opus auth is a coordinator choice derived from that rule. Carrier:
-  `extensions/RQW-models/index.ts`. Pi mechanisms: [notes/models-omp.md](notes/models-omp.md). Since: `5e1d478`.
+  `extensions/RQW-models/index.ts`. Since: `5e1d478`.
 - **Opus medium at startup** `[D-MODELS-DEFAULT]`. Without explicit CLI model selection, `session_start` selects
   available Opus at `medium` on a fresh startup or `/new`; with no authenticated Opus it keeps Pi's initial model if
   listed. Startups with history or continuation/session flags, and `resume`, `fork`, `reload`, keep a listed current
@@ -1756,27 +1439,15 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   no suffix is parsed again. Without an explicit model, `--thinking` applies through Pi's native clamping, else medium.
   CLI overrides apply to `/new` too; no defaults are persisted. An SDK host must pass reason `resume` for an empty
   restored session. Coordinator text (owner quote C:3113, an omp session, not found in the Pi sessions): "И базовая модель всегда при запуске — это Opus-Medium. Это от провайдера не зависит". CLI precedence and resumed-session
-  preservation are coordinator choices (C:3123, C:3274). Proof: `test/extensions/RQW-models/models.test.ts`. Since: `071df1e`.
+  preservation are coordinator choices (C:3123, C:3274). Since: `071df1e`.
 - **Harness effort lists** `[D-MODELS-EFFORT]`. `FAMILY_LEVELS` intersected with Pi's `getSupportedThinkingLevels`:
   Opus low, medium, high; Sonnet low, medium, high, xhigh; GPT-6.1 Sol, GPT-6 Sol, both Luna models and Haiku low,
   medium, high, xhigh, max. No minimal, no off. A model switch keeps the previous effort if allowed, else the nearest
   lower or the lowest; explicit off/minimal moves to the lowest allowed level on the next extension-driven selection. An
   unlisted model (current only while no listed model is authenticated) keeps Pi-supported levels minus off and minimal.
   Owner: «Нет, ты не понял: уровни effort будут не те, что в стоковом выборе Pi, а те, что в нашем MyOMPHarness были. Там они были перенастроены кастомно. Допустим, у Opus были low, medium, high, у Sonnet были low, medium, high, extra high. Такие же должны быть, только без no reasoning.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 134)
-  Carrier: `extensions/RQW-models/index.ts`. Source evidence: [notes/models-omp.md](notes/models-omp.md). Since: `0def125`.
-- **Model tests** `[D-MODELS-TESTS]`. `test/extensions/RQW-models/models.test.ts`, faux only: standalone loading and
-  disabling, real SDK sessions, model/thinking changes, history restore and reload, no persisted defaults, CLI flags
-  (also through Pi's CLI bundle), missing Anthropic auth, the listed-models rule, a provider `filterModels` dropping a
-  family, a pending startup availability pass, a subagent-style session, rapid snapshot contexts and reasoning queued
-  behind a switch. Key tests feed CSI `1;2A..D` and Kitty `1;2:1A..D` through Pi's matcher; the old Option-layout bytes
-  are negative cases. `test/anthropic-models.test.ts` switches RQW-models and RQW-anthropic off in turn. This is parser
-  testing, not manual terminal testing. CI runs on macOS and Windows (`tests.yml`); Linux is out of scope. Historical
-  local reports: [decisions evidence](notes/decisions-evidence.md#models-reports). Since: `e6c21e2`.
-- **CI auth fixture** `[D-MODELS-CI-FIXTURE]`. `test/extensions/RQW-models/models.test.ts` seeds `models.json` with
-  `providers.openai-codex.apiKey: faux-only` before spawning Pi, so the no-Opus-auth fallback test has a deterministic
-  initial model on Pi 1.4.0 (native-provider registration refreshes availability asynchronously while `findInitialModel`
-  reads the synchronous snapshot). Fixture auth only, no production change. Investigation and numbers:
-  [decisions evidence](notes/decisions-evidence.md#models-ci-fixture). Since: `071df1e`.
+  Carrier: `extensions/RQW-models/index.ts`. Since: `0def125`.
+- **Model tests** `[D-MODELS-TESTS]`. Tests: `test/extensions/RQW-models/models.test.ts`. Since: `e6c21e2`.
 
 ## Status bar
 
@@ -1790,8 +1461,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 - **Independent extension** `[D-STATUSBAR-EXT]`. `extensions/RQW-statusbar/` has its own `pi.extensions` entry and
   imports nothing from another extension folder. Coordinator text (owner quote C:3133, an omp session, not found in the
-  Pi sessions): "Просто нужны элементы и расположение их отображения, и всё". Row contract and evidence:
-  `notes/statusbar-omp.md`; no other omp UI is copied. Since: `0f356c4`.
+  Pi sessions): "Просто нужны элементы и расположение их отображения, и всё". No other omp UI is copied. Since: `0f356c4`.
 - **Toggle** `[D-STATUSBAR-TOGGLE]`. On by default; `/statusbar [on|off]` toggles in the TUI, the bare command inverts.
   Off restores the stock editor (only when ours is installed) and footer and disposes polling and subscriptions. The
   choice is local to the loaded extension, not persisted. Print, JSON and RPC do no footer work. Model and thinking are
@@ -1801,7 +1471,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Unknown post-compaction usage is `?/limit`, since zero would claim a known empty context. Since: `0f356c4`.
 - **No invented data** `[D-STATUSBAR-SCOPE]`. omp data without a stock Pi API is not shown: modes, collaboration,
   streaming/recording and PR metadata. Running agent counts, including reviewer profiles, are shown, read from RQW-agent over `pi.events` (`[D-STATUSBAR-ACTIVITY]`). Colours are the extension's own ANSI and truecolour values, not
-  stock theme roles. Limits and samples: `notes/statusbar-omp.md`. Since: `0f356c4`.
+  stock theme roles. Since: `0f356c4`.
 - **Activity chrome** `[D-STATUSBAR-ACTIVITY]`. The existing activity text and running counts occupy a separate
   line above the editor's top border, with one leading space and one empty line above and below.
   Idle removes all extension-added activity rows; only Pi's original widget spacer remains. The session title occupies the left of the top
@@ -1812,7 +1482,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «А статус — чтобы он был отдельной строкой, как будто это сообщение в чате.»
   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6378;
   verified by `scripts/owner-quotes.mjs`. Layout acceptance and spacing are in the task's included owner messages. Reason: the owner's requested title and status placement.
-  Carrier: `extensions/RQW-statusbar/{index,editor,render}.ts`; contract: `notes/statusbar-omp.md`.
+  Carrier: `extensions/RQW-statusbar/{index,editor,render}.ts`.
 - **Accurate waiting categories** `[D-STATUSBAR-WAITS]`. After Main's full answer and run completion,
   keep real pending work visible, for example `Waiting for 2 agents, 1 background process`. While Main is active,
   preserve its existing thinking or tool text and agent suffix. RQW-agent counts an active logical assignment
@@ -1842,7 +1512,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner: «Надо, чтобы метка фаз была в виде молнии яркой Желательно которая ярко-желтая с бликом переливающимся. Можешь так сделать?» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 2158);
   «Нет, лучше значок молнии пририсовывать после имени модели между моделью и резонингом.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 2175) The shimmer while
   working and the steady yellow idle follow the coordinator description the owner accepted. Carrier:
-  `extensions/RQW-statusbar/{render,index}.ts`. Proof: `test/fast-gpt.test.ts`. Since: `fa05edf`.
+  `extensions/RQW-statusbar/{render,index}.ts`. Since: `fa05edf`.
 - **Compaction sheen** `[D-STATUSBAR-SHEEN]`. Gold shimmer runs over the session title in the top input border.
   Gold and silver timing follow `[D-STATUSBAR-ANIMATION]`. Neither has a slant. Silver has a weak
   three-cell highlight; gold retains its bright three-cell peak. Both have wide, soft, monotone falloff between
@@ -1859,7 +1529,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   "Keep the current animation speed exactly; the owner explicitly likes it."
   "Make the falloff very soft, distributed and smooth, with an expensive-looking continuous gradient."
   This replaces the earlier gold peak width and periodic motion, not silver or the existing layout and labels.
-  Carrier: `extensions/RQW-statusbar/render.ts`; proof: deterministic statusbar render and animation tests.
+  Carrier: `extensions/RQW-statusbar/render.ts`.
 - **Animation cadence** `[D-STATUSBAR-ANIMATION]`. Redraw at 30 nominal frames per second,
   using monotonic elapsed time and fractional positions for smooth motion. Silver activity text has exactly one
   glint appearing at the left, flying right at constant linear speed, fully clearing the right edge,
@@ -1892,10 +1562,10 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6774,
   verified by `scripts/owner-quotes.mjs`. Soft falloff, layout and static title stay unchanged; silver intensity and gold timing follow the current amendment above.
   Doubled-speed source: `[D-STATUSBAR-SHEEN]`.
-  Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
+  Carrier: `extensions/RQW-statusbar/{index,render}.ts`.
 - **Own git discovery** `[D-STATUSBAR-GIT]`. Git branch and counts use the extension's own repository discovery and
   asynchronous git refresh, not Pi's cached `getGitBranch()`, which caches absent metadata when a session starts outside
-  git. Engineering choice. Carrier: `extensions/RQW-statusbar/{git,index}.ts`. Evidence: `notes/statusbar-omp.md`.
+  git. Engineering choice. Carrier: `extensions/RQW-statusbar/{git,index}.ts`.
   Since: `6b9b0b9`.
 - **Context bar as bottom border** `[D-STATUSBAR-BOTTOM]`. The context bar is the input editor's bottom border, not a
   separate footer row; the footer keeps the model and place rows. Mechanism: `ctx.ui.setEditorComponent` with a
@@ -1904,7 +1574,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   another extension's editor is installed it is kept and the bar stays the first footer row; if one replaces ours, the
   footer shows the row again. Outside the TUI nothing is installed.
   Owner: «Я бы хотел, чтобы бар контекстного окна был вместо нижней чёрточки.» (session `2026-10-21T12-13-54-289Z_01a15e61`, line 136)
-  Carrier: `extensions/RQW-statusbar/{editor,index}.ts`, `render.ts` `editorBorder`. Contract: `notes/statusbar-omp.md`.
+  Carrier: `extensions/RQW-statusbar/{editor,index}.ts`, `render.ts` `editorBorder`.
   Since: `1a2adb2`.
 - **Session ID in the top border** `[D-STATUSBAR-TOP]`. With our editor installed, the top border shows
   the gold session title at the left between rules and the full session ID at the right as ` <id> ──`.
@@ -1913,7 +1583,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner: «Можно добавить его в верхнюю часть там, где working крутится, хуйня. С левой стороны сделать также вставку id сессий с пробелами: идёт чёрточка, потом id, потом снова чёрточка. Прямо по левому краю.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 191);
   «Я бы так сделал, чтобы это было симметрично по левому краю именно, и чтобы между чёрточками и ID был какой-то пробел, хотя бы по одному, чтобы можно было нормально вырезать и вставить, скопировать и вставить.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 191)
   Correction: «По визуальному он должен стоять справа. Я ошибся: не с левого края, а с правого края. Слева working, справа ID сессии. Он прижат должен быть к правому краю, а ID к левому краю прижат. Если места нету, то он и не отображается, его просто не видно.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 203)
-  Carrier: `extensions/RQW-statusbar/{editor,render,index}.ts`. Contract: `notes/statusbar-omp.md`. Since: `c6b642c`.
+  Carrier: `extensions/RQW-statusbar/{editor,render,index}.ts`. Since: `c6b642c`.
 - **Tokens per second** `[D-STATUSBAR-RATE]`. `usage.output * 1000 / durationMs` per completed assistant message of the
   main session, `durationMs` being Pi's monotonic time from the request start. Skipped: missing or non-positive `output`
   or `durationMs`, `durationMs` under 500 ms, `stopReason` `aborted` or `error`. No chars/4 fallback, no live value while
@@ -1921,7 +1591,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   toggle. `usage.output` already includes reasoning tokens. Reason: neither Anthropic nor Codex returns a rate field.
   Owner: «Смотри, токены в секунду какую-то хуйню показывают. Надо как-то привести, чтобы токены в секунду очень хорошо и качественно работали. Надо разобраться, почему в ОМП таких ситуаций не бывает, а почему у нас токены в секунду показывают дичь какую-то. И по-хорошему, надо сделать так, чтобы токены в секунду были залайнены на те показатели, которые отдаёт провайдер, Anthropic либо Codex Legacy.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 464) The owner chose
   coordinator option a: "Делим точное число выходных токенов от провайдера на время ответа. Время Pi сам меряет точными часами от начала запроса. Ответы короче полсекунды не учитываем. Значение обновляется после каждого ответа."
-  Carrier: `extensions/RQW-statusbar/{render,index}.ts` `RateMeter`. Contract: `notes/statusbar-omp.md`. Since: `2f5be5b`.
+  Carrier: `extensions/RQW-statusbar/{render,index}.ts` `RateMeter`. Since: `2f5be5b`.
 
 - **Session branch mark** `[D-STATUSBAR-BRANCH-MARK]`. The interface is English: off the original session
   branch, row 3 shows `⑂ fork #N`, such as `⑂ fork #2` or `⑂ fork #3`. The glyph, `label` colour role,
@@ -1933,17 +1603,14 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner: «Мне нравится вариант Fork 2, только надо решетку сделать: fork #2, и все»
   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entries at physical lines 4044, 4049 and 4090.
   Reason: use the owner's chosen English marker without changing its placement or rendering rules.
-  Carrier: `placeRow` in `extensions/RQW-statusbar/render.ts`; proof: `test/extensions/RQW-statusbar/chrome.test.ts`,
-  `test/extensions/RQW-statusbar/lifecycle.test.ts`; contract: `notes/statusbar-omp.md`. Since: `21179e1`.
+  Carrier: `placeRow` in `extensions/RQW-statusbar/render.ts`. Since: `21179e1`.
 
 ## Anthropic package integration
 
 - **Package integration** `[D-ANTHROPIC-PKG]`. Coordinator integration brief (C:3376), not an owner quotation:
   RQW-anthropic is the ninth of the fourteen `pi.extensions` entries; package fixtures use fake authenticated allowed
-  providers, not a visibility bypass, and the dynamic isolation assertions are unchanged. `test/anthropic-models.test.ts`
-  covers source order, unauthenticated startup, Opus medium with mock secrets, login visibility, the stock fallback with
-  the adapter or RQW-models off, and RQW-anthropic and RQW-providers each off alone. Proof boundary:
-  `[D-ANTHROPIC-PROOF]`. Notes: `notes/anthropic-integration.md`. Since: `071df1e`.
+  providers, not a visibility bypass. Proof boundary:
+  `[D-ANTHROPIC-PROOF]`. Since: `071df1e`.
 
 ## Scroll
 
@@ -1972,12 +1639,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Limits** `[D-SCROLL-LIMITS]`. A custom editor not extending `CustomEditor` gets stock Escape. With search open, the
   first Escape closes search and the second jumps. The keybinding registry is process-global; the facade follows its
   owning interactive renderer. Since: `72873eb`.
-- **Proof** `[D-SCROLL-TESTS]`. `test/extensions/RQW-scroll/scroll.test.ts` (in `npm test`) with Pi's real renderers and
-  proxy, chat viewport, `CustomEditor`, `ExtensionSelectorComponent`, overlay and search, loaded by Pi's resource loader:
-  scrolled up Escape jumps and is consumed, then interrupts; at the bottom it interrupts; Ctrl+End jumps; selector,
-  overlay, autocomplete and search keep their Escape; inline mode, unloaded and after shutdown are stock; the hint lines
-  and the unchanged registry are asserted. Local PTY probe: [decisions evidence](notes/decisions-evidence.md#scroll-pty-probe).
-  Since: `72873eb`.
+- **Proof** `[D-SCROLL-TESTS]`. Tests: `test/extensions/RQW-scroll/scroll.test.ts`. Since: `72873eb`.
 
 ## Session commands
 
@@ -1992,7 +1654,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `ExtensionSelectorComponent` starts at index 0, so deletion needs Down then Enter. The deleted session is gone without a
   trash and a new empty session opens.
   Owner: «После remove сессия удаляется, но совсем, полностью без корзины, и сразу открывается новая пустая сессия, как ты предложил. Потом подтверждение удалению один раз. Просто на экране поднять визуально, как в кодексе открыть диалог с вопросом «да/нет?». Циферка один по дефолту — нет, по не дефолту — да. То есть циферка один — нет, циферка два — да. И мне, чтобы удалить, надо нажать стрелочку вниз и Enter. Это если у тебя есть SDK для того, чтобы такие диалоги открывать.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 203)
-  Carrier: `extensions/RQW-session/index.ts`, README. Proof: `test/extensions/RQW-session/session.test.ts` drives the real component.
+  Carrier: `extensions/RQW-session/index.ts`, README.
   Since: `db5ab64`.
 - **Deletion scope** `[D-SESSION-SCOPE]`. Coordinator-approved scope, not an owner quotation: delete the current JSONL
   plus referenced artifact files not referenced by other sessions, keeping user forks and shared artifacts. Only
@@ -2003,7 +1665,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Safe scan** `[D-SESSION-SCAN]`. `artifacts.ts` preflights other sessions before replacement, so discovery errors
   leave the current session active and name the file; malformed JSONL lines are tolerated and scanned conservatively in a
   streamed asynchronous scan; the final JSONL is read after shutdown. Rules and failure behaviour:
-  `extensions/RQW-session/README.md`. Research notes: [decisions evidence](notes/decisions-evidence.md#session-research).
+  `extensions/RQW-session/README.md`.
   Since: `db5ab64`.
 - **Child session tree** `[D-SESSION-CHILDREN]`. Basis: `[D-SESSION-COMMANDS]` (`/remove` deletes the whole session with everything tied to it) and the
   coordinator text (`16-27-59:5090`) quoted in `[D-PIPELINE-PAUSE-RESUME]`: `/remove` removes the child sessions with their parent.
@@ -2012,10 +1674,8 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   imports nothing from RQW-agent. A symlink, special entry or non-directory at the tree refuses removal before the session switch;
   descendant artifact references join the removal candidates, removed children do not count as sharing, and artifacts of surviving
   sessions stay. Descendants go before the parent JSONL, so a failure leaves the parent as marker. Reason: removal must not leave
-  orphan child histories. Carrier: `extensions/RQW-session/artifacts.ts` (`childTree`), `index.ts`; proof: `test/extensions/RQW-session/session.test.ts`. Since: `dd93a40`.
-- **Proof** `[D-SESSION-TESTS]`. `test/extensions/RQW-session/session.test.ts`: temp agent directories, a stub clipboard,
-  refusal paths, artifact and fork preservation, path safety, a real Pi runtime replaced before its JSONL is deleted.
-  Mechanics only, not VDI clipboard redirection, forensic erasure or remote deletion. Since: `db5ab64`.
+  orphan child histories. Carrier: `extensions/RQW-session/artifacts.ts` (`childTree`), `index.ts`. Since: `dd93a40`.
+- **Proof** `[D-SESSION-TESTS]`. Tests: `test/extensions/RQW-session/session.test.ts`. Since: `db5ab64`.
 
 ## Send now
 
@@ -2037,8 +1697,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   unfinished tool calls are dropped. Reason: oh-my-pi keeps the aborted reply; Pi drops it. Since: `d1f8b16`.
 - **Limits and proof** `[D-SENDNOW-LIMITS]`. Several queued messages go as one, joined by blank lines; images and custom
   messages in Pi's queue are dropped as with Escape; a steering input swallowed by another extension's `input` handler
-  can leave the count stale until the queue empties. Proof: Pi's real `InteractiveMode` on a scripted terminal with a
-  faux streaming model, `test/extensions/RQW-send-now/send-now.test.ts`, in `npm test` on macOS and Windows CI.
+  can leave the count stale until the queue empties. Tests: `test/extensions/RQW-send-now/send-now.test.ts`.
   Since: `d1f8b16`.
 
 ## Providers
@@ -2048,7 +1707,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   question "Скрытие лишних провайдеров. Сейчас его делает расширение Anthropic. Если его выключить, скрытие пропадёт. a) Вынести скрытие в отдельное расширение": «1a 2a 3a 4a 5a 6b 7a 8a ответы по транспорту» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 2394). Carrier:
   `extensions/RQW-providers/index.ts`, after RQW-anthropic in `pi.extensions`; RQW-codex follows it. Since: `2bf5eac`.
 - **Visible providers** `[D-PROVIDERS-ALLOW]`. Only `anthropic`, legacy `openai-codex` and `kimi-coding` (see `[D-MODELS-KIMI]`) are visible in login, pickers,
-  `--list-models` and scoped models (`ALLOWED`); Pi 1.4.0's `openai` ("Sign in with ChatGPT", `OPENAI_API_KEY`) stays hidden. Saved credentials stay; previously selected models and explicit SDK lookups are not erased; public `unregisterProvider` is not used because it restores builtins. The policy covers only a runtime with an owning session of this extension, so loading it alone or an unrelated runtime keeps Pi's lists. RQW-anthropic filters nothing; its `registration.ts` and `auth-boundary.ts` carry the conflict guard, credential-store binding and request auth boundary. Owner: «Смотри, в нашем Pi должен быть старый OpenAI кодекс и всё, блядь. Legacy, который через девайс. А новый OpenAI нахуй не нужен, блядь. Я не знаю, что там за глупость новый OpenAI. У нас должен быть вход именно такой же, как сейчас это работает в текущем OpenAI кодексе, и всё, больше никак.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 134) Coordinator text (owner quotes C:3171, an omp session, not found in the Pi sessions): "Это именно отключить"; "Когда мы заходим в логин, там должны быть только кодекс, авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё". Proof: `test/extensions/RQW-providers/providers.test.ts`. Since: `2bf5eac`.
+  `--list-models` and scoped models (`ALLOWED`); Pi 1.4.0's `openai` ("Sign in with ChatGPT", `OPENAI_API_KEY`) stays hidden. Saved credentials stay; previously selected models and explicit SDK lookups are not erased; public `unregisterProvider` is not used because it restores builtins. The policy covers only a runtime with an owning session of this extension, so loading it alone or an unrelated runtime keeps Pi's lists. RQW-anthropic filters nothing; its `registration.ts` and `auth-boundary.ts` carry the conflict guard, credential-store binding and request auth boundary. Owner: «Смотри, в нашем Pi должен быть старый OpenAI кодекс и всё, блядь. Legacy, который через девайс. А новый OpenAI нахуй не нужен, блядь. Я не знаю, что там за глупость новый OpenAI. У нас должен быть вход именно такой же, как сейчас это работает в текущем OpenAI кодексе, и всё, больше никак.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 134) Coordinator text (owner quotes C:3171, an omp session, not found in the Pi sessions): "Это именно отключить"; "Когда мы заходим в логин, там должны быть только кодекс, авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё". Since: `2bf5eac`.
 - **Binding and order** `[D-PROVIDERS-BIND]`. Engineering choices: ownership comes from the patched
   `AgentSession._bindExtensionCore`, because Pi emits no event before `--list-models` and a bindingless `/reload` emits
   no `session_start`; liveness is read from Pi's extension API going stale; the patched `AgentSession.dispose` releases
@@ -2056,9 +1715,9 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   RQW-codex cooperate through self-contained copies of `rqw:method-chain/v1`: reuse reachable layers, remove only the
   departing owner's layers, preserve survivors and restore the exact stock descriptor after the last cooperating owner
   leaves. Reason: independent transport and visibility toggles must not leave stale lifecycle layers. Carriers: each
-  extension's own lifecycle code; `test/providers-anthropic.test.ts`, `test/codex-providers.test.ts`. Manifest order
+  extension's own lifecycle code. Manifest order
   remains RQW-providers 14 followed by RQW-codex 15. Limits for foreign non-cooperating wrappers:
-  `extensions/RQW-providers/README.md`; research: `notes/anthropic-adapter.md`. Since: `2bf5eac`.
+  `extensions/RQW-providers/README.md`. Since: `2bf5eac`.
 
 ## Theme
 
@@ -2076,7 +1735,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner, keep grey and red, find analogues: «А когда запущено то, что было зелёное и фиолетовое, надо придумать им какие-то аналоги.» Source: `16-27-59:4544`.
   Owner, the choice: «По дизайню - бирюза сланец вибираю ответ C» Source: `16-27-59:4654`.
   Reason: option C of the comparison page gave the coolest pair with the least decoration; every text pair on the four cards meets WCAG AA 4.5:1 (minimum 4.56:1).
-  Carrier: `extensions/RQW-theme/theme.json`, `test/extensions/RQW-theme/schema.test.ts` (`approved-surfaces-exact`), `extensions/RQW-theme/README.md`. The theme is registered in `package.json` `pi.themes` ([Native theme](#native-theme)); the owner selects it once through `/settings` -> Theme.
+  Carrier: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/README.md`. The theme is registered in `package.json` `pi.themes` ([Native theme](#native-theme)); the owner selects it once through `/settings` -> Theme.
 
 ## Quality control
 
@@ -2098,42 +1757,9 @@ in the approved proposal (not stored in this repository). The loop reads only pu
   `windows-latest`, Node 24, PortableGit). The repo is public, so standard runners bill nothing; the real cost is
   macOS slot contention. Carrier: `.github/workflows/tests.yml`, `.github/workflows/pcli.yml`.
   Since: `3bdac4f`.
-- **Failure inbox** `[D-QA-INBOX]`. Owner: «нужно сделать какую-то систему алертинга, какую-то копилку, куда приходят эти падения, и ты проверяешь падения, их разбираешь потом и дорабатываешь в соответствии со всеми нашими требованиями» and «каждая ветка, каждый commit, каждый push в себе хранит историю именно каждой отдельной задачи, и ты в соответствии с ней сможешь всё это дело залайнить и пофиксить тесты». Decision: one GitHub issue per failure signature, label
-  `qa-inbox`, written by `qa-inbox.yml` after every completed `main` run (schedule or dispatch) of `tests`, `pcli`
-  and `codex-oracle`; every attempt of a run is read, so a manual rerun cannot hide the first failure. The bot owns the
-  body and rewrites it in place, never comments, so updates notify nobody. An issue closes only with a `QA: #N` fix
-  on `main` and max(6, ceil(3/p)) green scheduled runs after it; each pass also picks up failed `main` runs of the
-  last 48 hours that no issue records, so a dropped pass heals; a signature that stopped without a fix closes only
-  with a written explanation by Main. Reason: an issue per signature is the link target for `QA: #N`, dedupes one
-  bug on several jobs, and keeps state without a server; closing by silence would hide flakes. Carrier:
-  `scripts/qa-inbox.mjs`, `scripts/qa-state.mjs`, `.github/workflows/qa-inbox.yml`.
-  Since: `3bdac4f`.
-- **Public issues** `[D-QA-PUBLIC]`. Decision (engineering choice, from the proposal): the inbox lives as issues in the public repo.
-  Reason: test logs and artifacts are already public, and tests use fake credentials and no network
-  (`test/no-network.mjs`), so no secrets are expected in evidence. A private inbox would need a second repository.
-  Since: `3bdac4f`.
-- **Email digest, failures only** `[D-QA-DIGEST]`. Owner: «И мне пусть приходит на почту оповещение о том, что тесты упали, допустим, раз в сутки или два раза в сутки.» and «они будут запускаться, мне будут приходить отчеты о падениях, именно о падениях, а я буду тебе об этом сообщать сам.» Owner answers «1а 2а 3а (но нужна инструкция) 4а» to the questions
-  1a "Адрес `chuark@gmail.com`, пароль приложения Gmail сохраняем в секреты репозитория." and 2a "В 09:30 и 21:30 по
-  Москве." Decision: `qa-digest.yml` runs at 09:30 and 21:30 Moscow time (cron `30 6 * * *` and `30 18 * * *` UTC)
-  and sends one mail through Gmail SMTP with `curl`, only when something failed in its window: a new or recurring
-  inbox issue, a failed `main` run, or a failed `qa-inbox.yml` run. The window starts at the previous successful
-  scheduled digest run (at most 48 hours back, 12 hours when there is none), so no failure falls between two mails.
-  Nothing failed: no mail. Secrets:
-  `QA_SMTP_USER`, `QA_SMTP_PASSWORD` (a Gmail app password), `QA_MAIL_TO`. Missing secrets fail the job loudly on
-  every scheduled run. Reason: SMTP from the workflow does not depend on GitHub notification settings; the owner
-  relays what he gets. Carrier: `scripts/qa-digest.mjs`, `.github/workflows/qa-digest.yml`. The owner's steps are in
-  a separate instruction outside the repository.
-  Since: `3bdac4f`.
-- **GitHub's own Actions emails** `[D-QA-NOTIFICATIONS]`. Owner: «1а 2а 3а (но нужна инструкция) 4а», where 3a is "Ты переключаешь уведомления
-  Actions на "только в GitHub", остаётся только наша сводка." Decision: the owner switches Settings, Notifications,
-  Actions to "On GitHub" only. Reason: GitHub mails every completed scheduled run to the user who created the
-  workflow, with no digest, up to 12 mails a day at a 2-hour cadence; the setting also covers his branch runs.
-  Carrier: the owner's account setting, not a file; nothing in the repository can check it.
-  Since: `3bdac4f`.
 - **Red main does not block merges** `[D-QA-MERGE]`. Coordinator option 4a, accepted by the owner: "Слияния не блокируются, проверка перед слиянием только
-  показывает открытые падения." Decision: `deliver-check` lists open `qa-inbox` issues and never fails on them;
-  it does fail when a `QA: #N` line names an issue that is not in the inbox. Reason: a flaky or drifting `main` must
-  not freeze unrelated work, while Main still sees what is open. Carrier: `scripts/deliver-check.mjs`.
+  показывает открытые падения." Decision: `deliver-check` shows cached red `main` runs as information and never fails
+  on them. Reason: a flaky or drifting `main` must not freeze unrelated work. Carrier: `scripts/deliver-check.mjs`.
   Since: `3bdac4f`.
 - **Awareness through the shared watcher** `[D-QA-STATUS]`. Owner: «Новую задачу ставишь, и чтобы автоматически тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть постоянный, перманентно висящий процесс». Later owner answer (`16-27-59:5060`, entry `46a9e546`): «Окей, насчёт одного скрипта раз в минуту я согласен.» Decision: no timer or local cron; the watcher of [D-PIPELINE-CI-WATCHER] is started on demand and shared. `scripts/qa-status.mjs` (`npm run qa-status`, for subagents) and the dev-only, repo-local `.pi/extensions/qa-status/` read its file instead of making their own `gh` rounds; the extension shows a message on session start and on a changed red state, and `/qa` shows the full view. Main reads the status at task start, tells the owner in one line about a red scheduled `main` and triages it. Reason: the extension is useless outside this repository and must not ship in the package, so it is not an `RQW-*` extension and is not in `pi.extensions`; an unreadable or stale cache is reported as unavailable, never as green. Carrier: `.pi/extensions/qa-status/index.ts`, `scripts/qa-status.mjs`, `scripts/ci-watch.mjs`, [PROCESS.md](PROCESS.md#quality-control-loop).
   Since: `3bdac4f`.
@@ -2153,46 +1779,13 @@ in the approved proposal (not stored in this repository). The loop reads only pu
   product, not a green badge; a weakened assertion turns a real failure into silence. Carrier: `PROCESS.md`,
   `.pi/agents/test-reviewer.toml`, `scripts/deliver-check.mjs`.
   Since: `3bdac4f`.
-- **Daily Codex oracle** `[D-QA-CODEX-SCHEDULE]`. `.github/workflows/codex-oracle.yml` runs daily on `main` at
-  `03:43 UTC` with the normal pinned oracle, capture integrity and native differential checks. Manual diagnostic
-  inputs remain dispatch-only. `qa-state.mjs` and `qa-inbox.yml` accept the workflow name `codex-oracle`.
-  Owner accepted the daily compatibility check with answer «1а 2а 3а (но нужна инструкция) 4а» (session
-  `2026-10-21T16-27-59-062Z_01a15f4a`, USER `baecafb2`, physical JSONL line 4128).
-  Reason: the pinned subscription protocol must remain checked after delivery; minute 43 avoids top-of-hour load.
-  Since: `3bdac4f`.
-- **Closed issue acknowledges a failed main run** `[D-QA-ACK]`. Source: Owner task message, 2026-10-23, qa-status
-  acknowledgement defect:
-
-  > Defect found by triage: after a Pi restart the qa-status extension reports two deliberate QA canary runs on main (39982873982, 39979775666) as new red, although their only failure is covered by qa-inbox issue #1, closed by hand with an explanation.
-  >
-  > Fix: in scripts/qa-status.mjs treat a failed main run as acknowledged INFO only when every failure signature of that run is an occurrence recorded in a closed qa-inbox issue (use the shared format in scripts/qa-state.mjs); a run with any other failure stays red. Do not special-case qa_canary.
-
-  Before the fix, after a Pi restart `qa-status` reported the two canary runs as new red although their failure was in
-  `qa-inbox` issue #1, closed by hand with an explanation. Decision: `qa-status` shows a failed
-  scheduled or dispatched `main` run of `tests` or `pcli` (not `qa-inbox` or `qa-digest`) as `info` (text `acknowledged: every failure is in closed qa-inbox issue #N`) only when
-  every failure signature of that run is an occurrence (run, attempt, job) of the same signature in a closed `qa-inbox`
-  issue, and no open issue records it. The signatures come from the same code as the bot (`collectRunFailures` in
-  `scripts/qa-inbox.mjs`: jobs of every attempt, TAP evidence, else the failed step), compared through the shared format
-  of `scripts/qa-state.mjs`. Anything else stays red: another failure of the run, a capped or missing occurrence, an
-  empty failure list, evidence that cannot be downloaded or read, a failed `gh` call, a run that no closed issue records.
-  Expired or missing evidence is not a failure of the read: as in the bot, the failed step gives a job signature, and that
-  signature is acknowledged only when a closed issue records it for the same run, attempt and job. No test name
-  is special-cased. The gh reads that only GitHub can give (closed issues, jobs, artifacts, TAP evidence) happen once in
-  `npm run ci-watch -- --refresh-inbox` (`scripts/qa-inbox-snapshot.mjs`), for the failed main runs found in the watcher file
-  `status.json` and recorded by some closed issue, and the result is stored in `inbox.json`; `qa-status` itself never
-  calls `gh`. A failed run that appears after the last refresh stays red until the next refresh. The extension memory is
-  unchanged: acknowledgement lives in the snapshot, so a restart shows no red for acknowledged runs. Reason: a signature closed on purpose must not come back as new red at every
-  restart, yet a run with one more unknown failure must not be hidden. Carrier: `scripts/qa-inbox-snapshot.mjs`,
-  `scripts/qa-runs.mjs`, `scripts/ci-watch.mjs`, `scripts/qa-status.mjs`, `scripts/qa-inbox.mjs`,
-  `test/qa-inbox-snapshot.test.ts`, `test/qa-status.test.ts`, `test/ci-watch.test.ts`. Since: the delivering commit of branch `qa-status-ack`.
-
 ## Codex subscription transport
 
 Owner (verbatim, sessions `16-27-59:2346`, `16-27-59:2348`, `16-27-59:2353` in that order): «Нас вообще не интересует ничего, что касается API. Мы работаем только через подписку Codex и всё, что касается Codex и Mechanics Codex CLI, только это для нас имеет значение»; «Надо, чтобы наш Codex провайдер работал как в Codex CLI. Можешь сделать для этого extension, как мы делали для антропиков, который приводит, алайнит их к абсолютно идентичному поведению?»; «Да, получается, у нас будет полностью заменены два транспорта: один транспорт GPT, второй транспорт кодекса. И авторизация кодекса должна быть только по device ID и всё.»
 
 Owner transport answers (verbatim, `16-27-59:2394`): «1a 2a 3a 4a 5a 6b 7a 8a ответы по транспорту». The agreed mapping is GPT via the Codex subscription: provider `openai-codex`, API identifier `openai-codex-responses`. Pi's separate `openai` provider is not another GPT transport to implement or a fallback. Anthropic remains owned by RQW-anthropic.
 
-- **Reference** `[D-CODEX-REFERENCE]`. Pin Codex CLI stable 0.163.0, peeled commit `83086188ae0614bd882818ff1aa23f3194962012`; upgrade only manually with source review and renewed fixtures. Match the application protocol for equivalent inputs, not Rust TLS fingerprints or the entire Codex harness. Reason: a reproducible, honest parity target. Carriers: `extensions/RQW-codex/profile.ts`, source/oracle fixtures and `.github/workflows/codex-oracle.yml`.
+- **Reference** `[D-CODEX-REFERENCE]`. Pin Codex CLI stable 0.163.0, peeled commit `83086188ae0614bd882818ff1aa23f3194962012`; upgrade only manually with source review and renewed fixtures. Match the application protocol for equivalent inputs, not Rust TLS fingerprints or the entire Codex harness. Reason: a reproducible, honest parity target. Carriers: `extensions/RQW-codex/profile.ts`.
 - **Identity** `[D-CODEX-IDENTITY]`. `codex_cli_rs` / 0.163.0, actual host/terminal, truthful sanitized workspace/git/tool metadata, a new adapter-owned installation UUID. Never copy another tool's installation identity or fabricate sandbox, Guardian or attestation guarantees. Reason: the accepted exact-client identity includes actual metadata, not false capabilities. Carriers: `metadata.ts`, `wire.ts` in RQW-codex.
 - **Login/migration** `[D-CODEX-LOGIN]`. New logins directly use device code, without browser selection, loopback callback, pasted-code alternative or browser fallback. Keep a valid existing `openai-codex` OAuth grant in its native slot, preserving unrelated fields. Never import `openai`, another provider's grant, `~/.codex` or API-key billing. Refresh/401 recovery use the native credential-store transaction and authenticated owner guard. Reason: only the Codex subscription is in scope, rotating grants must remain safe. Carriers: `auth.ts`, `auth-boundary.ts`, `lifecycle.ts`, `index.ts`.
 - **Prewarm** `[D-CODEX-PREWARM]`. One native `generate:false` startup request and a native idle prewarm when the connection needs preparation; a healthy prepared socket skips it. No periodic cache keepalive or synthetic assistant inference. This explicitly supersedes the former first-real-message-only rule for this Codex mechanism only; RQW-settings still disables Pi's generic background warmer. Reason: accepted 4a. Coordinator/result-review clarification (verbatim): “Implement self-contained automatic idle prewarm once when session becomes idle and prepared connection needs preparation, using current full/compacted history via public lifecycle seams, not external host event.” Reason: accepted 4a requires a package producer, not merely an optional host API. Carriers: the RQW-codex controller's public session subscription (`agent_settled`, manual `compaction_end`) and one cancellable deferred idle check, the existing native transport/prepared-connection guard, and the optional RQW-prompt startup-projection service. No periodic polling or normal inference is scheduled; aborted runs skip, new busy work/disposal cancel automatic work, and the existing explicit host API remains optional. The native Codex exception does not enable Pi's generic cache warmer; `session-prefix.ts` preserves pending system-section update placement and current tool declarations, using Pi's public tool-state helpers and a minimal MIT pure prompt-builder port. An explicit internal forced-startup flag from the owning child factory selects Pi's forced projection; no force is guessed from a subagent kind or advertised as a backend capability. Known child prompts use the child's own normalized base options, not the parent root's projection handlers. Visible catalogs and historical declaration projections respect Pi's hidden-tool set, including compaction. The projection does not mutate the Pi transcript or invoke future user hooks.
@@ -2202,26 +1795,12 @@ Owner transport answers (verbatim, `16-27-59:2394`): «1a 2a 3a 4a 5a 6b 7a 8a �
   - No native `compaction_trigger`, opaque compaction item or checkpoint entry is produced while Pi has no public native compaction hook. The six replacements of `AgentSession` compaction methods (`compact`, `_runAutoCompaction`, `_exceedsCompactionThreshold`, `_checkCompaction`, `_compactBeforeNextAssistantResponse`, `getContextUsage`) are removed, not kept beside it. Native V2 request building and checkpoint code, if it stays in the tree, is non-running source: not registered, not run, not an active behavior and not evidence of compaction parity.
   - Pi's own threshold, compaction animation, chat summary entry and `session_compact` events apply unchanged. RQW-context still owns the trigger: W = min(contextWindow, 500000), R = round(W/10), threshold W−R, existing explicit reserve precedence.
   - Portability: the session keeps every original physical entry, but after a compaction the active context is Pi's summary plus the kept tail, for Codex and, with RQW-codex disabled or another provider, for every model. The full original history is no longer replayed to other providers; stock Pi behavior replaces the earlier retained-history promise.
-  - Parity exception: Codex backend V2 compaction is not matched. The native fixture and oracle captures stay unchanged (ten provenance cases) and the oracle still runs the full native reference. The active adapter differential replays the transport and retry cases only (7); the three native compaction cases are no longer replayed against the adapter, and stock compaction is checked by `test/extensions/RQW-codex/standard-compaction.test.ts` and `test/extensions/RQW-codex/stock-compaction-history.test.ts` (see [Native differential checks](#native-differential-checks)).
+  - Parity exception: Codex backend V2 compaction is not matched; stock Pi compaction is the active behavior.
   - Reason: Pi 1.4.0 has no public native compaction hook. A public result is only `{cancel?, compaction?}`, the interactive `compaction_end` handler requires a Pi `compaction` entry first in the context (`dist/modes/interactive/interactive-mode.js:2963-2966`, error `Completed compaction is missing from the session context`, which the former hook triggered), and Pi has no public way to take an effective wire token count: coordinator probes of 2026-10-24 show repeated compaction and a physical estimate of 64 109 tokens against a threshold of 18 000 after a native-style compaction (temporary logs `/tmp/codex-public-compaction-probe.log`, `/tmp/codex-option-p-probe.log`, outside the repository; a stock simulation with a fake summary transport, not an RQW-codex integration run). An upstream request for a public native compaction and context-accounting hook exists only as the unfiled draft `/Users/arkadijcukavin/ai-project/my-pi-evidence/codex-parity/PI-NATIVE-COMPACTION-ISSUE-DRAFT.md`.
   - Not claimed: RQW-codex is not fully on public Pi API. Lifecycle, auth and prompt seams still use private Pi internals; migrating them is the separate backlog task [CODEX-PUBLIC-INTERNALS](BACKLOG.md#codex-public-internals), not part of this decision.
   - Carriers under `extensions/RQW-codex/`: `session-compaction.ts` (the public `session_before_compact` handler that prepares the auxiliary transport and payload callbacks, and the `session_compact` handler that resets state; the summary is Pi's own), `registration.ts` (routing of Pi's summary request to the direct transport only during an active Pi compaction), `session.ts` (`afterPiCompaction`: drop prepared work and refresh the owned state when a new Pi compaction entry appears), `history.ts`, `session-history.ts` and `portable-history.ts` (native wire state retired at a persisted Pi compaction boundary), `README.md`; RQW-context stays the threshold owner. Supersedes `[D-CODEX-COMPACTION]` and `[D-CODEX-HISTORY]` (archived verbatim as A-0259 and A-0260 in `DECISIONS-ARCHIVE.md`), the compaction parts of the native differential paragraph (A-0261) and the former ledger row (A-0262).
-- **Offline capabilities** `[D-CODEX-OFFLINE]`. Owner answer (verbatim) «1а 2б» (user message `92037bbf`, physical JSONL line 2414 of the same external session). Coordinator option 2b summary, not an owner quotation: use only the pinned model list, without server discovery requests. No `/models` discovery requests. Pin the 0.163.0 wire-capability records for our listed GPT models; unknown capability is a clear error, never guessed from a prefix. Pi/RQW model lists and picker stay authoritative. Reason: accepted 2b deliberately excludes this native startup network request. Carriers: `profile.ts`, `test/extensions/RQW-codex/fixtures/stable-models.json`.
+- **Offline capabilities** `[D-CODEX-OFFLINE]`. Owner answer (verbatim) «1а 2б» (user message `92037bbf`, physical JSONL line 2414 of the same external session). Coordinator option 2b summary, not an owner quotation: use only the pinned model list, without server discovery requests. No `/models` discovery requests. Pin the 0.163.0 wire-capability records for our listed GPT models; unknown capability is a clear error, never guessed from a prefix. Pi/RQW model lists and picker stay authoritative. Reason: accepted 2b deliberately excludes this native startup network request. Carrier: `profile.ts`.
 - **Ownership/coexistence** `[D-CODEX-OWNERSHIP]`. Provider hiding lives in the independently switchable `extensions/RQW-providers`, not in Anthropic or Codex transport registration. RQW-providers remains extension 14; RQW-codex is extension 15 immediately after it in `pi.extensions`. RQW-settings alone owns `/fast-gpt`, default off, priority through final payload hooks; child inheritance/overrides, including reviewer profiles, remain in RQW-agent. Children share native root cache affinity but never socket continuation, sticky turn state or opaque history. Reason: accepted 7a and extension isolation. Carriers: RQW-codex registration/lifecycle, optional `rqw-codex:session-policy` event in child factories; existing Fast owners unchanged.
-
-### macOS oracle fixture
-
-Coordinator technical decision, not an owner quotation: adapt only the temporary harness fixture on `darwin`; retain the existing `listen(128)` and every native assertion and timeout. Reason: the macOS fixture's bound socket without `listen` kept connections pending instead of refusing them; the fixture-only lifecycle adaptation restores the intended refusal/recovery sequence. Proof: [one-shot native connect run 39951670171](https://github.com/ARQAWA/my-pi/actions/runs/39951670171). The previous English authorization wording came from coordinator instructions, not a verified user-role message.
-
-The pinned retry fixture holds a bound socket without listening until recovery. On the CI macOS runner this stalls TCP connection establishment instead of producing the connection refusal the test needs. The [one-shot native connect evidence](https://github.com/ARQAWA/my-pi/actions/runs/39951670171) records both raw TCP and direct HTTP pending beyond 12 seconds while held, then `ConnectionRefused` with errno 61 immediately after release; the listening control succeeds. This establishes the socket-state cause behind the coordinator's fixture-only technical decision, not a subscription transport change or broader owner permission to modify native tests.
-
-Only the temporary `core/tests/suite/retry_after.rs` copy on `darwin` is adapted. Its pinned preimage SHA-256 `2437e45336c5d3e811158aeb43963992860499cc1e9e66b939ad223d9e4d12af` and exact-once anchors are checked. Release the unavailable socket immediately after reading its address; at recovery create a fresh `TcpSocket`, bind that same address and retain the existing `listen(128)`. Native assertions, retry counts, delays and timeouts are unchanged. Other platforms and original source checkouts remain unchanged. Address reuse fails explicitly rather than choosing another port. Carriers: `extensions/RQW-codex/scripts/capture-oracle.mjs`, `test/extensions/RQW-codex/oracle-harness.test.ts`; `run.json` declares `adaptedFixtures` with identity, platform, reason, source/adapted hashes and the evidence URL, checked by `checkOutput`. Diagnostic success is not full oracle acceptance; the corrected case is verified inside the normal full oracle run on the final head.
-
-### Native differential checks
-
-Coordinator technical implementation, not an owner quotation: replay pinned native responses through the real RQW-codex extension in a Pi `AgentSession` and compare the adapter's ordered request projection with the native capture projection. Reason: native oracle success alone does not establish adapter parity. `test/extensions/RQW-codex/fixtures/native-differential.json` pins [normal oracle run 39956439677](https://github.com/ARQAWA/my-pi/actions/runs/39956439677), my-pi head `fe3e9ec554070811a76eb5403934b753825e67df`, with 10 cases: transport 4, retry 3, compaction 3. The shared projection checks transport/endpoint, turn state, request kind, turn grouping, retry-body identity and conversation replay; selected cases also compare content encoding. Since `[D-CODEX-SIMPLE-COMPACTION]` the fixture, the pin script and the oracle workflow are unchanged, and the oracle still runs the full native reference with all ten cases. The active adapter test `test/extensions/RQW-codex/native-differential.test.ts` replays the transport and retry cases only (7); the three compaction cases stay in the fixture as provenance of the native mechanism, which the adapter no longer runs, and are not replayed against it. The adapter's stock compaction is covered by `test/extensions/RQW-codex/standard-compaction.test.ts` and `test/extensions/RQW-codex/stock-compaction-history.test.ts`.
-
-Carriers: `extensions/RQW-codex/scripts/pin-native-differential.mjs`, `test/extensions/RQW-codex/native-differential.mjs`, `test/extensions/RQW-codex/native-differential.test.ts` and the fixture above. Normal `.github/workflows/codex-oracle.yml` runs regenerate the fixture projection and reject drift in the case list, cited source digests, scripted stimuli, native request projections and selected encodings. Capture hashes retain baseline provenance; per-run UUIDs and timestamps are not required to match. Replay uses injected network seams and fake credentials. Source-backed `Retry-After` sleeps are compared with a deterministic clock rather than elapsed wall time; explicit fallback cases check upgrade order/count, and the drift contract includes all stable replay configuration fields. Actual WebSocket frame replay is not covered, nor is live subscription acceptance; the baseline native run is not a claim that the new differential checks have already passed CI.
 
 ### Codex exception ledger
 
@@ -2265,7 +1844,7 @@ The shipped independent `web` tool lives in `extensions/RQW-web/`; Contract: [RQ
 - **Read-only credentials** `[D-WEB-AUTH]`. The public `readStoredCredential` supplies only saved `openai-codex` OAuth. No auth writes, copied auth files, refresh, private ModelRuntime credentials or API-key/other-provider fallback. Missing, expiring or rejected login returns a hint to use Pi for refresh or `/login openai-codex`, then retry. Carrier: `extensions/RQW-web/core/credentials.ts`.
 - **Defaults and bounds** `[D-WEB-DEFAULTS]`. The tool retains the existing search behavior: `cached`, `short`, three concurrent targets with the rest queued, target timeout 120000 ms, input-order results with independent errors. Normalized model-facing output is capped at 2000 lines or 48 KiB; overflow returns a full-result path and exact next line rather than another paid request. No raw reasoning, headers or secrets are written. Each target consumes subscription usage, with no requested GPT Fast. Carrier: `core/batch.ts`, `core/report.ts`, `core/truncate.ts`.
 - **All agents, independent loading** `[D-WEB-ACCESS]`. Owner (`16-27-59:4917`): «Это будет инструмент, который будет доступен всем агентам, и воркеры будут типа нашей матрицы агентов и исполнителей, она никак не меняется.» Normal package loading registers `web`. RQW-agent receives the optional `rqw-search:subagent-web` offer on `pi.events` and registers against each child's own API, recursively. It needs neither RQW-tools nor RQW-codex enabled. Disabling RQW-web removes its main tool and offer; existing children retain their startup tools until restarted. Carrier: `package.json`, `extensions/RQW-web/index.ts`, `extensions/RQW-agent/index.ts`.
-- **Cross-platform ordinary temporary files** `[D-WEB-TEMP-FILES]`. Owner (`16-27-59:6372`, entry `f7f8b0ad`, 2026-10-24): «Насчет этой хуйни, заморочки с файлами на разных пользователей — поебать вообще» and «Не надо никаких заебов. Надо просто, чтобы все работало стабильно, быстро, производительно и эффективно». Overflow uses ordinary OS temporary files on every platform, with no explicit POSIX modes, per-user privacy contract, NTFS ACL handling or privacy assertions. This overrides the former phase-1 private-file requirement and the proposed NTFS treatment. Windows tests exercise actual behavior without mode-bit assumptions. `.gitattributes` pins `web-native-tools.json` with `-text` because the exact source-provenance hash must survive Windows checkout conversion. Carrier: `core/truncate.ts`, `.gitattributes`, web tests.
+- **Cross-platform ordinary temporary files** `[D-WEB-TEMP-FILES]`. Owner (`16-27-59:6372`, entry `f7f8b0ad`, 2026-10-24): «Насчет этой хуйни, заморочки с файлами на разных пользователей — поебать вообще» and «Не надо никаких заебов. Надо просто, чтобы все работало стабильно, быстро, производительно и эффективно». Overflow uses ordinary OS temporary files on every platform, with no explicit POSIX modes, per-user privacy contract, NTFS ACL handling or privacy assertions. This overrides the former phase-1 private-file requirement and the proposed NTFS treatment. `.gitattributes` pins `web-native-tools.json` with `-text` because the exact source-provenance hash must survive Windows checkout conversion. Carrier: `core/truncate.ts`, `.gitattributes`.
 
 - **Remove the terminal entry** `[D-WEB-REMOVE-CLI]`. Owner, current repository session, 2026-10-25: «эту хуйню удалить». The obsolete terminal command and its dedicated tests and dependency are removed; the shipped `web` tool replaces it. Full order and superseded decision: [archive](DECISIONS-ARCHIVE.md#a-web-cli-removed---archived-2026-10-25). Carrier: `extensions/RQW-web/`, `package.json`.
 

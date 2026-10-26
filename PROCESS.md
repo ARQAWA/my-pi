@@ -70,8 +70,7 @@ where needed, and no `src/` layer. Tests belong in the separate mirrored
 `test/extensions/<extension>/` tree, not inside extensions.
 Root `INDEX.md` is the repository navigation map; every extension README has a generated file map.
 After relevant file, manifest or map changes, run `node scripts/repo-index.mjs --write`.
-Freshness is checked by `node scripts/repo-index.mjs --check` through root `test/repo-index.test.ts`
-in `npm test`. This delivery maps large files without splitting them; it adds no runtime changes,
+Freshness is checked by `node scripts/repo-index.mjs --check`. This delivery maps large files without splitting them; it adds no runtime changes,
 mandatory file headers, numeric size limits, new search tooling or audits.
 Accepted choices and sources: [DECISIONS.md, Work policy](DECISIONS.md#work-policy),
 `D-WORK-CODE-QUALITY` and `D-WORK-REPO-INDEX`; personal wording:
@@ -155,8 +154,8 @@ The guard reads this block from the root file. Its policy is in [Subagent models
    runtime prompts (`SYSTEM.md`, agent roles or profiles, reviewer profiles or skills, tool descriptions),
    executable code, workflows, `package.json` or the `coordinator-rules` block change. Meaning-change result review
    and the release batch checks in step 4 remain unchanged.
-   For all other changed sets, changed paths mechanically select affected extension tests, isolation, changed tests
-   and root tests loading changed files. It runs those tests on that exact committed branch head in its existing
+   For all other changed sets, changed paths mechanically select only the touched extension's tests.
+   It runs those tests on that exact committed branch head in its existing
    clean task worktree on the owner's macOS, and verifies worktree cleanliness and the head before and after the
    run. No new receipt or test trailer is required. No full suite runs per task.
    The message carries exactly one `Change-class: ordinary`, `Change-class: critical` or
@@ -166,11 +165,8 @@ The guard reads this block from the root file. Its policy is in [Subagent models
    Every class carries `Unverified: <what was not verified live, or none>`. See
    [Independent review](#independent-review). An optional `Decision: D-<SECTION>-<NAME>` trailer links the squash
    to a stable decision ID; it is not a gate requirement.
-   When the
-   test-integrity rule triggers it also requires `Test-change:` and `Test-review:`; a `QA: #N` line requires
-   `Test-change:` when test or workflow files changed, and issue N must carry the `qa-inbox`
-   label ([Quality control loop](#quality-control-loop)). It lists the open `qa-inbox` issues as information:
-   a red `main` does not block a merge. Any failure: no merge.
+   When the test-integrity rule triggers it also requires `Test-change:` and `Test-review:`.
+   A red `main` does not block a merge. Any failure: no merge.
 4. Squash merge into `release`: one task, one commit, with that message. Never merge the task's stage commits into
    release as a merge commit. Push release autonomously; the squash tree equals the tested head, so it is not retested.
    Main determines when a release is due from Git alone: the first-parent task commits in

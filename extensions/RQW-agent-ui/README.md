@@ -54,8 +54,7 @@ only: stored messages, tool results, their details and what the model sees are n
   Pi's stock call header, output padding and `toolPendingBg` / `toolSuccessBg` / `toolErrorBg` roles. This is an outer
   display branch, not an insertion into tool-ui's private state or components. Alerts, partials, errors, timeouts and
   statuses without results delegate unchanged. Folding again restores tool-ui's current group view, with no extra
-  card below it. There are no tool definitions, cross-folder imports or competing subscriptions here. The root
-  integration test composes both packages; this folder's tests load only agent-ui.
+  card below it. There are no tool definitions, cross-folder imports or competing subscriptions here.
 - **Lifecycle**: there is no session registry. The expanded wrapper keeps only per-call display state in Pi's public
   renderer `context.state`. It subscribes to no event, starts no timer or process and keeps no reference to a session. Pi builds it again for every new session and `/reload`, and the old registrations die with
   the old extension instance, so a session switch or reload leaves nothing stale. Switching it off is Pi's package filter
@@ -143,22 +142,7 @@ and ANSI); at width 0 nothing is rendered.
 
 ## Tests
 
-- `node --test test/extensions/RQW-agent-ui/card.test.ts`: the card (pure).
-- `node --test test/extensions/RQW-agent-ui/review.test.ts`: legacy stored verdict fixtures, source-aware counts,
-  full body and appended advice, width and purity.
-- `node --test test/extensions/RQW-agent-ui/child-wait.test.ts`: the `child_wait` card rows (pure).
-- `node --test test/extensions/RQW-agent-ui/wait.test.ts`: the wait cards, the stock view parity, layering, width, purity.
-- `node --test test/extensions/RQW-agent-ui/self.test.ts`: a tool-ui-like self shell, exact folded delegation, full
-  expanded cards, native box parity, output padding, diagnostics, invalidation and repeated expansion.
-- `node --test test/extensions/RQW-agent-ui/wire.test.ts`: Pi's real `InteractiveMode` on a scripted terminal with a
-  faux model and only this extension: both delivery paths, Ctrl+O and back, off = stock, `/reload` and a new session
-  register the cards again, the extension has no handler or subscription. The delivery shapes are stand-ins for
-  RQW-agent's, as its README describes them.
-- `node --test test/agent-ui-delivery.test.ts`: real RQW-agent message and wait deliveries for generic and profiled
-  agents, including ordinary card rendering and stored `{ name, path, sha256 }` provenance, drawn by Pi's exported
-  host components with faux providers and isolated directories. Covers wait-for-all, status/alert shapes and
-  composition with tool-ui. Separately injects legacy stored `review` message fixtures with both UI extensions
-  independently absent or present; it does not exercise a current standalone review runtime.
+Run `node --test test/extensions/RQW-agent-ui/card.test.ts`.
 
 <!-- repo-index:start -->
 ## File map

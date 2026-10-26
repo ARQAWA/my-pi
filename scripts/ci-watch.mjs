@@ -6,9 +6,6 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { acknowledgements } from "./qa-inbox-snapshot.mjs";
-import { DOWNLOAD_TIMEOUT } from "./qa-inbox.mjs";
-import { decodeState, INBOX_LABEL } from "./qa-state.mjs";
 
 export const INTERVAL_MS = 60_000;
 export const STALE_MS = 180_000;
@@ -133,34 +130,6 @@ export async function restartOwner(lockPath, { identify = processStart, kill = p
 	await wait(100);
 }
 
-export async function refreshInbox({ cwd = process.cwd(), execute = run, now = Date.now } = {}) {
-	assertMac();
-	const dir = await cacheDirectory(cwd, execute);
-	const remote = await execute("git", ["remote", "get-url", "origin"], { cwd });
-	const repo = /(?:github\.com[:/])([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(remote)?.[1];
-	if (!repo) throw new Error("origin must be a GitHub repository");
-	// Explicit issue triage only, never part of the minute run-polling loop.
-	const issues = JSON.parse(await execute("gh", ["api", `repos/${repo}/issues?state=open&labels=${INBOX_LABEL}&per_page=100`], { cwd }));
-	if (!Array.isArray(issues) || issues.length >= 100) throw new Error("QA inbox reached its 100-item bound or is invalid; snapshot not updated");
-	const items = issues.filter((issue) => !issue.pull_request).map((issue) => {
-		const state = decodeState(issue.body);
-		const lastSeen = state?.lastSeen ?? issue.updated_at;
-		const rate = state?.rate;
-		return { id: `issue:${issue.number}:${lastSeen}`, level: "red", url: issue.html_url,
-			text: `#${issue.number} ${issue.title} [${issue.labels.map((label) => typeof label === "string" ? label : label.name).join(", ")}] rate ${rate ? `${rate.k}/${rate.n}` : "unknown"}; lastSeen ${lastSeen ?? "unknown"}; occurrences ${state?.occurrences?.length ?? 0}` };
-	});
-	// Failed main runs come from the watcher file; only the closed-issue and evidence reads need gh.
-	const watched = await readJson(join(dir, "status.json")).catch(() => null);
-	const api = async (endpoint) => JSON.parse(await execute("gh", ["api", `repos/${repo}/${endpoint}`], { cwd }));
-	const download = (runId, name, target) => execute("gh", ["run", "download", String(runId), "-R", repo, "-n", name, "-D", target], { cwd, timeout: DOWNLOAD_TIMEOUT });
-	const acknowledged = watched?.repo === repo && Array.isArray(watched.runs)
-		? await acknowledgements({ repo, runs: watched.runs, openIssues: issues, api, download }).catch(() => []) : [];
-	const state = { version: 1, repo, fetchedAt: new Date(now()).toISOString(), items, acknowledged };
-	await mkdir(dir, { recursive: true, mode: 0o700 });
-	await atomicJson(join(dir, "inbox.json"), state);
-	return state;
-}
-
 export async function watch({ cwd = process.cwd(), once = false, restart = false, execute = run } = {}) {
 	assertMac();
 	const dir = await cacheDirectory(cwd, execute);
@@ -208,14 +177,9 @@ export async function watch({ cwd = process.cwd(), once = false, restart = false
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	try {
 		const flags = process.argv.slice(2);
-		if (flags.some((flag) => !["--once", "--restart", "--refresh-inbox"].includes(flag)) || flags.includes("--refresh-inbox") && flags.length !== 1)
-			throw new Error("usage: npm run ci-watch -- [--restart] [--once] | --refresh-inbox");
-		if (flags.includes("--refresh-inbox")) {
-			const state = await refreshInbox();
-			console.log(`QA inbox cached: ${state.items.length} open issues at ${state.fetchedAt}`);
-		} else {
-			const result = await watch({ once: flags.includes("--once"), restart: flags.includes("--restart") });
-			console.log(`${result.started ? "ci-watch stopped" : "ci-watch already running"}: ${result.directory}`);
-		}
+		if (flags.some((flag) => !["--once", "--restart"].includes(flag)))
+			throw new Error("usage: npm run ci-watch -- [--restart] [--once]");
+		const result = await watch({ once: flags.includes("--once"), restart: flags.includes("--restart") });
+		console.log(`${result.started ? "ci-watch stopped" : "ci-watch already running"}: ${result.directory}`);
 	} catch (error) { console.error(error.message); process.exitCode = 1; }
 }

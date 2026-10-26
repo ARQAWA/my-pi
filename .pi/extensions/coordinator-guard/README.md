@@ -124,7 +124,4 @@ Calls made from a `codemode` script go through the same `tool_call` handler.
 - Children inherit Main's prompt, including the `coordinator_rules` section. The section says it binds Main only.
 - In the error state Main cannot start subagents to repair `PROCESS.md`; the owner fixes the block.
 
-Tests: `test/coordinator-guard.test.ts` (fake pi and ctx), `test/coordinator-guard-pi.test.ts` (a real Pi
-session with codemode and a faux model), `test/coordinator-lock.test.ts` (lock file races between real processes
-and the first, second, stale, release and `/new` cases with a fake pi, SIGKILL of a real holder, a reused pid), `test/coordinator-lock-pi.test.ts` (real Pi
-`/reload` and quit) and `test/coordinator-lock-keys.test.ts` (real interactive mode, Ctrl+D and Ctrl+C).
+Tests: `npm test`.

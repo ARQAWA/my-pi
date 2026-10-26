@@ -34,7 +34,7 @@ The shared `readoutGreen` variable stays `#00ff88`, so unrelated green roles do 
 
 ## Tests
 
-`test/extensions/RQW-theme/schema.test.ts` checks the asset against Pi's theme schema and pins the four card backgrounds.
+Tests: `test/extensions/RQW-theme/schema.test.ts`.
 
 <!-- repo-index:start -->
 ## File map

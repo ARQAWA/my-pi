@@ -23,42 +23,19 @@ const short = (sha) => sha.slice(0, 7);
 const finish = () => {
 	if (!failures.length) return;
 	for (const line of failures) console.error(`FAIL ${line}`);
-	for (const line of qaOpenLines()) console.error(line);
+	for (const line of mainRunLines()) console.error(line);
 	console.error(`deliver-check: ${failures.length} failure(s), do not merge ${branch}`);
 	process.exit(1);
 };
 
-// Only QA issue labels need live GitHub data.
-const ghRun = (args) => {
-	const r = spawnSync("gh", args, { encoding: "utf8", shell: process.platform === "win32", timeout: 30000 });
-	if (r.status === 0) return { stdout: r.stdout };
-	const reason = String(r.stderr || r.error?.message || `exit ${r.status}`).trim().split(/\r?\n/)[0];
-	return { reason };
-};
-
-// Informational only (red main never blocks a merge, owner decision): local ci-watch files in
-// `<git-common-dir>/ci-watch/`, read synchronously with no gh call. Never merge proof.
-// `status.json` carries the bounded run list, the sidecar `inbox.json` the issue snapshot that
-// `npm run ci-watch -- --refresh-inbox` wrote on demand: it says when it was fetched, never that issues are open now.
+// Informational only (red main never blocks a merge, owner decision): the local ci-watch file in
+// `<git-common-dir>/ci-watch/status.json`, read synchronously with no gh call. Never merge proof.
 const CACHE_STALE_MS = 180_000;
 const RED = ["failure", "timed_out", "startup_failure", "action_required"];
 const readCache = (name) => {
 	const dir = resolve(process.cwd(), git("rev-parse", "--git-common-dir"));
 	return JSON.parse(readFileSync(join(dir, "ci-watch", name), "utf8"));
 };
-function inboxLines() {
-	let inbox;
-	try { inbox = readCache("inbox.json"); } catch (e) {
-		return [`  QA inbox: no local snapshot (${e.code ?? e.message}); run npm run ci-watch -- --refresh-inbox, workflow failures shown instead`];
-	}
-	if (inbox?.version !== 1 || !Array.isArray(inbox.items) || !Number.isFinite(Date.parse(inbox.fetchedAt))) {
-		return ["  QA inbox: local snapshot invalid; run npm run ci-watch -- --refresh-inbox"];
-	}
-	const lines = [`  QA inbox: local cached snapshot from ${inbox.fetchedAt}; not refreshed by ci-watch, not the current state`];
-	if (!inbox.items.length) lines.push("  QA inbox: no items in that snapshot");
-	for (const i of inbox.items) lines.push(`  QA inbox: ${String(i.level ?? "info").toUpperCase()} ${i.text}${i.url ? ` ${i.url}` : ""}`);
-	return lines;
-}
 function mainRunLines() {
 	let cache;
 	try { cache = readCache("status.json"); } catch (e) {
@@ -79,7 +56,6 @@ function mainRunLines() {
 	return [...latest.values()].filter((r) => r.status === "completed" && RED.includes(r.conclusion))
 		.map((r) => `  main red (cached): ${r.name ?? r.path} ${r.conclusion} ${r.html_url ?? ""}`.trimEnd());
 }
-const qaOpenLines = () => [...inboxLines(), ...mainRunLines()];
 
 if (process.platform !== "darwin") {
 	console.error("deliver-check requires the owner's macOS laptop");
@@ -137,7 +113,6 @@ const has = (re) => lines.some((l) => re.test(l));
 const reviews = lines.filter((l) => /^Review: agent#\d+ CLEAN$/.test(l)).map((l) => l.slice(8, -6));
 
 // 3b. Detected test/workflow weakening needs both a reason and an independent test-integrity review.
-// `QA: #N` also needs a reason for test/workflow edits, but is not itself an integrity-review trigger.
 const isTestFile = (f) => /(^|\/)test\//.test(f) || /(^|\/)[^/]*\.test\.[^/]*$/.test(f);
 const isWorkflowFile = (f) => f.startsWith(".github/workflows/");
 const SKIP_RES = [/\.(?:skip|todo)\s*\(/, /\{\s*(?:skip|todo)\s*:/, /\b(?:skip|todo)\s*:\s*(?:true|['"])/];
@@ -199,26 +174,6 @@ for (const w of weak) {
 	if (!hasTestReview) missing.push('"Test-review: agent#N CLEAN"');
 	if (missing.length) fail(`test integrity: ${w.file} ${w.rules.join("; ")}: missing trailer ${missing.join(" and ")}; review with agent_type: "test-reviewer"`);
 }
-const qaIssues = [];
-for (const l of lines.filter((x) => x.startsWith("QA:"))) {
-	const n = /^QA: #(\d+)$/.exec(l)?.[1];
-	if (!n) fail(`message: malformed line "${l}", expected "QA: #<issue number>"`);
-	else if (!qaIssues.includes(n)) qaIssues.push(n);
-}
-if (qaIssues.length) {
-	if (!hasTestChange && changed.some((f) => isTestFile(f) || isWorkflowFile(f))) {
-		fail('message: "QA: #N" with test or workflow files changed requires trailer "Test-change: <text>"');
-	}
-	for (const n of qaIssues) {
-		const r = ghRun(["issue", "view", n, "--json", "labels,state"]);
-		let issue;
-		try { issue = r.reason === undefined ? JSON.parse(r.stdout) : null; } catch { issue = null; }
-		if (r.reason !== undefined) fail(`message: "QA: #${n}": gh issue view failed: ${r.reason}`);
-		else if (!issue) fail(`message: "QA: #${n}": unreadable gh issue view output`);
-		else if (!(issue.labels ?? []).some((l) => (l.name ?? l) === "qa-inbox")) fail(`message: "QA: #${n}" is not a qa-inbox issue`);
-	}
-}
-
 // 3c. The declared class selects one ordinary review, critical result plus code review, or proofreading checks.
 const changeClasses = lines.filter((l) => l.startsWith("Change-class:"));
 const docChecks = lines.filter((l) => l.startsWith("Doc-check:")).map((l) => l.slice(10).trim());
@@ -268,7 +223,6 @@ function proofreadingProblems() {
 	if (changed.includes("PROCESS.md") && (rulesBlock(release) === "[]" || rulesBlock(release) !== rulesBlock(head))) {
 		problems.push("PROCESS.md coordinator-rules block changed or unreadable");
 	}
-	if (qaIssues.length) problems.push('"QA: #N" is not proofreading');
 	return problems;
 }
 let proofreading = false;
@@ -385,5 +339,4 @@ else console.log(`  targeted tests: ${selected.length ? "PASS" : "NONE"} ${head}
 if (proofreading) console.log(`  reviews: exempt (proofreading, Doc-check ${docChecks[0]})`);
 else console.log(`  reviews: ${reviews.join(", ")} (result and code)${critical ? "; separate code review CLEAN" : ""}`);
 if (weak.length) console.log(`  test integrity: ${weak.length} weakening file(s) accepted with Test-change and Test-review`);
-if (qaIssues.length) console.log(`  QA: ${qaIssues.map((n) => `#${n}`).join(", ")} (qa-inbox issues)`);
-for (const line of qaOpenLines()) console.log(line);
+for (const line of mainRunLines()) console.log(line);
