@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test --test-isolation=none \"test/extensions/*/*.test.ts\" \"test/*.test.ts\"",
+    "test": "node --test --experimental-test-isolation=none \"test/extensions/*/*.test.ts\" \"test/*.test.ts\"",
     "qa-status": "node scripts/qa-status.mjs",
     "ci-watch": "node scripts/ci-watch.mjs"
   },
