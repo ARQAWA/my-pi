@@ -27,7 +27,7 @@ Provenance:
 ## Work policy
 
 - **Only ordered work** `[D-WORK-ONLY-ORDERED]`. The scope and proposal rule is carried once in
-  [PROCESS.md, Research and agreement](PROCESS.md#research-and-agreement); review-brief construction is in
+  the owner's accepted task; review-brief construction is in
   [PROCESS.md, Independent review](PROCESS.md#independent-review) and the native
   [reviewer skill](extensions/RQW-review/skills/reviewer/SKILL.md). This replaces night-default authority
   and the earlier defect-fixing scope permission, preserved verbatim in archive entries A-0318 to A-0323.
@@ -44,18 +44,6 @@ Provenance:
   it stays only after explicit owner approval. This reaffirms the same rule, not a new mechanical blocker.
   The reviewer prompt itself is unchanged. Since: rule-only-ordered.
 
-- **Task dependency graph** `[D-WORK-DEPENDENCIES]`. Main identifies, links and blocks dependent tasks itself,
-  then shows their order as a plain-text dependency tree in terminal output, not Mermaid. BACKLOG `Blocked by:`
-  lines plus the handoff are the graph's source of truth. Owner (`16-27-59:4896`, entry `fcfa64f3`):
-
-  «И вообще ты должен сам уметь строить графы зависимостей и блокировки. Когда я тебе ставлю задачи, ты должен сам их определять, сам их должен друг с другом линковать, ты должен сам их блокировать друг другом и должен мне показывать порядок, показывать граф, желательно визуально, не через Mermaid-диаграммы, а просто в терминале рисовать по терминальным выводам дерево зависимостей, чтобы было понятно, что с чем связано.
-
-  Это тоже в правило запиши: работай с репозиторием нашим»
-
-  Reason: prerequisites must be visible and prevent starting work against missing inputs or a moving layout.
-  Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution), `BACKLOG.md`.
-  Since: process-rules-oct23 squash.
-
 - **Maintainable minimal code** `[D-WORK-CODE-QUALITY]`. Every change and review keeps source clean,
   readable, minimal and easy to extend. Prefer clear structure and meaningful decomposition over dense expressions;
   brevity must not hide understanding. This is a standing principle, not a provisional research placeholder.
@@ -63,26 +51,16 @@ Provenance:
   Source: coordinator question 7, accepted option 7a in the repo-code-index second-delivery agreement.
   This records the accepted option's meaning, not verbatim owner wording.
   Reason: maintainability for agents needs navigable structure without arbitrary size thresholds.
-  Carrier: [PROCESS.md, Code quality](PROCESS.md#code-quality).
+  Carrier: [PROCESS.md, Golden rule](PROCESS.md#golden-rule).
   Replaces the provisional entry preserved verbatim in [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md),
   under "Provisional code quality". Since: repo-code-index second delivery.
 
-- **Extension framework and generated repository maps** `[D-WORK-REPO-INDEX]`.
-  Source: coordinator questions 4, 5 and 6, accepted options 4a, 5a and 6a in the repo-code-index
-  second-delivery agreement. The following records coordinator question/accepted-option meanings,
-  not verbatim owner wording:
-  - 4a: keep one framework per extension: `index.ts` with meaning-named modules and resources beside it;
-    use subfolders where needed, with no `src/` layer. Tests live in the separate mirrored
-    `test/extensions/<extension>/` tree, delivered by `17d729c`.
-  - 5a: root `INDEX.md` provides repository navigation; every extension README contains a generated file map.
-    Agents regenerate after relevant file, manifest or map changes with `node scripts/repo-index.mjs --write`.
-    `node scripts/repo-index.mjs --check` checks freshness.
-  - 6a: map existing large files without splitting them in this delivery.
-  Reason: agents can locate implementation and tests without imposing a new runtime architecture.
-  Carriers: `INDEX.md`, extension READMEs, `scripts/repo-index.mjs`,
-  [PROCESS.md, Code quality](PROCESS.md#code-quality), `AGENTS.md`.
-  No runtime changes, mandatory file headers, numeric size limits, new search tooling or audits are authorized.
-  Since: repo-code-index second delivery.
+- **Extension framework and repository navigation** `[D-WORK-REPO-INDEX]`.
+  Keep one framework per extension: `index.ts` with meaning-named modules and resources beside it;
+  use subfolders where needed, with no `src/` layer. Tests live in the separate mirrored
+  `test/extensions/<extension>/` tree. Root `INDEX.md` is a short hand-written navigation list.
+  Reason: a consistent layout makes implementation and tests easy to locate.
+  Carriers: `INDEX.md`, extension READMEs, `AGENTS.md`. Since: repo-code-index second delivery.
 
 - **Golden rule: no avoidable token spending** `[D-WORK-GOLDEN-RULE]`. A standing design and review requirement for the
   harness and for the development workflow: spend no tokens where they can be avoided (no polling, no model turns
@@ -106,64 +84,14 @@ Provenance:
   blocks remain unchanged. Owner (`16-27-59:4829`, entry `e512853d`):
   «Погоди, ты сам лично как координатор спор не разнимаешь, но ты можешь поднять своего субагента, форка самого себя, субагента с форком контекста, чтобы он разрулил спор и тебе дал отчёт как судья, чтобы ты свой контекст не засерал. У тебя же запрет стоит на любую работу личную. Поэтому ты должен был отказаться, когда я тебе сказал, что ты будешь что-то делать, ты должен был сказать: «Пошёл на хуй, я таким не занимаюсь». Ты запиши себе это в процесс, запиши себе в Agents MD, что если я тебе даю какую-то работу личную, то ты должен со мной спорить. И только если я тебе императивно скажу: «Похуй на инструкции, действуй», потому что я забываю про инструкции твои, я забываю про то, что ты не должен делать работу сам. Я забываю про то, что ты чисто координатор»
   Reason: the owner may forget the coordinator role; a direct request alone must not silently bypass it.
-  Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution), guard prompt.
+  Carrier: `.pi/extensions/coordinator-guard/`, `AGENTS.md`.
   Since: process-rules-oct23 squash.
-- **One active execution task and owner queue** `[D-WORK-PARALLEL]`. Only one task is in active execution at a time
-  in the owner's priority queue. QA fixes, Windows work and full release regressions share that queue; there is no
-  separate test lane ([D-PIPELINE-SINGLE-QUEUE]). CI, review, merge-queue and owner waits are not active execution,
-  so the next logical task may run during a genuine external wait ([D-PIPELINE-SLOTS]). Coordinator bookkeeping is
-  operational, not a standalone queue task, and never permits concurrent implementation ([D-WORK-TASK-BOOKKEEPING]).
-  Owner (`16-27-59:12021`, entry `b5d1a538`, 2026-10-25):
-  «Кароче дальше в 1 поток задачи делаешь и отдельного потока на тесты нет чередуй по логике»
-  Existing paused tasks retain their history and resume one at a time. Other hold and discard rules stay unchanged.
-  Requested HTML artifacts are separate outside the queue, not product tasks. Owner (`16-27-59:10375`, entry
-  `541e58af`, 2026-10-25): «Это не типовая задача а отдельная вне очереди то что я написал выше».
-  Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
-  Owner (`16-27-59:4813`, entry `8f53ebc4`):
-  «Замер этого. Reviewer — это топ один приоритет. Надо закрыть reviewer как можно быстрее, довести его до финального состояния. Потом следующий по приоритету идёт транспорт кодекса. Затем идёт разведчик, как в курсоре, затем идёт веб-поиск новый. Потом идёт уже новый интерфейс, мелкие, почти готовые слияния одно с другим в конце и потом в конце уже починка нестабильных тестов — это вообще самый последний приоритет. Когда делать нехуй, ты уже занимаешься тестами.»
-  Reason: focus execution on the owner's priorities without independent implementation or test lanes. Carrier:
-  [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution). The superseded two-task entry is
-  preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0363, from `4c66755`.
-- **Task-list bookkeeping is coordinator operations** `[D-WORK-TASK-BOOKKEEPING]`.
-  The rule is carried in [Isolated parallel execution](process/isolated-parallel-execution.md).
-  Owner (`16-27-59`, entries `69d42f11`, `8be98ccd`, 2026-10-25):
-  «Блядь, удаление задачи из списка задач не должно быть задачей, блядь. Это просто обычная операция для тебя»
-  «Это твоя личная операционка. У тебя есть задача, есть операционка, связанная с задачами. И эта операционка не должна занимать слот задачи. Слот задачи выполняют сами задачи, заполняют сами задачи.»
-  Reason: task-list operations belong to coordination, not the active task queue. Product task and review
-  requirements remain unchanged.
-- **Ready-made solutions first** `[D-WORK-READY-MADE]`. Search Pi packages, npm, GitHub and other agents before
-  building new features or mechanisms; report license, maintenance, size and dependency risk. Build our own only
-  with owner consent recorded here. Small changes, bug fixes and test fixes are excluded.
-  Owner (`16-27-59:4702`, entry `251e3e5e`):
-  «Давай еще запишем в наш Agent's MD такое правило, что если мы что-то делаем, мы сначала пытаемся найти готовое решение в интернете, готовую библиотеку, готовый extension TAP, и только потом мы хуевертим свой, если я дам на это согласие, чтобы прямо всё с нуля не хуярить. Окей. Что скажешь по этому поводу?»
-  Coordinator text, proposal answered by the owner's later approval: "1a: rule in PROCESS research stage,
-  one link line in AGENTS; 2a: new features/mechanisms only, not small changes or bug/test fixes."
-  Owner (`16-27-59:4789`, entry `de383e38`):
-  «Да»
-  Reason: reuse suitable maintained solutions instead of automatically rebuilding them. Carrier:
-  [PROCESS.md, Research and agreement](PROCESS.md#research-and-agreement).
-  Since: process-rules-oct23 squash.
-- **Third-party installation fast path** `[D-WORK-THIRD-PARTY]`. Install agreed third-party libraries/extensions
-  into the owner's Pi immediately, then add them to the my-pi package; this alone authorizes the needed ~/.pi
-  changes. Light self-review and delivery under [PROCESS.md, Delivery](PROCESS.md#delivery) replace the full pipeline,
-  local test gate and independent reviews for this narrow configuration path, not our own implementations.
-  Owner (`16-27-59:4782`, entry `f73155f0`):
-  «Я хочу, чтобы ты так же, как мы работаем над нашими задачами по этому репозиторию, мог ставить в этот репозиторий, в нашу сборку MyPy сторонние библиотеки, сторонние экстеншены. И мне надо, чтобы ты делал это суперреактивно: чтобы ты сначала ставил локально, чтобы оно локально уже работало прямо сейчас, а потом чтобы ты уже её парковал именно в репозитории, добавлял в сетап. И там не надо делать какой-то жёсткий pipeline всяких проверок, тестов и прочей хуйни. Надо просто добавить config, сделать commit push и лёгким саморевьюром проверить, что всё заебись, что нет никакой хуйни лишней.»
-  Coordinator text, question answered by the owner's approval: "1a: put the extension in the my-pi package,
-  not only in INSTALL.md." Owner (`16-27-59:4789`, entry `de383e38`):
-  «Да»
-  Reason: make the accepted external tool usable now without treating configuration as original feature work.
-  At first use decide package bundling against Pi documentation; no mechanism is chosen in advance.
-  Carrier: [PROCESS.md, Third-party installation fast path](PROCESS.md#third-party-installation-fast-path).
-  Since: process-rules-oct23 squash.
-
 Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner's words, the reason and a link.
 
 - **Archive of decisions** `[D-WORK-ARCHIVE]`. `DECISIONS.md` holds only decisions in force. A superseded, obsolete or
   merged entry moves word for word to the append-only root file `DECISIONS-ARCHIVE.md`, with its status, replacement ID,
   introducing commit and original lines. Open and deferred work moves to `BACKLOG.md`.
-  This is the one exception to the "no archive copies in the repository" rule of
-  [PROCESS.md](PROCESS.md#isolated-parallel-execution). Owner (`16-27-59:4099`):
+  The archive is not routine agent reading. Owner (`16-27-59:4099`):
   «Еще задача такая: надо decision, всю нашу документацию чистить от старого мусора, проверить её на консистентность и выбросить старые решения, которые уже больше ни в каком виде не актуальны. Зачистить бэклог. Не удалять эти решения из репозитория — они же где-то сохранены, кроме этого decision, да? Или это и есть место, где они сохраняются? Я так понимаю, что у нас есть лог всех decision, на базе которого можно сверить каждую задачу. Или это и есть этот файл decision? Надо понять. Я хочу, чтобы у нас было такое место, где можно потом однозначно все decision проверить по истории, но при этом, чтобы наши документы, с которыми работает агент на постоянке, не были засраны хуйнёй. Не знаю, правильно ли понял ты меня, правильно ли я объяснил или нет.»
   Reason: every decision stays checkable by history while the documents agents read routinely carry only current
   rules. Carriers: `DECISIONS.md`, `DECISIONS-ARCHIVE.md`, `BACKLOG.md`, `PROCESS.md`.
@@ -171,7 +99,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Coordinator** `[D-WORK-COORDINATOR]`. Main is the coordinator, not an independent implementer. Owner (`13-49-40:282`):
   «Да, он как техлид/тимлид, координатор, но не исполнитель самостоятельный.»
   Reason: orchestration and acceptance stay with Main, execution with subagents.
-  Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution). Since: `4d8c004`.
+  Carrier: `.pi/extensions/coordinator-guard/`, `AGENTS.md`. Since: `4d8c004`.
 - **Exclusive coordinator** `[D-WORK-EXCLUSIVE]`. Only the Pi session holding `coordinator.lock` in the repository's
   Git common directory is the coordinator. Other chats work directly as normal agents, without coordinator blocking
   or coordinator rules. Owner (`16-27-59:4710`):
@@ -182,22 +110,22 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   [local development scope](#work-policy), and is not shipped. Shutdown releases ownership; `/new` and `/resume` keep it.
   Already-open normal chats stay normal after release; only a newly started chat can acquire the free lock.
   Each session announces coordinator or normal mode at start.
-  Carriers: `.pi/extensions/coordinator-guard/`, `AGENTS.md`, [PROCESS.md](PROCESS.md#isolated-parallel-execution).
+  Carriers: `.pi/extensions/coordinator-guard/`, `AGENTS.md`.
 - **Local development scope** `[D-WORK-LOCAL-MAC]`. Repository-work tooling targets only the owner's macOS laptop:
-  repo-local `.pi/extensions/`, including `coordinator-guard` and `qa-status`, and local agent scripts such as
-  `deliver-check` and `owner-quotes`. No Windows or Linux handling or cross-platform tests are required for them;
+  repo-local `.pi/extensions/`, including `coordinator-guard` and `qa-status`, and local scripts such as
+  `ci-watch` and `qa-status`. No Windows or Linux handling or cross-platform tests are required for them;
   their tests run only on macOS and explicitly skip elsewhere. Shipped `RQW-*` extensions and `pcli-vscode` retain
   their cross-platform contract, and GitHub Actions scripts retain their runner support. Existing development
   platform code is not refactored by this change. Owner (`16-27-59:4749`, `16-27-59:4753`):
   «это только под мак никакой винды это локальная история она только тут работает»
   «мы нигде кроме этого ноута это не запускаем, все что КАСАЕТСЯ РАБОТЫ В ЭТОМ РЕПО - только локальная тема»
   Reason: local orchestration has no other deployment target; product and CI portability remain separate.
-  Carriers: [PROCESS.md](PROCESS.md#isolated-parallel-execution), local development test suites.
+  Carriers: `.pi/extensions/`, `scripts/`, local development test suites.
 - **Development executor models** `[D-WORK-MODELS]`. Every new Main-started executor, work, research, test, QA, regression,
   operational or outside-queue agent uses only `kimi-coding/k3.1-pro`: simple and complex work uses low, hardest
   work uses high. Exact executor pairs and reviewer-profile exceptions live in the `coordinator-rules` JSON block of
   [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly.
-  There is no executor rotation or ratio bookkeeping; [D-WORK-PARALLEL]'s single execution queue stays.
+  There is no executor rotation or ratio bookkeeping.
   Already running or preserved Sol agents may finish their current tasks through ordinary `send` and `resume` and
   are not restarted merely to switch models. A genuinely new task, new agent or new-session restart uses Kimi unless
   it is a reviewer profile. Explicit owner model requests override the default. No silent model fallback.
@@ -210,32 +138,24 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner (`16-27-59:7665`, entry `29908fc1`): «Возобнови полный запрет использования антропиков».
   This governs model use, not Anthropic transport, quota implementation, auth, provider visibility or product models.
   Reason: remove GPT from future executor assignments while preserving reviewer profiles and current agents.
-  Carriers: [Subagent models](process/subagent-models.md), the root coordinator block, `AGENTS.md`,
-  [task pipeline](process/task-pipeline.md) and `.pi/extensions/coordinator-guard/` with its tests. The superseded 2:1
+  Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), `AGENTS.md` and
+  `.pi/extensions/coordinator-guard/` with its tests. The superseded 2:1
   rotation is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0362, from `967769a`.
 
 - **Process file and manifesto** `[D-WORK-PROCESS-LINK]`. The reading contract is carried in
-  [PROCESS.md](PROCESS.md), with its task-loaded sections, and linked from `AGENTS.md`.
-  The owner accepted the split in [D-WORK-PROCESS-SPLIT] below. `WORKFLOW-MANIFEST.md` is the owner's
+  [PROCESS.md](PROCESS.md), linked from `AGENTS.md`. `WORKFLOW-MANIFEST.md` is the owner's
   personal lifelong record and aspiration, not package behavior, a gate or an overriding procedure. Owner (`13-49-40:204`):
   «Манифест того, как я делаю свою личную работу.»
   Reason: one procedure that agents reload; the manifesto stays the owner's own. Carriers: `AGENTS.md`, `PROCESS.md`,
   `WORKFLOW-MANIFEST.md`. Since: `8f2ea64`.
-- **Research and agreement** `[D-WORK-AGREEMENT]`. Research in parallel first, then ask about all real ambiguity; the
-  owner's answers start autonomous execution; agreement is never invented. Owner (`13-49-40:204`):
-  «Насчет планки качества все расписано четко. И очень важно упомянуть, что согласованное надо выполнять полностью, лишнего ничего нельзя выбрасывать, нельзя терять согласование, но и нельзя сверх этого ничего придумывать. Нельзя придумывать того, что не было согласовано. Если чего-то согласовано не было, додумывать это нельзя ни в коем случае никогда. Мы делаем минимально необходимый объём работ, согласованный, не более того.»
-  «Да, по договоренности вопросам. Когда я работаю, я всегда все довожу до полной однозначности. В моей работе никогда нет никаких спорных моментов, которые мне приходится самому разрешать. Я всегда у заказчика работы разрешаю все конфликтные ситуации, которые есть, опираясь только на решение владельца задачи, а не на свое личное решение. Я сам лично не принимаю решения за заказчика, потому что я не имею на это permission.»
-  Reason: decisions belong to the owner. Carrier: [PROCESS.md, Research and agreement](PROCESS.md#research-and-agreement).
-  Since: `8f2ea64`.
 - **Branches, squash and history** `[D-WORK-BRANCHES]`. Branch bases, task squash destination, release promotion
   and cleanup follow [PROCESS.md, Delivery](PROCESS.md#delivery); history belongs in Git. Owner (`13-49-40:204`):
   «Насчет документации. Да, тут тоже все верно. И в документации не должно быть никаких исторических данных. История хранится в гиде. По общению агент отвечает владельцу кратко на русском языке всегда, не на моем языке, а именно на русском. Он отвечает не больше трех абзацев по максимум две строки в абзаце.»
   Reason: current documents carry current facts; Git keeps the history ([D-WORK-ARCHIVE] is the one exception for
-  decisions). Carriers: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution) and
-  [Delivery](PROCESS.md#delivery). Since: `8f2ea64`.
+  decisions). Carriers: [PROCESS.md, Delivery](PROCESS.md#delivery). Since: `8f2ea64`.
 - **Workspace hygiene** `[D-WORK-HYGIENE]`. Preserve the user's changes and secrets; do not fix unrelated failures;
   temporary files go to OS temporary storage; no forks. Reason: the owner's work and credentials stay intact.
-  Carrier: [PROCESS.md, Isolated parallel execution](PROCESS.md#isolated-parallel-execution). Since: `8f2ea64`.
+  Carrier: this entry. Since: `8f2ea64`.
 - **Heavy checks in CI, saved logs** `[D-WORK-CI-LOGS]`. Owner (`16-27-59:992`, then `16-27-59:1042`):
   «Сделай так, чтобы у тебя были логи числа прогонов на Mac. Это что за хуйня? Такого не должно быть.»
   «Ты запускаешь тесты или что? Ты не можешь проверить это? Это что за хуйня? Почему так, блядь?»
@@ -257,47 +177,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   line-by-line bounded review standard; [PROCESS.md](PROCESS.md#independent-review) defines invocation.
   Reason: one discoverable role and one source for its instructions and model defaults.
   Carrier: `.pi/agents/code-reviewer.toml`; source: the owner's messages supplied with this task.
-- **Final checks and code reviewer** `[D-WORK-FINAL-CHECK]`. Ordinary work ends with one independent review
-  covering result and code. Critical/high-risk work gets a separate code review too; explicit blind/high requests keep
-  their profiles. There is no small-work combined-review shortcut. Installed Pi updates follow
-  [PROCESS.md, Delivery](PROCESS.md#delivery). Reason: one sufficient independent check for ordinary risk, stronger
-  scrutiny only where the risk justifies it. Carriers: [PROCESS.md, Independent review](PROCESS.md#independent-review),
-  `scripts/deliver-check.mjs`, `.pi/agents/code-reviewer.toml`. Supersedes the small/large split in
-  [D-PIPELINE-COMBINED-REVIEW], archived verbatim. Since: `8f2ea64`; current class rule: process-minimal-testing-review.
+- **Independent review** `[D-WORK-FINAL-CHECK]`. Every task gets one independent review, short for small tasks.
+  Use `spotty` by default and `bossy` for an owner-requested high review. The `code-reviewer` and `test-reviewer`
+  profiles remain available. Findings need evidence and impact; missing evidence goes back to the same reviewer.
+  Carriers: [PROCESS.md, Independent review](PROCESS.md#independent-review), `.pi/agents/code-reviewer.toml`,
+  `.pi/agents/test-reviewer.toml`, `extensions/RQW-review/`.
 
-- **Deterministic delivery quality** `[D-WORK-DELIVER-CHECK]`. Owner (`16-27-59:440`, approval `16-27-59:450`):
-  «Теперь смотри насчет выполнения задач и пробелов, которые ты нашел. Я же не буду всегда тебя переспрашивать. Если бы я не спросил, ты бы об этом не узнал. Надо поэтому сделать какой-то процесс, как детерминированно эту проблему решить на постоянке, чтобы мне не надо было тебя постоянно переспрашивать, чтобы ты сам следил за качеством. Надо твое предложение по тому, как мы этот пробел будем закрывать.»
-  «Правила по Process MD я одобряю»
-  Coordinator text: the original approved proposal is preserved in `DECISIONS-ARCHIVE.md`, A-0246.
-  The current gate and integration base are carried in [PROCESS.md, Delivery](PROCESS.md#delivery);
-  review coverage stays in [PROCESS.md, Independent review](PROCESS.md#independent-review).
-  Reports retain the evidence table and honest "not verified live" section.
-  Reason: branches tested alone were squashed onto a moved `main`, and a code-review CLEAN once covered an earlier commit
-  while two later fixes landed unreviewed. Carriers: [PROCESS.md](PROCESS.md) (Sufficient proof, Independent review,
-  Delivery), `scripts/deliver-check.mjs`. Since: `47868b0`.
-
-- **Measurements in waves** `[D-WORK-MEASURE-WAVES]`. Owner (`16-27-59:3044`; `16-27-59:3059` to the five-step plan
-  whose step 5 is this rule; `16-27-59:3197`; `16-27-59:3202`):
-  «Так блять надо фиксить ты шо гонишь мы нахуй прогоны эти делаем . Мы прогоны делаем не ради прогонов. Мы прогоны делаем для того, чтобы найти косяки, найти хуйню, её пофиксить и делать пиздато всё. А ты, получается, просто всю ночь гоняешь прогоны и жгёшь лимиты. Для чего? Просто чтобы поставить галочку, что мы сделали прогоны нахуй?»
-  «Это нихуя не интеллектуально, нахуй. Что-то с этим делать надо.»
-  «Давай сейчас все прогоны останови, и мы обсудим дальнейшие шаги. Надо сейчас это все порефиксировать»
-  «1а»
-  «Смотри, я хочу, чтобы ты в процессе измерений прогонов сразу находил аномалии, сразу находил отклонения и сразу же останавливал прогоны и чинил. Если будут очевидные косяки жёсткие, надо их сразу чинить в моменте . Нет смысла ждать полных прогонов, если мы потом починим и будем заново перепрогонять. Ты на первых запусках, если видишь какую-то хуйню очевидную, надо её фиксить . И первые запуски делай на самых сильных моделях из того перечня, который у тебя есть, чтобы сразу получить отклонение на старте у сильных моделей»
-  «Мы не учитываем, что слабые модели в принципе не смогут какие-то вещи делать. Нам главное откалибровать на сильных моделях, а потом посмотрим, как они будут себя вести на слабых»
-  Reason: a measurement run once burned a night on a checker defect visible in its first outputs. Carrier:
-  [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks), rules 1-5. Since: `ba1c273`.
-- **Third arbiter** `[D-WORK-ARBITER]`. Owner (`16-27-59:4012`):
-  «Так, блядь, ты сам эти споры рассуди. Ты же, блядь, выше них. Ты сам спор можешь рассудить, у тебя есть все исходные материалы, ты знаешь, как именно должно всё это работать, и ты должен быть третьим независимым мнением от этих двух судей»
-  Reason: a disputed judge label needs an independent decision from the sources; under
-  [D-WORK-EXECUTOR-ROLE] a subagent arbitrates. Carrier:
-  [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks), rule 7. Since: `30952e6`.
-- **Supervised runs without caps** `[D-WORK-NO-CAPS]`. Owner (`16-27-59:3919`):
-  «Нахуй ты вообще лимиты какие то ставишь? я разве говорил ставить? ты наблюдаешь за запусками следишь как себя агенты ведут и сам их прерываешь, но ты их не полишь, а опрашиваешь прграмно раз допустим в 1-3-5 минут.»
-  «ну я имею ввиду не лично ты а тот кто делает замеры»
-  Reason: a pilot once stopped on a self-imposed request cap after harness pauses used it up; caps are not stop
-  conditions. The one exception is the controlled pause of [D-PIPELINE-TIMEBOX](#task-pipeline). Carrier:
-  [PROCESS.md, Measurements and benchmarks](PROCESS.md#measurements-and-benchmarks), rule 6.
-  Since: `c7baf0c`.
 - **Short replies** `[D-WORK-SHORT-REPLIES]`. The runtime rule text lives once in
   `extensions/RQW-prompt/SYSTEM.md`, `working_with_the_user`, Content, Shape and Choices and questions.
   This records the accepted recent-chat style there, replacing the longer sentence allowances and question batches.
@@ -312,268 +197,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Since: owner-chat-style squash.
 - **CI evidence for a test file that dies** `[D-WORK-CI-EVIDENCE]`. Coordinator decision (technical), no owner quote:
   the `npm test` steps keep Node's default log output and also write a TAP copy, uploaded on failure with the job's macOS
-  crash reports; a manual stress workflow repeats the 12 MB codemode tests with exit code and peak RSS per run.
-  Reason: a test file once died silently on macOS Node 24 and its exit code or signal was not recoverable from the spec
-  reporter.
-  Carriers: `scripts/ci-npm-test.sh`, `.github/workflows/tests.yml` (artifact `test-evidence-*`, with
-  `/Library/Logs/DiagnosticReports`), `.github/workflows/codemode-stress.yml` (input `runs`, `summary.tsv`).
-  Since: `8547d59`.
-  Update: the stress workflow takes exact `node` values, compares Node 22.19.0, the affected 24.21.0 and 24.22.0 with
-  the relevant V8 baseline fix, and has a `no_sparkplug` input (a direct Node flag, never `NODE_OPTIONS`). Use the
-  explicit `name_pattern=.` for whole-file probes and verify the effective pattern in the job log; diagnostic
-  dispatches do not retry failures. CI floor, accepted by the owner and relayed by the coordinator (no verbatim owner
-  message exists in the session files, so no quote): `tests.yml` keeps Node 22.19.0 and moves the Node 24
-  jobs to a version spec that resolves to `>=24.22.0 <25`. The matrix labels `22.19.0` and `24` stay for artifact
-  names, and `actions/setup-node@v4` resolves the `24` label. Reason: require the shipped V8
-  baseline fix without allowing a runner-cached 24.21.0; the incident's exact cause remains unproven. Evidence
-  collection and failure handling stay unchanged, with no reruns.
-
-## Task pipeline
-
-- **Document and process delivery gate** `[D-PIPELINE-DOC-GATE]`. Owner answer: `1a`.
-  Source: the active owner instruction relayed in this task and its appended `user_messages`; no raw session ID
-  is asserted. Original coordinator question text, restated from that supplied instruction, not owner words:
-  "For document and process-only changes, replace the full test gate with saved checks of touched owner quotes,
-  links and formatting, keeping the existing reviews?"
-  Applied to task-scoped checks under the owner's later release decision, not to the batch full-test gate.
-  Reason: application regression adds delivery time without checking passive text. The accepted scope and exclusions,
-  the replacement checks and the unchanged review obligations live only in
-  [PROCESS.md, Delivery](PROCESS.md#delivery). Carriers: `scripts/deliver-check.mjs`.
-  Superseded assertions from base `0521318` are preserved verbatim in
-  `DECISIONS-ARCHIVE.md`, A-0327 through A-0332.
-
-- **Short mandatory process and task-loaded sections** `[D-WORK-PROCESS-SPLIT]`. Owner answer: `2a`.
-  Source: the active owner instruction relayed in this task and its appended `user_messages`; no raw session ID
-  is asserted. Coordinator question text, restated from that supplied instruction, not owner words:
-  "Split PROCESS.md into a short mandatory part and sections loaded per task, preserving every rule and old anchor,
-  with the coordinator-rules block kept in the root file?"
-  Reason: every agent need not load the entire procedure for an unrelated task. Carrier:
-  [PROCESS.md](PROCESS.md), its linked task sections and `AGENTS.md`. This is a layout change, not permission
-  to change the rules. The superseded reading-contract passage from base `0521318` is preserved verbatim in
-  `DECISIONS-ARCHIVE.md`, A-0333.
-
-- **Release delivery** `[D-PIPELINE-RELEASE]`. The policy is carried once in
-  [PROCESS.md, Delivery](PROCESS.md#delivery). Source session:
-  `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`.
-  Owner, physical line 6654, entry `4514ebf7`:
-  «Короче смотрии новое правило, мы тесты полные запускаем раз в 2 часа или каждые 10 слияний
-И слияние будем делать через релиз ветку
-т.е. создается релиз ветка в ней копятся 10 задач или проходит 2 часа и полный набор прогоняется на этот релиз
-А по каждой отдельной задаче прогоняются точечно только тесты этой отдельной задачи»
-  Coordinator questions and selected options, physical line 6657, assistant entry `62173a73`, not owner words:
-  1. "От чего начинать задачи". Selected option: "Новые задачи стартуют от релиз-ветки, а не от `main`."
-  2. "История в `main`". Question: "Как релиз попадает в `main`?" Selected option:
-     "Обычным слиянием, каждая задача остаётся отдельным коммитом."
-  3. "Полный набор упал". Question: "Что делаем, когда на релизе падают тесты?" Selected option:
-     "Релиз не идёт в `main`, отдельный агент находит виновную задачу и чинит, затем полный набор идёт снова."
-  4. "Твой Pi". Question: "Откуда обновляется твой локальный Pi?" Selected option:
-     "Из релиз-ветки сразу после влития каждой задачи, так ты получаешь новое раньше."
-  5. "Старт таймера". Question: "Когда начинаются 2 часа?" Selected option:
-     "С влития первой задачи в пустой релиз; пустой релиз не запускается."
-  Owner answers, physical line 6679, user entry `7d2d40b1`: `1а 2а 3а 4а 5а`.
-  The coordinator's implementation brief at physical line 6680, assistant entry `73d884ca`, supplies the
-  exact-head single-queue execution and Git-derived batch accounting; it is coordinator text, not an owner quote.
-  Owner urgency, physical line 6683, entry `9a6cb0a8`:
-  «Смотри эта история про релиз это ультра крит и ее надо делать выше всех и сразу внедрять что бы тесты паралельные не ебали ни цпу ни процесс»
-  Reason: give the owner completed tasks promptly without concurrent per-task full regressions; keep a checked
-  release boundary for `main`. Carriers: `PROCESS.md`, `scripts/deliver-check.mjs`
-  and the owner's installed Pi package source. Scheduled GitHub checks on `main`,
-  independent reviews and the substantive-work timebox are unchanged. Superseded passages from `923ba22`
-  are preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0337 through A-0351.
-
-Rules: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline). Evidence: the speed analysis report outside the repository,
-`my-pi-evidence/process-speed/REPORT.md`. The owner answered the chat version of its seven questions (coordinator
-questions `16-27-59:5043`, entry `605c1e21`) in `16-27-59:5060`, entry `46a9e546`; the coordinator replied in
-`16-27-59:5061`, entry `a60ba2a1`; the owner approved in `16-27-59:5068`, entry `0a1ded04`. His approval quotes
-only the slot summary of [D-PIPELINE-SLOTS]; the other points of that coordinator reply ("Остальное принял") follow his
-numbered answers and are coordinator text. The owner answered items 2 and 3 with «2а 3а».
-
-- **Active execution and waiting tasks** `[D-PIPELINE-SLOTS]`. Only one task actively executes under [D-WORK-PARALLEL]. A task
-  that waits for CI, a reviewer, the merge queue or the owner is not active. A failed local delivery test under [D-PIPELINE-LOCAL-GATE] sends the task to the top of the
-  queue; when it becomes the next active task its existing agent is resumed, and another is started only if its
-  session no longer exists. Owner (`16-27-59:5060`): «7 надо чет пиздатое придумать, по типу пятого пункта или же делать всегда но не делать из этого блокер, т.е. не ждать, свичиться на след задачу и переключаться интелекетуально как релаьный прогер»
-  «Работа должна быть суперконвейерная, суперэффективная, производительная, супербыстрая, без дрочи.»
-  Owner (`16-27-59:5068`) answered the quoted coordinator text with: «Делаем, да»
-  The original three-slot and two-slot summaries are archived verbatim in `DECISIONS-ARCHIVE.md`, A-0357 and A-0364;
-  their numeric caps are superseded by [D-WORK-PARALLEL], while the waiting rules stay.
-  Reason: waits for CI, review and the owner idled slots; the analysis found CI and queue waits to be the largest
-  removable delay. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and
-  [Isolated parallel execution](PROCESS.md#isolated-parallel-execution), replacing the former plain "three tasks at the
-  same time" wording of [D-WORK-PARALLEL].
-  Since: process-pipeline squash.
-- **One merge agent, fixed order** `[D-PIPELINE-MERGE-TRAIN]`. One agent integrates branches in an order fixed in
-  the current session queue. Integration and its gate follow [PROCESS.md, Delivery](PROCESS.md#delivery),
-  with the required reviews unchanged. Owner: «2а 3а» (item 3 a). Coordinator text, option 3a: "Слияниями занимается один агент в заранее заданном порядке. Повторов меньше, каждая итоговая версия проверяется."
-  Reason: moved `main` forced repeated final CI on ready branches. The exact-head local test gate keeps untested code out of `main`. Carrier: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline) and [Delivery](PROCESS.md#delivery).
-  Since: process-pipeline squash.
-- **Shared CI watcher** `[D-PIPELINE-CI-WATCHER]`. Owner (`16-27-59:5060`): «Окей, насчёт одного скрипта раз в минуту я согласен.»
-  One repo-local script, `npm run ci-watch`, reads all recent runs once a minute and atomically writes
-  `<git common dir>/ci-watch/status.json`. Agents read the file instead of calling `gh`; a file older than 3 minutes
-  is restarted with `npm run ci-watch -- --restart`. GitHub runs are not a merge gate ([D-PIPELINE-LOCAL-GATE]).
-  It replaces independent per-agent `gh` polling and the 10-minute per-process status cache of the `qa-status` extension. Coordinator text, the explanation of how it works (`16-27-59:5061`): "Да, скрипт только для этого репозитория и только на твоём Mac, в наш продукт он не попадает. Помогает он так. Сейчас каждый агент сам спрашивает GitHub о своём прогоне, и десяток агентов съедают лимит. Скрипт одним запросом раз в минуту получает статус всех свежих прогонов репозитория и пишет его в файл, а агенты читают файл и в GitHub больше не ходят. Гонок не будет: скрипт запускается в одном экземпляре через метку, как координатор; файл он пишет целиком через переименование; если скрипт упал, файл устаревает, и следующий агент перезапускает скрипт."
-  Reason: independent pollers hit the GitHub limit and stopped every agent for at least 13 minutes (report). The file is
-  awareness only, never merge proof. Carrier: `scripts/ci-watch.mjs`, `scripts/qa-status.mjs`,
-  `scripts/deliver-check.mjs`, `.pi/extensions/qa-status/`, [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline).
-  Since: process-pipeline squash.
-- **Three classes of text change** `[D-PIPELINE-TEXT-CLASSES]`. Proofreading is checked locally with no independent
-  review; the delivery gate follows [PROCESS.md, Delivery](PROCESS.md#delivery); a change of meaning gets review; runtime prompts are checked by agent behavior. Owner:
-  «2а 3а» (item 2 a). Coordinator text, option 2a: "Опечатки и правки формулировок проверяются локально. Изменения смысла идут на проверку. Рабочие промпты проверяются по поведению агента. Быстрее, а контроль остаётся."
-  The report's extra idea of dropping extension READMEs from application CI was not part of the chat option and is not
-  adopted; READMEs still need code review. GitHub CI is not a delivery gate ([D-PIPELINE-LOCAL-GATE]). Reason: the 39-file documentation cleanup spent at least 50 minutes
-  of CI and found 9 real inconsistencies by review, so meaning review stays. Carrier:
-  [PROCESS.md, Independent review](PROCESS.md#independent-review), `scripts/deliver-check.mjs` (`Change-class:`,
-  `Doc-check:`). Since: process-pipeline squash.
-- **Completeness check by count or time** `[D-PIPELINE-COMPLETENESS]`. A fresh independent completeness check runs
-  once after 7 merges or 120 minutes, whichever comes first, and always before the final report. Owner: «5а - раз в 7 слияний или раз в 120 минут»
-  Reason: the owner set the cadence against the coordinator's 3 merges or 30 minutes; checks mostly fixed marks and reread
-  the same chat. Replaces the check after every merge (`DECISIONS-ARCHIVE.md`, A-0244). Carrier:
-  [PROCESS.md, Delivery](PROCESS.md#delivery) step 5. Since: process-pipeline squash.
-- **Interim Windows skips for flaky tests** `[D-PIPELINE-FLAKE-SKIP]`. QA issues #3, #4 and #5 get a narrow skip, and
-  their causal fix goes to the end of the queue. Owner (`16-27-59:5060`): «4 - а может поставить им скип и в конец очереди на починку? что за дроч бежать чинить тесты срауз без бага явного?»
-  Coordinator text (`16-27-59:5061`): "Нестабильные тесты пропускаются, а их починка уходит в конец очереди. Пропускать буду узко: только упавшие проверки и только на Windows, со ссылкой на задачу в копилке. Остальная часть тестов фоновых задач продолжит ловить настоящие ошибки."
-  Reason: chasing a fix without an obvious bug blocked unrelated work. This is the owner-approved exception to the
-  forbidden list of [D-QA-TEST-INTEGRITY]; retries, raised timeouts and whole-file skips stay forbidden. Carrier:
-  [PROCESS.md, Quality control loop](PROCESS.md#quality-control-loop). Since: process-pipeline squash.
-  Retired: the causal fix landed as `2b9c088` and no skip exists in the tests; the exception is not in force.
-
-- **Notification waits and independent jobs** `[D-TOOLS-NOTIFY]`. Where notifications are available, `job wait` returns `waiting` at once and one later notification carries the result. Inside codemode or without a notification callback it blocks. A newer wait on the same job replaces the older one.
-
-- **Two hours of substantive work per task** `[D-PIPELINE-TIMEBOX]`. Each development task gets at most 2 hours of
-  substantive work, then a safe pause and a report; the highest-priority runnable waiting task starts next; more work
-  on the paused task needs the owner's decision. Owner (`16-27-59:5231`, entry `ce0d83d8`): «Надо поставить тайм-лимит на каждую задачу — не больше двух часов на исполнение. Если больше двух часов проходит, то ты должен дать summary за проведённые два часа, дорожную карту и причинно-следственную связь.»
-  «Потому что на эту хуйню с review мы потратили день и кучу токенов сожгли на тесты, а в итоге получили хуй во рту.»
-  Owner (`16-27-59:5237`, entry `859f9675`): «Причем не просто остановка, а ты задачу останавливаешь, даешь мне отчет в таком виде. А вместо этого паркуется другая задача из списка ожидания.»
-  «Если я решу эту задачу продолжить, то ты их перетусуешь и вернёшь обратно задачу в работу»
-  Owner clarification (`16-27-59:5241`, entry `e3c8d844`): «Когда я имею в виду, что не больше двух часов, это имеется в виду именно саму сдачу. Когда он начал делать до самого конца сдачи, а не всё вместе со всеми перепроверками анальными, всякими тестами, CI, CD и прочей залупой»
-  Plain coordinator interpretation, not owner words: the limit counts research, design, implementation and fixes of
-  actual defects; check runs, review passes and external waits are excluded only from substantive time. Genuine CI,
-  review and owner waits are not active execution. A scheduled local full-release regression is the single active task
-  while it runs, with its duration still excluded from substantive work. Coordinator text (`16-27-59:5240`, entry `81302812`): "Да: через два часа задача встаёт на паузу, ты получаешь отчёт, а её место сразу занимает следующая готовая задача из очереди. Место под твой ответ не держим. Если разрешишь продолжить, пересоберу приоритеты и верну задачу в работу, при необходимости поставив менее важную на паузу. Сессии сохраняются."
-  Coordinator text (`16-27-59:5244`, entry `ecee6e20`): "Понял: два часа на выполнение самой задачи до передачи готового результата, а не на весь путь до слияния. Ревью, тесты, CI и ожидания в этот лимит не входят и идут отдельно. Реальные доработки считаются работой над задачей, таймер не обнуляют. В отчёте время работы и время проверок будут разделены."
-  Rules of this entry: the clock belongs to the logical task, with all descendant agents and all earlier work; a retry,
-  restart or helper never resets it; genuinely paused or externally waiting time is not counted. At 2 hours the
-  coordinator pauses the task with its sessions kept and no checkpoint file, and reports the result, the known costs, the
-  roadmap and the causes with facts apart from hypotheses, giving substantive time separately from verification and wait
-  time, and "unknown" where the logs cannot separate them. Only the owner may resume a timed-out task. Benchmark
-  and measurement runs keep no hard request or start caps ([D-WORK-NO-CAPS]); their outstanding work pauses at a review
-  boundary at 2 hours and is reported. The limit is a control checkpoint, not a promise that a task is done in 2 hours.
-  Reason: the reviewer work cost a day and many tokens on tests with no result. Carrier:
-  [PROCESS.md, Task timebox](PROCESS.md#task-timebox) and `AGENTS.md`. Since: process-pipeline squash.
-
-- **Local delivery test gate** `[D-PIPELINE-LOCAL-GATE]`. The current task and release gates are carried once in
-  [PROCESS.md, Delivery](PROCESS.md#delivery), following [D-PIPELINE-RELEASE] below.
-  No green GitHub Actions run is required before a merge, including `pcli.yml` for `pcli-vscode`; no `CI:` evidence
-  trailer is required. Required reviews and the other delivery checks remain.
-  Owner, urgent order in the current conversation, 2026-10-24:
-  «Если у нас всё на нашем macOS работает, нахуй мы ещё на каком-то macOS проверки делаем?»
-  «Так, блядь, надо удалить нахуй это. Это какой-то overhead, это просто двойная работа»
-  «Ты должен только delivery то, что я заказываю. Ничего сверх этого»
-  Scheduled workflows and the watcher are unchanged. Windows failures remain advisory and are
-  recorded before delivery closes as tail `BACKLOG.md` items. Still-running Windows
-  jobs stay tracked in the background without counting as active execution or model polling turns, and later failures are recorded
-  the same way. Delivery waits for neither Windows nor green macOS CI.
-  Reason: remove duplicate pre-merge GitHub checks, not ongoing quality control. Supersedes [D-PIPELINE-MAC-GATE]
-  and the pre-merge CI requirements of the related entries; verbatim originals at `a85b810` are in
-  `DECISIONS-ARCHIVE.md`, A-0268 through A-0276. Carriers: [PROCESS.md, Delivery](PROCESS.md#delivery),
-  [Task pipeline](PROCESS.md#task-pipeline), `scripts/deliver-check.mjs`.
-  Since: local-delivery-gate squash.
-
-- **Single queue for test work** `[D-PIPELINE-SINGLE-QUEUE]`. QA fixes, Windows work and full release regressions
-  are ordinary tasks in the single execution queue under [D-WORK-PARALLEL], with no independent concurrent test-fixer
-  or regression agent. Main sequences them by current owner priority, dependencies, required gates and release triggers.
-  Owner (`16-27-59:12021`, entry `b5d1a538`, 2026-10-25):
-  «Кароче дальше в 1 поток задачи делаешь и отдельного потока на тесты нет чередуй по логике»
-  The conserved old queue no longer resumes Windows work automatically; it waits for `OLD-QUEUE-REVIEW` under
-  [D-PIPELINE-QUEUE-RESET]. Completed and Discarded work stays out. Carriers:
-  [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), `BACKLOG.md`. The superseded automatic-tail wording is
-  preserved verbatim in `DECISIONS-ARCHIVE.md`.
-
-- **Queue reset and conservation** `[D-PIPELINE-QUEUE-RESET]`. `BACKLOG.md` has one current execution queue and a
-  clearly named conserved old queue. Work uses only the current queue. Every new task goes before `OLD-QUEUE-REVIEW`,
-  permanently last until the old queue is empty. Then the old queue is reviewed item by item; the reminder remains or
-  reappears last while anything remains. Completed and previously Discarded work is never resurrected. Conservation
-  preserves branches, worktrees, drafts, issues, evidence, dependencies and CI state without physical cleanup.
-  Source session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, owner line 13441,
-  entry `59a789ef`, 2026-10-26:
-  «Да, и в соответствии с тем, что я написал выше, надо всю старую очередь работы полностью законсервировать и переложить куда-то в старую очередь. А из текущей работы, которую я описал выше, создать актуальную текущую очередь. И потом мы старую очередь разберём. Пока что мы работаем в новой очереди, пока все задачи в ней не закончатся. Я буду сейчас в неё докладывать критичные вещи. Когда мы её полностью пройдём, мы сделаем разбор старой очереди.»
-  «Даже так: разбор старой очереди, чтобы не забыть, мы положим в новую очередь задачу-напоминание о том, что надо разобрать старую очередь.»
-  «И она будет всегда в самом конце, самой последней, Пока старая очередь не кончится»
-  Initial current-queue sources in the same session: owner line 13422, entry `202bfbdd`:
-  «Теперь по дальнейшей работе начнём с чего? Давай так: удаляем cache unchanged read. Rqw naming один запрос вместо двух оставляем. Не гарантировать 10 кандидатов. Надо просто минимум от одного до 10 кандидатов и выбирать из них лучшего. И всё. Надо, чтобы эта механика была максимально простой, без заёбов и строгости.»
-  «Agent list, to do panel, новые возможности, кодекс — это оставляем.»
-  «Слабые тесты удаляем. Это то, что нужно на будущее сделать.»
-  Owner line 13428, entry `89117405`: «Остатки подписок в Status Bar — это моя задача, мы её не выбрасываем. Composer Predictions — тоже моя задача, мы её не выбрасываем. Подсказка серая, Tab её принимает.»
-  Owner line 13320, entry `7245c9c3`: «Нет, для kimi K2.8 preview low, для Claude Code - haiku 5.5 low, для GPT - GPT 5.6 Luna low»
-  Owner line 13303, entry `94c96d9a`: «RQW-thinking надо удалить»
-  Final accepted RQW-tools design, same session, owner line 13600, entry `5347ebee`:
-  «Облегченный вариант должен быть максимально лёгким, настолько лёгким, чтобы его можно было проверить, чтобы он был максимально легковесный, максимально прозрачный, чтобы любой агент мог однозначно сказать, что весь функционал качественный и работает 100% пиздато.»
-  «Я предлагаю оставить блокировку записи файла на уровне write-едит инструмента, но так, чтобы она не создавала никаких side эффектов, была максимально простая, прозрачная и суперэффективная при этом. Теперь напиши план ближайших работ, которые ты видишь в соответствии с обеспечением всей этой штуки. Ты написал, что оставляем, вернее, что теряем, что выбрасываем. Всё, что выбрасываем, мы сверху нахуй вертели, чтобы обслуживать параллелизм?»
-  The owner's explicit final-design confirmation accepts stock parallel read/write/edit/find/grep and independent
-  Bash/codemode, without speculative command parsing or global Bash serialization. Remove the presented heavy
-  coordination inventory: footprint, custom barrier/nested scheduling, git/pkg claims, snapshots/effects and their
-  author attribution, port tracking, custom codemode slot accounting and nested display. Keep simple background jobs,
-  notifications, output/status/exit/kill, multi-file edit/write, bounded Windows retry and counts. Unchanged-read
-  deletion remains queue item 3.
-  The only retained coordination is an in-memory per-file lock inside write/edit: tiny, transparent and efficient,
-  with no external side effects. Multi-file acquisitions are ordered against deadlock and released in `finally`.
-  Reads do not lock; different files run in parallel; only write/edit of the same file serializes. No lock files,
-  OS locks, watchers, timers, resource claims or command prediction. Keep the contract modest and testable, with no
-  impossible coverage claims for every OS alias or shell behavior. This is queued for later implementation, not
-  implemented by this process task. The design-approval-only text is preserved verbatim in A-0373.
-  The exact current order and all conserved states are carried once in `BACKLOG.md`; no listed product item is
-  implemented by this process task. Reason: finish newly approved work before re-triaging conserved work without
-  losing artifacts or repeating finished work. Carriers: `BACKLOG.md`, [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline).
-
-- **Risk-based minimal testing** `[D-PIPELINE-RISK-TESTING]`. Tests are small, deterministic and synthetic. They call
-  public functions and assert returned results. Do not mass-rewrite old tests; clean a touched component, cancel
-  standalone test-only P3/cosmetic work, and delete only demonstrably useless tests with proof that needed risk
-  coverage remains. Canonical rules:
-  [Sufficient proof](process/sufficient-proof-without-idle-reruns.md), with QA specifics in
-  [Quality control](process/quality-control-loop.md) and the release regression in [Delivery](PROCESS.md#delivery).
-  Owner, same session, line 13403, entry `44f43a53`:
-  «Самое главное сейчас начнем с того что закрепим прцессуально правило тестирования и правило очень быстро эффективной простой и самое главное интеллектуальной проверки. Тесты должны покрывать достаточный минимум не более того + реальные выловленные баги.»
-  «Но это должно быть по всем канонам бест практис т.е. мы должны найти квинт эссенцию МИНИМАЛЬНОГО тестирования.»
-  «Мне нужна твое предложение как перестроить этот процесс.»
-  Owner approval and required HIGH review, line 13407, entry `49961511`:
-  «Проведи изменения процессов под этот флоу тестирования и закрепи его high review»
-  This approves Main's detailed proposal at line 13404, entry `c1068b80`, restated in the supplied execution task.
-  Exact accepted-flow spans from that supplied task:
-  «Ordinary changes get one independent review covering both result and code. Critical/high-risk changes get a separate code review. Explicit owner-requested blind/high review still uses the requested profile.»
-  «CLEAN requires concise concrete evidence, not a long bureaucratic checklist. If evidence is missing or output is malformed, resume/send the SAME reviewer to supply evidence from its retained inspection or mark UNCHECKED; do not start a fresh reviewer merely for format.»
-  «Stop when critical scenarios pass, real findings are resolved and required review is complete. No additional checks without new information.»
-  «Do not mass-rewrite old tests. Clean only a touched component. Cancel standalone test-only P3/cosmetic tasks. Delete a demonstrably useless test instead of repairing it, but never delete or weaken a meaningful check to hide a failure. Preserve proof that deletion does not remove needed risk coverage.»
-  Context only, not approval to implement the earlier finalization plan, line 13396, entry `534df4b8`:
-  «Давай сейчас смотри, я хочу зафиналить всю работу и надо понять что мы оставляем что выбрасываем.»
-  Primary-source validation, read 2026-10-26:
-  [Google: Test Behavior, Not Implementation](https://testing.googleblog.com/2013/08/testing-on-toilet-test-behavior-not.html)
-  validates public behavior and refactor-safe checks;
-  [Testing Library: Guiding Principles](https://testing-library.com/docs/guiding-principles/) validates testing as
-  users exercise behavior and avoiding implementation details. No framework or dependency is added.
-  Reason: spend checks on concrete failure risk and stop at sufficient evidence. Carriers: the process links above,
-  `scripts/deliver-check.mjs`, `BACKLOG.md` Discarded `TEST-ONLY-P3-COSMETIC`.
-
-- **Ordinary and critical review classes** `[D-PIPELINE-REVIEW-CLASSES]`. Ordinary changes get one independent review
-  covering result and code. Critical/high-risk changes add separate code review. Explicit blind/high requests retain
-  their requested profiles. `CLEAN` needs concise concrete evidence; incomplete evidence is completed by the same
-  reviewer. Fresh reviewers serve changed objects, admitted findings and the bounded failure rule, not format or
-  confidence. Routine test changes have no separate test-integrity review; mechanically detected weakening retains it.
-  Source: the approved testing/review flow in [D-PIPELINE-RISK-TESTING], owner line 13407 above.
-  Canonical rules: [Independent review](process/independent-review.md) and
-  [Quality control](process/quality-control-loop.md). Mechanical trailers: `Change-class: ordinary` or `critical`,
-  exactly one `Review: agent#N CLEAN`, plus `Code-review: CLEAN` for critical work. Proofreading keeps its narrow
-  document-only exception. `Combined-review:` is removed, not retained as a compatibility alias. Carriers:
-  `PROCESS.md` Delivery, `scripts/deliver-check.mjs`,
-  `extensions/RQW-review/skills/reviewer/SKILL.md`, `profiles/spotty.toml`, `profiles/bossy.toml`.
-
-- **Tests exist to check behavior** `[D-PIPELINE-TEST-PURPOSE]`. Every agent that writes, generates or fixes tests has one
-  purpose: to check that the behavior matches the requirements, not to turn the run green, with the same bound as the
-  reviewer: no fanaticism, perfectionism, polishing or taste. Owner (`16-27-59:5319`, entry `826fc7dd`): «Надо записать workflow, что все агенты, которые работают с тестами, пишут тесты, генерируют тесты, их задача — проверить качество на совпадение с требованиями, а не просто покрасить тесты в зеленый цвет.»
-  «При этом так же, как и в случае с ревьюером, там должно быть без фанатизма, перфекционизма, вылизывания и прочей хуйни, вкусовщины»
-  Coordinator interpretation, not owner words and not a direct owner approval of the algorithm: the owner gave the
-  instruction for the prompt and the workflow; the test-integrity review is therefore narrowed to mechanically detected
-  weakening, with `deliver-check` as the detector. Reason: this is the only purpose of tests and of work on them.
-  Carrier: [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns) and
-  [Quality control loop](PROCESS.md#quality-control-loop). Since: process-pipeline squash.
+  crash reports. Reason: a test file once died silently on macOS Node 24 and its exit code or signal was not recoverable
+  from the spec reporter. Carriers: `scripts/ci-npm-test.sh`, `.github/workflows/tests.yml` (artifact `test-evidence-*`,
+  with `/Library/Logs/DiagnosticReports`). Since: `8547d59`.
+  CI floor, accepted by the owner and relayed by the coordinator: `tests.yml` keeps Node 22.19.0 and resolves Node 24
+  as `>=24.22.0 <25`; the matrix labels stay `22.19.0` and `24` for artifact names. Reason: require the shipped V8
+  baseline fix without allowing a runner-cached 24.21.0; the incident's exact cause remains unproven.
 
 ## Scope
 
@@ -916,10 +545,10 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 - **Self-contained extensions** `[D-ISOLATION-SELF-CONTAINED]`. Each RQW extension is independently switchable; its runtime source imports no file outside its folder. Its test tooling may also import its own mirrored test tree, but no other extension or test tree. Shared helpers are copied: both `selection.ts` copies are 127 lines, and Fast event-channel constants are repeated in three extension-local files. Its tests live under `test/extensions/RQW-<name>/`, import only their own test tree and extension folder, and load only that extension; multi-extension tests remain directly under root `test/`. Disabling an extension removes its owned behavior; process-wide Context and PCLI hooks stay active while any owner remains.
   Coordinator text: the historical isolation quote is not verified in the permitted Pi USER sources.
   Reason: one feature flag must not require another extension to exist.
-  Carrier: `extensions/`, `test/isolation.test.ts`, `test/isolation-run.ts`. Since: `81cafe3`.
+  Carrier: `extensions/`, `test/isolation.test.ts`. Since: `81cafe3`.
 - **Registered resource coverage** `[D-ISOLATION-COVERAGE]`. Tests: `test/isolation.test.ts`.
   Coordinator text. Reason: registration and independent resource delivery need manifest-driven coverage; this is not a claim of physical-terminal or end-to-end proof.
-  Carrier: `package.json`, `test/isolation.test.ts`, `test/isolation-run.ts`. Since: `81cafe3`.
+  Carrier: `package.json`, `test/isolation.test.ts`. Since: `81cafe3`.
 - **Package switch and native limits** `[D-ISOLATION-SWITCH]`. Switch one extension off with the object-form package entry and the exact file exclusion `"extensions": ["-extensions/RQW-<name>/index.ts"]`, keeping the same source `git:github.com/ARQAWA/my-pi`; a directory-only exclusion does not match the file. The filter takes effect after reload or restart. `pi -e <dir>` bypasses package filters; choose individual entrypoint files and use `-ne` to avoid an installed copy. Built-ins use `-builtin:<name>`, not package filters. Pi preserves active tools on reload, so stock grep/find or codemode/tool_search may remain active after their RQW extension is disabled until a new session or restart.
   Coordinator text. Reason: use Pi's package controls without inventing a second switch mechanism.
   Carrier: `INSTALL.md`, `test/isolation.test.ts`; Pi 1.4.0 `dist/core/package-manager.js`, `dist/core/resource-loader.js`, `dist/core/agent-session.js`. Since: `81cafe3`.
@@ -1119,7 +748,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   system prompt and subagent reminder under `[D-AGENT-PROFILES]`; profile discovery and precedence stay unchanged.
   The original harness adaptations are the allowed read/search tools and read-only Bash, the brief-section sentence,
   and the truncated-read note. The owner-approved testing/review change additionally requires concise concrete
-  `CHECKED:` evidence instead of a long per-obligation checklist; see [D-PIPELINE-REVIEW-CLASSES]. Model defaults and
+  `CHECKED:` evidence instead of a long per-obligation checklist; see [PROCESS.md, Independent review](PROCESS.md#independent-review). Model defaults and
   the finding evidence format are unchanged. Owner (`16-27-59:5210`, `16-27-59:5219`):
   «reviewer должен делать полное review и находить все расхождения, а не по одному.»
   «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
@@ -1167,7 +796,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   The bounded provider/start-failure retry remains. Reviewers report evidenced requirement breaches, not taste,
   unsupported hypotheticals or new requirements. Owner (`16-27-59:5210`):
   «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
-  Current concise-evidence and same-reviewer completion rule: [D-PIPELINE-REVIEW-CLASSES].
+  Current concise-evidence and same-reviewer completion rule: [PROCESS.md, Independent review](PROCESS.md#independent-review).
   Reason: complete inspection without repeated reviewer startup for missing output detail. Carriers:
   `extensions/RQW-review/skills/reviewer/SKILL.md`, `blindreview/SKILL.md`, `highreview/SKILL.md`,
   [PROCESS.md, Independent review](PROCESS.md#independent-review). Since: the reviewer port; evidence completion updated
@@ -1481,7 +1110,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Owner: «Надо, чтобы заголовок сессии был там, где сейчас статус, в этой строке между чёрточкой разделения.»
   «А статус — чтобы он был отдельной строкой, как будто это сообщение в чате.»
   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6378;
-  verified by `scripts/owner-quotes.mjs`. Layout acceptance and spacing are in the task's included owner messages. Reason: the owner's requested title and status placement.
+  Layout acceptance and spacing are in the task's included owner messages. Reason: the owner's requested title and status placement.
   Carrier: `extensions/RQW-statusbar/{index,editor,render}.ts`.
 - **Accurate waiting categories** `[D-STATUSBAR-WAITS]`. After Main's full answer and run completion,
   keep real pending work visible, for example `Waiting for 2 agents, 1 background process`. While Main is active,
@@ -1522,7 +1151,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «Надо, чтобы пиковые цвета были очень яркие, но при этом спуск вниз до базового цвета был довольно размазанным.»
   «Надо вообще блик ускорить в два раза по скорости или даже в два раза ровно ускорить его.»
   Source: the same local owner session as `[D-STATUSBAR-ACTIVITY]`, USER entries at lines 6399 and 6413;
-  verified by `scripts/owner-quotes.mjs`. The earlier sheen task confirmed doubled speed for both shimmers and no slant; current timing follows `[D-STATUSBAR-ANIMATION]`. Reason: smoother highlights with the owner's peak widths.
+  The earlier sheen task confirmed doubled speed for both shimmers and no slant; current timing follows `[D-STATUSBAR-ANIMATION]`. Reason: smoother highlights with the owner's peak widths.
   Gold correction, owner task request on 2026-10-25, source: current `statusbar-compaction-glint` task:
   "Replace this with ONE glint, matching the silver status animation's approach, travelling across the whole strip AND the `Compaction` label."
   "Use the final width clarification: THREE characters at the peak, not seven."
@@ -1560,7 +1189,7 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `activityRows` supplies status and trailing blank; Pi supplies the leading spacer. Idle returns `[]`.
   Owner: «Сделай анимацию блика 30фпс, 50 ту мач и сделай ее более плавной и что бы был 1 блик на статусе который катается туда сюда, а не бесконечное количество»
   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6774,
-  verified by `scripts/owner-quotes.mjs`. Soft falloff, layout and static title stay unchanged; silver intensity and gold timing follow the current amendment above.
+  Soft falloff, layout and static title stay unchanged; silver intensity and gold timing follow the current amendment above.
   Doubled-speed source: `[D-STATUSBAR-SHEEN]`.
   Carrier: `extensions/RQW-statusbar/{index,render}.ts`.
 - **Own git discovery** `[D-STATUSBAR-GIT]`. Git branch and counts use the extension's own repository discovery and
@@ -1746,39 +1375,14 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   not perfectionist blocking. Carrier: the paused single-queue QA #13 work; its agent has received the decision.
   This operational record changes no tests or QA issues and claims no QA fix or delivery.
 
-The rules for Main and subagents are in [PROCESS.md](PROCESS.md#quality-control-loop); the design and its evidence are
-in the approved proposal (not stored in this repository). The loop reads only public GitHub state.
-
-- **Scheduled full regression** `[D-QA-SCHEDULE]`. Owner: «надо заебашить CI/CD, чтобы у нас тесты наши, полный regress запускался постоянно, каждые три-четыре часа.» and «Может быть, эти тесты запускаются не четыре часа, а раз в два часа, допустим.» Decision: `tests.yml` runs on `main` every 2 hours (cron `17 */2 * * *`, off the top of the hour because
-  GitHub drops queued scheduled jobs at high load), `pcli.yml` daily at 03:43 UTC. Task branches get no scheduled
-  reruns and nothing retries automatically: an unchanged head is not rerun
-  ([Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns)). Reason: `main` itself was never tested;
-  repeated runs of the same SHA give a free failure rate and catch drift in floating inputs (`macos-latest`,
-  `windows-latest`, Node 24, PortableGit). The repo is public, so standard runners bill nothing; the real cost is
-  macOS slot contention. Carrier: `.github/workflows/tests.yml`, `.github/workflows/pcli.yml`.
-  Since: `3bdac4f`.
-- **Red main does not block merges** `[D-QA-MERGE]`. Coordinator option 4a, accepted by the owner: "Слияния не блокируются, проверка перед слиянием только
-  показывает открытые падения." Decision: `deliver-check` shows cached red `main` runs as information and never fails
-  on them. Reason: a flaky or drifting `main` must not freeze unrelated work. Carrier: `scripts/deliver-check.mjs`.
-  Since: `3bdac4f`.
-- **Awareness through the shared watcher** `[D-QA-STATUS]`. Owner: «Новую задачу ставишь, и чтобы автоматически тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть постоянный, перманентно висящий процесс». Later owner answer (`16-27-59:5060`, entry `46a9e546`): «Окей, насчёт одного скрипта раз в минуту я согласен.» Decision: no timer or local cron; the watcher of [D-PIPELINE-CI-WATCHER] is started on demand and shared. `scripts/qa-status.mjs` (`npm run qa-status`, for subagents) and the dev-only, repo-local `.pi/extensions/qa-status/` read its file instead of making their own `gh` rounds; the extension shows a message on session start and on a changed red state, and `/qa` shows the full view. Main reads the status at task start, tells the owner in one line about a red scheduled `main` and triages it. Reason: the extension is useless outside this repository and must not ship in the package, so it is not an `RQW-*` extension and is not in `pi.extensions`; an unreadable or stale cache is reported as unavailable, never as green. Carrier: `.pi/extensions/qa-status/index.ts`, `scripts/qa-status.mjs`, `scripts/ci-watch.mjs`, [PROCESS.md](PROCESS.md#quality-control-loop).
+- **Awareness through the shared watcher** `[D-QA-STATUS]`. Owner: «Новую задачу ставишь, и чтобы автоматически тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть постоянный, перманентно висящий процесс». Later owner answer (`16-27-59:5060`, entry `46a9e546`): «Окей, насчёт одного скрипта раз в минуту я согласен.» Decision: no timer or local cron; the shared watcher is started on demand. `scripts/qa-status.mjs` (`npm run qa-status`, for subagents) and the dev-only, repo-local `.pi/extensions/qa-status/` read its file instead of making their own `gh` rounds; the extension shows a message on session start and on a changed red state, and `/qa` shows the full view. Reason: the extension is useless outside this repository and must not ship in the package, so it is not an `RQW-*` extension and is not in `pi.extensions`; an unreadable or stale cache is reported as unavailable, never as green. Carrier: `.pi/extensions/qa-status/index.ts`, `scripts/qa-status.mjs`, `scripts/ci-watch.mjs`.
   Since: `3bdac4f`.
 - **Scoped test-review profile** `[D-QA-TEST-REVIEWER]`. Owner: «они должны быть на Sol 6.1 Low, должны работать супербыстро и суперчётко» and «без перфекционизма, без удушья, без жёсткой ёбки».
   Source: the owner's test/code-review prompt request in this repository session, 2026-10-24.
   Decision: use the project Codex TOML profile `test-reviewer` for read-only, bounded test review, inspecting every
   scoped line and reporting real detection gaps or regressions by severity, without invented requirements or nits.
   Reason: tests verify requirements, not a green badge; explicit scope keeps review focused.
-  Carrier: `.pi/agents/test-reviewer.toml`; invocation and trigger: [PROCESS.md](PROCESS.md#quality-control-loop).
-- **Test integrity** `[D-QA-TEST-INTEGRITY]`. Owner: «нужно именно обеспечивать качество, а не фальсифицировать работу, чтобы тесты были зелёные. Это супер критически важно, потому что эти тесты и вся наша работа — это всё обеспечение контроля качества.» and «Можно даже ревьюера поднимать, который перепроверяет тесты.» Decision: before any fix Main records a triage
-  class (product bug, test bug, infra, drift) with evidence; a fixed list of weakening changes is forbidden without
-  proof; a fix needs red-before/green-after in CI logs, and an intermittent one repeat runs with (1-p)^n < 0.05 (generic repeat harness `codemode-stress.yml`).
-  A reviewer subagent with `agent_type: "test-reviewer"` checks only a test or workflow
-  change that `deliver-check` mechanically detects as weakening a check (skip, todo, retry, raised timeout,
-  continue-on-error, fewer assertions), not every QA fix ([D-PIPELINE-SINGLE-QUEUE]); the gate then requires the trailers
-  `Test-change:` and `Test-review: agent#N CLEAN` (exact conditions: [PROCESS.md](PROCESS.md#quality-control-loop)). Reason: the aim is a working
-  product, not a green badge; a weakened assertion turns a real failure into silence. Carrier: `PROCESS.md`,
-  `.pi/agents/test-reviewer.toml`, `scripts/deliver-check.mjs`.
-  Since: `3bdac4f`.
+  Carrier: `.pi/agents/test-reviewer.toml`; availability: [PROCESS.md](PROCESS.md#independent-review).
 ## Codex subscription transport
 
 Owner (verbatim, sessions `16-27-59:2346`, `16-27-59:2348`, `16-27-59:2353` in that order): «Нас вообще не интересует ничего, что касается API. Мы работаем только через подписку Codex и всё, что касается Codex и Mechanics Codex CLI, только это для нас имеет значение»; «Надо, чтобы наш Codex провайдер работал как в Codex CLI. Можешь сделать для этого extension, как мы делали для антропиков, который приводит, алайнит их к абсолютно идентичному поведению?»; «Да, получается, у нас будет полностью заменены два транспорта: один транспорт GPT, второй транспорт кодекса. И авторизация кодекса должна быть только по device ID и всё.»

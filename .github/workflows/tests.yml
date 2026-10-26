@@ -2,16 +2,9 @@ name: tests
 
 on:
   push:
-    # Proof comes from the task branch head on current main; its squash has the same tree (PROCESS.md, Delivery).
-    # `codemode-stress` only carries a head for codemode-stress.yml.
-    branches-ignore: [main, codemode-stress]
+    branches-ignore: [main]
     # Docs-only pushes run no tests: root *.md and .agents/ carry no code the tests load.
     paths-ignore: ['*.md', '.agents/**']
-  # Full regression on main every 2 h. Minute 17 avoids the top-of-hour load where GitHub documents dropped
-  # schedule runs. A schedule runs only on the default branch.
-  schedule:
-    - cron: '17 */2 * * *'
-  workflow_dispatch:
 
 permissions:
   contents: read

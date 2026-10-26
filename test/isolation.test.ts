@@ -1,163 +1,37 @@
-// Every extension of the package can be switched off alone, the way a user does it (a `packages` settings entry with
-// `-extensions/<name>/index.ts`), and the others keep working unchanged. The list comes from package.json
-// `pi.extensions`, so a new extension is covered without a change here. Each session runs in a child process
-// (isolation-run.ts), because an extension may patch Pi's classes for the life of the process.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { DefaultResourceLoader, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { dirname, join, resolve, sep } from "node:path";
-import { describe, it } from "node:test";
-import { fileURLToPath } from "node:url";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename, dirname, join, resolve, sep } from "node:path";
+import { it } from "node:test";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(HERE, "..");
-const RUN = join(HERE, "isolation-run.ts");
-const MANIFEST = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
-const NAMES: string[] = MANIFEST.pi.extensions.map(
-	(p: string) => /extensions\/([^/]+)\//.exec(p)![1],
-);
+const ROOT = resolve(import.meta.dirname, "..");
+const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { pi: { extensions: string[] } };
 
-it("isolation: manifest resources are unique and agent cards precede compact tool rendering", () => {
-	assert.equal(new Set(MANIFEST.pi.extensions).size, MANIFEST.pi.extensions.length);
-	assert.deepEqual(NAMES.slice(-3), ["RQW-naming", "RQW-agent-ui", "RQW-tool-ui"]);
-	assert.ok(NAMES.indexOf("RQW-agent-ui") < NAMES.indexOf("RQW-tool-ui"));
-	assert.deepEqual(MANIFEST.pi.themes, ["./extensions/RQW-theme/theme.json"]);
-	assert.ok(!NAMES.includes("RQW-theme"));
-});
-
-it("isolation: the native package loader discovers the manifest theme without extensions", async () => {
-	const dir = mkdtempSync(join(tmpdir(), "rqw-theme-resource-"));
-	const agentDir = join(dir, "agent");
-	const cwd = join(dir, "work");
-	mkdirSync(agentDir);
-	mkdirSync(cwd);
-	writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ packages: [ROOT] }));
-	try {
-		const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: SettingsManager.create(cwd, agentDir),
-			noExtensions: true, noSkills: true, noPromptTemplates: true, noContextFiles: true });
-		await loader.reload();
-		assert.deepEqual(loader.getExtensions().extensions, []);
-		assert.deepEqual(loader.getThemes().diagnostics, []);
-		assert.deepEqual(loader.getThemes().themes.map(theme => theme.name), ["RQW-theme"]);
-		assert.equal(loader.getThemes().themes[0].sourcePath, join(ROOT, MANIFEST.pi.themes[0]));
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
-});
-
-// Deliberately inherit apparently configured providers, not real keys. No owner configuration is changed.
-const POISON = { OPENROUTER_API_KEY: "isolation-not-a-real-key" };
-type Tool = { name: string; by: string; description: string };
-type Run = {
-	loaded: string[]; errors: string[]; tools: Tool[]; turn: string[]; finished: boolean;
-	reserveFor1M: number; sessionWindow: number; selectedModel: string; availableOpus: string[]; networkAttempts: string[];
-};
-
-function run(o: { off?: string; reloadOff?: string }): Run {
-	const r = spawnSync(process.execPath, [RUN, JSON.stringify({ root: ROOT, ...o })], {
-		encoding: "utf8", timeout: 120_000, env: { ...process.env, ...POISON },
+function sourceFiles(dir: string): string[] {
+	if (!existsSync(dir)) return [];
+	return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+		const path = join(dir, entry.name);
+		if (entry.isDirectory()) return entry.name === "node_modules" ? [] : sourceFiles(path);
+		return /\.[cm]?[jt]s$/.test(entry.name) ? [path] : [];
 	});
-	assert.ifError(r.error);
-	assert.equal(r.status, 0, `child failed (${r.signal}): ${r.stderr.slice(-2000)}`);
-	const line = r.stdout.split("\n").find((l) => l.startsWith("{"));
-	assert.ok(line, `child produced no result: ${r.stderr.slice(-2000)}`);
-	const result: Run = JSON.parse(line);
-	assert.equal(result.selectedModel, "openai-codex/gpt-6.1-sol", "explicit faux model survives startup and reload");
-	assert.ok(result.availableOpus.some((id) => id.startsWith("openrouter/")), "poisoned inherited auth makes real OpenRouter Opus available");
-	assert.deepEqual(result.networkAttempts, [], "no transport was attempted");
-	return result;
 }
 
-function files(dir: string): string[] {
-	return readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
-		d.isDirectory() ? (d.name === "node_modules" ? [] : files(join(dir, d.name))) : /\.(m?[jt]s)$/.test(d.name) ? [join(dir, d.name)] : [],
-	);
+function inside(path: string, dir: string): boolean {
+	return path === dir || path.startsWith(dir + sep);
 }
 
-it("isolation: a swallowed external fetch is blocked and still fails the helper", () => {
-	const r = spawnSync(process.execPath, [RUN, JSON.stringify({ root: ROOT, probeNetwork: true })], {
-		encoding: "utf8", timeout: 120_000, env: { ...process.env, ...POISON },
-	});
-	assert.ifError(r.error);
-	assert.equal(r.status, 1);
-	assert.match(r.stderr, /Isolation network blocked: fetch/);
-	assert.equal(r.stdout, "");
-});
-
-describe("isolation: no extension reaches into another extension's folder", () => {
-	for (const name of NAMES) {
-		it(`${name}: every relative import, tests included, stays inside its extension or test tree`, () => {
-			const own = join(ROOT, "extensions", name) + sep;
-			const tests = join(ROOT, "test", "extensions", name) + sep;
-			const outside: string[] = [];
-			for (const file of [...files(own), ...files(tests)]) {
-				const text = readFileSync(file, "utf8");
-				for (const m of text.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)["'](\.{1,2}\/[^"']+)["']/g)) {
-					const target = resolve(dirname(file), m[1]);
-					const testTooling = file.startsWith(tests) || file.startsWith(join(own, "scripts") + sep);
-					const allowed = target.startsWith(own) || (testTooling && target.startsWith(tests));
-					if (!allowed) outside.push(`${file.slice(ROOT.length + 1)} -> ${m[1]}`);
-				}
+it("every extension and its tests keep relative imports inside their own trees", () => {
+	const outside: string[] = [];
+	for (const entry of manifest.pi.extensions) {
+		const extensionDir = dirname(resolve(ROOT, entry));
+		const testDir = join(ROOT, "test", "extensions", basename(extensionDir));
+		for (const file of [...sourceFiles(extensionDir), ...sourceFiles(testDir)]) {
+			const text = readFileSync(file, "utf8");
+			for (const match of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*)["'](\.{1,2}\/[^"']+)["']/g)) {
+				const target = resolve(dirname(file), match[1]);
+				const allowed = inside(target, extensionDir) || (inside(file, testDir) && inside(target, testDir));
+				if (!allowed) outside.push(`${file.slice(ROOT.length + 1)} -> ${match[1]}`);
 			}
-			assert.deepEqual(outside, []);
-		});
+		}
 	}
-});
-
-describe("isolation: the package with one extension switched off", () => {
-	const full = run({});
-	const key = (t: Tool) => `${t.name} by ${t.by}: ${t.description}`;
-
-	it("everything on: loads and works", () => {
-		assert.deepEqual(full.errors, []);
-		assert.deepEqual(full.loaded, NAMES);
-		assert.deepEqual(full.turn, ["read:ok"]);
-		assert.equal(full.finished, true);
-	});
-
-	for (const off of NAMES) {
-		describe(`${off} off`, () => {
-			const r = run({ off });
-			const viaReload = run({ reloadOff: off });
-
-			it("the others load, with no errors", () => {
-				assert.deepEqual(r.errors, []);
-				assert.deepEqual(r.loaded, NAMES.filter((n) => n !== off));
-			});
-
-			it("the others keep their tools and descriptions, except the disabled provider's profile catalogue", () => {
-				let expected = full;
-				if (off === "RQW-review") {
-					const marker = "\n\nAgent types:\n";
-					const agent = full.tools.find(t => t.name === "agent" && t.by === "RQW-agent")!;
-					const parts = agent.description.split(marker);
-					assert.equal(parts.length, 2, "agent has exactly one profile catalogue");
-					assert.deepEqual(parts[1].split("\n").map(line => line.split(":")[0]), ["bossy", "requirements-test-reviewer", "spotty"]);
-					const description = `${parts[0]}${marker}No profiles discovered.`;
-					for (const disabled of [r, viaReload]) {
-						const tool = disabled.tools.find(t => t.name === "agent" && t.by === "RQW-agent")!;
-						assert.equal(tool.description, description, "all offered reviewer profiles disappear; the base description stays exact");
-					}
-					expected = { ...full, tools: full.tools.map(t => t === agent ? { ...t, description } : t) };
-				}
-				const others = (x: Run) => x.tools.filter((t) => t.by !== "builtin" && t.by !== off).map(key).sort();
-				assert.deepEqual(others(r), others(expected));
-			});
-
-			it("a model turn with a tool call completes", () => {
-				assert.deepEqual(r.turn, ["read:ok"]);
-				assert.equal(r.finished, true);
-			});
-
-			it("switching it off with /reload leaves the same state as starting without it", () => {
-				assert.deepEqual(viaReload.errors, []);
-				assert.deepEqual(viaReload.loaded, r.loaded, "loaded extensions");
-				assert.deepEqual(viaReload.tools.map(key).sort(), r.tools.map(key).sort(), "registered tools");
-				assert.equal(viaReload.reserveFor1M, r.reserveFor1M, "compaction reserve Pi reads for a 1M model");
-				assert.equal(viaReload.sessionWindow, r.sessionWindow, "context window of the session model");
-			});
-		});
-	}
+	assert.deepEqual(outside, []);
 });

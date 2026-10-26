@@ -100,10 +100,6 @@ This optional format is not an active repository rule. Product profiles are unch
   `thinking` are required. A named or inherited reviewer profile uses only its exact pair; every other call uses an exact executor pair.
   A reviewer-profile call supplies matching explicit model and effort values; restart may omit `agent_type` to inherit it. An allowed call with a `task` gets
   one generated line appended: ordinary nested `agent` starts need an explicit allowed executor pair.
-- Quotes: on `agent` `start`, `restart` and `send`, every guillemet span in
-  `task`, `role` and `system` must be one exact contiguous span of one user message of the current session
-  (`ctx.sessionManager.getEntries()`), after Unicode NFC and whitespace normalisation. Unbalanced guillemets and
-  empty spans fail. The check is `scripts/owner-quotes.mjs`, shared with `deliver-check`.
 - `edit` and `write`: every path (`path`, `edits[].path`, `files[].path`) is resolved like Pi does
   (`@`, `~`, file URLs, cwd) and canonicalised (symlinks, also dangling ones, and `..`). A path inside this
   checkout, the main checkout, any registered git worktree or the sibling `my-pi-worktrees` folder is blocked.

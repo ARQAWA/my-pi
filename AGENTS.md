@@ -3,30 +3,12 @@
 A Pi package (`@earendil-works/pi-coding-agent` 1.4.0) that carries the omp-lite behaviour into stock Pi step by step.
 Stock Pi tools stay as they are. Everything is an extension, one folder per extension under `extensions/`.
 
-Before every task, read the mandatory part of [PROCESS.md](PROCESS.md), which ends before Delivery, then load
-its applicable task sections from `process/` or the root Delivery section. Restore the mandatory part and applicable
-sections after compaction or a handoff before continuing. This is mandatory lazy
-loading, not optional background reading. Give subagents the relevant process rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
-Coordinator personal-work objections and explicit overrides: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
+Before every task, read [PROCESS.md](PROCESS.md). Restore it after compaction or a handoff.
+The owner's personal manifesto is a separate memory document, not the execution procedure.
 Coordinator rules bind only the session that holds the repository's `coordinator.lock`; every other session is a normal direct agent.
-Only one execution task is active at a time from BACKLOG.md's current queue. QA fixes, Windows work and full release
-regressions share that queue; there is no separate test lane. The conserved old queue waits for OLD-QUEUE-REVIEW,
-always last until empty; new tasks go before it. Completed and Discarded work never returns. CI, review, merge-queue
-and owner waits are not active execution, so the next logical task may run then. Coordinator bookkeeping is operational
-and never permits concurrent implementation. Pause is `agent` `interrupt`, resume is `agent` `resume` (`send` only carries a new message), with no pause files:
-[PROCESS.md](PROCESS.md#task-pipeline).
-Golden rule, no avoidable token spending and simplest engineered solutions: [PROCESS.md](PROCESS.md#golden-rule).
-Task timebox, at most 2 hours of substantive work, then a pause and a report: [PROCESS.md](PROCESS.md#task-timebox).
-Every new executor, work, research, test, QA, regression, operational or outside-queue agent uses only Kimi K3.1 Pro:
-simple and complex use low, hardest uses high. Existing Sol agents finish current tasks through send/resume and are
-not restarted merely to switch models. Independent reviewers keep their approved Sol profiles and are not executors.
-Owner model requests override the default; no silent fallback; Anthropic stays forbidden. The single execution queue
-stays unchanged. Policy: [PROCESS.md](PROCESS.md#subagent-models).
-Search ready-made solutions before new features or mechanisms: [PROCESS.md](PROCESS.md#research-and-agreement).
-Third-party installs go into the owner's Pi first, then the package: [PROCESS.md](PROCESS.md#third-party-installation-fast-path).
-Task bases, scoped checks, release batching and the owner's Pi update source: [PROCESS.md Delivery](PROCESS.md#delivery).
+Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.md).
 
-- [INDEX.md](INDEX.md): repository navigation and generated extension file maps.
+- [INDEX.md](INDEX.md): short repository navigation.
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
 - `extensions/RQW-settings/`: extension 1, the harness settings. Turns on Pi's built-in `codemode` and `tool_search` by
   default (same rule as `grep` and `find` in RQW-tools), and disables background cache warming regardless of user
@@ -70,7 +52,7 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   `resources_discover` supplies `skills/reviewer`, `skills/blindreview`, `skills/highreview` and `skills/testreview`.
   `testreview` selects `requirements-test-reviewer` on Sol low to review test code against supplied requirements,
   test plan and conversation without execution or mandatory commit pairs. It is separate from the project
-  `test-reviewer` mechanical integrity gate. The common blind/high skill
+  `test-reviewer` profile. The common blind/high skill
   carries only the review section of the owner's Codex skill, and the wrappers select Spotty or Bossy. Each pass
   starts a fresh ordinary `agent` with `agent_type`, the package `role_file` and `include: ["user_messages"]`; results are `agent#N` results.
   Read-only is an instruction, with no git guard or sandbox. Lifecycle, settings, Fast, caching and delivery are
@@ -118,21 +100,16 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   with an exact continuation. Description teaches batching, evidence, sources and untrusted web text.
   Contract: [RQW-web README](extensions/RQW-web/README.md), [Web search decision](DECISIONS.md#web-search).
   Tests: `test/extensions/RQW-web/`, `test/web-subagents.test.ts`.
-- Quality control loop: scheduled full regression on `main` (`tests.yml` every 2 h, `pcli.yml` daily), with triage
-  and test-integrity rules. Rules: `PROCESS.md` section Quality control loop; decisions: `DECISIONS.md` section
-  Quality control. Parts below.
 - `scripts/ci-watch.mjs`, `npm run ci-watch`: the shared repo-local CI watcher. One instance reads all recent workflow
   runs once a minute and writes `<git common dir>/ci-watch/status.json` atomically; agents read that file instead of
-  polling `gh`, and restart it with `npm run ci-watch -- --restart` when it is older than 3 minutes. Never merge
-  evidence ([PROCESS.md](PROCESS.md#task-pipeline), `DECISIONS.md` [Task pipeline](DECISIONS.md#task-pipeline)).
+  polling `gh`, and restart it with `npm run ci-watch -- --restart` when it is older than 3 minutes. It is awareness,
+  not merge evidence.
 - `scripts/qa-status.mjs`, `npm run qa-status`: reads the watcher file for the latest `main` runs and the current
   branch's CI; subagents and hosts without the extension use it. Failed runs stay red.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all. Its `qa-status` message has a compact card (`card.ts`); Ctrl+O shows every line with its link.
-- `.pi/agents/test-reviewer.toml`: the project test-review profile, used through `agent` with
-  `agent_type: "test-reviewer"`; trigger and evidence rules: [PROCESS.md](PROCESS.md#quality-control-loop).
-- `.agents/roles/test-fixer.md`: the short role of ordinary test-work agents in the single execution queue, passed as
-  the `role` of an `agent`, not as the whole `system` ([PROCESS.md](PROCESS.md#task-pipeline)).
+- `.pi/agents/test-reviewer.toml`: the read-only test-review profile, used through `agent` with
+  `agent_type: "test-reviewer"`.
 - `extensions/RQW-naming/`: extension 16, background native session names after first input and each successful
   compaction, from all available context. Ten candidates, semantic auto-selection only by
   `kimi-coding/kimi-for-coding` (Kimi K2.8 Preview) at `low`, without fallback. At most four words and 32 Unicode
@@ -157,9 +134,7 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   `RQW-theme` is data in `pi.themes`, not an extension. `INSTALL.md` shows the switch; `DECISIONS.md` section Isolation carries the decision.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `WORKFLOW-MANIFEST.md`: the owner's personal working principles and aspirations, written in Russian for him.
-- `PROCESS.md`: the short mandatory procedure and section index; `process/` holds task-loaded sections, from
-  parallel execution to autonomous squash delivery. The root keeps the coordinator guard's JSON block.
-- `scripts/deliver-check.mjs`: the pre-merge gate, `npm run deliver-check -- <branch> <message-file>`; see `PROCESS.md` Delivery.
+- `PROCESS.md`: the short development procedure, including testing and the coordinator guard's JSON block.
 - `.pi/agents/code-reviewer.toml`: the read-only bug and code-quality profile, used through `agent_type: "code-reviewer"`.
 - `DECISIONS.md`: active accepted decisions with their reason, verbatim owner source and carrier.
 - `DECISIONS-ARCHIVE.md`: append-only verbatim superseded and obsolete decisions with replacement and commit

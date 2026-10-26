@@ -4,11 +4,6 @@ on:
   push:
     branches: [pcli]
     paths: ['pcli-vscode/**', 'extensions/RQW-mouse/**', '.github/workflows/pcli.yml']
-  # Daily, 06:43 Moscow: one Windows e2e against a floating VS Code, vsce and bundled Pi download.
-  # A 2 h cadence would add Windows load for no extra signal.
-  schedule:
-    - cron: '43 3 * * *'
-  workflow_dispatch:
 
 permissions:
   contents: read

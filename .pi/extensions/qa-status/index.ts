@@ -28,7 +28,7 @@ export function createQaStatus({ pi, getSnapshot = snapshot, now = Date.now }: {
 			const ids = state.items.filter((i) => i.level === "red" && !shown.has(i.id)).map((i) => i.id);
 			if (!ids.length) return;
 			for (const id of ids) shown.add(id);
-			content = `${render(state, { onlyIds: ids })}\nTriage per PROCESS.md Quality control loop.`;
+			content = render(state, { onlyIds: ids });
 		}
 		// Pi 1.4.0 queues nextTurn without steering or creating a follow-up run,
 		// even during streaming. It is consumed with the next starting prompt.

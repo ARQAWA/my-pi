@@ -1,33 +1,61 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { AgentSession, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { it } from "node:test";
-import { fauxProvider } from "@earendil-works/pi-ai";
-import { createAgentSession, createCodemodeExtension, createToolSearchExtension, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+import settings from "../../../extensions/RQW-settings/index.ts";
 
-it("enables codemode and tool_search alongside the stock tools", async () => {
-	const root = await mkdtemp(join(tmpdir(), "rqw-settings-"));
+function activeTools(selected: boolean, manualReload = false): string[] {
+	const prototype = AgentSession.prototype;
+	const native = Object.getOwnPropertyDescriptor(prototype, "bindExtensions")!;
+	const argv = process.argv;
+	Object.defineProperty(prototype, "bindExtensions", { ...native, value: function () { return "native"; } });
+	process.argv = argv.slice(0, 2);
+	const handlers = new Map<string, ((event: any, ctx: any) => void)[]>();
+	let active = ["bash", "read"];
+	const pi = {
+		on(name: string, handler: (event: any, ctx: any) => void) {
+			handlers.set(name, [...(handlers.get(name) ?? []), handler]);
+			return () => {};
+		},
+		registerCommand() {},
+		events: { on: () => () => {}, emit: () => {} },
+		getSettings: () => ({}),
+		getAllTools: () => ["bash", "read", "codemode", "tool_search"].map(name => ({ name })),
+		getActiveTools: () => active,
+		setActiveTools: (names: string[]) => { active = names; },
+	};
+	const manager = {};
+	const session = {
+		sessionManager: manager,
+		_usesDefaultTools: !selected,
+		_defaultToolModifiers: selected ? ["read"] : [],
+		_excludedTools: undefined,
+		_allowedTools: undefined,
+	};
 	try {
-		const runtime = await ModelRuntime.create({ authPath: join(root, "auth.json"), modelsPath: null, refreshOnCreate: false });
-		const faux = fauxProvider();
-		runtime.registerNativeProvider(faux.provider);
-		const loader = new DefaultResourceLoader({ cwd: root, agentDir: root,
-			additionalExtensionPaths: [join(import.meta.dirname, "../../../extensions/RQW-settings/index.ts")],
-			extensionFactories: [
-				{ name: "codemode", factory: createCodemodeExtension(), replaceable: true, builtin: true },
-				{ name: "tool-search", factory: createToolSearchExtension(), replaceable: true, builtin: true },
-			], noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
-		await loader.reload();
-		assert.deepEqual(loader.getExtensions().errors, []);
-		const { session } = await createAgentSession({ cwd: root, agentDir: root, modelRuntime: runtime, model: faux.getModel(),
-			resourceLoader: loader, sessionManager: SessionManager.inMemory(root), settingsManager: SettingsManager.inMemory({}) });
-		try {
-			await session.bindExtensions({});
-			assert.deepEqual(session.getActiveToolNames().sort(), ["bash", "codemode", "edit", "read", "tool_search", "write"]);
-		} finally {
-			await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
-			session.dispose();
+		settings(pi as unknown as ExtensionAPI);
+		prototype.bindExtensions.call(session);
+		for (const handler of handlers.get("session_start") ?? []) handler({ reason: "startup" }, { sessionManager: manager });
+		if (manualReload) {
+			active = ["bash", "read"];
+			prototype.bindExtensions.call(session);
+			for (const handler of handlers.get("session_start") ?? []) handler({ reason: "reload" }, { sessionManager: manager });
 		}
-	} finally { await rm(root, { recursive: true, force: true }); }
+		return active;
+	} finally {
+		for (const handler of handlers.get("session_shutdown") ?? []) handler({}, {});
+		process.argv = argv;
+		Object.defineProperty(prototype, "bindExtensions", native);
+	}
+}
+
+it("enables codemode and tool_search when no tool selection was given", () => {
+	assert.deepEqual(activeTools(false).sort(), ["bash", "codemode", "read", "tool_search"]);
+});
+
+it("keeps an explicit tool selection unchanged", () => {
+	assert.deepEqual(activeTools(true), ["bash", "read"]);
+});
+
+it("regression: manual tool removal survives reload", () => {
+	assert.deepEqual(activeTools(false, true), ["bash", "read"]);
 });
