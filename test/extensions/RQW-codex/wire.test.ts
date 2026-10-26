@@ -183,11 +183,37 @@ describe("Responses Lite request", () => {
 		assert.deepEqual(body.reasoning, { effort: "medium", summary: "auto", context: "all_turns" });
 	});
 
+	it("hashes numeric schema keys in native lexicographic order through the real request", () => {
+		const nativeToolsJson = '[{"description":"","name":"functions","tools":[{"description":"","name":"numeric","parameters":{"properties":{"10":{"type":"string"},"2":{"type":"string"}},"type":"object"},"strict":false,"type":"function"}],"type":"namespace"}]';
+		const expectedId = "at_e192b5bf-1b2c-556b-9fca-358c9f2c4de7";
+		assert.equal(`at_${uuidV5(threadNs, nativeToolsJson)}`, expectedId, "independent native oracle");
+		const numeric = JSON.parse('{"name":"numeric","description":"","parameters":{"type":"object","properties":{"10":{"type":"string"},"2":{"type":"string"}}}}') as Tool;
+		const body = build({ capabilities: LITE, context: ctx([USER], [numeric]) }) as unknown as { input: WireItem[] };
+		assert.equal(body.input[0].id, expectedId);
+		assert.deepEqual(body.input[0].tools, JSON.parse(nativeToolsJson));
+	});
+
 	it("emits the canonical key order in the additional_tools declaration with every member kept, whatever the Pi schema order", () => {
-		const shuffled: Tool = { name: "read", description: "Read a file", parameters: { required: ["path"], properties: { path: { type: "string" } }, type: "object" } as never };
+		const shuffled = JSON.parse('{"name":"read","description":"Read a file","parameters":{"required":["path"],"properties":{"path":{"type":"string"}},"type":"object"}}') as Tool;
 		const body = build({ capabilities: LITE, context: ctx([USER], [shuffled]) }) as unknown as { input: WireItem[] };
 		assert.equal(JSON.stringify(body.input[0].tools), '[{"description":"","name":"functions","tools":[{"description":"Read a file","name":"read","parameters":{"properties":{"path":{"type":"string"}},"required":["path"],"type":"object"},"strict":false,"type":"function"}],"type":"namespace"}]');
 		assert.equal(body.input[0].id, "at_3ad30552-a401-5639-83e4-97552344a959");
+	});
+
+	it("keeps non-index numeric-looking keys native and preserves deterministic ID collision behavior", () => {
+		const nativeToolsJson = '[{"description":"","name":"functions","tools":[{"description":"","name":"numeric-controls","parameters":{"properties":{"-1":{"type":"boolean"},"01":{"type":"string"},"1.0":{"type":"number"},"4294967295":{"type":"null"}},"type":"object"},"strict":false,"type":"function"}],"type":"namespace"}]';
+		const expectedId = "at_3151a593-56cb-5079-8334-1c0be26faa92";
+		assert.equal(`at_${uuidV5(threadNs, nativeToolsJson)}`, expectedId, "independent native oracle");
+		const controls = JSON.parse('{"name":"numeric-controls","description":"","parameters":{"type":"object","properties":{"4294967295":{"type":"null"},"1.0":{"type":"number"},"01":{"type":"string"},"-1":{"type":"boolean"}}}}') as Tool;
+		const request = (tool: Tool, threadId = identity.threadId) => (buildRequest({ model, context: ctx([USER], [tool]), capabilities: LITE, identity: { ...identity, threadId } }).input as WireItem[])[0];
+		const item = request(controls);
+		assert.equal(item.id, expectedId);
+		assert.equal(item.id, request(JSON.parse(JSON.stringify(controls))).id);
+		assert.notEqual(item.id, request(controls, "thread-fake-2").id);
+		const changed = JSON.parse(JSON.stringify(controls)) as Tool;
+		(changed.parameters as any).properties["01"].type = "number";
+		assert.notEqual(item.id, request(changed).id);
+		assert.deepEqual(item.tools, JSON.parse(nativeToolsJson));
 	});
 
 	it("canonicalizes the non-Lite top-level tools recursively and keeps every member", () => {
