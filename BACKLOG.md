@@ -39,11 +39,6 @@ These items are conserved for item-by-item review only after current queue items
 resumed by old priorities, branch readiness, CI state or earlier deferral exceptions. No conserved artifact is deleted
 by this documentation change.
 
-### SKILL-DOLLAR-AUTOCOMPLETE
-
-Skill input mechanics as in Codex CLI: typing `$` anywhere in the input line, not only at its start, opens skill autocomplete; the suggestion list is at most 4 rows high.
-Status: QUEUED, first in old queue. Source: owner request 2026-10-26.
-
 ### Conserved prepared branches and evidence
 
 | ID | Conserved state | Source |

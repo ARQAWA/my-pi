@@ -34,7 +34,8 @@
       "./extensions/RQW-web/index.ts",
       "./extensions/RQW-naming/index.ts",
       "./extensions/RQW-agent-ui/index.ts",
-      "./extensions/RQW-tool-ui/index.ts"
+      "./extensions/RQW-tool-ui/index.ts",
+      "./extensions/RQW-skill-dollar/index.ts"
     ],
     "themes": [
       "./extensions/RQW-theme/theme.json"

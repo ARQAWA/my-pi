@@ -126,6 +126,9 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `extensions/RQW-tool-ui/`: extension 18, between-answer tool summaries, current call header plus last four output
   rows and status, immediate folding on answer text, Ctrl+O originals. Native thinking spacing and stock image output
   remain. Details: [Compact tool display](DECISIONS.md#compact-tool-display); tests: `test/extensions/RQW-tool-ui/`.
+- `extensions/RQW-skill-dollar/`: extension 19, `$skill` autocomplete at whitespace boundaries, all matches selectable
+  through a four-row editor window, and Pi-format skill blocks for every mention on submit. Public APIs only;
+  compatible with stock and statusbar editors. Tests: `test/extensions/RQW-skill-dollar/`.
 - `extensions/RQW-theme/theme.json`: native theme resource named `RQW-theme`, registered only in `pi.themes`, not
   an extension. Select once through `/settings` -> Theme; Pi persists the choice across reload and restart.
   Switch back through the same native selector. No activation code or unrelated settings writes.
