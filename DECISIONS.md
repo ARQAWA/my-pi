@@ -741,6 +741,19 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Stored messages, history and model context remain unchanged; native spacer/click-region rows remain.
   Reason: hide transcript reasoning without a Pi patch. Carriers: `extensions/RQW-thinking/index.ts`,
   `package.json`, `INSTALL.md`; independently switchable through Pi's package filter and `/reload`.
+- **Accepted reload-label limitation** `[D-UI-THINKING-RELOAD-LIMIT]`. Owner: «по твоеу вопросы выбираю 1 пункт».
+  Source: session `2026-10-21T16-27-59-062Z_01a15f4a`, USER entry `d12947ed`, 2026-10-25,
+  choosing to retain the transient native `Thinking...` frame during `/reload` as a known limitation.
+  The fix is cancelled, not completed: no private interception and no upstream Pi work.
+  Pi 1.4.0 resets the label and renders before `session.reload()` emits `session_shutdown`; the next
+  `session_start` restores the empty label. The public Markdown transformer does not handle the hidden label's
+  separate native `Text` component. Existing faux-provider interactive evidence in `/tmp/thinking-reload-red.log`
+  reproduces the transition while history, context, new-message and native-spacing controls pass;
+  `/tmp/thinking-reload-lifecycle.log` records `LABEL_ALREADY_WRITTEN_BEFORE_SHUTDOWN=true`.
+  These are scripted-terminal checks, not live-model or physical-terminal verification.
+  Reason: retain public Pi interfaces and native behavior rather than add an interception mechanism.
+  Carrier: `extensions/RQW-thinking/README.md`. Runtime, tests, package filters and the owner's current
+  RQW-thinking exclusion remain unchanged; this accepted limit is not pending implementation.
 
 ## Structure
 
