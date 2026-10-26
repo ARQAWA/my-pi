@@ -1,3 +1,0 @@
-export function label(status: string): string {
-	return status === "complete" ? "Complete" : "Cancelled";
-}

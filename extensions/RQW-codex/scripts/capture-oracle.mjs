@@ -738,6 +738,7 @@ export async function checkOutput({ out, commit = PIN_COMMIT }) {
   const captureDir = join(outDir, 'captures');
   const names = (await readdir(captureDir)).filter((name) => name.endsWith('.json'));
   const perScenario = new Map();
+  const perCase = new Map();
   for (const name of names) {
     const text = await readFile(join(captureDir, name), 'utf8');
     if (/Bearer\s+[A-Za-z0-9._-]{8,}/i.test(text)) failures.push(`${name} contains a bearer token`);
@@ -747,7 +748,10 @@ export async function checkOutput({ out, commit = PIN_COMMIT }) {
       .find((scenario) => scenario.id === meta.scenario)
       ?.cases?.find((entry) => entry.fullName === meta.test);
     if (!owner) failures.push(`${name} is not associated with a case of scenario ${meta.scenario}`);
-    else if (!name.startsWith(`${owner.capturePrefix}-`)) failures.push(`${name} does not carry the capture prefix of ${meta.test}`);
+    else {
+      perCase.set(owner, (perCase.get(owner) ?? 0) + 1);
+      if (!name.startsWith(`${owner.capturePrefix}-`)) failures.push(`${name} does not carry the capture prefix of ${meta.test}`);
+    }
     for (const [header, value] of meta.headers ?? []) {
       if (SECRET_HEADERS.has(String(header).toLowerCase()) && value !== '[REDACTED]') failures.push(`${name} leaks header ${header}`);
     }
@@ -759,7 +763,12 @@ export async function checkOutput({ out, commit = PIN_COMMIT }) {
     }
   }
   for (const scenario of SCENARIOS) {
-    if (scenario.requireCaptures && !perScenario.get(scenario.id)) failures.push(`no captures for scenario ${scenario.id}`);
+    if (!scenario.requireCaptures) continue;
+    if (!perScenario.get(scenario.id)) failures.push(`no captures for scenario ${scenario.id}`);
+    const cases = run.scenarios.find((entry) => entry.id === scenario.id)?.cases;
+    for (const entry of Array.isArray(cases) ? cases : []) {
+      if (!perCase.get(entry)) failures.push(`no captures for case ${entry.fullName}`);
+    }
   }
   return failures;
 }

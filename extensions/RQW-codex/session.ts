@@ -92,7 +92,7 @@ export interface SessionPolicy {
 }
 
 /** One startup setup: its clock origin is taken before its first await; the first normal stream waits for it within the budget. */
-type StartupAttempt = { origin: number; abort: AbortController; signal: AbortSignal; promise: Promise<void>; settled: boolean; spent: boolean };
+type StartupAttempt = { origin: number; abort: AbortController; signal: AbortSignal; promise: Promise<void>; pending?: Promise<void>; settled: boolean; spent: boolean };
 
 export interface SessionController {
 	readonly policy: SessionPolicy;
@@ -111,6 +111,8 @@ export interface SessionController {
 	captureRunOrigin(origin: { rootTurnId?: string }): void;
 	/** Explicit idle prewarm of the Codex history: accepted only when the session is idle; never a turn. Automatic idle prewarm is controller-owned (see createSessionController). */
 	prewarmWithHistory(): Promise<void>;
+	/** Invalidate pending prewarm on model selection and resolve after its preparation and transport have settled. */
+	modelChange(): Promise<void>;
 	/**
 	 * Called after stock Pi finished a compaction. When the latest Pi compaction entry of the branch differs from the observed one,
 	 * prepared work and the transport are dropped and the owned state is refreshed; otherwise nothing happens.
@@ -336,6 +338,9 @@ export function createSessionController(options: SessionControllerOptions): Sess
 	const isCodexModel = (model: Model<Api> | undefined): boolean =>
 		model?.provider === CODEX_PROVIDER && model.api === CODEX_API;
 
+	const isCurrentModel = (model: Model<Api>): boolean =>
+		session.model?.provider === model.provider && session.model.api === model.api && session.model.id === model.id;
+
 	const requireCodexModel = (model: Model<Api>) => {
 		if (model.provider !== CODEX_PROVIDER) throw new Error(`RQW-codex: model provider ${model.provider} is not ${CODEX_PROVIDER}`);
 		if (model.api !== CODEX_API) throw new Error(`RQW-codex: model api ${model.api} is not ${CODEX_API}`);
@@ -519,6 +524,8 @@ export function createSessionController(options: SessionControllerOptions): Sess
 				return;
 			}
 			if (runActive) return;
+			// Explicit idle preparation is obsolete as soon as real work starts; startup still shares its remaining budget.
+			idle?.abort.abort();
 			runActive = true;
 			turnId = uuidv7();
 			turnStartedAt = now();
@@ -752,7 +759,7 @@ export function createSessionController(options: SessionControllerOptions): Sess
 			// No usable saved login: the normal path stays in charge and reports it; the startup budget is not consumed.
 			return;
 		}
-		if (attempt.signal.aborted) return;
+		if (attempt.signal.aborted || released || !isCurrentModel(model)) return;
 		let prompt: string;
 		let warmOptions: CodexStreamOptions;
 		try {
@@ -781,14 +788,14 @@ export function createSessionController(options: SessionControllerOptions): Sess
 		} catch {
 			return;
 		}
-		// Budget spent, release or a newer generation: no metadata update and no prewarm from this setup.
-		if (attempt.signal.aborted || released) return;
+		// Budget spent, release, a newer generation or another selected model: no metadata update and no prewarm.
+		if (attempt.signal.aborted || released || !isCurrentModel(model)) return;
 		// Startup has its own snapshot: its workspaces are collected now, and it has no turn, time or root turn.
 		const snapshot = snapshotOf({ model, context, options: warmOptions, workspaces, historyInit: ready.historyInit, rootTurnId: isRootThread() ? undefined : lineage.rootTurnId });
 		ready.transport.updateMetadata?.(snapshot);
 		started = true;
 		// Prewarm failure only leaves the normal path in charge; the transport already swallows it.
-		ready.transport.prewarm(model, context, { ...warmOptions, prewarmInput: "base", prewarmStartedAt: attempt.origin, signal: attempt.signal }).catch(() => undefined);
+		attempt.pending = ready.transport.prewarm(model, context, { ...warmOptions, prewarmInput: "base", prewarmStartedAt: attempt.origin, signal: attempt.signal }).catch(() => undefined);
 	};
 
 	/** Pi's own idle state at this instant (no run, no streaming, no compaction) and this controller's run boundary. */
@@ -803,6 +810,7 @@ export function createSessionController(options: SessionControllerOptions): Sess
 	/** A new run or compaction: a new epoch, armed; the scheduled check and any in-flight automatic setup are cancelled. */
 	const armAuto = (): void => {
 		cancelAutoCheck();
+		idle?.abort.abort();
 		auto?.abort.abort();
 		autoArmed = true;
 		autoEpoch++;
@@ -832,9 +840,7 @@ export function createSessionController(options: SessionControllerOptions): Sess
 		const epoch = autoEpoch;
 		const attempt: StartupAttempt = { origin: now(), abort, signal: AbortSignal.any([lifetime.signal, abort.signal]), promise: Promise.resolve(), settled: false, spent: false };
 		// The selected model must still be the captured one after every await: a switch while setup waits never sends the old model.
-		const { provider, api, id } = model as Model<Api>;
-		const sameModel = (): boolean => session.model?.provider === provider && session.model?.api === api && session.model?.id === id;
-		const valid = (): boolean => !released && !attempt.signal.aborted && epoch === autoEpoch && autoIdle() && sameModel();
+		const valid = (): boolean => !released && !attempt.signal.aborted && epoch === autoEpoch && autoIdle() && isCurrentModel(model as Model<Api>);
 		auto = attempt;
 		// Best-effort background setup: its failure is consumed here, never an unhandled rejection.
 		attempt.promise = setupIdle(model as Model<Api>, attempt, valid).catch(() => undefined).finally(() => {
@@ -880,10 +886,17 @@ export function createSessionController(options: SessionControllerOptions): Sess
 			const abort = new AbortController();
 			const attempt: StartupAttempt = { origin: now(), abort, signal: AbortSignal.any([lifetime.signal, abort.signal]), promise: Promise.resolve(), settled: false, spent: false };
 			idle = attempt;
-			attempt.promise = setupIdle(model as Model<Api>, attempt, () => !released && !attempt.signal.aborted).finally(() => {
+			attempt.promise = setupIdle(model as Model<Api>, attempt, () => !released && !attempt.signal.aborted && autoIdle() && isCurrentModel(model as Model<Api>)).finally(() => {
 				attempt.settled = true;
 			});
 			return attempt.promise;
+		},
+		modelChange() {
+			if (released) return Promise.resolve();
+			startup?.abort.abort();
+			idle?.abort.abort();
+			auto?.abort.abort();
+			return Promise.allSettled([startup?.promise, startup?.pending, idle?.promise, auto?.promise]).then(() => undefined);
 		},
 		start() {
 			if (released) return Promise.resolve();

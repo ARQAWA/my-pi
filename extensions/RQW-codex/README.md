@@ -26,7 +26,7 @@ RQW-codex itself observes the public session lifecycle. After a run really settl
 
 The host channel `rqw-codex:prewarm-with-history` remains optional, not the package producer: a host may emit an object `{ threadId? }` to target an owned root or child. `accepted: true` means recognized, not necessarily sent. Busy/prepared sessions skip sending; unknown or foreign threads do not acquire credentials or start a transport.
 
-Startup, including cold resume, stays cold: base prompt/tools and no history. Automatic and explicit history prewarm use the current effective full or compacted history, including Pi 1.4.0 pending system-section updates in their next-run position and the current visible tool catalog rather than obsolete replayed declarations. Prewarm and compaction respect codemode-only hidden declarations without disabling the executable tools behind codemode. An explicitly marked forced child prompt is projected as the caller actually forces it; soft reviewer prompts retain their SDK sections. These request-time projections do not rewrite the Pi transcript. RQW-prompt and RQW-tools contribute their own policies to the optional pure projection; no normal turn hook is synthetically invoked. The package-level carrier is `test/codex-prompt-tools.test.ts`. The first normal request joins pending setup within the remaining native budget. Prepared-response continuation is used only while the actual post-hook prefix still matches; later prompt/tool-loadout changes require a full request instead.
+Startup, including cold resume, stays cold: base prompt/tools and no history. Startup and explicit preparation send only while their captured model is still selected; starting real work or compaction cancels pending explicit preparation, while the first normal request still joins startup within its remaining budget. Automatic and explicit history prewarm use the current effective full or compacted history, including Pi 1.4.0 pending system-section updates in their next-run position and the current visible tool catalog rather than obsolete replayed declarations. Prewarm and compaction respect codemode-only hidden declarations without disabling the executable tools behind codemode. An explicitly marked forced child prompt is projected as the caller actually forces it; soft reviewer prompts retain their SDK sections. These request-time projections do not rewrite the Pi transcript. RQW-prompt and RQW-tools contribute their own policies to the optional pure projection; no normal turn hook is synthetically invoked. The first normal request joins pending setup within the remaining native budget. Prepared-response continuation is used only while the actual post-hook prefix still matches; later prompt/tool-loadout changes require a full request instead.
 
 ### Optional one-shot context fork
 
@@ -48,73 +48,6 @@ Codex sessions use **stock Pi compaction**: Pi runs its own compaction with its 
 
 No imports outside this extension folder; optional event-bus session policies bind RQW-agent/RQW-review children without an import dependency. Missing adapter means stock child behavior. Disable/reload/dispose must not unregister another owner's live provider or leak a child's continuation into its parent. Reviewer safety policy and wall cap remain theirs.
 
-Source assertions and the pinned model snapshot: `test/extensions/RQW-codex/fixtures/`. Compatibility spikes cover stock library/bundle seams, while fake-server tests cover owned mechanics. `.github/workflows/codex-oracle.yml` executes pinned upstream fake-server scenarios and saves captures/logs in CI. Source-derived fixtures are not runtime captures; reconstructed WS JSON is not raw WS control-frame evidence. Full suites, Rust fixture generation and macOS/Windows/Bun checks run in CI, not on the owner's laptop.
-
-The oracle's optional `--work <dir>` selects a parent directory inside OS temp, outside the source and protected checkouts. Every run creates a fresh `rqw-codex-oracle-*` child for its source copy and removes only that child on normal cleanup. The parent and its existing contents stay untouched. `--keep-work` retains the harness child instead.
-
-On macOS the oracle applies one SHA-guarded socket-lifecycle cleanup only to its temporary upstream retry fixture and records it in `run.json` as `adaptedFixtures`. Native assertions, timeouts and `listen(128)` stay unchanged; original sources and runtime transport are untouched. The cause and coordinator technical decision are in [macOS oracle fixture](../../DECISIONS.md#macos-oracle-fixture). Diagnostic runs are not full oracle acceptance.
-
-### Deterministic native differential
-
-`test/extensions/RQW-codex/fixtures/native-differential.json` pins captures from [normal oracle run 39956439677](https://github.com/ARQAWA/my-pi/actions/runs/39956439677), my-pi head `fe3e9ec554070811a76eb5403934b753825e67df`: 10 cases, transport 4, retry 3 and compaction 3. `scripts/pin-native-differential.mjs` records capture/source hashes, captured SSE scripts and source-cited non-SSE stimuli. `test/extensions/RQW-codex/native-differential.test.ts` replays them through the real extension in a Pi `AgentSession`, with fake credentials and injected fetch/connect/sleep seams. The shared `test/extensions/RQW-codex/native-differential.mjs` projection compares ordered transport/endpoint, turn-state replay, request kind, compaction phase, turn grouping, retry-body identity and conversation items; selected cases also check content encoding. The fixture, pin script and oracle workflow are unchanged and the oracle still runs the full native reference. The adapter test replays the 7 transport and retry cases only; the three compaction cases stay pinned as provenance of the native mechanism, which the adapter no longer runs. Stock compaction is covered by `test/extensions/RQW-codex/standard-compaction.test.ts` and `test/extensions/RQW-codex/stock-compaction-history.test.ts`.
-
-The normal oracle workflow regenerates this projection from fresh captures and uses `--check` to reject fixture/source drift, including all stable replay configuration fields. Baseline capture hashes identify provenance, not byte equality across runs. Source-backed `Retry-After` sleeps are compared with a deterministic clock, without real waiting; explicit fallback cases check upgrade order/count. Actual WebSocket frame replay remains uncovered: upgrades are simulated and these requests use the HTTP/SSE path. The pinned native run does not itself prove that the new differential checks passed CI. See [Native differential checks](../../DECISIONS.md#native-differential-checks) for the coordinator technical decision.
+Tests: `test/extensions/RQW-codex/`. Live subscription acceptance is not claimed.
 
 See the canonical [decision and exception ledger](../../DECISIONS.md#codex-subscription-transport) for all accepted deviations. No deterministic test establishes live subscription acceptance, equal answers, cache retention, subscription billing or free prewarm. Raw TLS/packet equivalence and optional managed/enterprise/Guardian/memory harness profiles are not claimed.
-
-<!-- repo-index:start -->
-## File map
-
-Generated by `node scripts/repo-index.mjs --write` from the repository root.
-
-| File | Responsibility |
-| --- | --- |
-| [`LICENSE-CODEX`](LICENSE-CODEX) | Third-party licence text |
-| [`LICENSE-PI`](LICENSE-PI) | Third-party licence text |
-| [`README.md`](README.md) | Hand-written contract and generated file map |
-| [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) | Third-party attribution and provenance |
-| [`auth-boundary.ts`](auth-boundary.ts) | Authentication request boundary |
-| [`auth-runtime.ts`](auth-runtime.ts) | Authentication runtime integration |
-| [`auth.ts`](auth.ts) | Subscription credentials and OAuth recovery |
-| [`compaction-wire.ts`](compaction-wire.ts) | Compaction wire request conversion |
-| [`compaction.ts`](compaction.ts) | Compaction protocol handling |
-| [`compression.ts`](compression.ts) | Request body compression |
-| [`context-fork.ts`](context-fork.ts) | context fork module or resource |
-| [`continuation.ts`](continuation.ts) | Response continuation state |
-| [`cookies.ts`](cookies.ts) | Transport cookie handling |
-| [`display.d.ts`](display.d.ts) | Display metadata bridge and declarations |
-| [`display.mjs`](display.mjs) | Display metadata bridge and declarations |
-| [`errors.ts`](errors.ts) | Transport error conversion |
-| [`headers.ts`](headers.ts) | Subscription request headers |
-| [`history.ts`](history.ts) | Conversation history conversion |
-| [`index.ts`](index.ts) | Pi extension entrypoint: Codex subscription authentication and protocol overlay |
-| [`lifecycle.ts`](lifecycle.ts) | Installation and teardown lifecycle |
-| [`metadata.ts`](metadata.ts) | Request metadata |
-| [`portable-history.ts`](portable-history.ts) | Portable conversation history representation |
-| [`profile.ts`](profile.ts) | Pinned native protocol profile |
-| [`registration.ts`](registration.ts) | Provider registration overlay |
-| [`retry.ts`](retry.ts) | Transport retry classification and waiting |
-| [`scripts/capture-oracle.mjs`](scripts/capture-oracle.mjs) | Capture native Codex protocol evidence |
-| [`scripts/check-oracle.mjs`](scripts/check-oracle.mjs) | Compare protocol evidence |
-| [`scripts/oracle-diagnostic.mjs`](scripts/oracle-diagnostic.mjs) | Diagnose native protocol evidence |
-| [`scripts/pin-native-differential.mjs`](scripts/pin-native-differential.mjs) | Pinned native protocol comparison |
-| [`session-compaction.ts`](session-compaction.ts) | Stock session compaction integration |
-| [`session-history.ts`](session-history.ts) | Session history integration |
-| [`session-metadata.ts`](session-metadata.ts) | Session request metadata |
-| [`session-prefix.ts`](session-prefix.ts) | Session startup prefix |
-| [`session.ts`](session.ts) | Session transport lifecycle |
-| [`sse.ts`](sse.ts) | Server-sent event parsing |
-| [`streaming.ts`](streaming.ts) | Streaming response conversion |
-| [`tool-sampling.ts`](tool-sampling.ts) | Tool sampling request settings |
-| [`transport.ts`](transport.ts) | Subscription request transport |
-| [`web-THIRD-PARTY-NOTICES.md`](web-THIRD-PARTY-NOTICES.md) | Third-party attribution and provenance |
-| [`web-alpha.ts`](web-alpha.ts) | Native web protocol definitions |
-| [`web-commands.ts`](web-commands.ts) | Web command conversion |
-| [`web-engine.ts`](web-engine.ts) | Native web request execution |
-| [`web-native-tools.json`](web-native-tools.json) | Native web tool schemas |
-| [`web-types.ts`](web-types.ts) | Web protocol types |
-| [`websocket.ts`](websocket.ts) | WebSocket connection and response transport |
-| [`wire.ts`](wire.ts) | Provider request and response conversion |
-
-Tests: [`test/extensions/RQW-codex/`](../../test/extensions/RQW-codex/).
-<!-- repo-index:end -->

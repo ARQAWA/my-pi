@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cacheDirectory, isFresh, readJson, run } from "./ci-watch.mjs";
+import { cacheDirectory, isFresh, run } from "./ci-watch.mjs";
 import { levelOf, mainRuns, workflowRuns } from "./qa-runs.mjs";
 export { run } from "./ci-watch.mjs";
 
@@ -28,25 +28,10 @@ export async function snapshot({ cwd = process.cwd(), repo, run: execute = run, 
 		if (cached.repo !== repo || !Array.isArray(cached.runs)) throw new Error("invalid watcher cache");
 		if (!isFresh(cached, now())) throw new Error("watcher cache stale or missing successful fetch; restart with npm run ci-watch -- --restart");
 		if (cached.error) throw new Error(`watcher fetch failed: ${cached.error}; restart with npm run ci-watch -- --restart`);
-		const inbox = await readJson(resolve(cachePath ? dirname(cachePath) : dir, "inbox.json"));
-		const validInbox = inbox?.version === 1 && inbox.repo === repo && Array.isArray(inbox.items);
-		const items = validInbox ? [...inbox.items] : [];
-		// Issues have their own explicit, on-demand fetch; run freshness never refreshes them.
-		items.push({ id: "inbox:local-only", level: "info", text: validInbox
-			? `QA inbox: local snapshot from ${inbox.fetchedAt}; not refreshed by ci-watch polling; refresh with npm run ci-watch -- --refresh-inbox`
-			: "QA inbox: no local snapshot; not refreshed by ci-watch polling; run npm run ci-watch -- --refresh-inbox", url: "" });
-		// A failed main run that closed inbox issues fully cover (computed by the explicit inbox refresh) is information.
-		const acknowledged = new Map((validInbox && Array.isArray(inbox.acknowledged) ? inbox.acknowledged : [])
-			.map((a) => [`${a.runId}:${a.attempt}`, a.numbers]));
-		const acknowledge = (item, r) => {
-			const numbers = acknowledged.get(`${r.id}:${r.run_attempt ?? 1}`);
-			if (item.level !== "red" || !Array.isArray(numbers)) return item;
-			return { ...item, level: "info", text: `${item.text}; acknowledged: every failure is in closed qa-inbox issue ${numbers.map((n) => `#${n}`).join(", ")}` };
-		};
-		for (const [name, workflow, mainOnly] of [["main tests", "tests.yml", true], ["main pcli", "pcli.yml", true],
-			["qa-inbox", "qa-inbox.yml", false], ["qa-digest", "qa-digest.yml", false]]) {
-			const list = mainOnly ? mainRuns(cached.runs, workflow) : workflowRuns(cached.runs, workflow).slice(0, 1);
-			items.push(...list.map((r) => mainOnly ? acknowledge(runItem(r, name), r) : runItem(r, name)));
+		const items = [];
+		for (const [name, workflow] of [["main tests", "tests.yml"], ["main pcli", "pcli.yml"]]) {
+			const list = mainRuns(cached.runs, workflow);
+			items.push(...list.map((r) => runItem(r, name)));
 			if (!list.length) items.push({ id: `workflow:${name}:missing`, level: "info", text: `${name}: no runs in bounded cache`, url: "" });
 		}
 		if (branch !== "main" && branch !== "HEAD") {

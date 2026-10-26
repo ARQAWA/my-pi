@@ -55,6 +55,8 @@ export type RegisteredController = {
 	captureRunOrigin?(origin: { rootTurnId?: string }): void;
 	/** Optional: explicit idle prewarm of the session's Codex history; a controller without it is never prewarmed. */
 	prewarmWithHistory?(): Promise<void>;
+	/** Optional: cancel pending prewarm after model selection and resolve when it has settled. */
+	modelChange?(): Promise<void>;
 	/** Drop in-memory continuation after Pi commits a new summary boundary. */
 	afterPiCompaction?(): void;
 };
@@ -449,8 +451,9 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 	});
 
 	// Model choice after startup can make a Codex prewarm appropriate; a non-Codex choice never starts one.
-	pi.on("model_select", (event) => {
+	pi.on("model_select", async (event, ctx) => {
 		if (closed) return;
+		await entryForContext(ctx)?.controller.modelChange?.();
 		const root = owner.root;
 		if (!root || root.done) return;
 		startIfCodex(root, (event as unknown as { model?: Model<Api> }).model);
@@ -543,6 +546,10 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 			request.installCompactionHooks = (api) => {
 				if (closed || bound.done || hooksInstalled) return;
 				hooksInstalled = true;
+				// A child has its own extension runner: its model selection must cancel the same controller's pending prewarm.
+				bound.hookReleases.add(api.on("model_select", async () => {
+					if (!bound.done) await bound.controller.modelChange?.();
+				}));
 				bound.hookReleases.add(installSessionCompaction(api, {
 					accepts: (ctx) => !bound.done && ctx.sessionManager === bound.session.sessionManager,
 					prepare: (event) => prepareSummary(bound, event.signal),

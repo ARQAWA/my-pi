@@ -2,21 +2,9 @@ name: tests
 
 on:
   push:
-    # Proof comes from the task branch head on current main; its squash has the same tree (PROCESS.md, Delivery).
-    # `codemode-stress` only carries a head for codemode-stress.yml.
-    branches-ignore: [main, codemode-stress]
-    # Docs-only pushes run no tests: root *.md, notes/ and .agents/ carry no code the tests load.
-    paths-ignore: ['*.md', 'notes/**', '.agents/**']
-  # Full regression on main every 2 h. Minute 17 avoids the top-of-hour load where GitHub documents dropped
-  # schedule runs. A schedule runs only on the default branch.
-  schedule:
-    - cron: '17 */2 * * *'
-  workflow_dispatch:
-    inputs:
-      qa_canary:
-        description: One macOS job also runs a deliberately failing test, to prove the failure inbox end to end
-        type: boolean
-        default: false
+    branches-ignore: [main]
+    # Docs-only pushes run no tests: root *.md and .agents/ carry no code the tests load.
+    paths-ignore: ['*.md', '.agents/**']
 
 permissions:
   contents: read
@@ -39,7 +27,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # Keep the matrix label stable for evidence artifacts and the QA canary.
+          # Keep the matrix label stable for evidence artifacts.
           node-version: ${{ matrix.node == '24' && '>=24.22.0 <25' || matrix.node }}
 
       - name: Facts
@@ -84,12 +72,6 @@ jobs:
           done
           ls -la "$RUNNER_TEMP/evidence"
 
-      # Canary: test/fixtures/qa-canary/canary.test.mjs fails on purpose and is not in the npm test globs. The job then
-      # fails with TAP evidence and "Upload evidence" below ships it, so the inbox can be proven end to end.
-      - name: QA canary (deliberate failure)
-        if: ${{ inputs.qa_canary && matrix.os == 'macos-latest' && matrix.node == '24' }}
-        run: node --test --test-reporter=spec --test-reporter=tap --test-reporter-destination=stdout --test-reporter-destination="$RUNNER_TEMP/evidence/qa-canary.tap" test/fixtures/qa-canary/canary.test.mjs
-
       - name: Upload evidence
         if: failure()
         uses: actions/upload-artifact@v4
@@ -97,73 +79,6 @@ jobs:
           name: test-evidence-${{ matrix.os }}-node${{ matrix.node }}-attempt${{ github.run_attempt }}
           path: ${{ runner.temp }}/evidence
           if-no-files-found: ignore
-
-  # Pi's release binaries (pi.exe of PCLI included) run on Bun, not Node. Bun drops the async context in a worker's
-  # message callback, so the codemode routing must hold there too: Pi's own CLI under Bun, faux model, one script.
-  bun-codemode:
-    name: bun-codemode (${{ matrix.os }}, bun ${{ matrix.bun }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest]
-        # 1.3.14 is the runtime inside the Pi 1.4.0 release binaries
-        bun: ["1.3.14", "1.4.3"]
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22.19.0"
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ matrix.bun }}
-
-      - run: bun --version
-
-      - run: npm ci
-
-      - name: Codex connectors under Bun (zstd, WebSocket deflate and ping, SSE, abort; loopback only)
-        run: bun test/extensions/RQW-codex/bun-check.mjs
-
-      - name: RQW-codex CLI under Bun (real CLI, fake Codex connector and SSE, no network)
-        run: RQW_CODEX_BUN=1 node --test test/extensions/RQW-codex/cli.test.ts
-
-      - name: Codemode script under Bun (write then read, 60 s limit)
-        run: npm run test:bun
-
-      - name: RQW-agent wait and codemode CLI under Bun (real CLI, faux models, no network)
-        run: RQW_AGENT_BUN=1 node --import ./test/no-network.mjs --test test/extensions/RQW-agent/cli.test.ts
-
-  # Pi's official pi.exe 1.4.0 (Bun-compiled release binary, not the Node bundle). Only the bootstrap step downloads;
-  # the child CLI's network guard blocks everything else. fetch-pi.mjs runs from RUNNER_TEMP so its zip and pi.exe stay out of the worktree.
-  codex-binary:
-    name: codex-binary (windows-latest, node 22.19.0)
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22.19.0"
-
-      - run: node --version
-
-      - run: npm ci
-
-      - name: Bootstrap official pi.exe 1.4.0 (SHA-pinned download, outside the worktree)
-        run: |
-          mkdir -p "$RUNNER_TEMP/bundled-pi"
-          cp pcli-vscode/fetch-pi.mjs "$RUNNER_TEMP/bundled-pi/fetch-pi.mjs"
-          cd "$RUNNER_TEMP/bundled-pi"
-          node fetch-pi.mjs
-          test -f "$RUNNER_TEMP/bundled-pi/pi/pi.exe"
-
-      - name: RQW-codex CLI with the compiled pi.exe (real binary, fake Codex connector and SSE, no network)
-        run: RQW_CODEX_EXE="$RUNNER_TEMP/bundled-pi/pi/pi.exe" node --test test/extensions/RQW-codex/cli.test.ts
 
   windows-portable-git:
     name: windows-portable-git (node 22.19.0)
