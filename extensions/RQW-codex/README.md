@@ -52,6 +52,8 @@ Source assertions and the pinned model snapshot: `test/extensions/RQW-codex/fixt
 
 The oracle's optional `--work <dir>` selects a parent directory inside OS temp, outside the source and protected checkouts. Every run creates a fresh `rqw-codex-oracle-*` child for its source copy and removes only that child on normal cleanup. The parent and its existing contents stay untouched. `--keep-work` retains the harness child instead.
 
+Capture integrity requires evidence from every recorded native test in each scenario with `requireCaptures: true`; captures from sibling tests do not cover a missing case. Scenarios marked `requireCaptures: false` explicitly expect no such per-test requirement.
+
 On macOS the oracle applies one SHA-guarded socket-lifecycle cleanup only to its temporary upstream retry fixture and records it in `run.json` as `adaptedFixtures`. Native assertions, timeouts and `listen(128)` stay unchanged; original sources and runtime transport are untouched. The cause and coordinator technical decision are in [macOS oracle fixture](../../DECISIONS.md#macos-oracle-fixture). Diagnostic runs are not full oracle acceptance.
 
 ### Deterministic native differential

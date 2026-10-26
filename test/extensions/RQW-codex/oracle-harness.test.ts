@@ -589,31 +589,53 @@ describe('capture integrity', () => {
   }
 
   function fullCaptures(overrides: Record<string, unknown> = {}) {
-    return SCENARIOS.filter((scenario) => scenario.requireCaptures).map((scenario) => ({
-      kind: 'http',
-      seq: 0,
-      scenario: scenario.id,
-      test: `${scenario.filter}case0`,
-      pin: PIN_COMMIT,
-      uri: '/v1/responses',
-      note: '',
-      headers: [['content-type', 'application/json']],
-      raw_file: `${scenario.id}.raw`,
-      decoded_json: { model: 'synthetic' },
-      ...overrides,
-    }));
+    return SCENARIOS.filter((scenario) => scenario.requireCaptures).flatMap((scenario) =>
+      Array.from({ length: scenario.expectMin }, (_, index) => ({
+        kind: 'http',
+        seq: 0,
+        scenario: scenario.id,
+        test: `${scenario.filter}case${index}`,
+        pin: PIN_COMMIT,
+        uri: '/v1/responses',
+        note: '',
+        headers: [['content-type', 'application/json']],
+        raw_file: `${scenario.id}-case${index}.raw`,
+        decoded_json: { model: 'synthetic' },
+        ...overrides,
+      })),
+    );
   }
 
-  it('passes a consistent synthetic output (requires captures for every required scenario)', async () => {
+  function captureRaws(captures: Array<Record<string, unknown>>) {
+    return Object.fromEntries(captures.map((meta) => [meta.raw_file, '{"model":"synthetic"}']));
+  }
+
+  it('passes an intact per-test capture set and ignores unrelated non-capture files', async () => {
     const captures = fullCaptures();
-    const raws = Object.fromEntries(captures.map((meta) => [`${meta.scenario}.raw`, '{"model":"synthetic"}']));
-    const out = await fixtureOut(captures, raws);
+    const out = await fixtureOut(captures, captureRaws(captures));
+    await writeFile(join(out, 'captures', 'unrelated.txt'), 'caller data');
     assert.deepEqual(await checkOutput({ out, commit: PIN_COMMIT }), []);
+    assert.equal(await readFile(join(out, 'captures', 'unrelated.txt'), 'utf8'), 'caller data');
+  });
+
+  it('rejects complete capture loss for one expected native test while its sibling cases remain', async () => {
+    const captures = fullCaptures();
+    const out = await fixtureOut(captures, captureRaws(captures));
+    const fullName = 'suite::turn_state::case1';
+    const prefix = casePrefix('turn_state', fullName);
+    const captureDir = join(out, 'captures');
+    const removed = (await readdir(captureDir)).filter((name) => name.startsWith(`${prefix}-`) && name.endsWith('.json'));
+    assert.ok(removed.length > 0);
+    for (const name of removed) await rm(join(captureDir, name));
+
+    const failures = await checkOutput({ out, commit: PIN_COMMIT });
+    assert.ok(failures.some((line) => line === `no captures for case ${fullName}`));
+    assert.equal(failures.some((line) => /no captures for scenario turn_state/.test(line)), false);
   });
 
   it('rejects missing, wrong-platform or wrong-source adaptation metadata in run.json', async () => {
     const captures = fullCaptures();
-    const raws = Object.fromEntries(captures.map((meta) => [`${meta.scenario}.raw`, '{"model":"synthetic"}']));
+    const raws = captureRaws(captures);
     const adaptedFixtures = [{ ...MACOS_RETRY_FIXTURE, adaptedSha256: '1'.repeat(64) }];
     const good = await fixtureOut(captures, raws, { os: { platform: 'darwin' }, adaptedFixtures });
     assert.deepEqual(await checkOutput({ out: good }), []);
@@ -631,7 +653,7 @@ describe('capture integrity', () => {
     const captures = fullCaptures();
     captures[0] = { ...captures[0], headers: [['authorization', 'Bearer abcdefghijkl']] };
     captures[1] = { ...captures[1], decoded_json: { model: 'other' } };
-    const raws = Object.fromEntries(captures.map((meta) => [`${meta.scenario}.raw`, '{"model":"synthetic"}']));
+    const raws = captureRaws(captures);
     const failures = await checkOutput({ out: await fixtureOut(captures, raws), commit: PIN_COMMIT });
     assert.ok(failures.some((line) => /bearer token/.test(line)));
     assert.ok(failures.some((line) => /leaks header authorization/.test(line)));
@@ -639,8 +661,9 @@ describe('capture integrity', () => {
   });
 
   it('flags a run from another commit and a required scenario with no captures', async () => {
-    const captures = fullCaptures().slice(1);
-    const raws = Object.fromEntries(captures.map((meta) => [`${meta.scenario}.raw`, '{"model":"synthetic"}']));
+    const missingScenario = SCENARIOS.find((scenario) => scenario.requireCaptures)!.id;
+    const captures = fullCaptures().filter((meta) => meta.scenario !== missingScenario);
+    const raws = captureRaws(captures);
     const failures = await checkOutput({
       out: await fixtureOut(captures, raws, {}),
       commit: '35e21028080ccbda9de04d2239b0a0b2336d868f',
@@ -651,7 +674,7 @@ describe('capture integrity', () => {
 
   it('flags a capture whose raw file is missing', async () => {
     const captures = fullCaptures();
-    const raws = Object.fromEntries(captures.slice(1).map((meta) => [`${meta.scenario}.raw`, '{"model":"synthetic"}']));
+    const raws = captureRaws(captures.slice(1));
     const failures = await checkOutput({ out: await fixtureOut(captures, raws), commit: PIN_COMMIT });
     assert.ok(failures.some((line) => /raw file .* is missing/.test(line)));
   });
@@ -674,7 +697,7 @@ describe('capture integrity', () => {
   it('flags a capture whose test is not a recorded case of its scenario', async () => {
     const captures = fullCaptures();
     captures[0] = { ...captures[0], test: 'suite::unknown::case' };
-    const raws = Object.fromEntries(captures.map((meta) => [`${meta.scenario}.raw`, '{"model":"synthetic"}']));
+    const raws = captureRaws(captures);
     const failures = await checkOutput({ out: await fixtureOut(captures, raws), commit: PIN_COMMIT });
     assert.ok(failures.some((line) => /not associated with a case/.test(line)));
   });
