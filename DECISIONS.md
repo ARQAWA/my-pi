@@ -1425,8 +1425,11 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Reason: the Codex reviewer already works in practice, and the old reviewer missed errors. Carriers: `extensions/RQW-review/profiles/*.toml`, `extensions/RQW-review/skills/**/SKILL.md`,
   `extensions/RQW-review/index.ts`, [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md, Independent review](PROCESS.md#independent-review).
   The whole-cycle comparison with the original plugin is discarded by the owner, not queued: [BACKLOG.md](BACKLOG.md#codex-reviewer-comparison).
-- **Reviewer prompt** `[D-REVIEW-PROMPT]`. `extensions/RQW-review/profiles/spotty.toml` and `bossy.toml` embed identical
-  `developer_instructions`, appended to the main system prompt and subagent reminder under `[D-AGENT-PROFILES]`.
+- **Reviewer prompt** `[D-REVIEW-PROMPT]`. `extensions/RQW-review/REVIEWER.md` is the canonical reviewer role.
+  `profiles/spotty.toml` and `bossy.toml` retain byte-identical `developer_instructions` for direct profile use;
+  the common skill explicitly passes the absolute `REVIEWER.md` path through `role_file`, so a same-name personal
+  or project profile cannot replace the package review contract. RQW-agent appends the selected role to the main
+  system prompt and subagent reminder under `[D-AGENT-PROFILES]`; profile discovery and precedence stay unchanged.
   The original harness adaptations are the allowed read/search tools and read-only Bash, the brief-section sentence,
   and the truncated-read note. The owner-approved testing/review change additionally requires concise concrete
   `CHECKED:` evidence instead of a long per-obligation checklist; see [D-PIPELINE-REVIEW-CLASSES]. Model defaults and
@@ -1435,18 +1438,24 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
   «Я бы хотел его минимально улучшить, минимально усилить и без замеров просто использовать его.»
   «Его промпт вообще никак не подвигает его к запуску тестов изначально. То, что ты придумал про запрет запуска тестов — это overengineering очевидный»
-  Reason: preserve the working reviewer while making sufficient evidence explicit and concise. Carriers:
-  `extensions/RQW-review/profiles/spotty.toml`, `bossy.toml`; the shared runtime appends their role unchanged.
-  Since: subagent-profiles; evidence wording updated by process-minimal-testing-review.
+  Owner (`16-27-59:3963`, entry `dba6e9a3`), the native-agent direction behind `[D-AGENT-PROMPT-FILES]`:
+  «Всё должно быть нативно. Подумай, как можно максимально интеллектуально прокачать этот функционал.»
+  Existing profile precedence remains governed by `[D-AGENT-PROFILES]`.
+  Reason: preserve the working reviewer while making sufficient evidence explicit and concise, including when a
+  higher-precedence personal profile still demands a bare verdict. Carriers: `extensions/RQW-review/REVIEWER.md`,
+  `profiles/spotty.toml`, `bossy.toml`, `skills/reviewer/SKILL.md`; the shared runtime appends the explicit role unchanged.
+  Since: subagent-profiles; evidence wording updated by process-minimal-testing-review; explicit package role on
+  `fix-reviewer-evidence-output`.
 
 - **Reviewers are ordinary profiles** `[D-REVIEW-PROFILES]`. `RQW-review` is a small resource provider, not a tool
   or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-sol` with `model_reasoning_effort = "low"`;
   `profiles/bossy.toml` defaults to the same model with `"medium"`. RQW-agent resolves them to `openai-codex/gpt-6.1-sol`
-  without provider fallback and appends their identical role to the main prompt and reminder.
+  without provider fallback. The common skill appends their byte-identical package `REVIEWER.md` role explicitly.
   The extension offers both absolute paths on `rqw-agent:profiles` and returns `skills/reviewer`, `skills/blindreview`
   and `skills/highreview` through public `resources_discover`, not static `pi.skills`. The common skill is only the
   review section of the owner's `skills/subagents/SKILL.md`; wrappers select Spotty or Bossy.
-  Every pass starts a fresh ordinary `agent` with `agent_type` and `include: ["user_messages"]`. Read-only is
+  Every pass starts a fresh ordinary `agent` with `agent_type`, the absolute package `role_file` and
+  `include: ["user_messages"]`. Read-only is
   instruction only: no separate tool filter, git-state guard or sandbox. There is no separate reviewer runner,
   verdict delivery, Fast/cache implementation, review count producer or child-review offer. A verdict is an ordinary
   `agent#N` result, counted and rendered as an agent; lifecycle, tools, settings, cancellation, credentials, Fast,

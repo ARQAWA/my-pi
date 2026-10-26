@@ -83,13 +83,14 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   Tests: `npm test`.
 - `extensions/RQW-review/`: extension 6, a provider of Codex profiles and native Agent Skills, not a separate runtime.
   `profiles/spotty.toml` defaults to `gpt-6.1-sol` low; `profiles/bossy.toml` defaults to the same model medium. Both embed the same
-  reviewer role in `developer_instructions`. `rqw-agent:profiles` offers their paths to RQW-agent; public
+  reviewer role in `developer_instructions`; the common skill explicitly loads the byte-identical `REVIEWER.md` through
+  `role_file`, so personal or project same-name profiles cannot replace the package review contract. `rqw-agent:profiles` offers their paths to RQW-agent; public
   `resources_discover` supplies `skills/reviewer`, `skills/blindreview`, `skills/highreview` and `skills/testreview`.
   `testreview` selects `requirements-test-reviewer` on Sol low to review test code against supplied requirements,
   test plan and conversation without execution or mandatory commit pairs. It is separate from the project
   `test-reviewer` mechanical integrity gate. The common blind/high skill
   carries only the review section of the owner's Codex skill, and the wrappers select Spotty or Bossy. Each pass
-  starts a fresh ordinary `agent` with `agent_type` and `include: ["user_messages"]`; results are `agent#N` results.
+  starts a fresh ordinary `agent` with `agent_type`, the package `role_file` and `include: ["user_messages"]`; results are `agent#N` results.
   Read-only is an instruction, with no git guard or sandbox. Lifecycle, settings, Fast, caching and delivery are
   RQW-agent's. Without RQW-agent the reviewer cannot run; disabling RQW-review removes its own profiles and skills.
   Contract: `DECISIONS.md` section Review, `extensions/RQW-review/README.md`. Tests: `npm test`.

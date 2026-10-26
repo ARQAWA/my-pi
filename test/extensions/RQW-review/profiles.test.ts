@@ -16,6 +16,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../extensions/
 const PROFILES = ["spotty", "bossy", "requirements-test-reviewer"].map((name) => join(ROOT, "profiles", `${name}.toml`));
 const SKILLS = ["reviewer", "blindreview", "highreview", "testreview"];
 const text = (path: string) => readFileSync(join(ROOT, path), "utf8");
+const probe = (path: string) => readFileSync(join(import.meta.dirname, "fixtures/reviewer", path), "utf8");
 
 it("offers all absolute native profile paths without registering a tool or runner", () => {
 	const events = createEventBus();
@@ -41,6 +42,7 @@ it("pins source descriptions, bare Codex model and efforts with byte-identical c
 		assert.equal(profile.model_reasoning_effort, ["low", "medium"][i]);
 	}
 	assert.equal(profiles[0].developer_instructions, profiles[1].developer_instructions);
+	assert.equal(profiles[0].developer_instructions, text("REVIEWER.md"), "the explicit role file must be the canonical package prompt");
 	// SHA256 of the shared reviewer instructions, including the concise-evidence amendment.
 	assert.equal(createHash("sha256").update(profiles[0].developer_instructions as string).digest("hex"),
 		"27e51994b2f24a432666878d3300407a9d46cd2b7206e84a7f273ab523a6c311");
@@ -51,23 +53,20 @@ it("skills use ordinary agent profiles, mechanical end-of-task inclusion and the
 	for (const newline of ["\n", "\r\n"]) {
 		assert.match(common.replace(/\r?\n/g, newline), /^---\r?\nname: reviewer\r?\ndescription: .+\r?\n---\r?\n/);
 	}
-	assert.ok(common.includes('agent({action: "start", agent_type: "spotty", include: ["user_messages"], task: ...})'));
-	assert.ok(common.includes('agent({action: "start", agent_type: "bossy", include: ["user_messages"], task: ...})'));
+	assert.ok(common.includes('agent({action: "start", agent_type: "spotty", role_file: "<absolute RQW-review/REVIEWER.md>", include: ["user_messages"], task: ...})'));
+	assert.ok(common.includes('agent({action: "start", agent_type: "bossy", role_file: "<absolute RQW-review/REVIEWER.md>", include: ["user_messages"], task: ...})'));
+	assert.ok(common.includes("found at `../../REVIEWER.md` from this skill file"));
 	assert.ok(common.includes("Do not reproduce user messages yourself."));
 	assert.ok(common.includes("END, after the task"));
 	assert.ok(common.includes("raw user texts, not compaction or branch summaries"));
 	assert.ok(common.includes("The ordinary `agent` tool from RQW-agent is required"));
-	assert.ok(common.includes("if it or the selected profile is unavailable, report that the reviewer cannot run"));
+	assert.ok(common.includes("if it, the selected profile or the package role file is unavailable, report that the reviewer cannot run"));
 	assert.ok(common.includes("Launch a fresh child for the initial review and for each changed-object pass"));
 	assert.ok(common.includes("`CLEAN` with concise concrete `CHECKED:` evidence and no `UNCHECKED:`"));
 	assert.ok(common.includes("`send` the SAME reviewer"));
 	assert.ok(common.includes("Do not start a fresh reviewer merely for format or evidence completion"));
 	assert.ok(common.includes("Fix all admitted findings in one batch"));
 	assert.ok(common.includes("every rejection so far in `<rejected_earlier>`, until CLEAN"));
-	const role = parse(text("profiles/spotty.toml")).developer_instructions as string;
-	assert.ok(role.includes("concise concrete evidence for the inspected object and criterion"));
-	assert.ok(role.includes("without one line per obligation or a long checklist"));
-	assert.ok(role.includes("Never return a bare CLEAN when you inspected evidence"));
 	assert.ok(common.includes("Reject a finding only when a quote is not verbatim"));
 	assert.ok(common.includes("Do not impose file, search, tool-call or turn quotas"));
 	assert.doesNotMatch(common, /fork_turns|spawn_agent|wait_agent/);
@@ -135,5 +134,22 @@ it("has no cross-extension relative imports and no obsolete runner files", () =>
 			assert.ok(resolve(dirname(file), match[1]).startsWith(resolve(ROOT) + sep), `${file}: ${match[1]}`);
 		}
 	}
-	assert.deepEqual(readdirSync(ROOT).sort(), ["README.md", "index.ts", "profiles", "skills"]);
+	assert.deepEqual(readdirSync(ROOT).sort(), ["README.md", "REVIEWER.md", "index.ts", "profiles", "skills"]);
+});
+
+it("keeps tiny synthetic probes aligned with all review output contracts", () => {
+	const role = text("REVIEWER.md");
+	const common = text("skills/reviewer/SKILL.md");
+	assert.match(probe("requirements.md"), /must contain exactly `status = "ready"`/);
+	assert.equal(probe("correct/object.txt"), 'status = "ready"\n');
+	assert.equal(probe("defective/object.txt"), 'status = "broken"\n');
+	assert.match(role, /With no findings, return `CLEAN` followed by the verification sections below/);
+	assert.match(role, /concise concrete evidence for the inspected object and criterion/);
+	assert.match(role, /without one line per obligation or a long checklist/);
+	assert.match(role, /Never return a bare CLEAN when you inspected evidence/);
+	assert.match(role, /Otherwise return `FINDINGS:` followed by every finding/);
+	assert.match(role, /If a required source remains unavailable, report it under UNCHECKED/);
+	assert.match(role, /CLEAN with UNCHECKED is an incomplete review, never acceptance/);
+	assert.match(common, /`send` the SAME reviewer a short request to supply concise concrete evidence/);
+	assert.match(common, /Do not start a fresh reviewer merely for format or evidence completion/);
 });

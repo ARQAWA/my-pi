@@ -1,10 +1,12 @@
 ## Independent review
 
 - Review follows the native `reviewer` skill supplied by `RQW-review`. `blindreview` selects `spotty`,
-  `highreview` selects `bossy`; launch the initial pass as a fresh ordinary `agent` with `agent_type` and
-  `include: ["user_messages"]`. The profiles default to `openai-codex/gpt-6.1-sol` low and medium respectively
-  and append the reviewer role to the main prompt and subagent reminder. Read-only is an instruction, not a git
-  guard or sandbox. Record `Review: agent#N CLEAN`. If the required skill, profile or `agent` is unavailable,
+  `highreview` selects `bossy`; launch the initial pass as a fresh ordinary `agent` with `agent_type`,
+  `role_file` set to the absolute package `extensions/RQW-review/REVIEWER.md` path and
+  `include: ["user_messages"]`. The profiles default to `openai-codex/gpt-6.1-sol` low and medium respectively.
+  The explicit role file keeps the package review contract when a same-name personal or project profile overrides
+  the offered profile's instructions; profile discovery and precedence stay unchanged. Read-only is an instruction,
+  not a git guard or sandbox. Record `Review: agent#N CLEAN`. If the required skill, profile, role file or `agent` is unavailable,
   report the blocker; do not substitute another runtime or copied whole-system prompt.
 - Main names the change class in the task brief and squash message. Reasons and owner sources:
   [DECISIONS.md, Task pipeline](../DECISIONS.md#task-pipeline).
