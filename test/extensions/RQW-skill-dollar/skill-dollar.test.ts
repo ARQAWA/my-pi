@@ -102,6 +102,13 @@ it("mid-line dollar completes a skill and submit expands it like Pi", async (t) 
 	assert.deepEqual(submitted, { action: "transform", text: expanded(commands, ["review"], "please now") });
 });
 
+it("replaces the whole dollar token when completing inside it", async (t) => {
+	const { provider } = await setup(t, ["review"]);
+	const completed = provider.applyCompletion(["please $review now"], 0, 11,
+		{ value: "$review", label: "$review" }, "$rev");
+	assert.deepEqual(completed.lines, ["please $review now"]);
+});
+
 it("keeps embedded and unknown dollar tokens outside skill mentions", async (t) => {
 	const { provider, input } = await setup(t);
 	assert.equal(await provider.getSuggestions(["echo home$"], 0, 10, options()), fallbackResult);

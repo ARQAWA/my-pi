@@ -74,7 +74,7 @@ function skillProvider(
 			}
 			const line = lines[cursorLine] ?? "";
 			const before = line.slice(0, cursorCol - prefix.length);
-			const after = line.slice(cursorCol);
+			const after = line.slice(cursorCol).replace(/^\S*/, "");
 			const suffix = /^[ \t]/.test(after) ? "" : " ";
 			const nextLines = [...lines];
 			nextLines[cursorLine] = `${before}${item.value}${suffix}${after}`;
