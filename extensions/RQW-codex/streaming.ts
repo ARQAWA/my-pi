@@ -298,6 +298,10 @@ export interface PumpFinishOptions {
 	error?: unknown;
 	/** Completed tool handoff (from decidePartialHandoff) to end with as a done terminal instead of the display message. */
 	handoff?: AssistantMessage;
+	/** Terminal failure with completed content (from decidePartialHandoff) to emit unchanged as an error terminal. */
+	failure?: AssistantMessage;
+	/** Completed content to restore after retryBoundary removed a failed attempt's display blocks. */
+	completedContent?: AssistantMessage["content"];
 }
 
 type Terminal = "none" | "completed" | "failed" | "cut";
@@ -413,6 +417,7 @@ export class LiveResponsesPump {
 		const type = String(event.type);
 		const response = asRecord(event.response);
 		const classified = type === "response.incomplete" || type === "response.failed" || type === "error" ? classifyEvent(event) : null;
+		if (type === "error" && classified === null) return;
 
 		if (type === "response.failed" || type === "error" || (type === "response.incomplete" && classified !== null)) {
 			// Control, not display: these never reach processResponsesStream (it would throw on them).
@@ -497,9 +502,10 @@ export class LiveResponsesPump {
 			this.#closeOpen(attempt);
 		}
 		if (options.handoff && options.error !== undefined) throw new Error("LiveResponsesPump: handoff and error are exclusive");
+		if (options.handoff && options.failure) throw new Error("LiveResponsesPump: handoff and failure are exclusive");
 
 		const own = options.usage ? toPiUsage(options.usage) : this.#attemptUsage(attempt);
-		const content = this.#output.content.filter((_, i) => !this.#dropped.has(i));
+		const content = options.completedContent ?? this.#output.content.filter((_, i) => !this.#dropped.has(i));
 		this.#output.content = content;
 		const usage = addUsage(this.#carried, own);
 		const now = Date.now();
@@ -508,6 +514,13 @@ export class LiveResponsesPump {
 			const message = options.handoff;
 			this.#final = message;
 			this.#stream.push({ type: "done", reason: "toolUse", message });
+			this.#stream.end(message);
+			return message;
+		}
+		if (options.failure) {
+			const message = { ...this.#output, ...options.failure, ...(options.error !== undefined ? { errorMessage: failureMessage(options.error) } : {}) };
+			this.#final = message;
+			this.#stream.push({ type: "error", reason: "error", error: message });
 			this.#stream.end(message);
 			return message;
 		}
@@ -644,6 +657,8 @@ export interface PartialHandoffInput {
 	unfinishedToolCalls?: number;
 	/** Pump's grammar tool input properties: a grammar call's completed input keeps its own property. */
 	grammarToolInputProperties?: ReadonlyMap<string, string>;
+	/** The caller's retry policy has ended the request, even when this error would otherwise be retryable. */
+	terminal?: boolean;
 	now?: number;
 }
 
@@ -671,7 +686,7 @@ export function decidePartialHandoff(input: PartialHandoffInput): PartialHandoff
 	const content = completedContent(input.completedItems, input.grammarToolInputProperties);
 	const hasCalls = content.some((block) => block.type === "toolCall");
 
-	if (!hasCalls && error.retryable) return { action: "retry", error };
+	if (!hasCalls && error.retryable && !input.terminal) return { action: "retry", error };
 
 	const usage = input.context.usage ?? (error.usage ? toPiUsage(error.usage) : emptyUsage());
 	const base = { api: input.context.api, provider: input.context.provider, model: input.context.model, usage, timestamp };

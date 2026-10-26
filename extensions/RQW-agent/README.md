@@ -352,7 +352,8 @@ thinking presence/size rather than raw reasoning, plus unfinished assistant/tool
 running/preflight/model/retry/compaction, streaming tool arguments, running tools and idle; `pending_children` explains
 a native-idle subagent still awaiting descendants. Elapsed/idle/activity ages are monotonic. Diagnostics preserve parallel
 call IDs, previews, argument byte growth, last updates and repetition suspicions (not stall verdicts). Known session
-token totals/run deltas and explicitly incomplete live usage are not token estimates derived from bytes. Preview budgets
+token totals/run deltas and explicitly incomplete live usage are not token estimates derived from bytes. Final core-mode
+settlement also completes usage; a response without reported token usage keeps `usage_complete: false`. Preview budgets
 (1200 characters/message, 12000/ID) limit representation only, never execution/history.
 
 `agent` supports these wait/status options and `alert_after_ms` on start/restart. Status `alerts` contains

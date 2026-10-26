@@ -180,6 +180,7 @@ export class Activity {
 	private runStartedAt = 0;
 	private runBaseline: Tokens | null = null;
 	private runSettled = false;
+	private runUsageMissing = false;
 	private lastRunElapsed: number | null = null;
 	private lastRunDelta: Tokens | null = null;
 	private lastOutcome: string | null = null;
@@ -254,6 +255,7 @@ export class Activity {
 		this.runStartedAt = now();
 		this.runBaseline = this.tokens();
 		this.runSettled = false;
+		this.runUsageMissing = false;
 		this.lastOutcome = null;
 		this.changed();
 	}
@@ -268,7 +270,7 @@ export class Activity {
 		return this.runActive ? now() - this.runStartedAt : (this.lastRunElapsed ?? 0);
 	}
 
-	endRun(outcome: string): void {
+	endRun(outcome: string, coreSettled = false): void {
 		this.endTurn();
 		if (outcome === "error" && !this.alerts.some(a => a.kind === "error")) this.reportError("Run ended with an error");
 		if (this.runActive) {
@@ -277,6 +279,8 @@ export class Activity {
 		}
 		this.runActive = false;
 		this.preflight = false;
+		// Core resume has no AgentSession agent_settled; a received response and idle native work are its final settlement.
+		this.runSettled ||= coreSettled && !this.nativeBusy;
 		this.lastOutcome = outcome;
 		this.changed();
 	}
@@ -333,7 +337,7 @@ export class Activity {
 				run: this.runActive && this.runBaseline ? diff(this.tokens(), this.runBaseline) : this.lastRunDelta,
 				in_flight_usage: this.liveUsage,
 			},
-			usage_complete: !this.nativeBusy && this.runSettled,
+			usage_complete: !this.nativeBusy && this.runSettled && !this.runUsageMissing,
 		};
 		if (messages !== undefined) {
 			const peek = this.peek(messages);
@@ -421,6 +425,7 @@ export class Activity {
 				break;
 			case "message_end":
 				if (event.message.role === "assistant") {
+					if (!hasUsage(event.message.usage)) this.runUsageMissing = true;
 					if (event.message.stopReason === "error") {
 						const detail = event.message.errorMessage ?? "Unknown provider error";
 						this.lastError = fingerprint("error", detail);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Credential, CredentialStore } from "@earendil-works/pi-ai";
 
-import { TOKEN_URL } from "../../../extensions/RQW-codex/auth.ts";
+import { AuthRecoveryError, TOKEN_URL, loginDevice } from "../../../extensions/RQW-codex/auth.ts";
 import { recoverCredential, resolveStoredCredential, validateSubscriptionEndpoint } from "../../../extensions/RQW-codex/auth-boundary.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -42,6 +42,54 @@ const credential = (access: string, refresh = "RT-OLD"): Credential => ({
 const tokenResponse = (body: unknown, status = 200) => Response.json(body, { status });
 const neverFetch = async () => { throw new Error("network forbidden in this test"); };
 
+describe("FedRAMP grant eligibility", () => {
+	const idToken = (fedramp: boolean) => jwt({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-1", chatgpt_account_is_fedramp: fedramp } });
+	const signal = () => new AbortController().signal;
+	const excluded = (error: unknown) => error instanceof AuthRecoveryError && error.permanent && /FedRAMP.*not supported/.test(error.message);
+
+	it("rejects a saved excluded grant without network or mutation and preserves ordinary controls", async () => {
+		for (const fedramp of [true, false, undefined]) {
+			const stored = { ...credential(accessFor("acct-1", START + DAY)), ...(fedramp !== undefined ? { id_token: idToken(fedramp) } : {}) } as Credential;
+			const store = new MemoryStore(stored);
+			let fetches = 0;
+			const dependencies = { now: () => START, fetch: (async () => { fetches++; throw new Error("network forbidden"); }) as typeof fetch };
+			if (fedramp === true) await assert.rejects(resolveStoredCredential(store, signal(), dependencies), excluded);
+			else assert.equal((await resolveStoredCredential(store, signal(), dependencies)).credential, stored);
+			assert.equal(store.value, stored);
+			assert.equal(store.modifies, 0);
+			assert.equal(fetches, 0);
+		}
+		const invalid = { ...credential(accessFor("acct-1", START + DAY)), accountId: "other" } as Credential;
+		await assert.rejects(resolveStoredCredential(new MemoryStore(invalid), signal(), { now: () => START }), /does not match/);
+	});
+
+	it("rejects an excluded refresh result transactionally while ordinary rotation remains usable", async () => {
+		for (const fedramp of [true, false]) {
+			const stored = credential(accessFor("acct-1", START - 1000));
+			const store = new MemoryStore(stored);
+			const dependencies = { now: () => START, fetch: (async () => tokenResponse({ access_token: accessFor("acct-1", START + DAY), refresh_token: "RT-NEW", id_token: idToken(fedramp) })) as typeof fetch };
+			if (fedramp) {
+				await assert.rejects(resolveStoredCredential(store, signal(), dependencies), excluded);
+				assert.equal(store.value, stored);
+			} else {
+				const result = await resolveStoredCredential(store, signal(), dependencies);
+				assert.equal(result.credential.refresh, "RT-NEW");
+				assert.equal(store.value, result.credential);
+			}
+		}
+	});
+
+	it("rejects an excluded device grant before it can be saved, allowing the ordinary grant", async () => {
+		for (const fedramp of [true, false]) {
+			const responses = [tokenResponse({ device_auth_id: "device", user_code: "CODE" }), tokenResponse({ authorization_code: "code", code_challenge: "challenge", code_verifier: "verifier" }), tokenResponse({ access_token: accessFor("acct-1", START + DAY), refresh_token: "RT", id_token: idToken(fedramp) })];
+			const pending = loginDevice({ notify: () => {} }, { now: () => START, fetch: (async () => responses.shift()!) as typeof fetch });
+			if (fedramp) await assert.rejects(pending, excluded);
+			else assert.equal((await pending).accountId, "acct-1");
+			assert.equal(responses.length, 0);
+		}
+	});
+});
+
 describe("resolveStoredCredential", () => {
 	it("leaves a valid legacy grant untouched without any store write", async () => {
 		const stored = { type: "oauth" as const, access: accessFor("acct-1", START + DAY), refresh: "RT", expires: START + DAY, accountId: "acct-1" };
@@ -70,6 +118,40 @@ describe("resolveStoredCredential", () => {
 		assert.equal(store.modifies, 2);
 		assert.equal(a.credential.access, b.credential.access);
 		assert.equal(store.value?.type === "oauth" && store.value.profile, "work");
+	});
+
+	it("keeps an unexpired bearer after proactive failure, then preserves expiry and 401 recovery ordering", async () => {
+		let now = START;
+		const stored = credential(accessFor("acct-1", START + 4 * 60_000));
+		const store = new MemoryStore(stored);
+		let fetches = 0;
+		const fetch = async () => {
+			fetches += 1;
+			if (fetches < 3) return tokenResponse({ error: "temporarily_unavailable" }, 503);
+			return tokenResponse({ access_token: accessFor("acct-1", START + DAY, "recovered"), refresh_token: "RT-RECOVERED" });
+		};
+		const dependencies = { fetch: fetch as typeof globalThis.fetch, now: () => now };
+		const signal = new AbortController().signal;
+
+		const proactive = await resolveStoredCredential(store, signal, dependencies);
+		assert.equal(proactive.credential, stored, "the still-valid bearer reaches the request");
+		assert.equal(store.value, stored, "proactive failure neither rotates nor removes the grant");
+		assert.equal(fetches, 1);
+
+		now = START + 4 * 60_000;
+		await assert.rejects(resolveStoredCredential(store, signal, dependencies), /Refresh failed \(HTTP 503\)/);
+		assert.equal(fetches, 2, "genuine expiry does not use the proactive fallback");
+		assert.equal(store.value, stored);
+
+		const rejected = { accountId: "acct-1", access: stored.type === "oauth" ? stored.access : "" };
+		const reloaded = await recoverCredential(store, rejected, "reload", signal, dependencies);
+		assert.equal(reloaded, stored);
+		assert.equal(fetches, 2, "401 reload does not refresh");
+		const recovered = await recoverCredential(store, rejected, "refresh", signal, dependencies);
+		assert.equal(fetches, 3);
+		assert.equal(recovered.access, accessFor("acct-1", START + DAY, "recovered"));
+		assert.equal(store.value, recovered, "successful rotation is persisted before recovery returns");
+		assert.equal(recovered.type === "oauth" && recovered.refresh, "RT-RECOVERED");
 	});
 
 	it("fails for a missing or non-OAuth slot", async () => {

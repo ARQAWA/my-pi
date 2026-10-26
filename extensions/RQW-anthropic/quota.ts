@@ -101,6 +101,7 @@ export function createQuotaCache(getStore: () => CredentialStore | undefined): Q
 	const lifetime = new AbortController();
 	let cached: QuotaSnapshot | undefined;
 	let revision = 0;
+	let cachedRevision = 0;
 	return {
 		read: () => cached && structuredClone(cached),
 		async refresh(signal = new AbortController().signal) {
@@ -108,8 +109,11 @@ export function createQuotaCache(getStore: () => CredentialStore | undefined): Q
 			const combined = AbortSignal.any([lifetime.signal, signal]);
 			const result = await fetchQuota(getStore(), combined);
 			combined.throwIfAborted();
-			// A slower earlier read cannot replace a newer refresh's cache.
-			if (current === revision) cached = structuredClone(result);
+			// Failed newer refreshes do not block an earlier success from becoming the latest cached success.
+			if (current > cachedRevision) {
+				cachedRevision = current;
+				cached = structuredClone(result);
+			}
 			return result;
 		},
 		dispose() { lifetime.abort(); cached = undefined; },

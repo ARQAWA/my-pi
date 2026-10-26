@@ -138,15 +138,10 @@ async function main() {
   if (S === 'A') {
     const t3 = await tab('pi 3');
     await until('pi.exe alive in pi 3', () => piCount(piExe) === 1, 60000);
-    await sleep(10000);
+    await type(t3, '!echo PCLI_QUIT_$((6*7))');
+    await until('session with PCLI_QUIT_42', () => sessions().includes('PCLI_QUIT_42'), 60000);
     await type(t3, '/quit');
-    try {
-      await until('pi.exe exits after /quit', () => piCount(piExe) === 0, 10000);
-    } catch {
-      console.log('still alive 10s after /quit, pressing Enter once more');
-      t3.sendText('\r', false);
-      await until('pi.exe exits after /quit', () => piCount(piExe) === 0, 10000);
-    }
+    await until('pi.exe exits after /quit', () => piCount(piExe) === 0, 10000);
     const rest = ours(piExe);
     t3.dispose();
     if (rest.length) throw new Error('left after /quit:\n' + show(rest));

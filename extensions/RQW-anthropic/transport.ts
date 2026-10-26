@@ -72,7 +72,7 @@ export function createOverlay(
 ) {
 	const forks = contextForks(() => {
 		const store = getStore();
-		const isolated = createOverlay(base, () => store, deviceId, versionState(version.value));
+		const isolated = createOverlay(base, () => store, deviceId, version.fork());
 		return (model, context, options) => isolated.streamSimple(model, context as Parameters<Provider["streamSimple"]>[1], options);
 	});
 	const handler = (model: Parameters<Provider["streamSimple"]>[0], context: Parameters<Provider["streamSimple"]>[1], options?: SimpleStreamOptions) => {

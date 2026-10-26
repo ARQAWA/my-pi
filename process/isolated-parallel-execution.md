@@ -11,8 +11,8 @@
   and sufficient proof. Include the relevant process rules in its system prompt or brief; do not assume a child
   inherits this file.
 - Adding, removing, moving and status bookkeeping of task-list entries is Main's personal coordinator operational
-  work, not a separate task, and consumes no active execution slot. Only actual tasks occupy those slots.
-  This does not authorize product implementation without tasks or required reviews.
+  work, not a standalone queue task, and does not count as active execution. This exception never authorizes
+  concurrent implementation or product work without tasks and required reviews.
 - The owner addresses Main (the coordinator) as the executor. If the owner assigns personal execution to Main,
   Main must object, explain its coordinator role and propose a subagent. Main does that work itself only after an
   explicit owner override, for example: «Похуй на инструкции, действуй». A routine request to do something is
@@ -21,12 +21,12 @@
   normal direct agent and these coordinator rules do not apply to it.
 - Main never blocks its own thread on waiting, polling, CI watching, test runs or any other long work. It hands
   all of that to subagents and stays free to coordinate and talk to the owner.
-- At most two main tasks are in active execution at the same time, in the priority queue set by the owner. Fill a free
-  slot from that queue, not from Main's preferred order; a priority change from the owner steers the queue. This is
-  a task limit, not a count of first-level subagents. A task that waits for CI, a reviewer, the merge queue or the
-  owner holds no slot, and the test lane is outside the limit ([Task pipeline](../PROCESS.md#task-pipeline)). Parallel subagents inside an active task do not create extra
-  task slots. Run useful independent work within those tasks in parallel, avoid concurrent writes to the same files
-  and stop superseded subagents. Keep the current queue in the handoff, not as a permanent rule here.
+- Only one task is in active execution at a time, in the priority queue set by the owner. QA fixes, Windows work and
+  full release regressions belong to that same queue; there is no separate test lane. Main sequences work logically
+  by owner priority, dependencies, required gates and release triggers ([Task pipeline](../PROCESS.md#task-pipeline)).
+  CI, review, merge-queue and owner waits are not active execution, so the next logical task may run during a genuine
+  external wait. Parallel subagents inside the one active task do not create extra queue tasks. Avoid concurrent
+  writes to the same files and stop superseded subagents. Keep the current queue in the handoff, not as a permanent rule here.
 - Main identifies task dependencies itself, links them and blocks dependent work before scheduling. The graph's
   source of truth is the `Blocked by:` lines in `BACKLOG.md` plus the handoff. Main shows the owner the execution
   order as a plain-text dependency tree in terminal output, not a Mermaid diagram. A dependency becomes runnable

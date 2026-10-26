@@ -58,10 +58,8 @@ export function groupCodemode(definition: ToolDefinition<any, any, any>, nested:
             return await definition.execute(id, params, job.signal, job.onUpdate, ctx);
           } finally {
             release();
-            // The effects scan ends before the barrier releases the calls queued behind the script.
-            await job.settle();
           }
-        }, job.barrier, withNestedDisplay)).then((result: any) => withNote(withNestedDisplay(result, nested.displayOf(id)), jobs.piggyback())) as any,
+        }, job.barrier, withNestedDisplay, job.settle)).then((result: any) => withNote(withNestedDisplay(result, nested.displayOf(id)), jobs.piggyback())) as any,
   };
 }
 

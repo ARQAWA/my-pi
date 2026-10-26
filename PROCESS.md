@@ -29,7 +29,7 @@ restore those sections too. A section link is navigation, not permission to omit
    owner has explicitly requested execution, start. Keep the minimal necessary agreed scope, not a smaller scope.
 
 <a id="isolated-parallel-execution"></a>
-[Isolated parallel execution](process/isolated-parallel-execution.md): At most two main tasks in active execution.
+[Isolated parallel execution](process/isolated-parallel-execution.md): One execution task is active at a time, with no separate test lane.
 Before development work; Main also loads this before coordination.
 
 <a id="task-pipeline"></a>
@@ -111,15 +111,16 @@ The guard reads this block from the root file. Its policy is in [Subagent models
 ```json coordinator-rules
 {
   "agentModels": {
-    "simple": [
-      ["openai-codex/gpt-6.1-sol", "low"]
-    ],
-    "complex": [
-      ["openai-codex/gpt-6.1-sol", "medium"]
-    ],
-    "hardest": [
-      ["openai-codex/gpt-6.1-sol", "high"]
-    ]
+    "simple": [["kimi-coding/k3.1-pro", "low"]],
+    "complex": [["kimi-coding/k3.1-pro", "low"]],
+    "hardest": [["kimi-coding/k3.1-pro", "high"]]
+  },
+  "reviewerProfiles": {
+    "spotty": ["openai-codex/gpt-6.1-sol", "low"],
+    "bossy": ["openai-codex/gpt-6.1-sol", "medium"],
+    "code-reviewer": ["openai-codex/gpt-6.1-sol", "low"],
+    "test-reviewer": ["openai-codex/gpt-6.1-sol", "low"],
+    "requirements-test-reviewer": ["openai-codex/gpt-6.1-sol", "low"]
   }
 }
 ```
@@ -173,11 +174,12 @@ The guard reads this block from the root file. Its policy is in [Subagent models
    Main determines when a release is due from Git alone: the first-parent task commits in
    `git log --first-parent --reverse --format='%H %ct' origin/main..origin/release` and the first commit's committer
    timestamp. After 10 task commits or 2 hours from the first task since the prior release merge, whichever comes
-   first, Main starts a test-lane agent to run full local `npm test` on the exact committed `release` head on the
-   owner's macOS. Serialize merges while that full run is in progress so the release head stays the tested head.
+   first, Main schedules a full-release-regression task in the single execution queue to run local `npm test` on the
+   exact committed `release` head on the owner's macOS. It has no independent concurrent lane. Serialize merges while
+   that full run is in progress so the release head stays the tested head.
    An empty batch never runs. No counters, state files, daemon or new lock are added.
-   If the full run fails, do not move `main`: a separate test-lane agent finds the guilty task and fixes it, then the
-   full suite runs again. After a clean full run, merge that tested release head into `main` by an ordinary merge or
+   If the full run fails, do not move `main`: a fix task in the same single execution queue finds the guilty task and
+   fixes it, then the full suite runs again. After a clean full run, merge that tested release head into `main` by an ordinary merge or
    fast-forward, preserving the per-task commits, and push `main`. Switch the integration checkout to `main` for
    that merge, then return it to `release`. Never squash the batch or promote an untested head.
    Scheduled GitHub runs on `main` remain unchanged.

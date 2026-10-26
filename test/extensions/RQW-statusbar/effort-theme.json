@@ -1,0 +1,18 @@
+{
+  "name": "RQW-statusbar-effort-fixture",
+  "colors": {
+    "text": "",
+    "dim": "#5f5e5c",
+    "muted": "#8d8d8c",
+    "success": "#00ff88",
+    "warning": "#ffb347",
+    "selectedBg": "#2a2826",
+    "thinkingOff": "#3a3836",
+    "thinkingMinimal": "#4a4846",
+    "thinkingLow": "#80ffc4",
+    "thinkingMedium": "#00df77",
+    "thinkingHigh": "#c9a227",
+    "thinkingXhigh": "#b97cff",
+    "thinkingMax": "#ff4757"
+  }
+}

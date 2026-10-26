@@ -71,6 +71,7 @@ function header(call: LiveCall): string {
 
 function status(call: LiveCall): string {
 	if (call.status === "running") return "running";
+	if (call.status === "aborted") return "aborted";
 	const time = call.durationMs === undefined ? "" : formatDuration(call.durationMs);
 	if (call.status === "done") return time ? `✓ ${time}` : "✓";
 	const what = call.exitCode !== undefined ? `exit ${call.exitCode}` : "error";
@@ -80,7 +81,8 @@ function status(call: LiveCall): string {
 /** The live card of one call: at most six rows, each exactly one screen row no wider than `width`. */
 export function renderLive(call: LiveCall, width: number, theme: Theme): string[] {
 	const inner = width - INDENT;
-	const bgKey = call.status === "running" ? "toolPendingBg" : call.status === "error" ? "toolErrorBg" : "toolSuccessBg";
+	const failed = call.status === "error" || call.status === "aborted";
+	const bgKey = call.status === "running" ? "toolPendingBg" : failed ? "toolErrorBg" : "toolSuccessBg";
 	const row = (text: string, fg: Parameters<Theme["fg"]>[0]) => {
 		if (inner <= 0) return " ".repeat(Math.max(0, width));
 		return " ".repeat(INDENT) + theme.bg(bgKey, theme.fg(fg, text) + " ".repeat(inner - visibleWidth(text)));
@@ -92,6 +94,6 @@ export function renderLive(call: LiveCall, width: number, theme: Theme): string[
 			rows.push(row(fitEnd(line, inner), fg));
 		}
 	} else for (const line of tail(call.outputText)) rows.push(row(fitEnd(line, inner), "toolOutput"));
-	rows.push(row(fitEnd(status(call), inner), call.status === "running" ? "muted" : call.status === "error" ? "error" : "success"));
+	rows.push(row(fitEnd(status(call), inner), call.status === "running" ? "muted" : failed ? "error" : "success"));
 	return rows;
 }

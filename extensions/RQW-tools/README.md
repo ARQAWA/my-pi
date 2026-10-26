@@ -11,6 +11,13 @@ stock read with its version after the asynchronous image check. A changed versio
 is not remembered, so a later read returns the new content rather than the note.
 The full contract is `D-TOOLS-UNCHANGED-READ` in `DECISIONS.md`.
 
+## Codemode completion snapshot
+
+The final effects snapshot runs after the script's nested operations drain, including
+running file operations that finish after their host call is cancelled. It finishes
+before the outer barrier releases same-response followers. Background handoff and
+later-response resource holds keep the `D-TOOLS-BG` contract in `DECISIONS.md`.
+
 ## Background activity counts
 
 The main registry offers a version-1 source on `rqw:running-counts:offer` at each

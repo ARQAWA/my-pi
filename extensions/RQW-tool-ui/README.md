@@ -91,7 +91,10 @@ profiles and skills for the ordinary `agent` runtime.
 - `live.ts`: `renderLive(call, width, theme)`, the live card of the current call under the line, indented three
   columns: header (`$ <command>`, `read`/`grep`/`find`/`edit`/`write <target>`, `wait <ids>`, `<tool> <arg>`, cut
   at the start so the end stays visible), the last four output rows (an edit's confirmed diff when there is one)
-  and a status row (`running`, `✓ 1.2s`, `✗ exit 2 · 3.1s`, `✗ error`; the time only from Pi's final duration).
+  and a status row (`running`, `✓ 1.2s`, `✗ exit 2 · 3.1s`, `✗ error`, `aborted`; the time only from Pi's final duration).
+  An assistant stopped with `aborted` or `error` before execution gives its calls that terminal status, in the live
+  stream and saved history, without inventing a tool result. Aborted status uses the theme's error foreground and
+  tool surface, not the tool-title color. Confirmed execution results keep their own status.
   One solid card on Pi's pending, success or error tool surface; title, output, diff and status roles from the theme.
 - `groups.ts`: `buildGroups(contextEntries, live)` from `ctx.sessionManager.buildContextEntries()` (the entries Pi draws:
   after a compaction only the compaction and the kept entries) plus the streaming state of public events:
@@ -104,7 +107,10 @@ profiles and skills for the ordinary `agent` runtime.
   Once the parent has its result, Pi's saved nested record determines membership, status and arguments, in the
   stream as after a reload. Matching compact RQW-tools metadata adds confirmed edit counts and bash exit codes
   (see below); a call left `unfinished` stays unconfirmed even with metadata (no success, failure or counts).
-  A nested call's failure and a write's lines (from saved arguments) still count.
+  A nested call's failure and a write's lines (from saved arguments) still count. A failed outer codemode keeps its
+  error output and status in the current card even when nested calls succeeded. Its failure remains in the folded
+  summary, without an extra parent tool count or recounting a propagated nested failure. Nested details and expanded
+  originals are unchanged.
 - `test/extensions/RQW-tool-ui/harness.ts`: width sweep (`assertFits`, 0..160 columns), wide and styled samples, identity and colored theme
   painters, fixed clock. `test/extensions/RQW-tool-ui/transcript.ts`: saved messages in a public in-memory session and Pi's render context.
 - Tests: `test/extensions/RQW-tool-ui/render.test.ts` (the renderers), `test/extensions/RQW-tool-ui/original.test.ts` (the expanded original against Pi's own

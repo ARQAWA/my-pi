@@ -6,12 +6,12 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it, type TestContext } from "node:test";
 import * as pi from "@earendil-works/pi-coding-agent";
-import { getCapabilities, setCapabilities, type TerminalCapabilities, Text } from "@earendil-works/pi-tui";
+import { getCapabilities, setCapabilities, stripTerminalSequences, type TerminalCapabilities, Text, visibleWidth } from "@earendil-works/pi-tui";
 import { classify } from "../../../extensions/RQW-tool-ui/classify.ts";
 import { PI_FALLBACK_VERSION } from "../../../extensions/RQW-tool-ui/fallback.ts";
 import { ToolUi } from "../../../extensions/RQW-tool-ui/render.ts";
 import { assertFits } from "./harness.ts";
-import { CWD, fakeTui, stockDefinitions } from "./transcript.ts";
+import { call, CWD, fakeTui, messages, session, stockDefinitions, stockTheme } from "./transcript.ts";
 
 let caps: TerminalCapabilities;
 before(() => {
@@ -62,6 +62,68 @@ const update = (r: Result, partial = false) => (c: pi.ToolExecutionComponent) =>
 	c.updateResult({ content: r.content as never, details: r.details, isError: r.isError === true, ...(r.durationMs !== undefined ? { durationMs: r.durationMs } : {}) }, partial);
 
 const WIDTHS = [0, 1, 2, 10, 24, 64, 80, 120];
+
+describe("RQW-tool-ui terminal assistant outcomes through Pi's component", () => {
+	function status(p: ReturnType<typeof pair>, label: string, fg: "muted" | "success" | "error", bg: "toolPendingBg" | "toolSuccessBg" | "toolErrorBg") {
+		const rows = p.ours.render(80);
+		const row = rows.at(-1)!;
+		const theme = stockTheme();
+		assert.equal(stripTerminalSequences(row).trim(), label);
+		assert.equal(row, "    " + theme.bg(bg, theme.fg(fg, label) + " ".repeat(76 - visibleWidth(label))),
+			`status uses ${fg} on ${bg}, not the tool-title color`);
+		assert.ok(rows.some((line) => stripTerminalSequences(line).includes("$ make")));
+	}
+
+	for (const stopReason of ["aborted", "error"] as const) for (const mode of ["live", "history"] as const) {
+		it(`${stopReason} without a toolResult, ${mode}`, () => {
+			const m = messages();
+			const args = { command: "make" };
+			const pending = m.assistant([call("c1", "bash", args)]);
+			const stopped = { ...pending, stopReason, errorMessage: "provider stopped" };
+			const sm = session(mode === "history" ? [stopped] : []);
+			const ui = new ToolUi();
+			ui.start(sm);
+			if (mode === "live") ui.messageStart(pending);
+			const p = pair("bash", stockDefinitions().bash, args, { ui });
+			if (mode === "live") {
+				status(p, "running", "muted", "toolPendingBg");
+				sm.appendMessage(stopped as never);
+				ui.messageEnd(stopped);
+			}
+			// InteractiveMode does this for pending tool rows on message_end and on history replay.
+			p.both(update({ content: [{ type: "text", text: stopReason === "aborted" ? "Operation aborted" : "provider stopped" }], isError: true }));
+			const label = stopReason === "aborted" ? "aborted" : "✗ error";
+			status(p, label, "error", "toolErrorBg");
+			assert.equal(ui.group("c1")!.members[0].result, undefined, "no invented execution result");
+			assert.equal(ui.group("c1")!.members[0].isPartial, false);
+			assert.equal(sm.buildContextEntries().length, 1, "only the assistant message is saved");
+			const compact = p.ours.render(80);
+			ui.agentEnd();
+			assert.deepEqual(p.ours.render(80), compact, "agent_end keeps the terminal state");
+			p.both((x) => x.setExpanded(true));
+			p.same([64, 80], "Ctrl+O preserves Pi's aborted/error original");
+			p.both((x) => x.setExpanded(false));
+			assert.deepEqual(p.ours.render(80), compact, "folding restores the terminal compact state");
+		});
+	}
+
+	for (const isError of [false, true]) it(`ordinary running then ${isError ? "error" : "success"}`, () => {
+		const m = messages();
+		const args = { command: "make" };
+		const sm = session([m.assistant([call("c1", "bash", args)])]);
+		const ui = new ToolUi();
+		ui.start(sm);
+		const p = pair("bash", stockDefinitions().bash, args, { ui });
+		status(p, "running", "muted", "toolPendingBg");
+		const final = m.result("c1", "bash", "built", { isError, durationMs: 2400 });
+		sm.appendMessage(final as never);
+		ui.messageEnd(final);
+		p.both(update({ content: final.content, isError, durationMs: 2400 }));
+		status(p, isError ? "✗ error · 2.4s" : "✓ 2.4s", isError ? "error" : "success", isError ? "toolErrorBg" : "toolSuccessBg");
+		p.both((x) => x.setExpanded(true));
+		p.same([80], "Ctrl+O preserves the normal original");
+	});
+});
 
 describe("RQW-tool-ui expanded original against Pi's component", () => {
 	it("original-fallback-version-pin (the reproduced formatting is Pi's of this version)", () => {

@@ -4,13 +4,12 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 import {
 	createAgentSessionFromServices, createAgentSessionRuntime, createAgentSessionServices,
 	ExtensionSelectorComponent, initTheme, ModelRuntime, SessionManager, SettingsManager,
 	type ExtensionAPI, type ExtensionCommandContext, type RegisteredCommand,
 } from "@earendil-works/pi-coding-agent";
-import { fauxProvider } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { registerSessionCommands } from "../../../extensions/RQW-session/index.ts";
 import { prepareRemoval, references, regular, removeFiles } from "../../../extensions/RQW-session/artifacts.ts";
 
@@ -261,28 +260,88 @@ test("outside-agent session file is refused before switching", async () => {
 	} finally { await f.close(); }
 });
 
-test("real Pi runtime replacement closes the outgoing session, deletes its JSONL and starts empty", async () => {
+test("real Pi runtime replacement settles old activity before deleting final parent and child references", async () => {
 	const f = await fixture();
 	const modelRuntime = await ModelRuntime.create({ authPath: join(f.agent, "auth.json"), modelsPath: null, refreshOnCreate: false });
 	const faux = fauxProvider({ api: "faux-session", provider: "test", models: [{ id: "test", contextWindow: 10000, maxTokens: 1000 }] });
 	modelRuntime.registerNativeProvider(faux.provider);
-	const extension = fileURLToPath(new URL("../../../extensions/RQW-session/index.ts", import.meta.url));
+	const parentArtifact = join(f.root, "pi-bash-00000000000000a1.log");
+	const childArtifact = join(f.root, "pi-mcp-00000000000000a2.bin");
+	const child = join(`${f.file}.children`, "agent-1", "session.jsonl");
+	await writeFile(parentArtifact, "parent"); await writeFile(childArtifact, "child");
+	await mkdir(dirname(child), { recursive: true }); await f.save(child, [{ ...f.header, id: "child" }]);
+	let notifyStarted!: () => void;
+	const started = new Promise<void>(resolve => { notifyStarted = resolve; });
+	let aborted = false;
+	faux.setResponses([async (_context, options) => {
+		notifyStarted();
+		return new Promise(resolve => options?.signal?.addEventListener("abort", () => {
+			aborted = true;
+			resolve(fauxAssistantMessage("old writer stopped", { stopReason: "aborted" }));
+		}, { once: true }));
+	}]);
 	const settingsManager = SettingsManager.inMemory({});
-	const runtime = await createAgentSessionRuntime(async options => {
+	let runtime: Awaited<ReturnType<typeof createAgentSessionRuntime>> | undefined;
+	let oldManager: SessionManager | undefined;
+	let notifyShutdown!: () => void;
+	const shutdownStarted = new Promise<void>(resolve => { notifyShutdown = resolve; });
+	let releaseShutdown!: () => void;
+	const shutdownGate = new Promise<void>(resolve => { releaseShutdown = resolve; });
+	let runtimeCreations = 0;
+	const order: string[] = [];
+	const shutdown = { aborted: false, idle: false, fileBefore: false, fileAfterGate: false };
+	runtime = await createAgentSessionRuntime(async options => {
+		runtimeCreations++;
 		const services = await createAgentSessionServices({ cwd: options.cwd, agentDir: options.agentDir, modelRuntime, settingsManager,
-			resourceLoaderOptions: { noExtensions: true, additionalExtensionPaths: [extension], noSkills: true, noThemes: true, noContextFiles: true, noPromptTemplates: true } });
+			resourceLoaderOptions: { noExtensions: true, noSkills: true, noThemes: true, noContextFiles: true, noPromptTemplates: true,
+				extensionFactories: [(pi: ExtensionAPI) => {
+					registerSessionCommands(pi, async () => {}, f.agent);
+					pi.on("session_before_switch", async () => { order.push("before-switch"); });
+					pi.on("session_shutdown", async event => {
+						if (event.reason !== "new") return;
+						order.push("shutdown");
+						shutdown.aborted = aborted;
+						shutdown.idle = runtime!.session.isIdle;
+						shutdown.fileBefore = existsSync(f.file);
+						notifyShutdown();
+						await shutdownGate;
+						shutdown.fileAfterGate = existsSync(f.file);
+						oldManager!.appendCustomEntry("final-parent", { text: parentArtifact });
+						SessionManager.open(child).appendCustomEntry("final-child", { text: childArtifact });
+					});
+				}] } });
 		const created = await createAgentSessionFromServices({ services, sessionManager: options.sessionManager, sessionStartEvent: options.sessionStartEvent, model: faux.getModel("test") });
+		await created.session.bindExtensions({ mode: "tui", uiContext: {
+			select: async () => "2. Yes", notify: () => {},
+		} as ExtensionCommandContext["ui"], commandContextActions: {
+			newSession: async options => runtime!.newSession(options),
+		} as Parameters<typeof created.session.bindExtensions>[0]["commandContextActions"] });
 		return { ...created, services, diagnostics: services.diagnostics };
 	}, { cwd: f.root, agentDir: f.agent, sessionManager: SessionManager.open(f.file) });
 	try {
-		const oldId = runtime.session.sessionId;
-		const h = harness(f.agent, f.file);
-		h.ctx.newSession = options => {
-			assert.ok(existsSync(f.file), "outgoing file still exists before native replacement");
-			return runtime.newSession(options);
-		};
-		await h.call("remove");
-		assert.equal(existsSync(f.file), false);
+		const oldSession = runtime.session;
+		oldManager = oldSession.sessionManager;
+		const oldId = oldSession.sessionId;
+		const active = oldSession.prompt("old history");
+		await started;
+		assert.ok(existsSync(f.file));
+		assert.equal(oldSession.sessionManager.getEntries().some(e => e.type === "message"), true);
+		const removing = oldSession.prompt("/remove");
+		await shutdownStarted;
+		await new Promise<void>(resolve => setImmediate(resolve));
+		const creationsWhileHeld = runtimeCreations;
+		const filesWhileHeld = [f.file, child, parentArtifact, childArtifact].map(path => existsSync(path));
+		releaseShutdown();
+		await removing;
+		await active;
+		assert.equal(creationsWhileHeld, 1, "the next runtime cannot start while shutdown is pending");
+		assert.deepEqual(filesWhileHeld, [true, true, true, true], "nothing is deleted while shutdown is pending");
+		assert.deepEqual(order, ["before-switch", "shutdown"]);
+		assert.deepEqual(shutdown, { aborted: true, idle: true, fileBefore: true, fileAfterGate: true });
+		assert.equal(oldSession.isIdle, true);
+		for (const path of [f.file, child, parentArtifact, childArtifact]) assert.equal(existsSync(path), false, path);
+		await new Promise<void>(resolve => setImmediate(resolve));
+		assert.equal(existsSync(f.file), false, "settled old writers cannot recreate the deleted JSONL");
 		assert.notEqual(runtime.session.sessionId, oldId);
 		assert.equal(runtime.session.sessionManager.getEntries().some(e => e.type === "message"), false);
 	} finally { await runtime.dispose(); await f.close(); }

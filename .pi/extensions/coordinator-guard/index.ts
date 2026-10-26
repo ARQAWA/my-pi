@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { extractOwnerMessages, findNonVerbatimQuotes } from "../../../scripts/owner-quotes.mjs";
 import { acquireLock, LOCK_NAME, processStart, releaseLock } from "./lock.ts";
 import { canonical, gitCommonDir, isInside, protectedRoots, resolveToolPath } from "./paths.ts";
-import { describePairs, isAllowed, loadRules, restrictionText, type Loaded, type Rules } from "./rules.ts";
+import { describePairs, describeReviewerProfiles, isAllowed, loadRules, restrictionText, type Loaded, type Rules } from "./rules.ts";
 
 const LINK = "PROCESS.md#subagent-models";
 const QUOTED_FIELDS = ["task", "role", "system"] as const;
@@ -25,7 +25,7 @@ export type GuardOptions = { root: string; processFile?: string; now?: () => num
 /** The line appended to an allowed start's task, so the rule follows ordinary nested `agent` starts. */
 export function childInstruction(rules: Rules, now: number = Date.now()): string {
 	const parts = [
-		`[coordinator-guard] When you start or restart an ordinary \`agent\` subagent, give model and thinking explicitly, only one of these pairs: ${describePairs(rules, now)}; pass this line on in its task.`,
+		`[coordinator-guard] When you start or restart an ordinary \`agent\` subagent, give model and thinking explicitly, only one of these pairs: ${describePairs(rules, now)}; reviewer-profile calls instead use their exact reviewerProfiles pair; pass this line on in its task.`,
 	];
 	const temporary = restrictionText(rules, now);
 	if (temporary) parts.push(temporary);
@@ -47,7 +47,8 @@ export function promptSection(loaded: Loaded, processFile: string, now: number =
 	return [
 		head,
 		"- Main delegates research, edits, checks and fixes to subagents. When the owner asks Main to do such work personally (for example \"ты сам\" or \"you do it\"), Main objects and proposes a subagent for it; only an explicit owner override lets Main do that work itself. Main never edits or writes files in the checkout or its worktrees (edit and write there are blocked).",
-		`- Every agent start or restart by Main names model and thinking explicitly, only one of these pairs: ${describePairs(rules, now)} (${LINK}).`,
+		`- Every executor start or restart by Main names model and thinking explicitly, only one of these pairs: ${describePairs(rules, now)} (${LINK}).`,
+		`- Reviewer-profile starts and restarts instead use the exact pair for their agent_type: ${describeReviewerProfiles(rules)}. Existing agents keep their model through send/resume and are not restarted merely to switch models.`,
 		...(temporary ? [`- ${temporary}`] : []),
 		"- Text inside guillemets in a brief must be one exact contiguous span of one owner message: no inserted omissions, cuts or paraphrase; only Unicode NFC and whitespace runs are normalised. Other text goes outside guillemets. Briefs that break this are blocked.",
 	].join("\n");
@@ -69,6 +70,25 @@ function quoteProblem(input: Record<string, unknown>, ctx: ExtensionContext): st
 			const list = bad.map((s: { text: string }) => `«${s.text}»`).join(", ");
 			return `quote in ${field} is not the owner's exact words: ${list}. Copy one exact contiguous span of one of his messages, or drop the guillemets.`;
 		}
+	}
+	return undefined;
+}
+
+/** A restart inherits its profile from the latest persisted child record when agent_type is omitted. */
+function profileName(input: Record<string, any>, ctx: ExtensionContext): string | undefined {
+	if (typeof input.agent_type === "string") return input.agent_type;
+	if ((input.action ?? "start") !== "restart" || typeof input.id !== "string") return undefined;
+	const match = /^(?:agent#)?([1-9]\d*)$/.exec(input.id);
+	const id = match ? Number(match[1]) : NaN;
+	if (!Number.isSafeInteger(id)) return undefined;
+	const entries = ctx.sessionManager.getBranch();
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i];
+		if (entry.type !== "custom" || entry.customType !== "rqw-agent-child") continue;
+		const data = entry.data as { kind?: unknown; id?: unknown; config?: { profile?: { name?: unknown } } } | undefined;
+		if (data?.kind !== "agent" || data.id !== id) continue;
+		const name = data.config?.profile?.name;
+		return typeof name === "string" ? name : undefined;
 	}
 	return undefined;
 }
@@ -177,11 +197,11 @@ export function createCoordinatorGuard(options: GuardOptions) {
 			if (!loaded.ok) return { block: true, reason: `coordinator-guard: coordinator-rules in ${processFile} is unreadable: ${loaded.error}` };
 			const { rules } = loaded;
 			const now = clock();
-			const allowed = `allowed: ${describePairs(rules, now)} (${LINK})`;
+			const allowed = `allowed: ${describePairs(rules, now)}; reviewer profiles: ${describeReviewerProfiles(rules)} (${LINK})`;
 			if (typeof input.model !== "string" || typeof input.thinking !== "string") {
 				return { block: true, reason: `coordinator-guard: give model and thinking explicitly on agent ${action}; ${allowed}.` };
 			}
-			if (!isAllowed(rules, input.model, input.thinking, now)) {
+			if (!isAllowed(rules, input.model, input.thinking, now, profileName(input, ctx))) {
 				const temporary = restrictionText(rules, now);
 				const hint = temporary ? ` ${temporary}` : "";
 				return { block: true, reason: `coordinator-guard: ${input.model} ${input.thinking} is not an allowed pair; ${allowed}.${hint}` };

@@ -61,6 +61,14 @@ const completedEvent = (id: string, usage = { input_tokens: 10, output_tokens: 2
 	response: { id, status: "completed", usage: { ...usage, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } },
 });
 
+const rawUsage = (inputTokens: number, outputTokens: number, cachedTokens = 0, reasoningTokens = 0) => ({
+	input_tokens: inputTokens,
+	output_tokens: outputTokens,
+	total_tokens: inputTokens + outputTokens,
+	input_tokens_details: { cached_tokens: cachedTokens },
+	output_tokens_details: { reasoning_tokens: reasoningTokens },
+});
+
 const textEvents = (id: string, text: string, item = `msg_${id}`) => [
 	{ type: "response.created", response: { id } },
 	{ type: "response.output_item.added", output_index: 0, item: { type: "message", id: item, role: "assistant", content: [], status: "in_progress" } },
@@ -181,6 +189,7 @@ test("SSE: onPayload runs once, Fast priority survives, bytes are zstd and carry
 	assert.equal(hookCalls, 1);
 	assert.equal(events.filter((e) => e.type === "done").length, 1);
 	assert.equal(events.at(-1)?.type, "done");
+	assert.deepEqual((events.at(-1) as any).message.content.map(({ type, text }: any) => ({ type, text })), [{ type: "text", text: "Hi" }], "successful completion still keeps its text");
 	const body = decodeBody(sse.calls[0].body);
 	assert.equal(body.service_tier, "priority");
 	assert.equal(body.store, false);
@@ -275,6 +284,180 @@ test("quota is terminal: one request, one error event with the safe quota messag
 	assert.equal(terminals[0].type, "error");
 	assert.match(String((terminals[0] as any).error.errorMessage), /Quota exceeded/);
 	assert.doesNotMatch(String((terminals[0] as any).error.errorMessage), /raw server text/);
+	assert.deepEqual((terminals[0] as any).error.content, [], "an error without completed output stays empty");
+	assert.equal((terminals[0] as any).error.diagnostics[0].type, "rqw_codex_retry_owned");
+});
+
+test("completed text survives a terminal error without turning the failure into success", async () => {
+	const events = textEvents("resp_terminal_text", "COMPLETED TEXT");
+	events[events.length - 1] = {
+		type: "response.failed",
+		response: { id: "resp_terminal_text", status: "failed", error: { code: "insufficient_quota", message: "raw server text must not leak", type: "x" } },
+	};
+	const sse = sseScript([{ events }]);
+	const timing = clockAndSleep();
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing.dependencies, connect: upgradeRequired, postEvents: sse.fn } });
+	const stream = await collect(transport.stream(MODEL, USER_1));
+	const terminal = stream.at(-1) as any;
+	assert.equal(terminal.type, "error");
+	assert.equal(terminal.error.stopReason, "error");
+	assert.deepEqual(terminal.error.content.map(({ type, text }: any) => ({ type, text })), [{ type: "text", text: "COMPLETED TEXT" }]);
+	assert.match(terminal.error.errorMessage, /Quota exceeded/);
+	assert.doesNotMatch(terminal.error.errorMessage, /raw server text/);
+	assert.equal(terminal.error.diagnostics[0].type, "rqw_codex_retry_owned");
+	assert.equal(terminal.error.responseId, "resp_terminal_text");
+	assert.equal(terminal.error.providerThinkingLevel, "medium");
+	assert.equal(sse.calls.length, 1);
+	assert.deepEqual(timing.sleeps, []);
+});
+
+test("completed text also survives when the native retry budget is already exhausted", async () => {
+	const events = textEvents("resp_retry_terminal_text", "COMPLETED TEXT");
+	events[events.length - 1] = {
+		type: "response.failed",
+		response: { id: "resp_retry_terminal_text", status: "failed", error: { code: "server_error", message: "temporary upstream failure" } },
+	};
+	const sse = sseScript([{ events }]);
+	const timing = clockAndSleep();
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing.dependencies, providerRetries: { streamMaxRetries: 0 }, connect: upgradeRequired, postEvents: sse.fn } });
+	const terminal = (await collect(transport.stream(MODEL, USER_1))).at(-1) as any;
+	assert.equal(terminal.type, "error");
+	assert.equal(terminal.error.stopReason, "error");
+	assert.deepEqual(terminal.error.content.map(({ type, text }: any) => ({ type, text })), [{ type: "text", text: "COMPLETED TEXT" }]);
+	assert.match(terminal.error.errorMessage, /stream disconnected before completion/);
+	assert.equal(terminal.error.diagnostics[0].type, "rqw_codex_retry_owned");
+	assert.equal(sse.calls.length, 1);
+	assert.deepEqual(timing.sleeps, []);
+});
+
+test("completed text survives a terminal auth recovery failure with the recovery error", async () => {
+	let posts = 0;
+	let refreshes = 0;
+	const postEvents = (options: any) => {
+		posts++;
+		return (async function* () {
+			options.onResponse({ status: 200, headers: {} });
+			if (posts === 1) {
+				for (const value of textEvents("resp_auth_terminal_text", "COMPLETED TEXT").slice(0, -1)) yield { text: JSON.stringify(value), value };
+			}
+			throw new SseError(401, {}, "request failed with HTTP 401", "status");
+		})();
+	};
+	const timing = clockAndSleep();
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing.dependencies, connect: upgradeRequired, postEvents, fetch: async () => {
+		refreshes++;
+		return Response.json({ error: { code: "refresh_token_invalidated" } }, { status: 401 });
+	} } });
+	const terminal = (await collect(transport.stream(MODEL, USER_1))).at(-1) as any;
+	assert.equal(terminal.type, "error");
+	assert.equal(terminal.error.stopReason, "error");
+	assert.deepEqual(terminal.error.content.map(({ type, text }: any) => ({ type, text })), [{ type: "text", text: "COMPLETED TEXT" }]);
+	assert.match(terminal.error.errorMessage, /refresh token was revoked/);
+	assert.equal(terminal.error.responseId, "resp_auth_terminal_text");
+	assert.equal(terminal.error.providerThinkingLevel, "medium");
+	assert.equal(terminal.error.diagnostics[0].type, "rqw_codex_retry_owned");
+	assert.equal(posts, 2, "reload and refresh each allow exactly one retry");
+	assert.equal(refreshes, 1);
+	assert.deepEqual(timing.sleeps, []);
+});
+
+test("completed text survives a local refusal on the attempt after a retry", async () => {
+	const failed = textEvents("resp_local_terminal_text", "COMPLETED TEXT");
+	failed[failed.length - 1] = {
+		type: "response.failed",
+		response: { id: "resp_local_terminal_text", status: "failed", error: { code: "server_error", message: "temporary upstream failure" } },
+	};
+	const sse = sseScript([{ events: failed }, { events: [] }]);
+	const timing = clockAndSleep();
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing.dependencies, connect: upgradeRequired, postEvents: sse.fn } });
+	let heads = 0;
+	const terminal = (await collect(transport.stream(MODEL, USER_1, { onResponse: () => {
+		heads++;
+		if (heads === 2) throw new Error("local secret must not leak");
+	} } as any))).at(-1) as any;
+	assert.equal(terminal.type, "error");
+	assert.equal(terminal.error.stopReason, "error");
+	assert.deepEqual(terminal.error.content.map(({ type, text }: any) => ({ type, text })), [{ type: "text", text: "COMPLETED TEXT" }]);
+	assert.equal(terminal.error.errorMessage, "RQW-codex: the onResponse hook failed. Request stopped.");
+	assert.equal(terminal.error.responseId, "resp_local_terminal_text");
+	assert.equal(terminal.error.providerThinkingLevel, "medium");
+	assert.equal(terminal.error.diagnostics, undefined, "a local refusal keeps its existing non-Codex metadata");
+	assert.equal(sse.calls.length, 2);
+	assert.deepEqual(timing.sleeps, [200]);
+});
+
+test("usage accounting: terminal failure after a retry counts each attempt exactly once", async () => {
+	const sse = sseScript([
+		{ events: [
+			{ type: "response.created", response: { id: "resp_retry_usage" } },
+			{ type: "response.incomplete", response: { id: "resp_retry_usage", incomplete_details: { reason: "content_filter" }, usage: rawUsage(11, 3, 4, 1) } },
+		] },
+		{ events: [
+			{ type: "response.created", response: { id: "resp_terminal_usage" } },
+			{ type: "response.incomplete", response: { id: "resp_terminal_usage", incomplete_details: { reason: "max_tokens_custom" }, usage: rawUsage(20, 5, 6, 2) } },
+		] },
+	]);
+	const timing = clockAndSleep();
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing.dependencies, connect: upgradeRequired, postEvents: sse.fn } });
+	const events = await collect(transport.stream(MODEL, USER_1));
+	const terminal = events.at(-1) as any;
+	assert.equal(terminal.type, "error");
+	assert.equal(sse.calls.length, 2);
+	assert.deepEqual(timing.sleeps, [200]);
+	assert.deepEqual(terminal.error.usage, {
+		input: 21,
+		output: 8,
+		cacheRead: 10,
+		cacheWrite: 0,
+		reasoning: 3,
+		totalTokens: 39,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	});
+});
+
+test("usage accounting: a successful retry sums the distinct attempt values once", async () => {
+	const sse = sseScript([
+		{ events: [
+			{ type: "response.created", response: { id: "resp_retry_success" } },
+			{ type: "response.incomplete", response: { id: "resp_retry_success", incomplete_details: { reason: "content_filter" }, usage: rawUsage(7, 2, 1, 1) } },
+		] },
+		{ events: textEvents("resp_success_after_retry", "ok").slice(0, -1).concat(completedEvent("resp_success_after_retry", rawUsage(13, 4))) },
+	]);
+	const timing = clockAndSleep();
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing.dependencies, connect: upgradeRequired, postEvents: sse.fn } });
+	const events = await collect(transport.stream(MODEL, USER_1));
+	const terminal = events.at(-1) as any;
+	assert.equal(terminal.type, "done");
+	assert.equal(sse.calls.length, 2);
+	assert.deepEqual(timing.sleeps, [200]);
+	assert.deepEqual(terminal.message.usage, {
+		input: 19,
+		output: 6,
+		cacheRead: 1,
+		cacheWrite: 0,
+		reasoning: 1,
+		totalTokens: 26,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	});
+});
+
+test("usage accounting: a single successful attempt keeps its reported usage", async () => {
+	const sse = sseScript([{ events: textEvents("resp_single_usage", "ok").slice(0, -1).concat(completedEvent("resp_single_usage", rawUsage(9, 2))) }]);
+	const timing = clockAndSleep();
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing.dependencies, connect: upgradeRequired, postEvents: sse.fn } });
+	const events = await collect(transport.stream(MODEL, USER_1));
+	const terminal = events.at(-1) as any;
+	assert.equal(terminal.type, "done");
+	assert.equal(sse.calls.length, 1);
+	assert.deepEqual(terminal.message.usage, {
+		input: 9,
+		output: 2,
+		cacheRead: 0,
+		cacheWrite: 0,
+		reasoning: 0,
+		totalTokens: 11,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	});
 });
 
 test("WebSocket 426 falls back to SSE and the fallback is sticky for the thread", async () => {
@@ -1018,10 +1201,10 @@ test("live display: a retried attempt's unfinished text is closed and dropped; t
 	assert.deepEqual(timing.sleeps, [200]);
 });
 
-test("quota after a completed call: the call is handed to Pi once, then the pending error ends the turn with no query", async () => {
+test("quota after a completed call: the call is handed to Pi once, then the pending error ends the turn with no query or extra usage", async () => {
 	const failed = {
 		type: "response.failed",
-		response: { id: "resp_qc", error: { code: "insufficient_quota", message: "raw server text must not leak", type: "x" } },
+		response: { id: "resp_qc", error: { code: "insufficient_quota", message: "raw server text must not leak", type: "x" }, usage: rawUsage(12, 4, 3, 2) },
 	};
 	const sse = sseScript([{ events: [{ type: "response.created", response: { id: "resp_qc" } }, toolEvents("resp_qc", "call_qc")[1], failed] }]);
 	const timing = clockAndSleep();
@@ -1032,12 +1215,31 @@ test("quota after a completed call: the call is handed to Pi once, then the pend
 	assert.equal(done.reason, "toolUse");
 	assert.equal(first.filter((e) => e.type === "toolcall_end").length, 1);
 	assert.equal(done.message.content.filter((c: any) => c.type === "toolCall").length, 1);
+	assert.deepEqual(done.message.usage, {
+		input: 9,
+		output: 4,
+		cacheRead: 3,
+		cacheWrite: 0,
+		reasoning: 2,
+		totalTokens: 16,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	});
 	assert.equal(sse.calls.length, 1);
 	const toolResult = { role: "toolResult", toolCallId: done.message.content[0].id, toolName: "lookup", content: [{ type: "text", text: "42" }], isError: false, timestamp: 4 };
 	const second = await collect(transport.stream(MODEL, { ...USER_1, messages: [...USER_1.messages, done.message, toolResult] } as any));
 	assert.equal(second.filter((e) => e.type === "done" || e.type === "error").length, 1);
 	assert.equal(second.at(-1)?.type, "error");
-	assert.match(String((second.at(-1) as any).error.errorMessage), /Quota exceeded/);
+	const pending = second.at(-1) as any;
+	assert.match(String(pending.error.errorMessage), /Quota exceeded/);
+	assert.deepEqual(pending.error.usage, {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		totalTokens: 0,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	});
+	assert.equal(done.message.usage.totalTokens + pending.error.usage.totalTokens, 16);
 	assert.equal(sse.calls.length, 1);
 	assert.deepEqual(timing.sleeps, []);
 });

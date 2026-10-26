@@ -480,7 +480,7 @@ export function createSessionController(options: SessionControllerOptions): Sess
 			return sha256Hex(canonicalJson(rest)) === digest;
 		});
 		const adoptedBase = loaded.mode === "native" && !ownBase
-			&& proveForkAdoption(session.sessionManager as unknown as Parameters<typeof proveForkAdoption>[0], threadId, ownerId) !== null;
+			&& (proveForkAdoption(session.sessionManager as unknown as Parameters<typeof proveForkAdoption>[0], threadId, ownerId)?.length ?? 0) > 0;
 		return inferHistoryInitialization(session, { ownBase, adoptedBase });
 	};
 

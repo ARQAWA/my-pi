@@ -456,7 +456,7 @@ export function classifyEvent(event: unknown, now: number = Date.now()): CodexEr
 	}
 }
 
-/** WebSocket `{type:"error", status, error, headers}` wrapper (responses_websocket.rs map_wrapped_websocket_error_event). */
+/** WebSocket `{type:"error", status/status_code, error, headers}` wrapper (responses_websocket.rs map_wrapped_websocket_error_event). */
 function classifyWrappedError(event: JsonObject, now: number): CodexError | null {
 	const error = asObject(event.error);
 	if (error && error.code === "flex_unavailable") return new CodexError({ kind: "flex_unavailable", code: "flex_unavailable" });
@@ -467,12 +467,13 @@ function classifyWrappedError(event: JsonObject, now: number): CodexError | null
 	if (error?.code === "previous_response_not_found") {
 		return new CodexError({ kind: "previous_response_not_found", code: error.code, retryAt, transport: true });
 	}
-	if (typeof event.status !== "number" || !Number.isInteger(event.status) || event.status < 100 || event.status > 999) {
+	const status = event.status ?? event.status_code;
+	if (typeof status !== "number" || !Number.isInteger(status) || status < 100 || status > 999) {
 		return null;
 	}
-	if (event.status >= 200 && event.status < 300) return null;
+	if (status >= 200 && status < 300) return null;
 	return classifyHttpBody(
-		event.status,
+		status,
 		error,
 		retryAt,
 		requestIdFrom(asObject(event.headers) as HeadersLike | undefined),

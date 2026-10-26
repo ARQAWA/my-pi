@@ -35,7 +35,7 @@ import { AuthRecoveryPolicy, HttpRetryPolicy, RetryPolicy, sleepAbortable, type 
 import { postEvents, SseError, type FetchLike } from "./sse.ts";
 import { connect, SocketError, type CodexSocket, type ErrorControl, type RawEvent, type ResponseHead } from "./websocket.ts";
 import { buildRequest, grammarToolInputProperties, prefixContext, validateFinalRequest, type WireItem, type WireModelInfo, type WireOptions, type WireRequest } from "./wire.ts";
-import { decidePartialHandoff, LiveResponsesPump, PendingErrorGate } from "./streaming.ts";
+import { completedContent, decidePartialHandoff, LiveResponsesPump, PendingErrorGate } from "./streaming.ts";
 
 /** Startup budget the first real turn may wait for a prewarm (owner decision; design §4). */
 export const PREWARM_WAIT_BUDGET_MS = 15_000;
@@ -395,6 +395,8 @@ export class CodexThreadTransport {
 	#policy: { auth: AuthRecoveryPolicy; retry: RetryPolicy } | undefined;
 	/** Terminal error of a tool handoff: surfaced before the next backend request, without a query. */
 	#pendingGate = new PendingErrorGate();
+	/** Errors whose actual attempt usage was already carried, including an error pending after a tool handoff. */
+	#carriedUsageErrors = new WeakSet<CodexError>();
 	/** Auth recovery stage owed before the next backend request after a tool handoff. */
 	#recovery: "reload" | "refresh" | undefined;
 	/** Retry delay owed before the next backend request after a tool handoff (scheduled after Pi's tools). */
@@ -480,7 +482,7 @@ export class CodexThreadTransport {
 					return;
 				}
 				const codex = error instanceof LocalRequestError ? undefined : toCodexError(error, this.#clock.now());
-				await pump.finish({ error: codex ?? error, usage: codex?.usage });
+				await pump.finish({ error: codex ?? error, usage: codex && this.#carriedUsageErrors.has(codex) ? undefined : codex?.usage });
 			},
 		);
 		return outer;
@@ -999,18 +1001,30 @@ export class CodexThreadTransport {
 				return await this.#finish(result, logical, pump);
 			} catch (raw) {
 				if (isAbort(raw, signal)) throw abortError();
-				if (raw instanceof LocalRequestError) throw raw;
+				if (raw instanceof LocalRequestError && pump.completedRawItems.length === 0) throw raw;
 				const error = toCodexError(raw, this.#clock.now());
-				this.#dropSocket();
+				if (!(raw instanceof LocalRequestError)) this.#dropSocket();
 				// The failed attempt's display is closed here; its completed items and actual usage are kept by the pump.
-				await pump.retryBoundary();
-				const handoff = decidePartialHandoff({
+				const attemptFailure = await pump.retryBoundary();
+				if (raw instanceof LocalRequestError) {
+					await pump.finish({ error: raw, completedContent: completedContent(pump.completedRawItems, pump.grammarToolInputProperties) });
+					return;
+				}
+				if (attemptFailure) this.#carriedUsageErrors.add(error);
+				const partialInput = {
 					completedItems: pump.completedRawItems,
 					grammarToolInputProperties: pump.grammarToolInputProperties,
 					error,
 					context: { api: model.api, provider: model.provider, model: model.id, usage: pump.usage },
 					unfinishedToolCalls: pump.droppedToolCallCount,
-				});
+				};
+				const handoff = decidePartialHandoff(partialInput);
+				const finishFailure = async (recoveryError?: unknown): Promise<boolean> => {
+					const terminal = handoff.action === "fail" ? handoff : decidePartialHandoff({ ...partialInput, terminal: true });
+					if (terminal.action !== "fail") return false;
+					await pump.finish({ failure: terminal.message, ...(recoveryError !== undefined ? { error: recoveryError } : {}) });
+					return true;
+				};
 				if (handoff.action === "tool_handoff") {
 					// Completed calls go to Pi's own tool loop once, with their raw items kept for the replay. The unfinished call
 					// is not included, and no backend retry is sent now.
@@ -1023,12 +1037,24 @@ export class CodexThreadTransport {
 				if (error.partialItems) partial = [...partial, ...(error.partialItems as WireItem[])];
 				const next = auth.next(error);
 				if (next.action === "reload" || next.action === "refresh") {
-					cred = await this.#recover(cred, next.action, signal);
+					try {
+						cred = await this.#recover(cred, next.action, signal);
+					} catch (raw) {
+						if (isAbort(raw, signal)) throw abortError();
+						if (await finishFailure(raw)) return;
+						throw raw;
+					}
 					continue;
 				}
-				if (error.kind === "unauthorized") throw error;
+				if (error.kind === "unauthorized") {
+					if (await finishFailure()) return;
+					throw error;
+				}
 				const decision = retry.next(error);
-				if (decision.action === "fail") throw error;
+				if (decision.action === "fail") {
+					if (await finishFailure()) return;
+					throw error;
+				}
 				if (decision.action === "fallback") this.#transport = "sse";
 				if (decision.delayMs > 0) await sleepAbortable(decision.delayMs, signal, this.#deps.sleep);
 			}
@@ -1072,8 +1098,8 @@ export class CodexThreadTransport {
 		const { terminal, events } = result;
 		const rawItems = completedRawItems(events);
 		const responseId = result.responseId ?? (typeof (terminal.response as { id?: unknown } | undefined)?.id === "string" ? (terminal.response as { id: string }).id : undefined);
-		if (terminal.type === "response.failed" || terminal.type === "error") {
-			const error = classifyEvent(terminal, this.#clock.now()) ?? new CodexError({ kind: "stream" });
+		const error = terminal.type === "response.failed" || terminal.type === "error" ? classifyEvent(terminal, this.#clock.now()) : null;
+		if (error) {
 			throw error.withPartial(rawItems, normalizeUsage((terminal.response as { usage?: unknown } | undefined)?.usage));
 		}
 		if (responseId === undefined) throw new CodexError({ kind: "stream" });
@@ -1347,6 +1373,7 @@ export class CodexThreadTransport {
 					if (signal.aborted) throw abortError();
 					throw new LocalRequestError("RQW-codex: the onProviderStreamEvent hook failed. Request stopped.");
 				}
+				if (event.type === "error" && classifyEvent(event, this.#clock.now()) === null) continue;
 				// Deltas are not kept: the display parser has them, and the raw ledger needs only controls and completed items.
 				if (typeof event.type === "string" && !event.type.endsWith(".delta")) state.events.push(event);
 				if (event.type === "response.metadata") this.#captureTurnState(event.headers);

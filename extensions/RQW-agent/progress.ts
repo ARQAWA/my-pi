@@ -45,7 +45,7 @@ export class ProgressReports {
 		this.request = { model, context };
 	}
 
-	response(message: AssistantMessage, reasoning: ThinkingLevel): void {
+	response(message: AssistantMessage, reasoning?: ThinkingLevel): void {
 		if (message.stopReason !== "toolUse" || !message.content.some(part => part.type === "toolCall")) return;
 		this.steps++;
 		this.onCount();

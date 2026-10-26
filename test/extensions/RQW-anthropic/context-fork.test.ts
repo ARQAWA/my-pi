@@ -6,7 +6,8 @@ import { createOverlay } from "../../../extensions/RQW-anthropic/transport.ts";
 import { xxh64 } from "../../../extensions/RQW-anthropic/wire.ts";
 import type { ContextForkRequest } from "../../../extensions/RQW-anthropic/context-fork.ts";
 import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { ACCESS, base, model, context, setup, response, textEvents, finish, start } from "./recovery-fixtures.ts";
+import { TOKEN_URL } from "../../../extensions/RQW-anthropic/auth.ts";
+import { ACCESS, NEXT, base, model, context, setup, refreshed, response, textEvents, finish, start } from "./recovery-fixtures.ts";
 
 const completed = (answer: AssistantMessage): Context => ({ messages: [
 	...normalizeContext(context).messages, answer,
@@ -79,6 +80,90 @@ it("event offer is synchronous; fork stays on its completed snapshot while the c
 		assert.notEqual(bodies[2].system[0].text, bodies[0].system[0].text, "valid checksum changes with the tail, so full prefix reuse is best effort");
 		await assert.rejects(infer!(), /already consumed/);
 	} finally { globalThis.fetch = originalFetch; active.session.dispose(); }
+});
+
+for (const mode of ["default", "adopted", "pinned", "repeated rejection"] as const) {
+	it(`real session context fork preserves ${mode} version recovery and source isolation`, async () => {
+		const savedVersion = process.env.PI_AI_CLAUDE_CODE_VERSION;
+		if (mode === "pinned") process.env.PI_AI_CLAUDE_CODE_VERSION = "2.1.280";
+		else delete process.env.PI_AI_CLAUDE_CODE_VERSION;
+		const active = await setup();
+		const previousFetch = globalThis.fetch;
+		const sent: string[] = [];
+		let minimum = mode === "adopted" ? "2.2.0" : undefined;
+		globalThis.fetch = async (_input, init) => {
+			const version = /claude-cli\/([\d.]+)/.exec(new Headers(init?.headers).get("user-agent")!)![1];
+			sent.push(version);
+			const body = JSON.parse(String(init?.body));
+			assert.ok(body.system[0].text.includes(`cc_version=${version}.`));
+			assertChecksum(body);
+			return minimum && (version !== minimum || mode === "repeated rejection") ?
+				Response.json({ type: "error", error: { type: "invalid_request_error",
+					message: `claude_code_version_too_old: version ${minimum} or newer is required` } }, { status: 400 }) :
+				response([...textEvents, ...finish]);
+		};
+		try {
+			const options = { sessionId: active.session.sessionId, reasoning: "low" as const };
+			const stream = async () => (await active.session.agent.streamFunction(model, context, options)).result();
+			const answer = await stream();
+			assert.equal(answer.stopReason, "stop");
+			assert.deepEqual(sent, mode === "adopted" ? ["2.1.280", "2.2.0"] : ["2.1.280"]);
+			const sourceVersion = sent.at(-1)!;
+			let infer: (() => Promise<AssistantMessage>) | undefined;
+			(active.session.resourceLoader as any).eventBus.emit("rqw:context-fork:v1", {
+				sessionId: active.session.sessionId, model, context: completed(answer), reasoning: "low",
+				signal: new AbortController().signal, offer(value: typeof infer) { infer = value; },
+			});
+			assert.equal(typeof infer, "function");
+			const entries = structuredClone(active.session.sessionManager.getEntries());
+			minimum = "2.3.0";
+			sent.length = 0;
+			assert.equal((await infer!()).stopReason, mode === "pinned" || mode === "repeated rejection" ? "error" : "stop");
+			assert.deepEqual(sent, mode === "pinned" ? [sourceVersion] : [sourceVersion, minimum]);
+			assert.deepEqual(active.session.sessionManager.getEntries(), entries);
+			minimum = undefined;
+			sent.length = 0;
+			assert.equal((await stream()).stopReason, "stop");
+			assert.deepEqual(sent, [sourceVersion], "fork adoption does not change the source version");
+			minimum = "2.3.0";
+			sent.length = 0;
+			assert.equal((await stream()).stopReason, mode === "pinned" || mode === "repeated rejection" ? "error" : "stop");
+			assert.deepEqual(sent, mode === "pinned" ? [sourceVersion] : [sourceVersion, minimum], "ordinary recovery keeps the same bound");
+		} finally {
+			globalThis.fetch = previousFetch;
+			active.session.dispose();
+			if (savedVersion === undefined) delete process.env.PI_AI_CLAUDE_CODE_VERSION;
+			else process.env.PI_AI_CLAUDE_CODE_VERSION = savedVersion;
+		}
+	});
+}
+
+it("real session context fork retains one HTTP 401 refresh and replay", async () => {
+	const active = await setup();
+	const previousFetch = globalThis.fetch;
+	const sent: string[] = [];
+	let reject = false, refreshes = 0;
+	globalThis.fetch = async (input, init) => {
+		if (String(input) === TOKEN_URL) { refreshes++; return refreshed(); }
+		const bearer = new Headers(init?.headers).get("authorization")!;
+		sent.push(bearer);
+		return reject && bearer === `Bearer ${ACCESS}` ? new Response("expired", { status: 401 }) : response([...textEvents, ...finish]);
+	};
+	try {
+		const answer = await (await active.session.agent.streamFunction(model, context, { sessionId: active.session.sessionId })).result();
+		let infer: (() => Promise<AssistantMessage>) | undefined;
+		(active.session.resourceLoader as any).eventBus.emit("rqw:context-fork:v1", {
+			sessionId: active.session.sessionId, model, context: completed(answer), signal: new AbortController().signal,
+			offer(value: typeof infer) { infer = value; },
+		});
+		assert.equal(typeof infer, "function");
+		reject = true;
+		sent.length = 0;
+		assert.equal((await infer!()).stopReason, "stop");
+		assert.deepEqual(sent, [ACCESS, NEXT].map(token => `Bearer ${token}`));
+		assert.equal(refreshes, 1);
+		assert.equal((await active.store.read("anthropic"))?.access, NEXT);
+	} finally { globalThis.fetch = previousFetch; active.session.dispose(); }
 });
 
 for (const reason of ["stop", "restart"] as const) it(`${reason} release removes only its source snapshot, not an already offered fork`, async () => {

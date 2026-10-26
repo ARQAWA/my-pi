@@ -25,7 +25,7 @@ describe("cell-based shimmer", () => {
 	it("has a bright flat three-cell peak for both silver and gold", () => {
 		assert.equal(SILVER_PLATEAU_CELLS, 3);
 		assert.equal(GOLD_PLATEAU_CELLS, 3);
-		assert.equal(SILVER.at(-1), "#ffffff");
+		assert.deepEqual(SILVER, ["#5f5e5c", "#6b6a68", "#878685"]);
 		assert.equal(GOLD.at(-1), "#fff4c2");
 		const peakCells = (center: number, gold: boolean) => Array.from({ length: 19 }, (_, i) => i - 9)
 			.filter((i) => shimmerPhase(i, center / SHIMMER_CELLS_PER_FRAME, gold) === 1).length;
@@ -67,7 +67,7 @@ describe("cell-based shimmer", () => {
 			< 1 - shimmerPhase(SILVER_PLATEAU_CELLS / 2 + 1, 0));
 	});
 
-	it("retains the spatial phase unit and gold speed, independent of redraw cadence", () => {
+	it("retains the spatial shoulder phase unit, independent of redraw cadence", () => {
 		assert.equal(STATUS_FRAME_MS, 80);
 		assert.equal(SHIMMER_CELLS_PER_FRAME, 0.22 / 0.32);
 		assert.equal(SHIMMER_PERIOD_CELLS, 2 * Math.PI / 0.32);
@@ -91,8 +91,54 @@ describe("cell-based shimmer", () => {
 			return hexSgr(mix(SILVER, phase), phase > 0.85, text);
 		};
 		assert.equal(shimmerText("界e\u0301x", 0, 2, SILVER), silverAt("界", 0)
-			+ silverAt("e", 2) + silverAt("\u0301", 3) + silverAt("x", 3));
+			+ silverAt("e\u0301", 2) + silverAt("x", 3));
 		assert.equal(shimmerText("A B", 3, 7, GOLD).split(" ").length, 2);
+	});
+});
+
+describe("Unicode glint terminal columns", () => {
+	// Decode actual renderer output by measured prefixes, not by summing code-point widths.
+	const paintedRuns = (line: string) => [...line.matchAll(/\x1b\[(1;)?38;2;(\d+;\d+;\d+)m([^\x1b]*)\x1b\[22;39m/g)]
+		.map((match) => ({
+			column: visibleWidth(strip(line.slice(0, match.index))),
+			text: match[3],
+			rgb: match[2],
+		}));
+
+	it("keeps complex graphemes intact and reaches the gold border's right edge", () => {
+		for (const name of ["ASCII", "界e\u0301", "👨‍👩‍👧‍👦", "👍🏽", "🇺🇳", "𝄞"]) {
+			const width = 80;
+			const frame = 15.625 * (78 - 1) / (width + 5.5);
+			const line = topBorder(width, "12345678", chrome("Compacting context", true, frame), 0, plain, name);
+			assert.equal(visibleWidth(line), width);
+			assert.ok(strip(line).includes(name));
+			const peaks = paintedRuns(line).filter((run) => run.rgb === "255;244;194");
+			assert.deepEqual(peaks.map((run) => run.column), [78, 79], name);
+			for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(name)) {
+				assert.ok(paintedRuns(line).some((run) => run.text === segment), segment);
+			}
+			assert.equal(peaks.at(-1)?.text, "─");
+		}
+	});
+
+	it("uses measured columns after Unicode in silver activity labels, with ASCII controls", () => {
+		for (const prefix of ["ASCII", "界e\u0301", "👨‍👩‍👧‍👦", "👍🏽", "🇺🇳", "𝄞"]) {
+			const text = prefix + "x".repeat(30);
+			const width = visibleWidth(text);
+			const center = width - 2;
+			const frame = 15.625 * (center - 1) / (width + 4);
+			const line = activityRows(100, chrome(text, false, frame))[0];
+			assert.equal(strip(line), " " + text);
+			const runs = paintedRuns(line);
+			for (const run of runs.filter((run) => run.text === "x")) {
+				const phase = shimmerPhase(run.column - 1, center / SHIMMER_CELLS_PER_FRAME);
+				assert.equal(run.rgb, [1, 3, 5].map((i) => parseInt(mix(SILVER, phase).slice(i, i + 2), 16)).join(";"));
+			}
+			for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(prefix)) {
+				assert.ok(runs.some((run) => run.text === segment), segment);
+			}
+			assert.equal(runs.at(-1)?.rgb, "135;134;133");
+		}
 	});
 });
 
@@ -127,9 +173,20 @@ describe("single silver glint", () => {
 				const line = shimmerText("x".repeat(width), 1, frame, SILVER);
 				const cells = [...line.matchAll(/\x1b\[(1;)?38;2;(\d+);(\d+);(\d+)mx\x1b\[22;39m/g)];
 				assert.equal(cells.length, width);
-				const peaks = cells.map((cell, i) => cell[2] === "255" && cell[3] === "255" && cell[4] === "255" ? i : -1).filter((i) => i >= 0);
-				assert.equal(peaks.length, 3, `${width} ${frame}`);
-				assert.equal(peaks[2] - peaks[0], 2, "a single contiguous plateau, no repeated crests");
+				const peaks = cells.map((cell, i) => cell[2] === "135" && cell[3] === "134" && cell[4] === "133" ? i : -1).filter((i) => i >= 0);
+				const center = 1 + (width + 4) * ((frame % 46.875) / 15.625);
+				const plateau = Array.from({ length: width }, (_, i) => i)
+					.filter((i) => i - center >= -1.5 && i - center < 1.5);
+				assert.equal(plateau.length, 3, `${width} ${frame}`);
+				for (const i of plateau) assert.ok(peaks.includes(i));
+				// At the reduced contrast an adjacent shoulder can round to the crest RGB too.
+				const expectedPeaks = Array.from({ length: width }, (_, i) => i).filter((i) => {
+					const t = Math.max(0, Math.min(1, (Math.abs(i - center) - 1.5) / 4.5));
+					const phase = plateau.includes(i) ? 1 : Math.min(254 / 255, 1 - t * t * (3 - 2 * t));
+					return mix(SILVER, phase) === "#878685";
+				});
+				assert.deepEqual(peaks, expectedPeaks);
+				assert.equal(peaks.at(-1)! - peaks[0], peaks.length - 1, "a single contiguous plateau, no repeated crests");
 				assert.doesNotMatch(line, /\x1b\[(?:3|23)m/);
 			}
 		}
@@ -137,7 +194,8 @@ describe("single silver glint", () => {
 
 	it("changes shoulder colours at fine sub-character steps rather than rounding the moving center", () => {
 		const width = 80;
-		const frames = [0, 0.0005, 0.001, 0.0015, 0.002].map((frame) => frame * 1250 / 640);
+		// The dimmer palette needs slightly wider sub-cell samples to cross an RGB quantum.
+		const frames = [0, 0.005, 0.01, 0.015, 0.02];
 		const position = frames.map((frame) => silverGlintPosition(width, frame));
 		for (let i = 1; i < position.length; i++) {
 			assert.ok(position[i] > position[i - 1]);

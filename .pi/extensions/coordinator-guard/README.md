@@ -71,6 +71,14 @@ The fenced block `json coordinator-rules` in `PROCESS.md`, section [Subagent mod
 bad JSON or a bad schema is an error state: the guard then blocks every `agent` start and restart
 and shows the error in Main's prompt and status.
 
+The active `agentModels` table permits only Kimi executor pairs under
+[Subagent models](../../../PROCESS.md#subagent-models). `reviewerProfiles` separately names each established
+independent reviewer's approved Sol pair. A start or restart with Sol requires the matching reviewer `agent_type`,
+which a restart may inherit from its latest persisted child record; the same Sol pair without that profile is blocked. There is no rotation counter or bookkeeping. Existing agents
+keep their models through `send` and `resume`, which the guard leaves untouched. The parser and enforcement are
+data-driven: changing the root block updates both the next turn's prompt and the next tool call without reloading
+guard code.
+
 ## Optional temporary override format
 
 The active policy is permanent and has no `temporaryGptOnly` key; see
@@ -89,9 +97,9 @@ This optional format is not an active repository rule. Product profiles are unch
 ## What it does for Main
 
 - `tool_call` on `agent` `start` and `restart` (a missing `action` counts as `start`): `model` and
-  `thinking` are required and must be one exact allowed pair. A profile call supplies matching explicit values too.
-  An allowed call with a `task` gets one generated line appended: ordinary nested `agent` starts need an explicit
-  allowed pair.
+  `thinking` are required. A named or inherited reviewer profile uses only its exact pair; every other call uses an exact executor pair.
+  A reviewer-profile call supplies matching explicit model and effort values; restart may omit `agent_type` to inherit it. An allowed call with a `task` gets
+  one generated line appended: ordinary nested `agent` starts need an explicit allowed executor pair.
 - Quotes: on `agent` `start`, `restart` and `send`, every guillemet span in
   `task`, `role` and `system` must be one exact contiguous span of one user message of the current session
   (`ctx.sessionManager.getEntries()`), after Unicode NFC and whitespace normalisation. Unbalanced guillemets and

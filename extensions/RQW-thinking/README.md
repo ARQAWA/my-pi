@@ -9,6 +9,13 @@ model context keep every thinking block unchanged.
 - Pi's own spacer and click-region rows around a thinking block remain; one or two blank rows per model step with
   thinking are an accepted native limit, not a zero-row promise. No Pi patch, no private state.
 
+Known limitation: during `/reload`, the native `Thinking...` label can briefly reappear on existing messages
+before `session_start` hides it again. Pi 1.4.0 resets the label and renders before the first public reload lifecycle
+event, `session_shutdown`; the Markdown transformer does not handle the hidden label's separate native `Text`.
+The owner accepted this transition, not a fix: no private interception or upstream Pi work. See
+[D-UI-THINKING-RELOAD-LIMIT](../../DECISIONS.md#naming-and-thinking) for the decision and retained faux-provider
+lifecycle evidence. Stored thinking, model context and native blank rows remain unchanged.
+
 Registered in `package.json` under `pi.extensions`, so normal package loading enables it. Switch it independently
 through Pi's package filter and `/reload`. Tests: `node --test test/extensions/RQW-thinking/`
 (real interactive mode, scripted faux model, isolated temporary folders).

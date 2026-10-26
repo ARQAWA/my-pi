@@ -4,7 +4,7 @@
 // toolResult, and assistant messages without recorded raw items) reach the wire once: the source cursor is the set of
 // source entry ids the durable wire already holds on the current branch. A fork adopts its parent's entries only when
 // the real parent file proves the ancestry. Imports: Pi SDK types, this folder and Node built-ins only.
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import {
 	buildSessionProjection,
 	convertToLlm,
@@ -193,41 +193,89 @@ function isCovered(entry: WireSessionEntry, index: number, coverage: Coverage): 
 	return message?.role === "assistant" && typeof message.responseId === "string" && coverage.responses.has(message.responseId);
 }
 
-/**
- * Fork adoption proof. Returns the parent's scope digest only when every foreign history entry on this branch is an
- * entry of the real parent file (same id and data) and carries the parent header id with this owner. Otherwise null,
- * and the foreign entries are not replayed.
- */
-export function proveForkAdoption(manager: SessionManagerLike, threadId: string, ownerId: string): string | null {
-	const parentPath = manager.getHeader()?.parentSession;
-	if (!parentPath || !existsSync(parentPath)) return null;
-	let parentId: string | undefined;
-	const parentEntries = new Map<string, Record<string, unknown>>();
-	for (const line of readFileSync(parentPath, "utf8").split("\n")) {
+type ForkManager = Pick<SessionManagerLike, "getHeader" | "getEntries" | "getLeafId" | "getBranch">;
+type ForkHeader = { id?: unknown; parentSession?: string };
+
+/** Read-only branch view. Ancestor proof never opens a persistent SessionManager that could migrate the file. */
+function forkManager(header: ForkHeader, entries: SessionEntry[]): ForkManager {
+	const byId = new Map(entries.map((entry) => [entry.id, entry]));
+	const leafId = entries.at(-1)?.id ?? null;
+	return {
+		getHeader: () => header,
+		getEntries: () => entries,
+		getLeafId: () => leafId,
+		getBranch(fromId) {
+			const path: SessionEntry[] = [];
+			const startId = fromId ?? leafId;
+			let current = startId ? byId.get(startId) : undefined;
+			while (current) {
+				path.push(current);
+				current = current.parentId ? byId.get(current.parentId) : undefined;
+			}
+			return path.reverse();
+		},
+	};
+}
+
+function readForkParent(path: string): { id: string; header: ForkHeader; entries: Map<string, Record<string, unknown>> } {
+	let header: ForkHeader | undefined;
+	const entries: SessionEntry[] = [];
+	const records = new Map<string, Record<string, unknown>>();
+	for (const line of readFileSync(path, "utf8").split("\n")) {
 		if (line.trim() === "") continue;
-		let record: Record<string, unknown>;
+		const record = JSON.parse(line) as Record<string, unknown>;
+		if (record.type === "session") header ??= record;
+		else if (typeof record.id === "string") {
+			entries.push(record as unknown as SessionEntry);
+			records.set(record.id, record);
+		}
+	}
+	if (typeof header?.id !== "string") throw new Error("fork parent has no session id");
+	return { id: header.id, header, entries: records };
+}
+
+/**
+ * Fork adoption proof. Returns every adopted ancestor scope only when each foreign history entry is an exact entry of
+ * the real parent file and its scope belongs to the parent's own proven chain for this owner. Otherwise null.
+ */
+export function proveForkAdoption(manager: SessionManagerLike, threadId: string, ownerId: string): string[] | null {
+	const visited = new Set<string>();
+	const prove = (current: ForkManager, currentThreadId: string): string[] | null => {
+		const parentPath = current.getHeader()?.parentSession;
+		if (!parentPath || visited.has(parentPath)) return null;
+		visited.add(parentPath);
+		let parent: ReturnType<typeof readForkParent>;
 		try {
-			record = JSON.parse(line) as Record<string, unknown>;
+			parent = readForkParent(parentPath);
 		} catch {
 			return null;
 		}
-		if (record.type === "session") parentId ??= String(record.id);
-		else if (typeof record.id === "string") parentEntries.set(record.id, record);
-	}
-	if (!parentId) return null;
-	const parentScope = scopeDigest({ runtimeId: "", threadId: parentId, ownerId });
-	const ownScope = scopeDigest({ runtimeId: "", threadId, ownerId });
-	let foreign = 0;
-	const branch = manager.getBranch();
-	for (const entry of branch.slice(lastPiCompactionIndex(branch) + 1)) {
-		if (!isHistoryEntry(entry)) continue;
-		const scope = (entry.data as { scope?: unknown } | undefined)?.scope;
-		if (scope === ownScope) continue;
-		const original = parentEntries.get(entry.id);
-		if (scope !== parentScope || !original || canonicalJson(original.data) !== canonicalJson(entry.data)) return null;
-		foreign++;
-	}
-	return foreign > 0 ? parentScope : null;
+		const parentScope = scopeDigest({ runtimeId: "", threadId: parent.id, ownerId });
+		const ownScope = scopeDigest({ runtimeId: "", threadId: currentThreadId, ownerId });
+		const foreignScopes = new Set<string>();
+		const branch = current.getBranch();
+		for (const entry of branch.slice(lastPiCompactionIndex(branch) + 1)) {
+			if (!isHistoryEntry(entry)) continue;
+			const scope = (entry.data as { scope?: unknown } | undefined)?.scope;
+			if (scope === ownScope) continue;
+			const original = parent.entries.get(entry.id);
+			if (typeof scope !== "string" || !original || canonicalJson(original.data) !== canonicalJson(entry.data)) return null;
+			foreignScopes.add(scope);
+		}
+		if (foreignScopes.size === 0) return [];
+		if ([...foreignScopes].every((scope) => scope === parentScope)) return [parentScope];
+		// The copied part of the active branch is the parent branch as it was at fork time, before later parent changes.
+		const copied: SessionEntry[] = [];
+		for (const entry of current.getBranch()) {
+			if (!parent.entries.has(entry.id)) break;
+			copied.push(entry);
+		}
+		const inherited = prove(forkManager(parent.header, copied), parent.id);
+		if (inherited === null) return null;
+		const adopted = [parentScope, ...inherited];
+		return [...foreignScopes].every((scope) => adopted.includes(scope)) ? adopted : null;
+	};
+	return prove(manager, threadId);
 }
 
 export class SessionWireState {
@@ -358,7 +406,7 @@ export class SessionWireState {
 		const scope = { runtimeId: this.#runtimeId, threadId, ownerId: this.#ownerId };
 		const adopted = proveForkAdoption(manager, threadId, this.#ownerId);
 		this.#scopeHash = scopeDigest(scope);
-		this.#adopted = adopted ? [adopted] : [];
+		this.#adopted = adopted ?? [];
 		this.#view = projectedView(manager);
 		this.#history = new WireHistory({ session: this.#view, scope, modelHash: this.#modelHash, adoptedScopes: this.#adopted });
 	}

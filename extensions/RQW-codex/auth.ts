@@ -78,11 +78,15 @@ export function credentialIdentity(value: unknown): string {
 	return identity;
 }
 
-/** Shape and identity check only. The access token is a bearer and may be opaque; a JWT is read only for its claim. Returns the same object untouched; valid legacy grants are never rewritten. */
+/** Shape, subscription eligibility and identity check. Access may be opaque. Returns the same object untouched; valid legacy grants are never rewritten. */
 export function validateCredential(value: unknown): OAuthCredential {
 	if (!isRecord(value) || value.type !== "oauth" || !nonEmptyString(value.access) || !nonEmptyString(value.refresh)
 		|| typeof value.expires !== "number" || !Number.isFinite(value.expires)) {
 		throw new AuthRecoveryError(LOGIN_HELP, true);
+	}
+	const idClaim = typeof value.id_token === "string" ? decodeJwtPayload(value.id_token)?.[JWT_AUTH_CLAIM] : undefined;
+	if (isRecord(idClaim) && idClaim.chatgpt_account_is_fedramp === true) {
+		throw new AuthRecoveryError(`${LOGIN_HELP} FedRAMP subscriptions are not supported by this ordinary subscription profile.`, true);
 	}
 	credentialIdentity(value);
 	return value as OAuthCredential;

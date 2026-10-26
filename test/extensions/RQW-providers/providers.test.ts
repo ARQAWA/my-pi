@@ -87,6 +87,12 @@ for (const [label, entry] of entries) describe(`real Pi: ${label}`, () => {
 	const login = (session: pi.AgentSession) => [...new Set((entry.InteractiveMode.prototype as unknown as {
 		getLoginProviderOptions(this: { session: pi.AgentSession }): { id: string }[];
 	}).getLoginProviderOptions.call({ session }).map(provider => provider.id))].sort();
+	async function assertUnfiltered(runtime: pi.ModelRuntime) {
+		assert.ok(runtime.getProviders().some(provider => provider.id === "openrouter"), "provider list keeps openrouter");
+		assert.ok(runtime.getModels().some(model => model.provider === "openrouter"), "model list keeps openrouter");
+		assert.ok(runtime.getAvailableSnapshot().some(model => model.provider === "openrouter"), "refreshed snapshot keeps openrouter");
+		assert.ok((await runtime.getAvailable()).some(model => model.provider === "openrouter"), "available list keeps openrouter");
+	}
 
 	it("filters login, all, available and scoped picker inputs; credentials stay; reload without it restores defaults", async () => {
 		const original = NATIVE.get(entry)!;
@@ -109,7 +115,7 @@ for (const [label, entry] of entries) describe(`real Pi: ${label}`, () => {
 			assert.deepEqual(runtime.getProviders().map(provider => provider.id).sort(), KEPT, "a reload with the extension on keeps the policy");
 			enabled = false;
 			await session.reload();
-			assert.ok(runtime.getProviders().length > 2);
+			await assertUnfiltered(runtime);
 			assert.ok(login(session).includes("openrouter"));
 			assert.ok(runtime.getAvailableSnapshot().some(model => model.provider === "openrouter"));
 			assert.equal(session.scopedModels.length, 2);
@@ -161,7 +167,9 @@ for (const [label, entry] of entries) describe(`real Pi: ${label}`, () => {
 		const { session, runtime } = await setup({ extensions: [] });
 		await session.bindExtensions(bindings);
 		try {
-			assert.ok(runtime.getProviders().length > 2);
+			await assertUnfiltered(runtime);
+			assert.ok(login(session).includes("openrouter"));
+			assert.ok(session.scopedModels.some(item => item.model.provider === "openrouter"));
 			assert.equal(session.scopedModels.length, 2);
 		} finally { session.dispose(); }
 	});
@@ -201,15 +209,18 @@ for (const [label, entry] of entries) describe(`real Pi: ${label}`, () => {
 		const unrelated = await setup({ extensions: [] });
 		const dir = await mkdtemp(join(root, "load-only-"));
 		const runtime = await entry.ModelRuntime.create({ credentials: AuthStorage.inMemory({ anthropic: credential, openrouter: credential }), modelsPath: null, refreshOnCreate: false });
+		await runtime.refresh({ allowNetwork: false });
 		const loader = new entry.DefaultResourceLoader({ cwd: dir, agentDir: root, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
 			extensionPathsOverride: [], additionalExtensionPaths: [extensionPath] });
 		await loader.reload();
 		assert.deepEqual(loader.getExtensions().errors, []);
 		const owner = await setup();
 		try {
-			assert.ok(runtime.getProviders().length > 2, "source loading alone hides nothing");
+			await assertUnfiltered(runtime);
 			assert.deepEqual(owner.runtime.getProviders().map(provider => provider.id).sort(), KEPT);
-			assert.ok(unrelated.runtime.getProviders().length > 2);
+			await assertUnfiltered(unrelated.runtime);
+			assert.ok(login(unrelated.session).includes("openrouter"));
+			assert.ok(unrelated.session.scopedModels.some(item => item.model.provider === "openrouter"));
 			assert.equal(unrelated.session.scopedModels.length, 2);
 		} finally {
 			owner.session.dispose(); unrelated.session.dispose();
@@ -235,7 +246,7 @@ for (const [label, entry] of entries) describe(`real Pi: ${label}`, () => {
 			}
 		} finally { session.dispose(); session.dispose(); }
 		// An SDK host may dispose without session_shutdown: the stale owner no longer hides anything.
-		assert.ok(runtime.getProviders().length > 2);
+		await assertUnfiltered(runtime);
 		assert.ok((await runtime.getAvailable()).some(model => model.provider === "openrouter"));
 		assert.deepEqual(descriptors(entry), original, "dispose alone releases the owner and restores Pi's methods");
 		await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }).catch(() => {});
@@ -282,7 +293,7 @@ for (const [label, entry] of entries) describe(`real Pi: ${label}`, () => {
 				a.session.dispose(); a.session.dispose();
 				assert.deepEqual(a.runtime.getProviders().map(provider => provider.id).sort(), KEPT, mode);
 				b.session.dispose();
-				assert.ok(a.runtime.getProviders().length > 2, mode);
+				await assertUnfiltered(a.runtime);
 				await b.session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }).catch(() => {});
 			} finally { a.session.dispose(); b.session.dispose(); }
 			assert.deepEqual(descriptors(entry), original, mode);

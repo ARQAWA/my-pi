@@ -108,7 +108,7 @@ cadence; this provider has no timer. Refresh errors reject with a sanitized `Quo
 `http`, `response` or `network`; HTTP errors carry `status` and optional raw `retryAfter`. They do not erase
 or re-date the last successful snapshot. Callers must use `fetchedAt` to distinguish cached data from a fresh
 result. Upstream bodies and credential values are never exposed. Abort cancels this quota read; provider
-disposal aborts pending reads and clears the cache. A late earlier refresh cannot overwrite a newer result.
+disposal aborts pending reads and clears the cache. A late earlier refresh cannot overwrite a newer successful result.
 No statusbar display, colors, scheduler, options or settings are added here.
 
 ## One-shot context fork
@@ -121,7 +121,9 @@ Missing snapshots, another model, hosted tools and dangling tool calls receive n
 be present; the fork neither waits for the child nor fabricates results. No idle-session condition is required.
 
 The fork uses the existing Anthropic builder and subscription transport with cloned context/options and its own
-version state and abort signal. It keeps the source system blocks, tool order and actual cache retention, including
+version state and abort signal. The version copy retains the current version and whether it was explicitly pinned
+by `PI_AI_CLAUDE_CODE_VERSION`; fork adoption does not change the source version. It keeps the source system
+blocks, tool order and actual cache retention, including
 children's explicit short policy. Matching message-prefix cache markers are retained. Billing checksums are
 recomputed normally, so cache reuse is best effort, never guaranteed. A cache miss causes no retry. Existing
 bounded HTTP auth/version recovery remains; SDK retries are disabled. OAuth refresh may persist a rotated grant.

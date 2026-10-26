@@ -169,6 +169,72 @@ it("quota late refresh cannot overwrite a newer result, and disposal aborts pend
 	assert.equal(cache.read(), undefined);
 });
 
+it("quota event cache keeps the latest success across newer failures and cancellation", async t => {
+	let transport: typeof fetch = async () => { throw new Error("unexpected quota request"); };
+	t.mock.method(globalThis, "fetch", (input: unknown, init?: RequestInit) => transport(input as URL | RequestInfo, init));
+	const accessForNewSession = async () => {
+		const active = await setup();
+		t.after(() => active.session.dispose());
+		let access: QuotaAccess | undefined;
+		(active.session.resourceLoader as any).eventBus.emit(QUOTA_EVENT, {
+			sessionId: active.session.sessionId,
+			offer(value: QuotaAccess) { access = value; },
+		});
+		return access!;
+	};
+
+	// Failure-only and sequential controls must not manufacture or erase a snapshot.
+	transport = async () => new Response("no", { status: 429 });
+	const failed = await accessForNewSession();
+	assert.equal(failed.read(), undefined);
+	await assert.rejects(failed.refresh(), { kind: "http", status: 429 });
+	assert.equal(failed.read(), undefined);
+
+	let calls = 0;
+	transport = async () => ++calls === 1 ? Response.json(payload) : new Response("no", { status: 429 });
+	const sequential = await accessForNewSession();
+	const successful = await sequential.refresh();
+	await assert.rejects(sequential.refresh(), { kind: "http", status: 429 });
+	assert.deepEqual(sequential.read(), successful);
+
+	for (const failure of ["http", "abort"] as const) {
+		for (const olderCompletesFirst of [true, false]) {
+			const requests: { resolve(value: Response): void }[] = [];
+			const began = [Promise.withResolvers<void>(), Promise.withResolvers<void>()];
+			transport = (_input, init) => new Promise<Response>((resolve, reject) => {
+				requests.push({ resolve });
+				init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
+				began[requests.length - 1].resolve();
+			});
+			const access = await accessForNewSession();
+			const first = access.refresh();
+			await began[0].promise;
+			const cancellation = new AbortController();
+			const second = access.refresh(failure === "abort" ? cancellation.signal : undefined);
+			const secondRejected = assert.rejects(second,
+				failure === "abort" ? { name: "AbortError" } : { kind: "http", status: 429 });
+			await began[1].promise;
+			const failSecond = () => {
+				if (failure === "abort") cancellation.abort();
+				else requests[1].resolve(new Response("no", { status: 429 }));
+			};
+			if (olderCompletesFirst) {
+				requests[0].resolve(Response.json(payload));
+				const expected = await first;
+				failSecond();
+				await secondRejected;
+				assert.deepEqual(access.read(), expected);
+			} else {
+				failSecond();
+				await secondRejected;
+				requests[0].resolve(Response.json(payload));
+				const expected = await first;
+				assert.deepEqual(access.read(), expected);
+			}
+		}
+	}
+});
+
 it("the isolated Anthropic extension offers quota only for its bound session and releases it on SDK dispose", async t => {
 	let calls = 0;
 	t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json(payload); });

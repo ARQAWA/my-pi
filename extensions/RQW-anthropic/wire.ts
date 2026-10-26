@@ -52,7 +52,11 @@ export function xxh64(bytes: Uint8Array, seed = 0n): bigint {
 	return (h ^ h >> 32n) & MASK;
 }
 
-export interface VersionState { readonly value: string; adopt(message: string, sentVersion?: string): boolean }
+export interface VersionState {
+	readonly value: string;
+	fork(): VersionState;
+	adopt(message: string, sentVersion?: string): boolean;
+}
 
 function compareVersions(a: string, b: string): number {
 	const left = a.split(".").map(Number);
@@ -65,11 +69,15 @@ export function versionState(override = process.env.PI_AI_CLAUDE_CODE_VERSION): 
 	if (override !== undefined && !/^\d+\.\d+\.\d+$/.test(override)) {
 		throw new Error("RQW-anthropic: PI_AI_CLAUDE_CODE_VERSION must be major.minor.patch");
 	}
-	let value = override ?? DEFAULT_VERSION;
+	return createVersionState(override ?? DEFAULT_VERSION, override !== undefined);
+}
+
+function createVersionState(value: string, pinned: boolean): VersionState {
 	return {
 		get value() { return value; },
+		fork() { return createVersionState(value, pinned); },
 		adopt(message: string, sentVersion = value): boolean {
-			if (override || !message.includes("claude_code_version_too_old")) return false;
+			if (pinned || !message.includes("claude_code_version_too_old")) return false;
 			const required = /version (\d+\.\d+\.\d+) or newer is required/i.exec(message)?.[1];
 			if (!required) return false;
 			if (compareVersions(required, value) > 0) value = required;

@@ -94,6 +94,22 @@ function pumpFor(stream = createAssistantMessageEventStream(), queueLimit?: numb
 	return { stream, pump: new LiveResponsesPump({ model: MODEL, stream, ...(queueLimit ? { queueLimit } : {}) }) };
 }
 
+it("pump ignores native unclassified wrappers before successful completion", async () => {
+	const { stream, pump } = pumpFor();
+	const observed = observe(stream);
+	await pump.push(created());
+	await pump.push(done(0, messageItem("msg_ignored", "Completed text.")));
+	await pump.push({ type: "error", status: 200, error: { code: "server_error" } });
+	await pump.push({ type: "error", error: { code: "server_error" } });
+	await pump.push(completed());
+	const message = await pump.finish();
+	await observed.done;
+	assert.equal(message.stopReason, "stop");
+	assert.equal((message.content[0] as any).text, "Completed text.");
+	assert.equal(observed.events.at(-1)?.type, "done");
+	assert.equal(observed.events.some((event) => event.type === "error"), false);
+});
+
 function countTypes(events: AssistantMessageEvent[]): Record<string, number> {
 	const counts: Record<string, number> = {};
 	for (const e of events) counts[e.type] = (counts[e.type] ?? 0) + 1;

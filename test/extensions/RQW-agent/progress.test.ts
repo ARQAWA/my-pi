@@ -72,6 +72,14 @@ test("snapshot preserves system/tools and uses complete context plus textual lat
 	assert.equal(f.context.messages.length, before.messages.length, "summary and instruction never enter the child context");
 });
 
+test("unavailable request effort stays absent instead of inheriting the selected effort", () => {
+	const f = setup();
+	for (let i = 0; i < 50; i++) f.progress.response(tool(), undefined);
+	assert.equal(f.requests.length, 1);
+	assert.equal(f.requests[0].reasoning, undefined);
+	f.progress.invalidate();
+});
+
 test("notification provenance, continuation and fixed scope/brief check include the actual discovered skill", async () => {
 	const f = setup(); f.steps(50); f.completions[0].resolve(answer("what happened")); await drain();
 	const message = f.notices[0].message;

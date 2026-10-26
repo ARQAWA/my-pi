@@ -9,7 +9,7 @@ import {
 	normalizeContext,
 	renderSystemMessageUpdate,
 } from "@earendil-works/pi-ai";
-import { clientMetadata, NAMESPACE_OID, sortKeys, uuidV5, type CodexIdentity, type RequestKind } from "./metadata.ts";
+import { clientMetadata, NAMESPACE_OID, sortKeys, utf8Keys, uuidV5, type CodexIdentity, type RequestKind } from "./metadata.ts";
 import {
 	createGrammarToolInputProperties,
 	getGrammarToolInput,
@@ -226,6 +226,20 @@ export function canonicalNativeTools(tools: readonly unknown[]): unknown[] {
 	return sortKeys(tools) as unknown[];
 }
 
+/** Serialize BTreeMap order directly: JS objects reorder integer-index keys again during JSON.stringify. */
+function nativeToolsJson(value: unknown): string | undefined {
+	if (Array.isArray(value)) return `[${value.map((item) => nativeToolsJson(item) ?? "null").join(",")}]`;
+	if (value && typeof value === "object") {
+		const record = value as Record<string, unknown>;
+		const members = utf8Keys(Object.keys(record)).flatMap((key) => {
+			const item = nativeToolsJson(record[key]);
+			return item === undefined ? [] : [`${JSON.stringify(key)}:${item}`];
+		});
+		return `{${members.join(",")}}`;
+	}
+	return JSON.stringify(value);
+}
+
 /**
  * Pure native `additional_tools` fragment (ID = at_ + UUIDv5 of the serialized tools under the thread namespace).
  * `tools` is the native declaration array (custom, namespace and hosted items included), canonicalized recursively
@@ -233,7 +247,7 @@ export function canonicalNativeTools(tools: readonly unknown[]): unknown[] {
  */
 export function additionalToolsItem(threadId: string, tools: readonly unknown[]): WireItem {
 	const canonical = canonicalNativeTools(tools);
-	return { type: "additional_tools", id: `at_${uuidV5(threadNamespace(threadId), JSON.stringify(canonical))}`, role: "developer", tools: canonical } as WireItem;
+	return { type: "additional_tools", id: `at_${uuidV5(threadNamespace(threadId), nativeToolsJson(canonical)!)}`, role: "developer", tools: canonical } as WireItem;
 }
 
 /**

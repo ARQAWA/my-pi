@@ -163,6 +163,24 @@ async function withSession(steps: Step[], run: (ctx: { session: Awaited<ReturnTy
 }
 
 describe("partial-tool recovery through the real AgentSession", () => {
+	for (const wrapper of [
+		{ type: "error", status: 200, error: { code: "server_error" } },
+		{ type: "error", error: { code: "server_error" } },
+	]) {
+		it(`native ignored wrapper through the facade: ${JSON.stringify(wrapper)}`, { timeout: SCENARIO_TIMEOUT_MS }, async () => {
+			const events = textEvents("resp_ignored", "Completed text.");
+			events.splice(events.length - 1, 0, wrapper as never);
+			await withSession([{ events }], async ({ session, posts, toolRuns }) => {
+				await session.prompt("reply briefly");
+				const last = session.messages.at(-1) as any;
+				assert.equal(last.stopReason, "stop");
+				assert.equal(last.content[0].text, "Completed text.");
+				assert.equal(posts.length, 1, "ignored wrapper must not resubmit or fall back");
+				assert.equal(posts[0].url, "websocket");
+				assert.deepEqual(toolRuns, []);
+			}, true);
+		});
+	}
 	it("completed call runs once, is paired before the resubmission, unfinished call never runs, final text is normal", { timeout: SCENARIO_TIMEOUT_MS }, async () => {
 		const steps: Step[] = [
 			{
