@@ -16,6 +16,7 @@ import { createCodexExtension } from "../../../extensions/RQW-codex/index.ts";
 import { CODEX_PROVIDER } from "../../../extensions/RQW-codex/profile.ts";
 import { PREWARM_HISTORY_CHANNEL, SESSION_POLICY_CHANNEL, type PrewarmHistoryRequest, type SessionPolicyRequest } from "../../../extensions/RQW-codex/registration.ts";
 import { STARTUP_PROJECTION_CHANNEL } from "../../../extensions/RQW-codex/session.ts";
+import { CodexThreadTransport } from "../../../extensions/RQW-codex/transport.ts";
 import { SocketError } from "../../../extensions/RQW-codex/websocket.ts";
 
 const ACCOUNT = "acct_idle_host_runtime_1";
@@ -90,15 +91,41 @@ type Peer = {
 	connect: (options: unknown) => Promise<unknown>;
 };
 type Counts = { reads: number; connects: number; sends: number; collects: number; http: number };
+type HeldGate = { promise: Promise<void>; done: Promise<void>; open: () => void; finish: () => void };
+const heldGate = (): HeldGate => {
+	let open!: () => void;
+	let finish!: () => void;
+	const promise = new Promise<void>((resolve) => {
+		open = resolve;
+	});
+	const done = new Promise<void>((resolve) => {
+		finish = resolve;
+	});
+	return { promise, done, open, finish };
+};
+const releaseGates = async (gates: HeldGate[]): Promise<void> => {
+	const pending = gates.splice(0);
+	for (const gate of pending) gate.open();
+	await Promise.all(pending.map((gate) => gate.done));
+};
 type Host = {
 	session: AgentSession;
 	peer: Peer;
 	agentDir: string;
 	counts: () => Counts;
+	/** Gates the next startup or explicit workspace capture; released captures finish their prepared setup. */
+	holdNextCapture: () => void;
+	releaseCaptures: () => Promise<void>;
+	/** Gates the next generate:false provider hook, after controller preparation and before the socket send. */
+	holdNextPayload: () => void;
+	releasePayloads: () => Promise<void>;
+	prewarmPayloads: () => number;
+	/** Independently waits for every real transport prewarm attempt, including scheduled startup work. */
+	prewarmSettled: () => Promise<void>;
 	emit: (request: PrewarmHistoryRequest) => void;
 	createForeignSession: () => Promise<AgentSession>;
 	/** A child session on the same runtime, with a test-only before_agent_start marker that forces `prompt` (Pi's forceSystemPrompt). */
-	createForcedChild: (prompt: string) => Promise<AgentSession>;
+	createForcedChild: (prompt: string, onApi?: (api: ExtensionAPI) => void) => Promise<AgentSession>;
 	/** A child session on the same runtime with a custom SOFT startup prompt from its own loader (no before_agent_start force). */
 	createSoftChild: () => Promise<AgentSession>;
 	/** Emits the child's policy request on the owner's bus, as RQW-agent does for a spawned child. */
@@ -187,13 +214,19 @@ async function drain(): Promise<void> {
  * One real registered facade on one real AgentSession. `scripts` are the socket responses in send order; `history` resumes the
  * session with provided messages. Everything the run created is aborted, disposed and removed in finally.
  */
-async function withHost(options: { scripts: Script[]; history?: boolean; passthrough?: boolean; codemode?: boolean; parentOnly?: boolean; startup?: boolean; /** Manual stock compaction only: no threshold trigger, and a cut that keeps just the last message. */ compactionOff?: boolean }, run: (host: Host) => Promise<void>) {
+async function withHost(options: { scripts: Script[]; history?: boolean; passthrough?: boolean; codemode?: boolean; parentOnly?: boolean; startup?: boolean; holdStartupCapture?: boolean; holdStartupPayload?: boolean; /** Manual stock compaction only: no threshold trigger, and a cut that keeps just the last message. */ compactionOff?: boolean }, run: (host: Host) => Promise<void>) {
 	// passthrough (test-only opt-in): a before_agent_start hook that returns the event's own prompt options. Off by default: the real SDK runs.
 	const root = await mkdtemp(join(tmpdir(), "rqw-codex-idle-runtime-"));
 	let session: AgentSession | undefined;
 	let foreign: AgentSession | undefined;
 	const children: AgentSession[] = [];
 	let release: (() => void) | undefined;
+	let holdNext = options.holdStartupCapture === true;
+	let holdPayload = options.holdStartupPayload === true;
+	let prewarmPayloads = 0;
+	const prewarmAttempts: Promise<void>[] = [];
+	const captureReleases: HeldGate[] = [];
+	const payloadReleases: HeldGate[] = [];
 	try {
 		const agentDir = join(root, "agent");
 		await mkdir(agentDir, { recursive: true });
@@ -233,14 +266,52 @@ async function withHost(options: { scripts: Script[]; history?: boolean; passthr
 				postEvents: postEvents as never,
 				collectWorkspaceMetadata: (async () => {
 					counts.collects++;
+					if (holdNext) {
+						holdNext = false;
+						const held = heldGate();
+						captureReleases.push(held);
+						await held.promise;
+						held.finish();
+					}
 					return {};
 				}) as never,
+				transportFactory: (identity, store, history) => {
+					const real = new CodexThreadTransport({ identity, store, history, dependencies: { connect: peer.connect as never, postEvents: postEvents as never, sleep: async () => undefined, clock: { now: () => Date.now() } } });
+					return {
+						stream: (model, context, options) => real.stream(model, context, options),
+						prewarm: (model, context, options) => {
+							const pending = real.prewarm(model, context, options);
+							prewarmAttempts.push(pending);
+							return pending;
+						},
+						beginTurn: (info) => real.beginTurn(info),
+						endTurn: () => real.endTurn(),
+						updateMetadata: (update) => real.updateMetadata(update),
+						sendRaw: (args) => real.sendRaw(args),
+						dispose: () => real.dispose(),
+					};
+				},
 				sleep: async () => undefined,
 				clock: { now: () => Date.now() },
 			},
 		});
+		const installPayloadGate = (pi: ExtensionAPI): void => {
+			pi.on("before_provider_request", async (event) => {
+				const payload = (event as { payload?: { generate?: boolean } }).payload;
+				if (payload?.generate !== false) return;
+				prewarmPayloads++;
+				if (holdPayload) {
+					holdPayload = false;
+					const held = heldGate();
+					payloadReleases.push(held);
+					await held.promise;
+					held.finish();
+				}
+			});
+		};
 		const factory = (pi: ExtensionAPI) => {
 			codex(pi);
+			installPayloadGate(pi);
 			piEvents = pi.events;
 			// Test-only parent projector: a parent section the root's projection adds (what RQW-prompt/RQW-tools may do on the owner bus).
 			if (options.parentOnly === true) {
@@ -279,6 +350,16 @@ async function withHost(options: { scripts: Script[]; history?: boolean; passthr
 			peer,
 			agentDir,
 			counts: () => ({ ...counts, connects: peer.connects, sends: peer.sends.length }),
+			holdNextCapture: () => {
+				holdNext = true;
+			},
+			releaseCaptures: () => releaseGates(captureReleases),
+			holdNextPayload: () => {
+				holdPayload = true;
+			},
+			releasePayloads: () => releaseGates(payloadReleases),
+			prewarmPayloads: () => prewarmPayloads,
+			prewarmSettled: () => Promise.all(prewarmAttempts).then(() => undefined),
 			emit: (request) => bus.emit(PREWARM_HISTORY_CHANNEL, request),
 			createForeignSession: async () => {
 				// A plain session on its OWN runtime, without the RQW-codex factory: its thread id is foreign to the owner. (A session on the
@@ -292,11 +373,15 @@ async function withHost(options: { scripts: Script[]; history?: boolean; passthr
 				}));
 				return foreign;
 			},
-			createForcedChild: async (prompt) => {
+			createForcedChild: async (prompt, onApi) => {
 				// Test-only marker: a before_agent_start that returns the forced prompt. No RQW extension is loaded in the child.
 				const marker = new DefaultResourceLoader({
 					cwd: agentDir, agentDir, additionalExtensionPaths: [], noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
-					extensionFactories: [(pi: ExtensionAPI) => { pi.on("before_agent_start", () => ({ systemPrompt: prompt }) as never); }],
+					extensionFactories: [(pi: ExtensionAPI) => {
+						installPayloadGate(pi);
+						pi.on("before_agent_start", () => ({ systemPrompt: prompt }) as never);
+						onApi?.(pi);
+					}],
 				});
 				await marker.reload();
 				const { session: child } = await createAgentSession({
@@ -324,7 +409,9 @@ async function withHost(options: { scripts: Script[]; history?: boolean; passthr
 		};
 		await run(host);
 	} finally {
-		// Failure cleanup: a still-open socket request is aborted, then every session is disposed.
+		// Failure cleanup: release held captures, abort a still-open socket request, then dispose every session.
+		captureReleases.splice(0).forEach((gate) => gate.open());
+		payloadReleases.splice(0).forEach((gate) => gate.open());
 		for (const item of [session, foreign, ...children]) {
 			if (!item) continue;
 			if (item.isStreaming) await item.abort().catch(() => undefined);
@@ -366,6 +453,7 @@ describe("idle host channel on the real registered facade (Pi 1.4.0 AgentSession
 			await waitFor(() => host.peer.sends.length === 1, "the prepared warm request");
 			const warm = host.peer.sends[0]!;
 			assert.equal(warm.generate, false, "the prewarm is generate:false");
+			assert.equal(warm.model, host.session.model?.id, "the idle prewarm uses the currently selected model");
 			const json = JSON.stringify(warm.input);
 			assert.ok(json.includes(HISTORY_USER), "the warm carries the provided user history");
 			assert.ok(json.includes(HISTORY_ASSISTANT), "the warm carries the provided assistant history");
@@ -429,6 +517,70 @@ describe("idle host channel on the real registered facade (Pi 1.4.0 AgentSession
 			const json = JSON.stringify(warm.input);
 			for (const text of [HISTORY_USER, NEW_PROMPT, ANSWER]) assert.ok(json.includes(text), `the effective history carries ${text}`);
 			assert.equal(json.split(ANSWER).length - 1, 1, "the answer appears once in the warm");
+		});
+	});
+
+	it("model switch while the explicit capture is held: the released setup sends no warm for the old model", { timeout: CASE_TIMEOUT_MS }, async () => {
+		await withHost({ scripts: [], history: true }, async (host) => {
+			host.holdNextCapture();
+			const request: PrewarmHistoryRequest = {};
+			host.emit(request);
+			assert.equal(request.accepted, true);
+			await waitFor(() => host.counts().collects === 1, "the explicit capture to be held");
+			const previous = host.session.model!;
+			const next = host.session.modelRuntime.getModels(CODEX_PROVIDER).find((model) => model.id !== previous.id)!;
+			await host.session.setModel(next);
+			await host.releaseCaptures();
+			assert.equal(host.peer.sends.length, 0, "the superseded explicit setup sends nothing");
+			assert.equal(host.peer.connects, 0, "the superseded explicit setup opens no socket");
+			assert.equal(host.counts().http, 0, "no HTTP request");
+		});
+	});
+
+	it("model switch while the explicit provider hook is held: the released hook cannot send the old model", { timeout: CASE_TIMEOUT_MS }, async () => {
+		await withHost({ scripts: [], history: true }, async (host) => {
+			host.holdNextPayload();
+			const request: PrewarmHistoryRequest = {};
+			host.emit(request);
+			assert.equal(request.accepted, true);
+			await waitFor(() => host.prewarmPayloads() === 1, "the explicit provider hook to be held");
+			const previous = host.session.model!;
+			const next = host.session.modelRuntime.getModels(CODEX_PROVIDER).find((model) => model.id !== previous.id)!;
+			await host.session.setModel(next);
+			await host.releasePayloads();
+			await host.prewarmSettled();
+			assert.equal(host.peer.sends.length, 0, "the cancelled transport preparation sends nothing");
+			assert.equal(host.peer.connects, 0, "the cancelled transport preparation opens no socket");
+			assert.equal(host.counts().http, 0, "no HTTP request");
+		});
+	});
+
+	it("work starts while the explicit provider hook is held: the pending prewarm is cancelled before the normal request and never sends late", { timeout: CASE_TIMEOUT_MS }, async () => {
+		await withHost({ scripts: [{ events: textEvents(TURN_1, ANSWER) }], history: true }, async (host) => {
+			host.holdNextPayload();
+			const request: PrewarmHistoryRequest = {};
+			host.emit(request);
+			assert.equal(request.accepted, true);
+			await waitFor(() => host.prewarmPayloads() === 1, "the explicit provider hook to be held before work starts");
+			let offStart = () => {};
+			const started = new Promise<void>((resolve) => {
+				offStart = host.session.subscribe((event) => {
+					if (event.type !== "agent_start") return;
+					offStart();
+					resolve();
+				});
+			});
+			const prompting = host.session.prompt(NEW_PROMPT);
+			void prompting.catch(() => undefined);
+			await started;
+			await waitFor(() => host.peer.sends.length >= 1, "the normal request while the obsolete provider hook remains held");
+			const sendsBeforeRelease = host.peer.sends.length;
+			await host.releasePayloads();
+			await host.prewarmSettled();
+			assert.ok(sendsBeforeRelease > 0, "the normal request proceeds without releasing the obsolete provider hook");
+			assert.notEqual(host.peer.sends[0]!.generate, false, "the first request is the real turn, not the stale prewarm");
+			await prompting;
+			assert.equal(host.peer.sends.length, 1, "the settled obsolete prewarm sends nothing late; the healthy turn socket needs no automatic warm");
 		});
 	});
 
@@ -726,6 +878,56 @@ describe("idle host channel on the real registered facade (Pi 1.4.0 AgentSession
 			const input = turn.input as Array<Record<string, any>>;
 			assert.equal(input.length, 1, "only the new child input is sent incrementally");
 			assert.equal(JSON.stringify(turn).includes(PARENT_ONLY), false, "the parent-only section is never sent to the child");
+		});
+	});
+
+	it("child model switch while its startup provider hook is held: the released hook cannot send the old model", { timeout: CASE_TIMEOUT_MS }, async () => {
+		await withHost({ scripts: [] }, async (host) => {
+			let childApi: ExtensionAPI | undefined;
+			const child = await host.createForcedChild(FORCED_PROMPT, (api) => {
+				childApi = api;
+			});
+			host.holdNextPayload();
+			const request: SessionPolicyRequest = { session: child, parentThreadId: host.session.sessionId, kind: "collab_spawn", startupSystemPrompt: FORCED_PROMPT, startupSystemPromptForced: true, childName: "collab_spawn#1" };
+			host.emitPolicy(request);
+			assert.equal(request.error, undefined);
+			request.installCompactionHooks?.(childApi!);
+			await waitFor(() => host.prewarmPayloads() === 1, "the child startup provider hook to be held");
+			const previous = child.model!;
+			const next = child.modelRuntime.getModels(CODEX_PROVIDER).find((model) => model.id !== previous.id)!;
+			await child.setModel(next);
+			await host.releasePayloads();
+			await host.prewarmSettled();
+			assert.equal(host.peer.sends.length, 0, "the child's cancelled transport preparation sends nothing");
+			assert.equal(host.peer.connects, 0, "the child's cancelled transport preparation opens no socket");
+			assert.equal(host.counts().http, 0, "no HTTP request");
+		});
+	});
+
+	it("model switch while the startup capture is held: the released setup sends no warm for the old model", { timeout: CASE_TIMEOUT_MS }, async () => {
+		await withHost({ scripts: [], startup: true, holdStartupCapture: true }, async (host) => {
+			await waitFor(() => host.counts().collects === 1, "the startup capture to be held");
+			const previous = host.session.model!;
+			const next = host.session.modelRuntime.getModels(CODEX_PROVIDER).find((model) => model.id !== previous.id)!;
+			await host.session.setModel(next);
+			await host.releaseCaptures();
+			assert.equal(host.peer.sends.length, 0, "the superseded startup setup sends nothing");
+			assert.equal(host.peer.connects, 0, "the superseded startup setup opens no socket");
+			assert.equal(host.counts().http, 0, "no HTTP request");
+		});
+	});
+
+	it("model switch while the startup provider hook is held: the released hook cannot send the old model", { timeout: CASE_TIMEOUT_MS }, async () => {
+		await withHost({ scripts: [], startup: true, holdStartupPayload: true }, async (host) => {
+			await waitFor(() => host.prewarmPayloads() === 1, "the startup provider hook to be held");
+			const previous = host.session.model!;
+			const next = host.session.modelRuntime.getModels(CODEX_PROVIDER).find((model) => model.id !== previous.id)!;
+			await host.session.setModel(next);
+			await host.releasePayloads();
+			await host.prewarmSettled();
+			assert.equal(host.peer.sends.length, 0, "the cancelled transport preparation sends nothing");
+			assert.equal(host.peer.connects, 0, "the cancelled transport preparation opens no socket");
+			assert.equal(host.counts().http, 0, "no HTTP request");
 		});
 	});
 
