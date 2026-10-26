@@ -106,6 +106,7 @@ process.exit(process.env.FAKE_NODE_MODE === "fail" ? 23 : 0);
 	const run = (message: string, cwd = repo) => {
 		const msg = join(tmp, "message.txt");
 		writeFileSync(msg, message);
+		// Execute the task head's gate from release cwd; the older release gate cannot review its replacement.
 		const r = spawnSync(process.execPath, [SCRIPT, "task", msg], { cwd, env, encoding: "utf8" });
 		return { code: r.status, out: r.stdout + r.stderr };
 	};
@@ -114,9 +115,10 @@ process.exit(process.env.FAKE_NODE_MODE === "fail" ? 23 : 0);
 	return { tmp, repo, worktree, bin, env, git, commit, task, issues, cache, inbox, ghCalls, nodeCalls, run, sessions };
 }
 
-const MSG = () => "Task\n\nReview: review#7 CLEAN\nCode-review: CLEAN\nUnverified: none\n";
+const MSG = () => "Task\n\nChange-class: ordinary\nReview: agent#7 CLEAN\nUnverified: none\n";
+const CRITICAL_MSG = () => MSG().replace("Change-class: ordinary", "Change-class: critical").replace("Unverified:", "Code-review: CLEAN\nUnverified:");
 
-const DOC_MSG = "Docs\n\nReview: agent#7 CLEAN\nUnverified: none\n";
+const DOC_MSG = "Docs\n\nChange-class: ordinary\nReview: agent#7 CLEAN\nUnverified: none\n";
 describe("deliver-check owner quote gate", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	it("accepts NFC and whitespace-normalized owner quotes in both documents", () => {
 		const t = setup();
@@ -206,21 +208,21 @@ describe("deliver-check", { skip: process.platform !== "darwin" && "Local develo
 		assert.equal(t.nodeCalls().length, 2);
 	});
 
-	it("passes an agent result-review trailer", () => {
+	it("rejects repeated ordinary reviews", () => {
 		const t = setup();
 		t.task({ "src/a.js": "1\n" });
-		const r = t.run(MSG().replace("review#7", "agent#7"));
-		assert.equal(r.code, 0, r.out);
-		assert.match(r.out, /reviews: agent#7; code review CLEAN/);
+		const r = t.run(MSG() + "Review: agent#8 CLEAN\n");
+		assert.equal(r.code, 1, r.out);
+		assert.match(r.out, /expected exactly one "Review: agent#N CLEAN"/);
 	});
 
 	it("fails malformed or absent result-review trailers", () => {
 		const t = setup();
 		t.task({ "src/a.js": "1\n" });
-		for (const trailer of ["Review: agent#N CLEAN", "Review: agent7 CLEAN", "Review: agent#7 found issues", ""]) {
-			const r = t.run(MSG().replace("Review: review#7 CLEAN", trailer));
+		for (const trailer of ["Review: review#7 CLEAN", "Review: agent#N CLEAN", "Review: agent7 CLEAN", "Review: agent#7 found issues", ""]) {
+			const r = t.run(MSG().replace("Review: agent#7 CLEAN", trailer));
 			assert.equal(r.code, 1, r.out);
-			assert.match(r.out, /FAIL message: missing trailer "Review: review#N CLEAN" or "Review: agent#N CLEAN"/);
+			assert.match(r.out, /FAIL message: expected exactly one "Review: agent#N CLEAN" covering result and code/);
 		}
 	});
 
@@ -279,7 +281,7 @@ describe("deliver-check", { skip: process.platform !== "darwin" && "Local develo
 	it("checks documents without a test child and keeps agent roles on the targeted-test path", () => {
 		const t = setup();
 		t.task({ "README.md": "y\n", "notes/n.md": "n\n" });
-		const r = t.run("Docs\n\nReview: review#3 CLEAN\nUnverified: none\n");
+		const r = t.run("Docs\n\nChange-class: ordinary\nReview: agent#3 CLEAN\nUnverified: none\n");
 		assert.equal(r.code, 0, r.out);
 		assert.match(r.out, /document checks: PASS/);
 		assert.equal(t.nodeCalls().length, 0);
@@ -290,24 +292,23 @@ describe("deliver-check", { skip: process.platform !== "darwin" && "Local develo
 		assert.deepEqual(u.nodeCalls(), [{ args: ["--test", "test/relevant.test.ts"], cwd: realpathSync(u.worktree), head: u.git("-C", u.worktree, "rev-parse", "HEAD") }]);
 	});
 
-	it("counts both sides of a move: code into notes/ needs code review", () => {
+	it("covers code and documents in one ordinary review, including both sides of a move", () => {
 		const t = setup();
 		const code = "export const a = 1;\nexport const b = 2;\n";
 		t.commit("release", { "src/a.js": code });
 		t.git("push", "--quiet", "origin", "release");
 		t.task({ "src/a.js": null, "notes/a.js": code });
-		const r = t.run("Move\n\nReview: review#3 CLEAN\nUnverified: none\n");
-		assert.equal(r.code, 1);
-		assert.match(r.out, /"Code-review: CLEAN"/);
+		const r = t.run("Move\n\nChange-class: ordinary\nReview: agent#3 CLEAN\nUnverified: none\n");
+		assert.equal(r.code, 0, r.out);
 	});
 
-	it("lists every missing trailer", () => {
+	it("lists every missing required class and review trailer", () => {
 		const t = setup();
 		t.task({ "src/a.js": "1\n" });
-		const r = t.run("Task\n\nReview: review#7 found issues\n");
+		const r = t.run("Task\n\nReview: agent#7 found issues\n");
 		assert.equal(r.code, 1);
-		for (const re of [/"Review: review#N CLEAN"/,
-			/"Code-review: CLEAN"/, /"Unverified: <text or none>"/]) assert.match(r.out, re);
+		for (const re of [/expected exactly one "Change-class: ordinary"/, /expected exactly one "Review: agent#N CLEAN"/,
+			/"Unverified: <text or none>"/]) assert.match(r.out, re);
 	});
 
 	it("fails when the release checkout has uncommitted changes", () => {
@@ -379,26 +380,6 @@ describe("deliver-check targeted tests", { skip: process.platform !== "darwin" &
 		assert.equal(t.ghCalls(), "");
 	});
 
-	it("keeps both versions of tests.yml exclusions for code-review classification", () => {
-		const t = setup();
-		const tests = readFileSync(join(ROOT, ".github/workflows/tests.yml"), "utf8");
-		t.task({ ".github/workflows/tests.yml": tests.replace(/paths-ignore:\s*\[[^\]]*\]/g, "paths-ignore: ['**']"), "src/a.js": "1\n" });
-		const r = t.run(DOC_MSG);
-		assert.equal(r.code, 1, r.out);
-		assert.match(r.out, /missing trailer "Code-review: CLEAN"/);
-		assert.equal(t.ghCalls(), "");
-	});
-
-	it("fails closed when tests.yml or its exclusions cannot be read", () => {
-		for (const text of [null, "name: tests\n"]) {
-			const t = setup();
-			t.task({ ".github/workflows/tests.yml": text });
-			const r = t.run(MSG());
-			assert.equal(r.code, 1, r.out);
-			assert.match(r.out, /FAIL cannot read (?:paths-ignore from )?\.github\/workflows\/tests\.yml/);
-			assert.deepEqual(t.nodeCalls(), []);
-		}
-	});
 });
 
 describe("deliver-check mechanical document path", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
@@ -427,13 +408,13 @@ describe("deliver-check mechanical document path", { skip: process.platform !== 
 		assert.match(savedLog(r.out), /external URL syntax only, no network requests/);
 	});
 
-	it("still requires a result review and extension README code review", () => {
-		const t = setup();
-		t.task({ "README.md": "A new rule.\n" });
-		assert.match(t.run("Docs\n\nUnverified: none\n").out, /missing trailer "Review:/);
-		const u = setup();
-		u.task({ "extensions/RQW-x/README.md": "A new rule.\n" });
-		assert.match(u.run(DOC_MSG).out, /missing trailer "Code-review:/);
+	it("requires one ordinary review for documents and extension READMEs", () => {
+		for (const file of ["README.md", "extensions/RQW-x/README.md"]) {
+			const t = setup();
+			t.task({ [file]: "A new rule.\n" });
+			assert.match(t.run("Docs\n\nChange-class: ordinary\nUnverified: none\n").out, /expected exactly one "Review:/);
+			assert.equal(t.run(DOC_MSG).code, 0);
+		}
 	});
 
 	it("runs targeted tests for every excluded runtime/config path and mixed changes", () => {
@@ -718,7 +699,7 @@ describe("deliver-check QA cache lines", { skip: process.platform !== "darwin" &
 	});
 });
 
-describe("deliver-check proofreading exemption and combined review", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
+describe("deliver-check proofreading exemption", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
 	const doc = (t: ReturnType<typeof setup>) => {
 		const log = join(t.tmp, "doc-check.log");
 		writeFileSync(log, "doc check ok\n");
@@ -750,7 +731,7 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 			["Change-class: proofreading\nDoc-check: doc.log\nUnverified: none\n", /needs exactly one "Doc-check/],
 			[`Change-class: proofreading\nDoc-check: ${join(t.tmp, "absent.log")}\nUnverified: none\n`, /is missing or empty/],
 			[`Change-class: proofreading\nDoc-check: ${empty}\nUnverified: none\n`, /is missing or empty/],
-			[`Change-class: typo\nDoc-check: ${log}\nUnverified: none\n`, /malformed "Change-class:"/],
+			[`Change-class: typo\nDoc-check: ${log}\nUnverified: none\n`, /expected exactly one "Change-class: ordinary"/],
 		] as [string, RegExp][]) {
 			const r = t.run(`Fix\n\n${msg}`);
 			assert.equal(r.code, 1, r.out);
@@ -761,9 +742,9 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 	it("without the exemption a docs-only change still needs a Review trailer", () => {
 		const t = setup();
 		t.task({ "README.md": "changed\n" });
-		const r = t.run("Docs\n\nUnverified: none\n");
+		const r = t.run("Docs\n\nChange-class: ordinary\nUnverified: none\n");
 		assert.equal(r.code, 1);
-		assert.match(r.out, /missing trailer "Review: review#N CLEAN"/);
+		assert.match(r.out, /expected exactly one "Review: agent#N CLEAN"/);
 	});
 
 	it("rejects proofreading of runtime prompts, config, source, workflows, agent files and added or deleted files", () => {
@@ -807,84 +788,42 @@ describe("deliver-check proofreading exemption and combined review", { skip: pro
 		assert.match(qa.out, /"QA: #N" is not proofreading/);
 	});
 
-	const EXT = "extensions/RQW-x";
-	const lines = (n: number, tag = "n") => Array.from({ length: n }, (_, i) => `${tag}${i}\n`).join(""); // distinct lines, so a rewrite counts both sides
-	const COMBINED = (extra = "") => `Task\n\nCombined-review: agent#7 CLEAN\n${extra}Unverified: none\n`;
-	// Runs one combined-review change; `base` files are first committed to release.
-	const combined = (files: Record<string, string | null>, base: Record<string, string> = {}, extra = "") => {
-		const t = setup();
-		if (Object.keys(base).length) { t.commit("release", base); t.git("push", "--quiet", "origin", "release"); }
-		t.task(files);
-		t.issues({ view: { "6": { labels: [{ name: "qa-inbox" }], state: "OPEN" } } });
-		return t.run(COMBINED(extra));
-	};
+});
 
-	it("accepts Combined-review in place of Review and Code-review inside one extension", () => {
-		const r = combined({ [`${EXT}/a.js`]: "1\n", [`${EXT}/sub/b.js`]: "2\n" });
-		assert.equal(r.code, 0, r.out);
-		assert.match(r.out, /reviews: combined agent#7 \(result and code review\)/);
+describe("deliver-check review classes", { skip: process.platform !== "darwin" && "Local development tooling is supported only on the owner's macOS laptop" }, () => {
+	it("requires separate code review only for a declared critical change", () => {
 		const t = setup();
-		t.task({ [`${EXT}/a.js`]: "1\n" });
-		for (const bad of ["Combined-review: agent#N CLEAN", "Combined-review: agent#7 found issues"]) {
-			assert.match(t.run(COMBINED().replace("Combined-review: agent#7 CLEAN", bad)).out, /missing trailer "Review: review#N CLEAN"/);
+		t.task({ "src/a.js": "1\n" });
+		const missing = t.run(MSG().replace("Change-class: ordinary", "Change-class: critical"));
+		assert.equal(missing.code, 1, missing.out);
+		assert.match(missing.out, /critical change requires "Code-review: CLEAN"/);
+		assert.match(CRITICAL_MSG(), /^Change-class: critical$/m);
+		const good = t.run(CRITICAL_MSG());
+		assert.equal(good.code, 0, good.out);
+		assert.doesNotMatch(good.out, /proofreading exemption/);
+		assert.match(good.out, /reviews: agent#7 \(result and code\); separate code review CLEAN/);
+	});
+
+	it("requires exactly one known change class", () => {
+		for (const message of [
+			"Task\n\nReview: agent#7 CLEAN\nUnverified: none\n",
+			"Task\n\nChange-class: typo\nReview: agent#7 CLEAN\nUnverified: none\n",
+			MSG().replace("Change-class: ordinary", "Change-class: ordinary\nChange-class: critical"),
+		]) {
+			const t = setup();
+			t.task({ "src/a.js": "1\n" });
+			const r = t.run(message);
+			assert.equal(r.code, 1, r.out);
+			assert.match(r.out, /expected exactly one "Change-class: ordinary"/);
 		}
 	});
 
-	it("counts added plus deleted lines: 100 passes, 101 fails", () => {
-		assert.equal(combined({ [`${EXT}/a.js`]: lines(100) }).code, 0);
-		const over = combined({ [`${EXT}/a.js`]: lines(101) });
-		assert.equal(over.code, 1, over.out);
-		assert.match(over.out, /"Combined-review:" not allowed \(101 added plus deleted lines, at most 100\)/);
-		// 60 deleted + 40 added = 100 passes; 60 + 41 = 101 fails.
-		const base = { [`${EXT}/a.js`]: lines(60, "old") };
-		assert.equal(combined({ [`${EXT}/a.js`]: lines(40) }, base).code, 0);
-				assert.match(combined({ [`${EXT}/a.js`]: lines(41) }, base).out, /101 added plus deleted lines/);
-	});
-
-	it("allows more than five files in one extension within 100 lines", () => {
-		const files = Object.fromEntries([17, 17, 17, 17, 16, 16].map((n, i) => [`${EXT}/f${i}.js`, lines(n)]));
-		const r = combined(files);
-		assert.equal(r.code, 0, r.out);
-	});
-
-	it("requires every changed path in the same extensions/RQW-*/ folder", () => {
-		for (const [name, files] of [
-			["two extensions", { "extensions/RQW-x/a.js": "1\n", "extensions/RQW-y/b.js": "1\n" }],
-			["outside folder", { "extensions/RQW-x/a.js": "1\n", "src/b.js": "1\n" }],
-			["ancillary doc", { "extensions/RQW-x/a.js": "1\n", "README.md": "doc\n" }],
-			["extension root file", { "extensions/RQW-x": "1\n" }],
-			["not an RQW folder", { "extensions/other/a.js": "1\n" }],
-		] as [string, Record<string, string>][]) {
-			const r = combined(files);
-			assert.equal(r.code, 1, `${name}\n${r.out}`);
-			assert.match(r.out, /"Combined-review:" not allowed \(changed paths are not all inside one extensions\/RQW-\*\/ folder\)/, name);
-		}
-	});
-
-	it("treats a binary diff entry as ineligible", () => {
-		const r = combined({ [`${EXT}/a.bin`]: "a\0b\n" });
-		assert.equal(r.code, 1, r.out);
-		assert.match(r.out, /"Combined-review:" not allowed \(binary or non-numeric diff entry\)/);
-	});
-
-	it("rejects Combined-review for test weakening, QA fixes and workflow changes", () => {
-		const BASE_TEST = 'import assert from "node:assert/strict";\nit("a", () => {\n\tassert.equal(1, 1);\n\tassert.equal(2, 2);\n});\n';
-		const testFile = `${EXT}/test/a.test.ts`;
-		const weak = combined({ [testFile]: BASE_TEST.replace('it("a"', 'it.skip("a"') }, { [testFile]: BASE_TEST },
-			"Test-change: why\nTest-review: agent#8 CLEAN\n");
-		assert.match(weak.out, /"Combined-review:" not allowed \(test integrity rule triggered\)/);
-		const qa = combined({ [`${EXT}/a.js`]: "1\n" }, {}, "QA: #6\nTest-review: agent#8 CLEAN\n");
-		assert.match(qa.out, /"Combined-review:" not allowed \(\"QA: #N\" fix\)/);
-		const wf = combined({ ".github/workflows/x.yml": "a: 1\n" });
-		assert.match(wf.out, /"Combined-review:" not allowed .*workflow file changed/);
-		for (const r of [weak, qa, wf]) assert.equal(r.code, 1, r.out);
-	});
-
-	it("ignores an ineligible Combined-review when separate review trailers are present", () => {
+	it("rejects the removed combined-review trailer without a compatibility path", () => {
 		const t = setup();
-		t.task({ "src/a.js": "1\n", [`${EXT}/b.js`]: "1\n" }); // outside one extension: combined is ineligible
+		t.task({ "src/a.js": "1\n" });
 		const r = t.run(MSG() + "Combined-review: agent#9 CLEAN\n");
-		assert.equal(r.code, 0, r.out);
+		assert.equal(r.code, 1, r.out);
+		assert.match(r.out, /"Combined-review:" was removed/);
 	});
 });
 

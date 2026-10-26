@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { registerHooks } from "node:module";
 import { after, describe, it } from "node:test";
 import { extractOwnerMessages, findNonVerbatimQuotes, findQuotes, loadOwnerMessages,
 	normalizeQuote, ownerSessionDirs } from "../scripts/owner-quotes.mjs";
@@ -75,6 +77,40 @@ describe("owner quote helpers", { skip: process.platform !== "darwin" && "Local 
 		assert.deepEqual(loadOwnerMessages([root, root]), ["owner words", "block words"]);
 		assert.throws(() => loadOwnerMessages([join(root, "missing")]), /no session files found/);
 		assert.equal(findNonVerbatimQuotes("«assistant only»", loadOwnerMessages([root])).length, 1);
+	});
+
+	it("loads sessions when whole-file reads exceed Node's string limit", async (t) => {
+		const root = temp();
+		const file = join(root, "session.jsonl");
+		writeFileSync(file, JSON.stringify(user("streamed owner")) + "\n");
+		const key = "__owner_quotes_fs_mock__";
+		const names = ["readdirSync", "readFileSync", "openSync", "readSync", "closeSync"];
+		(globalThis as any)[key] = { ...fs, readFileSync(path: unknown) {
+			if (path === file) {
+				const error = new Error("Cannot create a string longer than 0x1fffffe8 characters") as NodeJS.ErrnoException;
+				error.code = "ERR_STRING_TOO_LONG";
+				throw error;
+			}
+			return fs.readFileSync(path as any);
+		} };
+		const hooks = registerHooks({
+			resolve(specifier, context, nextResolve) {
+				if (specifier !== "node:fs") return nextResolve(specifier, context);
+				return { url: "mock:owner-quotes-fs", shortCircuit: true };
+			},
+			load(specifier, context, nextLoad) {
+				if (specifier !== "mock:owner-quotes-fs") return nextLoad(specifier, context);
+				return { format: "module", shortCircuit: true, source: names.map((name) =>
+					`export const ${name} = globalThis.${key}.${name};`).join("\n") };
+			},
+		});
+		try {
+			const loaded = await import(`../scripts/owner-quotes.mjs?stream=${Date.now()}`);
+			assert.deepEqual(loaded.loadOwnerMessages([root]), ["streamed owner"]);
+		} finally {
+			hooks.deregister();
+			delete (globalThis as any)[key];
+		}
 	});
 
 	it("fails closed on corrupt JSONL or a corpus without owner messages", () => {

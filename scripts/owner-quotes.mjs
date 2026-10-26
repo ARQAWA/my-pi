@@ -1,7 +1,8 @@
 // Shared by the repo-only coordinator guard and the pre-merge gate. No Pi runtime dependencies.
-import { readdirSync, readFileSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 export const normalizeQuote = (text) => text.normalize("NFC").replace(/\s+/gu, " ").trim();
 
@@ -51,6 +52,30 @@ export function findNonVerbatimQuotes(text, messages) {
 	});
 }
 
+// Stream JSONL so large session histories do not hit Node's whole-file string limit.
+function* readSessionEntries(file) {
+	const fd = openSync(file, "r");
+	const decoder = new StringDecoder("utf8");
+	const buffer = Buffer.allocUnsafe(1024 * 1024);
+	let pending = "", lineIndex = 0;
+	const parse = (line, index) => {
+		if (!line.trim()) return [];
+		try { return [JSON.parse(line)]; }
+		catch { throw new Error(`invalid session JSONL at ${file}:${index}`); }
+	};
+	try {
+		while (true) {
+			const bytes = readSync(fd, buffer, 0, buffer.length, null);
+			if (!bytes) break;
+			const lines = (pending + decoder.write(buffer.subarray(0, bytes))).split(/\r?\n/u);
+			pending = lines.pop() ?? "";
+			for (const line of lines) yield* parse(line, ++lineIndex);
+		}
+		pending += decoder.end();
+		if (pending) yield* parse(pending, lineIndex + 1);
+	} finally { closeSync(fd); }
+}
+
 export function loadOwnerMessages(dirs) {
 	const files = new Set();
 	const visit = (dir) => {
@@ -67,12 +92,7 @@ export function loadOwnerMessages(dirs) {
 	if (!files.size) throw new Error("no session files found; set MY_PI_SESSIONS to owner session directories");
 	const messages = [];
 	for (const file of files) {
-		const entries = readFileSync(file, "utf8").split(/\r?\n/u).flatMap((line, index) => {
-			if (!line.trim()) return [];
-			try { return [JSON.parse(line)]; }
-			catch { throw new Error(`invalid session JSONL at ${file}:${index + 1}`); }
-		});
-		messages.push(...extractOwnerMessages(entries));
+		for (const entry of readSessionEntries(file)) messages.push(...extractOwnerMessages([entry]));
 	}
 	if (!messages.length) throw new Error("no owner user messages found in session files");
 	return messages;

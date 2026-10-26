@@ -9,11 +9,11 @@ sections after compaction or a handoff before continuing. This is mandatory lazy
 loading, not optional background reading. Give subagents the relevant process rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
 Coordinator personal-work objections and explicit overrides: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
 Coordinator rules bind only the session that holds the repository's `coordinator.lock`; every other session is a normal direct agent.
-Only one execution task is active at a time in the owner's priority queue. QA fixes, Windows work and full release
-regressions share that queue; there is no separate test lane. CI, review, merge-queue and owner waits are not active
-execution, so the next logical task may run then. Coordinator bookkeeping is operational and never permits concurrent
-implementation. After the listed queue items, only owner-ordered Windows CI failures resume; invented standalone PCLI
-verification and unrelated holds stay out. Pause is `agent` `interrupt`, resume is `agent` `resume` (`send` only carries a new message), with no pause files:
+Only one execution task is active at a time from BACKLOG.md's current queue. QA fixes, Windows work and full release
+regressions share that queue; there is no separate test lane. The conserved old queue waits for OLD-QUEUE-REVIEW,
+always last until empty; new tasks go before it. Completed and Discarded work never returns. CI, review, merge-queue
+and owner waits are not active execution, so the next logical task may run then. Coordinator bookkeeping is operational
+and never permits concurrent implementation. Pause is `agent` `interrupt`, resume is `agent` `resume` (`send` only carries a new message), with no pause files:
 [PROCESS.md](PROCESS.md#task-pipeline).
 Golden rule, no avoidable token spending and simplest engineered solutions: [PROCESS.md](PROCESS.md#golden-rule).
 Task timebox, at most 2 hours of substantive work, then a pause and a report: [PROCESS.md](PROCESS.md#task-timebox).

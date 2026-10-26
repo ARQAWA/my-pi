@@ -59,9 +59,11 @@ needs a fresh owner decision ([D-PIPELINE-FLAKE-SKIP](../DECISIONS.md#task-pipel
 - Intermittent failure: n repeat runs after the fix with no failure, where (1-p)^n < 0.05 and p is the failure rate
   before the fix. Use the manual `codemode-stress.yml` repeat harness (dispatch inputs: test file, name pattern, os, node, runs) or a dispatch of `tests.yml`; CPU-heavy repeats stay in CI.
 
-**Test-integrity review.** For every test or workflow change that weakens a check, as `deliver-check` mechanically
-detects it (`skip`, `todo`, retry, raised timeout, `continue-on-error`, fewer assertions), and not for every QA fix, a
-reviewer subagent runs through `agent` with `agent_type: "test-reviewer"`, in parallel with the result and code reviews.
+**Test-integrity review.** Routine test changes are covered by the one ordinary independent review; they get no
+separate test-integrity pass. For a test or workflow change that weakens a check, as `deliver-check` mechanically
+detects it (`skip`, `todo`, retry, raised timeout, `continue-on-error`, fewer assertions), a reviewer subagent runs
+through `agent` with `agent_type: "test-reviewer"`, in parallel with the other required reviews. Critical/high-risk
+changes also receive separate code review under [Independent review](independent-review.md).
 The project profile `.pi/agents/test-reviewer.toml` owns its prompt and Sol 6.1 low defaults.
 Its brief names the exact review scope and supplies the issue, the triage claim, the diff and the red/green and repeat
 evidence when applicable; without an inbox issue, supply `Test-change:` and its supporting contract and evidence.

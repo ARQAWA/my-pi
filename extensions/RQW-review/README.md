@@ -9,10 +9,12 @@ Self-contained: no imports from other extensions. Requires RQW-agent to run a re
 | `highreview` | high | `bossy` | `gpt-6.1-sol` | medium |
 | `testreview` | requirements/test plan | `requirements-test-reviewer` | `gpt-6.1-sol` | low |
 
-Both wrappers read `skills/reviewer/SKILL.md` for the common review procedure. Each pass starts a fresh ordinary
-`agent` with the selected `agent_type`, `include: ["user_messages"]` and a task containing `<agreement>` when
-needed, `<object>`, `<criterion>` and, from the second pass, `<rejected_earlier>`. Agent appends raw user messages
-in `<user_messages>` after the task; Main does not copy them. A complete `CLEAN` needs `CHECKED:` and no `UNCHECKED:`.
+Both wrappers read `skills/reviewer/SKILL.md` for the common review procedure. Initial and changed-object passes
+start a fresh ordinary `agent` with the selected `agent_type`, `include: ["user_messages"]` and a task containing
+`<agreement>` when needed, `<object>`, `<criterion>` and `<rejected_earlier>` when applicable. Agent appends raw user
+messages in `<user_messages>` after the task; Main does not copy them. A complete `CLEAN` needs concise concrete
+`CHECKED:` evidence and no `UNCHECKED:`. Missing or malformed evidence is completed by `send` to the same reviewer,
+which supplies evidence from retained inspection or marks the exact gap; a fresh reviewer is not started for format.
 
 `profiles/spotty.toml` and `profiles/bossy.toml` contain identical `developer_instructions`, appended as a role to
 the inherited main system prompt by RQW-agent. Read-only behavior is an instruction, not a sandbox or git guard;
@@ -21,8 +23,8 @@ explicit agent options can override these defaults.
 
 The source is the owner's Codex plugin `scope-focus`, developer A. Chukavin, with no licence text supplied.
 The common skill contains only its subagents skill's review section, with calls and user-message placement
-adapted for Pi. Both profiles preserve the canonical REVIEWER.md text exactly, including its section-description
-sentence; actual mechanical placement is specified by the common skill.
+adapted for Pi. Both profiles share the canonical reviewer role with the approved concise-evidence amendment;
+actual mechanical placement and same-reviewer completion are specified by the common skill.
 
 On `pi.events` channel `rqw-agent:profiles`, request `{ offer(paths: string[]): void }`, this extension offers
 absolute paths to all three TOML files. `resources_discover` returns absolute `skillPaths` for all four skills;

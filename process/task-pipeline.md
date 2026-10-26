@@ -27,11 +27,15 @@ Decisions, the owner's words and reasons: [DECISIONS.md, Task pipeline](../DECIS
   the branch is deleted. Delivery never waits for Windows or green macOS CI; no workflow result gates a merge.
 - Test work. QA fixes, Windows work and full release regressions are ordinary tasks in the same single execution
   queue as other work. There is no separate test lane and no independent concurrent test-fixer or regression agent.
-  Main sequences them logically by owner priority, dependencies, required gates and release triggers. After the
-  currently listed queue items, only owner-ordered Windows CI failure work resumes, with direct sources in `BACKLOG.md`.
-  Invented standalone PCLI verification, unrelated holds and discarded tasks stay out. Test agents remain ordinary
-  `agent`s on a simple executor pair under the [model policy](../PROCESS.md#subagent-models).
+  Main sequences them logically by owner priority, dependencies, required gates and release triggers. Test agents
+  remain ordinary `agent`s on a simple executor pair under the [model policy](../PROCESS.md#subagent-models).
   Decisions: [DECISIONS.md](../DECISIONS.md#task-pipeline).
+- Queue reset and conservation. `BACKLOG.md` is canonical: its clearly marked current queue is the only execution
+  source, and its conserved old queue is not runnable. Every newly added task goes immediately before
+  `OLD-QUEUE-REVIEW`, which stays permanently last while conserved items remain. When all other current work is done,
+  review the old queue item by item; restore the reminder last if anything remains, and remove it only when the old
+  queue is empty. Preserve branches, worktrees, evidence, dependencies and CI state. Never resurrect completed or
+  Discarded work, and do not physically delete conserved artifacts during the reset.
 - A failed task-scoped delivery check or a conflicting rebase sends the task back to the top of the queue. Full-run
   failures follow [Delivery](../PROCESS.md#delivery). GitHub CI does
   not gate delivery. When it becomes the next active task, ahead of tasks not yet started, resume its existing agent;

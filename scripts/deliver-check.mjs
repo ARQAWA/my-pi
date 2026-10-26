@@ -123,31 +123,8 @@ if (local !== release && !contains(local)) {
 		+ "push or drop the local commits, then rebase and retest");
 }
 
-// Both versions of tests.yml's exclusions classify changes for code review, not for test execution.
-function workflowPaths(rev, file, key) {
-	let text;
-	try {
-		text = git("show", `${rev}:.github/workflows/${file}`);
-	} catch (e) {
-		fail(`cannot read .github/workflows/${file} at ${short(rev)}: ${String(e.stderr || e.message).trim()}`);
-		finish();
-	}
-	const m = new RegExp(`^\\s*${key}:\\s*\\[([^\\]]*)\\]`, "m").exec(text);
-	if (!m) {
-		fail(`cannot read ${key} from .github/workflows/${file} at ${short(rev)}`);
-		finish();
-	}
-	return m[1].split(",").map((s) => s.trim().replace(/^['"]|['"]$/g, "")).filter(Boolean);
-}
-// GitHub path filter globs: ** crosses directories, * and ? do not.
-const globRe = (glob) => new RegExp(`^${glob.split(/(\*\*|\*|\?)/).map((p) =>
-	p === "**" ? ".*" : p === "*" ? "[^/]*" : p === "?" ? "[^/]" : p.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("")}$`);
-const matchesAny = (file, globs) => globs.some((g) => globRe(g).test(file));
-
-// --no-renames keeps both sides of moves in the review and targeted-test classification.
+// --no-renames keeps both sides of moves in targeted-test classification.
 const changed = git("diff", "-z", "--no-renames", "--name-only", `${release}...${head}`).split("\0").filter(Boolean);
-const ignoredBy = [release, head].map((rev) => workflowPaths(rev, "tests.yml", "paths-ignore"));
-const codeChanged = changed.some((f) => !ignoredBy.every((globs) => matchesAny(f, globs)));
 
 // 3. The squash message records clean reviews and what was not verified live.
 let lines = [];
@@ -157,7 +134,7 @@ try {
 	fail(`cannot read message file ${messageFile}: ${e.message}`);
 }
 const has = (re) => lines.some((l) => re.test(l));
-const reviews = lines.filter((l) => /^Review: (?:review|agent)#\d+ CLEAN$/.test(l)).map((l) => l.slice(8, -6));
+const reviews = lines.filter((l) => /^Review: agent#\d+ CLEAN$/.test(l)).map((l) => l.slice(8, -6));
 
 // 3b. Detected test/workflow weakening needs both a reason and an independent test-integrity review.
 // `QA: #N` also needs a reason for test/workflow edits, but is not itself an integrity-review trigger.
@@ -213,7 +190,7 @@ function weakeningRules(file) {
 	return rules;
 }
 const hasTestChange = has(/^Test-change: \S/);
-const hasTestReview = has(/^Test-review: (?:review|agent)#\d+ CLEAN$/);
+const hasTestReview = has(/^Test-review: agent#\d+ CLEAN$/);
 const weak = changed.filter((f) => isTestFile(f) || isWorkflowFile(f)).map((f) => ({ file: f, rules: weakeningRules(f) }))
 	.filter((w) => w.rules.length);
 for (const w of weak) {
@@ -242,14 +219,9 @@ if (qaIssues.length) {
 	}
 }
 
-// 3c. Review gates. Two declared shortcuts, both conservative:
-// - `Change-class: proofreading` + `Doc-check: <absolute log path>`: passive documents only, no review trailers.
-// - `Combined-review: agent#N CLEAN`: one reviewer for result and code review; at most 100 added plus deleted lines,
-//   every changed path inside one extensions/RQW-*/ folder. "No visible behavior change" stays the reviewer's attestation.
+// 3c. The declared class selects one ordinary review, critical result plus code review, or proofreading checks.
 const changeClasses = lines.filter((l) => l.startsWith("Change-class:"));
 const docChecks = lines.filter((l) => l.startsWith("Doc-check:")).map((l) => l.slice(10).trim());
-const combinedLines = lines.filter((l) => /^Combined-review: (?:review|agent)#\d+ CLEAN$/.test(l)).map((l) => l.slice(17, -6));
-const COMBINED_MAX_LINES = 100;
 const isPassiveDoc = (f) => /^[^/]+\.md$/.test(f) && !["AGENTS.md", "INSTALL.md"].includes(f) || /^notes\/.+\.md$/.test(f);
 const rulesBlock = (rev) => {
 	const files = git("ls-tree", "-r", "--name-only", rev, "--", "PROCESS.md", "process/").split("\n")
@@ -296,47 +268,28 @@ function proofreadingProblems() {
 	if (changed.includes("PROCESS.md") && (rulesBlock(release) === "[]" || rulesBlock(release) !== rulesBlock(head))) {
 		problems.push("PROCESS.md coordinator-rules block changed or unreadable");
 	}
-	if (codeChanged) problems.push("code review is required for this change");
 	if (qaIssues.length) problems.push('"QA: #N" is not proofreading');
 	return problems;
 }
 let proofreading = false;
-if (changeClasses.length) {
+if (changeClasses.includes("Change-class: proofreading")) {
 	const problems = proofreadingProblems();
 	for (const p of problems) fail(`message: proofreading exemption: ${p}`);
 	proofreading = !problems.length;
 }
-// Added plus deleted lines of the whole change; null when a binary or non-numeric entry makes the size unknowable.
-function changedLineCount() {
-	let total = 0;
-	for (const row of git("diff", "--numstat", "--no-renames", `${release}...${head}`).split(/\r?\n/).filter(Boolean)) {
-		const [add, del] = row.split("\t");
-		if (!/^\d+$/.test(add) || !/^\d+$/.test(del)) return null;
-		total += Number(add) + Number(del);
-	}
-	return total;
+const proofreadingClass = changeClasses.length === 1 && changeClasses[0] === "Change-class: proofreading";
+const ordinary = changeClasses.length === 1 && changeClasses[0] === "Change-class: ordinary";
+const critical = changeClasses.length === 1 && changeClasses[0] === "Change-class: critical";
+if (!proofreadingClass && !ordinary && !critical) {
+	fail('message: expected exactly one "Change-class: ordinary", "Change-class: critical" or "Change-class: proofreading"');
 }
-const combinedProblems = () => {
-	const problems = [];
-	const folders = new Set(changed.map((f) => /^(extensions\/RQW-[^/]+)\/./.exec(f)?.[1] ?? ""));
-	if (!changed.length || folders.has("") || folders.size !== 1) problems.push("changed paths are not all inside one extensions/RQW-*/ folder");
-	const lines = changedLineCount();
-	if (lines === null) problems.push("binary or non-numeric diff entry");
-	else if (lines > COMBINED_MAX_LINES) problems.push(`${lines} added plus deleted lines, at most ${COMBINED_MAX_LINES}`);
-	if (weak.length) problems.push("test integrity rule triggered");
-	if (qaIssues.length) problems.push('"QA: #N" fix');
-	if (changed.some(isWorkflowFile)) problems.push("workflow file changed");
-	return problems;
-};
-const combinedProblem = combinedLines.length ? combinedProblems() : [];
-const combined = combinedLines.length > 0 && !combinedProblem.length;
-const needsReview = !reviews.length && !combined && !proofreading;
-const needsCodeReview = codeChanged && !has(/^Code-review: CLEAN$/) && !combined;
-if (combinedProblem.length && (needsReview || needsCodeReview)) {
-	fail(`message: "Combined-review:" not allowed (${combinedProblem.join("; ")}): use separate "Review:" and "Code-review: CLEAN"`);
+if (lines.some((l) => l.startsWith("Combined-review:"))) {
+	fail('message: "Combined-review:" was removed; ordinary work uses one "Review: agent#N CLEAN" for result and code');
 }
-if (needsReview) fail('message: missing trailer "Review: review#N CLEAN" or "Review: agent#N CLEAN"');
-if (needsCodeReview) fail('message: missing trailer "Code-review: CLEAN" (non-doc files changed)');
+if (!proofreadingClass && reviews.length !== 1) {
+	fail('message: expected exactly one "Review: agent#N CLEAN" covering result and code');
+}
+if (critical && !has(/^Code-review: CLEAN$/)) fail('message: critical change requires "Code-review: CLEAN"');
 if (!has(/^Unverified: \S/)) fail('message: missing trailer "Unverified: <text or none>"');
 
 // 5. Only head-version quote spans touching added lines need provenance. Historical quotes stay untouched.
@@ -430,8 +383,7 @@ console.log(`  contains origin/release ${short(release)}; ${changed.length} chan
 if (documentOnly) console.log(`  document checks: PASS ${head}; targeted tests not required; ${documentLog}`);
 else console.log(`  targeted tests: ${selected.length ? "PASS" : "NONE"} ${head} in ${taskWorktree}`);
 if (proofreading) console.log(`  reviews: exempt (proofreading, Doc-check ${docChecks[0]})`);
-else if (combined && !reviews.length) console.log(`  reviews: combined ${combinedLines.join(", ")} (result and code review)`);
-else console.log(`  reviews: ${reviews.join(", ")}${codeChanged ? "; code review CLEAN" : ""}`);
+else console.log(`  reviews: ${reviews.join(", ")} (result and code)${critical ? "; separate code review CLEAN" : ""}`);
 if (weak.length) console.log(`  test integrity: ${weak.length} weakening file(s) accepted with Test-change and Test-review`);
 if (qaIssues.length) console.log(`  QA: ${qaIssues.map((n) => `#${n}`).join(", ")} (qa-inbox issues)`);
 for (const line of qaOpenLines()) console.log(line);

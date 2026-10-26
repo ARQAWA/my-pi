@@ -265,13 +265,14 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   line-by-line bounded review standard; [PROCESS.md](PROCESS.md#independent-review) defines invocation.
   Reason: one discoverable role and one source for its instructions and model defaults.
   Carrier: `.pi/agents/code-reviewer.toml`; source: the owner's messages supplied with this task.
-- **Final checks and code reviewer** `[D-WORK-FINAL-CHECK]`. Work ends with an independent completeness-and-consistency
-  check; large code changes also get a separate bug/quality reviewer through `agent_type: "code-reviewer"`,
-  small ones one combined review ([D-PIPELINE-COMBINED-REVIEW]). Installed Pi updates follow
-  [PROCESS.md, Delivery](PROCESS.md#delivery).
-  Reason: independent proof without new product tools. Carriers:
-  [PROCESS.md, Independent review](PROCESS.md#independent-review), `.pi/agents/code-reviewer.toml`.
-  Since: `8f2ea64`.
+- **Final checks and code reviewer** `[D-WORK-FINAL-CHECK]`. Ordinary work ends with one independent review
+  covering result and code. Critical/high-risk work gets a separate code review too; explicit blind/high requests keep
+  their profiles. There is no small-work combined-review shortcut. Installed Pi updates follow
+  [PROCESS.md, Delivery](PROCESS.md#delivery). Reason: one sufficient independent check for ordinary risk, stronger
+  scrutiny only where the risk justifies it. Carriers: [PROCESS.md, Independent review](PROCESS.md#independent-review),
+  `scripts/deliver-check.mjs`, `.pi/agents/code-reviewer.toml`. Supersedes the small/large split in
+  [D-PIPELINE-COMBINED-REVIEW], archived verbatim. Since: `8f2ea64`; current class rule: process-minimal-testing-review.
+
 - **Deterministic delivery quality** `[D-WORK-DELIVER-CHECK]`. Owner (`16-27-59:440`, approval `16-27-59:450`):
   «Теперь смотри насчет выполнения задач и пробелов, которые ты нашел. Я же не буду всегда тебя переспрашивать. Если бы я не спросил, ты бы об этом не узнал. Надо поэтому сделать какой-то процесс, как детерминированно эту проблему решить на постоянке, чтобы мне не надо было тебя постоянно переспрашивать, чтобы ты сам следил за качеством. Надо твое предложение по тому, как мы этот пробел будем закрывать.»
   «Правила по Process MD я одобряю»
@@ -432,11 +433,6 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   of CI and found 9 real inconsistencies by review, so meaning review stays. Carrier:
   [PROCESS.md, Independent review](PROCESS.md#independent-review), `scripts/deliver-check.mjs` (`Change-class:`,
   `Doc-check:`). Since: process-pipeline squash.
-- **Combined review for small work** `[D-PIPELINE-COMBINED-REVIEW]`. Small work gets one combined result and code
-  review; large work keeps both. Owner: «6b» Coordinator text, option 6b: "Сразу перейти на совмещённую проверку для малых правок: меньше работы, риск не измерен." Coordinator definition of small (not owner words): at most 100 added plus deleted lines, all inside one extension, with no owner-visible behavior change; the gate enforces the lines and the extension, the reviewer verifies the behavior. An explicit owner request for both reviews on a delivery takes precedence.
-  Reason: two roles found different real defects, so large work keeps both; the owner accepted the unmeasured risk for
-  small work. Carrier: [PROCESS.md, Independent review](PROCESS.md#independent-review), `scripts/deliver-check.mjs`
-  (`Combined-review:`). Since: process-pipeline squash.
 - **Completeness check by count or time** `[D-PIPELINE-COMPLETENESS]`. A fresh independent completeness check runs
   once after 7 merges or 120 minutes, whichever comes first, and always before the final report. Owner: «5а - раз в 7 слияний или раз в 120 минут»
   Reason: the owner set the cadence against the coordinator's 3 merges or 30 minutes; checks mostly fixed marks and reread
@@ -521,18 +517,94 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
 
 - **Single queue for test work** `[D-PIPELINE-SINGLE-QUEUE]`. QA fixes, Windows work and full release regressions
   are ordinary tasks in the single execution queue under [D-WORK-PARALLEL], with no independent concurrent test-fixer
-  or regression agent. Main sequences them logically by owner priority, dependencies, required gates and release triggers.
-  After the currently listed queue items, only owner-ordered Windows CI failure work resumes, with a readable direct
-  source for every item in [BACKLOG.md](BACKLOG.md#windows-test-failures). The direct Windows-test instruction is owner
-  `16-27-59:5309`, entry `1bbe27c1`. Owner (`16-27-59:12041`, entry `da2328fd`, 2026-10-25):
-  «И потом в работу добавь все что связано с виндой»
-  Coordinator or auditor-invented standalone PCLI publication, VS Code, ConPTY and generic Windows verification tasks
-  are not resumed. Discarded tasks, unrelated holds, delivered fixes and issue-monitoring-only items stay out.
-  Owner (`16-27-59:12047`, entry `5cc4142a`, 2026-10-25): «Из них удали те задачи которые Я НЕ ЗАКАЗЫВАЛ».
-  Test triage, proven-cause, no-skip/no-weakening, red/green evidence and release-regression requirements stay unchanged.
-  Reason: sequence owner-ordered test and Windows work without creating unauthorized tasks or an independent lane.
-  Carriers: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), [Delivery](PROCESS.md#delivery) and `BACKLOG.md`.
-  The superseded test-lane entry is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0365, from `4c66755`.
+  or regression agent. Main sequences them by current owner priority, dependencies, required gates and release triggers.
+  Owner (`16-27-59:12021`, entry `b5d1a538`, 2026-10-25):
+  «Кароче дальше в 1 поток задачи делаешь и отдельного потока на тесты нет чередуй по логике»
+  The conserved old queue no longer resumes Windows work automatically; it waits for `OLD-QUEUE-REVIEW` under
+  [D-PIPELINE-QUEUE-RESET]. Completed and Discarded work stays out. Carriers:
+  [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), `BACKLOG.md`. The superseded automatic-tail wording is
+  preserved verbatim in `DECISIONS-ARCHIVE.md`.
+
+- **Queue reset and conservation** `[D-PIPELINE-QUEUE-RESET]`. `BACKLOG.md` has one current execution queue and a
+  clearly named conserved old queue. Work uses only the current queue. Every new task goes before `OLD-QUEUE-REVIEW`,
+  permanently last until the old queue is empty. Then the old queue is reviewed item by item; the reminder remains or
+  reappears last while anything remains. Completed and previously Discarded work is never resurrected. Conservation
+  preserves branches, worktrees, drafts, issues, evidence, dependencies and CI state without physical cleanup.
+  Source session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, owner line 13441,
+  entry `59a789ef`, 2026-10-26:
+  «Да, и в соответствии с тем, что я написал выше, надо всю старую очередь работы полностью законсервировать и переложить куда-то в старую очередь. А из текущей работы, которую я описал выше, создать актуальную текущую очередь. И потом мы старую очередь разберём. Пока что мы работаем в новой очереди, пока все задачи в ней не закончатся. Я буду сейчас в неё докладывать критичные вещи. Когда мы её полностью пройдём, мы сделаем разбор старой очереди.»
+  «Даже так: разбор старой очереди, чтобы не забыть, мы положим в новую очередь задачу-напоминание о том, что надо разобрать старую очередь.»
+  «И она будет всегда в самом конце, самой последней, Пока старая очередь не кончится»
+  Initial current-queue sources in the same session: owner line 13422, entry `202bfbdd`:
+  «Теперь по дальнейшей работе начнём с чего? Давай так: удаляем cache unchanged read. Rqw naming один запрос вместо двух оставляем. Не гарантировать 10 кандидатов. Надо просто минимум от одного до 10 кандидатов и выбирать из них лучшего. И всё. Надо, чтобы эта механика была максимально простой, без заёбов и строгости.»
+  «Agent list, to do panel, новые возможности, кодекс — это оставляем.»
+  «Слабые тесты удаляем. Это то, что нужно на будущее сделать.»
+  Owner line 13428, entry `89117405`: «Остатки подписок в Status Bar — это моя задача, мы её не выбрасываем. Composer Predictions — тоже моя задача, мы её не выбрасываем. Подсказка серая, Tab её принимает.»
+  Owner line 13320, entry `7245c9c3`: «Нет, для kimi K2.8 preview low, для Claude Code - haiku 5.5 low, для GPT - GPT 5.6 Luna low»
+  Owner line 13303, entry `94c96d9a`: «RQW-thinking надо удалить»
+  Final accepted RQW-tools design, same session, owner line 13600, entry `5347ebee`:
+  «Облегченный вариант должен быть максимально лёгким, настолько лёгким, чтобы его можно было проверить, чтобы он был максимально легковесный, максимально прозрачный, чтобы любой агент мог однозначно сказать, что весь функционал качественный и работает 100% пиздато.»
+  «Я предлагаю оставить блокировку записи файла на уровне write-едит инструмента, но так, чтобы она не создавала никаких side эффектов, была максимально простая, прозрачная и суперэффективная при этом. Теперь напиши план ближайших работ, которые ты видишь в соответствии с обеспечением всей этой штуки. Ты написал, что оставляем, вернее, что теряем, что выбрасываем. Всё, что выбрасываем, мы сверху нахуй вертели, чтобы обслуживать параллелизм?»
+  The owner's explicit final-design confirmation accepts stock parallel read/write/edit/find/grep and independent
+  Bash/codemode, without speculative command parsing or global Bash serialization. Remove the presented heavy
+  coordination inventory: footprint, custom barrier/nested scheduling, git/pkg claims, snapshots/effects and their
+  author attribution, port tracking, custom codemode slot accounting and nested display. Keep simple background jobs,
+  notifications, output/status/exit/kill, multi-file edit/write, bounded Windows retry and counts. Unchanged-read
+  deletion remains queue item 3.
+  The only retained coordination is an in-memory per-file lock inside write/edit: tiny, transparent and efficient,
+  with no external side effects. Multi-file acquisitions are ordered against deadlock and released in `finally`.
+  Reads do not lock; different files run in parallel; only write/edit of the same file serializes. No lock files,
+  OS locks, watchers, timers, resource claims or command prediction. Keep the contract modest and testable, with no
+  impossible coverage claims for every OS alias or shell behavior. This is queued for later implementation, not
+  implemented by this process task. The design-approval-only text is preserved verbatim in A-0373.
+  The exact current order and all conserved states are carried once in `BACKLOG.md`; no listed product item is
+  implemented by this process task. Reason: finish newly approved work before re-triaging conserved work without
+  losing artifacts or repeating finished work. Carriers: `BACKLOG.md`, [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline).
+
+- **Risk-based minimal testing** `[D-PIPELINE-RISK-TESTING]`. Test risk and public behavior, not implementation or
+  coverage. Use the cheapest adequate level, proof matched to change type, and no idle reruns. Do not mass-rewrite old
+  tests; clean a touched component, cancel standalone test-only P3/cosmetic work, and delete only demonstrably useless
+  tests with proof that needed risk coverage remains. Canonical rules:
+  [Sufficient proof](process/sufficient-proof-without-idle-reruns.md), with QA specifics in
+  [Quality control](process/quality-control-loop.md) and the release regression in [Delivery](PROCESS.md#delivery).
+  Owner, same session, line 13403, entry `44f43a53`:
+  «Самое главное сейчас начнем с того что закрепим прцессуально правило тестирования и правило очень быстро эффективной простой и самое главное интеллектуальной проверки. Тесты должны покрывать достаточный минимум не более того + реальные выловленные баги.»
+  «Но это должно быть по всем канонам бест практис т.е. мы должны найти квинт эссенцию МИНИМАЛЬНОГО тестирования.»
+  «Мне нужна твое предложение как перестроить этот процесс.»
+  Owner approval and required HIGH review, line 13407, entry `49961511`:
+  «Проведи изменения процессов под этот флоу тестирования и закрепи его high review»
+  This approves Main's detailed proposal at line 13404, entry `c1068b80`, restated in the supplied execution task.
+  Exact accepted-flow spans from that supplied task:
+  «Test risk and public behavior, not implementation details or coverage. Every test protects a concrete behavior. Real bugs get regression tests; critical scenarios get contract tests. No test without risk, no coverage targets, remove duplicates.»
+  «Ordinary changes get one independent review covering both result and code. Critical/high-risk changes get a separate code review. Explicit owner-requested blind/high review still uses the requested profile.»
+  «CLEAN requires concise concrete evidence, not a long bureaucratic checklist. If evidence is missing or output is malformed, resume/send the SAME reviewer to supply evidence from its retained inspection or mark UNCHECKED; do not start a fresh reviewer merely for format.»
+  «Stop when critical scenarios pass, real findings are resolved and required review is complete. No additional checks without new information.»
+  «Do not mass-rewrite old tests. Clean only a touched component. Cancel standalone test-only P3/cosmetic tasks. Delete a demonstrably useless test instead of repairing it, but never delete or weaken a meaningful check to hide a failure. Preserve proof that deletion does not remove needed risk coverage.»
+  Context only, not approval to implement the earlier finalization plan, line 13396, entry `534df4b8`:
+  «Давай сейчас смотри, я хочу зафиналить всю работу и надо понять что мы оставляем что выбрасываем.»
+  Primary-source validation, read 2026-10-26:
+  [Google: Test Behavior, Not Implementation](https://testing.googleblog.com/2013/08/testing-on-toilet-test-behavior-not.html)
+  validates public behavior and refactor-safe checks;
+  [Google: Just Say No to More End-to-End Tests](https://testing.googleblog.com/2015/04/just-say-no-to-more-end-to-end-tests.html)
+  validates the pyramid and sparing end-to-end use without adopting its illustrative percentages;
+  [Testing Library: Guiding Principles](https://testing-library.com/docs/guiding-principles/) validates testing as
+  users exercise behavior and avoiding implementation details. No framework or dependency is added.
+  Reason: spend checks on concrete failure risk and stop at sufficient evidence. Carriers: the process links above,
+  `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`, `BACKLOG.md` Discarded `TEST-ONLY-P3-COSMETIC`.
+
+- **Ordinary and critical review classes** `[D-PIPELINE-REVIEW-CLASSES]`. Ordinary changes get one independent review
+  covering result and code. Critical/high-risk changes add separate code review. Explicit blind/high requests retain
+  their requested profiles. `CLEAN` needs concise concrete evidence; incomplete evidence is completed by the same
+  reviewer. Fresh reviewers serve changed objects, admitted findings and the bounded failure rule, not format or
+  confidence. Routine test changes have no separate test-integrity review; mechanically detected weakening retains it.
+  Source: the approved testing/review flow in [D-PIPELINE-RISK-TESTING], owner line 13407 above.
+  Canonical rules: [Independent review](process/independent-review.md) and
+  [Quality control](process/quality-control-loop.md). Mechanical trailers: `Change-class: ordinary` or `critical`,
+  exactly one `Review: agent#N CLEAN`, plus `Code-review: CLEAN` for critical work. Proofreading keeps its narrow
+  document-only exception. `Combined-review:` is removed, not retained as a compatibility alias. Carriers:
+  `PROCESS.md` Delivery, `scripts/deliver-check.mjs`, `test/deliver-check.test.ts`,
+  `extensions/RQW-review/skills/reviewer/SKILL.md`, `profiles/spotty.toml`, `profiles/bossy.toml`.
+
 - **Tests exist to check behavior** `[D-PIPELINE-TEST-PURPOSE]`. Every agent that writes, generates or fixes tests has one
   purpose: to check that the behavior matches the requirements, not to turn the run green, with the same bound as the
   reviewer: no fanaticism, perfectionism, polishing or taste. Owner (`16-27-59:5319`, entry `826fc7dd`): «Надо записать workflow, что все агенты, которые работают с тестами, пишут тесты, генерируют тесты, их задача — проверить качество на совпадение с требованиями, а не просто покрасить тесты в зеленый цвет.»
@@ -1354,22 +1426,19 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   `extensions/RQW-review/index.ts`, [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md, Independent review](PROCESS.md#independent-review).
   The whole-cycle comparison with the original plugin is discarded by the owner, not queued: [BACKLOG.md](BACKLOG.md#codex-reviewer-comparison).
 - **Reviewer prompt** `[D-REVIEW-PROMPT]`. `extensions/RQW-review/profiles/spotty.toml` and `bossy.toml` embed identical
-  `developer_instructions`. The main system prompt and subagent reminder precede that role, as approved in
-  `[D-AGENT-PROFILES]`; it is no longer a whole-system override.
-  Three changes, all harness differences: 1. the allowed tools are the `read`, `grep` and `find` tools and read-only
-  `bash` commands (Codex: "read-only inspection tools and commands"); 2. one sentence names the sections of the brief
-  supplied by the task and agent caller-message inclusion, `<user_messages>`, `<agreement>`, `<object>`, `<criterion>` and `<rejected_earlier>`; 3. the note
-  that ends a truncated `read` result, such as `Use offset=N to continue`, is not file content (Codex: "the reader's
-  continuation line"). Codex `fork_turns` has no counterpart: every pass is a fresh session from zero
-  (`[D-REVIEW-PROFILES]`). The prompt has no rule about running tests, for or against, and no measured claim of quality is made.
-  Owner (`16-27-59:5210`, `16-27-59:5219`):
+  `developer_instructions`, appended to the main system prompt and subagent reminder under `[D-AGENT-PROFILES]`.
+  The original harness adaptations are the allowed read/search tools and read-only Bash, the brief-section sentence,
+  and the truncated-read note. The owner-approved testing/review change additionally requires concise concrete
+  `CHECKED:` evidence instead of a long per-obligation checklist; see [D-PIPELINE-REVIEW-CLASSES]. Model defaults and
+  the finding evidence format are unchanged. Owner (`16-27-59:5210`, `16-27-59:5219`):
   «reviewer должен делать полное review и находить все расхождения, а не по одному.»
   «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
   «Я бы хотел его минимально улучшить, минимально усилить и без замеров просто использовать его.»
   «Его промпт вообще никак не подвигает его к запуску тестов изначально. То, что ты придумал про запрет запуска тестов — это overengineering очевидный»
-  Reason: the owner's reviewer works as written; the three changes only fit it to this harness.
-  Carriers: `extensions/RQW-review/profiles/spotty.toml`, `bossy.toml`; the shared runtime appends their role
-  without changing its text. No new review methodology or measured quality claim is introduced. Since: subagent-profiles.
+  Reason: preserve the working reviewer while making sufficient evidence explicit and concise. Carriers:
+  `extensions/RQW-review/profiles/spotty.toml`, `bossy.toml`; the shared runtime appends their role unchanged.
+  Since: subagent-profiles; evidence wording updated by process-minimal-testing-review.
+
 - **Reviewers are ordinary profiles** `[D-REVIEW-PROFILES]`. `RQW-review` is a small resource provider, not a tool
   or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-sol` with `model_reasoning_effort = "low"`;
   `profiles/bossy.toml` defaults to the same model with `"medium"`. RQW-agent resolves them to `openai-codex/gpt-6.1-sol`
@@ -1394,47 +1463,28 @@ numbered answers and are coordinator text. The owner answered items 2 and 3 with
   Carriers: `extensions/RQW-review/index.ts`, `profiles/*.toml`, `skills/**/SKILL.md`, RQW-agent.
   Contract: [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
   Since: subagent-profiles.
-- **Review cycle on Main's side** `[D-REVIEW-CYCLE]`. Carried over from the skill `subagents` of the Codex plugin; it
-  lives in the native `reviewer` skill and its `blindreview` and `highreview` wrappers, so disabling RQW-review
-  removes these discovered skills, and in
-  [PROCESS.md, Independent review](PROCESS.md#independent-review).
-  - When: the review runs only when the owner asks for a review or a checked result, or a procedure he approved requires
-    it, such as the squash-merge rule of PROCESS; never on Main's own initiative or as an automatic step of other work.
-    `blindreview` with `agent_type: "spotty"` unless the owner or that procedure asks for `highreview` with
-    `agent_type: "bossy"`. Main keeps working meanwhile but leaves the reviewed files unchanged until the verdict.
-  - Brief construction: [PROCESS.md, Independent review](PROCESS.md#independent-review) is the canonical
-    development rule; the native [reviewer skill](extensions/RQW-review/skills/reviewer/SKILL.md) carries it at runtime.
-    The replaced brief text is preserved verbatim in DECISIONS-ARCHIVE.md, A-0323.
-  - `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` passes: no extra pass for confidence, but every independent pass
-    and its order that the invoking procedure requires stays.
-  - `FINDINGS:` are the teammate's findings. Main finds each quote by searching for it. A finding whose two quotes stand
-    verbatim in their sources is admitted; for an omission Main verifies the quoted requirement and the complete
-    inspected file or section instead of demanding nonexistent text. Main fixes an admitted finding exactly to its
-    REQUIRED OUTCOME and no further, and does not reject it, argue with it or put it to the owner. Main rejects a finding
-    only when a quote is not verbatim, the allegedly missing content is present in the cited object, or a NOT AGREED
-    element is covered by a verbatim quote of the agreement, and gives that reason with the quote.
-  - All admitted fixes go in one batch. Then a fresh reviewer runs with the same level, object and criterion and every
-    rejection so far in `rejected_earlier`, until `CLEAN`.
-  - `UNCHECKED:` or missing `CHECKED:` evidence makes the check incomplete whatever the leading verdict is: resolve the
-    missing sources or evidence, or retry malformed output; never record it as acceptance.
-  - No verdict, an error or a reviewer that could not start: the check has not passed and no self-check replaces it.
-    Main launches it once more on the unchanged object; if it fails again, Main tells the owner and waits.
-  - When this review contract changes, validate it against known defective, corrected and missing-source examples before
-    claiming improved detection. These checks are not extra rounds in ordinary task reviews. The tests check mechanics,
-    such as a malformed verdict or a missing `CHECKED:`, and make no claim about detection quality.
-  Owner (`16-27-59:5210`): «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
-  Reason: one complete pass, one batch of fixes and a fresh pass is the cycle the owner's reviewer already runs.
-  Carriers: `extensions/RQW-review/skills/reviewer/SKILL.md`, `blindreview/SKILL.md`, `highreview/SKILL.md`,
-  [PROCESS.md, Independent review](PROCESS.md#independent-review). Since: the reviewer port; invocation updated by subagent-profiles.
+- **Review cycle on Main's side** `[D-REVIEW-CYCLE]`. The native `reviewer` skill and
+  [PROCESS.md, Independent review](PROCESS.md#independent-review) carry the cycle canonically. Initial and changed-object
+  passes start a fresh ordinary profile agent with `include: ["user_messages"]`. Admitted findings are fixed in one
+  batch and changed places receive a fresh pass. Missing or malformed evidence is completed through `send` to the same
+  reviewer, using retained inspection or an exact `UNCHECKED:`; a fresh reviewer is not started for format or confidence.
+  The bounded provider/start-failure retry remains. Reviewers report evidenced requirement breaches, not taste,
+  unsupported hypotheticals or new requirements. Owner (`16-27-59:5210`):
+  «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
+  Current concise-evidence and same-reviewer completion rule: [D-PIPELINE-REVIEW-CLASSES].
+  Reason: complete inspection without repeated reviewer startup for missing output detail. Carriers:
+  `extensions/RQW-review/skills/reviewer/SKILL.md`, `blindreview/SKILL.md`, `highreview/SKILL.md`,
+  [PROCESS.md, Independent review](PROCESS.md#independent-review). Since: the reviewer port; evidence completion updated
+  by process-minimal-testing-review.
 
-- **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by `CHECKED:`, or `FINDINGS:` with
-  numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME, each once) followed by `CHECKED:` and
-  `UNCHECKED:` sections when they apply; both reviewer profiles carry the exact format. The common skill treats
-  `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` as acceptance. Missing evidence, malformed output or any
-  `UNCHECKED:` is incomplete; a failed run is no acceptance. The text
-  stays as the reviewer wrote it, a preamble included. Structure cannot prove coverage: Main still assesses every required
-  obligation against `CHECKED:`. The result is delivered through the ordinary `agent#N` lifecycle.
-  Carriers: `extensions/RQW-review/profiles/*.toml`, `skills/reviewer/SKILL.md`, RQW-agent. Since: subagent-profiles.
+- **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by concise concrete
+  `CHECKED:` evidence for the inspected object and criterion, or `FINDINGS:` with numbered finding blocks. `CHECKED:`
+  cites exact files, sections and source anchors without a long per-obligation checklist; a bare `CLEAN` is incomplete.
+  `UNCHECKED:` names genuinely unavailable required evidence. Both reviewer profiles carry this format. The common
+  skill sends incomplete evidence back to the same reviewer and never accepts it. Structure alone does not prove
+  coverage; Main assesses the supplied evidence against the criterion. Results use the ordinary `agent#N` lifecycle.
+  Carriers: `extensions/RQW-review/profiles/*.toml`, `skills/reviewer/SKILL.md`, RQW-agent.
+  Since: subagent-profiles; concise evidence updated by process-minimal-testing-review.
 
 ## PCLI
 

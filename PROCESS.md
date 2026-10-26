@@ -145,7 +145,10 @@ The guard reads this block from the root file. Its policy is in [Subagent models
    No green GitHub Actions run is required, including `pcli.yml`; CI evidence trailers are not required.
 3. Before every squash merge, the merge agent ([Task pipeline](#task-pipeline)) writes the planned squash message
    and runs, from the clean `release` checkout,
-   `npm run deliver-check -- <branch> <message-file>` (`scripts/deliver-check.mjs`). It requires: the branch
+   `npm run deliver-check -- <branch> <message-file>` (`scripts/deliver-check.mjs`). When that script or
+   `scripts/owner-quotes.mjs` changes on the task branch, run the task head's `scripts/deliver-check.mjs` by absolute
+   path from the same release cwd instead: the release checkout's older gate cannot evaluate its own replacement.
+   The gate requires: the branch
    contains current `origin/release` and the release checkout's HEAD, the merge destination.
    When the changed set contains only documents or process rules, saved owner-quote checks for touched quotes,
    link checks and format checks for touched files replace application tests. This exception never applies when
@@ -156,14 +159,13 @@ The guard reads this block from the root file. Its policy is in [Subagent models
    and root tests loading changed files. It runs those tests on that exact committed branch head in its existing
    clean task worktree on the owner's macOS, and verifies worktree cleanliness and the head before and after the
    run. No new receipt or test trailer is required. No full suite runs per task.
-   The message carries the
-   trailers `Review: agent#N CLEAN` (at least one clean profile-based result review under
-   [Independent review](#independent-review)), `Code-review: CLEAN` (any path outside
-   the workflow exclusions, including extension READMEs),
-   or instead of both for small work `Combined-review: agent#N CLEAN`, or for proofreading no review trailer and
-   `Change-class: proofreading` with `Doc-check: <absolute log path>` ([Independent review](#independent-review)),
-   and `Unverified: <what was not verified live, or none>`. An optional
-   `Decision: D-<SECTION>-<NAME>` trailer links the squash to a stable decision ID; it is not a gate requirement.
+   The message carries exactly one `Change-class: ordinary`, `Change-class: critical` or
+   `Change-class: proofreading`. Ordinary work has exactly one `Review: agent#N CLEAN`, covering result and code.
+   Critical/high-risk work adds `Code-review: CLEAN`. Proofreading instead carries
+   `Doc-check: <absolute log path>` and no review trailer. There is no combined-review shortcut.
+   Every class carries `Unverified: <what was not verified live, or none>`. See
+   [Independent review](#independent-review). An optional `Decision: D-<SECTION>-<NAME>` trailer links the squash
+   to a stable decision ID; it is not a gate requirement.
    When the
    test-integrity rule triggers it also requires `Test-change:` and `Test-review:`; a `QA: #N` line requires
    `Test-change:` when test or workflow files changed, and issue N must carry the `qa-inbox`

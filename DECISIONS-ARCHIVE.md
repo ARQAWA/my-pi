@@ -6612,3 +6612,157 @@ Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 >   Owner (`16-27-59:5323`, entry `6256b148`), the prompt: «Ты нормальный пром дай, нормально сконфигурируй, выдай ему рамки, ограничения, и он нормально работу сделает»
 >   Reason: Windows and flaky failures must not wait for main-task slots. Carrier:
 >   [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), `.agents/roles/test-fixer.md`. Since: process-pipeline squash.
+
+## A-0366 · archived 2026-10-26 · Combined review shortcut · D-PIPELINE-COMBINED-REVIEW
+
+Status: SUPERSEDED by `[D-PIPELINE-REVIEW-CLASSES]`: ordinary work now always has one result-and-code review, with no size-based shortcut.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0366' -- DECISIONS-ARCHIVE.md`.
+
+> - **Combined review for small work** `[D-PIPELINE-COMBINED-REVIEW]`. Small work gets one combined result and code
+>   review; large work keeps both. Owner: «6b» Coordinator text, option 6b: "Сразу перейти на совмещённую проверку для малых правок: меньше работы, риск не измерен." Coordinator definition of small (not owner words): at most 100 added plus deleted lines, all inside one extension, with no owner-visible behavior change; the gate enforces the lines and the extension, the reviewer verifies the behavior. An explicit owner request for both reviews on a delivery takes precedence.
+>   Reason: two roles found different real defects, so large work keeps both; the owner accepted the unmeasured risk for
+>   small work. Carrier: [PROCESS.md, Independent review](PROCESS.md#independent-review), `scripts/deliver-check.mjs`
+>   (`Combined-review:`). Since: process-pipeline squash.
+
+## A-0367 · archived 2026-10-26 · Final review split · D-WORK-FINAL-CHECK
+
+Status: SUPERSEDED by `[D-PIPELINE-REVIEW-CLASSES]` and updated `[D-WORK-FINAL-CHECK]`.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0367' -- DECISIONS-ARCHIVE.md`.
+
+> - **Final checks and code reviewer** `[D-WORK-FINAL-CHECK]`. Work ends with an independent completeness-and-consistency
+>   check; large code changes also get a separate bug/quality reviewer through `agent_type: "code-reviewer"`,
+>   small ones one combined review ([D-PIPELINE-COMBINED-REVIEW]). Installed Pi updates follow
+>   [PROCESS.md, Delivery](PROCESS.md#delivery).
+>   Reason: independent proof without new product tools. Carriers:
+>   [PROCESS.md, Independent review](PROCESS.md#independent-review), `.pi/agents/code-reviewer.toml`.
+>   Since: `8f2ea64`.
+
+## A-0368 · archived 2026-10-26 · Automatic old Windows queue tail · D-PIPELINE-SINGLE-QUEUE
+
+Status: SUPERSEDED in queue-tail behavior by `[D-PIPELINE-QUEUE-RESET]`; the single execution queue remains.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0368' -- DECISIONS-ARCHIVE.md`.
+
+> - **Single queue for test work** `[D-PIPELINE-SINGLE-QUEUE]`. QA fixes, Windows work and full release regressions
+>   are ordinary tasks in the single execution queue under [D-WORK-PARALLEL], with no independent concurrent test-fixer
+>   or regression agent. Main sequences them logically by owner priority, dependencies, required gates and release triggers.
+>   After the currently listed queue items, only owner-ordered Windows CI failure work resumes, with a readable direct
+>   source for every item in [BACKLOG.md](BACKLOG.md#windows-test-failures). The direct Windows-test instruction is owner
+>   `16-27-59:5309`, entry `1bbe27c1`. Owner (`16-27-59:12041`, entry `da2328fd`, 2026-10-25):
+>   «И потом в работу добавь все что связано с виндой»
+>   Coordinator or auditor-invented standalone PCLI publication, VS Code, ConPTY and generic Windows verification tasks
+>   are not resumed. Discarded tasks, unrelated holds, delivered fixes and issue-monitoring-only items stay out.
+>   Owner (`16-27-59:12047`, entry `5cc4142a`, 2026-10-25): «Из них удали те задачи которые Я НЕ ЗАКАЗЫВАЛ».
+>   Test triage, proven-cause, no-skip/no-weakening, red/green evidence and release-regression requirements stay unchanged.
+>   Reason: sequence owner-ordered test and Windows work without creating unauthorized tasks or an independent lane.
+>   Carriers: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), [Delivery](PROCESS.md#delivery) and `BACKLOG.md`.
+>   The superseded test-lane entry is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0365, from `4c66755`.
+
+## A-0369 · archived 2026-10-26 · Fresh reviewer for malformed evidence · D-REVIEW-CYCLE
+
+Status: SUPERSEDED by `[D-PIPELINE-REVIEW-CLASSES]` and updated `[D-REVIEW-CYCLE]`: the same reviewer completes missing or malformed evidence.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0369' -- DECISIONS-ARCHIVE.md`.
+
+> - **Review cycle on Main's side** `[D-REVIEW-CYCLE]`. Carried over from the skill `subagents` of the Codex plugin; it
+>   lives in the native `reviewer` skill and its `blindreview` and `highreview` wrappers, so disabling RQW-review
+>   removes these discovered skills, and in
+>   [PROCESS.md, Independent review](PROCESS.md#independent-review).
+>   - When: the review runs only when the owner asks for a review or a checked result, or a procedure he approved requires
+>     it, such as the squash-merge rule of PROCESS; never on Main's own initiative or as an automatic step of other work.
+>     `blindreview` with `agent_type: "spotty"` unless the owner or that procedure asks for `highreview` with
+>     `agent_type: "bossy"`. Main keeps working meanwhile but leaves the reviewed files unchanged until the verdict.
+>   - Brief construction: [PROCESS.md, Independent review](PROCESS.md#independent-review) is the canonical
+>     development rule; the native [reviewer skill](extensions/RQW-review/skills/reviewer/SKILL.md) carries it at runtime.
+>     The replaced brief text is preserved verbatim in DECISIONS-ARCHIVE.md, A-0323.
+>   - `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` passes: no extra pass for confidence, but every independent pass
+>     and its order that the invoking procedure requires stays.
+>   - `FINDINGS:` are the teammate's findings. Main finds each quote by searching for it. A finding whose two quotes stand
+>     verbatim in their sources is admitted; for an omission Main verifies the quoted requirement and the complete
+>     inspected file or section instead of demanding nonexistent text. Main fixes an admitted finding exactly to its
+>     REQUIRED OUTCOME and no further, and does not reject it, argue with it or put it to the owner. Main rejects a finding
+>     only when a quote is not verbatim, the allegedly missing content is present in the cited object, or a NOT AGREED
+>     element is covered by a verbatim quote of the agreement, and gives that reason with the quote.
+>   - All admitted fixes go in one batch. Then a fresh reviewer runs with the same level, object and criterion and every
+>     rejection so far in `rejected_earlier`, until `CLEAN`.
+>   - `UNCHECKED:` or missing `CHECKED:` evidence makes the check incomplete whatever the leading verdict is: resolve the
+>     missing sources or evidence, or retry malformed output; never record it as acceptance.
+>   - No verdict, an error or a reviewer that could not start: the check has not passed and no self-check replaces it.
+>     Main launches it once more on the unchanged object; if it fails again, Main tells the owner and waits.
+>   - When this review contract changes, validate it against known defective, corrected and missing-source examples before
+>     claiming improved detection. These checks are not extra rounds in ordinary task reviews. The tests check mechanics,
+>     such as a malformed verdict or a missing `CHECKED:`, and make no claim about detection quality.
+>   Owner (`16-27-59:5210`): «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
+>   Reason: one complete pass, one batch of fixes and a fresh pass is the cycle the owner's reviewer already runs.
+>   Carriers: `extensions/RQW-review/skills/reviewer/SKILL.md`, `blindreview/SKILL.md`, `highreview/SKILL.md`,
+>   [PROCESS.md, Independent review](PROCESS.md#independent-review). Since: the reviewer port; invocation updated by subagent-profiles.
+>
+
+## A-0370 · archived 2026-10-26 · Per-obligation CLEAN checklist · D-REVIEW-VERDICT
+
+Status: SUPERSEDED by `[D-PIPELINE-REVIEW-CLASSES]` and updated `[D-REVIEW-VERDICT]`: concise concrete evidence replaces the long checklist.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0370' -- DECISIONS-ARCHIVE.md`.
+
+> - **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by `CHECKED:`, or `FINDINGS:` with
+>   numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME, each once) followed by `CHECKED:` and
+>   `UNCHECKED:` sections when they apply; both reviewer profiles carry the exact format. The common skill treats
+>   `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` as acceptance. Missing evidence, malformed output or any
+>   `UNCHECKED:` is incomplete; a failed run is no acceptance. The text
+>   stays as the reviewer wrote it, a preamble included. Structure cannot prove coverage: Main still assesses every required
+>   obligation against `CHECKED:`. The result is delivered through the ordinary `agent#N` lifecycle.
+>   Carriers: `extensions/RQW-review/profiles/*.toml`, `skills/reviewer/SKILL.md`, RQW-agent. Since: subagent-profiles.
+>
+
+## A-0371 · archived 2026-10-26 · Canonical reviewer prompt without concise-evidence amendment · D-REVIEW-PROMPT
+
+Status: SUPERSEDED by updated `[D-REVIEW-PROMPT]` under `[D-PIPELINE-REVIEW-CLASSES]`; model defaults and finding format remain.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0371' -- DECISIONS-ARCHIVE.md`.
+
+> - **Reviewer prompt** `[D-REVIEW-PROMPT]`. `extensions/RQW-review/profiles/spotty.toml` and `bossy.toml` embed identical
+>   `developer_instructions`. The main system prompt and subagent reminder precede that role, as approved in
+>   `[D-AGENT-PROFILES]`; it is no longer a whole-system override.
+>   Three changes, all harness differences: 1. the allowed tools are the `read`, `grep` and `find` tools and read-only
+>   `bash` commands (Codex: "read-only inspection tools and commands"); 2. one sentence names the sections of the brief
+>   supplied by the task and agent caller-message inclusion, `<user_messages>`, `<agreement>`, `<object>`, `<criterion>` and `<rejected_earlier>`; 3. the note
+>   that ends a truncated `read` result, such as `Use offset=N to continue`, is not file content (Codex: "the reader's
+>   continuation line"). Codex `fork_turns` has no counterpart: every pass is a fresh session from zero
+>   (`[D-REVIEW-PROFILES]`). The prompt has no rule about running tests, for or against, and no measured claim of quality is made.
+>   Owner (`16-27-59:5210`, `16-27-59:5219`):
+>   «reviewer должен делать полное review и находить все расхождения, а не по одному.»
+>   «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
+>   «Я бы хотел его минимально улучшить, минимально усилить и без замеров просто использовать его.»
+>   «Его промпт вообще никак не подвигает его к запуску тестов изначально. То, что ты придумал про запрет запуска тестов — это overengineering очевидный»
+>   Reason: the owner's reviewer works as written; the three changes only fit it to this harness.
+>   Carriers: `extensions/RQW-review/profiles/spotty.toml`, `bossy.toml`; the shared runtime appends their role
+>   without changing its text. No new review methodology or measured quality claim is introduced. Since: subagent-profiles.
+
+## A-0372 · archived 2026-10-26 · Sequential Bash accepted design · D-PIPELINE-QUEUE-RESET
+
+Status: SUPERSEDED by the design-approval-only Codex-level simplicity and parallelism direction in updated `[D-PIPELINE-QUEUE-RESET]`. Implementation requires explicit final-inventory confirmation.
+Source: `82980de4e0727d42f6c039fb29afb92cb7087ee6:DECISIONS.md` and `82980de4e0727d42f6c039fb29afb92cb7087ee6:BACKLOG.md`, replaced text verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0372' -- DECISIONS-ARCHIVE.md`.
+
+>   The initial `Да` at line 13441 also approves Main's RQW-tools proposal at line 13440, entry `4f06ef45`.
+
+> BACKLOG.md item 5, verbatim:
+> | 5 | SIMPLIFY-RQW-TOOLS: keep asynchronous jobs and notifications; serialize Bash with other Bash and new file writes, including codemode without self-deadlock. Keep read/grep/find and disjoint writes parallel. Remove speculative shell footprint/parser and git/pkg claims; keep withFileLock, writeConflict, multi-file edit/write and bounded Windows retry. Use actual snapshots for created/changed/deleted and honest unknowns. | QUEUED; no implementation branch. Preserve responsiveness; do not patch individual old shell cases. | Main proposal line 13440, entry `4f06ef45`, approved by owner `Да` at line 13441. |
+
+## A-0373 · archived 2026-10-26 · RQW-tools design-approval-only status · D-PIPELINE-QUEUE-RESET
+
+Status: SUPERSEDED by the owner's explicit final RQW-tools design and implementation queue item in updated `[D-PIPELINE-QUEUE-RESET]`.
+Source: `b51e171bed88b8022b49d640b6e3c693b138c0b6:DECISIONS.md` and `b51e171bed88b8022b49d640b6e3c693b138c0b6:BACKLOG.md`, replaced text verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0373' -- DECISIONS-ARCHIVE.md`.
+
+>   Latest RQW-tools steering, same session, owner line 13573, entry `9f4eec6f`:
+>   «Я предлагаю сделать какую-то супер простую схему, но при этом чтобы всё работало параллельно, отдельно. Допустим, read и write чтобы работали параллельно, чтобы они могли друг с другом работать параллельно, чтобы можно было write и edit запускать одновременно, всякие там read, find, grep можно было запускать одновременно. Bash можно было и codemod запускать изолированно. Не знаю, правильно объяснил или нет. И мы выбрасываем все тяжёлые обвесы, которые у нас есть. Но перед тем, как их выбрасывать, ты мне их покажешь и объяснишь, почему мы их выбрасываем.»
+>   «Я не вижу смысла делать наш вариант строже, чем кодекс. Кодекс работает хорошо. Мы можем сделать вариант такой же, как кодекс по строгости. Нам главное, чтобы у нас был баланс параллелизма и простоты поддержки этой хуйни. Всё должно быть максимально просто сделано, максимально понятно, без миллиарда corner case, чтобы очень легко функционал закрывался на 100%.»
+>   Item 5 is design-approval only: Main must present the heavy-coordination removal inventory and tradeoffs before
+>   removal, and implementation needs the owner's explicit confirmation of that final inventory. The design direction
+>   is Codex-level simplicity and parallelism, not sequential Bash. No product simplification is approved yet. The earlier
+>   accepted sequential-design text is superseded and preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0372.
+> BACKLOG.md item 5, verbatim:
+> | 5 | SIMPLIFY-RQW-TOOLS: design approval first, then implementation only after the owner's explicit confirmation of the final inventory. The design direction is Codex-level simplicity and parallelism: read/write/edit/find/grep run in parallel; Bash and codemode run independently. Main must show and explain the heavy-coordination removal inventory and tradeoffs before any removal. No product simplification is approved; sequential Bash is not the accepted direction. | DESIGN APPROVAL; no implementation branch. Implementation is blocked until explicit final-inventory confirmation. | Owner line 13573, entry `9f4eec6f`, superseding the earlier sequential-Bash proposal. |

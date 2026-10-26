@@ -41,9 +41,9 @@ it("pins source descriptions, bare Codex model and efforts with byte-identical c
 		assert.equal(profile.model_reasoning_effort, ["low", "medium"][i]);
 	}
 	assert.equal(profiles[0].developer_instructions, profiles[1].developer_instructions);
-	// SHA256 of the complete pre-port REVIEWER.md bytes, including its final newline.
+	// SHA256 of the shared reviewer instructions, including the concise-evidence amendment.
 	assert.equal(createHash("sha256").update(profiles[0].developer_instructions as string).digest("hex"),
-		"b85f5ebf44fa7fcd52bfd9dc08e9caa48e30d95e2ce50322d7d974586e8a11a3");
+		"27e51994b2f24a432666878d3300407a9d46cd2b7206e84a7f273ab523a6c311");
 });
 
 it("skills use ordinary agent profiles, mechanical end-of-task inclusion and the source review cycle", () => {
@@ -58,10 +58,16 @@ it("skills use ordinary agent profiles, mechanical end-of-task inclusion and the
 	assert.ok(common.includes("raw user texts, not compaction or branch summaries"));
 	assert.ok(common.includes("The ordinary `agent` tool from RQW-agent is required"));
 	assert.ok(common.includes("if it or the selected profile is unavailable, report that the reviewer cannot run"));
-	assert.ok(common.includes("Launch a fresh child each pass"));
-	assert.ok(common.includes("`CLEAN` with complete `CHECKED:` evidence and no `UNCHECKED:`"));
+	assert.ok(common.includes("Launch a fresh child for the initial review and for each changed-object pass"));
+	assert.ok(common.includes("`CLEAN` with concise concrete `CHECKED:` evidence and no `UNCHECKED:`"));
+	assert.ok(common.includes("`send` the SAME reviewer"));
+	assert.ok(common.includes("Do not start a fresh reviewer merely for format or evidence completion"));
 	assert.ok(common.includes("Fix all admitted findings in one batch"));
 	assert.ok(common.includes("every rejection so far in `<rejected_earlier>`, until CLEAN"));
+	const role = parse(text("profiles/spotty.toml")).developer_instructions as string;
+	assert.ok(role.includes("concise concrete evidence for the inspected object and criterion"));
+	assert.ok(role.includes("without one line per obligation or a long checklist"));
+	assert.ok(role.includes("Never return a bare CLEAN when you inspected evidence"));
 	assert.ok(common.includes("Reject a finding only when a quote is not verbatim"));
 	assert.ok(common.includes("Do not impose file, search, tool-call or turn quotas"));
 	assert.doesNotMatch(common, /fork_turns|spawn_agent|wait_agent/);

@@ -1,29 +1,48 @@
 ## Sufficient proof, without idle reruns
 
-- Main ensures subagents choose and perform checks for the changed behavior and claim under the rules below.
-  Subagents inspect documentation and Pi sources where needed.
-  Use deterministic tests for mechanics and actual model probes when the claim concerns model behavior.
-  Do not burn tokens on live compaction when the owner requests documentation-only proof.
-- Run existing relevant checks once, in the background where possible. Repeat after a relevant fix or a changed
-  tested input, not merely for confidence, staging, a commit ID or a squash merge. Reuse valid evidence while the
-  tested code, configuration and document contracts remain unchanged, subject to the delivery checks in [Delivery](../PROCESS.md#delivery).
-- CPU-heavy work (repeat loops, pressure runs and load probes) runs in GitHub Actions, not on the owner's MacBook
-  Air. The local delivery checks follow [Delivery](../PROCESS.md#delivery).
-  Other local checks stay focused on the change. Windows checks run in CI too,
-  including relevant Node, Bun and PortableGit coverage, but they are advisory and do not gate a merge
-  ([Task pipeline](../PROCESS.md#task-pipeline)). Linux is out of scope.
+This is the canonical testing and proof rule. QA-specific triage and intermittent-failure evidence stay in
+[Quality control loop](quality-control-loop.md); delivery mechanics stay in [Delivery](../PROCESS.md#delivery).
+
+- Test risk and public behavior, not implementation details or coverage. Every test protects a concrete behavior:
+  real bugs get regression tests and critical scenarios get contract tests. There is no test without a risk,
+  no coverage target and no duplicate check of the same risk.
+- Use the cheapest adequate level: unit tests only for algorithms, integration tests for interactions and
+  end-to-end tests only for critical paths. Use controlled network doubles, but real files and real Pi where
+  applicable. Windows behavior is proven on Windows.
+- Do not use blind sleeps, arbitrary timeouts or reruns until green. Replace timing assumptions with observable
+  events when the old timing was not a requirement.
+- Match proof to the change:
+  1. An ordinary change tests the affected contracts.
+  2. A bug fix proves red before and green after.
+  3. A refactor uses the existing checks.
+  4. Documents get the touched-quote, link and format checks in [Delivery](../PROCESS.md#delivery).
+  5. A platform bug gets targeted CI on that platform.
+  6. Each release gets one full local regression on the exact release head under [Delivery](../PROCESS.md#delivery).
+- Run existing relevant checks once, in the background where possible. A repeat needs new information: a relevant
+  fix, changed input or statistically necessary intermittent-failure evidence. Reuse valid evidence while the tested
+  code, configuration and document contracts remain unchanged, subject to [Delivery](../PROCESS.md#delivery).
+- Use deterministic tests for mechanics and actual model probes for model-behavior claims. Do not burn tokens on
+  live compaction when the owner requests documentation-only proof.
+- CPU-heavy repeat loops, pressure runs and load probes run in GitHub Actions, not on the owner's MacBook Air.
+  Other local checks stay focused. Windows checks run in CI too, including relevant Node, Bun and PortableGit
+  coverage, but are advisory and do not gate a merge ([Task pipeline](task-pipeline.md)). Linux is out of scope.
 - Run `npm run test:bun` in CI when Bun/codemode behavior is affected. Test extension isolation when affected.
-- Subagents save their check and probe logs. Every number in a report or documentation must point to a CI run URL
-  or a named saved log file; never report counts from memory. Save local logs in OS temporary storage.
-- Test exactly what gets merged. The base, rebase and final-head delivery checks follow [Delivery](../PROCESS.md#delivery).
-  No GitHub run needs to be triggered or awaited for a merge.
-- Root documentation, notes and development instructions alone do not justify extra application tests or model runs;
-  the delivery checks in [Delivery](../PROCESS.md#delivery) still apply. A workflow change does require validating its triggers and affected
-  Windows jobs. Do not claim a queued or incomplete run passed.
-- Everyone who writes, generates or fixes tests, a subagent, a reviewer or a test-work agent, has one purpose: to check
-  that the behavior matches the requirements, never to turn the run green. The bound is the reviewer's: no
-  fanaticism, perfectionism, polishing or taste.
+- Save check and probe logs in OS temporary storage. Every number in a report or documentation points to a CI run
+  URL or a named saved log; never report counts from memory.
+- Test exactly what gets merged. The base and final-head checks follow [Delivery](../PROCESS.md#delivery). No GitHub
+  run needs to be triggered or awaited for a merge.
+- Root documentation, notes and development instructions alone do not justify application tests or model runs.
+  A workflow change requires validating its triggers and affected Windows jobs. Never claim a queued or incomplete
+  run passed.
+- Everyone who writes, generates, fixes or reviews tests checks that behavior matches requirements, never that the
+  run becomes green. No fanaticism, perfectionism, polishing or taste.
+- Do not mass-rewrite old tests. Clean only a touched component. Standalone test-only P3 and cosmetic tasks are
+  cancelled; a grouped current-queue cleanup is not permission to recreate them. Delete a demonstrably useless test
+  instead of repairing it, with proof that deletion removes no needed risk coverage. Never delete or weaken a
+  meaningful check to hide a failure.
 - Fix failures caused by the task, including assertions for deliberately changed behavior. Report unrelated failures
-  without repairing them or falsely counting a failing required check as clean. If they block delivery, ask the owner.
-- For prompt/tool behavior performance claims, compare against the relevant baseline. The product goal remains
-  my-pi better than stock Pi and Pi plus our prompt; do not launch a full benchmark for every unrelated edit.
+  without repairing them or counting a failed required check as clean. If they block delivery, ask the owner.
+- For prompt/tool performance claims, compare against the relevant baseline. Do not launch a full benchmark for an
+  unrelated edit.
+- Stop when critical scenarios pass, real findings are resolved and the required review is complete. Run no extra
+  check without new information.
