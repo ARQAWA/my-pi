@@ -93,6 +93,19 @@ test("exact written files are held: redirects, tee, sed -i, curl -o, rm/mkdir/to
   nothing("echo hi > /dev/null");
 });
 
+for (const [command, target, unrelated] of [
+  ["touch @victim", "@victim", "victim"],
+  ["printf x > 'wide\u00a0name.txt'", "wide\u00a0name.txt", "wide name.txt"],
+] as const) {
+  test(`Bash path ${JSON.stringify(target)} stays literal instead of using Pi argument normalization`, () => {
+    assert.notEqual(file(target), file(unrelated));
+    const f = fp(command);
+    assert.deepEqual(f.held.files, [file(target)], command);
+    assert.deepEqual(f.explicit.writes, [file(target)], command);
+    assert.ok(!f.held.files.includes(file(unrelated)), command);
+  });
+}
+
 test("heredoc bodies are not commands; the command around them is", () => {
   const f = fp("cat > notes.md <<'EOF'\nnpm ci\ngit commit -m x\nEOF\n");
   assert.deepEqual(f.held.files, [file("notes.md")]);

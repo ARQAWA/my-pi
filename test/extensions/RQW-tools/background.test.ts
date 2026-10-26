@@ -501,6 +501,32 @@ describe("FR-safe: holds, effects, write precondition, kill of followers, notes,
 		assert.match(done.results[0].result, /npm test/);
 	});
 
+	for (const [target, ordinary] of [["@victim", "victim"], ["wide\u00a0name.txt", "wide name.txt"]] as const) {
+		const form = target.startsWith("@") ? "literal @" : "Unicode-space paths";
+		it(`Bash holds ${form} without holding its ordinary counterpart`, async (t) => {
+			const { dir, tools } = await fresh();
+			t.after(() => open(dir));
+			const shellTarget = target.startsWith("@") ? target : quote(target);
+			const started = await call(tools.bash, { command: `printf 'started\\n'; while [ ! -f gate ]; do sleep 0.02; done; printf job > ${shellTarget}` }, dir);
+			const bashId = started.details.job.id;
+			await running(tools, dir, bashId);
+
+			const absolute = join(dir, target);
+			const queued = await call(tools.bash, { command: `printf 'later\\n' > ${quote(absolute)}` }, dir);
+			assert.match(text(queued), /^job#\d+ \(bash\) is still queued/, target);
+			const queuedId = queued.details.job.id;
+			const control = await call(tools.bash, { command: `printf 'ordinary\\n' > ${quote(ordinary)}` }, dir);
+			await finished(tools, dir, control);
+			await open(dir);
+			for (const id of [bashId, queuedId]) {
+				const done = await job(tools, dir, { action: "wait", ids: [id], timeout_ms: 20000 });
+				assert.equal(done.results[0].state, "exited", JSON.stringify(done));
+			}
+			assert.equal(await readFile(absolute, "utf8"), "later\n");
+			assert.equal(await readFile(join(dir, ordinary), "utf8"), "ordinary\n");
+		});
+	}
+
 	it("a queued bash refreshes its symlink footprint and snapshots at its real start", async (t) => {
 		const { dir, tools } = await fresh();
 		await mkdir(join(dir, "old"));

@@ -27,6 +27,8 @@ barrier scope, claims, detached background holds and foreground write attributio
 Eligible process calls take their pre-start effects snapshot in `job.begin()` after
 barrier and resource waits. Changes made by queued predecessors are therefore the
 baseline, while the command's own changes and deletions appear in its effects report.
+Bash footprint keys keep leading `@` and Unicode spaces literal instead of applying
+Pi's tool-argument normalization.
 
 ## Background activity counts
 

@@ -11,18 +11,20 @@ const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 const DRIVE = /^\/(?:mnt\/|cygdrive\/)?([a-z])(?:\/(.*))?$/i;
 
 // The pure string rules. Result is an absolute path in the path flavour of `platform`.
-function resolveLexical(p: string, cwd: string, platform: NodeJS.Platform): string {
+function resolveLexical(p: string, cwd: string, platform: NodeJS.Platform, piArgument = true): string {
   const win = platform === "win32";
   const P = win ? path.win32 : path.posix;
-  p = p.replace(UNICODE_SPACES, " ");
-  if (p.startsWith("@")) p = p.slice(1);
+  if (piArgument) {
+    p = p.replace(UNICODE_SPACES, " ");
+    if (p.startsWith("@")) p = p.slice(1);
+  }
   if (win && p.startsWith("/") && !p.startsWith("//") && !p.includes("\\")) {
     const m = DRIVE.exec(p);
     if (m) p = `${m[1].toUpperCase()}:\\${(m[2] ?? "").replaceAll("/", "\\")}`;
   }
   if (p === "~") p = os.homedir();
   else if (p.startsWith("~/") || (win && p.startsWith("~\\"))) p = P.join(os.homedir(), p.slice(2));
-  else if (p.startsWith("file://")) p = fileURLToPath(p, { windows: win });
+  else if (piArgument && p.startsWith("file://")) p = fileURLToPath(p, { windows: win });
   return P.resolve(cwd, p);
 }
 
@@ -294,9 +296,9 @@ export function scopeOf(tool: string, args: unknown, cwd: string): Scope {
   }
 }
 
-/** The barrier key of one file named in a bash command (footprint.ts): the same key a write of it gets. */
+/** The barrier key of a literal Bash path: Pi's @, Unicode-space and file-URL argument rules do not apply. */
 export function fileKey(p: string, cwd: string): string | undefined {
-  try { return scopeKey(resolvePath(p, cwd)); } catch { return undefined; }
+  try { return scopeKey(resolveLexical(p, cwd, process.platform, false)); } catch { return undefined; }
 }
 
 /** The key of a directory (the git repository root or the package folder of a bash command). */
