@@ -27,7 +27,12 @@ No polling, no confidence reruns, no avoidable tokens.
 <a id="subagent-models"></a>
 ## Subagent models
 
-Executors use `kimi-coding/k3.1-pro` at low, or high for the hardest tasks.
+Executors use these main / fallback pairs:
+1. Code and fixes: `openai-codex/gpt-6.1-sol` low / `kimi-coding/k3.1-pro` low.
+2. Git, merge and mechanical work: `openai-codex/gpt-6.1-terra` low / `kimi-coding/kimi-for-coding` low.
+3. Ordinary work, research and search: `kimi-coding/kimi-for-coding` high / `openai-codex/gpt-6.1-terra` high.
+4. Hardest tasks: `kimi-coding/k3.1-pro` high / `openai-codex/gpt-6.1-sol` medium.
+
 Reviewers use their Sol profiles. Agents use no Anthropic models.
 
 The guard reads this machine-readable block.
@@ -35,9 +40,10 @@ The guard reads this machine-readable block.
 ```json coordinator-rules
 {
   "agentModels": {
-    "simple": [["kimi-coding/k3.1-pro", "low"]],
-    "complex": [["kimi-coding/k3.1-pro", "low"]],
-    "hardest": [["kimi-coding/k3.1-pro", "high"]]
+    "code": [["openai-codex/gpt-6.1-sol", "low"], ["kimi-coding/k3.1-pro", "low"]],
+    "mechanical": [["openai-codex/gpt-6.1-terra", "low"], ["kimi-coding/kimi-for-coding", "low"]],
+    "ordinary": [["kimi-coding/kimi-for-coding", "high"], ["openai-codex/gpt-6.1-terra", "high"]],
+    "hardest": [["kimi-coding/k3.1-pro", "high"], ["openai-codex/gpt-6.1-sol", "medium"]]
   },
   "reviewerProfiles": {
     "spotty": ["openai-codex/gpt-6.1-sol", "low"],
