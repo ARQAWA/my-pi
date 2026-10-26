@@ -1018,7 +1018,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner: «Надо подобрать сопостовимую модель на gpt, попробоуй 5.6 luna и более сильные модели типа medium ризонинг 6 и 6.1 sol, на время замеров добавь 5.6 luna в список моделей наших сразу после хайку и вообще хайку надо поставить над всеми в слабых моделях ь.е. порядок должен быть типа haiku 5.5, luna 5.6, luna 6» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1167); «Да» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1425)
   Carrier: `extensions/RQW-models/index.ts` (`FAMILIES`, `FAMILY_LEVELS`). Since: `7d6fdbf`.
 - **Model order and availability** `[D-MODELS-ORDER]`. After the four Kimi entries in `[D-MODELS-KIMI]`, `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`,
-  `gpt-6.1-sol`, `gpt-6-sol`, `claude-haiku-5-5`, `gpt-5.6-luna`, `gpt-6-luna`, strongest first. `pickerModels` takes
+  `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-sol`, `claude-haiku-5-5`, `gpt-5.6-luna`, `gpt-6-luna`, strongest first. `pickerModels` takes
   Pi's credential-aware availability including provider `filterModels`: the runtime's unmasked `getAvailableSnapshot`
   through its prototype while the listed-models masks are set, otherwise `ctx.modelRegistry.getAvailable()`. Absent,
   filtered and unauthenticated models are skipped. The draft resolves no credentials and makes no requests; commit uses

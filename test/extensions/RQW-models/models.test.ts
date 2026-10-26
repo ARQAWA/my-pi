@@ -12,6 +12,17 @@ const model = (id: string, provider = "anthropic"): Model<string> => ({
 });
 
 describe("RQW-models public selection", () => {
+	it("registers Terra with its limits and picker order", () => {
+		let catalog: Model<string>[] = [];
+		const pi = { registerProvider(provider: any) { if (typeof provider === "object") catalog = provider.getAllModels(); },
+			registerShortcut() {}, registerCommand() {}, on() {} };
+		extension(pi as unknown as ExtensionAPI);
+		const terra = catalog.find(model => model.id === "gpt-6.1-terra")!;
+		assert.equal(catalog.filter(model => model.id === terra.id).length, 1);
+		assert.deepEqual([terra.provider, terra.contextWindow, terra.maxTokens], ["openai-codex", 1_050_000, 128_000]);
+		assert.deepEqual(levelsFor(terra), ["off", "low", "medium", "high", "xhigh", "max"]);
+		assert.deepEqual(pickerModels(catalog).map(model => model.id), ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-5.6-luna", "gpt-6-luna"]);
+	});
 	it("lists each supported family once and steps the draft without wrapping", () => {
 		const opus = model("claude-opus-5-5");
 		const sonnet = model("claude-sonnet-5-5");
