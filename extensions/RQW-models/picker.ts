@@ -26,7 +26,6 @@ export const EFFORT_TOKEN: Record<string, ThemeColor> = {
 	high: "thinkingHigh", xhigh: "thinkingXhigh", max: "thinkingMax",
 };
 const WINDOW = 2;
-const COLUMN_GAP = "   ";
 const WIDE = 44;
 
 export const sameModel = (a: { provider: string; id: string } | undefined, b: { provider: string; id: string } | undefined) =>
@@ -53,7 +52,10 @@ export function stepDraft(spec: PickerSpec, draft: Draft, step: Step): Draft {
 }
 
 const sanitize = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/gu, " ");
-const modelLabel = (model: ChatModel) => sanitize(model.provider === "kimi-coding" ? model.name : `${model.provider}/${model.id}`);
+const modelLabel = (model: ChatModel) => {
+	const name = sanitize(model.name || model.id || "no-model").replace(/ +/g, " ").trim();
+	return name.startsWith("Claude ") ? name.slice(7) : name;
+};
 
 export class ModelEffortPicker implements Component {
 	private current: Draft;
@@ -113,32 +115,32 @@ export class ModelEffortPicker implements Component {
 		const levels = fixedEffort ? [fixedEffort] : this.spec.levels(model);
 		const effortIndex = effort === undefined ? -1 : levels.indexOf(effort);
 		if (!models.length) lines.push(theme.fg("muted", "No authenticated RQW models"));
-		else if (width < WIDE) {
-			lines.push(`${theme.fg("muted", "Model  ")}${model ? theme.bold(theme.fg("accent", modelLabel(model))) : theme.fg("muted", "none")}`);
-			lines.push(`${theme.fg("muted", "Effort ")}${this.effortLabel(effort, effortIndex, levels.length)}`);
-		} else {
-			const colWidth = Math.floor((width - COLUMN_GAP.length) / 2);
-			lines.push(`${this.pad(theme.fg("muted", "Model"), colWidth)}${COLUMN_GAP}${theme.fg("muted", "Effort")}`);
+		else {
+			lines.push(theme.fg("muted", "Model"));
 			const centre = index < 0 ? -1 : index;
 			for (let row = -WINDOW; row <= WINDOW; row++) {
 				const at = centre < 0 ? row + WINDOW : centre + row;
 				const left = models[at];
 				const leftCell = left
-					? this.cell(modelLabel(left), colWidth, row === 0 && centre >= 0,
+					? this.cell(modelLabel(left), width, row === 0 && centre >= 0,
 						(text, selected) => selected ? theme.bold(theme.fg("accent", text)) : theme.fg("muted", text))
-					: " ".repeat(colWidth);
-				const eAt = effortIndex < 0 ? row + WINDOW : effortIndex + row;
-				const level = levels[eAt];
-				const rightCell = level
-					? this.cell(level, colWidth, row === 0 && effortIndex >= 0,
-						(text, selected) => !selected ? theme.fg("muted", text)
-							: level === "low" ? theme.fg(EFFORT_TOKEN.low, text)
-								: theme.bold(theme.fg(EFFORT_TOKEN[level] ?? "muted", text)))
 					: "";
-				lines.push(`${leftCell}${COLUMN_GAP}${rightCell}`);
+				lines.push(leftCell);
 			}
 			if (index < 0 && model) lines.push(theme.fg("muted", `Current ${modelLabel(model)} is not in the RQW list`));
 		}
+		lines.push(theme.fg("muted", "Effort"));
+		const effortRow = levels.length ? levels.map((level, at) => at === effortIndex
+			? theme.fg("accent", "› ") + this.effortLabel(level, at, levels.length)
+			: theme.fg("muted", level)).join(" ") : theme.fg("muted", "none");
+		const requiredWidth = visibleWidth(effortRow);
+		if (requiredWidth > width) {
+			const message = `Effort needs ${requiredWidth} columns`;
+			const constraint: string[] = [];
+			for (let at = 0; at < message.length; at += width) constraint.push(theme.fg("error", message.slice(at, at + width)));
+			return constraint;
+		}
+		lines.push(effortRow);
 		lines.push(width < WIDE
 			? theme.bold("Enter") + theme.fg("dim", " OK · ") + theme.bold("Esc") + theme.fg("dim", " cancel")
 			: theme.fg("dim", "↑↓ model · ←→ effort · ") + theme.bold("Enter") + theme.fg("dim", " OK · ") + theme.bold("Esc") + theme.fg("dim", " cancel"));
@@ -158,7 +160,4 @@ export class ModelEffortPicker implements Component {
 		return `${marker}${style(plain, selected)}${" ".repeat(Math.max(0, room - visibleWidth(plain)))}`;
 	}
 
-	private pad(styled: string, width: number): string {
-		return `${styled}${" ".repeat(Math.max(0, width - visibleWidth(styled)))}`;
-	}
 }

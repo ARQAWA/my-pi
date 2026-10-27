@@ -265,11 +265,12 @@ export function renderBar(state: BarState, width: number, paint: Paint = plain):
 	// Wrap long native-window lists instead of silently cutting later providers.
 	const git = gitText(state.git, paint);
 	const place = placeRow({ ...state, quotas: undefined, git: undefined }, width, paint);
-	const rows = wrapTextWithAnsi(` ${quotaText(state.quotas)}  ${place.trimStart()}`, width);
-	const last = rows.pop() ?? "";
-	if (git && visibleWidth(last) + visibleWidth(git) + 1 > width) {
-		rows.push(last, leftRight("", git, width));
-	} else rows.push(leftRight(last, git, width));
+	const quotas = quotaText(state.quotas);
+	const right = quotas + (git ? `  ${git}` : "");
+	if (visibleWidth(place) + visibleWidth(right) + 1 <= width) {
+		return [contextRow(state.context, width, paint), modelRow(state, width, paint), leftRight(place, right, width)];
+	}
+	const rows = [place, ...wrapTextWithAnsi(right, width).map((row) => leftRight("", row, width))];
 	return [contextRow(state.context, width, paint), modelRow(state, width, paint), ...rows];
 }
 

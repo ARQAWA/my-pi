@@ -1,4 +1,6 @@
 node_modules/
 pi/
 pi.tmp/
+my-pi/
+my-pi.tmp/
 *.vsix

@@ -6,7 +6,7 @@ Modules and resources live beside `index.ts`; subfolders group needed resources.
 
 ## Subscription limits
 
-The folder row starts with CX in gold, KM in platinum and CC in bronze.
+The folder stays on the left; CX in gold, KM in platinum and CC in bronze sit on the right, immediately before the git branch. Narrow rows wrap instead of losing provider limits.
 Each provider shows one remaining percent: CX and CC the weekly window, KM the monthly total.
 Unknown values show `unavailable`.
 The active footer requests fresh snapshots immediately and every five minutes, independently

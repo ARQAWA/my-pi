@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { Agent } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import { createFauxCore, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { createEventBus, SessionManager, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { Activity, headTail } from "../../../extensions/RQW-agent/activity.ts";
 import { Coordinator } from "../../../extensions/RQW-agent/coordinator.ts";
@@ -15,7 +15,7 @@ import { createChildManager, openChildManager, repairInterrupted } from "../../.
 import { ProfileCatalogue } from "../../../extensions/RQW-agent/profiles.ts";
 import { CONTEXT_FORK, ProgressReports, type ContextForkRequest } from "../../../extensions/RQW-agent/progress.ts";
 import { appendUserMessages, loadPromptFile } from "../../../extensions/RQW-agent/prompt-files.ts";
-import { childRecord, collectExtensionFactories, mergeSaved } from "../../../extensions/RQW-agent/index.ts";
+import { childRecord, collectExtensionFactories, mergeSaved, registerSessionRuntime } from "../../../extensions/RQW-agent/index.ts";
 
 async function temp(t: TestContext) {
 	const root = await mkdtemp(join(tmpdir(), "rqw-agent-unit-"));
@@ -200,13 +200,13 @@ test("progress leaves unavailable request effort absent", () => {
 	f.progress.invalidate();
 });
 
-function coordinatorFixture(t: TestContext, busy = false) {
+function coordinatorFixture(t: TestContext, busy = false, sessionFile?: string) {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	t.mock.method(performance, "now", () => 0);
 	const hooks = new Map<string, ((event: any, context: any) => unknown)[]>();
 	const sent: { message: any; options: any }[] = [];
 	const branch: any[] = [];
-	const context = { isIdle: () => !busy, sessionManager: { getBranch: () => branch }, signal: new AbortController().signal };
+	const context = { isIdle: () => !busy, sessionManager: { getBranch: () => branch, getSessionFile: () => sessionFile }, signal: new AbortController().signal };
 	const pi = { on(name: string, hook: any) { hooks.set(name, [...hooks.get(name) ?? [], hook]); } };
 	const coordinator = new Coordinator(pi as never, (message, options) => sent.push({ message, options }));
 	const emit = (name: string, event: any = {}) => {
@@ -228,6 +228,25 @@ test("coordinator wait returns a completed child result", async t => {
 	const result = await waiting;
 	assert.equal(result.details.reason, "result");
 	assert.deepEqual((result.details.results as any[]).map((item: any) => [item.id, item.text, item.outcome]), [["agent#1", "answer", "completed"]]);
+});
+
+test("receipt write failure still commits a wait result", async t => {
+	const root = await temp(t);
+	const sessionFile = join(root, "parent.jsonl");
+	await writeFile(sessionFile, "");
+	// A directory at the receipt filename makes the real filesystem reject appending.
+	await mkdir(`${sessionFile}.children/delivered`, { recursive: true });
+	const f = coordinatorFixture(t, false, sessionFile);
+	const waiting = f.coordinator.wait(["agent#1"], 100, new AbortController().signal, "call");
+	f.finish();
+	const result = await waiting;
+	assert.equal((result.details.results as any[])[0].text, "answer");
+	f.branch.push({ type: "message", message: { role: "toolResult", toolCallId: "call", isError: false, content: result.content } });
+	f.emit("turn_end");
+	const repeated = await f.coordinator.wait(["agent#1"], 100, new AbortController().signal, "again");
+	assert.equal(repeated.details.reason, "receipt");
+	assert.deepEqual(repeated.details.results, []);
+	assert.equal((repeated.details.receipts as any[])[0].delivered_via, "wait");
 });
 
 // Regression for a66f2c7: busy-parent notifications survive queue clearing and continue once.
@@ -274,6 +293,446 @@ test("interrupted tool calls receive durable error results without replay", asyn
 	const result = messages.at(-1);
 	assert.ok(result?.role === "toolResult" && result.isError);
 	assert.match(JSON.stringify(result.content), /Interrupted before a durable result/);
+});
+
+function runtimeFixture(parent: SessionManager, cwd: string, response: (context: any, options: any) => string | ReturnType<typeof fauxAssistantMessage> | Promise<ReturnType<typeof fauxAssistantMessage>> = () => "answer", responses = 8, codemode = false) {
+	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
+	const events = createEventBus();
+	const model = createFauxCore({ provider: "persist-test", models: [{ id: "model" }] }).getModel();
+	const requests: any[] = [];
+	const core = createFauxCore({ provider: "persist-test", models: [{ id: "model" }] });
+	core.setResponses(Array.from({ length: responses }, () => async (context: any, options: any) => {
+		requests.push(context);
+		const answer = await response(context, options);
+		return typeof answer === "string" ? fauxAssistantMessage(answer, { timestamp: 1 }) : answer;
+	}));
+	const modelRuntime = {
+		getModel: () => model, getPhysicalModel: () => model,
+		hasConfiguredAuth: () => true, getAuth: async () => ({ apiKey: "fake" }),
+		checkAuth: async () => ({}), isUsingOAuth: () => false,
+		getAvailableSnapshot: () => [model], getRegisteredProviderIds: () => [],
+		streamSimple: core.streamSimple,
+	};
+	let definition: any;
+	const ctx: any = {
+		cwd, sessionManager: parent, model, modelRegistry: { runtime: modelRuntime, find: () => model, hasConfiguredAuth: () => true },
+		isIdle: () => true, isProjectTrusted: () => true, getSystemPrompt: () => "original prompt",
+		signal: new AbortController().signal, mode: "tui",
+	};
+	const pi: any = {
+		events, on: (name: string, hook: any) => hooks.set(name, [...hooks.get(name) ?? [], hook]),
+		registerTool: (tool: any) => { definition = tool; },
+		appendEntry: (name: string, data: any) => parent.appendCustomEntry(name, data),
+		getSettings: () => ({ retry: { enabled: false }, compaction: { enabled: false } }),
+		getThinkingLevel: () => "off", getActiveTools: () => codemode ? ["codemode"] : [],
+		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
+	};
+	const runtime = registerSessionRuntime(pi);
+	return { runtime, requests, ctx, events, async emit(name: string, event: any = {}) { for (const hook of hooks.get(name) ?? []) await hook(event, ctx); },
+		execute: (params: any) => definition.execute("call", params, new AbortController().signal, undefined, ctx) };
+}
+
+test("runtime persistence restores full-first short-later configuration and child history", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root);
+	await first.execute({ action: "start", task: "original task", system: "saved prompt", tools: [], thinking: "off", title: "saved title", fast_gpt: true });
+	await first.runtime.wait(new AbortController().signal);
+	const records = parent.getBranch().filter((entry: any) => entry.customType === "rqw-agent-child") as any[];
+	assert.equal(records[0].data.config.system, "saved prompt");
+	assert.ok(records.slice(1).some(entry => entry.data.config === undefined && entry.data.task === undefined));
+	first.runtime.close();
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	const status = await restored.execute({ action: "status", ids: ["agent#1"] });
+	assert.equal(status.details.statuses[0].title, "saved title");
+	await restored.execute({ action: "send", id: "agent#1", task: "follow-up" });
+	await restored.runtime.wait(new AbortController().signal);
+	const request = restored.requests.at(-1);
+	assert.equal(request.messages.find((message: any) => message.role === "system").content, "saved prompt");
+	assert.deepEqual(request.messages.filter((message: any) => message.role !== "system").map((message: any) => message.role), ["user", "assistant", "user"]);
+	assert.deepEqual(request.messages.find((message: any) => message.role === "assistant").content, [{ type: "text", text: "answer" }]);
+	assert.deepEqual(request.messages.filter((message: any) => message.role === "user").map((message: any) => message.content),
+		[[{ type: "text", text: "original task" }], [{ type: "text", text: "follow-up" }]]);
+	restored.runtime.close();
+});
+
+test("selected-branch fold isolates generations, corrupt siblings and genuine result delivery", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const source = runtimeFixture(parent, root);
+	await source.execute({ action: "start", task: "task", tools: [], title: "branch A" });
+	await source.runtime.wait(new AbortController().signal);
+	source.runtime.close();
+	const records = parent.getBranch().filter((entry: any) => entry.customType === "rqw-agent-child") as any[];
+	const latest = mergeSaved(records[0].data, records.at(-1).data);
+	const record = (data: any) => ({ type: "custom", customType: "rqw-agent-child", data });
+	const branchA: any[] = [records[0], record({ ...latest, config: undefined, task: undefined }),
+		record({ ...latest, id: 2, epoch: "stopped", state: "stopped" }),
+		record({ ...latest, id: 3, config: { ...latest.config, system: null } }),
+		{ type: "message", message: { role: "assistant", content: latest.result.run } }];
+	const branchB = branchA.map(entry => entry.data?.id === 1 ? record({ ...entry.data, title: "branch B" }) : entry);
+	// A real result detail suppresses delivery, even though prose on A did not.
+	branchB[4] = { type: "custom_message", details: { results: [{ run: latest.result.run }] } };
+	parent.appendCustomEntry("rqw-agent-child", { ...latest, id: 9, state: "stopped" });
+	let selected = branchA;
+	t.mock.method(parent, "getBranch", () => selected);
+	const restored = runtimeFixture(parent, root);
+	restored.ctx.mode = "print";
+	await restored.emit("agent_end");
+	const first = await restored.execute({ action: "status", ids: ["agent#1", "agent#2", "agent#3"] });
+	assert.deepEqual(first.details.statuses.map((status: any) => [status.id, status.title, status.state]),
+		[["agent#1", "branch A", "idle"], ["agent#2", undefined, undefined], ["agent#3", undefined, "unavailable"]]);
+	assert.match(first.details.statuses[1].error, /Unknown/);
+	const result = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.deepEqual(result.details.results.map((item: any) => [item.run, item.text]), [[latest.result.run, "answer"]]);
+	const repeated = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(repeated.details.results.length, 0);
+	selected = branchB;
+	await restored.emit("session_tree");
+	const second = await restored.execute({ action: "status", ids: ["agent#1"] });
+	assert.equal(second.details.statuses[0].title, "branch B");
+	const delivered = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(delivered.details.results.length, 0);
+	const allocated = await restored.execute({ action: "start", task: "new task", tools: [] });
+	assert.equal(allocated.content[0].text, "agent#10 started");
+	await restored.runtime.wait(new AbortController().signal);
+	restored.runtime.close();
+});
+
+test("completed children wait without opening siblings and materialize only for send or exact status", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const source = runtimeFixture(parent, root);
+	for (const task of ["task A", "task B"]) {
+		await source.execute({ action: "start", task, tools: [], system: "saved prompt" });
+		await source.runtime.wait(new AbortController().signal);
+	}
+	source.runtime.close();
+	const lastB = parent.getBranch().findLast((entry: any) => entry.customType === "rqw-agent-child" && entry.data.id === 2) as any;
+	await rm(lastB.data.sessionFile);
+	const reopened = SessionManager.open(parent.getSessionFile()!);
+	const branch = reopened.getBranch.bind(reopened);
+	t.mock.method(reopened, "getBranch", () => branch().filter((entry: any) => entry.type !== "custom_message"));
+	const restored = runtimeFixture(reopened, root);
+	restored.ctx.mode = "print";
+	await restored.emit("agent_end");
+	const waiting = await restored.execute({ action: "wait", ids: ["agent#1", "agent#2"], until: "all" });
+	// Both saved answers are usable even though B's transcript is unavailable.
+	assert.deepEqual(waiting.details.results.map((result: any) => [result.id, result.text]), [["agent#1", "answer"], ["agent#2", "answer"]]);
+	const repeated = await restored.execute({ action: "wait", ids: ["agent#1", "agent#2"], until: "all" });
+	assert.equal(repeated.details.results.length, 0);
+	assert.deepEqual(waiting.details.statuses.map((status: any) => [status.id, status.state, status.error]),
+		[["agent#1", "idle", undefined], ["agent#2", "idle", undefined]]);
+	await restored.execute({ action: "send", id: "agent#1", task: "follow-up A" });
+	await restored.runtime.wait(new AbortController().signal);
+	const request = restored.requests.at(-1);
+	assert.deepEqual(request.messages.filter((message: any) => message.role !== "system").map((message: any) => message.role), ["user", "assistant", "user"]);
+	assert.deepEqual(request.messages.filter((message: any) => message.role === "user").map((message: any) => message.content),
+		[[{ type: "text", text: "task A" }], [{ type: "text", text: "follow-up A" }]]);
+	const status = await restored.execute({ action: "status", ids: ["agent#1", "agent#2"] });
+	assert.ok(status.details.statuses[0].messages.some((message: any) => message.role === "assistant" && message.text === "answer"));
+	assert.equal(status.details.statuses[1].state, "unavailable");
+	assert.match(status.details.statuses[1].error, /ENOENT/);
+	const stopped = await restored.execute({ action: "stop", id: "agent#2" });
+	assert.equal(stopped.content[0].text, "agent#2 stopped");
+	restored.runtime.close();
+	const statusOnly = runtimeFixture(reopened, root);
+	statusOnly.ctx.mode = "print";
+	await statusOnly.emit("agent_end");
+	const beforeStatus = await statusOnly.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(beforeStatus.details.results.length, 1);
+	await statusOnly.execute({ action: "status", ids: ["agent#1"] });
+	const afterStatus = await statusOnly.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(afterStatus.details.results.length, 0);
+	statusOnly.runtime.close();
+});
+
+test("hot completed sends keep their session and branch changes fence late restore", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const hot = runtimeFixture(parent, root);
+	hot.ctx.mode = "print";
+	let serial = 0;
+	hot.events.on("rqw-codex:session-policy", (request: any) => {
+		const provider = createFauxCore({ provider: "persist-test", models: [{ id: "model" }] });
+		const text = `session ${++serial}`;
+		provider.setResponses([fauxAssistantMessage(text), fauxAssistantMessage(text)]);
+		request.session.agent.streamFunction = provider.streamSimple;
+	});
+	await hot.emit("agent_end");
+	await hot.execute({ action: "start", task: "original", tools: [] });
+	await hot.runtime.wait(new AbortController().signal);
+	const first = await hot.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(first.details.results[0].text, "session 1");
+	await hot.execute({ action: "send", id: "agent#1", task: "next" });
+	await hot.runtime.wait(new AbortController().signal);
+	const second = await hot.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(second.details.results[0].text, "session 1");
+	hot.runtime.close();
+	const reopened = SessionManager.open(parent.getSessionFile()!);
+	const restored = runtimeFixture(reopened, root);
+	restored.events.on("rqw-codex:session-policy", () => {
+		const last = reopened.getBranch().findLast((entry: any) => entry.customType === "rqw-agent-child") as any;
+		reopened.appendCustomEntry("rqw-agent-child", { ...last.data, state: "stopped" });
+		void restored.emit("session_tree");
+	});
+	await assert.rejects(restored.execute({ action: "send", id: "agent#1", task: "must not run" }), /changed its session branch/);
+	const status = await restored.execute({ action: "status", ids: ["agent#1"] });
+	assert.equal(status.details.statuses[0].error, "Unknown or closed child ID", JSON.stringify(status.details));
+	restored.runtime.close();
+});
+
+test("five finished idle minutes release a session and send wakes the same history", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	let now = 0;
+	t.mock.method(performance, "now", () => now);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	let released = false;
+	const live = runtimeFixture(parent, root, (context: any, options: any) => JSON.stringify({
+		released, sessionId: options.sessionId,
+		roles: context.messages.filter((message: any) => message.role !== "system").map((message: any) => message.role),
+		users: context.messages.filter((message: any) => message.role === "user").map((message: any) => message.content),
+		system: context.messages.find((message: any) => message.role === "system").content,
+	}));
+	live.events.on("rqw-codex:session-policy", (request: any) => { request.release = () => { released = true; }; });
+	await live.execute({ action: "start", task: "original task", tools: [], system: "saved prompt" });
+	await live.runtime.wait(new AbortController().signal);
+	const initial = await live.execute({ action: "status", ids: ["agent#1"] });
+	const original = JSON.parse(initial.details.statuses[0].messages.find((message: any) => message.role === "assistant").text);
+	now = 299999;
+	t.mock.timers.tick(299999);
+	const awake = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(awake.details.statuses[0].run_id, 1);
+	// The parent's wait rearms the full grace period.
+	now = 300000;
+	t.mock.timers.tick(1);
+	const rearmed = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(rearmed.details.statuses[0].run_id, 1);
+	now = 540000;
+	t.mock.timers.tick(240000);
+	const interrupted = await live.execute({ action: "interrupt", id: "agent#1" });
+	assert.equal(interrupted.content[0].text, "agent#1 is idle");
+	now = 600000;
+	t.mock.timers.tick(60000);
+	const afterInterrupt = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(afterInterrupt.details.statuses[0].run_id, 1);
+	now = 900000;
+	t.mock.timers.tick(300000);
+	const asleep = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(asleep.details.statuses[0].state, "idle");
+	assert.equal(asleep.details.statuses[0].run_id, undefined);
+	live.ctx.mode = "print";
+	await live.emit("agent_end");
+	await live.execute({ action: "send", id: "agent#1", task: "wake task" });
+	await live.runtime.wait(new AbortController().signal);
+	const wake = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.deepEqual(JSON.parse(wake.details.results[0].text), {
+		released: true, sessionId: original.sessionId, roles: ["user", "assistant", "user"],
+		users: [[{ type: "text", text: "original task" }], [{ type: "text", text: "wake task" }]], system: "saved prompt",
+	});
+	live.runtime.close();
+});
+
+test("filtered nested delivery survives five-minute hibernation and wake", async t => {
+	const nested = Promise.withResolvers<ReturnType<typeof fauxAssistantMessage>>();
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	let now = 0;
+	t.mock.method(performance, "now", () => now);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, (context: any) => {
+		const task = context.messages.find((message: any) => message.role === "user")?.content?.[0]?.text;
+		const tools = context.messages.filter((message: any) => message.role === "toolResult");
+		if (task === "delegate" && tools.length === 0)
+			return fauxAssistantMessage([fauxToolCall("codemode", { code: 'await tools.agent({ action: "start", task: "nested", tools: [] }); const waiting = tools.agent({ action: "wait", ids: ["agent#1"] }); await tools.agent({ action: "status", ids: ["agent#1"] }); await tools.read({ path: "release-model" }); text(JSON.parse(await waiting).results[0]?.text === "nested answer" ? "consumed" : "missing");' }, { id: "outer/filtered" })], { stopReason: "toolUse" });
+		if (task === "delegate" && tools.length === 1 && context.messages.some((message: any) => message.role === "user" && message.content?.[0]?.text === "wake"))
+			return fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "wake/wait" })], { stopReason: "toolUse" });
+		if (task === "delegate" && tools.length === 1)
+			return tools[0].content.some((part: any) => part.text === "consumed") ? "consumed" : "missing";
+		return task === "nested" ? nested.promise : JSON.stringify(context.messages.filter((message: any) => message.role !== "system" && message.role !== "assistant" && JSON.stringify(message.content).includes("nested answer")).length);
+	}, 16, true);
+	live.events.on("rqw-tools:subagent-tools", (request: any) => request.offer(() => [{
+		name: "read", label: "Read", description: "Release fake model", parameters: { type: "object", properties: { path: { type: "string" } } },
+		execute: async () => { nested.resolve(fauxAssistantMessage("nested answer")); return { content: [{ type: "text", text: "released" }], details: {} }; },
+	}]));
+	await live.execute({ action: "start", task: "delegate", tools: ["read"] });
+	await live.runtime.wait(new AbortController().signal);
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	const beforeSleep = await live.execute({ action: "status", ids: ["agent#1"] });
+	assert.ok(beforeSleep.details.statuses[0].messages.some((message: any) => message.role === "assistant" && message.text === "consumed"));
+	now = 300000;
+	t.mock.timers.tick(300000);
+	const result = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(result.details.statuses[0].run_id, undefined);
+	live.ctx.mode = "print";
+	await live.emit("agent_end");
+	await live.execute({ action: "send", id: "agent#1", task: "wake" });
+	await live.runtime.wait(new AbortController().signal);
+	const wake = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(wake.details.results[0].text, "0");
+	live.runtime.close();
+});
+
+test("background holds and uncommitted notifications block overdue sleep until settlement", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	let now = 0;
+	t.mock.method(performance, "now", () => now);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	let retain!: () => () => void;
+	live.events.on("rqw-tools:subagent-tools", (request: any) => request.offer((_cwd: string, _settings: any, options: any) => {
+		retain = options.retain;
+		return [];
+	}));
+	await live.execute({ action: "start", task: "task", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	const release = retain();
+	now = 300000;
+	t.mock.timers.tick(300000);
+	const held = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(held.details.statuses[0].run_id, 1);
+	release();
+	now = 600000;
+	t.mock.timers.tick(300000);
+	const released = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(released.details.statuses[0].run_id, undefined);
+	live.runtime.close();
+
+	const pending = runtimeFixture(parent, root);
+	pending.ctx.mode = "print";
+	await pending.emit("agent_end");
+	await pending.execute({ action: "start", task: "pending task", tools: [] });
+	await pending.runtime.wait(new AbortController().signal);
+	now = 900000;
+	t.mock.timers.tick(300000);
+	await pending.emit("tool_call", { toolCallId: "call", parentToolCallId: "outer" });
+	const waiting = await pending.execute({ action: "wait", ids: ["agent#2"] });
+	assert.equal(waiting.details.statuses[0].run_id, 1);
+	assert.equal(waiting.details.results[0].text, "answer");
+	parent.appendMessage({ role: "toolResult", toolCallId: "outer", toolName: "codemode", content: [{ type: "text", text: "filtered answer" }], details: {}, isError: false, timestamp: 1 });
+	await pending.emit("turn_end");
+	now = 1200000;
+	t.mock.timers.tick(300000);
+	const settled = await pending.execute({ action: "wait", ids: ["agent#2"] });
+	assert.equal(settled.details.statuses[0].run_id, undefined);
+	pending.runtime.close();
+});
+
+test("a running child's queued progress notice does not hold a finished sibling awake", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	let now = 0;
+	t.mock.method(performance, "now", () => now);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const entered = Promise.withResolvers<void>();
+	const response = Promise.withResolvers<ReturnType<typeof fauxAssistantMessage>>();
+	const sessions: AgentSession[] = [];
+	const live = runtimeFixture(parent, root, (context: any) => {
+		const task = context.messages.find((message: any) => message.role === "user")?.content?.[0]?.text;
+		if (task === "sleep sibling") return "answer";
+		const tools = context.messages.filter((message: any) => message.role === "toolResult").length;
+		if (tools === 50) { entered.resolve(); return response.promise; }
+		return fauxAssistantMessage([fauxToolCall("read", { path: "fixed" }, { id: `read-${tools}` })], { stopReason: "toolUse" });
+	}, 64);
+	live.events.on("rqw-codex:session-policy", (request: any) => { sessions.push(request.session); });
+	live.events.on("rqw:context-fork:v1", (request: any) => request.offer(async () => fauxAssistantMessage("progress")));
+	live.events.on("rqw-tools:subagent-tools", (request: any) => request.offer(() => [{
+		name: "read", label: "Read", description: "Fake external file", parameters: { type: "object", properties: { path: { type: "string" } } },
+		execute: async () => ({ content: [{ type: "text", text: "fixed" }], details: {} }),
+	}]));
+	await live.execute({ action: "start", task: "sleep sibling", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	await live.emit("agent_end");
+	await live.execute({ action: "start", task: "work", tools: ["read"] });
+	await entered.promise;
+	now = 300000;
+	t.mock.timers.tick(300000);
+	const sibling = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(sibling.details.statuses[0].run_id, undefined);
+	assert.equal(sibling.details.statuses[0].state, "idle");
+	await live.execute({ action: "stop", id: "agent#2" });
+	response.resolve(fauxAssistantMessage("done"));
+	await Promise.all(sessions.map(session => session.waitForIdle()));
+	live.runtime.close();
+});
+
+test("a replaced generation and a parent with running descendants stay safe at old deadlines", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	let now = 0;
+	t.mock.method(performance, "now", () => now);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	await live.execute({ action: "start", task: "old task", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	const original = await live.execute({ action: "wait", ids: ["agent#1"] });
+	now = 240000;
+	t.mock.timers.tick(240000);
+	await live.execute({ action: "restart", id: "agent#1", task: "new task", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	now = 300000;
+	t.mock.timers.tick(60000);
+	const current = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(current.details.statuses[0].run_id, 1);
+	assert.notEqual(current.details.statuses[0].run, original.details.statuses[0].run);
+	const restarted = await live.execute({ action: "status", ids: ["agent#1"] });
+	assert.deepEqual(restarted.details.statuses[0].messages.filter((message: any) => message.role === "user").map((message: any) => message.text), ["new task"]);
+	await live.execute({ action: "stop", id: "agent#1" });
+	now = 600000;
+	t.mock.timers.tick(300000);
+	const stopped = await live.execute({ action: "status", ids: ["agent#1"] });
+	assert.match(stopped.details.statuses[0].error, /Unknown/);
+	live.runtime.close();
+
+	const entered = Promise.withResolvers<void>();
+	const response = Promise.withResolvers<ReturnType<typeof fauxAssistantMessage>>();
+	const sessions: AgentSession[] = [];
+	const tree = runtimeFixture(parent, root, (context: any) => {
+		const lastUser = context.messages.findLast((message: any) => message.role === "user");
+		const task = lastUser?.content?.[0]?.text;
+		if (task === "child waits") { entered.resolve(); return response.promise; }
+		if (task === "seed") return "seed done";
+		if (context.messages.some((message: any) => message.role === "toolResult")) return "parent done";
+		return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "child waits", tools: [] }, { id: "delegate" })], { stopReason: "toolUse" });
+	});
+	tree.events.on("rqw-codex:session-policy", (request: any) => { sessions.push(request.session); });
+	await tree.execute({ action: "start", task: "seed", tools: [] });
+	await tree.runtime.wait(new AbortController().signal);
+	// A fake external Pi host starts native activity after the logical assignment settled.
+	const native = sessions[0].prompt("delegate");
+	await entered.promise;
+	await native;
+	now = 900000;
+	t.mock.timers.tick(300000);
+	const active = await tree.execute({ action: "status", ids: ["agent#2"], depth: 1 });
+	assert.equal(active.details.statuses[0].run_active, false);
+	assert.equal(active.details.statuses[0].children[0].run_active, true);
+	response.resolve(fauxAssistantMessage("child done"));
+	await Promise.all(sessions.map(session => session.waitForIdle()));
+	tree.runtime.close();
+	const memory = runtimeFixture(SessionManager.inMemory(root), root);
+	await memory.execute({ action: "start", task: "in-memory task", tools: [] });
+	await memory.runtime.wait(new AbortController().signal);
+	now = 1200000;
+	t.mock.timers.tick(300000);
+	const retained = await memory.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(retained.details.statuses[0].run_id, 1);
+	memory.runtime.close();
 });
 
 // Regression: every child state change rewrote config and task, growing the parent session to gigabytes.

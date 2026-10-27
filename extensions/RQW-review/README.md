@@ -7,7 +7,6 @@ Self-contained: no imports from other extensions. Requires RQW-agent to run a re
 |---|---|---|---|---|
 | `blindreview` | blind | `spotty` | `gpt-6.1-terra` | low |
 | `highreview` | high | `bossy` | `gpt-6.1-terra` | medium |
-| `testreview` | requirements/test plan | `requirements-test-reviewer` | `gpt-6.1-sol` | low |
 
 Both wrappers read `skills/reviewer/SKILL.md` for the common review procedure. Initial and changed-object passes
 start a fresh ordinary `agent` with the selected `agent_type`, `role_file` set to the absolute package `REVIEWER.md`
@@ -31,22 +30,10 @@ adapted for Pi. Both profiles share the canonical reviewer role with the approve
 actual mechanical placement and same-reviewer completion are specified by the common skill.
 
 On `pi.events` channel `rqw-agent:profiles`, request `{ offer(paths: string[]): void }`, this extension offers
-absolute paths to all three TOML files. `resources_discover` returns absolute `skillPaths` for all four skills;
+absolute paths to both TOML files. `resources_discover` returns absolute `skillPaths` for all three skills;
 there is no static `pi.skills` entry. Disable RQW-review and reload to remove its offers and skills. With RQW-agent
 disabled, the skills report that the required agent is unavailable rather than starting another kind of reviewer.
 
 No live model quality measurement is claimed.
 
-`testreview` reviews test code as the deliverable, without running tests or reviewed code. It collects supplied
-requirements, test plan, acceptance criteria and conversation sources, including user and assistant turns in an
-external transcript. `include: ["user_messages"]` adds only the current caller's user messages, not assistant turns
-or other sessions. The reviewer traces agreed checks to exercised code and assertions, reporting missing coverage
-and concrete false confidence. Missing primary sources make verification incomplete, never CLEAN. Current code
-and conversation suffice; no before/after commits, diff, QA issue or execution logs are required.
-
-Test review uses the same native profile and agent lifecycle, without a second runner, permission changes
-or automatic execution. Read-only is an instruction.
-
 Tests: `test/extensions/RQW-review/profiles.test.ts`.
-The testreview fixtures include defective, corrected and missing-conversation probe cases; static checks prove
-resource contracts, not model detection quality.

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { it } from "node:test";
 import { stripVTControlCharacters as strip } from "node:util";
 import { QuotaConsumer } from "../../../extensions/RQW-statusbar/quota.ts";
-import { renderBar } from "../../../extensions/RQW-statusbar/render.ts";
+import { ICON, renderBar } from "../../../extensions/RQW-statusbar/render.ts";
 
 const footer = (consumer: QuotaConsumer) => renderBar({ quotas: consumer.values, compactions: 0,
 	place: { kind: "folder", text: "project" }, statuses: [] }, 400).slice(2).join(" ");
@@ -40,7 +40,14 @@ it("renders one remaining number per provider in gold, platinum and bronze and r
 	});
 	consumer.start();
 	await flush();
-	const row = footer(consumer);
+	const row = renderBar({ quotas: consumer.values, compactions: 0,
+		place: { kind: "folder", text: "project" }, statuses: [],
+		git: { branch: "main", staged: 0, unstaged: 0, untracked: 0 } }, 100)[2];
+	assert.equal(strip(row), ` ${ICON.folder} project` + " ".repeat(60) + `CX 72%  KM 72%  CC 39%  ${ICON.branch} main`);
+	const wrapped = renderBar({ quotas: consumer.values, compactions: 0,
+		place: { kind: "folder", text: "project" }, statuses: [],
+		git: { branch: "main", staged: 0, unstaged: 0, untracked: 0 } }, 40).slice(2).map(strip);
+	assert.deepEqual(wrapped, [` ${ICON.folder} project`, " ".repeat(10) + `CX 72%  KM 72%  CC 39%  ${ICON.branch} main`]);
 	assert.ok(row.includes("\x1b[38;2;201;162;39mCX 72%\x1b[39m"));
 	assert.ok(row.includes("\x1b[38;2;229;228;226mKM 72%\x1b[39m"));
 	assert.ok(row.includes("\x1b[38;2;205;127;50mCC 39%\x1b[39m"));

@@ -575,6 +575,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 ## Subscription limits
 
 - **One subscription number** `[D-STATUSBAR-SUBSCRIPTION-LIMITS]`.
+  The folder stays on the left; limits sit on the right immediately before the git branch, wrapping when they do not fit.
+  Owner: «Надо еще это статус бар перенести лимиты по провайдерам на право и поставить их прямо перед веткой на 0 sp задача в общий текущий пак».
   The folder row shows CX gold, KM platinum and CC bronze, one remaining percent each:
   CX and CC the weekly window, KM `limit_month_total`. Refresh immediately and every five minutes while active.
   Missing or failed data is `unavailable`, never an invented 0% or 100%; failed reads
@@ -613,6 +615,19 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Carrier: `INSTALL.md`, `test/isolation.test.ts`; Pi 1.4.0 `dist/core/package-manager.js`, `dist/core/resource-loader.js`, `dist/core/agent-session.js`. Since: `81cafe3`.
 
 ## Agent
+
+- **Durable delivery receipts** `[D-AGENT-DELIVERY-RECEIPTS]`. Caller coordinators append committed result run IDs, one per line, to `<owning-session-file>.children/delivered`, creating it on first write. Hydration combines this append-only file with the existing branch scan. In-memory sessions skip it. Historical children no longer block five-minute hibernation; filtered codemode results remain consumed after wake or restart. Receipt writes are best effort: a write error does not prevent delivery from committing; repeat delivery after wake is acceptable in that case. This supersedes the historical-child guard in `666ad9f`.
+  Owner: «Почему мы не пишем в память то, что нам нужно? Есть данные, которые у нас должны быть durable. Почему мы не можем их писать в какие-то временные файлы ... чтобы это всё было не в одной огромной простыне, а чтобы это можно было просто прочитать с файла. И всё.»
+  Owner clarification: «Придут повторно, и что случится?»
+  Carrier: `extensions/RQW-agent/coordinator.ts`, `persistence.ts`, `index.ts`; regression: `test/extensions/RQW-agent/unit.test.ts`.
+
+- **Five-minute finished-idle hibernation** `[D-AGENT-HIBERNATE]`. A completed child with no pending work releases its SDK session after exactly five idle minutes. Parent interactions rearm the interval. Both parent metadata and child history must reopen durably; in-memory or unavailable histories stay awake. Committed filtered outer codemode handoffs remain valid delivery. It becomes a saved slot, not a stopped generation. Send, explicit resume or an exact-status query uses the demand-restore path with the same history, file and IDs. Running descendants, uncommitted results/notifications, queued sends and retained background jobs prevent sleeping. Settlement events recheck an overdue child without polling. No new lifecycle state or metadata format. SDK disposal may release provider connections and continuation caches; history and session identity remain intact.
+  Owner: «агентов можно в гибернацию закидывать при простое в 3-5 минут. Когда агент доделал ход и если его родитель ему не пишет ничего, то его можно усыплять, вырубать можно и потом заново поднимать.» Latest execution instruction selects exactly five minutes and supersedes the earlier design's no-live-eviction exclusion.
+  Carrier: `extensions/RQW-agent/index.ts`, `coordinator.ts`; contract: `extensions/RQW-agent/README.md#recursive-lifecycle`.
+
+- **Demand-driven completed-child restore** `[D-AGENT-LAZY-RESTORE]`. Completed durable children stay saved during parent hydration and wait; send materializes only its target with its original history, file, configuration and identity. Status retains an eager target-only fallback for exact diagnostics absent from saved records. Wait snapshots of saved slots contain saved identity, model, title and idle state, not invented runtime diagnostics. Unfinished recovery stays eager; hot sessions are reused. Per-generation restore promises and cancellation prevent stale construction from reviving a replaced branch. No new metadata format.
+  Owner: «поднимать агентов после перезапуска ... суперэффективно и производительно»; approved lazy completed-child direction. Source: accepted RELEASE-PLAN P05 and sleep-cache DESIGN section 5 part 2; execution clarification: “Exact-status fallback stays eager where needed”.
+  Carrier: `extensions/RQW-agent/index.ts`; contract: `extensions/RQW-agent/README.md#persistence-and-resume`.
 
 - **Codex TOML profiles on one agent lifecycle** `[D-AGENT-PROFILES]`. `agent_type` selects a named Codex role;
   no selector keeps the generic defaults. `smol-toml@1.9.1` is a direct dependency, not a hand-written parser.
@@ -768,23 +783,15 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Review
 
-- **Requirements-based test review** `[D-REVIEW-TEST-REQUIREMENTS]`. Owner R11 source: session
-  `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER `3d0e39ae`, line 1568:
-  «Мне надо, чтобы в этой ситуации reviewer закрывал такие моменты, что код проверок соответствует требованиям, соответствует тест-плану, acceptance критериям.»
-  USER `f5193077`, line 1602: «Нет, я думаю, что в автотестах тесты сами не надо запускать, когда он review делает.»
-  and «Я могу достать переписку. Я смогу достать код, но я не смогу достать коммит до и коммит после, скорее всего. Я хз.»
-  USER `96dc3500`, line 1606: «Просто не надо запускать сами тесты, блядь.»
-  The owner explicitly resumed R11 in the 2026-10-25 execution request; its earlier hold is no longer active.
-  Decision: the optional `testreview` native skill collects supplied requirements, test plan, acceptance criteria
-  and conversation references and starts the ordinary `requirements-test-reviewer` profile on Sol 6.1 low.
-  It reads test code and directly relevant exercised code, checks requirement coverage and concrete false confidence,
-  and reports missing primary evidence as incomplete. External transcripts include user and assistant turns;
-  `include: ["user_messages"]` separately appends the caller's raw user messages. No test/code execution, mandatory
-  commit pairs, new runtime, permissions or automatic review. The existing project `test-reviewer` and its mechanical
-  integrity gate remain unchanged. Reason: test code is itself the deliverable, so repository check execution does
-  not establish whether its assertions implement the agreed plan.
-  Carriers: `extensions/RQW-review/profiles/requirements-test-reviewer.toml`,
-  `extensions/RQW-review/skills/testreview/SKILL.md`, `extensions/RQW-review/index.ts`.
+- **Repository requirements-based test review** `[D-REVIEW-TEST-REQUIREMENTS]`. Owner: «review тестов и review кода
+  являются частью нашего harness. Не частью harness, а именно частью нашего репозитория. То есть code review должны
+  быть внутри этого репозитория, а не harness. Это не входит в harness вообще.» The optional `testreview` skill and
+  `requirements-test-reviewer` profile are repository-only under `.pi/`; RQW-review ships only Spotty, Bossy and their
+  blind/high skills. The local skill keeps the accepted requirements/test-plan review contract on Sol 6.1 low,
+  without test execution, mandatory commit pairs or a package `role_file`. The project `code-reviewer` and
+  `test-reviewer` profiles remain local. Reason: code and test review belong to this repository's development workflow,
+  not the shipped harness. Carriers: `.pi/agents/requirements-test-reviewer.toml`,
+  `.pi/skills/testreview/SKILL.md`, `extensions/RQW-review/index.ts`.
 
 - **Codex reviewer port** `[D-REVIEW-PORT]`. `RQW-review` carries the owner's working Codex CLI reviewer over to Pi, adapted
   to this harness. The base is his existing cycle, not a newly invented workflow: the original Codex reviewer profiles
@@ -895,12 +902,39 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   comes from the `Code.exe` environment and the settings `http.proxy` / `http.proxyStrictSSL` (false sets
   `NODE_TLS_REJECT_UNAUTHORIZED=0`) and is exported in the Git Bash command line, so profile scripts cannot override it;
   the line first unsets `http_proxy`, `https_proxy`, `all_proxy` and `no_proxy`, because Pi prefers lowercase names.
-  `~/.pi/agent` is shared and not changed. Carrier: `pcli-vscode/extension.js`. Since: `3b6d6c1`.
+  `~/.pi/agent` is shared. Only my-pi's package source is managed as described below; authentication and unrelated
+  settings stay unchanged. Carrier: `pcli-vscode/extension.js`. Since: `3b6d6c1`; package management: W04.
 - **No version check** `[D-PCLI-NOVERSION]`. The tab sets `PI_SKIP_VERSION_CHECK=1`: the version is pinned.
   Coordinator text (owner quote not found in the Pi sessions): "1 да давай 2 да давай". Carrier:
   `pcli-vscode/extension.js`. Since: `3b6d6c1`.
-- **One command** `[D-PCLI-COMMAND]`. One command, `Pi CLI: New Tab`; login is `/login` inside Pi. my-pi is installed
-  into that Pi with `INSTALL.md`; the extension does not install it. Carrier: `pcli-vscode/package.json`. Since: `3b6d6c1`.
+- **New tab and bundled my-pi** `[D-PCLI-COMMAND]`. `Pi CLI: New Tab` starts Pi; login is `/login` inside Pi.
+  At VSIX build time `bundle-my-pi.mjs` resolves the public `ARQAWA/my-pi` repository's `main` head once, downloads
+  that SHA's archive, copies only the package manifest and `extensions/`, installs runtime dependencies, and records
+  the SHA in `my-pi/.revision`. The result ships next to `pi/`. `vscode:prepublish` builds both; extension updates
+  update both. No Git command or GitHub package download runs on tab start. Git Bash remains the launch shell.
+  Before opening a tab, PCLI replaces only its own my-pi entry in the shared Pi `settings.json` with the bundled
+  local path, preserving object-form resource filters and unrelated keys/packages. A previous version's bundled
+  path or `git:github.com/ARQAWA/my-pi` source is migrated. Authentication is never read or written. Invalid settings
+  stop tab creation without overwriting them. Restart tabs after an extension update. No manual package install
+  inside PCLI. Carriers: `pcli-vscode/{package.json,bundle-my-pi.mjs,extension.js}`, `INSTALL.md`. Since: W04.
+  Owner: «На Windows ставим через наше расширение VS Code ... Оно запускает Py в терминале. ... Чтобы это было не из терминала, потому что у меня нет доступа к терминалу. Я не могу остановить Py и сделать апдейт, как я это делаю в терминале в macOS.»
+  «По поводу обновления в VS Code делай рекомендуемые решения, которые сам предлагаешь»
+  Accepted recommendation: bundle my-pi; updating the extension updates everything, without target Git/GitHub access.
+  Simplicity boundary: «Надо что бы решение было максимально простое топорное и ограниченное только тем что я сказал из требований.»
+- **Palette harness update** `[D-PCLI-UPDATE]`. `Pi CLI: Update` (`pcli.update`) fetches the latest public
+  `ARQAWA/my-pi` `main` SHA and its HTTPS archive without Git, npm or a Pi update. It compares the effective
+  production dependencies structurally, including bundled `typebox`, ignoring key order. Matching dependencies
+  reuse `node_modules` from the currently selected copy. Changed dependencies preserve that copy and notify
+  the user to update the VS Code extension instead. Owner chose option 1: «по либам ответ 1».
+  New product resources and reused libraries are prepared under VS Code `globalStorageUri/my-pi/<PCLI version>/<SHA>`.
+  Atomic replacement of `current.json` activates the complete copy only after preparation succeeds. Older snapshots
+  remain for running tabs; any reported update failure preserves the previously selected copy. Progress and result
+  notifications tell the user to open a new Pi tab. A Windows named-pipe
+  lease excludes simultaneous update hosts and is released by the OS on host exit; no persistent lock or PID recovery.
+  The command does not touch Pi settings or authentication;
+  the new tab uses the existing package-source migration with preserved resource filters. A new PCLI version uses
+  its new bundled package rather than a previous version's override. Carriers: `pcli-vscode/{extension.js,update-my-pi.js,package.json}`.
+  Owner: «команду PCL update тоже надо сделать, потому что у нас бывают ситуации, когда мы обновили harness, обновили репозиторий Git, но не обновили сам PCLI. ... PCLI не обновляется ... Он обновляться должен только вместе с Py. ... Должна быть возможность через Ctrl+Shift+P команду обновить внутренности, которые мы докрутили.» Since: W05.
 - **No Marketplace description** `[D-PCLI-NODESC]`. No `description` field in `pcli-vscode/package.json`, no README, no
   LICENSE; `pcli.yml` asserts an empty VSIX description. Coordinator text (owner quote not found in the Pi sessions):
   "При публикации в маркетплейс там НЕ ДОЛЖНО БЫТЬ НИКАКОГО ОПИСАНИЯ". Since: `3b6d6c1`.
@@ -1046,9 +1080,14 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   before the first render; one transition is Shift+arrow then Enter. Plain and Shift arrows then share the same axes.
   Enter commits once; Esc closes with no setters or restoration. A draft model switch clamps effort to the nearest lower
   allowed level or the lowest. Dialog and key-repeat guards prevent stacked dialogs; session replacement, reload or
-  shutdown cancels the draft. No settings, dependencies, request fences or aborts are added. Appearance: two compact
-  terminal-native wheel columns, selected centre, muted neighbours, visible OK/Enter/Esc hints, supplied theme roles and
-  thinking-level tokens; narrow rendering fits. Unchanged-model commits use only the thinking setter; changed-model
+  shutdown cancels the draft. No settings, dependencies, request fences or aborts are added. Appearance: a compact
+  vertical model wheel and one horizontal row of all available efforts. Up/Down move models; Left/Right move effort.
+  Muted neighbours, visible OK/Enter/Esc hints, supplied theme roles and thinking-level tokens stay.
+  The longest effort row needs 31 columns; a narrower width gets an explicit required-column message, not hidden levels.
+  Owner: «менюшка моделей была вертикальная, а менюшка effort была горизонтальная» and
+  «все effort были в ряд, и когда я влево, вправо нажимаю, чтобы он переключал effort». Model labels use the statusbar rule: name or ID without `Claude `,
+  preserving provider/model identity. Owner: «Как в status bar написана модель, так же она должна быть и в picker написана.»
+  Unchanged-model commits use only the thinking setter; changed-model
   commits use `pi.setModel` with a scoped synchronous pending-effort `model_select` handler, fallback and cleanup. Pi's
   setters are not atomic (README limit). The strict no-intermediate-request requirement was withdrawn by the coordinator
   as an overreach. `/rqw-models` and stock restrictions are unchanged.

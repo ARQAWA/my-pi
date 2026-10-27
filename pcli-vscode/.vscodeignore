@@ -1,6 +1,8 @@
 node_modules/**
 test/**
 fetch-pi.mjs
+bundle-my-pi.mjs
+my-pi.tmp/**
 .gitignore
 *.vsix
 pi.tmp/**

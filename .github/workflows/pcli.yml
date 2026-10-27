@@ -30,6 +30,9 @@ jobs:
           node --version
           echo "HOME=$HOME USERPROFILE=$USERPROFILE"
 
+      - name: Synthetic package and tab tests
+        run: node --test pcli-vscode/test/bundle.test.mjs pcli-vscode/test/update.test.mjs pcli-vscode/test/quit.test.mjs
+
       - name: Build VSIX
         working-directory: pcli-vscode
         run: |
@@ -38,6 +41,9 @@ jobs:
           (yes || true) | npx --yes @vscode/vsce@latest package --target win32-x64 --skip-license --no-dependencies -o pcli.vsix
           ls -l pcli.vsix
           unzip -l pcli.vsix | grep -i 'pi\.exe'
+          unzip -p pcli.vsix extension/my-pi/.revision
+          unzip -l pcli.vsix | grep 'extension/my-pi/package.json'
+          unzip -l pcli.vsix | grep 'extension/my-pi/node_modules/ws/package.json'
           manifest=$(unzip -p pcli.vsix extension.vsixmanifest)
           echo "$manifest" | grep -i '<Description'
           echo "$manifest" | grep -Eq '<Description[^>]*></Description>'
