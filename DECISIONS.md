@@ -129,7 +129,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Already running or preserved Sol agents may finish their current tasks through ordinary `send` and `resume` and
   are not restarted merely to switch models. A genuinely new task, new agent or new-session restart uses Kimi unless
   it is a reviewer profile. Explicit owner model requests override the default. No silent model fallback.
-  Independent reviewer profiles keep their approved Sol model and effort; they are not an executor category.
+  Independent reviewer profiles keep their approved model and effort; they are not an executor category.
   Recursive delegation and reviewer lifecycle stay unchanged; no new nested non-review helper restriction is added.
   Owner (`16-27-59:11912`, entry `8462d385`, 2026-10-25):
   «В будущих задачах больше не используй GPT в саб агентах, только кими по нашим правилам. только для ревьюеров»
@@ -775,8 +775,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `fix-reviewer-evidence-output`.
 
 - **Reviewers are ordinary profiles** `[D-REVIEW-PROFILES]`. `RQW-review` is a small resource provider, not a tool
-  or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-sol` with `model_reasoning_effort = "low"`;
-  `profiles/bossy.toml` defaults to the same model with `"medium"`. RQW-agent resolves them to `openai-codex/gpt-6.1-sol`
+  or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-terra` with `model_reasoning_effort = "low"`;
+  `profiles/bossy.toml` defaults to the same model with `"medium"`. RQW-agent resolves them to `openai-codex/gpt-6.1-terra`
   without provider fallback. The common skill appends their byte-identical package `REVIEWER.md` role explicitly.
   The extension offers both absolute paths on `rqw-agent:profiles` and returns `skills/reviewer`, `skills/blindreview`
   and `skills/highreview` through public `resources_discover`, not static `pi.skills`. The common skill is only the
@@ -795,6 +795,9 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   owner, not scheduled (`16-27-59:6149`, entry `348f1995`); see [BACKLOG.md, Discarded](BACKLOG.md#claude-reviewer).
   Source of the existing reviewer text and skills, read-only external archive:
   `/Users/arkadijcukavin/Downloads/codex-subagents-full-pack (1).zip`.
+  Owner, current task `reviewers-terra`, 2026-10-27:
+  «Надо переписать viewer с Sol 6.1 на Terru, чтобы в споте был на Terra low, а босси на terra medium».
+  Reason for the model change: the owner's explicit choice; the other three reviewer profiles stay on Sol low.
   Reason: one profile mechanism rather than a parallel reviewer execution stack.
   Carriers: `extensions/RQW-review/index.ts`, `profiles/*.toml`, `skills/**/SKILL.md`, RQW-agent.
   Contract: [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
@@ -1064,7 +1067,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
     listed model, at medium or the startup/`/new` `--thinking`, with a warning. With no authenticated listed model the
     model stays and the warning says its requests are refused. The wait before this choice is `[D-MODELS-STARTUP]`.
   - Requests: the owning runtime's `prepareRequest` refuses chat requests for an unlisted model with `RQW-models refused
-    the request: <the same text>`, covering in-process subagents; the reviewer model (GPT-6.1 Sol) is
+    the request: <the same text>`, covering in-process subagents; the reviewer models (GPT-6.1 Terra and Sol) are
     listed. Pi's own requests use the session's model; image and classifier models pass.
   - Masks call Pi's current prototype methods, so RQW-anthropic and RQW-context patches keep working; they are
     reference-counted and removed on `session_shutdown` or `session.dispose()`.

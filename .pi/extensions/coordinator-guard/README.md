@@ -71,10 +71,12 @@ The fenced block `json coordinator-rules` in `PROCESS.md`, section [Subagent mod
 bad JSON or a bad schema is an error state: the guard then blocks every `agent` start and restart
 and shows the error in Main's prompt and status.
 
-The active `agentModels` table permits only Kimi executor pairs under
+The active `agentModels` table permits the executor pairs under
 [Subagent models](../../../PROCESS.md#subagent-models). `reviewerProfiles` separately names each established
-independent reviewer's approved Sol pair. A start or restart with Sol requires the matching reviewer `agent_type`,
-which a restart may inherit from its latest persisted child record; the same Sol pair without that profile is blocked. There is no rotation counter or bookkeeping. Existing agents
+independent reviewer's profile-specific pair: `spotty` uses `openai-codex/gpt-6.1-terra` low, `bossy` uses
+`openai-codex/gpt-6.1-terra` medium, and the other reviewer profiles use `openai-codex/gpt-6.1-sol` low.
+A reviewer start or restart requires the pair matching its `agent_type`, which a restart may inherit from its
+latest persisted child record; calls without a reviewer profile use `agentModels`. There is no rotation counter or bookkeeping. Existing agents
 keep their models through `send` and `resume`, which the guard leaves untouched. The parser and enforcement are
 data-driven: changing the root block updates both the next turn's prompt and the next tool call without reloading
 guard code.

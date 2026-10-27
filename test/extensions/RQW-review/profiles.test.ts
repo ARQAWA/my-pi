@@ -27,8 +27,8 @@ it("pins the native reviewer models and efforts", () => {
 	const profiles = ["spotty", "bossy", "requirements-test-reviewer"].map((name) =>
 		parse(readFileSync(join(ROOT, "profiles", `${name}.toml`), "utf8")));
 	assert.deepEqual(profiles.map((profile) => [profile.name, profile.model, profile.model_reasoning_effort]), [
-		["spotty", "gpt-6.1-sol", "low"],
-		["bossy", "gpt-6.1-sol", "medium"],
+		["spotty", "gpt-6.1-terra", "low"],
+		["bossy", "gpt-6.1-terra", "medium"],
 		["requirements-test-reviewer", "gpt-6.1-sol", "low"],
 	]);
 });

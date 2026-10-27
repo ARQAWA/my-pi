@@ -35,7 +35,8 @@ Executors use these main / fallback pairs:
 3. Ordinary work, research and search: `kimi-coding/kimi-for-coding` high / `openai-codex/gpt-6.1-terra` high.
 4. Hardest tasks: `kimi-coding/k3.1-pro` high / `openai-codex/gpt-6.1-sol` medium.
 
-Reviewers use their Sol profiles. Agents use no Anthropic models.
+Spotty uses `openai-codex/gpt-6.1-terra` low; Bossy uses `openai-codex/gpt-6.1-terra` medium.
+Other reviewer profiles stay on Sol low. Agents use no Anthropic models.
 
 The guard reads this machine-readable block.
 
@@ -48,8 +49,8 @@ The guard reads this machine-readable block.
     "hardest": [["kimi-coding/k3.1-pro", "high"], ["openai-codex/gpt-6.1-sol", "medium"]]
   },
   "reviewerProfiles": {
-    "spotty": ["openai-codex/gpt-6.1-sol", "low"],
-    "bossy": ["openai-codex/gpt-6.1-sol", "medium"],
+    "spotty": ["openai-codex/gpt-6.1-terra", "low"],
+    "bossy": ["openai-codex/gpt-6.1-terra", "medium"],
     "code-reviewer": ["openai-codex/gpt-6.1-sol", "low"],
     "test-reviewer": ["openai-codex/gpt-6.1-sol", "low"],
     "requirements-test-reviewer": ["openai-codex/gpt-6.1-sol", "low"]
