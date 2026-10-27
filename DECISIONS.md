@@ -122,22 +122,26 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: local orchestration has no other deployment target; product and CI portability remain separate.
   Carriers: `.pi/extensions/`, `scripts/`, local development test suites.
 - **Development executor models** `[D-WORK-MODELS]`. Every new Main-started executor, work, research, test, QA, regression,
-  operational or outside-queue agent uses only `kimi-coding/k3.1-pro`: simple and complex work uses low, hardest
-  work uses high. Exact executor pairs and reviewer-profile exceptions live in the `coordinator-rules` JSON block of
+  operational or outside-queue agent uses the main / fallback matrix: code and fixes use Sol low / Kimi 3.1 low;
+  mechanical work uses Terra low / Kimi K2.8 low; ordinary work, research and search use Kimi K2.8 high / Terra high;
+  hardest work uses Kimi 3.1 high / Sol medium. Exact executor pairs and reviewer-profile exceptions live in the `coordinator-rules` JSON block of
   [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly.
   There is no executor rotation or ratio bookkeeping.
   Already running or preserved Sol agents may finish their current tasks through ordinary `send` and `resume` and
-  are not restarted merely to switch models. A genuinely new task, new agent or new-session restart uses Kimi unless
-  it is a reviewer profile. Explicit owner model requests override the default. No silent model fallback.
+  are not restarted merely to switch models. A genuinely new task, new agent or new-session restart uses the matrix
+  unless it is a reviewer profile. Explicit owner model requests override the default. No silent model fallback.
   Independent reviewer profiles keep their approved model and effort; they are not an executor category.
   Recursive delegation and reviewer lifecycle stay unchanged; no new nested non-review helper restriction is added.
-  Owner (`16-27-59:11912`, entry `8462d385`, 2026-10-25):
-  «В будущих задачах больше не используй GPT в саб агентах, только кими по нашим правилам. только для ревьюеров»
+  Owner (`16-27-59:15777`, 2026-10-26):
+  «Давай так - код и правки sol 6.1 low / kimi low
+  гит влитие и прочая механическая прям примитивная хуйня terra low / kimi k2.8 low
+  обычные какие то штук, обычная работа, исследование, поиск kimi K2.8 high / terra high
+  самые сложные задачи - kimi high / sol 6.1 medium»
   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
   The full Anthropic ban remains in force for Main and subagents, without expiry or benchmark exception.
   Owner (`16-27-59:7665`, entry `29908fc1`): «Возобнови полный запрет использования антропиков».
   This governs model use, not Anthropic transport, quota implementation, auth, provider visibility or product models.
-  Reason: remove GPT from future executor assignments while preserving reviewer profiles and current agents.
+  Reason: match executor models and effort to task complexity while preserving reviewer profiles and current agents.
   Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), `AGENTS.md` and
   `.pi/extensions/coordinator-guard/` with its tests. The superseded 2:1
   rotation is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0362, from `967769a`.
