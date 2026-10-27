@@ -20,6 +20,8 @@
 2. After runtime changes only, update the owner's installed Pi from `@release`, preserving settings.
 3. Merge into `main` only after one full `npm test` on the exact head.
 
+Run `npm run knip` on demand only. Findings are audit input, not deletion authority, and do not block default checks or delivery.
+
 ## Golden rule
 
 No polling, no confidence reruns, no avoidable tokens.
