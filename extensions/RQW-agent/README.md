@@ -431,7 +431,9 @@ in-memory build has no saved history and cannot be recovered retroactively, and 
 new agents are saved.
 Versioned `rqw-agent-child` entries in the parent's selected branch store the local id, generation, child file,
 run state, exact prompt/configuration, model, thinking, tools, settings, Fast, title and selected profile provenance
-`{name, path, sha256}`. Resume retains the saved resolved prompt and profile version; restart reloads its TOML. Restoring the parent makes
+`{name, path, sha256}`. The prompt/configuration and task are written once per agent object and again only when they
+change; later entries are short and restore takes the omitted fields from the previous entry of the same child.
+Resume retains the saved resolved prompt and profile version; restart reloads its TOML. Restoring the parent makes
 the same caller-local ids available. Stopped mappings are tombstoned; restart creates a new history rather than
 resurrecting the old generation. Old child files remain inside the owned tree until parent removal.
 Persisted entries with unknown child kinds are ignored without deleting their history files.

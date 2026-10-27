@@ -85,6 +85,22 @@ type Params = Static<typeof PARAMETERS>;
 type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; prompt_file?: PromptFile; profile?: ProfileRef; profile_defaults?: { model: boolean; thinking: boolean; role: boolean }; alert_after_ms?: number; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
 type SavedResult = { run: string; text: string; outcome: "completed" | "error"; meta: RunMeta };
 type SavedChild = { version: 1; kind: string; id: number; epoch: string; sessionFile?: string; runNumber: number; state: "idle" | "running" | "interrupted" | "paused" | "completed" | "stopped"; config: Omit<Config, "model"> & { model: { provider: string; id: string } }; fast: boolean; title?: string; task?: string; result?: SavedResult; progressSteps?: number };
+type Persisted = { config: Config; task?: string; written?: { config: Config; task?: string } };
+
+/** Config and task are written once and again only when they change; restore takes them from the earlier full record. */
+export function childRecord<T extends { config?: unknown; task?: string }>(a: Persisted, full: T): T | Omit<T, "config" | "task"> {
+	if (a.written?.config === a.config && a.written.task === a.task) {
+		const { config: _config, task: _task, ...short } = full;
+		return short;
+	}
+	a.written = { config: a.config, task: a.task };
+	return full;
+}
+
+/** A short record inherits config and task from the previous record of the same child. */
+export function mergeSaved<T extends { config?: unknown; task?: string }>(previous: T | undefined, data: T): T {
+	return data.config || !previous ? data : { ...data, config: previous.config, task: data.task ?? previous.task };
+}
 type CallerHost = { busy(): boolean; send: ExtensionAPI["sendMessage"] };
 type JobNotification = { id: string; text: string; details: Record<string, unknown> };
 type InboxMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
@@ -167,6 +183,8 @@ type Agent = Child & {
 	state: SavedChild["state"];
 	/** Last accepted task for provenance, never authority to reconstruct missing durable history. */
 	task?: string;
+	/** The config and task already written to the parent session by this agent object. */
+	written?: Persisted["written"];
 	result?: SavedResult;
 	/** The current run, undefined while idle. `quiet` ends it without a message. */
 	run?: { done: Promise<void>; quiet: boolean; controller: AbortController; parked?: AbortController };
@@ -577,7 +595,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			fast: a.fast.on, progressSteps: a.progress.steps, ...(a.title ? { title: a.title } : {}), ...(a.task !== undefined ? { task: a.task } : {}),
 			...(a.result ? { result: a.result } : {}),
 		};
-		pi.appendEntry(CHILD_ENTRY, data);
+		pi.appendEntry(CHILD_ENTRY, childRecord(a, data));
 	}
 
 	async function hydrate(ctx: ExtensionContext, signal: AbortSignal, onlyId?: number) {
@@ -591,7 +609,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (data?.version !== 1 || data.kind !== name) continue;
 			if (!Number.isSafeInteger(data.id) || data.id < 1) continue;
 			counter = Math.max(counter, data.id);
-			saved.set(data.id, data);
+			saved.set(data.id, mergeSaved(saved.get(data.id), data));
 		}
 		for (const data of saved.values()) {
 			if (onlyId !== undefined && data.id !== onlyId) continue;

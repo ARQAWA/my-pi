@@ -15,7 +15,7 @@ import { createChildManager, openChildManager, repairInterrupted } from "../../.
 import { ProfileCatalogue } from "../../../extensions/RQW-agent/profiles.ts";
 import { CONTEXT_FORK, ProgressReports, type ContextForkRequest } from "../../../extensions/RQW-agent/progress.ts";
 import { appendUserMessages, loadPromptFile } from "../../../extensions/RQW-agent/prompt-files.ts";
-import { collectExtensionFactories } from "../../../extensions/RQW-agent/index.ts";
+import { childRecord, collectExtensionFactories, mergeSaved } from "../../../extensions/RQW-agent/index.ts";
 
 async function temp(t: TestContext) {
 	const root = await mkdtemp(join(tmpdir(), "rqw-agent-unit-"));
@@ -274,4 +274,16 @@ test("interrupted tool calls receive durable error results without replay", asyn
 	const result = messages.at(-1);
 	assert.ok(result?.role === "toolResult" && result.isError);
 	assert.match(JSON.stringify(result.content), /Interrupted before a durable result/);
+});
+
+// Regression: every child state change rewrote config and task, growing the parent session to gigabytes.
+test("child records write config and task once and restore them from the full record", () => {
+	const config = { system: "prompt" } as never;
+	const a = { config, task: "task" };
+	const record = (state: string) => ({ id: 1, state, config: { system: "prompt" }, task: "task" });
+	const first = childRecord(a, record("running"));
+	const second = childRecord(a, record("completed"));
+	assert.deepEqual(second, { id: 1, state: "completed" });
+	assert.deepEqual(mergeSaved(mergeSaved(undefined, first as never), second as never), record("completed"));
+	assert.deepEqual(childRecord({ ...a, task: "next" }, record("running")), record("running"));
 });
