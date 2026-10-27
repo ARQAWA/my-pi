@@ -203,8 +203,7 @@ export async function verifyDigests({
   return entries.length;
 }
 
-// The work location must be under the OS temp directory, outside the source and outside the
-// evidence and worktree folders.
+// The work location must be under the OS temp directory, outside the source.
 export async function assertTempWorkDir({ work, sourceRoot, tmp = tmpdir() }) {
   const realWork = await realpathOfExisting(resolve(work));
   const realTmp = await realpath(tmp);
@@ -214,9 +213,6 @@ export async function assertTempWorkDir({ work, sourceRoot, tmp = tmpdir() }) {
   }
   if (realWork === realSource || isInside(realWork, realSource) || isInside(realSource, realWork)) {
     throw new Error(`work dir ${realWork} overlaps the source ${realSource}`);
-  }
-  if (/my-pi-evidence|my-pi-worktrees/.test(realWork)) {
-    throw new Error(`work dir ${realWork} points into a protected checkout`);
   }
   return realWork;
 }

@@ -2,12 +2,12 @@
 // read through the public `ctx.getSystemPrompt()`), then the subagent reminder, then the caller's optional role.
 // DECISIONS.md, section Agent.
 
-/** Cursor-style reminder: the child answers its caller; rules addressed to the main agent or a coordinator are not its own. */
+/** Cursor-style reminder: the child answers its caller; rules addressed to the main agent are not its own. */
 export const SUBAGENT_REMINDER = [
 	"<subagent>",
 	"You are running as a subagent: a caller agent started you through a tool and gave you your task.",
 	"Your final answer goes to that caller, not to the user: answer it with what it asked for.",
-	"Instructions above that address the main agent or a coordinator do not apply to you.",
+	"Instructions above that address the main agent do not apply to you.",
 	"</subagent>",
 ].join("\n");
 

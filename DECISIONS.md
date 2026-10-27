@@ -206,6 +206,17 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Scope
 
+- **Harness isolation from development tooling** `[D-SCOPE-HARNESS-ISOLATION]`.
+  The shipped harness and repository development tooling stay independent. Never port the repository coordinator,
+  lock, executor model matrix or development workflow into product prompts, skills, profiles or runtime code.
+  Local tooling uses its own helpers rather than importing harness internals. Native Pi project profile discovery
+  and the product's child-result broker remain product features, not repository workflow.
+  Owner, current harness-isolation order:
+  «У нас обвязка этого проекта никак не должна аффектить весь harness. Harness должен жить независимо. У нас не должно быть никаких переносов координатора и нашего процесса рабочего в сам harness. Harness сам по себе живёт изолированно, а наши локальные настройки работы над проектом живут изолированно. Эту хуйню проконтролируй и приведи её в порядок, чтобы никаких конфликтов не было. Делай»
+  Reason: repository work rules must not affect installed users or couple local tooling to product internals.
+  Carriers: `AGENTS.md`, `extensions/RQW-agent/prompt.ts`, `test/isolation.test.ts`,
+  `.pi/extensions/qa-status/fit.ts`. Since: harness-isolation.
+
 - **Web-search model follows the caller** `[D-SCOPE-WEB-SEARCH-MODEL]`. The search-side GPT model matches the
   calling agent, independently of the coordinator's development subagent table. GPT callers use the same model and
   thinking; Claude callers use a fixed GPT counterpart from the product-side search mapping. Reviewer profiles

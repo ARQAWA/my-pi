@@ -2,6 +2,7 @@
 
 A Pi package (`@earendil-works/pi-coding-agent` 1.4.0) that carries the omp-lite behaviour into stock Pi step by step.
 Stock Pi tools stay as they are. Everything is an extension, one folder per extension under `extensions/`.
+The repository coordinator and workflow are development-only, not part of the shipped harness; never port them into the product.
 
 Before every task, read [PROCESS.md](PROCESS.md). Restore it after compaction or a handoff.
 The owner's personal manifesto is a separate memory document, not the execution procedure.

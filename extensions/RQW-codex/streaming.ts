@@ -1,5 +1,5 @@
 // Live Responses event pump and completed-item retry handoff. Independent of transport.ts (no import from it).
-// Native evidence (codex-rs pinned at rust-v0.163.0, evidence tree my-pi-evidence/codex-parity/codex-rs):
+// Native source (codex-rs pinned at rust-v0.163.0):
 // - core/src/session/turn.rs:2801-2906: a tool future is queued only at ResponseEvent::OutputItemDone (push_back at 2905);
 //   OutputItemAdded (2934) starts no tool, so an unfinished call never runs.
 // - turn.rs:2769-2785: a stream error breaks the sampling loop with that error; turn.rs:3280-3288 drains the in-flight

@@ -1,5 +1,4 @@
-// Owned Codex WebSocket connector. Native source (read-only evidence, codex-rs commit 83086188, tree
-// my-pi-evidence/codex-parity/codex-rs):
+// Owned Codex WebSocket connector. Native source (codex-rs commit 83086188):
 // codex-api/src/endpoint/responses_websocket.rs:576-583 (permessage-deflate enabled, DeflateConfig::default()),
 // :166-170 and :746-747 (idle timeout per read), :299-385 (response.interrupt frame, discard_partial_items),
 // :738-823 (acknowledgement: matching response_id, failed or unexpected acks retire the socket), :353-357 (consumer
