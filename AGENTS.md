@@ -114,8 +114,10 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `.pi/agents/test-reviewer.toml`: the read-only test-review profile, used through `agent` with
   `agent_type: "test-reviewer"`.
 - `extensions/RQW-naming/`: extension 16, background native session names after first input and each successful
-  compaction, from all available context. Ten candidates, semantic auto-selection only by
-  `kimi-coding/kimi-for-coding` (Kimi K2.8 Preview) at `low`, without fallback. At most four words and 32 Unicode
+  compaction, from all available context. One request ranks 1-10 candidates by meaning, best valid name wins.
+  The session provider selects `kimi-coding/kimi-for-coding`, `anthropic/claude-haiku-5-5`, or
+  `openai-codex/gpt-5.6-luna`, all at `low`, without fallback. Owner: «один запрос вместо двух».
+  At most four words and 32 Unicode
   code points, overlong names rejected, never truncated; initial attempt plus up to three retries, then a warning
   preserving the old name. `/rename-gen` regenerates; native
   `/name` stays unchanged. RQW-statusbar displays the native name in the top input border, gold and shimmering during compaction.

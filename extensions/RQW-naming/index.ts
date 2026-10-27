@@ -41,10 +41,10 @@ export default function (pi: ExtensionAPI) {
 		catch { /* the UI of a replaced context is gone */ }
 	};
 
-	async function generate(ctx: ExtensionContext, run: Run, context: string, registry: NamingRegistry) {
+	async function generate(ctx: ExtensionContext, run: Run, context: string, registry: NamingRegistry, provider: string | undefined) {
 		let name: string | undefined;
 		for (let attempt = 0; attempt < ATTEMPTS && name === undefined; attempt++) {
-			try { name = await generateSessionName({ context, registry, signal: run.controller.signal }); }
+			try { name = await generateSessionName({ context, registry, signal: run.controller.signal, provider }); }
 			catch { name = undefined; }
 			if (!isCurrent(run, ctx)) return;
 		}
@@ -59,6 +59,7 @@ export default function (pi: ExtensionAPI) {
 		cancel();
 		const run: Run = { controller: new AbortController(), sessionId: sessionIdOf(ctx) };
 		current = run;
+		const provider = ctx.model?.provider;
 		void (async () => {
 			let context: string;
 			try {
@@ -69,7 +70,7 @@ export default function (pi: ExtensionAPI) {
 				context = JSON.stringify(convertToLlm(available));
 			}
 			catch { return warn(run, ctx); }
-			try { await generate(ctx, run, context, ctx.modelRegistry); }
+			try { await generate(ctx, run, context, ctx.modelRegistry, provider); }
 			catch { warn(run, ctx); }
 		})();
 	}

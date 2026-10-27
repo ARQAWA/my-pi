@@ -408,11 +408,20 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Coordinator text: option a in entry `b4093268`, line 970 means at most four whitespace-separated words AND
   32 Unicode code points. Prompt and validation enforce both; overlong candidates are rejected, never truncated.
   Background generation runs once after first user input and after every successful compaction, using all available
-  projected context including summary and kept messages. Generate ten candidates and automatically select the best
-  valid candidate by meaning. Both calls use only `kimi-coding/kimi-for-coding` (Kimi K2.8 Preview) with `low`
-  reasoning, independent of the main chat model, without fallback. Owner correction, `16-27-59` session,
-  USER entry `5b9c32fe`, 2026-10-25: «надо это делать через модель 2.8 preview low reasoning.»
-  Reason: the owner's explicit naming-model choice, not a proven diagnosis of the earlier warning.
+  projected context including summary and kept messages. One request generates 1-10 candidates ranked by meaning;
+  the first valid candidate is selected. The current session provider selects the naming model, all with `low`
+  reasoning: `kimi-coding` → `kimi-coding/kimi-for-coding`, `anthropic` → `anthropic/claude-haiku-5-5`,
+  `openai-codex` → `openai-codex/gpt-5.6-luna`, without fallback.
+  Owner corrections in the `16-27-59` coordinator session, USER entry `7245c9c3`, line 13320:
+  > Нет, для kimi K2.8 preview low, для Claude Code - haiku 5.5 low, для GPT - GPT 5.6 Luna low
+  >
+  > Там не может быть привязки к химии. Откуда она вообще появилась там
+
+  USER entry `202bfbdd`, line 13422, naming excerpt:
+  > Rqw naming один запрос вместо двух оставляем. Не гарантировать 10 кандидатов. Надо просто минимум от одного до 10 кандидатов и выбирать из них лучшего. И всё. Надо, чтобы эта механика была максимально простой, без заёбов и строгости.
+
+  These corrections supersede the earlier Kimi-only choice in USER entry `5b9c32fe`.
+  Reason: simple single-request naming through the session provider's light model.
   No valid candidate is a failed attempt. Initial attempt plus up to
   three retries; final warning through public `ctx.ui.notify` preserves the old name. `/rename-gen` uses the same
   pipeline. New triggers/session switch cancel old generation; a native name change cancels the pending old trigger.

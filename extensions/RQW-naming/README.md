@@ -13,12 +13,12 @@ Native `/name` remains unchanged.
   repeat the first-message trigger.
 - Use all currently available projected context, including the compaction summary
   and kept messages; do not recover discarded context or shorten it locally.
-- Use only `kimi-coding/kimi-for-coding`, Kimi K2.8 Preview, with `low`
-  reasoning for both generation and semantic selection, independent of the main
-  chat model. There is no fallback to another model. Credential availability is
-  checked through the public model registry, not its private runtime field.
-- Ask for ten candidates, reject invalid names, then ask the model to select the
-  best valid candidate by meaning. There is no user picker. Every generated name
+- Match the current session provider: `kimi-coding/kimi-for-coding` for Kimi,
+  `anthropic/claude-haiku-5-5` for Claude, `openai-codex/gpt-5.6-luna` for GPT.
+  All use `low` reasoning without fallback. Credential availability is checked
+  through the public model registry, not its private runtime field.
+- In one request, ask for 1-10 candidates ranked by meaning, best first, then use
+  the first valid name. There is no user picker. Every generated name
   must have at most four whitespace-separated words AND 32 Unicode code points;
   overlong candidates are rejected, never truncated.
 - `/rename-gen` uses the same pipeline with current context. A failed attempt may
