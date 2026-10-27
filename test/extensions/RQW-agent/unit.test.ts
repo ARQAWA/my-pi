@@ -15,6 +15,7 @@ import { createChildManager, openChildManager, repairInterrupted } from "../../.
 import { ProfileCatalogue } from "../../../extensions/RQW-agent/profiles.ts";
 import { CONTEXT_FORK, ProgressReports, type ContextForkRequest } from "../../../extensions/RQW-agent/progress.ts";
 import { appendUserMessages, loadPromptFile } from "../../../extensions/RQW-agent/prompt-files.ts";
+import { collectExtensionFactories } from "../../../extensions/RQW-agent/index.ts";
 
 async function temp(t: TestContext) {
 	const root = await mkdtemp(join(tmpdir(), "rqw-agent-unit-"));
@@ -115,6 +116,18 @@ test("GPT Fast inherits its setting and decorates only Codex requests", () => {
 	const payload = { model: "model", input: [] };
 	assert.deepEqual(handler({ payload }, { model: { provider: "openai-codex", id: "model" } }), { ...payload, service_tier: "priority" });
 	assert.equal(handler({ payload }, { model: { provider: "anthropic", id: "model" } }), undefined);
+});
+
+test("a child receives an explicitly offered inline extension factory", () => {
+	const events = createEventBus();
+	let registered = false;
+	const factory = (child: any) => { child.on("session_start", () => { registered = true; }); };
+	events.on("rqw-agent:subagent-extension-factories", request => (request as any).offer(factory));
+	const [offered] = collectExtensionFactories(events);
+	let hook: () => void;
+	offered({ on: (_name: string, value: () => void) => { hook = value; } } as never);
+	hook!();
+	assert.equal(registered, true);
 });
 
 test("prompt files preserve exact text and return byte provenance", async t => {

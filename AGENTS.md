@@ -110,6 +110,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   branch's CI; subagents and hosts without the extension use it. Failed runs stay red.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all. Its `qa-status` message has a compact card (`card.ts`); Ctrl+O shows every line with its link.
+- `.pi/extensions/post-edit-lint/`: dev-only, repo-local silent Oxlint checks after successful edits and writes. It is not shipped or listed in `pi.extensions`; its inline factory reaches only executors through RQW-agent's generic child-factory offer. Tests: `test/post-edit-lint.test.ts`.
 - `.pi/agents/test-reviewer.toml`: the read-only test-review profile, used through `agent` with
   `agent_type: "test-reviewer"`.
 - `extensions/RQW-naming/`: extension 16, background native session names after first input and each successful

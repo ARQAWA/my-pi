@@ -7,6 +7,11 @@ recursively and without a depth limit. This extension imports no other RQW exten
 When RQW-web is loaded, its optional `rqw-search:subagent-web` registration offer also supplies `web` to every child,
 including nested agents. Each call uses that child's model and thinking; no import reaches RQW-web.
 
+Any extension can explicitly offer inline child factories on `rqw-agent:subagent-extension-factories` with
+`{ offer(factory) }`. Before each child loader reload, RQW-agent collects and deduplicates those factories and appends
+them to `DefaultResourceLoader.extensionFactories`. Each runs with the child's own `ExtensionAPI` and can reoffer itself
+for nested children on the same channel. `noExtensions: true` stays unchanged; no project or package resources are loaded.
+
 ## Prompt and title
 
 - Default prompt: the main agent's system prompt as Pi built it for the main run (RQW-prompt's text, project context

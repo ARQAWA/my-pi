@@ -253,6 +253,18 @@ const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
  */
 type ToolsFactory = (cwd: string, settings: () => unknown, options?: { codemode?: ToolDefinition; notify?: (notification: JobNotification) => void; retain?: () => () => void }) => ToolDefinition[];
 
+type ExtensionFactory = (child: ExtensionAPI) => void;
+const SUBAGENT_EXTENSION_FACTORIES = "rqw-agent:subagent-extension-factories";
+
+/** Inline extensions explicitly offered for each child, without enabling resource discovery. */
+export function collectExtensionFactories(events: ExtensionAPI["events"]): ExtensionFactory[] {
+	const factories = new Set<ExtensionFactory>();
+	events.emit(SUBAGENT_EXTENSION_FACTORIES, {
+		offer: (factory: ExtensionFactory) => { if (typeof factory === "function") factories.add(factory); },
+	});
+	return [...factories];
+}
+
 type WebRegistrar = (child: ExtensionAPI) => void;
 
 function offeredWeb(events: ExtensionAPI["events"]): WebRegistrar | undefined {
@@ -756,6 +768,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (factory) createCodemodeExtension()(Object.assign(Object.create(sub), { registerTool: (d: ToolDefinition) => void (codemode = d) }));
 			else createCodemodeExtension()(sub);
 		};
+		const childExtensions = collectExtensionFactories(toolEvents);
 		const resourceLoader = new DefaultResourceLoader({
 			cwd, agentDir: getAgentDir(), settingsManager,
 			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
@@ -782,6 +795,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					children = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost);
 					web?.(sub);
 				},
+				...childExtensions,
 			],
 		});
 		// Reload can create a nested caller; failure or cancellation ends its lifetime too.
