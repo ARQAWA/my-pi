@@ -316,7 +316,6 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 130-131:
 
 ## A-0026 · archived 2026-10-23 · Work policy · CI evidence for a dying test file
 
-Status: SUPERSEDED by `[D-WORK-CI-EVIDENCE]` (rewritten in the docs-cleanup format; the stale push-trigger reason is recorded as a known leftover; run details in notes/decisions-evidence.md#ci-dying-test-file).
 Introduced: `8547d59`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0026' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 132-142:
 
@@ -363,7 +362,6 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 154-160:
 
 ## A-0029 · archived 2026-10-23 · Scope · bench41 reason
 
-Status: OBSOLETE: benchmark ledger without a rule; numbers kept in notes/decisions-evidence.md#scope-bench41.
 Introduced: `7d89c6a`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0029' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 161-163:
 
@@ -411,7 +409,6 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 172-173:
 
 ## A-0034 · archived 2026-10-23 · Scope · Reviewers accepted plan
 
-Status: SUPERSEDED by `[D-SCOPE-REVIEWERS]`; the contract is in DECISIONS.md#review; package sizing kept in notes/decisions-evidence.md#scope-reviewer-package-sizing.
 Introduced: `3dce6fa`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0034' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 174-184:
 
@@ -480,7 +477,7 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 200-205:
 >   Reason: fix obvious major failures, not speculative rare cases. The completed native physical routing and
 >   filesystem identity fixes are retained together, as the owner clarified: «ты всю уже выполненную работу собираешь
 >   вместе. Просто ты дополнительной работы не делаешь и всё.» Current carriers: `extensions/RQW-context/index.ts`,
->   `extensions/RQW-tools/`, and `notes/context-questions.md`. Native identities, hardlink equality, dangling targets
+> `extensions/RQW-tools/`, and. Native identities, hardlink equality, dangling targets
 >   and private namespace probes are implemented; this does not promise every rare filesystem or long-path case.
 
 ## A-0040 · archived 2026-10-23 · Structure · Everything is an extension
@@ -508,7 +505,7 @@ Status: SUPERSEDED by `[D-STRUCT-TOOL-NAMES]` (rewritten in the docs-cleanup for
 Introduced: `320e80e`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0042' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 214-216:
 
-> - Tools work: requirements compiled in `notes/tools-requirements.md`. Tool and parameter names stay exactly as in Pi;
+> - Tools work: requirements compiled in. Tool and parameter names stay exactly as in Pi;
 >   no `apply_patch`, one edit format for every model (user: «имена такие же, как в P... никакой хуйни не надо
 >   навяливать из ОМП лайта»; «Нет, не надо для GPT patch делать. Пусть работает одинаково везде»).
 
@@ -548,7 +545,7 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 227-236:
 >   and deadlock checks; no test asserts an elapsed slack cutoff. Reason: elapsed start latency includes
 >   host descheduling and garbage collection, which a percentile cutoff cannot distinguish from false dependencies.
 >   No runtime barrier change is needed. Carrier: `extensions/RQW-tools/test/barrier.test.ts`; test design:
->   [notes/analysis-races.md, Test plan](notes/analysis-races.md#7-test-plan-synthetic-no-model-node---test-under-extensionsrqw-toolstest).
+>.
 
 ## A-0046 · archived 2026-10-23 · Tools · Shell timing in comparisons
 
@@ -570,12 +567,11 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 244-247:
 
 > - `extensions/RQW-tools/` replaces `read`, `bash`, `edit`, `write` and turns on `grep` and `find` by registering them.
 >   Each tool spreads the stock definition and keeps its `execute`; only descriptions and the multi-file wrappers change,
->   and edit drops strict sampling (next entry). Design and reasons: `notes/tools-design.md`; evidence:
->   `notes/analysis-*.md`.
+> and edit drops strict sampling (next entry). Design and reasons:;
+>.
 
 ## A-0048 · archived 2026-10-23 · Tools · edit without strict sampling
 
-Status: SUPERSEDED by `[D-TOOLS-EDIT-STRICT]` (rewritten in the docs-cleanup format; replay and probe numbers in notes/decisions-evidence.md#tools-edit-strict-sampling-replay).
 Introduced: `886b677`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0048' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 248-263:
 
@@ -604,7 +600,7 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 264-267:
 
 > - Ordered conflict barrier: a call waits only for earlier calls of the same response it conflicts with; bash conflicts
 >   with every call, read never with read, otherwise equal path key or ancestor. Reason: stock Pi measured 20 of 20 races
->   for read/write, bash/read and case-variant writes (`notes/analysis-races.md` section 2). bash is serialized against
+> for read/write, bash/read and case-variant writes ( section 2). bash is serialized against
 >   bash because its footprint is unknown.
 
 ## A-0050 · archived 2026-10-23 · Tools · Codemode watchdog test
@@ -619,7 +615,7 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 268-274:
 >   a deterministic delta-count assertion prevents that overhead returning. The 5 s deadlock watchdog, payload,
 >   ten repetitions and ordering assertions stay unchanged; no runtime barrier or codemode change is needed.
 >   Carrier: `extensions/RQW-tools/test/codemode.test.ts`; analysis and proof:
->   [notes/settings-codemode.md, Test watchdog](notes/settings-codemode.md#test-watchdog).
+>.
 
 ## A-0051 · archived 2026-10-23 · Tools · In-place writes with Windows retry
 
@@ -702,7 +698,6 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 295-295:
 
 ## A-0059 · archived 2026-10-23 · Tools · Barrier order not described
 
-Status: SUPERSEDED by `[D-TOOLS-HIDDEN-ORDER]` (rewritten in the docs-cleanup format; numbers in notes/decisions-evidence.md#tools-barrier-order-lines).
 Introduced: `0a2028e`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0059' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 296-299:
 
@@ -713,13 +708,12 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 296-299:
 
 ## A-0060 · archived 2026-10-23 · Tools · bench42 first interpretation
 
-Status: SUPERSEDED by `[D-TOOLS-JUDGING]`: the T01 gap was judge noise; "Open: tune the grep description" was done by `[D-TOOLS-SEARCH-DESC]`. Ledger in notes/decisions-evidence.md#tools-bench42.
 Superseded: `52efad7`.
 Introduced: `85a2845`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0060' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 300-311:
 
 > - bench42 (commit `0a2028e`, T01-T07, 3 runs, same completion judge and checklists as bench41; rows in
->   `notes/bench42.csv`). Pi with the bench41 prompt vs my-pi:
+>). Pi with the bench41 prompt vs my-pi:
 >
 >   | Config | Pi + prompt | my-pi |
 >   |---|---|---|
@@ -733,7 +727,6 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 300-311:
 
 ## A-0061 · archived 2026-10-23 · Tools · bench42 regrade and five-vote judging
 
-Status: SUPERSEDED by `[D-TOOLS-JUDGING]` (rewritten in the docs-cleanup format; numbers in notes/decisions-evidence.md#tools-bench42).
 Introduced: `52efad7`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0061' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 312-314:
 
@@ -753,11 +746,10 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 315-317:
 
 ## A-0063 · archived 2026-10-23 · Tools · edit and write descriptions
 
-Status: SUPERSEDED by `[D-TOOLS-EDIT-WRITE-DESC]` (rewritten in the docs-cleanup format; numbers in notes/decisions-evidence.md#tools-description-probes).
 Introduced: `1628f8c`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0063' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 318-322:
 
-> - edit and write descriptions refined by probes (`notes/refine/refine-editwrite.md`; EDIT, WRITE and a multi-block task,
+> - edit and write descriptions refined by probes (; EDIT, WRITE and a multi-block task,
 >   gpt-6.1-sol medium and gpt-6-sol low, 3 runs per cell): the multi-file form comes first and a rename gets one edit per
 >   occurrence with enough of its line. Failed edit calls 5 -> 0, multi-file edit calls 12 of 23 -> 15 of 16, all runs
 >   correct in both texts. A variant that told the model bash sees the changed files again made gpt-6.1-sol issue one
@@ -765,22 +757,20 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 318-322:
 
 ## A-0064 · archived 2026-10-23 · Tools · read description
 
-Status: SUPERSEDED by `[D-TOOLS-READ-DESC]` (rewritten in the docs-cleanup format; numbers in notes/decisions-evidence.md#tools-description-probes).
 Introduced: `a0bd1b1`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0064' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 323-326:
 
-> - read description refined by probes (`notes/refine/refine-readbash.md`; T02, T05, EDIT, WRITE, two models, 96 runs):
+> - read description refined by probes (; T02, T05, EDIT, WRITE, two models, 96 runs):
 >   read a needed file whole in one call and read every file needed next in one response. Correctness 99.6 -> 100,
 >   whole-file reads 79% -> 84%, responses equal; the speed change is within noise. bash stays as it was: no run searched
 >   or read through bash, and a line asking to run tests in the same response as the edit split responses on gpt-6.1-sol.
 
 ## A-0065 · archived 2026-10-23 · Tools · grep and find descriptions
 
-Status: SUPERSEDED by `[D-TOOLS-SEARCH-DESC]` (rewritten in the docs-cleanup format; numbers in notes/decisions-evidence.md#tools-description-probes).
 Introduced: `9e13b55`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0065' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 327-330:
 
-> - grep and find descriptions refined by probes (`notes/refine/refine-search.md`; T01, T03, T06, two models, 72 runs):
+> - grep and find descriptions refined by probes (; T01, T03, T06, two models, 72 runs):
 >   the wave names the spellings to try, reads every file the hits already justify in one response, and the stop rule
 >   asks for where each value is set, used and what the code does with it, for every implementation. find shows brace
 >   alternatives. Checklist coverage 94.1% -> 95.0%, within noise; chosen by the rule completeness, then responses.
@@ -791,7 +781,7 @@ Status: SUPERSEDED by `[D-TOOLS-DESC-PRECISION]` (rewritten in the docs-cleanup 
 Introduced: `a56e291`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0066' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 331-335:
 
-> - Second description review (`notes/review-descriptions-2.md`, 8 findings) fixed as wording only: grep respects
+> - Second description review (, 8 findings) fixed as wording only: grep respects
 >   .gitignore inside a git repository only, a grep glob with "/" matches from path, find also returns directories, the
 >   edit hint may be absent, a cut grep line is read around instead of narrowing, a tool result that names cat or sed
 >   overrides the ban, a long file written in parts is the one exception to one edit call per file. bench43 measured the
@@ -799,7 +789,6 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 331-335:
 
 ## A-0067 · archived 2026-10-23 · Tools · bench43 results
 
-Status: OBSOLETE: intermediate benchmark ledger; kept in notes/decisions-evidence.md#tools-bench43.
 Introduced: `f8d027e`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0067' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 336-340:
 
@@ -811,7 +800,6 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 336-340:
 
 ## A-0068 · archived 2026-10-23 · Tools · Implementations that do not run
 
-Status: SUPERSEDED by `[D-TOOLS-INACTIVE-IMPL]` (rewritten in the docs-cleanup format; numbers in notes/decisions-evidence.md#tools-inactive-implementation-probe).
 Introduced: `7890a8b`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0068' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 341-344:
 
@@ -822,7 +810,6 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 341-344:
 
 ## A-0069 · archived 2026-10-23 · Tools · Edit-task speed comparison
 
-Status: OBSOLETE: benchmark ledger; kept in notes/decisions-evidence.md#tools-edit-tasks.
 Introduced: `7890a8b`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0069' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 345-348:
 
@@ -833,12 +820,11 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 345-348:
 
 ## A-0070 · archived 2026-10-23 · Tools · bench44 final check
 
-Status: OBSOLETE: benchmark ledger; kept in notes/decisions-evidence.md#tools-bench44.
 Introduced: `524fbf9`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0070' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 349-361:
 
 > - bench44, the final check (commit `7890a8b`; stock Pi, Pi + bench41 prompt and my-pi run at the same moment; T01-T07,
->   5 runs; judge 5 votes, majority per point; rows in `notes/bench44.csv`). Seconds / quality:
+> 5 runs; judge 5 votes, majority per point; rows in). Seconds / quality:
 >
 >   | Config | Pi | Pi + prompt | my-pi |
 >   |---|---|---|---|
@@ -853,11 +839,10 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 349-361:
 
 ## A-0071 · archived 2026-10-23 · Tools · Faster writing
 
-Status: SUPERSEDED by `[D-TOOLS-SPECIFIED-WRITE]` (rewritten in the docs-cleanup format; numbers in notes/decisions-evidence.md#tools-faster-writing-probes).
 Introduced: `a0b6e75`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0071' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 362-368:
 
-> - Faster writing (`notes/refine/refine-write2.md`, `notes/refine/refine-find.md`; WRITE, EDIT, MULTI, T01, T03, T05,
+> - Faster writing (,; WRITE, EDIT, MULTI, T01, T03, T05,
 >   T06; two models): a new file the task fully specifies needs no read of its neighbours (one line in `SYSTEM.md`, one
 >   in `read.md`), and the find example shows that "app" returns the directory only while "app/**" returns its files.
 >   Measured in two steps: the read lines against main (WRITE 18.4 s / 5.5 responses -> 16.0 s / 4.7, T01 and T05
@@ -877,7 +862,6 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 369-371:
 
 ## A-0073 · archived 2026-10-23 · Tools · Background jobs
 
-Status: SUPERSEDED by `[D-TOOLS-BG]`: compressed; the absolute D4 sentence replaced by the H1 hold rule; «children like main» is coordinator wording; running file-tool cancellation and short-timeout snapshot exclusions are approved caveats, not defects; current scan and footprint guarantees are in [DECISIONS.md, Tools](DECISIONS.md#tools); probes, replay, cost and fix history in notes/decisions-evidence.md#background-jobs-evidence.
 Correction note, 2026-10-23: replaced the obsolete pending bg-jobs-defects pointer with `[D-TOOLS-BG]` in DECISIONS.md#tools; the scan and footprint fixes were delivered in `e1cca48`.
 Introduced: `e5440f2`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0073' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 372-525:
@@ -1018,8 +1002,8 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 372-525:
 >   same-response order; the owner chose it. Carriers: `extensions/RQW-tools/footprint.ts`, `ledger.ts`, `barrier.ts`
 >   (held entries, followers), `jobs.ts`, `index.ts`, `codemode.ts`, `keys.ts`, `descriptions/job.md`,
 >   `descriptions/write.md`; `extensions/RQW-agent/index.ts`, `extensions/RQW-review/index.ts` (labels, the reviewer's
->   `job`), `notes/prompt-tools-isolation.md` (section text); races R16-R24:
->   `notes/analysis-races.md` section 9. Pilot live probe (Haiku 5.5 and GPT-6 Luna, thinking high; logs
+> `job`), (section text); races R16-R24:
+> section 9. Pilot live probe (Haiku 5.5 and GPT-6 Luna, thinking high; logs
 >   `my-pi-evidence/bash-background/probe-2/`) found six defects, fixed here: the footprint read a subshell's `)` as
 >   part of a written path; an append by the caller's own bash was reported as a change of the build job; a write of a same-response follower, which starts the moment the job's work
 >   ends and before its scan, was reported as the job's (the scan now runs before the barrier releases those calls); a
@@ -1039,7 +1023,6 @@ Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 372-525:
 
 ## A-0074 · archived 2026-10-23 · Tools · Historical cross-platform proof
 
-Status: OBSOLETE: historical verification, no current requirement; kept in notes/decisions-evidence.md#tools-historical-cross-platform-proof.
 Introduced: `8f2ea64`. Archived by: docs-cleanup (this cleanup; exact commit recoverable with `git log -S'A-0074' -- DECISIONS-ARCHIVE.md`).
 Verbatim text as it was in `DECISIONS.md` at `30952e6`, lines 526-528:
 
@@ -1053,7 +1036,6 @@ Status: SUPERSEDED by `[D-CONTEXT-WINDOW]` in DECISIONS.md.
 Introduced: `6eb01a7`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0075' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 532-536. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - `extensions/RQW-context/index.ts` applies the owner's rule to physical models after native routing: W = min(physical.contextWindow, 500000) is
 >   the context window Pi uses, R = `Math.round(W / 10)` (a .5 rounds up), and Pi compacts above W - R. 272 000 ->
@@ -1067,7 +1049,6 @@ Status: SUPERSEDED by `[D-CONTEXT-WINDOW]` in DECISIONS.md.
 Introduced: `6eb01a7`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0076' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 537-539. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - The physical window above 500 000 is lowered, not only the trigger. Owner, C:2015:
 >   «если контекстное окно больше 500 тыс. токенов, то пусть оно будет 500 тыс. токенов. Резерв — 10% от края.»
@@ -1079,7 +1060,6 @@ Status: SUPERSEDED by `[D-CONTEXT-ROUTING]` in DECISIONS.md.
 Introduced: `6eb01a7`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0077' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 540-547. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Mechanism, window: `agent.state.model` exposes the existing stable capped copy for a physical selection.
 >   `AgentSession._buildRuntime` hooks the actual native Agent's `state` getter and `createLoopConfig` so old and new
@@ -1096,7 +1076,6 @@ Status: SUPERSEDED by `[D-CONTEXT-LIFECYCLE]` in DECISIONS.md.
 Introduced: `6eb01a7`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0078' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 548-553. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Load check: before patching static hooks or acquiring ownership, the extension checks the writable/configurable
 >   methods `_buildRuntime`, `getCompactionSettings`, `getPhysicalModel`, `_exceedsCompactionThreshold`,
@@ -1111,7 +1090,6 @@ Status: SUPERSEDED by `[D-CONTEXT-ROUTING]` in DECISIONS.md.
 Introduced: `6eb01a7`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0079' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 554-566. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Mechanism, reserve: Pi compacts at `contextTokens > model.contextWindow - reserveTokens`. The existing
 >   `SettingsManager.getCompactionSettings` wrapper preserves native validation and explicit settings by the original
@@ -1133,7 +1111,6 @@ Status: SUPERSEDED by `[D-CONTEXT-LIMITS]` in DECISIONS.md.
 Introduced: `7e00dcb`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0080' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 567-575. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Consequences for a model above 500 000, all as for a 500 000 model: footer and `getContextUsage()` show the window
 >   500k and 90% at the threshold; summary requests reach the provider with the 500 000 window and without an explicit
@@ -1151,7 +1128,6 @@ Status: SUPERSEDED by `[D-CONTEXT-LIMITS]` in DECISIONS.md.
 Introduced: `a03eb47`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0081' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 576-601. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Known limits of the 500 000 window, no code change: the window rule is the owner's, and all follow from it.
 >   The numbers below were measured on Pi 1.3.0 with explicit summary caps; Pi 1.4.0 keeps the same pi-ai clamp
@@ -1186,7 +1162,6 @@ Status: SUPERSEDED by `[D-CONTEXT-SETTINGS]` in DECISIONS.md.
 Introduced: `6eb01a7`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0082' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 602-607. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Physical models up to 500 000 keep their own object; only the reserve changes. The model registry is not touched: `/model`
 >   and `--list-models` show the declared window, the session and the footer show 500k. So one model shows two windows
@@ -1201,7 +1176,6 @@ Status: SUPERSEDED by `[D-CONTEXT-SETTINGS]` in DECISIONS.md.
 Introduced: `a03eb47`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0083' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 608-622. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - A reserve the user set still wins, measured against the capped window W: `compaction.reserveTokens` for all models
 >   and `compaction.modelOverrides["provider/id"].reserveTokens` for that model, Pi's own precedence (1M with a reserve
@@ -1225,7 +1199,6 @@ Status: SUPERSEDED by `[D-CONTEXT-LIFECYCLE]` in DECISIONS.md.
 Introduced: `6eb01a7`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0084' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 623-641. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - The hooks live as long as the process, one per class (`Symbol.for` guards), and act only while a loaded
 >   RQW-context owns them: each factory adds a fresh token to the process-global `Set` under
@@ -1253,7 +1226,6 @@ Status: MERGED by `[D-CONTEXT-ROUTING]` in DECISIONS.md.
 Introduced: `6eb01a7`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0085' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 642-653. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Native virtual selection retains its callback, identity, state, thinking and declared or unknown window.
 >   `ModelRuntime.getPhysicalModel` caps the physical target after native canonicalization. Session/request-local
@@ -1266,7 +1238,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >   rebinding no longer changes a request; it stays, a later simplification is optional. No extra route, router or SDK fork is added.
 >   The prior routed-physical bypass was a bug, not an owner-approved exception. Last-owner shutdown restores stock
 >   physical lookup identity and settings. Implementation: `extensions/RQW-context/index.ts`;
->   details: `notes/context-questions.md`.
+>.
 
 ## A-0086 · archived 2026-10-23 · Context
 
@@ -1274,7 +1246,6 @@ Status: SUPERSEDED by `[D-CONTEXT-LIFECYCLE]` in DECISIONS.md.
 Introduced: `7e00dcb`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0086' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 654-669. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Proof: `extensions/RQW-context/test/context.test.ts` runs real sessions of the library and the bundle with a
 >   scripted provider that reports exact usage and a local OpenAI-compatible endpoint: Pi's own `session.model`,
@@ -1299,7 +1270,6 @@ Status: SUPERSEDED by `[D-PROMPT-CUSTOM]` in DECISIONS.md.
 Introduced: `17c21eb`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0087' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 672-675. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - First step is only the prompt extension (user: «пока делаем только экстеншен который заменяет промпт систменый на
 >   наш»). `extensions/RQW-prompt/index.ts` sets `systemPromptOptions.customPrompt` in `before_agent_start` to
@@ -1312,9 +1282,8 @@ Status: SUPERSEDED by `[D-PROMPT-CUSTOM]` in DECISIONS.md.
 Introduced: `17c21eb`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0088' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 676-677. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
-> - The text follows the concept in `notes/prompt-concept.md` and starts from the bench41 template, the only measured
+> - The text follows the concept in and starts from the bench41 template, the only measured
 >   version on Pi (+10.2 / +6.2 / +1.9 quality points on gpt-6-sol low / gpt-6-sol medium / gpt-6.1-sol medium).
 
 ## A-0089 · archived 2026-10-23 · Prompt
@@ -1323,7 +1292,6 @@ Status: MERGED by `[D-PROMPT-TOOL-ISOLATION]` in DECISIONS.md.
 Introduced: `04aa50f`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0089' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 678-679. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Tool-specific search and execution instructions belong to RQW-tools, not `SYSTEM.md`; see Prompt/tools isolation
 >   below. The `<critical>` verify line stays as in omp-lite.
@@ -1334,7 +1302,6 @@ Status: SUPERSEDED by `[D-PROMPT-CUSTOM]` in DECISIONS.md.
 Introduced: `1e6d295`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0090' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 680-683. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Writing a file longer than about 400 lines in parts (bench35 lost a response to the output limit) lives in the
 >   `write` description, as in omp-lite, each part in its own response. Removed against bench41: the working
@@ -1347,9 +1314,8 @@ Status: OBSOLETE. Completed historical candidate/measurement, not a current rule
 Introduced: `8e3432e`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0091' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 684-685. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
-> - The four optional `SYSTEM.md` edits at `f6e9327` are not adopted as a package; main keeps its prompt unchanged. The owner wanted the minimum changes without breaking the prompt, and explicitly permitted GPT measurement (user: «Замеры правок System LMD можно тоже проводить на модели GPT-6»). On GPT-6 low, wall time improved by about 6.9%; on GPT-6.1 medium, quality changed by -2.29 percentage points (90% CI [-5.81, +1.24]). This does not prove a general regression, but does not establish safe noninferiority for the common prompt. Measurement-based rejection completes this task, rather than pausing it. Evidence and candidate history: `notes/bench46-gpt.md`, `notes/bench46-gpt.csv`, commits `80bec267` and `f6e9327`; the deployed carrier remains `extensions/RQW-prompt/SYSTEM.md` on main.
+> - The four optional `SYSTEM.md` edits at `f6e9327` are not adopted as a package; main keeps its prompt unchanged. The owner wanted the minimum changes without breaking the prompt, and explicitly permitted GPT measurement (user: «Замеры правок System LMD можно тоже проводить на модели GPT-6»). On GPT-6 low, wall time improved by about 6.9%; on GPT-6.1 medium, quality changed by -2.29 percentage points (90% CI [-5.81, +1.24]). This does not prove a general regression, but does not establish safe noninferiority for the common prompt. Measurement-based rejection completes this task, rather than pausing it. Evidence and candidate history:,, commits `80bec267` and `f6e9327`; the deployed carrier remains `extensions/RQW-prompt/SYSTEM.md` on main.
 >
 
 ## A-0092 · archived 2026-10-23 · Prompt/tools isolation
@@ -1358,7 +1324,6 @@ Status: SUPERSEDED by `[D-PROMPT-TOOL-ISOLATION]` in DECISIONS.md.
 Introduced: `04aa50f`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0092' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 688-690. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Owner: «Когда мы делаем эти отдельные модули, они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать и выключать, как feature флаги».
 >   Task: "Scope ONLY removing RQW-tools-specific runtime assumptions from RQW-prompt and putting them inside RQW-tools,
@@ -1370,7 +1335,6 @@ Status: SUPERSEDED by `[D-PROMPT-TOOL-ISOLATION]` in DECISIONS.md.
 Introduced: `04aa50f`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0093' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 691-695. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - `extensions/RQW-prompt/SYSTEM.md` no longer names grep/find or assumes our shell barrier or partial writes.
 >   `extensions/RQW-tools/index.ts` uses native `before_agent_start` mutations of `systemPromptOptions.sections`, with
@@ -1384,7 +1348,6 @@ Status: SUPERSEDED by `[D-PROMPT-TOOL-ISOLATION]` in DECISIONS.md.
 Introduced: `02bd178`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0094' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 696-699. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Source proof, Pi 1.4.0: `dist/core/extensions/runner.js`, `emitBeforeAgentStart`, shares one normalized options
 >   object across handlers; `dist/core/system-prompt.js`, `buildSystemPromptSections`, uses `customPrompt` as preamble
@@ -1397,7 +1360,6 @@ Status: SUPERSEDED by `[D-PROMPT-TOOL-ISOLATION]` in DECISIONS.md.
 Introduced: `04aa50f`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0095' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 700-703. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - The two partial-write reminders were redundant: `extensions/RQW-tools/descriptions/write.md` already says
 >   "write a file over about 400 lines in parts, each part in its own response: the first with write, then each next
@@ -1410,9 +1372,8 @@ Status: SUPERSEDED by `[D-PROMPT-TOOL-ISOLATION]` in DECISIONS.md.
 Introduced: `04aa50f`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0096' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 704-708. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
-> - Exact runtime text diff and risks: `notes/prompt-tools-isolation.md`. Proof: `test/prompt-tools-isolation.test.ts`,
+> -. Proof: `test/prompt-tools-isolation.test.ts`,
 >   real package filtering, sessions and prompt/tool patch replay on a faux provider, both orders, standalone extensions,
 >   explicit tool selections, active-tool changes and disabling either extension through reload. `npm test` includes
 >   package tests. No live model runs in this task; GPT measurements of the changed text follow separately.
@@ -1424,7 +1385,6 @@ Status: SUPERSEDED by `[D-SETTINGS-WARMING]` in DECISIONS.md.
 Introduced: `b91f832`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0097' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 711-729. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.»
 >   Owner clarification: «Нам тоже настройки прогрева кэша нахуй не нужны через конфиги. Надо просто, чтобы они были внутри настроены в рамках плагина, и всё на этом. Чтобы они работали супер корректно, супер пиздато и эффективно.»
@@ -1443,7 +1403,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >   Proof: `extensions/RQW-settings/test/cache-warming.test.ts` (real SDK, faux provider and fake timers) and package
 >   `test/cache-warming-reload.test.ts` (library/bundle, 12 co-loaded reloads, actual bind/dispose stack depth stays 2).
 >   Child-session policy is carried independently by RQW-agent and RQW-review (sections Agent and Review).
->   TTL measurements and the accepted role policy: `notes/prompt-cache-policy.md` (owner:
+> TTL measurements and the accepted role policy: (owner:
 >   «Надо, чтобы ты замерил, как у нас сейчас это работает, и предложил какое-то наилучшее решение для нас.»).
 
 ## A-0098 · archived 2026-10-23 · Settings
@@ -1452,7 +1412,6 @@ Status: SUPERSEDED by `[D-SETTINGS-DEFAULT-TOOLS]` in DECISIONS.md.
 Introduced: `3720200`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0098' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 730-737. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - `codemode` and `tool_search`, Pi's built-in tools, are active by default (owner: «Давай включим CodeMode и Tool
 >   Search»). `extensions/RQW-settings/index.ts` adds them to the active tools at `session_start` under the same rule as
@@ -1461,7 +1420,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >   other (section Isolation). A tool is added only if it is registered, so `-builtin:codemode` gives no error.
 >   Any user selection (`--tools`, `--exclude-tools`, `--no-tools`, `--no-builtin-tools`, `defaultTools`) leaves the stock
 >   set. Mode `on` (Pi's default) is kept: Pi appends a "Codemode: `tools.<name>(args)` resolves to ..." line to the
->   descriptions of our six tools in each request. Texts, source lines and the barrier check: `notes/settings-codemode.md`.
+> descriptions of our six tools in each request. Texts, source lines and the barrier check:.
 
 ## A-0099 · archived 2026-10-23 · Settings
 
@@ -1469,7 +1428,6 @@ Status: SUPERSEDED by `[D-SETTINGS-CODEMODE]` in DECISIONS.md.
 Introduced: `3720200`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0099' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 738-741. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - `codemode` is a call of the RQW-tools barrier with scope "all", like `bash`; the tool calls of its own script are
 >   ordered by a barrier of that call. RQW-tools replaces Pi's built-in `codemode` at `session_start` with the same
@@ -1482,7 +1440,6 @@ Status: SUPERSEDED by `[D-SETTINGS-CODEMODE]` in DECISIONS.md.
 Introduced: `b98baec`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0100' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 742-754. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - A script's tool call finds the barrier of its script by its tool call id: Pi gives it `<codemode id>/<n>`, and the
 >   group registers its barrier under the codemode call's id. A nested id with no registered ancestor goes to the outer
@@ -1496,7 +1453,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >   per call), capped at 60 seconds or the script's remaining deadline, instead of failing at once with "Codemode worker
 >   limit reached"; the wait counts against the script timeout and each worker has a 256 MB VM limit, so a script
 >   that waits on slots held by other waiting scripts can still time out. It is not unlimited parallel capacity and does
->   not replace the barrier above. Details: `notes/settings-codemode.md`, Limits.
+> not replace the barrier above., Limits.
 
 ## A-0101 · archived 2026-10-23 · Settings
 
@@ -1504,7 +1461,6 @@ Status: OBSOLETE. Completed historical candidate/measurement, not a current rule
 Introduced: `feefe18`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0101' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 755-759. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Measured with codemode on (bench45, T01-T07, 5 runs, the bench44 judge; `~/stock-bench/bench45.csv`): gpt-6.1-sol
 >   medium quality 99.5 -> 97.4 (90% interval -3.7 to -0.5), seconds 51.1 -> 50.4, calls 40.9 -> 35.7; codemode called
@@ -1518,7 +1474,6 @@ Status: SUPERSEDED by `[D-SETTINGS-DEFAULT-TOOLS]` in DECISIONS.md.
 Introduced: `3720200`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0102' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 760-761. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - On `/reload` the `session_start` handlers of RQW-settings and RQW-tools leave the active set alone: Pi keeps the tools
 >   the user switched off, and the handlers had added them again.
@@ -1529,7 +1484,6 @@ Status: SUPERSEDED by `[D-SETTINGS-GPT-FAST]` in DECISIONS.md.
 Introduced: `fa05edf`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0103' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 762-802. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - GPT Fast: OpenAI priority processing for GPT (Codex CLI maps its Fast to `service_tier` `"priority"`; Pi's openai-codex
 >   provider sends the request body's `service_tier`, and Pi's cost table bills priority at 2x). Owner: «Так давай временно все
@@ -1579,7 +1533,6 @@ Status: SUPERSEDED by `[D-ISOLATION-SELF-CONTAINED]` in DECISIONS.md.
 Introduced: `81cafe3`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0104' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 805-812. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Every `RQW-*` extension is self-contained and can be switched on and off alone, like a feature flag (owner:
 >   «Когда мы делаем эти отдельные модули, они должны быть полностью изолированы, самодостаточны, чтобы мы могли
@@ -1596,7 +1549,6 @@ Status: SUPERSEDED by `[D-ISOLATION-COVERAGE]` in DECISIONS.md.
 Introduced: `81cafe3`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0105' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 813-822. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Proof: `test/isolation.test.ts` (in `npm test`). The list comes from `package.json` `pi.extensions`, so a new
 >   extension is covered without a change to the test. Static part: every relative import of every file under
@@ -1615,7 +1567,6 @@ Status: SUPERSEDED by `[D-ISOLATION-SWITCH]` in DECISIONS.md.
 Introduced: `81cafe3`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0106' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 823-832. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - The switch is the object form of the `packages` entry in settings (`INSTALL.md`, "Switch one extension off"):
 >   `{ "source": "<the same source string>", "extensions": ["-extensions/RQW-<name>/index.ts"] }`. Pi turns an object
@@ -1634,7 +1585,6 @@ Status: SUPERSEDED by `[D-ISOLATION-SWITCH]` in DECISIONS.md.
 Introduced: `81cafe3`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0107' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 833-840. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Limits of the switch, all Pi's own. `pi -e <dir>` ignores the filter: `-e` sources are resolved without one
 >   (`package-manager.js:746-757` `resolveExtensionSources`) and merged with the settings paths
@@ -1651,7 +1601,6 @@ Status: MERGED by `[D-PROMPT-TOOL-ISOLATION]` in DECISIONS.md.
 Introduced: `6281de7`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0108' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 841-853. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Prompt/tools isolation is complete (section Prompt/tools isolation): `SYSTEM.md` no longer describes RQW-tools;
 >   RQW-tools supplies conditional search and execution sections. The package-level
@@ -1663,8 +1612,8 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >   field-declaration citations rather than wrong values; the variant gained the T06 auth blocker delay. This is not
 >   behavioral neutrality. Pi puts these sections after cwd, changing instruction position and removing two redundant
 >   partial-write reminders; preserving their former positions would require extra coupling. Evidence and limits:
->   `notes/prompt-isolation-gpt.md`, 72 raw rows in `notes/prompt-isolation-gpt.csv`. The four optional manifesto edits
->   remain unadopted and separate (`notes/bench46-gpt.md`).
+>, 72 raw rows in. The four optional manifesto edits
+> remain unadopted and separate .
 >
 
 ## A-0109 · archived 2026-10-23 · Agent
@@ -1673,7 +1622,6 @@ Status: SUPERSEDED by `[D-AGENT-WAIT]` in DECISIONS.md.
 Introduced: `fe0e375`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0109' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 856-874. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Owner (verbatim): «основной агент запускает сабагента — воркера, shellrunner или codewriter. Пока они работают, он его либо ждёт, либо что-то делает параллельно, а потом ждёт. Когда shellrunner или codewriter отвечает, тот обрывает ожидание и дальше работает с его ответом. Если же он не ответил за время ожидания, то основной агент сам идёт и смотрит состояние codewriter или shellrunner, что там происходит, вычитывает его последние пять-десять сообщений и думает, что с ним делать дальше: interrupt его, давать ему какой-то follow-up, либо вырубать, либо перезапускать.»
 >   «Надо сделать интеллектуально, чтобы основной агент большой, который поднял runner, через время поглядывал за ним, через пять минут проверял статус. Только не тратить токены, а через механический wait.»
@@ -1701,7 +1649,6 @@ Status: SUPERSEDED by `[D-AGENT-CACHE]` in DECISIONS.md.
 Introduced: `b91f832`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0110' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 875-883. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Owner: «Да, давайте мы исполнителям, ревьюерам кэш выключай.» This disables background warming, not prompt
 >   caching (owner clarification: «Потому что если мы вообще выключим им кэш, то они будут пиздец жрать токенов нахуй.»).
@@ -1711,7 +1658,7 @@ Historical evidence: [decision evidence](notes/decisions-evidence.md).
 >   Each child's existing guarded stream wrapper sets `cacheRetention: "short"` on Anthropic Messages requests,
 >   before the adapter's OAuth fallback. This is a built-in 5m policy, not a config knob; other APIs keep their options.
 >   Reason: median observed resend gap 163s, with one of seven above 5m; a short write costs less than a 1h write.
->   Proof: `test/agent.test.ts` and package `test/prompt-cache.test.ts`; evidence: `notes/prompt-cache-policy.md`.
+> Proof: `test/agent.test.ts` and package `test/prompt-cache.test.ts`;.
 
 ## A-0111 · archived 2026-10-23 · Agent
 
@@ -1719,7 +1666,6 @@ Status: MERGED by `[D-SETTINGS-GPT-FAST-CHILDREN]` in DECISIONS.md.
 Introduced: `fa05edf`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0111' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 884-885. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Children inherit GPT Fast at start and `fast_gpt` overrides it: rule, quotes and carrier in
 >   [Settings](#settings), «GPT Fast» (`extensions/RQW-agent/fast-gpt.ts`, `index.ts`).
@@ -1730,7 +1676,6 @@ Status: SUPERSEDED by `[D-AGENT-PARITY]` in DECISIONS.md.
 Introduced: `c86e9bb`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0112' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 886-938. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Subagent parity, like Cursor (owner session 2026-10-23; agreement and Cursor/Codex/our evidence in
 >   `my-pi-evidence/subagent-parity/`). This entry supersedes the earlier rules below that a subagent's prompt is
@@ -1793,7 +1738,6 @@ Superseded: `c86e9bb`.
 Introduced: `7a9f505`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0113' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 939-947. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - A general subagent for the main agent, the one the Scope section names as a separate task. The owner's words: «должна
 >   быть опция поднимать любых рандомных саб-агентов, которые являются саб-потоком основного агента. Можно за базу взять
@@ -1811,7 +1755,6 @@ Status: SUPERSEDED by `[D-AGENT-API]` in DECISIONS.md.
 Introduced: `fe0e375`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0114' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 948-952. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - One tool `agent` with `action` `start`, `wait`, `status`, `send`, `interrupt`, `stop`, `restart` and the fields
 >   `ids`, `timeout_ms`, `messages` (wait/status above), `id`, `system`, `role`, `title`, `explore` (parity entry above), `task`,
@@ -1825,7 +1768,6 @@ Status: SUPERSEDED by `[D-AGENT-API]` in DECISIONS.md.
 Introduced: `7a9f505`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0115' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 953-956. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - In process, no spawn (Windows-safe): `createAgentSession` with `SessionManager.inMemory`, `SettingsManager.inMemory`,
 >   and `DefaultResourceLoader` with `noExtensions`, `noSkills`, `noPromptTemplates`, `noThemes`, `noContextFiles`; cwd
@@ -1838,7 +1780,6 @@ Status: SUPERSEDED by `[D-AGENT-API]` in DECISIONS.md.
 Introduced: `c86e9bb`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0116' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 957-961. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - The system prompt, `system` when given or the default of the parity entry above, is sent exactly. Pi appends `<cwd>` and other sections to every custom prompt
 >   (`buildSystemPromptSections` in Pi's `dist/core/system-prompt.js`); only a forced prompt goes out as it is. So the
@@ -1852,7 +1793,6 @@ Status: SUPERSEDED by `[D-AGENT-API]` in DECISIONS.md.
 Introduced: `7a9f505`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0117' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 962-965. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - The model runtime is the main session's, taken from `ctx.modelRegistry.runtime`, a plain field that is private only
 >   in the TypeScript types. Reason: one credential store and one OAuth refresh (risk 1 of
@@ -1865,7 +1805,6 @@ Status: SUPERSEDED by `[D-AGENT-API]` in DECISIONS.md.
 Introduced: `7a9f505`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0118' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 966-969. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Defaults follow Cursor's generalPurpose: all tools, the main model ("inherit") (Cursor transcript 704ada44 in
 >   `cursor-like-harness/kb/sources/cursor-reverse-extra`). Here: the main session's model and thinking level, all six
@@ -1878,7 +1817,6 @@ Status: MERGED by `[D-ISOLATION-SELF-CONTAINED]` in DECISIONS.md.
 Introduced: `90700ad`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0119' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 970-974. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - No imports across extension folders: `extensions/RQW-agent/` loads and works with every other RQW-* switched off or
 >   absent, and switching RQW-tools off switches it off for subagents too (owner: «Когда мы делаем эти отдельные модули,
@@ -1892,7 +1830,6 @@ Status: SUPERSEDED by `[D-AGENT-TOOLS-OFFER]` in DECISIONS.md.
 Introduced: `90700ad`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0120' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 975-987. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Subagent tools follow the RQW-tools switch through a loose, optional handshake on Pi's shared event bus `pi.events`
 >   (`docs/extensions.md` line 87: "Communicate with another extension | `pi.events`"; `events: EventBus` in
@@ -1914,7 +1851,6 @@ Status: SUPERSEDED by `[D-AGENT-CHILD-SETTINGS]` in DECISIONS.md.
 Introduced: `c86e9bb`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0121' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 988-992. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - The subagent's `SettingsManager.inMemory` carries the caller's `shellPath`, `shellCommandPrefix` and
 >   `images.autoResize`, the three settings Pi builds stock read and bash from (`_buildRuntime` in
@@ -1928,7 +1864,6 @@ Status: SUPERSEDED by `[D-AGENT-DELIVERY]` in DECISIONS.md.
 Introduced: `fe0e375`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0122' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 993-1007. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Results are async. At the end of each run the direct caller gets the text through wait or `[agent#N] <text>`
 >   through `pi.sendMessage`, once, as the wait decision above specifies. The
@@ -1952,7 +1887,6 @@ Status: SUPERSEDED by `[D-AGENT-DELIVERY]` in DECISIONS.md.
 Introduced: `c33ed4d`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0123' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1008-1028. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Delivery never loses a result to an abort of the main agent (review finding: a follow-up waits in the main agent's
 >   queue, which TUI Esc clears through `clearQueue()` and RPC `abort` leaves without a turn). When the main session is
@@ -1982,7 +1916,6 @@ Status: SUPERSEDED by `[D-AGENT-DELIVERY]` in DECISIONS.md.
 Introduced: `8344d2e`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0124' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1029-1032. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Ids `agent#N` never repeat within a session. Every extension instance (`/reload`, `/resume`, `/fork`, `pi -c`) starts
 >   its counter on `session_start` above the highest `agent#N` in the session's `[agent#N]` messages and `agent` tool
@@ -1995,7 +1928,6 @@ Status: MERGED by `[D-AGENT-WAIT]` in DECISIONS.md.
 Introduced: `fe0e375`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0125' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1033-1034. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - No execution timeout of our own: Pi's provider timeouts and retries apply, and the caller can interrupt.
 >   Caller-chosen wait deadlines return control/diagnostics, not a child cancellation (wait decision above).
@@ -2006,7 +1938,6 @@ Status: SUPERSEDED by `[D-AGENT-SEND]` in DECISIONS.md.
 Introduced: `029160d`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0126' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1035-1063. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - `send` to a running subagent (and to a running `code_writer` / `shell_runner`) is Pi steering, `session.steer`; to
 >   an idle one it starts a new run with the history. Coordinator proposal, accepted by the owner with «Да»: «сообщение
@@ -2044,7 +1975,6 @@ Status: SUPERSEDED by `[D-AGENT-MANAGEMENT]` in DECISIONS.md.
 Introduced: `fe0e375`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0127' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1064-1070. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Management registration across the three tools runs in call order; wait releases the queue after subscription,
 >   before its Promise settles. Pi runs the calls of one response in parallel, and a batch of
@@ -2060,7 +1990,6 @@ Status: SUPERSEDED by `[D-AGENT-MANAGEMENT]` in DECISIONS.md.
 Introduced: `40574b5`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0128' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1071-1075. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - `start`, `send` and `restart` also return at Pi's `compaction_start`: Pi's run is active from there, and a pre-run
 >   compaction of a large history (for example after an interrupt) would otherwise hold the main agent, an `interrupt`
@@ -2074,7 +2003,6 @@ Status: SUPERSEDED by `[D-AGENT-MANAGEMENT]` in DECISIONS.md.
 Introduced: `fe0e375`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0129' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1076-1079. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Print/JSON use one caller-wide non-consuming fallback wait in `agent_end`, with the omission default. A result
 >   follows normal message continuation; deadline returns compact status to the caller for its decision, not a stop.
@@ -2087,7 +2015,6 @@ Status: SUPERSEDED by `[D-AGENT-MANAGEMENT]` in DECISIONS.md.
 Introduced: `7a9f505`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0130' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1080-1080. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - `session_shutdown` aborts and disposes every subagent without messages. No cap on the count.
 
@@ -2097,7 +2024,6 @@ Status: SUPERSEDED by `[D-AGENT-LIMITS]` in DECISIONS.md.
 Introduced: `7a9f505`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0131' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1081-1082. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Accepted limits: a result that arrives after the main session ended is lost; a subagent may read files the main agent
 >   is editing; subagents share the process with the TUI.
@@ -2108,7 +2034,6 @@ Status: MERGED by `[D-CONTEXT-WINDOW]` in DECISIONS.md.
 Introduced: `c33ed4d`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0132' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1083-1085. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - `RQW-context` patches Pi classes for the whole process, so a subagent gets the owner's universal window rule like
 >   every model: its window is capped at 500 000 and its compaction reserve is 10% of that window. Checked in review: a
@@ -2120,7 +2045,6 @@ Status: SUPERSEDED by `[D-AGENT-DELIVERY]` in DECISIONS.md.
 Introduced: `b7d9ae7`. Archived by: `docs-cleanup`.
 Cleanup commit lookup: `git log -S'A-0133' --format='%h %s' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1086-1114. Source: `30952e6:DECISIONS.md`.
-Historical evidence: [decision evidence](notes/decisions-evidence.md).
 
 > - Proof: `extensions/RQW-agent/test/agent.test.ts`, faux-provider tests (a copy of the RQW-agent folder in a
 >   folder with no other extension loads and delivers, and the source has no `../` import; without RQW-tools the
@@ -2186,7 +2110,7 @@ Original DECISIONS.md lines 1220-1227 at `30952e6`, verbatim:
 >   Each reviewer's existing guarded stream wrapper sets `cacheRetention: "short"` on Anthropic Messages requests
 >   before the adapter's OAuth fallback, a built-in 5m policy with no config knob. Other APIs are unchanged.
 >   Reason: measured review duration median 30.9s, maximum 178s, so buying 1h writes is usually unnecessary.
->   Proof: `test/review.test.ts` and package `test/prompt-cache.test.ts`; evidence: `notes/prompt-cache-policy.md`.
+> Proof: `test/review.test.ts` and package `test/prompt-cache.test.ts`;.
 
 ## A-0144 · archived 2026-10-23 · Review · Reviewer GPT Fast
 Status: SUPERSEDED by `[D-REVIEW-FAST]` ([DECISIONS.md, Review](DECISIONS.md#review)).
@@ -2199,7 +2123,6 @@ Original DECISIONS.md lines 1228-1230 at `30952e6`, verbatim:
 >   `review` tool overrides it for that reviewer.
 
 ## A-0145 · archived 2026-10-23 · Review · Measured v3 prompt as current base
-Status: SUPERSEDED by `[D-REVIEW-DEEP]`, `[D-REVIEW-FORMAT]` ([DECISIONS.md, Review](DECISIONS.md#review)). Replaced by the deep reviewer prompt (a04a9c0); old GPT measurements stay in notes/reviewer-prompt-gpt.md.
 Superseded: `a04a9c0`.
 Introduced: `e76994a`, the oldest hit of `git log -S'Prompt adaptation is now tuned on GPT with the measured v3, ' -- DECISIONS.md`.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0145' -- DECISIONS-ARCHIVE.md`.
@@ -2216,7 +2139,7 @@ Original DECISIONS.md lines 1231-1243 at `30952e6`, verbatim:
 >   comparison; this is not a claim of universal recall improvement. Paired GPT-6.1 recall 87/90 -> 87/90, GPT-6
 >   87/90 -> 86/90; GPT-6 false findings after audit 6 -> 0, final 0 on both; mean seconds 7.9 -> 9.2 and
 >   10.8 -> 12.3. Only 12 cases x 3 runs per model, four GPT-held-out cases, no new Claude probes; details and limits
->   in `notes/reviewer-prompt-gpt.md`. These are earlier prompt measurements, not proof for the deep prompt/tool
+> in. These are earlier prompt measurements, not proof for the deep prompt/tool
 >   combination above. Verdict handling stays unchanged; reviewer models are the family table below.
 
 ## A-0146 · archived 2026-10-23 · Review · One tool, two levels
@@ -2231,7 +2154,6 @@ Original DECISIONS.md lines 1245-1248 at `30952e6`, verbatim:
 >   есть, и всё»).
 
 ## A-0147 · archived 2026-10-23 · Review · Reviewer models by family
-Status: SUPERSEDED by `[D-REVIEW-MODELS]` ([DECISIONS.md, Review](DECISIONS.md#review)). The "Claude high slot is being re-measured" sentence is dead (branch reviewer-haiku-high closed, no measurement running); probe numbers moved to notes/decisions-evidence.md#review-gpt-match.
 Introduced: `3389347`, the oldest hit of ``git log -S' live in one table, `LEVELS` at the top of `i' -- DECISIONS.md``.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0147' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1249-1272 at `30952e6`, verbatim:
@@ -2248,7 +2170,7 @@ Original DECISIONS.md lines 1249-1272 at `30952e6`, verbatim:
 >   answer, so its recommended option 1a applies: reviewer model by the main agent's family. Owner, 2026-10-22, on
 >   the GPT row: «Давай тогда сделаем, что на blind review будет Luna Medium. На high review будет Luna High. Да»
 >   (after «и потом будем думать» while more probes ran; the earlier placeholder, GPT-6.1-Sol low and medium, is
->   gone). Reason, from the gpt-match probes (`notes/reviewer-probes.md`, section "GPT match for the Claude slots"):
+> gone). Reason, from the gpt-match probes (, section "GPT match for the Claude slots"):
 >   GPT-5.6-Luna medium matches Haiku 5.5 medium (recall 94.1% against 95.6%, 164 of 165 dispute items right for
 >   both, 12.6 s and 0.0027 USD per pass against 14.4 s and 0.0022) and GPT-5.6-Luna high matches Sonnet 5.5 low
 >   (recall 96.3% against 96.7%, 165 of 165 against 154 with the strict reply parse, 0.0043 USD against 0.0226, but
@@ -2299,7 +2221,7 @@ Original DECISIONS.md lines 1278-1306 at `30952e6`, verbatim:
 >     OUTCOME filled; one structural check in `findingBlocks`, used by `kindOf` and `settle`): find each quote by searching; fix each new finding exactly to its REQUIRED OUTCOME and no further, unless
 >     Main can prove the reviewer misunderstood, then rebut it once; without proof, fix it; but a finding that rests on a
 >     value, rule or choice the user never gave is put to the user and not fixed with another choice of Main's own
->     (measured: [Reviewer probes](notes/reviewer-probes.md), variant n1); fix all the others in one batch, then
+> (measured:, variant n1); fix all the others in one batch, then
 >     call `review` again with the same level, object and criterion and the new rebuttals, until CLEAN. `failed` (the
 >     catch branch, not parsed text): the check has not passed and no self-check replaces it; retry once on the
 >     unchanged object, then tell the user and wait. Between the verdict and `NEXT` the extension adds the finding ids
@@ -2310,7 +2232,6 @@ Original DECISIONS.md lines 1278-1306 at `30952e6`, verbatim:
 >   Source: `/tmp/review-pair.md` section 3.
 
 ## A-0150 · archived 2026-10-23 · Review · Disputes: the three-message rule
-Status: SUPERSEDED by `[D-REVIEW-DISPUTES]` ([DECISIONS.md, Review](DECISIONS.md#review)). Rule kept; current realpath containment is described in the active disputes entry; omp-session sources moved to notes/decisions-evidence.md#review-dispute-sources, probe details to #review-dispute-probes.
 Correction note, 2026-10-23: replaced the obsolete BACKLOG.md REVIEW-CONTAINMENT pointer with `[D-REVIEW-DISPUTES]` in DECISIONS.md#review; the containment fix was delivered in `e1cca48`, so it is no longer open work.
 Introduced: `30c633f`, the oldest hit of `git log -S'Disputes follow the three-message rule, enforced by the exte' -- DECISIONS.md`.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0150' -- DECISIONS-ARCHIVE.md`.
@@ -2364,7 +2285,7 @@ Original DECISIONS.md lines 1307-1397 at `30952e6`, verbatim:
 >     the user never asked for (an extra feature, output, option or file) that Main defends only as useful or harmless
 >     is a finding with REQUIREMENT `NOT AGREED` and RULING `DECIDED`; Main removes it without asking the user."
 >     The measured v3h text had the clause (it made GPT-6.1-Sol rule UNDECIDED on that case); the adopted text, with
->     the exception sentence added after the probes, was not measured as a whole (`notes/reviewer-probes.md`, section
+> the exception sentence added after the probes, was not measured as a whole (, section
 >     U12). Proof: `review.test.ts` (prompt hash pins and dispute-rule assertions).
 >   - Verdict extraction tolerates prose before the verdict: when a reviewer reply does not start with `CLEAN` or
 >     `FINDINGS:`, the verdict starts at the first line that is exactly `FINDINGS:` and the text before it is dropped
@@ -2373,7 +2294,7 @@ Original DECISIONS.md lines 1307-1397 at `30952e6`, verbatim:
 >     that reply stays `incomplete`. Owner, 2026-10-22: «2а 3а» (question 3, option a: tolerate prose before the first
 >     line that is exactly `FINDINGS:`). Reason: Sonnet 5.5 wrote a one-line remark before `FINDINGS:` in 11 of 147 (low)
 >     and 4 of 147 (medium) dispute passes with the adopted wording, which left the dispute open; the rescore with
->     tolerant extraction resolves all of them (`notes/reviewer-probes.md`, section "Sonnet's remark before
+> tolerant extraction resolves all of them (, section "Sonnet's remark before
 >     `FINDINGS:`"). Proof: `review.test.ts` ("prose before the first line that is exactly FINDINGS:", "verdictOf").
 >   - What decides the outcome. A settled requirement with decisive evidence: Main fixes. A reviewer misreading: one
 >     rebuttal with evidence, then the fresh reviewer decides. A finding that demands what the agreement does not ask
@@ -2405,7 +2326,7 @@ Original DECISIONS.md lines 1307-1397 at `30952e6`, verbatim:
 >   fresh reviewer with the whole dispute, reload recovery after a failed and an incomplete review). Limits: a reviewer
 >   that upholds a dispute without the DISPUTE field produces a new finding id, which Main could rebut once more; the
 >   dispute wording in `REVIEWER.md` and `NEXT` was measured on models in the probe campaign
->   (`notes/reviewer-probes.md`: 8 reviewer configs x 49 dispute fixtures x 3 runs per wording; the main side on three
+> (: 8 reviewer configs x 49 dispute fixtures x 3 runs per wording; the main side on three
 >   main configs, 43 fixtures x 3 runs per round), with the limits listed there.
 
 ## A-0151 · archived 2026-10-23 · Review · Completed GPT reviewer tuning
@@ -2415,7 +2336,7 @@ Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0151' -- DECI
 Original DECISIONS.md lines 1398-1399 at `30952e6`, verbatim:
 
 > - Reviewer-side tuning is complete on GPT: REQUIRED OUTCOME states one concrete end state; the measured prompt
->   treats `<criterion>` as the scope alongside the real brief tags. Evidence and limits: `notes/reviewer-prompt-gpt.md`.
+> treats `<criterion>` as the scope alongside the real brief tags. Evidence and limits:.
 
 ## A-0152 · archived 2026-10-23 · Review · Diff as a file path
 Status: MERGED into `[D-REVIEW-PARAMS]` ([DECISIONS.md, Review](DECISIONS.md#review)).
@@ -2596,7 +2517,6 @@ Original DECISIONS.md lines 1489-1493 at `30952e6`, verbatim:
 >   model or credentials are used. These deterministic tests establish runtime behavior, not model review quality.
 
 ## A-0164 · archived 2026-10-23 · Review · Historical live smoke timings
-Status: OBSOLETE; nearest active entry `[D-REVIEW-TESTS]` ([DECISIONS.md, Review](DECISIONS.md#review)). One-off live smoke ledger with no saved raw log; deterministic parts kept in D-REVIEW-TESTS; timings in notes/decisions-evidence.md#review-live-smoke.
 Introduced: `3389347`, the oldest hit of ``git log -S'Proof: `extensions/RQW-review/test/review.test.ts` (real ses' -- DECISIONS.md``.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0164' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1494-1509 at `30952e6`, verbatim:
@@ -2653,7 +2573,6 @@ Original DECISIONS.md lines 1523-1525 at `30952e6`, verbatim:
 >   code, как субпроцесс extension VS code. только так»). Carried by `pcli-vscode/extension.js`.
 
 ## A-0168 · archived 2026-10-23 · PCLI · Pinned bundled Pi
-Status: SUPERSEDED by `[D-PCLI-PIN]` ([DECISIONS.md, PCLI](DECISIONS.md#pcli)). VSIX size, run link and embedded Bun moved to notes/decisions-evidence.md#pcli-bundle.
 Introduced: `3b6d6c1`, the oldest hit of `git log -S', no update at runtime (user: «мы не будем ав' -- DECISIONS.md`.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0168' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1526-1533 at `30952e6`, verbatim:
@@ -2732,7 +2651,6 @@ Original DECISIONS.md lines 1550-1555 at `30952e6`, verbatim:
 >   left after closing tabs, `/quit` or VS Code itself. Not covered: a real model call and the corporate VDI restrictions.
 
 ## A-0175 · archived 2026-10-23 · PCLI · Wheel scroll cause
-Status: SUPERSEDED by `[D-PCLI-MOUSE-CAUSE]` ([DECISIONS.md, PCLI](DECISIONS.md#pcli)). Pi source offsets and upstream issue/PR history moved to notes/decisions-evidence.md#pcli-mouse-sources.
 Introduced: `8f6251a`, the oldest hit of `git log -S'Wheel scroll on the VDI. In PCLI the wheel scrolled the inpu' -- DECISIONS.md`.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0175' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1556-1572 at `30952e6`, verbatim:
@@ -2792,7 +2710,6 @@ Original DECISIONS.md lines 1590-1594 at `30952e6`, verbatim:
 >   base `afterTerminalStart` hook is missing, and its test compares the set with what Pi's own `TuiAltScreen` writes.
 
 ## A-0178 · archived 2026-10-23 · PCLI · Wheel fix proof
-Status: SUPERSEDED by `[D-PCLI-MOUSE-PROOF]` ([DECISIONS.md, PCLI](DECISIONS.md#pcli)). Measured capture (VS Code version, byte counts, run link) moved to notes/decisions-evidence.md#pcli-mouse-capture.
 Introduced: `8f6251a`, the oldest hit of ``git log -S'Proof of the wheel fix. `extensions/RQW-mouse/test/mouse.tes' -- DECISIONS.md``.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0178' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1595-1610 at `30952e6`, verbatim:
@@ -2846,7 +2763,7 @@ Original DECISIONS.md lines 1621-1627 at `30952e6`, verbatim:
 >   their 5m request policy ([Agent](#agent), [Review](#review)). Their explicit `short` wins in both `cache.ts` and
 >   `transport.ts`, so wire cache markers stay on without `ttl: "1h"`, with or without this adapter loaded. No new
 >   config knobs or process env changes. Reason: the measured short review/resend gaps favor cheaper short writes;
->   [measurements](notes/prompt-cache-policy.md) retain the tradeoffs and evidence limits.
+> retain the tradeoffs and evidence limits.
 >   Carrier proof: package `test/prompt-cache.test.ts`, real Pi library/bundle SDK and mocked Anthropic payloads.
 
 ## A-0182 · archived 2026-10-23 · Anthropic subscription adapter · OAuth 1h default
@@ -2893,7 +2810,7 @@ Original DECISIONS.md lines 1646-1653 at `30952e6`, verbatim:
 >   The installed pi-claude-auth's SDK relocation and normalized checksum contradict the reference and are not used.
 >   MIT attribution: `THIRD-PARTY-NOTICES.md`. No installed fork code is copied. Pi's delegated login endpoint/callback
 >   and parser remain Pi's, not a complete omp port. Subscription acceptance/billing, account rotation and all omp SDK
->   headers are not claimed. Evidence and risks: `notes/anthropic-adapter.md`.
+> headers are not claimed. Evidence and risks:.
 
 ## A-0185 · archived 2026-10-23 · Anthropic subscription adapter · Provider visibility shim
 Status: MERGED into `[D-PROVIDERS-ALLOW]` ([DECISIONS.md, Anthropic subscription adapter](DECISIONS.md#anthropic-subscription-adapter)). Duplicate of the Providers entries.
@@ -2958,7 +2875,7 @@ Original DECISIONS.md lines 1680-1685 at `30952e6`, verbatim:
 > - Proof boundary: tests use fake credentials, mock fetch, file-backed lock fixtures and both Pi library/CLI-bundle
 >   entrypoints. These tests do not prove live subscription acceptance or billing. The owner's old Claude benchmark/tuning campaign
 >   pause (C:3244) remains: «Те задачи, где ты должен делать замеры на Sonnet моделях, на Cloud моделях, пока на паузе
->   стоят»; «Я тебе дам команду, когда их продолжать». Offline fixture coverage in `notes/anthropic-adapter.md` is
+> стоят»; «Я тебе дам команду, когда их продолжать». Offline fixture coverage in is
 >   not a current verification report or proof of actual Windows/Linux execution; independent review remains required
 >   by `PROCESS.md` and [Work policy](#work-policy), not by a manifesto gate.
 
@@ -3085,7 +3002,7 @@ Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0197' -- DECI
 Original DECISIONS.md lines 1759-1775 at `30952e6`, verbatim:
 
 > - Owner request: «Надо вернуть старое управление моделями: Shift + Вверх/Вниз будет смена модели, Shift + Вверх — к более сильным, Shift + Вниз — к более слабым. А Shift + Влево/Вправо — это будет смена ризенинга, так же, как и раньше это было в ОМП.»
->   Reason: the old oh-my-pi layout (`model-arrows.js`, `reasoning-arrows.js`, [notes/models-omp.md](notes/models-omp.md)),
+> Reason: the old oh-my-pi layout (`model-arrows.js`, `reasoning-arrows.js`,),
 >   where Shift+Up moves to earlier (stronger) entries of the list and Shift+Down to later (weaker) ones, and Shift+Right
 >   raises reasoning, Shift+Left lowers it. This replaces the earlier Option/Alt+plus/minus layout; those shortcuts and their
 >   aliases are removed. Pi 1.4.0 binds none of the four Shift+arrow keys (editor, app and `tui.altScreen` defaults use
@@ -3164,7 +3081,7 @@ Original DECISIONS.md lines 1780-1825 at `30952e6`, verbatim:
 >     result and has no hook, and a fake result would print a false "Switched to". `/scoped-models` lists no model,
 >     only saved patterns that match nothing, as unavailable rows. After `/login` from no model Pi suggests `/model`;
 >     `/rqw-models` or Shift+Up/Down select a model. If Pi's internals change and the session cannot be borrowed,
->     RQW-models warns and the stock lists stay. Pi mechanisms: [notes/models-omp.md](notes/models-omp.md).
+> RQW-models warns and the stock lists stay. Pi mechanisms:.
 
 ## A-0200 · archived 2026-10-23 · Models · Opus medium at startup
 Status: SUPERSEDED by `[D-MODELS-DEFAULT]` ([DECISIONS.md, Models](DECISIONS.md#models)).
@@ -3218,7 +3135,7 @@ Original DECISIONS.md lines 1844-1857 at `30952e6`, verbatim:
 >   selections of listed models retain their native precedence above. Engineering choice: an unlisted model, current
 >   only while no listed model is authenticated, keeps Pi-supported levels minus off and minimal, matching the harness
 >   ORDER without inventing a family list.
->   Source evidence and exact OMP capability provenance: [notes/models-omp.md](notes/models-omp.md).
+> Source evidence and exact OMP capability provenance:.
 
 ## A-0203 · archived 2026-10-23 · Models · P2 live context and CLI effort
 Status: MERGED into `[D-MODELS-KEYS]`, `[D-MODELS-DEFAULT]` ([DECISIONS.md, Models](DECISIONS.md#models)).
@@ -3233,12 +3150,11 @@ Original DECISIONS.md lines 1858-1862 at `30952e6`, verbatim:
 >   explicit selection in `extensions/RQW-models/index.ts`.
 
 ## A-0204 · archived 2026-10-23 · Models · Research sources
-Status: OBSOLETE; nearest active entry `[D-MODELS-KEYS]` ([DECISIONS.md, Models](DECISIONS.md#models)). Research provenance only, checked against Pi 1.3.0; sources live in notes/models-omp.md.
 Introduced: `e6c21e2`, the oldest hit of ``git log -S'-only: `~/Documents/ChatGPT/my-omp-harness`' -- DECISIONS.md``.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0204' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1863-1872 at `30952e6`, verbatim:
 
-> - Research sources and Pi mechanisms: `notes/models-omp.md`. Read-only: `~/Documents/ChatGPT/my-omp-harness`
+> - Research sources and Pi mechanisms:. Read-only: `~/Documents/ChatGPT/my-omp-harness`
 >   master/lite use `extensions/ui/model-arrows.js` and
 >   `reasoning-arrows.js`; deprecated uses the same files directly under `extensions/`. All use Shift+arrows and
 >   stop at the ends. Master's Opus high/Sonnet xhigh caps are carried by the family effort lists above; GPT 5.6
@@ -3250,7 +3166,6 @@ Original DECISIONS.md lines 1863-1872 at `30952e6`, verbatim:
 >   `models.js` and built-in model data, and pi-tui's `keys.js`.
 
 ## A-0205 · archived 2026-10-23 · Models · Model tests
-Status: SUPERSEDED by `[D-MODELS-TESTS]` ([DECISIONS.md, Models](DECISIONS.md#models)). "Windows/Linux remain covered by CI" was wrong (CI is macOS and Windows); the ESC-prefix/CSI-u key bytes are negative cases now; report details moved to notes/decisions-evidence.md#models-reports.
 Introduced: `e6c21e2`, the oldest hit of ``git log -S'Proof: `extensions/RQW-models/test/models.test.ts`, faux onl' -- DECISIONS.md``.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0205' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1873-1890 at `30952e6`, verbatim:
@@ -3275,7 +3190,6 @@ Original DECISIONS.md lines 1873-1890 at `30952e6`, verbatim:
 >   capture or corporate VDI test was performed.
 
 ## A-0206 · archived 2026-10-23 · Models · CI auth fixture
-Status: SUPERSEDED by `[D-MODELS-CI-FIXTURE]` ([DECISIONS.md, Models](DECISIONS.md#models)). Pi 1.3.0 wording updated; investigation and numbers moved to notes/decisions-evidence.md#models-ci-fixture.
 Introduced: `071df1e`, the oldest hit of `git log -S'Engineering CI auth fixture fix for the model request C:3113' -- DECISIONS.md`.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0206' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1891-1906 at `30952e6`, verbatim:
@@ -3307,7 +3221,7 @@ Original DECISIONS.md lines 1910-1914 at `30952e6`, verbatim:
 >   Owner request (C:3133): «Просто нужны элементы и расположение их отображения, и всё».
 >   Independent modules are required by C:3046 and the two-module request C:3113. No cross-folder imports is the
 >   engineering isolation mechanism, not a literal owner quotation. The existing predecessor renderer and git helpers
->   are retained and completed. Evidence and exact row contract: `notes/statusbar-omp.md`; do not copy other omp UI.
+> are retained and completed. Evidence and exact row; do not copy other omp UI.
 
 ## A-0208 · archived 2026-10-23 · Status bar · Toggle
 Status: SUPERSEDED by `[D-STATUSBAR-TOGGLE]` ([DECISIONS.md, Status bar](DECISIONS.md#status-bar)).
@@ -3338,7 +3252,7 @@ Original DECISIONS.md lines 1922-1924 at `30952e6`, verbatim:
 
 > - Conditional omp data without a stock Pi API is not invented: modes, collaboration, streaming/recording, running
 >   agent/job counts and PR metadata. Limits, source citations and test samples live only in
->   `notes/statusbar-omp.md`. Colors are stock Pi semantic colors, without tuning.
+>. Colors are stock Pi semantic colors, without tuning.
 
 ## A-0211 · archived 2026-10-23 · Status bar · GPT Fast lightning
 Status: SUPERSEDED by `[D-STATUSBAR-FAST]` ([DECISIONS.md, Status bar](DECISIONS.md#status-bar)).
@@ -3387,7 +3301,7 @@ Original DECISIONS.md lines 1939-1959 at `30952e6`, verbatim:
 >   donor, runs this shimmer at 30 Hz with a 30 Hz paint cap. Cost: every paint re-renders Pi's whole component tree and
 >   writes only the changed lines; CPU grows with the transcript length, and terminal, GPU, remote and visible frame rate
 >   are not measured. Carrier: `extensions/RQW-statusbar/{index,render}.ts`; proof:
->   `extensions/RQW-statusbar/test/{lifecycle,chrome,fast-gpt}.test.ts`, numbers in `notes/statusbar-omp.md`.
+> `extensions/RQW-statusbar/test/{lifecycle,chrome,fast-gpt}.test.ts`, numbers in.
 
 ## A-0213 · archived 2026-10-23 · Status bar · Own git discovery
 Status: SUPERSEDED by `[D-STATUSBAR-GIT]` ([DECISIONS.md, Status bar](DECISIONS.md#status-bar)).
@@ -3399,10 +3313,9 @@ Original DECISIONS.md lines 1960-1964 at `30952e6`, verbatim:
 >   `getGitBranch()`. Engineering choice for the status-bar request C:3113/C:3133: discover the repository and refresh
 >   git asynchronously to handle repository replacement and branch checkout. Reason: Pi caches absent metadata when a session
 >   starts outside git and does not rediscover it after init in the same cwd. Carried by `extensions/RQW-statusbar/{git,index}.ts`;
->   real-provider regression and evidence: `notes/statusbar-omp.md`.
+> real-provider regression and.
 
 ## A-0214 · archived 2026-10-23 · Status bar · Local proof boundaries
-Status: OBSOLETE; nearest active entry `[D-STATUSBAR-ANIMATION]` ([DECISIONS.md, Status bar](DECISIONS.md#status-bar)). Historical implementation-report boundary; no rule depends on it. Text in notes/decisions-evidence.md#statusbar-local-proof.
 Introduced: `0f356c4`, the oldest hit of `git log -S'uses deterministic snapshots, no-re' -- DECISIONS.md`.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0214' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 1965-1968 at `30952e6`, verbatim:
@@ -3429,7 +3342,7 @@ Original DECISIONS.md lines 1969-1980 at `30952e6`, verbatim:
 >   replaces ours later, the footer shows the row again. Off restores Pi's editor only when ours is installed.
 >   Reason: the owner's layout without taking the editor slot from another extension; no Pi patch. Outside the TUI
 >   nothing is installed. Carrier: `extensions/RQW-statusbar/{editor,index}.ts`, `render.ts` `editorBorder`;
->   contract and proof: `notes/statusbar-omp.md`.
+> contract and.
 
 ## A-0216 · archived 2026-10-23 · Status bar · Session ID in the top border
 Status: SUPERSEDED by `[D-STATUSBAR-TOP]` ([DECISIONS.md, Status bar](DECISIONS.md#status-bar)). Mechanism changed in d84b541: the top border is drawn by topBorder with own activity chrome; sessionTopBorder is test-only.
@@ -3455,7 +3368,7 @@ Original DECISIONS.md lines 1981-1999 at `30952e6`, verbatim:
 >   at the reduced width, the ID is dropped whole instead of cut and Pi's border is unchanged. With the bar off or a
 >   foreign editor in place there is no ID. Reason: the owner's layout and copyable ID without ever degrading Pi's
 >   status. Carrier: `extensions/RQW-statusbar/editor.ts` `renderTopBorder`, `render.ts` `sessionTopBorder`,
->   `index.ts`; contract and proof: `notes/statusbar-omp.md`.
+> `index.ts`; contract and.
 
 ## A-0217 · archived 2026-10-23 · Status bar · Tokens per second
 Status: SUPERSEDED by `[D-STATUSBAR-RATE]` ([DECISIONS.md, Status bar](DECISIONS.md#status-bar)). Option texts not found in the Pi sessions; relabelled coordinator option text.
@@ -3478,7 +3391,7 @@ Original DECISIONS.md lines 2000-2015 at `30952e6`, verbatim:
 >   and toggle reset it. Engineering choices: `usage.output` already includes reasoning tokens, so `usage.reasoning`
 >   is not added. Reason: neither Anthropic nor Codex returns a tokens-per-second field, so the exact billed count over Pi's own clock is the closest provider-aligned
 >   number. Carrier: `extensions/RQW-statusbar/{render,index}.ts` `RateMeter`; contract and proof:
->   `notes/statusbar-omp.md`.
+>.
 
 ## A-0218 · archived 2026-10-23 · Anthropic package integration · Package integration
 Status: SUPERSEDED by `[D-ANTHROPIC-PKG]` ([DECISIONS.md, Anthropic package integration](DECISIONS.md#anthropic-package-integration)). "Eight existing extensions" framing updated to the 14-entry manifest.
@@ -3494,7 +3407,7 @@ Original DECISIONS.md lines 2019-2027 at `30952e6`, verbatim:
 >   Opus medium with mock secrets, full-package login visibility and the stock fallback with the adapter or
 >   RQW-models switched off, and each of RQW-anthropic and RQW-providers switched off alone, are covered in
 >   `test/anthropic-models.test.ts`. Semantic test changes for independent review and
->   offline proof boundaries: `notes/anthropic-integration.md`.
+> offline proof boundaries:.
 
 ## A-0219 · archived 2026-10-23 · Anthropic package integration · Integration proof and campaign pause
 Status: MERGED into `[D-ANTHROPIC-PROOF]` ([DECISIONS.md, Anthropic package integration](DECISIONS.md#anthropic-package-integration)).
@@ -3504,7 +3417,7 @@ Original DECISIONS.md lines 2028-2030 at `30952e6`, verbatim:
 
 > - Integration proof uses offline fixtures only; it does not establish live auth, subscription acceptance or billing.
 >   The owner's old Claude campaign pause C:3244 remains in force, not a ban on Claude workers. Historical local results and their boundaries are recorded in
->   `notes/anthropic-integration.md`, not a standing prohibition on independent review or normal branch delivery.
+>, not a standing prohibition on independent review or normal branch delivery.
 
 ## A-0220 · archived 2026-10-23 · Scroll · Escape jumps down
 Status: SUPERSEDED by `[D-SCROLL-ESC]` ([DECISIONS.md, Scroll](DECISIONS.md#scroll)).
@@ -3579,7 +3492,6 @@ Original DECISIONS.md lines 2068-2070 at `30952e6`, verbatim:
 >   its owning interactive renderer, as does Pi's own registry.
 
 ## A-0225 · archived 2026-10-23 · Scroll · Proof
-Status: SUPERSEDED by `[D-SCROLL-TESTS]` ([DECISIONS.md, Scroll](DECISIONS.md#scroll)). Local PTY probe sentence moved to notes/decisions-evidence.md#scroll-pty-probe.
 Introduced: `72873eb`, the oldest hit of ``git log -S'Proof: `extensions/RQW-scroll/test/scroll.test.ts` (in `npm ' -- DECISIONS.md``.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0225' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 2071-2080 at `30952e6`, verbatim:
@@ -3663,7 +3575,6 @@ Original DECISIONS.md lines 2109-2115 at `30952e6`, verbatim:
 >   Generated-name rules, precise cleanup boundary and failure behavior live in `extensions/RQW-session/README.md`.
 
 ## A-0231 · archived 2026-10-23 · Session commands · Pi 1.4.0 research
-Status: OBSOLETE; nearest active entry `[D-SESSION-SCAN]` ([DECISIONS.md, Session commands](DECISIONS.md#session-commands)). Research evidence only; text in notes/decisions-evidence.md#session-research.
 Introduced: `db5ab64`, the oldest hit of ``git log -S'.0 research: `dist/utils/output-files.js` creates random-nam' -- DECISIONS.md``.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0231' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 2116-2121 at `30952e6`, verbatim:
@@ -3676,7 +3587,6 @@ Original DECISIONS.md lines 2116-2121 at `30952e6`, verbatim:
 >   Windows and emits OSC 52 for remote markers or `PI_CLIPBOARD_OSC52=1`, not simply because VS Code is present.
 
 ## A-0232 · archived 2026-10-23 · Session commands · Codex delete_thread comparison
-Status: OBSOLETE; nearest active entry `[D-SESSION-SCAN]` ([DECISIONS.md, Session commands](DECISIONS.md#session-commands)). Comparison only; text in notes/decisions-evidence.md#session-research.
 Introduced: `db5ab64`, the oldest hit of ``git log -S'Codex comparison, read-only `codex-harness` `upstream/main`,' -- DECISIONS.md``.
 Archived by: docs-cleanup, 2026-10-23; the commit is `git log -S'A-0232' -- DECISIONS-ARCHIVE.md`.
 Original DECISIONS.md lines 2122-2126 at `30952e6`, verbatim:
@@ -3794,7 +3704,7 @@ Original DECISIONS.md lines 2179-2185 at `30952e6`, verbatim:
 >   extensions wrap `_bindExtensionCore` and `dispose`, and `RQW-anthropic`'s lifecycle restores Pi's own methods when its
 >   last owner leaves, so each load of this extension checks its wrapper is still in the slots and wraps again if not
 >   (`test/providers-anthropic.test.ts`). Pi's restore is last-in-first-out, so the manifest keeps this extension after
->   `RQW-anthropic`, and an inert wrapper may stay in the other order (limits: `extensions/RQW-providers/README.md`). Mechanism research: `notes/anthropic-adapter.md`.
+> `RQW-anthropic`, and an inert wrapper may stay in the other order (limits: `extensions/RQW-providers/README.md`)..
 
 ## A-0241 · archived 2026-10-23 · Agent · Title and explorer with git-guarded read-only tools
 Status: SUPERSEDED by `[D-AGENT-EXPLORE-TOOLS]` ([DECISIONS.md, Agent](DECISIONS.md#agent)); `[D-AGENT-TITLE-EXPLORE]` stays for `title` and now points to it.
@@ -3939,7 +3849,7 @@ Original DECISIONS.md lines 836-844 at `b0b3672`, verbatim:
 >   «Если это замеренная цифра и 5 минут будет заебись в большинстве случаев, то пусть будет 5 минут.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 583)
 >   ([Anthropic subscription adapter](#anthropic-subscription-adapter)). Reason: review gaps are short, so 1h writes
 >   rarely pay off. Proof: `test/review.test.ts`, package `test/prompt-cache.test.ts`. Evidence:
->   `notes/prompt-cache-policy.md`. Since: `b91f832`.
+>. Since: `b91f832`.
 
 
 ## A-0250 · archived 2026-10-24 · Review · Reviewer models by the main agent's family
@@ -3960,8 +3870,8 @@ Original DECISIONS.md lines 852-865 at `b0b3672`, verbatim:
 >   Owner: «2а 3а» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1162) (answer to three coordinator questions; the unanswered first question took its recommended
 >   option 1a, reviewer model by the main agent's family); «Да» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1425).
 >   Reason: the gpt-match probes found GPT-5.6 Luna medium and high comparable to the Claude slots; GPT-6 Luna unusable.
->   Evidence: `notes/reviewer-probes.md`, section "GPT match for the Claude slots"; numbers in
->   [decisions evidence](notes/decisions-evidence.md#review-gpt-match). Proof: `test/review.test.ts` ("the family
+>, section "GPT match for the Claude slots"; numbers in
+>. Proof: `test/review.test.ts` ("the family
 >   table", "GPT main, blind", "GPT main, high", the fallback and failure tests). Since: `3389347`.
 
 
@@ -3989,7 +3899,7 @@ Original DECISIONS.md lines 872-875 at `b0b3672`, verbatim:
 
 > - **Main and reviewer as a pair** `[D-REVIEW-PAIR]`. The pair rules live only in the plugin, so switching RQW-review off
 >   removes them. Reviewer side: `REVIEWER.md` ("on Main's team"). Main side, three carriers in `index.ts`:
->   `DESCRIPTION` (every request while on: who the reviewer is, "works with you as one team for the user's agreement", how to call it); the tool result `startedText`: `review#N started. Keep working, but leave the reviewed files unchanged until its verdict.`; and the verdict wrapper `verdictMessage`: `[review#N]`, the verdict verbatim, finding ids and dispute outcomes, then one `NEXT` paragraph by kind. `clean`: the trimmed verdict is exactly `CLEAN` after a normal `stop`; passed, no further pass for confidence. A `length`, `error`, `aborted` or other abnormal stop is a failed review. `incomplete` (`CLEAN` with extra text, prose before `CLEAN`, `FINDINGS:` with text on its header line, a `FINDING` block missing a required field, any other text): resolve UNCHECKED or retry, never a pass, no finding id, answers no dispute. `findings` (a line exactly `FINDINGS:`, then `FINDING n` blocks with REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME filled; one structural check in `findingBlocks`, used by `kindOf` and `settle`): find each quote; fix each new finding exactly to its REQUIRED OUTCOME, or rebut it once with proof of a misreading; a finding resting on a value or choice the user never gave goes to the user, not fixed with another choice of Main's own ([Reviewer probes](notes/reviewer-probes.md), variant n1); fix the rest in one batch, then call `review` again with the same level, object, criterion and the new rebuttals until CLEAN. `failed` (the catch branch): no pass, no self-check replaces it; retry once on the unchanged object, then tell the user and wait. Not `promptSnippet` or `promptGuidelines`: RQW-prompt sets `customPrompt`, and Pi builds that section only without one. Not `SYSTEM.md`. Owner: «Правила пары остаются внутри плагина (DESCRIPTION, NEXT, REVIEWER.md), а не в SYSTEM.md.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 367) (task text the owner pasted). Coordinator text (earlier owner quotes, found only as copies in that pasted task): "чтобы они действовали в одной команде ... либо принимает правку, либо её отклоняет и пишет, почему" (2026-10-09); "он с ним действует в унисон, в паре ... их синергия должна идти в рамках плагина. Это не должно размазываться" (2026-10-20).
+> `DESCRIPTION` (every request while on: who the reviewer is, "works with you as one team for the user's agreement", how to call it); the tool result `startedText`: `review#N started. Keep working, but leave the reviewed files unchanged until its verdict.`; and the verdict wrapper `verdictMessage`: `[review#N]`, the verdict verbatim, finding ids and dispute outcomes, then one `NEXT` paragraph by kind. `clean`: the trimmed verdict is exactly `CLEAN` after a normal `stop`; passed, no further pass for confidence. A `length`, `error`, `aborted` or other abnormal stop is a failed review. `incomplete` (`CLEAN` with extra text, prose before `CLEAN`, `FINDINGS:` with text on its header line, a `FINDING` block missing a required field, any other text): resolve UNCHECKED or retry, never a pass, no finding id, answers no dispute. `findings` (a line exactly `FINDINGS:`, then `FINDING n` blocks with REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME filled; one structural check in `findingBlocks`, used by `kindOf` and `settle`): find each quote; fix each new finding exactly to its REQUIRED OUTCOME, or rebut it once with proof of a misreading; a finding resting on a value or choice the user never gave goes to the user, not fixed with another choice of Main's own (, variant n1); fix the rest in one batch, then call `review` again with the same level, object, criterion and the new rebuttals until CLEAN. `failed` (the catch branch): no pass, no self-check replaces it; retry once on the unchanged object, then tell the user and wait. Not `promptSnippet` or `promptGuidelines`: RQW-prompt sets `customPrompt`, and Pi builds that section only without one. Not `SYSTEM.md`. Owner: «Правила пары остаются внутри плагина (DESCRIPTION, NEXT, REVIEWER.md), а не в SYSTEM.md.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 367) (task text the owner pasted). Coordinator text (earlier owner quotes, found only as copies in that pasted task): "чтобы они действовали в одной команде... либо принимает правку, либо её отклоняет и пишет, почему" (2026-10-09); "он с ним действует в унисон, в паре... их синергия должна идти в рамках плагина. Это не должно размазываться" (2026-10-20).
 >   Since: `c4aaad4`.
 
 
@@ -4034,9 +3944,9 @@ Original DECISIONS.md lines 876-913 at `b0b3672`, verbatim:
 >     fresh reviewer decides. A missing or ambiguous decision, or a choice Main made that differs from what the user said,
 >     is `UNDECIDED` and goes to the user.
 >   - State: rebuttals persist with the review number entry (`{ n, rebuttals }`), findings and rulings in a second entry
->     (`{ n, findings, rulings }`), all `pi.appendEntry("review", ...)`, rebuilt from the current branch on every call and   verdict, so they survive reload and resume. Owner: «У них цикла быть не должно. Знаешь, тут даже не должно быть трёх кругов. Смотри, как должно быть: должно быть правило трёх сообщений. Ревьюер даёт комментарий, main ему отвечает, и ревьюер либо соглашается, либо выступает против. И это конечное. Дальше main с ним уже не спорит: он либо принимает его решение, либо идёт к пользователю, чтобы тот разрешил спор, конфликт. Вот и всё.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Если у ревьюера железобетонные доказательства, то мейн должен принять.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Если ревьюер выявил работу, которая не была зафиксирована однозначным решением, то надо вопрос отдать этому пользователю, чтобы пользователь разрешил спор. Всегда всё идёт на основании решения пользователя.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Да, и на каждом круге, конечно же, всегда у нас новый, свежий ревьюер» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Причем ему отдается инфа об отказе, возражения основного агента отдаются так, чтобы новый ревьюер потом без проблем понял, о чем идет речь.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); original task text the owner pasted: «Задача: доработать RQW-review так, чтобы main и reviewer работали в паре: main может опровергнуть находку по существу» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 367). The former rule that a finding with verbatim quotes can never be rejected was an agent proposal, replaced by these messages. Earlier owner sources from omp sessions: [decisions evidence](notes/decisions-evidence.md#review-dispute-sources). Proof: `test/review.test.ts` suites "disputes: one finding, one rebuttal, one final answer" and "dispute mechanics".
+> (`{ n, findings, rulings }`), all `pi.appendEntry("review",...)`, rebuilt from the current branch on every call and verdict, so they survive reload and resume. Owner: «У них цикла быть не должно. Знаешь, тут даже не должно быть трёх кругов. Смотри, как должно быть: должно быть правило трёх сообщений. Ревьюер даёт комментарий, main ему отвечает, и ревьюер либо соглашается, либо выступает против. И это конечное. Дальше main с ним уже не спорит: он либо принимает его решение, либо идёт к пользователю, чтобы тот разрешил спор, конфликт. Вот и всё.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Если у ревьюера железобетонные доказательства, то мейн должен принять.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Если ревьюер выявил работу, которая не была зафиксирована однозначным решением, то надо вопрос отдать этому пользователю, чтобы пользователь разрешил спор. Всегда всё идёт на основании решения пользователя.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Да, и на каждом круге, конечно же, всегда у нас новый, свежий ревьюер» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); «Причем ему отдается инфа об отказе, возражения основного агента отдаются так, чтобы новый ревьюер потом без проблем понял, о чем идет речь.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 391); original task text the owner pasted: «Задача: доработать RQW-review так, чтобы main и reviewer работали в паре: main может опровергнуть находку по существу» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 367). The former rule that a finding with verbatim quotes can never be rejected was an agent proposal, replaced by these messages. Earlier owner sources from omp sessions:. Proof: `test/review.test.ts` suites "disputes: one finding, one rebuttal, one final answer" and "dispute mechanics".
 >   Limits: a reviewer that upholds a dispute without the DISPUTE field creates a new finding id, which Main could rebut
->   once more. Probe evidence: `notes/reviewer-probes.md`, [decisions evidence](notes/decisions-evidence.md#review-dispute-probes).
+> once more.,.
 >   Since: `30c633f`.
 
 
@@ -4080,7 +3990,7 @@ Original DECISIONS.md lines 949-954 at `b0b3672`, verbatim:
 >   Verdict: `CLEAN`, or `FINDINGS:` with numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME;
 >   DISPUTE, RULING and ANSWER only on a repeated disputed finding) and an optional `UNCHECKED:` section. REQUIRED OUTCOME
 >   states one concrete end state; `<criterion>` sets the scope. Proof: `test/review.test.ts` format pins.
->   Earlier GPT prompt measurements: `notes/reviewer-prompt-gpt.md`, not proof for the deep prompt. Since: `e76994a`.
+> Earlier GPT prompt, not proof for the deep prompt. Since: `e76994a`.
 
 ## A-0257 · archived 2026-10-24 · Work policy · Measurements in waves, reason naming the reviewer-v2 benchmark
 
@@ -4258,12 +4168,12 @@ Archived by: the agent-async change (stages 1 and 2, branch `agent-async`; stage
 >   background job holds the later calls of its response and, from later responses, only calls that change what it holds.
 >   Reason: a replay of recorded tool calls left D4 alone with silent overlaps between jobs and later calls; FR-safe
 >   leaves none silent and keeps the same-response order; the owner chose it. Probes, replay, snapshot cost, pilot defects
->   and code-review fixes: [notes/decisions-evidence.md](notes/decisions-evidence.md#background-jobs-evidence); races
->   R16-R24: `notes/analysis-races.md` section 9.
+> and code-review fixes:; races
+> R16-R24: section 9.
 >   Carriers: `extensions/RQW-tools/jobs.ts`, `barrier.ts`, `nested.ts`, `footprint.ts`, `ledger.ts`, `keys.ts`,
 >   `index.ts`, `codemode.ts`, `descriptions/bash.md`, `descriptions/job.md`, `descriptions/write.md`;
 >   `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/roles/*.md`; `extensions/RQW-review/index.ts`;
->   `notes/prompt-tools-isolation.md`. Proof: `extensions/RQW-tools/test/background.test.ts`, `barrier-detach.test.ts`,
+>. Proof: `extensions/RQW-tools/test/background.test.ts`, `barrier-detach.test.ts`,
 >   `footprint.test.ts`, `ledger.test.ts`; `extensions/RQW-agent/test/wait.test.ts`, `nested-workers.test.ts`,
 >   `agent.test.ts`; `extensions/RQW-review/test/review.test.ts`, `subagent.test.ts`;
 >   `test/prompt-tools-isolation.test.ts`. Since: `e5440f2`; scan and footprint safeguards since `e1cca48`.
@@ -4296,7 +4206,7 @@ Archived by: the agent-async change; the commit is `git log -S'A-0267' -- DECISI
 
 > - **Ordered management and shutdown** `[D-AGENT-MANAGEMENT]`. Management calls across all three tools register in call order; wait releases that queue after subscription. Start, idle send and restart with task return once prompt preflight starts the run or `compaction_start` makes cancellation effective. Closing clears queues, calls abort and only then disposes, preventing requests after stop or shutdown. Print/JSON use a caller-wide non-consuming fallback wait in `agent_end`, subordinate to explicit waits; native-idle children use the same bounded fallback for their workers. TUI/RPC retain push wakeups. `session_shutdown` closes all descendants without result messages.
 >   Coordinator text. Reason: parallel tool batches, pre-run compaction and disposal must not leave unowned requests.
->   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `extensions/RQW-agent/test/agent.test.ts`; [historical proof](notes/decisions-evidence.md#agent-proof). Since: `fe0e375`.
+> Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/coordinator.ts`, `extensions/RQW-agent/test/agent.test.ts`;. Since: `fe0e375`.
 
 ## A-WEB-PHASE1 · archived 2026-10-24 · Web search CLI
 
@@ -4618,7 +4528,7 @@ Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0282' 
 
 > - **Reviewers** `[D-SCOPE-REVIEWERS]`. Review is our own extension `RQW-review` on `createAgentSession`, not a ready
 >   package; its contract, levels and models are in [Review](#review). Coordinator text (historical unverified attribution): "То, что ты предложил по ревьюерам — it's OK, я принимаю". Reason: the ready package was too large and failed
->   strict schemas ([notes/decisions-evidence.md](notes/decisions-evidence.md#scope-reviewer-package-sizing)). Carrier:
+> strict schemas . Carrier:
 >   `extensions/RQW-review/`. Since: `3dce6fa`.
 
 ## A-0283 · archived 2026-10-24 · Enable the ready interface now
@@ -4767,12 +4677,12 @@ Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0286' 
 >   background job holds the later calls of its response and, from later responses, only calls that change what it holds.
 >   Reason: a replay of recorded tool calls left D4 alone with silent overlaps between jobs and later calls; FR-safe
 >   leaves none silent and keeps the same-response order; the owner chose it. Probes, replay, snapshot cost, pilot defects
->   and code-review fixes: [notes/decisions-evidence.md](notes/decisions-evidence.md#background-jobs-evidence); races
->   R16-R24: `notes/analysis-races.md` section 9.
+> and code-review fixes:; races
+> R16-R24: section 9.
 >   Carriers: `extensions/RQW-tools/jobs.ts`, `barrier.ts`, `nested.ts`, `footprint.ts`, `ledger.ts`, `keys.ts`,
 >   `index.ts`, `codemode.ts`, `descriptions/bash.md`, `descriptions/job.md`, `descriptions/write.md`;
 >   `extensions/RQW-agent/index.ts`; `extensions/RQW-review/index.ts`;
->   `notes/prompt-tools-isolation.md`. Proof: `extensions/RQW-tools/test/background.test.ts`, `barrier-detach.test.ts`,
+>. Proof: `extensions/RQW-tools/test/background.test.ts`, `barrier-detach.test.ts`,
 >   `footprint.test.ts`, `ledger.test.ts`; `extensions/RQW-agent/test/wait.test.ts`,
 >   `agent.test.ts`; `extensions/RQW-review/test/review.test.ts`, `subagent.test.ts`;
 >   `test/prompt-tools-isolation.test.ts`. Since: `e5440f2`; scan and footprint safeguards since `e1cca48`; handoff independence and notification waits since the final squash of branch `agent-async`. Earlier wording (Esc killed jobs, polling only): [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0264.
@@ -5227,7 +5137,7 @@ Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0313' 
 >   `"undefined"` and blank arguments. `test/cli.test.ts` runs real CLI print/json subprocesses on Node, and on Bun with
 >   `PI_REVIEW_TEST_RUNTIME=bun`, with `test/cli-faux.ts` and the `test/offline.mjs` network tripwire. These establish
 >   runtime behavior, not review quality. Historical live smoke runs:
->   [decisions evidence](notes/decisions-evidence.md#review-live-smoke). Since: `b4b23cf`.
+>. Since: `b4b23cf`.
 
 ## A-0314 · archived 2026-10-24 · Known limits
 
@@ -5269,7 +5179,7 @@ Archived by: subagent-profiles; introducing archive commit: `git log -S'A-0316' 
 > - **No invented data** `[D-STATUSBAR-SCOPE]`. omp data without a stock Pi API is not shown: modes, collaboration,
 >   streaming/recording and PR metadata. Running agent and review counts are shown, read from RQW-agent and
 >   RQW-review over `pi.events` (`[D-STATUSBAR-ACTIVITY]`). Colours are the extension's own ANSI and truecolour values, not
->   stock theme roles. Limits and samples: `notes/statusbar-omp.md`. Since: `0f356c4`.
+> stock theme roles. Limits and samples:. Since: `0f356c4`.
 
 ## A-0317 · archived 2026-10-24 · Activity chrome (UI port P6)
 
@@ -5330,7 +5240,7 @@ Archived by: subagent-profiles; archive commit: `git log -S'A-0319' -- DECISIONS
 > - **Background cache warming** `[D-SETTINGS-WARMING]`. Background warming is off inside RQW-settings regardless of user configuration; normal inference still writes and reads prompt caches. A reversible session-owned `getCacheWarmingMode` policy leaves settings files, environment and cache-miss notices unchanged, restores the native getter on shutdown, and preserves other owners and foreign hooks through reload. Children carry their independent policy in Agent and Review.
 >   Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 440, in `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`.
 >   Reason: no synthetic keepalive inference before the first real request.
->   Carrier: `extensions/RQW-settings/cache-warming.ts`, `extensions/RQW-settings/test/cache-warming.test.ts`, `test/cache-warming-reload.test.ts`; evidence: `notes/prompt-cache-policy.md`. Since: `b91f832`.
+> Carrier: `extensions/RQW-settings/cache-warming.ts`, `extensions/RQW-settings/test/cache-warming.test.ts`, `test/cache-warming-reload.test.ts`;. Since: `b91f832`.
 
 ## A-0320 · archived 2026-10-24 · D-CODEX-OWNERSHIP
 
@@ -5479,7 +5389,7 @@ Archived by: rule-only-ordered; exact commit: `git log -S'A-0319' -- DECISIONS-A
 >   делать микроправки всяких хуёвин, которые возможно никогда не всплывут, и у них редкость возникновения очень высокая,
 >   вероятность, что они возникнут, крайне мала. Надо править именно очевидные жирные ошибки, а не вылизывать до
 >   предела."; "ты всю уже выполненную работу собираешь вместе. Просто ты дополнительной работы не делаешь и всё."
->   Carriers: `extensions/RQW-context/index.ts`, `extensions/RQW-tools/`, `notes/context-questions.md`; this does not
+> Carriers: `extensions/RQW-context/index.ts`, `extensions/RQW-tools/`,; this does not
 >   promise every rare filesystem or long-path case. Process side: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
 >   Since: `9ef1519`.
 
@@ -5716,7 +5626,7 @@ Archived by: context-simplify delivery; exact commit: `git log -S'A-0324' -- DEC
 
 > - **Native routing and reserve** `[D-CONTEXT-ROUTING]`. Stable capped copies are exposed through Agent state, `createLoopConfig`, `_buildRuntime` and native `ModelRuntime.getPhysicalModel`; registry entries are not mutated. Virtual selections keep their native identity, callback, thinking and declared or unknown window. Session/request-local `AsyncLocalStorage` supplies the physical target's W/R: automatic preparation uses its triggering target, manual preparation the latest successful response after abort. Default summaries preserve interception preparation and route once from the captured selection, retaining the original explicit reserve intent. On Pi 1.4.0 reserve rebinding does not size summary output; optional removal is tracked in [BACKLOG](BACKLOG.md).
 >   Coordinator text. Reason: physical limits must not leak across concurrent operations or alter native selection identity.
->   Carrier: `extensions/RQW-context/index.ts` (`wrapAgentState`, `wrapRouting`, `wrapCompactionSettings`, `reserveIntents`); details: `notes/context-questions.md`. Since: `6eb01a7`.
+> Carrier: `extensions/RQW-context/index.ts` (`wrapAgentState`, `wrapRouting`, `wrapCompactionSettings`, `reserveIntents`);. Since: `6eb01a7`.
 
 ## A-0327 · archived 2026-10-25 · Isolation · Tests beside extension code
 
@@ -5858,7 +5768,7 @@ Origin commits are retained in the quoted entries where recorded.
 >   Owner: «Не ускорить, а сделать более плавной, в два раза плавнее.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3636);
 >   «Давай попробуем сделать 50 FPS для начала.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3662); «Даже можно скорость блика сделать медленнее, чтобы она шла более медленно, более плавно.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3662)
 >   Carrier: `extensions/RQW-statusbar/{index,render}.ts`. Proof: `test/{lifecycle,chrome,fast-gpt}.test.ts`; numbers in
->   `notes/statusbar-omp.md`. Since: `e3b3566`.
+>. Since: `e3b3566`.
 
 > - **Session ID in the top border** `[D-STATUSBAR-TOP]`. With our editor installed the whole top border is ours:
 >   `render.ts` `topBorder`, called from `editor.ts` `renderTopBorder`, draws the silver rule, the activity status
@@ -5870,7 +5780,7 @@ Origin commits are retained in the quoted entries where recorded.
 >   Owner: «Можно добавить его в верхнюю часть там, где working крутится, хуйня. С левой стороны сделать также вставку id сессий с пробелами: идёт чёрточка, потом id, потом снова чёрточка. Прямо по левому краю.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 191);
 >   «Я бы так сделал, чтобы это было симметрично по левому краю именно, и чтобы между чёрточками и ID был какой-то пробел, хотя бы по одному, чтобы можно было нормально вырезать и вставить, скопировать и вставить.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 191)
 >   Correction: «По визуальному он должен стоять справа. Я ошибся: не с левого края, а с правого края. Слева working, справа ID сессии. Он прижат должен быть к правому краю, а ID к левому краю прижат. Если места нету, то он и не отображается, его просто не видно.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 203)
->   Carrier: `extensions/RQW-statusbar/{editor,render,index}.ts`. Contract: `notes/statusbar-omp.md`. Since: `c6b642c`.
+> Carrier: `extensions/RQW-statusbar/{editor,render,index}.ts`.. Since: `c6b642c`.
 
 Superseded passage, same source SHA:
 
@@ -6170,13 +6080,13 @@ Replacement commit: `git log -S'Statusbar 30 FPS and single silver glint' -- DEC
 >   `activityRows` supplies status and trailing blank; Pi supplies the leading spacer. Idle returns `[]`.
 >   Owner: «Давай попробуем сделать 50 FPS для начала.»
 >   Source: session `2026-10-21T16-27-59-062Z_01a15f4a`, line 3662; doubled-speed source: `[D-STATUSBAR-SHEEN]`.
->   Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
+> Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost.
 
 ## Statusbar 30 FPS · superseded note cadence paragraphs
 
 Status: 20 ms redraw cadence and repeated silver motion SUPERSEDED by `[D-STATUSBAR-ANIMATION]`
-and the current title/activity contract in `notes/statusbar-omp.md`; unchanged details remain current.
-Verbatim source: `notes/statusbar-omp.md` at base `83a91dbcaf37bad6886e5709457ff6159f337fcd`.
+and the current title/activity contract in; unchanged details remain current.
+Verbatim source: at base `83a91dbcaf37bad6886e5709457ff6159f337fcd`.
 Replacement: statusbar-single-glint delivery, initial task commit `09ac9b30c7c144e362972123693bd36a3e379c24`;
 final squash provenance: `git log -S'superseded note cadence paragraphs' -- DECISIONS-ARCHIVE.md`.
 
@@ -6300,7 +6210,7 @@ Superseded by D-STATUSBAR-ANIMATION in statusbar-silver-640ms: owner requests ex
 >   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6774,
 >   verified by `scripts/owner-quotes.mjs`. Colours, soft falloff, layout and static title stay unchanged; the later gold correction is recorded in `[D-STATUSBAR-SHEEN]`.
 >   Doubled-speed source: `[D-STATUSBAR-SHEEN]`.
->   Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
+> Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost.
 
 ## Full Anthropic-model ban restored - superseded 2026-10-25
 
@@ -6498,7 +6408,7 @@ Verbatim text as it was in DECISIONS.md at that source commit:
 >   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6774,
 >   verified by `scripts/owner-quotes.mjs`. Colours, soft falloff, layout and static title stay unchanged; the later gold correction is recorded in `[D-STATUSBAR-SHEEN]`.
 >   Doubled-speed source: `[D-STATUSBAR-SHEEN]`.
->   Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost measurements: `notes/statusbar-omp.md`.
+> Carrier: `extensions/RQW-statusbar/{index,render}.ts`; historical cost.
 
 ## A-0361 · archived 2026-10-25 · Development executor models · D-WORK-MODELS
 
@@ -6612,3 +6522,157 @@ Verbatim text as it was in DECISIONS.md at `70f2ea0`:
 >   Owner (`16-27-59:5323`, entry `6256b148`), the prompt: «Ты нормальный пром дай, нормально сконфигурируй, выдай ему рамки, ограничения, и он нормально работу сделает»
 >   Reason: Windows and flaky failures must not wait for main-task slots. Carrier:
 >   [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), `.agents/roles/test-fixer.md`. Since: process-pipeline squash.
+
+## A-0366 · archived 2026-10-26 · Combined review shortcut · D-PIPELINE-COMBINED-REVIEW
+
+Status: SUPERSEDED by `[D-PIPELINE-REVIEW-CLASSES]`: ordinary work now always has one result-and-code review, with no size-based shortcut.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0366' -- DECISIONS-ARCHIVE.md`.
+
+> - **Combined review for small work** `[D-PIPELINE-COMBINED-REVIEW]`. Small work gets one combined result and code
+>   review; large work keeps both. Owner: «6b» Coordinator text, option 6b: "Сразу перейти на совмещённую проверку для малых правок: меньше работы, риск не измерен." Coordinator definition of small (not owner words): at most 100 added plus deleted lines, all inside one extension, with no owner-visible behavior change; the gate enforces the lines and the extension, the reviewer verifies the behavior. An explicit owner request for both reviews on a delivery takes precedence.
+>   Reason: two roles found different real defects, so large work keeps both; the owner accepted the unmeasured risk for
+>   small work. Carrier: [PROCESS.md, Independent review](PROCESS.md#independent-review), `scripts/deliver-check.mjs`
+>   (`Combined-review:`). Since: process-pipeline squash.
+
+## A-0367 · archived 2026-10-26 · Final review split · D-WORK-FINAL-CHECK
+
+Status: SUPERSEDED by `[D-PIPELINE-REVIEW-CLASSES]` and updated `[D-WORK-FINAL-CHECK]`.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0367' -- DECISIONS-ARCHIVE.md`.
+
+> - **Final checks and code reviewer** `[D-WORK-FINAL-CHECK]`. Work ends with an independent completeness-and-consistency
+>   check; large code changes also get a separate bug/quality reviewer through `agent_type: "code-reviewer"`,
+>   small ones one combined review ([D-PIPELINE-COMBINED-REVIEW]). Installed Pi updates follow
+>   [PROCESS.md, Delivery](PROCESS.md#delivery).
+>   Reason: independent proof without new product tools. Carriers:
+>   [PROCESS.md, Independent review](PROCESS.md#independent-review), `.pi/agents/code-reviewer.toml`.
+>   Since: `8f2ea64`.
+
+## A-0368 · archived 2026-10-26 · Automatic old Windows queue tail · D-PIPELINE-SINGLE-QUEUE
+
+Status: SUPERSEDED in queue-tail behavior by `[D-PIPELINE-QUEUE-RESET]`; the single execution queue remains.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0368' -- DECISIONS-ARCHIVE.md`.
+
+> - **Single queue for test work** `[D-PIPELINE-SINGLE-QUEUE]`. QA fixes, Windows work and full release regressions
+>   are ordinary tasks in the single execution queue under [D-WORK-PARALLEL], with no independent concurrent test-fixer
+>   or regression agent. Main sequences them logically by owner priority, dependencies, required gates and release triggers.
+>   After the currently listed queue items, only owner-ordered Windows CI failure work resumes, with a readable direct
+>   source for every item in [BACKLOG.md](BACKLOG.md#windows-test-failures). The direct Windows-test instruction is owner
+>   `16-27-59:5309`, entry `1bbe27c1`. Owner (`16-27-59:12041`, entry `da2328fd`, 2026-10-25):
+>   «И потом в работу добавь все что связано с виндой»
+>   Coordinator or auditor-invented standalone PCLI publication, VS Code, ConPTY and generic Windows verification tasks
+>   are not resumed. Discarded tasks, unrelated holds, delivered fixes and issue-monitoring-only items stay out.
+>   Owner (`16-27-59:12047`, entry `5cc4142a`, 2026-10-25): «Из них удали те задачи которые Я НЕ ЗАКАЗЫВАЛ».
+>   Test triage, proven-cause, no-skip/no-weakening, red/green evidence and release-regression requirements stay unchanged.
+>   Reason: sequence owner-ordered test and Windows work without creating unauthorized tasks or an independent lane.
+>   Carriers: [PROCESS.md, Task pipeline](PROCESS.md#task-pipeline), [Delivery](PROCESS.md#delivery) and `BACKLOG.md`.
+>   The superseded test-lane entry is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0365, from `4c66755`.
+
+## A-0369 · archived 2026-10-26 · Fresh reviewer for malformed evidence · D-REVIEW-CYCLE
+
+Status: SUPERSEDED by `[D-PIPELINE-REVIEW-CLASSES]` and updated `[D-REVIEW-CYCLE]`: the same reviewer completes missing or malformed evidence.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0369' -- DECISIONS-ARCHIVE.md`.
+
+> - **Review cycle on Main's side** `[D-REVIEW-CYCLE]`. Carried over from the skill `subagents` of the Codex plugin; it
+>   lives in the native `reviewer` skill and its `blindreview` and `highreview` wrappers, so disabling RQW-review
+>   removes these discovered skills, and in
+>   [PROCESS.md, Independent review](PROCESS.md#independent-review).
+>   - When: the review runs only when the owner asks for a review or a checked result, or a procedure he approved requires
+>     it, such as the squash-merge rule of PROCESS; never on Main's own initiative or as an automatic step of other work.
+>     `blindreview` with `agent_type: "spotty"` unless the owner or that procedure asks for `highreview` with
+>     `agent_type: "bossy"`. Main keeps working meanwhile but leaves the reviewed files unchanged until the verdict.
+>   - Brief construction: [PROCESS.md, Independent review](PROCESS.md#independent-review) is the canonical
+>     development rule; the native [reviewer skill](extensions/RQW-review/skills/reviewer/SKILL.md) carries it at runtime.
+>     The replaced brief text is preserved verbatim in DECISIONS-ARCHIVE.md, A-0323.
+>   - `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` passes: no extra pass for confidence, but every independent pass
+>     and its order that the invoking procedure requires stays.
+>   - `FINDINGS:` are the teammate's findings. Main finds each quote by searching for it. A finding whose two quotes stand
+>     verbatim in their sources is admitted; for an omission Main verifies the quoted requirement and the complete
+>     inspected file or section instead of demanding nonexistent text. Main fixes an admitted finding exactly to its
+>     REQUIRED OUTCOME and no further, and does not reject it, argue with it or put it to the owner. Main rejects a finding
+>     only when a quote is not verbatim, the allegedly missing content is present in the cited object, or a NOT AGREED
+>     element is covered by a verbatim quote of the agreement, and gives that reason with the quote.
+>   - All admitted fixes go in one batch. Then a fresh reviewer runs with the same level, object and criterion and every
+>     rejection so far in `rejected_earlier`, until `CLEAN`.
+>   - `UNCHECKED:` or missing `CHECKED:` evidence makes the check incomplete whatever the leading verdict is: resolve the
+>     missing sources or evidence, or retry malformed output; never record it as acceptance.
+>   - No verdict, an error or a reviewer that could not start: the check has not passed and no self-check replaces it.
+>     Main launches it once more on the unchanged object; if it fails again, Main tells the owner and waits.
+>   - When this review contract changes, validate it against known defective, corrected and missing-source examples before
+>     claiming improved detection. These checks are not extra rounds in ordinary task reviews. The tests check mechanics,
+>     such as a malformed verdict or a missing `CHECKED:`, and make no claim about detection quality.
+>   Owner (`16-27-59:5210`): «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
+>   Reason: one complete pass, one batch of fixes and a fresh pass is the cycle the owner's reviewer already runs.
+>   Carriers: `extensions/RQW-review/skills/reviewer/SKILL.md`, `blindreview/SKILL.md`, `highreview/SKILL.md`,
+>   [PROCESS.md, Independent review](PROCESS.md#independent-review). Since: the reviewer port; invocation updated by subagent-profiles.
+>
+
+## A-0370 · archived 2026-10-26 · Per-obligation CLEAN checklist · D-REVIEW-VERDICT
+
+Status: SUPERSEDED by `[D-PIPELINE-REVIEW-CLASSES]` and updated `[D-REVIEW-VERDICT]`: concise concrete evidence replaces the long checklist.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0370' -- DECISIONS-ARCHIVE.md`.
+
+> - **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by `CHECKED:`, or `FINDINGS:` with
+>   numbered `FINDING n` blocks (REQUIREMENT, MISMATCH, EVIDENCE, REQUIRED OUTCOME, each once) followed by `CHECKED:` and
+>   `UNCHECKED:` sections when they apply; both reviewer profiles carry the exact format. The common skill treats
+>   `CLEAN` with complete `CHECKED:` and no `UNCHECKED:` as acceptance. Missing evidence, malformed output or any
+>   `UNCHECKED:` is incomplete; a failed run is no acceptance. The text
+>   stays as the reviewer wrote it, a preamble included. Structure cannot prove coverage: Main still assesses every required
+>   obligation against `CHECKED:`. The result is delivered through the ordinary `agent#N` lifecycle.
+>   Carriers: `extensions/RQW-review/profiles/*.toml`, `skills/reviewer/SKILL.md`, RQW-agent. Since: subagent-profiles.
+>
+
+## A-0371 · archived 2026-10-26 · Canonical reviewer prompt without concise-evidence amendment · D-REVIEW-PROMPT
+
+Status: SUPERSEDED by updated `[D-REVIEW-PROMPT]` under `[D-PIPELINE-REVIEW-CLASSES]`; model defaults and finding format remain.
+Source: `796cbc0e615c3a7a455ea9fe9a957edea80ab44f:DECISIONS.md`, replaced entry verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0371' -- DECISIONS-ARCHIVE.md`.
+
+> - **Reviewer prompt** `[D-REVIEW-PROMPT]`. `extensions/RQW-review/profiles/spotty.toml` and `bossy.toml` embed identical
+>   `developer_instructions`. The main system prompt and subagent reminder precede that role, as approved in
+>   `[D-AGENT-PROFILES]`; it is no longer a whole-system override.
+>   Three changes, all harness differences: 1. the allowed tools are the `read`, `grep` and `find` tools and read-only
+>   `bash` commands (Codex: "read-only inspection tools and commands"); 2. one sentence names the sections of the brief
+>   supplied by the task and agent caller-message inclusion, `<user_messages>`, `<agreement>`, `<object>`, `<criterion>` and `<rejected_earlier>`; 3. the note
+>   that ends a truncated `read` result, such as `Use offset=N to continue`, is not file content (Codex: "the reader's
+>   continuation line"). Codex `fork_turns` has no counterpart: every pass is a fresh session from zero
+>   (`[D-REVIEW-PROFILES]`). The prompt has no rule about running tests, for or against, and no measured claim of quality is made.
+>   Owner (`16-27-59:5210`, `16-27-59:5219`):
+>   «reviewer должен делать полное review и находить все расхождения, а не по одному.»
+>   «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
+>   «Я бы хотел его минимально улучшить, минимально усилить и без замеров просто использовать его.»
+>   «Его промпт вообще никак не подвигает его к запуску тестов изначально. То, что ты придумал про запрет запуска тестов — это overengineering очевидный»
+>   Reason: the owner's reviewer works as written; the three changes only fit it to this harness.
+>   Carriers: `extensions/RQW-review/profiles/spotty.toml`, `bossy.toml`; the shared runtime appends their role
+>   without changing its text. No new review methodology or measured quality claim is introduced. Since: subagent-profiles.
+
+## A-0372 · archived 2026-10-26 · Sequential Bash accepted design · D-PIPELINE-QUEUE-RESET
+
+Status: SUPERSEDED by the design-approval-only Codex-level simplicity and parallelism direction in updated `[D-PIPELINE-QUEUE-RESET]`. Implementation requires explicit final-inventory confirmation.
+Source: `82980de4e0727d42f6c039fb29afb92cb7087ee6:DECISIONS.md` and `82980de4e0727d42f6c039fb29afb92cb7087ee6:BACKLOG.md`, replaced text verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0372' -- DECISIONS-ARCHIVE.md`.
+
+>   The initial `Да` at line 13441 also approves Main's RQW-tools proposal at line 13440, entry `4f06ef45`.
+
+> BACKLOG.md item 5, verbatim:
+> | 5 | SIMPLIFY-RQW-TOOLS: keep asynchronous jobs and notifications; serialize Bash with other Bash and new file writes, including codemode without self-deadlock. Keep read/grep/find and disjoint writes parallel. Remove speculative shell footprint/parser and git/pkg claims; keep withFileLock, writeConflict, multi-file edit/write and bounded Windows retry. Use actual snapshots for created/changed/deleted and honest unknowns. | QUEUED; no implementation branch. Preserve responsiveness; do not patch individual old shell cases. | Main proposal line 13440, entry `4f06ef45`, approved by owner `Да` at line 13441. |
+
+## A-0373 · archived 2026-10-26 · RQW-tools design-approval-only status · D-PIPELINE-QUEUE-RESET
+
+Status: SUPERSEDED by the owner's explicit final RQW-tools design and implementation queue item in updated `[D-PIPELINE-QUEUE-RESET]`.
+Source: `b51e171bed88b8022b49d640b6e3c693b138c0b6:DECISIONS.md` and `b51e171bed88b8022b49d640b6e3c693b138c0b6:BACKLOG.md`, replaced text verbatim.
+Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0373' -- DECISIONS-ARCHIVE.md`.
+
+>   Latest RQW-tools steering, same session, owner line 13573, entry `9f4eec6f`:
+>   «Я предлагаю сделать какую-то супер простую схему, но при этом чтобы всё работало параллельно, отдельно. Допустим, read и write чтобы работали параллельно, чтобы они могли друг с другом работать параллельно, чтобы можно было write и edit запускать одновременно, всякие там read, find, grep можно было запускать одновременно. Bash можно было и codemod запускать изолированно. Не знаю, правильно объяснил или нет. И мы выбрасываем все тяжёлые обвесы, которые у нас есть. Но перед тем, как их выбрасывать, ты мне их покажешь и объяснишь, почему мы их выбрасываем.»
+>   «Я не вижу смысла делать наш вариант строже, чем кодекс. Кодекс работает хорошо. Мы можем сделать вариант такой же, как кодекс по строгости. Нам главное, чтобы у нас был баланс параллелизма и простоты поддержки этой хуйни. Всё должно быть максимально просто сделано, максимально понятно, без миллиарда corner case, чтобы очень легко функционал закрывался на 100%.»
+>   Item 5 is design-approval only: Main must present the heavy-coordination removal inventory and tradeoffs before
+>   removal, and implementation needs the owner's explicit confirmation of that final inventory. The design direction
+>   is Codex-level simplicity and parallelism, not sequential Bash. No product simplification is approved yet. The earlier
+>   accepted sequential-design text is superseded and preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0372.
+> BACKLOG.md item 5, verbatim:
+> | 5 | SIMPLIFY-RQW-TOOLS: design approval first, then implementation only after the owner's explicit confirmation of the final inventory. The design direction is Codex-level simplicity and parallelism: read/write/edit/find/grep run in parallel; Bash and codemode run independently. Main must show and explain the heavy-coordination removal inventory and tradeoffs before any removal. No product simplification is approved; sequential Bash is not the accepted direction. | DESIGN APPROVAL; no implementation branch. Implementation is blocked until explicit final-inventory confirmation. | Owner line 13573, entry `9f4eec6f`, superseding the earlier sequential-Bash proposal. |

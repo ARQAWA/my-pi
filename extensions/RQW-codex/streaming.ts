@@ -1,5 +1,5 @@
 // Live Responses event pump and completed-item retry handoff. Independent of transport.ts (no import from it).
-// Native evidence (codex-rs pinned at rust-v0.163.0, evidence tree my-pi-evidence/codex-parity/codex-rs):
+// Native source (codex-rs pinned at rust-v0.163.0):
 // - core/src/session/turn.rs:2801-2906: a tool future is queued only at ResponseEvent::OutputItemDone (push_back at 2905);
 //   OutputItemAdded (2934) starts no tool, so an unfinished call never runs.
 // - turn.rs:2769-2785: a stream error breaks the sampling loop with that error; turn.rs:3280-3288 drains the in-flight
@@ -22,7 +22,8 @@ import type {
 } from "@earendil-works/pi-ai";
 
 import { CodexError, classifyEvent, normalizeUsage, type CodexUsage } from "./errors.ts";
-import { processResponsesStream, type OpenAIResponsesStreamOptions } from "./display.mjs";
+import type { OpenAIResponsesStreamOptions } from "@earendil-works/pi-ai/api/openai-responses-shared";
+import { processResponsesStream } from "./display.mjs";
 import { CODEX_RETRY_OWNED_DIAGNOSTIC } from "./retry.ts";
 
 /** Bounded live queue between the upstream producer and the Pi display parser. */
@@ -608,7 +609,7 @@ export class LiveResponsesPump {
 		const open = [...attempt.open].sort((a, b) => a[0] - b[0]);
 		attempt.open.clear();
 		for (const [contentIndex, kind] of open) {
-			const block = this.#output.content[contentIndex] as Record<string, unknown> | undefined;
+			const block = this.#output.content[contentIndex] as unknown as Record<string, unknown> | undefined;
 			this.#dropped.add(contentIndex);
 			if (kind === "text") {
 				this.#stream.push({ type: "text_end", contentIndex, content: String(block?.text ?? ""), partial: this.#output });

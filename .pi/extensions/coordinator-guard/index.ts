@@ -4,13 +4,11 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractOwnerMessages, findNonVerbatimQuotes } from "../../../scripts/owner-quotes.mjs";
 import { acquireLock, LOCK_NAME, processStart, releaseLock } from "./lock.ts";
 import { canonical, gitCommonDir, isInside, protectedRoots, resolveToolPath } from "./paths.ts";
 import { describePairs, describeReviewerProfiles, isAllowed, loadRules, restrictionText, type Loaded, type Rules } from "./rules.ts";
 
 const LINK = "PROCESS.md#subagent-models";
-const QUOTED_FIELDS = ["task", "role", "system"] as const;
 const SECTION = "coordinator_rules";
 const NOTE_SECTION = "coordinator_note";
 // Pi builds a new instance of this extension (and may load the module afresh) on /new, /resume, /fork and /reload,
@@ -50,28 +48,13 @@ export function promptSection(loaded: Loaded, processFile: string, now: number =
 		`- Every executor start or restart by Main names model and thinking explicitly, only one of these pairs: ${describePairs(rules, now)} (${LINK}).`,
 		`- Reviewer-profile starts and restarts instead use the exact pair for their agent_type: ${describeReviewerProfiles(rules)}. Existing agents keep their model through send/resume and are not restarted merely to switch models.`,
 		...(temporary ? [`- ${temporary}`] : []),
-		"- Text inside guillemets in a brief must be one exact contiguous span of one owner message: no inserted omissions, cuts or paraphrase; only Unicode NFC and whitespace runs are normalised. Other text goes outside guillemets. Briefs that break this are blocked.",
 	].join("\n");
 }
 
 /** The short system note of a session that is not the coordinator: the coordinator rules do not bind it. */
 export function directNote(holderPid: number | undefined): string {
 	const who = holderPid === undefined ? "Another Pi session" : `Another Pi session (pid ${holderPid})`;
-	return `${who} holds the coordinator lock of this repository, so this session is a normal direct agent and stays one for its whole life. The coordinator rules of AGENTS.md and PROCESS.md (delegate all work to subagents, allowed model pairs, no direct edits, owner-quote checks) do not apply here: work with your own tools as the user asks.`;
-}
-
-function quoteProblem(input: Record<string, unknown>, ctx: ExtensionContext): string | undefined {
-	const owner = extractOwnerMessages(ctx.sessionManager.getEntries());
-	for (const field of QUOTED_FIELDS) {
-		const text = input[field];
-		if (typeof text !== "string") continue;
-		const bad = findNonVerbatimQuotes(text, owner);
-		if (bad.length) {
-			const list = bad.map((s: { text: string }) => `«${s.text}»`).join(", ");
-			return `quote in ${field} is not the owner's exact words: ${list}. Copy one exact contiguous span of one of his messages, or drop the guillemets.`;
-		}
-	}
-	return undefined;
+	return `${who} holds the coordinator lock of this repository, so this session is a normal direct agent and stays one for its whole life. The coordinator rules of AGENTS.md and PROCESS.md (delegate all work to subagents, allowed model pairs, no direct edits) do not apply here: work with your own tools as the user asks.`;
 }
 
 /** A restart inherits its profile from the latest persisted child record when agent_type is omitted. */
@@ -119,6 +102,7 @@ export function createCoordinatorGuard(options: GuardOptions) {
 		const common = gitCommonDir(root);
 		// The lock is macOS only; elsewhere there is no lock and the guard works as it did before it.
 		const lockFile = common && process.platform === "darwin" ? join(common, LOCK_NAME) : undefined;
+		// @ts-expect-error TS7 misreads this cached nullable process start as always nullish.
 		const self = () => ({ pid: process.pid, start: (shared().start ??= processStart(process.pid) ?? null) ?? undefined });
 
 		pi.on("session_start", (event, ctx) => {
@@ -188,9 +172,6 @@ export function createCoordinatorGuard(options: GuardOptions) {
 			if (name !== "agent") return undefined;
 			const action = input.action ?? "start";
 			const starts = action === "start" || action === "restart";
-			if (!starts && action !== "send") return undefined;
-			const problem = quoteProblem(input, ctx);
-			if (problem) return { block: true, reason: `coordinator-guard: ${problem}` };
 			if (!starts) return undefined;
 
 			const loaded = loadRules(processFile);

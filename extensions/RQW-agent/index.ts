@@ -245,15 +245,25 @@ function lastNumber(entries: readonly SessionEntry[], name: string): number {
 
 /**
  * Channel on `pi.events` where RQW-tools, when it is loaded, offers its tools for subagents: a request
- * `{ offer(factory) }` gets a factory of fresh definitions with a barrier of their own. Nothing here imports RQW-tools.
+ * `{ offer(factory) }` gets a factory of fresh definitions. Nothing here imports RQW-tools.
  */
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
 /**
- * `options.label` names the child in RQW-tools' notes of other sessions ("changed by agent#1/agent#2"); optional.
- * `options.codemode`: the child's own Pi `codemode` definition; the factory returns it as a call of the child's barrier
- * and a job of its registry (a factory that does not return it leaves the child Pi's definition as it is).
+ * `options.codemode`: the child's own Pi `codemode` definition, returned with background-job support.
  */
-type ToolsFactory = (cwd: string, settings: () => unknown, nested?: undefined, options?: { label?: string; codemode?: ToolDefinition; notify?: (notification: JobNotification) => void; retain?: () => () => void }) => ToolDefinition[];
+type ToolsFactory = (cwd: string, settings: () => unknown, options?: { codemode?: ToolDefinition; notify?: (notification: JobNotification) => void; retain?: () => () => void }) => ToolDefinition[];
+
+type ExtensionFactory = (child: ExtensionAPI) => void;
+const SUBAGENT_EXTENSION_FACTORIES = "rqw-agent:subagent-extension-factories";
+
+/** Inline extensions explicitly offered for each child, without enabling resource discovery. */
+export function collectExtensionFactories(events: ExtensionAPI["events"]): ExtensionFactory[] {
+	const factories = new Set<ExtensionFactory>();
+	events.emit(SUBAGENT_EXTENSION_FACTORIES, {
+		offer: (factory: ExtensionFactory) => { if (typeof factory === "function") factories.add(factory); },
+	});
+	return [...factories];
+}
 
 type WebRegistrar = (child: ExtensionAPI) => void;
 
@@ -549,8 +559,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	 * offered set) and, when it has `codemode`, that one as a call of its barrier. Without a returned `codemode`, Pi's
 	 * own definition of the child stays.
 	 */
-	function offeredTools(factory: ToolsFactory, cwd: string, names: string[], label: string, codemode?: ToolDefinition, bridge?: NotificationBridge): ToolDefinition[] {
-		const tools = factory(cwd, () => pi.getSettings(), undefined, { label, ...(codemode ? { codemode } : {}), ...(bridge ? {
+	function offeredTools(factory: ToolsFactory, cwd: string, names: string[], codemode?: ToolDefinition, bridge?: NotificationBridge): ToolDefinition[] {
+		const tools = factory(cwd, () => pi.getSettings(), { ...(codemode ? { codemode } : {}), ...(bridge ? {
 			notify: (n: JobNotification) => bridge.deliver({ customType: "job", content: `[job] ${n.text}`, display: true, details: { delivery: n.id, ...n.details } }),
 			retain: () => bridge.retain(),
 		} : {}) })
@@ -745,7 +755,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const builtins = config.builtins ?? BUILTIN_TOOLS.filter(name => active.has(name));
 		const settingsManager = SettingsManager.inMemory(config.settings ?? childSettings(pi.getSettings()));
 		settingsManager.setProjectTrusted(ctx.isProjectTrusted());
-		// With RQW-tools, the child's codemode is its barrier's and job registry's, like the main session's: Pi's own
+		// With RQW-tools, the child's codemode uses its job registry, like the main session's: Pi's own
 		// definition built from the child's API, handed to the factory instead of being registered as it is. Without an
 		// offer it is registered exactly as Pi's built-in factory does. The offer is asked for at that point of the reload
 		// when the child has codemode, otherwise right after it.
@@ -758,6 +768,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (factory) createCodemodeExtension()(Object.assign(Object.create(sub), { registerTool: (d: ToolDefinition) => void (codemode = d) }));
 			else createCodemodeExtension()(sub);
 		};
+		const childExtensions = collectExtensionFactories(toolEvents);
 		const resourceLoader = new DefaultResourceLoader({
 			cwd, agentDir: getAgentDir(), settingsManager,
 			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
@@ -784,6 +795,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					children = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost);
 					web?.(sub);
 				},
+				...childExtensions,
 			],
 		});
 		// Reload can create a nested caller; failure or cancellation ends its lifetime too.
@@ -792,7 +804,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		try {
 			await untilAborted(resourceLoader.reload(), signal);
 			if (!builtins.includes("codemode")) factory = offeredFactory();
-			const customTools = factory ? offeredTools(factory, cwd, config.tools, label, codemode, bridge) : [];
+			const customTools = factory ? offeredTools(factory, cwd, config.tools, codemode, bridge) : [];
 			const jobTool = customTools.find((d) => d.name === "job") as (ToolDefinition & { jobs?: JobControl }) | undefined;
 			jobs = jobTool?.jobs;
 			signal.throwIfAborted();
@@ -899,7 +911,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
 			const m = event.message;
 			if (m.stopReason !== "toolUse") a.progress.invalidate();
-			else a.progress.response(m, m.thinkingLevel);
+			else a.progress.response(m, m.thinkingLevel as Parameters<ProgressReports["response"]>[1]);
 			recordRunMessage(meta, m);
 			lastPushed = 0;
 			if (m.stopReason === "error") {
@@ -1171,7 +1183,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					signal.throwIfAborted();
 					await hydrate(ctx, signal);
 					const ids = targetIds(params.ids), timeout = waitTimeout(params.timeout_ms);
-					const options = { until: params.until, wake_on_alert: params.wake_on_alert };
+					const options = { until: params.until as "first" | "all" | undefined, wake_on_alert: params.wake_on_alert };
 					const blocking = toolCallId.includes("/") || (!backgroundCaller && (ctx.mode === "print" || ctx.mode === "json"));
 					return { waiting: blocking ? coordinator.wait(ids, timeout, signal, toolCallId, options)
 						: coordinator.notificationWait(ids, timeout, signal, toolCallId, options) };
@@ -1258,7 +1270,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				}
 				await startRun(a, params.task, signal, false, true);
 				signal.throwIfAborted();
-				a.guard.signal = a.run?.controller.signal;
+				a.guard.signal = (a.run as unknown as Agent["run"])?.controller.signal;
 				return ok(`${name}#${a.id}: sent`);
 			}
 			case "interrupt": {

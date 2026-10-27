@@ -40,9 +40,7 @@ The theme is distributed separately through `pi.themes`, not as an extension.
 - Pi's fallback formatting (a call without `renderCall`, a result without `renderResult` or whose renderer throws, or
   a tool without a definition, such as an unavailable tool in stored session history) is not exported by Pi, so
   `fallback.ts` holds a small copy of it, approved by the owner, pinned to Pi 1.4.0 with its sources cited in
-  its header. Maintenance: on a Pi upgrade, `test/extensions/RQW-tool-ui/original.test.ts` fails on the version pin; compare `fallback.ts`
-  with the cited Pi sources, update it and the pin. The same test compares every case with Pi's own
-  `ToolExecutionComponent.render()` (whole rows, colours included), so a drift in the shell shows there too.
+  its header. Maintenance: on a Pi upgrade, compare `fallback.ts` with the cited Pi sources and update the pin.
 - The original renderers are called where Pi calls this row's renderers: their call side from the start of execution
   (so the bash clock starts when Pi's would), their result side from the first expansion on, and from then on with
   every result, folded or not. A final or failed result therefore reaches them and they stop what they started
@@ -105,19 +103,12 @@ profiles and skills for the ordinary `agent` runtime.
   arguments still stream, else the latest started call while one runs, else the next queued call; a call that has
   its saved result counts only through what Pi saved, so a reload gives the same current call.
   Once the parent has its result, Pi's saved nested record determines membership, status and arguments, in the
-  stream as after a reload. Matching compact RQW-tools metadata adds confirmed edit counts and bash exit codes
-  (see below); a call left `unfinished` stays unconfirmed even with metadata (no success, failure or counts).
+  stream as after a reload. A call left `unfinished` stays unconfirmed.
   A nested call's failure and a write's lines (from saved arguments) still count. A failed outer codemode keeps its
   error output and status in the current card even when nested calls succeeded. Its failure remains in the folded
   summary, without an extra parent tool count or recounting a propagated nested failure. Nested details and expanded
   originals are unchanged.
-- `test/extensions/RQW-tool-ui/harness.ts`: width sweep (`assertFits`, 0..160 columns), wide and styled samples, identity and colored theme
-  painters, fixed clock. `test/extensions/RQW-tool-ui/transcript.ts`: saved messages in a public in-memory session and Pi's render context.
-- Tests: `test/extensions/RQW-tool-ui/render.test.ts` (the renderers), `test/extensions/RQW-tool-ui/original.test.ts` (the expanded original against Pi's own
-  component, the fallbacks and the bash timer), `test/extensions/RQW-tool-ui/host.test.ts` (a transcript of Pi's exported assistant and tool
-  components), `test/extensions/RQW-tool-ui/lifecycle.test.ts` (package filter and `/reload`, non-TUI modes, session switch); the terminal smoke
-  of the real Pi TUI at 80 columns is `test/tool-ui-smoke.test.ts` and, on a Mac, `python3 test/tool-ui-smoke.py`
-  at the repository root.
+- Tests: run `node --test test/extensions/RQW-tool-ui/render.test.ts`.
 
 ## On and off
 
@@ -132,50 +123,4 @@ Public Pi extension and TUI APIs only: no fork or edit of Pi, no replacing or wr
 fields, no deep imports. A feature that cannot be built that way is dropped and named as dropped. The one copy of Pi
 code is the expanded fallback formatting in `fallback.ts` (above), with the owner's approval.
 
-### Nested result metadata and remaining limits
-
-RQW-tools supplies the approved workaround without patching Pi. A completed nested edit or bash result gets compact
-public `details.rqwToolsNestedCall` metadata: `version: 1`, `tool: "edit"` and
-`files: [{path, ok, outcome?, added?, removed?}]`, or `tool: "bash"` and `exitCode`. Edit counts come only from actual
-confirmed result diffs or patches, including per-file outcomes; no requested replacement text, output or diffs are
-copied into the metadata. The completed codemode parent retains `details.rqwToolsNested` with
-`{version: 1, calls: [{id, ...marker}]}`, bounded to 256 records. No settings or registration are changed.
-
-`groups.ts` consumes only version-1 markers matching the tool and exact Pi nested call ID. Before the parent finishes,
-completed events supply their individual marker; afterwards the saved parent record wins, including after reload.
-Only calls Pi records as completed are enriched. The extensions exchange public result data, not cross-folder imports;
-without RQW-tools metadata the previous Pi-only behavior remains.
-
-Pi 1.4.0's own `nestedCalls` record still controls membership, status, duration, error and saved arguments. It keeps at
-most 256 calls, arguments up to 8 KiB per call and 32 KiB per parent, and no nested results or details itself. Metadata
-does not restore calls Pi omitted or omitted arguments such as commands, search patterns or write content. An edit
-marker can supply its confirmed file paths even if Pi omitted arguments; a write's line count still depends on saved
-arguments. Calls outside RQW-tools, missing markers and old history have no additional edit counts or bash exit codes.
-
-At the 12-second background handoff, nested calls already completed retain their confirmed compact metadata in
-`details.rqwToolsNested`. Calls Pi records as `unfinished` remain unconfirmed: no success, failure or counts are claimed
-for them. After the real job finishes, its compact parent metadata is available in job wait
-`details.results[].details.rqwToolsNested`; it is not duplicated into the model-facing job text. This consumer does not
-use that later result to retrospectively confirm unfinished calls in the old codemode handoff.
-
 RQW-tool-ui is registered in `package.json` `pi.extensions`, after RQW-agent-ui.
-
-<!-- repo-index:start -->
-## File map
-
-Generated by `node scripts/repo-index.mjs --write` from the repository root.
-
-| File | Responsibility |
-| --- | --- |
-| [`README.md`](README.md) | Hand-written contract and generated file map |
-| [`changes.ts`](changes.ts) | Tool change summary extraction |
-| [`classify.ts`](classify.ts) | Tool call classification |
-| [`fallback.ts`](fallback.ts) | Stock output rendering fallback |
-| [`groups.ts`](groups.ts) | Tool call grouping |
-| [`index.ts`](index.ts) | Pi extension entrypoint: Compact tool calls and output rendering |
-| [`live.ts`](live.ts) | Live tool output state |
-| [`render.ts`](render.ts) | Terminal row and component rendering |
-| [`summary.ts`](summary.ts) | Collapsed tool summaries |
-
-Tests: [`test/extensions/RQW-tool-ui/`](../../test/extensions/RQW-tool-ui/).
-<!-- repo-index:end -->

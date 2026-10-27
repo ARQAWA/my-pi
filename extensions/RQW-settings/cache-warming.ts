@@ -9,8 +9,8 @@ const INNER = Symbol.for("rqw:method-inner");
 /** Owner token of a layer; an owner removes only its own layers and never another owner's. */
 const OWNER = Symbol.for("rqw:method-owner");
 type Cleanup = () => void;
-type Fn = (this: unknown, ...args: unknown[]) => unknown;
-type Link = Fn & Record<symbol, unknown>;
+type Fn = (this: AgentSession, ...args: unknown[]) => unknown;
+type Link = Fn & { [INNER]?: unknown; [OWNER]?: unknown };
 type Chain = { stock: PropertyDescriptor; owners: Set<object> };
 type State = {
 	registrations: number;

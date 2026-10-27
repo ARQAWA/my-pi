@@ -4,7 +4,9 @@
 // resolver in Pi's tool box (or Pi's fallback formatting, reproduced in fallback.ts), from public pi-tui components.
 // Once a call has been expanded its original renderers keep receiving every update, so they finish what they start.
 // State comes from public events and the session manager only; no timers of its own, nothing outside the TUI.
-import type { ReadonlySessionManager, SessionEntry, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, SessionEntry, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
+
+type ReadonlySessionManager = ExtensionContext["sessionManager"];
 import { Box, type Component, Container, Text } from "@earendil-works/pi-tui";
 import { type ChangeClassified, classifyChange } from "./changes.ts";
 import { type CallResult, type Classified, classify, record } from "./classify.ts";

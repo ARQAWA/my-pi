@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { CredentialStore, OAuthCredential } from "@earendil-works/pi-ai";
+import type { CredentialStore, OAuthCredential, OAuthSelectPrompt } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { getAgentDir, VERSION, type ExtensionAPI, type ModelRuntime, type ProviderConfig } from "@earendil-works/pi-coding-agent";
 import { LOGIN_HELP, refreshCredential, validateCredential } from "./auth.ts";
@@ -84,7 +84,7 @@ export default function anthropic(pi: ExtensionAPI) {
 								else if (event.type === "progress" || event.type === "info") callbacks.onProgress?.(event.message);
 							},
 							prompt(prompt) {
-								if (prompt.type === "select" && callbacks.onSelect) return callbacks.onSelect(prompt);
+								if (prompt.type === "select" && callbacks.onSelect) return callbacks.onSelect(prompt as unknown as OAuthSelectPrompt) as Promise<string>;
 								if (prompt.type === "manual_code" && callbacks.onManualCodeInput) return callbacks.onManualCodeInput();
 								return callbacks.onPrompt({ message: prompt.message, placeholder: "placeholder" in prompt ? prompt.placeholder : undefined });
 							},

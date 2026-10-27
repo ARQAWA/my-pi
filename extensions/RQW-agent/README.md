@@ -7,12 +7,17 @@ recursively and without a depth limit. This extension imports no other RQW exten
 When RQW-web is loaded, its optional `rqw-search:subagent-web` registration offer also supplies `web` to every child,
 including nested agents. Each call uses that child's model and thinking; no import reaches RQW-web.
 
+Any extension can explicitly offer inline child factories on `rqw-agent:subagent-extension-factories` with
+`{ offer(factory) }`. Before each child loader reload, RQW-agent collects and deduplicates those factories and appends
+them to `DefaultResourceLoader.extensionFactories`. Each runs with the child's own `ExtensionAPI` and can reoffer itself
+for nested children on the same channel. `noExtensions: true` stays unchanged; no project or package resources are loaded.
+
 ## Prompt and title
 
 - Default prompt: the main agent's system prompt as Pi built it for the main run (RQW-prompt's text, project context
   such as AGENTS.md, skills and `<cwd>` when they are loaded), read through the public `ctx.getSystemPrompt()` of Pi
   1.4.0, then a short subagent reminder (`SUBAGENT_REMINDER` in [prompt.ts](prompt.ts): it is a subagent, its answer
-  goes to its caller, instructions addressed to the main agent or a coordinator do not apply to it), then the optional
+  goes to its caller, instructions addressed to the main agent do not apply to it), then the optional
   `role` as `<role>...</role>`. A nested subagent gets the same main prompt (handed down, never its caller's prompt,
   so nothing repeats). `system` stays the whole-prompt override: exactly that text, as before. `system` and `role` in
   one call are an error; on `restart` a new one replaces the old choice, otherwise the old choice is kept. The prompt is
@@ -23,7 +28,7 @@ including nested agents. Each call uses that child's model and thinking; no impo
   cards: collapsed waits are tool-ui's when it is loaded, Ctrl+O shows agent-ui's expanded wait cards. The delivered content keeps its `[agent#N] ...` format.
 - The `agent` description carries only generic when/when-not advice adapted from Cursor (not for narrow questions,
   one or two known files or a single search; parallel starts for independent areas; full context and the exact
-  return; trust the result; the user does not see it), no coordinator rules.
+  return; trust the result; the user does not see it), no project-specific execution rules.
 
 ## Codex profiles
 
@@ -100,9 +105,6 @@ re-reads and validates the selected profile before closing the old child; failed
 The profile path and SHA identify the bytes loaded for that child, not the latest file contents. Status and
 message `details.profile` expose the same provenance; waits expose it under `results[i].display.profile`.
 
-Proof: `test/extensions/RQW-agent/profiles.test.ts` covers TOML discovery, layers, metadata and invalid files; `test/extensions/RQW-agent/profile-runtime.test.ts`
-covers actual child configuration, explicit overrides, prompt composition, restart, resume and result provenance.
-
 RQW-review is one optional provider: it offers `spotty` and `bossy` and discovers native review skills.
 Each reviewer is an ordinary recursive agent; read-only is its role instruction, not tool filtering, a git guard
 or a sandbox. Its role forbids spawning agents even though the shared runtime exposes `agent`.
@@ -128,22 +130,15 @@ Text parts are joined with newlines; images and non-user messages are omitted. A
 session's messages, not the root session's. The block is not prefixed to the task, and inclusion is not inherited on
 restart. Without a task, restart remains idle.
 
-Proof: `test/extensions/RQW-agent/prompt-files.test.ts` covers exact system/role text and byte hashes, push/wait provenance,
-file re-reading and failed replacement, caller-branch inclusion and nested callers.
-
 ## Child tools and settings
 
 - `codemode` and `tool_search`: a child gets Pi's own built-in definitions
   (`createCodemodeExtension`, `createToolSearchExtension`) when its caller has them active, as main has them through
   RQW-settings. With an RQW-tools offer, the child's codemode is Pi's definition built from the child's own API and
-  passed to the factory as `options.codemode`; the factory returns it as one call of the child's barrier and a job of
-  the child's registry (after 12 s it goes to the background as a whole script, like main's), and its scripts share
-  the process's codemode execution slots with main and every other child. Without an offer it is registered exactly as
+  passed to the factory as `options.codemode`; the factory returns it with a job of
+  the child's registry (after 12 s it goes to the background as a whole script, like main's). Without an offer it is registered exactly as
   Pi's built-in factory does. The offer is asked for during the child's loader reload when it has codemode, otherwise
   right after the reload.
-- Labels: the factory's `options.label` is the child's path from the main session (`agent#1`, `agent#1/agent#1`,
-  including ordinary reviewer agents); it is shown only in RQW-tools' notes of other
-  sessions. The ids the model sees stay `agent#N`, and each registry keeps its own unique owner.
 - Profiles: nested callers use the same profile discovery and `agent_type` selection as main. RQW-review offers
   role files through `rqw-agent:profiles`, not another tool or child runtime.
 - Settings: every child's in-memory `SettingsManager` copies the caller's effective `shellPath`, `shellCommandPrefix`,
@@ -154,25 +149,9 @@ file re-reading and failed replacement, caller-branch inclusion and nested calle
   tools. `cacheWarming` stays off. Not copied: UI and terminal settings, default model/thinking and enabled models
   (the child's model is explicit), default tools (explicit allowlist), packages, extensions, skills, prompts and themes
   (children load no resources), branch summaries (no tree navigation), session storage, sharing and telemetry.
-- `job`: an offered set always includes RQW-tools' `job` tool (background jobs of the child's own calls), which the
-  child gets in addition to its base tools; its definition carries `jobs.abortAll()`, called on `interrupt`, and
-  `jobs.dispose()`, called when the child is closed (`stop`, `restart`, caller shutdown). Background jobs of a child survive its
-  caller's Esc and new owner messages; the child's management `interrupt`, `stop`, `restart` and shutdown end them.
-  The factory's `options` also carry two optional hooks for notification waits: `notify?: (n: { id, text, details }) => void`
-  delivers a finished job wait into the child's session, and `retain?: () => () => void` is acquired only while a
-  notification subscription is pending and released after its handoff or cancel, so the child's logical assignment stays
-  pending without a result. Both are optional: without them `job wait` blocks as before, and nothing here imports another
-  extension. Reviewer profiles use this same bridge and notification behavior. The factory call passes
-  `{ label: "agent#1" }` (or a nested agent path) as its optional fourth argument, so RQW-tools names the child in
-  other sessions' notes and holds. Rule: [DECISIONS.md, Tools](../../DECISIONS.md#tools). `jobs.abortAll()` kills only
-  jobs that can be killed (shell and other process jobs, and queued ones); a running file-tool job finishes on its own
-  and `job kill` answers `cannot_kill` for it. This is an approved design caveat, not a defect. The same resource
-  and effects contract applies to child jobs: bounded walks report scan errors, subshell cwd changes stay scoped,
-  and `symbolic-ref` and `reflog` writes hold the repository. Deletions are reported since the start, by comparing
-  the exact pre-start and end states.
+- `job`: an offered set includes RQW-tools' `job` tool and a child-local registry. `jobs.abortAll()` runs on interrupt and `jobs.dispose()` on close. Background jobs survive the caller's Esc and new messages; child interrupt, stop, restart and shutdown end them. Optional `notify` and `retain` hooks bridge notification waits into the child's session. Without them `job wait` blocks. A running file-tool call finishes on its own.
 
-Proof: `test/extensions/RQW-agent/agent.test.ts` ("subagent parity" and the default-prompt, role and error tests),
-`test/extensions/RQW-agent/cli.test.ts`. Decision: [DECISIONS.md, Agent](../../DECISIONS.md#agent).
+Decision: [DECISIONS.md, Agent](../../DECISIONS.md#agent).
 
 ## Recursive lifecycle
 
@@ -198,11 +177,9 @@ and discard their late results. `interrupt` aborts pending descendants and drops
 runtimes; a later `send` can start fresh agents in the same subagent. Queued/preflight calls are canceled too, and
 issued ids stay reserved.
 
-Session state and delivery remain caller-local. The ordered edit/check barrier is available when RQW-tools is loaded.
+Session state and delivery remain caller-local.
 There is no child-specific execution, turn, token, output-growth or wall-clock limit; provider limits and explicit
 management cancellation still apply. Wait timeout limits the caller's pause, never the child's lifetime.
-
-Proof: `test/extensions/RQW-agent/agent.test.ts`, `test/extensions/RQW-agent/nested-agents.test.ts` and `test/extensions/RQW-agent/cli.test.ts`.
 
 ## Background progress notifications
 
@@ -260,13 +237,6 @@ it can be delivered before a final answer, never after it. Compaction and model 
 but preserve the counter. Later qualifying responses reach the next 50-step boundary normally. Ongoing ordinary
 turns do not invalidate an in-flight report. Provider failures and stale results never change final-result ownership.
 
-Deterministic proof: `test/extensions/RQW-agent/progress.test.ts`, `progress-runtime.test.ts`, and the progress cases
-in `resume.test.ts` cover counting before long tools finish, cache-prefix preservation, fixed wording and actual skill
-discovery, no child pause or transcript write, send and terminal races, compaction and model changes, concurrent
-children, direct-parent-only recursion, provider error/timeout/no-offer behavior, parent busy/idle/wait/abort settlement,
-stale queued notices, final ownership and persisted counters across restart/resume. These tests use faux providers,
-not live subscription transports.
-
 ## GPT Fast
 
 A child agent inherits its caller's GPT Fast state when it starts; a nested child
@@ -277,8 +247,7 @@ without it children stay on the standard tier. The optional boolean `fast_gpt` i
 `fast_gpt`, `send` keeps the child's state and `restart` carries the old state over; the child's own agents follow its
 state. `fast-gpt.ts` sets `service_tier: "priority"` on the child's openai-codex requests
 through `before_provider_request`; Anthropic requests are untouched. Default, rule and quotes:
-[DECISIONS.md, Settings](../../DECISIONS.md#settings). Proof: `test/extensions/RQW-agent/fast-gpt.test.ts` covers `start`, `send` and
-`restart` of `agent`.
+[DECISIONS.md, Settings](../../DECISIONS.md#settings).
 
 ## Wait, status and management
 
@@ -333,7 +302,7 @@ The tool returns text JSON mirrored in `details` (no outputSchema): `reason`, `t
 `statuses`; `target_changed` also identifies the old run/change. `timeout` returns every selected status without consuming
 a future result. `idle` returns immediately if no selected run/result exists. Unknown/closed IDs are explicit status
 errors. Interrupt/stop/restart wake old waits; they never silently follow replacements. Management registration is
-ordered, but the wait Promise holds neither that queue nor the optional RQW-tools barrier.
+ordered, but the wait Promise does not hold that queue.
 
 Results have caller-local ID, epoch/run identity and a UUID delivery. A broker reserves a result for one waiter or
 commits it to the usual push message. Repeated/competing waits receive receipts (`delivered_via`, `claimed_by`), not
@@ -403,8 +372,7 @@ not restore operating-system processes.
 Child Anthropic Messages requests carry the built-in `cacheRetention: "short"` policy (5m), independently of
 RQW-anthropic and user config. Cache markers stay enabled; background warming is off. The existing stream guard
 applies the option before RQW-anthropic can supply its generic OAuth 1h fallback. Other APIs are unchanged.
-Policy, approval and measurements: [DECISIONS.md, Agent](../../DECISIONS.md#agent),
-[prompt cache policy](../../notes/prompt-cache-policy.md). Package wire proof: `test/prompt-cache.test.ts`.
+Policy and approval: [DECISIONS.md, Agent](../../DECISIONS.md#agent).
 
 ## Cancellation and replacement
 
@@ -502,36 +470,11 @@ synchronously without fsync: this is restart recovery, not a power-loss or exter
 Operating-system jobs are not restored after the Pi process ends. Disabling RQW-agent leaves the saved files intact;
 RQW-session independently removes the exact owned child tree with the confirmed parent `/remove` command.
 
-Proof: `test/extensions/RQW-agent/persistence.test.ts` and the persistence integration tests plus session cleanup tests use temporary
-directories and real Pi SDK sessions with faux providers. No owner session is used or deleted.
-
 ## Offline proof
 
-All tests use real Pi 1.4.0 SDK sessions or its actual CLI with faux providers. No real models, credentials or network
-are required. Use Node 22.19.0 or the current Node runtime from the repository root:
+Tests: `test/extensions/RQW-agent/unit.test.ts`.
 
-```sh
-node --import ./test/no-network.mjs --test --test-concurrency=1 test/extensions/RQW-agent/*.test.ts test/agent-tools.test.ts
-RQW_AGENT_BUN=1 node --import ./test/no-network.mjs --test test/extensions/RQW-agent/cli.test.ts
-```
-
-The second command requires an installed Bun. CLI children use a temporary HOME and agent directory, an allowlisted
-environment, offline flags and the same transport-denying preload before Pi loads. They cover normal text/JSON/RPC,
-main cancellation during text/JSON waiting, late-after-abort RPC, and actual builtin codemode nested ids. The CLI faux
-provider asserts that an empty base-tool subset declares exactly `agent` (plus `codemode` in the
-scenario where main has it active), matching [Recursive lifecycle](#recursive-lifecycle).
-`test/extensions/RQW-agent/coordinator.test.ts` covers broker races, handoff, caller-chosen deadlines, implicit fallback and explicit-wait
-priority with virtual time. `test/extensions/RQW-agent/activity.test.ts` covers live diagnostics, usage, trimming and argument growth.
-`test/extensions/RQW-agent/supervision-activity.test.ts` and `test/extensions/RQW-agent/supervision-coordinator.test.ts` cover alert detection and timer cleanup,
-fresh-alert wakeups, all-target result holds and release. `test/extensions/RQW-agent/supervision.test.ts` covers the native SDK integration.
-`test/extensions/RQW-agent/wait.test.ts` uses real sessions for multi-agent waits, retention, history, cancellation-pending tools and hook failure.
-CLI scenarios cover direct/nested waits, recursive agents, codemode handoff and outer error/timeout/abort; the same focused
-CLI file runs under Bun in CI. SDK regressions cover auth/queue/loader/factory/creation/preflight cancellation, failed replacement, unrecovered
-length/summary failure, safe ids, reload, shutdown and TUI/RPC late-after-abort. Coverage also includes successful retry,
-compaction, settings inheritance, exact system prompt and optional-tools integration.
-
-SDK TUI-mode Esc proof exercises `clearQueue()` plus `abort()`, not a keyboard/renderer test. Native Windows/Linux and
-real provider transports are not exercised by a local macOS run. Pi's separate compaction summarizer retains Pi's own
+Native Windows/Linux and real provider transports are not exercised by a local macOS run. Pi's separate compaction summarizer retains Pi's own
 system prompt; exact caller `system` applies to task requests. Bare SDK `session.dispose()` does not emit lifecycle
 shutdown: hosts must emit `session_shutdown` or use Pi's runtime lifecycle. Persisted parents keep child histories
 and local ids across restart; in-memory parents do not. Accepted process-sharing limits are unchanged.
@@ -548,8 +491,7 @@ an `error:` prefix, does not mark a run as failed. Quiet cancellation still supp
 For wait, the same metadata is at `result.details.results[i].display`. The existing result item's
 `outcome` remains `completed`/`error`, and the entire original wait `content` is unchanged. Consumers
 must read display metadata from details, not parse it from the model-visible JSON text. A receipt is
-not another delivered answer and adds no duplicate tool-use count. Proof: `test/extensions/RQW-agent/ui-metadata.test.ts`;
-metadata fixtures use `withAgents`.
+not another delivered answer and adds no duplicate tool-use count.
 
 <a id="contract-for-p6"></a>
 
@@ -588,35 +530,9 @@ runtime ownership tree, so a waiting parent and its active descendant each count
 results count zero; genuinely idle or AFK agents with no pending assignment do not linger.
 Reviewer profiles count as ordinary agents; the compatibility `reviews` field is zero for this producer.
 This extension adds no timer, card or second child registry.
-Proof: `test/extensions/RQW-agent/counts.test.ts`; full extension isolation remains `test/isolation.test.ts` in CI.
-
-Provenance: the original event-source contract comes from a coordinator proposal, not an owner quotation.
 The waiting categories and idle distinction follow [D-STATUSBAR-WAITS](../../DECISIONS.md#status-bar).
 Reason: expose real background activity without coupling independently switchable extensions or changing
 execution/delivery. Carriers: `activity.ts`, `index.ts`, `coordinator.ts` and `counts.ts`.
 Public Pi 1.4.0 seams: root-exported `EventBus`/`createEventBus`, `pi.events.emit/on`,
 `AgentSession.subscribe`, `AgentSession.thinkingLevel`, and `session_start`/`session_shutdown`.
 No Pi patch, private-field access or method replacement is introduced by this producer work.
-
-<!-- repo-index:start -->
-## File map
-
-Generated by `node scripts/repo-index.mjs --write` from the repository root.
-
-| File | Responsibility |
-| --- | --- |
-| [`README.md`](README.md) | Hand-written contract and generated file map |
-| [`activity.ts`](activity.ts) | Activity state and event integration |
-| [`coordinator.ts`](coordinator.ts) | Subagent lifecycle and orchestration |
-| [`counts.ts`](counts.ts) | Running agent counts |
-| [`fast-gpt.ts`](fast-gpt.ts) | GPT Fast state and request settings |
-| [`index.ts`](index.ts) | Pi extension entrypoint: Recursive subagents, profiles and persisted sessions |
-| [`persistence.ts`](persistence.ts) | Child session storage and restoration |
-| [`profiles.ts`](profiles.ts) | Codex TOML profile discovery and resolution |
-| [`progress.ts`](progress.ts) | progress module or resource |
-| [`prompt-files.ts`](prompt-files.ts) | Prompt file loading and caller message inclusion |
-| [`prompt.ts`](prompt.ts) | Child prompt composition |
-| [`skills/agent-progress/SKILL.md`](skills/agent-progress/SKILL.md) | agent-progress native Agent Skill instructions |
-
-Tests: [`test/extensions/RQW-agent/`](../../test/extensions/RQW-agent/).
-<!-- repo-index:end -->

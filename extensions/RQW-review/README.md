@@ -5,33 +5,37 @@ Self-contained: no imports from other extensions. Requires RQW-agent to run a re
 
 | Skill | Level | `agent_type` | Default model | Default reasoning |
 |---|---|---|---|---|
-| `blindreview` | blind | `spotty` | `gpt-6.1-sol` | low |
-| `highreview` | high | `bossy` | `gpt-6.1-sol` | medium |
+| `blindreview` | blind | `spotty` | `gpt-6.1-terra` | low |
+| `highreview` | high | `bossy` | `gpt-6.1-terra` | medium |
 | `testreview` | requirements/test plan | `requirements-test-reviewer` | `gpt-6.1-sol` | low |
 
-Both wrappers read `skills/reviewer/SKILL.md` for the common review procedure. Each pass starts a fresh ordinary
-`agent` with the selected `agent_type`, `include: ["user_messages"]` and a task containing `<agreement>` when
-needed, `<object>`, `<criterion>` and, from the second pass, `<rejected_earlier>`. Agent appends raw user messages
-in `<user_messages>` after the task; Main does not copy them. A complete `CLEAN` needs `CHECKED:` and no `UNCHECKED:`.
+Both wrappers read `skills/reviewer/SKILL.md` for the common review procedure. Initial and changed-object passes
+start a fresh ordinary `agent` with the selected `agent_type`, `role_file` set to the absolute package `REVIEWER.md`
+path, `include: ["user_messages"]` and a task containing `<agreement>` when needed, `<object>`, `<criterion>` and
+`<rejected_earlier>` when applicable. The explicit role file preserves the package review contract when a same-name
+personal or project profile overrides the offered profile's instructions; model, effort and profile-discovery
+precedence stay unchanged. Agent appends raw user messages in `<user_messages>` after the task; Main does not copy
+them. A complete `CLEAN` needs concise concrete
+`CHECKED:` evidence and no `UNCHECKED:`. Missing or malformed evidence is completed by `send` to the same reviewer,
+which supplies evidence from retained inspection or marks the exact gap; a fresh reviewer is not started for format.
 
-`profiles/spotty.toml` and `profiles/bossy.toml` contain identical `developer_instructions`, appended as a role to
-the inherited main system prompt by RQW-agent. Read-only behavior is an instruction, not a sandbox or git guard;
-ordinary agent tools remain available. The profile supplies model and effort defaults, independent of Main's model;
-explicit agent options can override these defaults.
+`REVIEWER.md` is the canonical reviewer role. `profiles/spotty.toml` and `profiles/bossy.toml` retain byte-identical
+`developer_instructions` for direct profile use, while the common skill explicitly loads the file through `role_file`.
+RQW-agent appends either form to the inherited main system prompt. Read-only behavior is an instruction, not a sandbox
+or git guard; ordinary agent tools remain available. The profile supplies model and effort defaults, independent of
+Main's model; explicit agent options can override these defaults.
 
 The source is the owner's Codex plugin `scope-focus`, developer A. Chukavin, with no licence text supplied.
 The common skill contains only its subagents skill's review section, with calls and user-message placement
-adapted for Pi. Both profiles preserve the canonical REVIEWER.md text exactly, including its section-description
-sentence; actual mechanical placement is specified by the common skill.
+adapted for Pi. Both profiles share the canonical reviewer role with the approved concise-evidence amendment;
+actual mechanical placement and same-reviewer completion are specified by the common skill.
 
 On `pi.events` channel `rqw-agent:profiles`, request `{ offer(paths: string[]): void }`, this extension offers
 absolute paths to all three TOML files. `resources_discover` returns absolute `skillPaths` for all four skills;
 there is no static `pi.skills` entry. Disable RQW-review and reload to remove its offers and skills. With RQW-agent
 disabled, the skills report that the required agent is unavailable rather than starting another kind of reviewer.
 
-Claude reviewer measurement and comparison with the original plugin are discarded by the owner, not scheduled:
-[BACKLOG.md, Discarded](../../BACKLOG.md#claude-reviewer),
-[reviewer comparison](../../BACKLOG.md#codex-reviewer-comparison). No live model quality measurement is claimed.
+No live model quality measurement is claimed.
 
 `testreview` reviews test code as the deliverable, without running tests or reviewed code. It collects supplied
 requirements, test plan, acceptance criteria and conversation sources, including user and assistant turns in an
@@ -40,31 +44,9 @@ or other sessions. The reviewer traces agreed checks to exercised code and asser
 and concrete false confidence. Missing primary sources make verification incomplete, never CLEAN. Current code
 and conversation suffice; no before/after commits, diff, QA issue or execution logs are required.
 
-This optional, owner-requested resource is separate from the repo-local `.pi/agents/test-reviewer.toml`, whose
-mechanical weakening trigger, evidence requirements and delivery trailers remain unchanged. The removed legacy
-`.agents/reviewers/test-integrity.md` is not an active resource. Test review uses the same native profile and agent
-lifecycle, without a second runner, permission changes or automatic execution. Read-only is an instruction.
+Test review uses the same native profile and agent lifecycle, without a second runner, permission changes
+or automatic execution. Read-only is an instruction.
 
-Focused offline checks: `node --test test/extensions/RQW-review/*.test.ts`.
+Tests: `test/extensions/RQW-review/profiles.test.ts`.
 The testreview fixtures include defective, corrected and missing-conversation probe cases; static checks prove
 resource contracts, not model detection quality.
-
-<!-- repo-index:start -->
-## File map
-
-Generated by `node scripts/repo-index.mjs --write` from the repository root.
-
-| File | Responsibility |
-| --- | --- |
-| [`README.md`](README.md) | Hand-written contract and generated file map |
-| [`index.ts`](index.ts) | Pi extension entrypoint: Reviewer profiles and native Agent Skills |
-| [`profiles/bossy.toml`](profiles/bossy.toml) | bossy reviewer profile and role |
-| [`profiles/requirements-test-reviewer.toml`](profiles/requirements-test-reviewer.toml) | requirements-test-reviewer reviewer profile and role |
-| [`profiles/spotty.toml`](profiles/spotty.toml) | spotty reviewer profile and role |
-| [`skills/blindreview/SKILL.md`](skills/blindreview/SKILL.md) | blindreview native Agent Skill instructions |
-| [`skills/highreview/SKILL.md`](skills/highreview/SKILL.md) | highreview native Agent Skill instructions |
-| [`skills/reviewer/SKILL.md`](skills/reviewer/SKILL.md) | reviewer native Agent Skill instructions |
-| [`skills/testreview/SKILL.md`](skills/testreview/SKILL.md) | testreview native Agent Skill instructions |
-
-Tests: [`test/extensions/RQW-review/`](../../test/extensions/RQW-review/).
-<!-- repo-index:end -->

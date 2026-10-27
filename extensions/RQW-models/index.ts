@@ -1,11 +1,12 @@
-import { getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels, type AnyModel, type Model } from "@earendil-works/pi-ai";
+import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { AgentSession, parseArgs, type ExtensionAPI, type ExtensionContext, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { ModelEffortPicker, sameModel, stepDraft, type Draft, type PickerSpec, type Step } from "./picker.ts";
 import { registerKimiModels } from "./kimi.ts";
 
 export const FAMILIES = [
 	"kimi-for-coding-highspeed", "kimi-for-coding", "k3.1-pro-highspeed", "k3.1-pro",
-	"claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna",
+	"claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna",
 ] as const;
 const KIMI_NAMES: Record<string, string> = {
 	"kimi-for-coding-highspeed": "Kimi K2.7 Code Highspeed",
@@ -25,6 +26,7 @@ const FAMILY_LEVELS: Record<typeof FAMILIES[number], readonly Level[]> = {
 	"claude-opus-5-5": ["low", "medium", "high"],
 	"claude-sonnet-5-5": ["low", "medium", "high", "xhigh"],
 	"gpt-6.1-sol": ["low", "medium", "high", "xhigh", "max"],
+	"gpt-6.1-terra": ["off", "low", "medium", "high", "xhigh", "max"],
 	"gpt-6-sol": ["low", "medium", "high", "xhigh", "max"],
 	"claude-haiku-5-5": ["low", "medium", "high", "xhigh", "max"],
 	"gpt-5.6-luna": ["low", "medium", "high", "xhigh", "max"],
@@ -47,7 +49,7 @@ export function levelsFor(model: ChatModel | undefined): Level[] {
 		: supported.filter((level): level is Level => level !== "off" && level !== "minimal");
 }
 
-export function pickerModels(models: ChatModel[]): ChatModel[] {
+export function pickerModels(models: readonly ChatModel[]): ChatModel[] {
 	const sorted = models.filter((model) => familyOf(model) >= 0).sort((a, b) => {
 		const family = familyOf(a) - familyOf(b);
 		if (family) return family;
@@ -86,6 +88,7 @@ type Mask = { count: number; restore: () => void; cleanups: Set<() => void>; war
 const SESSION_MASK = Symbol.for("rqw-models/session-mask");
 const RUNTIME_MASK = Symbol.for("rqw-models/runtime-mask");
 type Masked = { [key: symbol]: Mask | undefined };
+type PrepareRequest = (this: ModelRuntime, model: AnyModel, options?: unknown) => Promise<unknown>;
 
 function override(target: object, props: Record<string, PropertyDescriptor>): () => void {
 	const saved = Object.keys(props).map((key) => [key, Object.getOwnPropertyDescriptor(target, key)] as const);
@@ -142,10 +145,10 @@ function maskRuntime(runtime: ModelRuntime) {
 			// Stock /model, Ctrl+L, Ctrl+P, autocomplete, /scoped-models, /settings and RPC read this snapshot.
 			getAvailableSnapshot: { value: () => [], writable: true },
 			// Every request on this runtime, including in-process subagents and reviewers, passes here.
-			prepareRequest: { writable: true, value: async function(this: ModelRuntime, ...args: Parameters<ModelRuntime["prepareRequest"]>) {
+			prepareRequest: { writable: true, value: async function(this: ModelRuntime, ...args: Parameters<PrepareRequest>) {
 				const [model] = args;
 				if ((model.type ?? "chat") === "chat" && !isListed(model)) throw new Error(`RQW-models refused the request: ${notListed(model)}`);
-				return prototype().prepareRequest.apply(this, args);
+				return (prototype() as unknown as { prepareRequest: PrepareRequest }).prepareRequest.apply(this, args);
 			} },
 		});
 		return () => {
@@ -177,6 +180,13 @@ function maskSession(session: AgentSession) {
 
 export default function modelsExtension(pi: ExtensionAPI) {
 	registerKimiModels(pi);
+	const codex = builtinProviders().find((provider) => provider.id === "openai-codex")!;
+	const sol = codex.getModels().find((model) => model.id === "gpt-6.1-sol")!;
+	const terra = { ...sol, id: "gpt-6.1-terra", name: "GPT-6.1 Terra", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 1_050_000, maxTokens: 128_000,
+		thinkingLevelMap: { off: "none", minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" } };
+	const addTerra = <T extends { id: string }>(models: readonly T[]) => models.some((model) => model.id === terra.id) ? models : [...models, terra];
+	pi.registerProvider({ ...codex, getModels: () => addTerra(codex.getModels()), getAllModels: () => addTerra(codex.getAllModels?.() ?? codex.getModels()) });
 	// Event contexts have live getters; the TUI shortcut dispatcher passes snapshots.
 	let liveContext: ExtensionContext;
 	// Pi invokes shortcut handlers without awaiting the previous press.

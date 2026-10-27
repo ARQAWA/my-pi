@@ -7,7 +7,7 @@
 //
 // The context row is normally the editor's bottom border (`editorBorder`), the other two rows the footer.
 //
-// Evidence: notes/statusbar-omp.md. Colors intentionally use stock Pi semantic roles, without tuning.
+// Colors intentionally use stock Pi semantic roles, without tuning.
 import { stripVTControlCharacters } from "node:util";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 

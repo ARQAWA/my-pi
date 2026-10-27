@@ -2,56 +2,23 @@
 
 A Pi package (`@earendil-works/pi-coding-agent` 1.4.0) that carries the omp-lite behaviour into stock Pi step by step.
 Stock Pi tools stay as they are. Everything is an extension, one folder per extension under `extensions/`.
+The repository coordinator and workflow are development-only, not part of the shipped harness; never port them into the product.
 
-Before every task, read the mandatory part of [PROCESS.md](PROCESS.md), which ends before Delivery, then load
-its applicable task sections from `process/` or the root Delivery section. Restore the mandatory part and applicable
-sections after compaction or a handoff before continuing. This is mandatory lazy
-loading, not optional background reading. Give subagents the relevant process rules in their briefs. The owner's personal manifesto is a separate memory document, not the execution procedure.
-Coordinator personal-work objections and explicit overrides: [PROCESS.md](PROCESS.md#isolated-parallel-execution).
+Before every task, read [PROCESS.md](PROCESS.md). Restore it after compaction or a handoff.
+The owner's personal manifesto is a separate memory document, not the execution procedure.
 Coordinator rules bind only the session that holds the repository's `coordinator.lock`; every other session is a normal direct agent.
-Only one execution task is active at a time in the owner's priority queue. QA fixes, Windows work and full release
-regressions share that queue; there is no separate test lane. CI, review, merge-queue and owner waits are not active
-execution, so the next logical task may run then. Coordinator bookkeeping is operational and never permits concurrent
-implementation. After the listed queue items, only owner-ordered Windows CI failures resume; invented standalone PCLI
-verification and unrelated holds stay out. Pause is `agent` `interrupt`, resume is `agent` `resume` (`send` only carries a new message), with no pause files:
-[PROCESS.md](PROCESS.md#task-pipeline).
-Golden rule, no avoidable token spending and simplest engineered solutions: [PROCESS.md](PROCESS.md#golden-rule).
-Task timebox, at most 2 hours of substantive work, then a pause and a report: [PROCESS.md](PROCESS.md#task-timebox).
-Every new executor, work, research, test, QA, regression, operational or outside-queue agent uses only Kimi K3.1 Pro:
-simple and complex use low, hardest uses high. Existing Sol agents finish current tasks through send/resume and are
-not restarted merely to switch models. Independent reviewers keep their approved Sol profiles and are not executors.
-Owner model requests override the default; no silent fallback; Anthropic stays forbidden. The single execution queue
-stays unchanged. Policy: [PROCESS.md](PROCESS.md#subagent-models).
-Search ready-made solutions before new features or mechanisms: [PROCESS.md](PROCESS.md#research-and-agreement).
-Third-party installs go into the owner's Pi first, then the package: [PROCESS.md](PROCESS.md#third-party-installation-fast-path).
-Task bases, scoped checks, release batching and the owner's Pi update source: [PROCESS.md Delivery](PROCESS.md#delivery).
+Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.md).
 
-- [INDEX.md](INDEX.md): repository navigation and generated extension file maps.
+- [INDEX.md](INDEX.md): short repository navigation.
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
+- `.oxlintrc.json`: calibrated correctness lint. `npm run lint` checks the full source scope; `scripts/check.mjs` runs lint and tests concurrently. Use `--test <paths>` for touched tests; no flag runs the existing full `npm test`.
 - `extensions/RQW-settings/`: extension 1, the harness settings. Turns on Pi's built-in `codemode` and `tool_search` by
   default (same rule as `grep` and `find` in RQW-tools), and disables background cache warming regardless of user
   config (prompt caching stays on). Owns GPT Fast for the main chat: `/fast-gpt [on|off]`, default off, only
-  `openai-codex` requests get `service_tier` priority (`DECISIONS.md` Settings, «GPT Fast»). Details: `notes/settings-codemode.md`, `DECISIONS.md` Settings. Tests: `npm test`.
+  `openai-codex` requests get `service_tier` priority (`DECISIONS.md` Settings, «GPT Fast»). Tests: `npm test`.
 - `extensions/RQW-prompt/`: extension 2, the system prompt. `SYSTEM.md` is the text; `index.ts` puts it in place of Pi's
   default prompt prefix and appends the workstation, critical, environment and date blocks.
-- `extensions/RQW-tools/`: extension 3, the base tools. Stock `read`, `bash`, `edit`, `write`, `grep`, `find` with our
-  descriptions (`descriptions/*.md`), multi-file `edit` and `write`, and the ordered barrier (Pi's `codemode` is one call of it).
-  `read` answers an identical repeat of an unchanged range with a one-line note unless `force: true`, under strict
-  turn and token limits (`unchanged.ts`, `DECISIONS.md` Tools, Unchanged-read note).
-  An eligible call still running after 12 s returns as a background job `job#N`; `job` waits for or checks it and
-  kills process or queued jobs. Where notifications work, a direct `job wait` returns `waiting` at once and ends the turn;
-  its result comes later as a notification, and a handed-off job survives Esc and new owner messages (`DECISIONS.md` Tools,
-  `D-TOOLS-NOTIFY`). Remaining held-wait paths are listed in `D-TOOLS-NO-BLOCKING-FLAG`. By approved design, a running file-tool job such as `read`, `grep` or `find` cannot
-  be killed: `job kill` reports `cannot_kill`, and it finishes on its own. A bash call with its own timeout of 13 s
-  or less stays in the foreground and takes no pre-start snapshot; eligible bash calls take an exact snapshot
-  before starting. The approved contract holds only what the command certainly changes and reports changes
-  while it ran (`footprint.ts`, process-wide `ledger.ts`; `DECISIONS.md` Tools, «Background jobs»).
-  The outside-git walk enforces its whole-walk limit; scans report unreadable paths and git warnings. Footprint
-  inference restores cwd after a subshell and holds the repository for `symbolic-ref` and `reflog` writes.
-  Deletions are reported since the start, by comparing the exact pre-start and end states.
-  Own prompt sections also join the optional read-only startup projection without a prompt/provider dependency;
-  see `DECISIONS.md` Prompt/tools isolation.
-  Tests: `npm test`.
+- `extensions/RQW-tools/`: extension 3, the base tools. Stock `read`, `bash`, `edit`, `write`, `grep`, `find` with our descriptions, multi-file edit and write, bounded Windows retry and counts. File tools use stock parallel execution, with an in-memory resolved-path lock serializing edit and write on the same file; different files stay parallel. Bash and codemode run independently. A call still running after 12 s returns `job#N`; `job wait`, `status` and `kill` manage it, with one completion notification. Tests: `npm test`.
 - `extensions/RQW-context/`: extension 4, the context window and the compaction threshold. Every model gets the
   physical window W = min(contextWindow, 500000) and compacts strictly above W - R, where R = round(W / 10).
   Explicit settings and physical request scopes remain; Pi 1.4.0 summaries use native output limits, not R.
@@ -63,8 +30,7 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   supported fields, explicit overrides and saved provenance: [RQW-agent README](extensions/RQW-agent/README.md#codex-profiles).
   The optional `title` appears in status and results. Every child has recursive `agent` delegation without a depth
   limit. Children get codemode/tool_search as the caller has them, the caller's session settings and the same profile
-  catalog. With RQW-tools, codemode is one call of the child's barrier and a background job, sharing main's codemode
-  execution slots.
+  catalog. With RQW-tools, codemode uses the child's background-job registry.
   Details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). The tool offers caller-chosen mechanical wait and diagnostic status;
   results arrive once through wait or `[kind#N]` messages. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Children retain history until stop for explicit follow-ups.
   A persisted parent stores child sessions in `<parent.jsonl>.children/`; `resume` explicitly retries an interrupted or failed provider request with no new message, also after a Pi restart; no automatic retry loop is added. `/resume-agents` remains children-only and does not retry failed requests. Where notifications work, a direct `wait` returns `waiting` at once and ends the turn, the result wakes the caller later; see [persistence](extensions/RQW-agent/README.md#persistence-and-resume) and `DECISIONS.md` Agent.
@@ -82,14 +48,15 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   `send` or `restart` updates the retained value.
   Tests: `npm test`.
 - `extensions/RQW-review/`: extension 6, a provider of Codex profiles and native Agent Skills, not a separate runtime.
-  `profiles/spotty.toml` defaults to `gpt-6.1-sol` low; `profiles/bossy.toml` defaults to the same model medium. Both embed the same
-  reviewer role in `developer_instructions`. `rqw-agent:profiles` offers their paths to RQW-agent; public
+  `profiles/spotty.toml` defaults to `gpt-6.1-terra` low; `profiles/bossy.toml` defaults to the same model medium. Both embed the same
+  reviewer role in `developer_instructions`; the common skill explicitly loads the byte-identical `REVIEWER.md` through
+  `role_file`, so personal or project same-name profiles cannot replace the package review contract. `rqw-agent:profiles` offers their paths to RQW-agent; public
   `resources_discover` supplies `skills/reviewer`, `skills/blindreview`, `skills/highreview` and `skills/testreview`.
   `testreview` selects `requirements-test-reviewer` on Sol low to review test code against supplied requirements,
   test plan and conversation without execution or mandatory commit pairs. It is separate from the project
-  `test-reviewer` mechanical integrity gate. The common blind/high skill
+  `test-reviewer` profile. The common blind/high skill
   carries only the review section of the owner's Codex skill, and the wrappers select Spotty or Bossy. Each pass
-  starts a fresh ordinary `agent` with `agent_type` and `include: ["user_messages"]`; results are `agent#N` results.
+  starts a fresh ordinary `agent` with `agent_type`, the package `role_file` and `include: ["user_messages"]`; results are `agent#N` results.
   Read-only is an instruction, with no git guard or sandbox. Lifecycle, settings, Fast, caching and delivery are
   RQW-agent's. Without RQW-agent the reviewer cannot run; disabling RQW-review removes its own profiles and skills.
   Contract: `DECISIONS.md` section Review, `extensions/RQW-review/README.md`. Tests: `npm test`.
@@ -98,24 +65,24 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   footer when off. Its upper input border shows the gold session title at the left and session ID at the right.
   Activity is a separate line above it, with a one-space left gap and blank lines above and below, absent idle.
   Busy letters shimmer silver; compaction shimmers gold over the title.
-  Elements, evidence and limits: `notes/statusbar-omp.md`. Tests and deterministic renders: `test/extensions/RQW-statusbar/`, included in `npm test`.
+  Tests: `test/extensions/RQW-statusbar/`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
   Shift+arrows open a model/effort draft chooser and take the first step before rendering: Up/Down stronger/weaker,
   Right/Left effort up/down. Plain or Shift arrows navigate; Enter commits once, Esc closes without setters.
   Two compact wheel columns use supplied theme/thinking roles. Commit uses public Pi APIs, not an atomic request lock;
   scope and limitation: [RQW-models README](extensions/RQW-models/README.md). `/rqw-models` and stock picker restrictions stay.
   Only listed models can be selected or requested; Pi's stock model lists are empty (`DECISIONS.md` Models, owner quotes/carriers).
-  Disable separately in `pi config`. Tests: `test/extensions/RQW-models/`, `test/model-effort-picker.test.ts`, `npm test`.
+  Disable separately in `pi config`. Tests: `npm test`.
 - `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery, nothing else (no
   provider hiding: that is extension 14). Toggle, migration and limits:
-  `extensions/RQW-anthropic/README.md`; research: `notes/anthropic-adapter.md`. Tests use fake credentials: `npm test`.
+  `extensions/RQW-anthropic/README.md`. Tests: `test/extensions/RQW-anthropic/`.
 - `extensions/RQW-scroll/`: extension 10, Escape in the fullscreen view returns a scrolled-up transcript to the latest
   message; elsewhere Escape stays stock. Contract and limits: `DECISIONS.md` section Scroll. Tests: `npm test`.
 - `extensions/RQW-session/`: extension 11, independent `/copy-session` and confirmed permanent `/remove` commands; `/remove` also deletes the exact `<session.jsonl>.children` tree.
   Cleanup boundaries and limitations: `extensions/RQW-session/README.md`. Tests: `npm test`.
 - `extensions/RQW-send-now/`: extension 12, Enter on an empty editor while steering is queued interrupts the turn and
   sends the queue at once, as in oh-my-pi. Public Pi API only, no custom editor. Behavior and limits:
-  `extensions/RQW-send-now/README.md`. Tests drive Pi's real interactive mode: `npm test`.
+  `extensions/RQW-send-now/README.md`. Tests: `test/extensions/RQW-send-now/send-now.test.ts`.
 - `extensions/RQW-mouse/`: extension 13, on Windows Pi's fullscreen view enables mouse reporting again right after the
   terminal has started, so the wheel scrolls the conversation (the PCLI wheel bug) instead of the input history.
   Windows only; inert elsewhere. Cause, limits and proof: `DECISIONS.md` section PCLI. Tests: `npm test`; the ConPTY
@@ -135,59 +102,50 @@ Task bases, scoped checks, release batching and the owner's Pi update source: [P
   with an exact continuation. Description teaches batching, evidence, sources and untrusted web text.
   Contract: [RQW-web README](extensions/RQW-web/README.md), [Web search decision](DECISIONS.md#web-search).
   Tests: `test/extensions/RQW-web/`, `test/web-subagents.test.ts`.
-- Quality control loop: scheduled full regression on `main` (`tests.yml` every 2 h, `pcli.yml` daily), failures kept as
-  `qa-inbox` issues, a failures-only mail digest, and triage and test-integrity rules. Rules: `PROCESS.md` section
-  Quality control loop; decisions: `DECISIONS.md` section Quality control. Parts below.
-- `.github/workflows/qa-inbox.yml`: turns failed `main` runs into `qa-inbox` issues with `scripts/qa-inbox.mjs`.
-  `.github/workflows/qa-digest.yml`: mails the owner at 09:30 and 21:30 Moscow time, only about failures, with
-  `scripts/qa-digest.mjs`. Shared issue format: `scripts/qa-state.mjs`. Tests: `npm test`.
 - `scripts/ci-watch.mjs`, `npm run ci-watch`: the shared repo-local CI watcher. One instance reads all recent workflow
   runs once a minute and writes `<git common dir>/ci-watch/status.json` atomically; agents read that file instead of
-  polling `gh`, and restart it with `npm run ci-watch -- --restart` when it is older than 3 minutes.
-  `npm run ci-watch -- --refresh-inbox` explicitly refreshes the `qa-inbox` issue snapshot (`inbox.json`) at triage,
-  task takeover or after an issue change, not per agent. Never merge evidence ([PROCESS.md](PROCESS.md#task-pipeline), `DECISIONS.md` [Task pipeline](DECISIONS.md#task-pipeline)).
-- `scripts/qa-status.mjs`, `npm run qa-status`: reads the watcher file for the inbox snapshot, latest `main` runs and
-  the current branch's CI; subagents and hosts without the extension use it. A failed `main` run whose every failure
-  signature is an occurrence in a closed inbox issue shows as info (acknowledged), else red (`DECISIONS.md` `[D-QA-ACK]`);
-  `--refresh-inbox` computes that with `scripts/qa-inbox-snapshot.mjs`.
+  polling `gh`, and restart it with `npm run ci-watch -- --restart` when it is older than 3 minutes. It is awareness,
+  not merge evidence.
+- `scripts/qa-status.mjs`, `npm run qa-status`: reads the watcher file for the latest `main` runs and the current
+  branch's CI; subagents and hosts without the extension use it. Failed runs stay red.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all. Its `qa-status` message has a compact card (`card.ts`); Ctrl+O shows every line with its link.
-- `.pi/agents/test-reviewer.toml`: the project test-review profile, used through `agent` with
-  `agent_type: "test-reviewer"`; trigger and evidence rules: [PROCESS.md](PROCESS.md#quality-control-loop).
-- `.agents/roles/test-fixer.md`: the short role of ordinary test-work agents in the single execution queue, passed as
-  the `role` of an `agent`, not as the whole `system` ([PROCESS.md](PROCESS.md#task-pipeline)).
-- `extensions/RQW-thinking/`: extension 16, hides main-transcript thinking text and the hidden-thinking label,
-  without changing stored messages or model context. Native blank rows remain. Independent package filter and
-  `/reload`; tests: `test/extensions/RQW-thinking/`.
-- `extensions/RQW-naming/`: extension 17, background native session names after first input and each successful
-  compaction, from all available context. Ten candidates, semantic auto-selection only by
-  `kimi-coding/kimi-for-coding` (Kimi K2.8 Preview) at `low`, without fallback. At most four words and 32 Unicode
+- `.pi/extensions/post-edit-lint/`: dev-only, repo-local silent Oxlint checks after successful edits and writes. It is not shipped or listed in `pi.extensions`; its inline factory reaches only executors through RQW-agent's generic child-factory offer. Tests: `test/post-edit-lint.test.ts`.
+- `.pi/agents/test-reviewer.toml`: the read-only test-review profile, used through `agent` with
+  `agent_type: "test-reviewer"`.
+- `extensions/RQW-naming/`: extension 16, background native session names after first input and each successful
+  compaction, from all available context. One request ranks 1-10 candidates by meaning, best valid name wins.
+  The session provider selects `kimi-coding/kimi-for-coding`, `anthropic/claude-haiku-5-5`, or
+  `openai-codex/gpt-5.6-luna`, all at `low`, without fallback. Owner: «один запрос вместо двух».
+  At most four words and 32 Unicode
   code points, overlong names rejected, never truncated; initial attempt plus up to three retries, then a warning
   preserving the old name. `/rename-gen` regenerates; native
   `/name` stays unchanged. RQW-statusbar displays the native name in the top input border, gold and shimmering during compaction.
-  Details: [Naming and thinking](DECISIONS.md#naming-and-thinking); tests: `test/extensions/RQW-naming/`.
-- `extensions/RQW-agent-ui/`: extension 18, compact delivered result cards for `agent`, including reviewer profiles,
+  Details: [Naming](DECISIONS.md#naming); tests: `test/extensions/RQW-naming/`.
+- `extensions/RQW-agent-ui/`: extension 17, compact delivered result cards for `agent`, including reviewer profiles,
   and for delivered `child_wait` results, full originals
   through Ctrl+O. Loaded before tool-ui. With both loaded, a collapsed wait result is tool-ui's (`Waited for N agents`,
   live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards; with tool-ui off, agent-ui shows its
   collapsed wait cards. No activity-count producer, statusbar indicator or agent list here.
   Tests: `test/extensions/RQW-agent-ui/`; independent package filter and `/reload`.
-- `extensions/RQW-tool-ui/`: extension 19, between-answer tool summaries, current call header plus last four output
+- `extensions/RQW-tool-ui/`: extension 18, between-answer tool summaries, current call header plus last four output
   rows and status, immediate folding on answer text, Ctrl+O originals. Native thinking spacing and stock image output
-  remain. Details: [Compact tool display](DECISIONS.md#compact-tool-display); tests: `test/extensions/RQW-tool-ui/` and root
-  `test/tool-ui-smoke.test.ts`. Independent package filter and `/reload`.
+  remain. Details: [Compact tool display](DECISIONS.md#compact-tool-display); tests: `test/extensions/RQW-tool-ui/`.
+- `extensions/RQW-skill-dollar/`: extension 19, `$skill` autocomplete at whitespace boundaries, all matches selectable
+  through a four-row editor window, and Pi-format skill blocks for every mention on submit. Public APIs only;
+  compatible with stock and statusbar editors. Tests: `test/extensions/RQW-skill-dollar/`.
+- `extensions/RQW-dyslexia/`: appends the owner's exact Communication rule to the system prompt through public
+  `before_agent_start`. Self-contained and independently disableable in `pi config`; no host-file access.
+  Tests: `test/extensions/RQW-dyslexia/`.
 - `extensions/RQW-theme/theme.json`: native theme resource named `RQW-theme`, registered only in `pi.themes`, not
   an extension. Select once through `/settings` -> Theme; Pi persists the choice across reload and restart.
   Switch back through the same native selector. No activation code or unrelated settings writes.
 - Every registered package extension is self-contained and can be switched off alone (no import outside its folder,
-  its tests load only it); `test/isolation.test.ts` proves this for the entries in `pi.extensions`
-  (`RQW-theme` is data in `pi.themes`, not an extension). `INSTALL.md` shows the switch; `DECISIONS.md` section Isolation carries the decision.
+  its tests load only it). Isolation checks: `test/isolation.test.ts`.
+  `RQW-theme` is data in `pi.themes`, not an extension. `INSTALL.md` shows the switch; `DECISIONS.md` section Isolation carries the decision.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
-- `notes/`: research notes, such as how the omp-lite prompt was built.
 - `WORKFLOW-MANIFEST.md`: the owner's personal working principles and aspirations, written in Russian for him.
-- `PROCESS.md`: the short mandatory procedure and section index; `process/` holds task-loaded sections, from
-  parallel execution to autonomous squash delivery. The root keeps the coordinator guard's JSON block.
-- `scripts/deliver-check.mjs`: the pre-merge gate, `npm run deliver-check -- <branch> <message-file>`; see `PROCESS.md` Delivery.
+- `PROCESS.md`: the short development procedure, including testing and the coordinator guard's JSON block.
 - `.pi/agents/code-reviewer.toml`: the read-only bug and code-quality profile, used through `agent_type: "code-reviewer"`.
 - `DECISIONS.md`: active accepted decisions with their reason, verbatim owner source and carrier.
 - `DECISIONS-ARCHIVE.md`: append-only verbatim superseded and obsolete decisions with replacement and commit

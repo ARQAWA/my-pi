@@ -71,10 +71,12 @@ The fenced block `json coordinator-rules` in `PROCESS.md`, section [Subagent mod
 bad JSON or a bad schema is an error state: the guard then blocks every `agent` start and restart
 and shows the error in Main's prompt and status.
 
-The active `agentModels` table permits only Kimi executor pairs under
+The active `agentModels` table permits the executor pairs under
 [Subagent models](../../../PROCESS.md#subagent-models). `reviewerProfiles` separately names each established
-independent reviewer's approved Sol pair. A start or restart with Sol requires the matching reviewer `agent_type`,
-which a restart may inherit from its latest persisted child record; the same Sol pair without that profile is blocked. There is no rotation counter or bookkeeping. Existing agents
+independent reviewer's profile-specific pair: `spotty` uses `openai-codex/gpt-6.1-terra` low, `bossy` uses
+`openai-codex/gpt-6.1-terra` medium, and the other reviewer profiles use `openai-codex/gpt-6.1-sol` low.
+A reviewer start or restart requires the pair matching its `agent_type`, which a restart may inherit from its
+latest persisted child record; calls without a reviewer profile use `agentModels`. There is no rotation counter or bookkeeping. Existing agents
 keep their models through `send` and `resume`, which the guard leaves untouched. The parser and enforcement are
 data-driven: changing the root block updates both the next turn's prompt and the next tool call without reloading
 guard code.
@@ -100,10 +102,6 @@ This optional format is not an active repository rule. Product profiles are unch
   `thinking` are required. A named or inherited reviewer profile uses only its exact pair; every other call uses an exact executor pair.
   A reviewer-profile call supplies matching explicit model and effort values; restart may omit `agent_type` to inherit it. An allowed call with a `task` gets
   one generated line appended: ordinary nested `agent` starts need an explicit allowed executor pair.
-- Quotes: on `agent` `start`, `restart` and `send`, every guillemet span in
-  `task`, `role` and `system` must be one exact contiguous span of one user message of the current session
-  (`ctx.sessionManager.getEntries()`), after Unicode NFC and whitespace normalisation. Unbalanced guillemets and
-  empty spans fail. The check is `scripts/owner-quotes.mjs`, shared with `deliver-check`.
 - `edit` and `write`: every path (`path`, `edits[].path`, `files[].path`) is resolved like Pi does
   (`@`, `~`, file URLs, cwd) and canonicalised (symlinks, also dangling ones, and `..`). A path inside this
   checkout, the main checkout, any registered git worktree or the sibling `my-pi-worktrees` folder is blocked.
@@ -124,7 +122,4 @@ Calls made from a `codemode` script go through the same `tool_call` handler.
 - Children inherit Main's prompt, including the `coordinator_rules` section. The section says it binds Main only.
 - In the error state Main cannot start subagents to repair `PROCESS.md`; the owner fixes the block.
 
-Tests: `test/coordinator-guard.test.ts` (fake pi and ctx), `test/coordinator-guard-pi.test.ts` (a real Pi
-session with codemode and a faux model), `test/coordinator-lock.test.ts` (lock file races between real processes
-and the first, second, stale, release and `/new` cases with a fake pi, SIGKILL of a real holder, a reused pid), `test/coordinator-lock-pi.test.ts` (real Pi
-`/reload` and quit) and `test/coordinator-lock-keys.test.ts` (real interactive mode, Ctrl+D and Ctrl+C).
+Tests: `npm test`.

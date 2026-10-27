@@ -239,46 +239,22 @@ function current(b: Building, live: LiveState, topOf: (id: string) => string, sa
 	return waiting[0] ?? b.started.at(-1) ?? b.group.leaderId;
 }
 
-/** Only our versioned marker supplies nested results. Never copy output, diffs or third-party details. */
-function nestedResult(toolName: string, marker: unknown, isError: boolean): CallResult {
-	const base: CallResult = { content: [], ...(isError ? { isError: true } : {}) };
-	const m = record(marker);
-	if (m.version !== 1 || m.tool !== toolName) return base;
-	if (toolName === "bash" && typeof m.exitCode === "number" && Number.isSafeInteger(m.exitCode))
-		return { ...base, structuredContent: { exit_code: m.exitCode } };
-	if (toolName !== "edit" || !Array.isArray(m.files)) return base;
-	const files = [];
-	for (const value of m.files) {
-		const f = record(value);
-		if (typeof f.path !== "string" || f.path === "" || typeof f.ok !== "boolean" ||
-			(f.outcome !== undefined && f.outcome !== "possibly_changed") ||
-			[f.added, f.removed].some((n) => n !== undefined && (typeof n !== "number" || !Number.isSafeInteger(n) || n < 0))) return base;
-		const counts = { ...(f.added !== undefined ? { added: f.added } : {}), ...(f.removed !== undefined ? { removed: f.removed } : {}) };
-		files.push({ path: f.path, ok: f.ok, ...(f.outcome ? { outcome: f.outcome } : {}),
-			...(f.ok && Object.keys(counts).length ? { details: { rqwToolsNestedCounts: counts } } : {}) });
-	}
-	return { ...base, details: { files } };
+/** Pi owns nested membership and status; it does not store nested result content. */
+function nestedResult(isError: boolean): CallResult {
+	return { content: [], ...(isError ? { isError: true } : {}) };
 }
 
-/** Count leaves only. Pi's saved nestedCalls owns membership, status and arguments; our compact metadata only
- * enriches matching completed calls. Saved history always wins over retained events. Missing arguments stay
- * missing and unfinished calls never receive a result, even when a marker exists. */
+/** Saved history wins over retained events. Missing arguments and unfinished calls stay unconfirmed. */
 function nestedOf(id: string, saved: Record<string, unknown> | undefined, executions: Map<string, LiveExecution>, topOf: (id: string) => string): Member[] {
 	const byId = new Map<string, Member>();
 	const parents = new Set<string>();
 	if (saved) {
-		const metadata = record(record(saved.details).rqwToolsNested);
-		const markers = new Map<string, unknown>();
-		if (metadata.version === 1 && Array.isArray(metadata.calls)) for (const value of metadata.calls) {
-			const m = record(value);
-			if (typeof m.id === "string" && !markers.has(m.id)) markers.set(m.id, m);
-		}
 		for (const c of Array.isArray(record(saved.nestedCalls).calls) ? (record(saved.nestedCalls).calls as unknown[]) : []) {
 			const n = record(c);
 			if (typeof n.id !== "string" || byId.has(n.id)) continue;
 			const done = n.status === "ok" || n.status === "error";
 			byId.set(n.id, { id: n.id, toolName: String(n.name ?? ""), args: n.arguments ?? {}, parentId: id,
-				...(done ? { result: nestedResult(String(n.name ?? ""), markers.get(n.id), n.status === "error"), isError: n.status === "error" } : { unconfirmed: true }),
+				...(done ? { result: nestedResult(n.status === "error"), isError: n.status === "error" } : { unconfirmed: true }),
 				isPartial: false, ...(typeof n.durationMs === "number" ? { durationMs: n.durationMs } : {}) });
 		}
 		// Saved records name nested parents only through their IDs: `<parent>/<n>`.
@@ -287,7 +263,7 @@ function nestedOf(id: string, saved: Record<string, unknown> | undefined, execut
 		for (const x of executions.values()) {
 			if (!x.parentToolCallId || topOf(x.toolCallId) !== id) continue;
 			parents.add(x.parentToolCallId);
-			const result = x.ended ? nestedResult(x.toolName, record(x.result?.details).rqwToolsNestedCall, x.isError === true) : resultOf(x.partialResult);
+			const result = x.ended ? nestedResult(x.isError === true) : resultOf(x.partialResult);
 			byId.set(x.toolCallId, { id: x.toolCallId, toolName: x.toolName, args: x.args ?? {}, parentId: id, ...(result ? { result } : {}),
 				...(x.ended ? { isError: x.isError === true } : {}), isPartial: !x.ended, ...(typeof x.durationMs === "number" ? { durationMs: x.durationMs } : {}) });
 		}

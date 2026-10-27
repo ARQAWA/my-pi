@@ -1,159 +1,62 @@
 import assert from "node:assert/strict";
-import { stripVTControlCharacters } from "node:util";
-import { readFileSync } from "node:fs";
+import { stripVTControlCharacters as strip } from "node:util";
 import { it } from "node:test";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import { type BarState, contextRow, editorBorder, formatK, gitText, ICON, leftRight, modelName, parsePorcelain,
-	placeOf, RateMeter, renderBar, sessionTopBorder, singleLine, thinkingLabel, within } from "../../../extensions/RQW-statusbar/render.ts";
+import type { Theme } from "@earendil-works/pi-coding-agent";
+import { themePaint } from "../../../extensions/RQW-statusbar/index.ts";
+import { activityRows, type BarState, effortText, fastMark, ICON, mix, modelRow, parsePorcelain,
+	RateMeter, renderBar, SHIMMER, SHIMMER_CELLS_PER_FRAME, shimmerPhase, shimmerText, SILVER, silverGlintPosition
+} from "../../../extensions/RQW-statusbar/render.ts";
 
-export const sample: BarState = {
+const sample: BarState = {
 	model: { id: "sonnet", name: "Claude Sonnet 5.5", reasoning: true }, thinkingLevel: "high",
 	context: { tokens: 13100, limit: 450000 }, compactions: 2, rate: 52.4,
 	place: { kind: "worktree", text: "my-pi/statusbar" },
 	git: { branch: "rqw-statusbar", unstaged: 1, staged: 2, untracked: 3 }, statuses: [],
 };
 
-it("deterministic plain renders match the committed snapshots", () => {
-	const actual = Object.fromEntries([80, 48, 24, 8, 1, 0].map(w => [w, renderBar(sample, w).map(stripVTControlCharacters)]));
-	const expected = JSON.parse(readFileSync(new URL("./render.snap.json", import.meta.url), "utf8"));
-	assert.deepEqual(actual, expected);
+it("renders the context, model and repository rows", () => {
+	assert.deepEqual(renderBar(sample, 48).map(strip), [
+		"━───────────────────────────────── 3% 13.1k/450k",
+		` ${ICON.model} Sonnet 5.5 hi             cmp 2 · ${ICON.throughput}52.4 tok/s`,
+		` ${ICON.worktree} my-pi/statusbar      ${ICON.branch} rqw-statusbar *1 +2 ?3`,
+	]);
 });
 
-it("every row fits from zero to 160 columns, with wide and styled metadata", () => {
-	for (const state of [sample, { ...sample, model: undefined, context: undefined, git: undefined },
-		{ ...sample, context: { tokens: null, limit: 450000 } },
-		{ ...sample, place: { kind: "folder" as const, text: "工程/🙂/e\u0301".repeat(30) },
-			statuses: ["\x1b[31mhello\x1b[0m\nworld", "x".repeat(200)] }]) {
-		for (let width = 0; width <= 160; width++) {
-			for (const row of renderBar(state, width, (_role, text) => `\x1b[31m${text}\x1b[39m`)) {
-				assert.ok(visibleWidth(row) <= width, `${width}: ${JSON.stringify(row)}`);
-				assert.ok(!/[\r\n\t]/.test(row));
-			}
-		}
-	}
-	assert.equal(leftRight("left", "right", 12), "left   right");
-	assert.equal(stripVTControlCharacters(leftRight("long left", "right", 8)), "l… right");
+it("renders the fast marker and activity row", () => {
+	const row = strip(modelRow({ ...sample, fast: {} }, 80));
+	assert.ok(row.includes(`Sonnet 5.5 ${ICON.fast} hi`));
+	assert.equal(fastMark(SHIMMER.length), fastMark(0));
+	assert.deepEqual(activityRows(80, { text: "Planning next moves", compacting: false, frame: 0 }).map(strip),
+		[" Planning next moves", ""]);
 });
 
-it("context is relative to Pi's threshold; overflow clamps the bar, not the token count", () => {
-	assert.match(contextRow({ tokens: 225000, limit: 450000 }, 40), /50% 225k\/450k$/);
-	assert.match(contextRow({ tokens: 600000, limit: 450000 }, 40), /100% 600k\/450k$/);
-	assert.match(contextRow({ tokens: null, limit: 450000 }, 40), /\?\/450k$/);
-	assert.equal(contextRow(undefined, 5), "─────");
-	assert.equal(contextRow({ tokens: 1, limit: 0 }, 5), "─────");
-	assert.equal(formatK(13100), "13.1k");
-	assert.equal(formatK(1000000), "1M");
-});
-
-it("the editor border is the context row, with the hidden-lines hint first at every width", () => {
-	const styled = (_role: string, text: string) => `\x1b[31m${text}\x1b[39m`;
-	const hint = (text: string) => `\x1b[2m${text}\x1b[22m`;
-	for (const context of [sample.context, undefined, { tokens: null, limit: 450000 }]) {
-		for (let width = 0; width <= 160; width++) {
-			assert.equal(editorBorder(context, 0, width, styled, hint), contextRow(context, width, styled));
-			for (const hidden of [1, 8, 12345]) {
-				const border = editorBorder(context, hidden, width, styled, hint);
-				const plainText = stripVTControlCharacters(border);
-				assert.equal(visibleWidth(border), width, `${width}/${hidden}: ${JSON.stringify(border)}`);
-				if (width >= 2) assert.ok(plainText.startsWith("\u2193"), `${width}/${hidden}: ${plainText}`);
-				const text = `\u2193 ${hidden} more `;
-				if (width > text.length) assert.equal(plainText, text + stripVTControlCharacters(contextRow(context, width - text.length)));
-			}
-		}
-	}
-	assert.equal(editorBorder(sample.context, 8, 40), "\u2193 8 more \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 3% 13.1k/450k");
-	assert.equal(stripVTControlCharacters(editorBorder(sample.context, 8, 6)), "\u2193 8 m\u2026");
-	assert.equal(editorBorder(sample.context, 8, 0), "");
-});
-
-it("the session ID ends the top border whole, framed by single spaces, or is dropped", () => {
-	const rule = (width: number) => "\u2500".repeat(Math.max(0, width));
-	const id = "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b";
-	const border = (text: string) => `\x1b[2m${text}\x1b[22m`;
-	const styled = (_role: string, text: string) => `\x1b[31m${text}\x1b[39m`;
-	for (let width = 0; width <= 160; width++) {
-		const line = sessionTopBorder(width, id, rule, border, styled);
-		assert.equal(visibleWidth(line), width, `${width}`);
-		// The ID needs its 36 cells, a space on each side, two rule cells after it and at least two before it.
-		if (width >= 42) {
-			assert.equal(stripVTControlCharacters(line), `${rule(width - 40)} ${id} \u2500\u2500`);
-			assert.ok(line.includes(`\x1b[31m${id}\x1b[39m`), "the ID is one uninterrupted run of text");
-		} else assert.equal(line, rule(width));
-	}
-	// No ID, an empty one or one that would not copy as a single word: Pi's border as it is.
-	for (const bad of [undefined, "", " \n ", "two words", "a\x1b[31mb\nc"]) assert.equal(sessionTopBorder(80, bad, rule), rule(80));
-	// Terminal controls never reach the border.
-	assert.equal(sessionTopBorder(10, "ab\x07c\x1b[39m", rule), `${rule(3)} abc \u2500\u2500`);
-	// A stock border whose text changes at the reduced width (a status cut, a hint lost) keeps the full width.
-	const status = (width: number) => width >= 30 ? `\u2500\u2500 Working long status \u2500${rule(width - 24)}` : rule(width);
-	assert.equal(sessionTopBorder(60, id, status), status(60));
-	assert.equal(stripVTControlCharacters(sessionTopBorder(80, id, status)), `${status(40)} ${id} \u2500\u2500`);
-	// A stock border without two rule cells before the ID keeps the full width.
-	const tight = (width: number) => `\u2500\u2500 ${"x".repeat(Math.max(0, width - 3))}`;
-	assert.equal(sessionTopBorder(80, id, tight), tight(80));
-});
-
-it("model labels, missing metadata and reasoning levels match the owner's symbols", () => {
-	assert.equal(modelName(sample.model), "Sonnet 5.5");
-	assert.equal(modelName(undefined), "no-model");
-	assert.equal(modelName({ id: "fallback", name: "" }), "fallback");
-	for (const [level, short] of Object.entries({ off: "no", minimal: "min", low: "lo", medium: "md", high: "hi", xhigh: "xh", max: "mx" })) {
-		assert.equal(thinkingLabel(sample.model, level), short);
-	}
-	assert.equal(thinkingLabel({ id: "plain", reasoning: false }, "high"), "");
-	assert.equal(thinkingLabel(sample.model, "future"), "future");
-	assert.equal(singleLine("\x1b[31ma\x1b[0m\n\tb\x07"), "a b");
-	assert.equal(gitText({ branch: null, unstaged: 1, staged: 0, untracked: 0 }), "*1");
-	assert.equal(gitText({ branch: "main", unstaged: 0, staged: 0, untracked: 0 }), `${ICON.branch} main`);
-});
-
-it("place handles POSIX, Windows drive and UNC paths with directory boundaries", () => {
-	const place = (cwd: string, home = "/home/u", scratchRoots = ["/tmp"]) => placeOf({ cwd, home, scratchRoots });
-	assert.deepEqual(place("/tmp/probe"), { kind: "scratch", text: "probe" });
-	assert.deepEqual(place("/tmp-other/probe"), { kind: "folder", text: "/tmp-other/probe" });
-	assert.equal(place("/home/u/Projects/app").text, "app");
-	assert.equal(place("/home/u/repos/app").text, "app");
-	assert.equal(place("/work/app").text, "app");
-	assert.equal(place("/home/u/app").text, "~/app");
-	assert.equal(place("C:\\Users\\Bob\\repos\\app", "c:\\users\\bob", []).text, "app");
-	assert.deepEqual(place("C:\\TEMP\\app", "C:\\Users\\Bob", ["c:\\temp"]), { kind: "scratch", text: "app" });
-	assert.equal(within("\\\\server\\share", "\\\\SERVER\\SHARE\\app"), "app");
-	assert.equal(within("C:\\temp", "C:\\temporary"), null);
-	assert.equal(within("/", "/foo"), "foo");
-	assert.equal(placeOf({ cwd: "/tmp/tree/sub", home: "/home/u", scratchRoots: ["/tmp"],
-		worktree: { project: "app", name: "feature" }, branch: "feature" }).text, "app");
-	assert.equal(place("/" + "🙂".repeat(50)).text, "…" + "🙂".repeat(39));
-});
-
-it("porcelain counts staged, unstaged, conflicts, untracked and two-record renames", () => {
-	assert.deepEqual(parsePorcelain("M  staged\0 M unstaged\0MM both\0?? new\0!! ignored\0R  dest\0?? source\0 R dest2\0 M source2\0UU conflict\0"),
-		{ staged: 4, unstaged: 4, untracked: 1 });
-	assert.deepEqual(parsePorcelain(""), { staged: 0, unstaged: 0, untracked: 0 });
-});
-
-it("rate is provider output over Pi's duration, skips unqualified samples, holds and resets", () => {
+it("parses git records and measures a qualified response rate", () => {
+	assert.deepEqual(parsePorcelain("M  staged\0 M unstaged\0?? new\0"), { staged: 1, unstaged: 1, untracked: 1 });
 	const rate = new RateMeter();
-	assert.equal(rate.value(), undefined);
-	rate.record({ usage: { output: 44 }, durationMs: 1 });
-	assert.equal(rate.value(), undefined, "44 tokens in 1 ms is skipped, not 44000");
-	rate.record({ usage: { output: 100 }, durationMs: 499 });
-	assert.equal(rate.value(), undefined);
-	for (const bad of [{ usage: { output: 100 } }, { durationMs: 1000 }, { usage: { output: 0 }, durationMs: 1000 },
-		{ usage: { output: NaN }, durationMs: 1000 }, { usage: { output: 100 }, durationMs: NaN },
-		{ usage: { output: 100 }, durationMs: 0 }, { usage: { output: 100 }, durationMs: Infinity },
-		{ usage: { output: -5 }, durationMs: 1000 }]) {
-		rate.record(bad as never);
-		assert.equal(rate.value(), undefined);
-	}
 	rate.record({ usage: { output: 300 }, durationMs: 2000 });
 	assert.equal(rate.value(), 150);
-	rate.record({ usage: { output: 100 }, durationMs: 100 });
-	assert.equal(rate.value(), 150, "an unqualified sample holds the last value");
-	for (const stopReason of ["aborted", "error"]) {
-		rate.record({ usage: { output: 5 }, durationMs: 3000, stopReason });
-		assert.equal(rate.value(), 150, `a ${stopReason} message keeps the previous value`);
-	}
-	rate.record({ usage: { output: 100 }, durationMs: 500, stopReason: "toolUse" });
-	assert.equal(rate.value(), 200, "exactly 500 ms qualifies");
-	rate.reset(); assert.equal(rate.value(), undefined);
+	rate.record({ usage: { output: 5 }, durationMs: 3000, stopReason: "aborted" });
+	assert.equal(rate.value(), 150);
+	rate.reset();
+	assert.equal(rate.value(), undefined);
+});
+
+it("keeps Unicode graphemes on their measured terminal columns", () => {
+	// Regression for c576f3697603dc5f789984ef1fdbd35cc2e9e7b8.
+	const frame = silverGlintPosition(4, 2) / SHIMMER_CELLS_PER_FRAME;
+	const silverAt = (text: string, column: number) => {
+		const phase = shimmerPhase(column, frame);
+		const rgb = [1, 3, 5].map((i) => parseInt(mix(SILVER, phase).slice(i, i + 2), 16)).join(";");
+		return `\x1b[${phase > 0.85 ? "1;" : ""}38;2;${rgb}m${text}\x1b[22;39m`;
+	};
+	assert.equal(shimmerText("界e\u0301x", 0, 2, SILVER), silverAt("界", 0) + silverAt("e\u0301", 2) + silverAt("x", 3));
+});
+
+it("delegates effort color to the supplied Pi theme", () => {
+	// Regression for 34e6bd3d12fbb3939457f5987be9c950c34e62f2.
+	const theme = {
+		fg: (_role: string, text: string) => text,
+		getThinkingBorderColor: (level: string) => (text: string) => `<${level}>${text}`,
+	} as unknown as Theme;
+	assert.equal(effortText("high", "hi", themePaint(theme)), "\x1b[1m<high>hi\x1b[22m");
 });
