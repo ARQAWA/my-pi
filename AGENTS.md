@@ -51,10 +51,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   `profiles/spotty.toml` defaults to `gpt-6.1-terra` low; `profiles/bossy.toml` defaults to the same model medium. Both embed the same
   reviewer role in `developer_instructions`; the common skill explicitly loads the byte-identical `REVIEWER.md` through
   `role_file`, so personal or project same-name profiles cannot replace the package review contract. `rqw-agent:profiles` offers their paths to RQW-agent; public
-  `resources_discover` supplies `skills/reviewer`, `skills/blindreview`, `skills/highreview` and `skills/testreview`.
-  `testreview` selects `requirements-test-reviewer` on Sol low to review test code against supplied requirements,
-  test plan and conversation without execution or mandatory commit pairs. It is separate from the project
-  `test-reviewer` profile. The common blind/high skill
+  `resources_discover` supplies `skills/reviewer`, `skills/blindreview` and `skills/highreview`. The common blind/high skill
   carries only the review section of the owner's Codex skill, and the wrappers select Spotty or Bossy. Each pass
   starts a fresh ordinary `agent` with `agent_type`, the package `role_file` and `include: ["user_messages"]`; results are `agent#N` results.
   Read-only is an instruction, with no git guard or sandbox. Lifecycle, settings, Fast, caching and delivery are
@@ -113,6 +110,8 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `.pi/extensions/post-edit-lint/`: dev-only, repo-local silent Oxlint checks after successful edits and writes. It is not shipped or listed in `pi.extensions`; its inline factory reaches only executors through RQW-agent's generic child-factory offer. Tests: `test/post-edit-lint.test.ts`.
 - `.pi/agents/test-reviewer.toml`: the read-only test-review profile, used through `agent` with
   `agent_type: "test-reviewer"`.
+- `.pi/agents/requirements-test-reviewer.toml` and `.pi/skills/testreview/`: repo-only requirements-based test review
+  on Sol low, without execution or mandatory commit pairs.
 - `extensions/RQW-naming/`: extension 16, background native session names after first input and each successful
   compaction, from all available context. One request ranks 1-10 candidates by meaning, best valid name wins.
   The session provider selects `kimi-coding/kimi-for-coding`, `anthropic/claude-haiku-5-5`, or

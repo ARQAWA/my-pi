@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { loadSkills } from "@earendil-works/pi-coding-agent";
 import { parse } from "smol-toml";
+import { ProfileCatalogue } from "../extensions/RQW-agent/profiles.ts";
 
-test("project reviewer profiles retain Sol low and the required review contracts", () => {
+test("project reviewer profiles retain Sol low and the required review contracts", async () => {
 	const fragments = {
 		"code-reviewer": [
 			"a concrete reachable trigger, input, state, or ordering",
@@ -14,6 +20,12 @@ test("project reviewer profiles retain Sol low and the required review contracts
 			"Use public Pi APIs unless an accepted decision explicitly permits a private seam.",
 			"CHECKED: <one or two sentences naming the scoped files, critical paths traced, and applicable project principles checked>",
 			"CLEAN with material UNCHECKED evidence is incomplete.",
+		],
+		"requirements-test-reviewer": [
+			"Check whether its checks actually verify the owner's requirements, test plan and acceptance criteria",
+			"Do not edit files, change state, spawn agents, run tests or execute the code under review.",
+			"Current code and conversation are sufficient inputs",
+			"Any element beyond the owner's requirements and decisions the owner himself accepted is a finding.",
 		],
 		"test-reviewer": [
 			"Trace requirement -> setup -> public production function -> returned result -> assertion.",
@@ -42,5 +54,21 @@ test("project reviewer profiles retain Sol low and the required review contracts
 		for (const fragment of required) {
 			assert.ok((profile.developer_instructions as string).includes(fragment), `${name}: ${fragment}`);
 		}
+	}
+	const root = fileURLToPath(new URL("..", import.meta.url));
+	const agentDir = await mkdtemp(join(tmpdir(), "my-pi-review-discovery-"));
+	try {
+		const profiles = await new ProfileCatalogue().refresh({ cwd: root, agentDir, codexHome: agentDir, extensionPaths: [] });
+		const profile = profiles.find(item => item.name === "requirements-test-reviewer");
+		assert.equal(profile?.path, join(root, ".pi", "agents", "requirements-test-reviewer.toml"));
+		const skills = loadSkills({ cwd: root, agentDir, skillPaths: [], includeDefaults: true }).skills;
+		const skill = skills.find(item => item.name === "testreview");
+		assert.equal(skill?.filePath, join(root, ".pi", "skills", "testreview", "SKILL.md"));
+		const text = readFileSync(skill!.filePath, "utf8");
+		assert.ok(text.includes('agent_type: "requirements-test-reviewer"'));
+		assert.ok(text.includes("openai-codex/gpt-6.1-sol"));
+		assert.ok(!text.includes("role_file"));
+	} finally {
+		await rm(agentDir, { recursive: true, force: true });
 	}
 });

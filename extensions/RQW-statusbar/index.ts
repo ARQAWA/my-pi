@@ -6,6 +6,7 @@ import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme, ThemeCo
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { actionPhrase, CountsWatch, statusText } from "./activity.ts";
 import { branchNumber } from "./branch.ts";
+import { QuotaConsumer } from "./quota.ts";
 import { type BorderSource, ContextEditor } from "./editor.ts";
 import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
 import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar, activityRows } from "./render.ts";
@@ -239,10 +240,13 @@ export default function statusbar(pi: ExtensionAPI) {
 			const poll = setInterval(refresh, GIT_POLL_MS);
 			poll.unref?.();
 			refresh();
+			const quotas = new QuotaConsumer(pi.events, ctx.sessionManager.getSessionId(), () => tui.requestRender());
+			quotas.start();
 			const cleanup = () => {
 				if (disposed) return;
 				disposed = true;
 				clearInterval(poll);
+				quotas.stop();
 				stopBranch();
 				stopShimmer();
 				active = false;
@@ -263,6 +267,7 @@ export default function statusbar(pi: ExtensionAPI) {
 						void refreshGit();
 					}
 					const rows = renderBar({
+						quotas: quotas.values,
 						model: ctx.model,
 						thinkingLevel: pi.getThinkingLevel(),
 						...contextState(),

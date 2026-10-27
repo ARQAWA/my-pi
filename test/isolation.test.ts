@@ -16,11 +16,12 @@ function sourceFiles(dir: string, resources = false): string[] {
 }
 
 it("harness sources do not reference repository development tooling", () => {
-	const forbidden = /PROCESS\.md|coordinator\.lock|\.pi[\/\\]extensions|my-pi-evidence|my-pi-worktrees|qa-status|ci-watch|BACKLOG\.md|repository's mandatory weakening review|project `test-reviewer`/;
+	const forbidden = /PROCESS\.md|coordinator\.lock|\.pi[\/\\]extensions|my-pi-evidence|my-pi-worktrees|qa-status|ci-watch|BACKLOG\.md|repository's mandatory weakening review|project `(?:test-reviewer|requirements-test-reviewer)`/;
 	assert.doesNotMatch(JSON.stringify(manifest.pi), forbidden, "package.json pi resources");
 	const files = [
 		...sourceFiles(join(ROOT, "extensions"), true),
-		...sourceFiles(join(ROOT, "pcli-vscode"), true),
+		...sourceFiles(join(ROOT, "pcli-vscode"), true)
+			.filter(file => !inside(file, join(ROOT, "pcli-vscode", "test"))),
 	];
 	for (const file of files) {
 		assert.doesNotMatch(readFileSync(file, "utf8"), forbidden, file);

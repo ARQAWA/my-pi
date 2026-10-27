@@ -1,5 +1,27 @@
 # Install my-pi into this Pi
 
+## Windows through ARQAWA PCLI
+
+PCLI bundles Pi and my-pi. Install or update the VS Code extension, then open `Pi CLI: New Tab`.
+Do not run the manual package installation below inside PCLI. Loading the bundled package needs no Git command
+or GitHub access. The existing Git Bash launch prerequisite remains.
+At build time the VSIX takes the public repository's `main` head, recorded in `my-pi/.revision`.
+The extension manages only my-pi's package source in Pi settings, preserving its resource filters,
+unrelated settings, packages and authentication. Close old tabs and open a new tab after updating PCLI.
+Login remains `/login` inside Pi. Real VDI launch is not verified by synthetic tests.
+
+To update only my-pi without a new PCLI release, use Ctrl+Shift+P -> `Pi CLI: Update`.
+It downloads the latest public `ARQAWA/my-pi` `main` archive over HTTPS, without Git or npm.
+Existing libraries are reused only when dependency names and versions match, regardless of key order.
+Changed dependencies leave the current copy untouched and ask you to update the VS Code extension instead.
+Successful updates activate an immutable managed copy for new tabs; old copies stay for running tabs.
+Open a new Pi tab after the success notification. Pi itself stays pinned until PCLI is updated.
+A crashed extension host does not leave a persistent update lock.
+The command changes no settings or authentication; opening the new tab preserves the package filters.
+A later PCLI version starts from its newly bundled package instead of an older managed override.
+
+## Manual installation outside PCLI
+
 You are running inside Pi. Install the my-pi package into this Pi installation, then report the result in one short message.
 
 0. Run `pi --version`. The package is built and tested for Pi 1.4.0. If the version differs, tell the user and stop:

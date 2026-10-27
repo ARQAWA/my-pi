@@ -9,16 +9,20 @@
 
 ## Independent review
 
-1. Use one independent review per task, short for small tasks.
-2. Use `spotty` by default and `bossy` when the owner asks for a high review.
-3. Keep the `code-reviewer` and `test-reviewer` profiles available.
-4. Findings need evidence and impact. Send missing evidence back to the same reviewer.
+1. Keep tasks at one to three story points.
+2. Give each leaf one independent review after its scoped checks.
+3. Use `spotty` by default and `bossy` when the owner asks for a high review.
+4. A short review checks that the task is done right, with nothing extra and nothing forgotten.
+5. Keep the `code-reviewer` and `test-reviewer` profiles available.
+6. Findings need evidence and impact. Send missing evidence back to the same reviewer.
 
 ## Delivery
 
-1. Squash into `release` and push.
-2. After runtime changes only, update the owner's installed Pi from `@release`, preserving settings.
-3. Merge into `main` only after one full `npm test` on the exact head.
+1. Deliver in large chunks, not separate leaf releases.
+2. At each chunk boundary, run `code-reviewer` and `test-reviewer` over the chunk and resolve evidenced findings.
+3. Squash the reviewed chunk into `release` and push once.
+4. After runtime changes only, update the owner's installed Pi once from `@release`, preserving settings.
+5. Merge into `main` only after one full `npm test` on the exact head.
 
 Run `npm run knip` on demand only. Findings are audit input, not deletion authority, and do not block default checks or delivery.
 
@@ -74,4 +78,5 @@ The guard reads this machine-readable block.
 11. Write the test from the requirement, not the code. It must fail without the change; no tautologies.
 12. Compare bytes only for the exact static fragment that must be static, never a whole file or dynamic parts.
 13. One test runs in milliseconds; an extension's suite runs in about a second.
-14. Per task, run `npm run check -- --test "test/extensions/<touched>/*.test.ts"` for full calibrated lint and only the touched tests, concurrently. Repeat `--test <paths>` for more paths. Run `npm run check` once before merging into main: full lint and the unchanged `npm test` run concurrently. All jobs finish before a failure is returned; no automatic fixes or retries. Adding `--typecheck` runs `tsc` concurrently on request. TypeScript is never part of the default check or push CI.
+14. Documentation-only changes get source checks, not invented runtime tests.
+15. Per task, run `npm run check -- --test "test/extensions/<touched>/*.test.ts"` for full calibrated lint and only the touched tests, concurrently. Repeat `--test <paths>` for more paths. Run `npm run check` once before merging into main: full lint and the unchanged `npm test` run concurrently. All jobs finish before a failure is returned; no automatic fixes or retries. Adding `--typecheck` runs `tsc` concurrently on request. TypeScript is never part of the default check or push CI.

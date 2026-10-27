@@ -9,11 +9,10 @@ export default function reviewProfiles(pi: ExtensionAPI) {
 		(request as { offer(paths: string[]): void }).offer([
 			join(ROOT, "profiles", "spotty.toml"),
 			join(ROOT, "profiles", "bossy.toml"),
-			join(ROOT, "profiles", "requirements-test-reviewer.toml"),
 		]);
 	});
 	pi.on("session_shutdown", stopOffering);
 	pi.on("resources_discover", () => ({
-		skillPaths: ["reviewer", "blindreview", "highreview", "testreview"].map((name) => join(ROOT, "skills", name, "SKILL.md")),
+		skillPaths: ["reviewer", "blindreview", "highreview"].map((name) => join(ROOT, "skills", name, "SKILL.md")),
 	}));
 }

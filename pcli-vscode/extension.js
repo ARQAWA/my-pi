@@ -4,6 +4,7 @@ const vscode = require('vscode');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { createUpdater } = require('./update-my-pi');
 
 // Константы и пути
 
@@ -13,6 +14,8 @@ const PROXY_VARS = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'NODE_
 // Состояние модуля
 
 let piExe = '';
+let bundledPackage = '';
+let updater;
 let count = 0;
 const ptys = new Set();
 
@@ -69,7 +72,21 @@ function proxyExports(env) {
 
 function activate(context) {
   piExe = path.join(context.extensionPath, 'pi', 'pi.exe');
-  context.subscriptions.push(vscode.commands.registerCommand('pcli.newTab', () => openTab('pi ' + ++count)));
+  bundledPackage = path.join(context.extensionPath, 'my-pi');
+  updater = createUpdater(context, globalThis.fetch, require('net'));
+  context.subscriptions.push(
+    vscode.commands.registerCommand('pcli.newTab', () => openTab('pi ' + ++count)),
+    vscode.commands.registerCommand('pcli.update', async () => {
+      try {
+        await vscode.window.withProgress({
+          location: vscode.ProgressLocation.Notification, title: 'Updating my-pi...',
+        }, () => updater.run());
+        vscode.window.showInformationMessage('my-pi updated. Open a new Pi tab to use it.');
+      } catch (err) {
+        vscode.window.showErrorMessage('my-pi update failed: ' + err.message);
+      }
+    }),
+  );
 }
 
 // Вкладки терминала
@@ -143,6 +160,51 @@ function loadNodePty() {
   }
 }
 
+// Replace only our package source. Object-form resource filters remain untouched.
+function configurePackage() {
+  if (!fs.existsSync(path.join(bundledPackage, 'package.json'))) {
+    throw new Error('Not found: ' + bundledPackage);
+  }
+  const agentDir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
+  const settingsPath = path.join(agentDir, 'settings.json');
+  fs.mkdirSync(agentDir, { recursive: true });
+  // Pi uses proper-lockfile with realpath:false: the same atomic .lock directory.
+  // A busy or stale lock stops this tab; never steal another settings writer's lock.
+  const lockPath = settingsPath + '.lock';
+  fs.mkdirSync(lockPath);
+  try {
+    const original = fs.existsSync(settingsPath) ? fs.readFileSync(settingsPath, 'utf8') : null;
+    const settings = original === null ? {} : JSON.parse(original.replace(/^\uFEFF/, ''));
+    if (settings.packages !== undefined && !Array.isArray(settings.packages)) throw new Error('Invalid Pi packages setting');
+    const packages = settings.packages ?? [];
+    const isOurs = (entry) => {
+      const source = typeof entry === 'string' ? entry : entry?.source;
+      if (typeof source !== 'string') return false;
+      return /^git:(?:https:\/\/)?github\.com\/ARQAWA\/my-pi(?:\.git)?(?:@.*)?$/i.test(source)
+        || source === bundledPackage || source === updater.bundled
+        || source.startsWith(updater.managedRoot + path.sep)
+        || /[\\/]arqawa\.pcli-[^\\/]+[\\/]my-pi$/i.test(source);
+    };
+    const owned = packages.filter(isOurs);
+    const filtered = owned.find((entry) => typeof entry === 'object');
+    const replacement = filtered ? { ...filtered, source: bundledPackage } : bundledPackage;
+    let replaced = false;
+    settings.packages = packages.flatMap((entry) => {
+      if (!isOurs(entry)) return [entry];
+      if (replaced) return [];
+      replaced = true;
+      return [replacement];
+    });
+    if (!replaced) settings.packages.push(replacement);
+    if (JSON.stringify(settings.packages) === JSON.stringify(packages)) return;
+    const temp = settingsPath + '.pcli.tmp';
+    fs.writeFileSync(temp, JSON.stringify(settings, null, 2) + '\n');
+    fs.renameSync(temp, settingsPath);
+  } finally {
+    fs.rmdirSync(lockPath);
+  }
+}
+
 function openTab(name) {
   if (!fs.existsSync(GIT_BASH)) {
     vscode.window.showErrorMessage('Not found: ' + GIT_BASH + '. Install Git for Windows.');
@@ -157,6 +219,13 @@ function openTab(name) {
   }
   if (!fs.existsSync(piExe)) {
     vscode.window.showErrorMessage('Not found: ' + piExe);
+    return;
+  }
+  try {
+    bundledPackage = updater.current();
+    configurePackage();
+  } catch (err) {
+    vscode.window.showErrorMessage(err.message);
     return;
   }
   const terminal = vscode.window.createTerminal({

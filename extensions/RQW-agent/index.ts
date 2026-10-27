@@ -22,8 +22,8 @@ import { Activity } from "./activity.ts";
 import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-files.ts";
 import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
-import { Coordinator, type Result, type RuntimeHandle, waitTimeout, targetIds, messageCount, statusDepth, waitResult } from "./coordinator.ts";
-import { CHILD_ENTRY, createChildManager, openChildManager, retainedChildManager, repairInterrupted, installExecutionIntent } from "./persistence.ts";
+import { Coordinator, type Result, type RuntimeHandle, deadlineTimer, waitTimeout, targetIds, messageCount, statusDepth, waitResult } from "./coordinator.ts";
+import { CHILD_ENTRY, deliveredRuns, createChildManager, openChildManager, retainedChildManager, repairInterrupted, installExecutionIntent } from "./persistence.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
 /** Pi's built-in tools a child gets when its caller has them active (the main session has them through RQW-settings). */
@@ -85,6 +85,22 @@ type Params = Static<typeof PARAMETERS>;
 type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; prompt_file?: PromptFile; profile?: ProfileRef; profile_defaults?: { model: boolean; thinking: boolean; role: boolean }; alert_after_ms?: number; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
 type SavedResult = { run: string; text: string; outcome: "completed" | "error"; meta: RunMeta };
 type SavedChild = { version: 1; kind: string; id: number; epoch: string; sessionFile?: string; runNumber: number; state: "idle" | "running" | "interrupted" | "paused" | "completed" | "stopped"; config: Omit<Config, "model"> & { model: { provider: string; id: string } }; fast: boolean; title?: string; task?: string; result?: SavedResult; progressSteps?: number };
+type Persisted = { config: Config; task?: string; written?: { config: Config; task?: string } };
+
+/** Config and task are written once and again only when they change; restore takes them from the earlier full record. */
+export function childRecord<T extends { config?: unknown; task?: string }>(a: Persisted, full: T): T | Omit<T, "config" | "task"> {
+	if (a.written?.config === a.config && a.written.task === a.task) {
+		const { config: _config, task: _task, ...short } = full;
+		return short;
+	}
+	a.written = { config: a.config, task: a.task };
+	return full;
+}
+
+/** A short record inherits config and task from the previous record of the same child. */
+export function mergeSaved<T extends { config?: unknown; task?: string }>(previous: T | undefined, data: T): T {
+	return data.config || !previous ? data : { ...data, config: previous.config, task: data.task ?? previous.task };
+}
 type CallerHost = { busy(): boolean; send: ExtensionAPI["sendMessage"] };
 type JobNotification = { id: string; text: string; details: Record<string, unknown> };
 type InboxMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
@@ -167,11 +183,15 @@ type Agent = Child & {
 	state: SavedChild["state"];
 	/** Last accepted task for provenance, never authority to reconstruct missing durable history. */
 	task?: string;
+	/** The config and task already written to the parent session by this agent object. */
+	written?: Persisted["written"];
 	result?: SavedResult;
 	/** The current run, undefined while idle. `quiet` ends it without a message. */
 	run?: { done: Promise<void>; quiet: boolean; controller: AbortController; parked?: AbortController };
 	/** Tasks of `send` calls made while an interrupted run is still stopping; they start, in order, once it has. */
 	next?: string[];
+	idleSince?: number;
+	cancelSleep?: () => void;
 };
 
 /** The run's own record (startRun), from its assistant message_end events: last executed model and last stop reason. */
@@ -231,6 +251,10 @@ function lastNumber(entries: readonly SessionEntry[], name: string): number {
 	};
 	for (const e of entries) {
 		if (e.type === "custom" && e.customType === name) take((e.data as { id?: unknown } | undefined)?.id);
+		if (e.type === "custom" && e.customType === CHILD_ENTRY) {
+			const data = e.data as Partial<SavedChild> | undefined;
+			if (data?.version === 1 && data.kind === name) take(data.id);
+		}
 		let match: RegExpExecArray | null = null;
 		if (e.type === "custom_message" && e.customType === name && typeof e.content === "string")
 			match = new RegExp(`^\\[${name}#(\\d+)\\](?:\\s|$)`).exec(e.content);
@@ -397,11 +421,14 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	/** A child's display label in RQW-tools notes: the path from the main session, "agent#1/agent#2". */
 	const labelOf = (id: number) => `${labelPrefix}${name}#${id}`;
 	const agents = new Map<number, Agent>();
+	const savedSlots = new Map<number, SavedChild>();
+	const restoring = new Map<number, { epoch: string; promise: Promise<void> }>();
 	const lifetime = new AbortController();
 	let generation = new AbortController();
 	let counter = 0;
 	let main: ExtensionContext | undefined;
 	let hydrated = false;
+	let branchIndex: { saved: Map<number, SavedChild>; delivered: Set<string> } | undefined;
 	let initialRecovery = true;
 	const recoveryPending = new Set<number>();
 	const recoveryErrors = new Map<number, { data?: SavedChild; error: string }>();
@@ -577,28 +604,114 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			fast: a.fast.on, progressSteps: a.progress.steps, ...(a.title ? { title: a.title } : {}), ...(a.task !== undefined ? { task: a.task } : {}),
 			...(a.result ? { result: a.result } : {}),
 		};
-		pi.appendEntry(CHILD_ENTRY, data);
+		pi.appendEntry(CHILD_ENTRY, childRecord(a, data));
+		branchIndex?.saved.set(a.id, data);
+		return data;
+	}
+
+	function saveSlot(data: SavedChild) {
+		savedSlots.set(data.id, data);
+		coordinator.add({ id: `${name}#${data.id}`, run: `${data.epoch}:${data.runNumber}`, active: () => false,
+			snapshot: () => ({ state: "idle", run_active: false, model: data.config.model, ...(data.title ? { title: data.title } : {}),
+				...(data.config.profile ? { profile: data.config.profile } : {}) }) });
+	}
+
+	function sleep(a: Agent) {
+		if (agents.get(a.id) !== a || a.idleSince === undefined || performance.now() - a.idleSince < 300000
+			|| a.state !== "completed" || !a.result || a.run || a.next?.length || a.activity.isRunning()
+			|| a.session.agent.state.isStreaming || a.session.agent.hasQueuedMessages()
+			|| a.session.getSteeringMessages().length || a.session.getFollowUpMessages().length
+			|| a.bridge.pending() || a.children?.pending() || a.children?.runningCounts().agents
+			|| coordinator.undelivered(`${name}#${a.id}`)) return;
+		// A queued Pi message is not durable delivery yet. Wait for its actual branch entry.
+		const delivered = main?.sessionManager.getBranch().some(entry => {
+			const details = (entry.type === "custom_message" ? entry.details
+				: entry.type === "message" && entry.message.role === "toolResult" ? entry.message.details : undefined) as
+				{ run?: string; results?: { run?: string }[] } | undefined;
+			return details?.run === a.result!.run || (Array.isArray(details?.results) && details.results.some(result => result?.run === a.result!.run));
+		});
+		if (!delivered && !coordinator.committed(`${name}#${a.id}`, a.result.run)) return;
+		const parentFile = main?.sessionManager.getSessionFile();
+		const childFile = a.session.sessionManager.getSessionFile();
+		if (!parentFile || !childFile || !main) return;
+		const data = persist(a);
+		try {
+			const durable = SessionManager.open(parentFile).getBranch().findLast(entry => entry.type === "custom" && entry.customType === CHILD_ENTRY
+				&& (entry.data as SavedChild)?.id === a.id) as { data?: SavedChild } | undefined;
+			if (durable?.data?.epoch !== a.epoch || durable.data.state !== "completed" || durable.data.sessionFile !== childFile) return;
+			const manager = openChildManager(main.sessionManager, childFile, a.config.cwd ?? main.cwd, name, a.id);
+			if (manager.getSessionId() !== a.session.sessionManager.getSessionId()
+				|| !manager.buildSessionProjection().messages.some(message => message.role !== "system")) return;
+		} catch { return; }
+		agents.delete(a.id);
+		saveSlot(data);
+		close(a);
+	}
+
+	function touch(ids: string[]) {
+		for (const id of ids) {
+			const a = agents.get(localNumber(id)!);
+			if (a?.state === "completed" && !a.run) { a.idleSince = performance.now(); armSleep(a); }
+		}
+	}
+
+	function queueSleep(a: Agent) {
+		if (a.idleSince === undefined || performance.now() - a.idleSince < 300000) return;
+		const pending = coordinator.queue.then(() => sleep(a));
+		coordinator.queue = pending.catch(() => {});
+	}
+
+	function armSleep(a: Agent) {
+		a.cancelSleep?.();
+		if (a.state !== "completed" || a.run || !a.result) return;
+		a.idleSince ??= performance.now();
+		a.bridge.wake = () => queueSleep(a);
+		a.cancelSleep = deadlineTimer(Math.max(0, 300000 - (performance.now() - a.idleSince)), () => {
+			a.cancelSleep = undefined;
+			queueSleep(a);
+		});
+	}
+
+	function selectedBranch(ctx: ExtensionContext) {
+		if (branchIndex) return branchIndex;
+		const saved = new Map<number, SavedChild>();
+		const delivered = deliveredRuns(ctx.sessionManager);
+		for (const entry of ctx.sessionManager.getBranch()) {
+			if (entry.type === "custom" && entry.customType === CHILD_ENTRY) {
+				const data = entry.data as SavedChild | undefined;
+				if (data?.version === 1 && data.kind === name && Number.isSafeInteger(data.id) && data.id > 0)
+					saved.set(data.id, mergeSaved(saved.get(data.id), data));
+			}
+			const details = (entry.type === "custom_message" ? entry.details
+				: entry.type === "message" && entry.message.role === "toolResult" ? entry.message.details
+					: entry.type === "custom" && entry.customType === INBOX_ENTRY
+						? (entry.data as { message?: { details?: unknown } })?.message?.details : undefined) as
+				{ run?: unknown; results?: { run?: unknown }[] } | undefined;
+			if (typeof details?.run === "string") delivered.add(details.run);
+			if (Array.isArray(details?.results)) for (const result of details.results)
+				if (typeof result?.run === "string") delivered.add(result.run);
+		}
+		// Allocation evidence belongs to the whole session, not just the selected branch.
+		counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries(), name),
+			...saved.keys());
+		branchIndex = { saved, delivered };
+		return branchIndex;
 	}
 
 	async function hydrate(ctx: ExtensionContext, signal: AbortSignal, onlyId?: number) {
 		if (hydrated && onlyId === undefined) return;
 		main = ctx;
-		const saved = new Map<number, SavedChild>();
-		// Session mappings are branch-local; allocation high-water marks remain session-wide.
-		for (const entry of ctx.sessionManager.getBranch()) {
-			if (entry.type !== "custom" || entry.customType !== CHILD_ENTRY) continue;
-			const data = entry.data as SavedChild | undefined;
-			if (data?.version !== 1 || data.kind !== name) continue;
-			if (!Number.isSafeInteger(data.id) || data.id < 1) continue;
-			counter = Math.max(counter, data.id);
-			saved.set(data.id, data);
-		}
+		if (onlyId !== undefined) branchIndex = undefined;
+		const { saved, delivered } = selectedBranch(ctx);
 		for (const data of saved.values()) {
 			if (onlyId !== undefined && data.id !== onlyId) continue;
 			if (data.state === "stopped") { recoveryErrors.delete(data.id); continue; }
 			if (agents.has(data.id)) continue;
+			const pending = restoring.get(data.id);
+			if (pending?.epoch === data.epoch) { await pending.promise; continue; }
+			const promise = (async () => {
 			try {
-			if (!data.sessionFile && !retainedChildManager(ctx.sessionManager, name, data.id)) continue;
+			if (!data.sessionFile && !retainedChildManager(ctx.sessionManager, name, data.id)) return;
 			const c = data.config;
 			if (!c || typeof c.system !== "string" || typeof c.base !== "string" || !Array.isArray(c.tools)
 				|| c.tools.some(tool => !TOOLS.includes(tool as typeof TOOLS[number])) || !THINKING.includes(c.thinking)
@@ -615,6 +728,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				|| (data.progressSteps !== undefined && (!Number.isSafeInteger(data.progressSteps) || data.progressSteps < 0))
 				|| !["idle", "running", "interrupted", "paused", "completed"].includes(data.state))
 				throw new Error(`Invalid persisted configuration for ${name}#${data.id}`);
+			if (onlyId === undefined && data.state === "completed" && data.result && data.sessionFile) {
+				saveSlot(data);
+				return;
+			}
 			const model = ctx.modelRegistry.find(c.model.provider, c.model.id);
 			if (!model) throw new Error(`Cannot restore ${name}#${data.id}: model ${c.model.provider}/${c.model.id} is unavailable`);
 			const neverRunIdle = data.state === "idle" && data.runNumber === 0 && data.task === undefined;
@@ -636,29 +753,34 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			child.progress.steps = data.progressSteps ?? 0;
 			const a: Agent = { ...child, id: data.id, config, fast, epoch: data.epoch, runNumber: data.runNumber,
 				state: data.state === "running" ? "interrupted" : data.state, title: data.title, task: data.task, result: data.result };
+			if (signal.aborted) { close(a); signal.throwIfAborted(); }
 			agents.set(a.id, a);
+			savedSlots.delete(a.id);
 			if (initialRecovery && ctx.sessionManager.getSessionFile() && a.state === "interrupted") recoveryPending.add(a.id);
 			recoveryErrors.delete(a.id);
 			coordinator.add(target(a));
+			armSleep(a);
 			} catch (error) {
 				if (signal.aborted) throw error;
 				recoveryPending.delete(data.id);
 				recoveryFailure(data.id, error, data);
 			}
+			})();
+			restoring.set(data.id, { epoch: data.epoch, promise });
+			try { await promise; }
+			finally { if (restoring.get(data.id)?.promise === promise) restoring.delete(data.id); }
 		}
 		hydrated = true;
 		initialRecovery = false;
-		for (const a of agents.values()) {
+		for (const a of [...agents.values(), ...savedSlots.values()]) {
 			const result = a.result;
-			if (a.state !== "completed" || !result) continue;
-			const seen = ctx.sessionManager.getBranch().some(entry => {
-				const details = (entry.type === "custom_message" ? entry.details
-					: entry.type === "message" && entry.message.role === "toolResult" ? entry.message.details : undefined) as
-					{ run?: string; results?: { run?: string }[] } | undefined;
-				return details?.run === result.run || details?.results?.some(r => r.run === result.run);
-			});
-			if (!seen) {
-				displays.set(result.run, displayOf(a, `${name}#${a.id}`, result.outcome, result.meta));
+			if (a.state !== "completed" || !result || recoveryErrors.has(a.id)) continue;
+			if (!delivered.has(result.run)) {
+				displays.set(result.run, "session" in a ? displayOf(a, `${name}#${a.id}`, result.outcome, result.meta) : {
+					id: `${name}#${a.id}`, outcome: result.outcome === "error" || ["aborted", "length"].includes(result.meta.stop ?? "") ? "failed" : "finished",
+					seconds: 0, thinking: a.config.thinking, ...(result.meta.model ? { model: result.meta.model } : {}),
+					...(a.title ? { title: a.title } : {}), ...(a.config.profile ? { profile: a.config.profile } : {}),
+					...(a.config.prompt_file ? { prompt_file: a.config.prompt_file } : {}) });
 				ownRuns.add(result.run);
 				coordinator.publish(`${name}#${a.id}`, result.run, result.text, result.outcome, deliver);
 			}
@@ -838,7 +960,14 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					// Child Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
 					return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 				};
-				activity = new Activity(session, () => { onRunning(); coordinator.notify(); }, { alert_after_ms: config.alert_after_ms });
+				activity = new Activity(session, () => {
+					onRunning(); coordinator.notify();
+					const a = agents.get(localNumber(childName)!);
+					if (a?.session === session && !a.run && !a.controller.signal.aborted) {
+						a.cancelSleep?.(); a.cancelSleep = undefined; a.idleSince = undefined;
+						if (!activity?.isRunning()) armSleep(a);
+					}
+				}, { alert_after_ms: config.alert_after_ms });
 				return { session, progress, controller, guard, children, activity, jobs, release: policy.release, captureRun: policy.capture, core, bridge };
 			});
 			return await untilAborted(creating, signal);
@@ -860,6 +989,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			started.resolve();
 		};
 		const session = a.session;
+		a.cancelSleep?.(); a.cancelSleep = undefined; a.idleSince = undefined;
 		a.progress.onCount = () => persist(a);
 		a.runNumber++;
 		a.state = "running";
@@ -1026,6 +1156,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					if (next?.length && !a.controller.signal.aborted)
 						void startRun(a, next.join("\n\n"), a.controller.signal).then(() => { a.guard.signal = a.run?.controller.signal; }, () => {});
 					a.next = undefined;
+					armSleep(a);
 					coordinator.notify();
 				}
 			}
@@ -1044,6 +1175,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	}
 
 	function close(a: Agent, preserveBridge = false) {
+		a.cancelSleep?.(); a.cancelSleep = undefined;
 		a.progress.invalidate();
 		if (!preserveBridge) a.bridge.close();
 		a.next = undefined;
@@ -1183,6 +1315,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					signal.throwIfAborted();
 					await hydrate(ctx, signal);
 					const ids = targetIds(params.ids), timeout = waitTimeout(params.timeout_ms);
+					touch(ids);
 					const options = { until: params.until as "first" | "all" | undefined, wake_on_alert: params.wake_on_alert };
 					const blocking = toolCallId.includes("/") || (!backgroundCaller && (ctx.mode === "print" || ctx.mode === "json"));
 					return { waiting: blocking ? coordinator.wait(ids, timeout, signal, toolCallId, options)
@@ -1203,13 +1336,24 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const params = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== null)) as Params;
 		signal.throwIfAborted();
 		await hydrate(ctx, signal);
+		if (params.action === "status") {
+			for (const id of targetIds(params.ids)) {
+				const number = localNumber(id)!;
+				if (savedSlots.has(number)) await hydrate(ctx, signal, number);
+				const depth = statusDepth(params.depth);
+				if (depth > 0) await agents.get(number)?.children?.prepareStatus?.(depth - 1, signal);
+			}
+		} else if (!["start", "wait", "stop"].includes(params.action)) {
+			const id = localNumber(params.id);
+			if (id !== undefined && savedSlots.has(id)) await hydrate(ctx, signal, id);
+		}
 		if ((params.system_file !== undefined || params.role_file !== undefined || params.include !== undefined || params.agent_type !== undefined) && params.action !== "start" && params.action !== "restart")
 			throw new Error("system_file, role_file, include and agent_type are only supported on start/restart");
 		if (params.agent_type !== undefined || (params.action === "restart" && find(params.id).config.profile)) await refreshProfiles(ctx);
 		const task = params.include?.includes("user_messages") && params.task !== undefined
 			? appendUserMessages(params.task, ctx.sessionManager.getBranch()) : params.task;
 		switch (params.action) {
-			case "status": return waitResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages), undefined, statusDepth(params.depth)) });
+			case "status": touch(targetIds(params.ids)); return waitResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages), undefined, statusDepth(params.depth)) });
 			case "start": {
 				if (!params.task) throw new Error("task is required");
 				const config = await resolveConfig(params, ctx, signal);
@@ -1279,15 +1423,18 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				const run = a.run;
 				a.next = undefined; // an interrupt drops tasks still waiting for the stopping run
 				// An interrupt is the caller's abort of the child: its background jobs die too, also when it is idle.
-				if (!run) { a.children?.abortAll(); a.jobs?.abortAll(); return ok(`${name}#${a.id} is idle`); }
+				if (!run) { a.children?.abortAll(); a.jobs?.abortAll(); touch([`${name}#${a.id}`]); return ok(`${name}#${a.id} is idle`); }
 				requestInterrupt(a, run);
 				return waitResult({ id: `${name}#${a.id}`, reason: "interruption_requested", cancellation_requested: true, snapshot });
 			}
 			case "stop": {
 				const id = localNumber(params.id);
-				const failed = id === undefined ? undefined : recoveryErrors.get(id);
-				if (id !== undefined && !agents.has(id) && failed?.data) {
-					pi.appendEntry(CHILD_ENTRY, { ...failed.data, state: "stopped" });
+				const stopped = id === undefined ? undefined : savedSlots.get(id) ?? recoveryErrors.get(id)?.data;
+				if (id !== undefined && !agents.has(id) && stopped) {
+					const data = { ...stopped, state: "stopped" as const };
+					pi.appendEntry(CHILD_ENTRY, data);
+					branchIndex?.saved.set(id, data);
+					savedSlots.delete(id);
 					recoveryErrors.delete(id); recoveryPending.delete(id);
 					coordinator.change(`${name}#${id}`, "stop");
 					return ok(`${name}#${id} stopped`);
@@ -1349,8 +1496,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		generation.abort(new Error("The caller changed its session branch"));
 		generation = new AbortController();
 		for (const a of agents.values()) { coordinator.change(`${name}#${a.id}`, "branch_changed"); close(a); }
-		for (const id of recoveryErrors.keys()) coordinator.change(`${name}#${id}`, "branch_changed");
-		agents.clear(); recoveryPending.clear(); recoveryErrors.clear(); hydrated = false; main = ctx;
+		for (const id of [...savedSlots.keys(), ...recoveryErrors.keys()]) coordinator.change(`${name}#${id}`, "branch_changed");
+		agents.clear(); savedSlots.clear(); restoring.clear(); recoveryPending.clear(); recoveryErrors.clear(); hydrated = false; branchIndex = undefined; main = ctx;
 		late.length = 0; unanswered.clear();
 	});
 	// agent_end still has the native run's live abort signal. before_settle no longer does.
@@ -1395,8 +1542,11 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			persist(a);
 			coordinator.change(`${name}#${a.id}`, "shutdown"); close(a);
 		}
+		for (const id of savedSlots.keys()) coordinator.change(`${name}#${id}`, "shutdown");
 		agents.clear();
+		savedSlots.clear(); restoring.clear();
 		hydrated = false;
+		branchIndex = undefined;
 		onRunning();
 		late.length = 0;
 		unanswered.clear();
@@ -1408,6 +1558,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		ownRuns.clear();
 	};
 	pi.on("session_shutdown", shutdown);
+	// Delivery and queue settlement can remove a blocker after the idle deadline.
+	for (const event of ["turn_end", "agent_settled"] as const) pi.on(event, () => {
+		for (const a of agents.values()) queueSleep(a);
+	});
 	return {
 		pending: () => runs().length > 0 || late.some(result => result.state === "pending") || !!(main && needsTurn(main)),
 		async wait(signal) {
@@ -1417,7 +1571,14 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			else await coordinator.observe(signal);
 		},
 		ids: () => [...agents.values()].filter(a => a.run).map(a => `${name}#${a.id}`),
-		status: depth => coordinator.status([...new Set([...agents.keys(), ...recoveryErrors.keys()])].map(id => `${name}#${id}`), undefined, undefined, statusDepth(depth)).map(compactStatus),
+		status: depth => coordinator.status([...new Set([...agents.keys(), ...savedSlots.keys(), ...recoveryErrors.keys()])].map(id => `${name}#${id}`), undefined, undefined, statusDepth(depth)).map(compactStatus),
+		async prepareStatus(depth, signal) {
+			if (!main) return;
+			await hydrate(main, signal);
+			for (const id of [...savedSlots.keys()]) await hydrate(main, signal, id);
+			touch([...agents.keys()].map(id => `${name}#${id}`));
+			if (depth > 0) for (const a of agents.values()) await a.children?.prepareStatus?.(depth - 1, signal);
+		},
 		runningCounts,
 		resume: resumeAll,
 		settle(aborted) {
