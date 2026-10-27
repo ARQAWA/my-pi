@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { nearestMatchHint } from "./hint.ts";
 import { editPathKey, resolvePath } from "./keys.ts";
 import { withRetry } from "./retry.ts";
+import { withFileLock } from "./lock.ts";
 
 // Multi-file edit over the stock edit definition (design decision 4).
 // Schema = stock schema + optional top-level path + optional path on each edits[] entry (strict-mode safe).
@@ -85,7 +86,8 @@ export async function executeEdit(stockExecute: any, id: string, params: any, si
 	}
 	const groups = groupEdits(params, base);
 	const runGroup = (group: Group) =>
-		withRetry<{ details?: unknown }>(() => stockExecute(id, { path: group.path, edits: group.edits }, signal, onUpdate, ctx), signal);
+		withFileLock(group.abs, () =>
+			withRetry<{ details?: unknown }>(() => stockExecute(id, { path: group.path, edits: group.edits }, signal, onUpdate, ctx), signal), signal);
 
 	if (groups.length === 1) {
 		try {

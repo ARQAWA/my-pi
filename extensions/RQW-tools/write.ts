@@ -1,5 +1,6 @@
 import { Type } from "typebox";
-import { writePathKeys } from "./keys.ts";
+import { resolvePath, writePathKeys } from "./keys.ts";
+import { withFileLock } from "./lock.ts";
 import { withRetry } from "./retry.ts";
 
 // Multi-file write over the stock write definition (design decision 5).
@@ -71,7 +72,8 @@ export async function executeWrite(stockExecute: any, id: string, params: any, s
 	}
 
 	const runFile = (file: { path: string; content: string }) =>
-		withRetry<{ details?: unknown }>(() => stockExecute(id, { path: file.path, content: file.content }, signal, onUpdate, ctx), signal);
+		withFileLock(resolvePath(file.path, base), () =>
+			withRetry<{ details?: unknown }>(() => stockExecute(id, { path: file.path, content: file.content }, signal, onUpdate, ctx), signal), signal);
 
 	if (files.length === 1) return runFile(files[0]);
 
