@@ -4,6 +4,27 @@ Terminal footer, editor borders and activity display.
 
 Modules and resources live beside `index.ts`; subfolders group needed resources.
 
+## Subscription limits
+
+The folder row starts with CX in gold, KM in platinum and CC in bronze.
+Each supplied native window shows its remaining percent. Unknown values show `unavailable`.
+Long lists wrap onto extra footer rows rather than hiding later providers.
+The active footer requests fresh snapshots immediately and every five minutes, independently
+of model responses. Disabling the footer or closing the session cancels requests and clears its timer.
+Failed refreshes replace old percentages with `unavailable`; windows are never combined.
+
+CC consumes the existing session-bound `rqw-anthropic:quota:v1` offer when available.
+CX and KM use Pi's public `readStoredCredential` for one-off read-only token reads.
+CX reads `https://chatgpt.com/backend-api/wham/usage` with the stored Codex account ID;
+its primary, secondary and additional groups retain the server's window durations.
+KM reads `https://api.kimi.com/coding/v1/usages` and displays the supplied five-hour,
+seven-day, monthly-total and monthly-code windows. Neither depends on RQW-codex.
+Missing or expired OAuth credentials, failed requests and unrecognized response shapes
+show `unavailable`. Requests have a five-second deadline. Tokens are never refreshed,
+rotated or written; settings and installed packages are untouched. No model calls,
+private APIs, cross-extension imports or new dependencies are used.
+No live credential or endpoint verification was performed.
+
 ## Effort colour
 
 The footer resolves all seven thinking levels through the supplied Pi theme's

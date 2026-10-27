@@ -572,6 +572,28 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: child tier follows the caller's choice without live coupling or cross-extension imports.
   Carrier: `extensions/RQW-agent/fast-gpt.ts`, `index.ts`. Since: `fa05edf`.
 
+## Subscription limits
+
+- **Native subscription windows** `[D-STATUSBAR-SUBSCRIPTION-LIMITS]`.
+  The folder row shows CX gold, KM platinum and CC bronze, with remaining percent per
+  supplied native window. Refresh immediately and every five minutes while active.
+  Missing or failed data is `unavailable`, never an invented 0% or 100%; failed reads
+  discard displayed stale data. Disable/shutdown cancels requests and releases the timer.
+  Owner: «Надо, чтобы ты разобрался, как это запилить, и сделал отображение, чтобы в real time эта хуйня работала. Не в real time, а хотя бы чтобы она раз в пять минут.»
+  Owner: «Codex будет золотого цвета, Kimi будет платинового цвета, а CloudCode будет бронзового цвета.»
+  Owner chose option 1: remaining native-window percentages, honest unavailable state,
+  five-minute refresh and partial delivery when a source cannot be read in this runtime.
+  CC consumes the existing optional Anthropic event offer. CX and KM independently use
+  Pi's public `readStoredCredential` for one-off read-only stored OAuth reads, without
+  auth resolution, token refresh, rotation or writes. CX requests the wham usage source
+  with the stored account ID; KM requests the Kimi coding usages source. Each native
+  window retains its name or server duration. Missing/expired credentials, request
+  failures and unknown response shapes show `unavailable`. RQW-codex is not required.
+  No private API, auth copying, dependency or live credential probe is added.
+  Owner correction: use public `readStoredCredential` for Codex and Kimi; never write
+  auth or refresh tokens. Keep the implementation inside the statusbar folder.
+  Carriers: `extensions/RQW-statusbar/{index,render,quota}.ts` and its README.
+
 ## Isolation
 
 - **Separate mirrored extension tests** `[D-STRUCT-TEST-LAYOUT]`. Coordinator question and accepted option 3a, not an owner quotation: move `extensions/*/test/**` to `test/extensions/RQW-<name>/**`, preserving the tree and keeping root `test/`. Source: owner's architecture answers `3a 4a 5a 6a 7a` and subsequent explicit delivery order in this repository session, 2026-10-25. First delivery is only the mechanical move and necessary path fixes, with assertions and behavior unchanged. The index, generator, README maps, extension-structure alignment and code-quality principle are deferred to the second delivery.
