@@ -383,7 +383,7 @@ export async function processResponsesStream(openaiStream, output, stream, model
 		} else if (event.type === "response.completed" || event.type === "response.incomplete") {
 			finalizeResponse(event.response);
 		} else if (event.type === "error") {
-			throw new Error(`Error Code ${event.code}: ${event.message}` || "Unknown error");
+			throw new Error(`Error Code ${event.code}: ${event.message}`);
 		} else if (event.type === "response.failed") {
 			sawTerminalResponseEvent = true;
 			output.rawStopReason = event.response?.status;

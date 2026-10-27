@@ -27,7 +27,7 @@ import { CODEX_AUTH_ORIGIN, type CodexAuthOrigin } from "./auth-runtime.ts";
 import { compressRequest } from "./compression.ts";
 import { Continuation } from "./continuation.ts";
 import { prepareContextFork, type ContextForkRequest, type PreparedTurn } from "./context-fork.ts";
-import { CodexError, classifyEvent, classifyHttp, classifyTransport, normalizeUsage, type CodexUsage } from "./errors.ts";
+import { CodexError, classifyEvent, classifyHttp, classifyTransport, normalizeUsage } from "./errors.ts";
 import { mergeHeaders } from "./headers.ts";
 import { clientMetadata, identityHeaders, localPlatform, validateExtraMetadata, type CodexIdentity, type RequestKind } from "./metadata.ts";
 import { CODEX_ENDPOINT, CODEX_PROVIDER, CODEX_STABLE_FEATURES, codexModelCapabilities, type CodexModelCapabilities } from "./profile.ts";
