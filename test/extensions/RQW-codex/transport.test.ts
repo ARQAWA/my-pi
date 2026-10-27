@@ -19,7 +19,7 @@ async function seededStore(token = access()) {
 
 const completed = (id: string, usage = rawUsage(10, 2)) => ({ type: "response.completed", response: { id, status: "completed", usage } });
 const rawUsage = (input: number, output: number, cached = 0, reasoning = 0) => ({ input_tokens: input, output_tokens: output, total_tokens: input + output, input_tokens_details: { cached_tokens: cached }, output_tokens_details: { reasoning_tokens: reasoning } });
-const textEvents = (id: string, text: string) => [
+const textEvents = (id: string, text: string): Record<string, unknown>[] => [
 	{ type: "response.created", response: { id } },
 	{ type: "response.output_item.added", output_index: 0, item: { type: "message", id: `msg_${id}`, role: "assistant", content: [], status: "in_progress" } },
 	{ type: "response.output_text.delta", item_id: `msg_${id}`, output_index: 0, content_index: 0, delta: text },

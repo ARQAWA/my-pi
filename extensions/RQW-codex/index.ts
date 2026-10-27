@@ -12,7 +12,7 @@ import { uuidv7 } from "./compaction.ts";
 import { newInstallationId } from "./metadata.ts";
 import { registerCodex, type CreateControllerOptions, type DirectTransport } from "./registration.ts";
 import { createSessionController, type SessionDependencies } from "./session.ts";
-import { CodexThreadTransport } from "./transport.ts";
+import { CodexThreadTransport, type CodexStreamOptions } from "./transport.ts";
 
 /** Name of the extension-owned installation id file inside the agent directory. */
 export const INSTALLATION_ID_FILE = "rqw-codex-installation-id";
@@ -83,7 +83,7 @@ export function createCodexExtension(options: CodexExtensionOptions = {}): (pi: 
 				const store = boundStore;
 				if (store === undefined) throw new Error("RQW-codex: no bound credential store for a request without a session id. Request not sent.");
 				return {
-					stream(model, context, streamOptions) {
+					stream(model, context, streamOptions?: CodexStreamOptions) {
 						const threadId = uuidv7();
 						// Request-local: a fresh thread, root and window; the transport is disposed when its stream settles.
 						// Native shape (oracle capture): window id is `${thread}:0`, window number 0, and the bare UUIDv7 is the separate context window id.

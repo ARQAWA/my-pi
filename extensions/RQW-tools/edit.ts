@@ -85,7 +85,7 @@ export async function executeEdit(stockExecute: any, id: string, params: any, si
 	}
 	const groups = groupEdits(params, base);
 	const runGroup = (group: Group) =>
-		withRetry(() => stockExecute(id, { path: group.path, edits: group.edits }, signal, onUpdate, ctx), signal);
+		withRetry<{ details?: unknown }>(() => stockExecute(id, { path: group.path, edits: group.edits }, signal, onUpdate, ctx), signal);
 
 	if (groups.length === 1) {
 		try {

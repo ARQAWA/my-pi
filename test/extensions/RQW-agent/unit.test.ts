@@ -161,7 +161,7 @@ function progressFixture(reasoning: "low" | undefined) {
 		request.offer(async () => fauxAssistantMessage("summary"));
 	});
 	const progress = new ProgressReports(events, "agent#1", "child", message => delivered.resolve(message));
-	const model = fauxProvider({ provider: "progress", models: [{ id: "model" }] }).getModel("model");
+	const model = fauxProvider({ provider: "progress", models: [{ id: "model" }] }).getModel("model")!;
 	progress.capture(model, { messages: [{ role: "user", content: "task", timestamp: 1 }] } as never);
 	const response = fauxAssistantMessage([fauxToolCall("read", { path: "a" })], { stopReason: "toolUse" });
 	for (let i = 0; i < 50; i++) progress.response(response, reasoning);
@@ -214,7 +214,7 @@ test("coordinator wait returns a completed child result", async t => {
 	f.finish();
 	const result = await waiting;
 	assert.equal(result.details.reason, "result");
-	assert.deepEqual(result.details.results.map((item: any) => [item.id, item.text, item.outcome]), [["agent#1", "answer", "completed"]]);
+	assert.deepEqual((result.details.results as any[]).map((item: any) => [item.id, item.text, item.outcome]), [["agent#1", "answer", "completed"]]);
 });
 
 // Regression for a66f2c7: busy-parent notifications survive queue clearing and continue once.

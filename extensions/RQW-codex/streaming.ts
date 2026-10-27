@@ -22,7 +22,8 @@ import type {
 } from "@earendil-works/pi-ai";
 
 import { CodexError, classifyEvent, normalizeUsage, type CodexUsage } from "./errors.ts";
-import { processResponsesStream, type OpenAIResponsesStreamOptions } from "./display.mjs";
+import type { OpenAIResponsesStreamOptions } from "@earendil-works/pi-ai/api/openai-responses-shared";
+import { processResponsesStream } from "./display.mjs";
 import { CODEX_RETRY_OWNED_DIAGNOSTIC } from "./retry.ts";
 
 /** Bounded live queue between the upstream producer and the Pi display parser. */
@@ -608,7 +609,7 @@ export class LiveResponsesPump {
 		const open = [...attempt.open].sort((a, b) => a[0] - b[0]);
 		attempt.open.clear();
 		for (const [contentIndex, kind] of open) {
-			const block = this.#output.content[contentIndex] as Record<string, unknown> | undefined;
+			const block = this.#output.content[contentIndex] as unknown as Record<string, unknown> | undefined;
 			this.#dropped.add(contentIndex);
 			if (kind === "text") {
 				this.#stream.push({ type: "text_end", contentIndex, content: String(block?.text ?? ""), partial: this.#output });

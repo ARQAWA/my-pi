@@ -24,6 +24,7 @@ const ACTIVITY_KEY = "rqw-statusbar-activity";
 // RQW-settings owns /fast-gpt. Its channels on pi.events are the only coupling; nobody answering means no lightning.
 const FAST_GPT_QUERY = "rqw-settings:fast-gpt-query";
 const FAST_GPT_CHANGED = "rqw-settings:fast-gpt";
+type SessionManager = ExtensionContext["sessionManager"] & { getEntryCount(): number };
 const COLORS: Record<Exclude<Role, "effort">, ThemeColor> = {
 	bar: "text", barEmpty: "dim", label: "muted", model: "text", path: "text",
 	gitClean: "success", gitDirty: "warning", staged: "success", unstaged: "warning",
@@ -101,7 +102,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	};
 	/** Read-only: the branch number of the leaf from the public tree, recomputed when the leaf or the entry count changes. */
 	const branchOf = (ctx: ExtensionContext): number | undefined => {
-		const manager = ctx.sessionManager;
+		const manager = ctx.sessionManager as SessionManager;
 		const key = [manager, manager.getSessionId(), manager.getLeafId(), manager.getEntryCount()];
 		const previous = branchKey;
 		if (!previous || key.some((value, i) => value !== previous[i])) {
@@ -179,7 +180,7 @@ export default function statusbar(pi: ExtensionAPI) {
 		let cached: Pick<BarState, "context" | "compactions"> = { compactions: 0 };
 		const contextState = (): Pick<BarState, "context" | "compactions"> => {
 			const model = ctx.model;
-			const manager = ctx.sessionManager;
+			const manager = ctx.sessionManager as SessionManager;
 			const key = [manager, manager.getSessionId(), manager.getLeafId(), manager.getEntryCount(),
 				model, model?.contextWindow, JSON.stringify(pi.getSettings().compaction)];
 			if (key.length !== cacheKey.length || key.some((value, i) => value !== cacheKey[i])) {

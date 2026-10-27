@@ -96,7 +96,7 @@ function skillProvider(
 type RowEditor = EditorComponent & { getAutocompleteMaxVisible?(): number };
 
 function focusedEditor(tui: TUI | undefined): RowEditor | null | undefined {
-	return tui?.getFocusedComponent() as RowEditor | null | undefined;
+	return (tui as (TUI & { getFocusedComponent(): unknown }) | undefined)?.getFocusedComponent() as RowEditor | null | undefined;
 }
 
 function skillBlock(skill: Skill): string {

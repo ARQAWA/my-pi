@@ -12,7 +12,7 @@ function hooks() {
 		emit(name: string, payload: unknown) { channels.get(name)?.(payload); },
 	};
 	prompt({ on: (name: string, handler: Handler) => handlers.set(name, handler), events } as unknown as ExtensionAPI);
-	const options = () => ({ selectedTools: ["read", "bash"], hiddenTools: [] }) as NormalizedBuildSystemPromptOptions;
+	const options = () => ({ selectedTools: ["read", "bash"], hiddenTools: [] }) as unknown as NormalizedBuildSystemPromptOptions;
 	return { events, options,
 		prepare: (value: NormalizedBuildSystemPromptOptions) => handlers.get("before_agent_start")!({ systemPromptOptions: value }, { model: { provider: "fake", id: "one" } }),
 		select: () => handlers.get("model_select")!({ model: { provider: "fake", id: "two" } }, {}),

@@ -681,7 +681,7 @@ export function createSessionController(options: SessionControllerOptions): Sess
 		const pending = pendingSystemMessage(physical, nextRunOptionsOf(), pendingToolChanges(physical, session.agent.state.tools, hidden));
 		const all = withHiddenTools(pending ? [...physical, pending as unknown as Context["messages"][number]] : physical, hidden);
 		if (lineage.startupSystemPrompt !== undefined && lineage.startupSystemPromptForced === true) {
-			const current = getCurrentTools(all as never) as Context["tools"];
+			const current = getCurrentTools(all as never);
 			const head = {
 				role: "system",
 				content: lineage.startupSystemPrompt,

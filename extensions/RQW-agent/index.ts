@@ -897,7 +897,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
 			const m = event.message;
 			if (m.stopReason !== "toolUse") a.progress.invalidate();
-			else a.progress.response(m, m.thinkingLevel);
+			else a.progress.response(m, m.thinkingLevel as Parameters<ProgressReports["response"]>[1]);
 			recordRunMessage(meta, m);
 			lastPushed = 0;
 			if (m.stopReason === "error") {
@@ -1169,7 +1169,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					signal.throwIfAborted();
 					await hydrate(ctx, signal);
 					const ids = targetIds(params.ids), timeout = waitTimeout(params.timeout_ms);
-					const options = { until: params.until, wake_on_alert: params.wake_on_alert };
+					const options = { until: params.until as "first" | "all" | undefined, wake_on_alert: params.wake_on_alert };
 					const blocking = toolCallId.includes("/") || (!backgroundCaller && (ctx.mode === "print" || ctx.mode === "json"));
 					return { waiting: blocking ? coordinator.wait(ids, timeout, signal, toolCallId, options)
 						: coordinator.notificationWait(ids, timeout, signal, toolCallId, options) };
@@ -1256,7 +1256,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				}
 				await startRun(a, params.task, signal, false, true);
 				signal.throwIfAborted();
-				a.guard.signal = a.run?.controller.signal;
+				a.guard.signal = (a.run as unknown as Agent["run"])?.controller.signal;
 				return ok(`${name}#${a.id}: sent`);
 			}
 			case "interrupt": {

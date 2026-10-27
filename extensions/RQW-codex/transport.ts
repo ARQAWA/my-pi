@@ -1083,7 +1083,7 @@ export class CodexThreadTransport {
 
 	async #recover(cred: Credential, stage: "reload" | "refresh", signal: AbortSignal): Promise<Credential> {
 		const access = cred.access;
-		const refreshed = await recoverCredential(this.#store, { accountId: cred.accountId, access }, stage, signal, { fetch: this.#deps.fetch });
+		const refreshed = await recoverCredential(this.#store, { accountId: cred.accountId, access }, stage, signal, { fetch: this.#deps.fetch as typeof fetch | undefined });
 		this.#revision++;
 		this.#dropSocket();
 		return Object.assign({}, refreshed, { accountId: credentialIdentity(refreshed) });

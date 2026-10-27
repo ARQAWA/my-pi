@@ -4,8 +4,10 @@ import {
 	SessionManager,
 	type AgentSession,
 	type ExtensionAPI,
-	type ReadonlySessionManager,
+	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+
+type ReadonlySessionManager = ExtensionContext["sessionManager"];
 
 export const CHILD_ENTRY = "rqw-agent-child";
 

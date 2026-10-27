@@ -6,7 +6,7 @@ import { getKeybindings, setKeybindings, isKeyRelease, matchesKey, type TUI } fr
 const WIDGET = "rqw-scroll";
 
 // The live renderer as seen through Pi's TUI proxy; the fullscreen members exist only on TuiAltScreen.
-type Renderer = TUI & { isFollowingOutput?: boolean; scrollToBottom?(): void };
+type Renderer = TUI & { isFollowingOutput?: boolean; scrollToBottom?(): void; getFocusedComponent(): unknown };
 type Focused = { actionHandlers?: unknown; isShowingAutocomplete?(): boolean };
 
 /** True when Escape should jump to the latest message instead of reaching Pi. */

@@ -9,12 +9,12 @@ import { registerSessionCommands } from "../../../extensions/RQW-session/index.t
 import { prepareRemoval, removeFiles } from "../../../extensions/RQW-session/artifacts.ts";
 
 it("copy-session passes the exact public session id to the clipboard", async () => {
-	const commands = new Map<string, RegisteredCommand>();
+	const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
 	const copied: string[] = [];
 	const notes: string[] = [];
-	registerSessionCommands({ registerCommand: (name, command) => commands.set(name, command) } as ExtensionAPI,
+	registerSessionCommands({ registerCommand: (name: string, command: Omit<RegisteredCommand, "name" | "sourceInfo">) => commands.set(name, command) } as unknown as ExtensionAPI,
 		async (id) => { copied.push(id); }, "unused");
-	const ctx = { sessionManager: { getSessionId: () => "session-1" }, ui: { notify: (text: string) => notes.push(text) } } as ExtensionCommandContext;
+	const ctx = { sessionManager: { getSessionId: () => "session-1" }, ui: { notify: (text: string) => notes.push(text) } } as unknown as ExtensionCommandContext;
 	await commands.get("copy-session")!.handler("", ctx);
 	assert.deepEqual(copied, ["session-1"]);
 	assert.deepEqual(notes, ["Session ID copied: session-1"]);

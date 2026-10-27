@@ -10,7 +10,7 @@ const runItem = (r, name) => ({ id: `run:${r.id}:${r.run_attempt ?? 1}`, level: 
 const reason = (e) => String(e?.message ?? e).replace(/\s+/g, " ").slice(0, 400);
 
 // Readers never query GitHub. A bounded recent page is useful awareness, not merge proof.
-export async function snapshot({ cwd = process.cwd(), repo, run: execute = run, now = Date.now, cachePath } = {}) {
+export async function snapshot({ cwd = process.cwd(), repo = /** @type {string | undefined} */ (undefined), run: execute = run, now = Date.now, cachePath = /** @type {string | undefined} */ (undefined) } = {}) {
 	const at = new Date(now()).toISOString();
 	const call = (cmd, args) => execute(cmd, args, { cwd, timeout: 11_000 });
 	try {

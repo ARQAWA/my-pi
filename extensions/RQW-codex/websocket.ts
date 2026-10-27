@@ -335,7 +335,7 @@ class Connection implements CodexSocket {
 						? `websocket redirect rejected with HTTP ${status}`
 						: `websocket upgrade rejected with HTTP ${status}`;
 				this.rejectionPending = true;
-				void readErrorControl(response as AsyncIterable<unknown>, () => response.destroy?.()).then((control) =>
+				void readErrorControl(response as unknown as AsyncIterable<unknown>, () => response.destroy?.()).then((control) =>
 					this.rejectOpen(new SocketError(status, headers, message, kind, control)),
 				);
 			},

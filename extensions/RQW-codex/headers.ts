@@ -4,7 +4,7 @@
  * own spelling. So the final record holds at most one spelling per header name, and the last source's spelling wins.
  * Values are never lowercased or joined; this is not a WHATWG Headers merge, which would concatenate before replacing.
  */
-export function mergeHeaders(...sources: (Record<string, string> | undefined)[]): Record<string, string> {
+export function mergeHeaders(...sources: (Record<string, string | null> | undefined)[]): Record<string, string> {
 	const merged: Record<string, string> = {};
 	for (const source of sources) {
 		if (!source) continue;

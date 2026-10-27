@@ -18,7 +18,7 @@ test("check starts lint and full tests together and waits for both after failure
 });
 
 test("check passes only requested test paths and accepts successful jobs", async () => {
-  const jobs = [];
+  const jobs: [string, string[]][] = [];
   assert.equal(await runCheck(["--test", "test/a*.test.ts", "test/b.test.ts", "--test", "test/c.test.ts"], async (name, args) => {
     jobs.push([name, args]);
     return 0;
@@ -29,8 +29,21 @@ test("check passes only requested test paths and accepts successful jobs", async
   ]);
 });
 
+test("check adds typecheck only when requested", async () => {
+  const jobs: [string, string[]][] = [];
+  assert.equal(await runCheck(["--typecheck"], async (name, args) => {
+    jobs.push([name, args]);
+    return 0;
+  }), 0);
+  assert.deepEqual(jobs, [
+    ["lint", ["run", "lint"]],
+    ["test", ["test"]],
+    ["typecheck", ["run", "typecheck"]],
+  ]);
+});
+
 test("check rejects unsupported or incomplete options before starting jobs", async () => {
-  for (const args of [["--typecheck"], ["--test"], ["--test", "--knip"]]) {
+  for (const args of [["--unknown"], ["--test"], ["--test", "--knip"]]) {
     await assert.rejects(runCheck(args, () => assert.fail("must not launch")), /Usage:/);
   }
 });
