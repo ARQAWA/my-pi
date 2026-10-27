@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { RunningCounts } from "./counts.ts";
+import { recordDelivery } from "./persistence.ts";
 
 /** Caller-owned children and results, including results not yet consumed by the caller model. */
 export type RuntimeHandle = {
@@ -10,6 +11,8 @@ export type RuntimeHandle = {
 	ids(): string[];
 	/** Compact read-only diagnostics; depth counts generations below these direct children. */
 	status?(depth: number): Record<string, unknown>[];
+	/** Materialize only the generations requested by an explicit exact-status query. */
+	prepareStatus?(depth: number, signal: AbortSignal): Promise<void>;
 	/** Native running children, including descendants. Pending results count zero. */
 	runningCounts(): RunningCounts;
 	resume?(signal: AbortSignal, recoveredOnly?: boolean): Promise<number>;
@@ -71,6 +74,7 @@ export class Coordinator {
 	// Older runs can still have an unfinalized handoff when send starts the next run.
 	private uncommitted = new Set<Result>();
 	private offered = new WeakSet<Result>();
+	private messageReceipts = new Set<Result>();
 	private watchers = new Set<Watch>();
 	private changes = new Map<string, { run: string; change: string }>();
 	private reservations = new Map<string, Reservation>();
@@ -181,8 +185,24 @@ export class Coordinator {
 		while (this.parents.has(call) && !seen.has(call)) { seen.add(call); call = this.parents.get(call)!; }
 		return call;
 	}
+	private saveReceipt(ctx: ExtensionContext, run: string) {
+		// Receipt failure may repeat delivery after wake, but must not block the handoff.
+		try { recordDelivery(ctx.sessionManager, run); } catch { /* Best effort. */ }
+	}
 	/** Only a successful finalized, persisted outer toolResult commits a wait handoff. */
 	private finalize(ctx: ExtensionContext, settled = false) {
+		for (const result of this.messageReceipts) {
+			const persisted = ctx.sessionManager.getBranch().some(entry => {
+				const details = (entry.type === "custom_message" ? entry.details
+					: entry.type === "custom" && entry.customType === "rqw-agent-inbox"
+						? (entry.data as { message?: { details?: unknown } })?.message?.details : undefined) as
+					{ run?: string; results?: { run?: string }[] } | undefined;
+				return details?.run === result.run || details?.results?.some(item => item.run === result.run);
+			});
+			if (!persisted) continue;
+			this.saveReceipt(ctx, result.run);
+			this.messageReceipts.delete(result);
+		}
 		for (const [owner, reservation] of this.reservations) {
 			const root = this.root(reservation.call);
 			const entry = ctx.sessionManager.getBranch().findLast(e => e.type === "message" && e.message.role === "toolResult" && e.message.toolCallId === root);
@@ -195,7 +215,7 @@ export class Coordinator {
 			this.reservations.delete(owner);
 			for (const result of reservation.results) {
 				if (result.state !== "reserved" || result.claimed_by !== owner) continue;
-				if (kept) { result.state = "wait"; result.text = undefined; this.uncommitted.delete(result); }
+				if (kept) { this.saveReceipt(ctx, result.run); result.state = "wait"; result.text = undefined; this.uncommitted.delete(result); }
 				else { result.state = "pending"; delete result.claimed_by; this.push(result); }
 			}
 		}
@@ -223,7 +243,7 @@ export class Coordinator {
 	}
 	begin(target: Target) { this.results.delete(target.id); this.add(target); }
 	publish(id: string, run: string, text: string, outcome: string, push: Result["push"]) {
-		if (this.targets.get(id)?.run !== run) return;
+		if (this.targets.get(id)?.run !== run || this.results.get(id)?.run === run) return;
 		const result: Result = { id, run, delivery: randomUUID(), text, outcome, state: "pending", push };
 		this.results.set(id, result);
 		this.uncommitted.add(result);
@@ -238,6 +258,7 @@ export class Coordinator {
 	/** Call immediately before pi.sendMessage; a deferred pending result is still claimable by wait. */
 	message(result: Result) {
 		if (result.state !== "pending" || !this.uncommitted.has(result)) return false;
+		this.messageReceipts.add(result);
 		result.state = "message";
 		this.uncommitted.delete(result);
 		return true;
@@ -252,6 +273,13 @@ export class Coordinator {
 		});
 	}
 	ids() { return [...this.targets.keys()]; }
+	committed(id: string, run: string): boolean {
+		const result = this.results.get(id);
+		return result?.run === run && result.state === "wait";
+	}
+	undelivered(id: string): boolean {
+		return [...this.uncommitted].some(result => result.id === id) || this.notices.some(notice => (notice.message.details as { id?: string } | undefined)?.id === id && notice.current());
+	}
 	private receipt(result: Result) {
 		return { id: result.id, run: result.run, delivery: result.delivery, delivered_via: result.state === "message" ? "message" : "wait", claimed_by: result.claimed_by };
 	}
@@ -403,7 +431,7 @@ export class Coordinator {
 					for (const r of claimed) { r.state = "held"; this.uncommitted.add(r); selection.held.add(r); }
 					selection.release(); return;
 				}
-				for (const r of claimed) this.releaseMessage(r);
+				for (const r of claimed) { this.messageReceipts.add(r); this.releaseMessage(r); }
 				selection.release();
 			},
 		};

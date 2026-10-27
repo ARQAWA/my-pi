@@ -17,18 +17,17 @@ it("offers native profiles and skills without registering a runner", () => {
 	} as never);
 	let paths: string[] = [];
 	channels.get("rqw-agent:profiles")!({ offer: (offered: string[]) => { paths = offered; } });
-	assert.deepEqual(paths, ["spotty", "bossy", "requirements-test-reviewer"].map((name) => join(ROOT, "profiles", `${name}.toml`)));
+	assert.deepEqual(paths, ["spotty", "bossy"].map((name) => join(ROOT, "profiles", `${name}.toml`)));
 	assert.ok(paths.every(isAbsolute));
 	assert.deepEqual(handlers.get("resources_discover")!().skillPaths,
-		["reviewer", "blindreview", "highreview", "testreview"].map((name) => join(ROOT, "skills", name, "SKILL.md")));
+		["reviewer", "blindreview", "highreview"].map((name) => join(ROOT, "skills", name, "SKILL.md")));
 });
 
 it("pins the native reviewer models and efforts", () => {
-	const profiles = ["spotty", "bossy", "requirements-test-reviewer"].map((name) =>
+	const profiles = ["spotty", "bossy"].map((name) =>
 		parse(readFileSync(join(ROOT, "profiles", `${name}.toml`), "utf8")));
 	assert.deepEqual(profiles.map((profile) => [profile.name, profile.model, profile.model_reasoning_effort]), [
 		["spotty", "gpt-6.1-terra", "low"],
 		["bossy", "gpt-6.1-terra", "medium"],
-		["requirements-test-reviewer", "gpt-6.1-sol", "low"],
 	]);
 });

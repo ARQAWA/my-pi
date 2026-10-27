@@ -161,10 +161,21 @@ thinking and base tools through the same `agent` options. The extension register
 
 The generic `RuntimeHandle` in [coordinator.ts](coordinator.ts) connects the caller-local lifecycle and result broker
 to the session runtime in [index.ts](index.ts). Registration takes the direct caller's API explicitly; there is no
-global caller session. Completed agents stay idle with history until `stop` or caller shutdown. Idle retained sessions
-do not keep the parent assignment pending. Each `start` is clean; explicit `send` reuses history, and `resume` retries
-an interrupted or failed provider request without adding a message. Retained history costs memory; send pays its input tokens and may
-trigger Pi compaction or a new cache write after expiry. There is no automatic eviction/cap. Caller shutdown aborts
+global caller session. Completed agents keep their history until `stop` or caller shutdown. After exactly five
+finished-idle minutes, an eligible live child releases its SDK session into the same saved-slot restore path.
+Parent wait/status interactions rearm the grace period. Both parent metadata and child history must reopen durably;
+in-memory or unavailable histories stay awake. A committed outer codemode handoff may intentionally filter its result.
+Committed delivery run IDs are appended one per line to `<owning-session-file>.children/delivered`.
+Hydration reads these receipts alongside the selected branch, so historical children do not prevent sleep
+and filtered results are not delivered again after wake or restart. In-memory sessions skip the receipt file.
+Receipt write errors do not block delivery; a result may repeat after wake if its receipt could not be saved.
+Running descendants, uncommitted results or notifications, queued messages and retained background jobs block sleep.
+Delivery/queue settlement rechecks overdue children without polling. Sleep is not stop: send, explicit resume and
+exact status restore the same file, history, caller-local ID and session ID. No lifecycle state or metadata format is
+added. Disposal can release provider sockets/continuations; ordinary cache expiry and reconnect still apply.
+Idle retained sessions do not keep the parent assignment pending. Each `start` is clean; explicit `send` reuses history,
+and `resume` retries an interrupted or failed provider request without adding a message. Send pays its input tokens and may
+trigger Pi compaction or a new cache write after expiry. There is no child-count cap. Caller shutdown aborts
 and disposes live sessions while preserving durable child histories and recovery metadata for persisted parents.
 Caller Esc leaves accepted agents running and keeps late answers without waking the aborted caller; see
 [Results and main abort](#results-and-main-abort).
@@ -431,7 +442,17 @@ in-memory build has no saved history and cannot be recovered retroactively, and 
 new agents are saved.
 Versioned `rqw-agent-child` entries in the parent's selected branch store the local id, generation, child file,
 run state, exact prompt/configuration, model, thinking, tools, settings, Fast, title and selected profile provenance
-`{name, path, sha256}`. Resume retains the saved resolved prompt and profile version; restart reloads its TOML. Restoring the parent makes
+`{name, path, sha256}`. The prompt/configuration and task are written once per agent object and again only when they
+change; later entries are short and restore takes the omitted fields from the previous entry of the same child.
+Completed durable children remain saved slots during parent hydration and `wait`; neither opens their histories or
+constructs SDK sessions. Wait snapshots for these slots report saved identity, model, title and idle state, without
+inventing live diagnostics. `send` opens only its target with the original history, configuration and session identity.
+`status` materializes selected slots where exact previews, token totals or descendant diagnostics require the runtime;
+this is the exact-status fallback, not a summary substitute. Unfinished recovery remains eager, and already live
+completed children are reused. Concurrent restoration shares a per-generation promise; branch cancellation fences
+late construction. Saved answers still use the existing exactly-once delivery broker. No metadata format is added.
+
+Resume retains the saved resolved prompt and profile version; restart reloads its TOML. Restoring the parent makes
 the same caller-local ids available. Stopped mappings are tombstoned; restart creates a new history rather than
 resurrecting the old generation. Old child files remain inside the owned tree until parent removal.
 Persisted entries with unknown child kinds are ignored without deleting their history files.
@@ -529,7 +550,7 @@ A native-idle child waiting for its own jobs or children still counts. Counts re
 runtime ownership tree, so a waiting parent and its active descendant each count once. Completed undelivered
 results count zero; genuinely idle or AFK agents with no pending assignment do not linger.
 Reviewer profiles count as ordinary agents; the compatibility `reviews` field is zero for this producer.
-This extension adds no timer, card or second child registry.
+This counts producer adds no timer, card or second child registry.
 The waiting categories and idle distinction follow [D-STATUSBAR-WAITS](../../DECISIONS.md#status-bar).
 Reason: expose real background activity without coupling independently switchable extensions or changing
 execution/delivery. Carriers: `activity.ts`, `index.ts`, `coordinator.ts` and `counts.ts`.

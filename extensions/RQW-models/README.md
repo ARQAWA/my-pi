@@ -29,9 +29,13 @@ For several transitions, continue with ordinary or Shift arrows: Up/Down move mo
 Both axes stop at their ends, without wrapping. A draft model change keeps its effort if supported, otherwise
 clamps to the nearest lower allowed effort, or the lowest. Only authenticated listed models are offered.
 
-The compact terminal chooser shows nearby models and efforts around the selected draft, with muted neighbours,
-supplied Pi theme roles and thinking-level colors. Narrow terminals show the current draft model and effort on
-separate rows instead of squeezing two wheels. OK is confirmed with Enter; Esc closes the chooser.
+Model labels match the statusbar: model name or ID, without the `Claude ` prefix. Selection keeps the provider and ID.
+
+The compact terminal chooser shows nearby models vertically and all available efforts in one horizontal row.
+Up/Down move models; Left/Right move effort. Muted neighbours, supplied Pi theme roles and thinking-level colors stay.
+The longest supported effort row needs 31 columns, including its selection marker. Below that row's required width,
+the chooser reports `Effort needs N columns` instead of wrapping or hiding levels. The target VDI width is not yet verified.
+OK is confirmed with Enter; Esc closes the chooser.
 Opening, navigation and Esc call no model/thinking setters and send no requests. Nothing needs restoring on Esc:
 the session was never changed. An already-running turn continues on the live session, not the draft.
 Duplicate shortcut presses cannot create stacked dialogs; session replacement, reload and shutdown cancel the draft.
@@ -48,7 +52,7 @@ live selection, not that Pi's separate setters form an atomic transaction.
 
 ## Scope and checks
 
-`/rqw-models` remains the existing authenticated model-list selector, not the two-column draft chooser. Stock
+`/rqw-models` remains the existing authenticated model-list selector, not the draft chooser. Stock
 `/model`, Ctrl+L/Ctrl+P and the existing allowlist restrictions are unchanged; stock model lists remain empty.
 Shift+Tab and unrelated editor controls stay stock. The visual chooser is terminal-only; headless modes do not
 open it. It adds no setting or dependency and remains independently disableable through `pi config`, then `/reload`.

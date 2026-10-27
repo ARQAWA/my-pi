@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync } from "node:fs";
+import { appendFileSync, lstatSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import {
 	SessionManager,
@@ -54,6 +54,24 @@ function checkPath(path: string, allowMissing: boolean, parentFile: string): voi
 			throw error;
 		}
 	}
+}
+
+export function deliveredRuns(parent: ReadonlySessionManager): Set<string> {
+	const file = parent.getSessionFile();
+	if (!file) return new Set();
+	const path = resolve(`${file}.children`, "delivered");
+	checkPath(path, true, file);
+	try { return new Set(readFileSync(path, "utf8").split("\n").filter(Boolean)); }
+	catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return new Set(); throw error; }
+}
+
+export function recordDelivery(parent: ReadonlySessionManager, run: string): void {
+	const file = parent.getSessionFile();
+	if (!file) return;
+	const path = resolve(`${file}.children`, "delivered");
+	checkPath(path, true, file);
+	mkdirSync(dirname(path), { recursive: true });
+	appendFileSync(path, `${run}\n`, "utf8");
 }
 
 export function createChildManager(parent: ReadonlySessionManager, cwd: string, kind: string, id: number): SessionManager {

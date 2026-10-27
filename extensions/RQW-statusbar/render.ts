@@ -9,7 +9,8 @@
 //
 // Colors intentionally use stock Pi semantic roles, without tuning.
 import { stripVTControlCharacters } from "node:util";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { quotaText, type Quotas } from "./quota.ts";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 /** Nerd Font glyphs of omp's `nerd` symbol preset (`pi-tui/src/theme/symbols.ts`), the owner's `symbolPreset`. */
 export const ICON = {
@@ -48,6 +49,7 @@ export function singleLine(text: string): string {
 export type PlaceKind = "folder" | "scratch" | "worktree";
 
 export interface BarState {
+	quotas?: Quotas;
 	/** The sibling number N of the branch the leaf is on (`⑂ fork #N`); undefined on the original first branch. */
 	branch?: number;
 	/** The session model; undefined shows "no-model", as omp. */
@@ -257,7 +259,19 @@ export function placeRow(state: BarState, width: number, paint: Paint = plain): 
 
 /** The three rows of the bar at this width. */
 export function renderBar(state: BarState, width: number, paint: Paint = plain): string[] {
-	return [contextRow(state.context, width, paint), modelRow(state, width, paint), placeRow(state, width, paint)];
+	if (!state.quotas || width <= 0) {
+		return [contextRow(state.context, width, paint), modelRow(state, width, paint), placeRow(state, width, paint)];
+	}
+	// Wrap long native-window lists instead of silently cutting later providers.
+	const git = gitText(state.git, paint);
+	const place = placeRow({ ...state, quotas: undefined, git: undefined }, width, paint);
+	const quotas = quotaText(state.quotas);
+	const right = quotas + (git ? `  ${git}` : "");
+	if (visibleWidth(place) + visibleWidth(right) + 1 <= width) {
+		return [contextRow(state.context, width, paint), modelRow(state, width, paint), leftRight(place, right, width)];
+	}
+	const rows = [place, ...wrapTextWithAnsi(right, width).map((row) => leftRight("", row, width))];
+	return [contextRow(state.context, width, paint), modelRow(state, width, paint), ...rows];
 }
 
 // ---- The place: omp's `path` segment (`pi-tui/src/status-line/segments.ts`), on plain strings so a Windows path

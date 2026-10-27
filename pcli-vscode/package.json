@@ -1,7 +1,7 @@
 {
   "name": "pcli",
   "displayName": "ARQAWA PCLI",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "arqawa",
   "repository": {
     "type": "git",
@@ -14,11 +14,12 @@
   "activationEvents": [],
   "contributes": {
     "commands": [
-      { "command": "pcli.newTab", "title": "New Tab", "category": "Pi CLI" }
+      { "command": "pcli.newTab", "title": "New Tab", "category": "Pi CLI" },
+      { "command": "pcli.update", "title": "Update", "category": "Pi CLI" }
     ]
   },
   "scripts": {
-    "vscode:prepublish": "node fetch-pi.mjs"
+    "vscode:prepublish": "node fetch-pi.mjs && node bundle-my-pi.mjs"
   },
   "devDependencies": {
     "@vscode/test-electron": "^3.1.0"

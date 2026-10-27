@@ -6676,3 +6676,38 @@ Archived by: process-minimal-testing-review; exact commit: `git log -S'A-0373' -
 >   accepted sequential-design text is superseded and preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0372.
 > BACKLOG.md item 5, verbatim:
 > | 5 | SIMPLIFY-RQW-TOOLS: design approval first, then implementation only after the owner's explicit confirmation of the final inventory. The design direction is Codex-level simplicity and parallelism: read/write/edit/find/grep run in parallel; Bash and codemode run independently. Main must show and explain the heavy-coordination removal inventory and tradeoffs before any removal. No product simplification is approved; sequential Bash is not the accepted direction. | DESIGN APPROVAL; no implementation branch. Implementation is blocked until explicit final-inventory confirmation. | Owner line 13573, entry `9f4eec6f`, superseding the earlier sequential-Bash proposal. |
+
+## A-0374 · archived 2026-10-27 · Review · Shipped requirements-based test review
+
+Status: SUPERSEDED by repository-only `[D-REVIEW-TEST-REQUIREMENTS]` in DECISIONS.md.
+Source: `f29d4068dd427eace406a69bc19d1cfad9f7f43b:DECISIONS.md`, whole entry verbatim.
+Archived by: chunk-review; exact commit: `git log -S'A-0374' -- DECISIONS-ARCHIVE.md`.
+
+> - **Requirements-based test review** `[D-REVIEW-TEST-REQUIREMENTS]`. Owner R11 source: session
+>   `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER `3d0e39ae`, line 1568:
+>   «Мне надо, чтобы в этой ситуации reviewer закрывал такие моменты, что код проверок соответствует требованиям, соответствует тест-плану, acceptance критериям.»
+>   USER `f5193077`, line 1602: «Нет, я думаю, что в автотестах тесты сами не надо запускать, когда он review делает.»
+>   and «Я могу достать переписку. Я смогу достать код, но я не смогу достать коммит до и коммит после, скорее всего. Я хз.»
+>   USER `96dc3500`, line 1606: «Просто не надо запускать сами тесты, блядь.»
+>   The owner explicitly resumed R11 in the 2026-10-25 execution request; its earlier hold is no longer active.
+>   Decision: the optional `testreview` native skill collects supplied requirements, test plan, acceptance criteria
+>   and conversation references and starts the ordinary `requirements-test-reviewer` profile on Sol 6.1 low.
+>   It reads test code and directly relevant exercised code, checks requirement coverage and concrete false confidence,
+>   and reports missing primary evidence as incomplete. External transcripts include user and assistant turns;
+>   `include: ["user_messages"]` separately appends the caller's raw user messages. No test/code execution, mandatory
+>   commit pairs, new runtime, permissions or automatic review. The existing project `test-reviewer` and its mechanical
+>   integrity gate remain unchanged. Reason: test code is itself the deliverable, so repository check execution does
+>   not establish whether its assertions implement the agreed plan.
+>   Carriers: `extensions/RQW-review/profiles/requirements-test-reviewer.toml`,
+>   `extensions/RQW-review/skills/testreview/SKILL.md`, `extensions/RQW-review/index.ts`.
+
+## A-0375 · archived 2026-10-27 · PCLI manual my-pi installation
+
+Status: SUPERSEDED by W04 bundled my-pi in `[D-PCLI-COMMAND]` and the package-source exception in `[D-PCLI-LAUNCH]`.
+Introduced: `3b6d6c1`. Archived by W04; exact commit: `git log -S'A-0375' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+>   `~/.pi/agent` is shared and not changed. Carrier: `pcli-vscode/extension.js`. Since: `3b6d6c1`.
+
+> - **One command** `[D-PCLI-COMMAND]`. One command, `Pi CLI: New Tab`; login is `/login` inside Pi. my-pi is installed
+>   into that Pi with `INSTALL.md`; the extension does not install it. Carrier: `pcli-vscode/package.json`. Since: `3b6d6c1`.

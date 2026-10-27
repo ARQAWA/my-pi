@@ -1,4 +1,5 @@
 {
+  "packages": [{ "source": "git:github.com/ARQAWA/my-pi", "extensions": [], "themes": [] }],
   "defaultProvider": "fake",
   "defaultModel": "fake-1",
   "defaultProjectTrust": "never",
