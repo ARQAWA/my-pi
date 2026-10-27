@@ -91,7 +91,6 @@ describe("RQW-models public selection", () => {
 	it("regression 4b0e7f4: an unlisted restored model falls back to authenticated Opus first", async () => {
 		const run = async (available: Model<string>[]) => {
 			const handlers = new Map<string, (event: any, ctx: any) => Promise<void>>();
-			const opus = model("claude-opus-5-5");
 			let current = model("outside", "other");
 			let thinking = "high";
 			const pi = {

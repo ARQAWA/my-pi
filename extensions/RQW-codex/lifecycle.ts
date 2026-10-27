@@ -20,8 +20,8 @@ const CODEX_API = "openai-codex-responses";
 const PATCHED = ["_bindExtensionCore", "dispose", "_isRetryableError", "subscribe"] as const;
 
 type Cleanup = () => void;
-type Fn = (this: unknown, ...args: unknown[]) => unknown;
-type Link = Fn & Record<symbol, unknown>;
+type Fn = (this: AgentSession, ...args: unknown[]) => unknown;
+type Link = Fn & { [INNER]?: unknown; [OWNER]?: unknown };
 type Chain = { stock: PropertyDescriptor; owners: Set<object> };
 
 export type RunStart = { kind: "run" | "steer" };

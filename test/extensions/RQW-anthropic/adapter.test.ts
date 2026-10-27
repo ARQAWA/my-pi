@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import Anthropic from "@anthropic-ai/sdk";
-import { InMemoryCredentialStore, normalizeContext } from "@earendil-works/pi-ai";
+import { InMemoryCredentialStore, normalizeContext, type OAuthCredential, type SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { recoverCredential, refreshCredential, TOKEN_URL } from "../../../extensions/RQW-anthropic/auth.ts";
 import { createOverlay, subscriptionFetch } from "../../../extensions/RQW-anthropic/transport.ts";
@@ -15,6 +15,7 @@ const raw = JSON.stringify({
 	messages: [{ role: "user", content: "Hello cch=00000; world" }],
 });
 const url = "https://api.anthropic.com/v1/messages";
+type ClientOptions = SimpleStreamOptions & { client: Anthropic };
 const base = builtinProviders().find(provider => provider.id === "anthropic")!;
 const model = base.getModels()[0];
 const context = { messages: [{ role: "user" as const, content: "fake prompt", timestamp: 1 }] };
@@ -61,7 +62,7 @@ it("refreshes a rejected saved bearer and replays the request", async () => {
 	assert.equal(await result.text(), "ok");
 	assert.equal(inference, 2);
 	assert.equal(refreshes, 1);
-	assert.equal((await credentials.read("anthropic"))?.access, NEXT);
+	assert.equal((await credentials.read("anthropic") as OAuthCredential | undefined)?.access, NEXT);
 });
 
 // Regression: 3b1fd18 kept fork version adoption independent and pinned versions fixed.
@@ -78,7 +79,7 @@ it("keeps adopted fork versions independent", () => {
 it("reuses only a proven credential rotation", async () => {
 	const credentials = await store();
 	const signal = new AbortController().signal;
-	await credentials.modify("anthropic", async current => refreshCredential(current!, signal, async () => refreshed()));
+	await credentials.modify("anthropic", async current => refreshCredential(current! as OAuthCredential, signal, async () => refreshed()));
 	const noFetch: typeof fetch = async () => { throw new Error("unexpected network"); };
 	assert.equal(await recoverCredential(credentials, ACCESS, signal, noFetch), NEXT);
 	await credentials.modify("anthropic", async () => ({ ...credential, access: "sk-ant-oat01-other-login" }));
@@ -96,11 +97,11 @@ it("keeps OAuth off a custom client while ordinary API-key clients stay native",
 	const overlay = createOverlay(base, () => undefined, "device");
 	const oauth = await overlay.streamSimple(model, normalizeContext(context), {
 		apiKey: ACCESS, client, fetch: async () => { protectedCalls++; return response([...text, ...finish]); },
-	}).result();
+	} as ClientOptions).result();
 	assert.equal(oauth.stopReason, "stop");
 	assert.equal(customCalls, 0);
 	assert.equal(protectedCalls, 1);
-	const ordinary = await overlay.streamSimple(model, normalizeContext(context), { apiKey: "fake-key", client }).result();
+	const ordinary = await overlay.streamSimple(model, normalizeContext(context), { apiKey: "fake-key", client } as ClientOptions).result();
 	assert.equal(ordinary.stopReason, "stop");
 	assert.equal(customCalls, 1);
 });

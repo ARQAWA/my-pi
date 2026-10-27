@@ -15,6 +15,7 @@ import { createChildManager, openChildManager, repairInterrupted } from "../../.
 import { ProfileCatalogue } from "../../../extensions/RQW-agent/profiles.ts";
 import { CONTEXT_FORK, ProgressReports, type ContextForkRequest } from "../../../extensions/RQW-agent/progress.ts";
 import { appendUserMessages, loadPromptFile } from "../../../extensions/RQW-agent/prompt-files.ts";
+import { collectExtensionFactories } from "../../../extensions/RQW-agent/index.ts";
 
 async function temp(t: TestContext) {
 	const root = await mkdtemp(join(tmpdir(), "rqw-agent-unit-"));
@@ -117,6 +118,18 @@ test("GPT Fast inherits its setting and decorates only Codex requests", () => {
 	assert.equal(handler({ payload }, { model: { provider: "anthropic", id: "model" } }), undefined);
 });
 
+test("a child receives an explicitly offered inline extension factory", () => {
+	const events = createEventBus();
+	let registered = false;
+	const factory = (child: any) => { child.on("session_start", () => { registered = true; }); };
+	events.on("rqw-agent:subagent-extension-factories", request => (request as any).offer(factory));
+	const [offered] = collectExtensionFactories(events);
+	let hook: () => void;
+	offered({ on: (_name: string, value: () => void) => { hook = value; } } as never);
+	hook!();
+	assert.equal(registered, true);
+});
+
 test("prompt files preserve exact text and return byte provenance", async t => {
 	const root = await temp(t);
 	const text = "\uFEFFexact\r\nprompt\n";
@@ -161,7 +174,7 @@ function progressFixture(reasoning: "low" | undefined) {
 		request.offer(async () => fauxAssistantMessage("summary"));
 	});
 	const progress = new ProgressReports(events, "agent#1", "child", message => delivered.resolve(message));
-	const model = fauxProvider({ provider: "progress", models: [{ id: "model" }] }).getModel("model");
+	const model = fauxProvider({ provider: "progress", models: [{ id: "model" }] }).getModel("model")!;
 	progress.capture(model, { messages: [{ role: "user", content: "task", timestamp: 1 }] } as never);
 	const response = fauxAssistantMessage([fauxToolCall("read", { path: "a" })], { stopReason: "toolUse" });
 	for (let i = 0; i < 50; i++) progress.response(response, reasoning);
@@ -214,7 +227,7 @@ test("coordinator wait returns a completed child result", async t => {
 	f.finish();
 	const result = await waiting;
 	assert.equal(result.details.reason, "result");
-	assert.deepEqual(result.details.results.map((item: any) => [item.id, item.text, item.outcome]), [["agent#1", "answer", "completed"]]);
+	assert.deepEqual((result.details.results as any[]).map((item: any) => [item.id, item.text, item.outcome]), [["agent#1", "answer", "completed"]]);
 });
 
 // Regression for a66f2c7: busy-parent notifications survive queue clearing and continue once.

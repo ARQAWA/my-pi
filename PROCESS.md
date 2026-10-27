@@ -20,6 +20,8 @@
 2. After runtime changes only, update the owner's installed Pi from `@release`, preserving settings.
 3. Merge into `main` only after one full `npm test` on the exact head.
 
+Run `npm run knip` on demand only. Findings are audit input, not deletion authority, and do not block default checks or delivery.
+
 ## Golden rule
 
 No polling, no confidence reruns, no avoidable tokens.
@@ -71,4 +73,4 @@ The guard reads this machine-readable block.
 11. Write the test from the requirement, not the code. It must fail without the change; no tautologies.
 12. Compare bytes only for the exact static fragment that must be static, never a whole file or dynamic parts.
 13. One test runs in milliseconds; an extension's suite runs in about a second.
-14. Per task, run only the touched extension's tests. Run the full suite once before merging into main.
+14. Per task, run `npm run check -- --test "test/extensions/<touched>/*.test.ts"` for full calibrated lint and only the touched tests, concurrently. Repeat `--test <paths>` for more paths. Run `npm run check` once before merging into main: full lint and the unchanged `npm test` run concurrently. All jobs finish before a failure is returned; no automatic fixes or retries. Adding `--typecheck` runs `tsc` concurrently on request. TypeScript is never part of the default check or push CI.

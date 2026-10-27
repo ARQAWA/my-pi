@@ -27,7 +27,7 @@ function capture(sessions: Session[]): boolean {
 	process.argv = argv.slice(0, 2);
 	const release = installSelectionIntent();
 	try {
-		for (const item of sessions) prototype.bindExtensions.call(item);
+		for (const item of sessions) prototype.bindExtensions.call(item, undefined as never);
 		return noToolSelection({ getSettings: () => ({}) } as unknown as ExtensionAPI, sessions.at(-1)!.sessionManager);
 	} finally {
 		release();

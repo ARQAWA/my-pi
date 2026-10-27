@@ -6,14 +6,26 @@ import { it } from "node:test";
 const ROOT = resolve(import.meta.dirname, "..");
 const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { pi: { extensions: string[] } };
 
-function sourceFiles(dir: string): string[] {
+function sourceFiles(dir: string, resources = false): string[] {
 	if (!existsSync(dir)) return [];
 	return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
 		const path = join(dir, entry.name);
-		if (entry.isDirectory()) return entry.name === "node_modules" ? [] : sourceFiles(path);
-		return /\.[cm]?[jt]s$/.test(entry.name) ? [path] : [];
+		if (entry.isDirectory()) return entry.name === "node_modules" ? [] : sourceFiles(path, resources);
+		return (resources ? /\.(?:[cm]?[jt]s|md|toml|json)$/ : /\.[cm]?[jt]s$/).test(entry.name) ? [path] : [];
 	});
 }
+
+it("harness sources do not reference repository development tooling", () => {
+	const forbidden = /PROCESS\.md|coordinator\.lock|\.pi[\/\\]extensions|my-pi-evidence|my-pi-worktrees|qa-status|ci-watch|BACKLOG\.md|repository's mandatory weakening review|project `test-reviewer`/;
+	assert.doesNotMatch(JSON.stringify(manifest.pi), forbidden, "package.json pi resources");
+	const files = [
+		...sourceFiles(join(ROOT, "extensions"), true),
+		...sourceFiles(join(ROOT, "pcli-vscode"), true),
+	];
+	for (const file of files) {
+		assert.doesNotMatch(readFileSync(file, "utf8"), forbidden, file);
+	}
+});
 
 function inside(path: string, dir: string): boolean {
 	return path === dir || path.startsWith(dir + sep);

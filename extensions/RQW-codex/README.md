@@ -42,7 +42,7 @@ Codex sessions use **stock Pi compaction**: Pi runs its own compaction with its 
 
 **RQW-context still owns the trigger**, W = min(contextWindow, 500000), R = round(W/10), threshold W−R, with the existing explicit-reserve precedence. After a compaction every original entry stays in the session file, but the active context is Pi's summary plus the kept tail, also with RQW-codex disabled or for another provider. The full original history is not replayed to other models.
 
-**Not fully public.** Pi's compaction methods stay untouched; retry ownership uses a temporary wrapper of the public agent stream callback. Other parts of this extension (session lifecycle, auth layers, prompt projection) still use private Pi internals. Migrating them where possible is the backlog task [CODEX-PUBLIC-INTERNALS](../../BACKLOG.md#codex-public-internals).
+**Not fully public.** Pi's compaction methods stay untouched; retry ownership uses a temporary wrapper of the public agent stream callback. Other parts of this extension (session lifecycle, auth layers, prompt projection) still use private Pi internals.
 
 ## Independence and verification
 

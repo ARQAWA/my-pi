@@ -1,7 +1,7 @@
 // The transcript card for the `qa-status` message (display only; the stored content stays the scripts/qa-status.mjs
 // text). Collapsed: one line of red and green counts. Ctrl+O: every line in full, links included.
 import type { MessageRenderer, Theme } from "@earendil-works/pi-coding-agent";
-import { clean, fit, padded, wrap } from "../../../extensions/RQW-agent-ui/fit.ts";
+import { clean, fit, padded, wrap } from "./fit.ts";
 
 type CardTheme = Pick<Theme, "fg">;
 type Item = { level: string; text: string; url: string };

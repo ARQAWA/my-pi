@@ -7,12 +7,17 @@ recursively and without a depth limit. This extension imports no other RQW exten
 When RQW-web is loaded, its optional `rqw-search:subagent-web` registration offer also supplies `web` to every child,
 including nested agents. Each call uses that child's model and thinking; no import reaches RQW-web.
 
+Any extension can explicitly offer inline child factories on `rqw-agent:subagent-extension-factories` with
+`{ offer(factory) }`. Before each child loader reload, RQW-agent collects and deduplicates those factories and appends
+them to `DefaultResourceLoader.extensionFactories`. Each runs with the child's own `ExtensionAPI` and can reoffer itself
+for nested children on the same channel. `noExtensions: true` stays unchanged; no project or package resources are loaded.
+
 ## Prompt and title
 
 - Default prompt: the main agent's system prompt as Pi built it for the main run (RQW-prompt's text, project context
   such as AGENTS.md, skills and `<cwd>` when they are loaded), read through the public `ctx.getSystemPrompt()` of Pi
   1.4.0, then a short subagent reminder (`SUBAGENT_REMINDER` in [prompt.ts](prompt.ts): it is a subagent, its answer
-  goes to its caller, instructions addressed to the main agent or a coordinator do not apply to it), then the optional
+  goes to its caller, instructions addressed to the main agent do not apply to it), then the optional
   `role` as `<role>...</role>`. A nested subagent gets the same main prompt (handed down, never its caller's prompt,
   so nothing repeats). `system` stays the whole-prompt override: exactly that text, as before. `system` and `role` in
   one call are an error; on `restart` a new one replaces the old choice, otherwise the old choice is kept. The prompt is
@@ -23,7 +28,7 @@ including nested agents. Each call uses that child's model and thinking; no impo
   cards: collapsed waits are tool-ui's when it is loaded, Ctrl+O shows agent-ui's expanded wait cards. The delivered content keeps its `[agent#N] ...` format.
 - The `agent` description carries only generic when/when-not advice adapted from Cursor (not for narrow questions,
   one or two known files or a single search; parallel starts for independent areas; full context and the exact
-  return; trust the result; the user does not see it), no coordinator rules.
+  return; trust the result; the user does not see it), no project-specific execution rules.
 
 ## Codex profiles
 
@@ -525,7 +530,6 @@ runtime ownership tree, so a waiting parent and its active descendant each count
 results count zero; genuinely idle or AFK agents with no pending assignment do not linger.
 Reviewer profiles count as ordinary agents; the compatibility `reviews` field is zero for this producer.
 This extension adds no timer, card or second child registry.
-Provenance: the original event-source contract comes from a coordinator proposal, not an owner quotation.
 The waiting categories and idle distinction follow [D-STATUSBAR-WAITS](../../DECISIONS.md#status-bar).
 Reason: expose real background activity without coupling independently switchable extensions or changing
 execution/delivery. Carriers: `activity.ts`, `index.ts`, `coordinator.ts` and `counts.ts`.

@@ -1,0 +1,12 @@
+{
+  "categories": { "correctness": "error" },
+  "rules": {
+    "unicorn/no-useless-spread": "off",
+    "unicorn/no-useless-fallback-in-spread": "off",
+    "unicorn/prefer-string-starts-ends-with": "off",
+    "unicorn/no-new-array": "off",
+    "typescript/no-this-alias": "off",
+    "eslint/no-control-regex": "off",
+    "eslint/no-useless-escape": "off"
+  }
+}

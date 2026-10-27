@@ -27,7 +27,7 @@ export function selfShellWaitRenderers(name: string, inner: ToolRenderers): Tool
 		...inner,
 		renderCall(args, theme, context) {
 			const delegated = inner.renderCall?.(args, theme, context) ?? EMPTY;
-			if (!context.expanded || args?.action !== "wait") return delegated;
+			if (!context.expanded || (args as { action?: unknown })?.action !== "wait") return delegated;
 			// Pi calls renderCall before renderResult on every update and expansion. The result fills this view.
 			const view: View = {};
 			(context.state as Record<symbol, View>)[OWN] = view;

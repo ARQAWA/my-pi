@@ -64,7 +64,7 @@ it("regression: model change cancels stale startup prewarm", async () => {
 	} });
 	const starting = controller.start();
 	await started;
-	session.model = { ...MODEL, id: "gpt-6.1-sol" } as Model<Api>;
+	Object.assign(session, { model: { ...MODEL, id: "gpt-6.1-sol" } as Model<Api> });
 	const changing = controller.modelChange();
 	releaseHook();
 	await Promise.all([starting, changing]);

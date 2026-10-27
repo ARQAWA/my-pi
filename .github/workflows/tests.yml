@@ -1,6 +1,13 @@
 name: tests
 
 on:
+  workflow_dispatch:
+    inputs:
+      typecheck:
+        description: Run optional TypeScript diagnostics
+        required: false
+        default: false
+        type: boolean
   push:
     branches-ignore: [main]
     # Docs-only pushes run no tests: root *.md and .agents/ carry no code the tests load.
@@ -14,6 +21,27 @@ defaults:
     shell: bash
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm ci
+      - run: npm run lint
+
+  typecheck:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.typecheck }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm ci
+      - run: npm run typecheck
+
   test:
     name: test (${{ matrix.os }}, node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}

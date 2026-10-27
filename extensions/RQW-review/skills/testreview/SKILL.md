@@ -5,7 +5,7 @@ description: "Review test code against requirements, test plan and conversation 
 
 # Test review
 
-Use when the owner requests review of test code against requirements, a test plan or acceptance criteria. Do not launch it automatically. This is not the repository's mandatory weakening review with the project `test-reviewer` profile, and does not replace that gate.
+Use when the owner requests review of test code against requirements, a test plan or acceptance criteria. Do not launch it automatically.
 
 Collect the exact test paths or ranges, primary requirements, test plan, acceptance criteria and relevant conversation sources. Use readable absolute paths when the review runs in another directory. Collect the supplied external conversation with both user and assistant turns, not just a summary; follow relevant references without searching unrelated sessions. Preserve the owner's accepted decisions and their source, not agent proposals as agreement. If required sources are unavailable, name the missing input instead of inventing it.
 

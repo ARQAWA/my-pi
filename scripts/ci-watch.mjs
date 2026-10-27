@@ -92,7 +92,7 @@ export async function acquireLock(path, { identify = processStart, pid = process
 	return { owner, release, signal: controller.signal };
 }
 
-export async function poll({ repo, statusPath, execute = run, now = Date.now, previous = null, signal }) {
+export async function poll({ repo, statusPath, execute = run, now = Date.now, previous = null, signal = undefined }) {
 	const attemptedAt = new Date(now()).toISOString();
 	// Reserve the minute before HTTP so a crash/restart cannot create a second request.
 	await atomicJson(statusPath, { ...previous, version: 1, repo, attemptedAt,

@@ -64,7 +64,7 @@ function resultText(result: any, theme: any): string {
 		"\n" +
 		text
 			.split("\n")
-			.map((line) => theme.fg(line.startsWith("Failed:") ? "error" : "toolOutput", line))
+			.map((line: string) => theme.fg(line.startsWith("Failed:") ? "error" : "toolOutput", line))
 			.join("\n")
 	);
 }

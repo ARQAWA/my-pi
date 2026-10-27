@@ -2,6 +2,7 @@
 
 A Pi package (`@earendil-works/pi-coding-agent` 1.4.0) that carries the omp-lite behaviour into stock Pi step by step.
 Stock Pi tools stay as they are. Everything is an extension, one folder per extension under `extensions/`.
+The repository coordinator and workflow are development-only, not part of the shipped harness; never port them into the product.
 
 Before every task, read [PROCESS.md](PROCESS.md). Restore it after compaction or a handoff.
 The owner's personal manifesto is a separate memory document, not the execution procedure.
@@ -10,6 +11,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 
 - [INDEX.md](INDEX.md): short repository navigation.
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
+- `.oxlintrc.json`: calibrated correctness lint. `npm run lint` checks the full source scope; `scripts/check.mjs` runs lint and tests concurrently. Use `--test <paths>` for touched tests; no flag runs the existing full `npm test`.
 - `extensions/RQW-settings/`: extension 1, the harness settings. Turns on Pi's built-in `codemode` and `tool_search` by
   default (same rule as `grep` and `find` in RQW-tools), and disables background cache warming regardless of user
   config (prompt caching stays on). Owns GPT Fast for the main chat: `/fast-gpt [on|off]`, default off, only
@@ -108,6 +110,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   branch's CI; subagents and hosts without the extension use it. Failed runs stay red.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all. Its `qa-status` message has a compact card (`card.ts`); Ctrl+O shows every line with its link.
+- `.pi/extensions/post-edit-lint/`: dev-only, repo-local silent Oxlint checks after successful edits and writes. It is not shipped or listed in `pi.extensions`; its inline factory reaches only executors through RQW-agent's generic child-factory offer. Tests: `test/post-edit-lint.test.ts`.
 - `.pi/agents/test-reviewer.toml`: the read-only test-review profile, used through `agent` with
   `agent_type: "test-reviewer"`.
 - `extensions/RQW-naming/`: extension 16, background native session names after first input and each successful

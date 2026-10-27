@@ -64,7 +64,7 @@ only: stored messages, tool results, their details and what the model sees are n
 
 ## Layout and Markdown (`fit.ts`, `card.ts`)
 
-The cards drawn as custom messages (`agent`, `child_wait`, legacy `review`, and the dev `qa-status`) keep
+The cards drawn as custom messages (`agent`, `child_wait` and legacy `review`) keep
 Pi's output padding: `padded` in `fit.ts` leaves `options.outputPad` cells free at both sides, so a header and its body line up
 with the text blocks around the card, collapsed and expanded, and the wrapping uses the narrower width. A width at or below
 the padding is drawn without it. Cards inside a tool result are already inside Pi's own box and are not padded again.

@@ -212,7 +212,7 @@ function forkManager(header: ForkHeader, entries: SessionEntry[]): ForkManager {
 				path.push(current);
 				current = current.parentId ? byId.get(current.parentId) : undefined;
 			}
-			return path.reverse();
+			return path.reverse() as unknown as WireSessionEntry[];
 		},
 	};
 }
@@ -268,7 +268,7 @@ export function proveForkAdoption(manager: SessionManagerLike, threadId: string,
 		const copied: SessionEntry[] = [];
 		for (const entry of current.getBranch()) {
 			if (!parent.entries.has(entry.id)) break;
-			copied.push(entry);
+			copied.push(entry as unknown as SessionEntry);
 		}
 		const inherited = prove(forkManager(parent.header, copied), parent.id);
 		if (inherited === null) return null;

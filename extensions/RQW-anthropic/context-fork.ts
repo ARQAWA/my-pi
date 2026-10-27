@@ -1,11 +1,10 @@
-import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
-import type { ThinkingLevel } from "@earendil-works/pi-coding-agent";
+import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions, ThinkingLevel } from "@earendil-works/pi-ai";
 import { AUTH_ORIGIN, STREAM_CONTRACT } from "./retry.ts";
 
-type Stream = (model: Model, context: Context, options?: SimpleStreamOptions) => { result(): Promise<AssistantMessage> };
+type Stream = (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => { result(): Promise<AssistantMessage> };
 export interface ContextForkRequest {
 	sessionId: string;
-	model: Model;
+	model: Model<Api>;
 	context: Context;
 	reasoning?: ThinkingLevel;
 	signal: AbortSignal;
@@ -13,7 +12,7 @@ export interface ContextForkRequest {
 }
 
 type Body = Record<string, any>;
-type Snapshot = { model: Model; context: Context; options: SimpleStreamOptions; body: Body };
+type Snapshot = { model: Model<Api>; context: Context; options: SimpleStreamOptions; body: Body };
 
 // Keep only transport/sampling data. Session observers and the child's signal never enter a fork.
 function forkOptions(options: SimpleStreamOptions): SimpleStreamOptions {
@@ -57,7 +56,7 @@ export function contextForks(captureStream: () => Stream) {
 		clear() { snapshots.clear(); },
 		registerSource(sessionId: string) { if (!snapshots.has(sessionId)) snapshots.set(sessionId, undefined); },
 		release(sessionId: string) { snapshots.delete(sessionId); },
-		capture(model: Model, context: Context, options: SimpleStreamOptions, raw: string) {
+		capture(model: Model<Api>, context: Context, options: SimpleStreamOptions, raw: string) {
 			if (!options.sessionId || !snapshots.has(options.sessionId) || options.signal?.aborted) return;
 			snapshots.set(options.sessionId, { model: structuredClone(model), context: structuredClone(context),
 				options: forkOptions(options), body: JSON.parse(raw) });

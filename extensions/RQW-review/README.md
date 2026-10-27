@@ -35,9 +35,7 @@ absolute paths to all three TOML files. `resources_discover` returns absolute `s
 there is no static `pi.skills` entry. Disable RQW-review and reload to remove its offers and skills. With RQW-agent
 disabled, the skills report that the required agent is unavailable rather than starting another kind of reviewer.
 
-Claude reviewer measurement and comparison with the original plugin are discarded by the owner, not scheduled:
-[BACKLOG.md, Discarded](../../BACKLOG.md#claude-reviewer),
-[reviewer comparison](../../BACKLOG.md#codex-reviewer-comparison). No live model quality measurement is claimed.
+No live model quality measurement is claimed.
 
 `testreview` reviews test code as the deliverable, without running tests or reviewed code. It collects supplied
 requirements, test plan, acceptance criteria and conversation sources, including user and assistant turns in an
@@ -46,10 +44,8 @@ or other sessions. The reviewer traces agreed checks to exercised code and asser
 and concrete false confidence. Missing primary sources make verification incomplete, never CLEAN. Current code
 and conversation suffice; no before/after commits, diff, QA issue or execution logs are required.
 
-This optional, owner-requested resource is separate from the repo-local `.pi/agents/test-reviewer.toml`, whose
-mechanical weakening trigger, evidence requirements and delivery trailers remain unchanged. The removed legacy
-`.agents/reviewers/test-integrity.md` is not an active resource. Test review uses the same native profile and agent
-lifecycle, without a second runner, permission changes or automatic execution. Read-only is an instruction.
+Test review uses the same native profile and agent lifecycle, without a second runner, permission changes
+or automatic execution. Read-only is an instruction.
 
 Tests: `test/extensions/RQW-review/profiles.test.ts`.
 The testreview fixtures include defective, corrected and missing-conversation probe cases; static checks prove

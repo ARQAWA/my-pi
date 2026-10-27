@@ -102,6 +102,7 @@ export function createCoordinatorGuard(options: GuardOptions) {
 		const common = gitCommonDir(root);
 		// The lock is macOS only; elsewhere there is no lock and the guard works as it did before it.
 		const lockFile = common && process.platform === "darwin" ? join(common, LOCK_NAME) : undefined;
+		// @ts-expect-error TS7 misreads this cached nullable process start as always nullish.
 		const self = () => ({ pid: process.pid, start: (shared().start ??= processStart(process.pid) ?? null) ?? undefined });
 
 		pi.on("session_start", (event, ctx) => {

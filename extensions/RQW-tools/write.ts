@@ -71,7 +71,7 @@ export async function executeWrite(stockExecute: any, id: string, params: any, s
 	}
 
 	const runFile = (file: { path: string; content: string }) =>
-		withRetry(() => stockExecute(id, { path: file.path, content: file.content }, signal, onUpdate, ctx), signal);
+		withRetry<{ details?: unknown }>(() => stockExecute(id, { path: file.path, content: file.content }, signal, onUpdate, ctx), signal);
 
 	if (files.length === 1) return runFile(files[0]);
 

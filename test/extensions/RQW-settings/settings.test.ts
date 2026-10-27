@@ -33,11 +33,11 @@ function activeTools(selected: boolean, manualReload = false): string[] {
 	};
 	try {
 		settings(pi as unknown as ExtensionAPI);
-		prototype.bindExtensions.call(session);
+		prototype.bindExtensions.call(session, undefined as never);
 		for (const handler of handlers.get("session_start") ?? []) handler({ reason: "startup" }, { sessionManager: manager });
 		if (manualReload) {
 			active = ["bash", "read"];
-			prototype.bindExtensions.call(session);
+			prototype.bindExtensions.call(session, undefined as never);
 			for (const handler of handlers.get("session_start") ?? []) handler({ reason: "reload" }, { sessionManager: manager });
 		}
 		return active;

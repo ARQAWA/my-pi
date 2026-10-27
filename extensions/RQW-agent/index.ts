@@ -253,6 +253,18 @@ const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
  */
 type ToolsFactory = (cwd: string, settings: () => unknown, options?: { codemode?: ToolDefinition; notify?: (notification: JobNotification) => void; retain?: () => () => void }) => ToolDefinition[];
 
+type ExtensionFactory = (child: ExtensionAPI) => void;
+const SUBAGENT_EXTENSION_FACTORIES = "rqw-agent:subagent-extension-factories";
+
+/** Inline extensions explicitly offered for each child, without enabling resource discovery. */
+export function collectExtensionFactories(events: ExtensionAPI["events"]): ExtensionFactory[] {
+	const factories = new Set<ExtensionFactory>();
+	events.emit(SUBAGENT_EXTENSION_FACTORIES, {
+		offer: (factory: ExtensionFactory) => { if (typeof factory === "function") factories.add(factory); },
+	});
+	return [...factories];
+}
+
 type WebRegistrar = (child: ExtensionAPI) => void;
 
 function offeredWeb(events: ExtensionAPI["events"]): WebRegistrar | undefined {
@@ -756,6 +768,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (factory) createCodemodeExtension()(Object.assign(Object.create(sub), { registerTool: (d: ToolDefinition) => void (codemode = d) }));
 			else createCodemodeExtension()(sub);
 		};
+		const childExtensions = collectExtensionFactories(toolEvents);
 		const resourceLoader = new DefaultResourceLoader({
 			cwd, agentDir: getAgentDir(), settingsManager,
 			noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
@@ -782,6 +795,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					children = registerCaller(sub, toolEvents, true, false, () => fast.on, onRunning, () => config.base, `${label}/`, childHost);
 					web?.(sub);
 				},
+				...childExtensions,
 			],
 		});
 		// Reload can create a nested caller; failure or cancellation ends its lifetime too.
@@ -897,7 +911,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
 			const m = event.message;
 			if (m.stopReason !== "toolUse") a.progress.invalidate();
-			else a.progress.response(m, m.thinkingLevel);
+			else a.progress.response(m, m.thinkingLevel as Parameters<ProgressReports["response"]>[1]);
 			recordRunMessage(meta, m);
 			lastPushed = 0;
 			if (m.stopReason === "error") {
@@ -1169,7 +1183,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					signal.throwIfAborted();
 					await hydrate(ctx, signal);
 					const ids = targetIds(params.ids), timeout = waitTimeout(params.timeout_ms);
-					const options = { until: params.until, wake_on_alert: params.wake_on_alert };
+					const options = { until: params.until as "first" | "all" | undefined, wake_on_alert: params.wake_on_alert };
 					const blocking = toolCallId.includes("/") || (!backgroundCaller && (ctx.mode === "print" || ctx.mode === "json"));
 					return { waiting: blocking ? coordinator.wait(ids, timeout, signal, toolCallId, options)
 						: coordinator.notificationWait(ids, timeout, signal, toolCallId, options) };
@@ -1256,7 +1270,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				}
 				await startRun(a, params.task, signal, false, true);
 				signal.throwIfAborted();
-				a.guard.signal = a.run?.controller.signal;
+				a.guard.signal = (a.run as unknown as Agent["run"])?.controller.signal;
 				return ok(`${name}#${a.id}: sent`);
 			}
 			case "interrupt": {

@@ -9,6 +9,7 @@ export const ENTRY = "rqw-send-now";
 const POLL_MS = 20;
 
 type Pending = { text: string; ctx: ExtensionContext; interrupted?: AssistantMessage };
+type FocusTUI = TUI & { getFocusedComponent(): unknown };
 
 /** The interrupted reply as the model will see it: its text only, as a finished reply; undefined when it has none. */
 export function keptReply(message: AssistantMessage): AssistantMessage | undefined {
@@ -32,7 +33,7 @@ export default function sendNow(pi: ExtensionAPI) {
 	let pending: Pending | undefined;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let unsubscribe: (() => void) | undefined;
-	let tui: TUI | undefined;
+	let tui: FocusTUI | undefined;
 	/** Timestamps of interrupted replies this extension force-sent past; their text is replayed to the model. */
 	let kept = new Set<number>();
 
@@ -146,7 +147,7 @@ export default function sendNow(pi: ExtensionAPI) {
 		if (ctx.mode !== "tui") return;
 		// The TUI is needed only to see what has focus; a widget factory is the public way to get it. Removed at once.
 		ctx.ui.setWidget(ENTRY, (instance) => {
-			tui = instance;
+			tui = instance as FocusTUI;
 			return { render: () => [], invalidate() {} };
 		}, { placement: "belowEditor" });
 		ctx.ui.setWidget(ENTRY, undefined);
