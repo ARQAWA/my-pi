@@ -574,9 +574,9 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Subscription limits
 
-- **Native subscription windows** `[D-STATUSBAR-SUBSCRIPTION-LIMITS]`.
-  The folder row shows CX gold, KM platinum and CC bronze, with remaining percent per
-  supplied native window. Refresh immediately and every five minutes while active.
+- **One subscription number** `[D-STATUSBAR-SUBSCRIPTION-LIMITS]`.
+  The folder row shows CX gold, KM platinum and CC bronze, one remaining percent each:
+  CX and CC the weekly window, KM `limit_month_total`. Refresh immediately and every five minutes while active.
   Missing or failed data is `unavailable`, never an invented 0% or 100%; failed reads
   discard displayed stale data. Disable/shutdown cancels requests and releases the timer.
   Owner: «Надо, чтобы ты разобрался, как это запилить, и сделал отображение, чтобы в real time эта хуйня работала. Не в real time, а хотя бы чтобы она раз в пять минут.»
@@ -586,12 +586,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   CC consumes the existing optional Anthropic event offer. CX and KM independently use
   Pi's public `readStoredCredential` for one-off read-only stored OAuth reads, without
   auth resolution, token refresh, rotation or writes. CX requests the wham usage source
-  with the stored account ID; KM requests the Kimi coding usages source. Each native
-  window retains its name or server duration. Missing/expired credentials, request
+  with the stored account ID; KM requests the Kimi coding usages source. Missing/expired credentials, request
   failures and unknown response shapes show `unavailable`. RQW-codex is not required.
   No private API, auth copying, dependency or live credential probe is added.
   Owner correction: use public `readStoredCredential` for Codex and Kimi; never write
   auth or refresh tokens. Keep the implementation inside the statusbar folder.
+  Owner correction: «Смотри, должны быть лимиты просто одной цифры, недельные лимиты. А у Кими месячный лимит.»
+  This replaces the per-window display above; KM's total month is chosen over its code month.
   Carriers: `extensions/RQW-statusbar/{index,render,quota}.ts` and its README.
 
 ## Isolation

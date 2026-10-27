@@ -10,6 +10,7 @@ type Access = { refresh(signal?: AbortSignal): Promise<Snapshot> };
 type Events = { emit(name: string, data: unknown): void };
 const PROVIDERS = ["CX", "KM", "CC"] as const;
 type Dependencies = { readCredential: typeof readStoredCredential; fetch: typeof globalThis.fetch };
+const WEEK_SECONDS = 7 * 24 * 60 * 60;
 const URLS = { CX: "https://chatgpt.com/backend-api/wham/usage", KM: "https://api.kimi.com/coding/v1/usages" };
 
 function object(value: unknown): Record<string, unknown> {
@@ -22,45 +23,21 @@ function remaining(value: unknown, scale: number): number {
 	}
 	return 100 * (1 - value / scale);
 }
-function parseUsage(id: "CX" | "KM", data: unknown): Snapshot {
+/** One number per provider: Codex's weekly window, Kimi's monthly total. */
+function parseUsage(id: "CX" | "KM", data: unknown): number {
 	const payload = object(data);
-	const windows: Snapshot["windows"] = {};
-	if (id === "KM") {
-		const usages = object(payload.usages);
-		for (const name of ["limit_5h", "limit_7d", "limit_month_total", "limit_month_code"]) {
-			if (usages[name] == null) continue;
-			windows[name] = { remainingPercent: remaining(object(usages[name]).used_ratio, 1) };
-		}
-	} else {
-		const add = (value: unknown, prefix = "") => {
-			if (value == null) return;
-			const limits = object(value);
-			for (const name of ["primary_window", "secondary_window"]) {
-				if (limits[name] == null) continue;
-				const window = object(limits[name]);
-				const seconds = window.limit_window_seconds;
-				if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) {
-					throw new Error("Invalid quota window");
-				}
-				windows[`${prefix}${name} ${seconds}s`] = { remainingPercent: remaining(window.used_percent, 100) };
-			}
-		};
-		add(payload.rate_limit);
-		if (payload.additional_rate_limits != null) {
-			if (!Array.isArray(payload.additional_rate_limits)) throw new Error("Invalid quota groups");
-			for (const value of payload.additional_rate_limits) {
-				const group = object(value);
-				if (typeof group.limit_name !== "string" || !group.limit_name) throw new Error("Invalid quota group");
-				add(group.rate_limit, `${group.limit_name} `);
-			}
-		}
+	if (id === "KM") return remaining(object(object(payload.usages).limit_month_total).used_ratio, 1);
+	const limits = object(payload.rate_limit);
+	for (const name of ["primary_window", "secondary_window"]) {
+		if (limits[name] == null) continue;
+		const window = object(limits[name]);
+		if (window.limit_window_seconds === WEEK_SECONDS) return remaining(window.used_percent, 100);
 	}
-	if (!Object.keys(windows).length) throw new Error("No quota windows");
-	return { windows };
+	throw new Error("No weekly quota window");
 }
 
 /** One-off stored-token reads only: never resolve auth or rotate expired tokens. */
-async function fetchUsage(id: "CX" | "KM", signal: AbortSignal, deps: Dependencies): Promise<Snapshot> {
+async function fetchUsage(id: "CX" | "KM", signal: AbortSignal, deps: Dependencies): Promise<number> {
 	const credential = deps.readCredential(id === "CX" ? "openai-codex" : "kimi-coding");
 	if (credential?.type !== "oauth" || typeof credential.access !== "string" || !credential.access ||
 		!Number.isFinite(credential.expires) || credential.expires <= Date.now()) throw new Error("Quota auth unavailable");
@@ -125,14 +102,11 @@ export class QuotaConsumer {
 				if (id === "CC") this.events.emit("rqw-anthropic:quota:v1", {
 					sessionId: this.sessionId, offer(value: Access) { access = value; },
 				});
-				const snapshot = id === "CC" ? await access?.refresh(signal) : await fetchUsage(id, signal, this.deps);
-				const windows = Object.entries(snapshot?.windows ?? {}).map(([name, value]) => {
-					const percent = value?.remainingPercent;
-					const text = typeof percent === "number" && Number.isFinite(percent) && percent >= 0 && percent <= 100
-						? `${Math.round(percent)}%` : "unavailable";
-					return `${name} ${text}`;
-				});
-				if (current()) this.values[id] = windows.join(" ") || "unavailable";
+				// Claude Code's weekly window; Codex weekly and Kimi monthly come from fetchUsage.
+				const percent = id === "CC" ? (await access?.refresh(signal))?.windows.seven_day?.remainingPercent
+					: await fetchUsage(id, signal, this.deps);
+				const valid = typeof percent === "number" && Number.isFinite(percent) && percent >= 0 && percent <= 100;
+				if (current()) this.values[id] = valid ? `${Math.round(percent)}%` : "unavailable";
 			} catch { if (current()) this.values[id] = "unavailable"; }
 			if (current()) this.changed();
 		}));
