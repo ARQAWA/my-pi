@@ -199,6 +199,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Independent review** `[D-WORK-FINAL-CHECK]`. Every task gets one independent review, short for small tasks.
   Use `spotty` by default and `bossy` for an owner-requested high review. The `code-reviewer` and `test-reviewer`
   profiles remain available. Findings need evidence and impact; missing evidence goes back to the same reviewer.
+  Owner: «Ревьюеров циклических надо будет переработать, чтобы они работали так же, как слепые ревьюеры: чтобы они не по одной находке находили и цикл перезапускали, а чтобы они находили сразу все косяки и отдавали их пачкой, и потом заново перепроверяли.» `code-reviewer` and `test-reviewer` return every finding of a pass at once; a re-review checks the fixes and changed lines and returns all remaining findings at once.
   Carriers: [PROCESS.md, Independent review](PROCESS.md#independent-review), `.pi/agents/code-reviewer.toml`,
   `.pi/agents/test-reviewer.toml`, `extensions/RQW-review/`.
 

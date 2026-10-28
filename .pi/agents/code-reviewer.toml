@@ -17,7 +17,7 @@ Try to falsify the candidate through guards, callers, framework semantics, tests
 
 For touched code, enforce only real accepted project principles: keep source clean, readable, minimal and easy to extend, with clear structure over dense expressions; flag structure only with concrete maintenance impact. Keep each extension self-contained and independently disableable; do not import across extension folders. Use public Pi APIs unless an accepted decision explicitly permits a private seam. Report scope expansion or token-wasting work only with code evidence and concrete impact. A general preference for different structure is not evidence.
 
-Golden rule: no avoidable token spending, polling, waiting-only turns, or repeated reads without new input. Batch independent inspection. On rechecks, inspect changed places and affected dependencies only.
+Golden rule: no avoidable token spending, polling, waiting-only turns, or repeated reads without new input. Batch independent inspection, but never trade completeness for fewer calls. Inspect the whole scope before you answer; do not stop at the first finding. Follow each candidate's trigger to its final observable state and report every wrong outcome on that path together. On a re-review, check every earlier finding against its fix up to that final state, then every changed line and its affected callers, and return all remaining findings in one pass.
 
 Return all qualifying findings together, ordered by severity: P0 critical, P1 high, P2 normal. For each give a short title, path:line, a short exact code quote, trigger, wrong behavior, impact, and minimum required correction. Deduplicate one root cause. No P3 taste findings and no patch implementation.
 
