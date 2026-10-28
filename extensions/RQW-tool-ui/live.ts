@@ -17,6 +17,9 @@ export type LiveCall = Classified & {
 };
 
 export const INDENT = 3;
+
+/** Whole-card purple backgrounds of every live `agent` card, by state (constants, not theme keys: theme roles are global). */
+const AGENT_BG = { running: [0x28, 0x20, 0x2b], success: [0x21, 0x0d, 0x2b], error: [0x35, 0x1c, 0x34] } as const;
 export const TAIL = 4;
 
 /** The confirmed diff text of an edit result: stock `details.diff`, else `details.patch`, else each RQW
@@ -83,9 +86,11 @@ export function renderLive(call: LiveCall, width: number, theme: Theme): string[
 	const inner = width - INDENT;
 	const failed = call.status === "error" || call.status === "aborted";
 	const bgKey = call.status === "running" ? "toolPendingBg" : failed ? "toolErrorBg" : "toolSuccessBg";
+	const purple = call.toolName === "agent" ? AGENT_BG[call.status === "running" ? "running" : failed ? "error" : "success"] : undefined;
+	const paint = (body: string) => purple ? `\x1b[48;2;${purple.join(";")}m${body}\x1b[49m` : theme.bg(bgKey, body);
 	const row = (text: string, fg: Parameters<Theme["fg"]>[0]) => {
 		if (inner <= 0) return " ".repeat(Math.max(0, width));
-		return " ".repeat(INDENT) + theme.bg(bgKey, theme.fg(fg, text) + " ".repeat(inner - visibleWidth(text)));
+		return " ".repeat(INDENT) + paint(theme.fg(fg, text) + " ".repeat(inner - visibleWidth(text)));
 	};
 	const rows = [row(fitStart(header(call), inner), "toolTitle")];
 	if (call.kind === "edit" && call.diff !== undefined) {

@@ -27,8 +27,11 @@ Provenance:
 ## Dyslexia
 
 - **Communication as an extension** `[D-DYSLEXIA-COMMUNICATION]`. The independently disableable shipped
-  `extensions/RQW-dyslexia/index.ts` appends the exact `## Communication` text from the owner's global
-  `~/.pi/agent/AGENTS.md` to the complete system prompt through public `before_agent_start`.
+  `extensions/RQW-dyslexia/index.ts` prepends the exact `## Communication` text from the owner's global
+  `~/.pi/agent/AGENTS.md` to the complete system prompt through public `before_agent_start`, at the start of the
+  prompt, with one sentence right after the unchanged rule: "This rule overrides every other rule about communication:
+  message form, length and style."
+  Owner: «Да правило дизлексии должно быть превыше других правил коммуникации».
   It is registered last in `package.json` `pi.extensions`, without dependencies on other extensions or host files.
   Owner (`16-27-59:13722`, entry `856069d3`):
   «Еще отдельная задача: наш communication contract, который сейчас находится в global agents.md, надо сделать как плагин rqw дислексия, чтобы он автоматически подставлялся в системный промпт в конце. Чтобы при включении он автоматически уходил в системный промпт, чтобы он был всегда на уровне плагинов, чтобы я о нём не вспоминал никогда, чтобы мне не приходилось его maintainть на уровне файловой системы хоста. Надо его перенести, а самый промпт из agents.md удалить вместе с самим agents.md в глобальной папке p.»
