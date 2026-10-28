@@ -10,7 +10,7 @@ type ReadonlySessionManager = ExtensionContext["sessionManager"];
 import { Box, type Component, Container, Text } from "@earendil-works/pi-tui";
 import { type ChangeClassified, classifyChange } from "./changes.ts";
 import { type CallResult, type Classified, classify, record } from "./classify.ts";
-import { buildGroups, type CallGroup, type LiveExecution, type Member } from "./groups.ts";
+import { buildTail, type CallGroup, type LiveExecution, type Member } from "./groups.ts";
 import type { ToolRenderContext } from "./index.ts";
 import { callFallback, type FallbackResult, resultFallback, shellBackground, unknownToolText } from "./fallback.ts";
 import { diffOf, renderLive } from "./live.ts";
@@ -27,6 +27,7 @@ interface RowState {
 	result?: { content: CallResult["content"]; details?: unknown };
 	/** The original renderers' view of the row, from the start of execution or the first expansion on. */
 	original?: Original;
+	cached?: { group: CallGroup | undefined; width: number; theme: Theme; cwd: string | undefined; pad: number; rows: string[] };
 }
 
 /** The original of a row: what the renderers after this resolver (or Pi's fallbacks) drew, in Pi's shell. */
@@ -81,54 +82,52 @@ export function collapsedRows(g: CallGroup | undefined, width: number, theme: Th
 /** One line per event that can change the groups; holds the streaming state between saves. */
 export class ToolUi {
 	private sessionManager: ReadonlySessionManager | undefined;
+	/** The session's cwd, read once at start: it is what Pi resolves the paths of calls against. */
+	private cwd: string | undefined;
 	private entries: SessionEntry[] = [];
+	/** Entries before this index only form groups no event can change again; they are not read again. */
+	private cut = 0;
 	private messages: unknown[] = [];
 	private streaming = false;
 	private executions: LiveExecution[] = [];
 	private groups = new Map<string, CallGroup>();
+	/** Calls of the groups already stored in their final form; later rebuilds do not build those groups again. */
+	private final = new Set<string>();
 	/** The latest `invalidate` Pi gave each row, by tool call ID. */
 	private rows = new Map<string, () => void>();
 	/** What each row drew last time it was asked to redraw: leader or not, active or not. */
 	private drawn = new Map<string, string>();
-	private updateKey = "";
+	private textBreaks = new Set<number>();
 
 	/** True between a TUI `session_start` and `session_shutdown`. */
 	get installed(): boolean {
 		return this.sessionManager !== undefined;
 	}
 
-	/** The group of a top-level call, for tests and the renderers. */
-	group(toolCallId: string): CallGroup | undefined {
-		return this.groups.get(toolCallId);
-	}
-
-	/** Number of rows this instance can redraw; zero after shutdown. */
-	get rowCount(): number {
-		return this.rows.size;
-	}
-
 	/** Install for a TUI session: read what Pi draws and redraw every row already built (Pi may build the transcript
 	 * before it starts the session's extensions, on `/reload` and session switches). */
 	start(sessionManager: ReadonlySessionManager): void {
 		this.sessionManager = sessionManager;
+		this.cwd = sessionManager.getCwd();
 		this.messages = [];
 		this.executions = [];
 		this.streaming = false;
-		this.updateKey = "";
-		this.refresh(true, true);
+		this.refresh(true, true, true);
 	}
 
 	/** Forget everything of the session: state, rows and their redraw callbacks. */
 	shutdown(): void {
 		this.sessionManager = undefined;
+		this.cwd = undefined;
 		this.entries = [];
+		this.cut = 0;
 		this.messages = [];
 		this.executions = [];
 		this.streaming = false;
 		this.groups.clear();
+		this.final.clear();
 		this.rows.clear();
 		this.drawn.clear();
-		this.updateKey = "";
 	}
 
 	/** Saved entries changed: a compaction, or tree navigation (`rebuild`: Pi then draws the transcript anew, so the
@@ -138,30 +137,34 @@ export class ToolUi {
 			this.rows.clear();
 			this.drawn.clear();
 		}
-		this.refresh(true);
+		this.refresh(true, true);
 	}
 
 	messageStart(message: unknown): void {
+		this.textBreaks.clear();
 		this.messages.push(message);
 		this.streaming = true;
-		this.updateKey = "";
 		this.refresh(false);
 	}
 
-	messageUpdate(message: unknown): void {
+	/** Only tool calls and arguments, and whether a text block has begun, change the groups; other tokens change nothing. */
+	messageUpdate(message: unknown, event: { type: string; contentIndex?: number }): void {
 		this.replace(message);
 		this.streaming = true;
-		// Text tokens after the first and thinking tokens change nothing here; tool calls and their arguments do.
-		const key = streamKey(message);
-		if (key === this.updateKey) return;
-		this.updateKey = key;
+		if (event.type.startsWith("text_") && event.contentIndex !== undefined) {
+			const content = record(message).content;
+			const block = record(Array.isArray(content) ? content[event.contentIndex] : undefined);
+			const present = typeof block.text === "string" && block.text.trim() !== "";
+			if (present === this.textBreaks.has(event.contentIndex)) return;
+			if (present) this.textBreaks.add(event.contentIndex);
+			else this.textBreaks.delete(event.contentIndex);
+		} else if (!event.type.startsWith("toolcall_")) return;
 		this.refresh(false);
 	}
 
 	messageEnd(message: unknown): void {
 		this.replace(message);
 		this.streaming = false;
-		this.updateKey = "";
 		this.refresh(true);
 	}
 
@@ -193,7 +196,6 @@ export class ToolUi {
 		this.messages = [];
 		this.executions = [];
 		this.streaming = false;
-		this.updateKey = "";
 		this.refresh(true);
 	}
 
@@ -224,11 +226,6 @@ export class ToolUi {
 		};
 	}
 
-	/** The cwd of the session, for classifying paths as Pi resolves them. */
-	get cwd(): string | undefined {
-		return this.sessionManager?.getCwd();
-	}
-
 	private own(context: ToolRenderContext): RowState {
 		const state = context.state as Record<symbol, RowState>;
 		return (state[OWN] ??= {});
@@ -241,20 +238,55 @@ export class ToolUi {
 		else this.messages.push(message);
 	}
 
-	private refresh(readEntries: boolean, all = false): void {
+	/** Rebuild the groups from the cut on, the only ones an event can touch. `restart`: the entries changed anywhere, so
+	 * start from the first; `force`: redraw every row, not only the ones whose drawing changed. */
+	private refresh(readEntries: boolean, restart = false, force = false): void {
 		if (!this.sessionManager) return;
 		if (readEntries) this.entries = this.sessionManager.buildContextEntries();
-		this.groups = buildGroups(this.entries, { messages: this.messages, executions: this.executions, streaming: this.streaming });
-		for (const [id, invalidate] of this.rows) {
+		if (restart) {
+			this.cut = 0;
+			this.groups.clear();
+			this.final.clear();
+		}
+		const tail = buildTail(this.cut > 0 ? this.entries.slice(this.cut) : this.entries,
+			{ messages: this.messages, executions: this.executions, streaming: this.streaming }, this.final);
+		for (const [id, g] of tail.groups) this.groups.set(id, g);
+		for (const id of tail.settled) this.final.add(id);
+		this.advance(tail.unsettledFrom);
+		for (const id of restart ? this.rows.keys() : tail.groups.keys()) {
+			const invalidate = this.rows.get(id);
+			if (!invalidate) continue;
 			const g = this.groups.get(id);
 			const drawn = this.signature(id);
 			// The leader of the active group shows the current call, which moves with every event; others only when
 			// they gain or lose the lead or the group stops.
-			if (all || drawn !== (this.drawn.get(id) ?? "") || (g?.isLeader && g.active)) {
+			if (force || drawn !== (this.drawn.get(id) ?? "") || (g?.isLeader && g.active)) {
 				this.drawn.set(id, drawn);
 				invalidate();
 			}
 		}
+	}
+
+	/** Move the cut to the entry that holds the first call of the earliest group still open to events. The streamed
+	 * messages before that call are saved before it, so they are dropped with the entries they duplicate. */
+	private advance(first: string | undefined): void {
+		if (first === undefined) {
+			if (this.messages.length === 0) this.cut = this.entries.length;
+			return;
+		}
+		const holds = (m: unknown): boolean => {
+			const content = record(m).content;
+			return Array.isArray(content) && content.some((c) => record(c).type === "toolCall" && record(c).id === first);
+		};
+		const live = this.messages.findLastIndex(holds);
+		let saved = -1;
+		for (let i = this.entries.length - 1; i >= this.cut && saved < 0; i--) {
+			const e = this.entries[i];
+			if (e.type === "message" && holds(e.message)) saved = i;
+		}
+		if (saved < 0 && live < 0) return;
+		this.cut = saved >= 0 ? saved : this.entries.length;
+		if (live > 0) this.messages.splice(0, live);
 	}
 
 	/** What a row draws, coarsely: nothing, or the summary with or without the live block. */
@@ -269,7 +301,14 @@ export class ToolUi {
 		if (!context || !own.theme) return [];
 		if (context.expanded) return this.drawOriginal(own, width);
 		if (!this.sessionManager) return [];
-		return collapsedRows(this.groups.get(context.toolCallId), width, own.theme, this.cwd, context.outputPad);
+		const group = this.groups.get(context.toolCallId);
+		const cwd = this.cwd;
+		const pad = context.outputPad;
+		const cache = own.cached;
+		if (cache && cache.group === group && cache.width === width && cache.theme === own.theme && cache.cwd === cwd && cache.pad === pad) return cache.rows;
+		const rows = collapsedRows(group, width, own.theme, cwd, pad);
+		own.cached = { group, width, theme: own.theme, cwd, pad, rows };
+		return rows;
 	}
 
 	/** The original's call, from the renderers after this resolver with the row's own last component and the row's
@@ -344,18 +383,6 @@ export class ToolUi {
 	private drawOriginal(own: RowState, width: number): string[] {
 		return own.original?.shell?.render(width) ?? [];
 	}
-}
-
-/** What of a streaming message can change the groups: its tool calls and arguments, and whether text has begun. */
-function streamKey(message: unknown): string {
-	const m = record(message);
-	if (m.role !== "assistant" || !Array.isArray(m.content)) return `${String(m.role)}@${String(m.timestamp)}`;
-	return JSON.stringify(m.content.map((c) => {
-		const b = record(c);
-		if (b.type === "toolCall") return [b.id, b.arguments];
-		if (b.type === "text") return typeof b.text === "string" && b.text.trim() !== "" ? 1 : 0;
-		return 0;
-	}));
 }
 
 /** The component Pi puts in the row's self shell: drawn at render time from the current state. */

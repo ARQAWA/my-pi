@@ -85,6 +85,8 @@ interface Building {
 	started: string[];
 	/** Top-level calls without a final result, in transcript order. */
 	pending: string[];
+	/** A call still waits for its saved result: events can change this group. */
+	unsaved: boolean;
 }
 
 /** Identity of a message across the saved branch and the stream. A custom message is saved as a `custom_message`
@@ -132,6 +134,16 @@ function resultOf(value: unknown): CallResult | undefined {
 		...(r.structuredContent !== undefined ? { structuredContent: r.structuredContent } : {}), ...(r.isError === true ? { isError: true } : {}) };
 }
 
+/** The groups of {@link buildTail}. */
+export interface Tail {
+	groups: Map<string, CallGroup>;
+	/** The ID of the first call of the earliest group that events can still change: the open group, or a group with a
+	 * call whose result is not saved yet. Every group before it is final. */
+	unsettledFrom: string | undefined;
+	/** The top-level call IDs of the groups no event can change any more: closed, every call saved. */
+	settled: string[];
+}
+
 /**
  * Groups of the tool calls Pi draws, keyed by top-level tool call ID. `contextEntries` is
  * `ctx.sessionManager.buildContextEntries()` (public on Pi 1.4.0 `ReadonlySessionManager`), the list Pi's
@@ -139,6 +151,12 @@ function resultOf(value: unknown): CallResult | undefined {
  * `firstKeptEntryId` on and the entries after it; summarized entries are not drawn, so they are not counted here.
  */
 export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveState = {}): Map<string, CallGroup> {
+	return buildTail(contextEntries, live).groups;
+}
+
+/** Like {@link buildGroups}, for the entries from a group boundary on, with the calls events can still change.
+ * The calls in `skip` belong to settled groups, which are not built again. */
+export function buildTail(contextEntries: readonly SessionEntry[], live: LiveState = {}, skip: ReadonlySet<string> = new Set()): Tail {
 	const executions = new Map<string, LiveExecution>();
 	for (const x of live.executions ?? []) if (!executions.has(x.toolCallId)) executions.set(x.toolCallId, x);
 	const results = new Map<string, Record<string, unknown>>();
@@ -166,8 +184,12 @@ export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveS
 		const id = call.id as string;
 		if (seenCalls.has(id)) return;
 		seenCalls.add(id);
+		if (skip.has(id)) {
+			open = undefined;
+			return;
+		}
 		if (!open) {
-			open = { group: { groupId: id, leaderId: id, active: true, currentCallId: id, callIds: [], members: [] }, started: [], pending: [] };
+			open = { group: { groupId: id, leaderId: id, active: true, currentCallId: id, callIds: [], members: [] }, started: [], pending: [], unsaved: false };
 			groups.push(open);
 		}
 		const g = open.group;
@@ -180,6 +202,7 @@ export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveS
 		const nested = nestedOf(id, saved, executions, topOf);
 		open.started.push(id, ...nested.map((n) => n.id));
 		if (!final && !stopReason) open.pending.push(id);
+		if (!saved && assistantStopReason !== "aborted" && assistantStopReason !== "error") open.unsaved = true;
 		const result = resultOf(final ?? run?.partialResult);
 		const member: Member = { id, toolName: String(call.name ?? ""), args: call.arguments ?? {}, ...(result ? { result } : {}),
 			...(final ? { isError: final.isError === true } : {}), ...(stopReason ? { stopReason } : {}), isPartial: !final && !stopReason,
@@ -211,7 +234,8 @@ export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveS
 	for (const { group } of groups)
 		for (const id of group.callIds)
 			out.set(id, { groupId: group.groupId, isLeader: id === group.leaderId, active: group.active, currentCallId: group.currentCallId, members: group.members, group });
-	return out;
+	const settled = groups.filter((b) => b !== open && !b.unsaved).flatMap((b) => b.group.callIds);
+	return { groups: out, unsettledFrom: groups.find((b) => b === open || b.unsaved)?.group.groupId, settled };
 }
 
 /** The current call of a group: a new call whose arguments still stream (in the streaming message, not started);
