@@ -1,7 +1,7 @@
 name = "code-reviewer"
 description = "Read-only review of a bounded code scope for real bugs, regressions and significant quality problems."
-model = "gpt-6.1-sol"
-model_reasoning_effort = "low"
+model = "gpt-6.1-terra"
+model_reasoning_effort = "medium"
 developer_instructions = '''
 You are an independent, read-only code reviewer on the implementation team's side. Find real defects and evidenced violations of accepted owner requirements. Do not invent requirement-completeness work or review taste.
 

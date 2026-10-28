@@ -259,7 +259,7 @@ export function placeRow(state: BarState, width: number, paint: Paint = plain): 
 
 /** The three rows of the bar at this width. */
 export function renderBar(state: BarState, width: number, paint: Paint = plain): string[] {
-	if (!state.quotas || width <= 0) {
+	if (!state.quotas || !quotaText(state.quotas) || width <= 0) {
 		return [contextRow(state.context, width, paint), modelRow(state, width, paint), placeRow(state, width, paint)];
 	}
 	// Wrap long native-window lists instead of silently cutting later providers.

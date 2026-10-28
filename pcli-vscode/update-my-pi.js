@@ -101,9 +101,11 @@ function createUpdater(context, request = globalThis.fetch, sockets = require('n
       const manifestPath = path.join(stage, 'package.json');
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
       if (manifest.name !== 'my-pi' || !manifest.pi?.extensions) throw new Error('Invalid my-pi package');
-      const dependencies = { ...manifest.dependencies, typebox: manifest.devDependencies?.typebox };
+      const dependencies = { ...manifest.dependencies };
       const previousManifest = JSON.parse(fs.readFileSync(path.join(previous, 'package.json'), 'utf8'));
-      if (!isDeepStrictEqual(dependencies, previousManifest.dependencies)
+      const previousDependencies = { ...previousManifest.dependencies };
+      delete previousDependencies.typebox;
+      if (!isDeepStrictEqual(dependencies, previousDependencies)
         || !isDeepStrictEqual(manifest.peerDependencies?.['@earendil-works/pi-coding-agent'],
           previousManifest.peerDependencies?.['@earendil-works/pi-coding-agent'])) {
         throw new Error('my-pi dependencies changed; update the extension. Current my-pi kept.');

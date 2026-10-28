@@ -9,7 +9,7 @@ import { loadSkills } from "@earendil-works/pi-coding-agent";
 import { parse } from "smol-toml";
 import { ProfileCatalogue } from "../extensions/RQW-agent/profiles.ts";
 
-test("project reviewer profiles retain Sol low and the required review contracts", async () => {
+test("project reviewer profiles use Terra medium and the required review contracts", async () => {
 	const fragments = {
 		"code-reviewer": [
 			"a concrete reachable trigger, input, state, or ordering",
@@ -48,8 +48,8 @@ test("project reviewer profiles retain Sol low and the required review contracts
 	for (const [name, required] of Object.entries(fragments)) {
 		const profile = parse(readFileSync(new URL(`../.pi/agents/${name}.toml`, import.meta.url), "utf8"));
 		assert.equal(profile.name, name);
-		assert.equal(profile.model, "gpt-6.1-sol");
-		assert.equal(profile.model_reasoning_effort, "low");
+		assert.equal(profile.model, "gpt-6.1-terra");
+		assert.equal(profile.model_reasoning_effort, "medium");
 		assert.equal(typeof profile.developer_instructions, "string");
 		for (const fragment of required) {
 			assert.ok((profile.developer_instructions as string).includes(fragment), `${name}: ${fragment}`);

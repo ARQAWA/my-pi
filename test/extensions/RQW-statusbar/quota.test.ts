@@ -66,15 +66,40 @@ it("renders one remaining number per provider in gold, platinum and bronze and r
 	consumer.stop();
 });
 
-it("shows unavailable for missing, expired, failed or unknown data without stale percentages", async (t) => {
+it("hides providers without stored login and leaves no quota separators", async (t) => {
 	t.mock.timers.enable({ apis: ["setInterval", "setTimeout", "Date"], now: 0 });
-	let mode = "missing";
+	let loggedIn = false;
+	const consumer = new QuotaConsumer({ emit() {} }, "session", () => {}, {
+		readCredential: (provider) => loggedIn && provider === "kimi-coding" ? credential() : undefined,
+		fetch: async () => Response.json({ usages: { limit_month_total: { used_ratio: 0.25 } } }),
+	});
+	consumer.start();
+	await flush();
+	for (const git of [undefined, { branch: "main", staged: 0, unstaged: 0, untracked: 0 }]) {
+		const state = { compactions: 0, place: { kind: "folder" as const, text: "project" }, statuses: [], git };
+		assert.deepEqual(renderBar({ ...state, quotas: consumer.values }, 40), renderBar(state, 40));
+	}
+	loggedIn = true;
+	await consumer.refresh();
+	const row = strip(footer(consumer));
+	assert.ok(row.includes("KM 75%"));
+	assert.ok(!row.includes("CX"));
+	assert.ok(!row.includes("CC"));
+	loggedIn = false;
+	await consumer.refresh();
+	assert.ok(!strip(footer(consumer)).includes("KM"));
+	consumer.stop();
+});
+
+it("shows ??? for expired, failed or unknown data without stale percentages", async (t) => {
+	t.mock.timers.enable({ apis: ["setInterval", "setTimeout", "Date"], now: 0 });
+	let mode = "valid";
 	const consumer = new QuotaConsumer({ emit(_name, data) {
 		(data as { offer(access: unknown): void }).offer({ async refresh() {
 			return { windows: { seven_day: { remainingPercent: 57 } } };
 		} });
 	} }, "session", () => {}, {
-		readCredential: () => mode === "missing" ? undefined : { ...credential(), expires: mode === "expired" ? 0 : 1e9 },
+		readCredential: () => ({ ...credential(), expires: mode === "expired" ? 0 : 1e9 }),
 		fetch: async (url) => {
 			if (mode === "failed") return new Response(null, { status: 401 });
 			if (mode === "unknown") return Response.json({ unexpected: true });
@@ -85,7 +110,7 @@ it("shows unavailable for missing, expired, failed or unknown data without stale
 	});
 	consumer.start();
 	await flush();
-	for (const value of ["missing", "expired", "valid", "failed", "unknown", "invalid"]) {
+	for (const value of ["expired", "valid", "failed", "unknown", "invalid"]) {
 		mode = value;
 		await consumer.refresh();
 		const row = strip(footer(consumer));
@@ -93,7 +118,11 @@ it("shows unavailable for missing, expired, failed or unknown data without stale
 		if (mode === "valid") {
 			assert.ok(row.includes("CX 57%"));
 			assert.ok(row.includes("KM 57%"));
-		} else assert.ok(row.includes("CX unavailable  KM unavailable"));
+		} else {
+			assert.ok(row.includes("CX ???  KM ???"));
+			assert.ok(footer(consumer).includes("\x1b[38;2;201;162;39mCX ???\x1b[39m"));
+			assert.ok(footer(consumer).includes("\x1b[38;2;229;228;226mKM ???\x1b[39m"));
+		}
 	}
 	consumer.stop();
 });
@@ -121,7 +150,7 @@ it("keeps completed providers visible and ignores a late stale success after a n
 	await consumer.refresh();
 	complete({ windows: { seven_day: { remainingPercent: 81 } } });
 	await flush();
-	assert.ok(displayed.includes("CC unavailable"));
+	assert.ok(displayed.includes("CC ???"));
 	assert.ok(!displayed.includes("81%"));
 	consumer.stop();
 });

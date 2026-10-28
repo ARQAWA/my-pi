@@ -141,6 +141,7 @@ test('palette update selects new code and reuses current libraries without chang
   const settings = fs.readFileSync(f.settingsPath, 'utf8');
   await f.update();
   const first = f.selected();
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(first, 'package.json'))).dependencies, { ws: '1', other: '2' });
   assert.equal(fs.readFileSync(path.join(first, 'extensions/demo/index.ts'), 'utf8'), 'new code');
   assert.equal(fs.readFileSync(path.join(first, 'node_modules/ws/index.js'), 'utf8'), 'installed library');
   assert.equal(fs.readFileSync(path.join(first, '.revision'), 'utf8').trim(), 'b'.repeat(40));

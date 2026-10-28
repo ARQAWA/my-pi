@@ -11,7 +11,7 @@ export function materializeMyPi(source, output, sha) {
   fs.cpSync(path.join(source, 'extensions'), path.join(output, 'extensions'), { recursive: true });
   const packaged = {
     name: manifest.name, private: true, type: manifest.type, pi: manifest.pi,
-    dependencies: { ...manifest.dependencies, typebox: manifest.devDependencies.typebox },
+    dependencies: manifest.dependencies,
     peerDependencies: manifest.peerDependencies,
   };
   fs.writeFileSync(path.join(output, 'package.json'), JSON.stringify(packaged, null, 2) + '\n');
@@ -42,7 +42,7 @@ export async function bundleMyPi(root, external = {}) {
     if (extracted.status !== 0) throw new Error('my-pi extraction failed');
     const output = materializeMyPi(source, path.join(temp, 'package'), sha);
     const installed = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm',
-      ['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
+      ['install', '--omit=dev', '--omit=peer', '--ignore-scripts', '--no-audit', '--no-fund'],
       { cwd: output, stdio: 'inherit', shell: process.platform === 'win32' });
     if (installed.status !== 0) throw new Error('my-pi dependencies failed');
     fs.rmSync(destination, { recursive: true, force: true });

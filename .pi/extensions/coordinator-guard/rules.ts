@@ -1,5 +1,6 @@
 // Reads the `json coordinator-rules` block of PROCESS.md. Any problem is an error: the guard fails closed on it.
 import { readFileSync } from "node:fs";
+import { randomInt } from "node:crypto";
 
 export const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
@@ -95,6 +96,13 @@ export function isAllowed(rules: Rules, model: string, thinking: string, now: nu
 	const inTable = reviewerPair === undefined && Object.values(rules.agentModels).some((pairs) => pairs.some(([m, t]) => m === model && t === thinking));
 	const inReviewerProfile = reviewerPair?.[0] === model && reviewerPair[1] === thinking;
 	return (inTable || inReviewerProfile) && (!restrictionActive(rules, now) || model === GPT_MODEL);
+}
+
+/** Draw uniformly from the category's currently permitted pairs. */
+export function drawPair(rules: Rules, category: string, now: number, random: (max: number) => number = randomInt): Pair | undefined {
+	const pairs = Object.hasOwn(rules.agentModels, category) ? rules.agentModels[category] : undefined;
+	const allowed = pairs?.filter(([model, thinking]) => isAllowed(rules, model, thinking, now));
+	return allowed?.length ? allowed[random(allowed.length)] : undefined;
 }
 
 export function describeReviewerProfiles(rules: Rules): string {
