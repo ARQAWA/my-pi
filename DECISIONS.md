@@ -24,6 +24,14 @@ Provenance:
 - Only the quoted lines are copied from the sessions; no full transcript and no credential is copied into this
   repository.
 
+## History edit
+
+- **Edit the current session** `[D-HISTORY-EDIT]`. Double Escape opens the current branch's user messages. Enter selects a message; Escape returns to the list without changing history. Enter on the edited text permanently removes the selected message and all other paths after keeping the path before it, then sends the edited text. Existing fork files and subagent directories are untouched; delivered results are not repeated. A running subagent or a session without a file prevents the edit. `/edit-history` is the approved service command and is visible in Pi's command list. Only public Pi APIs are used.
+  Owner, quoted in `my-pi-evidence/final-release/SUMMARY-RU.md`, history section:
+  «Когда я делаю два escape, я хочу отредактировать историю. Я не хочу форкать новую ветку.»
+  Reason: edit the same session without retaining unwanted history.
+  Carriers: `extensions/RQW-history-edit/`, `package.json`, `test/extensions/RQW-history-edit/`.
+
 ## Dyslexia
 
 - **Communication as an extension** `[D-DYSLEXIA-COMMUNICATION]`. The independently disableable shipped

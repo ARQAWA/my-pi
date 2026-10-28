@@ -44,6 +44,10 @@ You are running inside Pi. Install the my-pi package into this Pi installation, 
 Apart from the authorized old adapter replacement above and installing or updating my-pi, change nothing else:
 no unrelated packages, settings, credentials or files.
 
+## History editing
+
+Double Escape opens your messages for editing. Enter on the edited text permanently cuts the current session history. Escape cancels. `/fork` is unchanged. Disable this feature independently with `-extensions/RQW-history-edit/index.ts`. Details: [RQW-history-edit](extensions/RQW-history-edit/README.md).
+
 ## Model and reasoning shortcuts
 
 For the user, not part of the install. The first Shift+arrow opens a draft chooser already advanced one step:
