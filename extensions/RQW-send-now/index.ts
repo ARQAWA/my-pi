@@ -7,8 +7,6 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 /** Custom entry type: the timestamp of an interrupted reply whose text stays in the model's context. */
 export const ENTRY = "rqw-send-now";
 const POLL_MS = 20;
-/** Gap that still counts as one unbracketed paste: sequences of one chunk are microseconds apart, chunks milliseconds. */
-const BURST_MS = 30;
 
 type Pending = { text: string; ctx: ExtensionContext; interrupted?: AssistantMessage };
 type FocusTUI = TUI & { getFocusedComponent(): unknown };
@@ -85,32 +83,6 @@ export default function sendNow(pi: ExtensionAPI) {
 		}
 		// The text is already expanded by Pi, so templates are not expanded again. Steer only if a run started meanwhile.
 		pi.sendUserMessage(all, { deliverAs: "steer" });
-	}
-
-	/**
-	 * Without bracketed paste a paste reaches the editor as separate sequences with `\r` between lines. Pi's input
-	 * listeners see them one by one, so a `\r` or `\n` right after printable text is part of a paste, not a typed Enter:
-	 * hand the editor a bracketed newline instead. A lone typed Enter has no text just before it and still submits.
-	 */
-	let lastTextAt = Number.NEGATIVE_INFINITY;
-	/** When the previous piece was a burst `\r`; a `\n` right after it, within BURST_MS, is the second half of CRLF. */
-	let burstCrAt = Number.NEGATIVE_INFINITY;
-	function onBurst(data: string): { data: string } | { consume: true } | undefined {
-		const now = Date.now();
-		const crlfTail = data === "\n" && now - burstCrAt <= BURST_MS;
-		burstCrAt = Number.NEGATIVE_INFINITY;
-		// Only Pi's input editor takes part: other components keep their own Enter and text.
-		if (!(tui?.getFocusedComponent() instanceof CustomEditor)) return undefined;
-		if (crlfTail) return { consume: true };
-		if (data === "\r" || data === "\n") {
-			if (now - lastTextAt > BURST_MS) return undefined;
-			lastTextAt = now;
-			if (data === "\r") burstCrAt = now;
-			return { data: "\x1b[200~\n\x1b[201~" };
-		}
-		const code = data.charCodeAt(0);
-		if (code >= 32 && code !== 127 || data === "\t") lastTextAt = now;
-		return undefined;
 	}
 
 	function onKey(data: string, ctx: ExtensionContext): { consume: true } | undefined {
@@ -191,7 +163,7 @@ export default function sendNow(pi: ExtensionAPI) {
 			return { render: () => [], invalidate() {} };
 		}, { placement: "belowEditor" });
 		ctx.ui.setWidget(ENTRY, undefined);
-		unsubscribe = ctx.ui.onTerminalInput((data) => onBurst(data) ?? onKey(data, ctx));
+		unsubscribe = ctx.ui.onTerminalInput((data) => onKey(data, ctx));
 	});
 
 	pi.on("session_shutdown", () => {
