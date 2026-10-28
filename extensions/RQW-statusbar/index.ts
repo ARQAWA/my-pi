@@ -5,7 +5,6 @@ import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { actionPhrase, CountsWatch, statusText } from "./activity.ts";
-import { branchNumber } from "./branch.ts";
 import { QuotaConsumer } from "./quota.ts";
 import { type BorderSource, ContextEditor } from "./editor.ts";
 import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
@@ -74,9 +73,6 @@ export default function statusbar(pi: ExtensionAPI) {
 	const tools = new Map<string, string>();
 	const jobs = new CountsWatch(pi.events, () => { syncShimmer(); redraw?.(); });
 	let sessionName: string | undefined;
-	// The branch number of the current leaf, derived from the public tree and kept for one leaf and entry count.
-	let branchKey: unknown[] | undefined;
-	let branchValue: number | undefined;
 	/** The main chat's GPT Fast is on (asked from RQW-settings) and its model is GPT through openai-codex: the lightning shows. */
 	const lit = (ctx: ExtensionContext | undefined): boolean => {
 		if (ctx?.model?.provider !== "openai-codex") return false;
@@ -100,17 +96,6 @@ export default function statusbar(pi: ExtensionAPI) {
 		if (shimmer) return;
 		shimmer = setInterval(() => { syncSpinner(); if (!wantsShimmer()) stopShimmer(); redraw?.(); }, SHIMMER_MS);
 		shimmer.unref?.();
-	};
-	/** Read-only: the branch number of the leaf from the public tree, recomputed when the leaf or the entry count changes. */
-	const branchOf = (ctx: ExtensionContext): number | undefined => {
-		const manager = ctx.sessionManager as SessionManager;
-		const key = [manager, manager.getSessionId(), manager.getLeafId(), manager.getEntryCount()];
-		const previous = branchKey;
-		if (!previous || key.some((value, i) => value !== previous[i])) {
-			branchValue = branchNumber(manager.getTree(), manager.getLeafId(), manager.getEntries().map((entry) => entry.id));
-			branchKey = key;
-		}
-		return branchValue;
 	};
 	// The context row is drawn as the bottom border of this extension's editor. One factory per extension instance
 	// identifies our editor in `getEditorComponent()`; its border reads the current install's source.
@@ -149,11 +134,10 @@ export default function statusbar(pi: ExtensionAPI) {
 		lightCtx = undefined;
 	}
 
-	/** The main chat's state, the session name and the branch, sampled from the live session through public getters. */
+	/** The main chat's state and session name, sampled from the live session through public getters. */
 	function sample(ctx: ExtensionContext): void {
 		rate.reset();
 		sessionName = pi.getSessionName();
-		branchKey = undefined;
 		running = !ctx.isIdle();
 		working = running;
 		compacting = false;
@@ -273,7 +257,6 @@ export default function statusbar(pi: ExtensionAPI) {
 						...contextState(),
 						rate: rate.value(),
 						fast: fastState(ctx),
-						branch: branchOf(ctx),
 						place: placeOf({ cwd: ctx.cwd, home: homedir(), scratchRoots: roots, worktree: repo?.worktree, branch }),
 						git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts },
 						statuses: [...footer.getExtensionStatuses().entries()]
@@ -325,13 +308,11 @@ export default function statusbar(pi: ExtensionAPI) {
 		compacting = false;
 		tools.clear();
 		sessionName = undefined;
-		branchKey = undefined;
 		if (ctx.mode === "tui") setActivity(ctx, false);
 	});
 	pi.on("session_tree", (_event, ctx) => {
 		if (ctx.mode !== "tui") return;
 		rate.reset();
-		branchKey = undefined;
 		syncShimmer();
 		redraw?.();
 	});
