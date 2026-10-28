@@ -1,48 +1,56 @@
-# Development process
+правила действуют только в процессе этого проекта.
+**запрос**
+1. делай только заказанное и согласованное. несогласованное покажи с доказательством, спроси владельца. удаляй только после ответа владельца. оставляй только с его явного разрешения.
+2. прямой заказ уже разрешает названную работу. обсуждение разрешением не считается. спорное оставь до ответа владельца.
+
+**план и сложность**
+3. выбирай кратчайшее решение без лишнего кода. SP означает сложность, не время. задачу крупнее трёх SP раздели. пиши понятный код, дели без числовых лимитов.
+4. план и макет показывай по заказу. не добавляй согласование к прямому поручению. неясный объём сначала уточни.
 
 <a id="isolated-parallel-execution"></a>
-## Isolated parallel execution
+**работа**
+5. ветка хранит изменения отдельной задачи. worktree означает отдельную рабочую папку. создай их от release, ветки сборки.
+6. координатор поручает работу, кроме приказа работать самому. ребёнок знает свою роль. вложенных исполнителей разрешай явно. проверяющие своих исполнителей не запускают.
+7. одна задача одновременно, если иначе не заказано. тесты не создают отдельную очередь. ведение очереди не отдельная задача. застрявшая задача ждёт, бери следующую разрешённую.
+8. код, правки программ: gpt-6.1-terra high, claude-sonnet-5-5 high. механика, простые действия: gpt-6.1-terra low, claude-sonnet-5-5 medium. обычное, поиск, разбор: gpt-6.1-terra medium, claude-sonnet-5-5 high. сложнейшее, трудные задачи: gpt-6.1-sol medium, claude-opus-5-5 medium.
+9. модель выбирает случайный механизм, не агент. high означает сильное рассуждение, medium среднее. low означает слабое.
 
-1. Give each task one branch from `release` in a worktree under `/Users/arkadijcukavin/ai-project/my-pi-worktrees/`.
-2. Make the change. Update docs only when an agreement or behavior changes.
-3. Follow the testing rule below. Run only the touched extension's tests.
+<a id="sufficient-proof-without-idle-reruns"></a>
+**тесты**
+10. малой правке поведения дай свой тест. проверяй только поведение, затронутое изменением. новой функции один основной сценарий, критические ветки. реальному багу один тест повторения.
+11. вызывай функцию через её обычный вход. проверяй результат, не внутренние вызовы. тест должен ловить отсутствие исправления. тест пиши от требования, не реализации.
+12. моки заменяют внешний мир управляемыми данными. подменяй сеть, модель, часы и Pi. свой код не подменяй. сеть и настоящий Pi не запускай.
+13. без запуска продукта и связок настоящих систем. часы и данные всегда одинаковые. случайности нет, порядок тестов не важен. один процесс, без ожидания настоящего времени.
+14. байт в байт сверяй только неизменные части. изменяемые части так не сравнивай.
+15. маленькие данные в тесте, временные папки допустимы. тест длится миллисекунды, набор расширения секунды. не оставляй слабые, повторные или пропущенные тесты.
+16. запускай лишь тесты затронутого расширения. документам проверь цитаты, ссылки и формат. прочие проверки выполняй параллельно тестам. повтор допускай после исправлений или новых данных.
 
-## Independent review
+<a id="independent-review"></a>
+**независимая проверка**
+17. каждой задаче одна короткая независимая проверка spotty. проверь правильность, полноту и отсутствие лишнего. bossy означает глубокую проверку по заказу.
+18. находке нужны доказательство и реальный вред. сверх заказа ничего не исправляй. доказательства уточняй у того же проверяющего. после исправлений проверяй снова, пока чисто.
+19. на выпуске отдельно проверь код и тесты. code-reviewer проверяет код, test-reviewer проверяет тесты. spotty: gpt-6.1-terra low. остальные проверяющие: gpt-6.1-terra medium.
 
-1. Keep tasks at one to three story points.
-2. Give each leaf one independent review after its scoped checks.
-3. Use `spotty` by default and `bossy` when the owner asks for a high review.
-4. A short review checks that the task is done right, with nothing extra and nothing forgotten.
-5. Keep the `code-reviewer` and `test-reviewer` profiles available.
-6. Findings need evidence and impact. Send missing evidence back to the same reviewer.
+<a id="delivery"></a>
+**доставка**
+20. squash объединяет изменения задачи одним коммитом. коммит означает сохранённый шаг изменений. после проверки squash задачи направляй в release. main означает главную ветку готового продукта.
+21. затем обнови установленный Pi из release. только при изменении работающего кода. задачи выпускай крупными сборками, не поодиночке.
+22. перед main один успешный полный прогон тестов. затем слей release в main, сохраняя историю. CI, автоматические проверки, запускается только при push. push отправляет изменения в общий репозиторий.
+23. PCLI выпускай только через Marketplace. это магазин расширений VS Code. файлы PCLI на рабочий стол не клади.
 
-## Delivery
+**общение**
+24. пиши простым русским на ты. максимум семь слов в предложении. максимум четыре предложения в абзаце. главные идеи выделяй жирным.
+25. вопросы задавай по одному. отвечай только на заданное, начиная с главного. длинное разбивай на короткие нумерованные строки. строчные буквы, простые слова, минимум знаков.
+26. сообщи результат, остаток работы и причину остановки. правило дислексии выше других правил общения. соблюдай его всегда через системный промпт. системный промпт задаёт правила для модели.
 
-1. Deliver in large chunks, not separate leaf releases.
-2. At each chunk boundary, run `code-reviewer` and `test-reviewer` over the chunk and resolve evidenced findings.
-3. Squash the reviewed chunk into `release` and push once.
-4. After runtime changes only, update the owner's installed Pi once from `@release`, preserving settings.
-5. Merge into `main` only after one full `npm test` on the exact head.
-
-Run `npm run knip` on demand only. Findings are audit input, not deletion authority, and do not block default checks or delivery.
-
-## Golden rule
-
-No polling, no confidence reruns, no avoidable tokens.
+<a id="golden-rule"></a>
+**полномочия**
+27. споры об объёме решает только владелец. неотвеченный вопрос не означает согласия. по приказу остановиться останови всю работу.
+28. процесс проекта не переносится в продукт. частные поручения не становятся общими правилами. отменённое не возвращай. исключения и причины перечислены в REQUIREMENTS.md.
+29. не трать время на лишние проверки. завершай только заказанный результат. документы меняй при новых договорённостях. скорость доказывай замером.
 
 <a id="subagent-models"></a>
 ## Subagent models
-
-Main passes the category name as `model`, with optional `thinking`. The guard picks one pair uniformly at random from that category using `crypto.randomInt`:
-1. Code and fixes: `openai-codex/gpt-6.1-terra` high / `anthropic/claude-sonnet-5-5` high.
-2. Git, merge and mechanical work: `openai-codex/gpt-6.1-terra` low / `anthropic/claude-sonnet-5-5` medium.
-3. Ordinary work, research and search: `openai-codex/gpt-6.1-terra` medium / `anthropic/claude-sonnet-5-5` high.
-4. Hardest tasks: `openai-codex/gpt-6.1-sol` medium / `anthropic/claude-opus-5-5` medium.
-
-Spotty uses `openai-codex/gpt-6.1-terra` low; Bossy uses `openai-codex/gpt-6.1-terra` medium.
-Code-reviewer, test-reviewer and requirements-test-reviewer use `openai-codex/gpt-6.1-terra` medium.
-
-The guard reads this machine-readable block.
 
 ```json coordinator-rules
 {
@@ -61,22 +69,3 @@ The guard reads this machine-readable block.
   }
 }
 ```
-
-<a id="sufficient-proof-without-idle-reruns"></a>
-## Sufficient proof, without idle reruns
-
-1. For a new feature, write one happy-path test and only its critical branches tied to the target behavior.
-2. For a real bug, write one regression test.
-3. Call the module's public function.
-4. Assert only the returned result, never internal calls or call order.
-5. Use fakes only for the outside world: network, model, clock and Pi.
-6. Do not mock our own modules.
-7. Keep small test data inline in the test.
-8. A temporary folder is allowed.
-9. Use no sleeps, real timers, end-to-end tests or integration tests; all tests are synthetic.
-10. Use a fixed clock and fixed data, with no randomness; tests are independent of order.
-11. Write the test from the requirement, not the code. It must fail without the change; no tautologies.
-12. Compare bytes only for the exact static fragment that must be static, never a whole file or dynamic parts.
-13. One test runs in milliseconds; an extension's suite runs in about a second.
-14. Documentation-only changes get source checks, not invented runtime tests.
-15. Per task, run `npm run check -- --test "test/extensions/<touched>/*.test.ts"` for full calibrated lint and only the touched tests, concurrently. Repeat `--test <paths>` for more paths. Run `npm run check` once before merging into main: full lint and the unchanged `npm test` run concurrently. All jobs finish before a failure is returned; no automatic fixes or retries. Adding `--typecheck` runs `tsc` concurrently on request. TypeScript is never part of the default check or push CI.
