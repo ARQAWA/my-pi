@@ -14,6 +14,7 @@ Force-send queued steering with Enter, the oh-my-pi gesture. Decision and owner 
   acts only when Pi's input editor (`CustomEditor` or a subclass, such as RQW-statusbar's) has focus.
 - The key is Pi's configured `tui.input.submit` binding (`enter` by default; `\r` on Windows and legacy terminals,
   CSI-u under the Kitty protocol). Key releases and bracketed paste do not trigger it.
+- In the TUI it also re-writes `\x1b[?2004h` (bracketed paste on) at `session_start`, after every `tool_execution_end` and at `agent_end` and `agent_settled`, so a child process that switched it off cannot turn pasted newlines into Enter.
 - Only in the interactive TUI. Print, JSON and RPC modes are unaffected.
 
 ## How

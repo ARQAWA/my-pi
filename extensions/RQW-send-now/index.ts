@@ -19,6 +19,14 @@ export function keptReply(message: AssistantMessage): AssistantMessage | undefin
 	return { ...rest, content: text, stopReason: "stop" };
 }
 
+/**
+ * Pi enables bracketed paste once at start; a child process that writes the "off" code to the TTY leaves it off and
+ * pasted newlines then arrive as Enter. Asserting "on" again is harmless when it is already on.
+ */
+function reassertBracketedPaste(ctx: ExtensionContext) {
+	if (ctx.mode === "tui" && process.stdout.isTTY) process.stdout.write("\x1b[?2004h");
+}
+
 export default function sendNow(pi: ExtensionAPI) {
 	/** Steering messages queued through Pi since the queue was last empty; Pi exposes only "anything queued". */
 	let steering = 0;
@@ -117,7 +125,10 @@ export default function sendNow(pi: ExtensionAPI) {
 		const message = event.message;
 		if (pending && message.role === "assistant" && message.stopReason === "aborted") pending.interrupted = message;
 	});
+	pi.on("tool_execution_end", (_event, ctx) => reassertBracketedPaste(ctx));
+	pi.on("agent_end", (_event, ctx) => reassertBracketedPaste(ctx));
 	pi.on("agent_settled", (_event, ctx) => {
+		reassertBracketedPaste(ctx);
 		startingPrompt = false;
 		submitting = 0;
 		if (!ctx.hasPendingMessages()) steering = 0;
@@ -141,6 +152,7 @@ export default function sendNow(pi: ExtensionAPI) {
 		steering = 0;
 		submitting = 0;
 		startingPrompt = false;
+		reassertBracketedPaste(ctx);
 		kept = new Set(ctx.sessionManager.getEntries().flatMap((entry) =>
 			entry.type === "custom" && entry.customType === ENTRY && typeof (entry.data as { timestamp?: unknown })?.timestamp === "number"
 				? [(entry.data as { timestamp: number }).timestamp] : []));
