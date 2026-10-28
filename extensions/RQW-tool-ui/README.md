@@ -30,6 +30,7 @@ The theme is distributed separately through `pi.themes`, not as an extension.
   under it. Both are indented by Pi's `outputPad`, like the assistant text. The rows are drawn at render time from
   the current groups, so a new call, a result or the start of the answer text shows on the next frame; the rows whose
   look changes (old and new leader, the active leader) are asked to redraw through the `invalidate` callback Pi gives.
+- The live card of every `agent` call (all actions) has a whole-card purple background by state, constants in `live.ts`: running `#28202b`, success `#210d2b`, error `#351c34`; other tools keep the theme's tool backgrounds.
 - Expanded (Ctrl+O, or a click on the row): every call shows its original at its own place, exactly as Pi draws it
   without this extension (owner decision after a visual comparison: the same look, not a simplified one). The row
   rebuilds Pi's shell from public pi-tui components: a `Box` with Pi's padding (`outputPad`, one blank row above and

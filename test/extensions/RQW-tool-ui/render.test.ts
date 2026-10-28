@@ -41,6 +41,36 @@ it("renders a summary and the last four live output rows", () => {
 		["$ npm test", "3", "4", "5", "6", "running"]);
 });
 
+it("paints live agent cards purple by state and leaves normal tools on theme backgrounds", () => {
+	const tagged = { fg: (_role: string, text: string) => text, bg: (role: string, text: string) => `<${role}>${text}` } as Theme;
+	const liveRows = (name: string, args: object, res: object | undefined, isError = false, isPartial = false) =>
+		renderLive({ ...classify(name, args, res, { toolCallId: "x", isError, isPartial }), toolName: name, durationMs: 300 }, 40, tagged);
+	const live = (name: string, args: object, res: object | undefined, isError = false) =>
+		liveRows(name, args, res, isError)[0];
+	const start = { action: "start" };
+	// The purple background covers the whole card: header, output rows and status, in every state.
+	const wholeCard = (rows: string[], color: RegExp) => {
+		assert.equal(rows.length, 4, "header, two output rows and status");
+		// Indent, then the background, then the visible text, then the only reset at the very end.
+		rows.forEach((row, i) => {
+			const parts = row.match(/^( *)(\x1b\[48;2;[\d;]+m)(.*)(\x1b\[49m)$/);
+			assert.ok(parts, `row ${i}: background does not wrap the row text`);
+			assert.match(parts[2], color, `row ${i} lacks the card background`);
+			assert.ok(parts[3].trim() !== "", `row ${i}: no visible text inside the background`);
+			assert.doesNotMatch(parts[3], /\x1b\[(?:49|0)?m/, `row ${i}: background reset before the end of the text`);
+		});
+		rows.forEach((row, i) => assert.doesNotMatch(row, /<tool/, `row ${i} has a tool background`));
+	};
+	wholeCard(liveRows("agent", start, ok("o1\no2"), false, true), /\x1b\[48;2;40;32;43m/);
+	wholeCard(liveRows("agent", start, ok("o1\no2")), /\x1b\[48;2;33;13;43m/);
+	wholeCard(liveRows("agent", { action: "wait", ids: ["agent#1"] }, ok("o1\no2"), true), /\x1b\[48;2;53;28;52m/);
+	assert.match(live("agent", start, undefined), /\x1b\[48;2;40;32;43m/);
+	assert.match(live("agent", start, ok("agent#1 started")), /\x1b\[48;2;33;13;43m/);
+	assert.match(live("agent", { action: "wait", ids: ["agent#1"] }, ok("failed"), true), /\x1b\[48;2;53;28;52m/);
+	assert.doesNotMatch(live("agent", start, undefined), /<tool/);
+	assert.match(live("read", { path: "a.ts" }, ok("x")), /<toolSuccessBg>/);
+});
+
 it("groups calls between answers and folds the live card", () => {
 	const log = entries(assistant([call("r")]), result("r", "read", { durationMs: 1000 }));
 	const active = buildGroups(log).get("r")!;
