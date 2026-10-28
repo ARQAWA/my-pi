@@ -43,5 +43,5 @@ test("explicit executor model pairs are blocked with category guidance", () => {
 	const call = fixture(() => 0);
 	const { result } = call({ action: "start", model: "openai-codex/gpt-6.1-terra", thinking: "high", task: "synthetic" });
 	assert.equal(result.block, true);
-	assert.match(result.reason, /pass the category name as model \(code, mechanical, ordinary, hardest\)/);
+	assert.match(result.reason, /pass the category name as model \(code, mechanical, ordinary, hardest, design\)/);
 });
