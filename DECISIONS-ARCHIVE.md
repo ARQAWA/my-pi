@@ -6722,3 +6722,23 @@ Verbatim replaced text:
 > Optional `system` or `system_file` replaces that whole prompt exactly;
 
 > Repository coordinator rules are not product policy, and the reminder excludes instructions addressed to the main agent or coordinator.
+
+## A-0377 · archived 2026-10-28 · Status bar · Session branch mark
+
+Status: SUPERSEDED by removal of the session fork mark.
+Introduced: `21179e1`. Source: `03e898ee93a9fb44650d7aa277399231c3de0a87:DECISIONS.md`.
+Archived by: the fork mark removal; exact commit: `git log -S'A-0377' -- DECISIONS-ARCHIVE.md`.
+Replacement owner quote: «его вообще нахуй надо удалить абсолютно бесполезная хуйня».
+Verbatim replaced text:
+
+> - **Session branch mark** `[D-STATUSBAR-BRANCH-MARK]`. The interface is English: off the original session
+>   branch, row 3 shows `⑂ fork #N`, such as `⑂ fork #2` or `⑂ fork #3`. The glyph, `label` colour role,
+>   two-space gap and hiding rules stay unchanged; only the wording after the glyph changes.
+>   Owner quotations in source order:
+>   Owner: «В интерфейсе надо поменять ветка два на branch two, как-нибудь её сделать типа BR2. У нас весь интерфейс должен быть английский. Пройдись по интерфейсу, найди, где есть русский язык, и дай мне список. Будем думать, как англицизировать всё дело.»
+>   Owner: «Насчет BR2 я имею в виду, что должен сам придумать пиздатую аббревиатуру, которая будет подходить к нашему дизайну и вписываться в него органично.»
+>   Owner: «Допустим, это может быть не BR2, а просто значок ветки и написано V2, V3 или branch V2 написано, V3, что-нибудь такое»
+>   Owner: «Мне нравится вариант Fork 2, только надо решетку сделать: fork #2, и все»
+>   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entries at physical lines 4044, 4049 and 4090.
+>   Reason: use the owner's chosen English marker without changing its placement or rendering rules.
+>   Carrier: `placeRow` in `extensions/RQW-statusbar/render.ts`. Since: `21179e1`.

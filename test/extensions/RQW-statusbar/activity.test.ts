@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import { actionPhrase, CountsWatch, countParts, COUNTS_REQUEST, statusText } from "../../../extensions/RQW-statusbar/activity.ts";
-import { branchNumber, type TreeNodeLike } from "../../../extensions/RQW-statusbar/branch.ts";
 
 it("renders main activity, compaction and counts", () => {
 	assert.deepEqual(statusText({ compacting: false, running: true, counts: { agents: 2 } }),
@@ -46,11 +45,3 @@ it("consumes a count source and drops it on stop", () => {
 	assert.deepEqual(watch.get(), { agents: 0 });
 });
 
-it("numbers only leaves off the original branch", () => {
-	const node = (id: string, children: TreeNodeLike[] = []): TreeNodeLike => ({
-		entry: { id, type: "message", message: { role: "user" } }, children,
-	});
-	const tree = [node("root", [node("original"), node("fork")])];
-	assert.equal(branchNumber(tree, "original"), undefined);
-	assert.equal(branchNumber(tree, "fork"), 2);
-});
