@@ -20,6 +20,9 @@ test("project reviewer profiles use Terra medium and the required review contrac
 			"Use public Pi APIs unless an accepted decision explicitly permits a private seam.",
 			"CHECKED: <one or two sentences naming the scoped files, critical paths traced, and applicable project principles checked>",
 			"CLEAN with material UNCHECKED evidence is incomplete.",
+			"Inspect the whole scope before you answer; do not stop at the first finding.",
+			"return all remaining findings in one pass",
+			"On a re-review, check every earlier finding against its fix up to that final state, then every changed line and its affected callers",
 		],
 		"requirements-test-reviewer": [
 			"Check whether its checks actually verify the owner's requirements, test plan and acceptance criteria",
@@ -43,6 +46,8 @@ test("project reviewer profiles use Terra medium and the required review contrac
 			"For a weakening review, each of these forbidden changes is a finding",
 			"Do not require CI history, commit trailers or a separate integrity gate.",
 			"Check that each in-scope test or workflow change is needed by the issue or stated reason",
+			"return all remaining findings in one pass",
+			"On a re-review, check every earlier finding against its fix, then every changed line",
 		],
 	};
 	for (const [name, required] of Object.entries(fragments)) {
