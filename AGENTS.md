@@ -23,7 +23,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   physical window W = min(contextWindow, 500000) and compacts strictly above W - R, where R = round(W / 10).
   Explicit settings and physical request scopes remain; Pi 1.4.0 summaries use native output limits, not R.
   Contract: `extensions/RQW-context/README.md`. Tests: `npm test`.
-- `extensions/RQW-agent/`: extension 5, subagents. `agent`
+- `extensions/RQW-agent/`: extension 5, subagents; description and reminder follow Cursor's Subagent guidance. `agent`
   (start, wait, status, send, resume, interrupt, stop, restart) runs in-process Pi sessions. Optional `agent_type`
   selects a Codex TOML profile; without it the generic defaults stay. A profile's `developer_instructions` supplies the default role
   after the main system prompt and subagent reminder, not a whole-prompt replacement. Profile discovery, precedence,

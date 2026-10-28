@@ -6711,3 +6711,14 @@ Verbatim replaced text:
 
 > - **One command** `[D-PCLI-COMMAND]`. One command, `Pi CLI: New Tab`; login is `/login` inside Pi. my-pi is installed
 >   into that Pi with `INSTALL.md`; the extension does not install it. Carrier: `pcli-vscode/package.json`. Since: `3b6d6c1`.
+
+## A-0376 · archived 2026-10-28 · D-AGENT-PARITY · reminder excluded main-agent instructions
+
+Status: SUPERSEDED by `[D-AGENT-PARITY]` in DECISIONS.md: the reminder is Cursor's single sentence, and a whole-prompt `system` is no longer exact.
+Archived by the Cursor-agents part B; exact commit: `git log -S'A-0376' -- DECISIONS-ARCHIVE.md`.
+Replacement owner quote: «Это небыло в заказе вообще».
+Verbatim replaced text:
+
+> Optional `system` or `system_file` replaces that whole prompt exactly;
+
+> Repository coordinator rules are not product policy, and the reminder excludes instructions addressed to the main agent or coordinator.

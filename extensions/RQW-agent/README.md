@@ -16,19 +16,26 @@ for nested children on the same channel. `noExtensions: true` stays unchanged; n
 
 - Default prompt: the main agent's system prompt as Pi built it for the main run (RQW-prompt's text, project context
   such as AGENTS.md, skills and `<cwd>` when they are loaded), read through the public `ctx.getSystemPrompt()` of Pi
-  1.4.0, then a short subagent reminder (`SUBAGENT_REMINDER` in [prompt.ts](prompt.ts): it is a subagent, its answer
-  goes to its caller, instructions addressed to the main agent do not apply to it), then the optional
+  1.4.0, then the subagent reminder (`SUBAGENT_REMINDER` in [prompt.ts](prompt.ts): Cursor's sentence between
+  `<subagent>` tags, "You are running as a subagent under a parent agent. Do not spawn additional subagents unless
+  requested by the user or by your instructions."), then the optional
   `role` as `<role>...</role>`. A nested subagent gets the same main prompt (handed down, never its caller's prompt,
-  so nothing repeats). `system` stays the whole-prompt override: exactly that text, as before. `system` and `role` in
+  so nothing repeats). `system` replaces the main prompt text; the subagent reminder is still appended after it
+  (`system_file` too). There is no option to drop the reminder; a parent allows spawning by saying so in the task,
+  role or system. `system` and `role` in
   one call are an error; on `restart` a new one replaces the old choice, otherwise the old choice is kept. The prompt is
   forced, so Pi appends nothing more.
 - `title` (optional, 3-5 words; `agent` `start` and `restart`, kept on restart) is shown
   as `title` in `status`, in the wait result's display data (`results[i].display.title`) and in the message
   `details.title`. The package registers RQW-agent-ui before RQW-tool-ui for delivered-message cards and wait-result
   cards: collapsed waits are tool-ui's when it is loaded, Ctrl+O shows agent-ui's expanded wait cards. The delivered content keeps its `[agent#N] ...` format.
-- The `agent` description carries only generic when/when-not advice adapted from Cursor (not for narrow questions,
-  one or two known files or a single search; parallel starts for independent areas; full context and the exact
-  return; trust the result; the user does not see it), no project-specific execution rules.
+- The `agent` description is Cursor's Subagent guidance with our tool names (`agent`, `read`, `find`, `grep`, `job wait`,
+  `title`): when not to use it, the examples, parallel starts, usage notes, the background-completion paragraph; Cursor's
+  type catalogue, model slugs, cloud links and self-fork are not carried. Our mechanics (`start`, `send`, `wait`,
+  `status`, profiles, files) follow it as the owner's own text. The profile list is appended under
+  `Available agent_types and a quick description of what they do:`. The `title`, `interrupt` and `model` parameter
+  descriptions carry the matching Cursor sentences; `model` states the exact omission order. No project-specific
+  execution rules.
 
 ## Codex profiles
 
@@ -409,6 +416,13 @@ A final `compaction_end.errorMessage` without `willRetry` is delivered as `error
 drops only the provisional assistant attempt, including its truncation marker. Genuine final answers and errors remain
 in order across follow-ups.
 
+Every delivered final result ends with Cursor's completion follow-up (`FOLLOW_UP` in [prompt.ts](prompt.ts)): "Perform
+any necessary follow-up actions in response to the subagent completion above. If no follow-up work is needed, no further
+action is required. Don't repeat the same confirmation every time." It follows a blank line after the result text in the
+pushed `[agent#N]` message content, in each `results[].text` of a `wait` result and in each `results[].text` of a
+completed `child_wait` notification. A `waiting` receipt, an already-delivered receipt, the timeout `child_wait` and
+`agent_progress` notices carry none. The result cards do not change: the collapsed card previews the first answer block.
+
 An external print/json host uses one caller-wide non-consuming fallback wait at `agent_end`, not serial waits per child.
 It is bounded by the omitted default `timeout_ms` (300000); completion follows normal message continuation, and a timeout
 adds compact status so the caller can decide. A native-idle subagent that only waits for its own agents is not bounded
@@ -452,7 +466,13 @@ this is the exact-status fallback, not a summary substitute. Unfinished recovery
 completed children are reused. Concurrent restoration shares a per-generation promise; branch cancellation fences
 late construction. Saved answers still use the existing exactly-once delivery broker. No metadata format is added.
 
-Resume retains the saved resolved prompt and profile version; restart reloads its TOML. Restoring the parent makes
+Resume retains the saved resolved prompt and profile version, except the subagent reminder: when a child is restored
+from disk or resumed, `withCurrentReminder` in [prompt.ts](prompt.ts) rebuilds its saved `system`. The exact legacy
+reminder block (`LEGACY_SUBAGENT_REMINDER`) is replaced in place by the current `SUBAGENT_REMINDER`, a prompt with
+neither block gets the current one appended after a blank line, and a prompt that already has it is unchanged. The
+rest of the text, including a `<role>` block, stays byte for byte, and the rebuilt text is written back to the saved
+configuration at the next persist. Cost: the system prompt prefix changes once, so the first request of each restored
+or resumed child is a one-time provider prompt cache miss. Restart reloads its TOML. Restoring the parent makes
 the same caller-local ids available. Stopped mappings are tombstoned; restart creates a new history rather than
 resurrecting the old generation. Old child files remain inside the owned tree until parent removal.
 Persisted entries with unknown child kinds are ignored without deleting their history files.
