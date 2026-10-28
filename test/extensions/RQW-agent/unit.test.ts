@@ -200,6 +200,8 @@ test("progress leaves unavailable request effort absent", () => {
 	f.progress.invalidate();
 });
 
+const FOLLOW_UP = "Perform any necessary follow-up actions in response to the subagent completion above. If no follow-up work is needed, no further action is required. Don't repeat the same confirmation every time.";
+
 function coordinatorFixture(t: TestContext, busy = false, sessionFile?: string) {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	t.mock.method(performance, "now", () => 0);
@@ -227,7 +229,41 @@ test("coordinator wait returns a completed child result", async t => {
 	f.finish();
 	const result = await waiting;
 	assert.equal(result.details.reason, "result");
-	assert.deepEqual((result.details.results as any[]).map((item: any) => [item.id, item.text, item.outcome]), [["agent#1", "answer", "completed"]]);
+	assert.deepEqual((result.details.results as any[]).map((item: any) => [item.id, item.text, item.outcome]), [["agent#1", `answer\n\n${FOLLOW_UP}`, "completed"]]);
+});
+
+test("the model-visible wait text carries the follow-up once, a repeat wait does not", async t => {
+	const f = coordinatorFixture(t);
+	const waited = f.coordinator.wait(["agent#1"], 100, new AbortController().signal, "call");
+	f.finish();
+	const result = await waited;
+	assert.equal(JSON.parse(result.content[0].text).results[0].text, `answer\n\n${FOLLOW_UP}`);
+	assert.equal(result.details.results[0].text, `answer\n\n${FOLLOW_UP}`);
+	const repeated = await f.coordinator.wait(["agent#1"], 100, new AbortController().signal, "again");
+	assert.doesNotMatch(repeated.content[0].text, /follow-up actions/);
+});
+
+function notified(t: TestContext, timeout = 100) {
+	const f = coordinatorFixture(t, true);
+	f.emit("before_agent_start");
+	const receipt = f.coordinator.notificationWait(["agent#1"], timeout, new AbortController().signal, "call");
+	f.branch.push({ type: "message", message: { role: "toolResult", toolCallId: "call", isError: false, content: receipt.content } });
+	f.emit("turn_end");
+	return { f, receipt };
+}
+
+test("a child_wait notification carries the follow-up, its waiting receipt does not", t => {
+	const { f, receipt } = notified(t);
+	assert.doesNotMatch(receipt.content[0].text, /follow-up actions/);
+	f.finish();
+	assert.equal(JSON.parse(f.sent[0].message.content).results[0].text, `answer\n\n${FOLLOW_UP}`);
+});
+
+test("a timed-out child_wait notification has no completed result and no follow-up", t => {
+	const { f } = notified(t, 0);
+	assert.equal(f.sent.length, 1);
+	assert.deepEqual(JSON.parse(f.sent[0].message.content).results, []);
+	assert.doesNotMatch(f.sent[0].message.content, /follow-up actions/);
 });
 
 test("receipt write failure still commits a wait result", async t => {
@@ -240,7 +276,7 @@ test("receipt write failure still commits a wait result", async t => {
 	const waiting = f.coordinator.wait(["agent#1"], 100, new AbortController().signal, "call");
 	f.finish();
 	const result = await waiting;
-	assert.equal((result.details.results as any[])[0].text, "answer");
+	assert.equal((result.details.results as any[])[0].text, `answer\n\n${FOLLOW_UP}`);
 	f.branch.push({ type: "message", message: { role: "toolResult", toolCallId: "call", isError: false, content: result.content } });
 	f.emit("turn_end");
 	const repeated = await f.coordinator.wait(["agent#1"], 100, new AbortController().signal, "again");
@@ -260,7 +296,7 @@ test("busy notification is retained and does not wake the parent repeatedly", t 
 	f.finish();
 	assert.equal(f.sent.length, 1);
 	assert.equal(f.sent[0].options.triggerTurn, false);
-	assert.equal(f.sent[0].message.details.results[0].text, "answer");
+	assert.equal(f.sent[0].message.details.results[0].text, `answer\n\n${FOLLOW_UP}`);
 	assert.deepEqual(f.emit("agent_before_settle"), { continue: true });
 	f.branch.push(
 		{ type: "custom_message", customType: "child_wait", details: { wait_id: receipt.details.wait_id } },
@@ -328,9 +364,133 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
 	const runtime = registerSessionRuntime(pi);
-	return { runtime, requests, ctx, events, async emit(name: string, event: any = {}) { for (const hook of hooks.get(name) ?? []) await hook(event, ctx); },
+	return { runtime, requests, ctx, events, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { for (const hook of hooks.get(name) ?? []) await hook(event, ctx); },
 		execute: (params: any) => definition.execute("call", params, new AbortController().signal, undefined, ctx) };
 }
+
+const REMINDER = "<subagent>\nYou are running as a subagent under a parent agent. Do not spawn additional subagents unless requested by the user or by your instructions.\n</subagent>";
+
+test("a finished child's pushed result message ends with the follow-up", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	await live.execute({ action: "start", task: "one", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	const pushed = parent.getEntries().filter((entry: any) => entry.type === "custom_message" && entry.customType === "agent") as any[];
+	assert.deepEqual(pushed.map(entry => entry.content), [`[agent#1] answer\n\n${FOLLOW_UP}`]);
+	live.runtime.close();
+});
+
+const LEGACY_REMINDER = "<subagent>\nYou are running as a subagent: a caller agent started you through a tool and gave you your task.\nYour final answer goes to that caller, not to the user: answer it with what it asked for.\nInstructions above that address the main agent do not apply to you.\n</subagent>";
+
+/** Starts a child, closes it, lets `edit` rewrite its saved prompt, restores it and returns the system prompt of its next request. */
+async function restoredSystem(t: TestContext, start: Record<string, unknown>, edit: (system: string) => string) {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const source = runtimeFixture(parent, root);
+	await source.execute({ action: "start", task: "task", tools: [], ...start });
+	await source.runtime.wait(new AbortController().signal);
+	source.runtime.close();
+	const full = parent.getBranch().find((entry: any) => entry.customType === "rqw-agent-child") as any;
+	full.data.config.system = edit(full.data.config.system);
+	const restored = runtimeFixture(parent, root);
+	await restored.execute({ action: "send", id: "agent#1", task: "again" });
+	await restored.runtime.wait(new AbortController().signal);
+	const system = restored.requests.at(-1).messages.find((message: any) => message.role === "system").content;
+	restored.runtime.close();
+	return system;
+}
+
+test("a restored child with the legacy reminder gets the new one in place, role bytes unchanged", async t => {
+	const system = await restoredSystem(t, { role: "  R\n" }, text => text.replace(REMINDER, LEGACY_REMINDER));
+	assert.equal(system, `original prompt\n\n${REMINDER}\n\n<role>\nR\n</role>`);
+});
+
+test("a restored custom prompt saved without any reminder gets the reminder appended", async t => {
+	assert.equal(await restoredSystem(t, { system: "CUSTOM" }, () => "CUSTOM"), `CUSTOM\n\n${REMINDER}`);
+});
+
+test("restoring a prompt that already has the reminder leaves it unchanged", async t => {
+	assert.equal(await restoredSystem(t, { system: "CUSTOM" }, text => text), `CUSTOM\n\n${REMINDER}`);
+});
+
+test("a resumed failed child runs with the current reminder", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	let fail = true;
+	const answer = (): any => fail ? fauxAssistantMessage("boom", { stopReason: "error", errorMessage: "provider down" }) : fauxAssistantMessage("fine");
+	const source = runtimeFixture(parent, root, answer);
+	await source.execute({ action: "start", task: "task", tools: [] });
+	await source.runtime.wait(new AbortController().signal);
+	source.runtime.close();
+	(parent.getBranch().find((entry: any) => entry.customType === "rqw-agent-child") as any).data.config.system = LEGACY_REMINDER;
+	fail = false;
+	const restored = runtimeFixture(parent, root, answer);
+	await restored.execute({ action: "resume", id: "agent#1" });
+	await restored.runtime.wait(new AbortController().signal);
+	assert.equal(restored.requests.at(-1).messages.find((message: any) => message.role === "system").content, REMINDER);
+	restored.runtime.close();
+});
+
+async function resumedLive(t: TestContext, system: string) {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	let fail = true;
+	const live = runtimeFixture(parent, root, (): any => fail ? fauxAssistantMessage("boom", { stopReason: "error", errorMessage: "provider down" }) : fauxAssistantMessage("fine"));
+	await live.execute({ action: "start", task: "task", tools: [], system });
+	await live.runtime.wait(new AbortController().signal);
+	fail = false;
+	await live.execute({ action: "resume", id: "agent#1" });
+	await live.runtime.wait(new AbortController().signal);
+	const resumed = live.requests.at(-1).messages.find((message: any) => message.role === "system").content;
+	live.runtime.close();
+	return resumed;
+}
+
+// A live child never saves the legacy block itself, so the start prompt carries it as plain text beside the appended current reminder.
+test("resuming a live failed child replaces the legacy block in place", async t => {
+	assert.equal(await resumedLive(t, `CUSTOM\n\n${LEGACY_REMINDER}`), `CUSTOM\n\n${REMINDER}\n\n${REMINDER}`);
+});
+
+test("custom system and system_file prompts still get the subagent reminder last", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	await writeFile(join(root, "whole.txt"), "FROM FILE\n", "utf8");
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	await live.execute({ action: "start", task: "one", tools: [], system: "CUSTOM" });
+	await live.execute({ action: "start", task: "two", tools: [], system_file: "whole.txt" });
+	await live.runtime.wait(new AbortController().signal);
+	const systems = new Map(live.requests.map((request: any) => [request.messages.find((m: any) => m.role === "user").content[0].text, request.messages.find((m: any) => m.role === "system").content]));
+	assert.equal(systems.get("one"), `CUSTOM\n\n${REMINDER}`);
+	assert.equal(systems.get("two"), `FROM FILE\n\n\n${REMINDER}`);
+	const description = live.parameters().properties.system.description;
+	assert.match(description, /subagent reminder is still appended/);
+	assert.doesNotMatch(description, /replacing the default \(your prompt, the subagent reminder/);
+	live.runtime.close();
+});
+
+test("registered description ends with Cursor's profile-list header and parameters carry Cursor guidance", async t => {
+	const root = await temp(t);
+	const live = runtimeFixture(SessionManager.create(root, join(root, "parent")), root);
+	await live.emit("session_start");
+	assert.match(live.description(), /\n\nAvailable agent_types and a quick description of what they do:\n/);
+	assert.doesNotMatch(live.description(), /Agent types:/);
+	const { title, interrupt, model } = live.parameters().properties;
+	assert.ok(title.description.endsWith("Make it concrete and distinct, consider recent titles to avoid reuse."));
+	assert.ok(interrupt.description.endsWith("Only use when the user explicitly asks to interrupt or change what the running agent is doing."));
+	assert.equal(model.description, "provider/id. If omitted: on restart, the previous model if it was given explicitly (a previous model that came from the agent_type profile is dropped and the profile is re-read); otherwise the agent_type profile's model, if it has one; otherwise the caller's model. Omit model unless the user explicitly requested another model.");
+	live.runtime.close();
+});
 
 test("runtime persistence restores full-first short-later configuration and child history", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
@@ -341,7 +501,7 @@ test("runtime persistence restores full-first short-later configuration and chil
 	await first.execute({ action: "start", task: "original task", system: "saved prompt", tools: [], thinking: "off", title: "saved title", fast_gpt: true });
 	await first.runtime.wait(new AbortController().signal);
 	const records = parent.getBranch().filter((entry: any) => entry.customType === "rqw-agent-child") as any[];
-	assert.equal(records[0].data.config.system, "saved prompt");
+	assert.equal(records[0].data.config.system, `saved prompt\n\n${REMINDER}`);
 	assert.ok(records.slice(1).some(entry => entry.data.config === undefined && entry.data.task === undefined));
 	first.runtime.close();
 	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
@@ -350,7 +510,7 @@ test("runtime persistence restores full-first short-later configuration and chil
 	await restored.execute({ action: "send", id: "agent#1", task: "follow-up" });
 	await restored.runtime.wait(new AbortController().signal);
 	const request = restored.requests.at(-1);
-	assert.equal(request.messages.find((message: any) => message.role === "system").content, "saved prompt");
+	assert.equal(request.messages.find((message: any) => message.role === "system").content, `saved prompt\n\n${REMINDER}`);
 	assert.deepEqual(request.messages.filter((message: any) => message.role !== "system").map((message: any) => message.role), ["user", "assistant", "user"]);
 	assert.deepEqual(request.messages.find((message: any) => message.role === "assistant").content, [{ type: "text", text: "answer" }]);
 	assert.deepEqual(request.messages.filter((message: any) => message.role === "user").map((message: any) => message.content),
@@ -388,7 +548,7 @@ test("selected-branch fold isolates generations, corrupt siblings and genuine re
 		[["agent#1", "branch A", "idle"], ["agent#2", undefined, undefined], ["agent#3", undefined, "unavailable"]]);
 	assert.match(first.details.statuses[1].error, /Unknown/);
 	const result = await restored.execute({ action: "wait", ids: ["agent#1"] });
-	assert.deepEqual(result.details.results.map((item: any) => [item.run, item.text]), [[latest.result.run, "answer"]]);
+	assert.deepEqual(result.details.results.map((item: any) => [item.run, item.text]), [[latest.result.run, `answer\n\n${FOLLOW_UP}`]]);
 	const repeated = await restored.execute({ action: "wait", ids: ["agent#1"] });
 	assert.equal(repeated.details.results.length, 0);
 	selected = branchB;
@@ -424,7 +584,7 @@ test("completed children wait without opening siblings and materialize only for 
 	await restored.emit("agent_end");
 	const waiting = await restored.execute({ action: "wait", ids: ["agent#1", "agent#2"], until: "all" });
 	// Both saved answers are usable even though B's transcript is unavailable.
-	assert.deepEqual(waiting.details.results.map((result: any) => [result.id, result.text]), [["agent#1", "answer"], ["agent#2", "answer"]]);
+	assert.deepEqual(waiting.details.results.map((result: any) => [result.id, result.text]), [["agent#1", `answer\n\n${FOLLOW_UP}`], ["agent#2", `answer\n\n${FOLLOW_UP}`]]);
 	const repeated = await restored.execute({ action: "wait", ids: ["agent#1", "agent#2"], until: "all" });
 	assert.equal(repeated.details.results.length, 0);
 	assert.deepEqual(waiting.details.statuses.map((status: any) => [status.id, status.state, status.error]),
@@ -471,11 +631,11 @@ test("hot completed sends keep their session and branch changes fence late resto
 	await hot.execute({ action: "start", task: "original", tools: [] });
 	await hot.runtime.wait(new AbortController().signal);
 	const first = await hot.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(first.details.results[0].text, "session 1");
+	assert.equal(first.details.results[0].text, `session 1\n\n${FOLLOW_UP}`);
 	await hot.execute({ action: "send", id: "agent#1", task: "next" });
 	await hot.runtime.wait(new AbortController().signal);
 	const second = await hot.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(second.details.results[0].text, "session 1");
+	assert.equal(second.details.results[0].text, `session 1\n\n${FOLLOW_UP}`);
 	hot.runtime.close();
 	const reopened = SessionManager.open(parent.getSessionFile()!);
 	const restored = runtimeFixture(reopened, root);
@@ -536,9 +696,9 @@ test("five finished idle minutes release a session and send wakes the same histo
 	await live.execute({ action: "send", id: "agent#1", task: "wake task" });
 	await live.runtime.wait(new AbortController().signal);
 	const wake = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.deepEqual(JSON.parse(wake.details.results[0].text), {
+	assert.deepEqual(JSON.parse(wake.details.results[0].text.split("\n\n")[0]), {
 		released: true, sessionId: original.sessionId, roles: ["user", "assistant", "user"],
-		users: [[{ type: "text", text: "original task" }], [{ type: "text", text: "wake task" }]], system: "saved prompt",
+		users: [[{ type: "text", text: "original task" }], [{ type: "text", text: "wake task" }]], system: `saved prompt\n\n${REMINDER}`,
 	});
 	live.runtime.close();
 });
@@ -555,7 +715,7 @@ test("filtered nested delivery survives five-minute hibernation and wake", async
 		const task = context.messages.find((message: any) => message.role === "user")?.content?.[0]?.text;
 		const tools = context.messages.filter((message: any) => message.role === "toolResult");
 		if (task === "delegate" && tools.length === 0)
-			return fauxAssistantMessage([fauxToolCall("codemode", { code: 'await tools.agent({ action: "start", task: "nested", tools: [] }); const waiting = tools.agent({ action: "wait", ids: ["agent#1"] }); await tools.agent({ action: "status", ids: ["agent#1"] }); await tools.read({ path: "release-model" }); text(JSON.parse(await waiting).results[0]?.text === "nested answer" ? "consumed" : "missing");' }, { id: "outer/filtered" })], { stopReason: "toolUse" });
+			return fauxAssistantMessage([fauxToolCall("codemode", { code: 'await tools.agent({ action: "start", task: "nested", tools: [] }); const waiting = tools.agent({ action: "wait", ids: ["agent#1"] }); await tools.agent({ action: "status", ids: ["agent#1"] }); await tools.read({ path: "release-model" }); text(JSON.parse(await waiting).results[0]?.text === ' + JSON.stringify(`nested answer\n\n${FOLLOW_UP}`) + ' ? "consumed" : "missing");' }, { id: "outer/filtered" })], { stopReason: "toolUse" });
 		if (task === "delegate" && tools.length === 1 && context.messages.some((message: any) => message.role === "user" && message.content?.[0]?.text === "wake"))
 			return fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "wake/wait" })], { stopReason: "toolUse" });
 		if (task === "delegate" && tools.length === 1)
@@ -580,7 +740,7 @@ test("filtered nested delivery survives five-minute hibernation and wake", async
 	await live.execute({ action: "send", id: "agent#1", task: "wake" });
 	await live.runtime.wait(new AbortController().signal);
 	const wake = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(wake.details.results[0].text, "0");
+	assert.equal(wake.details.results[0].text, `0\n\n${FOLLOW_UP}`);
 	live.runtime.close();
 });
 
@@ -621,7 +781,7 @@ test("background holds and uncommitted notifications block overdue sleep until s
 	await pending.emit("tool_call", { toolCallId: "call", parentToolCallId: "outer" });
 	const waiting = await pending.execute({ action: "wait", ids: ["agent#2"] });
 	assert.equal(waiting.details.statuses[0].run_id, 1);
-	assert.equal(waiting.details.results[0].text, "answer");
+	assert.equal(waiting.details.results[0].text, `answer\n\n${FOLLOW_UP}`);
 	parent.appendMessage({ role: "toolResult", toolCallId: "outer", toolName: "codemode", content: [{ type: "text", text: "filtered answer" }], details: {}, isError: false, timestamp: 1 });
 	await pending.emit("turn_end");
 	now = 1200000;

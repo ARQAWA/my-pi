@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { RunningCounts } from "./counts.ts";
 import { recordDelivery } from "./persistence.ts";
+import { FOLLOW_UP } from "./prompt.ts";
 
 /** Caller-owned children and results, including results not yet consumed by the caller model. */
 export type RuntimeHandle = {
@@ -321,7 +322,7 @@ export class Coordinator {
 			if (!ownedElsewhere && !ids.some(id => this.targets.get(id)?.active())) return { reason: "idle", pending: [], receipts: [] };
 		};
 		const output = ({ reason, pending, receipts, changed }: WaitOutcome) => json({ reason, timed_out: reason === "timeout",
-			results: pending.map(r => ({ id: r.id, run: r.run, delivery: r.delivery, text: r.text, outcome: r.outcome })), receipts,
+			results: pending.map(r => ({ id: r.id, run: r.run, delivery: r.delivery, text: `${r.text}\n\n${FOLLOW_UP}`, outcome: r.outcome })), receipts,
 			...(changed ? { changed } : {}), statuses: this.status(ids, undefined, checkpoints) });
 		return { held, hold, release, check, output };
 	}
