@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acquireLock, LOCK_NAME, processStart, releaseLock } from "./lock.ts";
 import { canonical, gitCommonDir, isInside, protectedRoots, resolveToolPath } from "./paths.ts";
-import { describePairs, describeReviewerProfiles, isAllowed, loadRules, restrictionText, type Loaded, type Rules } from "./rules.ts";
+import { describePairs, describeReviewerProfiles, drawPair, isAllowed, loadRules, restrictionText, type Loaded, type Rules } from "./rules.ts";
 
 const LINK = "PROCESS.md#subagent-models";
 const SECTION = "coordinator_rules";
@@ -18,12 +18,12 @@ type Shared = { role?: "coordinator" | "direct"; holderPid?: number; start?: str
 const shared = (): Shared => ((globalThis as Record<symbol, unknown>)[SHARED] ??= {}) as Shared;
 
 /** `now` is the clock in ms; tests inject it, the default is the real time. */
-export type GuardOptions = { root: string; processFile?: string; now?: () => number };
+export type GuardOptions = { root: string; processFile?: string; now?: () => number; randomInt?: (max: number) => number };
 
 /** The line appended to an allowed start's task, so the rule follows ordinary nested `agent` starts. */
 export function childInstruction(rules: Rules, now: number = Date.now()): string {
 	const parts = [
-		`[coordinator-guard] When you start or restart an ordinary \`agent\` subagent, give model and thinking explicitly, only one of these pairs: ${describePairs(rules, now)}; reviewer-profile calls instead use their exact reviewerProfiles pair; pass this line on in its task.`,
+		`[coordinator-guard] For Main's executor \`agent\` start or restart, pass the category name as model (${Object.keys(rules.agentModels).join(", ")}); thinking is optional; the guard draws the pair uniformly at random (${describePairs(rules, now)}); reviewer-profile calls instead use their exact reviewerProfiles pair; pass this line on in its task.`,
 	];
 	const temporary = restrictionText(rules, now);
 	if (temporary) parts.push(temporary);
@@ -45,7 +45,7 @@ export function promptSection(loaded: Loaded, processFile: string, now: number =
 	return [
 		head,
 		"- Main delegates research, edits, checks and fixes to subagents. When the owner asks Main to do such work personally (for example \"ты сам\" or \"you do it\"), Main objects and proposes a subagent for it; only an explicit owner override lets Main do that work itself. Main never edits or writes files in the checkout or its worktrees (edit and write there are blocked).",
-		`- Every executor start or restart by Main names model and thinking explicitly, only one of these pairs: ${describePairs(rules, now)} (${LINK}).`,
+		`- Every executor start or restart by Main passes the category name as model (${Object.keys(rules.agentModels).join(", ")}); thinking is optional. The guard draws the pair uniformly at random: ${describePairs(rules, now)} (${LINK}).`,
 		`- Reviewer-profile starts and restarts instead use the exact pair for their agent_type: ${describeReviewerProfiles(rules)}. Existing agents keep their model through send/resume and are not restarted merely to switch models.`,
 		...(temporary ? [`- ${temporary}`] : []),
 	].join("\n");
@@ -179,13 +179,17 @@ export function createCoordinatorGuard(options: GuardOptions) {
 			const { rules } = loaded;
 			const now = clock();
 			const allowed = `allowed: ${describePairs(rules, now)}; reviewer profiles: ${describeReviewerProfiles(rules)} (${LINK})`;
-			if (typeof input.model !== "string" || typeof input.thinking !== "string") {
-				return { block: true, reason: `coordinator-guard: give model and thinking explicitly on agent ${action}; ${allowed}.` };
-			}
-			if (!isAllowed(rules, input.model, input.thinking, now, profileName(input, ctx))) {
-				const temporary = restrictionText(rules, now);
-				const hint = temporary ? ` ${temporary}` : "";
-				return { block: true, reason: `coordinator-guard: ${input.model} ${input.thinking} is not an allowed pair; ${allowed}.${hint}` };
+			const profile = profileName(input, ctx);
+			if (profile !== undefined && Object.hasOwn(rules.reviewerProfiles, profile)) {
+				if (typeof input.model !== "string" || typeof input.thinking !== "string" || !isAllowed(rules, input.model, input.thinking, now, profile)) {
+					return { block: true, reason: `coordinator-guard: give the exact model and thinking for reviewer ${profile}; ${allowed}.` };
+				}
+			} else {
+				const pair = typeof input.model === "string" ? drawPair(rules, input.model, now, options.randomInt) : undefined;
+				if (!pair) {
+					return { block: true, reason: `coordinator-guard: pass the category name as model (${Object.keys(rules.agentModels).join(", ")}); the guard draws the pair uniformly at random. Main must not choose an explicit executor pair; ${allowed}.` };
+				}
+				[input.model, input.thinking] = pair;
 			}
 			if (typeof input.task === "string") input.task = `${input.task}\n\n${childInstruction(rules, now)}`;
 			return undefined;

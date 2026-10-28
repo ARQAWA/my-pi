@@ -4,7 +4,7 @@ import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 // Missing sources never imply a full or empty subscription.
 export const QUOTA_REFRESH_MS = 5 * 60 * 1000;
 export const QUOTA_COLORS = { CX: "201;162;39", KM: "229;228;226", CC: "205;127;50" } as const;
-export type Quotas = Record<keyof typeof QUOTA_COLORS, string>;
+export type Quotas = Partial<Record<keyof typeof QUOTA_COLORS, string>>;
 type Snapshot = { windows: Record<string, { remainingPercent: number | null } | null> };
 type Access = { refresh(signal?: AbortSignal): Promise<Snapshot> };
 type Events = { emit(name: string, data: unknown): void };
@@ -63,13 +63,13 @@ async function fetchUsage(id: "CX" | "KM", signal: AbortSignal, deps: Dependenci
 }
 
 export function quotaText(values: Quotas): string {
-	return (Object.keys(QUOTA_COLORS) as (keyof Quotas)[]).map((id) =>
-		`\x1b[38;2;${QUOTA_COLORS[id]}m${id} ${stripVTControlCharacters(values[id]).replace(/[\r\n\t]/g, " ")}\x1b[39m`).join("  ");
+	return (Object.keys(QUOTA_COLORS) as (keyof Quotas)[]).filter((id) => values[id] !== undefined).map((id) =>
+		`\x1b[38;2;${QUOTA_COLORS[id]}m${id} ${stripVTControlCharacters(values[id]!).replace(/[\r\n\t]/g, " ")}\x1b[39m`).join("  ");
 }
 
 /** The footer owns the timer and request lifetime. Offers are requested afresh each cycle. */
 export class QuotaConsumer {
-	readonly values: Quotas = { CX: "unavailable", KM: "unavailable", CC: "unavailable" };
+	readonly values: Quotas = {};
 	private controller?: AbortController;
 	private revision = 0;
 	private timer?: ReturnType<typeof setInterval>;
@@ -99,6 +99,12 @@ export class QuotaConsumer {
 		await Promise.all(PROVIDERS.map(async (id) => {
 			let access: Access | undefined;
 			try {
+				const credential = this.deps.readCredential(id === "CX" ? "openai-codex" : id === "KM" ? "kimi-coding" : "anthropic");
+				if (!credential) {
+					if (current()) { delete this.values[id]; this.changed(); }
+					return;
+				}
+				if (this.values[id] === undefined && current()) { this.values[id] = "???"; this.changed(); }
 				if (id === "CC") this.events.emit("rqw-anthropic:quota:v1", {
 					sessionId: this.sessionId, offer(value: Access) { access = value; },
 				});
@@ -106,8 +112,8 @@ export class QuotaConsumer {
 				const percent = id === "CC" ? (await access?.refresh(signal))?.windows.seven_day?.remainingPercent
 					: await fetchUsage(id, signal, this.deps);
 				const valid = typeof percent === "number" && Number.isFinite(percent) && percent >= 0 && percent <= 100;
-				if (current()) this.values[id] = valid ? `${Math.round(percent)}%` : "unavailable";
-			} catch { if (current()) this.values[id] = "unavailable"; }
+				if (current()) this.values[id] = valid ? `${Math.round(percent)}%` : "???";
+			} catch { if (current()) this.values[id] = "???"; }
 			if (current()) this.changed();
 		}));
 	}

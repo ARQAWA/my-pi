@@ -238,29 +238,32 @@ class Connection implements CodexSocket {
 	// Installed once, before the handshake starts. Handshake-phase failures reject the connect promise instead.
 	attach(onResponse: OnResponse, url: URL): void {
 		const ws = this.ws;
-		ws.on("upgrade", (response: { statusCode: number; headers: Record<string, string | string[] | undefined> }) => {
-			this.jar.ingest(url, response.headers["set-cookie"] as string[] | undefined);
-			onResponse({ status: response.statusCode, headers: response.headers });
-		});
-		ws.on(
-			"unexpected-response",
-			(_request: unknown, response: { statusCode: number; headers: Record<string, string | string[] | undefined>; destroy?(): void }) => {
-				const status = response.statusCode;
-				const headers = response.headers;
-				// Cookies come from the actual rejected upgrade's headers (websocket-client/src/lib.rs:170-195).
-				this.jar.ingest(url, headers["set-cookie"] as string[] | undefined);
-				onResponse({ status, headers });
-				const kind: SocketErrorKind = status >= 300 && status < 400 ? "redirect-rejected" : "upgrade-rejected";
-				const message =
-					kind === "redirect-rejected"
-						? `websocket redirect rejected with HTTP ${status}`
-						: `websocket upgrade rejected with HTTP ${status}`;
-				this.rejectionPending = true;
-				void readErrorControl(response as unknown as AsyncIterable<unknown>, () => response.destroy?.()).then((control) =>
-					this.rejectOpen(new SocketError(status, headers, message, kind, control)),
-				);
-			},
-		);
+		// Bun does not implement these ws handshake events.
+		if (!process.versions.bun) {
+			ws.on("upgrade", (response: { statusCode: number; headers: Record<string, string | string[] | undefined> }) => {
+				this.jar.ingest(url, response.headers["set-cookie"] as string[] | undefined);
+				onResponse({ status: response.statusCode, headers: response.headers });
+			});
+			ws.on(
+				"unexpected-response",
+				(_request: unknown, response: { statusCode: number; headers: Record<string, string | string[] | undefined>; destroy?(): void }) => {
+					const status = response.statusCode;
+					const headers = response.headers;
+					// Cookies come from the actual rejected upgrade's headers (websocket-client/src/lib.rs:170-195).
+					this.jar.ingest(url, headers["set-cookie"] as string[] | undefined);
+					onResponse({ status, headers });
+					const kind: SocketErrorKind = status >= 300 && status < 400 ? "redirect-rejected" : "upgrade-rejected";
+					const message =
+						kind === "redirect-rejected"
+							? `websocket redirect rejected with HTTP ${status}`
+							: `websocket upgrade rejected with HTTP ${status}`;
+					this.rejectionPending = true;
+					void readErrorControl(response as unknown as AsyncIterable<unknown>, () => response.destroy?.()).then((control) =>
+						this.rejectOpen(new SocketError(status, headers, message, kind, control)),
+					);
+				},
+			);
+		}
 		ws.on("open", () => {
 			this.phase = "open";
 			const waiter = this.openWaiter;
@@ -462,7 +465,7 @@ class Connection implements CodexSocket {
 
 // Opens one owned connection. Resolves after the 101 upgrade; rejects with SocketError (status, headers and allowlisted
 // control fields of the rejected upgrade preserved) or AbortError. The returned socket is never shared with another request.
-export async function connect(options: ConnectOptions): Promise<CodexSocket> {
+export async function connect(options: ConnectOptions, SocketConstructor: new (url: string, options: Record<string, unknown>) => WsLike = WebSocket): Promise<CodexSocket> {
 	const url = new URL(options.url);
 	assertTransportOrigin(url);
 	if (url.protocol !== "wss:" && url.protocol !== "ws:" && url.protocol !== "https:" && url.protocol !== "http:") {
@@ -488,7 +491,7 @@ export async function connect(options: ConnectOptions): Promise<CodexSocket> {
 	};
 	let ws: WsLike;
 	try {
-		ws = new WebSocket(url.href, wsOptions) as unknown as WsLike;
+		ws = new SocketConstructor(url.href, wsOptions);
 	} catch (error) {
 		throw transportError(error);
 	}

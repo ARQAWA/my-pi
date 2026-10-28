@@ -39,9 +39,7 @@ only: stored messages, tool results, their details and what the model sees are n
   indented card per result. The coordinator `outcome` maps `completed` to `finished` and `error` to `failed`; any other
   value shows no status. When an item carries `display`, its model, effort, duration and title
   are rendered like ordinary agent cards; profile provenance stays in stored metadata. Without `display`, only the item ID, mapped outcome and answer are used;
-  missing metadata is not invented. Timeouts, alerts, receipts, `idle` and anything without a delivered result,
-  or unreadable JSON, return `undefined` and stay
-  Pi's stock box. Ctrl+O shows the whole answer of every result.
+  missing metadata is not invented. Non-result `child_wait`, `agent_progress` and `job` notifications show one short line; Ctrl+O shows their full original text. Ctrl+O shows the whole answer of every result.
 - **Ctrl+O** (expanded tools): custom messages show the full card body. With tool-ui, each wait result shows its
   expanded cards once inside a stock-look box, with the full answer text instead of the raw result JSON. Without
   tool-ui, the existing standalone behaviour stays: expanded waits show the original result text through the next

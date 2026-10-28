@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import vm from 'node:vm';
-import { createRequire } from 'node:module';
+import { createRequire, syncBuiltinESMExports } from 'node:module';
+import childProcess from 'node:child_process';
 const require = createRequire(import.meta.url);
 import { bundleMyPi, materializeMyPi } from '../bundle-my-pi.mjs';
 
@@ -77,7 +78,7 @@ function installed(root) {
   fs.writeFileSync(path.join(root, 'my-pi', 'package.json'), '{"name":"my-pi"}');
 }
 
-test('materialization writes product resources, manifest and exact revision', (t) => {
+test('materialization writes product resources, manifest and exact revision', async (t) => {
   const root = fixture(t);
   const sha = 'a'.repeat(40);
   const source = path.join(root, 'source');
@@ -103,13 +104,42 @@ test('materialization writes product resources, manifest and exact revision', (t
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(bundle, 'package.json'))), {
     name: 'my-pi', private: true, type: 'module',
     pi: { extensions: ['./extensions/RQW-demo/index.ts'], themes: ['./extensions/RQW-theme/theme.json'] },
-    dependencies: { ws: '8.22.0', typebox: '1.3.27' },
+    dependencies: { ws: '8.22.0' },
     peerDependencies: { '@earendil-works/pi-coding-agent': '1.4.0', typebox: '*' },
   });
   const manifest = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url)));
   assert.match(manifest.scripts['vscode:prepublish'], /bundle-my-pi\.mjs/);
   const ignore = fs.readFileSync(new URL('../.vscodeignore', import.meta.url), 'utf8').split('\n');
   assert.equal(ignore.includes('my-pi/**'), false);
+
+  const spawn = t.mock.method(childProcess, 'spawnSync', (command, args, options) => {
+    if (args[0] === '-xf') fs.cpSync(source, args[args.indexOf('-C') + 1], { recursive: true });
+    else {
+      const manifest = JSON.parse(fs.readFileSync(path.join(options.cwd, 'package.json')));
+      // npm 7+ installs peers unless explicitly omitted.
+      const installed = { ...manifest.dependencies, ...(!args.includes('--omit=peer') ? manifest.peerDependencies : {}) };
+      for (const name of Object.keys(installed)) {
+        fs.mkdirSync(path.join(options.cwd, 'node_modules', name), { recursive: true });
+      }
+    }
+    return { status: 0 };
+  });
+  syncBuiltinESMExports();
+  try {
+    assert.equal(await bundleMyPi(root, {
+      async fetch(url) {
+        return url.includes('/commits/')
+          ? { ok: true, json: async () => ({ sha }) }
+          : { ok: true, arrayBuffer: async () => new ArrayBuffer(0) };
+      },
+    }), sha);
+    assert.equal(fs.existsSync(path.join(bundle, 'node_modules', 'ws')), true);
+    assert.equal(fs.existsSync(path.join(bundle, 'node_modules', 'typebox')), false);
+    assert.equal(fs.existsSync(path.join(bundle, 'node_modules', '@earendil-works', 'pi-coding-agent')), false);
+  } finally {
+    spawn.mock.restore();
+    syncBuiltinESMExports();
+  }
 });
 
 test('failed source lookup preserves the existing bundle', async (t) => {

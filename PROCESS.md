@@ -33,31 +33,31 @@ No polling, no confidence reruns, no avoidable tokens.
 <a id="subagent-models"></a>
 ## Subagent models
 
-Executors use these main / fallback pairs:
-1. Code and fixes: `openai-codex/gpt-6.1-sol` low / `kimi-coding/k3.1-pro` low.
-2. Git, merge and mechanical work: `openai-codex/gpt-6.1-terra` low / `kimi-coding/kimi-for-coding` low.
-3. Ordinary work, research and search: `kimi-coding/kimi-for-coding` high / `openai-codex/gpt-6.1-terra` high.
-4. Hardest tasks: `kimi-coding/k3.1-pro` high / `openai-codex/gpt-6.1-sol` medium.
+Main passes the category name as `model`, with optional `thinking`. The guard picks one pair uniformly at random from that category using `crypto.randomInt`:
+1. Code and fixes: `openai-codex/gpt-6.1-terra` high / `anthropic/claude-sonnet-5-5` high.
+2. Git, merge and mechanical work: `openai-codex/gpt-6.1-terra` low / `anthropic/claude-sonnet-5-5` medium.
+3. Ordinary work, research and search: `openai-codex/gpt-6.1-terra` medium / `anthropic/claude-sonnet-5-5` high.
+4. Hardest tasks: `openai-codex/gpt-6.1-sol` medium / `anthropic/claude-opus-5-5` medium.
 
 Spotty uses `openai-codex/gpt-6.1-terra` low; Bossy uses `openai-codex/gpt-6.1-terra` medium.
-Other reviewer profiles stay on Sol low. Agents use no Anthropic models.
+Code-reviewer, test-reviewer and requirements-test-reviewer use `openai-codex/gpt-6.1-terra` medium.
 
 The guard reads this machine-readable block.
 
 ```json coordinator-rules
 {
   "agentModels": {
-    "code": [["openai-codex/gpt-6.1-sol", "low"], ["kimi-coding/k3.1-pro", "low"]],
-    "mechanical": [["openai-codex/gpt-6.1-terra", "low"], ["kimi-coding/kimi-for-coding", "low"]],
-    "ordinary": [["kimi-coding/kimi-for-coding", "high"], ["openai-codex/gpt-6.1-terra", "high"]],
-    "hardest": [["kimi-coding/k3.1-pro", "high"], ["openai-codex/gpt-6.1-sol", "medium"]]
+    "code": [["openai-codex/gpt-6.1-terra", "high"], ["anthropic/claude-sonnet-5-5", "high"]],
+    "mechanical": [["openai-codex/gpt-6.1-terra", "low"], ["anthropic/claude-sonnet-5-5", "medium"]],
+    "ordinary": [["openai-codex/gpt-6.1-terra", "medium"], ["anthropic/claude-sonnet-5-5", "high"]],
+    "hardest": [["openai-codex/gpt-6.1-sol", "medium"], ["anthropic/claude-opus-5-5", "medium"]]
   },
   "reviewerProfiles": {
     "spotty": ["openai-codex/gpt-6.1-terra", "low"],
     "bossy": ["openai-codex/gpt-6.1-terra", "medium"],
-    "code-reviewer": ["openai-codex/gpt-6.1-sol", "low"],
-    "test-reviewer": ["openai-codex/gpt-6.1-sol", "low"],
-    "requirements-test-reviewer": ["openai-codex/gpt-6.1-sol", "low"]
+    "code-reviewer": ["openai-codex/gpt-6.1-terra", "medium"],
+    "test-reviewer": ["openai-codex/gpt-6.1-terra", "medium"],
+    "requirements-test-reviewer": ["openai-codex/gpt-6.1-terra", "medium"]
   }
 }
 ```
