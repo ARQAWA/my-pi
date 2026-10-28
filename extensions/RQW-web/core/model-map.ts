@@ -19,7 +19,6 @@ const CLAUDE: Record<string, { model: string; effort: (thinking: string) => stri
 	"claude-opus-5-5": { model: "gpt-6.1-sol", effort: opusEffort },
 };
 const CLAUDE_UNSUPPORTED = new Set(["off", "minimal"]);
-const KIMI_EFFORT: Record<string, string> = { low: "low", high: "medium", max: "high" };
 
 function splitCaller(callerModel: string): { provider: string; id: string } {
 	const slash = callerModel.indexOf("/");
@@ -44,12 +43,6 @@ export function mapCaller(callerModel: string, thinking: string): SearchPlan {
 		}
 		supportedEffort(id, thinking);
 		return { model: id, effort: thinking };
-	}
-	if (provider === "kimi-coding") {
-		if (!Object.hasOwn(KIMI_EFFORT, thinking)) {
-			throw new UsageError(`Unsupported: Kimi thinking "${thinking}" has no search mapping. Use low, high or max.`);
-		}
-		return { model: "gpt-6.1-sol", effort: KIMI_EFFORT[thinking] };
 	}
 	if (provider === CLAUDE_PROVIDER && Object.hasOwn(CLAUDE, id)) {
 		if (CLAUDE_UNSUPPORTED.has(thinking) || !(THINKING_LEVELS as readonly string[]).includes(thinking)) {

@@ -13,7 +13,7 @@
 5. ветка хранит изменения отдельной задачи. worktree означает отдельную рабочую папку. создай их от release, ветки сборки.
 6. координатор поручает работу, кроме приказа работать самому. ребёнок знает свою роль. вложенных исполнителей разрешай явно. проверяющие своих исполнителей не запускают.
 7. одна задача одновременно, если иначе не заказано. тесты не создают отдельную очередь. ведение очереди не отдельная задача. застрявшая задача ждёт, бери следующую разрешённую.
-8. код, правки программ: gpt-6.1-terra high, claude-sonnet-5-5 high. механика, простые действия: gpt-6.1-terra low, claude-sonnet-5-5 medium. обычное, поиск, разбор: gpt-6.1-terra medium, claude-sonnet-5-5 high. сложнейшее, трудные задачи: gpt-6.1-sol medium, claude-opus-5-5 medium. проектирование всегда в классе design. в каждый класс входят и модели Kimi, точные пары в блоке ниже.
+8. код, правки программ: gpt-6.1-terra high, claude-sonnet-5-5 high. механика, простые действия: gpt-6.1-terra low, claude-sonnet-5-5 medium. обычное, поиск, разбор: gpt-6.1-terra medium, claude-sonnet-5-5 high. сложнейшее, трудные задачи: gpt-6.1-sol medium, claude-opus-5-5 medium. проектирование всегда в классе design. точные пары в блоке ниже.
 9. модель выбирает случайный механизм, не агент. high означает сильное рассуждение, medium среднее. low означает слабое.
 
 <a id="sufficient-proof-without-idle-reruns"></a>
@@ -56,11 +56,11 @@
 ```json coordinator-rules
 {
   "agentModels": {
-    "code": [["openai-codex/gpt-6.1-terra", "high"], ["anthropic/claude-sonnet-5-5", "high"], ["kimi-coding/kimi-for-coding", "max"]],
-    "mechanical": [["openai-codex/gpt-6.1-terra", "low"], ["anthropic/claude-sonnet-5-5", "medium"], ["kimi-coding/kimi-for-coding", "low"]],
-    "ordinary": [["openai-codex/gpt-6.1-terra", "medium"], ["anthropic/claude-sonnet-5-5", "high"], ["kimi-coding/kimi-for-coding", "high"]],
-    "hardest": [["openai-codex/gpt-6.1-sol", "medium"], ["anthropic/claude-opus-5-5", "medium"], ["kimi-coding/k3.1-pro", "high"]],
-    "design": [["openai-codex/gpt-6.1-sol", "high"], ["anthropic/claude-opus-5-5", "high"], ["kimi-coding/k3.1-pro", "max"]]
+    "code": [["openai-codex/gpt-6.1-terra", "high"], ["anthropic/claude-sonnet-5-5", "high"]],
+    "mechanical": [["openai-codex/gpt-6.1-terra", "low"], ["anthropic/claude-sonnet-5-5", "medium"]],
+    "ordinary": [["openai-codex/gpt-6.1-terra", "medium"], ["anthropic/claude-sonnet-5-5", "high"]],
+    "hardest": [["openai-codex/gpt-6.1-sol", "medium"], ["anthropic/claude-opus-5-5", "medium"]],
+    "design": [["openai-codex/gpt-6.1-sol", "high"], ["anthropic/claude-opus-5-5", "high"]]
   },
   "reviewerProfiles": {
     "spotty": ["openai-codex/gpt-6.1-terra", "low"],
