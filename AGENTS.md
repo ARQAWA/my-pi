@@ -143,6 +143,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   its tests load only it). Isolation checks: `test/isolation.test.ts`.
   `RQW-theme` is data in `pi.themes`, not an extension. `INSTALL.md` shows the switch; `DECISIONS.md` section Isolation carries the decision.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
+- `.agents/skills/report/`: repo-local skill and HTML template for dyslexia-friendly reports, plans, research summaries and design documents.
 - `WORKFLOW-MANIFEST.md`: the owner's personal working principles and aspirations, written in Russian for him.
 - `PROCESS.md`: the short development procedure, including testing and the coordinator guard's JSON block.
 - `.pi/agents/code-reviewer.toml`: the read-only bug and code-quality profile, used through `agent_type: "code-reviewer"`.
