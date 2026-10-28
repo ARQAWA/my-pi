@@ -114,8 +114,8 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   on Terra medium, without execution or mandatory commit pairs.
 - `extensions/RQW-naming/`: extension 16, background native session names after first input and each successful
   compaction, from all available context. One request ranks 1-10 candidates by meaning, best valid name wins.
-  The session provider selects `kimi-coding/kimi-for-coding`, `anthropic/claude-haiku-5-5`, or
-  `openai-codex/gpt-5.6-luna`, all at `low`, without fallback. Owner: «один запрос вместо двух».
+  The session provider selects `anthropic/claude-haiku-5-5` or
+  `openai-codex/gpt-5.6-luna`, both at `low`, without fallback. Owner: «один запрос вместо двух».
   At most four words and 32 Unicode
   code points, overlong names rejected, never truncated; initial attempt plus up to three retries, then a warning
   preserving the old name. `/rename-gen` regenerates; native

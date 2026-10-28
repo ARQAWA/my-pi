@@ -33,7 +33,6 @@ The canonical table and owner sources are in [DECISIONS.md](../../DECISIONS.md#w
 | `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | Same level |
 | `anthropic/claude-sonnet-5-5` | `gpt-6-sol` | Same level |
 | `anthropic/claude-opus-5-5` | `gpt-6.1-sol` | low -> low, medium -> high, high -> xhigh, higher -> max |
-| `kimi-coding/*`, including future caller models | `gpt-6.1-sol` | low -> low, high -> medium, max -> high |
 | Unknown or missing model | `gpt-6.1-sol` | low |
 
 An unsupported thinking level on a recognized model is an error; Claude `off` and `minimal` remain unmapped.

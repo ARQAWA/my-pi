@@ -4,7 +4,6 @@ import { generateSessionName, selectNamingModel, type NamingRegistry } from "../
 
 function registry(reply = '["Lisbon trip", "Travel plans"]') {
 	const models = [
-		{ provider: "kimi-coding", id: "kimi-for-coding" },
 		{ provider: "anthropic", id: "claude-haiku-5-5" },
 		{ provider: "openai-codex", id: "gpt-5.6-luna" },
 	];
@@ -20,17 +19,16 @@ function registry(reply = '["Lisbon trip", "Travel plans"]') {
 
 describe("RQW-naming public core", () => {
 	it("returns the best valid name from one request", async () => {
-		const name = await generateSessionName({ context: "Plan a Lisbon trip", provider: "kimi-coding", registry: registry(), signal: new AbortController().signal });
+		const name = await generateSessionName({ context: "Plan a Lisbon trip", provider: "anthropic", registry: registry(), signal: new AbortController().signal });
 		assert.equal(name, "Lisbon trip");
 	});
 
 	it("returns the name when the model provides exactly one candidate", async () => {
-		const name = await generateSessionName({ context: "Plan a Lisbon trip", provider: "kimi-coding", registry: registry('["Lisbon trip"]'), signal: new AbortController().signal });
+		const name = await generateSessionName({ context: "Plan a Lisbon trip", provider: "anthropic", registry: registry('["Lisbon trip"]'), signal: new AbortController().signal });
 		assert.equal(name, "Lisbon trip");
 	});
 
 	for (const [provider, id] of [
-		["kimi-coding", "kimi-for-coding"],
 		["anthropic", "claude-haiku-5-5"],
 		["openai-codex", "gpt-5.6-luna"],
 	]) {

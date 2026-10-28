@@ -12,7 +12,6 @@ export type PickerSpec = {
 	family: (model: ChatModel) => number;
 	rank: (effort: string) => number;
 	levels: (model: ChatModel | undefined) => string[];
-	displayEffort?: (model: ChatModel | undefined) => string | undefined;
 	nearest: (model: ChatModel, effort: string) => string | undefined;
 };
 
@@ -109,11 +108,9 @@ export class ModelEffortPicker implements Component {
 		const lines: string[] = [theme.bold(theme.fg("accent", "Model / effort")), ""];
 		const models = this.spec.models;
 		const { model } = this.current;
-		// A fixed label is visual only: draft navigation and commit still see no reasoning level.
-		const fixedEffort = this.spec.displayEffort?.(model);
-		const effort = fixedEffort ?? this.current.effort;
+		const effort = this.current.effort;
 		const index = model ? models.findIndex((candidate) => this.spec.family(candidate) === this.spec.family(model)) : -1;
-		const levels = fixedEffort ? [fixedEffort] : this.spec.levels(model);
+		const levels = this.spec.levels(model);
 		const efforts = this.effortsText(levels, effort);
 		// The efforts share the selected row with the name; the name gives way, but never below MIN_NAME columns.
 		const effortsWidth = visibleWidth(efforts);

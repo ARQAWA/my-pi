@@ -4,7 +4,6 @@ import {
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 const NAMING_MODELS: Record<string, string> = {
-	"kimi-coding": "kimi-for-coding",
 	anthropic: "claude-haiku-5-5",
 	"openai-codex": "gpt-5.6-luna",
 };

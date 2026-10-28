@@ -2,27 +2,15 @@ import { getSupportedThinkingLevels, type AnyModel, type Model } from "@earendil
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { AgentSession, parseArgs, type ExtensionAPI, type ExtensionContext, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { ModelEffortPicker, sameModel, stepDraft, type Draft, type PickerSpec, type Step } from "./picker.ts";
-import { registerKimiModels } from "./kimi.ts";
 
 export const FAMILIES = [
-	"kimi-for-coding-highspeed", "kimi-for-coding", "k3.1-pro-highspeed", "k3.1-pro",
 	"claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna",
 ] as const;
-const KIMI_NAMES: Record<string, string> = {
-	"kimi-for-coding-highspeed": "Kimi K2.7 Code Highspeed",
-	"kimi-for-coding": "Kimi K2.8 Preview",
-	"k3.1-pro-highspeed": "Kimi K3.1 Pro Highspeed",
-	"k3.1-pro": "Kimi K3.1 Pro",
-};
 const ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type Level = typeof ORDER[number];
 type ChatModel = Model<string>;
 // OMP reasoning-arrows ORDER/CAPS intersected with its canonical model efforts.
 const FAMILY_LEVELS: Record<typeof FAMILIES[number], readonly Level[]> = {
-	"kimi-for-coding-highspeed": [],
-	"kimi-for-coding": ["low", "high", "max"],
-	"k3.1-pro-highspeed": ["low", "high", "max"],
-	"k3.1-pro": ["low", "high", "max"],
 	"claude-opus-5-5": ["low", "medium", "high", "xhigh", "max"],
 	"claude-sonnet-5-5": ["low", "medium", "high", "xhigh", "max"],
 	"gpt-6.1-sol": ["low", "medium", "high", "xhigh", "max"],
@@ -54,12 +42,11 @@ export function pickerModels(models: readonly ChatModel[]): ChatModel[] {
 		const family = familyOf(a) - familyOf(b);
 		if (family) return family;
 		const id = FAMILIES[familyOf(a)];
-		const preferred = id in KIMI_NAMES ? "kimi-coding" : id.startsWith("claude-") ? "anthropic" : "openai-codex";
+		const preferred = id.startsWith("claude-") ? "anthropic" : "openai-codex";
 		const rank = (model: ChatModel) => Number(model.provider !== preferred) * 2 + Number(model.id !== FAMILIES[familyOf(model)]);
 		return rank(a) - rank(b) || `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`, "en");
 	});
-	return sorted.filter((model, index) => index === 0 || familyOf(model) !== familyOf(sorted[index - 1]))
-		.map((model) => model.provider === "kimi-coding" && KIMI_NAMES[model.id] ? { ...model, name: KIMI_NAMES[model.id] } : model);
+	return sorted.filter((model, index) => index === 0 || familyOf(model) !== familyOf(sorted[index - 1]));
 }
 
 function nearestLevel(model: ChatModel, current: Level): Level | undefined {
@@ -72,7 +59,6 @@ const pickerSpec = (models: ChatModel[]): PickerSpec => ({
 	family: (model) => familyOf(model),
 	rank: (effort) => ORDER.indexOf(effort as Level),
 	levels: (model) => levelsFor(model),
-	displayEffort: (model) => model?.provider === "kimi-coding" && model.id === "kimi-for-coding-highspeed" ? "high" : undefined,
 	nearest: (model, effort) => nearestLevel(model, effort as Level),
 });
 
@@ -141,7 +127,7 @@ function sessionOf(ctx: ExtensionContext): AgentSession | undefined {
 function maskRuntime(runtime: ModelRuntime) {
 	const prototype = () => Object.getPrototypeOf(runtime) as ModelRuntime;
 	return lease(runtime, RUNTIME_MASK, () => {
-		const restore = override(runtime, {
+		return override(runtime, {
 			// Stock /model, Ctrl+L, Ctrl+P, autocomplete, /scoped-models, /settings and RPC read this snapshot.
 			getAvailableSnapshot: { value: () => [], writable: true },
 			// Every request on this runtime, including in-process subagents and reviewers, passes here.
@@ -151,11 +137,6 @@ function maskRuntime(runtime: ModelRuntime) {
 				return (prototype() as unknown as { prepareRequest: PrepareRequest }).prepareRequest.apply(this, args);
 			} },
 		});
-		return () => {
-			restore();
-			// The catalog has the same owners; the registering session's API may already be inactive.
-			runtime.unregisterProvider("kimi-coding");
-		};
 	});
 }
 
@@ -179,7 +160,6 @@ function maskSession(session: AgentSession) {
 }
 
 export default function modelsExtension(pi: ExtensionAPI) {
-	registerKimiModels(pi);
 	const codex = builtinProviders().find((provider) => provider.id === "openai-codex")!;
 	const sol = codex.getModels().find((model) => model.id === "gpt-6.1-sol")!;
 	const terra = { ...sol, id: "gpt-6.1-terra", name: "GPT-6.1 Terra", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -347,7 +327,7 @@ export default function modelsExtension(pi: ExtensionAPI) {
 				ctx.ui.notify("No authenticated RQW models available", "warning");
 				return;
 			}
-			const labels = models.map((model) => model.provider === "kimi-coding" ? model.name : `${model.provider}/${model.id}`);
+			const labels = models.map((model) => `${model.provider}/${model.id}`);
 			const chosen = await ctx.ui.select("RQW models", labels);
 			const model = models[labels.indexOf(chosen ?? "")];
 			if (model) await enqueue(() => select(ctx, model));

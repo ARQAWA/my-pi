@@ -6,18 +6,18 @@ Modules and resources live beside `index.ts`; subfolders group needed resources.
 
 ## Subscription limits
 
-The folder stays on the left; CX in gold, KM in platinum and CC in bronze sit on the right, immediately before the git branch. Narrow rows wrap instead of losing provider limits.
-Each provider shows one remaining percent: CX and CC the weekly window, KM the monthly total.
+The folder stays on the left; CX in gold and CC in bronze sit on the right, immediately before the git branch. Narrow rows wrap instead of losing provider limits.
+Each provider shows one remaining percent: CX and CC the weekly window.
 Providers without stored login credentials are hidden. Unknown values show `???`.
 The active footer requests fresh snapshots immediately and every five minutes, independently
 of model responses. Disabling the footer or closing the session cancels requests and clears its timer.
 Failed refreshes replace old percentages with `???`.
 
 CC checks the stored `anthropic` credential and consumes the existing session-bound `rqw-anthropic:quota:v1` offer when available.
-CX and KM use Pi's public `readStoredCredential` for one-off read-only token reads.
+CX uses Pi's public `readStoredCredential` for one-off read-only token reads.
 CX reads `https://chatgpt.com/backend-api/wham/usage` with the stored Codex account ID;
 it uses the main rate limit window lasting 604800 seconds.
-KM reads `https://api.kimi.com/coding/v1/usages` and uses `limit_month_total`. Neither depends on RQW-codex.
+It does not depend on RQW-codex.
 Expired OAuth credentials, failed requests and unrecognized response shapes
 show `???`. Requests have a five-second deadline. Tokens are never refreshed,
 rotated or written; settings and installed packages are untouched. No model calls,

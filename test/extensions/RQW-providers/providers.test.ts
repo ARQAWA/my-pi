@@ -4,7 +4,6 @@ import { installVisibility } from "../../../extensions/RQW-providers/index.ts";
 
 const models = [
 	{ id: "claude", provider: "anthropic" },
-	{ id: "kimi", provider: "kimi-coding" },
 	{ id: "codex", provider: "openai-codex" },
 	{ id: "other", provider: "openrouter" },
 	{ id: "alias", provider: "constructor" },
@@ -28,7 +27,7 @@ it("returns only allowed providers while owned and restores all results on relea
 	const visibility = installVisibility(Runtime as never, Session as never);
 	const session = new Session();
 	visibility.own(session as never, () => true);
-	const allowed = ["anthropic", "kimi-coding", "openai-codex"];
+	const allowed = ["anthropic", "openai-codex"];
 	assert.deepEqual(session.modelRuntime.getProviders().map(provider => provider.id), allowed);
 	for (const list of [session.modelRuntime.getModels(), session.modelRuntime.getAvailableSnapshot(), await session.modelRuntime.getAvailable()]) {
 		assert.deepEqual(list.map(model => model.provider), allowed);
@@ -37,4 +36,16 @@ it("returns only allowed providers while owned and restores all results on relea
 	visibility.release();
 	assert.equal(session.modelRuntime.getModels().length, models.length);
 	assert.equal(session.scopedModels.length, models.length);
+});
+
+it("does not show kimi-coding as a provider", () => {
+	models.push({ id: "kimi-for-coding", provider: "kimi-coding" });
+	try {
+		const visibility = installVisibility(Runtime as never, Session as never);
+		const session = new Session();
+		visibility.own(session as never, () => true);
+		assert.ok(!session.modelRuntime.getProviders().some(provider => provider.id === "kimi-coding"));
+		assert.ok(!session.modelRuntime.getModels().some(model => model.provider === "kimi-coding"));
+		visibility.release();
+	} finally { models.pop(); }
 });

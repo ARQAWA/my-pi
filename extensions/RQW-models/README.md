@@ -7,14 +7,6 @@ snapshot on failure. Errors follow Pi's existing extension-error reporting path.
 An unlisted current model is replaced by authenticated Opus first, otherwise the strongest authenticated listed
 model. This also applies to resumed sessions, reloads, history and explicit unlisted CLI choices; picker order stays unchanged.
 
-The four Kimi Code entries appear first in the owner's order; see `[D-MODELS-KIMI]` in the linked decision.
-K2.7 Code Highspeed shows `high` as a visual label only, without selecting or sending a reasoning level.
-The other three Kimi models offer `low`, `high`, `max`. The two K3.1 models are registered through Pi's public
-provider API, preserving its built-in OAuth. Their cached output limit is `131072`; the official docs do not
-independently state a server output ceiling. Source details are recorded in the same decision.
-The Kimi catalog registration shares the runtime's existing owner count: disabling or disposing one session
-keeps it for the others; the last owner's shutdown or SDK dispose restores the built-in catalog and OAuth.
-
 ## Draft chooser
 
 | Key | First draft step when opening |

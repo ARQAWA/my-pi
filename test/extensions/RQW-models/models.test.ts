@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import extension, { FAMILIES, familyOf, levelsFor, pickerModels } from "../../../extensions/RQW-models/index.ts";
+import extension, { FAMILIES, familyOf, isListed, levelsFor, pickerModels } from "../../../extensions/RQW-models/index.ts";
 import { ModelEffortPicker, stepDraft, type PickerSpec } from "../../../extensions/RQW-models/picker.ts";
 
 const model = (id: string, provider = "anthropic"): Model<string> => ({
@@ -17,7 +17,7 @@ describe("RQW-models public selection", () => {
 		const models = [
 			{ ...model("claude-opus-5-5"), name: "Claude Opus 5.5" },
 			{ ...model("gpt-6.1-sol", "openai-codex"), name: "GPT-6.1 Sol" },
-			{ ...model("k3.1-pro", "kimi-coding"), name: "Kimi K3.1 Pro" },
+			{ ...model("claude-sonnet-5-5"), name: "Claude Sonnet 5.5" },
 		];
 		const spec: PickerSpec = { models, family: m => models.indexOf(m), rank: () => 0,
 			levels: () => ["low"], nearest: () => "low" };
@@ -25,10 +25,16 @@ describe("RQW-models public selection", () => {
 		let selected: unknown;
 		const picker = new ModelEffortPicker(spec, { model: models[1], effort: "low" }, theme as any, result => { selected = result?.model; });
 		const output = picker.render(100).join("\n");
-		for (const label of ["Opus 5.5", "GPT-6.1 Sol", "Kimi K3.1 Pro"]) assert.ok(output.includes(label));
+		for (const label of ["Opus 5.5", "GPT-6.1 Sol", "Sonnet 5.5"]) assert.ok(output.includes(label));
 		assert.ok(!output.includes("anthropic/") && !output.includes("openai-codex/") && !output.includes("Claude "));
 		picker.handleInput("\r");
 		assert.equal(selected, models[1]);
+	});
+	it("does not offer or list Kimi models", () => {
+		const kimi = [model("kimi-for-coding", "kimi-coding"), model("k3.1-pro", "kimi-coding")];
+		const opus = model("claude-opus-5-5");
+		assert.deepEqual(pickerModels([...kimi, opus]), [opus]);
+		for (const entry of kimi) assert.equal(isListed(entry), false);
 	});
 	it("registers Terra with its limits and picker order", () => {
 		let catalog: Model<string>[] = [];
@@ -165,10 +171,10 @@ describe("RQW-models public selection", () => {
 		const argv = process.argv;
 		process.argv = argv.slice(0, 2);
 		try {
-			const kimi = model("kimi-for-coding-highspeed", "kimi-coding");
+			const unlisted = model("outside-model", "other");
 			const opus = model("claude-opus-5-5");
-			assert.equal((await run([kimi, opus])).current, opus);
-			assert.equal((await run([kimi])).current.id, kimi.id);
+			assert.equal((await run([unlisted, opus])).current, opus);
+			assert.equal((await run([unlisted])).current.id, "outside");
 		} finally {
 			process.argv = argv;
 		}

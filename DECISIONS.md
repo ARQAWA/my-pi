@@ -137,9 +137,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: local orchestration has no other deployment target; product and CI portability remain separate.
   Carriers: `.pi/extensions/`, `scripts/`, local development test suites.
 - **Development executor models** `[D-WORK-MODELS]`. Every new Main-started executor, work, research, test, QA, regression,
-  operational or outside-queue agent uses the main / fallback matrix: code and fixes use Sol low / Kimi 3.1 low;
-  mechanical work uses Terra low / Kimi K2.8 low; ordinary work, research and search use Kimi K2.8 high / Terra high;
-  hardest work uses Kimi 3.1 high / Sol medium. Exact executor pairs and reviewer-profile exceptions live in the `coordinator-rules` JSON block of
+  operational or outside-queue agent uses the category matrix: code, mechanical, ordinary, hardest and design. Exact executor pairs and reviewer-profile exceptions live in the `coordinator-rules` JSON block of
   [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly.
   There is no executor rotation or ratio bookkeeping.
   Already running or preserved Sol agents may finish their current tasks through ordinary `send` and `resume` and
@@ -147,12 +145,6 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   unless it is a reviewer profile. Explicit owner model requests override the default. No silent model fallback.
   Independent reviewer profiles keep their approved model and effort; they are not an executor category.
   Recursive delegation and reviewer lifecycle stay unchanged; no new nested non-review helper restriction is added.
-  Owner (`16-27-59:15777`, 2026-10-26):
-  «Давай так - код и правки sol 6.1 low / kimi low
-  гит влитие и прочая механическая прям примитивная хуйня terra low / kimi k2.8 low
-  обычные какие то штук, обычная работа, исследование, поиск kimi K2.8 high / terra high
-  самые сложные задачи - kimi high / sol 6.1 medium»
-  Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl` in the owner's Pi session directory.
   The full Anthropic ban remains in force for Main and subagents, without expiry or benchmark exception.
   Owner (`16-27-59:7665`, entry `29908fc1`): «Возобнови полный запрет использования антропиков».
   This governs model use, not Anthropic transport, quota implementation, auth, provider visibility or product models.
@@ -414,17 +406,10 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Background generation runs once after first user input and after every successful compaction, using all available
   projected context including summary and kept messages. One request generates 1-10 candidates ranked by meaning;
   the first valid candidate is selected. The current session provider selects the naming model, all with `low`
-  reasoning: `kimi-coding` → `kimi-coding/kimi-for-coding`, `anthropic` → `anthropic/claude-haiku-5-5`,
-  `openai-codex` → `openai-codex/gpt-5.6-luna`, without fallback.
-  Owner corrections in the `16-27-59` coordinator session, USER entry `7245c9c3`, line 13320:
-  > Нет, для kimi K2.8 preview low, для Claude Code - haiku 5.5 low, для GPT - GPT 5.6 Luna low
-  >
-  > Там не может быть привязки к химии. Откуда она вообще появилась там
-
+  reasoning: `anthropic` → `anthropic/claude-haiku-5-5`, `openai-codex` → `openai-codex/gpt-5.6-luna`, without fallback.
   USER entry `202bfbdd`, line 13422, naming excerpt:
   > Rqw naming один запрос вместо двух оставляем. Не гарантировать 10 кандидатов. Надо просто минимум от одного до 10 кандидатов и выбирать из них лучшего. И всё. Надо, чтобы эта механика была максимально простой, без заёбов и строгости.
 
-  These corrections supersede the earlier Kimi-only choice in USER entry `5b9c32fe`.
   Reason: simple single-request naming through the session provider's light model.
   No valid candidate is a failed attempt. Initial attempt plus up to
   three retries; final warning through public `ctx.ui.notify` preserves the old name. `/rename-gen` uses the same
@@ -581,24 +566,21 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **One subscription number** `[D-STATUSBAR-SUBSCRIPTION-LIMITS]`.
   The folder stays on the left; limits sit on the right immediately before the git branch, wrapping when they do not fit.
   Owner: «Надо еще это статус бар перенести лимиты по провайдерам на право и поставить их прямо перед веткой на 0 sp задача в общий текущий пак».
-  The folder row shows CX gold, KM platinum and CC bronze, one remaining percent each:
-  CX and CC the weekly window, KM `limit_month_total`. Refresh immediately and every five minutes while active.
+  The folder row shows CX gold and CC bronze, one remaining percent each:
+  the weekly window. Refresh immediately and every five minutes while active.
   Missing or failed data is `unavailable`, never an invented 0% or 100%; failed reads
   discard displayed stale data. Disable/shutdown cancels requests and releases the timer.
   Owner: «Надо, чтобы ты разобрался, как это запилить, и сделал отображение, чтобы в real time эта хуйня работала. Не в real time, а хотя бы чтобы она раз в пять минут.»
-  Owner: «Codex будет золотого цвета, Kimi будет платинового цвета, а CloudCode будет бронзового цвета.»
   Owner chose option 1: remaining native-window percentages, honest unavailable state,
   five-minute refresh and partial delivery when a source cannot be read in this runtime.
-  CC consumes the existing optional Anthropic event offer. CX and KM independently use
+  CC consumes the existing optional Anthropic event offer. CX independently uses
   Pi's public `readStoredCredential` for one-off read-only stored OAuth reads, without
   auth resolution, token refresh, rotation or writes. CX requests the wham usage source
-  with the stored account ID; KM requests the Kimi coding usages source. Missing/expired credentials, request
+  with the stored account ID. Missing/expired credentials, request
   failures and unknown response shapes show `unavailable`. RQW-codex is not required.
   No private API, auth copying, dependency or live credential probe is added.
-  Owner correction: use public `readStoredCredential` for Codex and Kimi; never write
+  Use public `readStoredCredential` for Codex; never write
   auth or refresh tokens. Keep the implementation inside the statusbar folder.
-  Owner correction: «Смотри, должны быть лимиты просто одной цифры, недельные лимиты. А у Кими месячный лимит.»
-  This replaces the per-window display above; KM's total month is chosen over its code month.
   Carriers: `extensions/RQW-statusbar/{index,render,quota}.ts` and its README.
 
 ## Isolation
@@ -1062,26 +1044,6 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Models
 
-- **Kimi Code models** `[D-MODELS-KIMI]`. The first four entries are `kimi-for-coding-highspeed`
-  (Kimi K2.7 Code Highspeed), `kimi-for-coding` (Kimi K2.8 Preview), `k3.1-pro-highspeed`
-  (Kimi K3.1 Pro Highspeed), `k3.1-pro` (Kimi K3.1 Pro), all on `kimi-coding`.
-  The first has no selectable reasoning level: the chooser renders `high` only, without a thinking setter.
-  The other three offer only `low`, `high`, `max`; none offers `off`. Opus medium remains the new-session default.
-  Owner: «Добавь их в самый верх списка в таком порядке.» and «Выключенное рассуждение (off) не предлагай ни для одной из них.»
-  (session `2026-10-21T16-27-59-062Z_01a15f4a`, 2026-10-25, Kimi task).
-  Owner authorized the provider visibility and missing model registration:
-  «да добавь в провайдеры и добавь модель кими к 3.1 и проресерч про нее инфу потому что другой агент нашел эту модель в провайдера и конфигах кимича»
-  (same session, line 7039). `RQW-providers` adds only `kimi-coding` to `ALLOWED`.
-  `RQW-models/kimi.ts` extends the built-in catalog through public `pi.registerProvider`, retaining built-in OAuth.
-  Both K3.1 definitions use context `1048576`, output `131072`, text/image inputs and reasoning `low/high/max`.
-  Source for every definition field, including compatibility, image preprocessing and cost: the exact two records
-  `kimi-coding.models[2]` and `[3]` in the host's `~/.pi/agent/models-store.json`, inspected 2026-10-25.
-  [Official model configuration](https://www.kimi.com/code/docs/en/kimi-code/models) confirms IDs, context,
-  image/video capability, reasoning levels and OpenAI-compatible `https://api.kimi.com/coding/v1`.
-  Pi exposes text/image input, not video. The `131072` output value is the cached client definition, not an independently
-  documented server ceiling: neither that page nor the [release notes](https://www.kimi.com/code/docs/en/kimi-code/whats-new.html)
-  specifies a maximum output. No installed Kimi CLI or exact local source definition was found.
-  Carriers: `extensions/RQW-models/{index,picker,kimi}.ts`, `extensions/RQW-providers/index.ts`.
 - **Draft chooser** `[D-MODELS-CHOOSER]`. Shift+arrows open a model/effort draft chooser that performs one draft step
   before the first render; one transition is Shift+arrow then Enter. Plain and Shift arrows then share the same axes.
   Enter commits once; Esc closes with no setters or restoration. A draft model switch clamps effort to the nearest lower
@@ -1130,7 +1092,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   intersected with Pi support.
   Owner: «Надо подобрать сопостовимую модель на gpt, попробоуй 5.6 luna и более сильные модели типа medium ризонинг 6 и 6.1 sol, на время замеров добавь 5.6 luna в список моделей наших сразу после хайку и вообще хайку надо поставить над всеми в слабых моделях ь.е. порядок должен быть типа haiku 5.5, luna 5.6, luna 6» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1167); «Да» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 1425)
   Carrier: `extensions/RQW-models/index.ts` (`FAMILIES`, `FAMILY_LEVELS`). Since: `7d6fdbf`.
-- **Model order and availability** `[D-MODELS-ORDER]`. After the four Kimi entries in `[D-MODELS-KIMI]`, `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`,
+- **Model order and availability** `[D-MODELS-ORDER]`. `FAMILIES`: `claude-opus-5-5`, `claude-sonnet-5-5`,
   `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-sol`, `claude-haiku-5-5`, `gpt-5.6-luna`, `gpt-6-luna`, strongest first. `pickerModels` takes
   Pi's credential-aware availability including provider `filterModels`: the runtime's unmasked `getAvailableSnapshot`
   through its prototype while the listed-models masks are set, otherwise `ctx.modelRegistry.getAvailable()`. Absent,
@@ -1193,11 +1155,9 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Status bar
 
-- **Pending provider-limit badge colors** `[D-STATUSBAR-LIMIT-COLORS]`. Owner (`16-27-59:7409`, entry
-  `e65a800e`, 2026-10-25): «Codex будет золотого цвета, Kimi будет платинового цвета, а CloudCode будет бронзового цвета.»
-  Definitive `CC` choice, owner (`16-27-59:9432`, entry `d7037e66`): «2 бронза».
+- **Pending provider-limit badge colors** `[D-STATUSBAR-LIMIT-COLORS]`. Definitive `CC` choice, owner (`16-27-59:9432`, entry `d7037e66`): «2 бронза».
   This answers the bronze/orange question in assistant entry `05b22f2b`, `16-27-59:9416`.
-  Decision: `CC` bronze, Codex gold, Kimi platinum. Reason: distinguish provider-limit badges by color.
+  Decision: `CC` bronze, Codex gold. Reason: distinguish provider-limit badges by color.
   Carrier: pending [PROVIDER-LIMITS](BACKLOG.md#provider-limits). The direct Anthropic quota provider is delivered
   ([D-ANTHROPIC-QUOTA](#anthropic-subscription-adapter)); statusbar badge implementation is NOT STARTED by this record.
 
@@ -1437,7 +1397,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   transport is off; switching either off alone is the [Isolation](#isolation) rule. Owner answer «7a» to the coordinator
   question "Скрытие лишних провайдеров. Сейчас его делает расширение Anthropic. Если его выключить, скрытие пропадёт. a) Вынести скрытие в отдельное расширение": «1a 2a 3a 4a 5a 6b 7a 8a ответы по транспорту» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 2394). Carrier:
   `extensions/RQW-providers/index.ts`, after RQW-anthropic in `pi.extensions`; RQW-codex follows it. Since: `2bf5eac`.
-- **Visible providers** `[D-PROVIDERS-ALLOW]`. Only `anthropic`, legacy `openai-codex` and `kimi-coding` (see `[D-MODELS-KIMI]`) are visible in login, pickers,
+- **Visible providers** `[D-PROVIDERS-ALLOW]`. Only `anthropic` and legacy `openai-codex` are visible in login, pickers,
   `--list-models` and scoped models (`ALLOWED`); Pi 1.4.0's `openai` ("Sign in with ChatGPT", `OPENAI_API_KEY`) stays hidden. Saved credentials stay; previously selected models and explicit SDK lookups are not erased; public `unregisterProvider` is not used because it restores builtins. The policy covers only a runtime with an owning session of this extension, so loading it alone or an unrelated runtime keeps Pi's lists. RQW-anthropic filters nothing; its `registration.ts` and `auth-boundary.ts` carry the conflict guard, credential-store binding and request auth boundary. Owner: «Смотри, в нашем Pi должен быть старый OpenAI кодекс и всё, блядь. Legacy, который через девайс. А новый OpenAI нахуй не нужен, блядь. Я не знаю, что там за глупость новый OpenAI. У нас должен быть вход именно такой же, как сейчас это работает в текущем OpenAI кодексе, и всё, больше никак.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 134) Coordinator text (owner quotes C:3171, an omp session, not found in the Pi sessions): "Это именно отключить"; "Когда мы заходим в логин, там должны быть только кодекс, авторизация и авторизация через Anthropic, которую ты сейчас делаешь. И всё". Since: `2bf5eac`.
 - **Binding and order** `[D-PROVIDERS-BIND]`. Engineering choices: ownership comes from the patched
   `AgentSession._bindExtensionCore`, because Pi emits no event before `--list-models` and a bindingless `/reload` emits
@@ -1536,14 +1496,7 @@ The shipped independent `web` tool lives in `extensions/RQW-web/`; Contract: [RQ
   | `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | Same level |
   | `anthropic/claude-sonnet-5-5` | `gpt-6-sol` | Same level |
   | `anthropic/claude-opus-5-5` | `gpt-6.1-sol` | low -> low, medium -> high, high -> xhigh, above high -> max |
-  | `kimi-coding/*`, including future caller models | `gpt-6.1-sol` | low -> low, high -> medium, max -> high |
   | Unknown or missing model, including unknown GPT slug | `gpt-6.1-sol` | low |
-
-  Owner, current task session `web-kimi-sol-effort`, 2026-10-25: «Kimi `low` -> `openai-codex/gpt-6.1-sol` `low`.»
-  «Kimi `high` -> `openai-codex/gpt-6.1-sol` `medium`.» «Kimi `max` -> `openai-codex/gpt-6.1-sol` `high`.»
-  Reason: align Kimi caller reasoning with Sol 6.1 while retaining the existing web-only Codex subscription engine.
-  Owner clarification, same task session: «the mapping is by PROVIDER, not a hardcoded list of four model IDs.»
-  The mapping applies to every current or future `kimi-coding/*` caller; it changes neither the caller model nor session naming.
 
   Owner's fallback (`16-27-59:6331`, entry `e3aba5d4`): «если короче это модель не опознанная то всегда по дефолту 6.1 сол лоу юзать» Known callers with unsupported thinking fail explicitly; Claude `off` and `minimal` stay unmapped. Carrier: `extensions/RQW-web/core/model-map.ts`.
 - **Engine** `[D-WEB-ENGINE]`. The existing Codex CLI 0.164.0 source research selected the Responses Lite path `web.run -> POST alpha/search -> function_call_output -> sourced answer`, not hosted-only `web_search`. Each target has an ephemeral web-only loop, no Pi AgentSession, stored history, provider registration, prewarm or compaction. Pure transport/auth code is a minimal local snapshot with original path and commit headers; no import reaches another extension. The snapshot retains the existing 0.163.0 transport pin. Reason: preserve the researched subscription mechanism while keeping RQW-web independently switchable. Carrier: `extensions/RQW-web/core/`, `vendor/`.
