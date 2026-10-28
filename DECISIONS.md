@@ -364,7 +364,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Delivered results, not an agent board** `[D-UI-AGENT-CARDS]`. Owner: "Да с сабагентами +".
   Source: the `18-16-12` session file named above, USER entry `96231cbd`, line 243. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default).
   Agent custom results show compact cards: ID, outcome, available actual
-  model/effort/duration, then the first nonempty answer line. Missing metadata stays omitted. Reviewer profiles
+  model/effort/duration, then the tail of the answer: its last 400 characters as plain text on one line, no Markdown parsing,
+  cut at the front with `…`, rows cached per card and width. Owner: «Вообще не надо отрисовывать. Что там агент пишет? Мне вообще поебать, что там написано. [...] Эти карточки, которые ты отрисовываешь, во-первых, должны занимать ноль CPU. И для их отрисовки тебе не надо весь текст, тебе надо только конец текста. Последние символы текста должны быть. Ты должен всё сделать супер просто, супер оптимально, супер легко.» Missing metadata stays omitted. Reviewer profiles
   use these same ordinary `agent#N` cards; there is no separate review delivery or review card.
   Delivered wait results: with both agent-ui and tool-ui loaded, the collapsed result is tool-ui's (summary part
   `Waited for N agents`, live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards, each with
