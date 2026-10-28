@@ -1183,8 +1183,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   restored session. Coordinator text (owner quote C:3113, an omp session, not found in the Pi sessions): "И базовая модель всегда при запуске — это Opus-Medium. Это от провайдера не зависит". CLI precedence and resumed-session
   preservation are coordinator choices (C:3123, C:3274). Since: `071df1e`.
 - **Harness effort lists** `[D-MODELS-EFFORT]`. `FAMILY_LEVELS` intersected with Pi's `getSupportedThinkingLevels`:
-  Opus low, medium, high; Sonnet low, medium, high, xhigh; GPT-6.1 Sol, GPT-6 Sol, both Luna models and Haiku low,
-  medium, high, xhigh, max. No minimal, no off. A model switch keeps the previous effort if allowed, else the nearest
+  Opus, Sonnet, GPT-6.1 Sol, GPT-6 Sol, both Luna models and Haiku low,
+  medium, high, xhigh, max (Opus xhigh/max and Sonnet max added later at the owner's request: «на Sonnet добавь Max тоже»). No minimal, no off. A model switch keeps the previous effort if allowed, else the nearest
   lower or the lowest; explicit off/minimal moves to the lowest allowed level on the next extension-driven selection. An
   unlisted model (current only while no listed model is authenticated) keeps Pi-supported levels minus off and minimal.
   Owner: «Нет, ты не понял: уровни effort будут не те, что в стоковом выборе Pi, а те, что в нашем MyOMPHarness были. Там они были перенастроены кастомно. Допустим, у Opus были low, medium, high, у Sonnet были low, medium, high, extra high. Такие же должны быть, только без no reasoning.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 134)

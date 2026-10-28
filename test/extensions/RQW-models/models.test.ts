@@ -47,15 +47,16 @@ describe("RQW-models public selection", () => {
 		const unknown = model("other");
 		assert.deepEqual(pickerModels([unknown, sonnet, opus]), [opus, sonnet]);
 		assert.equal(familyOf(model("us.anthropic.claude-opus-5-5-v1:0", "bedrock")), FAMILIES.indexOf("claude-opus-5-5"));
-		assert.deepEqual(levelsFor(opus), ["low", "medium", "high"]);
+		assert.deepEqual(levelsFor(opus), ["low", "medium", "high", "xhigh", "max"]);
+		assert.deepEqual(levelsFor(sonnet), ["low", "medium", "high", "xhigh", "max"]);
 		const spec: PickerSpec = {
 			models: [opus, sonnet], family: (m) => familyOf(m),
 			rank: (level) => ["off", "minimal", "low", "medium", "high", "xhigh", "max"].indexOf(level),
 			levels: levelsFor, nearest: (m, effort) => levelsFor(m).filter((level) => spec.rank(level) <= spec.rank(effort)).at(-1) ?? levelsFor(m)[0],
 		};
-		assert.deepEqual(stepDraft(spec, { model: opus, effort: "max" }, "down"), { model: sonnet, effort: "xhigh" });
+		assert.deepEqual(stepDraft(spec, { model: opus, effort: "max" }, "down"), { model: sonnet, effort: "max" });
 		assert.deepEqual(stepDraft(spec, { model: opus, effort: "high" }, "up"), { model: opus, effort: "high" });
-		assert.equal(stepDraft(spec, { model: opus, effort: "high" }, "right").effort, "high");
+		assert.equal(stepDraft(spec, { model: opus, effort: "max" }, "right").effort, "max");
 	});
 
 	it("renders efforts inline after the selected model, without labels or marker", () => {
@@ -125,7 +126,7 @@ describe("RQW-models public selection", () => {
 				custom(factory: any) {
 					let component: any;
 					const result = new Promise((resolve) => { component = factory({ requestRender() {} }, { fg: (_: string, text: string) => text, bold: (text: string) => text }, {}, resolve); });
-					assert.ok(component.render(44).includes("› claude-sonnet-5-5 low medium high xhigh"));
+					assert.ok(component.render(60).includes("› claude-sonnet-5-5 low medium high xhigh max"));
 					component.handleInput("\u001b[C");
 					component.handleInput(cancel ? "\u001b" : "\r");
 					return result;
