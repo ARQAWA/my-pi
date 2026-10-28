@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>отчёт</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#141414;color:#e6e6e6;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:21px;line-height:1.6;padding:1.5rem 1rem 4rem}
+main{max-width:46rem;margin:0 auto}
+h1{font-size:1.7rem;color:#c9a227;margin:.2rem 0 .6rem;line-height:1.3}
+h2{font-size:1.3rem;color:#b97cff;margin:2rem 0 .5rem}
+p{margin:.5rem 0}
+.muted{color:#8d8d8c}
+.total{font-size:1.3rem;margin:.6rem 0}
+.total b{color:#00ff88}
+.legend span{margin-right:1rem;white-space:nowrap}
+details{margin:.45rem 0}
+summary{cursor:pointer;padding:.4rem .6rem;border-radius:6px;background:#1b1b1b}
+summary:hover,summary:focus-visible{background:#262626;outline:none}
+.body{padding:.1rem 0 .1rem 1rem;border-left:2px solid #333;margin:.3rem 0 .3rem .5rem}
+.chunk>summary{font-size:1.1rem;font-weight:600;color:#c9a227;background:#1e1e1e}
+.lv2>summary,.lv3>summary,.lv4>summary{color:#e6e6e6}
+.lv3>summary,.lv4>summary{font-size:.95rem}
+.sp{color:#8d8d8c;font-weight:400}
+.st{font-weight:700;margin-left:.3rem}
+.st-w{color:#c9a227}
+.st-ok{color:#6fc3df}
+.st-done{color:#00ff88}
+.st-q{color:#b97cff}
+.st-d{color:#8d8d8c}
+.q>summary{color:#b97cff;background:#181420}
+.q ul{margin:.3rem 0;padding-left:1.2rem}
+.q li{margin:.5rem 0}
+.rec{color:#00ff88}
+.alt{color:#8d8d8c}
+.none{color:#8d8d8c}
+a{color:#b97cff}
+</style></head>
+<body><main>
+<p><strong>главный итог отчёта.</strong></p>
+<p class="total">всего: <b>2 sp</b></p>
+<details class="lv1 chunk"><summary>часть плана <span class="sp">2 sp</span> <span class="st st-ok">согласовано</span>.</summary><div class="body">
+<p>здесь объяснение части плана.</p>
+<details class="lv2"><summary>задача <span class="sp">2 sp</span> <span class="st st-ok">согласовано</span>.</summary><div class="body">
+<p>здесь объяснение задачи.</p>
+<details class="lv3"><summary>подзадача <span class="sp">2 sp</span> <span class="st st-ok">согласовано</span>.</summary><div class="body">
+<p>здесь объяснение подзадачи.</p>
+</div></details>
+</div></details>
+</div></details>
+</main></body></html>
