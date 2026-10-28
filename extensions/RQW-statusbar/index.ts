@@ -8,7 +8,7 @@ import { actionPhrase, CountsWatch, statusText } from "./activity.ts";
 import { QuotaConsumer } from "./quota.ts";
 import { type BorderSource, ContextEditor } from "./editor.ts";
 import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
-import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar, activityRows } from "./render.ts";
+import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar, modelRow, activityRows } from "./render.ts";
 
 const GIT_POLL_MS = 10_000;
 /** Thirty nominal redraws per second; travel follows elapsed time independently of this timer. */
@@ -60,7 +60,9 @@ export default function statusbar(pi: ExtensionAPI) {
 	let active = false;
 	let redraw: (() => void) | undefined;
 	let refresh: (() => void) | undefined;
+	let resample: (() => void) | undefined;
 	let dispose: (() => void) | undefined;
+	let installRevision = 0;
 	const rate = new RateMeter();
 	let working = false;
 	let unsubscribeFast: (() => void) | undefined;
@@ -80,17 +82,20 @@ export default function statusbar(pi: ExtensionAPI) {
 		pi.events.emit(FAST_GPT_QUERY, query);
 		return query.fastGpt === true;
 	};
-	const chromeNow = (): ActivityChrome | undefined => {
-		const status = statusText({ compacting, running, action: [...tools.values()].at(-1), counts: jobs.get() });
-		return status && { text: status.text, compacting: status.compacting, frame: (now() - animationStart) / STATUS_FRAME_MS };
-	};
-	const fastState = (ctx: ExtensionContext): BarState["fast"] =>
-		lit(ctx) ? { frame: working ? Math.floor((now() - animationStart) / FAST_STEP_MS) : undefined } : undefined;
+	let status: ReturnType<typeof statusText>;
+	let lightning = false;
+	/** The phase moves in shimmer ticks, the pace of the redraw timer, so renders within one tick are identical. */
+	const chromeNow = (): ActivityChrome | undefined =>
+		status && { text: status.text, compacting: status.compacting, frame: Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS };
+	const fastState = (): BarState["fast"] =>
+		lightning ? { frame: working ? Math.floor((now() - animationStart) / FAST_STEP_MS) : undefined } : undefined;
 	const stopShimmer = () => { if (shimmer) clearInterval(shimmer); shimmer = undefined; };
 	/** The shimmer timer only asks for redraws while the status letters or the working lightning need it and the footer is up;
 	 * re-checked on every tick. The phase comes from the elapsed time at render, so Pi's other redraws show it too. */
-	const wantsShimmer = () => active && (chromeNow() !== undefined || (working && lit(lightCtx)));
+	const wantsShimmer = () => active && (status !== undefined || (working && lightning));
 	const syncShimmer = () => {
+		status = statusText({ compacting, running, action: [...tools.values()].at(-1), counts: jobs.get() });
+		lightning = lit(lightCtx);
 		syncSpinner();
 		if (!wantsShimmer()) return stopShimmer();
 		if (shimmer) return;
@@ -124,10 +129,12 @@ export default function statusbar(pi: ExtensionAPI) {
 
 	/** Drops what this extension holds for the session: the GPT Fast subscription, the counts, timers, footer and border source. */
 	function release(): void {
+		installRevision++;
 		showNativeSpinner();
 		unsubscribeFast?.();
 		unsubscribeFast = undefined;
 		dispose?.();
+		resample = undefined;
 		jobs.stop();
 		stopShimmer();
 		border = undefined;
@@ -145,29 +152,54 @@ export default function statusbar(pi: ExtensionAPI) {
 	}
 
 	/** Pi supplies one leading spacer. The active widget adds the status and one trailing empty line, idle adds nothing. */
+	const activityWidget = () => {
+		let last: { width: number; chrome: ActivityChrome; rows: string[] } | undefined;
+		return {
+			render(width: number): string[] {
+				const chrome = chromeNow();
+				if (!chrome) return [];
+				if (!last || last.width !== width || last.chrome.text !== chrome.text || last.chrome.compacting !== chrome.compacting || last.chrome.frame !== chrome.frame)
+					last = { width, chrome, rows: activityRows(width, chrome) };
+				return last.rows;
+			},
+			invalidate() {},
+		};
+	};
 	const setActivity = (ctx: ExtensionContext, show: boolean): void => {
 		try {
-			ctx.ui.setWidget(ACTIVITY_KEY, show ? () => ({ render: (width: number) => activityRows(width, chromeNow()), invalidate() {} }) : undefined,
+			ctx.ui.setWidget(ACTIVITY_KEY, show ? activityWidget : undefined,
 				show ? { placement: "aboveEditor" } : undefined);
 		} catch {
 			// A widget error must not prevent the footer/editor install or stock restore.
 		}
 	};
 
-	function install(ctx: ExtensionContext): void {
+	async function install(ctx: ExtensionContext): Promise<void> {
 		release();
 		if (ctx.mode !== "tui" || !enabled) return;
+		const revision = installRevision;
+		let initialCwd = ctx.cwd;
+		let initialRepo = await findRepo(initialCwd);
+		while (revision === installRevision && initialCwd !== ctx.cwd) {
+			initialCwd = ctx.cwd;
+			initialRepo = await findRepo(initialCwd);
+		}
+		if (revision !== installRevision) return;
 		lightCtx = ctx;
 		unsubscribeFast = pi.events.on(FAST_GPT_CHANGED, () => { syncShimmer(); redraw?.(); });
 		jobs.start();
 		setActivity(ctx, true);
+		// Pi has no event for settings changes and hands out a full copy on every read: sample the compaction settings
+		// here and again at the turn and model events instead of on every frame.
+		let compaction = pi.getSettings().compaction;
+		resample = () => { compaction = pi.getSettings().compaction; };
 		let cacheKey: unknown[] = [];
 		let cached: Pick<BarState, "context" | "compactions"> = { compactions: 0 };
 		const contextState = (): Pick<BarState, "context" | "compactions"> => {
 			const model = ctx.model;
 			const manager = ctx.sessionManager as SessionManager;
 			const key = [manager, manager.getSessionId(), manager.getLeafId(), manager.getEntryCount(),
-				model, model?.contextWindow, JSON.stringify(pi.getSettings().compaction)];
+				model, model?.contextWindow, compaction?.enabled, compaction?.reserveTokens, compaction?.keepRecentTokens];
 			if (key.length !== cacheKey.length || key.some((value, i) => value !== cacheKey[i])) {
 				const usage = ctx.getContextUsage();
 				cached = {
@@ -179,14 +211,19 @@ export default function statusbar(pi: ExtensionAPI) {
 			return cached;
 		};
 		// The ID is read on every render; /new, resume, fork and /reload also reinstall through session_start.
+		let borderTheme = ctx.ui.theme;
+		let borderPaint = themePaint(borderTheme);
 		border = { context: () => contextState().context, sessionId: () => ctx.sessionManager.getSessionId(),
-			sessionName: () => sessionName, paint: () => themePaint(ctx.ui.theme), activity: () => chromeNow() };
+			sessionName: () => sessionName, paint: () => {
+				if (borderTheme !== ctx.ui.theme) { borderTheme = ctx.ui.theme; borderPaint = themePaint(borderTheme); }
+				return borderPaint;
+			}, activity: () => chromeNow() };
 		// Another extension's editor is kept; the context row then stays in the footer.
 		if (ctx.ui.getEditorComponent() === undefined) ctx.ui.setEditorComponent(editorFactory);
 		ctx.ui.setFooter((tui, theme, footer) => {
 			let disposed = false;
-			let cwd: string | undefined;
-			let repo: RepoInfo | undefined;
+			let cwd: string | undefined = initialCwd;
+			let repo: RepoInfo | undefined = initialRepo;
 			let counts: GitCounts | undefined;
 			let branch: string | null = null;
 			let busy = false;
@@ -205,7 +242,7 @@ export default function statusbar(pi: ExtensionAPI) {
 					do {
 						again = false;
 						const targetCwd = ctx.cwd;
-						const target = findRepo(targetCwd);
+						const target = await findRepo(targetCwd);
 						const [nextCounts, nextBranch] = target
 							? await Promise.all([gitCounts(target.root), gitBranch(target.root)])
 							: [undefined, null] as const;
@@ -225,6 +262,11 @@ export default function statusbar(pi: ExtensionAPI) {
 			poll.unref?.();
 			refresh();
 			const quotas = new QuotaConsumer(pi.events, ctx.sessionManager.getSessionId(), () => tui.requestRender());
+			let lastKey: unknown[] = [];
+			let lastStatuses = new Map<string, string>();
+			let cachedRows: string[] = [];
+			let cachedState: BarState | undefined;
+			let lastFastFrame: number | undefined;
 			quotas.start();
 			const cleanup = () => {
 				if (disposed) return;
@@ -245,24 +287,36 @@ export default function statusbar(pi: ExtensionAPI) {
 					if (disposed) return [];
 					if (cwd !== ctx.cwd) {
 						cwd = ctx.cwd;
-						repo = findRepo(cwd);
+						repo = undefined;
 						counts = undefined;
 						branch = null;
-						void refreshGit();
+						queueMicrotask(() => { void refreshGit(); });
 					}
-					const rows = renderBar({
-						quotas: quotas.values,
-						model: ctx.model,
-						thinkingLevel: pi.getThinkingLevel(),
-						...contextState(),
-						rate: rate.value(),
-						fast: fastState(ctx),
-						place: placeOf({ cwd: ctx.cwd, home: homedir(), scratchRoots: roots, worktree: repo?.worktree, branch }),
-						git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts },
-						statuses: [...footer.getExtensionStatuses().entries()]
-							.sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text),
-					}, width, paint);
-					return ctx.ui.getEditorComponent() === editorFactory ? rows.slice(1) : rows;
+					const context = contextState();
+					const fast = fastState();
+					const statuses = footer.getExtensionStatuses();
+					let statusChanged = statuses.size !== lastStatuses.size;
+					if (!statusChanged) for (const [name, text] of statuses) if (lastStatuses.get(name) !== text) { statusChanged = true; break; }
+					const key = [width, quotas.values.CX, quotas.values.KM, quotas.values.CC, ctx.model, pi.getThinkingLevel(), context, rate.value(), ctx.cwd,
+						repo?.root, repo?.worktree?.project, repo?.worktree?.name, counts?.staged, counts?.unstaged, counts?.untracked, branch, !!fast];
+					if (statusChanged || key.length !== lastKey.length || key.some((value, i) => value !== lastKey[i])) {
+						lastStatuses = new Map(statuses);
+						cachedState = {
+							quotas: { ...quotas.values }, model: ctx.model, thinkingLevel: pi.getThinkingLevel(), ...context,
+							rate: rate.value(), fast, place: placeOf({ cwd: ctx.cwd, home: homedir(), scratchRoots: roots, worktree: repo?.worktree, branch }),
+							git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts },
+							statuses: [...statuses].sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text),
+						};
+						cachedRows = renderBar(cachedState, width, paint);
+						lastKey = key;
+						lastFastFrame = fast?.frame;
+					} else if (cachedState && fast?.frame !== lastFastFrame) {
+						cachedState.fast = fast;
+						cachedRows = [...cachedRows];
+						cachedRows[1] = modelRow(cachedState, width, paint);
+						lastFastFrame = fast?.frame;
+					}
+					return ctx.ui.getEditorComponent() === editorFactory ? cachedRows.slice(1) : cachedRows;
 				},
 				invalidate() {},
 				dispose: cleanup,
@@ -282,7 +336,7 @@ export default function statusbar(pi: ExtensionAPI) {
 			enabled = value ? value === "on" : !enabled;
 			if (enabled) {
 				sample(ctx);
-				install(ctx);
+				await install(ctx);
 			} else {
 				release();
 				running = false;
@@ -296,10 +350,10 @@ export default function statusbar(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
 		if (ctx.mode !== "tui") return;
 		sample(ctx);
-		install(ctx);
+		await install(ctx);
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
 		release();
@@ -317,8 +371,8 @@ export default function statusbar(pi: ExtensionAPI) {
 		redraw?.();
 	});
 	pi.on("session_info_changed", (event) => { sessionName = event.name; redraw?.(); });
-	pi.on("model_select", () => { syncShimmer(); redraw?.(); });
-	pi.on("agent_start", () => { working = true; running = true; animationStart = now(); syncShimmer(); redraw?.(); });
+	pi.on("model_select", () => { resample?.(); syncShimmer(); redraw?.(); });
+	pi.on("agent_start", () => { resample?.(); working = true; running = true; animationStart = now(); syncShimmer(); redraw?.(); });
 	pi.on("agent_end", () => { working = false; syncShimmer(); redraw?.(); });
 	pi.on("agent_settled", () => { running = false; working = false; tools.clear(); syncShimmer(); redraw?.(); });
 	pi.on("tool_execution_start", (event) => {
@@ -334,7 +388,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	});
 	pi.on("session_before_compact", () => { compacting = true; syncShimmer(); redraw?.(); });
 	// Success, cancel, abort and error all end the compaction; a failure without a before-event ends it here too.
-	pi.on("session_compact", () => { compacting = false; syncShimmer(); redraw?.(); });
+	pi.on("session_compact", () => { compacting = false; resample?.(); syncShimmer(); redraw?.(); });
 	pi.on("session_compact_failed", () => { compacting = false; syncShimmer(); redraw?.(); });
 	pi.on("thinking_level_select", () => redraw?.());
 	pi.on("message_end", (event) => {

@@ -1,6 +1,6 @@
 // Git facts owned by the bar: repository discovery, branch and file counts.
 import { execFile } from "node:child_process";
-import { readFileSync, type Stats, statSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { type GitCounts, parsePorcelain } from "./render.ts";
 
@@ -12,30 +12,25 @@ export interface RepoInfo {
 }
 
 /** Walks up from cwd to the first `.git`; a `.git` file means a linked worktree (`gitdir:` plus `commondir`). */
-export function findRepo(cwd: string): RepoInfo | undefined {
+export async function findRepo(cwd: string): Promise<RepoInfo | undefined> {
 	let dir = resolve(cwd);
 	for (;;) {
 		const dotGit = join(dir, ".git");
-		let stat: Stats | undefined;
-		try {
-			stat = statSync(dotGit);
-		} catch {
-			stat = undefined;
-		}
-		if (stat?.isDirectory()) return { root: dir };
-		if (stat?.isFile()) return { root: dir, worktree: worktreeOf(dir, dotGit) };
+		const info = await stat(dotGit).catch(() => undefined);
+		if (info?.isDirectory()) return { root: dir };
+		if (info?.isFile()) return { root: dir, worktree: await worktreeOf(dir, dotGit) };
 		const parent = dirname(dir);
 		if (parent === dir) return undefined;
 		dir = parent;
 	}
 }
 
-function worktreeOf(root: string, dotGitFile: string): RepoInfo["worktree"] {
+async function worktreeOf(root: string, dotGitFile: string): Promise<RepoInfo["worktree"]> {
 	try {
-		const match = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGitFile, "utf8"));
+		const match = /^gitdir:\s*(.+)$/m.exec(await readFile(dotGitFile, "utf8"));
 		if (!match) return undefined;
 		const gitDir = resolve(root, match[1].trim());
-		const common = readFileSync(join(gitDir, "commondir"), "utf8").trim();
+		const common = (await readFile(join(gitDir, "commondir"), "utf8")).trim();
 		const commonDir = isAbsolute(common) ? common : resolve(gitDir, common);
 		// A submodule's `.git` file points into the parent's modules and has no commondir: not a worktree.
 		return { project: basename(dirname(commonDir)), name: basename(root) };

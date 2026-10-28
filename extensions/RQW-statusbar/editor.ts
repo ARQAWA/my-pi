@@ -16,6 +16,8 @@ export interface BorderSource {
 
 export class ContextEditor extends CustomEditor {
 	private readonly source: () => BorderSource | undefined;
+	private top?: { key: unknown[]; line: string };
+	private bottom?: { key: unknown[]; line: string };
 
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, source: () => BorderSource | undefined) {
 		// Keep Pi's status out of its separate row; our top border replaces the embedded indicator.
@@ -27,14 +29,24 @@ export class ContextEditor extends CustomEditor {
 	protected override renderTopBorder(width: number, hiddenLineCount: number): string {
 		const source = this.source();
 		if (!source) return super.renderTopBorder(width, hiddenLineCount);
-		return topBorder(width, source.sessionId(), source.activity?.(), hiddenLineCount, source.paint(), source.sessionName?.());
+		const id = source.sessionId();
+		const activity = source.activity?.();
+		const paint = source.paint();
+		const name = source.sessionName?.();
+		const key = [width, hiddenLineCount, id, name, paint, activity?.compacting, activity?.compacting ? activity.frame : undefined];
+		if (!this.top || key.some((value, i) => value !== this.top!.key[i])) this.top = { key, line: topBorder(width, id, activity, hiddenLineCount, paint, name) };
+		return this.top.line;
 	}
 
 	protected override renderBottomBorder(width: number, hiddenLineCount: number): string {
 		const source = this.source();
 		if (!source) return super.renderBottomBorder(width, hiddenLineCount);
 		const activity = source.activity?.();
-		return editorBorder(source.context(), hiddenLineCount, width, source.paint(), undefined,
-			activity?.compacting ? activity.frame : undefined);
+		const context = source.context();
+		const paint = source.paint();
+		const frame = activity?.compacting ? activity.frame : undefined;
+		const key = [width, hiddenLineCount, context?.tokens, context?.limit, paint, frame];
+		if (!this.bottom || key.some((value, i) => value !== this.bottom!.key[i])) this.bottom = { key, line: editorBorder(context, hiddenLineCount, width, paint, undefined, frame) };
+		return this.bottom.line;
 	}
 }

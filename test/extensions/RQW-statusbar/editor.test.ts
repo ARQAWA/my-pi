@@ -28,6 +28,16 @@ it("renders owned borders without Pi's native working row", () => {
 	assert.equal(rows.some((row) => row.includes("Working")), false);
 });
 
+it("updates the cached border when context changes", () => {
+	let tokens = 1000;
+	const dynamic: BorderSource = { context: () => ({ tokens, limit: 10000 }), sessionId: () => id, paint: () => plain };
+	const e = new ContextEditor({ requestRender() {}, terminal: { rows: 40 } } as never,
+		{ borderColor: (text: string) => text, selectList: {} } as never, { matches: () => false } as never, () => dynamic);
+	assert.match(strip(e.render(48).at(-1)!), /10%/);
+	tokens = 2000;
+	assert.match(strip(e.render(48).at(-1)!), /20%/);
+});
+
 it("restores Pi's native indicator without a border source", () => {
 	assert.match(strip(editor(false, true).render(48)[0]), /Working/);
 });

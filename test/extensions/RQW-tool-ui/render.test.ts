@@ -5,7 +5,7 @@ import { classifyChange } from "../../../extensions/RQW-tool-ui/changes.ts";
 import { classify } from "../../../extensions/RQW-tool-ui/classify.ts";
 import { buildGroups } from "../../../extensions/RQW-tool-ui/groups.ts";
 import { renderLive } from "../../../extensions/RQW-tool-ui/live.ts";
-import { collapsedRows } from "../../../extensions/RQW-tool-ui/render.ts";
+import { collapsedRows, ToolUi } from "../../../extensions/RQW-tool-ui/render.ts";
 import { renderSummary } from "../../../extensions/RQW-tool-ui/summary.ts";
 
 const theme = { fg: (_role: string, text: string) => text, bg: (_role: string, text: string) => text } as Theme;
@@ -79,6 +79,56 @@ it("groups calls between answers and folds the live card", () => {
 		["Read 1 file", "read a.ts", "out", "✓ 1.0s"]);
 	const answered = buildGroups(entries(assistant([call("r")]), result("r"), assistant([{ type: "text", text: "Done" }], "stop"))).get("r")!;
 	assert.deepEqual(collapsedRows(answered, 80, theme, "/w"), ["Read 1 file"]);
+});
+
+it("shows a tool update after a cached frame", () => {
+	const ui = new ToolUi();
+	ui.start({ buildContextEntries: () => [], getCwd: () => "/w" } as never);
+	ui.messageStart(assistant([call("b", "bash", { command: "echo" })]));
+	ui.toolStart({ toolCallId: "b", toolName: "bash", args: { command: "echo" } });
+	const renderer = ui.resolve("bash", () => undefined);
+	const context = { state: {}, toolCallId: "b", outputPad: 0, invalidate() {}, expanded: false } as never;
+	const row = renderer.renderCall!({ command: "echo" } as never, theme, context);
+	row.render(80);
+	ui.toolUpdate({ toolCallId: "b", partialResult: ok("new output") });
+	assert.ok(row.render(80).some((line) => line.includes("new output")));
+	ui.shutdown();
+});
+
+it("keeps earlier groups and updates the open one after entries are saved", () => {
+	const saved = entries(assistant([call("r")]), result("r"), assistant([{ type: "text", text: "Done" }], "stop"));
+	let log = saved;
+	const ui = new ToolUi();
+	ui.start({ buildContextEntries: () => log, getCwd: () => "/w" } as never);
+	const draw = (name: string, id: string, args: object, expanded = false) => {
+		const context = { state: {}, toolCallId: id, outputPad: 0, invalidate() {}, expanded } as never;
+		return ui.resolve(name, () => undefined).renderCall!(args as never, theme, context);
+	};
+	const first = draw("read", "r", { path: "a.ts" });
+	const bash = { command: "echo" };
+	const message = { ...assistant([call("b", "bash", bash)]), timestamp: 3 };
+	ui.messageStart(message);
+	ui.toolStart({ toolCallId: "b", toolName: "bash", args: bash });
+	const second = draw("bash", "b", bash);
+	assert.deepEqual(first.render(80).map((row) => row.trim()), ["Read 1 file"]);
+	assert.ok(second.render(80).some((row) => row.includes("echo")));
+	// The call is saved while it runs; its update still shows, and the earlier group stays as it was.
+	log = [...saved, ...entries(message).map((e, i) => ({ ...e, id: `s${i}`, parentId: "e2" }))] as SessionEntry[];
+	ui.messageEnd(message);
+	ui.toolUpdate({ toolCallId: "b", partialResult: ok("new output") });
+	assert.ok(second.render(80).some((row) => row.includes("new output")));
+	assert.deepEqual(first.render(80).map((row) => row.trim()), ["Read 1 file"]);
+	// The result is saved and the answer ends the run: the group folds to its summary.
+	const done = result("b", "bash", { timestamp: 4 });
+	const answer = { ...assistant([{ type: "text", text: "Ok" }], "stop"), timestamp: 5 };
+	log = [...log, ...entries(done, answer).map((e, i) => ({ ...e, id: `t${i}`, parentId: "s0" }))] as SessionEntry[];
+	ui.toolEnd({ toolCallId: "b", result: ok("out") });
+	ui.messageEnd(done);
+	ui.messageEnd(answer);
+	ui.agentEnd();
+	assert.deepEqual(second.render(80).map((row) => row.trim()), ["Ran 1 command"]);
+	assert.deepEqual(first.render(80).map((row) => row.trim()), ["Read 1 file"]);
+	ui.shutdown();
 });
 
 it("renders an aborted call without inventing a result", () => {
