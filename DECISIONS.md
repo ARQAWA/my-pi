@@ -1086,9 +1086,15 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Enter commits once; Esc closes with no setters or restoration. A draft model switch clamps effort to the nearest lower
   allowed level or the lowest. Dialog and key-repeat guards prevent stacked dialogs; session replacement, reload or
   shutdown cancels the draft. No settings, dependencies, request fences or aborts are added. Appearance: a compact
-  vertical model wheel and one horizontal row of all available efforts. Up/Down move models; Left/Right move effort.
-  Muted neighbours, visible OK/Enter/Esc hints, supplied theme roles and thinking-level tokens stay.
-  The longest effort row needs 31 columns; a narrower width gets an explicit required-column message, not hidden levels.
+  vertical model wheel; the efforts of the selected model follow its name on the same row (inactive dim, active bold in
+  its thinking-level colour, no marker, no Model/Effort labels). Up/Down move models; Left/Right move effort.
+  Muted neighbours, the selected model bold in the status bar's `text` colour, visible OK/Enter/Esc hints and supplied
+  theme roles stay. The longest row needs 36 columns (4-column name); a narrower width gets an explicit
+  required-column message, not hidden levels.
+  Owner, inline efforts and brighter text (2026-10-28): «Effort идут прямо после модели через пробел ... неактивные Effort — едва заметным серым цветом, а активные Effort подсвечиваются жирным и того цвета, который по нашей палитре. Там не должно быть никакой стрелочки-указателя Effort.»
+  and «надо всю цветовую палитру ... именно цвета серебристые, надо всю поднять на несколько тонов ... Задний фон графитовый, это всё мы оставляем, а именно цвет шрифта, надо поднять его тональность».
+  Theme text tones raised by about +0x20: `steel` 5f5e5c to 7f7e7c, `smoke` 8d8d8c to adadac, `silver` b6b6b5 to d6d6d5,
+  `chalk` d6d6dd to e6e6ec, `thinkingMinimal` 4a4846 to 6a6866.
   Owner: «менюшка моделей была вертикальная, а менюшка effort была горизонтальная» and
   «все effort были в ряд, и когда я влево, вправо нажимаю, чтобы он переключал effort». Model labels use the statusbar rule: name or ID without `Claude `,
   preserving provider/model identity. Owner: «Как в status bar написана модель, так же она должна быть и в picker написана.»

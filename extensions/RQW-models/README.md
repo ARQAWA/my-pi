@@ -31,10 +31,12 @@ clamps to the nearest lower allowed effort, or the lowest. Only authenticated li
 
 Model labels match the statusbar: model name or ID, without the `Claude ` prefix. Selection keeps the provider and ID.
 
-The compact terminal chooser shows nearby models vertically and all available efforts in one horizontal row.
-Up/Down move models; Left/Right move effort. Muted neighbours, supplied Pi theme roles and thinking-level colors stay.
-The longest supported effort row needs 31 columns, including its selection marker. Below that row's required width,
-the chooser reports `Effort needs N columns` instead of wrapping or hiding levels. The target VDI width is not yet verified.
+The compact terminal chooser has the title, one empty line and a five-row model wheel with a fixed `›` marker.
+The selected model is bold in the status bar's model colour; neighbours are muted. The efforts of the selected model
+follow its name after one space: inactive ones dim, the active one bold in its thinking-level colour, no marker.
+Up/Down move models; Left/Right move effort. Below the width the selected row needs (the efforts plus a 4-column name,
+36 columns for the longest list), the chooser reports `Effort needs N columns` instead of hiding levels.
+The target VDI width is not yet verified.
 OK is confirmed with Enter; Esc closes the chooser.
 Opening, navigation and Esc call no model/thinking setters and send no requests. Nothing needs restoring on Esc:
 the session was never changed. An already-running turn continues on the live session, not the draft.
