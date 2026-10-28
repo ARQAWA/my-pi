@@ -1,4 +1,5 @@
 // Local width helpers for the cards. Only public pi-tui exports; nothing from outside this folder.
+import type { Component } from "@earendil-works/pi-tui";
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
@@ -23,11 +24,39 @@ export function padded(render: (width: number) => string[], pad: number): (width
 	};
 }
 
+/** A component that keeps the rows of the last width: a repeat frame of an unchanged card does no work. `invalidate` (theme change) drops them. */
+export function cached(render: (width: number) => string[]): Component {
+	let width = -1;
+	let rows: string[] = [];
+	return {
+		render(w) {
+			if (w !== width) {
+				rows = render(w);
+				width = w;
+			}
+			return rows;
+		},
+		invalidate() {
+			width = -1;
+		},
+	};
+}
+
 /** One styled line cut at the end with "…" so it never exceeds width. */
 export function fit(line: string, width: number): string {
 	if (width <= 0) return "";
 	if (visibleWidth(line) <= width) return line;
 	return truncateToWidth(line, width, "…");
+}
+
+/** Plain one-line text cut at the front with "…" to at most `width` cells, on whole graphemes. */
+export function fitTail(text: string, width: number): string {
+	if (visibleWidth(text) <= width) return text;
+	const parts = Array.from(segmenter.segment(text), (part) => part.segment);
+	let used = 1;
+	let start = parts.length;
+	while (start > 0 && used + visibleWidth(parts[start - 1]) <= width) used += visibleWidth(parts[--start]);
+	return `…${parts.slice(start).join("")}`;
 }
 
 /**

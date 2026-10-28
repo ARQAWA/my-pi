@@ -60,15 +60,17 @@ only: stored messages, tool results, their details and what the model sees are n
   `extensions/RQW-agent-ui/index.ts` from this package's extension resources, then run `/reload`. Include it again
   and `/reload` to enable it. There is no private toggle or settings write.
 
-## Layout and Markdown (`fit.ts`, `card.ts`)
+## Layout and cache (`fit.ts`, `card.ts`)
 
 The cards drawn as custom messages (`agent`, `child_wait` and legacy `review`) keep
 Pi's output padding: `padded` in `fit.ts` leaves `options.outputPad` cells free at both sides, so a header and its body line up
 with the text blocks around the card, collapsed and expanded, and the wrapping uses the narrower width. A width at or below
 the padding is drawn without it. Cards inside a tool result are already inside Pi's own box and are not padded again.
-The collapsed answer line is rendered by Pi's own `Markdown` component with the card's theme roles, so wrappers such as `**` and
-backticks become styling instead of showing as characters; other source characters stay, and the expanded card shows the
-original text unchanged.
+The collapsed answer line is plain text of the last 400 characters of the answer, on one line, cut at the front with `…`.
+No Markdown is parsed, so `**` and backticks show as written, and the rest of the answer is not read. Each card keeps its rows for
+the last width (`cached` in `fit.ts`), so a repeat frame of an unchanged card costs nothing; `invalidate` drops them.
+The expanded card shows the original text unchanged and is drawn only when the user expands it.
+Owner: «Вообще не надо отрисовывать. [...] для их отрисовки тебе не надо весь текст, тебе надо только конец текста.»
 
 ## The card (`card.ts`)
 
@@ -89,7 +91,7 @@ agent#3 finished · opus medium · 42s
   then ` · <model> <effort>` and ` · <seconds>` when `details` supplies them. Unknown or unusable parts are left out; no details at all gives just `agent#3`.
 - Model: `anthropic/claude-opus-5-5` shows as `opus`; any other `provider/id` shows as `id`. Seconds: `42s`, `12.3s`,
   `1m 05s`.
-- Below the header the first nonempty line of the answer, indented, cut at the end with `…`.
+- Below the header the tail of the answer: its last 400 characters as plain text on one line, indented, cut at the front with `…`.
 
 Expanded (Ctrl+O): the header, then the whole answer wrapped to the width (breaks after the last space that fits,
 else inside a word; empty lines kept). Nothing is dropped or added.

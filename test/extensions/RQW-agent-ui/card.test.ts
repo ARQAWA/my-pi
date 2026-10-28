@@ -17,9 +17,36 @@ it("renders collapsed and expanded agent answers", () => {
 		outcome: "finished", model: "anthropic/claude-opus-5-5", thinking: "medium", seconds: 42,
 	});
 	const collapsed = createAgentCard(input as never, { expanded: false, outputPad: 0 }, identity as never)!;
-	assert.deepEqual(collapsed.render(80), ["agent#3 finished · opus medium · 42s", "  First"]);
+	assert.deepEqual(collapsed.render(80), ["agent#3 finished · opus medium · 42s", "  First Second"]);
 	const expanded = createAgentCard(input as never, { expanded: true, outputPad: 0 }, identity as never)!;
 	assert.deepEqual(expanded.render(80), ["agent#3 finished · opus medium · 42s", "  First", "  Second"]);
+});
+
+const longAnswer = `# BEGINNING\n\n${"filler line of the middle\n".repeat(400)}\nthe **end** with \`code\` DONE`;
+
+it("shows only the plain tail of a long collapsed answer, cut to the width", () => {
+	const card = createAgentCard(message("agent", `[agent#7] ${longAnswer}`) as never, { expanded: false, outputPad: 0 }, identity as never)!;
+	const rows = card.render(40);
+	assert.equal(rows.length, 2);
+	// Plain text: the markdown wrappers stay as written, and the start of the answer is never read.
+	assert.equal(rows[1], "  …e middle the **end** with `code` DONE");
+	assert.equal(card.render(40), rows);
+});
+
+it("shows the plain tail in a collapsed child wait result", () => {
+	const details = { reason: "result", results: [{ id: "agent#7", outcome: "completed", text: longAnswer }] };
+	const card = createChildWaitCard(message("child_wait", JSON.stringify(details), details) as never,
+		{ expanded: false, outputPad: 0 }, identity as never)!;
+	const rows = card.render(40);
+	assert.equal(rows.length, 2);
+	assert.equal(rows[1], "  …e middle the **end** with `code` DONE");
+});
+
+it("cuts the collapsed tail on whole graphemes and cleans terminal sequences", () => {
+	const text = "start\u001b[31m red \u001b[0m 👨‍👩‍👧 e\u0301e\u0301e\u0301";
+	const card = createAgentCard(message("agent", `[agent#8] ${text}`) as never, { expanded: false, outputPad: 0 }, identity as never)!;
+	assert.equal(card.render(80)[1], "  start red 👨‍👩‍👧 e\u0301e\u0301e\u0301");
+	assert.equal(card.render(8)[1], "  … e\u0301e\u0301e\u0301");
 });
 
 it("renders review verdicts and counts real sections", () => {
@@ -38,7 +65,7 @@ it("renders child wait results and preserves expanded answers", () => {
 	const collapsed = createChildWaitCard(message("child_wait", JSON.stringify(details), details) as never,
 		{ expanded: false, outputPad: 0 }, identity as never)!;
 	assert.deepEqual(collapsed.render(80), [
-		"child_wait · 2 results · 1 failed", "  agent#3 finished", "    First", "  agent#4 failed", "    Failed",
+		"child_wait · 2 results · 1 failed", "  agent#3 finished", "    First Second", "  agent#4 failed", "    Failed",
 	]);
 	const expanded = createChildWaitCard(message("child_wait", JSON.stringify(details), details) as never,
 		{ expanded: true, outputPad: 0 }, identity as never)!;

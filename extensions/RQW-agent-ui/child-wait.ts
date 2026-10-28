@@ -4,7 +4,7 @@
 // its default view for them.
 import type { MessageRenderer } from "@earendil-works/pi-coding-agent";
 import { type CardTheme, cardLines, cardParts, messageText, type ParsedCard } from "./card.ts";
-import { fit, padded } from "./fit.ts";
+import { cached, fit, padded } from "./fit.ts";
 
 const TYPE = "child_wait";
 
@@ -53,5 +53,5 @@ export const createChildWaitCard: MessageRenderer = (message, options, theme) =>
 	if (message.customType !== TYPE) return undefined;
 	const cards = childWaitCards(message);
 	if (!cards) return undefined;
-	return { render: padded((width) => childWaitLines(cards, options.expanded, theme, width), options.outputPad), invalidate() {} };
+	return cached(padded((width) => childWaitLines(cards, options.expanded, theme, width), options.outputPad));
 };

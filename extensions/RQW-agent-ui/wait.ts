@@ -3,6 +3,7 @@
 import { keyHint, type ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { type Component, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
 import { type CardTheme, cardLines, cardParts, type ParsedCard } from "./card.ts";
+import { cached } from "./fit.ts";
 
 export const WAIT_TOOLS = ["agent"] as const;
 
@@ -66,7 +67,7 @@ export function waitResultRenderer(toolName: string, inner: ToolRenderers): Resu
 	return (result, options, theme, context) => {
 		if (!options.expanded && !options.isPartial && !context.isError) {
 			const cards = waitCards(toolName, context.args, result);
-			if (cards) return { render: (width) => cards.flatMap((card) => cardLines(card, false, theme, width)), invalidate() {} };
+			if (cards) return cached((width) => cards.flatMap((card) => cardLines(card, false, theme, width)));
 		}
 		return inner.renderResult ? inner.renderResult(result, options, theme, context) : stockResult(result, options.expanded, theme);
 	};
