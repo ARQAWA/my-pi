@@ -27,6 +27,7 @@ export const EFFORT_TOKEN: Record<string, ThemeColor> = {
 };
 const WINDOW = 2;
 const WIDE = 44;
+const MIN_NAME = 4;
 
 export const sameModel = (a: { provider: string; id: string } | undefined, b: { provider: string; id: string } | undefined) =>
 	!!a && !!b && a.provider === b.provider && a.id === b.id;
@@ -105,7 +106,7 @@ export class ModelEffortPicker implements Component {
 	render(width: number): string[] {
 		if (width <= 0) return [];
 		const theme = this.theme;
-		const lines: string[] = [theme.bold(theme.fg("accent", "Model / effort"))];
+		const lines: string[] = [theme.bold(theme.fg("accent", "Model / effort")), ""];
 		const models = this.spec.models;
 		const { model } = this.current;
 		// A fixed label is visual only: draft navigation and commit still see no reasoning level.
@@ -113,44 +114,48 @@ export class ModelEffortPicker implements Component {
 		const effort = fixedEffort ?? this.current.effort;
 		const index = model ? models.findIndex((candidate) => this.spec.family(candidate) === this.spec.family(model)) : -1;
 		const levels = fixedEffort ? [fixedEffort] : this.spec.levels(model);
-		const effortIndex = effort === undefined ? -1 : levels.indexOf(effort);
-		if (!models.length) lines.push(theme.fg("muted", "No authenticated RQW models"));
-		else {
-			lines.push(theme.fg("muted", "Model"));
-			const centre = index < 0 ? -1 : index;
-			for (let row = -WINDOW; row <= WINDOW; row++) {
-				const at = centre < 0 ? row + WINDOW : centre + row;
-				const left = models[at];
-				const leftCell = left
-					? this.cell(modelLabel(left), width, row === 0 && centre >= 0,
-						(text, selected) => selected ? theme.bold(theme.fg("accent", text)) : theme.fg("muted", text))
-					: "";
-				lines.push(leftCell);
-			}
-			if (index < 0 && model) lines.push(theme.fg("muted", `Current ${modelLabel(model)} is not in the RQW list`));
-		}
-		lines.push(theme.fg("muted", "Effort"));
-		const effortRow = levels.length ? levels.map((level, at) => at === effortIndex
-			? theme.fg("accent", "› ") + this.effortLabel(level, at, levels.length)
-			: theme.fg("muted", level)).join(" ") : theme.fg("muted", "none");
-		const requiredWidth = visibleWidth(effortRow);
-		if (requiredWidth > width) {
-			const message = `Effort needs ${requiredWidth} columns`;
+		const efforts = this.effortsText(levels, effort);
+		// The efforts share the selected row with the name; the name gives way, but never below MIN_NAME columns.
+		const effortsWidth = visibleWidth(efforts);
+		const required = effortsWidth ? 2 + MIN_NAME + 1 + effortsWidth : 0;
+		if (required > width) {
+			const message = `Effort needs ${required} columns`;
 			const constraint: string[] = [];
 			for (let at = 0; at < message.length; at += width) constraint.push(theme.fg("error", message.slice(at, at + width)));
 			return constraint;
 		}
-		lines.push(effortRow);
+		const withEfforts = (cell: string) => efforts ? `${cell} ${efforts}` : cell;
+		if (!models.length) lines.push(theme.fg("muted", "No authenticated RQW models"));
+		else {
+			const centre = index < 0 ? -1 : index;
+			for (let row = -WINDOW; row <= WINDOW; row++) {
+				const at = centre < 0 ? row + WINDOW : centre + row;
+				const left = models[at];
+				if (!left) { lines.push(""); continue; }
+				const selected = row === 0 && centre >= 0;
+				if (!selected) {
+					lines.push(this.cell(modelLabel(left), width, false, (text) => theme.fg("muted", text)));
+					continue;
+				}
+				// Selected model: bold, in the status bar's model colour (the `text` role).
+				const room = Math.max(MIN_NAME, width - 2 - (effortsWidth ? effortsWidth + 1 : 0));
+				const name = truncateToWidth(sanitize(modelLabel(left)), room, "…");
+				lines.push(withEfforts(`${theme.fg("accent", "› ")}${theme.bold(theme.fg("text", name))}`));
+			}
+			if (index < 0 && model) lines.push(withEfforts(theme.fg("muted", `Current ${modelLabel(model)} is not in the RQW list`)));
+		}
 		lines.push(width < WIDE
 			? theme.bold("Enter") + theme.fg("dim", " OK · ") + theme.bold("Esc") + theme.fg("dim", " cancel")
 			: theme.fg("dim", "↑↓ model · ←→ effort · ") + theme.bold("Enter") + theme.fg("dim", " OK · ") + theme.bold("Esc") + theme.fg("dim", " cancel"));
 		return lines.map((line) => truncateToWidth(line, width));
 	}
 
-	private effortLabel(effort: string | undefined, index: number, count: number): string {
-		if (!count || effort === undefined) return this.theme.fg("muted", "none");
-		const token = EFFORT_TOKEN[effort] ?? "muted";
-		return index < 0 || effort === "low" ? this.theme.fg(token, effort) : this.theme.bold(this.theme.fg(token, effort));
+	/** Inactive efforts dim, the active one bold in its thinking-level colour; no marker. */
+	private effortsText(levels: string[], active: string | undefined): string {
+		const theme = this.theme;
+		return levels.map((level) => level === active
+			? theme.bold(theme.fg(EFFORT_TOKEN[level] ?? "muted", level))
+			: theme.fg("dim", level)).join(" ");
 	}
 
 	private cell(text: string, width: number, selected: boolean, style: (text: string, selected: boolean) => string): string {

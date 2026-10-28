@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { stripVTControlCharacters } from "node:util";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import extension, { FAMILIES, familyOf, levelsFor, pickerModels } from "../../../extensions/RQW-models/index.ts";
@@ -57,28 +58,33 @@ describe("RQW-models public selection", () => {
 		assert.equal(stepDraft(spec, { model: opus, effort: "high" }, "right").effort, "high");
 	});
 
-	it("renders every effort horizontally and keeps models vertical before cancel", () => {
+	it("renders efforts inline after the selected model, without labels or marker", () => {
 		const models = [model("gpt-6.1-sol", "openai-codex"), model("claude-opus-5-5")];
 		const levels = ["off", "low", "medium", "high", "xhigh", "max"];
 		const spec: PickerSpec = { models, family: m => models.indexOf(m), rank: level => levels.indexOf(level),
 			levels: () => levels, nearest: (_, effort) => effort };
-		const theme = { fg: (_: string, text: string) => text, bold: (text: string) => text };
+		// Tagged theme: [role|text] and <b>text</b> make colour and bold visible in the rendered text.
+		const theme = { fg: (role: string, text: string) => `[${role}|${text}]`, bold: (text: string) => `<b>${text}</b>` };
 		let result: unknown = "open";
 		const picker = new ModelEffortPicker(spec, { model: models[0], effort: "high" }, theme as any, value => { result = value; });
-		for (const width of [31, 44, 100]) {
-			const lines = picker.render(width);
-			assert.ok(lines.includes("off low medium › high xhigh max"));
-			const modelRows = models.map(m => lines.findIndex(line => line.includes(m.name)));
-			assert.ok(modelRows[0] >= 0 && modelRows[1] > modelRows[0]);
+		// The tags count as columns, so the tagged render uses a wide terminal.
+		{
+			const lines = picker.render(300);
+			assert.equal(lines[1], "", "one empty line after the title");
+			assert.ok(!lines.some(line => /\|(Model|Effort)\]$/.test(line)), "no Model/Effort label lines");
+			const row = lines.find(line => line.includes("gpt-6.1-sol"));
+			assert.ok(row?.startsWith("[accent|› ]<b>[text|gpt-6.1-sol]</b> [dim|off] [dim|low] [dim|medium] <b>[thinkingHigh|high]</b> [dim|xhigh] [dim|max]"));
+			assert.equal(lines.filter(line => line.includes("[dim|off]")).length, 1, "efforts only on the selected row");
+			assert.ok(lines.find(line => line.includes("claude-opus-5-5"))?.startsWith("  [muted|claude-opus-5-5]"));
 		}
-		for (const width of [1, 10, 30]) {
-			const lines = picker.render(width);
-			assert.equal(lines.join(""), "Effort needs 31 columns");
-			assert.ok(lines.every(line => line.length <= width));
-		}
+		const plainTheme = { fg: (_: string, text: string) => text, bold: (text: string) => text };
+		const narrow = new ModelEffortPicker(spec, { model: models[0], effort: "high" }, plainTheme as any, () => {});
+		assert.ok(narrow.render(36).map(line => stripVTControlCharacters(line)).includes("› gpt… off low medium high xhigh max"));
+		for (const width of [1, 10, 35]) assert.equal(narrow.render(width).join(""), "Effort needs 36 columns");
 		picker.handleInput("\u001b[B");
 		picker.handleInput("\u001b[C");
-		assert.ok(picker.render(44).includes("off low medium high › xhigh max"));
+		const moved = picker.render(300).find(line => line.includes("claude-opus-5-5") && line.includes("[dim|off]"));
+		assert.ok(moved?.includes("[dim|high] <b>[thinkingXhigh|xhigh]</b> [dim|max]"));
 		picker.handleInput("\u001b");
 		assert.equal(result, undefined);
 	});
@@ -119,7 +125,7 @@ describe("RQW-models public selection", () => {
 				custom(factory: any) {
 					let component: any;
 					const result = new Promise((resolve) => { component = factory({ requestRender() {} }, { fg: (_: string, text: string) => text, bold: (text: string) => text }, {}, resolve); });
-					assert.ok(component.render(44).includes("low medium › high xhigh"));
+					assert.ok(component.render(44).includes("› claude-sonnet-5-5 low medium high xhigh"));
 					component.handleInput("\u001b[C");
 					component.handleInput(cancel ? "\u001b" : "\r");
 					return result;
