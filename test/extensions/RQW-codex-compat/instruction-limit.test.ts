@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { basename, dirname } from "node:path";
 import { it } from "node:test";
 import { fakePi, promptOf, run, world } from "./fixture.ts";
 
@@ -108,8 +109,8 @@ it("--no-skills (and -ns) offers no Codex skill root, but the rules still apply 
 	w.skill("codex/skills/a", "a");
 	const kept = w.skill("agent/extra/kept", "kept");
 	const dropped = w.skill("agent/extra/dropped", "dropped");
-	w.put("codex/config.toml", `[[skills.config]]\npath = "${dropped}"\nenabled = false\n`);
-	const loaded = [kept, dropped].map(filePath => ({ name: filePath.split("/").at(-2), description: "d", filePath, baseDir: "", sourceInfo: { scope: "user" }, disableModelInvocation: false }));
+	w.put("codex/config.toml", `[[skills.config]]\npath = ${JSON.stringify(dropped)}\nenabled = false\n`);
+	const loaded = [kept, dropped].map(filePath => ({ name: basename(dirname(filePath)), description: "d", filePath, baseDir: dirname(filePath), sourceInfo: { scope: "user" }, disableModelInvocation: false }));
 	const offered = async (argv: string[]) => (await fakePi({ env: w.env, argv }).fire("resources_discover", { cwd: w.cwd, reason: "startup" }) as { skillPaths?: string[] } | undefined)?.skillPaths;
 	assert.deepEqual(await offered([]), [w.path("codex/skills")]);
 	for (const flag of ["--no-skills", "-ns"]) {

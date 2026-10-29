@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { basename, dirname } from "node:path";
 import { it } from "node:test";
 import { fakePi, world } from "./fixture.ts";
 
@@ -17,12 +18,12 @@ it("the filter offered on rqw-skill-dollar:filter drops disabled and bundled-off
 	const on = w.skill("codex/skills/on", "on");
 	const off = w.skill("codex/skills/off", "off");
 	const sys = w.skill("codex/skills/.system/sys", "sys");
-	w.put("codex/config.toml", `[[skills.config]]\npath = "${off}"\nenabled = false\n`);
+	w.put("codex/config.toml", `[[skills.config]]\npath = ${JSON.stringify(off)}\nenabled = false\n`);
 	const pi = fakePi({ env: w.env });
 	await pi.fire("session_start", {}, { cwd: w.cwd });
 	let filter: ((skills: any[]) => any[]) | undefined;
 	pi.pi.events.emit("rqw-skill-dollar:filter", { offer(next: any) { filter = next; } });
-	const given = [on, off, sys].map(filePath => ({ name: filePath.split("/").at(-2), filePath, baseDir: filePath.replace(/\/SKILL\.md$/, "") }));
+	const given = [on, off, sys].map(filePath => ({ name: basename(dirname(filePath)), filePath, baseDir: dirname(filePath) }));
 	assert.deepEqual(filter!(given).map(skill => skill.name), ["on", "sys"]);
 	// A changed config file counts at the next call, without a new session start or prompt.
 	w.put("codex/config.toml", '[skills.bundled]\nenabled = false\n[[skills.config]]\nname = "on"\nenabled = false\n');

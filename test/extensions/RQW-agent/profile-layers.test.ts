@@ -6,7 +6,7 @@ import { runtime, world } from "./fixture.ts";
 
 const role = (name: string, description: string, extra = "") =>
 	`name = "${name}"\ndescription = "${description}"\ndeveloper_instructions = "${description} rules"\n${extra}`;
-const trust = (path: string, level: string) => `[projects."${path}"]\ntrust_level = "${level}"\n`;
+const trust = (path: string, level: string) => `[projects.${JSON.stringify(path)}]\ntrust_level = "${level}"\n`;
 
 /** The roles the `agent` tool offers, from the public tool description. */
 async function catalogue(w: Awaited<ReturnType<typeof world>>) {
@@ -129,7 +129,7 @@ test("Pi's .pi profiles keep their own project root; only .codex layers follow C
 	await w.put("project/pkg/.pi/agents/leaf-pi.toml", role("leaf-pi", "leaf pi"));
 	await w.put("project/.codex/agents/root-codex.toml", role("root-codex", "root codex"));
 	await w.put("project/pkg/.codex/agents/leaf-codex.toml", role("leaf-codex", "leaf codex"));
-	await w.put("codex/config.toml", `project_root_markers = []\n[projects."${w.project}"]\ntrust_level = "trusted"\n[projects."${w.cwd}"]\ntrust_level = "trusted"\n`);
+	await w.put("codex/config.toml", `project_root_markers = []\n[projects.${JSON.stringify(w.project)}]\ntrust_level = "trusted"\n[projects.${JSON.stringify(w.cwd)}]\ntrust_level = "trusted"\n`);
 	const roles = await catalogue(w);
 	// Empty markers leave only cwd for Codex layers, while the Pi folders still reach the Git root.
 	assert.equal(roles("root-codex"), undefined);
