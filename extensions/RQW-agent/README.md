@@ -447,7 +447,7 @@ any necessary follow-up actions in response to the subagent completion above. If
 action is required. Don't repeat the same confirmation every time." It follows a blank line after the result text in the
 pushed `[agent#N]` message content, in each `results[].text` of a `wait` result and in each `results[].text` of a
 completed `child_wait` notification. A `waiting` receipt, an already-delivered receipt, the timeout `child_wait` and
-`agent_progress` notices carry none. The result cards do not change: the collapsed card previews the first answer block.
+`agent_progress` notices carry none. The result cards hide this follow-up paragraph, so a collapsed card shows the real end of the answer.
 
 An external print/json host uses one caller-wide non-consuming fallback wait at `agent_end`, not serial waits per child.
 It is bounded by the omitted default `timeout_ms` (300000); completion follows normal message continuation, and a timeout

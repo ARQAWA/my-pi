@@ -84,6 +84,16 @@ export function formatSeconds(seconds: unknown): string | undefined {
 const oneLine = (text: unknown): string | undefined =>
 	typeof text === "string" ? clean(text).replace(/\s+/g, " ").trim() || undefined : undefined;
 
+/** Local copy of RQW-agent's completion follow-up sentence; cards hide it, the stored message keeps it. */
+const FOLLOW_UP = "Perform any necessary follow-up actions in response to the subagent completion above. If no follow-up work is needed, no further action is required. Don't repeat the same confirmation every time.";
+
+/** Drops the trailing follow-up paragraph and the blank line before it, when present. */
+function withoutFollowUp(body: string): string {
+	if (!body.endsWith(FOLLOW_UP)) return body;
+	const head = body.slice(0, -FOLLOW_UP.length);
+	return head.endsWith("\n\n") ? head.slice(0, -2) : head;
+}
+
 /** The card parts from an id (prefix or item id), display details (any shape, none required), body and a last-resort id. Never mutates. */
 export function cardParts(id: unknown, details: unknown, body: string, fallbackId: string): ParsedCard {
 	const raw = details && typeof details === "object" ? (details as Record<string, unknown>) : {};
@@ -94,7 +104,7 @@ export function cardParts(id: unknown, details: unknown, body: string, fallbackI
 		thinking: oneLine(raw.thinking),
 		seconds: formatSeconds(raw.seconds),
 		title: oneLine(raw.title),
-		body,
+		body: withoutFollowUp(body),
 	};
 }
 
