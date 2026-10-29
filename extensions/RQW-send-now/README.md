@@ -19,7 +19,7 @@ Force-send queued steering with Enter, the oh-my-pi gesture. Decision and owner 
 
 ## How
 
-Public Pi API only, no custom editor (RQW-statusbar owns that slot):
+No custom editor (RQW-statusbar owns that slot). A version-checked Pi 1.4.0 runtime hook captures the owning session by its session manager, using weak references. The hook restores its predecessor on shutdown when it is still on top; other wrappers remain intact. An incompatible hook or queue disables the gesture and leaves Enter to Pi. Check this hook on every Pi update, including Windows PCLI:
 
 1. `ctx.ui.onTerminalInput` sees the Enter before the editor. It acts when the editor text is empty, the agent is
    not idle, steering is queued and the input editor has focus (the TUI comes from a widget factory, removed at once).
@@ -28,14 +28,10 @@ Public Pi API only, no custom editor (RQW-statusbar owns that slot):
 3. When the session is idle, `pi.sendUserMessage(text)` sends it. Pi already expanded templates and skills when it
    queued the text, so they are not expanded again.
 
-Pi tells extensions only whether anything is queued, so steering is counted from `input` events with
-`streamingBehavior: "steer"`, minus the queued user messages Pi delivers (Pi delivers steering before follow-ups).
-A run's own starting prompt, the first user message after `before_agent_start`, is not counted as a delivery.
-The count resets when the queue is empty and no steering input is on its way. Pi awaits input handlers and then
-queues within the same chain of microtasks, so an input counts as on its way until the next event-loop turn; a
-batch of keys (text, Enter, Enter in one terminal chunk) arrives synchronously within that window. After Pi's
-dequeue key the queue is empty with nothing on its way, so the count resets. A message still on its way lands in
-Pi's queue after the abort; before sending, and when the session ends first, the extension takes anything left in
+The real steering queue decides the gesture after the provisional input period. While a steering input is still
+being submitted, its provisional count also permits the gesture, preserving two Enter keys in one terminal batch.
+A swallowed input can still trigger it during that brief period. A message still on its way lands in Pi's queue
+after the abort; before sending, and when the session ends first, the extension takes anything left in
 the queue through Pi's restore, keeping what the user typed meanwhile, and sends or restores it with the rest.
 
 Closer to oh-my-pi: Pi drops an aborted reply from later requests (pi-ai `transform-messages`), so the model would
@@ -55,10 +51,8 @@ replies, for example after Escape, stay dropped as in stock Pi.
 - Pi's queue restore is text only. Steering typed in the TUI is text (pasted images are file paths, kept);
   images an extension attached to steering via `sendUserMessage` are dropped, as with Escape. Custom messages an
   extension queued into Pi's agent queue are cleared by the abort, as with Escape.
-- If another extension's `input` handler swallows a steering message while other messages are queued, the count
-  stays above zero until the queue empties; queued follow-ups alone could then be force-sent. An `input` handler
-  that waits past an event-loop turn delays Pi's queueing; an empty Enter in that window treats the queue as
-  having no steering, as stock Pi would.
+- A steering input swallowed during the provisional period can still trigger a force-send. A delayed input is
+  not available to send until Pi queues it. Pi's separate compaction queue is not visible to this gesture.
 - The text, including steering that landed in Pi's queue after the abort, goes back to the editor with a warning
   when no model is selected or the session ends (`/reload`, `/new`, `/resume`, quit) before the interrupted run
   settles. A send Pi itself rejects later shows Pi's error.
@@ -70,4 +64,4 @@ Like every RQW extension: `-extensions/RQW-send-now/index.ts` in the package ent
 
 ## Tests
 
-`test/extensions/RQW-send-now/send-now.test.ts`.
+`test/extensions/RQW-send-now/send-now.test.ts` and `test/extensions/RQW-send-now/queue.test.ts`.
