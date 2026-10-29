@@ -11,6 +11,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 
 - [INDEX.md](INDEX.md): short repository navigation.
 - `package.json`: the package manifest; extensions are listed under `pi.extensions`.
+- `extensions/RQW-blocks/`: independent runtime UI patches for compact chat blocks; Pi files stay unchanged, incompatible shapes fall back to stock. Tests: `test/extensions/RQW-blocks/`.
 - `.oxlintrc.json`: calibrated correctness lint. `npm run lint` checks the full source scope; `scripts/check.mjs` runs lint and tests concurrently. Use `--test <paths>` for touched tests; no flag runs the existing full `npm test`.
 - `extensions/RQW-settings/`: extension 1, the harness settings. Turns on Pi's built-in `codemode` and `tool_search` by
   default (same rule as `grep` and `find` in RQW-tools), and disables background cache warming regardless of user

@@ -6,7 +6,7 @@ import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme, ThemeCo
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { actionPhrase, CountsWatch, statusText } from "./activity.ts";
 import { QuotaConsumer } from "./quota.ts";
-import { type BorderSource, ContextEditor } from "./editor.ts";
+import { type BorderSource, ContextEditor, type NativeActivity } from "./editor.ts";
 import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
 import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar, modelRow, activityRows } from "./render.ts";
 
@@ -84,19 +84,20 @@ export default function statusbar(pi: ExtensionAPI) {
 		pi.events.emit(FAST_GPT_QUERY, query);
 		return query.fastGpt === true;
 	};
-	let status: ReturnType<typeof statusText>;
+	let nativeActivity: NativeActivity | undefined;
+	let status: (NonNullable<ReturnType<typeof statusText>> & { retry?: boolean }) | undefined;
 	let lightning = false;
 	/** The phase moves in shimmer ticks, the pace of the redraw timer, so renders within one tick are identical. */
 	const chromeNow = (): ActivityChrome | undefined =>
-		status && { text: status.text, compacting: status.compacting, frame: Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS };
+		status && { text: status.text, compacting: status.compacting, retry: status.retry, frame: status.retry ? 0 : Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS };
 	const fastState = (): BarState["fast"] =>
 		lightning ? { frame: working ? Math.floor((now() - animationStart) / FAST_STEP_MS) : undefined } : undefined;
 	const stopShimmer = () => { if (shimmer) clearInterval(shimmer); shimmer = undefined; };
 	/** The shimmer timer only asks for redraws while the status letters or the working lightning need it and the footer is up;
 	 * re-checked on every tick. The phase comes from the elapsed time at render, so Pi's other redraws show it too. */
-	const wantsShimmer = () => active && (status !== undefined || (working && lightning));
+	const wantsShimmer = () => active && ((status !== undefined && !status.retry) || (working && lightning));
 	const syncShimmer = () => {
-		status = statusText({ compacting, running, action: [...tools.values()].at(-1), counts: jobs.get() });
+		status = nativeActivity ? { ...nativeActivity, compacting: false } : statusText({ compacting, running, action: [...tools.values()].at(-1), counts: jobs.get() });
 		lightning = lit(lightCtx);
 		syncSpinner();
 		if (!wantsShimmer()) return stopShimmer();
@@ -107,8 +108,17 @@ export default function statusbar(pi: ExtensionAPI) {
 	// The context row is drawn as the bottom border of this extension's editor. One factory per extension instance
 	// identifies our editor in `getEditorComponent()`; its border reads the current install's source.
 	let border: BorderSource | undefined;
+	let editor: ContextEditor | undefined;
 	const editorFactory: NonNullable<Parameters<ExtensionUIContext["setEditorComponent"]>[0]> =
-		(tui, theme, keybindings) => new ContextEditor(tui, theme, keybindings, () => border);
+		(tui, theme, keybindings) => {
+			editor?.releaseIndicator();
+			editor = new ContextEditor(tui, theme, keybindings, () => border, (activity) => {
+				nativeActivity = activity;
+				syncShimmer();
+				redraw?.();
+			});
+			return editor;
+		};
 
 	// Hide Pi's spinner only while our editor owns the border; restore it for other editors and on release.
 	let spinnerUi: ExtensionUIContext | undefined;
@@ -132,6 +142,8 @@ export default function statusbar(pi: ExtensionAPI) {
 	/** Drops what this extension holds for the session: the GPT Fast subscription, the counts, timers, footer and border source. */
 	function release(): void {
 		installRevision++;
+		editor?.releaseIndicator();
+		editor = undefined;
 		showNativeSpinner();
 		unsubscribeFast?.();
 		unsubscribeFast = undefined;
@@ -160,7 +172,7 @@ export default function statusbar(pi: ExtensionAPI) {
 			render(width: number): string[] {
 				const chrome = chromeNow();
 				if (!chrome) return [];
-				if (!last || last.width !== width || last.chrome.text !== chrome.text || last.chrome.compacting !== chrome.compacting || last.chrome.frame !== chrome.frame)
+				if (!last || last.width !== width || last.chrome.text !== chrome.text || last.chrome.compacting !== chrome.compacting || last.chrome.retry !== chrome.retry || last.chrome.frame !== chrome.frame)
 					last = { width, chrome, rows: activityRows(width, chrome) };
 				return last.rows;
 			},

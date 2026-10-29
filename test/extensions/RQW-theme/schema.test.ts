@@ -12,6 +12,13 @@ it("the theme satisfies Pi's strict native schema", () => {
 	assert.equal(check.Check({ ...theme, colors: { ...theme.colors, pythonMode: "#ffb347" } }), false);
 });
 
+it("dialog and list accents render gold", async () => {
+	const entry = join(import.meta.dirname, "../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js");
+	const { loadThemeFromPath } = await import(entry);
+	const theme = loadThemeFromPath(join(import.meta.dirname, "../../../extensions/RQW-theme/theme.json"), "truecolor");
+	assert.match(theme.fg("accent", "selected"), /\x1b\[38;2;201;162;39mselected/);
+});
+
 it("custom message boxes have no background and a gold label", () => {
 	const theme = JSON.parse(readFileSync(join(import.meta.dirname, "../../../extensions/RQW-theme/theme.json"), "utf8"));
 	assert.equal(theme.colors.customMessageBg, "");
