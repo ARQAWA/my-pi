@@ -58,7 +58,7 @@ with `--no-skills` or `-ns` no Codex skill root is offered, while `skills.config
    `AGENTS.override.md`, `AGENTS.md`, then `project_doc_fallback_filenames` (bare file names only, path syntax is
    ignored). `CLAUDE.md` is not added unless the config names it. An empty file adds nothing.
 
-Project files share one byte budget, `project_doc_max_bytes` (default 32768, `0` adds none). Bytes are cut first and
+Project files share one byte budget, `project_doc_max_bytes` (default 262144 = 256 KB on every OS, a deliberate deviation from the Codex default 32768; a value in Codex config, including `0`, wins). Bytes are cut first and
 then decoded, so a split multibyte character becomes U+FFFD, as in Codex. An empty file spends no budget. Global and
 personal files are outside the budget. A leading BOM stays in the text, as in Codex. A cut raises one warning per
 session id, also after a reload. The same code builds the prompt and the
