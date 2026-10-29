@@ -22,6 +22,22 @@ it("renders collapsed and expanded agent answers", () => {
 	assert.deepEqual(expanded.render(80), ["agent#3 finished · opus medium · 42s", "  First", "  Second"]);
 });
 
+it("shows verdict labels with semantic colors", () => {
+	const theme: CardTheme = { fg: (color, text) => `\u001b[${color === "success" ? 32 : color === "error" ? 31 : 0}m${text}\u001b[0m`, bold: (text) => text };
+	for (const [body, label, color] of [
+		["\nCLEAN\nchecked", "CLEAN", 32],
+		["FINDINGS:\nFINDING 1\nproof\nFINDING 2", "2 findings", 31],
+		["FINDINGS: 3\nproof", "3 findings", 31],
+		["ordinary answer", "finished", 32],
+	] as const) {
+		const card = createAgentCard(message("agent", `[agent#3] ${body}`, { outcome: "finished" }) as never,
+			{ expanded: false, outputPad: 0 }, theme as never)!;
+		const header = card.render(100)[0];
+		assert.ok(strip(header).includes(label));
+		assert.ok(header.includes(`\u001b[${color}m${label}`));
+	}
+});
+
 const longAnswer = `# BEGINNING\n\n${"filler line of the middle\n".repeat(400)}\nthe **end** with \`code\` DONE`;
 
 it("shows only the plain tail of a long collapsed answer, cut to the width", () => {

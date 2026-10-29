@@ -117,7 +117,24 @@ export function parseCard(message: { customType: string; content: unknown; detai
 function header(card: ParsedCard, theme: CardTheme, width: number): string {
 	const dim = (text: string) => theme.fg("dim", text);
 	let rest = "";
-	if (card.outcome) rest += theme.fg("muted", " ") + theme.fg(card.outcome === "failed" ? "error" : "success", card.outcome);
+	if (card.outcome) {
+		let label: string = card.outcome;
+		let color: "success" | "error" = card.outcome === "failed" ? "error" : "success";
+		if (card.outcome === "finished") {
+			const lines = card.body.split(/\r?\n/);
+			const first = lines.find((line) => line.trim() !== "");
+			if (first === "CLEAN") label = "CLEAN";
+			else {
+				const match = /^FINDINGS:(?: (\d+))?$/.exec(first ?? "");
+				if (match) {
+					const count = match[1] === undefined ? lines.filter((line) => /^FINDING \d+$/.test(line)).length : Number(match[1]);
+					label = `${count} ${count === 1 ? "finding" : "findings"}`;
+					color = "error";
+				}
+			}
+		}
+		rest += theme.fg("muted", " ") + theme.fg(color, label);
+	}
 	const meta: string[] = [];
 	if (card.model || card.thinking) {
 		const effort = card.thinking ? EFFORT[card.thinking] ?? ORDINARY : undefined;
