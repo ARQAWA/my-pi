@@ -3,8 +3,8 @@
 The `RQW-theme` colour theme for Pi 1.4.0, one asset: `theme.json`. It uses only Pi's native theme tokens.
 The owner's decisions are recorded in [Theme](../../DECISIONS.md#theme).
 
-**Registration.** `package.json` lists the theme in `pi.themes`. Select `RQW-theme` once through `/settings` ->
-Theme; Pi persists the choice across reload and restart, and the same selector switches back.
+**Registration.** `package.json` lists the theme in `pi.themes`. RQW-settings selects `RQW-theme` once on first start
+(`[D-SETTINGS-SETUP]`); Pi persists the choice across reload and restart, and `/settings` -> Theme switches it later.
 Dialog and list accents use gold (`#c9a227`).
 
 ## Card backgrounds

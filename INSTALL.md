@@ -41,8 +41,15 @@ You are running inside Pi. Install the my-pi package into this Pi installation, 
    `pi update` in step 1, tell the user to restart Pi: RQW-context patches Pi's classes once per process, so a
    `/reload` keeps its old code.
 
-Apart from the authorized old adapter replacement above and installing or updating my-pi, change nothing else:
-no unrelated packages, settings, credentials or files.
+Apart from the authorized old adapter replacement above, installing or updating my-pi and the one-time setup profile
+below, change nothing else: no unrelated packages, settings, credentials or files.
+
+The first start after install applies the setup profile once: RQW-settings writes the keys of
+`extensions/RQW-settings/setup-profile.json`, including `theme: "RQW-theme"`, and the marker `rqwSetupVersion` to the
+global `~/.pi/agent/settings.json`, before Pi builds its interface. Packages, credentials and all other keys stay as
+they were. Later changes by the owner stay; the profile is not applied again. If an extension or the theme of this
+package is switched off or filtered, or the file is not valid JSON, nothing is written and Pi shows a warning at
+start; fix the cause and restart Pi. Reload alone does not apply a profile that failed before.
 
 ## History editing
 
@@ -76,10 +83,9 @@ An initial failed attempt gets up to three retries, then a warning preserves the
 Native `/name` still works; only the next automatic trigger or `/rename-gen` may replace a manual name.
 RQW-statusbar shows the current native name as a static gold title above the input.
 
-For the user, not an automatic install step: open `/settings` -> Theme and choose `RQW-theme` once.
-Pi saves only the theme choice and reapplies it after `/reload` and restart. To switch back, choose another theme
-in the same native selector. Disabling a UI extension does not restore a previous theme. The theme is an independent
-`pi.themes` resource, with no activation extension. Preserve auth and all unrelated settings.
+The theme `RQW-theme` is activated by the setup profile; no manual step. Change it later through `/settings` -> Theme;
+Pi saves the choice and the profile does not override it. Disabling a UI extension does not restore a previous theme.
+The theme is an independent `pi.themes` resource.
 
 ## Switch one extension off
 

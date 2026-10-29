@@ -426,10 +426,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Source: the `18-16-12` session file, USER entry `a6718225`, line 815, accepting coordinator proposal
   `74a328d8`, line 814. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default). Coordinator text: an ordinary named Pi theme, selected once, persisted by Pi across
   reload/restart, switched back through native theme selection rather than disabling an extension.
-  `pi.themes` distributes `./extensions/RQW-theme/theme.json`, named `RQW-theme`. Select through `/settings` -> Theme.
-  Pi may persist only the theme choice; auth and unrelated settings stay untouched. Native menus keep their structure
+  `pi.themes` distributes `./extensions/RQW-theme/theme.json`, named `RQW-theme`. Select through `/settings` -> Theme
+  (initial selection superseded in part by `[D-SETTINGS-SETUP]`: the setup profile now selects it once automatically; later selection stays native).
+  Pi may persist only the theme choice; auth and unrelated settings stay untouched (superseded in part by `[D-SETTINGS-SETUP]`: the managed profile keys are written once). Native menus keep their structure
   and behavior; supported roles and terminal-default delegation only, no universal terminal-canvas promise.
-  No `pi.extensions` entry, activation code, transient override or automatic restore-on-disable.
+  No `pi.extensions` entry for the theme, no transient override or automatic restore-on-disable. The earlier "no activation code" is superseded in part by `[D-SETTINGS-SETUP]`.
   Reason: native persistence without unsupported lifecycle hooks. Carriers: `package.json`,
   `extensions/RQW-theme/theme.json`, `INSTALL.md`.
 
@@ -621,6 +622,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner: the exact inheritance instruction is recorded in GPT Fast above.
   Reason: child tier follows the caller's choice without live coupling or cross-extension imports.
   Carrier: `extensions/RQW-agent/fast-gpt.ts`, `index.ts`. Since: `fa05edf`.
+- **Identical setup on every machine** `[D-SETTINGS-SETUP]`. Supersedes in part `[D-UI-NATIVE-THEME]` (manual one-time theme selection, "no activation code", "unrelated settings stay untouched") and the `INSTALL.md` rule "change nothing else: no unrelated packages, settings, credentials or files". Every machine with my-pi starts configured like the owner's working machine. `extensions/RQW-settings/setup-profile.json` holds `setupVersion` and the portable settings: `quietStartup`, `outputPad`, `terminal.showImages`, `autocompleteMaxVisible`, `steeringMode`, `followUpMode`, `transport`, `hideThinkingBlock`, `markdown.mermaid`, `showCacheMissNotices`, `warnings.anthropicExtraUsage`, `collapseChangelog`, `enableInstallTelemetry`, `defaultProjectTrust`, `doubleEscapeAction`, `treeFilterMode`, `tuiMode`, `compaction.enabled`, `theme` (`RQW-theme`) and `editorPaddingX`. A runtime bridge (`[D-SCOPE-RUNTIME-PATCH]`) on Pi 1.4.0's `DefaultResourceLoader.updateThemesFromPaths` applies it once, after the extensions and themes are loaded and before the interface is built, in one settings lock: the listed keys replace existing values, other keys stay, and the marker `rqwSetupVersion` is written in the same write. With the marker present nothing is applied again, so later owner changes stay. Project settings keep priority in memory. Packages, paths, project trust, credentials and `lastChangelogVersion` are never written. An invalid settings file, a changed Pi shape, or an extension or the theme of the package filtered out writes nothing and shows a warning at session start; Pi stays stock. The profile is not rerun when `setupVersion` is unchanged. A package fully excluded by an old filter, and the Windows PCLI bootstrap, are not covered here.
+  Owner, verbatim: «Да, и самое главное, когда мы устанавливаем весь наш harness на систему, надо, чтобы там уже всё было активно, все наши настройки чтобы уже были активны, чтобы все тачки, на которые я поставлю Pi и поставлю наш My Pi harness, чтобы они все идентично были настроены, как эта рабочая тачка. Я имею в виду подключенные плагины, темы сразу должны быть все активированы, все настройки должны быть активированы, как здесь. Это суперкритически важно.»
+  Owner, verbatim: «Да. Всю работу делаем минимальным количеством story points в соответствии с нашими workflow, манифестом работы, ценностями и стандартами качества»
+  Source: delegated task of 2026-10-29, design `my-pi-evidence/designs/identical-setup/DESIGN.md`.
+  Reason: a bare `pi install` runs no install code and Pi has no default for these values; an early one-time application is the smallest way to make machines equal without overriding later owner choices.
+  Carrier: `extensions/RQW-settings/setup.ts`, `extensions/RQW-settings/setup-profile.json`, `INSTALL.md`. Tests: `test/extensions/RQW-settings/setup.test.ts`.
 
 ## Subscription limits
 
@@ -1503,7 +1510,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner, keep grey and red, find analogues: «А когда запущено то, что было зелёное и фиолетовое, надо придумать им какие-то аналоги.» Source: `16-27-59:4544`.
   Owner, the choice: «По дизайню - бирюза сланец вибираю ответ C» Source: `16-27-59:4654`.
   Reason: option C of the comparison page gave the coolest pair with the least decoration; every text pair on the four cards meets WCAG AA 4.5:1 (minimum 4.56:1).
-  Carrier: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/README.md`. The theme is registered in `package.json` `pi.themes` ([Native theme](#native-theme)); the owner selects it once through `/settings` -> Theme.
+  Carrier: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/README.md`. The theme is registered in `package.json` `pi.themes` ([Native theme](#native-theme)); RQW-settings selects it once on first start (`[D-SETTINGS-SETUP]`); later choice stays native through `/settings` -> Theme.
 
 ## Quality control
 
