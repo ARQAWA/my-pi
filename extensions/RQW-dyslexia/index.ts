@@ -9,8 +9,13 @@ const RULE = `${HEADING}\n\n${BODY}`;
 const BLOCK = `${RULE}\n\n${OVERRIDE}`;
 
 export default function dyslexia(pi: ExtensionAPI) {
-	// Returning systemPrompt makes Pi force this exact text, so the rule stays first whatever other handlers did.
-	pi.on("before_agent_start", (event) => ({
-		systemPrompt: `${BLOCK}\n\n${event.systemPrompt.replace(`${BLOCK}\n\n`, "").replace(BLOCK, "").replace(RULE, "")}`,
+	pi.on("before_agent_start", (event) => {
+		const systemPrompt = event.systemPrompt.replace(`${BLOCK}\n\n`, "").replace(BLOCK, "").replace(RULE, "");
+		return systemPrompt !== event.systemPrompt ? { systemPrompt } : undefined;
+	});
+	pi.on("context", event => ({
+		messages: event.messages.flatMap(message => message.role === "user"
+			? [message, { role: "custom" as const, customType: "rqw-dyslexia", content: BLOCK, display: false, timestamp: 0 }]
+			: [message]),
 	}));
 }

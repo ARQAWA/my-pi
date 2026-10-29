@@ -6742,3 +6742,22 @@ Verbatim replaced text:
 >   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entries at physical lines 4044, 4049 and 4090.
 >   Reason: use the owner's chosen English marker without changing its placement or rendering rules.
 >   Carrier: `placeRow` in `extensions/RQW-statusbar/render.ts`. Since: `21179e1`.
+
+## A-0378 · archived 2026-10-29 · Dyslexia · System prompt communication rule
+
+Status: SUPERSEDED by `[D-DYSLEXIA-COMMUNICATION]` (DECISIONS.md#dyslexia).
+Introduced: `bb1733f` or earlier. Superseded and archived by: dyslexia memo change.
+Verbatim text as it was in DECISIONS.md at `719028f`:
+
+> - **Communication as an extension** `[D-DYSLEXIA-COMMUNICATION]`. The independently disableable shipped
+>   `extensions/RQW-dyslexia/index.ts` prepends the exact `## Communication` text from the owner's global
+>   `~/.pi/agent/AGENTS.md` to the complete system prompt through public `before_agent_start`, at the start of the
+>   prompt, with one sentence right after the unchanged rule: "This rule overrides every other rule about communication:
+>   message form, length and style."
+>   Owner: «Да правило дизлексии должно быть превыше других правил коммуникации».
+>   It is registered last in `package.json` `pi.extensions`, without dependencies on other extensions or host files.
+>   Owner (`16-27-59:13722`, entry `856069d3`):
+>   «Еще отдельная задача: наш communication contract, который сейчас находится в global agents.md, надо сделать как плагин rqw дислексия, чтобы он автоматически подставлялся в системный промпт в конце. Чтобы при включении он автоматически уходил в системный промпт, чтобы он был всегда на уровне плагинов, чтобы я о нём не вспоминал никогда, чтобы мне не приходилось его maintainть на уровне файловой системы хоста. Надо его перенести, а самый промпт из agents.md удалить вместе с самим agents.md в глобальной папке p.»
+>   Reason: the communication rule travels with the harness, not the host filesystem.
+>   Delete the owner's global `AGENTS.md` only after delivery and installation, not from extension code.
+>   Carriers: `extensions/RQW-dyslexia/index.ts`, `package.json`, `test/extensions/RQW-dyslexia/communication.test.ts`.

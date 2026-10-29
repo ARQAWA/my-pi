@@ -35,16 +35,15 @@ Provenance:
 ## Dyslexia
 
 - **Communication as an extension** `[D-DYSLEXIA-COMMUNICATION]`. The independently disableable shipped
-  `extensions/RQW-dyslexia/index.ts` prepends the exact `## Communication` text from the owner's global
-  `~/.pi/agent/AGENTS.md` to the complete system prompt through public `before_agent_start`, at the start of the
-  prompt, with one sentence right after the unchanged rule: "This rule overrides every other rule about communication:
-  message form, length and style."
+  `extensions/RQW-dyslexia/index.ts` removes the old rule from the system prompt and returns the exact
+  `## Communication` rule and override sentence after every user message through the public `context` event.
+  It is request-only, invisible and not persisted. The placement is deterministic, preserving the cached prefix,
+  including for queued prompts. RQW-agent children and reviewers do not receive the message or rule.
   Owner: «Да правило дизлексии должно быть превыше других правил коммуникации».
-  It is registered last in `package.json` `pi.extensions`, without dependencies on other extensions or host files.
-  Owner (`16-27-59:13722`, entry `856069d3`):
-  «Еще отдельная задача: наш communication contract, который сейчас находится в global agents.md, надо сделать как плагин rqw дислексия, чтобы он автоматически подставлялся в системный промпт в конце. Чтобы при включении он автоматически уходил в системный промпт, чтобы он был всегда на уровне плагинов, чтобы я о нём не вспоминал никогда, чтобы мне не приходилось его maintainть на уровне файловой системы хоста. Надо его перенести, а самый промпт из agents.md удалить вместе с самим agents.md в глобальной папке p.»
-  Reason: the communication rule travels with the harness, not the host filesystem.
-  Delete the owner's global `AGENTS.md` only after delivery and installation, not from extension code.
+  Owner: «Я думаю памятку про дизлексию надо сделать на уровне харнеса потому что во всех чатах эта тема проебываается, а это крит и надо выпилить ее из системного промпта а сделать именно памяткой».
+  Owner: «по поводу памятки - она должна идти перед моим сообщением в хвосте всей историии или где ей лучше место разместить? что бы агент был всегда aware о ней, какой тут бест практис тчо бы еще кеши не обосрать?».
+  Owner: «памятка идет ТОЛЬКО моим чатам, саб агентам то она нахуя?».
+  Reason: keep the communication rule in the harness and the cached prefix stable, without applying it to children.
   Carriers: `extensions/RQW-dyslexia/index.ts`, `package.json`, `test/extensions/RQW-dyslexia/communication.test.ts`.
 
 ## Live tail
