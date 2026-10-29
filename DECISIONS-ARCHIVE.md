@@ -6821,3 +6821,29 @@ Verbatim replaced text:
 >   descendant artifact references join the removal candidates, removed children do not count as sharing, and artifacts of surviving
 >   sessions stay. Descendants go before the parent JSONL, so a failure leaves the parent as marker. Reason: removal must not leave
 >   orphan child histories. Carrier: `extensions/RQW-session/artifacts.ts` (`childTree`), `index.ts`. Since: `dd93a40`.
+
+## Runtime patch restrictions · archived 2026-10-29
+Status: SUPERSEDED by `[D-SCOPE-RUNTIME-PATCH]` ([DECISIONS.md](DECISIONS.md)).
+Original: `41fb742`; archived by: runtime-patch-rule; the commit is `git log -S'Runtime patch restrictions · archived 2026-10-29' -- DECISIONS-ARCHIVE.md`.
+
+Q3, verbatim:
+
+>   Q3, entry `dcd5070f`, line 120:
+>   > fork и patching pI недопустим. То, что мы делаем, это должно быть extension, расширение, всё, что угодно поверх PI. Мы не изменяем сам PI. Это, блядь, критически важно. Если мы что-то не можем реализовать без патча, это мы выбрасываем. Но надо пометить, что мы выбрасываем тогда из-за того, что мы не можем пропатчить, чтобы я, может, нашёл какую-то альтернативу этому.
+
+Tool display restriction, verbatim:
+
+> Public APIs only,
+>   no Pi patch, private fields or method replacement.
+
+Send now restriction, verbatim:
+
+> - **Public API only** `[D-SENDNOW-API]`.
+
+Codex compatibility restriction, verbatim:
+
+>   and full parity waits for a public Pi API: parts that need one are blocked, not worked around.
+
+Codex compatibility reason, verbatim:
+
+>   Reason: let Codex configuration work in Pi without a Pi patch.
