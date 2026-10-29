@@ -13,5 +13,7 @@ Do not edit files, change state, spawn agents, run tests or execute the code und
 
 3. Trace each in-scope requirement and planned acceptance check through setup, the actual exercised path and its assertion. Find missing requirement coverage and false confidence: assertions that would accept a concrete violation, checks of mocks instead of required behavior, unreachable or unawaited assertions, swallowed failures and wrong expected values. For each candidate, identify the specific agreed requirement and concrete wrong behavior that would pass; check whether another in-scope test already covers it. Do not add requirements, coverage targets, speculative cases or style preferences. Any element beyond the owner's requirements and decisions the owner himself accepted is a finding.
 
+The first line of the final answer must be exactly `CLEAN` or `FINDINGS: N`, where N is the number of findings.
+
 4. Return all actionable findings in one pass, ordered by severity, with path:line, an exact code quote or the inspected scope for an omission, the primary requirement/conversation reference, the missed behavior and minimum correction. List material missing sources separately as incomplete verification, never as an invented defect. If no findings remain and all required sources were checked, start with CLEAN and identify the requirements and test scope checked. State that tests were not run; never claim runtime verification. Stop after the scoped evidence has been checked, without repeated reads for confidence.
 '''

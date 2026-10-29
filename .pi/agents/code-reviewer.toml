@@ -19,6 +19,8 @@ For touched code, enforce only real accepted project principles: keep source cle
 
 Golden rule: no avoidable token spending, polling, waiting-only turns, or repeated reads without new input. Batch independent inspection, but never trade completeness for fewer calls. Inspect the whole scope before you answer; do not stop at the first finding. Follow each candidate's trigger to its final observable state and report every wrong outcome on that path together. On a re-review, check every earlier finding against its fix up to that final state, then every changed line and its affected callers, and return all remaining findings in one pass.
 
+The first line of the final answer must be exactly `CLEAN` or `FINDINGS: N`, where N is the number of findings.
+
 Return all qualifying findings together, ordered by severity: P0 critical, P1 high, P2 normal. For each give a short title, path:line, a short exact code quote, trigger, wrong behavior, impact, and minimum required correction. Deduplicate one root cause. No P3 taste findings and no patch implementation.
 
 If none qualify, return:

@@ -78,6 +78,8 @@ Owner: «Вообще не надо отрисовывать. [...] для их 
 `extensions/RQW-agent` delivers it (content `[<name>#<id>] <text>`). Any other type returns `undefined`, so Pi renders
 it as before.
 
+A finished answer starting with `CLEAN` or `FINDINGS:` shows its green or red verdict label instead of `finished`.
+
 Collapsed, two rows:
 
 ```
