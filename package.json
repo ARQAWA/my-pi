@@ -43,7 +43,8 @@
       "./extensions/RQW-history-edit/index.ts",
       "./extensions/RQW-dyslexia/index.ts",
       "./extensions/RQW-live-tail/index.ts",
-      "./extensions/RQW-codex-compat/index.ts"
+      "./extensions/RQW-codex-compat/index.ts",
+      "./extensions/RQW-tabs-link/index.ts"
     ],
     "themes": [
       "./extensions/RQW-theme/theme.json"
