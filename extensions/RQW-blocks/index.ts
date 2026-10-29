@@ -4,6 +4,7 @@ import { installBash } from "./bash.ts";
 import { installThinking } from "./thinking.ts";
 import { installJump, isJumpInstalled } from "./jump.ts";
 import { installFlash } from "./flash.ts";
+import { installHistory } from "./history.ts";
 
 const ACTIVE = Symbol.for("rqw-blocks.compaction");
 const GOLD = ["#8a6d1c", "#c9a227", "#e3c45a"];
@@ -87,6 +88,9 @@ export function installBranch(getTheme: () => Theme, prototype: any = BranchSumm
 
 export default function blocks(pi: ExtensionAPI): void {
 	let restore = () => {};
+	// Installed while the extension loads, not at session_start: Pi draws the transcript of a reload or a switched
+	// session before the new session's extensions start.
+	const restoreHistory = installHistory();
 	// Other block patches are installed here, each with its own cleanup.
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
@@ -119,5 +123,5 @@ export default function blocks(pi: ExtensionAPI): void {
 		restore = () => { for (const cleanup of cleanups) cleanup(); if ((globalThis as any)[ACTIVE] === restore) delete (globalThis as any)[ACTIVE]; };
 		(globalThis as any)[ACTIVE] = restore;
 	});
-	pi.on("session_shutdown", () => restore());
+	pi.on("session_shutdown", () => { restoreHistory(); restore(); });
 }

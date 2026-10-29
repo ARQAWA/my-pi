@@ -48,7 +48,7 @@ The theme is distributed separately through `pi.themes`, not as an extension.
   (Pi's bash renderer stops its one-second redraw timer); a call never expanded never runs them for results.
 - Images: Pi appends a result's images to the tool row itself, outside the renderers. These renderers draw no image
   and change nothing of Pi's image output; a folded row with an image shows just Pi's image.
-- Groups come from `ctx.sessionManager.buildContextEntries()` plus the streaming state (`groups.ts`). The state is
+- Groups come from the whole active branch, `ctx.sessionManager.getBranch()` (RQW-blocks lets Pi draw it all after a compaction, so calls before the compaction keep this view), plus the streaming state (`groups.ts`). The state is
   reset on every `session_start` and dropped on `session_shutdown` (reload, session switch, quit); rows of the
   transcript Pi rebuilds before `session_start` are redrawn once the session is known. No timers of its own.
 - Accepted limit: every model step with thinking keeps Pi's own blank row and, while thinking is hidden, its label row;
@@ -95,8 +95,7 @@ profiles and skills for the ordinary `agent` runtime.
   stream and saved history, without inventing a tool result. Aborted status uses the theme's error foreground and
   tool surface, not the tool-title color. Confirmed execution results keep their own status.
   One solid card on Pi's pending, success or error tool surface; title, output, diff and status roles from the theme.
-- `groups.ts`: `buildGroups(contextEntries, live)` from `ctx.sessionManager.buildContextEntries()` (the entries Pi draws:
-  after a compaction only the compaction and the kept entries) plus the streaming state of public events:
+- `groups.ts`: `buildGroups(contextEntries, live)` from `ctx.sessionManager.getBranch()` (every entry of the branch, compactions at their place) plus the streaming state of public events:
   per top-level call its group, whether it leads (the last call), whether the group is active (no answer text, user
   message, displayed custom message, `!` command, compaction or branch summary after it yet) and the current call.
   Nested calls (codemode) count instead of their parent and can be current. A streamed message already saved counts

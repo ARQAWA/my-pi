@@ -1,6 +1,6 @@
 // The group model: which tool calls form one run between two answers, which call leads it (draws the summary),
-// whether the run is still active (shows the live block) and which call is current. Pure, from the entries Pi draws
-// (`ctx.sessionManager.buildContextEntries()`) and the streaming state of public events only; order is history and
+// whether the run is still active (shows the live block) and which call is current. Pure, from the branch entries
+// (`ctx.sessionManager.getBranch()`) and the streaming state of public events only; order is history and
 // event order, never render order.
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { CallResult } from "./classify.ts";
@@ -100,7 +100,7 @@ function messageKey(m: unknown): string | undefined {
 
 /** The messages of the branch and of the stream, as one ordered list; group breaks for non-message entries.
  * A streamed message that is already saved counts once, at its saved place (each saved copy matches one streamed). */
-function timeline(entries: readonly SessionEntry[], live: LiveState): unknown[] {
+function timeline(entries: readonly SessionEntry[], live: LiveState, firstKeptEntryId?: string): unknown[] {
 	const out: unknown[] = [];
 	const saved = new Map<string, number>();
 	const keep = (m: unknown) => {
@@ -108,6 +108,8 @@ function timeline(entries: readonly SessionEntry[], live: LiveState): unknown[] 
 		if (k) saved.set(k, (saved.get(k) ?? 0) + 1);
 	};
 	for (const e of entries) {
+		// Pi may hide everything before this entry, even when the compaction split a tool run.
+		if (e.id === firstKeptEntryId) out.push({ role: "break" });
 		if (e.type === "message") {
 			out.push(e.message);
 			keep(e.message);
@@ -146,9 +148,8 @@ export interface Tail {
 
 /**
  * Groups of the tool calls Pi draws, keyed by top-level tool call ID. `contextEntries` is
- * `ctx.sessionManager.buildContextEntries()` (public on Pi 1.4.0 `ReadonlySessionManager`), the list Pi's
- * interactive mode renders: after a compaction it starts with the compaction entry, then the kept entries from
- * `firstKeptEntryId` on and the entries after it; summarized entries are not drawn, so they are not counted here.
+ * `ctx.sessionManager.getBranch()` (public on Pi 1.4.0 `ReadonlySessionManager`): every entry of the active branch,
+ * compactions at their chronological place, each one a group break. Calls the transcript does not draw are harmless.
  */
 export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveState = {}): Map<string, CallGroup> {
 	return buildTail(contextEntries, live).groups;
@@ -156,11 +157,11 @@ export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveS
 
 /** Like {@link buildGroups}, for the entries from a group boundary on, with the calls events can still change.
  * The calls in `skip` belong to settled groups, which are not built again. */
-export function buildTail(contextEntries: readonly SessionEntry[], live: LiveState = {}, skip: ReadonlySet<string> = new Set()): Tail {
+export function buildTail(contextEntries: readonly SessionEntry[], live: LiveState = {}, skip: ReadonlySet<string> = new Set(), firstKeptEntryId?: string): Tail {
 	const executions = new Map<string, LiveExecution>();
 	for (const x of live.executions ?? []) if (!executions.has(x.toolCallId)) executions.set(x.toolCallId, x);
 	const results = new Map<string, Record<string, unknown>>();
-	const messages = timeline(contextEntries, live);
+	const messages = timeline(contextEntries, live, firstKeptEntryId);
 	for (const m of messages) {
 		const r = record(m);
 		if (r.role === "toolResult" && typeof r.toolCallId === "string" && !results.has(r.toolCallId)) results.set(r.toolCallId, r);

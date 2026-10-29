@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import type { SessionEntry, Theme } from "@earendil-works/pi-coding-agent";
+import { initTheme, InteractiveMode, SessionManager, type SessionEntry, type Theme } from "@earendil-works/pi-coding-agent";
+import { Container, stripTerminalSequences } from "@earendil-works/pi-tui";
+import toolUi from "../../../extensions/RQW-tool-ui/index.ts";
 import { classifyChange } from "../../../extensions/RQW-tool-ui/changes.ts";
 import { classify } from "../../../extensions/RQW-tool-ui/classify.ts";
 import { buildGroups } from "../../../extensions/RQW-tool-ui/groups.ts";
@@ -91,7 +93,7 @@ it("groups calls between answers and folds the live card", () => {
 
 it("shows a tool update after a cached frame", () => {
 	const ui = new ToolUi();
-	ui.start({ buildContextEntries: () => [], getCwd: () => "/w" } as never);
+	ui.start({ getBranch: () => [], getCwd: () => "/w" } as never);
 	ui.messageStart(assistant([call("b", "bash", { command: "echo" })]));
 	ui.toolStart({ toolCallId: "b", toolName: "bash", args: { command: "echo" } });
 	const renderer = ui.resolve("bash", () => undefined);
@@ -107,7 +109,7 @@ it("keeps earlier groups and updates the open one after entries are saved", () =
 	const saved = entries(assistant([call("r")]), result("r"), assistant([{ type: "text", text: "Done" }], "stop"));
 	let log = saved;
 	const ui = new ToolUi();
-	ui.start({ buildContextEntries: () => log, getCwd: () => "/w" } as never);
+	ui.start({ getBranch: () => log, getCwd: () => "/w" } as never);
 	const draw = (name: string, id: string, args: object, expanded = false) => {
 		const context = { state: {}, toolCallId: id, outputPad: 0, invalidate() {}, expanded } as never;
 		return ui.resolve(name, () => undefined).renderCall!(args as never, theme, context);
@@ -156,4 +158,64 @@ it("keeps a failed codemode parent visible beside a nested success", () => {
 	const group = buildGroups(entries(assistant([call("p", "codemode", { code: "throw" })]), final)).get("p")!;
 	assert.deepEqual(collapsedRows(group, 80, theme, "/w").map((row) => row.trim()),
 		["Read 1 file · 1 failed", "codemode throw", "Error: SCRIPT_BROKE", "✗ error · 1.2s"]);
+});
+
+function renderSession(manager: SessionManager, wholeBranch: boolean): string[] {
+	initTheme();
+	const handlers = new Map<string, (...args: any[]) => void>();
+	let resolveToolRenderers: any;
+	toolUi({
+		registerToolRenderer: (resolver: unknown) => { resolveToolRenderers = resolver; },
+		on: (name: string, handler: (...args: any[]) => void) => handlers.set(name, handler),
+	} as never);
+	handlers.get("session_start")!({}, { mode: "tui", sessionManager: manager });
+	try {
+		const host: any = Object.create(InteractiveMode.prototype);
+		Object.assign(host, {
+			chatContainer: new Container(), pendingTools: new Map(), outputPad: 1,
+			toolOutputExpanded: false, hideThinkingBlock: false, hiddenThinkingLabel: "Thinking...",
+			ui: { requestRender() {} },
+			runtimeHost: { session: {
+				sessionManager: manager,
+				settingsManager: { getShowCacheMissNotices: () => false, getShowImages: () => false, getImageWidthCells: () => 60, getCodeBlockIndent: () => "  " },
+				modelRuntime: {}, retryAttempt: 0,
+				extensionRunner: { getMessageRenderer: () => undefined, getMarkdownTransformers: () => [], resolveToolRenderers },
+				getToolDefinition: () => undefined,
+			} },
+		});
+		host.renderSessionEntries(wholeBranch ? manager.getBranch() : manager.buildContextEntries());
+		return host.chatContainer.render(80).map(stripTerminalSequences).map((line: string) => line.trim());
+	} finally { handlers.get("session_shutdown")!(); }
+}
+
+it("keeps the compact view for calls before a compaction", () => {
+	const manager = SessionManager.inMemory("/w");
+	const first = manager.appendMessage({ role: "user", content: "go", timestamp: 1 } as never);
+	manager.appendMessage(assistant([call("old")]) as never);
+	manager.appendMessage(result("old") as never);
+	manager.appendMessage(assistant([{ type: "text", text: "Done" }], "stop") as never);
+	const kept = manager.appendMessage({ role: "user", content: "more", timestamp: 3 } as never);
+	manager.appendMessage(assistant([call("new")]) as never);
+	manager.appendMessage(result("new") as never);
+	manager.appendCompaction("summary", kept, 1000);
+	assert.ok(first && manager.buildContextEntries().every((e) => e.id !== first));
+	const lines = renderSession(manager, true);
+	const oldPrompt = lines.indexOf("go");
+	const answer = lines.indexOf("Done");
+	assert.ok(oldPrompt >= 0 && answer > oldPrompt);
+	assert.deepEqual(lines.slice(oldPrompt + 1, answer).filter(Boolean), ["Read 1 file"]);
+});
+
+it("counts only visible calls when compaction keeps part of a tool run", () => {
+	const manager = SessionManager.inMemory("/w");
+	manager.appendMessage({ role: "user", content: "go", timestamp: 0 } as never);
+	manager.appendMessage({ ...assistant([call("hidden")]), timestamp: 1 } as never);
+	manager.appendMessage(result("hidden", "read", { isError: true, timestamp: 2 }) as never);
+	const kept = manager.appendMessage({ ...assistant([call("kept", "read", { path: "visible.ts" })]), timestamp: 3 } as never);
+	manager.appendMessage(result("kept", "read", { timestamp: 4 }) as never);
+	manager.appendMessage({ ...assistant([{ type: "text", text: "Done" }], "stop"), timestamp: 5 } as never);
+	manager.appendCompaction("summary", kept, 1000);
+	const lines = renderSession(manager, false).filter(Boolean);
+	assert.ok(lines.includes("Read 1 file"));
+	assert.ok(!lines.some((line) => /failed|Read 2 files/.test(line)));
 });
