@@ -68,7 +68,7 @@ it("an explicitly untrusted project adds no project files, global files stay", a
 it("the cwd project entry wins over the repository root, even without a trust level", async (t) => {
 	const w = world(t);
 	w.put("project/AGENTS.md", "root doc");
-	w.put("codex/config.toml", `${trust(w.root, "untrusted")}\n[projects."${w.cwd}"]\nnote = "no trust level here"\n`);
+	w.put("codex/config.toml", `${trust(w.root, "untrusted")}\n[projects.${JSON.stringify(w.cwd)}]\nnote = "no trust level here"\n`);
 	assert.deepEqual((await run(w)).map(file => file.content), ["root doc"]);
 	// Without a cwd entry the repository root decides.
 	w.put("codex/config.toml", trust(w.root, "untrusted"));

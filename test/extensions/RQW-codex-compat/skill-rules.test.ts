@@ -30,13 +30,13 @@ it("skills.config disables by name and by path in the prompt text, later rules w
 	const all = [files.a, files.b, files.sys].sort();
 	assert.deepEqual(await listed(""), all);
 	assert.deepEqual(await listed('[[skills.config]]\nname = "a"\nenabled = false\n'), [files.b, files.sys].sort());
-	assert.deepEqual(await listed(`[[skills.config]]\npath = "${files.b}"\nenabled = false\n`), [files.a, files.sys].sort());
+	assert.deepEqual(await listed(`[[skills.config]]\npath = ${JSON.stringify(files.b)}\nenabled = false\n`), [files.a, files.sys].sort());
 	// A later path rule enables the skill again; a later name rule disables it once more.
 	const off = '[[skills.config]]\nname = "a"\nenabled = false\n';
-	const on = `[[skills.config]]\npath = "${files.a}"\nenabled = true\n`;
+	const on = `[[skills.config]]\npath = ${JSON.stringify(files.a)}\nenabled = true\n`;
 	assert.deepEqual(await listed(off + on), all);
 	assert.deepEqual(await listed(off + on + off), [files.b, files.sys].sort());
-	assert.deepEqual(await listed(`[[skills.config]]\npath = "${files.a}"\nenabled = false\n[[skills.config]]\nname = "a"\nenabled = true\n`), all);
+	assert.deepEqual(await listed(`[[skills.config]]\npath = ${JSON.stringify(files.a)}\nenabled = false\n[[skills.config]]\nname = "a"\nenabled = true\n`), all);
 });
 
 it("skills.bundled.enabled = false drops system skills and their root", async (t) => {

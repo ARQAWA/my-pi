@@ -62,7 +62,7 @@ export function fakePi(deps: Parameters<typeof codexCompat>[1]) {
 	};
 }
 
-export const trust = (path: string, level: string) => `[projects."${path}"]\ntrust_level = "${level}"\n`;
+export const trust = (path: string, level: string) => `[projects.${JSON.stringify(path)}]\ntrust_level = "${level}"\n`;
 
 export type Files = { path: string; content: string }[];
 

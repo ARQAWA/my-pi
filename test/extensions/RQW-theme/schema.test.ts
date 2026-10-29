@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { it } from "node:test";
+import { pathToFileURL } from "node:url";
 import { Compile } from "typebox/compile";
 
 it("the theme satisfies Pi's strict native schema", () => {
@@ -14,7 +15,7 @@ it("the theme satisfies Pi's strict native schema", () => {
 
 it("dialog and list accents render gold", async () => {
 	const entry = join(import.meta.dirname, "../../../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js");
-	const { loadThemeFromPath } = await import(entry);
+	const { loadThemeFromPath } = await import(pathToFileURL(entry).href);
 	const theme = loadThemeFromPath(join(import.meta.dirname, "../../../extensions/RQW-theme/theme.json"), "truecolor");
 	assert.match(theme.fg("accent", "selected"), /\x1b\[38;2;201;162;39mselected/);
 });

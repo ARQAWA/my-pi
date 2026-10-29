@@ -114,7 +114,8 @@ it("cleanup removes only orphaned child trees and reports the count", async () =
 		assert.doesNotMatch(notes[1]!, /\b[1-9]\b/);
 		// An unreadable (non-ENOENT) sessions path is a failure, not "nothing to clean"; a missing one is clean.
 		const notAgent = join(root, "not-a-dir");
-		await writeFile(notAgent, "x");
+		await mkdir(notAgent);
+		await writeFile(join(notAgent, "sessions"), "x");
 		const failing = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
 		registerSessionCommands({ on: () => undefined, registerCommand: (name: string, command: Omit<RegisteredCommand, "name" | "sourceInfo">) => failing.set(name, command) } as unknown as ExtensionAPI,
 			async () => {}, undefined, notAgent);
