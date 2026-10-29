@@ -24,6 +24,10 @@ rotated or written; settings and installed packages are untouched. No model call
 private APIs, cross-extension imports or new dependencies are used.
 No live credential or endpoint verification was performed.
 
+## Background compaction
+
+While the current session's background summary runs, `bg compaction` shimmers in gold after the folder. It shares the existing animation timer and disappears when the request ends or the session changes. The folder and limits retain their existing narrow-row layout.
+
 ## Effort colour
 
 The footer resolves all seven thinking levels through the supplied Pi theme's

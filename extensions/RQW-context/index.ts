@@ -7,6 +7,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { AgentSession, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { type BackgroundSession, bindBackground, installBackground, maybeStart, ready, supersede } from "./background.ts";
 
 export const MAX_WINDOW = 500_000;
 const VIRTUAL_MODEL_API = "pi-virtual";
@@ -87,6 +88,8 @@ type LimitScope = {
 	session?: SessionInternals;
 	selectedModel?: CompactionModel;
 	physical?: CompactionModel;
+	/** A ready background summary: Pi's own threshold check says yes, so its normal path adopts it. */
+	force?: boolean;
 };
 const SCOPE = Symbol.for("rqw-context/physical-scope");
 const scopes = globalThis as { [SCOPE]?: AsyncLocalStorage<LimitScope> };
@@ -187,12 +190,12 @@ function wrapCompactionSettings(proto: SettingsPrototype): void {
 		const settings = original.call(this, model);
 		if (!owned() || !model) return settings;
 		const scope = physicalScope.getStore();
-		const limits = scope?.session?.settingsManager === this && scope.selectedModel === model
-			? scope.physical : isVirtual(model) ? undefined : model;
+		const bound = scope?.session?.settingsManager === this && scope.selectedModel === model;
+		const limits = bound ? scope!.physical : isVirtual(model) ? undefined : model;
 		const contextWindow = contextWindowOf(limits);
 		const explicitReserve = userSetReserve(this, model) ? settings.reserveTokens : undefined;
 		return contextWindow === undefined || (limits && isVirtual(limits)) ? settings
-			: { ...settings, reserveTokens: reserveFor(contextWindow, explicitReserve) };
+			: { ...settings, reserveTokens: bound && scope!.force ? contextWindow : reserveFor(contextWindow, explicitReserve) };
 	};
 	proto[WRAPPED_SETTINGS] = original;
 }
@@ -231,9 +234,11 @@ const ROUTING_METHODS = {
 type NativeMethod = (this: SessionInternals, ...args: any[]) => any;
 type RoutingPrototype = SessionInternals & Record<string | symbol, any>;
 
-function withPhysical(session: SessionInternals, physical: CompactionModel, run: () => unknown) {
-	return physicalScope.run({ agent: session.agent, session, selectedModel: session.model, physical }, run);
+function withPhysical(session: SessionInternals, physical: CompactionModel, run: () => unknown, force?: boolean) {
+	return physicalScope.run({ agent: session.agent, session, selectedModel: session.model, physical, force }, run);
 }
+
+const background = (session: SessionInternals) => session as unknown as BackgroundSession;
 
 function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<symbol, any>): void {
 	if (!runtime[WRAPPED_PHYSICAL]) {
@@ -256,15 +261,27 @@ function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<sym
 		if (request?.request && request.agent === this.agent) {
 			request.session = this; request.selectedModel = this.model; request.physical = physical;
 		}
-		return withPhysical(this, physical, () => original.call(this, physical, projection));
+		const force = ready(background(this));
+		return withPhysical(this, physical, () => {
+			const due = original.call(this, physical, projection);
+			if (!due && !force) maybeStart(background(this), physical);
+			return due;
+		}, force);
 	});
 	wrap("_checkCompaction", (original) => function (message, ...args) {
 		if (!owned()) return original.call(this, message, ...args);
-		return withPhysical(this, this._modelForMessage(message) ?? this.model, () => original.call(this, message, ...args));
+		const physical = this._modelForMessage(message) ?? this.model;
+		const force = ready(background(this));
+		return withPhysical(this, physical, async () => {
+			const result = await original.call(this, message, ...args);
+			if (!force) maybeStart(background(this), physical);
+			return result;
+		}, force);
 	});
 	for (const name of ["_runAutoCompaction", "compact"]) {
 		wrap(name, (original) => function (...args) {
 			if (!owned()) return original.apply(this, args);
+			supersede(background(this), name === "compact" ? "manual" : args[0]);
 			if (name === "compact") {
 				const session = this;
 				// Native compact aborts the current run before reading settings. Read its response limits then, not now.
@@ -308,6 +325,8 @@ export default function context(pi: ExtensionAPI) {
 	wrapModelGetter(session, modelDescriptor!);
 	wrapSessionModel(session);
 	wrapRouting(session, runtime);
+	installBackground(session, owned);
+	bindBackground((event, handler) => pi.on(event as "session_start", handler), pi.events);
 	const token = {};
 	(owners[OWNER] ??= new Set()).add(token);
 	// Removing only this factory's token preserves concurrent sessions and renewed runtimes.

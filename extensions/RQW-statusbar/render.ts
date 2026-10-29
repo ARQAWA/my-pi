@@ -63,6 +63,7 @@ export interface BarState {
 	git?: GitCounts & { branch: string | null };
 	/** GPT Fast of the main chat: the lightning right after the model name, before the thinking level. `frame` is the shimmer step while the agent works, undefined when idle. */
 	fast?: { frame?: number };
+	backgroundFrame?: number;
 	/** Texts other extensions set with `ctx.ui.setStatus`, in key order. */
 	statuses: string[];
 }
@@ -244,27 +245,35 @@ export function gitText(git: BarState["git"], paint: Paint = plain): string {
 }
 
 /** Row 3: the working place on the left, git on the right. */
-export function placeRow(state: BarState, width: number, paint: Paint = plain): string {
+export function placeRow(state: BarState, width: number, paint: Paint = plain, right = gitText(state.git, paint)): string {
 	const folder = ` ${paint("path", `${ICON[state.place.kind]} ${singleLine(state.place.text)}`)}`;
+	let left = folder;
+	if (state.backgroundFrame !== undefined) {
+		const room = width - (right ? visibleWidth(right) + 1 : 0) - visibleWidth(folder) - 2;
+		if (room >= 2) left += "  " + shimmerText(fitPlain("bg compaction", room), visibleWidth(folder) + 2, state.backgroundFrame, GOLD);
+	}
+	return leftRight(left, right, width);
+}
+
+/** Prepare the fixed quota layout once; animation redraws only its first row. */
+export function placeLayout(state: BarState, width: number, paint: Paint = plain): { first: () => string; rest: string[] } {
+	const quotas = state.quotas && quotaText(state.quotas);
+	if (!quotas || width <= 0) return { first: () => placeRow(state, width, paint), rest: [] };
 	const git = gitText(state.git, paint);
-	return leftRight(folder, git, width);
+	const base = { ...state, quotas: undefined, git: undefined };
+	const place = placeRow({ ...base, backgroundFrame: undefined }, width, paint);
+	const right = quotas + (git ? `  ${git}` : "");
+	if (visibleWidth(place) + visibleWidth(right) + 1 <= width) {
+		return { first: () => placeRow({ ...base, backgroundFrame: state.backgroundFrame }, width, paint, right), rest: [] };
+	}
+	return { first: () => placeRow({ ...base, backgroundFrame: state.backgroundFrame }, width, paint),
+		rest: wrapTextWithAnsi(right, width).map((row) => leftRight("", row, width)) };
 }
 
 /** The three rows of the bar at this width. */
 export function renderBar(state: BarState, width: number, paint: Paint = plain): string[] {
-	if (!state.quotas || !quotaText(state.quotas) || width <= 0) {
-		return [contextRow(state.context, width, paint), modelRow(state, width, paint), placeRow(state, width, paint)];
-	}
-	// Wrap long native-window lists instead of silently cutting later providers.
-	const git = gitText(state.git, paint);
-	const place = placeRow({ ...state, quotas: undefined, git: undefined }, width, paint);
-	const quotas = quotaText(state.quotas);
-	const right = quotas + (git ? `  ${git}` : "");
-	if (visibleWidth(place) + visibleWidth(right) + 1 <= width) {
-		return [contextRow(state.context, width, paint), modelRow(state, width, paint), leftRight(place, right, width)];
-	}
-	const rows = [place, ...wrapTextWithAnsi(right, width).map((row) => leftRight("", row, width))];
-	return [contextRow(state.context, width, paint), modelRow(state, width, paint), ...rows];
+	const place = placeLayout(state, width, paint);
+	return [contextRow(state.context, width, paint), modelRow(state, width, paint), place.first(), ...place.rest];
 }
 
 // ---- The place: omp's `path` segment (`pi-tui/src/status-line/segments.ts`), on plain strings so a Windows path
