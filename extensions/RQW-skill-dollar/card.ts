@@ -79,8 +79,11 @@ export function installSkillCard(getTheme: () => Theme): () => void {
 
 	// Pi adds [Spacer, skill block, Spacer, user message]; link them when the user message arrives.
 	const link = (children: unknown[]) => {
-		const [skill, spacer, card] = children.slice(-3) as [Skill, Spacer, Card];
-		if (!(skill instanceof SkillInvocationMessageComponent) || !skill.skillBlock.userMessage) return;
+		const [candidate, spacer, card] = children.slice(-3) as [unknown, Spacer, Card];
+		if (!(candidate instanceof SkillInvocationMessageComponent)) return;
+		// Pi's private component fields are accessed by this runtime patch.
+		const skill = candidate as unknown as Skill;
+		if (!skill.skillBlock.userMessage) return;
 		// Check everything before changing anything.
 		if (typeof spacer?.setLines !== "function" || typeof spacer.lines !== "number" || typeof card?.text !== "string") return;
 		if (typeof skill.skillBlock.name !== "string" || typeof skill.skillBlock.content !== "string") return;

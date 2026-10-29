@@ -19,8 +19,8 @@ function fixture(randomInt: (max: number) => number) {
 	}, { get: (target, key) => target[key as keyof typeof target] ?? noop }) as unknown as ExtensionAPI;
 	registerSessionRuntime(pi);
 	createCoordinatorGuard({ root, now: () => 0, randomInt })(pi);
-	return (input: Record<string, unknown>) => {
-		const args = validateToolArguments(tool, { id: "synthetic", name: "agent", arguments: input });
+	return (input: { action: string; model: string; task: string; thinking?: string }) => {
+		const args = validateToolArguments(tool, { type: "toolCall", id: "synthetic", name: "agent", arguments: input });
 		const result = handlers.get("tool_call")!({ toolName: "agent", input: args }, { cwd: root, sessionManager: { getBranch: () => [] } });
 		return { result, args };
 	};

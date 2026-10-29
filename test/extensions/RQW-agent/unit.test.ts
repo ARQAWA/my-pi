@@ -241,6 +241,7 @@ test("the model-visible wait text carries the follow-up once, a repeat wait does
 	f.finish();
 	const result = await waited;
 	assert.equal(JSON.parse(result.content[0].text).results[0].text, `answer\n\n${FOLLOW_UP}`);
+	assert.ok(Array.isArray(result.details.results));
 	assert.equal(result.details.results[0].text, `answer\n\n${FOLLOW_UP}`);
 	const repeated = await f.coordinator.wait(["agent#1"], 100, new AbortController().signal, "again");
 	assert.doesNotMatch(repeated.content[0].text, /follow-up actions/);
@@ -334,7 +335,7 @@ test("interrupted tool calls receive durable error results without replay", asyn
 	assert.match(JSON.stringify(result.content), /Interrupted before a durable result/);
 });
 
-function runtimeFixture(parent: SessionManager, cwd: string, response: (context: any, options: any) => string | ReturnType<typeof fauxAssistantMessage> | Promise<ReturnType<typeof fauxAssistantMessage>> = () => "answer", responses = 8, codemode = false) {
+function runtimeFixture(parent: SessionManager, cwd: string, response: (context: any, options: any) => string | ReturnType<typeof fauxAssistantMessage> | Promise<string | ReturnType<typeof fauxAssistantMessage>> = () => "answer", responses = 8, codemode = false) {
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	const events = createEventBus();
 	const model = createFauxCore({ provider: "persist-test", models: [{ id: "model" }] }).getModel();
@@ -367,8 +368,7 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 		getThinkingLevel: () => "off", getActiveTools: () => codemode ? ["codemode"] : [],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
-	// No administrative Codex folder: the fixture must not read the host's /etc/codex.
-	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined, join(cwd, "no-system-codex"));
+	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
 	return { runtime, requests, ctx, events, notices, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { let result: unknown; for (const hook of hooks.get(name) ?? []) result = await hook(event, ctx); return result; },
 		execute: (params: any, callId = "call") => definition.execute(callId, params, new AbortController().signal, undefined, ctx) };
 }
@@ -1149,7 +1149,7 @@ async function crashedDuringWait(t: TestContext, restoredAt = 1000, restoredResp
 	await before?.(parent.getSessionFile()!, id);
 	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root, restoredResponse);
 	await restored.execute({ action: "status", ids: ["agent#1"] });
-	const sent = () => restored.ctx.sessionManager.getBranch().filter((entry: any) => entry.customType === "child_wait").map((entry: any) => entry.details);
+	const sent = (): { wait_id: string; reason: string; timed_out: boolean; changed: { change: string }[]; results: { text: string }[] }[] => restored.ctx.sessionManager.getBranch().filter((entry: any) => entry.customType === "child_wait").map((entry: any) => entry.details);
 	return { id, root, clock, restored, sent, plain: () => restored.ctx.sessionManager.getBranch().filter((entry: any) => entry.type === "custom_message" && entry.customType === "agent") };
 }
 

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ContextEvent, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
@@ -19,7 +19,7 @@ export default function processReminder(pi: ExtensionAPI, root = ROOT): void {
 		});
 		const reminder = rules.join("\n");
 		if (!reminder) return;
-		return { messages: event.messages.flatMap(message => message.role === "user"
+		return { messages: event.messages.flatMap<ContextEvent["messages"][number]>(message => message.role === "user"
 			? [message, { role: "custom" as const, customType: "process-reminder", content: `<process-reminder>\n${reminder}\n</process-reminder>`, display: false, timestamp: 0 }]
 			: [message]) };
 	});

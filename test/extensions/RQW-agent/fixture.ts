@@ -28,7 +28,7 @@ export async function world(t: TestContext) {
 	return { base, put, project: join(base, "project"), cwd: join(base, "project", "pkg") };
 }
 
-export function runtime(cwd: string, root: string, thinking = "off", systemDir = join(root, "no-system-codex")) {
+export function runtime(cwd: string, root: string, thinking = "off") {
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	const parent = SessionManager.create(root, join(root, "parent"));
 	// Two models: the parent's `model` and a distinct `other`, so a profile model that is ignored shows.
@@ -56,8 +56,7 @@ export function runtime(cwd: string, root: string, thinking = "off", systemDir =
 		getThinkingLevel: () => thinking, getActiveTools: () => [],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
-	// No administrative Codex folder: the test must not read the host's /etc/codex.
-	const live = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined, systemDir);
+	const live = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
 	return {
 		live, requests, efforts, description: () => definition.description as string,
 		async emit(name: string) { for (const hook of hooks.get(name) ?? []) await hook({}, ctx); },

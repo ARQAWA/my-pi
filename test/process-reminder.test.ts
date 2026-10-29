@@ -34,6 +34,7 @@ test("request context gets fresh rules beside every user message", async t => {
 		assert.equal(memo.customType, "process-reminder");
 		assert.equal(memo.display, false);
 		assert.equal(typeof memo.content, "string");
+		if (typeof memo.content !== "string") throw new Error("invalid reminder content");
 		for (const rule of ["1. first", "2. second", "3. third", "4. fourth", "5. fifth"]) assert.ok(memo.content.includes(rule));
 		assert.ok(!memo.content.includes("5. unrelated"));
 	}
