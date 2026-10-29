@@ -3,6 +3,7 @@
 import type { MessageRenderer, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { cached, clean, fit, fitTail, padded, wrap } from "./fit.ts";
+import { reviewCounts } from "./review.ts";
 
 export const CARD_TYPES = ["agent", "code_writer", "shell_runner"] as const;
 
@@ -114,6 +115,9 @@ export function parseCard(message: { customType: string; content: unknown; detai
 	return cardParts(id, message.details, body, message.customType);
 }
 
+/** The red verdict label of a findings answer; a zero count is never shown as a number. */
+export const findingsLabel = (count: number): string => (count === 0 ? "findings" : `${count} ${count === 1 ? "finding" : "findings"}`);
+
 function header(card: ParsedCard, theme: CardTheme, width: number): string {
 	const dim = (text: string) => theme.fg("dim", text);
 	let rest = "";
@@ -127,8 +131,8 @@ function header(card: ParsedCard, theme: CardTheme, width: number): string {
 			else {
 				const match = /^FINDINGS:(?: (\d+))?$/.exec(first ?? "");
 				if (match) {
-					const count = match[1] === undefined ? lines.filter((line) => /^FINDING \d+$/.test(line)).length : Number(match[1]);
-					label = count === 0 ? "findings" : `${count} ${count === 1 ? "finding" : "findings"}`;
+					// An explicit count wins; otherwise the protocol parser counts real findings, not quoted examples.
+					label = findingsLabel(match[1] === undefined ? reviewCounts(clean(card.body)).findings : Number(match[1]));
 					color = "error";
 				}
 			}

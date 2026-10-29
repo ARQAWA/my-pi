@@ -278,3 +278,48 @@ it("a message typed after the open session file was deleted is kept in the edito
 		assert.match(notes[2]!, /could not/i);
 	} finally { await rm(root, { recursive: true, force: true }); }
 });
+
+it("once the file has been seen, input outcomes do not need the session history and the text survives deletion", async () => {
+	const root = await mkdtemp(join(tmpdir(), "rqw-session-"));
+	try {
+		const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+		const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
+		const pi = {
+			registerCommand: (name: string, command: Omit<RegisteredCommand, "name" | "sourceInfo">) => commands.set(name, command),
+			on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
+			sendUserMessage: (text: string) => { void commands.get(text.slice(1))!.handler("", ctx as unknown as ExtensionCommandContext); },
+		};
+		const file = join(root, "open.jsonl");
+		await writeFile(file, '{"type":"session","version":3,"id":"abc"}\n');
+		let editor = "";
+		let historyAvailable = true;
+		const fresh = { ui: { setEditorText: (text: string) => { editor = text; }, notify() {} } };
+		const ctx = {
+			sessionManager: {
+				getSessionFile: () => file,
+				getEntries: () => {
+					if (!historyAvailable) throw new Error("session history unavailable");
+					return [];
+				},
+			},
+			ui: fresh.ui,
+			newSession: async (options: { withSession: (fresh: unknown) => Promise<void> }) => {
+				await options.withSession(fresh);
+				return { cancelled: false };
+			},
+		};
+		registerSessionCommands(pi as unknown as ExtensionAPI, async () => {}, undefined, root);
+		const submit = () => handlers.get("input")!({ type: "input", text: "my text", source: "interactive" }, ctx);
+		// The first input sees the file; from then on the history is not needed.
+		assert.deepEqual(await submit(), { action: "continue" });
+		historyAvailable = false;
+		assert.deepEqual(await submit(), { action: "continue" });
+		await unlink(file);
+		assert.deepEqual(await submit(), { action: "handled" });
+		await new Promise(done => setImmediate(done));
+		await new Promise(done => setImmediate(done));
+		assert.equal(editor, "my text");
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+});

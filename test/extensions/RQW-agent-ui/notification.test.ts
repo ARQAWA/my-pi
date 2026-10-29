@@ -34,3 +34,24 @@ for (const [type, content, expected] of [
 		}
 	});
 }
+
+it("does not repaint a notification at an unchanged width and refreshes after invalidate", () => {
+	const renderers = new Map<string, MessageRenderer>();
+	agentUi({ registerMessageRenderer: (name: string, renderer: MessageRenderer) => renderers.set(name, renderer), registerToolRenderer() {} } as never);
+	let paints = 0;
+	const counting = { ...theme, fg: (_role: string, text: string) => (paints++, text) };
+	const message = { role: "custom", customType: "agent_progress", content: "[notification] agent#7 has worked 50 tool-call steps", display: true, timestamp: 0 };
+	const card = renderers.get("agent_progress")!(message as never, { expanded: true, outputPad: 0 }, counting as never)!;
+	const wide = [...card.render(80)];
+	const before = paints;
+	assert.deepEqual(card.render(80), wide);
+	assert.equal(paints, before);
+	// A width change rewraps the rows and repaints them.
+	const narrow = card.render(20);
+	assert.ok(paints > before);
+	assert.ok(narrow.length > wide.length && narrow.every(row => row.length <= 20));
+	const afterWidth = paints;
+	card.invalidate();
+	assert.deepEqual(card.render(20), narrow);
+	assert.ok(paints > afterWidth);
+});

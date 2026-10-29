@@ -10,6 +10,8 @@ import { type BorderSource, ContextEditor } from "./editor.ts";
 import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
 import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar, modelRow, activityRows } from "./render.ts";
 
+// Tools that never change the working tree or the branch.
+const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "web", "tool_search"]);
 const GIT_POLL_MS = 10_000;
 /** Thirty nominal redraws per second; travel follows elapsed time independently of this timer. */
 const SHIMMER_MS = 1000 / 30;
@@ -384,7 +386,8 @@ export default function statusbar(pi: ExtensionAPI) {
 		tools.delete(event.toolCallId);
 		syncShimmer();
 		redraw?.();
-		refresh?.();
+		// Read-only tools cannot change git state; the poll and agent_end still refresh it.
+		if (!READ_ONLY_TOOLS.has(event.toolName)) refresh?.();
 	});
 	pi.on("session_before_compact", () => { compacting = true; syncShimmer(); redraw?.(); });
 	// Success, cancel, abort and error all end the compaction; a failure without a before-event ends it here too.

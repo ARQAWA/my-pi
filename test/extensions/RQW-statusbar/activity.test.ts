@@ -13,6 +13,11 @@ it("renders main activity, compaction and counts", () => {
 	assert.equal(actionPhrase("edit", { path: "src/app.ts" }), "Editing app.ts");
 });
 
+it("names the file of a multi-file write", () => {
+	assert.match(actionPhrase("write", { files: [{ path: "src/hello.ts", content: "x" }] }), /hello\.ts/);
+	assert.match(actionPhrase("edit", { edits: [{ path: "src/a.ts" }] }), /a\.ts/);
+});
+
 it("keeps inactive agent and process waits visible after the main answer", () => {
 	// Regression for 0870ef56d9e86367639a3997cd6d07b620c07c8b.
 	assert.equal(statusText({ compacting: false, running: false, counts: { agents: 2, backgroundProcesses: 3 } })?.text,

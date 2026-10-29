@@ -1,6 +1,6 @@
 import type { MessageRenderer } from "@earendil-works/pi-coding-agent";
 import { messageText } from "./card.ts";
-import { clean, fit, padded, wrap } from "./fit.ts";
+import { cached, clean, fit, padded, wrap } from "./fit.ts";
 
 function detailsOf(content: string, details: unknown): Record<string, unknown> {
 	if (details && typeof details === "object") return details as Record<string, unknown>;
@@ -39,10 +39,7 @@ export const createNotificationCard: MessageRenderer = (message, options, theme)
 				+ paint(failed ? "error" : "muted", status) + muted(targets ? `: ${targets}` : "");
 		}
 	}
-	return {
-		render: padded((width) => options.expanded
-			? wrap(clean(text), width).map((line) => theme.fg("muted", line))
-			: width > 0 ? [fit(summary, width)] : [], options.outputPad),
-		invalidate() {},
-	};
+	return cached(padded((width) => options.expanded
+		? wrap(clean(text), width).map((line) => theme.fg("muted", line))
+		: width > 0 ? [fit(summary, width)] : [], options.outputPad));
 };
