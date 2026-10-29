@@ -3,18 +3,24 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import {
 	SessionManager,
 	type AgentSession,
-	type ExtensionAPI,
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 
 type ReadonlySessionManager = ExtensionContext["sessionManager"];
 
 export const CHILD_ENTRY = "rqw-agent-child";
+export const WAIT_ENTRY = "rqw-agent-wait";
+export const ACCEPT_ENTRY = "rqw-agent-accept";
 
 const retainedChildren = new WeakMap<ReadonlySessionManager, Map<string, SessionManager>>();
 
 export function retainedChildManager(parent: ReadonlySessionManager, kind: string, id: number): SessionManager | undefined {
 	return retainedChildren.get(parent)?.get(`${kind}#${id}`);
+}
+
+/** Forgets the retained manager of a child that went to sleep: its history is reopened from its file when needed. */
+export function releaseChildManager(parent: ReadonlySessionManager, kind: string, id: number): void {
+	retainedChildren.get(parent)?.delete(`${kind}#${id}`);
 }
 
 function retainChild(parent: ReadonlySessionManager, kind: string, id: number, manager: SessionManager): SessionManager {
@@ -140,12 +146,4 @@ export function repairInterrupted(session: AgentSession): boolean {
 	const messages = manager.buildSessionProjection().messages;
 	session.agent.state.messages = messages;
 	return messages.some(message => message.role === "user") && messages.at(-1)?.role !== "assistant";
-}
-
-export function installExecutionIntent(pi: ExtensionAPI, manager: SessionManager): void {
-	pi.on("tool_call", event => {
-		manager.appendCustomEntry("rqw-agent-tool-intent", {
-			version: 1, toolCallId: event.toolCallId, toolName: event.toolName, args: event.input,
-		});
-	});
 }

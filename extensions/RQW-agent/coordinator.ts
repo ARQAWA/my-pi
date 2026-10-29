@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { RunningCounts } from "./counts.ts";
-import { recordDelivery } from "./persistence.ts";
+import { ACCEPT_ENTRY, WAIT_ENTRY, recordDelivery } from "./persistence.ts";
 import { FOLLOW_UP } from "./prompt.ts";
 
 /** Caller-owned children and results, including results not yet consumed by the caller model. */
@@ -22,15 +22,27 @@ export type RuntimeHandle = {
 	close(): void;
 };
 
+/**
+ * A notification wait as saved in the caller's session: opened when it is created, with the `call` whose tool result carries
+ * its `waiting` receipt (a restore raises it only if that result is saved without error), closed (`open: false`) when its `child_wait` is sent or the wait is replaced or canceled. `deadline_at` is wall-clock ms.
+ */
+export type WaitRecord = { version: 1; wait_id: string; open: boolean; call?: string; replaced_by?: string; targets?: { id: string; run?: string }[]; until?: "first" | "all"; wake_on_alert?: boolean; deadline_at?: number };
+
+/**
+ * The outcome of a wait that ran inside a codemode script (`root` is the script's call), written when the wait call ends.
+ * A restore counts its results as delivered only if the wait succeeded and the script's own result is saved without error.
+ */
+export type AcceptRecord = { version: 1; call: string; root: string; ok: boolean; results: { run: string; delivery: string }[] };
+
 export const DEFAULT_WAIT_MS = 300000;
-export type Target = { id: string; run: string; active(): boolean; checkpoint?(): Map<string, number>; alertVersion?(): number; snapshot(messages?: number, checkpoint?: Map<string, number>, depth?: number): Record<string, unknown> };
+export type Target = { id: string; run: string; recovers?: string; active(): boolean; checkpoint?(): Map<string, number>; alertVersion?(): number; snapshot(messages?: number, checkpoint?: Map<string, number>, depth?: number): Record<string, unknown> };
 export type WaitOptions = { until?: "first" | "all"; wake_on_alert?: boolean };
 export type Result = { id: string; run: string; delivery: string; text?: string; outcome: string;
 	state: "pending" | "held" | "reserved" | "message" | "wait"; claimed_by?: string; push(result: Result): void };
 type Watch = { check(): void };
 type Reservation = { owner: string; call: string; results: Result[]; signal: AbortSignal };
 type WaitOutcome = { reason: string; pending: Result[]; receipts: Record<string, unknown>[]; changed?: unknown };
-type NotificationWait = { call: string; key: string; ready(): boolean; confirm(kept: boolean): void; cancel(uncommittedOnly?: boolean): void; flush(triggerTurn: boolean): void };
+type NotificationWait = { id: string; call: string; key: string; ready(): boolean; confirm(kept: boolean): void; cancel(uncommittedOnly?: boolean, replacedBy?: string): void; drop(): void; flush(triggerTurn: boolean): void; follow(id: string, from: string, to: string): void };
 
 export function waitTimeout(value?: number | null) {
 	if (value == null) return DEFAULT_WAIT_MS;
@@ -80,6 +92,7 @@ export class Coordinator {
 	private changes = new Map<string, { run: string; change: string }>();
 	private reservations = new Map<string, Reservation>();
 	private notificationWaits = new Map<string, NotificationWait>();
+	private sentWaits = new Set<string>();
 	private notices: { message: Parameters<ExtensionAPI["sendMessage"]>[0]; current(): boolean; delivered(): void; send: ExtensionAPI["sendMessage"] }[] = [];
 	private parents = new Map<string, string>();
 	private completed = new Map<string, boolean>();
@@ -94,8 +107,10 @@ export class Coordinator {
 	private markAborted = () => { this.callerAborted = true; this.cancelNotificationWaits(true); };
 	queue: Promise<unknown> = Promise.resolve();
 	private send: ExtensionAPI["sendMessage"];
-	constructor(pi: ExtensionAPI, send: ExtensionAPI["sendMessage"] = (message, options) => pi.sendMessage(message, options)) {
+	private journal?: (type: string, data: object) => void;
+	constructor(pi: ExtensionAPI, send: ExtensionAPI["sendMessage"] = (message, options) => pi.sendMessage(message, options), journal?: (type: string, data: object) => void) {
 		this.send = send;
+		this.journal = journal;
 		pi.on("session_start", (_event, ctx) => { this.caller = ctx; });
 		pi.on("before_agent_start", (_event, ctx) => { this.caller = ctx; });
 		pi.on("session_tree", (_event, ctx) => { this.caller = ctx; this.unansweredNotifications.clear(); });
@@ -103,6 +118,10 @@ export class Coordinator {
 		pi.on("tool_call", event => { if (event.parentToolCallId) this.parents.set(event.toolCallId, event.parentToolCallId); });
 		pi.on("tool_execution_end", event => {
 			this.completed.set(event.toolCallId, !event.isError);
+			const root = this.root(event.toolCallId);
+			const reservation = [...this.reservations.values()].find(item => item.call === event.toolCallId);
+			if (reservation && root !== event.toolCallId)
+				this.record(ACCEPT_ENTRY, { version: 1, call: event.toolCallId, root, ok: !event.isError, results: reservation.results.map(r => ({ run: r.run, delivery: r.delivery })) });
 		});
 		pi.on("turn_end", (_event, ctx) => this.finalize(ctx));
 		pi.on("agent_start", () => { this.callerAborted = false; this.nativeStarts++; this.notify(); });
@@ -125,7 +144,9 @@ export class Coordinator {
 		});
 		pi.on("agent_settled", (event, ctx) => this.settleCore(ctx, event.aborted));
 		pi.on("session_shutdown", () => {
-			this.callerAborted = true; this.cancelNotificationWaits();
+			this.callerAborted = true; this.sentWaits.clear();
+			// Shutdown ends the live waits but writes no closing entry: the accepted ones are restored with the reopened session.
+			for (const wait of [...this.notificationWaits.values()]) wait.drop();
 			this.notices.length = 0;
 			this.diagnostics.length = 0; this.endSignal?.removeEventListener("abort", this.markAborted);
 		});
@@ -159,11 +180,12 @@ export class Coordinator {
 		return this.unansweredNotifications.size > 0;
 	}
 	private cancelNotificationWaits(uncommittedOnly = false) {
-		for (const wait of [...this.notificationWaits.values()]) wait.cancel(uncommittedOnly);
+		// A wait whose closing entry cannot be saved stays accepted.
+		for (const wait of [...this.notificationWaits.values()]) try { wait.cancel(uncommittedOnly); } catch { /* Stays accepted. */ }
 	}
 	private replaceNotifications(key: string, replacement?: NotificationWait) {
 		for (const wait of [...this.notificationWaits.values()])
-			if (wait !== replacement && wait.key === key) wait.cancel();
+			if (wait !== replacement && wait.key === key) wait.cancel(false, replacement?.id);
 	}
 	/** Side-channel notices use the same settlement-safe sender as wait notifications, never result ownership. */
 	notification(message: Parameters<ExtensionAPI["sendMessage"]>[0], current: () => boolean, delivered: () => void, send = this.send): void {
@@ -186,12 +208,24 @@ export class Coordinator {
 		while (this.parents.has(call) && !seen.has(call)) { seen.add(call); call = this.parents.get(call)!; }
 		return call;
 	}
+	private record(type: string, data: WaitRecord | AcceptRecord) {
+		// A failed write may lose a wait after a crash, but must not break the live wait.
+		try { this.journal?.(type, data); } catch { /* Best effort. */ }
+	}
 	private saveReceipt(ctx: ExtensionContext, run: string) {
 		// Receipt failure may repeat delivery after wake, but must not block the handoff.
 		try { recordDelivery(ctx.sessionManager, run); } catch { /* Best effort. */ }
 	}
 	/** Only a successful finalized, persisted outer toolResult commits a wait handoff. */
 	private finalize(ctx: ExtensionContext, settled = false) {
+		// A wait is closed in the session only once its child_wait message is persisted; until then a crash re-raises it.
+		for (const id of this.sentWaits) {
+			const persisted = ctx.sessionManager.getBranch().some(entry => entry.type === "custom_message" && entry.customType === "child_wait"
+				&& (entry.details as { wait_id?: string } | undefined)?.wait_id === id);
+			if (!persisted) continue;
+			this.record(WAIT_ENTRY, { version: 1, wait_id: id, open: false });
+			this.sentWaits.delete(id);
+		}
 		for (const result of this.messageReceipts) {
 			const persisted = ctx.sessionManager.getBranch().some(entry => {
 				const details = (entry.type === "custom_message" ? entry.details
@@ -231,6 +265,22 @@ export class Coordinator {
 		this.notify();
 		if (!this.settling) this.flushNotifications(!this.callerAborted);
 	}
+	/** Brings a saved open wait back with its id, targets, options and remaining time; a past deadline times out at once. */
+	restoreWait(record: WaitRecord) {
+		const targets = record.targets ?? [];
+		if (!targets.length || typeof record.deadline_at !== "number") return;
+		this.notificationWait(targets.map(target => target.id), Math.max(0, record.deadline_at - Date.now()), new AbortController().signal,
+			`restored:${record.wait_id}`, { until: record.until, wake_on_alert: record.wake_on_alert },
+			{ id: record.wait_id, runs: new Map(targets.map(target => [target.id, this.continued(target.id, target.run)])), deadlineAt: record.deadline_at, call: record.call });
+	}
+	/** The run a saved wait follows: a target that recorded it as the run it continues after a crash moves on to its own. */
+	private continued(id: string, run?: string): string | undefined {
+		const target = this.targets.get(id);
+		return run && target?.recovers === run ? target.run : run;
+	}
+	hasWait(id: string) { return this.notificationWaits.has(id); }
+	/** A restored wait on `id` moves from the interrupted run `from` to the run `to` that continues it. */
+	follow(id: string, from: string, to: string) { for (const wait of this.notificationWaits.values()) wait.follow(id, from, to); }
 	add(target: Target) { this.targets.set(target.id, target); this.notify(); }
 	change(id: string, change: string) {
 		const target = this.targets.get(id);
@@ -243,13 +293,28 @@ export class Coordinator {
 		this.notify();
 	}
 	begin(target: Target) { this.results.delete(target.id); this.add(target); }
-	publish(id: string, run: string, text: string, outcome: string, push: Result["push"]) {
+	private register(id: string, run: string, text: string, outcome: string, push: Result["push"], delivery: string = randomUUID()): Result | undefined {
 		if (this.targets.get(id)?.run !== run || this.results.get(id)?.run === run) return;
-		const result: Result = { id, run, delivery: randomUUID(), text, outcome, state: "pending", push };
+		const result: Result = { id, run, delivery, text, outcome, state: "pending", push };
 		this.results.set(id, result);
 		this.uncommitted.add(result);
+		return result;
+	}
+	publish(id: string, run: string, text: string, outcome: string, push: Result["push"], delivery?: string) {
+		const result = this.register(id, run, text, outcome, push, delivery);
+		if (!result) return;
 		this.notify(); // A registered waiter reserves synchronously before the message path can claim it.
 		this.push(result);
+	}
+	/**
+	 * Saved answers of a restore: all are registered first, then `restore` raises the saved waits, so each wait sees every
+	 * answer before any is pushed as a message.
+	 */
+	publishAll(items: { id: string; run: string; text: string; outcome: string; push: Result["push"]; delivery?: string }[], restore?: () => void) {
+		const added = items.flatMap(item => this.register(item.id, item.run, item.text, item.outcome, item.push, item.delivery) ?? []);
+		restore?.();
+		this.notify();
+		for (const result of added) this.push(result);
 	}
 	private push(result: Result) {
 		if (result.state !== "pending" || this.offered.has(result)) return;
@@ -284,10 +349,10 @@ export class Coordinator {
 	private receipt(result: Result) {
 		return { id: result.id, run: result.run, delivery: result.delivery, delivered_via: result.state === "message" ? "message" : "wait", claimed_by: result.claimed_by };
 	}
-	private selection(ids: string[], options: WaitOptions, owner: string, confirmedOnly = false) {
+	private selection(ids: string[], options: WaitOptions, owner: string, confirmedOnly = false, runs?: Map<string, string | undefined>) {
 		if (options.until != null && options.until !== "first" && options.until !== "all") throw new Error("until must be first or all");
 		if (options.wake_on_alert != null && typeof options.wake_on_alert !== "boolean") throw new Error("wake_on_alert must be a boolean");
-		const selected = new Map(ids.map(id => [id, this.targets.get(id)?.run]));
+		const selected = new Map(runs ?? ids.map(id => [id, this.targets.get(id)?.run]));
 		const changes = new Map(ids.map(id => [id, this.changes.get(id)]));
 		const alerts = new Map(ids.map(id => [id, this.targets.get(id)?.alertVersion?.() ?? 0]));
 		const checkpoints = new Map(ids.map(id => [id, this.targets.get(id)?.checkpoint?.()]));
@@ -324,7 +389,12 @@ export class Coordinator {
 		const output = ({ reason, pending, receipts, changed }: WaitOutcome) => json({ reason, timed_out: reason === "timeout",
 			results: pending.map(r => ({ id: r.id, run: r.run, delivery: r.delivery, text: `${r.text}\n\n${FOLLOW_UP}`, outcome: r.outcome })), receipts,
 			...(changed ? { changed } : {}), statuses: this.status(ids, undefined, checkpoints) });
-		return { held, hold, release, check, output };
+		// For shutdown: held answers go back to pending without being pushed; they stay saved and a restored wait claims them again.
+		const drop = () => {
+			for (const r of held) if (r.state === "held" && r.claimed_by === owner) { r.state = "pending"; delete r.claimed_by; }
+			held.clear();
+		};
+		return { held, hold, release, check, output, selected, drop };
 	}
 	wait(ids: string[], timeout: number, signal: AbortSignal, call: string, options: WaitOptions = {}) {
 		signal.throwIfAborted();
@@ -359,33 +429,52 @@ export class Coordinator {
 			if (signal.aborted) abort();
 			else {
 				// Release old holds only after the replacement can claim them before normal push.
-				this.replaceNotifications(targetKey(ids));
+				try { this.replaceNotifications(targetKey(ids)); } catch (error) { fail(error); return; }
 				watcher.check();
 			}
 		});
 	}
 	/** The receipt must persist before its subscription may deliver through the caller's safe sender. */
-	notificationWait(ids: string[], timeout: number, signal: AbortSignal, call: string, options: WaitOptions = {}): ReturnType<typeof json> & { terminate?: true } {
+	notificationWait(ids: string[], timeout: number, signal: AbortSignal, call: string, options: WaitOptions = {}, restored?: { id: string; runs: Map<string, string | undefined>; deadlineAt: number; call?: string }): ReturnType<typeof json> & { terminate?: true } {
 		signal.throwIfAborted();
-		const owner = randomUUID(), selection = this.selection(ids, options, owner, true);
+		const owner = restored?.id ?? randomUUID(), selection = this.selection(ids, options, owner, true, restored?.runs);
+		const deadlineAt = restored?.deadlineAt ?? Date.now() + timeout;
 		let initial: WaitOutcome | undefined;
 		try {
-			initial = selection.check();
+			// A restored wait is judged only after the saved answers are published (see publishAll).
+			if (!restored) initial = selection.check();
 			if (initial && initial.reason !== "result") {
 				const result = selection.output(initial);
 				this.replaceNotifications(targetKey(ids));
 				return result;
 			}
 		} catch (error) { selection.release(); throw error; }
-		let armed = false, closed = false, outcome: WaitOutcome | undefined, cancelTimer = () => {};
+		const savedCall = restored ? restored.call : call;
+		const openRecord = (): WaitRecord => ({ version: 1, wait_id: owner, open: true, ...(savedCall ? { call: savedCall } : {}), deadline_at: deadlineAt, until: options.until === "all" ? "all" : "first",
+			wake_on_alert: options.wake_on_alert !== false,
+			targets: ids.map(id => ({ id, ...(selection.selected.get(id) ? { run: selection.selected.get(id) } : {}) })) });
+		let armed = !!restored, closed = false, outcome: WaitOutcome | undefined, cancelTimer = () => {};
+		// A delivered wait stays open in the session until its child_wait is persisted (see finalize).
 		const cleanup = () => {
 			closed = true; this.notificationWaits.delete(owner); this.watchers.delete(watcher); this.activeWaits--;
 			cancelTimer(); signal.removeEventListener("abort", abort);
 		};
-		const cancel = (uncommittedOnly = false) => {
-			if (!closed && (!uncommittedOnly || !armed)) { cleanup(); selection.release(); }
+		// A canceled or replaced wait counts as closed only once its closing entry is saved; a failed write throws and the wait stays accepted.
+		const cancel = (uncommittedOnly = false, replacedBy?: string) => {
+			if (closed || (uncommittedOnly && armed)) return;
+			this.journal?.(WAIT_ENTRY, { version: 1, wait_id: owner, open: false, ...(replacedBy ? { replaced_by: replacedBy } : {}) });
+			cleanup(); selection.release();
 		};
-		const abort = () => cancel(true);
+		const drop = () => { if (!closed) { cleanup(); selection.drop(); } };
+		// Internal cancellations have no caller to tell: a failed write keeps the wait, to be tried again.
+		const softCancel = (uncommittedOnly = false) => { try { cancel(uncommittedOnly); } catch { /* Stays accepted. */ } };
+		// A wait whose own call fails is dropped at once, its closing entry written as well as possible.
+		const discard = () => {
+			if (closed) return;
+			this.record(WAIT_ENTRY, { version: 1, wait_id: owner, open: false });
+			cleanup(); selection.release();
+		};
+		const abort = () => softCancel(true);
 		const finish = (value: WaitOutcome) => {
 			if (closed || outcome) return;
 			selection.hold(value.pending);
@@ -395,19 +484,25 @@ export class Coordinator {
 		const watcher: Watch = { check: () => {
 			if (closed || outcome) return;
 			try { const value = selection.check(); if (value) finish(value); }
-			catch { cancel(); }
+			catch { softCancel(); }
 		} };
 		const wait: NotificationWait = {
-			call, key: targetKey(ids),
+			id: owner, call, key: targetKey(ids),
 			ready: () => armed && !!outcome && !closed,
 			confirm: kept => {
 				if (closed || armed) return;
-				if (!kept) { cancel(); return; }
+				if (!kept) { softCancel(); return; }
 				armed = true;
 				// A persisted observation belongs to the caller session, not its originating turn.
 				signal.removeEventListener("abort", abort);
 			},
-			cancel,
+			cancel, drop,
+			follow: (id, from, to) => {
+				if (!restored || closed || selection.selected.get(id) !== from) return;
+				selection.selected.set(id, to);
+				// Saved again, so a second crash restores the wait on the continuing run.
+				this.record(WAIT_ENTRY, openRecord());
+			},
 			flush: triggerTurn => {
 				if (!wait.ready()) return;
 				let result: ReturnType<typeof json>;
@@ -416,7 +511,7 @@ export class Coordinator {
 					if (outcome!.pending.some(r => r.state !== "held" || r.claimed_by !== owner))
 						outcome = selection.check() ?? { reason: "target_changed", pending: [], receipts: [] };
 					result = selection.output(outcome!);
-				} catch { cancel(); return; }
+				} catch { softCancel(); return; }
 				const message = { customType: "child_wait", content: JSON.stringify({ ...result.details, wait_id: owner }), display: true,
 					details: { ...result.details, wait_id: owner } };
 				// Claim before sending: triggerTurn may synchronously re-enter the broker.
@@ -432,6 +527,7 @@ export class Coordinator {
 					for (const r of claimed) { r.state = "held"; this.uncommitted.add(r); selection.held.add(r); }
 					selection.release(); return;
 				}
+				this.sentWaits.add(owner);
 				for (const r of claimed) { this.messageReceipts.add(r); this.releaseMessage(r); }
 				selection.release();
 			},
@@ -439,13 +535,19 @@ export class Coordinator {
 		let receipt: ReturnType<typeof json>;
 		try { receipt = json({ reason: "waiting", wait_id: owner, timed_out: false, results: [], receipts: [], statuses: this.status(ids) }); }
 		catch (error) { selection.release(); throw error; }
+		// Saved at creation: a crash after its tool result is saved, but before the turn ends, still finds the wait.
+		// A wait whose opening record cannot be saved is not accepted: the write is not best effort.
+		if (!restored) {
+			try { this.journal?.(WAIT_ENTRY, openRecord()); } catch (error) { selection.release(); throw error; }
+		}
 		this.activeWaits++; this.notificationWaits.set(owner, wait); this.watchers.add(watcher);
 		signal.addEventListener("abort", abort, { once: true });
 		cancelTimer = deadlineTimer(timeout, () => finish({ reason: "timeout", pending: [], receipts: [] }));
-		if (signal.aborted) cancel();
+		if (signal.aborted) discard();
 		else {
-			this.replaceNotifications(wait.key, wait);
-			if (initial) finish(initial); else watcher.check();
+			// The new wait is already saved; an old one is closed only after that, and a failed closing write fails this call.
+			try { this.replaceNotifications(wait.key, wait); } catch (error) { discard(); throw error; }
+			if (initial) finish(initial); else if (!restored) watcher.check();
 		}
 		this.notify();
 		return { ...receipt, terminate: true as const };

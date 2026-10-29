@@ -196,7 +196,8 @@ to the session runtime in [index.ts](index.ts). Registration takes the direct ca
 global caller session. Completed agents keep their history until `stop` or caller shutdown. After exactly five
 finished-idle minutes, an eligible live child releases its SDK session into the same saved-slot restore path.
 Parent wait/status interactions rearm the grace period. Both parent metadata and child history must reopen durably;
-in-memory or unavailable histories stay awake. A committed outer codemode handoff may intentionally filter its result.
+in-memory or unavailable histories stay awake. The session manager the caller keeps for a sleeping child is released with
+its session, so a sleeping child holds no history in memory. A committed outer codemode handoff may intentionally filter its result.
 Committed delivery run IDs are appended one per line to `<owning-session-file>.children/delivered`.
 Hydration reads these receipts alongside the selected branch, so historical children do not prevent sleep
 and filtered results are not delivered again after wake or restart. In-memory sessions skip the receipt file.
@@ -481,8 +482,40 @@ in-memory build has no saved history and cannot be recovered retroactively, and 
 new agents are saved.
 Versioned `rqw-agent-child` entries in the parent's selected branch store the local id, generation, child file,
 run state, exact prompt/configuration, model, thinking, tools, settings, Fast, title and selected profile provenance
-`{name, path, sha256}`. The prompt/configuration and task are written once per agent object and again only when they
-change; later entries are short and restore takes the omitted fields from the previous entry of the same child.
+`{name, path, sha256}`. The prompt/configuration and task are written once and again only when their text changes.
+Restore remembers the text of the saved record, so a restore or a resume without changes writes no new copy; later entries are short and restore takes the omitted fields from the previous entry of the same child.
+An ordinary prompt starts with the saved `base`: the record keeps only the text after it as `system_tail`, and
+restore joins the trimmed `base` and the tail. An own `system` and records written earlier keep the whole `system` and are read as before.
+Every command a child accepts (a steering `send`, a `send` while a run stops, an idle `send`) is saved in its record as
+`pending_sends`, batches `{n, tasks}`, until its user message is in the child's history. Only parent commands create user
+messages, so `n`, the ordinal of that user message, tells whether a batch has arrived. Tasks queued while a run stops
+become one batch, as they become one message. `interrupt`, `stop` and `restart` clear the list by writing a record.
+On resume the batches whose `n` is not yet in the history are sent once, in order, whatever the last request was; the
+first one as the next prompt, the others as steering. A batch already in the history is never sent again.
+
+A notification wait is saved in the parent session as an `rqw-agent-wait` entry when it is created, so a crash after its
+tool result is saved but before the turn ends loses nothing; a restore raises it only if the tool result of its `call` is
+saved without error. The entry holds `wait_id`, `call`, the targets with their run, `until`, `wake_on_alert` and `deadline_at`, a wall-clock time in
+milliseconds. Replacing it by a wait on the same targets and canceling it write a closing entry `{wait_id, open: false}`;
+sending its `child_wait` writes it only once that message is seen persisted, so a crash before that re-raises the wait. An ordinary shutdown writes no closing entry either: the accepted waits are restored with the reopened session. Blocking waits, such as inside codemode, are not saved. If the opening entry cannot be written, the `wait` call fails instead of being accepted. A wait that replaces another saves its own opening entry first and closes the old one only after that; if the closing entry
+cannot be written, the new `wait` call fails and the old wait stays accepted. Canceling a wait works the same way: a failed closing write keeps the wait accepted. The closing entry of a
+replacement names the replacing wait (`replaced_by`); if a restore drops that one for lack of a saved tool result, the old wait is restored.
+When the parent's children are restored, every wait still open (no closing entry and no `child_wait` with its
+`wait_id`, whether a message of the session or an entry of a nested caller's durable inbox) is raised first, before the saved answers are published, with the same `wait_id`, targets, options and the rest of
+its deadline; a past deadline gives a `timeout` `child_wait` at once. Such a wait follows only the run that continues an
+interrupted child after the crash (a run that starts as crash recovery writes the run it continues, `recovers`, into the child's record in the same entry, so a
+restored wait follows it even when the crash came before the wait's own saved run changed, also for a recovery that finished and is restored as a saved slot; any other run change gives `target_changed`); `interrupt`, `stop` and `restart` wake it as before, and any other change of run ends it with
+`target_changed`. A child waiting for its recovery counts as active for this wait, and `interrupt` on it pauses it and wakes the wait.
+The saved answers are registered before the restored waits judge their targets, and a wait that follows a continuing run is saved
+again with that run, so a second crash restores it too.
+
+A final answer is saved in the child's record, with its `delivery` id, before it is delivered; the saved answer is the outbox.
+After a restore its message carries that same id, not a new one. Records and receipts written earlier have no id and are read as before.
+A child record from before `pending_sends` and `history` has only its saved task: it counts as one pending batch, sent when the history has no user message.
+A `wait` inside a codemode script may let the script filter the answer, and the delivery receipt is written only later. So when
+that wait call ends, an `rqw-agent-accept` entry saves the call, the script's call, the outcome of the wait and the runs and
+delivery ids it took. After a restore those answers count as delivered only if the wait succeeded and the script's own tool
+result is saved without error; a wait error the script caught sends the answer again.
 Completed durable children remain saved slots during parent hydration and `wait`; neither opens their histories or
 constructs SDK sessions. Wait snapshots for these slots report saved identity, model, title and idle state, without
 inventing live diagnostics. `send` opens only its target with the original history, configuration and session identity.
@@ -509,7 +542,7 @@ seeing the failure; this adds no automatic retry loop. Failed requests stay idle
 Active or cancellation-pending children cannot be resumed;
 successfully completed children stay idle and require `send` for a new task. A child paused by hand with `interrupt` gets a durable
 `paused` state with its reason. It stays paused after reload, session switch and Pi restart until an explicit `resume` or
-`/resume-agents`. The parent's continuation restores only unfinished children that were active or interrupted by a shutdown.
+`/resume-agents`. The parent's continuation restores only unfinished children that were active or interrupted by a shutdown, and a paused child that still has an accepted command to send.
 A fork or clone copies the parent transcript but not the children's files: it does not claim the original `.children` tree,
 so a saved child entry that points into another session's tree is unavailable with a clear diagnostic. That never blocks a new
 `agent` start or the main chat, and one broken or lost child never blocks the recovery of the others. Children are not
@@ -517,16 +550,17 @@ copied on fork. `/resume-agents` resumes unfinished children
 without calling the main model first. Their final result wakes the main chat normally. Continuing a restored
 parent mechanically recovers its unfinished children; merely opening an old session does not start work.
 
-Before tool execution, `rqw-agent-tool-intent` records the call through Pi's public `tool_call` hook. Recovery
-keeps completed tool results and fills missing results with an explicit interrupted/error result warning that
+Recovery keeps completed tool results and fills missing results with an explicit interrupted/error result warning that
 side effects may already exist. It omits only a failed assistant attempt through append-only context edits.
 No old tool call is automatically executed again. The model decides whether another action is safe after seeing
 the interrupted result. Recovery is fail-closed: a missing or empty JSONL of an established or unknown history is a `recovery_error` of that
 child alone, never a new history. Only a saved state of `idle`, `runNumber` 0 and no task, as a task-less `restart` writes
 it, may restore an empty retained or new session under the same id, with no task message. The saved task and configuration are provenance only and are never turned into a task
-message, a rebuilt history or an inferred transcript. A start with a saved task whose history Pi had not flushed when
-the whole Pi process ended is not recoverable after the restart; start that child again. The other children are still
-recovered.
+message, a rebuilt history or an inferred transcript. Pi writes a child's file with its first user message. A record
+keeps `history`: false until a persist sees that message (a record without the field counts as true). When the process
+ended while it was false and the file is absent, restore opens a new empty session and sends the accepted task from
+`pending_sends`, so one task arrives. With `history` true a missing file stays a `recovery_error`. The other children are
+still recovered.
 
 Pi 1.4.0 exposes no `AgentSession.continue`. Resume reconstructs a child session, uses public `agent.continue()`
 and owns its core-run busy, abort, idle and settlement fences. Prompt/provider hooks still apply. This path does
