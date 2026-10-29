@@ -61,7 +61,7 @@ it("shows every skill as one footer line of the user card, with no separate bloc
 	// Pi rebuilds the history before session_start: that card must be linked too.
 	const early = chat("keep", `${block("b")}\n\nText`);
 	loaded.start();
-	assert.match(plain(early.container.render(60)).at(-1)!, /└ skill {2}keep · b/);
+	assert.match(plain(early.container.render(60)).at(-2)!, /└ skill {2}keep · b/);
 
 	const message = `${block("blindreview")}\n\n${block("third")}\n\nCheck my work`;
 	const { container, skill } = chat("highreview", message);
@@ -69,9 +69,9 @@ it("shows every skill as one footer line of the user card, with no separate bloc
 	const lines = plain(rendered);
 	assert.equal(lines.some(line => line.includes("[skill]") || line.includes("<skill") || line.includes("body")), false);
 	assert.equal(lines.filter(line => line.includes("└ skill")).length, 1);
-	assert.match(lines.at(-1)!, /└ skill {2}highreview · blindreview · third +ctrl\+o$/);
-	// Gap row, card padding, text, skills row: no second gap and no block rows, all in the card colour.
-	assert.equal(lines.length, 4);
+	assert.match(lines.at(-2)!, /└ skill {2}highreview · blindreview · third +ctrl\+o$/);
+	// Gap row, card padding, text, skills row and bottom padding use the card colour.
+	assert.equal(lines.length, 5);
 	assert.match(lines[2], /Check my work/);
 	assert.ok(rendered.slice(3).every(line => line.includes(cardBg)));
 
@@ -84,13 +84,13 @@ it("shows every skill as one footer line of the user card, with no separate bloc
 	assert.ok(open.findIndex(line => line.includes("Check my work")) < open.findIndex(line => line.includes("highreview body")));
 	assert.ok(openRows.slice(3).every(line => line.includes(cardBg)));
 	skill.setExpanded(false);
-	assert.equal(plain(container.render(60)).length, 4);
+	assert.equal(plain(container.render(60)).length, 5);
 
 	// No click target: only Ctrl+O shows the skill text.
 	assert.equal(click(container, 3, 4), undefined);
 	const afterClick = plain(container.render(60));
 	assert.equal(afterClick.some(line => line.includes("highreview body")), false);
-	assert.match(afterClick.at(-1)!, /└ skill {2}highreview/);
+	assert.match(afterClick.at(-2)!, /└ skill {2}highreview/);
 
 	// A narrow card wraps the skills onto more rows and keeps every name.
 	const narrow = plain(container.render(40)).join(" ");
@@ -114,15 +114,28 @@ it("shows every skill as one footer line of the user card, with no separate bloc
 	const lone = chat("solo");
 	const alone = plain(lone.container.render(60));
 	assert.equal(alone.some(line => line.includes("[skill]")), false);
-	assert.match(alone.at(-1)!, /└ skill {2}solo +ctrl\+o$/);
+	assert.match(alone.at(-2)!, /└ skill {2}solo +ctrl\+o$/);
 	assert.equal(click(lone.container, 2, 3), undefined);
 	const aloneAfter = plain(lone.container.render(60));
 	assert.equal(aloneAfter.some(line => line.includes("solo body")), false);
-	assert.match(aloneAfter.at(-1)!, /└ skill {2}solo/);
+	assert.match(aloneAfter.at(-2)!, /└ skill {2}solo/);
 
 	// Switching the card off gives every component its stock output back.
 	loaded.stop();
 	assert.deepEqual(plain(early.container.render(60)), stock);
+});
+
+it("pads attached skills below while leaving plain cards unchanged", t => {
+	initTheme();
+	const plainCard = new UserMessageComponent("Hello");
+	const stock = plainCard.render(60);
+	const loaded = load({ fg: (_color: string, text: string) => text, bg: (_color: string, text: string) => text });
+	t.after(loaded.stop);
+	loaded.start();
+	assert.deepEqual(plainCard.render(60), stock);
+	const rows = plain(chat("review", "Hello").container.render(60));
+	assert.equal(rows.at(-1), "");
+	assert.ok(rows.at(-2)?.includes("review"));
 });
 
 it("leaves stock rendering when Pi's classes do not match", t => {

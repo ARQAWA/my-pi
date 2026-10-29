@@ -69,6 +69,8 @@ export function installSkillCard(getTheme: () => Theme): () => void {
 					color: text => theme.fg("userMessageText", text),
 					bgColor: bg,
 				}).render(width), bg(" ".repeat(width)));
+			} else {
+				lines.push(bg(" ".repeat(width)));
 			}
 			owner.rqwLines = { width, expanded, pad, lines };
 		}
