@@ -57,9 +57,10 @@ export function cleanLine(line: string): string {
 
 /** The last `TAIL` lines of `text`, trailing empty lines dropped first. */
 export function tail(text: string): string[] {
-	const lines = text.split(/\r?\n/).map(cleanLine);
-	while (lines.length > 0 && lines.at(-1)!.trim() === "") lines.pop();
-	return lines.slice(-TAIL);
+	const lines = text.split(/\r?\n/);
+	let end = lines.length;
+	while (end > 0 && cleanLine(lines[end - 1]).trim() === "") end--;
+	return lines.slice(Math.max(0, end - TAIL), end).map(cleanLine);
 }
 
 function header(call: LiveCall): string {

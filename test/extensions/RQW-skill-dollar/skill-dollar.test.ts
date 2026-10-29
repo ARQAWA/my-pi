@@ -28,6 +28,7 @@ async function setup(t: any, skillNames = names, offerFilter?: (skills: any[]) =
 			sourceInfo: { path, source: "test", scope: "project", origin: "top-level", baseDir: directory },
 		};
 	});
+	const catalog = { available: true };
 	const handlers = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	let provider: AutocompleteProvider | undefined;
 	const current: AutocompleteProvider = {
@@ -43,7 +44,10 @@ async function setup(t: any, skillNames = names, offerFilter?: (skills: any[]) =
 	const tui = { getFocusedComponent: () => editor };
 	const pi = {
 		on(name: string, handler: any) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
-		getCommands() { return commands; },
+		getCommands() {
+			if (!catalog.available) throw new Error("skill catalog unavailable");
+			return commands;
+		},
 		events: { emit(channel: string, request: any) { if (offerFilter && channel === "rqw-skill-dollar:filter") request.offer(offerFilter); } },
 	};
 	skillDollar(pi as unknown as ExtensionAPI);
@@ -61,7 +65,7 @@ async function setup(t: any, skillNames = names, offerFilter?: (skills: any[]) =
 	} as unknown as ExtensionContext;
 	for (const handler of handlers.get("session_start")!) await handler({}, ctx);
 	return {
-		provider: provider!, input: handlers.get("input")![0], commands, editor, editorFactory,
+		provider: provider!, input: handlers.get("input")![0], commands, catalog, root, editor, editorFactory,
 		currentEditorFactory: () => ctx.ui.getEditorComponent(),
 	};
 }
@@ -101,6 +105,27 @@ it("mid-line dollar completes a skill and submit expands it like Pi", async (t) 
 
 	const submitted = await input({ text: completed.lines[0], source: "interactive" }, {});
 	assert.deepEqual(submitted, { action: "transform", text: expanded(commands, ["review"], "please now") });
+});
+
+it("passes input without a dollar unchanged even when the skill catalog is unavailable, then uses a fresh catalog", async (t) => {
+	const { input, commands, catalog, root } = await setup(t);
+	catalog.available = false;
+	assert.equal(await input({ text: "plain message", source: "interactive" }, {}), undefined);
+	catalog.available = true;
+	const directory = join(root, "newskill");
+	const path = join(directory, "SKILL.md");
+	mkdirSync(directory, { recursive: true });
+	writeFileSync(path, "---\nname: newskill\ndescription: newskill instructions\n---\nnewskill body\n");
+	commands.push({
+		name: "skill:newskill",
+		description: "newskill instructions",
+		source: "skill",
+		sourceInfo: { path, source: "test", scope: "project", origin: "top-level", baseDir: directory },
+	});
+	const result = await input({ text: "$newskill go", source: "interactive" }, {}) as { action: string; text: string };
+	assert.equal(result.action, "transform");
+	assert.match(result.text, /<skill name="newskill"[^>]*>[\s\S]*newskill body[\s\S]*<\/skill>/);
+	assert.match(result.text, /go$/);
 });
 
 it("replaces the whole dollar token when completing inside it", async (t) => {

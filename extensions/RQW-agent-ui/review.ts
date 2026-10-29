@@ -1,7 +1,7 @@
 // Display only: retain cards for stored standalone review messages from older sessions.
 import type { MessageRenderer } from "@earendil-works/pi-coding-agent";
-import { messageText, splitPrefix } from "./card.ts";
-import { clean, fit, padded, wrap } from "./fit.ts";
+import { findingsLabel, messageText, splitPrefix } from "./card.ts";
+import { cached, clean, fit, padded, wrap } from "./fit.ts";
 
 /** Ignore protocol-looking text inside verbatim source quotes and fenced examples. */
 class SourceQuote {
@@ -75,7 +75,9 @@ function scanCounts(body: string, quoted: boolean) {
 }
 
 /** Counts are presentation, not validation of the review's policy or coverage. */
-export function reviewCounts(body: string): { findings: number; unchecked: number } {
+export function reviewCounts(rawBody: string): { findings: number; unchecked: number } {
+	// Surrounding whitespace on the verdict heading and FINDING lines must not stop counting; other lines stay as written.
+	const body = rawBody.split("\n").map(line => /^\s*(FINDINGS:|FINDING\s+\d+)\s*$/.test(line) ? line.trim() : line).join("\n");
 	let counts = scanCounts(body, true);
 	if (!counts.complete) {
 		const literal = scanCounts(body, false);
@@ -89,14 +91,12 @@ export const createReviewCard: MessageRenderer<{ n?: number }> = (message, optio
 	const prefix = splitPrefix("review", messageText(message.content));
 	const body = clean(prefix.body);
 	const id = clean(prefix.id ?? (typeof message.details?.n === "number" ? `review#${message.details.n}` : "review"));
-	const firstLine = body.split("\n").find(line => line.trim()) ?? "";
-	const first = firstLine.trim();
+	const first = (body.split("\n").find(line => line.trim()) ?? "").trim();
 	const { findings, unchecked } = reviewCounts(body);
 	const failed = first.startsWith("Review failed:");
-	const color = failed ? "error" : firstLine === "CLEAN" ? "success" : "muted";
-	const verdict = first === "FINDINGS:" ? `${findings} findings` : failed ? "Review failed:" : first;
-	return {
-		render: padded((width) => {
+	const color = failed ? "error" : first === "CLEAN" ? "success" : "muted";
+	const verdict = first === "FINDINGS:" ? findingsLabel(findings) : failed ? "Review failed:" : first;
+	return cached(padded((width) => {
 			if (width <= 0) return [];
 			const suffix = unchecked ? theme.fg("warning", ` · ${unchecked} unchecked`) : "";
 			const header = theme.fg("muted", id) + (verdict ? " " + theme.fg(color, verdict) : "") + suffix;
@@ -107,7 +107,5 @@ export const createReviewCard: MessageRenderer<{ n?: number }> = (message, optio
 				for (const row of wrap(body, width - indent.length)) rows.push(row ? indent + theme.fg(bodyColor, row) : "");
 			} else if (first) rows.push(fit(indent + theme.fg(bodyColor, first), width));
 			return rows;
-		}, options.outputPad),
-		invalidate() {},
-	};
+	}, options.outputPad));
 };

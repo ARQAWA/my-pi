@@ -197,7 +197,8 @@ export default function skillDollar(pi: ExtensionAPI): void {
 	});
 	pi.on("input", event => {
 		restoreRows();
-		if (event.source !== "interactive") return;
+		// A mention needs a dollar; skip building the skill catalog for every other message.
+		if (event.source !== "interactive" || !event.text.includes("$")) return;
 		const text = expandMentions(event.text, getSkills());
 		return text === undefined ? undefined : { action: "transform", text };
 	});

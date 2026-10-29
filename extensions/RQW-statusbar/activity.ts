@@ -143,8 +143,9 @@ export function actionPhrase(toolName: string, args: unknown): string {
 	const path = (): string => {
 		const direct = text(record.path);
 		if (direct) return direct;
-		const first = Array.isArray(record.edits) ? (record.edits[0] as Record<string, unknown> | undefined) : undefined;
-		return text(first?.path);
+		// Multi-file edit and write calls name their files in `edits` or `files`.
+		const list = Array.isArray(record.edits) ? record.edits : Array.isArray(record.files) ? record.files : [];
+		return text((list[0] as Record<string, unknown> | undefined)?.path);
 	};
 	switch (toolName) {
 		case "bash": {

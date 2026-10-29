@@ -41,6 +41,14 @@ it("renders a summary and the last four live output rows", () => {
 		["$ npm test", "3", "4", "5", "6", "running"]);
 });
 
+it("renders cleaned tail rows", () => {
+	const draw = (text: string) => renderLive({ ...classify("bash", { command: "x" }, ok(text), { toolCallId: "b" }), toolName: "bash" }, 80, theme).map((row) => row.trim());
+	const rows = draw("old-marker\n\u001b[31mone\u001b[0m\ntwo\rover\nthree\tend\nfour\n \n\u001b[0m\n");
+	assert.deepEqual(rows.slice(1, -1), ["one", "over", "three   end", "four"]);
+	assert.ok(!rows.some((row) => row.includes("old-marker")));
+	assert.deepEqual(draw(" \n\u001b[0m\n").slice(1, -1), []);
+});
+
 it("paints live agent cards purple by state and leaves normal tools on theme backgrounds", () => {
 	const tagged = { fg: (_role: string, text: string) => text, bg: (role: string, text: string) => `<${role}>${text}` } as Theme;
 	const liveRows = (name: string, args: object, res: object | undefined, isError = false, isPartial = false) =>

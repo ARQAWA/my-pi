@@ -150,8 +150,9 @@ export function registerSessionCommands(pi: ExtensionAPI, copy = copyToClipboard
 		if (event.source === "extension") return { action: "continue" };
 		observe(ctx);
 		const file = ctx.sessionManager.getSessionFile();
-		const written = ctx.sessionManager.getEntries().some(entry => entry.type === "message" && (entry.message.role === "user" || entry.message.role === "assistant"));
-		if (!file || !(seen || written) || !sessionFileGone(file)) return { action: "continue" };
+		// getEntries copies the whole history, so it is read only when the file has not been seen yet.
+		const written = () => ctx.sessionManager.getEntries().some(entry => entry.type === "message" && (entry.message.role === "user" || entry.message.role === "assistant"));
+		if (!file || !(seen || written()) || !sessionFileGone(file)) return { action: "continue" };
 		pendingText = event.text;
 		// Let the input pipeline finish before the session is replaced.
 		setImmediate(() => pi.sendUserMessage("/session-deleted", { expandPromptTemplates: true }));

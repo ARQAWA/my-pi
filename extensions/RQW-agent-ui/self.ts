@@ -2,6 +2,7 @@
 import type { Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { Box, type Component, Text } from "@earendil-works/pi-tui";
 import { cardLines } from "./card.ts";
+import { cached } from "./fit.ts";
 import { stockResult, waitCards } from "./wait.ts";
 
 const OWN = Symbol("rqw-agent-ui-wait");
@@ -46,7 +47,7 @@ export function selfShellWaitRenderers(name: string, inner: ToolRenderers): Tool
 			const role = context.isPartial ? "toolPendingBg" : context.isError ? "toolErrorBg" : "toolSuccessBg";
 			const box = new Box(context.outputPad, 1, (text) => theme.bg(role, text));
 			box.addChild(new Text(callHeader(name, context.args, theme), 0, 0));
-			box.addChild({ render: (width) => cards.flatMap((card) => cardLines(card, true, theme, width)), invalidate() {} });
+			box.addChild(cached((width) => cards.flatMap((card) => cardLines(card, true, theme, width))));
 			view.box = box;
 			// The call component draws one complete box. A separate result component would duplicate its rows.
 			return EMPTY;

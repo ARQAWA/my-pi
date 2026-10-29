@@ -126,3 +126,68 @@ it("hides the follow-up sentence in collapsed and expanded cards and keeps other
 	const plain = render("[agent#4] First\n\nSecond", true).join("\n");
 	assert.ok(plain.includes("First") && plain.includes("Second"));
 });
+
+const painted: CardTheme = { fg: (color, text) => `<${color}>${text}`, bold: (text) => text };
+
+it("counts only real findings of a protocol body, not quoted examples", () => {
+	const body = "FINDINGS:\nFINDING 1\nREQUIREMENT: x\nMISMATCH: x\nEVIDENCE: example\n```\nFINDING 99\n```\nREQUIRED OUTCOME: x\nCHECKED:\n- x";
+	const card = createAgentCard(message("agent", `[agent#3] ${body}`, { outcome: "finished" }) as never,
+		{ expanded: false, outputPad: 0 }, painted as never)!;
+	const header = card.render(100)[0];
+	assert.ok(header.includes("<error>1 finding"), header);
+	assert.ok(!header.includes("<success>"), header);
+});
+
+it("counts findings when the heading and FINDING lines have surrounding whitespace", () => {
+	const body = "  FINDINGS:  \n  FINDING 1  \nREQUIREMENT: x\nMISMATCH: x\nEVIDENCE: e\nREQUIRED OUTCOME: x\n\t FINDING 2 \nREQUIREMENT: x\nMISMATCH: x\nEVIDENCE: e\nREQUIRED OUTCOME: x\nCHECKED:\n- x";
+	assert.deepEqual(reviewCounts(body), { findings: 2, unchecked: 0 });
+	const card = createAgentCard(message("agent", `[agent#3] ${body}`, { outcome: "finished" }) as never,
+		{ expanded: false, outputPad: 0 }, painted as never)!;
+	assert.ok(card.render(100)[0].includes("<error>2 findings"));
+	const quoted = "FINDINGS:\n  FINDING 1 \nREQUIREMENT: x\nMISMATCH: x\nEVIDENCE: ex\n```\n  FINDING 99  \n```\nREQUIRED OUTCOME: x";
+	assert.equal(reviewCounts(quoted).findings, 1);
+});
+
+it("colours a stored review verdict after trimming its first line", () => {
+	const card = createReviewCard(message("review", "[review#2]  CLEAN \nCHECKED:\n- x") as never,
+		{ expanded: false, outputPad: 0 }, painted as never)!;
+	assert.ok(card.render(80)[0].includes("<success>CLEAN"));
+	const none = createReviewCard(message("review", "[review#3] FINDINGS:\nproof") as never,
+		{ expanded: false, outputPad: 0 }, painted as never)!;
+	assert.ok(!none.render(80)[0].includes("0 "));
+});
+
+const LONG = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango";
+const squash = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "").replace(/[^a-z]/g, "");
+
+it("does not repaint the remaining cards at an unchanged width and refreshes after invalidate", () => {
+	let paints = 0;
+	const counting: CardTheme = { fg: (_color, text) => (paints++, text), bold: (text) => text };
+	const options = { expanded: true, outputPad: 0 };
+	const review = createReviewCard(message("review", `[review#2] CLEAN\nCHECKED:\n- ${LONG}`) as never, options, counting as never)!;
+	const self = selfShellWaitRenderers("agent", { renderShell: "self", renderCall: () => ({ render: () => [], invalidate() {} }) } as never);
+	const theme = { ...counting, bg: (_role: string, text: string) => text };
+	const base = { args: { action: "wait" }, state: {}, outputPad: 0, isError: false, invalidate() {}, expanded: true };
+	const view = self.renderCall!(base.args, theme as never, base as never);
+	self.renderResult!({ content: [], details: { reason: "result", results: [{ id: "agent#3", text: LONG, display: { outcome: "finished" } }] } },
+		{ expanded: true, isPartial: false }, theme as never, base as never);
+	for (const [component, id, answer] of [[review, "review#2", LONG], [view, "agent#3", LONG]] as const) {
+		const first = [...component.render(80)];
+		const before = paints;
+		assert.deepEqual(component.render(80), first);
+		assert.equal(paints, before);
+		const resized = component.render(60);
+		assert.ok(paints > before);
+		assert.ok(resized.some((row) => row.includes(id)));
+		assert.ok(resized.every((row) => strip(row).length <= 60));
+		assert.ok(resized.length > first.length);
+		assert.ok(squash(resized.join(" ")).includes(squash(answer)));
+		const second = paints;
+		component.invalidate();
+		const refreshed = component.render(60);
+		assert.ok(paints > second);
+		assert.ok(refreshed.some((row) => row.includes(id)));
+		assert.ok(refreshed.every((row) => strip(row).length <= 60));
+		assert.ok(squash(refreshed.join(" ")).includes(squash(answer)));
+	}
+});
