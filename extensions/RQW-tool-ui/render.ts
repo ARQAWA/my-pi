@@ -85,6 +85,7 @@ export class ToolUi {
 	/** The session's cwd, read once at start: it is what Pi resolves the paths of calls against. */
 	private cwd: string | undefined;
 	private entries: SessionEntry[] = [];
+	private firstKeptEntryId: string | undefined;
 	/** Entries before this index only form groups no event can change again; they are not read again. */
 	private cut = 0;
 	private messages: unknown[] = [];
@@ -120,6 +121,7 @@ export class ToolUi {
 		this.sessionManager = undefined;
 		this.cwd = undefined;
 		this.entries = [];
+		this.firstKeptEntryId = undefined;
 		this.cut = 0;
 		this.messages = [];
 		this.executions = [];
@@ -242,14 +244,18 @@ export class ToolUi {
 	 * start from the first; `force`: redraw every row, not only the ones whose drawing changed. */
 	private refresh(readEntries: boolean, restart = false, force = false): void {
 		if (!this.sessionManager) return;
-		if (readEntries) this.entries = this.sessionManager.buildContextEntries();
+		if (readEntries) {
+			this.entries = this.sessionManager.getBranch();
+			const latest = this.entries.findLast((entry) => entry.type === "compaction");
+			this.firstKeptEntryId = latest?.type === "compaction" ? latest.firstKeptEntryId : undefined;
+		}
 		if (restart) {
 			this.cut = 0;
 			this.groups.clear();
 			this.final.clear();
 		}
 		const tail = buildTail(this.cut > 0 ? this.entries.slice(this.cut) : this.entries,
-			{ messages: this.messages, executions: this.executions, streaming: this.streaming }, this.final);
+			{ messages: this.messages, executions: this.executions, streaming: this.streaming }, this.final, this.firstKeptEntryId);
 		for (const [id, g] of tail.groups) this.groups.set(id, g);
 		for (const id of tail.settled) this.final.add(id);
 		this.advance(tail.unsettledFrom);
