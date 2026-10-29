@@ -110,6 +110,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all. Its `qa-status` message has a compact card (`card.ts`); Ctrl+O shows every line with its link.
 - `.pi/extensions/post-edit-lint/`: dev-only, repo-local silent Oxlint checks after successful edits and writes. It is not shipped or listed in `pi.extensions`; its inline factory reaches only executors through RQW-agent's generic child-factory offer. Tests: `test/post-edit-lint.test.ts`.
+- `.pi/extensions/process-reminder/`: dev-only, main-session transient process reminder; not shipped or offered to children. Tests: `test/process-reminder.test.ts`.
 - `.pi/agents/test-reviewer.toml`: the read-only test-review profile, used through `agent` with
   `agent_type: "test-reviewer"`.
 - `.pi/agents/requirements-test-reviewer.toml` and `.pi/skills/testreview/`: repo-only requirements-based test review
