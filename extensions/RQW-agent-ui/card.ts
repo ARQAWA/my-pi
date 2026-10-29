@@ -121,14 +121,14 @@ function header(card: ParsedCard, theme: CardTheme, width: number): string {
 		let label: string = card.outcome;
 		let color: "success" | "error" = card.outcome === "failed" ? "error" : "success";
 		if (card.outcome === "finished") {
-			const lines = card.body.split(/\r?\n/);
-			const first = lines.find((line) => line.trim() !== "");
+			const lines = card.body.split(/\r?\n/).map((line) => line.trim());
+			const first = lines.find((line) => line !== "");
 			if (first === "CLEAN") label = "CLEAN";
 			else {
 				const match = /^FINDINGS:(?: (\d+))?$/.exec(first ?? "");
 				if (match) {
 					const count = match[1] === undefined ? lines.filter((line) => /^FINDING \d+$/.test(line)).length : Number(match[1]);
-					label = `${count} ${count === 1 ? "finding" : "findings"}`;
+					label = count === 0 ? "findings" : `${count} ${count === 1 ? "finding" : "findings"}`;
 					color = "error";
 				}
 			}
