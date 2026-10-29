@@ -131,8 +131,8 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   rows and status, immediate folding on answer text, Ctrl+O originals. Native thinking spacing and stock image output
   remain. Details: [Compact tool display](DECISIONS.md#compact-tool-display); tests: `test/extensions/RQW-tool-ui/`.
 - `extensions/RQW-skill-dollar/`: extension 19, `$skill` autocomplete at whitespace boundaries, all matches selectable
-  through a four-row editor window, and Pi-format skill blocks for every mention on submit. Public APIs only;
-  compatible with stock and statusbar editors. Tests: `test/extensions/RQW-skill-dollar/`.
+  through a four-row editor window, and Pi-format skill blocks for every mention on submit. Public APIs for the editor and autocomplete;
+  compatible with stock and statusbar editors. Also, through a runtime patch of Pi internals, shows the skills of a user message as one line in its card, not a blue block (`[D-UI-SKILL-CARD]`). Tests: `test/extensions/RQW-skill-dollar/`.
 - `extensions/RQW-dyslexia/`: prepends the owner's exact Communication rule, followed by one sentence that it overrides every other communication rule, to the system prompt through public
   `before_agent_start`. Self-contained and independently disableable in `pi config`; no host-file access.
   Tests: `test/extensions/RQW-dyslexia/`.
