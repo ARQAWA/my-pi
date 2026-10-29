@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
+import fs from "node:fs/promises";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
@@ -33,6 +34,9 @@ it("shows the current activity in the widget after a cached frame", async (t) =>
 	await handlers.get("session_shutdown")!({}, ctx);
 });
 
+// One refresh asks git for the file counts and for the branch.
+const GIT_RUNS_PER_REFRESH = 2;
+
 it("runs git after a write and the poll but not after a read, and shows the new state", async (t) => {
 	t.mock.timers.enable({ apis: ["setInterval"] });
 	const root = await mkdtemp(join(tmpdir(), "rqw-statusbar-git-"));
@@ -41,14 +45,37 @@ it("runs git after a write and the poll but not after a read, and shows the new 
 	// The git process is the boundary: a fake runner answers `status` and `symbolic-ref` and counts the runs.
 	let porcelain = "";
 	let gitRuns = 0;
+	const dotGit = join(root, ".git");
+	const dotGitStat = await fs.stat(dotGit);
+	const stat = fs.stat;
+	let sequence = 0;
+	const calls: { kind: string; sequence: number }[] = [];
+	t.mock.method(fs, "stat", (...args: Parameters<typeof stat>) => {
+		assert.equal(args[0], dotGit);
+		calls.push({ kind: "stat", sequence: ++sequence });
+		return Promise.resolve(dotGitStat);
+	});
 	t.mock.method(childProcess, "execFile", (file: string, args: string[], _options: unknown, done: (error: Error | null, stdout: string) => void) => {
 		assert.equal(file, "git");
 		gitRuns++;
-		setImmediate(() => done(null, args.includes("status") ? porcelain : "main\n"));
+		calls.push({ kind: "git", sequence: ++sequence });
+		done(null, args.includes("status") ? porcelain : "main\n");
 	});
 	syncBuiltinESMExports();
 	t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
-	const settle = async () => { for (let i = 0; i < 20; i++) await new Promise(done => setImmediate(done)); };
+	// No stored credentials: the quota consumer neither reads the real account nor renders later.
+	const agentDir = join(root, "agent");
+	await mkdir(agentDir);
+	const savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	t.after(() => { if (savedAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = savedAgentDir; });
+	// A git refresh ends with exactly one asynchronous render request. Renders asked while the test itself
+	// drives a handler or the clock are synchronous and do not count, so waiting never depends on timing.
+	let driving = false;
+	let wake: (() => void) | undefined;
+	const drive = <T>(run: () => T): T => { driving = true; try { return run(); } finally { driving = false; } };
+	const refreshed = () => new Promise<void>(done => { wake = done; });
+	const requestRender = () => { if (!driving) wake?.(); };
 
 	const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
 	const pi = {
@@ -64,32 +91,42 @@ it("runs git after a write and the poll but not after a read, and shows the new 
 	};
 	statusbar(pi as never);
 	await handlers.get("session_start")!({}, ctx);
-	const rows = footer!({ requestRender() {} }, ctx.ui.theme, { onBranchChange: () => () => {}, getExtensionStatuses: () => new Map() });
+	const started = refreshed();
+	const rows = drive(() => footer!({ requestRender }, ctx.ui.theme, { onBranchChange: () => () => {}, getExtensionStatuses: () => new Map() }));
 	const shown = () => rows.render(120).map(strip).join("\n");
-	await settle();
+	await started;
 	const afterStart = gitRuns;
 	assert.ok(afterStart > 0);
 	assert.doesNotMatch(shown(), /\*1/);
 
 	// Files change on disk, but a read cannot have changed them: no git run, the shown state stays.
 	porcelain = " M a.ts\0";
-	for (const toolName of ["read", "grep", "find", "web", "tool_search"]) handlers.get("tool_execution_end")!({ toolCallId: "r", toolName }, ctx);
-	await settle();
-	assert.equal(gitRuns, afterStart);
+	const beforeRead = calls.length;
+	drive(() => {
+		for (const toolName of ["read", "grep", "find", "web", "tool_search"]) handlers.get("tool_execution_end")!({ toolCallId: "r", toolName }, ctx);
+	});
 	assert.doesNotMatch(shown(), /\*1/);
 
-	// A write runs git and the new state is shown.
-	handlers.get("tool_execution_end")!({ toolCallId: "w", toolName: "write" }, ctx);
-	await settle();
-	assert.ok(gitRuns > afterStart);
+	const written = refreshed();
+	const writeStarted = ++sequence;
+	drive(() => handlers.get("tool_execution_end")!({ toolCallId: "w", toolName: "write" }, ctx));
+	assert.ok(calls.some(call => call.kind === "stat" && call.sequence > writeStarted));
+	await written;
+	const readAndWriteCalls = calls.slice(beforeRead);
+	assert.ok(readAndWriteCalls.every(call => call.sequence > writeStarted));
+	assert.deepEqual(readAndWriteCalls.map(call => call.kind), ["stat", "git", "git"]);
+	assert.equal(gitRuns, afterStart + GIT_RUNS_PER_REFRESH);
 	assert.match(shown(), /\*1/);
 
 	// The 10 s poll runs git too and picks up a later change.
 	const afterWrite = gitRuns;
 	porcelain = " M a.ts\0 M b.ts\0";
-	t.mock.timers.tick(10_000);
-	await settle();
-	assert.ok(gitRuns > afterWrite);
+	const polled = refreshed();
+	const beforePoll = calls.length;
+	drive(() => t.mock.timers.tick(10_000));
+	assert.equal(calls[beforePoll]?.kind, "stat");
+	await polled;
+	assert.equal(gitRuns, afterWrite + GIT_RUNS_PER_REFRESH);
 	assert.match(shown(), /\*2/);
 	await handlers.get("session_shutdown")!({}, ctx);
 });
