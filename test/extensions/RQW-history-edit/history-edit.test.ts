@@ -3,7 +3,7 @@ import { it } from "node:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { initTheme, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import historyEdit from "../../../extensions/RQW-history-edit/index.ts";
 
 it("refuses history editing while a child runs", async () => {
@@ -78,6 +78,32 @@ it("escape restores the draft, and enter intercepts slash text", async () => {
 	assert.deepEqual(input("\r"), { consume: true });
 	await Promise.resolve();
 	assert.deepEqual(sent, ["/edit-history"]);
+});
+
+it("stops at both ends of the message list", async () => {
+	initTheme();
+	let command: any;
+	let editor = "";
+	let keys: string[] = [];
+	historyEdit({ on() {}, events: { on() {}, emit() {} },
+		registerCommand: (_name: string, options: any) => { command = options.handler; } } as unknown as ExtensionAPI);
+	const ctx = { mode: "tui", sessionManager: { getBranch: () => ["first", "middle", "last"].map(id =>
+		({ type: "message", id, message: { role: "user", content: id } })) },
+		ui: { getEditorText: () => editor, setEditorText: (value: string) => { editor = value; }, notify() {},
+			custom: async (factory: any) => {
+				let result: string | undefined;
+				const bindings = { matches: (key: string, action: string) => key === ({ "tui.select.up": "\x1b[A", "tui.select.down": "\x1b[B" } as Record<string, string>)[action] };
+				const list = factory({}, {}, bindings, (id: string) => { result = id; });
+				for (const key of keys) list.handleInput(key);
+				list.handleInput("\r");
+				return result;
+			} } };
+	keys = Array(5).fill("\x1b[B");
+	await command("", ctx);
+	assert.equal(editor, "last");
+	keys = Array(5).fill("\x1b[A");
+	await command("", ctx);
+	assert.equal(editor, "first");
 });
 
 it("sends plain text and the selected and new images", async () => {
