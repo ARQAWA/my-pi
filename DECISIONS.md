@@ -744,7 +744,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   (`16-27-59:5087`, `5092`, `5103`). Taken by default (coordinator text, not an owner quote): a persisted caller stores each child's
   Pi JSONL in the adjacent `<parent.jsonl>.children/agent-N/`, nested children recursively; the parent
   branch carries versioned `rqw-agent-child` entries (id, generation, file, state, configuration, model, tools, thinking,
-  Fast, title) and `rqw-agent-tool-intent` entries written through the public `tool_call` hook. Stop tombstones a mapping and
+  Fast, title). Stop tombstones a mapping and
   restart creates a new history. `resume` builds a fresh `AgentSession` from the saved history and calls the public
   `agent.continue()` with no new message, under its own busy, abort and settlement fences; the cut-off assistant attempt is
   hidden by append-only context edits, and a tool call without a result gets an explicit interrupted/error result, never a
@@ -756,7 +756,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Recovery is fail-closed, taken by default as the safe choice (coordinator text, not an owner quote): a missing or empty child
   JSONL of an established or unknown history is a `recovery_error` of that child alone; a saved state of idle, run number 0 and no
   task (a task-less restart) may restore an empty session under the same id, with no task message; the saved task and configuration are provenance, never re-executed, and no
-  history is rebuilt or inferred, so a start with a saved task whose history Pi had not flushed before a full Pi restart is not recoverable. Children
+  history is rebuilt or inferred. A record keeps `history` false until the child's history has a user message; if the file is then absent, restore starts a new empty session and
+  sends the accepted task once from `pending_sends`, while with `history` true a missing file stays a `recovery_error`. Children
   created by the earlier in-memory build cannot be recovered retroactively; only children created after the updated extension
   loads are durable.
   Chosen over a global registry or a handoff file: the adjacent tree needs no shared state and lets RQW-session recognize it by name.
@@ -783,6 +784,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   is one notification, not periodic polling, and no model request is made merely to wait. Owner messages reach the agent
   without cancelling accepted children. Same callback as `[D-TOOLS-NOTIFY]`. Reason: a waiting agent must not hold a call.
   Carrier: `extensions/RQW-agent/index.ts`, `coordinator.ts`, `descriptions/*.md`. Since: the final squash of branch `agent-async`.
+  Crash recovery (coordinator text): an accepted notification wait is saved as `rqw-agent-wait` entries in the parent session and a restore raises the open ones with their id, targets and remaining deadline, as described in the [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume).
 
 ## Review
 

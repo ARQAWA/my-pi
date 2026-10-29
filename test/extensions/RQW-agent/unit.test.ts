@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { queryObjects } from "node:v8";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -368,7 +369,7 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 	// No administrative Codex folder: the fixture must not read the host's /etc/codex.
 	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined, join(cwd, "no-system-codex"));
 	return { runtime, requests, ctx, events, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { for (const hook of hooks.get(name) ?? []) await hook(event, ctx); },
-		execute: (params: any) => definition.execute("call", params, new AbortController().signal, undefined, ctx) };
+		execute: (params: any, callId = "call") => definition.execute(callId, params, new AbortController().signal, undefined, ctx) };
 }
 
 const REMINDER = "<subagent>\nYou are running as a subagent under a parent agent. Do not spawn additional subagents unless requested by the user or by your instructions.\n</subagent>";
@@ -399,7 +400,10 @@ async function restoredSystem(t: TestContext, start: Record<string, unknown>, ed
 	await source.runtime.wait(new AbortController().signal);
 	source.runtime.close();
 	const full = parent.getBranch().find((entry: any) => entry.customType === "rqw-agent-child") as any;
-	full.data.config.system = edit(full.data.config.system);
+	// An older record holds the whole prompt, not the tail after its base.
+	const config = full.data.config;
+	config.system = edit(config.system ?? `${config.base.trimEnd()}${config.system_tail}`);
+	delete config.system_tail;
 	const restored = runtimeFixture(parent, root);
 	await restored.execute({ action: "send", id: "agent#1", task: "again" });
 	await restored.runtime.wait(new AbortController().signal);
@@ -407,6 +411,40 @@ async function restoredSystem(t: TestContext, start: Record<string, unknown>, ed
 	restored.runtime.close();
 	return system;
 }
+
+test("an ordinary prompt is stored as its tail after base and restores byte for byte", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const source = runtimeFixture(parent, root);
+	await source.execute({ action: "start", task: "task", tools: [], role: "R" });
+	await source.runtime.wait(new AbortController().signal);
+	source.runtime.close();
+	const full = (parent.getBranch().find((entry: any) => entry.customType === "rqw-agent-child") as any).data.config;
+	assert.equal(full.system, undefined);
+	assert.equal(full.system_tail, `\n\n${REMINDER}\n\n<role>\nR\n</role>`);
+	const restored = runtimeFixture(parent, root);
+	await restored.execute({ action: "send", id: "agent#1", task: "again" });
+	await restored.runtime.wait(new AbortController().signal);
+	assert.equal(restored.requests.at(-1).messages.find((message: any) => message.role === "system").content,
+		`original prompt\n\n${REMINDER}\n\n<role>\nR\n</role>`);
+	restored.runtime.close();
+});
+
+test("an own system prompt that begins with the base is still saved whole", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	await live.execute({ action: "start", task: "task", tools: [], system: "original prompt and more" });
+	await live.runtime.wait(new AbortController().signal);
+	const config = (parent.getBranch().find((entry: any) => entry.customType === "rqw-agent-child") as any).data.config;
+	assert.equal(config.system, `original prompt and more\n\n${REMINDER}`);
+	assert.equal(config.system_tail, undefined);
+	live.runtime.close();
+});
 
 test("a restored child with the legacy reminder gets the new one in place, role bytes unchanged", async t => {
 	const system = await restoredSystem(t, { role: "  R\n" }, text => text.replace(REMINDER, LEGACY_REMINDER));
@@ -900,12 +938,692 @@ test("a replaced generation and a parent with running descendants stay safe at o
 
 // Regression: every child state change rewrote config and task, growing the parent session to gigabytes.
 test("child records write config and task once and restore them from the full record", () => {
-	const config = { system: "prompt" } as never;
-	const a = { config, task: "task" };
-	const record = (state: string) => ({ id: 1, state, config: { system: "prompt" }, task: "task" });
+	const a = {};
+	const record = (state: string, task = "task") => ({ id: 1, state, config: { system: "prompt" }, task });
 	const first = childRecord(a, record("running"));
 	const second = childRecord(a, record("completed"));
 	assert.deepEqual(second, { id: 1, state: "completed" });
 	assert.deepEqual(mergeSaved(mergeSaved(undefined, first as never), second as never), record("completed"));
-	assert.deepEqual(childRecord({ ...a, task: "next" }, record("running")), record("running"));
+	assert.deepEqual(childRecord(a, record("running", "next")), record("running", "next"));
+});
+
+test("restore and resume without changes write only short child records", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	// The first request ends in a tool call so that Pi flushes the history; the second one never answers.
+	const first = runtimeFixture(parent, root, (context: any) => context.messages.some((message: any) => message.role === "toolResult")
+		? new Promise<never>(() => {}) : fauxAssistantMessage([fauxToolCall("read", { path: "missing.txt" }, { id: "call" })], { stopReason: "toolUse" }));
+	await first.execute({ action: "start", task: "long task", tools: ["read"] });
+	await new Promise(resolve => setImmediate(resolve));
+	first.runtime.close();
+	const reopened = SessionManager.open(parent.getSessionFile()!);
+	const records = () => reopened.getBranch().filter((entry: any) => entry.customType === "rqw-agent-child") as any[];
+	const before = records().length;
+	const restored = runtimeFixture(reopened, root);
+	await restored.execute({ action: "resume", id: "agent#1" });
+	await restored.runtime.wait(new AbortController().signal);
+	const fresh = records().slice(before);
+	assert.ok(fresh.length > 0);
+	assert.deepEqual(fresh.map(entry => [entry.data.config, entry.data.task]), fresh.map(() => [undefined, undefined]));
+	restored.runtime.close();
+});
+
+test("a child that calls a tool writes no tool-intent entry to its file", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, (context: any) => context.messages.some((message: any) => message.role === "toolResult")
+		? "done" : fauxAssistantMessage([fauxToolCall("read", { path: "missing.txt" }, { id: "call" })], { stopReason: "toolUse" }));
+	await live.execute({ action: "start", task: "read it", tools: ["read"] });
+	await live.runtime.wait(new AbortController().signal);
+	const directory = `${parent.getSessionFile()}.children/agent-1`;
+	const [file] = await readdir(directory);
+	const text = await readFile(join(directory, file), "utf8");
+	assert.match(text, /"toolName":"read"/);
+	assert.doesNotMatch(text, /rqw-agent-tool-intent/);
+	live.runtime.close();
+});
+
+test("accepted steering commands are saved in order and an interrupt clears them", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await live.execute({ action: "start", task: "long task", tools: [] });
+	await new Promise(resolve => setImmediate(resolve));
+	await live.execute({ action: "send", id: "agent#1", task: "first" });
+	await live.execute({ action: "send", id: "agent#1", task: "second" });
+	const latest = () => (parent.getBranch().filter((entry: any) => entry.customType === "rqw-agent-child").at(-1) as any).data;
+	assert.deepEqual(latest().pending_sends, [{ n: 2, tasks: ["first"] }, { n: 3, tasks: ["second"] }]);
+	await live.execute({ action: "interrupt", id: "agent#1" });
+	assert.equal(latest().pending_sends, undefined);
+	assert.equal(latest().state, "paused");
+	live.runtime.close();
+});
+
+async function until(done: () => boolean) {
+	for (let i = 0; i < 200 && !done(); i++) await new Promise(resolve => setImmediate(resolve));
+	assert.ok(done());
+}
+const userTexts = (request: any) => request.messages.filter((message: any) => message.role === "user").map((message: any) => message.content[0].text);
+
+test("after a crash only the commands missing from the history are sent, once and in order", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const gate = Promise.withResolvers<void>();
+	// The first request waits for both commands, then calls a tool; the second one never answers: the crash.
+	const first = runtimeFixture(parent, root, async (context: any) => {
+		if (context.messages.some((message: any) => message.role === "toolResult")) return new Promise<never>(() => {});
+		await gate.promise;
+		return fauxAssistantMessage([fauxToolCall("read", { path: "missing.txt" }, { id: "call" })], { stopReason: "toolUse" });
+	});
+	await first.execute({ action: "start", task: "long task", tools: ["read"] });
+	await until(() => parent.getBranch().length > 0 && first.requests.length === 1);
+	await first.execute({ action: "send", id: "agent#1", task: "same" });
+	await first.execute({ action: "send", id: "agent#1", task: "same" });
+	gate.resolve();
+	await until(() => first.requests.length === 2);
+	assert.deepEqual(userTexts(first.requests[1]), ["long task", "same"]);
+	first.runtime.close();
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	await restored.runtime.resume!(new AbortController().signal, true);
+	await restored.runtime.wait(new AbortController().signal);
+	assert.deepEqual(userTexts(restored.requests.at(-1)), ["long task", "same", "same"]);
+	restored.runtime.close();
+});
+
+test("a paused child with an accepted command starts it by itself, queued commands as one message", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await first.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => first.requests.length === 1);
+	await first.execute({ action: "send", id: "agent#1", task: "one", interrupt: true });
+	await first.execute({ action: "send", id: "agent#1", task: "two", interrupt: true });
+	first.runtime.close();
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	await restored.runtime.resume!(new AbortController().signal, true);
+	await restored.runtime.wait(new AbortController().signal);
+	assert.deepEqual(userTexts(restored.requests.at(-1)), ["long task", "one\n\ntwo"]);
+	restored.runtime.close();
+});
+
+/** A child started and the process died before its history reached the file: only the start record survives. */
+async function crashedAtStart(t: TestContext, history: boolean, keepSends = true) {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await first.execute({ action: "start", task: "long task", tools: [] });
+	first.runtime.close();
+	const file = parent.getSessionFile()!;
+	let seen = false;
+	const lines = (await readFile(file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line)).filter(entry => {
+		if (entry.customType !== "rqw-agent-child") return true;
+		if (seen) return false;
+		seen = entry.data.history = history;
+		if (!keepSends) delete entry.data.pending_sends;
+		return true;
+	});
+	await writeFile(file, `${lines.map(entry => JSON.stringify(entry)).join("\n")}\n`);
+	await rm(`${file}.children/agent-1`, { recursive: true });
+	return runtimeFixture(SessionManager.open(file), root);
+}
+
+test("a child whose history never reached its file restarts with its one accepted task", async t => {
+	const restored = await crashedAtStart(t, false);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	await restored.runtime.resume!(new AbortController().signal, true);
+	await restored.runtime.wait(new AbortController().signal);
+	assert.deepEqual(userTexts(restored.requests.at(-1)), ["long task"]);
+	restored.runtime.close();
+});
+
+test("a child with a saved history but no file is still a recovery error", async t => {
+	const restored = await crashedAtStart(t, true);
+	const status = await restored.execute({ action: "status", ids: ["agent#1"] });
+	assert.match(status.details.statuses[0].error, /ENOENT/);
+	restored.runtime.close();
+});
+
+/** Calls `wait` and commits its `waiting` receipt the way Pi does: an outer tool result in the branch, then the turn's end. */
+async function acceptedWait(live: ReturnType<typeof runtimeFixture>, parent: SessionManager, callId: string, timeout = 60000, turnEnd = true) {
+	const receipt = await live.execute({ action: "wait", ids: ["agent#1"], timeout_ms: timeout }, callId);
+	parent.appendMessage({ role: "toolResult", toolCallId: callId, toolName: "agent", content: [{ type: "text", text: JSON.stringify(receipt.details) }], isError: false, timestamp: 1 });
+	if (turnEnd) await live.emit("turn_end");
+	return receipt.details.wait_id as string;
+}
+const waitRecords = (parent: SessionManager) => parent.getBranch().filter((entry: any) => entry.customType === "rqw-agent-wait").map((entry: any) => entry.data);
+
+test("an accepted wait is saved, and a replacement or a sent child_wait closes it", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	t.mock.method(Date, "now", () => 1000);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await live.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => live.requests.length === 1);
+	const one = await acceptedWait(live, parent, "call1");
+	assert.deepEqual(waitRecords(parent), [{ version: 1, wait_id: one, open: true, call: "call1", deadline_at: 61000, until: "first", wake_on_alert: true,
+		targets: [{ id: "agent#1", run: waitRecords(parent)[0].targets[0].run }] }]);
+	assert.match(waitRecords(parent)[0].targets[0].run, /:1$/);
+	const two = await acceptedWait(live, parent, "call2");
+	assert.deepEqual(waitRecords(parent).map(record => [record.wait_id, record.open]), [[one, true], [two, true], [one, false]]);
+	await live.execute({ action: "interrupt", id: "agent#1" });
+	const sent = parent.getBranch().filter((entry: any) => entry.customType === "child_wait") as any[];
+	assert.deepEqual(sent.map(entry => [entry.details.wait_id, entry.details.reason]), [[two, "target_changed"]]);
+	// Sent, but not yet seen persisted by the turn's end: the wait is still open.
+	const ofTwo = () => waitRecords(parent).filter(record => record.wait_id === two);
+	assert.equal(ofTwo().at(-1).open, true);
+	await live.emit("turn_end");
+	assert.deepEqual(ofTwo().at(-1), { version: 1, wait_id: two, open: false });
+	live.runtime.close();
+});
+
+/** A child waits on its first request and a notification wait is accepted; then the process dies (the first runtime is abandoned). */
+async function crashedDuringWait(t: TestContext, restoredAt = 1000, restoredResponse?: () => Promise<never>, before?: (file: string, waitId: string) => Promise<void>, turnEnd = true) {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const clock = { now: 1000 };
+	t.mock.method(Date, "now", () => clock.now);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await first.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => first.requests.length === 1);
+	const id = await acceptedWait(first, parent, "call1", 60000, turnEnd);
+	clock.now = restoredAt;
+	await before?.(parent.getSessionFile()!, id);
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root, restoredResponse);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	const sent = () => restored.ctx.sessionManager.getBranch().filter((entry: any) => entry.customType === "child_wait").map((entry: any) => entry.details);
+	return { id, root, clock, restored, sent, plain: () => restored.ctx.sessionManager.getBranch().filter((entry: any) => entry.type === "custom_message" && entry.customType === "agent") };
+}
+
+test("a wait open at the crash delivers one child_wait with the answer of the resumed run", async t => {
+	const crash = await crashedDuringWait(t);
+	assert.equal(crash.sent().length, 0);
+	await crash.restored.runtime.resume!(new AbortController().signal, true);
+	await crash.restored.runtime.wait(new AbortController().signal);
+	const [sent, ...more] = crash.sent();
+	assert.equal(more.length, 0);
+	assert.deepEqual([sent.wait_id, sent.reason, sent.results[0].text.split("\n\n")[0]], [crash.id, "result", "answer"]);
+	assert.equal(crash.plain().length, 0);
+	crash.restored.runtime.close();
+});
+
+test("a restored wait ends with target_changed when its child is restarted", async t => {
+	const crash = await crashedDuringWait(t);
+	assert.equal(crash.sent().length, 0);
+	await crash.restored.execute({ action: "restart", id: "agent#1" });
+	assert.deepEqual(crash.sent().map(sent => [sent.wait_id, sent.reason]), [[crash.id, "target_changed"]]);
+	crash.restored.runtime.close();
+});
+
+test("a wait whose deadline passed during the crash times out at once", async t => {
+	const crash = await crashedDuringWait(t, 70000);
+	assert.deepEqual(crash.sent().map(sent => [sent.wait_id, sent.reason, sent.timed_out]), [[crash.id, "timeout", true]]);
+	crash.restored.runtime.close();
+});
+
+/** A child's answer is taken by an accepted wait in the first runtime, which then dies before any turn ends. */
+async function crashedAfterChildWait(t: TestContext) {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	t.mock.method(Date, "now", () => 1000);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const gate = Promise.withResolvers<void>();
+	const first = runtimeFixture(parent, root, async () => { await gate.promise; return "answer"; });
+	await first.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => first.requests.length === 1);
+	const id = await acceptedWait(first, parent, "call1");
+	gate.resolve();
+	await first.runtime.wait(new AbortController().signal);
+	assert.deepEqual(waitRecords(parent).map(record => [record.wait_id, record.open]), [[id, true]]);
+	return { id, parent, root, file: parent.getSessionFile()!, branch: (manager: SessionManager) => manager.getBranch() as any[] };
+}
+
+test("a wait whose child_wait was persisted before the crash is not raised again", async t => {
+	const crash = await crashedAfterChildWait(t);
+	const restored = runtimeFixture(SessionManager.open(crash.file), crash.root);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	const branch = crash.branch(restored.ctx.sessionManager);
+	assert.equal(branch.filter(entry => entry.customType === "child_wait").length, 1);
+	assert.equal(branch.filter(entry => entry.type === "custom_message" && entry.customType === "agent").length, 0);
+	restored.runtime.close();
+});
+
+test("a wait whose child_wait was not persisted before the crash is raised again", async t => {
+	const crash = await crashedAfterChildWait(t);
+	const lines = (await readFile(crash.file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line))
+		.map(entry => entry.customType === "child_wait" ? { type: "custom", id: entry.id, parentId: entry.parentId, timestamp: entry.timestamp, customType: "unrelated", data: {} } : entry);
+	await writeFile(crash.file, `${lines.map(entry => JSON.stringify(entry)).join("\n")}\n`);
+	const restored = runtimeFixture(SessionManager.open(crash.file), crash.root);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	const sent = crash.branch(restored.ctx.sessionManager);
+	// The saved answer is registered before the wait judges its target, so the wait takes it and nothing is sent twice.
+	assert.deepEqual(sent.filter(entry => entry.customType === "child_wait").map(entry => [entry.details.wait_id, entry.details.reason, entry.details.results[0].text.split("\n\n")[0]]), [[crash.id, "result", "answer"]]);
+	assert.equal(sent.filter(entry => entry.type === "custom_message" && entry.customType === "agent").length, 0);
+	restored.runtime.close();
+});
+
+test("a saved answer that was not delivered before the crash is sent with the same delivery id", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root);
+	await first.execute({ action: "start", task: "task", tools: [] });
+	await first.runtime.wait(new AbortController().signal);
+	const file = parent.getSessionFile()!;
+	const entries = (await readFile(file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
+	// The id the child's saved answer holds: the record is the outbox.
+	const saved = entries.filter(entry => entry.customType === "rqw-agent-child" && entry.data.result).at(-1).data.result.delivery;
+	assert.equal(typeof saved, "string");
+	// The crash came before the message was persisted.
+	const lost = entries.map(entry => entry.type === "custom_message" && entry.customType === "agent" ? { type: "custom", id: entry.id, parentId: entry.parentId, timestamp: entry.timestamp, customType: "unrelated", data: {} } : entry);
+	await writeFile(file, `${lost.map(entry => JSON.stringify(entry)).join("\n")}\n`);
+	const restored = runtimeFixture(SessionManager.open(file), root);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	const pushed = restored.ctx.sessionManager.getBranch().filter((entry: any) => entry.type === "custom_message" && entry.customType === "agent") as any[];
+	assert.deepEqual(pushed.map(entry => entry.details.delivery), [saved]);
+	restored.runtime.close();
+});
+
+/** A child's answer is taken by a wait inside a codemode script; the process dies before the turn ends and writes the receipt. */
+async function crashedInsideCodemode(t: TestContext, waitFailed: boolean, outerFailed = false) {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const gate = Promise.withResolvers<void>();
+	const first = runtimeFixture(parent, root, async () => { await gate.promise; return "answer"; });
+	await first.execute({ action: "start", task: "task", tools: [] });
+	await until(() => first.requests.length === 1);
+	await first.emit("tool_call", { toolCallId: "outer/inner", parentToolCallId: "outer", input: {} });
+	const waiting = first.execute({ action: "wait", ids: ["agent#1"] }, "outer/inner");
+	gate.resolve();
+	await waiting;
+	await first.emit("tool_execution_end", { toolCallId: "outer/inner", isError: waitFailed });
+	// The script caught the wait's error or used its result; either way its own result is saved.
+	parent.appendMessage({ role: "toolResult", toolCallId: "outer", toolName: "codemode", content: [{ type: "text", text: "ok" }], isError: outerFailed, timestamp: 1 });
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	return (restored.ctx.sessionManager.getBranch() as any[]).filter(entry => entry.type === "custom_message" && entry.customType === "agent").length;
+}
+
+test("an answer a codemode wait took is not sent again after a crash before its receipt", async t => {
+	assert.equal(await crashedInsideCodemode(t, false), 0);
+});
+
+test("an answer is sent again when the codemode call that took it failed", async t => {
+	assert.equal(await crashedInsideCodemode(t, false, true), 1);
+});
+
+test("an answer is sent again when the wait inside codemode ended with a caught error", async t => {
+	assert.equal(await crashedInsideCodemode(t, true), 1);
+});
+
+test("resuming an empty history without an accepted command is an error, not a replay of the task", async t => {
+	const restored = await crashedAtStart(t, false, false);
+	await assert.rejects(restored.execute({ action: "resume", id: "agent#1" }), /no saved request to resume/);
+	assert.equal(restored.requests.length, 0);
+	restored.runtime.close();
+});
+
+test("a child that went to sleep leaves no live session manager behind", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	let now = 0;
+	// Not t.mock.method: a mock keeps the stack of every call, and its frames hold the objects they ran on.
+	const realNow = performance.now;
+	performance.now = () => now;
+	t.after(() => { performance.now = realNow; });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	// queryObjects collects garbage first, so it counts only managers still reachable.
+	const managers = () => queryObjects(SessionManager) as number;
+	const before = managers();
+	await live.execute({ action: "start", task: "task", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	assert.ok(managers() > before);
+	now = 300000;
+	t.mock.timers.tick(300000);
+	const asleep = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(asleep.details.statuses[0].run_id, undefined);
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(managers(), before);
+	live.runtime.close();
+});
+
+test("a tool call cut off by a crash gets an error result when the child is recovered, and is not run again", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	let runs = 0;
+	const first = runtimeFixture(parent, root, () => fauxAssistantMessage([fauxToolCall("read", { path: "x" }, { id: "call" })], { stopReason: "toolUse" }));
+	const hanging = () => [{ name: "read", label: "Read", description: "Never ends", parameters: { type: "object", properties: { path: { type: "string" } } },
+		execute: () => { runs++; return new Promise<never>(() => {}); } }];
+	first.events.on("rqw-tools:subagent-tools", (request: any) => request.offer(hanging));
+	await first.execute({ action: "start", task: "task", tools: ["read"] });
+	await until(() => runs === 1);
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	restored.events.on("rqw-tools:subagent-tools", (request: any) => request.offer(hanging));
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	await restored.runtime.resume!(new AbortController().signal, true);
+	await restored.runtime.wait(new AbortController().signal);
+	const result = restored.requests.at(-1).messages.find((message: any) => message.role === "toolResult");
+	assert.equal(result.isError, true);
+	assert.match(JSON.stringify(result.content), /Interrupted before a durable result/);
+	assert.equal(runs, 1);
+	restored.runtime.close();
+});
+
+test("a joined batch that is already in the history is not sent again", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await first.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => first.requests.length === 1);
+	await first.execute({ action: "send", id: "agent#1", task: "one", interrupt: true });
+	await first.execute({ action: "send", id: "agent#1", task: "two", interrupt: true });
+	first.runtime.close();
+	// The joined message reached the child's file, but the crash came before its record was pruned.
+	const directory = `${parent.getSessionFile()}.children/agent-1`;
+	const [file] = await readdir(directory);
+	SessionManager.open(join(directory, file)).appendMessage({ role: "user", content: [{ type: "text", text: "one\n\ntwo" }], timestamp: 2 });
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "resume", id: "agent#1" });
+	await restored.runtime.wait(new AbortController().signal);
+	assert.deepEqual(userTexts(restored.requests.at(-1)), ["long task", "one\n\ntwo"]);
+	restored.runtime.close();
+});
+
+test("interrupting a child that waits for its recovery wakes its restored wait and keeps it paused", async t => {
+	const crash = await crashedDuringWait(t);
+	await crash.restored.execute({ action: "interrupt", id: "agent#1" });
+	assert.deepEqual(crash.sent().map(sent => [sent.wait_id, sent.reason, sent.changed[0].change]), [[crash.id, "target_changed", "interrupt"]]);
+	await crash.restored.runtime.resume!(new AbortController().signal, true);
+	assert.equal(crash.restored.requests.length, 0);
+	crash.restored.runtime.close();
+});
+
+test("a restored wait still follows its child after a second crash", async t => {
+	const crash = await crashedDuringWait(t, 1000, () => new Promise<never>(() => {}));
+	await crash.restored.runtime.resume!(new AbortController().signal, true);
+	await until(() => crash.restored.requests.length === 1);
+	const second = runtimeFixture(SessionManager.open(crash.restored.ctx.sessionManager.getSessionFile()!), crash.root);
+	await second.execute({ action: "status", ids: ["agent#1"] });
+	await second.runtime.resume!(new AbortController().signal, true);
+	await second.runtime.wait(new AbortController().signal);
+	const sent = (second.ctx.sessionManager.getBranch() as any[]).filter(entry => entry.customType === "child_wait");
+	assert.deepEqual(sent.map(entry => [entry.details.wait_id, entry.details.reason]), [[crash.id, "result"]]);
+	second.runtime.close();
+});
+
+test("a wait whose tool result was saved before the crash, but not the turn's end, is restored", async t => {
+	const crash = await crashedDuringWait(t, 1000, undefined, undefined, false);
+	await crash.restored.runtime.resume!(new AbortController().signal, true);
+	await crash.restored.runtime.wait(new AbortController().signal);
+	assert.deepEqual(crash.sent().map(sent => [sent.wait_id, sent.reason]), [[crash.id, "result"]]);
+	crash.restored.runtime.close();
+});
+
+test("a wait whose tool result was never saved is not raised after a crash", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await first.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => first.requests.length === 1);
+	await first.execute({ action: "wait", ids: ["agent#1"] }, "call1");
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	await restored.runtime.resume!(new AbortController().signal, true);
+	await restored.runtime.wait(new AbortController().signal);
+	const branch = restored.ctx.sessionManager.getBranch() as any[];
+	assert.equal(branch.filter(entry => entry.customType === "child_wait").length, 0);
+	assert.equal(branch.filter(entry => entry.type === "custom_message" && entry.customType === "agent").length, 1);
+	restored.runtime.close();
+});
+
+/** The child record already holds the next run, written as crash recovery or as an ordinary run; the wait still names the earlier one. */
+async function waitBehindChild(t: TestContext, recovery: boolean) {
+	const bump = async (file: string) => {
+		const lines = (await readFile(file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
+		for (const entry of lines) if (entry.customType === "rqw-agent-child") {
+			if (recovery) entry.data.recovers = `${entry.data.epoch}:${entry.data.runNumber}`;
+			entry.data.runNumber++;
+		}
+		await writeFile(file, `${lines.map(entry => JSON.stringify(entry)).join("\n")}\n`);
+	};
+	const crash = await crashedDuringWait(t, 1000, undefined, bump);
+	await crash.restored.runtime.resume!(new AbortController().signal, true);
+	await crash.restored.runtime.wait(new AbortController().signal);
+	const reasons = crash.sent().map(sent => [sent.wait_id, sent.reason]);
+	crash.restored.runtime.close();
+	return { crash, reasons };
+}
+
+test("a wait keeps following its child when the crash came between the child's record and the wait's", async t => {
+	const { crash, reasons } = await waitBehindChild(t, true);
+	assert.deepEqual(reasons, [[crash.id, "result"]]);
+});
+
+test("a wait ends with target_changed when the child's next run is not a crash recovery", async t => {
+	const { crash, reasons } = await waitBehindChild(t, false);
+	assert.deepEqual(reasons, [[crash.id, "target_changed"]]);
+});
+
+test("a wait whose opening record cannot be saved is not accepted", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await live.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => live.requests.length === 1);
+	const append = parent.appendCustomEntry.bind(parent);
+	t.mock.method(parent, "appendCustomEntry", (type: string, data: unknown) => {
+		if (type === "rqw-agent-wait") throw new Error("disk full");
+		return append(type, data);
+	});
+	await assert.rejects(live.execute({ action: "wait", ids: ["agent#1"] }, "call1"), /disk full/);
+	await live.execute({ action: "interrupt", id: "agent#1" });
+	assert.equal((parent.getBranch() as any[]).filter(entry => entry.customType === "child_wait").length, 0);
+	live.runtime.close();
+});
+
+/** A first wait is accepted; then saving wait records fails for `failing`, and a second wait on the same child is asked for. */
+async function replacementWithFailingJournal(t: TestContext, failing: (data: any) => boolean) {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await live.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => live.requests.length === 1);
+	const one = await acceptedWait(live, parent, "call1");
+	const append = parent.appendCustomEntry.bind(parent);
+	t.mock.method(parent, "appendCustomEntry", (type: string, data: any) => {
+		if (type === "rqw-agent-wait" && failing(data)) throw new Error("disk full");
+		return append(type, data);
+	});
+	await assert.rejects(live.execute({ action: "wait", ids: ["agent#1"] }, "call2"), /disk full/);
+	// The old wait is still the accepted one: it gets the interruption.
+	await live.execute({ action: "interrupt", id: "agent#1" });
+	const sent = (parent.getBranch() as any[]).filter(entry => entry.customType === "child_wait").map(entry => entry.details.wait_id);
+	live.runtime.close();
+	return { one, sent, records: waitRecords(parent) };
+}
+
+test("a replacement that cannot save its opening record leaves the old wait open and accepted", async t => {
+	const { one, sent, records } = await replacementWithFailingJournal(t, () => true);
+	assert.deepEqual(sent, [one]);
+	assert.deepEqual(records.filter(record => record.wait_id === one).map(record => record.open), [true]);
+});
+
+test("a replacement fails when the old wait's closing record cannot be saved, and the old wait stays accepted", async t => {
+	const { one, sent } = await replacementWithFailingJournal(t, data => data.open === false);
+	assert.deepEqual(sent, [one]);
+});
+
+test("a child_wait saved in a nested caller's durable inbox ends its wait on restore", async t => {
+	const inbox = async (file: string, waitId: string) => {
+		const lines = (await readFile(file, "utf8")).split("\n").filter(Boolean);
+		const last = JSON.parse(lines.at(-1)!);
+		const entry = { type: "custom", id: "inbox001", parentId: last.id, timestamp: last.timestamp, customType: "rqw-agent-inbox",
+			data: { version: 1, id: "message-1", message: { customType: "child_wait", content: "{}", display: true, details: { wait_id: waitId } } } };
+		await writeFile(file, `${lines.join("\n")}\n${JSON.stringify(entry)}\n`);
+	};
+	const crash = await crashedDuringWait(t, 1000, undefined, inbox);
+	await crash.restored.runtime.resume!(new AbortController().signal, true);
+	await crash.restored.runtime.wait(new AbortController().signal);
+	assert.equal(crash.sent().length, 0);
+	crash.restored.runtime.close();
+});
+
+test("a wait whose closing record cannot be saved on cancellation stays accepted and is closed on the next try", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await live.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => live.requests.length === 1);
+	let failing = true;
+	const append = parent.appendCustomEntry.bind(parent);
+	t.mock.method(parent, "appendCustomEntry", (type: string, data: any) => {
+		if (failing && type === "rqw-agent-wait" && data.open === false) throw new Error("disk full");
+		return append(type, data);
+	});
+	const receipt = await live.execute({ action: "wait", ids: ["agent#1"] }, "call1");
+	// Its tool result failed: the wait is canceled, but the closing entry cannot be written.
+	parent.appendMessage({ role: "toolResult", toolCallId: "call1", toolName: "agent", content: [{ type: "text", text: "failed" }], isError: true, timestamp: 1 });
+	await live.emit("turn_end");
+	assert.deepEqual(waitRecords(parent).map(record => record.open), [true]);
+	failing = false;
+	await live.emit("turn_end");
+	assert.deepEqual(waitRecords(parent).map(record => [record.wait_id, record.open]), [[receipt.details.wait_id, true], [receipt.details.wait_id, false]]);
+	live.runtime.close();
+});
+
+test("a replaced wait is restored when the replacing wait never got its tool result saved", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await first.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => first.requests.length === 1);
+	const one = await acceptedWait(first, parent, "call1");
+	// The replacing wait closed the first one; the crash came before its own tool result was saved.
+	await first.execute({ action: "wait", ids: ["agent#1"] }, "call2");
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	await restored.runtime.resume!(new AbortController().signal, true);
+	await restored.runtime.wait(new AbortController().signal);
+	const sent = (restored.ctx.sessionManager.getBranch() as any[]).filter(entry => entry.customType === "child_wait");
+	assert.deepEqual(sent.map(entry => [entry.details.wait_id, entry.details.reason]), [[one, "result"]]);
+	restored.runtime.close();
+});
+
+test("a recovery that already completed before the crash still ends its restored wait with the result", async t => {
+	// The child record holds a finished run that continued the one the wait recorded; its answer is saved.
+	const finished = async (file: string) => {
+		const lines = (await readFile(file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
+		for (const entry of lines) if (entry.customType === "rqw-agent-child") {
+			const data = entry.data;
+			data.recovers = `${data.epoch}:${data.runNumber}`;
+			data.runNumber++;
+			data.state = "completed";
+			data.result = { run: `${data.epoch}:${data.runNumber}`, text: "answer", outcome: "completed", meta: { model: "persist-test/model", stop: "stop" }, delivery: "saved-delivery" };
+		}
+		await writeFile(file, `${lines.map(entry => JSON.stringify(entry)).join("\n")}\n`);
+	};
+	const crash = await crashedDuringWait(t, 1000, undefined, finished);
+	assert.deepEqual(crash.sent().map(sent => [sent.wait_id, sent.reason, sent.results[0].text.split("\n\n")[0]]), [[crash.id, "result", "answer"]]);
+	crash.restored.runtime.close();
+});
+
+test("a restarted child whose history never reached its file restarts with its one accepted task", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await first.execute({ action: "start", task: "old task", tools: [] });
+	await first.execute({ action: "restart", id: "agent#1", task: "long task", tools: [] });
+	await until(() => first.requests.length > 0);
+	// The crash: the new history never reached its file.
+	const file = parent.getSessionFile()!;
+	await rm(`${file}.children/agent-1`, { recursive: true });
+	const restored = runtimeFixture(SessionManager.open(file), root);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	await restored.runtime.resume!(new AbortController().signal, true);
+	await restored.runtime.wait(new AbortController().signal);
+	assert.deepEqual(userTexts(restored.requests.at(-1)), ["long task"]);
+	restored.runtime.close();
+});
+
+test("a wait accepted before an ordinary shutdown is restored with the reopened session", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	t.mock.method(Date, "now", () => 1000);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await first.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => first.requests.length === 1);
+	const id = await acceptedWait(first, parent, "call1");
+	await first.emit("session_shutdown");
+	assert.deepEqual(waitRecords(parent).map(record => [record.wait_id, record.open]), [[id, true]]);
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	await restored.runtime.resume!(new AbortController().signal, true);
+	await restored.runtime.wait(new AbortController().signal);
+	const sent = (restored.ctx.sessionManager.getBranch() as any[]).filter(entry => entry.customType === "child_wait");
+	assert.deepEqual(sent.map(entry => [entry.details.wait_id, entry.details.reason]), [[id, "result"]]);
+	restored.runtime.close();
+});
+
+test("an ordinary shutdown does not deliver an answer a wait for all targets was holding", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const gate = Promise.withResolvers<void>();
+	const first = runtimeFixture(parent, root, async (context: any) => {
+		if (userTexts(context)[0] === "quick") { await gate.promise; return "answer"; }
+		return new Promise<never>(() => {});
+	});
+	await first.execute({ action: "start", task: "quick", tools: [] });
+	await first.execute({ action: "start", task: "slow", tools: [] });
+	await until(() => first.requests.length === 2);
+	const receipt = await first.execute({ action: "wait", ids: ["agent#1", "agent#2"], until: "all" }, "call1");
+	parent.appendMessage({ role: "toolResult", toolCallId: "call1", toolName: "agent", content: [{ type: "text", text: JSON.stringify(receipt.details) }], isError: false, timestamp: 1 });
+	await first.emit("turn_end");
+	gate.resolve();
+	await until(() => first.runtime.ids().length === 1);
+	await first.emit("session_shutdown");
+	assert.equal((parent.getBranch() as any[]).filter(entry => entry.type === "custom_message" && entry.customType === "agent").length, 0);
+	first.runtime.close();
 });
