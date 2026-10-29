@@ -19,8 +19,8 @@ const TERRA = "gpt-6.1-terra";
 const REVIEW_PREFIX = "You are a read-only blind reviewer on Main's team: Main does the work, you check it, and together you deliver";
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
 
-/** sha256 of a UTF-8 text; the pinned values below are of origin/release, never of the files under test. */
-const digest = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+/** sha256 of a UTF-8 text with LF endings (git may check files out with CRLF on Windows); the pinned values below are of origin/release, never of the files under test. */
+const digest = (text: string) => createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
 const REVIEW_SHA = "27e51994b2f24a432666878d3300407a9d46cd2b7206e84a7f273ab523a6c311";
 /** sha256 of the owner's personal spotty and bossy developer_instructions; checked only where those files exist. */
 const PERSONAL_SHA = "8ca0dec75595b08693706d1a253f35f0e49ce80115449d89d2c9ccd6aa7c03af";
