@@ -497,6 +497,7 @@ export function titleRow(name: string | undefined, width: number): string {
 export interface ActivityChrome {
 	text: string;
 	compacting: boolean;
+	retry?: boolean;
 	/** The phase in frames, fractional: elapsed time over the frame length, not a tick count. */
 	frame: number;
 }
@@ -505,7 +506,7 @@ export interface ActivityChrome {
 export function activityRows(width: number, chrome: ActivityChrome | undefined): string[] {
 	if (!chrome) return [];
 	const text = fitPlain(singleLine(chrome.text), Math.max(0, width - 1));
-	return [width > 0 ? " " + shimmerText(text, 1, chrome.frame, chrome.compacting ? GOLD : SILVER) : "", ""];
+	return [width > 0 ? " " + (chrome.retry ? styled("#ffb347", false, text) : shimmerText(text, 1, chrome.frame, chrome.compacting ? GOLD : SILVER)) : "", ""];
 }
 
 /** A run of the top border: a rule, the hint, the title or the session ID. */

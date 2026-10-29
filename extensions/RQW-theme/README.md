@@ -5,6 +5,7 @@ The owner's decisions are recorded in [Theme](../../DECISIONS.md#theme).
 
 **Registration.** `package.json` lists the theme in `pi.themes`. Select `RQW-theme` once through `/settings` ->
 Theme; Pi persists the choice across reload and restart, and the same selector switches back.
+Dialog and list accents use gold (`#c9a227`).
 
 ## Card backgrounds
 

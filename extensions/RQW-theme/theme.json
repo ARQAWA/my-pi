@@ -20,7 +20,7 @@
     "carrierPurple": "#b97cff"
   },
   "colors": {
-    "accent": "",
+    "accent": "sourceGold",
     "border": "line",
     "borderAccent": "steel",
     "borderMuted": "lineSoft",
