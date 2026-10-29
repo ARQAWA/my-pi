@@ -1,11 +1,12 @@
 // RQW-codex-compat: Codex skill roots, skill rules and project instructions on Pi's public extension APIs.
-import { getAgentDir, parseArgs, type ExtensionAPI, type NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
-import { disabledPaths, fitBudget, scopeOf, scopeRank, skillRules, skillSettings } from "./catalog.ts";
+import { getAgentDir, parseArgs, stripFrontmatter, type ExtensionAPI, type NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
+import { disabledPaths, fitBudget, scopeOf, scopeRank, skillRules, skillSettings, type SkillLike } from "./catalog.ts";
 import { defaultEnv, loadContext, type CodexContext, type Env } from "./config.ts";
 import { instructionFiles } from "./instructions.ts";
-import { realpathSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { skillRoots } from "./skills.ts";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { orderSameName, scanRoots, withScanned } from "./selection.ts";
+import { skillRoots, type SkillRoot } from "./skills.ts";
 
 export interface CompatDeps {
 	env?: Env;
@@ -22,10 +23,12 @@ const FALLBACK_CHARS = 8000;
 const SKILL_FILTER = "rqw-skill-dollar:filter";
 
 type Skill = NormalizedBuildSystemPromptOptions["skills"][number];
+/** What the selection needs of a skill: Pi's skills, and the name, description and path of a command. */
+type Selectable = SkillLike & { baseDir?: string; sourceInfo?: { scope?: string } };
 const real = (path: string) => { try { return realpathSync(path); } catch { return path; } };
 
 /** The skills a Codex config leaves enabled: `skills.config` rules and the bundled switch. */
-function enabledSkills<T extends Skill>(ctx: CodexContext, skills: readonly T[]): T[] {
+function enabledSkills<T extends Selectable>(ctx: CodexContext, skills: readonly T[]): T[] {
 	const settings = skillSettings(ctx.effective);
 	const roots = skillRoots(ctx, true);
 	const disabled = disabledPaths(skillRules(ctx), skills);
@@ -62,7 +65,14 @@ export default function codexCompat(pi: ExtensionAPI, deps: CompatDeps = {}): vo
 	const noSkills = args.noSkills === true;
 	let latest: CodexContext | undefined;
 	let stamp = "";
+	// The skills of the offered roots, Pi's same-name losers included; read once per resource load, as Pi's own list.
+	let offered: SkillRoot[] = [];
+	let scanned: Skill[] | undefined;
+	const withAll = <T extends Selectable>(given: readonly T[]): T[] => withScanned(given, (scanned ??= scanRoots(offered)) as unknown as T[]);
+	// The last ordered list `selectable` built, with the skills it was built from; dropped whenever the context is read again.
+	let ordered: { key: string; result: Selectable[] } | undefined;
 	const refresh = (cwd: string) => {
+		ordered = undefined;
 		latest = loadContext(cwd, env());
 		stamp = configStamp(latest);
 		return latest;
@@ -70,7 +80,7 @@ export default function codexCompat(pi: ExtensionAPI, deps: CompatDeps = {}): vo
 	// Applies the skill catalog and the instruction files; returns the path of a project file cut by the byte limit.
 	const apply = (options: NormalizedBuildSystemPromptOptions, contextWindow?: number): string | undefined => {
 		const ctx = refresh(options.cwd);
-		options.skills = catalogOf(ctx, options.skills, contextWindow);
+		options.skills = catalogOf(ctx, withAll(options.skills), contextWindow);
 		if (noContextFiles) return undefined;
 		const instructions = instructionFiles(ctx, options.contextFiles);
 		options.contextFiles = instructions.files;
@@ -79,6 +89,8 @@ export default function codexCompat(pi: ExtensionAPI, deps: CompatDeps = {}): vo
 
 	pi.on("resources_discover", event => {
 		const roots = skillRoots(refresh(event.cwd));
+		scanned = undefined;
+		offered = noSkills ? [] : roots;
 		if (noSkills) return undefined;
 		return roots.length > 0 ? { skillPaths: roots.map(root => root.path) } : undefined;
 	});
@@ -96,13 +108,44 @@ export default function codexCompat(pi: ExtensionAPI, deps: CompatDeps = {}): vo
 		}
 	});
 
+	// The enabled skills in selection order, same-name ones included: the one list `$name`, `[$name](skill://path)` and `/skill:name` read.
+	// The list is built once and reused until the skills, the resources, the cwd or the config change: an autocomplete
+	// request does no file access. A changed config file is noticed by one stat per submit (`fresh`), never per keystroke.
+	const selectable = <T extends Selectable>(given: readonly T[], cwd?: string, fresh = false): T[] | undefined => {
+		if (fresh && latest && configStamp(latest) !== stamp) refresh(latest.cwd);
+		const ctx = latest ?? (cwd === undefined ? undefined : refresh(cwd));
+		if (!ctx) return undefined;
+		const key = JSON.stringify(given.map(skill => [skill.name, skill.description, skill.filePath, skill.baseDir, skill.sourceInfo?.scope]));
+		if (ordered?.key === key) return ordered.result as T[];
+		const result = orderSameName(enabledSkills(ctx, withAll(given)), skillRoots(ctx, true));
+		ordered = { key, result };
+		return result;
+	};
 	// RQW-skill-dollar lists and expands only skills a Codex config leaves enabled.
 	pi.events.on(SKILL_FILTER, request => {
-		(request as { offer?: (filter: (skills: Skill[]) => Skill[]) => void })?.offer?.(skills => {
-			// Mentions follow the config as it is now: a changed config file is read again before the input is processed.
-			if (latest && configStamp(latest) !== stamp) refresh(latest.cwd);
-			return latest ? enabledSkills(latest, skills) : skills;
-		});
+		(request as { offer?: (filter: (skills: Skill[], submit?: boolean) => Skill[]) => void })?.offer?.((skills, submit) => selectable(skills, undefined, submit) ?? skills);
+	});
+
+	// `/skill:name` picks from the same list; Pi's own expansion still runs when it would pick the same skill.
+	pi.on("input", (event, ctx) => {
+		if (!event.text.startsWith("/skill:")) return undefined;
+		const space = event.text.indexOf(" ");
+		const name = space === -1 ? event.text.slice(7) : event.text.slice(7, space);
+		const args = space === -1 ? "" : event.text.slice(space + 1).trim();
+		const own = pi.getCommands().flatMap(command => command.source === "skill" && command.name === `skill:${name}`
+			? [{ name, description: command.description ?? "", filePath: command.sourceInfo.path }] : []);
+		const chosen = selectable(own, ctx.cwd, true)?.find(skill => skill.name === name);
+		if (!chosen) {
+			if (own.length === 0) return undefined;
+			ctx.ui.notify(`Skill ${name} is disabled by the Codex config`, "warning");
+			return { action: "handled" as const };
+		}
+		if (chosen.filePath === own[0]?.filePath) return undefined;
+		try {
+			const body = stripFrontmatter(readFileSync(chosen.filePath, "utf-8")).trim();
+			const block = `<skill name="${name}" location="${chosen.filePath}">\nReferences are relative to ${dirname(chosen.filePath)}.\n\n${body}\n</skill>`;
+			return { action: "transform" as const, text: args ? `${block}\n\n${args}` : block };
+		} catch { return undefined; }
 	});
 
 	// The idle prewarm builds its prompt from a cloned options object; it gets the same result.

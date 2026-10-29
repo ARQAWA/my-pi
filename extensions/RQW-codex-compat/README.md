@@ -1,7 +1,7 @@
 # RQW-codex-compat
 
 Reads Codex configuration on Pi's public extension APIs. It never writes to `~/.codex`, `/etc/codex` or a project.
-Pi sources are not edited; a part that needs a public Pi API that does not exist is listed as blocked below.
+Pi sources are not edited; a part that is not done is listed as blocked below.
 
 ## Config view
 
@@ -40,6 +40,23 @@ The model-visible skill list (`systemPromptOptions.skills`, also for the idle pr
   Descriptions shrink round-robin, then skills are omitted from the end. Without a configured limit and without a
   known window Codex's fallback of 8000 characters counts instead (a line and its newline cost their characters). Pi's
   own prompt text around the lines is not charged.
+
+## Same-name skills
+
+Pi keeps only the first skill of a name while loading. The extension scans the offered roots again (Pi's public
+`loadSkillsFromDir`, once per resource load) and adds the skills Pi dropped, one entry per real path, so the model
+catalog lists every path. Codex's rule (codex-rs `ext/skills/src/loader/host_merge.rs`, `merge_host_skill_root_snapshots`)
+orders skills by scope Repo, User, System, Admin, then name, then path; a plain `$name` takes the first enabled skill of
+that name (`selection.rs`, `collect_explicit_skill_mentions`), and a link `[$name](skill://path)` takes exactly that path.
+Duplicates are removed by path, never by name. A `name` rule disables every skill of that name, a `path` rule one.
+
+- `$name` (RQW-skill-dollar): reads the list on `rqw-skill-dollar:filter`, which now returns same-name skills too, in that order.
+  Autocomplete lists each one with its path and inserts a `[$name](skill://path)` link for all but the first.
+- `/skill:name`: an `input` handler picks from the same list. When Pi would expand the same skill it does nothing and Pi expands.
+  When another skill of that name is chosen, the text becomes that skill's block, in Pi's own format. A skill that exists
+  but is disabled by the Codex config is not expanded: the input is dropped with a warning.
+- Pi's own slash-command list is unchanged: it still shows one `/skill:name` per name.
+- Skills outside the Codex roots (Pi's own folders) keep Pi's rule among themselves; for ordering their scope is user, or repo for project skills.
 
 Skills disabled by a rule are also removed from the list RQW-skill-dollar uses, through the `pi.events` channel
 `rqw-skill-dollar:filter` with `{ offer(filter) }`, so a `$name` mention cannot expand them.
@@ -95,6 +112,6 @@ Blocked: waits for a public Pi API and is not done.
 | Agent roles: built-in `default` and `worker` | supported | user roles replace them |
 | Agent roles: `explorer` | ignored | removed by the owner's earlier decision |
 | Permissions: a child inherits its parent's real sandbox | blocked | Pi has no equal sandbox; removing tools is not one |
-| Skills: `/skill:name` commands follow rules | blocked | Pi has no public way to change its command list |
-| Skills: same-name selection by path and `skill://` links | blocked | Pi drops later same-name skills while loading and keeps its own command list; waits for a public API with command parity |
+| Skills: `/skill:name` commands follow rules and the same list as `$name` | supported | Pi's command list still shows one entry per name; the `input` event picks the skill |
+| Skills: same-name selection by path and `skill://` links | supported | Codex merge order; the catalog and `$` keep every path, `skill://` selects one |
 | Exception: Pi's agent directory outranks `$CODEX_HOME`, and at the same project directory `.pi` roles win over `.codex` roles; nearer project directories win over ancestors | ignored | agreed exception to exact parity, not a Codex rule |

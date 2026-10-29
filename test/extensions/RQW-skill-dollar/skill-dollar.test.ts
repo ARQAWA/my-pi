@@ -199,3 +199,50 @@ it("an offered filter removes a skill from suggestions and from expansion", asyn
 	assert.equal(await input({ text: "use $drop now", source: "interactive" }, {}), undefined);
 	assert.deepEqual(await input({ text: "use $keep now", source: "interactive" }, {}), { action: "transform", text: expanded(commands, ["keep"], "use now") });
 });
+
+it("same-name skills: $name takes the first, a skill:// link takes its own path, completion offers both", async (t) => {
+	const { root, provider, input } = await setup(t, ["keep"], skills => {
+		const path = join(root2(skills), "second", "SKILL.md");
+		mkdirSync(dirname(path), { recursive: true });
+		writeFileSync(path, "---\nname: keep\ndescription: second keep\n---\nsecond body\n");
+		return [...skills, { name: "keep", description: "second keep", filePath: path, baseDir: dirname(path) }];
+	});
+	const second = join(root, "second", "SKILL.md");
+	const first = join(root, "keep", "SKILL.md");
+	const items = (await provider.getSuggestions(["$ke"], 0, 3, options()))!.items;
+	assert.deepEqual(items.map(item => item.value), ["$keep", `[$keep](skill://${second})`]);
+	assert.match(items[1].description!, new RegExp(second.replace(/[\\/.]/g, "\\$&")));
+	// Applying the second completion writes the link of that very skill into the editor text.
+	const link = `[$keep](skill://${second}) `;
+	const applied = provider.applyCompletion(["$ke"], 0, 3, items[1], "$ke");
+	assert.deepEqual(applied.lines, [link]);
+	assert.equal(applied.cursorCol, link.length);
+	assert.deepEqual(provider.applyCompletion(["$ke"], 0, 3, items[0], "$ke").lines, ["$keep "]);
+	const plain = await input({ text: "use $keep", source: "interactive" }, {}) as { text: string };
+	assert.match(plain.text, new RegExp(`location="${first.replace(/[\\/.]/g, "\\$&")}"`));
+	assert.doesNotMatch(plain.text, /second body/);
+	const linked = await input({ text: `use [$keep](skill://${second}) now`, source: "interactive" }, {}) as { text: string };
+	assert.match(linked.text, /second body/);
+	assert.doesNotMatch(linked.text, /keep body/);
+	assert.match(linked.text, /\n\nuse now$/);
+	assert.equal(await input({ text: "use [$keep](skill:///nowhere/SKILL.md)", source: "interactive" }, {}), undefined);
+});
+
+// The temp root of `setup` is the directory above a skill folder; the filter only has the skills to learn it from.
+const root2 = (skills: { filePath: string }[]) => dirname(dirname(skills[0].filePath));
+
+it("a skill link whose path has parentheses, like Windows Program Files (x86), is recognised on submit", async (t) => {
+	const { provider, input } = await setup(t, ["keep"], skills => {
+		const path = join(root2(skills), "Program Files (x86)", "second", "SKILL.md");
+		mkdirSync(dirname(path), { recursive: true });
+		writeFileSync(path, "---\nname: keep\ndescription: second keep\n---\nsecond body\n");
+		return [...skills, { name: "keep", description: "second keep", filePath: path, baseDir: dirname(path) }];
+	});
+	const items = (await provider.getSuggestions(["$ke"], 0, 3, options()))!.items;
+	const applied = provider.applyCompletion(["$ke"], 0, 3, items[1], "$ke");
+	assert.match(applied.lines[0], /Program Files \(x86\)/);
+	const linked = await input({ text: `use ${applied.lines[0]}now`, source: "interactive" }, {}) as { text: string };
+	assert.match(linked.text, /second body/);
+	assert.doesNotMatch(linked.text, /keep body/);
+	assert.match(linked.text, /\n\nuse now$/);
+});

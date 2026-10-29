@@ -154,7 +154,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   `~/.agents/skills`, `/etc/codex/skills` where the system has it (no other administrative config is read), project `.agents/skills` and, for trusted projects
   (`projects.*.trust_level`), `.codex/skills`, bounded by `project_root_markers`. Applies `skills.config`, `skills.bundled.enabled`, `skills.include_instructions` and
   `skills.max_context_tokens` to the model skill catalog, and filters skills for RQW-skill-dollar on
-  `rqw-skill-dollar:filter`. Same-name selection by path and `/skill:` command parity are not implemented yet; under `[D-SCOPE-RUNTIME-PATCH]` they no longer wait for a public Pi API. Replaces `contextFiles` with the global Codex `AGENTS.override.md`/`AGENTS.md`, Pi's
+  `rqw-skill-dollar:filter`. Same-name skills of the Codex roots stay in the catalog, selected by Codex's merge order or by a `[$name](skill://path)` link, and `/skill:name` reads the same list. Replaces `contextFiles` with the global Codex `AGENTS.override.md`/`AGENTS.md`, Pi's
   personal file and project files by Codex rules (fallback names, markers, explicit untrusted skip, shared `project_doc_max_bytes` budget). Contract:
   [README](extensions/RQW-codex-compat/README.md), `DECISIONS.md` `[D-COMPAT-CODEX]`. Tests: `test/extensions/RQW-codex-compat/`.
 - `extensions/RQW-theme/theme.json`: native theme resource named `RQW-theme`, registered only in `pi.themes`, not
