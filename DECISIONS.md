@@ -585,6 +585,39 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Checked process-wide lifecycle** `[D-CONTEXT-LIFECYCLE]`. Native method descriptors, arities, model getter and prototype extensibility are checked before static installation; unsupported shapes fail without static changes. Hooks are installed once per process and apply while `Symbol.for("rqw-context/owner")` holds any live owner token. Each `session_shutdown` removes only its own token; the last removal restores stock behavior, including physical lookup identity. SDK `dispose()` alone does not emit this lifecycle event, and sessions that excluded the extension still receive the rule while another owner remains. Updating the hook implementation requires restarting Pi, not only `/reload`.
   Coordinator text. Reason: independent sessions must not disable each other's universal context policy.
   Carrier: `extensions/RQW-context/index.ts`; restart instructions: `INSTALL.md`. Since: `e1fa03d`.
+- **Background compaction at 65% of W** `[D-CONTEXT-BACKGROUND]`. At Pi's existing checkpoints, when context reaches
+  65% of W and Pi's own threshold has not, RQW-context prepares a snapshot with a version-pinned local copy of Pi 1.4.0's
+  projected preparation and starts Pi's own `_runDefaultCompaction` without awaiting it, at most once per compaction
+  generation (latest compaction id), failed attempts included. A ready summary that is still fresh makes the next
+  checkpoint (before the next model call, after a run, or before the next prompt) answer "threshold reached"; Pi's
+  normal `_runAutoCompaction` then takes the ready result with no new request and appends, refreshes and emits as usual.
+  `firstKeptEntryId` is the snapshot cut, so everything written meanwhile stays verbatim; `tokensBefore` comes from
+  Pi's later preparation; file lists are the snapshot's, once. Fresh means the same base compaction, the snapshot leaf
+  and cut still on the branch, no `context_edit` of a dependency, and an unchanged serialized previous compaction and
+  summarized projected input. Not ready, stale, manual or overflow: the background request is aborted and Pi compacts
+  normally, without waiting. Before each request the session dispatch `rqw:background-summary:v1` `{ type, signal }`
+  lets a transport route it. The session's `pi.events` channel `rqw-context:background-compaction` carries
+  `{ sessionId, active }`: true when the request starts, false once when it ends in any way, also on supersede, shutdown or
+  `dispose()`. Entering a manual, overflow or not-ready threshold compaction aborts the request, even if a handler
+  replaces the generator. A shape-checked `dispose` wrapper aborts a stopped subagent's request.
+  Children run the same mechanism through the shared prototypes, but load no RQW-context instance: they get no status
+  event and no shutdown abort. A model switch keeps the candidate. Pi 1.4.0 refuses `context_edit` on a compaction
+  entry; the dependency check still rejects one. The copied helpers must be compared with Pi on every Pi update.
+  Owner: «Нет, смотри, проект фонового сжатия — это просто мы берём механику фонового сжатия, как в кодексе, но при
+  этом также продолжаем сжимать её через P. И всё. Я не вижу смысла использовать фоновое сжатие кодекса, когда у нас
+  есть пишное. Я хотел, чтобы оно концептуально работало так же: чтобы оно под капотом запускало сжатие на 65%, и потом
+  это бесшовно дальше проходило. Надо это всё проанализировать, продумать и оценить самое простое и быстрое решение на
+  минимальное количество story points, максимально эффективное и легковесное по всем нашим правилам. Супер простое,
+  быстрое, отзывчивое и легковесное, молниеносное»; «так да делай фоновый компакшен алло лол». Status, superseding the
+  design's «no background progress UI»: «надо сделать какую-то анимацию фонового compaction ... в статус-баре ...
+  справа от папки чтобы был золотой переливающийся статус ... что-то минималистичное»; mockup variant 2:
+  «2й вариант толье вместо бекграунд бг просто»; «тона только для лимитов не для компакшена».
+  Coordinator text: adopting as soon as ready, no waiting at Pi's threshold, placement in RQW-context, children,
+  model-switch retention, one attempt per generation and the local helper copy are design choices the owner approved
+  with the 7.5 SP design, not owner quotations.
+  Reason: Codex's background mechanics with Pi's own summary, off the critical path, without timers or polling.
+  Carrier: `extensions/RQW-context/background.ts`, `extensions/RQW-context/index.ts` (checkpoint force),
+  `extensions/RQW-context/README.md`. Since: background-compaction delivery.
 
 ## Prompt
 
@@ -1231,6 +1264,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Model tests** `[D-MODELS-TESTS]`. Tests: `test/extensions/RQW-models/models.test.ts`. Since: `e6c21e2`.
 
 ## Status bar
+
+- **Background compaction** `[D-STATUSBAR-BACKGROUND-COMPACTION]`. While the current session's background summary runs, `bg compaction` shimmers gold after the folder, using the existing shimmer loop. Owner: «надо сделать какую-то анимацию фонового compaction ... в статус-баре ... справа от папки чтобы был золотой переливающийся статус ... что-то минималистичное»; «2й вариант толье вместо бекграунд бг просто»; «тона только для лимитов не для компакшена». Carrier: `extensions/RQW-statusbar/{index,render}.ts`.
 
 - **Provider-limit badge colors** `[D-STATUSBAR-LIMIT-COLORS]`. Definitive `CC` choice, owner (`16-27-59:9432`, entry `d7037e66`): «2 бронза».
   This answers the bronze/orange question in assistant entry `05b22f2b`, `16-27-59:9416`.

@@ -144,7 +144,7 @@ type OwnerState = {
 type RuntimeRecord = {
 	refs: number;
 	owners: Set<OwnerState>;
-	summaries: WeakMap<AbortSignal, { entry: Entry; owner: OwnerState }>;
+	summaries: WeakMap<AbortSignal, { entry: Entry; owner: OwnerState; background: boolean }>;
 	authRelease: () => void;
 	saved: ProviderConfigInput | undefined;
 	config: ProviderConfigInput;
@@ -222,14 +222,14 @@ function attach(runtime: ModelRuntime, owner: OwnerState): () => void {
 				const entry = item.entries.get(sessionId);
 				if (entry) return entry.controller.stream(model, context, options);
 			}
-			// Pi's standalone summaries get fresh routing IDs. Only an active Pi compaction may use this auxiliary path.
+			// Pi's standalone summaries get fresh routing IDs. Only an active Pi compaction or a registered background summary may use this auxiliary path.
 			const auxiliary = (options as { cacheRetention?: string } | undefined)?.cacheRetention === "none"
 				&& /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sessionId)
 				&& model.provider === CODEX_PROVIDER && model.api === CODEX_API;
 			if (auxiliary) {
 				const streamOptions = options as SimpleStreamOptions;
 				const route = streamOptions.signal ? created.summaries.get(streamOptions.signal) : undefined;
-				if (route && !route.entry.done && route.entry.compacting && route.entry.session.modelRuntime === runtime
+				if (route && !route.entry.done && (route.entry.compacting || route.background) && route.entry.session.modelRuntime === runtime
 					&& !streamOptions.signal!.aborted && route.owner.directs) {
 					const agent = route.entry.session.agent;
 					return route.owner.directs().stream(model, context, {
@@ -400,11 +400,11 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 	const lifecycle: Lifecycle = installLifecycle(pi, policyFor);
 	const entryForContext = (ctx: { sessionManager: unknown }) => [...owner.entries.values()]
 		.find((entry) => !entry.done && entry.session.sessionManager === ctx.sessionManager);
-	const prepareSummary = (entry: Entry, signal: AbortSignal): void => {
+	const prepareSummary = (entry: Entry, signal: AbortSignal, background = false): void => {
 		entry.releaseSummary();
 		const record = all.records.get(entry.session.modelRuntime);
 		if (!record || signal.aborted) return;
-		record.summaries.set(signal, { entry, owner });
+		record.summaries.set(signal, { entry, owner, background });
 		entry.summarySignal = signal;
 		const release = () => {
 			record.summaries.delete(signal);
@@ -417,7 +417,7 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 	};
 	const offCompaction = installSessionCompaction(pi, {
 		accepts: (ctx) => !closed && entryForContext(ctx) !== undefined,
-		prepare: (event, ctx) => prepareSummary(entryForContext(ctx)!, event.signal),
+		prepare: (event, ctx, background) => prepareSummary(entryForContext(ctx)!, event.signal, background),
 		onCompacted: (ctx) => entryForContext(ctx)?.controller.afterPiCompaction?.(),
 		onFinished: (ctx) => entryForContext(ctx)?.releaseSummary(),
 	});
@@ -552,7 +552,7 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 				}));
 				bound.hookReleases.add(installSessionCompaction(api, {
 					accepts: (ctx) => !bound.done && ctx.sessionManager === bound.session.sessionManager,
-					prepare: (event) => prepareSummary(bound, event.signal),
+					prepare: (event, _ctx, background) => prepareSummary(bound, event.signal, background),
 					onCompacted: () => bound.controller.afterPiCompaction?.(),
 					onFinished: () => bound.releaseSummary(),
 				}));

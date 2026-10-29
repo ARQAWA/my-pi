@@ -8,7 +8,7 @@ import { actionPhrase, CountsWatch, statusText } from "./activity.ts";
 import { QuotaConsumer } from "./quota.ts";
 import { type BorderSource, ContextEditor, type NativeActivity } from "./editor.ts";
 import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
-import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, renderBar, modelRow, activityRows } from "./render.ts";
+import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, contextRow, modelRow, placeLayout, activityRows } from "./render.ts";
 
 // Tools that never change the working tree or the branch.
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "web", "tool_search"]);
@@ -68,6 +68,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	const rate = new RateMeter();
 	let working = false;
 	let unsubscribeFast: (() => void) | undefined;
+	const backgroundSessions = new Set<string>();
 	let animationStart = now();
 	let shimmer: ReturnType<typeof setInterval> | undefined;
 	let lightCtx: ExtensionContext | undefined;
@@ -95,7 +96,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	const stopShimmer = () => { if (shimmer) clearInterval(shimmer); shimmer = undefined; };
 	/** The shimmer timer only asks for redraws while the status letters or the working lightning need it and the footer is up;
 	 * re-checked on every tick. The phase comes from the elapsed time at render, so Pi's other redraws show it too. */
-	const wantsShimmer = () => active && ((status !== undefined && !status.retry) || (working && lightning));
+	const wantsShimmer = () => active && ((status !== undefined && !status.retry) || (working && lightning) || backgroundSessions.has(lightCtx?.sessionManager.getSessionId() ?? ""));
 	const syncShimmer = () => {
 		status = nativeActivity ? { ...nativeActivity, compacting: false } : statusText({ compacting, running, action: [...tools.values()].at(-1), counts: jobs.get() });
 		lightning = lit(lightCtx);
@@ -105,6 +106,13 @@ export default function statusbar(pi: ExtensionAPI) {
 		shimmer = setInterval(() => { syncSpinner(); if (!wantsShimmer()) stopShimmer(); redraw?.(); }, SHIMMER_MS);
 		shimmer.unref?.();
 	};
+	const unsubscribeBackground = pi.events.on("rqw-context:background-compaction", (event: unknown) => {
+		const value = event as { sessionId?: unknown; active?: unknown } | null;
+		if (!value || typeof value.sessionId !== "string" || typeof value.active !== "boolean") return;
+		if (value.active) backgroundSessions.add(value.sessionId);
+		else backgroundSessions.delete(value.sessionId);
+		if (value.sessionId === lightCtx?.sessionManager.getSessionId()) { syncShimmer(); redraw?.(); }
+	});
 	// The context row is drawn as the bottom border of this extension's editor. One factory per extension instance
 	// identifies our editor in `getEditorComponent()`; its border reads the current install's source.
 	let border: BorderSource | undefined;
@@ -280,7 +288,10 @@ export default function statusbar(pi: ExtensionAPI) {
 			let lastStatuses = new Map<string, string>();
 			let cachedRows: string[] = [];
 			let cachedState: BarState | undefined;
+			let cachedPlace: ReturnType<typeof placeLayout> | undefined;
 			let lastFastFrame: number | undefined;
+			let lastBackgroundFrame: number | undefined;
+			let lastSessionId = ctx.sessionManager.getSessionId();
 			quotas.start();
 			const cleanup = () => {
 				if (disposed) return;
@@ -308,6 +319,14 @@ export default function statusbar(pi: ExtensionAPI) {
 					}
 					const context = contextState();
 					const fast = fastState();
+					const sessionId = ctx.sessionManager.getSessionId();
+					if (lastSessionId !== sessionId) {
+						backgroundSessions.delete(lastSessionId);
+						lastSessionId = sessionId;
+						syncShimmer();
+					}
+					const backgroundFrame = backgroundSessions.has(sessionId)
+						? Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS : undefined;
 					const statuses = footer.getExtensionStatuses();
 					let statusChanged = statuses.size !== lastStatuses.size;
 					if (!statusChanged) for (const [name, text] of statuses) if (lastStatuses.get(name) !== text) { statusChanged = true; break; }
@@ -318,17 +337,26 @@ export default function statusbar(pi: ExtensionAPI) {
 						cachedState = {
 							quotas: { ...quotas.values }, model: ctx.model, thinkingLevel: pi.getThinkingLevel(), ...context,
 							rate: rate.value(), fast, place: placeOf({ cwd: ctx.cwd, home: homedir(), scratchRoots: roots, worktree: repo?.worktree, branch }),
-							git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts },
+							git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts }, backgroundFrame,
 							statuses: [...statuses].sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text),
 						};
-						cachedRows = renderBar(cachedState, width, paint);
+						cachedPlace = placeLayout(cachedState, width, paint);
+						cachedRows = [contextRow(cachedState.context, width, paint), modelRow(cachedState, width, paint), cachedPlace.first(), ...cachedPlace.rest];
 						lastKey = key;
 						lastFastFrame = fast?.frame;
-					} else if (cachedState && fast?.frame !== lastFastFrame) {
-						cachedState.fast = fast;
+						lastBackgroundFrame = backgroundFrame;
+					} else if (cachedState && (fast?.frame !== lastFastFrame || backgroundFrame !== lastBackgroundFrame)) {
 						cachedRows = [...cachedRows];
-						cachedRows[1] = modelRow(cachedState, width, paint);
-						lastFastFrame = fast?.frame;
+						if (fast?.frame !== lastFastFrame) {
+							cachedState.fast = fast;
+							cachedRows[1] = modelRow(cachedState, width, paint);
+							lastFastFrame = fast?.frame;
+						}
+						if (backgroundFrame !== lastBackgroundFrame) {
+							cachedState.backgroundFrame = backgroundFrame;
+							cachedRows[2] = cachedPlace!.first();
+							lastBackgroundFrame = backgroundFrame;
+						}
 					}
 					return ctx.ui.getEditorComponent() === editorFactory ? cachedRows.slice(1) : cachedRows;
 				},
@@ -370,6 +398,8 @@ export default function statusbar(pi: ExtensionAPI) {
 		await install(ctx);
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
+		unsubscribeBackground();
+		backgroundSessions.clear();
 		release();
 		running = false;
 		working = false;
