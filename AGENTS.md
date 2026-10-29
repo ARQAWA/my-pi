@@ -101,6 +101,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   with an exact continuation. Description teaches batching, evidence, sources and untrusted web text.
   Contract: [RQW-web README](extensions/RQW-web/README.md), [Web search decision](DECISIONS.md#web-search).
   Tests: `test/extensions/RQW-web/`, `test/web-subagents.test.ts`.
+- `scripts/submit-timing/`: dev-only submit timing instrument; launch and JSONL path are in its README. Never shipped or offered to subagents.
 - `scripts/ci-watch.mjs`, `npm run ci-watch`: the shared repo-local CI watcher. One instance reads all recent workflow
   runs once a minute and writes `<git common dir>/ci-watch/status.json` atomically; agents read that file instead of
   polling `gh`, and restart it with `npm run ci-watch -- --restart` when it is older than 3 minutes. It is awareness,
