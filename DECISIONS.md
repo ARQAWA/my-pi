@@ -189,9 +189,6 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   unless it is a reviewer profile. Explicit owner model requests override the default. No silent model fallback.
   Independent reviewer profiles keep their approved model and effort; they are not an executor category.
   Recursive delegation and reviewer lifecycle stay unchanged; no new nested non-review helper restriction is added.
-  The full Anthropic ban remains in force for Main and subagents, without expiry or benchmark exception.
-  Owner (`16-27-59:7665`, entry `29908fc1`): «Возобнови полный запрет использования антропиков».
-  This governs model use, not Anthropic transport, quota implementation, auth, provider visibility or product models.
   Reason: match executor models and effort to task complexity while preserving reviewer profiles and current agents.
   Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), `AGENTS.md` and
   `.pi/extensions/coordinator-guard/` with its tests. The superseded 2:1
@@ -632,16 +629,16 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner: «Надо еще это статус бар перенести лимиты по провайдерам на право и поставить их прямо перед веткой на 0 sp задача в общий текущий пак».
   The folder row shows CX gold and CC bronze, one remaining percent each:
   the weekly window. Refresh immediately and every five minutes while active.
-  Missing or failed data is `unavailable`, never an invented 0% or 100%; failed reads
+  Missing or failed data is `???`, never an invented 0% or 100%; failed reads
   discard displayed stale data. Disable/shutdown cancels requests and releases the timer.
   Owner: «Надо, чтобы ты разобрался, как это запилить, и сделал отображение, чтобы в real time эта хуйня работала. Не в real time, а хотя бы чтобы она раз в пять минут.»
-  Owner chose option 1: remaining native-window percentages, honest unavailable state,
+  Owner chose option 1: remaining native-window percentages, honest `???` state,
   five-minute refresh and partial delivery when a source cannot be read in this runtime.
   CC consumes the existing optional Anthropic event offer. CX independently uses
   Pi's public `readStoredCredential` for one-off read-only stored OAuth reads, without
   auth resolution, token refresh, rotation or writes. CX requests the wham usage source
   with the stored account ID. Missing/expired credentials, request
-  failures and unknown response shapes show `unavailable`. RQW-codex is not required.
+  failures and unknown response shapes show `???`. RQW-codex is not required.
   No private API, auth copying, dependency or live credential probe is added.
   Use public `readStoredCredential` for Codex; never write
   auth or refresh tokens. Keep the implementation inside the statusbar folder.
@@ -850,7 +847,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   являются частью нашего harness. Не частью harness, а именно частью нашего репозитория. То есть code review должны
   быть внутри этого репозитория, а не harness. Это не входит в harness вообще.» The optional `testreview` skill and
   `requirements-test-reviewer` profile are repository-only under `.pi/`; RQW-review ships only Spotty, Bossy and their
-  blind/high skills. The local skill keeps the accepted requirements/test-plan review contract on Sol 6.1 low,
+  blind/high skills. The local skill keeps the accepted requirements/test-plan review contract on Terra medium,
   without test execution, mandatory commit pairs or a package `role_file`. The project `code-reviewer` and
   `test-reviewer` profiles remain local. Reason: code and test review belong to this repository's development workflow,
   not the shipped harness. Carriers: `.pi/agents/requirements-test-reviewer.toml`,
@@ -913,7 +910,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `/Users/arkadijcukavin/Downloads/codex-subagents-full-pack (1).zip`.
   Owner, current task `reviewers-terra`, 2026-10-27:
   «Надо переписать viewer с Sol 6.1 на Terru, чтобы в споте был на Terra low, а босси на terra medium».
-  Reason for the model change: the owner's explicit choice; the other three reviewer profiles stay on Sol low.
+  Reason for the model change: the owner's explicit choice. The code and test reviewer profiles use Terra medium too. Owner: «Ревью кода, ревью тестов пусть делает  Terra Medium тоже».
   Reason: one profile mechanism rather than a parallel reviewer execution stack.
   Carriers: `extensions/RQW-review/index.ts`, `profiles/*.toml`, `skills/**/SKILL.md`, RQW-agent.
   Contract: [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
@@ -1252,7 +1249,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Idle removes all extension-added activity rows; only Pi's original widget spacer remains. The session title occupies the left of the top
   border between rules; the session ID remains at the right. The title is gold and gains the gold shimmer during
   compaction. The activity remains separate from Pi's native current-action row.
-  Existing activity wording, count sources, branch marker and footer effort colours are unchanged.
+  Existing activity wording, count sources and footer effort colours are unchanged.
   Owner: «Надо, чтобы заголовок сессии был там, где сейчас статус, в этой строке между чёрточкой разделения.»
   «А статус — чтобы он был отдельной строкой, как будто это сообщение в чате.»
   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6378;
@@ -1295,9 +1292,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner: «Да, и во время compaction анимация должна идти поверх заголовка, поверх названия сессии.»
   «Надо серебряный сделать более плавным и золотой нужно сделать максимально плавным А пиковые цвета чтобы были на серебре в три символа, а на золоте в шесть-семь символов»
   «Надо, чтобы пиковые цвета были очень яркие, но при этом спуск вниз до базового цвета был довольно размазанным.»
-  «Надо вообще блик ускорить в два раза по скорости или даже в два раза ровно ускорить его.»
   Source: the same local owner session as `[D-STATUSBAR-ACTIVITY]`, USER entries at lines 6399 and 6413;
-  The earlier sheen task confirmed doubled speed for both shimmers and no slant; current timing follows `[D-STATUSBAR-ANIMATION]`. Reason: smoother highlights with the owner's peak widths.
+  Neither shimmer has a slant; timing follows `[D-STATUSBAR-ANIMATION]`. Reason: smoother highlights with the owner's peak widths.
   Gold correction, owner task request on 2026-10-25, source: current `statusbar-compaction-glint` task:
   "Replace this with ONE glint, matching the silver status animation's approach, travelling across the whole strip AND the `Compaction` label."
   "Use the final width clarification: THREE characters at the peak, not seven."
@@ -1336,7 +1332,6 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner: «Сделай анимацию блика 30фпс, 50 ту мач и сделай ее более плавной и что бы был 1 блик на статусе который катается туда сюда, а не бесконечное количество»
   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6774,
   Soft falloff, layout and static title stay unchanged; silver intensity and gold timing follow the current amendment above.
-  Doubled-speed source: `[D-STATUSBAR-SHEEN]`.
   Carrier: `extensions/RQW-statusbar/{index,render}.ts`.
 - **Own git discovery** `[D-STATUSBAR-GIT]`. Git branch and counts use the extension's own repository discovery and
   asynchronous git refresh, not Pi's cached `getGitBranch()`, which caches absent metadata when a session starts outside
@@ -1503,7 +1498,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: distinguish the two greens without changing the chooser. Carrier: `extensions/RQW-theme/theme.json`;
   the native data-only theme and existing thinking-role rendering remain unchanged.
 
-- **Card background colours** `[D-THEME-CARD-COLORS]`. The four card surfaces of `RQW-theme` are `toolPendingBg` `#222222` (running, dark grey), `toolSuccessBg` `#062b29` (finished, turquoise), `toolErrorBg` `#351c22` (failed, dark red) and `customMessageBg` `#192538` (agent answer, slate). Grey and red keep the owner's choice; turquoise and slate are the analogues of the old green and purple, shifted from green toward blue and tied to the cool text of the source layout. All four have equal OKLCH lightness of about 26 %. They are direct hex values, so no other token changes: `infoBg` keeps `panel`, `selectedBg` keeps `cardHi`, `userMessageBg` keeps `card`; the unused variable `coal` is removed.
+- **Card background colours** `[D-THEME-CARD-COLORS]`. The three card surfaces of `RQW-theme` are `toolPendingBg` `#222222` (running, dark grey), `toolSuccessBg` `#062b29` (finished, turquoise) and `toolErrorBg` `#351c22` (failed, dark red). Agent answers have no background: `customMessageBg` is `""` (`[D-UI-NO-BLUE]`). Grey and red keep the owner's choice; turquoise is the analogue of the old green, shifted toward blue and tied to the cool text of the source layout. All three have equal OKLCH lightness of about 26 %. They are direct hex values, so no other token changes: `infoBg` keeps `panel`, `selectedBg` keeps `cardHi`, `userMessageBg` keeps `card`; the unused variable `coal` is removed.
   Owner, what he liked: «Мне нравится, что когда ты запускаешь карточки рабочие, у них есть цвета: зелёные — это какие-то команды, фиолетовые — ответы от агентов, серые — это запуски, красные — это отказы.» Source: `16-27-59:4251` (see Provenance above).
   Owner, keep grey and red, find analogues: «А когда запущено то, что было зелёное и фиолетовое, надо придумать им какие-то аналоги.» Source: `16-27-59:4544`.
   Owner, the choice: «По дизайню - бирюза сланец вибираю ответ C» Source: `16-27-59:4654`.
