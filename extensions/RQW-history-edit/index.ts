@@ -120,7 +120,22 @@ async function selectMessage(ctx: ExtensionContext, initial?: string): Promise<{
 		return [{ id: entry.id, text, images, timestamp: entry.timestamp }];
 	});
 	if (!messages.length) return;
-	const id = await ctx.ui.custom<string | undefined>((_tui, _theme, _keys, done) =>
-		new UserMessageSelectorComponent(messages, done, () => done(undefined), initial).getMessageList());
+	const id = await ctx.ui.custom<string | undefined>((_tui, _theme, keys, done) => {
+		const list = new UserMessageSelectorComponent(messages, done, () => done(undefined), initial).getMessageList();
+		let index = messages.findIndex(message => message.id === initial);
+		if (index < 0) index = messages.length - 1;
+		const handleInput = list.handleInput.bind(list);
+		list.handleInput = data => {
+			if (keys.matches(data, "tui.select.up")) {
+				if (index === 0) return;
+				index--;
+			} else if (keys.matches(data, "tui.select.down")) {
+				if (index === messages.length - 1) return;
+				index++;
+			}
+			handleInput(data);
+		};
+		return list;
+	});
 	return messages.find(message => message.id === id);
 }
