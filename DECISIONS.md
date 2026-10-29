@@ -1463,16 +1463,15 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   limits: `extensions/RQW-send-now/README.md`. Since: `d1f8b16`.
 - **Send now implementation** `[D-SENDNOW-API]`. The public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`. Current engineering choices: `ctx.ui.onTerminalInput`, `ctx.abort`, editor text,
   `pi.sendUserMessage`; no custom editor, since RQW-statusbar owns `setEditorComponent`. The key is Pi's
-  `tui.input.submit`; only Pi's focused input editor triggers it. Steering is told from follow-ups by counting `input`
-  events, because the public context reports only whether anything is queued; in-flight inputs and a run's starting
-  prompt are accounted for, leftovers after the abort are sent or restored to the editor, and a follow-up-only queue is
-  left to Pi. Since: `d1f8b16`.
+  `tui.input.submit`; only Pi's focused input editor triggers it. A version-checked runtime hook reads the owning Pi
+  session's real steering queue. During an in-flight input the provisional count also permits the gesture; incompatible
+  Pi shapes leave Enter to stock Pi. Leftovers after abort are sent or restored. Owner: «если по чтению очереди Pi для send now на один story point, то оставляем. Спроектируй его и дай мне свой вердикт.»; after the 1 SP verdict: «делай». Carrier: `extensions/RQW-send-now/queue.ts`. Since: `d1f8b16`.
 - **Interrupted reply kept** `[D-SENDNOW-REPLAY]`. For the reply a force-send interrupts, a `context_with_system` handler
   replays its text as a finished reply, kept across resume and `/reload` by the custom entry `rqw-send-now`; thinking and
   unfinished tool calls are dropped. Reason: oh-my-pi keeps the aborted reply; Pi drops it. Since: `d1f8b16`.
 - **Limits and proof** `[D-SENDNOW-LIMITS]`. Several queued messages go as one, joined by blank lines; images and custom
-  messages in Pi's queue are dropped as with Escape; a steering input swallowed by another extension's `input` handler
-  can leave the count stale until the queue empties. Tests: `test/extensions/RQW-send-now/send-now.test.ts`.
+  messages in Pi's queue are dropped as with Escape; a steering input swallowed during its provisional period can
+  still trigger the gesture. Tests: `test/extensions/RQW-send-now/send-now.test.ts`, `test/extensions/RQW-send-now/queue.test.ts`.
   Since: `d1f8b16`.
 
 ## Providers

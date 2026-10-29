@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { AgentSession, CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import sendNow, { keptReply } from "../../../extensions/RQW-send-now/index.ts";
 
 it("empty Enter force-sends queued steering with a fake clock", (t) => {
@@ -12,7 +12,9 @@ it("empty Enter force-sends queued steering with a fake clock", (t) => {
 		on: (name: string, handler: any) => { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 		sendUserMessage: (text: string) => sent.push(text), appendEntry() {},
 	};
+	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
 	sendNow(pi as unknown as ExtensionAPI);
+	t.after(() => { for (const handler of handlers.get("session_shutdown")!) handler({}, ctx); });
 	let editor = "";
 	let idle = false;
 	let queued = true;
@@ -28,8 +30,11 @@ it("empty Enter force-sends queued steering with a fake clock", (t) => {
 			onTerminalInput: (handler: typeof input) => { input = handler; return () => {}; },
 		},
 	} as unknown as ExtensionContext;
+	const session = Object.create(AgentSession.prototype);
+	session.sessionManager = ctx.sessionManager;
+	session.getSteeringMessages = () => ["steer me"];
+	session._bindExtensionCore();
 	for (const handler of handlers.get("session_start")!) handler({}, ctx);
-	for (const handler of handlers.get("input")!) handler({ streamingBehavior: "steer" }, ctx);
 	assert.deepEqual(input!("\r"), { consume: true });
 	t.mock.timers.tick(0);
 	assert.deepEqual(sent, ["steer me"]);
@@ -48,6 +53,7 @@ it("keptReply preserves only interrupted text as a finished reply", () => {
 it("re-enables bracketed paste after a tool in TUI mode only", (t) => {
 	const handlers = new Map<string, ((event: any, ctx: any) => void)[]>();
 	sendNow({ on: (name: string, handler: any) => { handlers.set(name, [...(handlers.get(name) ?? []), handler]); } } as unknown as ExtensionAPI);
+	t.after(() => { for (const handler of handlers.get("session_shutdown")!) handler({}, {}); });
 	const writes: string[] = [];
 	t.mock.method(process.stdout, "write", (chunk: string) => { writes.push(String(chunk)); return true; });
 	const tty = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");

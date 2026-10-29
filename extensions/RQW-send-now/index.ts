@@ -1,8 +1,9 @@
 // Enter on an empty editor while the agent works and steering is queued: interrupt the turn and send the queue now.
-// Public Pi API only: raw terminal input, ctx.abort (Pi moves the queue into the editor), pi.sendUserMessage.
+// Raw terminal input and public send APIs; queue.ts captures the owning Pi session in memory.
 import { CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, isKeyRelease, type TUI } from "@earendil-works/pi-tui";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { installQueue } from "./queue.ts";
 
 /** Custom entry type: the timestamp of an interrupted reply whose text stays in the model's context. */
 export const ENTRY = "rqw-send-now";
@@ -28,6 +29,7 @@ function reassertBracketedPaste(ctx: ExtensionContext) {
 }
 
 export default function sendNow(pi: ExtensionAPI) {
+	const queue = installQueue();
 	/** Steering messages queued through Pi since the queue was last empty; Pi exposes only "anything queued". */
 	let steering = 0;
 	/**
@@ -88,7 +90,9 @@ export default function sendNow(pi: ExtensionAPI) {
 	function onKey(data: string, ctx: ExtensionContext): { consume: true } | undefined {
 		if (pending || isKeyRelease(data) || !getKeybindings().matches(data, "tui.input.submit")) return undefined;
 		if (!ctx.hasPendingMessages() && submitting === 0) steering = 0;
-		if (ctx.isIdle() || steering <= 0 || ctx.ui.getEditorText().trim()) return undefined;
+		const queuedSteering = queue.read(ctx.sessionManager);
+		if (queuedSteering === undefined) return undefined;
+		if (ctx.isIdle() || (queuedSteering === 0 && !(submitting > 0 && steering > 0)) || ctx.ui.getEditorText().trim()) return undefined;
 		// Only Pi's input editor: dialogs, selectors and overlays keep their own Enter.
 		if (!(tui?.getFocusedComponent() instanceof CustomEditor)) return undefined;
 		ctx.abort(); // Pi clears both queues into the editor, then aborts the run
@@ -167,6 +171,7 @@ export default function sendNow(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", () => {
+		queue.release();
 		unsubscribe?.();
 		unsubscribe = undefined;
 		tui = undefined;
