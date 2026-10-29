@@ -9,6 +9,14 @@ type Renderer = TUI & { getFocusedComponent(): unknown };
 type Editing = { id: string; draft: string; images: ImageContent[] };
 type Pending = { id: string; text: string; images?: ImageContent[] };
 
+function isCountsOffer(data: unknown): data is { version: number; source: CountsSource } {
+	if (typeof data !== "object" || data === null || !("version" in data) || !("source" in data)) return false;
+	const source = data.source;
+	return typeof data.version === "number" && typeof source === "object" && source !== null &&
+		"version" in source && typeof source.version === "number" &&
+		"snapshot" in source && typeof source.snapshot === "function";
+}
+
 export default function historyEdit(pi: ExtensionAPI): void {
 	let counts: CountsSource | undefined;
 	let dispose: (() => void) | undefined;
@@ -31,8 +39,8 @@ export default function historyEdit(pi: ExtensionAPI): void {
 		pending = value;
 		queueMicrotask(() => pi.sendUserMessage("/edit-history", { expandPromptTemplates: true }));
 	};
-	pi.events.on("rqw:running-counts:offer", (offer: { version: number; source: CountsSource }) => {
-		if (offer.version === 1) accept(offer.source);
+	pi.events.on("rqw:running-counts:offer", data => {
+		if (isCountsOffer(data) && data.version === 1) accept(data.source);
 	});
 	pi.on("session_start", (_event, ctx) => {
 		dispose?.();
