@@ -16,7 +16,8 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `.oxlintrc.json`: calibrated correctness lint. `npm run lint` checks the full source scope; `scripts/check.mjs` runs lint and tests concurrently. Use `--test <paths>` for touched tests; no flag runs the existing full `npm test`.
 - `extensions/RQW-settings/`: extension 1, the harness settings. Turns on Pi's built-in `codemode` and `tool_search` by
   default (same rule as `grep` and `find` in RQW-tools), and disables background cache warming regardless of user
-  config (prompt caching stays on). Owns GPT Fast for the main chat: `/fast-gpt [on|off]`, default off, only
+  config (prompt caching stays on). Applies the shared setup profile `setup-profile.json` once (theme and portable
+  settings, marker `rqwSetupVersion`, `[D-SETTINGS-SETUP]`). Owns GPT Fast for the main chat: `/fast-gpt [on|off]`, default off, only
   `openai-codex` requests get `service_tier` priority (`DECISIONS.md` Settings, «GPT Fast»). Tests: `npm test`.
 - `extensions/RQW-prompt/`: extension 2, the system prompt. `SYSTEM.md` is the text; `index.ts` puts it in place of Pi's
   default prompt prefix and appends the workstation, critical, environment and date blocks.
@@ -157,8 +158,8 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   personal file and project files by Codex rules (fallback names, markers, explicit untrusted skip, shared `project_doc_max_bytes` budget). Contract:
   [README](extensions/RQW-codex-compat/README.md), `DECISIONS.md` `[D-COMPAT-CODEX]`. Tests: `test/extensions/RQW-codex-compat/`.
 - `extensions/RQW-theme/theme.json`: native theme resource named `RQW-theme`, registered only in `pi.themes`, not
-  an extension. Select once through `/settings` -> Theme; Pi persists the choice across reload and restart.
-  Switch back through the same native selector. No activation code or unrelated settings writes.
+  an extension. RQW-settings selects it once on first start (`[D-SETTINGS-SETUP]`); Pi persists the choice across
+  reload and restart. Switch later through the native `/settings` -> Theme selector. No other settings writes.
 - Every registered package extension is self-contained and can be switched off alone (no import outside its folder,
   its tests load only it). Isolation checks: `test/isolation.test.ts`.
   `RQW-theme` is data in `pi.themes`, not an extension. `INSTALL.md` shows the switch; `DECISIONS.md` section Isolation carries the decision.

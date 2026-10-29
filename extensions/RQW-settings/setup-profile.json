@@ -1,0 +1,25 @@
+{
+	"setupVersion": 1,
+	"settings": {
+		"quietStartup": true,
+		"outputPad": 1,
+		"terminal": { "showImages": false },
+		"autocompleteMaxVisible": 3,
+		"steeringMode": "one-at-a-time",
+		"followUpMode": "one-at-a-time",
+		"transport": "auto",
+		"hideThinkingBlock": true,
+		"markdown": { "mermaid": "off" },
+		"showCacheMissNotices": false,
+		"warnings": { "anthropicExtraUsage": false },
+		"collapseChangelog": true,
+		"enableInstallTelemetry": false,
+		"defaultProjectTrust": "ask",
+		"doubleEscapeAction": "tree",
+		"treeFilterMode": "default",
+		"tuiMode": "fullscreen",
+		"compaction": { "enabled": true },
+		"theme": "RQW-theme",
+		"editorPaddingX": 1
+	}
+}

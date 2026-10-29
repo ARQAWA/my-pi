@@ -5,12 +5,12 @@ const HOOK = Symbol.for("rqw-settings/cache-default/1.4.0");
 /** Shared method-lease contract `rqw:method-chain/v1` (self-contained copy in each RQW extension that wraps a Pi prototype method). */
 const CHAIN = Symbol.for("rqw:method-chain/v1");
 /** Each wrapper layer links to the value it wraps; read at call time, so a rebase of the chain reaches the layer. */
-const INNER = Symbol.for("rqw:method-inner");
+export const INNER = Symbol.for("rqw:method-inner");
 /** Owner token of a layer; an owner removes only its own layers and never another owner's. */
 const OWNER = Symbol.for("rqw:method-owner");
 type Cleanup = () => void;
 type Fn = (this: AgentSession, ...args: unknown[]) => unknown;
-type Link = Fn & { [INNER]?: unknown; [OWNER]?: unknown };
+export type Link = Fn & { [INNER]?: unknown; [OWNER]?: unknown };
 type Chain = { stock: PropertyDescriptor; owners: Set<object> };
 type State = {
 	registrations: number;
@@ -35,7 +35,7 @@ function chainsOf(target: object, create: boolean): Map<string, Chain> | undefin
 }
 
 /** Puts `layer` on top of the current value. The layer's inner link is the value it replaces. */
-function joinChain(target: object, name: string, owner: object, layer: Link): void {
+export function joinChain(target: object, name: string, owner: object, layer: Link): void {
 	const current = Object.getOwnPropertyDescriptor(target, name)!;
 	const chains = chainsOf(target, true)!;
 	let chain = chains.get(name);
@@ -50,7 +50,7 @@ function joinChain(target: object, name: string, owner: object, layer: Link): vo
  * Removes this owner's layers that are reachable through cooperating links; a layer above another owner's layer
  * is rebased, not clobbered. The exact stock descriptor is restored only when no owner is left and the chain is stock.
  */
-function leaveChain(target: object, name: string, owner: object): void {
+export function leaveChain(target: object, name: string, owner: object): void {
 	const chains = chainsOf(target, false);
 	const chain = chains?.get(name);
 	if (!chains || !chain) return;

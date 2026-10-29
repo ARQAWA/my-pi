@@ -6847,3 +6847,19 @@ Codex compatibility restriction, verbatim:
 Codex compatibility reason, verbatim:
 
 >   Reason: let Codex configuration work in Pi without a Pi patch.
+
+## A-0382 · archived 2026-10-29 · Native theme · Manual theme selection and no activation code
+
+Status: SUPERSEDED in part by `[D-SETTINGS-SETUP]` (DECISIONS.md#settings).
+Superseded: the commit of `[D-SETTINGS-SETUP]`. Archived by: the identical-setup change.
+Verbatim text as it was in DECISIONS.md at `2f66d55`, lines 432-435, and `INSTALL.md`:
+
+> `pi.themes` distributes `./extensions/RQW-theme/theme.json`, named `RQW-theme`. Select through `/settings` -> Theme.
+>   Pi may persist only the theme choice; auth and unrelated settings stay untouched. Native menus keep their structure
+>   and behavior; supported roles and terminal-default delegation only, no universal terminal-canvas promise.
+>   No `pi.extensions` entry, activation code, transient override or automatic restore-on-disable.
+>
+> Apart from the authorized old adapter replacement above and installing or updating my-pi, change nothing else:
+> no unrelated packages, settings, credentials or files.
+>
+> For the user, not an automatic install step: open `/settings` -> Theme and choose `RQW-theme` once.
