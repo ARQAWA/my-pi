@@ -15,7 +15,7 @@ const codex = (used: number) => ({ rate_limit: {
 	primary_window: { used_percent: 45, limit_window_seconds: 3600 },
 } }] });
 
-it("renders one remaining number per provider in gold and bronze and refreshes after five minutes", async (t) => {
+it("renders one remaining number per provider in light blue and pink-red and refreshes after five minutes", async (t) => {
 	t.mock.timers.enable({ apis: ["setInterval", "setTimeout", "Date"], now: 0 });
 	const consumer = new QuotaConsumer({ emit(_name, data) {
 		(data as { offer(access: unknown): void }).offer({ async refresh() {
@@ -44,8 +44,8 @@ it("renders one remaining number per provider in gold and bronze and refreshes a
 		place: { kind: "folder", text: "project" }, statuses: [],
 		git: { branch: "main", staged: 0, unstaged: 0, untracked: 0 } }, 30).slice(2).map(strip);
 	assert.deepEqual(wrapped, [` ${ICON.folder} project`, " ".repeat(8) + `CX 72%  CC 39%  ${ICON.branch} main`]);
-	assert.ok(row.includes("\x1b[38;2;201;162;39mCX 72%\x1b[39m"));
-	assert.ok(row.includes("\x1b[38;2;205;127;50mCC 39%\x1b[39m"));
+	assert.ok(row.includes("\x1b[38;2;139;197;255mCX 72%\x1b[39m"));
+	assert.ok(row.includes("\x1b[38;2;255;152;170mCC 39%\x1b[39m"));
 	t.mock.timers.tick(299999);
 	await flush();
 	assert.ok(strip(footer(consumer)).includes("CX 72%"));
@@ -111,7 +111,7 @@ it("shows ??? for expired, failed or unknown data without stale percentages", as
 			assert.ok(row.includes("CX 57%"));
 		} else {
 			assert.ok(row.includes("CX ???"));
-			assert.ok(footer(consumer).includes("\x1b[38;2;201;162;39mCX ???\x1b[39m"));
+			assert.ok(footer(consumer).includes("\x1b[38;2;139;197;255mCX ???\x1b[39m"));
 		}
 	}
 	consumer.stop();

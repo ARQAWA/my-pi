@@ -634,7 +634,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **One subscription number** `[D-STATUSBAR-SUBSCRIPTION-LIMITS]`.
   The folder stays on the left; limits sit on the right immediately before the git branch, wrapping when they do not fit.
   Owner: «Надо еще это статус бар перенести лимиты по провайдерам на право и поставить их прямо перед веткой на 0 sp задача в общий текущий пак».
-  The folder row shows CX gold and CC bronze, one remaining percent each:
+  The folder row shows CX soft light blue (`139;197;255`) and CC soft pink-red (`255;152;170`), one remaining percent each (owner recolour: «CC красным ближе к розовому, а СХ синим ближе к голубому», soft bright colours):
   the weekly window. Refresh immediately and every five minutes while active.
   Missing or failed data is `???`, never an invented 0% or 100%; failed reads
   discard displayed stale data. Disable/shutdown cancels requests and releases the timer.
