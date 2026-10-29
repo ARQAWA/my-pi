@@ -96,3 +96,15 @@ it("keeps folded self-shell rows and replaces expanded ones with cards", () => {
 	assert.equal(rows.some((row) => row.includes("FULL ANSWER")), true);
 	assert.equal(rows.some((row) => row.includes("RAW")), false);
 });
+
+it("hides the follow-up sentence in collapsed and expanded cards and keeps other bodies", () => {
+	const followUp = "Perform any necessary follow-up actions in response to the subagent completion above. If no follow-up work is needed, no further action is required. Don't repeat the same confirmation every time.";
+	const render = (content: string, expanded: boolean) =>
+		createAgentCard(message("agent", content) as never, { expanded, outputPad: 0 }, identity as never)!.render(80);
+	const withFollowUp = `[agent#4] First\nreal last words\n\n${followUp}`;
+	const collapsed = render(withFollowUp, false).join("\n");
+	assert.ok(collapsed.includes("real last words"));
+	for (const expanded of [false, true]) assert.ok(!render(withFollowUp, expanded).join("\n").includes("follow-up actions"));
+	const plain = render("[agent#4] First\n\nSecond", true).join("\n");
+	assert.ok(plain.includes("First") && plain.includes("Second"));
+});
