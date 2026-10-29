@@ -16,19 +16,29 @@ it("project_doc_max_bytes is one budget for project files; global files are outs
 	assert.match(notes[0], /project_doc_max_bytes/);
 });
 
-it("without the setting project files share the default 32768-byte budget", async (t) => {
+it("without the setting project files share the default 262144-byte (256 KB) budget", async (t) => {
 	const w = world(t);
-	w.put("project/AGENTS.md", "r".repeat(30000));
+	w.put("project/AGENTS.md", "r".repeat(40000));
+	const small: string[] = [];
+	assert.deepEqual((await run(w, [], small)).map(file => file.content.length), [40000], "40 KB is not cut");
+	assert.equal(small.length, 0);
+	w.put("project/AGENTS.md", "r".repeat(260000));
 	w.put("project/pkg/AGENTS.md", "l".repeat(5000));
 	const notes: string[] = [];
 	const files = await run(w, [], notes);
-	assert.deepEqual(files.map(file => file.content.length), [30000, 2768]);
+	assert.deepEqual(files.map(file => file.content.length), [260000, 2144]);
 	assert.equal(notes.length, 1);
 	// Exactly the budget: nothing is cut and nothing is warned about.
-	w.put("project/pkg/AGENTS.md", "l".repeat(2768));
+	w.put("project/pkg/AGENTS.md", "l".repeat(2144));
 	const exact: string[] = [];
-	assert.deepEqual((await run(w, [], exact)).map(file => file.content.length), [30000, 2768]);
+	assert.deepEqual((await run(w, [], exact)).map(file => file.content.length), [260000, 2144]);
 	assert.equal(exact.length, 0);
+	// A smaller configured value still cuts.
+	w.put("codex/config.toml", "project_doc_max_bytes = 32768\n");
+	w.put("project/AGENTS.md", "r".repeat(40000));
+	const cut: string[] = [];
+	assert.deepEqual((await run(w, [], cut)).map(file => file.content.length), [32768]);
+	assert.equal(cut.length, 1);
 });
 
 it("cuts bytes first and decodes lossy, an empty file spends no budget, a spent budget stops the walk", async (t) => {

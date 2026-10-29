@@ -1575,5 +1575,9 @@ Since: web-search-tool.
   Codex config is not supported (owner chose the lightest variant); this replaces the earlier text "without a separate trust gate" of `[D-AGENT-PROFILES]` for `.codex` layers.
   Role fields (design item 4.3, recorded in the design): supported are model, effort and instructions; `model_reasoning_summary`,
   `model_verbosity`, `personality`, `service_tier`, `features` and `skills` wait for a public Pi API and are listed as not applied.
+  Project instruction budget (deliberate deviation from the Codex default 32768): without `project_doc_max_bytes` in Codex config the
+  default is 262144 (256 KB), the same on every OS; a configured value, including `0`, still wins. Reason: the owner saw the
+  warning «Warning: Codex project_doc_max_bytes cut /Users/arkadijcukavin/PycharmProjects/superbot/AGENTS.md» while his config sets no limit.
+  Owner: «Так же не должно быть? у меня там вроде глобально огромный лимит на Agents.md?», «давай это сделаем его по дефолту 256кб всегда если только он не пренестроен через кодекс конфиг?», «Это должно работаь на всех ос одинакого».
   Reason: let Codex configuration work in Pi without a Pi patch.
   Carriers: `extensions/RQW-codex-compat/`, `extensions/RQW-agent/profiles.ts`, `extensions/RQW-skill-dollar/`, `package.json`.

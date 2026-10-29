@@ -9,7 +9,7 @@ export interface Instructions { files: ContextFile[]; truncatedPath?: string }
 
 const OVERRIDE = "AGENTS.override.md";
 const DEFAULT = "AGENTS.md";
-const DEFAULT_MAX_BYTES = 32768;
+const DEFAULT_MAX_BYTES = 262144;
 
 // Rust `str::trim` removes Unicode White_Space, which keeps U+FEFF (a BOM) and adds U+0085; JS `trim` does the reverse.
 const WHITESPACE = "\\t-\\r \\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
