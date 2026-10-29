@@ -562,6 +562,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: replace the prompt prefix while retaining Pi's context assembly.
   Carrier: `extensions/RQW-prompt/index.ts`, `extensions/RQW-prompt/SYSTEM.md`. Since: `17c21eb`.
 
+- **Copy, do not retype** `[D-PROMPT-COPY-NOT-RETYPE]`. The `<general>` section of `SYSTEM.md` tells every agent to move text a tool can reach (a file, a codemode store value, output a tool can produce again) with tools when a tool call or file needs it; text only in the conversation is written once into codemode store (this one write is allowed, no file) and reused from there; without codemode it is used directly. Only new content is generated; chat answers may still quote. Subagents inherit it through the system prompt.
+  Owner: «Вопрос: как-то можно оптимизировать создание subagents, оптимизировать генерацию огромного количества токенов при написании задания? Допустим, какую-то часть копированием, вставкой через tool call подготавливать, а не генерировать токены, огромные простыни. Это вообще реально или нет? Мне интересно.»; «И меня интересует вообще overall оптимизация больших генераций больших протянных токенов. Если это не изменение кода, а повторяющиеся, копирующиеся тексты, может, просто их механически копировать, а не генерировать их как долбоёбы?»; «Давай в системный промпт harness сделаем, но надо понять на долгой дистанции, надёжно ли это работает или нет. Надо понять, как мы это потом проверим, замерим через два-три дня работы, допустим».
+  Reason: a tool copy costs no generated tokens, and a full untruncated read copies text exactly. Whether agents follow it is open until the measurement in BACKLOG `COPY-MEASURE`.
+  Carrier: `extensions/RQW-prompt/SYSTEM.md`.
+
 ### Prompt/tools isolation
 
 - **Conditional tool instructions** `[D-PROMPT-TOOL-ISOLATION]`. RQW-tools supplies the search-method section only when read, grep and find are visible, and the independent-execution/background-job section only when bash is visible. The same sections join the startup projection without an RQW-prompt dependency.
