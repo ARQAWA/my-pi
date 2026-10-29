@@ -25,15 +25,17 @@ it("renders collapsed and expanded agent answers", () => {
 it("shows verdict labels with semantic colors", () => {
 	const theme: CardTheme = { fg: (color, text) => `\u001b[${color === "success" ? 32 : color === "error" ? 31 : 0}m${text}\u001b[0m`, bold: (text) => text };
 	for (const [body, label, color] of [
-		["\nCLEAN\nchecked", "CLEAN", 32],
+		["\n CLEAN \nchecked", "CLEAN", 32],
+		["FINDINGS:\nFINDING 1  \nproof", "1 finding", 31],
+		[" FINDINGS: \nproof", "findings", 31],
 		["FINDINGS:\nFINDING 1\nproof\nFINDING 2", "2 findings", 31],
-		["FINDINGS: 3\nproof", "3 findings", 31],
+		[" FINDINGS: 3 \nproof", "3 findings", 31],
 		["ordinary answer", "finished", 32],
 	] as const) {
 		const card = createAgentCard(message("agent", `[agent#3] ${body}`, { outcome: "finished" }) as never,
 			{ expanded: false, outputPad: 0 }, theme as never)!;
 		const header = card.render(100)[0];
-		assert.ok(strip(header).includes(label));
+		assert.equal(strip(header), `agent#3 ${label}`);
 		assert.ok(header.includes(`\u001b[${color}m${label}`));
 	}
 });
