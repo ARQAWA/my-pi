@@ -11,3 +11,7 @@ Adds Codex-style skill mentions to Pi's input editor.
 - A submitted message with skills shows them as one line at the bottom of the user card, `└ skill  a · b`, instead of Pi's separate blue block, wrapped when long; Ctrl+O shows the text of every skill under it, in the same card. This patches Pi's component prototypes at runtime (not a public API); if Pi changes, stock rendering stays. See `[D-UI-SKILL-CARD]` in `DECISIONS.md`.
 
 The extension never replaces the editor or its factory. Stock and RQW-statusbar factory identities stay intact across statusbar toggles.
+
+Optional filter: another extension may answer the `pi.events` channel `rqw-skill-dollar:filter` with `offer(filter)`,
+where `filter(skills)` returns the skills that may be listed and expanded. A skill it drops is neither suggested nor
+expanded. Without an offer the behaviour above is unchanged.

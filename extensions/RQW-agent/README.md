@@ -52,10 +52,26 @@ Sources are loaded from weakest to strongest:
 4. Project directories from the project root to cwd: `.codex/config.toml` and `.codex/agents/`, then
    `.pi/config.toml` and `.pi/agents/` at each level.
 
+A project `.codex` layer loads only when Codex trusts that directory: `projects.<path>.trust_level = "trusted"` in the
+user config. Administrative and managed Codex config (`/etc/codex`, `managed_config.toml`) is not supported. Trust is looked up for the directory, then the project
+root, then the git root; a linked worktree uses its main checkout, if its Git metadata is complete and consistent as in
+Codex (`gitdir` and `commondir` both present, a separate git directory allowed). A trusted subdirectory does not open the
+`.codex` of its parent. The project root of the `.codex` layers is the nearest directory with a `project_root_markers`
+entry (default `.git`, where a `.git` directory without HEAD does not count); with no marker, or an empty list, only cwd
+counts.
+
+Project `.pi` layers are not gated and keep their own root, as before: the nearest directory with a `.git` entry, or the
+filesystem root outside Git. They do not follow `project_root_markers`. This is the agreed exception to exact parity:
+Pi's own sources keep priority over Codex at the same level.
+
+Codex's built-in roles `default` ("Default agent.") and `worker` are always in the catalogue, with the source
+`builtin:<name>`. They carry no model, effort or instructions, so the child keeps the parent's settings and prompt. A
+user or project role of the same name replaces the built-in one completely, as in Codex. The built-in `explorer` is not
+offered: it stays removed by the owner's earlier decision.
+
 A later source wins for a same-name profile. Missing description or nicknames can inherit lower metadata;
 a declaration without `config_file` retains the lower selected role file. Pi wins over Codex at the same
-project directory; nearer project directories win over their ancestors. The project root is the nearest Git
-root, or the filesystem root outside Git. Project profiles load like the other sources. `agents/` discovery
+project directory; nearer project directories win over their ancestors. `agents/` discovery
 recurses into `.toml` files. Config files contribute only `[agents.<name>]` role declarations with `config_file`
 and role metadata; global auth, transport and limits are not imported. `config_file` is relative to its config.
 Within one source, declarations are read before standalone files; duplicate names keep the first.
@@ -87,9 +103,18 @@ The supported role fields are `name`, `description`, `developer_instructions`, `
 `developer_instructions` is inline TOML text, never a path for another prompt file. It supplies the default role
 after the main system prompt and subagent reminder. `nickname_candidates` must contain distinct nonempty
 ASCII names made of letters, digits, spaces, underscores or hyphens. They remain profile metadata and never
-supply an automatic title; lifecycle IDs remain `agent#N`. Other Codex fields, such as `sandbox_mode`, are
-silently ignored. They install no sandbox, permissions, transport or other Codex runtime behavior.
-Malformed TOML and invalid supported role fields remain errors.
+supply an automatic title; lifecycle IDs remain `agent#N`.
+
+Codex applies only a fixed set of role overrides (codex-rs `AgentRoleOverrides`); every other key of a role file is
+ignored by Codex too, `sandbox_mode` included, because a Codex child inherits its parent's permissions. The same holds
+here: other keys, known or unknown to Codex, change nothing and their values are not type checked (Pi has no copy
+of the full Codex config schema). Pi has no equal of
+six Codex overrides: `model_reasoning_summary`, `model_verbosity`, `personality`, `service_tier`, `features` and
+`skills`. They are read and type checked by the Codex schema (enum values, strings, booleans, the known keys of `skills`; unknown keys are accepted as Codex serde does), so a
+bad value makes the role unavailable, but they are not applied, and the catalogue line of the role names them after
+`not applied:`. They wait for
+a public Pi API; no sandbox or tool filtering stands in for them. Malformed TOML and invalid supported role fields
+remain errors.
 
 A bare GPT ID, such as `gpt-6.1-sol`, resolves to `openai-codex/gpt-6.1-sol`. Other bare IDs require one exact,
 unique match in Pi's model registry; an explicit `provider/id` names that exact model. Missing, ambiguous or

@@ -23,6 +23,10 @@ type Skill = {
 	baseDir: string;
 };
 
+/** Optional filter, offered on `pi.events` (see FILTER_CHANNEL): returns the skills that may be listed and expanded. */
+type SkillFilter = (skills: Skill[]) => Skill[];
+const FILTER_CHANNEL = "rqw-skill-dollar:filter";
+
 function loadedSkills(commands: SlashCommandInfo[]): Skill[] {
 	return commands.flatMap(command => command.source === "skill" && command.name.startsWith("skill:")
 		? [{
@@ -136,7 +140,13 @@ function expandMentions(text: string, skills: Skill[]): string | undefined {
 }
 
 export default function skillDollar(pi: ExtensionAPI): void {
-	const getSkills = () => loadedSkills(pi.getCommands());
+	let filter: SkillFilter | undefined;
+	// Pi's loaded skills, narrowed by an optional filter (for example skills a Codex config disables).
+	const getSkills = () => {
+		if (!filter) pi.events.emit(FILTER_CHANNEL, { offer(next: SkillFilter) { filter = next; } });
+		const loaded = loadedSkills(pi.getCommands());
+		return filter ? filter(loaded) : loaded;
+	};
 	let tui: TUI | undefined;
 	let limitedEditor: RowEditor | undefined;
 	let previousRows: number | undefined;

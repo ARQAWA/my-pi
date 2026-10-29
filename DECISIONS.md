@@ -632,11 +632,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   no selector keeps the generic defaults. `smol-toml@1.9.1` is a direct dependency, not a hand-written parser.
   Supported role fields are `name`, `description`, `developer_instructions`, `model`, `model_reasoning_effort`
   and `nickname_candidates`; `developer_instructions` is inline role text after the main prompt and reminder.
-  Other Codex fields are silently ignored, not applied as sandbox, permissions, auth, transport or lifecycle
-  settings. Malformed TOML and invalid supported role fields remain errors. Configs contribute only `[agents.<name>]` declarations,
+  Other Codex fields are ignored, not applied as sandbox, permissions, auth, transport or lifecycle
+  settings; six Codex role overrides Pi cannot apply are named in the catalogue (`[D-COMPAT-CODEX]`). Malformed TOML and invalid supported role fields remain errors. Configs contribute only `[agents.<name>]` declarations,
   `config_file` and role metadata. Recursive `.toml` discovery also reads agents folders.
   Sources, weak to strong: extension offers, `$CODEX_HOME` (default `~/.codex`), `getAgentDir()` (normally
-  `~/.pi/agent`), then project `.codex` and `.pi` from root to cwd, without a separate trust gate. Pi wins at the same directory;
+  `~/.pi/agent`), then project `.codex` (only when Codex trusts the layer, `[D-COMPAT-CODEX]`) and `.pi` from root to cwd. Pi wins at the same directory;
   nearer directories win. Existing Codex folders are read directly, never written. The extension offer is
   `rqw-agent:profiles` with `{ offer(paths: string[]): void }`, without cross-extension imports.
   Bare GPT IDs map to `openai-codex`; other bare model IDs need one exact unique registry match. There is no
@@ -648,6 +648,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   restart re-reads and validates before closing the old child. Async work, tools, settings, caching, steering,
   interrupt and durable recovery stay on RQW-agent; no new engine, parent-history fork or sibling messaging is added.
   No built-in explorer, thoroughness option or explorer role remains.
+  Built-in `default` and `worker` roles of Codex are added by `[D-COMPAT-CODEX]` (design item 4.1): they take the
+  parent's settings, a user role of the same name replaces them, and `explorer` stays banned.
   Owner (`16-27-59:6039`, entry `95423baf`), one contiguous span:
   «Потом мы переделываем механику саб-агентов, чтобы они работали механически, концептуально как в кодексе, плюс все наши наработки сверху, асинхронность, эта вся хуйня. Я имею в виду, чтобы у нас саб-агенты строились по такому же принципу, как они в кодексе строятся. Чтобы саб-агенты кодекса работали у нас. Но при этом чтобы наши кишки были у этих саб-агентов, передавались им все эти промпты и так далее.»
   Owner (`16-27-59:6057`, entry `ce172fe2`): «1 удаляем эксплорера, ревьюер - саб агент как выше я писал»
@@ -1521,3 +1523,21 @@ The shipped independent `web` tool lives in `extensions/RQW-web/`; Contract: [RQ
 - **Remove the terminal entry** `[D-WEB-REMOVE-CLI]`. Owner, current repository session, 2026-10-25: «эту хуйню удалить». The obsolete terminal command and its dedicated tests and dependency are removed; the shipped `web` tool replaces it. Full order and superseded decision: [archive](DECISIONS-ARCHIVE.md#a-web-cli-removed---archived-2026-10-25). Carrier: `extensions/RQW-web/`, `package.json`.
 
 Since: web-search-tool.
+
+## Codex compatibility
+
+- **Codex compatibility on public Pi APIs** `[D-COMPAT-CODEX]`. A new independent `extensions/RQW-codex-compat/` reads
+  Codex skill roots, skill rules and project instructions; Codex profiles stay in `RQW-agent`. Pi sources are not edited,
+  and full parity waits for a public Pi API: parts that need one are blocked, not worked around. The built-in Codex
+  `explorer` role stays removed (`[D-AGENT-PROFILES]`).
+  Coordinator question: «начинаем совместимость с codex? 1. да, по этому проекту». Owner answer: «1».
+  Source: the coordinator brief for this task; the session file locator is not machine-verified. Coordinator text, not owner quotations: the
+  design `design-codex-compat.html` (9 SP, reviewed CLEAN) and its project decisions, each marked "проект" there.
+  Instruction order (design decision M150, owner words as relayed by the design): the global Codex override, then Pi's personal
+  file from `getAgentDir()`, then project Codex files; no new source is added beyond that.
+  Profile layers (design item 4.2, project decision): project `.codex` layers need Codex trust; administrative and managed
+  Codex config is not supported (owner chose the lightest variant); this replaces the earlier text "without a separate trust gate" of `[D-AGENT-PROFILES]` for `.codex` layers.
+  Role fields (design item 4.3, recorded in the design): supported are model, effort and instructions; `model_reasoning_summary`,
+  `model_verbosity`, `personality`, `service_tier`, `features` and `skills` wait for a public Pi API and are listed as not applied.
+  Reason: let Codex configuration work in Pi without a Pi patch.
+  Carriers: `extensions/RQW-codex-compat/`, `extensions/RQW-agent/profiles.ts`, `extensions/RQW-skill-dollar/`, `package.json`.

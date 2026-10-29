@@ -5,6 +5,7 @@
 - [DECISIONS.md](DECISIONS.md): accepted product decisions.
 - [BACKLOG.md](BACKLOG.md): open and deferred work.
 - [extensions/](extensions/): independent package extensions and native theme data.
+- [extensions/RQW-codex-compat/](extensions/RQW-codex-compat/README.md): Codex skill roots, rules, instructions and compatibility matrix.
 - [test/](test/): extension and repository tests.
 - [scripts/](scripts/): CI watcher and status tools.
 - [pcli-vscode/](pcli-vscode/): bundled Windows VS Code terminal extension.

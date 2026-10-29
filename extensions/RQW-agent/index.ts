@@ -485,7 +485,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const lines = profiles.map(profile => {
 			const model = profile.model ?? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "caller default");
 			const effort = profile.model_reasoning_effort === "none" ? "off" : profile.model_reasoning_effort ?? pi.getThinkingLevel();
-			return `${profile.name}: ${profile.description}; model=${model}; effort=${effort}; source=${profile.path}${profile.error ? "; invalid profile" : ""}`;
+			return `${profile.name}: ${profile.description}; model=${model}; effort=${effort}; source=${profile.path}${profile.not_applied ? `; not applied: ${profile.not_applied.join(", ")}` : ""}${profile.error ? "; invalid profile" : ""}`;
 		});
 		const description = `${DESCRIPTION}\n\nAvailable agent_types and a quick description of what they do:\n${lines.join("\n") || "No profiles discovered."}`;
 		if (definition.description !== description) { definition.description = description; pi.registerTool(definition); }
