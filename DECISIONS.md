@@ -59,6 +59,29 @@ Provenance:
   Evidence: `my-pi-evidence/designs/deferred/live-tail-measurement.md`.
   Carriers: `extensions/RQW-live-tail/index.ts`, `package.json`, `test/extensions/RQW-live-tail/live-tail.test.ts`.
 
+## Tabs link
+
+- **Chats talk through three deferred tools** `[D-TABS-LINK]`. The independently disableable
+  `extensions/RQW-tabs-link/index.ts` lets main chats in visible Pi tabs on one computer list, read and message each
+  other, as Codex does through `list_threads`, `read_thread` and `send_message_to_thread`. The user opens every tab
+  himself; a closed chat gets the answer "Chat is closed. Ask the user to open it." with an open hint that is shown,
+  never run. The tools are `list_chats`, `read_chat` and `send_message_to_chat`: plain code, no model call, no
+  summary, no waiting; they read stored turns from the open tab, not the session file. They are registered deferred;
+  one fixed prompt line names them and the shared search key `rqwchat` loads exactly these three through
+  `tool_search`. Delivery is a follow-up after the current work, never an interruption, one turn at a time. Same
+  computer only; Mac and Windows (PCLI inside the VDI) work the same way. No change to PCLI, no Herder, no auto-open.
+  Owner: «создавать несколько вкладок и соединять их через session ID, чтобы они могли общаться друг с другом»
+  Owner: «Да. VDI запущен через VS Code, через наш PCLI.»
+  Owner: «Смотри, я хочу, чтобы я сам открывал вкладки. И если вкладка закрыта, то агент говорит, что вкладка закрыта, и я сам должен её открыть. А также знаешь, что я хочу? Я хочу, чтобы это работало нативно, так же как в кодексе. В кодексе я не пишу никакую команду типа Tab. Я просто пишу, что у меня открыт чат, сделай с ним то-то или прочитай его. Понимаешь, о чём я?»
+  Owner: «Он читает его не как файл сессии, а через инструмент ReadChat. Есть инструменты для работы с чатами. Посмотри, как в кодексе это сделано»
+  Owner: «И надо не перегружать общий инструментарий типа системного тулинга или я хз нужно твое экспертное мнение»
+  Owner: «Погоди. Смотри список чатов. Во-первых, надо инструмент переименовать. Мне не нравится название Tracks, нравится название Chats. List Tracks, List Read Chat, Send Message to Chat. Они должны быть полностью механическими. Я просто не знаю, как ты сейчас это спроектировал, но это должно быть полностью механическим, во-первых.»
+  Owner: «Насчет инструментов, чтобы они были видны сразу. А разве нельзя в tool search вписать или в описании этого tool search, что там есть инструменты для работы с другими чатами и все на этом? И по этому описанию агент поймет, что ему нужно прочитать Tool Search.»
+  Quoted in `my-pi-evidence/designs/tabs-link/DESIGN.md`, section «Решения владельца».
+  Reason: Codex-like chat to chat work without a bridge, a service or a heavy always-visible toolset.
+  Limit: a closed chat in a custom `--session-dir` that no tab ever registered is reported as `not_found`.
+  Carriers: `extensions/RQW-tabs-link/`, `package.json`, `test/extensions/RQW-tabs-link/`.
+
 ## Work policy
 
 - **Only ordered work** `[D-WORK-ONLY-ORDERED]`. The scope and proposal rule is carried once in
