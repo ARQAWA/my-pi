@@ -42,6 +42,7 @@
       "./extensions/RQW-skill-dollar/index.ts",
       "./extensions/RQW-history-edit/index.ts",
       "./extensions/RQW-dyslexia/index.ts",
+      "./extensions/RQW-live-tail/index.ts",
       "./extensions/RQW-codex-compat/index.ts"
     ],
     "themes": [

@@ -47,6 +47,19 @@ Provenance:
   Delete the owner's global `AGENTS.md` only after delivery and installation, not from extension code.
   Carriers: `extensions/RQW-dyslexia/index.ts`, `package.json`, `test/extensions/RQW-dyslexia/communication.test.ts`.
 
+## Live tail
+
+- **Placeholder instead of typing** `[D-LIVE-TAIL]`. The independently disableable `extensions/RQW-live-tail/index.ts`
+  registers one public `registerMarkdownTransformer`. For `messageType === "assistant" && isStreaming` it returns
+  «ответ готовится»; otherwise the original text. The finished answer, user text, thinking, tools and statuses stay
+  unchanged. No Pi source edit, no separate README, no dependency on other extensions.
+  Owner (RP1): «Мне не нужна анимация того, как агент что-то печатает на экране. Мне лучше видеть отзывчивый, 100% производительный, 100% супербыстрый, суперлегковесный интерфейс».
+  Owner approved the chunk «отложенное» with «1». Measured (6.1.1.2, Markdown component only, width 100, 100-character updates,
+  median of 5): parse and render of a streamed 10 000-character answer 139.5 ms before, 0.25 ms after; 50 000 characters
+  3881 ms before, 1.42 ms after; the final full frame costs the same (2.5 ms and 16.4 ms). Terminal and session cost are not measured.
+  Evidence: `my-pi-evidence/designs/deferred/live-tail-measurement.md`.
+  Carriers: `extensions/RQW-live-tail/index.ts`, `package.json`, `test/extensions/RQW-live-tail/live-tail.test.ts`.
+
 ## Work policy
 
 - **Only ordered work** `[D-WORK-ONLY-ORDERED]`. The scope and proposal rule is carried once in
@@ -775,6 +788,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Carrier: `extensions/RQW-agent/index.ts`;
   contract: [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume).
 
+- **Session switch waits for children** `[D-AGENT-SWITCH]`. The `session_before_switch` (`/new`, `/resume`) and `session_before_fork` (`/fork`) handlers return
+  `{ cancel: true }` and notify «дождись сабагентов» while `runningCounts().agents` is above zero; with no running child it
+  returns nothing and the switch proceeds. Reason: the stock switch and fork emit `session_shutdown`, which aborts running children.
+  Owner decision in design 6.2.3 (chunk «отложенное», approved with «1»): «переключаем только после конца детей», reason:
+  «их работу не прерываем».
+  Carriers: `extensions/RQW-agent/index.ts`, `test/extensions/RQW-agent/unit.test.ts`.
+
 - **Notification waits for children** `[D-AGENT-NOTIFY]`. Owner quotes: `[D-TOOLS-NOTIFY]` (`16-27-59:4876`, `16-27-59:4937`). Taken by default (coordinator text, not an owner quote): where the caller can
   receive notifications, `wait` on `agent` returns a `waiting` receipt at once with
   `terminate: true` and the result later wakes the caller once through the existing delivery broker.
@@ -1383,6 +1403,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   descendant artifact references join the removal candidates, removed children do not count as sharing, and artifacts of surviving
   sessions stay. Descendants go before the parent JSONL, so a failure leaves the parent as marker. Reason: removal must not leave
   orphan child histories. Carrier: `extensions/RQW-session/artifacts.ts` (`childTree`), `index.ts`. Since: `dd93a40`.
+- **Measured session paths** `[D-SESSION-MEASURE]`. Small fixed temp sessions through the real entry points (stock
+  `SessionSelectorComponent` for list and Remove Session, our registered `/remove` handler, fake `trash`), median of 5
+  (design 6.2.1, chunk «отложенное»). Input wait, median with the maximum seen: our `/remove` 1.6 ms (2.1) at 40 sessions and
+  2.3 ms (2.3) at 200; stock Remove Session 7.1 ms (7.7) and 11.0 ms (11.4); stock list 2.5 ms (3.0) and 10.7 ms (13.3);
+  `SessionManager.open` alone waits 1.2 ms (1.2) at both sizes; the full runtime switch was not measured. Our `/remove` total grows with the other sessions (64 ms at 40, 299 ms at 200). No change to Pi or to
+  `/remove`. Evidence: `my-pi-evidence/designs/deferred/session-paths-measurement.md`.
 - **Proof** `[D-SESSION-TESTS]`. Tests: `test/extensions/RQW-session/session.test.ts`. Since: `db5ab64`.
 
 ## Send now

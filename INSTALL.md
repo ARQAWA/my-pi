@@ -100,6 +100,7 @@ excludes nothing.
 ```
 
 - It takes effect after `/reload` or a restart. To switch the extension on again, delete its line.
+- The streaming placeholder «ответ готовится» switches off alone with `-extensions/RQW-live-tail/index.ts`.
 - The compact UI switches independently with `-extensions/RQW-tool-ui/index.ts`,
   `-extensions/RQW-agent-ui/index.ts` and `-extensions/RQW-naming/index.ts`, one exclusion per extension.
   Tool-ui off restores stock old and new tool calls, except that agent-ui then shows its collapsed wait cards;
