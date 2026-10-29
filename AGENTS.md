@@ -2,6 +2,7 @@
 
 A Pi package (`@earendil-works/pi-coding-agent` 1.4.0) that carries the omp-lite behaviour into stock Pi step by step.
 Stock Pi tools stay as they are. Everything is an extension, one folder per extension under `extensions/`.
+Extensions may change or patch Pi in memory under `[D-SCOPE-RUNTIME-PATCH]`: lightweight and efficient on Windows including VDI through PCLI and macOS, with shape checks, stock fallback and checks on every Pi update; no installed-file edits, fork or rebuild.
 The repository coordinator and workflow are development-only, not part of the shipped harness; never port them into the product.
 
 Before every task, read [PROCESS.md](PROCESS.md). Restore it after compaction or a handoff.
@@ -147,12 +148,12 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   a closed chat is reported with an open hint, never opened. Reads stored turns from the open tab, delivers as a follow-up, one turn at a time. Public Pi APIs only; no import from another
   extension folder, switch it off alone in `pi config`; subagents never load it. Contract and limits: [README](extensions/RQW-tabs-link/README.md),
   `DECISIONS.md` `[D-TABS-LINK]`. Tests: `test/extensions/RQW-tabs-link/`.
-- `extensions/RQW-codex-compat/`: independent Codex compatibility on public Pi APIs only; no Pi source edit, full parity
-  waits for a public Pi API. Offers Codex skill roots through `resources_discover`: `$CODEX_HOME/skills` and its `.system`,
+- `extensions/RQW-codex-compat/`: independent Codex compatibility on public Pi APIs today; no Pi source edit. Full parity is not implemented yet and,
+  under `[D-SCOPE-RUNTIME-PATCH]`, no longer waits for a public Pi API. Offers Codex skill roots through `resources_discover`: `$CODEX_HOME/skills` and its `.system`,
   `~/.agents/skills`, `/etc/codex/skills` where the system has it (no other administrative config is read), project `.agents/skills` and, for trusted projects
   (`projects.*.trust_level`), `.codex/skills`, bounded by `project_root_markers`. Applies `skills.config`, `skills.bundled.enabled`, `skills.include_instructions` and
   `skills.max_context_tokens` to the model skill catalog, and filters skills for RQW-skill-dollar on
-  `rqw-skill-dollar:filter`. Same-name selection by path and `/skill:` command parity are blocked until a public Pi API. Replaces `contextFiles` with the global Codex `AGENTS.override.md`/`AGENTS.md`, Pi's
+  `rqw-skill-dollar:filter`. Same-name selection by path and `/skill:` command parity are not implemented yet; under `[D-SCOPE-RUNTIME-PATCH]` they no longer wait for a public Pi API. Replaces `contextFiles` with the global Codex `AGENTS.override.md`/`AGENTS.md`, Pi's
   personal file and project files by Codex rules (fallback names, markers, explicit untrusted skip, shared `project_doc_max_bytes` budget). Contract:
   [README](extensions/RQW-codex-compat/README.md), `DECISIONS.md` `[D-COMPAT-CODEX]`. Tests: `test/extensions/RQW-codex-compat/`.
 - `extensions/RQW-theme/theme.json`: native theme resource named `RQW-theme`, registered only in `pi.themes`, not

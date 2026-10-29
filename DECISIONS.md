@@ -314,7 +314,10 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   ([Scroll](#scroll)). Compact tools, agent cards and naming are registered in `pi.extensions`;
   the native `RQW-theme` resource is registered separately in `pi.themes` ([UI activation](#ui-activation)). omp-lite's own tool implementations are not carried over; RQW-tools wraps Pi's stock
   tools ([Tools](#tools)). Reason: keep Pi's own behavior and add only agreed extensions. Carriers: `package.json`,
-  `extensions/`. Since: `9ef1519`.
+  `extensions/`. Since: `9ef1519`. Any restriction on runtime changes is superseded by `[D-SCOPE-RUNTIME-PATCH]`.
+- **Runtime changes and patches** `[D-SCOPE-RUNTIME-PATCH]`. Owner, verbatim: «Надо переписать правила работы с нашим репозиторием, с нашим harness, что разрешены все виды правок в runtime, все виды патчей в runtime. Можно патчить все что угодно в runtime с условием, что это будет сверхлегковесно, производительно, эффективно работать на всех стендах. То есть Windows, MacOS. И при апдейте надо будет их поддерживать тоже, при апдейте версии P.»
+  Extensions may make any runtime change or patch to Pi in memory. Installed Pi files are not edited; there is no fork or rebuild. Changes and patches must be ultra-light, fast and efficient on every stand, including Windows VDI through PCLI and macOS. Each patch checks its expected shape and falls back to stock on mismatch. Every Pi version update includes checking every runtime patch and keeping it working.
+  Carriers: `AGENTS.md`, `DECISIONS.md`. Since: runtime-patch-rule.
 - **Public repository** `[D-SCOPE-PUBLIC]`. [ARQAWA/my-pi](https://github.com/ARQAWA/my-pi) is public. Coordinator text
   (historical unverified attribution): "он должен быть паблик". Carriers: the GitHub repository, `INSTALL.md`.
   Since: `10a864c`.
@@ -366,8 +369,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 - **Between-answer summaries** `[D-UI-TOOL-DISPLAY]`. Owner sources below name entries of
   `2026-10-21T18-16-12-433Z_01a15fad-8f91-7306-bd46-1528008fbdc6.jsonl`, under the repository session directory.
-  Q3, entry `dcd5070f`, line 120:
-  > fork и patching pI недопустим. То, что мы делаем, это должно быть extension, расширение, всё, что угодно поверх PI. Мы не изменяем сам PI. Это, блядь, критически важно. Если мы что-то не можем реализовать без патча, это мы выбрасываем. Но надо пометить, что мы выбрасываем тогда из-за того, что мы не можем пропатчить, чтобы я, может, нашёл какую-то альтернативу этому.
+  Q3's patch prohibition is superseded by `[D-SCOPE-RUNTIME-PATCH]`; the verbatim quote is in `DECISIONS-ARCHIVE.md`.
 
   Q5, entry `8b4929e4`, line 160, three separate spans around the owner's screenshot paths:
   > Смотри я хочу что бы это было еще более компактно т.е. как сейчас в чате гпт, он пишет в строку что то типа
@@ -388,8 +390,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   All tool calls between assistant answers share a muted summary with confirmed edit/read/search/run/wait/other
   counts. Latest top-level call leads; current call shows its header, last four output rows and status. The next
   call folds the previous; answer text immediately folds the live block. Ctrl+O shows every original at its place
-  and toggles back. Native thinking spacer rows remain; stock Pi image output is unchanged. Public APIs only,
-  no Pi patch, private fields or method replacement. Unsupported nested-result details remain omitted, not invented.
+  and toggles back. Native thinking spacer rows remain; stock Pi image output is unchanged. The earlier public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`; this extension currently uses public APIs without Pi patches, private fields or method replacement. Unsupported nested-result details remain omitted, not invented.
   Reason: compact progress without losing original calls. Carriers: `extensions/RQW-tool-ui/{index,groups,render,summary,live}.ts`,
   its README, `package.json` and `test/isolation.test.ts`.
   Accepted appearance: owner entry `f7d11547`, line 702: "Бля, заебись, вообще кайф нахуй" (owner words as recorded in the ledger);
@@ -434,13 +435,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: native persistence without unsupported lifecycle hooks. Carriers: `package.json`,
   `extensions/RQW-theme/theme.json`, `INSTALL.md`.
 
-- **No blue message boxes, theme only** `[D-UI-NO-BLUE]`. Owner, verbatim: «Смотри, у Compaction какой-то ебаный не в стиле вообще ни разу. Запись какая-то. Надо сделать её золотой, прямо золотой с градиентом, чтобы она была. Что это Compaction, чтобы он был в стиле нашего дизайна. Что нужно сделать? Надо проверить, где у нас ещё есть такие облуски обоссаные, плашки синие уёбищные. И предложить решение им и замену, чтобы они вписывались в наш охуенный, пиздатый, компактный, минималистичный дизайн, современный, модерновый. И также надо поискать те элементы интерфейса, которые мы не перерисовали нашим охуенным стилем и не сделали минималистично-компактным. Это Super crit». On a runtime patch of Pi: «не не патчи запрещены нахуй». Offered theme-only variant: «синий фон уйдёт. надпись [compaction] станет золотой, но одним цветом, без градиента. блок останется в пять строк. те же цвета получат блоки [branch] и [skill]. делаем так, через тему? 1. рекомендую: да. это 0,5 sp, и синих плашек больше не будет.» Owner: «да».
+- **No blue message boxes, theme only** `[D-UI-NO-BLUE]`. Owner, verbatim: «Смотри, у Compaction какой-то ебаный не в стиле вообще ни разу. Запись какая-то. Надо сделать её золотой, прямо золотой с градиентом, чтобы она была. Что это Compaction, чтобы он был в стиле нашего дизайна. Что нужно сделать? Надо проверить, где у нас ещё есть такие облуски обоссаные, плашки синие уёбищные. И предложить решение им и замену, чтобы они вписывались в наш охуенный, пиздатый, компактный, минималистичный дизайн, современный, модерновый. И также надо поискать те элементы интерфейса, которые мы не перерисовали нашим охуенным стилем и не сделали минималистично-компактным. Это Super crit». On a runtime patch of Pi: «не не патчи запрещены нахуй» (superseded by `[D-SCOPE-RUNTIME-PATCH]`). Offered theme-only variant: «синий фон уйдёт. надпись [compaction] станет золотой, но одним цветом, без градиента. блок останется в пять строк. те же цвета получат блоки [branch] и [skill]. делаем так, через тему? 1. рекомендую: да. это 0,5 sp, и синих плашек больше не будет.» Owner: «да».
   `customMessageBg` is `""` (terminal default, no background) and `customMessageLabel` is `sourceGold`.
-  The owner later clarified: «Погоди. Патч в памяти — это мы можем делать патчи без форка пишки, которые будут работать в рантайме? Если да, то делаем всё через патчи в рантайме.» Runtime UI patches from extensions are allowed; Pi files and forks remain unchanged. The planned one-line compaction and branch summary, jump indicator, copied flash and tool-style `!cmd` are in scope.
+  The owner later clarified: «Погоди. Патч в памяти — это мы можем делать патчи без форка пишки, которые будут работать в рантайме? Если да, то делаем всё через патчи в рантайме.» The UI-only scope of that clarification is superseded by `[D-SCOPE-RUNTIME-PATCH]`; Pi files and forks remain unchanged. The planned one-line compaction and branch summary, jump indicator, copied flash and tool-style `!cmd` are in scope.
   Reason: remove the blue boxes with theme data. Carriers: `extensions/RQW-theme/theme.json`,
   `test/extensions/RQW-theme/schema.test.ts`.
 
-- **Runtime chat block styling** `[D-UI-BLOCKS]`. Owner, verbatim: «Смотри, надо убрать надписи Thinking, троеточие и пустые строки между ними. Мы когда раньше делали через API, у нас оставались пустые строки отрисованные. Мы даже делали pull request, чтобы расширить API на эту тему. Но если мы можем делать патчи в рантайме и перерисовывать, рендерить интерфейс в рантайме, то нахуй не нужны никакие форки. И вообще получается, мы в рантайме можем полностью переделывать функционал без форка и компиляции Mapy. И оно будет работать и на VDI, и на Mac. Да, строки полностью убираем с thinking и пустые между ними тоже». `RQW-blocks` patches Pi components in memory only, checks their expected shape and falls back to stock on mismatch. It restores patches on shutdown. Compaction is a cached golden gradient line, branch summary a silver line; expanded Markdown stays available with Ctrl+O. `!cmd` uses a cached live tool-style block with output and status, without duration. Hidden thinking runs and their spacing render no rows; shown thinking remains unchanged. Reason: the owner approved runtime patches for the UI style plan. Carriers: `extensions/RQW-blocks/`, `test/extensions/RQW-blocks/`.
+- **Runtime chat block styling** `[D-UI-BLOCKS]`. Owner, verbatim: «Смотри, надо убрать надписи Thinking, троеточие и пустые строки между ними. Мы когда раньше делали через API, у нас оставались пустые строки отрисованные. Мы даже делали pull request, чтобы расширить API на эту тему. Но если мы можем делать патчи в рантайме и перерисовывать, рендерить интерфейс в рантайме, то нахуй не нужны никакие форки. И вообще получается, мы в рантайме можем полностью переделывать функционал без форка и компиляции Mapy. И оно будет работать и на VDI, и на Mac. Да, строки полностью убираем с thinking и пустые между ними тоже». `RQW-blocks` patches Pi components in memory only, checks their expected shape and falls back to stock on mismatch. It restores patches on shutdown. Compaction is a cached golden gradient line, branch summary a silver line; expanded Markdown stays available with Ctrl+O. `!cmd` uses a cached live tool-style block with output and status, without duration. Hidden thinking runs and their spacing render no rows; shown thinking remains unchanged. Reason: the owner approved runtime patches for the UI style plan; the UI-only scope is superseded by `[D-SCOPE-RUNTIME-PATCH]`. Carriers: `extensions/RQW-blocks/`, `test/extensions/RQW-blocks/`.
 
 ## Naming
 
@@ -1459,7 +1460,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «Мне надо, чтобы в Py я мог нажать Enter и сообщение ушло, чтобы не нажимать ебучие Escape, Enter. Это какой-то рак мозга, мне кажется. Надо проверить, можем мы сделать это или нет. Если можем, надо сделать» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 184)
   Carrier: `extensions/RQW-send-now/index.ts`, its own `pi.extensions` entry ([Isolation](#isolation)); behaviour and
   limits: `extensions/RQW-send-now/README.md`. Since: `d1f8b16`.
-- **Public API only** `[D-SENDNOW-API]`. Engineering choices: `ctx.ui.onTerminalInput`, `ctx.abort`, editor text,
+- **Send now implementation** `[D-SENDNOW-API]`. The public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`. Current engineering choices: `ctx.ui.onTerminalInput`, `ctx.abort`, editor text,
   `pi.sendUserMessage`; no custom editor, since RQW-statusbar owns `setEditorComponent`. The key is Pi's
   `tui.input.submit`; only Pi's focused input editor triggers it. Steering is told from follow-ups by counting `input`
   events, because the public context reports only whether anything is queued; in-flight inputs and a run's starting
@@ -1595,7 +1596,7 @@ Since: web-search-tool.
 
 - **Codex compatibility on public Pi APIs** `[D-COMPAT-CODEX]`. A new independent `extensions/RQW-codex-compat/` reads
   Codex skill roots, skill rules and project instructions; Codex profiles stay in `RQW-agent`. Pi sources are not edited,
-  and full parity waits for a public Pi API: parts that need one are blocked, not worked around. The built-in Codex
+  and the current implementation does not yet cover the parts that needed a public Pi API; under `[D-SCOPE-RUNTIME-PATCH]` they no longer wait for one. The restriction against runtime patches is superseded by `[D-SCOPE-RUNTIME-PATCH]`. The built-in Codex
   `explorer` role stays removed (`[D-AGENT-PROFILES]`).
   Coordinator question: «начинаем совместимость с codex? 1. да, по этому проекту». Owner answer: «1».
   Source: the coordinator brief for this task; the session file locator is not machine-verified. Coordinator text, not owner quotations: the
@@ -1605,10 +1606,10 @@ Since: web-search-tool.
   Profile layers (design item 4.2, project decision): project `.codex` layers need Codex trust; administrative and managed
   Codex config is not supported (owner chose the lightest variant); this replaces the earlier text "without a separate trust gate" of `[D-AGENT-PROFILES]` for `.codex` layers.
   Role fields (design item 4.3, recorded in the design): supported are model, effort and instructions; `model_reasoning_summary`,
-  `model_verbosity`, `personality`, `service_tier`, `features` and `skills` wait for a public Pi API and are listed as not applied.
+  `model_verbosity`, `personality`, `service_tier`, `features` and `skills` are not applied yet and are listed as such; the earlier public-API wait is superseded by `[D-SCOPE-RUNTIME-PATCH]`; they no longer wait for a public Pi API.
   Project instruction budget (deliberate deviation from the Codex default 32768): without `project_doc_max_bytes` in Codex config the
   default is 262144 (256 KB), the same on every OS; a configured value, including `0`, still wins. Reason: the owner saw the
   warning «Warning: Codex project_doc_max_bytes cut /Users/arkadijcukavin/PycharmProjects/superbot/AGENTS.md» while his config sets no limit.
   Owner: «Так же не должно быть? у меня там вроде глобально огромный лимит на Agents.md?», «давай это сделаем его по дефолту 256кб всегда если только он не пренестроен через кодекс конфиг?», «Это должно работаь на всех ос одинакого».
-  Reason: let Codex configuration work in Pi without a Pi patch.
+  Reason: let Codex configuration work in Pi; the earlier restriction against a Pi patch is superseded by `[D-SCOPE-RUNTIME-PATCH]`.
   Carriers: `extensions/RQW-codex-compat/`, `extensions/RQW-agent/profiles.ts`, `extensions/RQW-skill-dollar/`, `package.json`.
