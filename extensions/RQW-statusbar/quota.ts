@@ -3,7 +3,7 @@ import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 
 // Missing sources never imply a full or empty subscription.
 export const QUOTA_REFRESH_MS = 5 * 60 * 1000;
-export const QUOTA_COLORS = { CX: "201;162;39", CC: "205;127;50" } as const;
+export const QUOTA_COLORS = { CX: "139;197;255", CC: "255;152;170" } as const;
 export type Quotas = Partial<Record<keyof typeof QUOTA_COLORS, string>>;
 type Snapshot = { windows: Record<string, { remainingPercent: number | null } | null> };
 type Access = { refresh(signal?: AbortSignal): Promise<Snapshot> };
