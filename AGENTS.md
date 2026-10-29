@@ -77,7 +77,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   `extensions/RQW-anthropic/README.md`. Tests: `test/extensions/RQW-anthropic/`.
 - `extensions/RQW-scroll/`: extension 10, Escape in the fullscreen view returns a scrolled-up transcript to the latest
   message; elsewhere Escape stays stock. Contract and limits: `DECISIONS.md` section Scroll. Tests: `npm test`.
-- `extensions/RQW-session/`: extension 11, independent `/copy-session` and confirmed permanent `/remove` commands; `/remove` also deletes the exact `<session.jsonl>.children` tree.
+- `extensions/RQW-session/`: extension 11, independent `/copy-session`, `/remove` (stock-identical: confirm, fresh session, then trash-else-unlink of the JSONL only) and `/cleanup` (deletes `.jsonl.children` trees whose JSONL is gone) commands.
   Cleanup boundaries and limitations: `extensions/RQW-session/README.md`. Tests: `npm test`.
 - `extensions/RQW-send-now/`: extension 12, Enter on an empty editor while steering is queued interrupts the turn and
   sends the queue at once, as in oh-my-pi. Public Pi API only, no custom editor. Behavior and limits:

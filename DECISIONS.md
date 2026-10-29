@@ -1377,32 +1377,35 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   shutdown hooks finish. Contract: `extensions/RQW-session/README.md`.
   Owner: «И по-хорошему надо какую-нибудь команду вбить, типа COPY SESSION ID. И надо ещё добавить команду remove сессии, как в кодексе, чтобы можно было написать /remove и удалить полностью эту сессию со всей историей, со всей хуйнёй, которая с ней связана.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 191);
   «Просто надо сделать /copy session команду, чтобы я мог её просто скопировать в буфер обмена и всё.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 203)
-  Carrier: `extensions/RQW-session/{index,artifacts}.ts`, its own `pi.extensions` entry. Since: `db5ab64`.
+  Carrier: `extensions/RQW-session/index.ts`, its own `pi.extensions` entry. Since: `db5ab64`.
 - **Confirmation dialog** `[D-SESSION-CONFIRM]`. `/remove` asks once with `["1. No", "2. Yes"]`; Pi 1.4.0's
-  `ExtensionSelectorComponent` starts at index 0, so deletion needs Down then Enter. The deleted session is gone without a
-  trash and a new empty session opens.
-  Owner: «После remove сессия удаляется, но совсем, полностью без корзины, и сразу открывается новая пустая сессия, как ты предложил. Потом подтверждение удалению один раз. Просто на экране поднять визуально, как в кодексе открыть диалог с вопросом «да/нет?». Циферка один по дефолту — нет, по не дефолту — да. То есть циферка один — нет, циферка два — да. И мне, чтобы удалить, надо нажать стрелочку вниз и Enter. Это если у тебя есть SDK для того, чтобы такие диалоги открывать.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 203)
+  `ExtensionSelectorComponent` starts at index 0, so deletion needs Down then Enter. A new empty session opens first,
+  then the old JSONL goes the way stock `/resume` Remove Session does (`[D-SESSION-STOCK-REMOVE]`).
+  Owner: «После remove сессия удаляется, но совсем, полностью без корзины, и сразу открывается новая пустая сессия, как ты предложил. Потом подтверждение удалению один раз. Просто на экране поднять визуально, как в кодексе открыть диалог с вопросом «да/нет?». Циферка один по дефолту — нет, по не дефолту — да. То есть циферка один — нет, циферка два — да. И мне, чтобы удалить, надо нажать стрелочку вниз и Enter. Это если у тебя есть SDK для того, чтобы такие диалоги открывать.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 203; the «без корзины» part is superseded by `[D-SESSION-STOCK-REMOVE]`)
   Carrier: `extensions/RQW-session/index.ts`, README.
   Since: `db5ab64`.
-- **Deletion scope** `[D-SESSION-SCOPE]`. Coordinator-approved scope, not an owner quotation: delete the current JSONL
-  plus referenced artifact files not referenced by other sessions, keeping user forks and shared artifacts. Only
-  Pi-generated basenames inside OS temp are deleted, never arbitrary `fullOutputPath` values; JSONL outside the agent
-  directory is refused; no symlink escape, directories or unrelated files. Randomly named unreferenced temp files,
-  including in-memory subagent and reviewer spills, stay for OS temp cleanup: no complete-erasure claim. Reason: no safe
-  ownership map exists. Mechanism: README. Since: `db5ab64`.
-- **Safe scan** `[D-SESSION-SCAN]`. `artifacts.ts` preflights other sessions before replacement, so discovery errors
-  leave the current session active and name the file; malformed JSONL lines are tolerated and scanned conservatively in a
-  streamed asynchronous scan; the final JSONL is read after shutdown. Rules and failure behaviour:
-  `extensions/RQW-session/README.md`.
-  Since: `db5ab64`.
-- **Child session tree** `[D-SESSION-CHILDREN]`. Basis: `[D-SESSION-COMMANDS]` (`/remove` deletes the whole session with everything tied to it) and the
-  coordinator text (`16-27-59:5090`) quoted in `[D-PIPELINE-PAUSE-RESUME]`: `/remove` removes the child sessions with their parent.
-  Taken by default (coordinator text, not an owner quote): after the confirmed Yes, `/remove` also deletes the exact sibling
-  `<session.jsonl>.children` tree, its nested descendants and regular sidecar files. RQW-session infers only that suffix and
-  imports nothing from RQW-agent. A symlink, special entry or non-directory at the tree refuses removal before the session switch;
-  descendant artifact references join the removal candidates, removed children do not count as sharing, and artifacts of surviving
-  sessions stay. Descendants go before the parent JSONL, so a failure leaves the parent as marker. Reason: removal must not leave
-  orphan child histories. Carrier: `extensions/RQW-session/artifacts.ts` (`childTree`), `index.ts`. Since: `dd93a40`.
+- **Stock-identical remove** `[D-SESSION-STOCK-REMOVE]`. After the confirmed Yes and the switch to a fresh empty session,
+  `/remove` deletes only the old session JSONL with a local copy of Pi 1.4.0's `deleteSessionFile` (stock `/resume` Remove
+  Session): `trash` first, else `unlink`; messages `Session moved to trash`, `Session deleted`, `Failed to delete: <error>`.
+  No `.children` tree, no artifact discovery, no shared-reference scan, no permanent-deletion logic; leftovers of removed
+  sessions are `/cleanup`'s job (`[D-SESSION-CLEANUP]`). A cancelled switch deletes nothing.
+  Owner: «наш ремув должен работать так же как ремув в резюме так же 1 в 1 и открывает новую сессию я так хочу сделать теперь» (direct owner order, 2026-10-29)
+  Carrier: `extensions/RQW-session/index.ts`. Since: this commit.
+- **Cleanup command** `[D-SESSION-CLEANUP]`. `/cleanup` deletes, recursively and permanently, every `<name>.jsonl.children`
+  directory under `<agent dir>/sessions/<project>/` whose sibling `<name>.jsonl` is gone: one `readdir` per project folder,
+  no content reads, no dialog, no temp-artifact scanning (Pi temp files have no session owner, left to the OS). The current
+  session's tree, non-directories, symlinks and anything outside `sessions/` are never touched. It notifies the count removed
+  or that there is nothing to clean.
+  Owner: «и надо команду клин ап которая зачистит мусор за удаленными сессиями (саб агентов и прочее) но супер легковесный и ультра скоростно и эффективный на 1 сп задача» (direct owner order, 2026-10-29)
+  Carrier: `extensions/RQW-session/cleanup.ts`, `index.ts`. Since: this commit.
+- **Deleted open session** `[D-SESSION-DELETED-OPEN]`. A message submitted in a window whose session file is expected (seen
+  to exist at session start, turn end, agent end or input, or the session has user or assistant entries) but no longer exists (missing, or recreated headerless by a later append: the first valid JSON entry must be a header with `type: "session"` and a string `id`, as Pi's loader decides; blank and malformed lines are skipped, no size cap) is not sent: error notification
+  `Session file was deleted. Opening a new session.` first, then a fresh empty session through `ctx.newSession`, the typed
+  text back in the editor (also when the switch is refused). A new session with no entries and no seen file is normal. `/cleanup` therefore needs no liveness logic. Public API only:
+  `input` event, `pi.sendUserMessage("/session-deleted", { expandPromptTemplates: true })` to reach a command context,
+  `ui.setEditorText`.
+  Owner: «Если сессия была открыта а удалил ее логично что сессия просто должна выдать ошибку и создать новую мне кажется это так должно рабоать»; plan accepted with «да»: «1. окно проверяет файл сессии перед твоим сообщением. 2. файла нет? окно пишет ошибку. 3. потом открывает новую сессию. 4. твой текст остаётся в поле ввода. 5. тогда /cleanup спокойно стирает папку удалённой сессии.» (direct owner order, 2026-10-29)
+  Carrier: `extensions/RQW-session/index.ts`. Since: this commit.
 - **Measured session paths** `[D-SESSION-MEASURE]`. Small fixed temp sessions through the real entry points (stock
   `SessionSelectorComponent` for list and Remove Session, our registered `/remove` handler, fake `trash`), median of 5
   (design 6.2.1, chunk «отложенное»). Input wait, median with the maximum seen: our `/remove` 1.6 ms (2.1) at 40 sessions and
