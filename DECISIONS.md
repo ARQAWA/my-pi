@@ -180,8 +180,9 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: local orchestration has no other deployment target; product and CI portability remain separate.
   Carriers: `.pi/extensions/`, `scripts/`, local development test suites.
 - **Development executor models** `[D-WORK-MODELS]`. Every new Main-started executor, work, research, test, QA, regression,
-  operational or outside-queue agent uses the category matrix: code, mechanical, ordinary, hardest and design. Exact executor pairs and reviewer-profile exceptions live in the `coordinator-rules` JSON block of
+  operational or outside-queue agent uses the category matrix: code, mechanical, ordinary, analysis, hardest and design. Exact executor pairs and reviewer-profile exceptions live in the `coordinator-rules` JSON block of
   [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly.
+  Analysis is a separate executor category. Owner: «2й хочу - опус медиум и сол медиум».
   There is no executor rotation or ratio bookkeeping.
   Already running or preserved Sol agents may finish their current tasks through ordinary `send` and `resume` and
   are not restarted merely to switch models. A genuinely new task, new agent or new-session restart uses the matrix
