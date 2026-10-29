@@ -11,3 +11,9 @@ it("the theme satisfies Pi's strict native schema", () => {
 	assert.equal(check.Check(theme), true, JSON.stringify([...check.Errors(theme)]));
 	assert.equal(check.Check({ ...theme, colors: { ...theme.colors, pythonMode: "#ffb347" } }), false);
 });
+
+it("custom message boxes have no background and a gold label", () => {
+	const theme = JSON.parse(readFileSync(join(import.meta.dirname, "../../../extensions/RQW-theme/theme.json"), "utf8"));
+	assert.equal(theme.colors.customMessageBg, "");
+	assert.equal(theme.colors.customMessageLabel, "sourceGold");
+});

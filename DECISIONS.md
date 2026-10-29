@@ -434,6 +434,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: native persistence without unsupported lifecycle hooks. Carriers: `package.json`,
   `extensions/RQW-theme/theme.json`, `INSTALL.md`.
 
+- **No blue message boxes, theme only** `[D-UI-NO-BLUE]`. Owner, verbatim: «Смотри, у Compaction какой-то ебаный не в стиле вообще ни разу. Запись какая-то. Надо сделать её золотой, прямо золотой с градиентом, чтобы она была. Что это Compaction, чтобы он был в стиле нашего дизайна. Что нужно сделать? Надо проверить, где у нас ещё есть такие облуски обоссаные, плашки синие уёбищные. И предложить решение им и замену, чтобы они вписывались в наш охуенный, пиздатый, компактный, минималистичный дизайн, современный, модерновый. И также надо поискать те элементы интерфейса, которые мы не перерисовали нашим охуенным стилем и не сделали минималистично-компактным. Это Super crit». On a runtime patch of Pi: «не не патчи запрещены нахуй». Offered theme-only variant: «синий фон уйдёт. надпись [compaction] станет золотой, но одним цветом, без градиента. блок останется в пять строк. те же цвета получат блоки [branch] и [skill]. делаем так, через тему? 1. рекомендую: да. это 0,5 sp, и синих плашек больше не будет.» Owner: «да».
+  `customMessageBg` is `""` (terminal default, no background) and `customMessageLabel` is `sourceGold`.
+  Patch-only items were dropped because the owner forbids patches: one-line gradient compaction, one-line branch
+  summary, gold "jump to latest", green "copied" flash, tool-style `!cmd` block.
+  Reason: remove the blue boxes with theme data only. Carriers: `extensions/RQW-theme/theme.json`,
+  `test/extensions/RQW-theme/schema.test.ts`.
+
 ## Naming
 
 - **Automatic native session names** `[D-UI-NAMING]`. Owner sources in the `18-16-12` session file:
