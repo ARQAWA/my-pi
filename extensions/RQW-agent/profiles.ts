@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { parse } from "smol-toml";
+import { codexLayout } from "./codex-layout.ts";
 
 export type ProfileRef = { name: string; path: string; sha256: string };
 export type Profile = ProfileRef & {
@@ -11,6 +12,8 @@ export type Profile = ProfileRef & {
 	model?: string;
 	model_reasoning_effort?: string;
 	nickname_candidates?: string[];
+	/** Codex role fields present in the file that Pi cannot apply yet (see NOT_APPLIED_ROLE_FIELDS). */
+	not_applied?: string[];
 	error?: string;
 };
 export type ProfileOptions = {
@@ -24,9 +27,57 @@ type Table = Record<string, unknown>;
 type Document = { sha256: string; data?: Table; error?: string };
 type Draft = Omit<Profile, "description"> & { description?: string; hasFile: boolean };
 const fields = ["name", "description", "developer_instructions", "model", "model_reasoning_effort", "nickname_candidates"] as const;
+/**
+ * Role overrides that Codex applies (codex-rs core/src/agent/role.rs `AgentRoleOverrides`) and Pi cannot reproduce
+ * with public APIs: they are read, not applied, and named in the catalogue. Every other Codex config key is ignored by
+ * Codex roles as well, `sandbox_mode` included: a Codex child inherits its parent's permissions.
+ */
+export const NOT_APPLIED_ROLE_FIELDS = ["model_reasoning_summary", "model_verbosity", "personality", "service_tier", "features", "skills"] as const;
+const ENUM_OVERRIDES: Record<string, readonly string[]> = {
+	model_reasoning_summary: ["auto", "concise", "detailed", "none"],
+	model_verbosity: ["low", "medium", "high"],
+	personality: ["none", "friendly", "pragmatic"],
+};
+const isBool = (value: unknown) => typeof value === "boolean";
+const SKILL_KEYS: Record<string, (value: unknown) => boolean> = {
+	bundled: value => table(value) && (!own(value, "enabled") || isBool(value.enabled)),
+	include_instructions: isBool,
+	max_context_tokens: value => Number.isInteger(value) && (value as number) > 0,
+	config: value => Array.isArray(value) && value.every(entry => table(entry) && isBool(entry.enabled)
+		&& ["path", "name"].every(key => !own(entry, key) || typeof entry[key] === "string")),
+};
+
+/**
+ * Type check of a Codex role override that Pi reads but cannot apply, by the Codex schema (codex-rs `ConfigToml`):
+ * enum values, `service_tier` as a string, `features` as a table of booleans, `skills` with its known keys (serde ignores unknown keys, as Codex does at runtime).
+ */
+function invalidOverride(key: string, value: unknown): boolean {
+	if (key in ENUM_OVERRIDES) return typeof value !== "string" || !ENUM_OVERRIDES[key].includes(value);
+	if (key === "service_tier") return typeof value !== "string";
+	if (key === "features") return !table(value) || Object.values(value).some(entry => !isBool(entry));
+	return !table(value) || Object.entries(value).some(([name, entry]) => own(SKILL_KEYS, name) && !SKILL_KEYS[name](entry));
+}
 const declarationFields = ["description", "nickname_candidates"] as const;
 const lifecycle = new Set(["enabled", "max_threads", "max_concurrent_threads_per_session", "max_depth",
 	"default_subagent_model", "default_subagent_reasoning_effort", "job_max_runtime_seconds", "interrupt_message"]);
+/**
+ * Codex's built-in roles (codex-rs core/src/agent/role.rs `built_in::configs`) without `explorer`, which stays removed.
+ * They carry no role file: the child keeps the parent's model, effort and prompt. A user role of the same name replaces them.
+ */
+const BUILT_IN_ROLES: readonly { name: string; description: string }[] = [
+	{ name: "default", description: "Default agent." },
+	{
+		name: "worker",
+		description: `Use for execution and production work.
+Typical tasks:
+- Implement part of a feature
+- Fix tests or bugs
+- Split large refactors into independent chunks
+Rules:
+- Explicitly assign **ownership** of the task (files / responsibility). When the subtask involves code changes, you should clearly specify which files or modules the worker is responsible for. This helps avoid merge conflicts and ensures accountability. For example, you can say "Worker 1 is responsible for updating the authentication module, while Worker 2 will handle the database layer." By defining clear ownership, you can delegate more effectively and reduce coordination overhead.
+- Always tell workers they are **not alone in the codebase**, and they should not revert the edits made by others, and they should adjust their implementation to accommodate the changes made by others. This is important because there may be multiple workers making changes in parallel, and they need to be aware of each other's work to avoid conflicts and ensure a cohesive final product.`,
+	},
+];
 const hash = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const table = (value: unknown): value is Table => value !== null && typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
 const own = (value: Table, key: string) => Object.hasOwn(value, key);
@@ -48,6 +99,7 @@ export class ProfileCatalogue {
 				// A declaration without config_file keeps the previously selected role file.
 				if (!draft.hasFile && lower.hasFile) {
 					for (const key of ["developer_instructions", "model", "model_reasoning_effort"] as const) draft[key] ??= lower[key];
+					if (lower.not_applied) draft.not_applied = lower.not_applied;
 					draft.path = lower.path;
 					draft.sha256 = lower.sha256;
 					draft.hasFile = true;
@@ -66,8 +118,18 @@ export class ProfileCatalogue {
 				for (const draft of layer.values()) apply(draft);
 			} else apply(await this.profile(absolute));
 		}
-		const directories = [resolve(options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), ".codex")), resolve(options.agentDir)];
-		for (const directory of await this.projectDirectories(options.cwd)) directories.push(join(directory, ".codex"), join(directory, ".pi"));
+		const codexHome = resolve(options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), ".codex"));
+		const directories = [codexHome, resolve(options.agentDir)];
+		// Project `.codex` layers need Codex trust (`projects.*.trust_level`); `.pi` layers never did and stay open.
+		const layout = await codexLayout(options.cwd, codexHome);
+		const codexDirs = new Set(layout.dirs);
+		const piDirs = new Set(await this.projectDirectories(options.cwd));
+		// Pi's `.pi` folders keep their own project root (nearest Git root); only `.codex` follows Codex's roots.
+		for (const directory of [...new Set([...piDirs, ...codexDirs])].sort((a, b) => a.length - b.length)) {
+			const codex = join(directory, ".codex");
+			if (codexDirs.has(directory) && resolve(codex) !== codexHome && await layout.trusted(directory)) directories.push(codex);
+			if (piDirs.has(directory)) directories.push(join(directory, ".pi"));
+		}
 		for (const directory of directories) {
 			const layer = new Map<string, Draft>();
 			const declared = new Set<string>();
@@ -108,6 +170,9 @@ export class ProfileCatalogue {
 				if (!declared.has(file)) this.first(layer, await this.profile(file));
 			}
 			for (const draft of layer.values()) apply(draft);
+		}
+		for (const role of BUILT_IN_ROLES) {
+			if (!roles.has(role.name)) roles.set(role.name, { name: role.name, description: role.description, path: `builtin:${role.name}`, sha256: hash(role.description), hasFile: false });
 		}
 		this.profiles.clear();
 		for (const draft of [...roles.values()].sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) {
@@ -150,6 +215,11 @@ export class ProfileCatalogue {
 				if (value.trim()) result.name = value.trim();
 				else if (!declared) result.error ??= "name is required";
 			} else result[key] = key === "description" ? value.trim() : value;
+		}
+		if (hasFile) {
+			const unapplied = NOT_APPLIED_ROLE_FIELDS.filter(key => own(data, key));
+			if (unapplied.length) result.not_applied = unapplied;
+			for (const key of unapplied) if (invalidOverride(key, data[key])) result.error ??= `${key} is invalid`;
 		}
 		if (hasFile && !declared) {
 			if (!own(data, "name")) result.error ??= "name is required";
@@ -195,6 +265,7 @@ export class ProfileCatalogue {
 		return files.sort();
 	}
 
+	/** Directories from the nearest Git root (or the filesystem root outside Git) down to cwd. */
 	private async projectDirectories(cwd: string): Promise<string[]> {
 		const directories: string[] = [];
 		let directory = resolve(cwd);

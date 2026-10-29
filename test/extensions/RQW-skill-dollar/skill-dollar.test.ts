@@ -13,7 +13,7 @@ const fallbackResult: AutocompleteSuggestions = {
 	prefix: "fallback",
 };
 
-async function setup(t: any, skillNames = names) {
+async function setup(t: any, skillNames = names, offerFilter?: (skills: any[]) => any[]) {
 	const root = mkdtempSync(join(tmpdir(), "rqw-skill-dollar-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
 	const commands: SlashCommandInfo[] = skillNames.map(name => {
@@ -44,6 +44,7 @@ async function setup(t: any, skillNames = names) {
 	const pi = {
 		on(name: string, handler: any) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 		getCommands() { return commands; },
+		events: { emit(channel: string, request: any) { if (offerFilter && channel === "rqw-skill-dollar:filter") request.offer(offerFilter); } },
 	};
 	skillDollar(pi as unknown as ExtensionAPI);
 	const ctx = {
@@ -164,4 +165,12 @@ it("restores the previous height for slash and file autocompletes", async (t) =>
 	assert.equal(editor.maxVisible, 4);
 	assert.equal(await provider.getSuggestions(["@"], 0, 1, options()), fallbackResult);
 	assert.equal(editor.maxVisible, 7);
+});
+
+it("an offered filter removes a skill from suggestions and from expansion", async (t) => {
+	const { provider, input, commands } = await setup(t, ["keep", "drop"], skills => skills.filter(skill => skill.name !== "drop"));
+	const all = await provider.getSuggestions(["$"], 0, 1, options());
+	assert.deepEqual(all?.items.map(item => item.value), ["$keep"]);
+	assert.equal(await input({ text: "use $drop now", source: "interactive" }, {}), undefined);
+	assert.deepEqual(await input({ text: "use $keep now", source: "interactive" }, {}), { action: "transform", text: expanded(commands, ["keep"], "use now") });
 });

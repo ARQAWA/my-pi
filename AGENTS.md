@@ -26,7 +26,9 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `extensions/RQW-agent/`: extension 5, subagents; description and reminder follow Cursor's Subagent guidance. `agent`
   (start, wait, status, send, resume, interrupt, stop, restart) runs in-process Pi sessions. Optional `agent_type`
   selects a Codex TOML profile; without it the generic defaults stay. A profile's `developer_instructions` supplies the default role
-  after the main system prompt and subagent reminder, not a whole-prompt replacement. Profile discovery, precedence,
+  after the main system prompt and subagent reminder, not a whole-prompt replacement. The catalogue always has Codex's built-in `default` and `worker` (no `explorer`; a user role of the same name replaces
+  them). Project `.codex` layers are gated by Codex trust (administrative Codex config is not supported); six Codex role overrides Pi cannot apply are named
+  `not applied` in the catalogue. Profile discovery, precedence,
   supported fields, explicit overrides and saved provenance: [RQW-agent README](extensions/RQW-agent/README.md#codex-profiles).
   The optional `title` appears in status and results. Every child has recursive `agent` delegation without a depth
   limit. Children get codemode/tool_search as the caller has them, the caller's session settings and the same profile
@@ -131,11 +133,20 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   rows and status, immediate folding on answer text, Ctrl+O originals. Native thinking spacing and stock image output
   remain. Details: [Compact tool display](DECISIONS.md#compact-tool-display); tests: `test/extensions/RQW-tool-ui/`.
 - `extensions/RQW-skill-dollar/`: extension 19, `$skill` autocomplete at whitespace boundaries, all matches selectable
-  through a four-row editor window, and Pi-format skill blocks for every mention on submit. Public APIs for the editor and autocomplete;
+  through a four-row editor window, and Pi-format skill blocks for every mention on submit; an optional filter offer
+  on `rqw-skill-dollar:filter` can hide skills. Public APIs for the editor and autocomplete;
   compatible with stock and statusbar editors. Also, through a runtime patch of Pi internals, shows the skills of a user message as one line in its card, not a blue block (`[D-UI-SKILL-CARD]`). Tests: `test/extensions/RQW-skill-dollar/`.
 - `extensions/RQW-dyslexia/`: prepends the owner's exact Communication rule, followed by one sentence that it overrides every other communication rule, to the system prompt through public
   `before_agent_start`. Self-contained and independently disableable in `pi config`; no host-file access.
   Tests: `test/extensions/RQW-dyslexia/`.
+- `extensions/RQW-codex-compat/`: independent Codex compatibility on public Pi APIs only; no Pi source edit, full parity
+  waits for a public Pi API. Offers Codex skill roots through `resources_discover`: `$CODEX_HOME/skills` and its `.system`,
+  `~/.agents/skills`, `/etc/codex/skills` where the system has it (no other administrative config is read), project `.agents/skills` and, for trusted projects
+  (`projects.*.trust_level`), `.codex/skills`, bounded by `project_root_markers`. Applies `skills.config`, `skills.bundled.enabled`, `skills.include_instructions` and
+  `skills.max_context_tokens` to the model skill catalog, and filters skills for RQW-skill-dollar on
+  `rqw-skill-dollar:filter`. Same-name selection by path and `/skill:` command parity are blocked until a public Pi API. Replaces `contextFiles` with the global Codex `AGENTS.override.md`/`AGENTS.md`, Pi's
+  personal file and project files by Codex rules (fallback names, markers, explicit untrusted skip, shared `project_doc_max_bytes` budget). Contract:
+  [README](extensions/RQW-codex-compat/README.md), `DECISIONS.md` `[D-COMPAT-CODEX]`. Tests: `test/extensions/RQW-codex-compat/`.
 - `extensions/RQW-theme/theme.json`: native theme resource named `RQW-theme`, registered only in `pi.themes`, not
   an extension. Select once through `/settings` -> Theme; Pi persists the choice across reload and restart.
   Switch back through the same native selector. No activation code or unrelated settings writes.

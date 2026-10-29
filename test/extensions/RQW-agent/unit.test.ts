@@ -159,8 +159,10 @@ test("profile catalogue loads native metadata and exact provenance", async t => 
 	await writeFile(path, text);
 	const catalogue = new ProfileCatalogue();
 	const profiles = await catalogue.refresh({ cwd, agentDir, codexHome: join(root, "codex"), extensionPaths: [] });
-	assert.deepEqual(profiles.map(profile => ({ name: profile.name, description: profile.description, model: profile.model, effort: profile.model_reasoning_effort })),
+	// Codex's built-in default and worker roles come with every catalogue; explorer does not.
+	assert.deepEqual(profiles.filter(profile => !profile.path.startsWith("builtin:")).map(profile => ({ name: profile.name, description: profile.description, model: profile.model, effort: profile.model_reasoning_effort })),
 		[{ name: "scout", description: "Search", model: "model", effort: "low" }]);
+	assert.deepEqual(profiles.map(profile => profile.name), ["default", "scout", "worker"]);
 	assert.equal(catalogue.get("scout")?.sha256, createHash("sha256").update(text).digest("hex"));
 });
 
@@ -363,7 +365,8 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 		getThinkingLevel: () => "off", getActiveTools: () => codemode ? ["codemode"] : [],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
-	const runtime = registerSessionRuntime(pi);
+	// No administrative Codex folder: the fixture must not read the host's /etc/codex.
+	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined, join(cwd, "no-system-codex"));
 	return { runtime, requests, ctx, events, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { for (const hook of hooks.get(name) ?? []) await hook(event, ctx); },
 		execute: (params: any) => definition.execute("call", params, new AbortController().signal, undefined, ctx) };
 }
