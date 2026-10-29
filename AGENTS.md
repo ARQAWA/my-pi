@@ -110,7 +110,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `.pi/extensions/qa-status/`: dev-only, repo-local Pi extension (not an `RQW-*` extension, not in `pi.extensions`,
   never shipped with the package). Shows a message only for new red items (a new or recurring failure); a branch head without a CI run is information, not red. `/qa` shows it all. Its `qa-status` message has a compact card (`card.ts`); Ctrl+O shows every line with its link.
 - `.pi/extensions/post-edit-lint/`: dev-only, repo-local silent Oxlint checks after successful edits and writes. It is not shipped or listed in `pi.extensions`; its inline factory reaches only executors through RQW-agent's generic child-factory offer. Tests: `test/post-edit-lint.test.ts`.
-- `.pi/extensions/process-reminder/`: dev-only, main-session transient process reminder; not shipped or offered to children. Tests: `test/process-reminder.test.ts`.
+- `.pi/extensions/process-reminder/`: dev-only, main-session request-only process reminder after each user message; reads `PROCESS.md` fresh, not persisted, shipped or offered to children. Deterministic placement preserves the cached prefix unless the file changes. Tests: `test/process-reminder.test.ts`.
 - `.pi/agents/test-reviewer.toml`: the read-only test-review profile, used through `agent` with
   `agent_type: "test-reviewer"`.
 - `.pi/agents/requirements-test-reviewer.toml` and `.pi/skills/testreview/`: repo-only requirements-based test review
@@ -137,8 +137,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   through a four-row editor window, and Pi-format skill blocks for every mention on submit; an optional filter offer
   on `rqw-skill-dollar:filter` can hide skills. Public APIs for the editor and autocomplete;
   compatible with stock and statusbar editors. Also, through a runtime patch of Pi internals, shows the skills of a user message as one line in its card, not a blue block (`[D-UI-SKILL-CARD]`). Tests: `test/extensions/RQW-skill-dollar/`.
-- `extensions/RQW-dyslexia/`: prepends the owner's exact Communication rule, followed by one sentence that it overrides every other communication rule, to the system prompt through public
-  `before_agent_start`. Self-contained and independently disableable in `pi config`; no host-file access.
+- `extensions/RQW-dyslexia/`: adds the owner's exact Communication rule and override after each user message in request context, not in history, the system prompt or subagents. Deterministic placement preserves the cached prefix. Self-contained and independently disableable in `pi config`; no host-file access.
   Tests: `test/extensions/RQW-dyslexia/`.
 - `extensions/RQW-live-tail/`: independent light screen. One public `registerMarkdownTransformer` replaces assistant text that is still streaming with «ответ готовится»; the finished answer, user text and thinking stay unchanged. No README; disable it alone in `pi config` (`[D-LIVE-TAIL]`). Tests: `test/extensions/RQW-live-tail/`.
 - `extensions/RQW-codex-compat/`: independent Codex compatibility on public Pi APIs only; no Pi source edit, full parity

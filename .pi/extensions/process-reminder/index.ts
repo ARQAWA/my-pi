@@ -19,12 +19,8 @@ export default function processReminder(pi: ExtensionAPI, root = ROOT): void {
 		});
 		const reminder = rules.join("\n");
 		if (!reminder) return;
-		const index = event.messages.findLastIndex(message => message.role === "user");
-		const position = index < 0 ? event.messages.length : index + 1;
-		return { messages: [
-			...event.messages.slice(0, position),
-			{ role: "user", content: `<process-reminder>\n${reminder}\n</process-reminder>`, timestamp: 0 },
-			...event.messages.slice(position),
-		] };
+		return { messages: event.messages.flatMap(message => message.role === "user"
+			? [message, { role: "custom" as const, customType: "process-reminder", content: `<process-reminder>\n${reminder}\n</process-reminder>`, display: false, timestamp: 0 }]
+			: [message]) };
 	});
 }
