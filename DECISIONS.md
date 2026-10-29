@@ -52,7 +52,7 @@ Provenance:
   registers one public `registerMarkdownTransformer`. For `messageType === "assistant" && isStreaming` it returns
   «ответ готовится»; otherwise the original text. The finished answer, user text, thinking, tools and statuses stay
   unchanged. No Pi source edit, no separate README, no dependency on other extensions.
-  Owner (RP1): «Мне не нужна анимация того, как агент что-то печатает на экране. Мне лучше видеть отзывчивый, 100% производительный, 100% супербыстрый, суперлегковесный интерфейс».
+  Owner: «Мне не нужна анимация того, как агент что-то печатает на экране. Мне лучше видеть отзывчивый, 100% производительный, 100% супербыстрый, суперлегковесный интерфейс».
   Owner approved the chunk «отложенное» with «1». Measured (6.1.1.2, Markdown component only, width 100, 100-character updates,
   median of 5): parse and render of a streamed 10 000-character answer 139.5 ms before, 0.25 ms after; 50 000 characters
   3881 ms before, 1.42 ms after; the final full frame costs the same (2.5 ms and 16.4 ms). Terminal and session cost are not measured.
@@ -869,7 +869,6 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   «Надо его перенести, адаптировав к нашему harness, потому что у них свой harness, у нас свой harness. Надо адаптацию сделать полную, чтобы по смыслу работало так же»
   Reason: the Codex reviewer already works in practice, and the old reviewer missed errors. Carriers: `extensions/RQW-review/profiles/*.toml`, `extensions/RQW-review/skills/**/SKILL.md`,
   `extensions/RQW-review/index.ts`, [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md, Independent review](PROCESS.md#independent-review).
-  The whole-cycle comparison with the original plugin is discarded by the owner, not queued: [BACKLOG.md](BACKLOG.md#codex-reviewer-comparison).
 - **Reviewer prompt** `[D-REVIEW-PROMPT]`. `extensions/RQW-review/REVIEWER.md` is the canonical reviewer role.
   `profiles/spotty.toml` and `profiles/bossy.toml` retain byte-identical `developer_instructions` for direct profile use;
   the common skill explicitly passes the absolute `REVIEWER.md` path through `role_file`, so a same-name personal
@@ -909,8 +908,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   there is no reviewer execution or fallback route. The common skill reports missing runtime/profile resources.
   Owner rename (`16-27-59:6489`, entry `96fcf727`), coordinator summary: the blind profile is Spotty (`spotty`);
   the high profile keeps its name.
-  Owner approval and exact messages: `[D-AGENT-PROFILES]`. The Claude reviewer measurement is discarded by the
-  owner, not scheduled (`16-27-59:6149`, entry `348f1995`); see [BACKLOG.md, Discarded](BACKLOG.md#claude-reviewer).
+  Owner approval and exact messages: `[D-AGENT-PROFILES]`.
   Source of the existing reviewer text and skills, read-only external archive:
   `/Users/arkadijcukavin/Downloads/codex-subagents-full-pack (1).zip`.
   Owner, current task `reviewers-terra`, 2026-10-27:
@@ -1230,11 +1228,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Status bar
 
-- **Pending provider-limit badge colors** `[D-STATUSBAR-LIMIT-COLORS]`. Definitive `CC` choice, owner (`16-27-59:9432`, entry `d7037e66`): «2 бронза».
+- **Provider-limit badge colors** `[D-STATUSBAR-LIMIT-COLORS]`. Definitive `CC` choice, owner (`16-27-59:9432`, entry `d7037e66`): «2 бронза».
   This answers the bronze/orange question in assistant entry `05b22f2b`, `16-27-59:9416`.
   Decision: `CC` bronze, Codex gold. Reason: distinguish provider-limit badges by color.
-  Carrier: pending [PROVIDER-LIMITS](BACKLOG.md#provider-limits). The direct Anthropic quota provider is delivered
-  ([D-ANTHROPIC-QUOTA](#anthropic-subscription-adapter)); statusbar badge implementation is NOT STARTED by this record.
+  Carrier: `extensions/RQW-statusbar/quota.ts`. The direct Anthropic quota provider is delivered
+  ([D-ANTHROPIC-QUOTA](#anthropic-subscription-adapter)).
 
 - **Independent extension** `[D-STATUSBAR-EXT]`. `extensions/RQW-statusbar/` has its own `pi.extensions` entry and
   imports nothing from another extension folder. Coordinator text (owner quote C:3133, an omp session, not found in the
@@ -1547,7 +1545,7 @@ Owner transport answers (verbatim, `16-27-59:2394`): «1a 2a 3a 4a 5a 6b 7a 8a �
   - Portability: the session keeps every original physical entry, but after a compaction the active context is Pi's summary plus the kept tail, for Codex and, with RQW-codex disabled or another provider, for every model. The full original history is no longer replayed to other providers; stock Pi behavior replaces the earlier retained-history promise.
   - Parity exception: Codex backend V2 compaction is not matched; stock Pi compaction is the active behavior.
   - Reason: Pi 1.4.0 has no public native compaction hook. A public result is only `{cancel?, compaction?}`, the interactive `compaction_end` handler requires a Pi `compaction` entry first in the context (`dist/modes/interactive/interactive-mode.js:2963-2966`, error `Completed compaction is missing from the session context`, which the former hook triggered), and Pi has no public way to take an effective wire token count: coordinator probes of 2026-10-24 show repeated compaction and a physical estimate of 64 109 tokens against a threshold of 18 000 after a native-style compaction (temporary logs `/tmp/codex-public-compaction-probe.log`, `/tmp/codex-option-p-probe.log`, outside the repository; a stock simulation with a fake summary transport, not an RQW-codex integration run). An upstream request for a public native compaction and context-accounting hook exists only as the unfiled draft `/Users/arkadijcukavin/ai-project/my-pi-evidence/codex-parity/PI-NATIVE-COMPACTION-ISSUE-DRAFT.md`.
-  - Not claimed: RQW-codex is not fully on public Pi API. Lifecycle, auth and prompt seams still use private Pi internals; migrating them is the separate backlog task [CODEX-PUBLIC-INTERNALS](BACKLOG.md#codex-public-internals), not part of this decision.
+  - Not claimed: RQW-codex is not fully on public Pi API. Lifecycle, auth and prompt seams still use private Pi internals.
   - Carriers under `extensions/RQW-codex/`: `session-compaction.ts` (the public `session_before_compact` handler that prepares the auxiliary transport and payload callbacks, and the `session_compact` handler that resets state; the summary is Pi's own), `registration.ts` (routing of Pi's summary request to the direct transport only during an active Pi compaction), `session.ts` (`afterPiCompaction`: drop prepared work and refresh the owned state when a new Pi compaction entry appears), `history.ts`, `session-history.ts` and `portable-history.ts` (native wire state retired at a persisted Pi compaction boundary), `README.md`; RQW-context stays the threshold owner. Supersedes `[D-CODEX-COMPACTION]` and `[D-CODEX-HISTORY]` (archived verbatim as A-0259 and A-0260 in `DECISIONS-ARCHIVE.md`), the compaction parts of the native differential paragraph (A-0261) and the former ledger row (A-0262).
 - **Offline capabilities** `[D-CODEX-OFFLINE]`. Owner answer (verbatim) «1а 2б» (user message `92037bbf`, physical JSONL line 2414 of the same external session). Coordinator option 2b summary, not an owner quotation: use only the pinned model list, without server discovery requests. No `/models` discovery requests. Pin the 0.163.0 wire-capability records for our listed GPT models; unknown capability is a clear error, never guessed from a prefix. Pi/RQW model lists and picker stay authoritative. Reason: accepted 2b deliberately excludes this native startup network request. Carrier: `profile.ts`.
 - **Ownership/coexistence** `[D-CODEX-OWNERSHIP]`. Provider hiding lives in the independently switchable `extensions/RQW-providers`, not in Anthropic or Codex transport registration. RQW-providers remains extension 14; RQW-codex is extension 15 immediately after it in `pi.extensions`. RQW-settings alone owns `/fast-gpt`, default off, priority through final payload hooks; child inheritance/overrides, including reviewer profiles, remain in RQW-agent. Children share native root cache affinity but never socket continuation, sticky turn state or opaque history. Reason: accepted 7a and extension isolation. Carriers: RQW-codex registration/lifecycle, optional `rqw-codex:session-policy` event in child factories; existing Fast owners unchanged.
