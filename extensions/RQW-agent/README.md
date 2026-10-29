@@ -568,7 +568,7 @@ not inherit Session's post-run automatic retry and overflow-recovery loop; error
 retry instead. Persisted settings and ordinary threshold compaction remain available. Session files are appended
 synchronously without fsync: this is restart recovery, not a power-loss or external-effect transaction guarantee.
 Operating-system jobs are not restored after the Pi process ends. Disabling RQW-agent leaves the saved files intact;
-RQW-session independently removes the exact owned child tree with the confirmed parent `/remove` command.
+RQW-session `/cleanup` independently removes child trees whose parent session file is gone.
 
 ## Offline proof
 

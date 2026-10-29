@@ -6761,3 +6761,63 @@ Verbatim text as it was in DECISIONS.md at `719028f`:
 >   Reason: the communication rule travels with the harness, not the host filesystem.
 >   Delete the owner's global `AGENTS.md` only after delivery and installation, not from extension code.
 >   Carriers: `extensions/RQW-dyslexia/index.ts`, `package.json`, `test/extensions/RQW-dyslexia/communication.test.ts`.
+## A-0378 · archived 2026-10-29 · Session commands · Confirmation dialog, «без корзины» part
+
+Status: PARTLY SUPERSEDED by `[D-SESSION-STOCK-REMOVE]` ([DECISIONS.md, Session commands](DECISIONS.md#session-commands)); the «полностью без корзины» part no longer applies.
+Replacement owner quote: «наш ремув должен работать так же как ремув в резюме так же 1 в 1 и открывает новую сессию я так хочу сделать теперь».
+Source: `4f64da4d0d8f109a900ec76113cb445e150d44b4:DECISIONS.md`.
+Archived by: the `/remove` change; exact commit: `git log -S'A-0378' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> - **Confirmation dialog** `[D-SESSION-CONFIRM]`. `/remove` asks once with `["1. No", "2. Yes"]`; Pi 1.4.0's
+>   `ExtensionSelectorComponent` starts at index 0, so deletion needs Down then Enter. The deleted session is gone without a
+>   trash and a new empty session opens.
+>   Owner: «После remove сессия удаляется, но совсем, полностью без корзины, и сразу открывается новая пустая сессия, как ты предложил. Потом подтверждение удалению один раз. Просто на экране поднять визуально, как в кодексе открыть диалог с вопросом «да/нет?». Циферка один по дефолту — нет, по не дефолту — да. То есть циферка один — нет, циферка два — да. И мне, чтобы удалить, надо нажать стрелочку вниз и Enter. Это если у тебя есть SDK для того, чтобы такие диалоги открывать.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 203)
+>   Carrier: `extensions/RQW-session/index.ts`, README.
+>   Since: `db5ab64`.
+
+## A-0379 · archived 2026-10-29 · Session commands · Deletion scope
+
+Status: SUPERSEDED by `[D-SESSION-STOCK-REMOVE]` ([DECISIONS.md, Session commands](DECISIONS.md#session-commands)).
+Replacement owner quote: «наш ремув должен работать так же как ремув в резюме так же 1 в 1 и открывает новую сессию я так хочу сделать теперь».
+Source: `4f64da4d0d8f109a900ec76113cb445e150d44b4:DECISIONS.md`.
+Archived by: the `/remove` change; exact commit: `git log -S'A-0379' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> - **Deletion scope** `[D-SESSION-SCOPE]`. Coordinator-approved scope, not an owner quotation: delete the current JSONL
+>   plus referenced artifact files not referenced by other sessions, keeping user forks and shared artifacts. Only
+>   Pi-generated basenames inside OS temp are deleted, never arbitrary `fullOutputPath` values; JSONL outside the agent
+>   directory is refused; no symlink escape, directories or unrelated files. Randomly named unreferenced temp files,
+>   including in-memory subagent and reviewer spills, stay for OS temp cleanup: no complete-erasure claim. Reason: no safe
+>   ownership map exists. Mechanism: README. Since: `db5ab64`.
+
+## A-0380 · archived 2026-10-29 · Session commands · Safe scan
+
+Status: SUPERSEDED by `[D-SESSION-STOCK-REMOVE]` ([DECISIONS.md, Session commands](DECISIONS.md#session-commands)).
+Replacement owner quote: «наш ремув должен работать так же как ремув в резюме так же 1 в 1 и открывает новую сессию я так хочу сделать теперь».
+Source: `4f64da4d0d8f109a900ec76113cb445e150d44b4:DECISIONS.md`.
+Archived by: the `/remove` change; exact commit: `git log -S'A-0380' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> - **Safe scan** `[D-SESSION-SCAN]`. `artifacts.ts` preflights other sessions before replacement, so discovery errors
+>   leave the current session active and name the file; malformed JSONL lines are tolerated and scanned conservatively in a
+>   streamed asynchronous scan; the final JSONL is read after shutdown. Rules and failure behaviour:
+>   `extensions/RQW-session/README.md`.
+>   Since: `db5ab64`.
+
+## A-0381 · archived 2026-10-29 · Session commands · Child session tree
+
+Status: SUPERSEDED by `[D-SESSION-STOCK-REMOVE]` and `[D-SESSION-CLEANUP]` ([DECISIONS.md, Session commands](DECISIONS.md#session-commands)).
+Replacement owner quotes: «наш ремув должен работать так же как ремув в резюме так же 1 в 1 и открывает новую сессию я так хочу сделать теперь»; «и надо команду клин ап которая зачистит мусор за удаленными сессиями (саб агентов и прочее) но супер легковесный и ультра скоростно и эффективный на 1 сп задача».
+Source: `4f64da4d0d8f109a900ec76113cb445e150d44b4:DECISIONS.md`.
+Archived by: the `/remove` change; exact commit: `git log -S'A-0381' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> - **Child session tree** `[D-SESSION-CHILDREN]`. Basis: `[D-SESSION-COMMANDS]` (`/remove` deletes the whole session with everything tied to it) and the
+>   coordinator text (`16-27-59:5090`) quoted in `[D-PIPELINE-PAUSE-RESUME]`: `/remove` removes the child sessions with their parent.
+>   Taken by default (coordinator text, not an owner quote): after the confirmed Yes, `/remove` also deletes the exact sibling
+>   `<session.jsonl>.children` tree, its nested descendants and regular sidecar files. RQW-session infers only that suffix and
+>   imports nothing from RQW-agent. A symlink, special entry or non-directory at the tree refuses removal before the session switch;
+>   descendant artifact references join the removal candidates, removed children do not count as sharing, and artifacts of surviving
+>   sessions stay. Descendants go before the parent JSONL, so a failure leaves the parent as marker. Reason: removal must not leave
+>   orphan child histories. Carrier: `extensions/RQW-session/artifacts.ts` (`childTree`), `index.ts`. Since: `dd93a40`.

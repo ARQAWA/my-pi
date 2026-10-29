@@ -1,54 +1,36 @@
 # RQW-session
 
-Independent session commands for Pi 1.4.0. No tool, UI replacement, other-extension import or Pi patch.
+Independent session commands (`/copy-session`, `/remove`, `/cleanup`) for Pi 1.4.0. No tool, UI replacement, other-extension import or Pi patch.
 
 - `/copy-session`: copy the current ID and notify `Session ID copied: <id>`. Stock `/copy` still copies the last
   assistant message. Clipboard failures produce an error notification, not success.
-- `/remove`: ask `Delete this session permanently?` in one Pi selection dialog: `1. No` first (selected by
-  default), then `2. Yes`. Enter on the default, Escape or cancellation deletes nothing. Down then Enter chooses
-  Yes. After Yes, switch to a fresh empty session using Pi's `/new` runtime path, then permanently unlink the old
-  JSONL, its exact adjacent `.children` session tree and their unshared referenced artifact files (no trash). Cancelling the session switch deletes nothing.
-  Without dialog-capable UI it refuses; RPC may select via its UI bridge. An empty/in-memory session simply becomes
-  a new empty session. No custom keyboard handling is installed.
+- `/remove`: works like Remove Session in the `/resume` picker. It asks `Delete this session?` in one Pi selection
+  dialog: `1. No` first (selected by default), then `2. Yes`. Enter on the default, Escape or cancellation deletes
+  nothing. After Yes, it switches to a fresh empty session using Pi's `/new` runtime path, then deletes the old JSONL
+  with a local copy of stock `deleteSessionFile` (Pi 1.4.0): `trash` first (`--` before a leading dash), else
+  `unlink`. Messages: `Session moved to trash`, `Session deleted`, `Failed to delete: <error>`. Cancelling the session
+  switch deletes nothing. Without dialog-capable UI it refuses; RPC may select via its UI bridge. An empty/in-memory
+  session simply becomes a new empty session. Only the JSONL is deleted: no `.children` tree, no artifacts.
+  No custom keyboard handling is installed.
 
-## Cleanup contract
+- `/cleanup`: deletes, permanently and without a dialog, every `<name>.jsonl.children` directory whose sibling
+  `<name>.jsonl` no longer exists, under Pi's `sessions/` directory (`PI_CODING_AGENT_DIR`, normally `~/.pi/agent`).
+  One asynchronous `readdir` per project folder, run in parallel; no file content is read. Skipped: the current
+  session's own tree, files, symlinks and anything outside `sessions/`. It notifies the count removed, or
+  `Nothing to clean`. Pi temp files (`pi-bash-*` and the like) have no session owner and are left to the OS.
 
-The current JSONL must be inside Pi's agent directory (`PI_CODING_AGENT_DIR`, normally `~/.pi/agent`). A custom
-`--session` file outside it is refused. Once the old runtime has shut down, cleanup reads its final on-disk JSONL,
-including entries written at shutdown. Session names, labels, branches, usage and embedded images are in that file.
-Pi discovers recent sessions from JSONL timestamps/mtimes; there is no last-session pointer or name-index sidecar.
+- Deleted open session: the file is expected when the window has seen it exist (at session start, after each
+  turn or agent end, and on input) or the session already has user or assistant entries (Pi writes the file with the
+  first one). When you submit a message and an expected file is gone (missing, or recreated by a later append so that its first valid JSON entry is not a Pi session header, `type: "session"` and a string `id`, as Pi's loader decides; blank and malformed lines are skipped, reading stops at that entry, and a file with no valid entry counts as deleted), the message is not sent. The
+  window shows the error `Session file was deleted. Opening a new session.`, then opens a fresh empty session and puts
+  your text back into the editor (images are not restored). If the switch is refused, the text stays and a second error
+  says a new session could not be opened. A brand-new session with no entries and no seen file is untouched. Mechanism, all public Pi
+  API: an `input` handler sees the message and hands the text to a hidden command `/session-deleted` through
+  `pi.sendUserMessage("/session-deleted", { expandPromptTemplates: true })`, because only a command context has
+  `newSession`; the command opens the session and sets the editor text in `withSession`. Because a deleted session is
+  dead by design, `/cleanup` has no liveness logic.
 
-Only Pi-generated artifact basenames are eligible: `pi-bash`, `pi-powershell`, `pi-output`, `pi-codemode`, or
-`pi-mcp`, followed by `-`, exactly 16 hex digits and an extension; clipboard files use `pi-clipboard-<UUIDv4>` plus
-an extension. References may occur in any JSONL string, but a `fullOutputPath` key grants no extra permission:
-credentials, settings and arbitrary temp files are not artifacts. The only removable directory tree is the exact
-`<current-session.jsonl>.children` sibling, including nested descendants and regular sidecar files. A symlink,
-special entry or non-directory at that tree root refuses removal before switching. Before switching sessions it
-scans all JSONLs recursively below the agent's `sessions` directory and the current session's directory. After
-shutdown, it repeats that discovery and shared-reference scan before deleting artifacts, so references saved by
-surviving sessions during replacement are retained. Descendant sessions being removed do not count as surviving
-references. User-created forks, unrelated sessions and similarly named trees remain unchanged.
-
-Only regular artifact files lexically and physically inside the OS temp directory are eligible. The agent directory
-is used to validate/discover session JSONLs, not as an additional artifact root. Traversal components and symlink
-leaves are rejected; resolving a parent symlink cannot escape the temp root. A symlink in session discovery or an
-unreadable JSONL refuses removal before switching and names the offending file. Malformed JSONL lines, including
-truncated tails, do not block removal: raw line text is scanned conservatively with JSON escapes decoded so shared
-references on Windows remain protected. Reads are streamed asynchronously; each string/line is normalized once,
-with one combined reference search and canonical-path sets rather than rescanning transcripts per artifact/alias.
-Long scans periodically yield to the event loop. File read handles close before deletion, including on Windows.
-The outgoing JSONL and descendant tree are reread after shutdown to include final output references. Descendant
-files and their empty directories are removed before the parent JSONL. If cleanup fails after switching, the new
-session remains active and the error identifies the old session file. Cleanup is not atomic: an error partway
-through may leave some artifacts or descendants deleted and the old JSONL present.
-
-**Limit:** Pi 1.4.0 names temp artifacts randomly, without session ownership metadata. Unreferenced temp files,
-including spills from in-memory children and RQW-review's in-memory reviewers, cannot safely be attributed and
-are left for OS temp cleanup. Persisted child JSONLs inside the owned tree do contribute artifact references.
-Child runtimes are cancelled/disposed by their own native shutdown handlers; RQW-session adds no runtime tracking
-or cross-extension dependency. RQW-anthropic's installation ID,
-credentials, settings and other shared configuration are not session artifacts. User exports and remote/provider
-copies are not erased. This is local permanent deletion, not forensic secure erasure.
+**Limit:** `/remove` deletes only the JSONL, so its subagent tree stays until `/cleanup`.
 
 ## Clipboard on Windows / VDI
 
@@ -61,7 +43,7 @@ environment if the terminal/client requires and supports OSC 52. The extension d
 ## Switch off and proof
 
 Follow [INSTALL.md](../../INSTALL.md#switch-one-extension-off) with
-`-extensions/RQW-session/index.ts`, then `/reload` or restart. Both commands disappear without changing other
+`-extensions/RQW-session/index.ts`, then `/reload` or restart. All three commands disappear without changing other
 extensions. Tests: `test/extensions/RQW-session/session.test.ts`, `test/isolation.test.ts`.
 
 Decision and research: [DECISIONS.md](../../DECISIONS.md#session-commands).
