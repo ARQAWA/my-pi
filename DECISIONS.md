@@ -1612,4 +1612,10 @@ Since: web-search-tool.
   warning «Warning: Codex project_doc_max_bytes cut /Users/arkadijcukavin/PycharmProjects/superbot/AGENTS.md» while his config sets no limit.
   Owner: «Так же не должно быть? у меня там вроде глобально огромный лимит на Agents.md?», «давай это сделаем его по дефолту 256кб всегда если только он не пренестроен через кодекс конфиг?», «Это должно работаь на всех ос одинакого».
   Reason: let Codex configuration work in Pi; the earlier restriction against a Pi patch is superseded by `[D-SCOPE-RUNTIME-PATCH]`.
+  Same-name skills (design items 2 and 2.1, owner `1e292ab2`: «То, что реально приоритетно — это полная совместимость с Codex»): the catalog keys skills by path and
+  keeps same-name skills of the Codex roots that Pi's loader drops. Selection is Codex's, not Pi's first-wins: order Repo, User, System, Admin, name, path
+  (codex-rs `ext/skills/src/loader/host_merge.rs`), plain `$name` takes the first enabled (`ext/skills/src/selection.rs`), a `[$name](skill://path)` link takes its path.
+  `/skill:name` and `$name` read this one list; `/skill:` of a skill the config disables is dropped with a warning. Coordinator text: the design page says a plain name of
+  several skills expands nothing; the task brief and Codex source say it picks one, and Codex's rule is followed. Reason: Codex parity without a public Pi API, by a second scan of the roots and the `input` event.
+  Carriers: `extensions/RQW-codex-compat/` (`selection.ts`, `index.ts`), `extensions/RQW-skill-dollar/index.ts`; contract: [README](extensions/RQW-codex-compat/README.md#same-name-skills).
   Carriers: `extensions/RQW-codex-compat/`, `extensions/RQW-agent/profiles.ts`, `extensions/RQW-skill-dollar/`, `package.json`.

@@ -28,14 +28,14 @@ export async function world(t: TestContext) {
 	return { base, put, project: join(base, "project"), cwd: join(base, "project", "pkg") };
 }
 
-export function runtime(cwd: string, root: string, thinking = "off") {
+export function runtime(cwd: string, root: string, thinking = "off", extraModels: string[] = []) {
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	const parent = SessionManager.create(root, join(root, "parent"));
 	// Two models: the parent's `model` and a distinct `other`, so a profile model that is ignored shows.
 	const requests: any[] = [];
-	const core = createFauxCore({ provider: "persist-test", models: [{ id: "model", reasoning: true }, { id: "other", reasoning: true }] });
+	const core = createFauxCore({ provider: "persist-test", models: [{ id: "model", reasoning: true }, { id: "other", reasoning: true }, ...extraModels.map(id => ({ id, reasoning: true }))] });
 	const model = core.getModel("model")!;
-	const models = new Map([["model", model], ["other", core.getModel("other")!]]);
+	const models = new Map([["model", model], ["other", core.getModel("other")!], ...extraModels.map(id => [id, core.getModel(id)!] as const)]);
 	const efforts: any[] = [];
 	core.setResponses(Array.from({ length: 8 }, () => async (context: any, options: any) => { requests.push(context); efforts.push(options?.reasoning); return fauxAssistantMessage("answer", { timestamp: 1 }); }));
 	const modelRuntime = {
@@ -58,7 +58,7 @@ export function runtime(cwd: string, root: string, thinking = "off") {
 	};
 	const live = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
 	return {
-		live, requests, efforts, description: () => definition.description as string,
+		live, requests, efforts, events: pi.events, parent, description: () => definition.description as string,
 		async emit(name: string) { for (const hook of hooks.get(name) ?? []) await hook({}, ctx); },
 		execute: (params: any) => definition.execute("call", params, new AbortController().signal, undefined, ctx),
 		/** Model, effort and prompt of the child that ran `task`, from the public status and the model request. */

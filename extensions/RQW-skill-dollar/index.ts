@@ -23,8 +23,11 @@ type Skill = {
 	baseDir: string;
 };
 
-/** Optional filter, offered on `pi.events` (see FILTER_CHANNEL): returns the skills that may be listed and expanded. */
-type SkillFilter = (skills: Skill[]) => Skill[];
+/**
+ * Optional filter, offered on `pi.events` (see FILTER_CHANNEL): returns the skills that may be listed and expanded.
+ * `submit` is true when a message is sent and false for each autocomplete request, which must stay cheap.
+ */
+type SkillFilter = (skills: Skill[], submit?: boolean) => Skill[];
 const FILTER_CHANNEL = "rqw-skill-dollar:filter";
 
 function loadedSkills(commands: SlashCommandInfo[]): Skill[] {
@@ -38,6 +41,9 @@ function loadedSkills(commands: SlashCommandInfo[]): Skill[] {
 		: [])
 		.filter(skill => skill.name.length > 0 && !/\s/.test(skill.name));
 }
+
+const SKILL_PATH_PREFIX = "skill://";
+const skillLink = (skill: Skill) => `[$${skill.name}](${SKILL_PATH_PREFIX}${skill.filePath})`;
 
 function skillToken(textBeforeCursor: string): string | undefined {
 	return textBeforeCursor.match(/(?:^|\s)\$([^\s]*)$/)?.[1];
@@ -60,12 +66,18 @@ function skillProvider(
 				return current.getSuggestions(lines, cursorLine, cursorCol, options);
 			}
 
-			const items: AutocompleteItem[] = fuzzyFilter(getSkills(), token, skill => skill.name)
-				.map(skill => ({
-					value: `$${skill.name}`,
-					label: `$${skill.name}`,
-					description: skill.description,
-				}));
+			const skills = getSkills();
+			const items: AutocompleteItem[] = fuzzyFilter(skills, token, skill => skill.name)
+				.map(skill => {
+					// Same-name skills stay apart: the first of a name keeps `$name`, the others insert a link to their path.
+					const shared = skills.filter(other => other.name === skill.name);
+					const shadowed = shared[0] !== skill;
+					return {
+						value: shadowed ? skillLink(skill) : `$${skill.name}`,
+						label: `$${skill.name}`,
+						description: shared.length > 1 ? `${skill.description ?? ""} (${skill.filePath})`.trim() : skill.description,
+					};
+				});
 			if (items.length === 0) {
 				restoreRows();
 				return current.getSuggestions(lines, cursorLine, cursorCol, options);
@@ -75,7 +87,7 @@ function skillProvider(
 		},
 
 		applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
-			if (!prefix.startsWith("$") || !item.value.startsWith("$")) {
+			if (!prefix.startsWith("$") || !/^(\[)?\$/.test(item.value)) {
 				return current.applyCompletion(lines, cursorLine, cursorCol, item, prefix);
 			}
 			const line = lines[cursorLine] ?? "";
@@ -111,21 +123,30 @@ function skillBlock(skill: Skill): string {
 	return `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
 }
 
+/**
+ * A plain `$name` or a Codex link `[$name](skill://path)`; the link selects exactly that path. The path may hold
+ * one level of balanced parentheses, as in `C:\Program Files (x86)\...`.
+ */
+const MENTION = /(?:^|\s)(?:\[\$([^\]\s]+)\]\(((?:[^()]|\([^()]*\))*)\)|\$([^\s]+))(?=\s|$)/g;
+
 function expandMentions(text: string, skills: Skill[]): string | undefined {
-	const byName = new Map(skills.map(skill => [skill.name, skill]));
+	// The first skill of a name wins, as in Codex: the list is in its selection order.
+	const byName = new Map<string, Skill>();
+	for (const skill of skills) if (!byName.has(skill.name)) byName.set(skill.name, skill);
 	const blocks: string[] = [];
 	const seenPaths = new Set<string>();
 	let rest = "";
 	let last = 0;
 	let found = false;
 
-	for (const match of text.matchAll(/(?:^|\s)\$([^\s]+)(?=\s|$)/g)) {
-		const skill = byName.get(match[1]);
+	for (const match of text.matchAll(MENTION)) {
+		const linked = match[2]?.trim();
+		const path = linked?.startsWith(SKILL_PATH_PREFIX) ? linked.slice(SKILL_PATH_PREFIX.length) : linked;
+		const skill = linked === undefined ? byName.get(match[3]) : skills.find(candidate => candidate.filePath === path);
 		if (!skill) continue;
 		found = true;
-		const start = match.index + match[0].indexOf("$");
-		const end = start + skill.name.length + 1;
-		rest += text.slice(last, start);
+		const end = match.index + match[0].length;
+		rest += text.slice(last, match.index + match[0].length - match[0].trimStart().length);
 		// Consume one horizontal separator with the mention so prose does not gain a double space.
 		last = end + (/^[ \t]/.test(text.slice(end)) ? 1 : 0);
 		if (!seenPaths.has(skill.filePath)) {
@@ -142,10 +163,10 @@ function expandMentions(text: string, skills: Skill[]): string | undefined {
 export default function skillDollar(pi: ExtensionAPI): void {
 	let filter: SkillFilter | undefined;
 	// Pi's loaded skills, narrowed by an optional filter (for example skills a Codex config disables).
-	const getSkills = () => {
+	const getSkills = (submit = false) => {
 		if (!filter) pi.events.emit(FILTER_CHANNEL, { offer(next: SkillFilter) { filter = next; } });
 		const loaded = loadedSkills(pi.getCommands());
-		return filter ? filter(loaded) : loaded;
+		return filter ? filter(loaded, submit) : loaded;
 	};
 	let tui: TUI | undefined;
 	let limitedEditor: RowEditor | undefined;
@@ -199,7 +220,7 @@ export default function skillDollar(pi: ExtensionAPI): void {
 		restoreRows();
 		// A mention needs a dollar; skip building the skill catalog for every other message.
 		if (event.source !== "interactive" || !event.text.includes("$")) return;
-		const text = expandMentions(event.text, getSkills());
+		const text = expandMentions(event.text, getSkills(true));
 		return text === undefined ? undefined : { action: "transform", text };
 	});
 }

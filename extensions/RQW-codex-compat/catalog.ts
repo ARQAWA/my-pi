@@ -11,7 +11,7 @@ export interface SkillSettings { bundled: boolean; includeInstructions: boolean;
 const MAX_CONFIGURED_TOKENS = 10_000;
 const MAX_DESCRIPTION_CHARS = 1_024;
 
-const real = (path: string) => { try { return realpathSync(path); } catch { return resolve(path); } };
+export const real = (path: string) => { try { return realpathSync(path); } catch { return resolve(path); } };
 const selectorKey = (rule: Rule) => "name" in rule.selector ? `name:${rule.selector.name}` : `path:${rule.selector.path}`;
 
 /** `skills.config` entries of the user layer; a repeated selector keeps only its last position. */
@@ -66,6 +66,9 @@ export function scopeOf(filePath: string, roots: readonly SkillRoot[], piScope?:
 
 const RANK: Record<Scope, number> = { system: 0, admin: 1, repo: 2, user: 3 };
 export const scopeRank = (scope: Scope) => RANK[scope];
+// Selection order of the skill merge (codex-rs ext/skills loader/host_merge.rs `scope_rank`): Repo, User, System, Admin.
+const MERGE_RANK: Record<Scope, number> = { repo: 0, user: 1, system: 2, admin: 3 };
+export const mergeRank = (scope: Scope) => MERGE_RANK[scope];
 
 const truncated = (text: string) => Array.from(text).length > MAX_DESCRIPTION_CHARS ? `${Array.from(text).slice(0, MAX_DESCRIPTION_CHARS - 3).join("")}...` : text;
 type Budgeted = SkillLike & { disableModelInvocation?: boolean };

@@ -38,10 +38,11 @@ export function linkedWorktree(w: ReturnType<typeof world>, separate = false) {
 	return { main: w.path("main"), wt: w.path("wt"), admin: w.path(`${common}/worktrees/wt`) };
 }
 
-export function fakePi(deps: Parameters<typeof codexCompat>[1]) {
+export function fakePi(deps: Parameters<typeof codexCompat>[1], commands: () => unknown[] = () => []) {
 	const handlers = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	const channels = new Map<string, ((data: unknown) => void)[]>();
 	const pi = {
+		getCommands: commands,
 		on(name: string, handler: any) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 		events: {
 			on(channel: string, handler: (data: unknown) => void) {
