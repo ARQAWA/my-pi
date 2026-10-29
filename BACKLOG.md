@@ -39,9 +39,9 @@ registered last in `package.json`; the global `~/.pi/agent/AGENTS.md` no longer 
 (delivered `1bbbceb`; one request returns ranked 1-10 candidates and the first valid name wins) and
 DELETE-WEAK-TESTS (delivered cleanup `7666300`, `a79812e`, `16c57f6`; the purge removed 89,091 lines of the overall
 slim change, not 89,091 proven-weak test lines). The lost regression coverage stays an open owner choice, not
-permission to restore the old test estate: stale idle-prewarm cancellation (fix `3ffe7dc`), repeated fork
-A-to-B-to-C raw history (`eb5e865`), Anthropic fork version recovery (`3b1fd18`), and handshake timeout classified
-as `connect-timeout` (`d47328d`). No numeric deletion quota or new purge is queued.
+permission to restore the old test estate: repeated fork
+A-to-B-to-C raw history (`eb5e865`; test restored in `test/extensions/RQW-codex/session-history.test.ts`), Anthropic fork version recovery (`3b1fd18`; test restored in `test/extensions/RQW-anthropic/adapter.test.ts`), and handshake timeout classified
+as `connect-timeout` (`d47328d`; test restored in `test/extensions/RQW-codex/network.test.ts`). No numeric deletion quota or new purge is queued.
 
 ### Research pocket: after the plan and its execution
 
@@ -54,6 +54,7 @@ and permit no settings or auth edits during research. Quotes are verbatim from t
 - **RP2 — Huge agent blocks: the remaining non-result notifications.** Owner supplied historical wording: «в старых задачах была задача на то, чтобы убрать огромные, монструозные ответы от агентов синего цвета … это важно тоже для меня. Это такие мысли на будущие задачи». Resolved historical link: the purple cards. Delivered results already have cards (`66c154c`); what remains is `child_wait` without a result. Merge this with D2/Q2: investigate once, then ask for the one-line card and fragment-only wake change. **Still needs the owner's yes before implementation.** Docs only, no Pi install; conditional files and tests are in D2.
 - **RP3 — Instant message display and planning status.** Owner: «У меня бывает такое, что я отправляю сообщение для Claude, для Codex или для Kimi, и оно подвисает на несколько секунд. … Хотя оно должно выглядеть моментально: что моментально появилось сообщение, моментально пошло planning next moves, а под капотом оно всё работает уже само. Не должно быть этой синхронизации интерфейса с under the hood обработками, процессингом.» Investigate submit-to-visible-message and submit-to-working-status separately from model latency. Docs only, no Pi install during research.
 - **RP4 — Verify request-cache mechanics against native clients.** Owner: «И у меня есть впечатление, что у нас суперхуёво работает кэширование запросов. … Там нужно скачать будет отдельно свежую версию Codex CLI, проверить, что наш транспорт хорошо работает, правильно. Надо будет засниффать пакеты Claude code: какие request он делает под капотом, какие response он получает и как именно он механически пробивает кэш через сниффер. … Такие исследовательские задачи, я думаю, суперкритически важны для нас. Их надо на будущее в кармашек положить и записать. Мы их возьмём в работу сразу после того, как мы закончим работу над глубокой переделкой плана. И исполнение этого плана». Hypothesis, not a measured defect; the pinned Codex CLI 0.163.0 stays. Inspect existing `my-pi-evidence/cache-research/` first. External research evidence only; no product, settings or auth modification.
+  Still open: the Claude sniffer capture.
 
 ## Conserved old queue
 

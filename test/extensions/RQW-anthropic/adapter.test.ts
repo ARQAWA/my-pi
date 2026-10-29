@@ -75,6 +75,32 @@ it("keeps adopted fork versions independent", () => {
 	assert.equal(versionState("2.1.280").fork().adopt("claude_code_version_too_old: version 2.2.0 or newer is required"), false);
 });
 
+// Regression: 3b1fd18 gave a context fork its own version, so a fork's version recovery never moves its source.
+it("recovers a fork from a version rejection without changing its source", async () => {
+	const agents: string[] = [];
+	const reject = () => Response.json({ type: "error", error: { type: "invalid_request_error", message: "claude_code_version_too_old: version 2.2.0 or newer is required" } }, { status: 400 });
+	const answers = [() => response([start, ...finish]), reject, () => response([start, ...finish]), () => response([start, ...finish])];
+	const transport = async (_input: unknown, init?: RequestInit) => {
+		agents.push(new Headers(init?.headers).get("user-agent")!);
+		return answers[agents.length - 1]!();
+	};
+	// The default version state reads this variable once, at creation; keep the test independent of the caller's environment.
+	const pinned = process.env.PI_AI_CLAUDE_CODE_VERSION;
+	delete process.env.PI_AI_CLAUDE_CODE_VERSION;
+	const overlay = createOverlay(base, () => undefined, "device");
+	if (pinned !== undefined) process.env.PI_AI_CLAUDE_CODE_VERSION = pinned;
+	const sessionId = "source-session";
+	overlay.forks.registerSource(sessionId);
+	const sourceOptions = { apiKey: ACCESS, sessionId, fetch: transport } as unknown as SimpleStreamOptions;
+	await overlay.streamSimple(model, normalizeContext(context), sourceOptions).result();
+	let infer: (() => Promise<unknown>) | undefined;
+	overlay.forks.offer({ sessionId, model, context: normalizeContext(context), signal: new AbortController().signal, offer: next => { infer = next; } });
+	assert.ok(infer, "the source request is offered as a fork");
+	assert.equal(((await infer()) as { stopReason: string }).stopReason, "stop");
+	await overlay.streamSimple(model, normalizeContext(context), sourceOptions).result();
+	assert.deepEqual(agents, ["claude-cli/2.1.280 (external, cli)", "claude-cli/2.1.280 (external, cli)", "claude-cli/2.2.0 (external, cli)", "claude-cli/2.1.280 (external, cli)"]);
+});
+
 // Regression: ce0fa4d reused a proven rotation but rejected an unrelated saved login.
 it("reuses only a proven credential rotation", async () => {
 	const credentials = await store();

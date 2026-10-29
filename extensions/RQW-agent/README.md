@@ -579,6 +579,10 @@ system prompt; exact caller `system` applies to task requests. Bare SDK `session
 shutdown: hosts must emit `session_shutdown` or use Pi's runtime lifecycle. Persisted parents keep child histories
 and local ids across restart; in-memory parents do not. Accepted process-sharing limits are unchanged.
 
+**Session switch.** While any child runs, `session_before_switch` (`/new`, `/resume`) and `session_before_fork` (`/fork`) are cancelled with the notice
+«дождись сабагентов», because the replacement shuts the session down and aborts the children. After they end the switch or fork works.
+A finished but undelivered result does not block it. Test: `test/extensions/RQW-agent/unit.test.ts`.
+
 ## Display metadata and running-count offer
 
 Delivered custom messages keep their original content byte-for-byte. Their `details` add

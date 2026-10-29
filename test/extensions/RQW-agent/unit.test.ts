@@ -353,10 +353,11 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 		streamSimple: core.streamSimple,
 	};
 	let definition: any;
+	const notices: string[] = [];
 	const ctx: any = {
 		cwd, sessionManager: parent, model, modelRegistry: { runtime: modelRuntime, find: () => model, hasConfiguredAuth: () => true },
 		isIdle: () => true, isProjectTrusted: () => true, getSystemPrompt: () => "original prompt",
-		signal: new AbortController().signal, mode: "tui",
+		signal: new AbortController().signal, mode: "tui", ui: { notify: (message: string) => { notices.push(message); } },
 	};
 	const pi: any = {
 		events, on: (name: string, hook: any) => hooks.set(name, [...hooks.get(name) ?? [], hook]),
@@ -368,7 +369,7 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 	};
 	// No administrative Codex folder: the fixture must not read the host's /etc/codex.
 	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined, join(cwd, "no-system-codex"));
-	return { runtime, requests, ctx, events, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { for (const hook of hooks.get(name) ?? []) await hook(event, ctx); },
+	return { runtime, requests, ctx, events, notices, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { let result: unknown; for (const hook of hooks.get(name) ?? []) result = await hook(event, ctx); return result; },
 		execute: (params: any, callId = "call") => definition.execute(callId, params, new AbortController().signal, undefined, ctx) };
 }
 
@@ -1603,6 +1604,27 @@ test("a wait accepted before an ordinary shutdown is restored with the reopened 
 	const sent = (restored.ctx.sessionManager.getBranch() as any[]).filter(entry => entry.customType === "child_wait");
 	assert.deepEqual(sent.map(entry => [entry.details.wait_id, entry.details.reason]), [[id, "result"]]);
 	restored.runtime.close();
+});
+
+test("switching or forking the session is refused while a child runs and allowed once it ended", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const gate = Promise.withResolvers<void>();
+	const live = runtimeFixture(parent, root, async () => { await gate.promise; return "answer"; });
+	const event = { type: "session_before_switch", reason: "new" };
+	assert.equal(await live.emit("session_before_switch", event), undefined);
+	await live.execute({ action: "start", task: "long task", tools: [] });
+	await until(() => live.requests.length === 1);
+	assert.deepEqual(await live.emit("session_before_switch", event), { cancel: true });
+	assert.deepEqual(await live.emit("session_before_fork", { type: "session_before_fork", entryId: "e1" }), { cancel: true });
+	assert.deepEqual(live.notices, ["дождись сабагентов", "дождись сабагентов"]);
+	gate.resolve();
+	await live.runtime.wait(new AbortController().signal);
+	assert.equal(await live.emit("session_before_switch", event), undefined);
+	assert.equal(await live.emit("session_before_fork", { type: "session_before_fork", entryId: "e1" }), undefined);
+	live.runtime.close();
 });
 
 test("an ordinary shutdown does not deliver an answer a wait for all targets was holding", async t => {

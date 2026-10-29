@@ -6,7 +6,8 @@ import { createSessionController } from "../../../extensions/RQW-codex/session.t
 
 const MODEL = { id: "gpt-6-luna", provider: "openai-codex", api: "openai-codex-responses", input: ["text"] } as Model<Api>;
 
-it("regression: model change cancels stale startup prewarm", async () => {
+/** Fake session whose before-provider-request hook blocks until released; counts connects and sends. */
+async function harness() {
 	const entries: any[] = [];
 	const manager = {
 		getHeader: () => null,
@@ -27,6 +28,9 @@ it("regression: model change cancels stale startup prewarm", async () => {
 	const session = {
 		sessionId: "thread-prewarm",
 		model: MODEL,
+		isIdle: true,
+		isStreaming: false,
+		isCompacting: false,
 		systemPrompt: "PROMPT",
 		sessionManager: manager,
 		agent: { state: { tools: [] } },
@@ -62,13 +66,35 @@ it("regression: model change cancels stale startup prewarm", async () => {
 			};
 		},
 	} });
-	const starting = controller.start();
-	await started;
-	Object.assign(session, { model: { ...MODEL, id: "gpt-6.1-sol" } as Model<Api> });
-	const changing = controller.modelChange();
-	releaseHook();
+	return {
+		controller,
+		started,
+		releaseHook,
+		counts: () => ({ connects, sends }),
+		selectOtherModel: () => Object.assign(session, { model: { ...MODEL, id: "gpt-6.1-sol" } as Model<Api> }),
+	};
+}
+
+it("regression: model change cancels stale startup prewarm", async () => {
+	const h = await harness();
+	const starting = h.controller.start();
+	await h.started;
+	h.selectOtherModel();
+	const changing = h.controller.modelChange();
+	h.releaseHook();
 	await Promise.all([starting, changing]);
-	assert.equal(connects, 0);
-	assert.equal(sends, 0);
-	controller.release();
+	assert.deepEqual(h.counts(), { connects: 0, sends: 0 });
+	h.controller.release();
+});
+
+it("regression: model change cancels stale idle prewarm", async () => {
+	const h = await harness();
+	const warming = h.controller.prewarmWithHistory();
+	await h.started;
+	h.selectOtherModel();
+	const changing = h.controller.modelChange();
+	h.releaseHook();
+	await Promise.all([warming, changing]);
+	assert.deepEqual(h.counts(), { connects: 0, sends: 0 });
+	h.controller.release();
 });

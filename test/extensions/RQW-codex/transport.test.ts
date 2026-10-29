@@ -52,6 +52,7 @@ function fakeSockets(scripts: unknown[][][], connectErrors: Error[] = []) {
 	const connects: number[] = [];
 	const sent: any[] = [];
 	const heads: Record<string, string>[] = [];
+	const opened: any[] = [];
 	const connect = async (options: any) => {
 		connects.push(connects.length);
 		heads.push(options.headers);
@@ -59,7 +60,7 @@ function fakeSockets(scripts: unknown[][][], connectErrors: Error[] = []) {
 		if (error) throw error;
 		let open = true;
 		let current: unknown[] = [];
-		return {
+		const socket = {
 			get isOpen() { return open; },
 			socketIdentity: `socket-${connects.length}`,
 			events: () => (async function* () {
@@ -72,8 +73,10 @@ function fakeSockets(scripts: unknown[][][], connectErrors: Error[] = []) {
 			async interrupt() { return { acknowledged: true as const, completed: false }; },
 			async close() { open = false; },
 		} as any;
+		opened.push(socket);
+		return socket;
 	};
-	return { connect: connect as any, connects, sent, heads };
+	return { connect: connect as any, connects, sent, heads, opened };
 }
 
 const upgradeRequired = async (): Promise<never> => { throw new SocketError(426, {}, "upgrade required", "upgrade-rejected"); };
@@ -187,4 +190,66 @@ it("prewarm sends generate:false once and the first turn reuses the socket", asy
 	const events = await collect(transport.stream(MODEL, { ...USER, messages: [...USER.messages, { role: "user", content: "next", timestamp: 2 }] } as Context));
 	assert.equal(events.at(-1)?.type, "done");
 	assert.equal(sockets.connects.length, 1);
+});
+
+// Reference: Codex CLI 0.165.0 (my-pi-evidence/cache-research/codex-fresh/REPORT.md); the pin 0.163.0 behaves the same here.
+// Known difference, not covered: native input comparison ignores differences in internal chat-message metadata passthrough (client.rs:460-478);
+// ours is plain JSON equality. Late tool-result metadata breaks native continuation too. Ours emits the passthrough (content_item_kinds) from the same builder each time.
+it("cache mechanics match the native reference in this scenario: key, prefix, continuation, warm-up, cached tokens", async () => {
+	const withCache = (events: Record<string, unknown>[], cached: number) => [...events.slice(0, -1), completed((events.at(-1) as any).response.id, rawUsage(100, 2, cached))];
+	const sockets = fakeSockets([
+		[[{ type: "response.created", response: { id: "resp_pre" } }, completed("resp_pre")]],
+		[withCache(textEvents("resp_1", "one"), 64)],
+		[withCache(textEvents("resp_2", "two"), 90)],
+		[textEvents("resp_3", "three")],
+	]);
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: sockets.connect } });
+	const turn = async (messages: unknown[]) => (await collect(transport.stream(MODEL, { ...USER, messages } as Context))).at(-1) as any;
+	const user = (text: string, timestamp: number) => ({ role: "user", content: text, timestamp });
+	const textOf = (item: any) => item.content[0].text;
+
+	await transport.prewarm(MODEL, USER);
+	const first = await turn([user("hello", 1)]);
+	const second = await turn([user("hello", 1), first.message, user("next", 2)]);
+	await sockets.opened.at(-1).close();
+	await turn([user("hello", 1), first.message, user("next", 2), second.message, user("third", 3)]);
+
+	const [warm, one, two, full] = sockets.sent;
+	assert.equal(warm.generate, false);
+	assert.equal(warm.previous_response_id, undefined);
+	assert.equal(one.generate, undefined);
+	assert.equal(one.previous_response_id, "resp_pre");
+	assert.deepEqual(one.input.map(textOf), ["hello"]);
+	assert.equal(two.previous_response_id, "resp_1");
+	assert.deepEqual(two.input.map(textOf), ["next"]);
+	// Every field the native comparator checks stays equal across warm-up, continuations and the full request.
+	const stable = ({ input: _input, previous_response_id: _previous, generate: _generate, client_metadata: _metadata, ...rest }: any) => rest;
+	assert.deepEqual(stable(warm), {
+		type: "response.create", model: "gpt-6-luna", stream: true, tool_choice: "auto", parallel_tool_calls: false,
+		reasoning: { effort: "medium", context: "all_turns" }, store: false, include: ["reasoning.encrypted_content"],
+		prompt_cache_key: "root-session-1", text: { verbosity: "low" },
+	});
+	assert.deepEqual(warm.input, [{
+		type: "message", id: "msg_b2aa8eb3-8305-5b4b-aae3-c163e529024f", role: "developer",
+		content: [{ type: "input_text", text: "Be brief." }],
+		internal_chat_message_metadata_passthrough: { content_item_kinds: ["model.base_instructions"] },
+	}]);
+	for (const request of [one, two, full]) assert.deepEqual(stable(request), stable(warm));
+	assert.equal(warm.prompt_cache_key, IDENTITY.rootSessionId);
+	assert.equal(warm.store, false);
+	assert.equal(sockets.heads[0]["session-id"], IDENTITY.rootSessionId);
+	// A closed socket gets a new connection and a full request: same stable prefix, raw output items replayed unchanged.
+	assert.equal(sockets.connects.length, 2);
+	assert.equal(full.previous_response_id, undefined);
+	assert.deepEqual(full.input[0], warm.input[0]);
+	assert.deepEqual(full.input.slice(1), [
+		{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] },
+		{ type: "message", id: "msg_resp_1", role: "assistant", status: "completed", content: [{ type: "output_text", text: "one", annotations: [] }] },
+		{ type: "message", role: "user", content: [{ type: "input_text", text: "next" }] },
+		{ type: "message", id: "msg_resp_2", role: "assistant", status: "completed", content: [{ type: "output_text", text: "two", annotations: [] }] },
+		{ type: "message", role: "user", content: [{ type: "input_text", text: "third" }] },
+	]);
+	// cached_tokens becomes cacheRead; input is the uncached rest.
+	assert.deepEqual([first.message.usage.cacheRead, first.message.usage.input], [64, 36]);
+	assert.deepEqual([second.message.usage.cacheRead, second.message.usage.input], [90, 10]);
 });

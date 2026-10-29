@@ -1724,6 +1724,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		ownRuns.clear();
 	};
 	pi.on("session_shutdown", shutdown);
+	// Pi's switch (/new, /resume) and /fork run session_shutdown, which would abort the running children: refuse until they end.
+	for (const event of ["session_before_switch", "session_before_fork"] as const) pi.on(event, (_event, ctx) => {
+		if (!runningCounts().agents) return undefined;
+		ctx.ui.notify("дождись сабагентов", "warning");
+		return { cancel: true };
+	});
 	// Delivery and queue settlement can remove a blocker after the idle deadline.
 	for (const event of ["turn_end", "agent_settled"] as const) pi.on(event, () => {
 		for (const a of agents.values()) queueSleep(a);

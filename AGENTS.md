@@ -139,6 +139,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `extensions/RQW-dyslexia/`: prepends the owner's exact Communication rule, followed by one sentence that it overrides every other communication rule, to the system prompt through public
   `before_agent_start`. Self-contained and independently disableable in `pi config`; no host-file access.
   Tests: `test/extensions/RQW-dyslexia/`.
+- `extensions/RQW-live-tail/`: independent light screen. One public `registerMarkdownTransformer` replaces assistant text that is still streaming with «ответ готовится»; the finished answer, user text and thinking stay unchanged. No README; disable it alone in `pi config` (`[D-LIVE-TAIL]`). Tests: `test/extensions/RQW-live-tail/`.
 - `extensions/RQW-codex-compat/`: independent Codex compatibility on public Pi APIs only; no Pi source edit, full parity
   waits for a public Pi API. Offers Codex skill roots through `resources_discover`: `$CODEX_HOME/skills` and its `.system`,
   `~/.agents/skills`, `/etc/codex/skills` where the system has it (no other administrative config is read), project `.agents/skills` and, for trusted projects
