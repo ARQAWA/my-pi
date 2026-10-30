@@ -91,7 +91,7 @@ interface Building {
 
 /** Identity of a message across the saved branch and the stream. A custom message is saved as a `custom_message`
  * entry with a new timestamp (Pi `appendCustomMessageEntry`), so it is matched by type, display and content. */
-function messageKey(m: unknown): string | undefined {
+export function messageKey(m: unknown): string | undefined {
 	const r = record(m);
 	if (r.role === "custom") return `custom@${String(r.customType)}@${String(r.display)}@${JSON.stringify(r.content ?? null)}`;
 	if (typeof r.timestamp !== "number" && typeof r.timestamp !== "string") return undefined;
@@ -126,6 +126,62 @@ function timeline(entries: readonly SessionEntry[], live: LiveState, firstKeptEn
 		else out.push(m);
 	}
 	return out;
+}
+
+/** `42s` under a minute, `2m 03s` under an hour, then `1h 05m`; whole seconds are rounded first. */
+export function formatWorked(ms: number): string {
+	const seconds = Math.round(ms / 1000);
+	if (seconds < 60) return `${seconds}s`;
+	if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+	return `${Math.floor(seconds / 3600)}h ${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}m`;
+}
+
+/** A successful answer: stopped normally, with text and without tool calls. */
+function isFinal(m: unknown): boolean {
+	const r = record(m);
+	if (r.role !== "assistant" || r.stopReason !== "stop" || !Array.isArray(r.content)) return false;
+	const blocks = r.content.map(record);
+	return !blocks.some((b) => b.type === "toolCall") && blocks.some((b) => b.type === "text" && typeof b.text === "string" && b.text.trim() !== "");
+}
+
+/**
+ * The finished turns of the branch, keyed by the {@link messageKey} of each turn's final answer, with the header label:
+ * `worked for <time>` from the user message's timestamp to the saved entry of the answer, or `worked` without valid
+ * times. A turn runs from a user message to the next one; a compaction, a branch summary, a `!` command and the first
+ * kept entry of any compaction end it. Only a turn whose last assistant message is a successful answer is finished.
+ */
+export class TurnIndex {
+	readonly finals = new Map<string, string>();
+	private start: unknown;
+	private open = false;
+	private key: string | undefined;
+
+	append(entries: readonly SessionEntry[], kept = new Set<string>()): void {
+		const clear = () => { this.start = undefined; this.open = false; this.key = undefined; };
+		for (const e of entries) {
+			if (kept.has(e.id) || e.type === "compaction" || e.type === "branch_summary") clear();
+			if (e.type !== "message") continue;
+			const role = e.message.role;
+			if (role === "user") { clear(); this.open = true; this.start = e.message.timestamp; }
+			else if (role === "bashExecution") clear();
+			else if (role === "assistant" && this.open) {
+				if (this.key) this.finals.delete(this.key);
+				this.key = undefined;
+				const key = messageKey(e.message);
+				if (key && isFinal(e.message)) {
+					const ms = Date.parse(e.timestamp) - Number(this.start);
+					this.key = key;
+					this.finals.set(key, typeof this.start === "number" && Number.isFinite(ms) && ms >= 0 ? `worked for ${formatWorked(ms)}` : "worked");
+				}
+			}
+		}
+	}
+}
+
+export function buildTurns(entries: readonly SessionEntry[]): Map<string, string> {
+	const index = new TurnIndex();
+	index.append(entries, new Set(entries.flatMap((e) => e.type === "compaction" ? [e.firstKeptEntryId] : [])));
+	return index.finals;
 }
 
 /** The result fields the classifiers read, the same whether they come from a saved message or an event. */

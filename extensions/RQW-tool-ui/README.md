@@ -110,6 +110,34 @@ profiles and skills for the ordinary `agent` runtime.
   originals are unchanged.
 - Tests: run `node --test test/extensions/RQW-tool-ui/render.test.ts`.
 
+### Worked-for folds (`fold.ts`)
+
+- When a run has settled (`agent_settled`) and its turn ends in a successful final answer (stop reason `stop`, text,
+  no tool calls), everything Pi drew between the user message and that answer folds under one dim row, indented by
+  `outputPad`: `worked for 42s ›`. Open, the angle turns to `˅`. The user message and the final answer, with its
+  thinking, stay outside and unchanged. While the agent works, the live view is today's.
+- Time: from the user message's `timestamp` to the saved entry `timestamp` of the final answer, waiting and the time
+  Pi was closed included. Whole seconds are rounded first: `42s`, `1m 00s` (59.6 s), `2m 03s`, `1h 05m`; no space
+  before the unit. Without valid times the row reads `worked`.
+- A left click anywhere on the row opens or closes that fold only. Press, drag and copy stay Pi's text selection.
+  Ctrl+O keeps switching tool originals and Enter keeps sending; neither toggles a fold. No hints anywhere.
+- Open shows literally the rows from before the fold: the same components, renderers, colors, padding and blank rows,
+  with the current Ctrl+O and Ctrl+T state; the header sits right under the work's leading blank row.
+- Not folded: a turn whose last assistant message ended in error, abort or length; a turn without work; a turn cut by
+  a compaction or branch summary line, a `!` command or any compaction's first kept entry; Pi's inline mode (no mouse
+  there, so today's view). A later answer in the same turn (a wake-up after a child result) joins the same fold.
+- Old turns fold too: on resume, reload, rebuild and whatever history interval is loaded. Every newly drawn transcript
+  or interval starts closed; resize and redraws keep the open state.
+- Runtime patch under `[D-SCOPE-RUNTIME-PATCH]`, installed while the extension loads and removed on
+  `session_shutdown`: a wrapper on `InteractiveMode.prototype.addMessageToChat` finds the chat container; an O(1)
+  guard on that container's `render` binds again when the transcript's first child changes or after a settled run,
+  compaction or tree navigation. Bound components keep their place, order and identity, so Pi's own Ctrl+O and Ctrl+T
+  walks still reach them; they get an own `render` (hidden: nothing, without calling the original) and `handleMouse`
+  (the header row of the first one), both removed when unbound. Pi's Container and fullscreen renderer draw and route
+  the mouse as usual. Any other shape installs or binds nothing and keeps today's view.
+- Tests: `node --test test/extensions/RQW-tool-ui/fold.test.ts`, Pi's real InteractiveMode, Container and TuiAltScreen
+  over a fake terminal.
+
 ## On and off
 
 The extension is switched with Pi's package filter (`pi config`, or a `packages` entry with
@@ -117,10 +145,10 @@ The extension is switched with Pi's package filter (`pi config`, or a `packages`
 the transcript anew without this extension's resolver, so old and new tool calls look exactly as stock Pi draws them;
 switching it on again the same way brings the compact display back for the whole transcript.
 
-## No patch
+## Patches
 
-Public Pi extension and TUI APIs only: no fork or edit of Pi, no replacing or wrapping of Pi methods, no private
-fields, no deep imports. A feature that cannot be built that way is dropped and named as dropped. The one copy of Pi
-code is the expanded fallback formatting in `fallback.ts` (above), with the owner's approval.
+The tool rows use public Pi extension and TUI APIs only: no fork or edit of Pi, no deep imports. The one copy of Pi
+code is the expanded fallback formatting in `fallback.ts` (above), with the owner's approval. The worked-for folds are
+the one runtime patch (above), with shape checks and today's view as the fallback.
 
 RQW-tool-ui is registered in `package.json` `pi.extensions`, after RQW-agent-ui.
