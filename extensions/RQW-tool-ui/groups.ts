@@ -148,24 +148,41 @@ export interface TurnSpan {
 	label: string;
 }
 
-/** Successful answers close independent spans. Hard boundaries discard only the unfinished prefix; a kept suffix
- * can form its own span. Later tools never erase an earlier answer. Times use the first message, or delivered card. */
+/** Successful answers and kept-entry cuts close independent, boundary-local spans. Other hard boundaries discard
+ * unfinished work. Times use the first visible message or delivered card, including an assistant-only suffix. */
 export class TurnIndex {
 	readonly finals = new Map<string, TurnSpan>();
-	/** Saved message key -> the final answer of its complete, boundary-local span. No component references. */
+	/** Cut-local unfinished prefixes, keyed independently of the neighbouring interval. */
+	readonly prefixes = new Map<string, TurnSpan>();
+	/** Saved message key -> its boundary-local span. No component references. */
 	readonly members = new Map<string, string>();
 	/** Cards match by content and saved order, never their pre-delivery timestamp. Each occurrence has its entry ID. */
 	readonly cards = new Map<string, { key: string; position: number }[]>();
 	readonly positions = new Map<string, number>();
 	private position = 0;
 	private start: unknown;
+	private end = NaN;
 	private keys: string[] = [];
+
+	private span(end: number): TurnSpan {
+		const ms = end - Number(this.start);
+		return { label: typeof this.start === "number" && Number.isFinite(ms) && ms >= 0 ? `worked for ${formatWorked(ms)}` : "worked" };
+	}
 
 	append(entries: readonly SessionEntry[], kept: ReadonlySet<string> = new Set<string>()): void {
 		const clear = () => { this.start = undefined; this.keys = []; };
 		for (const e of entries) {
 			const position = this.position++;
-			if (kept.has(e.id) || e.type === "compaction" || e.type === "branch_summary") clear();
+			if (kept.has(e.id)) {
+				if (this.keys.length) {
+					const key = `cut@${e.id}`;
+					this.prefixes.set(key, this.span(this.end));
+					for (const member of this.keys) this.members.set(member, key);
+				}
+				clear();
+			}
+			if (e.type === "compaction" || e.type === "branch_summary") clear();
+			this.end = Date.parse(e.timestamp);
 			let message: unknown;
 			if (e.type === "custom_message" && e.display) message = { role: "custom", customType: e.customType, display: e.display, content: e.content, timestamp: Date.parse(e.timestamp) };
 			else if (e.type === "message") message = e.message;
@@ -184,8 +201,7 @@ export class TurnIndex {
 			} else this.positions.set(key, position);
 			if (this.keys.length === 0) this.start = r.timestamp;
 			if (isFinal(message)) {
-				const ms = Date.parse(e.timestamp) - Number(this.start);
-				this.finals.set(key, { label: typeof this.start === "number" && Number.isFinite(ms) && ms >= 0 ? `worked for ${formatWorked(ms)}` : "worked" });
+				this.finals.set(key, this.span(this.end));
 				for (const member of this.keys) this.members.set(member, key);
 				clear();
 			} else this.keys.push(key);

@@ -451,9 +451,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   an owner message; it ends with the final answer's saved entry timestamp. The preceding idle pause is excluded;
   waiting and closed Pi within the span count. Round whole seconds first: `42s`, `2m 03s`, `1h 05m`; no space before
   units; `worked` without valid times. Compaction lines, branch summaries, `!` commands and every `firstKeptEntryId`
-  are hard boundaries. An unfinished prefix stays visible; a local suffix may fold at its own successful answer,
-  using its own clock. No fold ever crosses a kept-entry cut, even when both intervals are loaded.
-  Not folded: an unfinished span ending in error, abort or length, a span without work, and inline mode (no mouse).
+  are hard boundaries. A prefix closed by a kept-entry cut folds independently, ending its clock at its last
+  saved entry before that cut. Without an owner or card, its first visible assistant work timestamp starts it.
+  The header remains `worked for <time>`, with the same formats. This applies to loaded intervals and the non-lazy
+  whole branch alike. A local suffix may fold at its own successful answer, using its own clock.
+  No fold ever crosses a kept-entry cut, even when both intervals are loaded.
+  Not folded: an unfinished span not closed by a kept-entry cut, a span without work, and inline mode (no mouse).
   A successful retry can fold earlier errors. Left click anywhere on the row toggles that fold only; press, drag and
   copy stay Pi's selection. Ctrl+O and Enter never toggle folds; no hints. Live view stays unchanged until settled.
   Restart, reload, rebuild and reloaded history intervals start closed; redraw and resize preserve open state.

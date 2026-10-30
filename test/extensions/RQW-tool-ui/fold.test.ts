@@ -324,7 +324,7 @@ it("does not lose earlier answers when a later tool, abort and a new prompt prec
 	assert.ok(m.row("second work card") < 0);
 });
 
-it("folds only the local suffix after a kept entry and restores its original rows", () => {
+it("folds the prefix and local suffix separately in the whole branch and restores their original rows", () => {
 	const m = mounted((s) => {
 		s.add(user("prompt before cut", 0), 0);
 		s.add(assistant([text("prefix stays visible")], "toolUse", 1_000), 1_000);
@@ -338,7 +338,11 @@ it("folds only the local suffix after a kept entry and restores its original row
 		host.chatContainer.clear();
 		(host as unknown as { renderSessionEntries(entries: readonly SessionEntry[]): void }).renderSessionEntries(m.session.manager.getBranch());
 	}
-	assert.ok(m.row("prompt before cut") >= 0 && m.row("prefix stays visible") >= 0);
+	assert.ok(m.row("prompt before cut") >= 0 && m.row("prefix stays visible") < 0);
+	assert.ok(m.row("worked for 1s ›") >= 0);
+	m.click(70, m.row("worked for 1s ›"));
+	assert.ok(m.row("prefix stays visible") > m.row("worked for 1s ˅"));
+	assert.ok(m.row("kept local work") < 0);
 	assert.ok(m.row("worked for 7s ›") >= 0 && m.row("kept local work") < 0);
 	assert.ok(m.row("local answer") > m.row("worked for 7s ›"));
 	m.click(70, m.row("worked for 7s ›"));
