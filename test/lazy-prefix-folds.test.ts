@@ -49,6 +49,7 @@ async function open(origin: "owner" | "card" | "work" = "owner", ms = 42_000, su
 		}
 		return resolve();
 	};
+	(fx.host.runtimeHost.session as any).resourceLoader = { getExtensions: () => ({ runtime: s.manager, extensions }) };
 	fx.host.renderInitialMessages();
 	for (const extension of extensions) for (const handler of extension.handlers.get("session_start") ?? []) await handler({}, ctx);
 	fx.frame();

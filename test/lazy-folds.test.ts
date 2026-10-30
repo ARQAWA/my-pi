@@ -34,6 +34,8 @@ function open(build?: (session: Session) => void) {
 	cleanups.push(() => fx.stop());
 	// The history host draws tool rows through Pi's own renderers; give it tool-ui's resolver.
 	(fx.host.runtimeHost.session as any).extensionRunner.resolveToolRenderers = (name: string, next: () => unknown) => loaded.resolve(name, next);
+	// Pi's loader result: tool-ui finds its host through the resolver it registered.
+	(fx.host.runtimeHost.session as any).resourceLoader = { getExtensions: () => ({ runtime: session.manager, extensions: [{ toolRenderers: [loaded.resolver()] }] }) };
 	fx.host.renderInitialMessages();
 	loaded.start(session.manager);
 	fx.frame();

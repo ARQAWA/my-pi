@@ -20,8 +20,8 @@ The theme is distributed separately through `pi.themes`, not as an extension.
 
 - `index.ts` registers one tool renderer resolver and the public events the groups need: `session_start`,
   `session_shutdown`, `session_compact`, `session_tree`, `message_start/update/end`, `tool_execution_start/update/end`
-  and `agent_end`. Only a session started in Pi's interactive TUI (`ctx.mode === "tui"`) keeps state; print, JSON and
-  RPC modes keep nothing and draw nothing (Pi resolves no tool renderers there).
+  and `agent_end`. Interactive history is prepared before Pi builds its components. Print, JSON and RPC modes keep
+  nothing and draw nothing (Pi resolves no tool renderers there).
 - The resolver gives every tool, known or not, `renderShell: "self"` renderers and keeps what comes after it
   (`next()`: another extension's renderers, else the tool's own, else nothing) as the original. Pi's shell choice is
   static per definition, so the original look is reproduced inside the self shell (below).
@@ -49,8 +49,9 @@ The theme is distributed separately through `pi.themes`, not as an extension.
 - Images: Pi appends a result's images to the tool row itself, outside the renderers. These renderers draw no image
   and change nothing of Pi's image output; a folded row with an image shows just Pi's image.
 - Groups come from the whole active branch, `ctx.sessionManager.getBranch()` (RQW-blocks lets Pi draw it all after a compaction, so calls before the compaction keep this view), plus the streaming state (`groups.ts`). The state is
-  reset on every `session_start` and dropped on `session_shutdown` (reload, session switch, quit); rows of the
-  transcript Pi rebuilds before `session_start` are redrawn once the session is known. No timers of its own.
+  prepared before `renderSessionEntries`, keyed by the live session and extension runtime. `session_start` does not
+  rebuild the groups. On shutdown, event data and session references are released while the old visible rows stay
+  intact until Pi replaces the transcript or stops. No timers of its own.
 - Accepted limit: every model step with thinking keeps Pi's own blank row and, while thinking is hidden, its label row;
   this extension cannot remove them.
 
@@ -147,9 +148,9 @@ profiles and skills for the ordinary `agent` runtime.
 - Delivered custom cards match by type, display, content and saved order between normal-message anchors. Each
   occurrence uses its persisted entry ID, so identical cards in different spans stay independent. The live card's
   send timestamp need not equal its entry's persistence timestamp; matching never depends on that equality.
-- Runtime patch under `[D-SCOPE-RUNTIME-PATCH]`, installed while the extension loads and removed on
-  `session_shutdown`: a wrapper on `InteractiveMode.prototype.addMessageToChat` records whole message bundles and
-  finds the chat container; an O(1)
+- Runtime patch under `[D-SCOPE-RUNTIME-PATCH]`: wrappers on `InteractiveMode` prepare the current resolver's
+  session before history construction and record whole message bundles. A live theme getter is independent of the old
+  session context. Shutdown freezes the visible bindings; replacing history or stopping the host releases them. An O(1)
   guard on that container's `render` binds again when the transcript's first child changes or after a settled run,
   compaction or tree navigation. Bound components keep their place, order and identity, so Pi's own Ctrl+O and Ctrl+T
   walks still reach them; they get an own `render` (hidden: nothing, without calling the original) and `handleMouse`.
@@ -172,8 +173,8 @@ switching it on again the same way brings the compact display back for the whole
 
 ## Patches
 
-The tool rows use public Pi extension and TUI APIs only: no fork or edit of Pi, no deep imports. The one copy of Pi
-code is the expanded fallback formatting in `fallback.ts` (above), with the owner's approval. The worked-for folds are
-the one runtime patch (above), with shape checks and today's view as the fallback.
+The tool rows use Pi extension and TUI APIs. The early history and worked-for hooks patch Pi 1.4.0 in memory,
+with shape checks and stock rendering on an incompatible host. There is no fork, installed-file edit or deep import.
+The one copy of Pi code is the expanded fallback formatting in `fallback.ts` (above), with the owner's approval.
 
 RQW-tool-ui is registered in `package.json` `pi.extensions`, after RQW-agent-ui.

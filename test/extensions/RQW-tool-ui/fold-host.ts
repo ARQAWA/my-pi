@@ -1,12 +1,21 @@
 // A minimal InteractiveMode: Pi's real prototype methods on a plain object, with a real SessionManager, Container and
 // TuiAltScreen over a fake terminal; the RQW-tool-ui extension loaded through a fake extension API.
-import { mock } from "node:test";
+import { afterEach, mock } from "node:test";
 import { initTheme, InteractiveMode, SessionManager, type Theme } from "@earendil-works/pi-coding-agent";
 import { Container, stripTerminalSequences, type Terminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import toolUi from "../../../extensions/RQW-tool-ui/index.ts";
 
+const hosts: any[] = [];
+afterEach(() => {
+	for (const host of hosts.splice(0)) {
+		try { host.stop("none"); } catch { /* The minimal host omits unrelated shutdown services. */ }
+	}
+});
+
 initTheme();
 export const theme = (globalThis as Record<symbol, unknown>)[Symbol.for("@earendil-works/pi-coding-agent:theme")] as Theme;
+/** The host's theme is the global one, which other test files replace with `initTheme`; read it when drawing. */
+export const liveTheme = () => (globalThis as Record<symbol, unknown>)[Symbol.for("@earendil-works/pi-coding-agent:theme")] as Theme;
 
 const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 export const user = (text: string, timestamp: number) => ({ role: "user", content: text, timestamp });
@@ -55,6 +64,7 @@ export class Session {
 export interface Loaded {
 	handlers: Map<string, (event?: unknown, ctx?: unknown) => unknown>;
 	resolve: (name: string, next: () => unknown) => unknown;
+	resolver(): (name: string, next: () => unknown) => unknown;
 	/** Start the TUI session as Pi does after drawing the transcript. */
 	start(manager: SessionManager): void;
 	shutdown(): void;
@@ -71,6 +81,7 @@ export function load(): Loaded {
 	return {
 		handlers,
 		resolve: (name, next) => resolve(name, next),
+		resolver: () => resolve,
 		start: (manager) => handlers.get("session_start")!({}, { mode: "tui", hasUI: true, sessionManager: manager, ui: { theme } }),
 		shutdown: () => handlers.get("session_shutdown")!(),
 	};
@@ -139,6 +150,7 @@ export function makeHost(manager: SessionManager, loaded: Loaded | undefined, re
 		showStatus() {},
 		renderProjectTrustWarningIfNeeded() {},
 		runtimeHost: { session: {
+			resourceLoader: { getExtensions: () => ({ runtime: manager, extensions: loaded ? [{ toolRenderers: [loaded.resolver()] }] : [] }) },
 			sessionManager: manager,
 			settingsManager: { getShowTerminalProgress: () => false, getShowCacheMissNotices: () => false, getShowImages: () => false, getImageWidthCells: () => 60, getCodeBlockIndent: () => "  ", setHideThinkingBlock() {} },
 			modelRuntime: {}, thinkingLevel: "off", retryAttempt: 0,
@@ -146,5 +158,6 @@ export function makeHost(manager: SessionManager, loaded: Loaded | undefined, re
 			getToolDefinition: () => undefined,
 		} },
 	});
+	hosts.push(host);
 	return host;
 }

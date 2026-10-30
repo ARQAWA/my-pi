@@ -57,6 +57,8 @@ interface Bound {
 
 export class Folds {
 	private host: Host | undefined;
+	private frozen = false;
+	private pad = 1;
 	private chat: Chat | undefined;
 	private guard: ((this: Chat, width: number) => string[]) | undefined;
 	private guardPrev: PropertyDescriptor | undefined;
@@ -128,7 +130,7 @@ export class Folds {
 		try {
 			const theme = this.theme?.();
 			if (!theme) { fold.disabled = true; return undefined; }
-			const pad = typeof this.host?.outputPad === "number" ? Math.max(0, this.host.outputPad) : 1;
+			const pad = this.host && typeof this.host.outputPad === "number" ? Math.max(0, this.host.outputPad) : this.pad;
 			const c = fold.cache;
 			const same = c && c.width === width && c.theme === theme && c.pad === pad && c.open === fold.open && c.revision === fold.revision;
 			if (same && c.lines === lines) return c.rows;
@@ -187,17 +189,29 @@ export class Folds {
 		const chat = host.chatContainer as Partial<Chat> | undefined;
 		if (!chat || !Array.isArray(chat.children) || typeof chat.render !== "function" || !Object.isExtensible(chat)) return;
 		this.host = host;
+		this.frozen = false;
+		this.pad = typeof host.outputPad === "number" ? Math.max(0, host.outputPad) : 1;
 		this.chat = chat as Chat;
 		this.guardPrev = Object.getOwnPropertyDescriptor(chat, "render");
 		const folds = this;
 		const prev = this.guardPrev?.value as Renders["render"] | undefined;
 		// A cleared or reloaded transcript has a new first child; new turns bump the version.
 		const guard = function (this: Chat, width: number): string[] {
-			if (folds.chat === this && (this.children[0] !== folds.first || folds.version !== folds.seen)) folds.bind();
+			if (!folds.frozen && folds.chat === this && (this.children[0] !== folds.first || folds.version !== folds.seen)) folds.bind();
 			return (prev ?? (Object.getPrototypeOf(this) as Renders).render).call(this, width);
 		};
 		this.guard = guard;
 		chat.render = guard;
+	}
+
+	/** Keep the displayed bindings, but release the old session until Pi replaces the transcript. */
+	freeze(): void {
+		this.frozen = true;
+		this.host = undefined;
+		this.index = undefined;
+		this.leaf = undefined;
+		this.keys = new WeakMap();
+		this.users = new WeakSet();
 	}
 
 	/** Forget the container and every binding. */
@@ -209,6 +223,7 @@ export class Folds {
 			else delete (chat as Partial<Chat>).render;
 		}
 		this.host = this.chat = this.guard = this.guardPrev = undefined;
+		this.frozen = false;
 		this.first = undefined;
 		this.index = undefined;
 		this.leaf = undefined;
