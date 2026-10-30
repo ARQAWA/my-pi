@@ -405,20 +405,41 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
   > Так, насчёт свёртывания заебись. Я посмотрел макет, но когда я кликнул на него, там развернулась какая-то залупа. А разворачиваться должно буквально то же самое, что было свёрнуто, блядь.
 
-  Once a turn has a successful final answer (stop, text, no tool calls) and the run has settled, every component
-  Pi drew between the user message and that answer folds under one dim row `worked for 42s ›`, `2m 03s`, `1h 05m`
-  (whole seconds rounded first; `worked` without valid times); open, `˅`. A left click anywhere on that row toggles
-  that fold only; press, drag and copy stay Pi's selection. Open shows literally the rows from before the fold, with
-  the current Ctrl+O and Ctrl+T state; Ctrl+O and Enter never toggle folds; no hints. The final answer and the user
-  message stay outside, unchanged. Time runs from the user message's timestamp to the saved entry of the final
-  answer, waiting and closed Pi included. Not folded: a turn ending in error, abort or length, a turn without work,
-  a turn cut by a compaction line, branch summary, `!` command or any compaction's first kept entry, and Pi's inline
-  mode (no mouse). A second answer in the same turn joins one fold. Folds start closed after a restart, reload,
-  rebuild or a reloaded history interval. Runtime patch under `[D-SCOPE-RUNTIME-PATCH]`: a wrapper on
-  `InteractiveMode.prototype.addMessageToChat` finds the chat container, an O(1) guard on its `render` rebinds on a
-  new transcript or a settled run, and fold members get own `render`/`handleMouse` that return nothing when hidden;
-  another shape keeps today's view.
-  Carriers: `extensions/RQW-tool-ui/{fold,groups,index}.ts`, its README, `test/extensions/RQW-tool-ui/fold.test.ts`.
+  New owner order, verbatim:
+  > Надо сворачивать так же, как это делает кодекс APP. Как делает кодекс APP? Он делает следующим образом: он сворачивает всё, что было от твоего сообщения до твоего сообщения. Ты дал response, и после этого response он показывает все мои сообщения, которые я написал до твоего response, и потом показывает worked for и твой конечный response. А когда ты нажимаешь «развернуть», то он восстанавливает, как это выглядело механически правильно. Не знаю, понятно объяснил или нет.
+
+  Owner acceptance, verbatim: «1», choosing the coordinator's option
+  «рекомендую: да, 6 sp, с обеими рекомендациями».
+  Accepted clock recommendation: «часы идут от твоего сообщения. если тебя нет, от карточки агента. пауза перед ними не считается.»
+  Accepted cut recommendation: «кусок после линии сжатия тоже сворачивать. сейчас он остаётся открытым.»
+
+  Each successful final answer (stop, text, no tool calls) closes an independent span after the run settles.
+  Earlier answers, including questions, stay outside later folds; later tools and notifications never remove them.
+  User messages no longer split spans. The closed fold lifts every owner user message, in order, above one dim
+  `worked for 42s ›` row and the final answer. Agent cards and tools fold. Open, `˅`, restores exactly the original
+  rows and user positions, with the current Ctrl+O and Ctrl+T state.
+  Time starts with the span's first message timestamp, or a delivered card's saved timestamp when it starts without
+  an owner message; it ends with the final answer's saved entry timestamp. The preceding idle pause is excluded;
+  waiting and closed Pi within the span count. Round whole seconds first: `42s`, `2m 03s`, `1h 05m`; no space before
+  units; `worked` without valid times. Compaction lines, branch summaries, `!` commands and every `firstKeptEntryId`
+  are hard boundaries. An unfinished prefix stays visible; a local suffix may fold at its own successful answer,
+  using its own clock. No fold ever crosses a kept-entry cut, even when both intervals are loaded.
+  Not folded: an unfinished span ending in error, abort or length, a span without work, and inline mode (no mouse).
+  A successful retry can fold earlier errors. Left click anywhere on the row toggles that fold only; press, drag and
+  copy stay Pi's selection. Ctrl+O and Enter never toggle folds; no hints. Live view stays unchanged until settled.
+  Restart, reload, rebuild and reloaded history intervals start closed; redraw and resize preserve open state.
+  Runtime patch under `[D-SCOPE-RUNTIME-PATCH]`: `InteractiveMode.prototype.addMessageToChat` records message
+  bundles and finds the chat container; its O(1) render guard rebinds on a new transcript or settled run.
+  Components keep place, order and identity; hidden members return without original render. No timers.
+  An unexpected shape keeps today's view.
+  The header owner caches original user/skill bundle rows and their mouse transforms; source updates invalidate
+  that cache. Closed messages appear once above the header, including a sole owner message after an agent card.
+  Opening removes the projection and restores their original order without moving any components.
+  Every loaded interval binds separately, including local suffixes after older cuts. Source-update wrappers and
+  lifted-row references are released on unload. Own and inherited descriptors are checked before wrapping; an
+  unsupported component leaves its entire span visible. Skill-dollar compatibility is tested without a product import.
+  Carriers: `extensions/RQW-tool-ui/{fold,groups,index}.ts`, its README, `test/extensions/RQW-tool-ui/fold.test.ts`,
+  `test/lazy-folds.test.ts` and `test/worked-for-skills.test.ts`.
 
 ## Agent cards
 

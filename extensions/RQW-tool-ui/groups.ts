@@ -144,36 +144,51 @@ function isFinal(m: unknown): boolean {
 	return !blocks.some((b) => b.type === "toolCall") && blocks.some((b) => b.type === "text" && typeof b.text === "string" && b.text.trim() !== "");
 }
 
-/**
- * The finished turns of the branch, keyed by the {@link messageKey} of each turn's final answer, with the header label:
- * `worked for <time>` from the user message's timestamp to the saved entry of the answer, or `worked` without valid
- * times. A turn runs from a user message to the next one; a compaction, a branch summary, a `!` command and the first
- * kept entry of any compaction end it. Only a turn whose last assistant message is a successful answer is finished.
- */
-export class TurnIndex {
-	readonly finals = new Map<string, string>();
-	private start: unknown;
-	private open = false;
-	private key: string | undefined;
+export interface TurnSpan {
+	label: string;
+}
 
-	append(entries: readonly SessionEntry[], kept = new Set<string>()): void {
-		const clear = () => { this.start = undefined; this.open = false; this.key = undefined; };
+/** Successful answers close independent spans. Hard boundaries discard only the unfinished prefix; a kept suffix
+ * can form its own span. Later tools never erase an earlier answer. Times use the first message, or delivered card. */
+export class TurnIndex {
+	readonly finals = new Map<string, TurnSpan>();
+	/** Saved message key -> the final answer of its complete, boundary-local span. No component references. */
+	readonly members = new Map<string, string>();
+	/** Cards match by content and saved order, never their pre-delivery timestamp. Each occurrence has its entry ID. */
+	readonly cards = new Map<string, { key: string; position: number }[]>();
+	readonly positions = new Map<string, number>();
+	private position = 0;
+	private start: unknown;
+	private keys: string[] = [];
+
+	append(entries: readonly SessionEntry[], kept: ReadonlySet<string> = new Set<string>()): void {
+		const clear = () => { this.start = undefined; this.keys = []; };
 		for (const e of entries) {
+			const position = this.position++;
 			if (kept.has(e.id) || e.type === "compaction" || e.type === "branch_summary") clear();
-			if (e.type !== "message") continue;
-			const role = e.message.role;
-			if (role === "user") { clear(); this.open = true; this.start = e.message.timestamp; }
-			else if (role === "bashExecution") clear();
-			else if (role === "assistant" && this.open) {
-				if (this.key) this.finals.delete(this.key);
-				this.key = undefined;
-				const key = messageKey(e.message);
-				if (key && isFinal(e.message)) {
-					const ms = Date.parse(e.timestamp) - Number(this.start);
-					this.key = key;
-					this.finals.set(key, typeof this.start === "number" && Number.isFinite(ms) && ms >= 0 ? `worked for ${formatWorked(ms)}` : "worked");
-				}
-			}
+			let message: unknown;
+			if (e.type === "custom_message" && e.display) message = { role: "custom", customType: e.customType, display: e.display, content: e.content, timestamp: Date.parse(e.timestamp) };
+			else if (e.type === "message") message = e.message;
+			else continue;
+			const r = record(message);
+			if (r.role === "bashExecution" || r.role === "compactionSummary" || r.role === "branchSummary") { clear(); continue; }
+			// Results live in the call's component, not a newly drawn row. They cannot start a suffix across a cut.
+			if (r.role !== "user" && r.role !== "assistant" && !(r.role === "custom" && r.display === true)) continue;
+			const sourceKey = messageKey(message);
+			if (!sourceKey) continue;
+			const key = e.type === "custom_message" ? `entry@${e.id}` : sourceKey;
+			if (e.type === "custom_message") {
+				const cards = this.cards.get(sourceKey) ?? [];
+				cards.push({ key, position });
+				this.cards.set(sourceKey, cards);
+			} else this.positions.set(key, position);
+			if (this.keys.length === 0) this.start = r.timestamp;
+			if (isFinal(message)) {
+				const ms = Date.parse(e.timestamp) - Number(this.start);
+				this.finals.set(key, { label: typeof this.start === "number" && Number.isFinite(ms) && ms >= 0 ? `worked for ${formatWorked(ms)}` : "worked" });
+				for (const member of this.keys) this.members.set(member, key);
+				clear();
+			} else this.keys.push(key);
 		}
 	}
 }
@@ -181,7 +196,7 @@ export class TurnIndex {
 export function buildTurns(entries: readonly SessionEntry[]): Map<string, string> {
 	const index = new TurnIndex();
 	index.append(entries, new Set(entries.flatMap((e) => e.type === "compaction" ? [e.firstKeptEntryId] : [])));
-	return index.finals;
+	return new Map([...index.finals].map(([key, span]) => [key, span.label]));
 }
 
 /** The result fields the classifiers read, the same whether they come from a saved message or an event. */

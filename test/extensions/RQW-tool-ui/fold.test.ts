@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, it } from "node:test";
-import { AssistantMessageComponent, type SessionEntry } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, UserMessageComponent, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { Folds, installFolds } from "../../../extensions/RQW-tool-ui/fold.ts";
 import { buildTurns, formatWorked } from "../../../extensions/RQW-tool-ui/groups.ts";
@@ -50,7 +50,7 @@ it("does not finish a turn that ends in an error or abort, and finishes a succes
 	s.add(assistant([text("ok")], "stop", 10_002), 15_000);
 	s.add(user("c", 20_000), 20_000);
 	s.add(assistant([text("cut")], "length", 20_001), 21_000);
-	assert.deepEqual(labels(s.manager.getBranch()), ["worked for 5s"]);
+	assert.deepEqual(labels(s.manager.getBranch()), ["worked for 15s"]);
 });
 
 it("ends turns at a compaction and at any compaction's first kept entry", () => {
@@ -63,8 +63,8 @@ it("ends turns at a compaction and at any compaction's first kept entry", () => 
 	s.compact(kept, 4_000);
 	s.add(user("b", 5_000), 5_000);
 	s.add(assistant([text("done b")], "stop", 6), 6_000);
-	// Turn a is split by its kept entry: it stays open; turn b is finished.
-	assert.deepEqual(labels(s.manager.getBranch()), ["worked for 1s"]);
+	// The kept suffix is independent: its clock starts at the kept assistant, not the older user.
+	assert.deepEqual(labels(s.manager.getBranch()), ["worked for 3s", "worked for 1s"]);
 });
 
 it("binds each finished turn between its user message and final answer", () => {
@@ -85,6 +85,16 @@ it("starts closed after a rebuild and stays open on a redraw", () => {
 it("binds no fold for a turn without work", () => {
 	const plain = open((s) => { s.add(user("hi", 0), 0); s.add(assistant([text("hello")], "stop", 1), 1_000); });
 	assert.ok(!plain.host.chatContainer.render(80).some((row) => row.includes("worked for")));
+});
+
+it("leaves two owner messages and a final answer without work exactly as Pi drew them", () => {
+	const m = mounted((s) => {
+		s.add(user("first owner without work", 0), 0);
+		s.add(user("second owner without work", 1_000), 1_000);
+		s.add(assistant([text("answer without work")], "stop", 2_000), 3_000);
+	});
+	assert.ok(m.row("worked for") < 0);
+	assert.deepEqual(m.host.chatContainer.render(80), m.stock.chatContainer.render(80));
 });
 
 it("binds no fold in Pi's inline mode, without fullscreen mouse reporting", () => {
@@ -154,6 +164,17 @@ it("does not render hidden components and gives them their own render back once 
 	host.rebuildChatFromMessages();
 	host.chatContainer.render(80);
 	assert.ok(members.every((m) => !Object.hasOwn(m, "render")));
+});
+
+it("keeps all rows visible if an inherited user update method cannot be wrapped", () => {
+	const prototype = UserMessageComponent.prototype;
+	const descriptor = Object.getOwnPropertyDescriptor(prototype, "rebuild")!;
+	Object.defineProperty(prototype, "rebuild", { ...descriptor, writable: false });
+	try {
+		const m = mounted((s) => s.turn(0, 0, 42));
+		assert.ok(m.row("worked for") < 0 && m.row("prompt 0") >= 0 && m.row("update 0") >= 0);
+		assert.deepEqual(m.host.chatContainer.render(80), m.stock.chatContainer.render(80));
+	} finally { Object.defineProperty(prototype, "rebuild", descriptor); }
 });
 
 it("leaves a foreign container shape visible and unchanged", () => {
@@ -259,22 +280,133 @@ it("keeps earlier turns and the user outside a live streamed fold", async () => 
 	for (const back of ["direct.ts", "live.ts"]) assert.ok(m.row(back) >= 0, back);
 });
 
-it("folds a late result and a second answer into the same user turn", () => {
+it("keeps each answer outside an independent fold and times a wake-up from its delivered card", () => {
 	const m = mounted((s) => {
 		s.add(user("prompt", 0), 0);
-		s.add(assistant([text("work")], "toolUse", 1), 1_000);
-		s.add(assistant([text("first answer")], "stop", 2), 5_000);
-		s.card("late child result", 8_000);
-		s.add(assistant([text("second answer")], "stop", 3), 12_000);
+		s.add(assistant([text("initial work")], "toolUse", 1_000), 1_000);
+		s.add(assistant([text("first answer")], "stop", 2_000), 5_000);
+		s.card("late child result", 60_000);
+		s.add(assistant([text("second answer")], "stop", 61_000), 64_000);
 	});
-	assert.ok(m.row("worked for 12s ›") >= 0 && m.row("second answer") >= 0);
-	assert.ok(m.row("first answer") < 0 && m.row("late child result") < 0);
-	m.click(1, m.row("worked for 12s ›"));
-	assert.ok(m.row("first answer") >= 0 && m.row("late child result") >= 0);
-	assert.equal(m.screen.frame().filter((row) => row.includes("worked for")).length, 1);
+	assert.ok(m.row("prompt") < m.row("worked for 5s ›"));
+	assert.ok(m.row("worked for 5s ›") < m.row("first answer"));
+	assert.ok(m.row("first answer") < m.row("worked for 4s ›"));
+	assert.ok(m.row("worked for 4s ›") < m.row("second answer"));
+	assert.ok(m.row("initial work") < 0 && m.row("late child result") < 0);
+	m.click(70, m.row("worked for 4s ›"));
+	assert.ok(m.row("late child result") > m.row("worked for 4s ˅"));
+	assert.ok(m.row("worked for 5s ›") >= 0);
+	m.click(70, m.row("worked for 5s ›"));
+	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
 });
 
-it("does not fold an unfinished earlier turn across an image-only user message", () => {
+it("does not lose earlier answers when a later tool, abort and a new prompt precede the next answer", () => {
+	const m = mounted((s) => {
+		s.add(user("first prompt", 0), 0);
+		s.add(assistant([text("first work")], "toolUse", 1_000), 1_000);
+		s.add(assistant([text("question for owner")], "stop", 2_000), 5_000);
+		s.card("second work card", 8_000);
+		s.add(assistant([text("second answer")], "stop", 9_000), 12_000);
+	});
+	m.click(70, m.row("worked for 5s ›"));
+	const add = (message: unknown, at: number) => {
+		m.session.add(message, at);
+		(m.host as unknown as { addMessageToChat(message: unknown): void }).addMessageToChat(message);
+	};
+	const card = m.session.card("new wake-up", 20_000);
+	const entry = m.session.manager.getEntry(card)! as { content: string; timestamp: string };
+	(m.host as unknown as { addMessageToChat(message: unknown): void }).addMessageToChat({ role: "custom", customType: "note", display: true, content: entry.content, timestamp: Date.parse(entry.timestamp) });
+	add(assistant([text("late tool work"), call("late", "late.ts")], "toolUse", 21_000), 21_000);
+	add(assistant([text("aborted work")], "aborted", 22_000), 22_000);
+	add(user("new prompt", 23_000), 23_000);
+	m.loaded.handlers.get("agent_settled")!();
+	for (const kept of ["worked for 5s ˅", "question for owner", "worked for 4s ›", "second answer", "new wake-up", "late tool work", "aborted work", "new prompt"]) assert.ok(m.row(kept) >= 0, kept);
+	assert.ok(m.row("second work card") < 0);
+});
+
+it("folds only the local suffix after a kept entry and restores its original rows", () => {
+	const m = mounted((s) => {
+		s.add(user("prompt before cut", 0), 0);
+		s.add(assistant([text("prefix stays visible")], "toolUse", 1_000), 1_000);
+		const kept = s.add(assistant([text("kept local work"), call("kept", "kept.ts")], "toolUse", 5_000), 5_000);
+		s.add(result("kept", "kept body", 6_000), 6_000);
+		s.add(assistant([text("local answer")], "stop", 7_000), 12_000);
+		s.compact(kept, 13_000);
+	});
+	// Show the whole saved branch without loading another extension; the cut remains a hard boundary.
+	for (const host of [m.stock, m.host]) {
+		host.chatContainer.clear();
+		(host as unknown as { renderSessionEntries(entries: readonly SessionEntry[]): void }).renderSessionEntries(m.session.manager.getBranch());
+	}
+	assert.ok(m.row("prompt before cut") >= 0 && m.row("prefix stays visible") >= 0);
+	assert.ok(m.row("worked for 7s ›") >= 0 && m.row("kept local work") < 0);
+	assert.ok(m.row("local answer") > m.row("worked for 7s ›"));
+	m.click(70, m.row("worked for 7s ›"));
+	assert.ok(m.row("kept local work") > m.row("worked for 7s ˅"));
+	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
+});
+
+for (const boundary of ["compaction", "branch summary", "! command"] as const) it(`keeps ${boundary} outside a local fold without an owner prompt`, () => {
+	const m = mounted((s) => {
+		const prompt = s.add(user("old prompt", 0), 0);
+		s.add(assistant([text("unfinished prefix")], "toolUse", 1_000), 1_000);
+		if (boundary === "compaction") s.compact(prompt, 2_000);
+		else if (boundary === "branch summary") s.manager.branchWithSummary(s.manager.getLeafId(), "branch boundary");
+		else s.add({ role: "bashExecution", command: "echo boundary", output: "boundary output", exitCode: 0, cancelled: false, excludeFromContext: false, timestamp: 2_000 }, 2_000);
+		s.card("post-boundary work", 3_000);
+		s.add(assistant([text("post-boundary answer")], "stop", 4_000), 7_000);
+	});
+	for (const host of [m.stock, m.host]) {
+		host.chatContainer.clear();
+		(host as unknown as { renderSessionEntries(entries: readonly SessionEntry[]): void }).renderSessionEntries(m.session.manager.getBranch());
+	}
+	assert.ok(m.row("old prompt") >= 0 && m.row("unfinished prefix") >= 0);
+	assert.ok(m.row("worked for 4s ›") >= 0 && m.row("post-boundary work") < 0);
+	assert.ok(m.row("post-boundary answer") > m.row("worked for 4s ›"));
+	const mark = boundary === "compaction" ? "Compacted" : boundary === "branch summary" ? "Branch" : "echo boundary";
+	assert.ok(m.row(mark) >= 0, mark);
+	m.click(70, m.row("worked for 4s ›"));
+	assert.ok(m.row("post-boundary work") > m.row("worked for 4s ˅"));
+	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
+});
+
+it("adds no empty fold between adjacent answers and leaves both as boundaries", () => {
+	const m = mounted((s) => {
+		s.add(user("prompt", 0), 0);
+		s.add(assistant([text("original work")], "toolUse", 1_000), 1_000);
+		s.add(assistant([text("question")], "stop", 2_000), 5_000);
+		s.add(assistant([text("additional answer")], "stop", 6_000), 7_000);
+	});
+	assert.ok(m.row("worked for 5s ›") >= 0 && m.row("original work") < 0);
+	assert.ok(m.row("question") > m.row("worked for 5s ›"));
+	assert.ok(m.row("additional answer") > m.row("question"));
+	assert.equal(m.screen.frame().filter(row => row.includes("worked for")).length, 1);
+});
+
+it("lifts all owner messages in order and restores their positions among the original work", () => {
+	const m = mounted((s) => {
+		s.add(user("first owner message", 0), 0);
+		s.add(assistant([text("work before steering")], "toolUse", 1_000), 1_000);
+		s.add(user("second owner message", 2_000), 2_000);
+		s.add(assistant([text("work after steering")], "toolUse", 3_000), 3_000);
+		s.add(assistant([text("final answer")], "stop", 4_000), 5_000);
+	});
+	assert.ok(m.row("first owner message") >= 0);
+	assert.ok(m.row("first owner message") < m.row("second owner message"));
+	assert.ok(m.row("second owner message") < m.row("worked for 5s ›"));
+	assert.ok(m.row("worked for 5s ›") < m.row("final answer"));
+	assert.ok(m.row("work before steering") < 0 && m.row("work after steering") < 0);
+	for (const owner of ["first owner message", "second owner message"]) {
+		assert.equal(m.screen.frame().filter(row => row.includes(owner)).length, 1, owner);
+	}
+	m.click(70, m.row("worked for 5s ›"));
+	assert.ok(m.row("first owner message") < m.row("work before steering"));
+	assert.ok(m.row("work before steering") < m.row("second owner message"));
+	assert.ok(m.row("second owner message") < m.row("work after steering"));
+	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
+});
+
+it("folds a multi-user span without inventing a row for an image-only prompt", () => {
 	const m = mounted((s) => {
 		s.add(user("earlier prompt", 0), 0);
 		s.add(assistant([text("unfinished work")], "toolUse", 1), 1_000);
@@ -282,8 +414,149 @@ it("does not fold an unfinished earlier turn across an image-only user message",
 		s.add(assistant([text("new work")], "toolUse", 3), 3_000);
 		s.add(assistant([text("new answer")], "stop", 4), 5_000);
 	});
-	assert.ok(m.row("unfinished work") >= 0);
-	assert.ok(m.row("worked for 3s ›") >= 0 && m.row("new work") < 0 && m.row("new answer") >= 0);
+	assert.ok(m.row("earlier prompt") >= 0 && m.row("unfinished work") < 0);
+	assert.ok(m.row("worked for 5s ›") >= 0 && m.row("new work") < 0 && m.row("new answer") >= 0);
+	m.click(70, m.row("worked for 5s ›"));
+	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
+});
+
+it("lifts a sole owner message sent after an agent card, without hiding or duplicating it", () => {
+	const m = mounted((s) => {
+		s.card("agent card before owner", 1_000);
+		s.add(user("sole owner message", 2_000), 2_000);
+		s.add(assistant([text("answer after owner")], "stop", 3_000), 5_000);
+	});
+	assert.ok(m.row("sole owner message") >= 0);
+	assert.ok(m.row("sole owner message") < m.row("worked for 4s ›"));
+	assert.ok(m.row("worked for 4s ›") < m.row("answer after owner"));
+	assert.ok(m.row("agent card before owner") < 0);
+	assert.equal(m.screen.frame().filter(row => row.includes("sole owner message")).length, 1);
+	m.click(70, m.row("worked for 4s ›"));
+	assert.ok(m.row("agent card before owner") < m.row("sole owner message"));
+	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
+});
+
+it("keeps closed lifted rows cached and invalidates them when an original user card changes", () => {
+	const m = mounted((s) => {
+		s.add(user("first cached owner", 0), 0);
+		s.add(assistant([text("hidden work")], "toolUse", 1_000), 1_000);
+		s.add(user("second cached owner", 2_000), 2_000);
+		s.add(assistant([text("cache answer")], "stop", 3_000), 5_000);
+	});
+	assert.ok(m.row("worked for 5s ›") >= 0);
+	const cards = m.host.chatContainer.children.filter(child => child instanceof UserMessageComponent);
+	const original = UserMessageComponent.prototype.render;
+	let renders = 0;
+	UserMessageComponent.prototype.render = function (width: number) { renders++; return original.call(this, width); };
+	try {
+		m.screen.frame();
+		m.screen.frame();
+		assert.equal(renders, 0);
+		cards[1].setOutputPad(3);
+		const changed = m.screen.frame();
+		assert.equal(renders, 2);
+		assert.equal(changed.find(row => row.includes("second cached owner"))?.indexOf("second cached owner"), 3);
+		m.screen.frame();
+		assert.equal(renders, 2);
+	} finally { UserMessageComponent.prototype.render = original; }
+});
+
+it("places the click target after wrapped lifted rows and keeps owner clicks separate after resize", () => {
+	const m = mounted((s) => {
+		s.add(user("first owner", 0), 0);
+		s.add(assistant([text("geometry work")], "toolUse", 1_000), 1_000);
+		s.add(user("steering ".repeat(12) + "end", 2_000), 2_000);
+		s.add(assistant([text("geometry answer")], "stop", 3_000), 5_000);
+	});
+	assert.ok(m.row("steering") < m.row("worked for 5s ›"));
+	m.screen.terminal.columns = 40;
+	m.click(30, m.row("steering"));
+	assert.ok(m.row("worked for 5s ›") >= 0 && m.row("geometry work") < 0);
+	m.click(39, m.row("worked for 5s ›"));
+	assert.ok(m.row("worked for 5s ˅") >= 0 && m.row("geometry work") >= 0);
+	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(40)), m.stock.chatContainer.render(40));
+});
+
+for (const ownerText of ["", "owner text after skill"]) it(`lifts a skill bundle and routes its original clicks ${ownerText ? "with text" : "without text"}`, () => {
+	const m = mounted((s) => {
+		s.add(user("first owner", 0), 0);
+		s.add(assistant([text("skill work")], "toolUse", 1_000), 1_000);
+		s.add(user('<skill name="sample" location="/skills/sample.md">\nunique skill body\n</skill>' + (ownerText ? "\n\n" + ownerText : ""), 2_000), 2_000);
+		s.add(assistant([text("skill answer")], "stop", 3_000), 5_000);
+	});
+	assert.ok(m.row("[skill]") >= 0 && m.row("[skill]") < m.row("worked for 5s ›"));
+	if (ownerText) assert.ok(m.row(ownerText) >= 0 && m.row(ownerText) < m.row("worked for 5s ›"));
+	m.host.setToolsExpanded(true);
+	assert.ok(m.row("unique skill body") >= 0 && m.row("unique skill body") < m.row("worked for 5s ›"));
+	m.host.setToolsExpanded(false);
+	assert.ok(m.row("unique skill body") < 0 && m.row("worked for 5s ›") >= 0);
+	m.click(2, m.row("[skill]"));
+	assert.ok(m.row("unique skill body") >= 0 && m.row("worked for 5s ›") >= 0);
+	m.stock.setToolsExpanded(true);
+	m.click(70, m.row("worked for 5s ›"));
+	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
+});
+
+it("matches a live delivered card to its saved entry despite different timestamps", () => {
+	const m = mounted(() => {});
+	const host = m.host as unknown as { addMessageToChat(message: unknown): void };
+	host.addMessageToChat({ role: "custom", customType: "note", display: true, content: "delayed card", timestamp: 1_000 });
+	assert.ok(m.row("delayed card") >= 0);
+	m.session.card("delayed card", 3_000);
+	const answer = assistant([text("answer immediately after card")], "stop", 4_000);
+	m.session.add(answer, 7_000);
+	host.addMessageToChat(answer);
+	const before = m.host.chatContainer.render(80);
+	m.loaded.handlers.get("agent_settled")!();
+	assert.ok(m.row("worked for 4s ›") >= 0 && m.row("delayed card") < 0);
+	assert.ok(m.row("answer immediately after card") > m.row("worked for 4s ›"));
+	m.click(70, m.row("worked for 4s ›"));
+	assert.ok(m.row("delayed card") > m.row("worked for 4s ˅"));
+	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), before);
+});
+
+it("matches repeated delayed cards by saved order without joining their answer spans", () => {
+	const m = mounted(() => {});
+	const host = m.host as unknown as { addMessageToChat(message: unknown): void };
+	for (const [sent, saved, end, label] of [[1_000, 3_000, 7_000, "4s"], [10_000, 13_000, 20_000, "7s"]] as const) {
+		host.addMessageToChat({ role: "custom", customType: "note", display: true, content: "identical delayed card", timestamp: sent });
+		assert.ok(m.row("identical delayed card") >= 0);
+		m.session.card("identical delayed card", saved);
+		const answer = assistant([text(`answer ${label}`)], "stop", end - 1_000);
+		m.session.add(answer, end);
+		host.addMessageToChat(answer);
+		m.loaded.handlers.get("agent_settled")!();
+		assert.ok(m.row(`worked for ${label} ›`) >= 0 && m.row("identical delayed card") < 0);
+	}
+	m.click(70, m.row("worked for 7s ›"));
+	assert.equal(m.screen.frame().filter(row => row.includes("identical delayed card")).length, 1);
+	assert.ok(m.row("worked for 4s ›") >= 0);
+	m.click(70, m.row("worked for 4s ›"));
+	assert.equal(m.screen.frame().filter(row => row.includes("identical delayed card")).length, 2);
+	assert.ok(m.row("answer 4s") < m.row("worked for 7s ˅"));
+});
+
+it("rebuilds only the selected branch with closed folds and lifted steering", () => {
+	let fork = "";
+	const m = mounted((s) => {
+		s.turn(0, 0, 42);
+		fork = s.manager.getLeafId()!;
+		s.turn(1, 100_000, 7);
+	});
+	m.click(70, m.row("worked for 42s ›"));
+	m.session.manager.branch(fork);
+	m.session.add(user("branch owner", 200_000), 200_000);
+	m.session.add(assistant([text("branch work")], "toolUse", 201_000), 201_000);
+	m.session.add(user("branch steering", 202_000), 202_000);
+	m.session.add(assistant([text("branch answer")], "stop", 203_000), 205_000);
+	m.host.rebuildChatFromMessages();
+	m.loaded.handlers.get("session_tree")!();
+	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("worked for 5s ›") >= 0);
+	assert.ok(m.row("answer 1") < 0 && m.row("prompt 1") < 0 && m.row("branch work") < 0);
+	assert.ok(m.row("branch owner") >= 0 && m.row("branch owner") < m.row("branch steering"));
+	assert.ok(m.row("branch steering") < m.row("worked for 5s ›"));
+	m.click(70, m.row("worked for 5s ›"));
+	assert.ok(m.row("branch owner") < m.row("branch work") && m.row("branch work") < m.row("branch steering"));
 });
 
 it("updates a settled turn from the new session tail without rereading the branch", () => {

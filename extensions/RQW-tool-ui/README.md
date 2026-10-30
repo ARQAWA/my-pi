@@ -112,31 +112,53 @@ profiles and skills for the ordinary `agent` runtime.
 
 ### Worked-for folds (`fold.ts`)
 
-- When a run has settled (`agent_settled`) and its turn ends in a successful final answer (stop reason `stop`, text,
-  no tool calls), everything Pi drew between the user message and that answer folds under one dim row, indented by
-  `outputPad`: `worked for 42s ›`. Open, the angle turns to `˅`. The user message and the final answer, with its
-  thinking, stay outside and unchanged. While the agent works, the live view is today's.
-- Time: from the user message's `timestamp` to the saved entry `timestamp` of the final answer, waiting and the time
-  Pi was closed included. Whole seconds are rounded first: `42s`, `1m 00s` (59.6 s), `2m 03s`, `1h 05m`; no space
-  before the unit. Without valid times the row reads `worked`.
+- Once a run settles (`agent_settled`), each successful final answer (stop reason `stop`, text, no tool calls)
+  closes its own span. Earlier answers, including questions to the owner, never enter a later fold. A later tool or
+  delivered agent notification never cancels their boundary. Work folds under one dim row, indented by `outputPad`:
+  `worked for 42s ›`. Open, the angle turns to `˅`. The final answer, with its thinking, stays outside and unchanged.
+  While the agent works, the live view is today's.
+- User messages no longer split spans. All owner messages, including skill-invocation bundles and messages sent
+  mid-work, appear in order above the closed header. Opening returns them to their original positions among the work.
+  A sole user arriving after an agent card is lifted too. Agent notification cards and tools fold.
+- The original user components and their spacers stay in `children`; only their rendered rows are projected by the
+  header owner. Closed rows are cached by width, theme, padding, open state and source revision. Original `invalidate`,
+  `setExpanded`, `setOutputPad` and `rebuild` calls invalidate their bundle's fold cache; stock Ctrl+O still reaches skills.
+  The cached source-row ranges route clicks back to the original user/skill component. The header's local row follows
+  those ranges, so wrapped messages and resize do not make owner rows into fold-toggle targets.
+- Time starts with the span's first message `timestamp`, or the saved entry `timestamp` of its first delivered card
+  when the span starts without an owner message. It ends with the final answer's saved entry `timestamp`. The idle
+  pause before that first message/card is excluded; waiting and closed Pi within the span count. Whole seconds are
+  rounded first: `42s`, `1m 00s` (59.6 s), `2m 03s`, `1h 05m`; no space before units. Invalid times give `worked`.
 - A left click anywhere on the row opens or closes that fold only. Press, drag and copy stay Pi's text selection.
   Ctrl+O keeps switching tool originals and Enter keeps sending; neither toggles a fold. No hints anywhere.
 - Open shows literally the rows from before the fold: the same components, renderers, colors, padding and blank rows,
-  with the current Ctrl+O and Ctrl+T state; the header sits right under the work's leading blank row.
-- Not folded: a turn whose last assistant message ended in error, abort or length; a turn without work; a turn cut by
-  a compaction or branch summary line, a `!` command or any compaction's first kept entry; Pi's inline mode (no mouse
-  there, so today's view). A later answer in the same turn (a wake-up after a child result) joins the same fold.
+  with the current Ctrl+O and Ctrl+T state. The header is inserted before the first component's content, preserving
+  its leading blank row when present. No original rows or blank rows are added, removed or trimmed.
+- Compaction and branch summary lines, `!` commands and every compaction's `firstKeptEntryId` are hard boundaries.
+  The unfinished prefix stays visible; the local suffix can fold at its own successful answer with its own clock.
+  A fold never crosses a kept-entry cut, even when both intervals are loaded. A wake-up without a new user message
+  can have its own fold. Not folded: an unfinished span ending in error, abort or length; a span without work; inline
+  mode (no mouse, today's view). A successful retry can fold earlier errors within its own span.
 - Old turns fold too: on resume, reload, rebuild and whatever history interval is loaded. Every newly drawn transcript
   or interval starts closed; resize and redraws keep the open state.
+- Delivered custom cards match by type, display, content and saved order between normal-message anchors. Each
+  occurrence uses its persisted entry ID, so identical cards in different spans stay independent. The live card's
+  send timestamp need not equal its entry's persistence timestamp; matching never depends on that equality.
 - Runtime patch under `[D-SCOPE-RUNTIME-PATCH]`, installed while the extension loads and removed on
-  `session_shutdown`: a wrapper on `InteractiveMode.prototype.addMessageToChat` finds the chat container; an O(1)
+  `session_shutdown`: a wrapper on `InteractiveMode.prototype.addMessageToChat` records whole message bundles and
+  finds the chat container; an O(1)
   guard on that container's `render` binds again when the transcript's first child changes or after a settled run,
   compaction or tree navigation. Bound components keep their place, order and identity, so Pi's own Ctrl+O and Ctrl+T
-  walks still reach them; they get an own `render` (hidden: nothing, without calling the original) and `handleMouse`
-  (the header row of the first one), both removed when unbound. Pi's Container and fullscreen renderer draw and route
-  the mouse as usual. Any other shape installs or binds nothing and keeps today's view.
-- Tests: `node --test test/extensions/RQW-tool-ui/fold.test.ts`, Pi's real InteractiveMode, Container and TuiAltScreen
-  over a fake terminal.
+  walks still reach them; they get an own `render` (hidden: nothing, without calling the original) and `handleMouse`.
+  Lifted components also get source-update wrappers. All wrappers and cached source references are removed when unbound. Pi's Container and fullscreen renderer draw and route
+  the mouse as usual. Own and inherited descriptors are checked before any wrappers are installed. Any other shape
+  installs or binds nothing and keeps today's view.
+- Tests: `test/extensions/RQW-tool-ui/fold.test.ts`, Pi's real InteractiveMode, Container and TuiAltScreen over a fake
+  terminal, including selected-branch rebuilds and unsupported inherited component methods. `test/lazy-folds.test.ts`
+  covers local suffixes through two kept-entry cuts, lifted owners, repeated identical cards, interval reload and
+  released source-update wrappers. `test/worked-for-skills.test.ts` loads skill-dollar only in a root compatibility
+  fixture: linked multi-skill user cards, skill-only cards, Ctrl+O/Ctrl+T, exact expanded originals, rebuild and inline.
+  Run: `npm run check -- --typecheck --test 'test/extensions/RQW-tool-ui/*.test.ts' test/lazy-folds.test.ts test/worked-for-skills.test.ts`.
 
 ## On and off
 
