@@ -2,11 +2,22 @@
 // loader with only Pi's own aliases and those dependencies.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { it } from "node:test";
+
+// Not fs.cpSync: on Windows Node 22.19.0 it kills the process with 0xC0000409 when the source path has Cyrillic letters.
+function copyTree(from: string, to: string, skip: (name: string) => boolean = () => false) {
+	mkdirSync(to, { recursive: true });
+	for (const entry of readdirSync(from, { withFileTypes: true })) {
+		if (skip(entry.name)) continue;
+		const source = join(from, entry.name), target = join(to, entry.name);
+		if (entry.isDirectory()) copyTree(source, target, skip);
+		else copyFileSync(source, target);
+	}
+}
 
 it("every pi.extensions entry loads from a copy with production dependencies only", async () => {
 	const root = new URL("../", import.meta.url);
@@ -14,12 +25,9 @@ it("every pi.extensions entry loads from a copy with production dependencies onl
 	const manifest = JSON.parse(readFileSync(new URL("package.json", root), "utf8")) as { dependencies: Record<string, string>; pi: { extensions: string[] } };
 	const copy = mkdtempSync(join(tmpdir(), "rqw-installed-"));
 	try {
-		cpSync(join(source, "extensions"), join(copy, "extensions"), {
-			recursive: true,
-			filter: path => !/(?:^|[\\/])node_modules(?:[\\/]|$)/.test(path.slice(source.length)),
-		});
+		copyTree(join(source, "extensions"), join(copy, "extensions"), name => name === "node_modules");
 		for (const name of Object.keys(manifest.dependencies)) {
-			cpSync(join(source, "node_modules", name), join(copy, "node_modules", name), { recursive: true });
+			copyTree(join(source, "node_modules", name), join(copy, "node_modules", name));
 		}
 		const home = join(copy, "home");
 		mkdirSync(home);
