@@ -24,6 +24,17 @@ Provenance:
 - Only the quoted lines are copied from the sessions; no full transcript and no credential is copied into this
   repository.
 
+## Command cleanup
+
+- **Remove conflicting command entrances** `[D-COMMAND-CLEANUP]`. `RQW-commands` removes Pi's `/model`, `/thinking`, `/tree`, `/scoped-models`, `/share`, `/bug` and built-in llama from interactive suggestions and submission, and hides only RQW-session's `/session-deleted` suggestion. Other implementations and service execution remain. Pi's built-in command precedence stays. Shortcuts and menus are a separate, not yet ordered task. The checked runtime patch falls back to stock on incompatible Pi internals.
+  Owner: «надо команды лишние коттрые конфликтуют с нашим харнесом выпилить нахуй через рантайм патч что бы они нам рабоатть не мешали составь аналитику и проект работы и открой мне его, спланируй на минимум сторей (в идеале на 1)».
+  Owner: «убираем трии, финкинг убираем модел убираем».
+  Owner: «да делай + к этому надо вырубить эти хоткеи шифт таб, ктрл л и ктрл п и шифт ктрл п».
+  Owner: «три убирай».
+  Design: `my-pi-evidence/designs/command-cleanup/DESIGN.md`.
+  Reason: remove conflicting interactive command entrances without editing Pi.
+  Carriers: `extensions/RQW-commands/`, `package.json`, `test/extensions/RQW-commands/`.
+
 ## History edit
 
 - **Edit the current session** `[D-HISTORY-EDIT]`. Double Escape opens the current branch's user messages. Enter selects a message; Escape returns to the list without changing history. Enter on the edited text permanently removes the selected message and all other paths after keeping the path before it, then sends the edited text. Existing fork files and subagent directories are untouched; delivered results are not repeated. A running subagent or a session without a file prevents the edit. `/edit-history` is the approved service command and is visible in Pi's command list. Only public Pi APIs are used.
