@@ -87,6 +87,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   message; elsewhere Escape stays stock. Contract and limits: `DECISIONS.md` section Scroll. Tests: `npm test`.
 - `extensions/RQW-commands/`: independently removes six built-in command entrances and built-in llama, hides RQW-session's service command, disables four model and thinking actions, and filters settings and logout menus. Runtime patch with stock fallback; tests: `test/extensions/RQW-commands/`.
 - `extensions/RQW-session/`: extension 11, independent `/copy-session`, `/remove` (stock-identical: confirm, fresh session, then trash-else-unlink of the JSONL only) and `/cleanup` (deletes `.jsonl.children` trees whose JSONL is gone) commands.
+  Also a runtime patch of `SessionManager.list`/`listAll` for a fast `/resume` list: reverse scan for the name, file size in the row instead of the message count, no message-text search (`[D-SESSION-FAST-LIST]`).
   Cleanup boundaries and limitations: `extensions/RQW-session/README.md`. Tests: `npm test`.
 - `extensions/RQW-send-now/`: extension 12, Enter on an empty editor while steering is queued interrupts the turn and
   sends the queue at once, as in oh-my-pi. Public Pi API only, no custom editor. Behavior and limits:

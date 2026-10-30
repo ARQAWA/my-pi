@@ -1,6 +1,6 @@
 # RQW-session
 
-Independent session commands (`/copy-session`, `/remove`, `/cleanup`) for Pi 1.4.0. No tool, UI replacement, other-extension import or Pi patch.
+Independent session commands (`/copy-session`, `/remove`, `/cleanup`) and a fast `/resume` list for Pi 1.4.0. No tool, UI replacement or other-extension import. The only Pi patch is the list below.
 
 - `/copy-session`: copy the current ID and notify `Session ID copied: <id>`. Stock `/copy` still copies the last
   assistant message. Clipboard failures produce an error notification, not success.
@@ -30,6 +30,16 @@ Independent session commands (`/copy-session`, `/remove`, `/cleanup`) for Pi 1.4
   `newSession`; the command opens the session and sets the editor text in `withSession`. Because a deleted session is
   dead by design, `/cleanup` has no liveness logic.
 
+- Fast `/resume` list (`list.ts`): a runtime patch (`[D-SCOPE-RUNTIME-PATCH]`) of `SessionManager.list` and `listAll`.
+  No cache and no background work. Per file and per call: one `stat`, the header line, then 64 KB windows read from the end
+  until the last line starting `{"type":"session_info"`; only that line is parsed. Only a session without a name also
+  scans forward for its first user message. The date is the file's mtime. The row shows the size (`123 KB`, `2.2 MB`)
+  where Pi prints the message count, and `allMessagesText` is empty, so the search covers id, name and folder only.
+  `onProgress` is called once with the finished list. Stock runs when the shape differs (the sources must contain
+  `listSessionsFromDir`), for a relative or `~` directory, and on any error. The patch is removed on `session_shutdown`. Limits: `pi --resume` from the command line
+  opens the list before extensions load, so it stays stock; the age keeps Pi's form (`3d`). Measured on 30 real files
+  (317 MB, one folder of 239 MB), warm OS cache: stock 862 ms current folder and 1143 ms all; now 1.5 ms and 25 ms.
+
 **Limit:** `/remove` deletes only the JSONL, so its subagent tree stays until `/cleanup`.
 
 ## Clipboard on Windows / VDI
@@ -43,7 +53,7 @@ environment if the terminal/client requires and supports OSC 52. The extension d
 ## Switch off and proof
 
 Follow [INSTALL.md](../../INSTALL.md#switch-one-extension-off) with
-`-extensions/RQW-session/index.ts`, then `/reload` or restart. All three commands disappear without changing other
-extensions. Tests: `test/extensions/RQW-session/session.test.ts`, `test/isolation.test.ts`.
+`-extensions/RQW-session/index.ts`, then `/reload` or restart. All three commands and the fast list disappear without changing other
+extensions. The fast list is switched off with the same entry. Tests: `test/extensions/RQW-session/session.test.ts`, `list.test.ts`, `test/isolation.test.ts`.
 
 Decision and research: [DECISIONS.md](../../DECISIONS.md#session-commands).
