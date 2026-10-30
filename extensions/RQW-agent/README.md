@@ -281,6 +281,51 @@ it can be delivered before a final answer, never after it. Compaction and model 
 but preserve the counter. Later qualifying responses reach the next 50-step boundary normally. Ongoing ordinary
 turns do not invalidate an in-flight report. Provider failures and stale results never change final-result ownership.
 
+## Main-chat progress cards
+
+Only the top-level TUI caller also registers [main-progress.ts](main-progress.ts). Every 50 assistant responses with
+`stopReason: "toolUse"` and at least one tool call, without an assistant text update, start an independent summary.
+Parallel calls and codemode's nested calls count as one response. Any nonblank assistant text, including streamed
+text and text beside a tool call, resets the next counter. Owner input, job/child notifications, model selection and
+compaction do not reset it. A reached summary survives later text, a final answer and ordinary `agent_end`; only
+abort, session switch and shutdown cancel it. Slow requests can coexist and finish out of order. There is no timer,
+queue, replacement of earlier summaries or automatic retry between the next 50-step boundaries.
+
+The snapshot is taken at `message_end`, before its tools run. It contains the last 65 tool-call responses, or fewer
+when unavailable; the first two normal windows are 1–50 and 36–100. Current calls are `running`, not unmatched wire
+tool calls. Completed results are matched by call ID; running background jobs stay `running`. Bounded argument and
+output excerpts, omission counts and truncation markers keep the JSON input within 64 KiB and the model's input
+budget. Full outputs and the whole branch are never cloned or serialized. One parent-link walk from `getLeafEntry`
+through `getEntry(parentId)` runs at each reached threshold and on resume, never in a render frame. It stops at 65
+responses or the root, with no entry cap: O(k) visited entries and O(1) lookups, not O(65) entries on a sparse branch.
+
+An invisible `rqw-main-progress-counter-v1` custom entry every 50 tool-call responses stores `stepOrdinal`,
+`silentCount` and `sourceToolCallId`. Resume validates the persisted source response and applies only records after
+that source, not the source twice. It does not start old requests again. A crash before the source response was saved
+cannot advance the recovered count. A new session starts separately; child progress semantics are unchanged.
+
+The request uses public `ctx.modelRegistry.streamSimple`, the response's physical model and actual effort, with a
+separate abort signal and no main `sessionId`, hooks, tools or history. Codex uses its direct transport; Anthropic uses
+its registered subscription transport. This is a small standalone request, not the child's full cache fork. Native
+thinking/output limits and provider auth recovery remain intact. It spends extra subscription tokens; no cache hit
+is promised. Failures, invalid summaries and persistence errors are silent and never create error cards.
+
+The model returns one or two lowercase Russian paragraphs, up to four sentences each and seven words per sentence.
+Code validates this structured JSON, rejects control characters and unsafe sentence shapes, and renders each main
+sentence in bold as plain terminal text. `Progress update` and its step range are English. Gold label, muted range,
+steel left border and a theme-native card background distinguish it from an assistant answer. Expanded output keeps
+the same full card. It never changes editor state or injects a turn.
+
+`pi.appendEntry("rqw-main-progress-v1", ...)` plus `registerEntryRenderer` persist and render the card. Native `custom`
+entries never project to model messages, including compaction. Existing RQW-blocks history replays them on resume,
+`/reload` and compaction, loading older intervals lazily; no replay path or runtime patch is added here. Without
+RQW-blocks, stock Pi hides entries before its kept range, but their JSONL records remain. Without RQW-agent the renderer
+is absent and records remain intact. The existing worked-for fold rules are unchanged: cards can fold with the work,
+not act as always-visible boundaries. Cards delivered after a final answer remain at their delivery position.
+
+No automatic generation in print, JSON or RPC. Tests fake Pi and the model registry through the registration entry:
+`test/extensions/RQW-agent/main-progress.test.ts`. Decision: `[D-MAIN-PROGRESS]` in [DECISIONS.md](../../DECISIONS.md#agent).
+
 ## GPT Fast
 
 A child agent inherits its caller's GPT Fast state when it starts; a nested child

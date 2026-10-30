@@ -48,6 +48,8 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   Every 50 non-final tool-call responses without parent communication trigger an isolated background context-fork
   summary. The parent receives a notification and workflow skill reminder, never a subagent final answer; the child
   keeps working and its chat is unchanged. Contract: `DECISIONS.md` `[D-AGENT-PROGRESS]`.
+  The main TUI also gets saved, context-free `Progress update` cards every 50 silent tool-call responses, summarizing
+  the last 65 steps. Assistant text resets only the next count; existing worked-for folds stay unchanged (`[D-MAIN-PROGRESS]`).
   Imports nothing from another extension folder: subagents get RQW-tools only when
   RQW-tools is loaded and offers them on `pi.events` channel `rqw-tools:subagent-tools`, otherwise Pi's stock
   tools. Child background cache warming is off; Anthropic prompt caching uses built-in 5m (`DECISIONS.md`, Agent).
