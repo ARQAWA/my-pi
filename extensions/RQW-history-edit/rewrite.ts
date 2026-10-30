@@ -1,8 +1,8 @@
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, openSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 /** Keep the active path and preserve session-wide metadata and child records. */
-export function rewriteSession(pi: ExtensionAPI, ctx: ExtensionContext, path: string): Buffer {
+export function rewriteSession(pi: ExtensionAPI, ctx: ExtensionContext, path: string): void {
 	const manager = ctx.sessionManager;
 	const before = manager.getEntries();
 	const branch = manager.getBranch();
@@ -24,14 +24,26 @@ export function rewriteSession(pi: ExtensionAPI, ctx: ExtensionContext, path: st
 	pi.appendEntry("rqw-history-edit", { version: 1 });
 	const header = manager.getHeader();
 	if (!header) throw new Error("session header is missing");
-	const output = [header, ...manager.getBranch()].map(entry => JSON.stringify(entry)).join("\n") + "\n";
-	const original = readFileSync(path);
-	replaceSessionFile(path, output);
-	return original;
+	function* lines() {
+		yield `${JSON.stringify(header)}\n`;
+		for (const entry of manager.getBranch()) yield `${JSON.stringify(entry)}\n`;
+	}
+	replaceSessionFile(path, lines());
 }
 
-export function replaceSessionFile(path: string, content: string | Buffer): void {
+export function replaceSessionFile(path: string, content: string | Buffer | Iterable<string>): void {
 	const temporary = `${path}.rqw-edit-${process.pid}.tmp`;
-	writeFileSync(temporary, content);
-	renameSync(temporary, path);
+	try {
+		const fd = openSync(temporary, "w");
+		try {
+			if (typeof content === "string" || Buffer.isBuffer(content)) writeFileSync(fd, content);
+			else for (const line of content) writeFileSync(fd, line);
+		} finally {
+			closeSync(fd);
+		}
+		renameSync(temporary, path);
+	} catch (error) {
+		rmSync(temporary, { force: true });
+		throw error;
+	}
 }

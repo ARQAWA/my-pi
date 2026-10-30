@@ -17,7 +17,7 @@ it("refuses history editing while a child runs", async () => {
 	} as unknown as ExtensionAPI);
 	handlers.get("session_start")!({}, { mode: "print" });
 	await command("", { ui: { notify: (message: string) => notices.push(message) } });
-	assert.deepEqual(notices, ["дождись сабагентов"]);
+	assert.deepEqual(notices, ["Wait for subagents to finish."]);
 });
 
 it("double escape opens the current branch selector", async () => {

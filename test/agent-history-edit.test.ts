@@ -63,7 +63,7 @@ async function editHistory(parent: SessionManager, edited: string) {
 	assert.deepEqual(await hooks.get("input")!({ source: "interactive", text: "edited" }, ctx), { action: "handled" });
 	await new Promise(resolve => queueMicrotask(() => resolve(undefined)));
 	await committed;
-	assert.deepEqual(notices, ["enter обрежет историю. esc отменит правку"]);
+	assert.deepEqual(notices, ["Enter truncates history. Esc cancels the edit."]);
 }
 
 /** A parent session file with one finished child started after the user message `first`. */

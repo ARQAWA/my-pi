@@ -54,24 +54,27 @@ it("restores the original file when switching is cancelled", async () => {
 		const ctx = { isIdle: () => true, sessionManager: manager, ui: { notify: (message: string) => notices.push(message) },
 			navigateTree: async (id: string) => { if (id === "u") { branch = []; append("navigation", { value: 1 }); } else { branch = entries.slice(0, 3); } return { cancelled: false }; },
 			switchSession: async () => ({ cancelled: true }) } as unknown as ExtensionCommandContext;
-		assert.equal(await commitEdit(pi, ctx, "u", "new"), false);
+		assert.deepEqual(await commitEdit(pi, ctx, "u", "new"), { committed: false });
 		const appended = [
 			{ type: "custom", id: "n2", parentId: "v", customType: "rqw-history-edit", data: { version: 1 } },
-			{ type: "custom", id: "n3", parentId: null, customType: "navigation", data: { value: 1 } },
-			{ type: "custom", id: "n4", parentId: "n3", customType: "rqw-history-edit", data: { version: 1 } },
 		];
-		const expected = Buffer.concat([original, Buffer.from(appended.map(entry => `${JSON.stringify(entry)}\n`).join(""))]);
-		assert.deepEqual(readFileSync(path), expected);
-		assert.equal(manager.getLeafId(), "n2");
-		assert.deepEqual(notices, ["правка истории отменена"]);
+		const restored = readFileSync(path);
+		assert.deepEqual(restored.subarray(0, original.length), original);
+		const records = restored.subarray(original.length).toString().trim().split("\n").map(line => JSON.parse(line));
+		assert.deepEqual(records, appended);
+		const last = records.at(-1);
+		assert.ok(last);
+		assert.equal(last.parentId, "v");
+		assert.equal(last.id, manager.getLeafId());
+		assert.deepEqual(notices, ["History edit cancelled."]);
 	} finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 it("refuses editing without a session file", async () => {
 	const notices: string[] = [];
 	const ctx = { sessionManager: { getSessionFile: () => undefined }, ui: { notify: (message: string) => notices.push(message) } } as unknown as ExtensionCommandContext;
-	assert.equal(await commitEdit({} as ExtensionAPI, ctx, "u", "new"), false);
-	assert.deepEqual(notices, ["нет файла сессии. открой сохранённую сессию"]);
+	assert.deepEqual(await commitEdit({} as ExtensionAPI, ctx, "u", "new"), { committed: false });
+	assert.deepEqual(notices, ["No session file. Open a saved session first."]);
 });
 
 it("keeps edited text in the reopened session when sending fails", async () => {

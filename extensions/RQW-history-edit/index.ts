@@ -1,13 +1,25 @@
 import { UserMessageSelectorComponent, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { isKeyRelease, matchesKey, type TUI } from "@earendil-works/pi-tui";
-import { commitEdit } from "./commit.ts";
+import { commitEdit, type CommitResult } from "./commit.ts";
 
 type CountsSource = { version: number; snapshot(): { agents: number; reviews: number } };
 type Focused = { actionHandlers?: unknown; isShowingAutocomplete?(): boolean };
 type Renderer = TUI & { getFocusedComponent(): unknown };
 type Editing = { id: string; draft: string; images: ImageContent[] };
-type Pending = { id: string; text: string; images?: ImageContent[] };
+type Pending = { id?: string; text: string; images?: ImageContent[] };
+type EditState = {
+ editing?: Editing;
+ pending?: Pending;
+ retryRestore?: CommitResult["retryRestore"];
+ draft?: string;
+ inFlight?: boolean;
+ owner?: object;
+ ui?: ExtensionContext["ui"];
+ schedule?: () => void;
+};
+// Session replacement constructs a new extension instance. Only an active edit is handed over.
+const activeEdits = new Map<string, EditState>();
 
 function isCountsOffer(data: unknown): data is { version: number; source: CountsSource } {
 	if (typeof data !== "object" || data === null || !("version" in data) || !("source" in data)) return false;
@@ -20,8 +32,9 @@ function isCountsOffer(data: unknown): data is { version: number; source: Counts
 export default function historyEdit(pi: ExtensionAPI): void {
 	let counts: CountsSource | undefined;
 	let dispose: (() => void) | undefined;
-	let editing: Editing | undefined;
-	let pending: Pending | undefined;
+	let state: EditState = {};
+	let sessionPath: string | undefined;
+	const owner = {};
 	let lastEscape = 0;
 	let suppressedUntil = 0;
 	const accept = (source: CountsSource) => {
@@ -31,12 +44,12 @@ export default function historyEdit(pi: ExtensionAPI): void {
 		const draft = ctx.ui.getEditorText();
 		const selected = await selectMessage(ctx, initial);
 		if (!selected) return;
-		editing = { id: selected.id, draft, images: selected.images };
+		state.editing = { id: selected.id, draft, images: selected.images };
 		ctx.ui.setEditorText(selected.text);
-		ctx.ui.notify("enter обрежет историю. esc отменит правку", "info");
+		ctx.ui.notify("Enter truncates history. Esc cancels the edit.", "info");
 	};
 	const submit = (value: Pending) => {
-		pending = value;
+		state.pending = value;
 		queueMicrotask(() => pi.sendUserMessage("/edit-history", { expandPromptTemplates: true }));
 	};
 	pi.events.on("rqw:running-counts:offer", data => {
@@ -44,7 +57,11 @@ export default function historyEdit(pi: ExtensionAPI): void {
 	});
 	pi.on("session_start", (_event, ctx) => {
 		dispose?.();
-		editing = undefined;
+		sessionPath = ctx.sessionManager?.getSessionFile?.();
+		state = sessionPath ? activeEdits.get(sessionPath) ?? {} : {};
+		state.owner = owner;
+		state.ui = ctx.ui;
+		state.schedule = () => pi.sendUserMessage("/edit-history", { expandPromptTemplates: true });
 		counts = undefined;
 		lastEscape = 0;
 		suppressedUntil = 0;
@@ -60,18 +77,18 @@ export default function historyEdit(pi: ExtensionAPI): void {
 			if (isKeyRelease(data)) return;
 			const focused = tui?.getFocusedComponent() as Focused | undefined;
 			if (!(focused?.actionHandlers instanceof Map) || focused.isShowingAutocomplete?.()) return;
-			if (editing && matchesKey(data, "enter")) {
+			if ((state.editing || state.retryRestore) && matchesKey(data, "enter")) {
 				const text = ctx.ui.getEditorText();
 				if (text.startsWith("/") || text.startsWith("!")) {
-					submit({ id: editing.id, text, images: editing.images });
+					submit({ id: state.editing?.id, text, images: state.editing?.images });
 					return { consume: true };
 				}
 				return;
 			}
 			if (!matchesKey(data, "escape")) return;
-			if (editing) {
-				const old = editing;
-				editing = undefined;
+			if (state.editing) {
+				const old = state.editing;
+				state.editing = undefined;
 				ctx.ui.setEditorText(old.draft);
 				void select(ctx, old.id);
 				return { consume: true };
@@ -88,32 +105,66 @@ export default function historyEdit(pi: ExtensionAPI): void {
 			lastEscape = now;
 		});
 	});
-	pi.on("session_tree", () => { editing = undefined; });
-	pi.on("session_shutdown", () => { dispose?.(); dispose = undefined; editing = undefined; });
+	pi.on("session_tree", () => { state.editing = undefined; state.retryRestore = undefined; });
+	pi.on("session_shutdown", () => {
+		dispose?.();
+		dispose = undefined;
+		if (!state.inFlight) {
+			if (sessionPath) activeEdits.delete(sessionPath);
+			state = {};
+		}
+	});
 	pi.on("input", event => {
-		if (!editing || event.source !== "interactive") return;
-		submit({ id: editing.id, text: event.text, images: [...editing.images, ...(event.images ?? [])] });
+		if (event.source !== "interactive" || (!state.editing && !state.retryRestore)) return;
+		submit({ id: state.editing?.id, text: event.text, images: [...(state.editing?.images ?? []), ...(event.images ?? [])] });
 		return { action: "handled" };
 	});
 	pi.registerCommand("edit-history", {
 		description: "Edit a previous message",
 		handler: async (_args: string, ctx: ExtensionCommandContext) => {
-			const current = pending;
-			pending = undefined;
-			const running = counts?.snapshot();
-			if (running && (running.agents > 0 || running.reviews > 0)) {
-				if (current) ctx.ui.setEditorText(current.text);
-				ctx.ui.notify("дождись сабагентов", "warning");
-				return;
-			}
-			if (current) {
-				const previous = editing;
-				if (!await commitEdit(pi, ctx, current.id, current.text, current.images)) {
-					editing = previous;
-					ctx.ui.setEditorText(current.text);
+			const edit = state;
+			const current = edit.pending;
+			edit.pending = undefined;
+			const previous = edit.editing;
+			const retry = edit.retryRestore;
+			edit.inFlight = true;
+			const path = sessionPath;
+			if (path) activeEdits.set(path, edit);
+			try {
+				if (retry) {
+					if (!await retry(ctx)) {
+						edit.retryRestore = retry;
+						edit.editing = previous;
+						if (current) edit.draft = current.text;
+						edit.ui?.setEditorText(edit.draft ?? "");
+						if (edit.owner !== owner) queueMicrotask(() => edit.schedule?.());
+						return;
+					}
+					edit.retryRestore = undefined;
+					edit.editing = undefined;
+					edit.ui?.setEditorText(current?.text ?? edit.draft ?? "");
+					edit.ui?.notify("Previous branch restored.", "info");
+					return;
 				}
-			} else if (ctx.mode === "tui") {
-				await select(ctx);
+				const running = counts?.snapshot();
+				if (running && (running.agents > 0 || running.reviews > 0)) {
+					if (current) ctx.ui.setEditorText(current.text);
+					ctx.ui.notify("Wait for subagents to finish.", "warning");
+					return;
+				}
+				if (current?.id !== undefined) {
+					edit.draft = current.text;
+					const result = await commitEdit(pi, ctx, current.id, current.text, current.images);
+					if (!result.committed) {
+						edit.retryRestore = result.retryRestore;
+						edit.editing = previous;
+						edit.ui?.setEditorText(current.text);
+						if (result.retryRestore && edit.owner !== owner) queueMicrotask(() => edit.schedule?.());
+					} else edit.editing = undefined;
+				} else if (ctx.mode === "tui") await select(ctx);
+			} finally {
+				edit.inFlight = false;
+				if (path && !edit.retryRestore && !edit.pending) activeEdits.delete(path);
 			}
 		},
 	});
