@@ -174,6 +174,7 @@ it("restores quota position, colour and wrapping through the extension entry", a
 	cache.response.branch = "long-branch-".repeat(10);
 	const longBranch = await cache.openTab();
 	await until(() => longBranch().includes(cache.response.branch) && longBranch().includes("CC 39%"));
+	await until(() => longBranch().includes("CX 64%"));
 	const narrow = longBranch.raw(60).slice(2).map(strip).join(" ");
 	for (const id of ["CX", "CC"]) assert.ok(narrow.includes(id));
 	assert.ok(narrow.includes("CC 39%"));
