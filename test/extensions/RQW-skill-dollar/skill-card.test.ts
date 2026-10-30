@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 import { it } from "node:test";
 import {
 	initTheme,
+	InteractiveMode,
+	SessionManager,
+	SettingsManager,
 	SkillInvocationMessageComponent,
 	UserMessageComponent,
 	type ExtensionAPI,
@@ -10,6 +14,7 @@ import {
 	Container,
 	getKeybindings,
 	KeybindingsManager,
+	resetCapabilitiesCache,
 	setKeybindings,
 	Spacer,
 	stripTerminalSequences,
@@ -36,10 +41,21 @@ function chat(first: string, userMessage?: string, spacer: any = new Spacer(1)) 
 // Loads the extension; `start` is the session_start Pi sends after it has rebuilt the history.
 function load(theme?: unknown) {
 	const handlers = new Map<string, (event: any, ctx: any) => void>();
+	const key = Symbol.for("@earendil-works/pi-coding-agent:theme");
+	const original = (globalThis as any)[key];
+	if (theme) (globalThis as any)[key] = new Proxy(original, { get(target, property) {
+		return property === "fg" || property === "bg" ? (theme as any)[property] : Reflect.get(target, property, target);
+	} });
 	skillDollar({ on: (name: string, handler: any) => handlers.set(name, handler), getCommands: () => [] } as unknown as ExtensionAPI);
+	const host: any = Object.create(InteractiveMode.prototype);
+	host.runtimeHost = { session: { settingsManager: { getShowCacheMissNotices: () => false }, resourceLoader: { getExtensions: () => ({ extensions: [{ resolvedPath: fileURLToPath(new URL("../../../extensions/RQW-skill-dollar/index.ts", import.meta.url)) }] }) } } };
+	host.pendingTools = new Map();
+	host.ui = { requestRender() {} };
+	host.renderSessionEntries([]);
 	return {
 		start: () => handlers.get("session_start")!(undefined, { mode: "tui", ui: { theme, setWidget() {}, addAutocompleteProvider() {} } }),
-		stop: () => handlers.get("session_shutdown")!(undefined, undefined),
+		stop: () => { handlers.get("session_shutdown")!(undefined, undefined); (globalThis as any)[Symbol.for("rqw-skill-dollar.host")]?.dispose(); (globalThis as any)[key] = original; },
+		shutdown: () => handlers.get("session_shutdown")!(undefined, undefined),
 	};
 }
 
@@ -60,8 +76,10 @@ it("shows every skill as one footer line of the user card, with no separate bloc
 	t.after(loaded.stop);
 	// Pi rebuilds the history before session_start: that card must be linked too.
 	const early = chat("keep", `${block("b")}\n\nText`);
-	loaded.start();
 	assert.match(plain(early.container.render(60)).at(-2)!, /└ skill {2}keep · b/);
+	const earlyLone = chat("solo");
+	assert.match(plain(earlyLone.container.render(60)).at(-2)!, /└ skill {2}solo/);
+	loaded.start();
 
 	const message = `${block("blindreview")}\n\n${block("third")}\n\nCheck my work`;
 	const { container, skill } = chat("highreview", message);
@@ -123,6 +141,59 @@ it("shows every skill as one footer line of the user card, with no separate bloc
 	// Switching the card off gives every component its stock output back.
 	loaded.stop();
 	assert.deepEqual(plain(early.container.render(60)), stock);
+});
+
+it("keeps the old cards during shutdown and restores stock before disabled history", t => {
+	const colorterm = process.env.COLORTERM;
+	process.env.COLORTERM = "truecolor";
+	resetCapabilitiesCache();
+	t.after(() => { if (colorterm === undefined) delete process.env.COLORTERM; else process.env.COLORTERM = colorterm; resetCapabilitiesCache(); });
+	initTheme();
+	const loaded = load();
+	let enabled = true;
+	const settings = SettingsManager.inMemory({ quietStartup: true, theme: "dark" } as never);
+	const session: any = {
+		settingsManager: settings, sessionManager: SessionManager.inMemory(process.cwd()),
+		resourceLoader: { getThemes: () => ({ themes: [] }), getExtensions: () => ({ extensions: enabled ? [{ resolvedPath: fileURLToPath(new URL("../../../extensions/RQW-skill-dollar/index.ts", import.meta.url)) }] : [] }) },
+		extensionRunner: { getMarkdownTransformers: () => [] },
+	};
+	const terminal = { columns: 80, rows: 24, start() {}, stop() {}, write() {}, moveBy() {}, hideCursor() {}, showCursor() {}, clearLine() {}, clearFromCursor() {}, clearScreen() {}, setTitle() {}, setProgress() {} };
+	const host: any = new InteractiveMode({ session, setBeforeSessionInvalidate() {}, setRebindSession() {} } as never, { terminal: terminal as never, tuiMode: "fullscreen" });
+	t.after(() => { host.themeController.dispose(); host.footerDataProvider.dispose(); loaded.stop(); });
+	const entry = (text: string) => ({ type: "message", message: { role: "user", content: [{ type: "text", text }], timestamp: 1 } });
+	const entries = [entry(`${block("keep")}\n\nText`), entry(block("solo"))];
+	host.renderSessionEntries(entries);
+	const rendered = host.chatContainer.render(60) as string[];
+	const before = plain(rendered);
+	const selected = (globalThis as any)[Symbol.for("@earendil-works/pi-coding-agent:theme")];
+	const colour = selected.bg("userMessageBg", "x").match(/\x1b\[48;2;\d+;\d+;\d+m/)?.[0];
+	assert.ok(colour);
+	for (const text of ["Text", "└ skill  keep", "└ skill  solo"]) {
+		const row = rendered.find(line => stripTerminalSequences(line).includes(text));
+		assert.ok(row?.includes(colour), text);
+	}
+	const oldSpacer = host.chatContainer.children.find((child: any, index: number, children: any[]) => children[index - 1] instanceof SkillInvocationMessageComponent && child instanceof Spacer);
+	loaded.shutdown();
+	assert.deepEqual(plain(host.chatContainer.render(60)), before);
+	// A new runtime may keep the extension enabled. Old links are no longer tracked.
+	host.runtimeHost.session = { ...session };
+	host.chatContainer.clear();
+	host.renderSessionEntries(entries);
+	enabled = false;
+	host.chatContainer.clear();
+	host.renderSessionEntries(entries);
+	assert.deepEqual(oldSpacer.render(60), []);
+	const stock = plain(host.chatContainer.render(60)).join("\n");
+	assert.match(stock, /\[skill\] keep/);
+	assert.match(stock, /\[skill\] solo/);
+	// An unconfirmed loader shape also falls back to stock.
+	enabled = true;
+	host.chatContainer.clear();
+	host.renderSessionEntries(entries);
+	host.runtimeHost.session = { ...session, resourceLoader: { getExtensions: () => ({ extensions: null }) } };
+	host.chatContainer.clear();
+	host.renderSessionEntries(entries);
+	assert.match(plain(host.chatContainer.render(60)).join("\n"), /\[skill\] keep/);
 });
 
 it("pads attached skills below while leaving plain cards unchanged", t => {

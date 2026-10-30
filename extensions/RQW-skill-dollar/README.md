@@ -12,6 +12,8 @@ Adds Codex-style skill mentions to Pi's input editor.
 
 - Same-name skills (offered by a filter) are all listed, with their paths. `$name` takes the first in the filter's order; a Codex link `[$name](skill://path)` takes exactly that path, and the suggestion for each later skill of a name inserts such a link. A link to an unknown path stays text.
 
+Skill cards use Pi's selected theme before `session_start`. During a session replacement, the old cards keep their appearance until the new history is built. If the extension is disabled, that new history uses stock rendering. The runtime hooks are limited to Pi 1.4.0 and fall back to stock on an incompatible shape.
+
 The extension never replaces the editor or its factory. Stock and RQW-statusbar factory identities stay intact across statusbar toggles.
 
 Optional filter: another extension may answer the `pi.events` channel `rqw-skill-dollar:filter` with `offer(filter)`,

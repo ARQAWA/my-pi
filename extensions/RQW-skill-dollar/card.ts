@@ -36,7 +36,7 @@ type Card = Cached & {
 
 const ACTIVE = Symbol.for("rqw-skill-dollar.card");
 
-export function installSkillCard(getTheme: () => Theme): () => void {
+export function installSkillCard(getTheme: () => Theme): (() => void) & { clear: () => void } {
 	// A reload or a second instance must not stack wrappers.
 	(globalThis as any)[ACTIVE]?.();
 	const container = Container.prototype as any;
@@ -50,7 +50,7 @@ export function installSkillCard(getTheme: () => Theme): () => void {
 		typeof cardProto.render !== "function" ||
 		typeof cardProto.invalidate !== "function" ||
 		typeof cardProto.rebuild !== "function"
-	) return () => {};
+	) return Object.assign(() => {}, { clear() {} });
 	const linked: WeakRef<Skill>[] = [];
 	const { addChild } = container;
 	const { render: skillRender, setExpanded, invalidate: skillInvalidate } = skillProto;
@@ -87,6 +87,8 @@ export function installSkillCard(getTheme: () => Theme): () => void {
 		// Check everything before changing anything.
 		if (typeof spacer?.setLines !== "function" || typeof spacer.lines !== "number" || typeof card?.text !== "string") return;
 		if (typeof skill.skillBlock.name !== "string" || typeof skill.skillBlock.content !== "string") return;
+		// Do not alter the stock card unless the selected theme is ready.
+		getTheme();
 		const skills: Entry[] = [{ name: skill.skillBlock.name, content: skill.skillBlock.content }];
 		const original = card.text;
 		let rest = original;
@@ -187,7 +189,7 @@ export function installSkillCard(getTheme: () => Theme): () => void {
 		skillProto.handleMouse = skillMouse;
 	};
 	(globalThis as any)[ACTIVE] = restore;
-	return restore;
+	return Object.assign(restore, { clear: () => { linked.length = 0; } });
 }
 
 // `└ skill  a · b`, expand key at the right of the first row; names wrap onto more rows, none is cut off.
