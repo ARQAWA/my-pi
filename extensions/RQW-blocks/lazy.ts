@@ -39,7 +39,7 @@ export interface Lazy {
 export function createLazy(render: Render, enabled: boolean): Lazy {
 	const states = new WeakMap<object, State>();
 	const views = new WeakMap<object, any>();
-	const patched: [object, string][] = [];
+	const patched: [any, string, PropertyDescriptor | undefined, unknown][] = [];
 	let disabled = false;
 
 	const fullscreen = (host: any): boolean => {
@@ -174,8 +174,10 @@ export function createLazy(render: Render, enabled: boolean): Lazy {
 		if (patched.some(([object, key]) => object === target && key === name)) return;
 		const original = target[name];
 		if (typeof original !== "function") return;
-		target[name] = make(original);
-		patched.push([target, name]);
+		const own = Object.getOwnPropertyDescriptor(target, name);
+		const wrapper = make(original);
+		target[name] = wrapper;
+		patched.push([target, name, own, wrapper]);
 	};
 
 	const install = (host: any) => {
@@ -240,7 +242,10 @@ export function createLazy(render: Render, enabled: boolean): Lazy {
 			try { load(host, state, false, true); } catch { fail(host); }
 		},
 		dispose() {
-			for (const [target, name] of patched) delete (target as any)[name];
+			for (const [target, name, own, wrapper] of patched) {
+				if (target[name] !== wrapper) continue;
+				if (own) Object.defineProperty(target, name, own); else delete target[name];
+			}
 			patched.length = 0;
 		},
 	};

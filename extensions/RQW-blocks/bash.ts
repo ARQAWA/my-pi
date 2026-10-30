@@ -70,8 +70,11 @@ export function installBash(getTheme: () => Theme, prototype: any = BashExecutio
 		} catch { return original.call(this, width); }
 	};
 	prototype.invalidate = function () { cache.delete(this); return invalidate.call(this); };
+	const keys = ["render", "invalidate", "appendOutput", "setComplete", "setExpanded", "setOutputPad"];
+	const installed = new Map(keys.map(key => [key, prototype[key]]));
 	return () => {
-		for (const key of ["render", "invalidate", "appendOutput", "setComplete", "setExpanded", "setOutputPad"]) {
+		for (const key of keys) {
+			if (prototype[key] !== installed.get(key)) continue;
 			if (own[key]) Object.defineProperty(prototype, key, own[key]); else delete prototype[key];
 		}
 	};

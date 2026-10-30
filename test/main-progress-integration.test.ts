@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test, type TestContext } from "node:test";
 import { createFauxCore, fauxAssistantMessage, fauxToolCall, InMemoryCredentialStore, InMemoryModelsStore, normalizeContext, type Context } from "@earendil-works/pi-ai";
 import { convertToLlm, createEventBus, initTheme, ModelRegistry, ModelRuntime, SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -205,7 +206,15 @@ test("Pi resumes saved progress cards and RQW-blocks loads their older interval 
 	const file = d.manager.getSessionFile()!;
 	blocks(d.pi as ExtensionAPI); // History is installed at extension registration, before the resumed transcript draws.
 	const wireRenderers = (host: ReturnType<typeof makeHost>) => {
-		(host.runtimeHost.session as any).extensionRunner.getEntryRenderer = (type: string) => d.renderers.get(type);
+		const session = host.runtimeHost.session as any;
+		session.extensionRunner.getEntryRenderer = (type: string) => d.renderers.get(type);
+		session.resourceLoader = { getExtensions: () => ({ extensions: [{ resolvedPath: fileURLToPath(new URL("../extensions/RQW-blocks/index.ts", import.meta.url)) }], runtime: session }) };
+	};
+	const stopHost = (host: any) => {
+		Object.assign(host, { isInitialized: false, disposeActiveSelector() {}, clearExtensionTerminalInputListeners() {}, unregisterSignalHandlers() {}, footerDataProvider: { dispose() {} }, themeController: { disableAutoSync() {} } });
+		Object.assign(host.footer, { dispose() {} });
+		Object.assign(host.session.settingsManager, { getShowTerminalProgress: () => false });
+		host.stop("none");
 	};
 	const resumed = SessionManager.open(file);
 	const inline = makeHost(resumed);
@@ -215,12 +224,14 @@ test("Pi resumes saved progress cards and RQW-blocks loads their older interval 
 	assert.ok(rows(inline).includes("Progress update"));
 	assert.ok(rows(inline).includes("steps 1–50"));
 	assert.ok(rows(inline).includes("проверил сохранение карточки."));
+	stopHost(inline);
+	blocks(d.pi as ExtensionAPI);
 	const kept = d.manager.appendMessage({ role: "user", content: "latest main prompt", timestamp: 100 });
 	d.manager.appendMessage(fauxAssistantMessage("latest answer", { timestamp: 101 }));
 	d.manager.appendCompaction("older work summary", kept, 1000);
 	const before = readFileSync(file, "utf8");
 	const fx = makeFullscreen(SessionManager.open(file), { columns: 80, rows: 24 });
-	t.after(() => fx.stop());
+	t.after(() => { stopHost(fx.host); fx.stop(); });
 	wireRenderers(fx.host);
 	fx.host.renderInitialMessages(); fx.frame();
 	assert.ok(rows(fx.host).includes("latest main prompt"));

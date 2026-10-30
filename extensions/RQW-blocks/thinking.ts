@@ -68,9 +68,15 @@ export function installThinking(prototype: any = AssistantMessageComponent.proto
 		if (!seen.has(this) && this.lastMessage) this.updateContent(this.lastMessage);
 		return originalRender.call(this, width);
 	};
+	const patchedUpdate = prototype.updateContent;
+	const patchedRender = prototype.render;
 	return () => {
-		if (own) Object.defineProperty(prototype, "updateContent", own); else delete prototype.updateContent;
-		if (ownRender) Object.defineProperty(prototype, "render", ownRender); else delete prototype.render;
+		if (prototype.updateContent === patchedUpdate) {
+			if (own) Object.defineProperty(prototype, "updateContent", own); else delete prototype.updateContent;
+		}
+		if (prototype.render === patchedRender) {
+			if (ownRender) Object.defineProperty(prototype, "render", ownRender); else delete prototype.render;
+		}
 		for (const ref of instances) {
 			const instance = ref.deref();
 			if (instance?.lastMessage) original.call(instance, instance.lastMessage);

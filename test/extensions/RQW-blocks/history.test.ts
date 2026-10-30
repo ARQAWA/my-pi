@@ -107,14 +107,24 @@ it("falls back to Pi when the session manager has another shape", () => {
 	} finally { restore(); }
 });
 
-it("is installed by the extension on load and removed on shutdown", async () => {
+it("keeps history through shutdown and restores Pi after the host stops", async () => {
 	const { default: blocks } = await import("../../../extensions/RQW-blocks/index.ts");
-	const handlers = new Map<string, () => void>();
-	blocks({ on: (name: string, fn: () => void) => handlers.set(name, fn) } as never);
-	const host = makeHost(compacted().manager);
-	host.renderInitialMessages();
-	assert.deepEqual(prompts(rows(host)), all(6));
-	handlers.get("session_shutdown")!();
+	const { initTheme } = await import("@earendil-works/pi-coding-agent");
+	const { fileURLToPath } = await import("node:url");
+	initTheme();
+	const handlers = new Map<string, (...args: any[]) => void>();
+	blocks({ on: (name: string, fn: (...args: any[]) => void) => handlers.set(name, fn) } as never);
+	const host: any = makeHost(compacted().manager);
+	host.runtimeHost.session.resourceLoader = { getExtensions: () => ({ extensions: [{ resolvedPath: fileURLToPath(new URL("../../../extensions/RQW-blocks/index.ts", import.meta.url)) }], runtime: {} }) };
+	Object.assign(host, { isInitialized: false, disposeActiveSelector() {}, clearExtensionTerminalInputListeners() {}, unregisterSignalHandlers() {}, footerDataProvider: { dispose() {} }, themeController: { disableAutoSync() {} } });
+	Object.assign(host.footer, { dispose() {} });
+	Object.assign(host.runtimeHost.session.settingsManager, { getShowTerminalProgress: () => false });
+	try {
+		host.renderInitialMessages();
+		assert.deepEqual(prompts(rows(host)), all(6));
+		handlers.get("session_shutdown")!({ reason: "switch" }, { sessionManager: host.sessionManager });
+		assert.deepEqual(prompts(rows(host)), all(6));
+	} finally { host.stop("none"); }
 	const stock = makeHost(compacted().manager);
 	stock.renderInitialMessages();
 	assert.deepEqual(prompts(rows(stock)), ["prompt 2", "prompt 3", "prompt 4", "prompt 5"]);
