@@ -3,9 +3,13 @@
 Independent runtime UI patches for compact chat blocks. Pi files stay unchanged; an incompatible shape falls back to stock.
 
 Compaction, branch summary, bash and thinking styles are ready before Pi builds the history. They use the host's live theme,
-not a session context. During a session switch the visible blocks keep their style until the new history is built; pending
-older history stops loading. On quit, the exit transcript still gets the whole history. The host releases its patches after
-Pi stops. Reload and a newly disabled extension are resolved against the current host's loaded extension paths.
+not a session context. On a compatible Pi 1.4.0 startup, the first history is built after the viewport exists and before the
+terminal starts, without waiting for session-start handlers. Pi subscribes before those handlers, and the usual later history
+redraw is skipped once. The editor's input history is transferred when the editor changes during startup or a session rebind,
+only for the displayed session. An incompatible startup shape keeps Pi's usual sequence. During a session switch the visible blocks keep their style until
+the new history is built; pending older history stops loading. On quit, the exit transcript still gets the whole history.
+The host releases its patches after Pi stops. Reload and a newly disabled extension are resolved against the current host's
+loaded extension paths.
 
 ## History (`history.ts`, `lazy.ts`)
 

@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { AssistantMessageComponent, BashExecutionComponent, BranchSummaryMessageComponent, CompactionSummaryMessageComponent, InteractiveMode, VERSION, type Theme } from "@earendil-works/pi-coding-agent";
 import { installHistory } from "./history.ts";
+import { rebindWithHistory, startWithHistory } from "./startup.ts";
 
 const ACTIVE = Symbol.for("rqw-blocks.early");
 const normalize = (path: string) => {
@@ -17,7 +18,7 @@ export function installEarly(installStyles: (theme: () => Theme, supported: { co
 	const existing = (globalThis as any)[ACTIVE] as Binding | undefined;
 	if (existing) return existing;
 	const proto = InteractiveMode.prototype as any;
-	const names = ["init", "stop", "renderSessionEntries", "renderInitialMessages", "rebuildChatFromMessages", "handleEvent"];
+	const names = ["init", "stop", "rebindCurrentSession", "renderSessionEntries", "renderInitialMessages", "rebuildChatFromMessages", "handleEvent"];
 	const mutable = (target: any, name: string) => {
 		const own = Object.getOwnPropertyDescriptor(target, name);
 		let source = target;
@@ -70,7 +71,11 @@ export function installEarly(installStyles: (theme: () => Theme, supported: { co
 	const history = installHistory(proto, prepare);
 	const init = Object.getOwnPropertyDescriptor(proto, "init")!;
 	const stop = Object.getOwnPropertyDescriptor(proto, "stop")!;
-	const initWrapper = function (this: any, ...args: unknown[]) { prepare(this); return init.value.apply(this, args); };
+	const rebind = Object.getOwnPropertyDescriptor(proto, "rebindCurrentSession")!;
+	const rebindWrapper = function (this: any, ...args: unknown[]) { return prepare(this) ? rebindWithHistory(this, () => rebind.value.apply(this, args)) : rebind.value.apply(this, args); };
+	const initWrapper = function (this: any, ...args: unknown[]) {
+		return prepare(this) ? startWithHistory(this, () => init.value.apply(this, args)) : init.value.apply(this, args);
+	};
 	const stopWrapper = function (this: any, ...args: unknown[]) {
 		try { return stop.value.apply(this, args); }
 		finally {
@@ -79,6 +84,7 @@ export function installEarly(installStyles: (theme: () => Theme, supported: { co
 				history();
 				if (proto.init === initWrapper) Object.defineProperty(proto, "init", init);
 				if (proto.stop === stopWrapper) Object.defineProperty(proto, "stop", stop);
+				if (proto.rebindCurrentSession === rebindWrapper) Object.defineProperty(proto, "rebindCurrentSession", rebind);
 				if ((globalThis as any)[ACTIVE] === binding) delete (globalThis as any)[ACTIVE];
 				host = undefined; session = undefined; generation = undefined;
 			}
@@ -86,6 +92,7 @@ export function installEarly(installStyles: (theme: () => Theme, supported: { co
 	};
 	proto.init = initWrapper;
 	proto.stop = stopWrapper;
+	proto.rebindCurrentSession = rebindWrapper;
 	const binding: Binding = {
 		shutdown(event, ctx) {
 			if (event?.reason !== "quit" && host && ctx?.sessionManager === session?.sessionManager) history.reset?.(host);
