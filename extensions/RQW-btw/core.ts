@@ -120,6 +120,7 @@ function unsent(mark: Mark, turns: readonly Message[]): number {
 
 export function installBtwCore(pi: ExtensionAPI): BtwCore {
 	let snapshot: Snapshot | undefined;
+	let hasMainRequest = false;
 	let release: (() => void) | undefined;
 	const drop = () => { snapshot = undefined; };
 
@@ -128,6 +129,7 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 		release?.();
 		release = undefined;
 		drop();
+		hasMainRequest = ctx.sessionManager.getEntries().some(entry => entry.type === "message" && entry.message.role === "assistant");
 		const session = sessionOf(ctx);
 		const agent = session?.agent;
 		if (!session || typeof agent?.streamFunction !== "function") return;
@@ -136,6 +138,7 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 		let active = true;
 		const wrapped: typeof original = function(this: unknown, model, context, options) {
 			if (active && options?.sessionId !== undefined && options.sessionId === manager.getSessionId()) {
+				hasMainRequest = true;
 				snapshot = { sessionId: options.sessionId, model, messages: context.messages, reasoning: options.reasoning, after: [] };
 			}
 			return original.call(this, model, context, options);
@@ -149,10 +152,34 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 
 	/** The current prompt and the active tool declarations. */
 	function systemOf(ctx: ExtensionContext): SystemMessage {
+		const session = sessionOf(ctx);
+		const internals = session as unknown as { _baseSystemPromptOptions?: Record<string, unknown>; _runSystemPromptOptions?: unknown; _hiddenDeclarations?: Set<string> } | undefined;
+		let prompt = ctx.getSystemPrompt();
+		const descriptor = session && (Object.getOwnPropertyDescriptor(session, "systemPrompt")
+			?? Object.getOwnPropertyDescriptor(AgentSession.prototype, "systemPrompt"));
+		const getter = descriptor?.get;
+		if (!hasMainRequest && session && typeof getter === "function" && internals?._baseSystemPromptOptions && internals._hiddenDeclarations instanceof Set && typeof session.getActiveToolNames === "function") {
+			try {
+				const options = structuredClone(internals._baseSystemPromptOptions);
+				options.selectedTools = session.getActiveToolNames();
+				options.hiddenTools = [...internals._hiddenDeclarations];
+				const request = { options, model: ctx.model, error: undefined as string | undefined };
+				pi.events.emit("rqw-prompt:startup-projection", request);
+				if (!request.error) {
+					const previous = internals._runSystemPromptOptions;
+					try {
+						internals._runSystemPromptOptions = options;
+						const projected = getter.call(session);
+						if (typeof projected === "string" && projected.trim()) prompt = projected;
+					}
+					finally { internals._runSystemPromptOptions = previous; }
+				}
+			} catch { /* An incompatible Pi shape leaves the stock prompt unchanged. */ }
+		}
 		const active = new Set(pi.getActiveTools());
 		const tools = pi.getAllTools().filter(tool => active.has(tool.name))
 			.map(({ name, description, parameters }) => ({ name, description, parameters }));
-		return { role: "system", content: ctx.getSystemPrompt(), toolsAdded: tools, timestamp: Date.now() };
+		return { role: "system", content: prompt, toolsAdded: tools, timestamp: Date.now() };
 	}
 
 	/** The current branch (after a compaction: summary and kept tail) after the given prompt and active tools. */
