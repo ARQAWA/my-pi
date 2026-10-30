@@ -8,7 +8,7 @@ import { afterEach, it } from "node:test";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { installHistory } from "../extensions/RQW-blocks/history.ts";
 import { makeFullscreen, type Fullscreen } from "./extensions/RQW-blocks/history-host.ts";
-import { load, Session } from "./extensions/RQW-tool-ui/fold-host.ts";
+import { assistant, load, Session, text, user } from "./extensions/RQW-tool-ui/fold-host.ts";
 
 const WIDTH = 60;
 const cleanups: (() => void)[] = [];
@@ -16,13 +16,16 @@ afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 
 /** Six finished turns; compactions keep from the user message of turn 1 and of turn 3: the latest interval starts at turn 3,
  * the older ones are turns 1 and 2, and turn 0. Every turn has work, so every one gets a fold, and its own label. */
-function open() {
+function open(build?: (session: Session) => void) {
 	const session = new Session();
 	cleanups.push(() => session.end());
-	const users: string[] = [];
-	for (let n = 0; n < 6; n++) {
-		users.push(session.turn(n, n * 100_000, 10 + n));
-		if (n === 1 || n === 3) session.compact(users[n], n * 100_000 + 50_000);
+	if (build) build(session);
+	else {
+		const users: string[] = [];
+		for (let n = 0; n < 6; n++) {
+			users.push(session.turn(n, n * 100_000, 10 + n));
+			if (n === 1 || n === 3) session.compact(users[n], n * 100_000 + 50_000);
+		}
 	}
 	const loaded = load();
 	cleanups.push(() => loaded.shutdown());
@@ -107,7 +110,9 @@ it("an unloaded interval's components get their own render and mouse handling ba
 	const unloaded = [...before].filter((child) => !after.has(child));
 	assert.ok(unloaded.length > 10, "an interval was unloaded");
 	// Folds wrapped these with an own render and handleMouse; an unloaded component no longer carries them.
-	for (const child of unloaded) assert.ok(!Object.hasOwn(child, "render") && !Object.hasOwn(child, "handleMouse"), (child as object).constructor.name);
+	for (const child of unloaded) for (const name of ["render", "handleMouse", "invalidate", "setExpanded", "setOutputPad", "rebuild"]) {
+		assert.ok(!Object.hasOwn(child, name), `${child.constructor.name}.${name}`);
+	}
 });
 
 it("an unloaded interval is collected: no fold list, binding or row callback keeps its components", async () => {
@@ -128,6 +133,49 @@ it("an unloaded interval is collected: no fold list, binding or row callback kee
 	const stillDrawn = refs.filter((ref) => { const target = ref.deref(); return target !== undefined && kept.has(target); }).length;
 	assert.equal(stillDrawn, kept.size, "everything still drawn is alive");
 	assert.equal(refs.length - gone, kept.size, `only the drawn components are alive (${refs.length - gone} alive, ${kept.size} drawn)`);
+});
+
+it("keeps local suffix folds separate across two kept cuts while loading and unloading lifted owners", () => {
+	const { fx } = open((s) => {
+		s.add(user("owner before first cut", 0), 0);
+		s.add(assistant([text("first unfinished prefix")], "toolUse", 1_000), 1_000);
+		const first = s.add(assistant([text("first local work")], "toolUse", 4_000), 4_000);
+		s.card("identical result card", 5_000);
+		s.add(user("first lifted steering", 6_000), 6_000);
+		s.add(assistant([text("first suffix answer")], "stop", 10_000), 11_000);
+		s.compact(first, 12_000);
+		s.add(user("owner before second cut", 20_000), 20_000);
+		s.add(assistant([text("second unfinished prefix")], "toolUse", 21_000), 21_000);
+		const second = s.add(assistant([text("second local work")], "toolUse", 24_000), 24_000);
+		s.card("identical result card", 25_000);
+		s.add(user("second lifted steering", 26_000), 26_000);
+		s.add(assistant([text("second suffix answer")], "stop", 29_000), 30_000);
+		s.compact(second, 31_000);
+		for (let n = 2; n < 5; n++) s.turn(n, n * 20_000, 10 + n);
+	});
+	const has = (value: string) => chatRows(fx).some(row => row.includes(value));
+	assert.deepEqual(headers(fx), ["worked for 6s ›", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
+	assert.ok(has("second lifted steering") && !has("owner before second cut") && !has("second local work"));
+	loadOlder(fx);
+	assert.deepEqual(headers(fx), ["worked for 7s ›", "worked for 6s ›", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
+	for (const value of ["first lifted steering", "second lifted steering", "owner before second cut", "second unfinished prefix"]) assert.ok(has(value), value);
+	assert.ok(!has("first local work") && !has("second local work") && !has("identical result card"));
+	loadOlder(fx);
+	assert.ok(has("owner before first cut") && has("first unfinished prefix"));
+	assert.equal(chatRows(fx).filter(row => row.includes("lifted steering")).length, 2);
+	click(fx, "worked for 7s ›");
+	assert.ok(has("first local work") && !has("second local work"));
+	assert.equal(chatRows(fx).filter(row => row.includes("identical result card")).length, 1);
+	click(fx, "worked for 6s ›");
+	assert.equal(chatRows(fx).filter(row => row.includes("identical result card")).length, 2);
+	fx.screen.scrollToBottom();
+	fx.frame();
+	assert.deepEqual(headers(fx), ["worked for 6s ˅", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
+	assert.ok(!has("first lifted steering") && !has("owner before second cut"));
+	loadOlder(fx);
+	assert.deepEqual(headers(fx), ["worked for 7s ›", "worked for 6s ˅", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
+	assert.ok(has("first lifted steering") && !has("first local work"));
+	assert.equal(chatRows(fx).filter(row => row.includes("identical result card")).length, 1);
 });
 
 it("the rows he reads stay in place when the loaded interval has folds, which start closed", () => {

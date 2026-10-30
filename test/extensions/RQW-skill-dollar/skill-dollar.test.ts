@@ -51,6 +51,7 @@ async function setup(t: any, skillNames = names, offerFilter?: (skills: any[]) =
 		events: { emit(channel: string, request: any) { if (offerFilter && channel === "rqw-skill-dollar:filter") request.offer(offerFilter); } },
 	};
 	skillDollar(pi as unknown as ExtensionAPI);
+	t.after(() => { for (const handler of handlers.get("session_shutdown")!) handler({}, {}); });
 	const ctx = {
 		mode: "tui",
 		ui: {
