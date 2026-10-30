@@ -8,7 +8,7 @@ import { actionPhrase, CountsWatch, statusText } from "./activity.ts";
 import { QuotaConsumer } from "./quota.ts";
 import { type BorderSource, ContextEditor, type NativeActivity } from "./editor.ts";
 import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
-import { installStartup } from "./startup.ts";
+import { installEarly } from "./early.ts";
 import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, contextRow, modelRow, placeLayout, activityRows } from "./render.ts";
 
 // Tools that never change the working tree or the branch.
@@ -37,7 +37,7 @@ export const themePaint = (theme: Theme): Paint => (role, text, level) => role =
 	? theme.getThinkingBorderColor((level ?? "off") as Parameters<Theme["getThinkingBorderColor"]>[0])(text)
 	: theme.fg(COLORS[role], text);
 
-function scratchRoots(): string[] {
+export function scratchRoots(): string[] {
 	const roots = new Set([tmpdir(), join(homedir(), "tmp")]);
 	if (process.platform === "win32") {
 		const { TEMP, TMP, SystemRoot } = process.env;
@@ -117,6 +117,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	// identifies our editor in `getEditorComponent()`; its border reads the current install's source.
 	let border: BorderSource | undefined;
 	let editor: ContextEditor | undefined;
+	let ownedFooter: unknown;
 	const editorFactory: NonNullable<Parameters<ExtensionUIContext["setEditorComponent"]>[0]> =
 		(tui, theme, keybindings) => {
 			editor?.releaseIndicator();
@@ -196,8 +197,8 @@ export default function statusbar(pi: ExtensionAPI) {
 	};
 
 	function install(ctx: ExtensionContext): void {
-		const endStartup = startup.begin(ctx.ui);
-		try {
+		{
+			const previousFooter = ownedFooter;
 			release();
 			if (ctx.mode !== "tui" || !enabled) return;
 			const initialCwd = ctx.cwd;
@@ -236,7 +237,7 @@ export default function statusbar(pi: ExtensionAPI) {
 				}, activity: () => chromeNow() };
 			// Another extension's editor is kept; the context row then stays in the footer.
 			if (ctx.ui.getEditorComponent() === undefined) ctx.ui.setEditorComponent(editorFactory);
-			ctx.ui.setFooter((tui, theme, footer) => {
+			if (early.canInstallFooter(previousFooter)) ctx.ui.setFooter((tui, theme, footer) => {
 				let disposed = false;
 				let cwd: string | undefined = initialCwd;
 				let repo: RepoInfo | undefined;
@@ -298,10 +299,10 @@ export default function statusbar(pi: ExtensionAPI) {
 					rate.reset();
 					redraw = undefined;
 					refresh = undefined;
-					if (dispose === cleanup) dispose = undefined;
+					if (dispose === cleanup) { dispose = undefined; ownedFooter = undefined; }
 				};
 				dispose = cleanup;
-				return {
+				return ownedFooter = {
 					render(width: number) {
 						if (disposed) return [];
 						if (cwd !== ctx.cwd) {
@@ -358,7 +359,7 @@ export default function statusbar(pi: ExtensionAPI) {
 					dispose: cleanup,
 				};
 			});
-		} finally { endStartup(); }
+		}
 	}
 
 	const command: Parameters<ExtensionAPI["registerCommand"]>[1] = {
@@ -372,22 +373,25 @@ export default function statusbar(pi: ExtensionAPI) {
 			}
 			enabled = value ? value === "on" : !enabled;
 			if (enabled) {
+				early.enable();
 				sample(ctx);
 				await install(ctx);
 			} else {
+				early.disable(ctx.ui, editorFactory, ownedFooter);
+				if (ownedFooter) ctx.ui.setFooter(undefined);
+				ownedFooter = undefined;
 				release();
 				running = false;
 				working = false;
 				compacting = false;
 				tools.clear();
 				setActivity(ctx, false);
-				ctx.ui.setFooter(undefined);
 				if (ctx.ui.getEditorComponent() === editorFactory) ctx.ui.setEditorComponent(undefined);
 			}
 		},
 	};
 	pi.registerCommand("statusbar", command);
-	const startup = installStartup(command.handler);
+	const early = installEarly(command.handler, () => enabled);
 
 	function onStart(_event: unknown, ctx: ExtensionContext): void {
 		if (ctx.mode !== "tui") return;
@@ -396,7 +400,9 @@ export default function statusbar(pi: ExtensionAPI) {
 	}
 	pi.on("session_start", onStart);
 	pi.on("session_shutdown", (_event, ctx) => {
-		startup.dispose();
+		if (ctx.mode === "tui") early.freeze(ctx.ui, editorFactory, ownedFooter);
+		ownedFooter = undefined;
+		early.dispose();
 		unsubscribeBackground();
 		backgroundSessions.clear();
 		release();

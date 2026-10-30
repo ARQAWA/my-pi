@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { stripVTControlCharacters as strip } from "node:util";
 import { it } from "node:test";
 import statusbar from "../../../extensions/RQW-statusbar/index.ts";
+import { bindTestHost } from "./footer-host.ts";
 
 it("shows the current activity in the widget after a cached frame", async (t) => {
 	t.mock.timers.enable({ apis: ["setInterval"] });
@@ -78,9 +79,10 @@ it("runs git after a write and the poll but not after a read, and shows the new 
 	const requestRender = () => { if (!driving) wake?.(); };
 
 	const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
+	let command: unknown;
 	const pi = {
 		events: { on: () => () => {}, emit() {} }, getSettings: () => ({}), getSessionName: () => undefined, getThinkingLevel: () => "off",
-		registerCommand() {}, on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
+		registerCommand(_name: string, value: unknown) { command = value; }, on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
 	};
 	let footer: ((tui: unknown, theme: unknown, data: unknown) => { render(width: number): string[] }) | undefined;
 	const ctx = {
@@ -90,6 +92,7 @@ it("runs git after a write and the poll but not after a read, and shows the new 
 			setFooter: (factory: typeof footer) => { footer = factory; }, setWorkingIndicator() {}, setWidget() {} },
 	};
 	statusbar(pi as never);
+	bindTestHost(t, command);
 	await handlers.get("session_start")!({}, ctx);
 	const started = refreshed();
 	const rows = drive(() => footer!({ requestRender }, ctx.ui.theme, { onBranchChange: () => () => {}, getExtensionStatuses: () => new Map() }));
