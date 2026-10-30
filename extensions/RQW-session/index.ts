@@ -3,8 +3,9 @@ import { StringDecoder } from "node:string_decoder";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { setImmediate } from "node:timers";
-import { copyToClipboard, getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { copyToClipboard, getAgentDir, SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { cleanupOrphanedChildren } from "./cleanup.ts";
+import { installFastList } from "./list.ts";
 
 type Spawn = (command: string, args: string[], options: { encoding: "utf-8" }) => { status: number | null; error?: Error; stderr?: string | null };
 
@@ -160,4 +161,7 @@ export function registerSessionCommands(pi: ExtensionAPI, copy = copyToClipboard
 	});
 }
 
-export default function sessionCommands(pi: ExtensionAPI) { registerSessionCommands(pi); }
+export default function sessionCommands(pi: ExtensionAPI) {
+	registerSessionCommands(pi);
+	pi.on("session_shutdown", installFastList(SessionManager as unknown as Parameters<typeof installFastList>[0]));
+}
