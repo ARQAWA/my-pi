@@ -4,7 +4,7 @@ import { AssistantMessageComponent, UserMessageComponent, type SessionEntry } fr
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { Folds, installFolds } from "../../../extensions/RQW-tool-ui/fold.ts";
 import { buildTurns, formatWorked } from "../../../extensions/RQW-tool-ui/groups.ts";
-import { assistant, call, load, makeHost, makeScreen, result, Session, text, theme, user } from "./fold-host.ts";
+import { assistant, call, load, makeHost, makeScreen, result, Session, text, liveTheme, user } from "./fold-host.ts";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
@@ -119,7 +119,7 @@ function scene(build: (s: Session) => void) {
 	return { session, loaded, stock, host, screen };
 }
 
-const headerOf = (label: string, open: boolean) => " " + theme.fg("dim", `${label} ${open ? "˅" : "›"}`);
+const headerOf = (label: string, open: boolean) => " " + liveTheme().fg("dim", `${label} ${open ? "˅" : "›"}`);
 
 const withoutHeaders = (rows: string[]) => rows.filter((row) => !/worked for/.test(row));
 
@@ -216,6 +216,7 @@ function mounted(build: (s: Session) => void, columns = 80, rows = 60) {
 	s.host.renderer = screen.screen;
 	screen.screen.addChild(s.host.chatContainer);
 	screen.screen.start();
+	screen.frame();
 	cleanups.push(() => screen.stop());
 	const row = (text: string) => screen.frame().findIndex((line) => line.includes(text));
 	// SGR mouse reports: 0 press, 32 drag, release with `m`; one-based cells.

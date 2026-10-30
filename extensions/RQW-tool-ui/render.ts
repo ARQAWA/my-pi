@@ -82,6 +82,7 @@ export function collapsedRows(g: CallGroup | undefined, width: number, theme: Th
 /** One line per event that can change the groups; holds the streaming state between saves. */
 export class ToolUi {
 	private sessionManager: ReadonlySessionManager | undefined;
+	private displayReady = false;
 	/** The session's cwd, read once at start: it is what Pi resolves the paths of calls against. */
 	private cwd: string | undefined;
 	private entries: SessionEntry[] = [];
@@ -111,6 +112,7 @@ export class ToolUi {
 	 * before it starts the session's extensions, on `/reload` and session switches). */
 	start(sessionManager: ReadonlySessionManager): void {
 		this.sessionManager = sessionManager;
+		this.displayReady = true;
 		this.cwd = sessionManager.getCwd();
 		this.messages = [];
 		this.executions = [];
@@ -118,9 +120,30 @@ export class ToolUi {
 		this.refresh(true, true, true);
 	}
 
+	/** Stop events and release session data while the old components remain visible. */
+	freeze(): void {
+		this.sessionManager = undefined;
+		this.entries = [];
+		this.firstKeptEntryIds = undefined;
+		this.messages = [];
+		this.executions = [];
+		this.streaming = false;
+		this.final.clear();
+		this.textBreaks.clear();
+		for (const id of this.groups.keys()) if (!this.rows.get(id)?.deref()) this.groups.delete(id);
+		for (const ref of this.rows.values()) {
+			const row = ref.deref();
+			const context = row?.context;
+			if (row && context) row.context = { toolCallId: context.toolCallId, outputPad: context.outputPad, expanded: context.expanded } as ToolRenderContext;
+		}
+		this.rows.clear();
+		this.drawn.clear();
+	}
+
 	/** Forget everything of the session: state, rows and their redraw callbacks. */
 	shutdown(): void {
 		this.sessionManager = undefined;
+		this.displayReady = false;
 		this.cwd = undefined;
 		this.entries = [];
 		this.firstKeptEntryIds = undefined;
@@ -307,7 +330,7 @@ export class ToolUi {
 		const context = own.context;
 		if (!context || !own.theme) return [];
 		if (context.expanded) return this.drawOriginal(own, width);
-		if (!this.sessionManager) return [];
+		if (!this.displayReady) return [];
 		const group = this.groups.get(context.toolCallId);
 		const cwd = this.cwd;
 		const pad = context.outputPad;

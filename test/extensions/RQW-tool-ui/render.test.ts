@@ -170,14 +170,14 @@ function renderSession(manager: SessionManager, wholeBranch: boolean): string[] 
 		registerToolRenderer: (resolver: unknown) => { resolveToolRenderers = resolver; },
 		on: (name: string, handler: (...args: any[]) => void) => handlers.set(name, handler),
 	} as never);
-	handlers.get("session_start")!({}, { mode: "tui", sessionManager: manager });
+	const host: any = Object.create(InteractiveMode.prototype);
 	try {
-		const host: any = Object.create(InteractiveMode.prototype);
 		Object.assign(host, {
 			chatContainer: new Container(), pendingTools: new Map(), outputPad: 1,
 			toolOutputExpanded: false, hideThinkingBlock: false, hiddenThinkingLabel: "Thinking...",
 			ui: { requestRender() {} },
 			runtimeHost: { session: {
+				resourceLoader: { getExtensions: () => ({ runtime: manager, extensions: [{ toolRenderers: [resolveToolRenderers] }] }) },
 				sessionManager: manager,
 				settingsManager: { getShowCacheMissNotices: () => false, getShowImages: () => false, getImageWidthCells: () => 60, getCodeBlockIndent: () => "  " },
 				modelRuntime: {}, retryAttempt: 0,
@@ -187,7 +187,7 @@ function renderSession(manager: SessionManager, wholeBranch: boolean): string[] 
 		});
 		host.renderSessionEntries(wholeBranch ? manager.getBranch() : manager.buildContextEntries());
 		return host.chatContainer.render(80).map(stripTerminalSequences).map((line: string) => line.trim());
-	} finally { handlers.get("session_shutdown")!(); }
+	} finally { handlers.get("session_shutdown")!(); try { host.stop("none"); } catch {} }
 }
 
 it("keeps the compact view for calls before a compaction", () => {
@@ -252,14 +252,14 @@ it("lets a tool component that Pi no longer draws be collected", async () => {
 		registerToolRenderer: (resolver: unknown) => { resolveToolRenderers = resolver; },
 		on: (name: string, handler: (...args: any[]) => void) => handlers.set(name, handler),
 	} as never);
-	handlers.get("session_start")!({}, { mode: "tui", sessionManager: manager });
+	const host: any = Object.create(InteractiveMode.prototype);
 	try {
-		const host: any = Object.create(InteractiveMode.prototype);
 		Object.assign(host, {
 			chatContainer: new Container(), pendingTools: new Map(), outputPad: 1,
 			toolOutputExpanded: false, hideThinkingBlock: false, hiddenThinkingLabel: "Thinking...",
 			ui: { requestRender() {} },
 			runtimeHost: { session: {
+				resourceLoader: { getExtensions: () => ({ runtime: manager, extensions: [{ toolRenderers: [resolveToolRenderers] }] }) },
 				sessionManager: manager,
 				settingsManager: { getShowCacheMissNotices: () => false, getShowImages: () => false, getImageWidthCells: () => 60, getCodeBlockIndent: () => "  " },
 				modelRuntime: {}, retryAttempt: 0,
@@ -283,7 +283,7 @@ it("lets a tool component that Pi no longer draws be collected", async () => {
 		v8.setFlagsFromString("--expose-gc");
 		(vm.runInNewContext("gc") as () => void)();
 		assert.equal(ref.deref(), undefined);
-	} finally { handlers.get("session_shutdown")!(); }
+	} finally { handlers.get("session_shutdown")!(); try { host.stop("none"); } catch {} }
 });
 
 it("still redraws a visible row after a collection, with the callback Pi gave the result", async () => {
