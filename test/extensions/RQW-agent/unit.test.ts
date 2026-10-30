@@ -401,8 +401,10 @@ async function restoredSystem(t: TestContext, start: Record<string, unknown>, ed
 	await source.runtime.wait(new AbortController().signal);
 	source.runtime.close();
 	const full = parent.getBranch().find((entry: any) => entry.customType === "rqw-agent-child") as any;
-	// An older record holds the whole prompt, not the tail after its base.
+	// An older record holds the whole prompt and its base inline, not a tail and a base ref.
 	const config = full.data.config;
+	config.base = "original prompt";
+	delete config.base_ref;
 	config.system = edit(config.system ?? `${config.base.trimEnd()}${config.system_tail}`);
 	delete config.system_tail;
 	const restored = runtimeFixture(parent, root);
@@ -430,6 +432,47 @@ test("an ordinary prompt is stored as its tail after base and restores byte for 
 	await restored.runtime.wait(new AbortController().signal);
 	assert.equal(restored.requests.at(-1).messages.find((message: any) => message.role === "system").content,
 		`original prompt\n\n${REMINDER}\n\n<role>\nR\n</role>`);
+	restored.runtime.close();
+});
+
+// Regression: every child record repeated the whole main prompt as `base`, two thirds of a long session file.
+test("children of one parent write the base prompt once and restore from it byte for byte", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const source = runtimeFixture(parent, root);
+	await source.execute({ action: "start", task: "one", tools: [], role: "R" });
+	await source.execute({ action: "start", task: "two", tools: [], role: "S" });
+	await source.runtime.wait(new AbortController().signal);
+	source.runtime.close();
+	assert.equal((await readFile(parent.getSessionFile()!, "utf8")).split("original prompt").length - 1, 1);
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "send", id: "agent#2", task: "again" });
+	await restored.runtime.wait(new AbortController().signal);
+	assert.equal(restored.requests.at(-1).messages.find((message: any) => message.role === "system").content,
+		`original prompt\n\n${REMINDER}\n\n<role>\nS\n</role>`);
+	restored.runtime.close();
+});
+
+test("a record from before base refs restores from its inline base", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const source = runtimeFixture(parent, root);
+	await source.execute({ action: "start", task: "task", tools: [], role: "R" });
+	await source.runtime.wait(new AbortController().signal);
+	source.runtime.close();
+	// The released format: `base` inline beside `system_tail`, no base entry.
+	const config = (parent.getBranch().find((entry: any) => entry.customType === "rqw-agent-child") as any).data.config;
+	config.base = "legacy base\n";
+	delete config.base_ref;
+	const restored = runtimeFixture(parent, root);
+	await restored.execute({ action: "send", id: "agent#1", task: "again" });
+	await restored.runtime.wait(new AbortController().signal);
+	assert.equal(restored.requests.at(-1).messages.find((message: any) => message.role === "system").content,
+		`legacy base\n\n${REMINDER}\n\n<role>\nR\n</role>`);
 	restored.runtime.close();
 });
 
@@ -572,10 +615,11 @@ test("selected-branch fold isolates generations, corrupt siblings and genuine re
 	const records = parent.getBranch().filter((entry: any) => entry.customType === "rqw-agent-child") as any[];
 	const latest = mergeSaved(records[0].data, records.at(-1).data);
 	const record = (data: any) => ({ type: "custom", customType: "rqw-agent-child", data });
+	const base = parent.getBranch().find((entry: any) => entry.customType === "rqw-agent-base");
 	const branchA: any[] = [records[0], record({ ...latest, config: undefined, task: undefined }),
 		record({ ...latest, id: 2, epoch: "stopped", state: "stopped" }),
 		record({ ...latest, id: 3, config: { ...latest.config, system: null } }),
-		{ type: "message", message: { role: "assistant", content: latest.result.run } }];
+		{ type: "message", message: { role: "assistant", content: latest.result.run } }, base];
 	const branchB = branchA.map(entry => entry.data?.id === 1 ? record({ ...entry.data, title: "branch B" }) : entry);
 	// A real result detail suppresses delivery, even though prose on A did not.
 	branchB[4] = { type: "custom_message", details: { results: [{ run: latest.result.run }] } };

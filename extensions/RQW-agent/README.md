@@ -531,6 +531,8 @@ run state, exact prompt/configuration, model, thinking, tools, settings, Fast, t
 Restore remembers the text of the saved record, so a restore or a resume without changes writes no new copy; later entries are short and restore takes the omitted fields from the previous entry of the same child.
 An ordinary prompt starts with the saved `base`: the record keeps only the text after it as `system_tail`, and
 restore joins the trimmed `base` and the tail. An own `system` and records written earlier keep the whole `system` and are read as before.
+The `base` text itself is written once per branch as an `rqw-agent-base` entry `{version: 1, ref, text}`; a record keeps only
+`base_ref`, the first 16 hex characters of the text's SHA-256. Records written earlier keep `base` inline and are read as before.
 Every command a child accepts (a steering `send`, a `send` while a run stops, an idle `send`) is saved in its record as
 `pending_sends`, batches `{n, tasks}`, until its user message is in the child's history. Only parent commands create user
 messages, so `n`, the ordinal of that user message, tells whether a batch has arrived. Tasks queued while a run stops

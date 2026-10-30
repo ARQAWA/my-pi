@@ -11,6 +11,8 @@ type ReadonlySessionManager = ExtensionContext["sessionManager"];
 export const CHILD_ENTRY = "rqw-agent-child";
 export const WAIT_ENTRY = "rqw-agent-wait";
 export const ACCEPT_ENTRY = "rqw-agent-accept";
+/** One base prompt text, written once per branch; child records name it by `base_ref`. */
+export const BASE_ENTRY = "rqw-agent-base";
 
 const retainedChildren = new WeakMap<ReadonlySessionManager, Map<string, SessionManager>>();
 
