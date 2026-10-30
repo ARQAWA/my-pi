@@ -64,7 +64,7 @@ function filtered(host: Host, provider: any): any[] | undefined {
  });
 }
 
-export function installCommands(pi: ExtensionAPI): () => void {
+export function installCommands(pi: ExtensionAPI, registerShutdown = true): () => void {
  if (VERSION !== "1.4.0") throw new Error(WARNING);
  const proto = InteractiveMode.prototype as any;
  let state = (proto as any)[STATE] as State | undefined;
@@ -148,6 +148,6 @@ export function installCommands(pi: ExtensionAPI): () => void {
    if (proto[STATE] === s) delete proto[STATE];
   }
  };
- pi.on("session_shutdown", dispose);
+ if (registerShutdown) pi.on("session_shutdown", dispose);
  return dispose;
 }
