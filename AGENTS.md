@@ -72,6 +72,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   footer when off. Its upper input border shows the gold session title at the left and session ID at the right.
   Activity is a separate line above it, with a one-space left gap and blank lines above and below, absent idle.
   Busy letters shimmer silver; compaction shimmers gold over the title.
+  `startup.ts` holds only the first paint until our editor/footer are installed, without waiting for Git; dialogs, custom UI, progress, errors and a 1000 ms cap release it, with shape-checked stock fallback (`[D-STATUSBAR-STARTUP]`).
   Tests: `test/extensions/RQW-statusbar/`.
 - `extensions/RQW-models/`: extension 8, independent model picker and shortcuts, Opus medium for a new session.
   Shift+arrows open a model/effort draft chooser and take the first step before rendering: Up/Down stronger/weaker,
