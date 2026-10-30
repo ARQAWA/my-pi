@@ -93,6 +93,11 @@ export function contextForks(captureStream: () => Stream) {
 						if (withoutCache(body.messages[i]) !== withoutCache(next.messages[i])) break;
 						next.messages[i] = structuredClone(body.messages[i]);
 					}
+					// Pi adds a breakpoint to the new last user message. Keep the earlier cached prefix first.
+					const blocks = [...(next.tools ?? []), ...(next.system ?? []),
+						...next.messages.flatMap((message: Body) => Array.isArray(message.content) ? message.content : [])];
+					let count = 0;
+					for (const block of blocks) if (block.cache_control && ++count > 4) delete block.cache_control;
 					return next;
 				} }).result();
 				signal.throwIfAborted();
