@@ -23,7 +23,7 @@ it("builds the default prefix and preserves explicit prompts and hidden bash", (
 	const hook = hooks();
 	const input = hook.options();
 	hook.prepare(input);
-	assert.match(input.customPrompt!, /You are a coding agent in pi/);
+	assert.match(input.customPrompt!, /You are an autonomous coding executor in pi/);
 	assert.doesNotMatch(input.customPrompt!, /code-review stance/);
 	assert.match(input.customPrompt!, /- Model: fake\/one/);
 	assert.match(input.customPrompt!, /the bash tool runs bash/);
