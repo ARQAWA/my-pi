@@ -570,6 +570,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   only the next automatic trigger or `/rename-gen` may overwrite a manual name. RQW-statusbar displays the current
   native name as a gold title in the top input border, shimmering during compaction, empty before a name exists.
   Placement follows [D-STATUSBAR-ACTIVITY](#status-bar).
+  Agent tool `rename_session` (one `name`, trimmed, empty is an error, no limits; `pi.setSessionName`). Owner, verbatim: «Я хочу, чтобы у моего агента был инструмент для переименования сессии. На один story point надо максимально простейший инструмент захуярить ему.»
   Reason: meaningful short names without blocking main work or a user candidate picker. Carriers:
   `extensions/RQW-naming/{index,core}.ts`, `extensions/RQW-statusbar/index.ts`, `package.json`, `INSTALL.md`.
 ## Structure

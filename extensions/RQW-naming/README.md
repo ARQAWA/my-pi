@@ -27,6 +27,7 @@ Native `/name` remains unchanged.
 - A newer trigger or session switch cancels pending work. An external/native
   name change cancels pending generation so it is not overwritten by that old
   trigger. The next automatic trigger or `/rename-gen` may replace a manual name.
+- The `rename_session` tool takes one `name`, trims it and sets it through `pi.setSessionName`; an empty name is an error. A manual name cancels pending generation, as native `/name` does.
 - Successful names use public `pi.setSessionName`, so they persist in native
   history and `/resume`. RQW-statusbar owns title rendering, not this extension.
 

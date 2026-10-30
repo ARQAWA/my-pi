@@ -1,4 +1,5 @@
 import { convertToLlm, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { generateSessionName, type NamingRegistry } from "./core.ts";
 
 /** Initial attempt plus three retries. */
@@ -98,6 +99,19 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", () => cancel());
+
+	pi.registerTool({
+		name: "rename_session",
+		label: "Rename session",
+		description: "Rename the current session.",
+		parameters: Type.Object({ name: Type.String({ description: "The new session name." }) }),
+		async execute(_id, params) {
+			const name = params.name.trim();
+			if (!name) throw new Error("Session name must not be empty.");
+			pi.setSessionName(name);
+			return { content: [{ type: "text", text: `Session renamed to "${name}".` }], details: {} };
+		},
+	});
 
 	pi.registerCommand("rename-gen", {
 		description: "Generate the session name from the conversation",
