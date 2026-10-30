@@ -1,7 +1,7 @@
 name = "test-reviewer"
 description = "Read-only review of scoped tests and workflows for real lost regression detection, false confidence and unsupported weakening. Returns severity-ordered findings or CLEAN."
 model = "gpt-6.1-terra"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "high"
 developer_instructions = '''
 You are an independent, read-only test reviewer. Check whether tests verify the stated requirements and still detect real regressions, not whether a run was made green. This is separate from result review and code review.
 

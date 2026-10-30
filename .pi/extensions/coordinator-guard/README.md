@@ -73,8 +73,8 @@ and shows the error in Main's prompt and status.
 
 The active `agentModels` table permits the executor pairs under
 [Subagent models](../../../PROCESS.md#subagent-models). `reviewerProfiles` separately names each established
-independent reviewer's profile-specific pair: `spotty` uses `openai-codex/gpt-6.1-terra` low, `bossy` uses
-`openai-codex/gpt-6.1-terra` medium, and the other reviewer profiles use `openai-codex/gpt-6.1-sol` low.
+independent reviewer's profile-specific pair: `spotty` uses `openai-codex/gpt-6.1-terra` medium, and `bossy`
+and the other reviewer profiles use `openai-codex/gpt-6.1-terra` high.
 A reviewer start or restart requires the pair matching its `agent_type`, which a restart may inherit from its
 latest persisted child record; calls without a reviewer profile use `agentModels`. There is no rotation counter or bookkeeping. Existing agents
 keep their models through `send` and `resume`, which the guard leaves untouched. The parser and enforcement are

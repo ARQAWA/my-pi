@@ -126,7 +126,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `.pi/agents/test-reviewer.toml`: the read-only test-review profile, used through `agent` with
   `agent_type: "test-reviewer"`.
 - `.pi/agents/requirements-test-reviewer.toml` and `.pi/skills/testreview/`: repo-only requirements-based test review
-  on Terra medium, without execution or mandatory commit pairs.
+  on Terra high, without execution or mandatory commit pairs.
 - `extensions/RQW-naming/`: extension 16, background native session names after first input and each successful
   compaction, from all available context. One request ranks 1-10 candidates by meaning, best valid name wins.
   The session provider selects `anthropic/claude-haiku-5-5` or

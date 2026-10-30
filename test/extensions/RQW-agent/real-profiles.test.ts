@@ -32,9 +32,9 @@ const PACKAGE: Record<string, Expected> = {
 	bossy: { model: TERRA, effort: "medium", prefix: REVIEW_PREFIX, sha256: REVIEW_SHA },
 };
 const REPO_PROFILES: Record<string, Expected> = {
-	"code-reviewer": { model: TERRA, effort: "medium", prefix: "You are an independent, read-only code reviewer on the implementation team's side. Find real defects", sha256: "d79b76ab709bab0520a52e2120f8d87d930393cd3d5556a1793bd058384ef30b" },
-	"test-reviewer": { model: TERRA, effort: "medium", prefix: "You are an independent, read-only test reviewer. Check whether tests verify the stated requirements", sha256: "6b1773ae06bf4b431322dc20dbc343e5b76c8717268e69a6058d3e750248c7b4" },
-	"requirements-test-reviewer": { model: TERRA, effort: "medium", prefix: "You are an independent, read-only reviewer of test code as the deliverable. Check whether its checks", sha256: "b0a7de09a144ac4e6db179f4014fa626a4ee7afe88702b9ebaad6d7c83b20ecb" },
+	"code-reviewer": { model: TERRA, effort: "high", prefix: "You are an independent, read-only code reviewer on the implementation team's side. Find real defects", sha256: "d79b76ab709bab0520a52e2120f8d87d930393cd3d5556a1793bd058384ef30b" },
+	"test-reviewer": { model: TERRA, effort: "high", prefix: "You are an independent, read-only test reviewer. Check whether tests verify the stated requirements", sha256: "6b1773ae06bf4b431322dc20dbc343e5b76c8717268e69a6058d3e750248c7b4" },
+	"requirements-test-reviewer": { model: TERRA, effort: "high", prefix: "You are an independent, read-only reviewer of test code as the deliverable. Check whether its checks", sha256: "b0a7de09a144ac4e6db179f4014fa626a4ee7afe88702b9ebaad6d7c83b20ecb" },
 };
 // Same-name personal overrides outrank the package ones; by shape they mirror the owner's own files.
 const FIXTURE_PERSONAL: Record<string, Expected> = {

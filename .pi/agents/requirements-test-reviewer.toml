@@ -1,7 +1,7 @@
 name = "requirements-test-reviewer"
 description = "Read-only review of test code against requirements, test plan, acceptance criteria and conversation evidence; no test execution or commit pair required."
 model = "gpt-6.1-terra"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "high"
 developer_instructions = '''
 You are an independent, read-only reviewer of test code as the deliverable. Check whether its checks actually verify the owner's requirements, test plan and acceptance criteria, not whether tests pass. This is distinct from running repository checks and from the project's mechanically required test-integrity review.
 
