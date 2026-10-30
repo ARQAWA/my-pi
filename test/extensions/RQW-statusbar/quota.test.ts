@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { it, type TestContext } from "node:test";
 import { stripVTControlCharacters as strip } from "node:util";
 import statusbar from "../../../extensions/RQW-statusbar/index.ts";
+import { bindTestHost } from "./footer-host.ts";
 import { ICON, renderBar } from "../../../extensions/RQW-statusbar/render.ts";
 
 const MINUTE = 60_000;
@@ -79,6 +80,7 @@ function setup(t: TestContext) {
 	async function openTab() {
 		const tickIndex = ticks.length;
 		const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
+		let command: unknown;
 		const pi = {
 			events: { on: () => () => {}, emit(name: string, data: unknown) {
 				if (name !== "rqw-anthropic:quota:v1") return;
@@ -90,7 +92,7 @@ function setup(t: TestContext) {
 					return { windows: { seven_day: { remainingPercent: response.ccPercent ?? response.percent } } };
 				} });
 			} },
-			getSettings: () => ({}), getSessionName: () => undefined, getThinkingLevel: () => "off", registerCommand() {},
+			getSettings: () => ({}), getSessionName: () => undefined, getThinkingLevel: () => "off", registerCommand(_name: string, value: unknown) { command = value; },
 			on(name: string, handler: (event: unknown, ctx: unknown) => unknown) { handlers.set(name, handler); },
 		};
 		type Footer = { render(width: number): string[]; dispose(): void };
@@ -107,6 +109,7 @@ function setup(t: TestContext) {
 				} },
 		};
 		statusbar(pi as never);
+		bindTestHost(t, command);
 		await handlers.get("session_start")!({}, ctx);
 		const stop = () => handlers.get("session_shutdown")!({}, ctx);
 		shutdown.push(stop);

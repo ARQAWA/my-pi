@@ -4,7 +4,7 @@ Terminal footer, editor borders and activity display.
 
 Modules and resources live beside `index.ts`; subfolders group needed resources.
 
-Startup holds only the first paint until our editor and footer are installed, without waiting for Git; dialogs, custom UI, notifications, managed-tool progress, errors, shutdown, disable, incompatible shapes or a 1000 ms safety cap immediately restore stock painting. The self-contained Pi 1.4.0 runtime patch is in `startup.ts`; terminal input and queries are not held (`[D-STATUSBAR-STARTUP]`).
+The Pi 1.4.0 runtime patch in `early.ts` decorates the stock editor and footer before startup paints and during session replacement. The usual editor and footer are installed at `session_start`; Git and quotas arrive later. No paint is held. Dialogs, errors and input remain stock. Disabled or incompatible shapes fall back to Pi (`[D-STATUSBAR-STARTUP]`).
 
 ## Subscription limits
 

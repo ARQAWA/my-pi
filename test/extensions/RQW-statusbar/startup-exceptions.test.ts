@@ -6,162 +6,101 @@ import { join } from "node:path";
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { deferred, startupHost } from "./startup-host.ts";
 
-for (const kind of ["select", "confirm", "input", "editor", "custom", "overlay"] as const) {
-	it(`startup ${kind} paints and accepts input before statusbar is ready`, async t => {
+for (const kind of ["select", "confirm", "input", "custom"] as const) {
+	it(`startup ${kind} remains visible and accepts input`, async t => {
 		const f = startupHost(t);
 		const { init } = await f.pending();
 		const ui = f.host.createExtensionUIContext();
-		let answer: Promise<unknown>;
-		if (kind === "select") answer = ui.select("STARTUP QUESTION", ["one"]);
-		else if (kind === "confirm") answer = ui.confirm("STARTUP QUESTION", "continue?");
-		else if (kind === "input") answer = ui.input("STARTUP QUESTION", "text");
-		else if (kind === "editor") answer = ui.editor("STARTUP QUESTION", "text");
-		else answer = ui.custom((_tui: unknown, _theme: unknown, _keys: unknown, done: (value: string) => void) => ({
-			render: () => ["STARTUP QUESTION"], invalidate() {}, handleInput() { done("done"); },
-		}), { overlay: kind === "overlay" });
-		// Custom factories may be async; let Pi mount their component.
+		const answer = kind === "select" ? ui.select("QUESTION", ["one"]) : kind === "confirm" ? ui.confirm("QUESTION", "continue?") : kind === "input" ? ui.input("QUESTION", "text") : ui.custom((_tui: unknown, _theme: unknown, _keys: unknown, done: (value: string) => void) => ({ render: () => ["QUESTION"], invalidate() {}, handleInput() { done("done"); } }));
 		await Promise.resolve();
 		f.host.renderer.renderNow();
-		assert.match(f.frames().join("\n"), /STARTUP QUESTION/);
+		assert.match(f.frames().join("\n"), /QUESTION/);
 		if (kind === "input") f.input("fixed input");
 		f.input("\r");
-		assert.equal(await answer, { select: "one", confirm: true, input: "fixed input", editor: "text", custom: "done", overlay: "done" }[kind]);
-		f.proceed.resolve();
-		await init;
+		assert.equal(await answer, { select: "one", confirm: true, input: "fixed input", custom: "done" }[kind]);
+		f.proceed.resolve(); await init;
 	});
 }
 
-for (const kind of ["notification", "error", "extension error", "managed tool", "foreign editor", "foreign footer", "shutdown", "off"] as const) {
-	it(`${kind} immediately releases startup painting`, async t => {
+for (const kind of ["error", "progress"] as const) {
+	it(`startup ${kind} stays visible over the early panel`, async t => {
 		const f = startupHost(t);
 		const { init } = await f.pending();
-		const ui = f.host.createExtensionUIContext();
-		if (kind === "notification") ui.notify("STARTUP NOTICE", "info");
-		else if (kind === "error") f.host.showError("STARTUP ERROR");
-		else if (kind === "extension error") f.host.showExtensionError("fixture.ts", "STARTUP ERROR");
-		else if (kind === "managed tool") f.host.showManagedToolStatus({ type: "info", message: "STARTUP TOOL" });
-		else if (kind === "foreign editor") ui.setEditorComponent((tui: any, theme: any, keys: any) => {
-			const editor = new CustomEditor(tui, theme, keys);
-			editor.render = () => ["FOREIGN EDITOR"];
-			return editor;
-		});
-		else if (kind === "foreign footer") ui.setFooter(() => ({ render: () => ["FOREIGN FOOTER"], invalidate() {} }));
-		else if (kind === "off") await f.commands.get("statusbar").handler("off", { mode: "tui", ui });
-		else f.host.renderer.stop();
-		if (kind === "shutdown") {
-			// Stop restored painting, without requiring completion of extension binding.
-			f.host.renderer.start();
-		}
+		if (kind === "error") f.host.showError("STARTUP ERROR");
+		else f.host.showManagedToolStatus({ type: "info", message: "STARTUP PROGRESS" });
 		f.host.renderer.renderNow();
-		assert.ok(f.frames().length > 0);
-		const output = f.frames().join("\n");
-		if (kind === "notification") assert.match(output, /STARTUP NOTICE/);
-		if (kind === "error" || kind === "extension error") assert.match(output, /STARTUP ERROR/);
-		if (kind === "managed tool") assert.match(output, /STARTUP TOOL/);
-		if (kind === "foreign editor") assert.match(output, /FOREIGN EDITOR/);
-		if (kind === "foreign footer") assert.match(output, /FOREIGN FOOTER/);
-		f.proceed.resolve();
-		await init;
+		const screen = f.frames().join("\n");
+		assert.match(screen, kind === "error" ? /STARTUP ERROR/ : /STARTUP PROGRESS/);
+		assert.ok(screen.includes(f.session.sessionManager.getSessionId()));
+		f.proceed.resolve(); await init;
 	});
 }
 
-it("the 1000 ms cap restores stock painting even while startup remains pending", async t => {
-	const f = startupHost(t);
-	const { init } = await f.pending();
-	t.mock.timers.tick(899);
-	f.host.renderer.renderNow();
-	assert.equal(f.frames().length, 0);
-	t.mock.timers.tick(1);
-	f.host.renderer.renderNow();
-	assert.match(f.frames().join("\n"), /\(auto\)/);
-	f.proceed.resolve();
-	await init;
-});
-
-it("no loaded statusbar uses Pi's normal first frame", async t => {
-	const f = startupHost(t, { loaded: false });
-	const { init } = await f.pending();
-	assert.match(f.frames().join("\n"), /\(auto\)/);
-	f.proceed.resolve();
-	await init;
-});
-
-it("a statusbar factory belonging to another session does not hold this session", async t => {
+it("a foreign host remains stock", async t => {
 	const f = startupHost(t);
 	f.session.resourceLoader.getExtensions = () => ({ extensions: [] });
 	const { init } = await f.pending();
 	assert.match(f.frames().join("\n"), /\(auto\)/);
-	f.proceed.resolve();
-	await init;
+	f.proceed.resolve(); await init;
 });
 
-it("an incompatible renderer stays stock without a partial hold", async t => {
+it("incompatible borders fall back to stock without partial decoration", async t => {
 	const f = startupHost(t);
-	Object.defineProperty(f.host.renderer, "showOverlay", { value: f.host.renderer.showOverlay, writable: false, configurable: false });
+	Object.defineProperty(f.host.defaultEditor, "renderBottomBorder", { value: f.host.defaultEditor.renderBottomBorder, writable: false, configurable: false });
 	const { init } = await f.pending();
 	assert.match(f.frames().join("\n"), /\(auto\)/);
-	f.proceed.resolve();
-	await init;
+	f.proceed.resolve(); await init;
+	f.host.renderer.renderNow();
+	assert.match(f.host.renderer.getScreenLines().join("\n"), /cmp 0/, "the normal footer is installed after fallback");
 });
 
-it("a rejected initialization restores painting and preserves the error", async t => {
+it("startup leaves a foreign footer in place", async t => {
 	const f = startupHost(t);
 	const { init } = await f.pending();
-	const failed = assert.rejects(init, /fixture startup failed/);
-	f.proceed.reject(new Error("fixture startup failed"));
-	await failed;
+	f.host.createExtensionUIContext().setFooter(() => ({ render: () => ["FOREIGN FOOTER"], invalidate() {} }));
+	f.proceed.resolve(); await init;
 	f.host.renderer.renderNow();
-	assert.match(f.frames().join("\n"), /\(auto\)/);
+	assert.match(f.host.renderer.getScreenLines().join("\n"), /FOREIGN FOOTER/);
 });
 
-it("completion releases a hold even when no session-start handler installs chrome", async t => {
+it("off restores stock and shutdown preserves foreign components", async t => {
 	const f = startupHost(t);
-	const { init } = await f.pending();
-	f.handlers.set("session_start", []);
-	f.proceed.resolve();
-	await init;
-	f.host.renderer.renderNow();
-	assert.match(f.frames().join("\n"), /\(auto\)/);
-});
-
-it("removing the extension releases pending paints and repeated init stays stock", async t => {
-	const f = startupHost(t);
-	const { init } = await f.pending();
-	const ui = f.host.createExtensionUIContext();
-	for (const handler of f.handlers.get("session_shutdown") ?? []) await handler({}, { mode: "tui", ui });
-	f.handlers.clear();
-	f.commands.clear();
-	f.host.renderer.renderNow();
-	assert.match(f.frames().join("\n"), /\(auto\)/, "removal paints stock while initialization is still pending");
-	f.proceed.resolve();
-	await init;
-	await f.host.init();
-	f.host.renderer.renderNow();
-	assert.match(f.host.renderer.getScreenLines().join("\n"), /\(auto\)/);
-});
-
-it("reloading the factory keeps chrome live without another startup hold", async t => {
-	const f = startupHost(t);
-	const { init } = await f.pending();
-	f.proceed.resolve();
-	await init;
-	await f.reload();
-	f.host.renderer.renderNow();
-	assert.match(f.host.renderer.getScreenLines().join("\n"), /cmp 0/);
+	const { init } = await f.pending(); f.proceed.resolve(); await init;
 	await f.commands.get("statusbar").handler("off", f.ctx);
 	f.host.renderer.renderNow();
-	assert.match(f.frames().at(-1)!, /\(auto\)/);
+	assert.match(f.host.renderer.getScreenLines().join("\n"), /\(auto\)/);
+	await f.commands.get("statusbar").handler("on", f.ctx);
+	const ui = f.host.createExtensionUIContext();
+	ui.setEditorComponent((tui: any, theme: any, keys: any) => {
+		const editor = new CustomEditor(tui, theme, keys);
+		editor.render = () => ["FOREIGN EDITOR"];
+		return editor;
+	});
+	ui.setFooter(() => ({ render: () => ["FOREIGN FOOTER"], invalidate() {} }));
+	await f.runner.emit({ type: "session_shutdown", reason: "switch" });
+	f.host.renderer.renderNow();
+	const screen = f.host.renderer.getScreenLines().join("\n");
+	assert.match(screen, /FOREIGN EDITOR/);
+	assert.match(screen, /FOREIGN FOOTER/);
 });
 
-it("a failed chrome installation releases painting and preserves its error", async t => {
+it("reload binds a new owner before history is rendered", async t => {
 	const f = startupHost(t);
-	const { init } = await f.pending();
-	t.mock.method(f.host, "setExtensionFooter", () => { throw new Error("fixture install failed"); });
-	const failed = assert.rejects(init, /fixture install failed/);
-	f.proceed.resolve();
-	await failed;
+	const { init } = await f.pending(); f.proceed.resolve(); await init;
+	await f.reload();
 	f.host.renderer.renderNow();
-	assert.ok(f.frames().length > 0);
+	const screen = f.host.renderer.getScreenLines().join("\n");
+	assert.ok(screen.includes(f.session.sessionManager.getSessionId()));
+	assert.ok(!screen.includes("(auto)"));
+});
+
+it("stopping restores our prototype wrappers", async t => {
+	const f = startupHost(t);
+	const { init } = await f.pending(); f.proceed.resolve(); await init;
+	await f.runner.emit({ type: "session_shutdown", reason: "shutdown" });
+	f.host.stop();
+	assert.match(f.host.defaultEditor.renderTopBorder(80, 0), /─/);
+	assert.ok(!f.host.defaultEditor.renderTopBorder(80, 0).includes(f.session.sessionManager.getSessionId()));
 });
 
 it("slow old Git discovery cannot delay chrome or overwrite a new cwd", async t => {
@@ -184,8 +123,9 @@ it("slow old Git discovery cannot delay chrome or overwrite a new cwd", async t 
 	const { init } = await f.pending();
 	f.proceed.resolve();
 	await init;
-	assert.match(f.frames()[0], /cmp 0/);
-	f.ctx.cwd = newCwd;
+	f.host.renderer.renderNow();
+	assert.match(f.frames().join("\n"), /cmp 0/);
+	f.runner.cwd = newCwd;
 	f.host.renderer.renderNow();
 	const refreshed = deferred();
 	const write = f.host.renderer.terminal.write.bind(f.host.renderer.terminal);
@@ -195,10 +135,10 @@ it("slow old Git discovery cannot delay chrome or overwrite a new cwd", async t 
 	await newLookupEntered.promise;
 	// The old result finished while another cwd was current. Returning to its cwd must
 	// not resurrect that discarded result while the newer lookup is still pending.
-	f.ctx.cwd = oldCwd;
+	f.runner.cwd = oldCwd;
 	f.host.renderer.renderNow();
 	assert.ok(f.frames().every(frame => !frame.includes("OLD_BRANCH")), "a discarded old result never paints");
-	f.ctx.cwd = newCwd;
+	f.runner.cwd = newCwd;
 	f.host.renderer.renderNow();
 	newStat.resolve({ isDirectory: () => true, isFile: () => false });
 	await refreshed.promise;

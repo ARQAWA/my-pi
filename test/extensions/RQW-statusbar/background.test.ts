@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { stripVTControlCharacters as strip } from "node:util";
 import { it } from "node:test";
 import statusbar from "../../../extensions/RQW-statusbar/index.ts";
+import { bindTestHost } from "./footer-host.ts";
 
 it("shows only the current session's background summary with gold animation", async (t) => {
 	t.mock.timers.enable({ apis: ["setInterval"] });
@@ -17,11 +18,12 @@ it("shows only the current session's background summary with gold animation", as
 	t.after(() => { if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous; });
 	const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
 	const listeners = new Map<string, Set<(event: unknown) => void>>();
+	let command: unknown;
 	const pi = {
 		events: { on: (name: string, fn: (event: unknown) => void) => { const set = listeners.get(name) ?? new Set(); set.add(fn); listeners.set(name, set); return () => set.delete(fn); },
 			emit: (name: string, event: unknown) => { for (const fn of listeners.get(name) ?? []) fn(event); } },
 		getSettings: () => ({}), getSessionName: () => undefined, getThinkingLevel: () => "off",
-		registerCommand() {}, on: (name: string, fn: (event: unknown, ctx: unknown) => unknown) => handlers.set(name, fn),
+		registerCommand(_name: string, value: unknown) { command = value; }, on: (name: string, fn: (event: unknown, ctx: unknown) => unknown) => handlers.set(name, fn),
 	};
 	let id = "one";
 	let footer: ((tui: unknown, theme: unknown, data: unknown) => { render(width: number): string[] }) | undefined;
@@ -30,6 +32,7 @@ it("shows only the current session's background summary with gold animation", as
 		ui: { theme: { fg: (_role: string, text: string) => text }, getEditorComponent: () => ({}), setEditorComponent() {},
 			setFooter: (fn: typeof footer) => { footer = fn; }, setWorkingIndicator() {}, setWidget() {} } };
 	statusbar(pi as never);
+	bindTestHost(t, command);
 	const emit = (sessionId: string, active: boolean) => pi.events.emit("rqw-context:background-compaction", { sessionId, active });
 	emit("one", true);
 	await handlers.get("session_start")!({}, ctx);

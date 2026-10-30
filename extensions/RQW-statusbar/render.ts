@@ -55,7 +55,7 @@ export interface BarState {
 	thinkingLevel?: string;
 	/** Context tokens (null: unknown after a compaction) against the compaction threshold. */
 	context?: { tokens: number | null; limit: number };
-	compactions: number;
+	compactions?: number;
 	/** Output tokens per second of the latest assistant message. */
 	rate?: number;
 	place: { kind: PlaceKind; text: string };
@@ -224,7 +224,7 @@ export function modelRow(state: BarState, width: number, paint: Paint = plain): 
 	const dot = ` ${paint("sep", "·")} `;
 	const statuses = state.statuses.map(singleLine).filter(Boolean);
 	if (statuses.length > 0) left += dot + statuses.join(dot);
-	const right = [paint("label", `cmp ${state.compactions}`)];
+	const right = state.compactions === undefined ? [] : [paint("label", `cmp ${state.compactions}`)];
 	if (state.rate !== undefined && Number.isFinite(state.rate) && state.rate > 0) {
 		right.push(paint("info", `${ICON.throughput}${state.rate.toFixed(1)} tok/s`));
 	}
