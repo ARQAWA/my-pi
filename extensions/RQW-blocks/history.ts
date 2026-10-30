@@ -76,7 +76,7 @@ function historyTexts(host: Host, older: Entry[]): string[] {
 	return texts;
 }
 
-export function installHistory(prototype: any = InteractiveMode.prototype): () => void {
+export function installHistory(prototype: any = InteractiveMode.prototype, beforeRender?: (host: any) => boolean): (() => void) & { reset?: (host: any) => void } {
 	const names = ["renderSessionEntries", "renderInitialMessages", "rebuildChatFromMessages", "handleEvent"];
 	if (names.some((name) => typeof prototype?.[name] !== "function")) return () => {};
 	const lazyNames = typeof prototype.switchTuiMode === "function" ? [...names, "switchTuiMode"] : names;
@@ -98,6 +98,7 @@ export function installHistory(prototype: any = InteractiveMode.prototype): () =
 	prototype.renderSessionEntries = function (this: Host, entries: Entry[], options?: unknown) {
 		const mode = armed;
 		armed = undefined;
+		if (beforeRender && !beforeRender(this)) return render.call(this, entries, options);
 		let plan: Plan | undefined;
 		let texts: string[] = [];
 		if (mode) try {
@@ -130,11 +131,16 @@ export function installHistory(prototype: any = InteractiveMode.prototype): () =
 		const fresh = type === "compaction_end" ? event.result && !event.aborted : type === "entry_appended" && event.entry?.type === "compaction";
 		return fresh ? arm("prefix", () => handle.call(this, event, ...args)) : handle.call(this, event, ...args);
 	};
+	const installed = new Map(lazyNames.map(key => [key, prototype[key]]));
 	const restore = () => {
 		lazy.dispose();
-		for (const key of lazyNames) if (own[key]) Object.defineProperty(prototype, key, own[key]); else delete prototype[key];
+		for (const key of lazyNames) {
+			if (prototype[key] !== installed.get(key)) continue;
+			if (own[key]) Object.defineProperty(prototype, key, own[key]); else delete prototype[key];
+		}
 		if ((globalThis as any)[ACTIVE] === restore) delete (globalThis as any)[ACTIVE];
 	};
+	restore.reset = (host: any) => lazy.reset(host);
 	(globalThis as any)[ACTIVE] = restore;
 	return restore;
 }

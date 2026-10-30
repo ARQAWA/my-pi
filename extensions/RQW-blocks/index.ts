@@ -4,9 +4,7 @@ import { installBash } from "./bash.ts";
 import { installThinking } from "./thinking.ts";
 import { installJump, isJumpInstalled } from "./jump.ts";
 import { installFlash } from "./flash.ts";
-import { installHistory } from "./history.ts";
-
-const ACTIVE = Symbol.for("rqw-blocks.compaction");
+import { installEarly } from "./early.ts";
 const GOLD = ["#8a6d1c", "#c9a227", "#e3c45a"];
 const FADE = ["#8a6d1c", "#3a3836"];
 const SILVER = ["#7f7e7c", "#adadac", "#d6d6d5"];
@@ -70,8 +68,10 @@ function installSummary(getTheme: () => Theme, prototype: any, branch: boolean):
 		if (!valid(this) || !patched.has(this)) return mouse?.call(this, event);
 		return undefined;
 	};
+	const installed = new Map(["render", "invalidate", "handleMouse"].map(key => [key, prototype[key]]));
 	const restore = () => {
 		for (const key of ["render", "invalidate", "handleMouse"]) {
+			if (prototype[key] !== installed.get(key)) continue;
 			if (own[key]) Object.defineProperty(prototype, key, own[key]); else delete prototype[key];
 		}
 	};
@@ -88,14 +88,21 @@ export function installBranch(getTheme: () => Theme, prototype: any = BranchSumm
 
 export default function blocks(pi: ExtensionAPI): void {
 	let restore = () => {};
-	// Installed while the extension loads, not at session_start: Pi draws the transcript of a reload or a switched
-	// session before the new session's extensions start.
-	const restoreHistory = installHistory();
-	// Other block patches are installed here, each with its own cleanup.
+	const early = installEarly((theme, supported) => {
+		const cleanups: (() => void)[] = [];
+		try {
+			if (supported.compaction) cleanups.push(installCompaction(theme));
+			if (supported.branch) cleanups.push(installBranch(theme));
+			if (supported.bash) cleanups.push(installBash(theme));
+			if (supported.thinking) cleanups.push(installThinking());
+		} catch (error) {
+			for (const cleanup of cleanups) cleanup();
+			throw error;
+		}
+		return () => { for (const cleanup of cleanups) cleanup(); };
+	});
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
-		(globalThis as any)[ACTIVE]?.();
-		const cleanups = [installCompaction(() => ctx.ui.theme), installBranch(() => ctx.ui.theme), installBash(() => ctx.ui.theme), installThinking()];
 		let uninstallTui = () => {};
 		if (ctx.mode === "tui") {
 			ctx.ui.setWidget("rqw-blocks", (tui) => {
@@ -118,10 +125,8 @@ export default function blocks(pi: ExtensionAPI): void {
 				install();
 				return { render: () => [], invalidate: install };
 			}, { placement: "belowEditor" });
-			cleanups.push(() => { uninstallTui(); ctx.ui.setWidget("rqw-blocks", undefined); });
+			restore = () => { uninstallTui(); ctx.ui.setWidget("rqw-blocks", undefined); };
 		}
-		restore = () => { for (const cleanup of cleanups) cleanup(); if ((globalThis as any)[ACTIVE] === restore) delete (globalThis as any)[ACTIVE]; };
-		(globalThis as any)[ACTIVE] = restore;
 	});
-	pi.on("session_shutdown", () => { restoreHistory(); restore(); });
+	pi.on("session_shutdown", (event, ctx) => { early.shutdown(event, ctx); restore(); });
 }

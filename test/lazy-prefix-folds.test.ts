@@ -40,7 +40,16 @@ async function open(origin: "owner" | "card" | "work" = "owner", ms = 42_000, su
 	const ctx = { mode: "tui", hasUI: true, sessionManager: s.manager, ui: { theme, setWidget() {} } };
 	cleanups.push(async () => { for (const extension of extensions.toReversed()) for (const handler of extension.handlers.get("session_shutdown") ?? []) await handler({}, ctx); });
 	const fx = makeFullscreen(s.manager, { columns: WIDTH, rows: 20 });
+	(fx.host.runtimeHost.session as any).resourceLoader = { getExtensions: () => loaded };
 	cleanups.push(() => fx.stop());
+	cleanups.push(() => {
+		const host = fx.host as any;
+		Object.assign(host, { isInitialized: false, disposeActiveSelector() {}, clearExtensionTerminalInputListeners() {}, unregisterSignalHandlers() {}, footerDataProvider: { dispose() {} } });
+		Object.assign(host.footer, { dispose() {} });
+		Object.assign(host.themeController, { disableAutoSync() {} });
+		Object.assign(host.session.settingsManager, { getShowTerminalProgress: () => false });
+		host.stop("none");
+	});
 	(fx.host.runtimeHost.session as any).extensionRunner.resolveToolRenderers = (name: string, next: () => unknown) => {
 		let resolve = next;
 		for (const extension of extensions.toReversed()) for (const renderer of (extension.toolRenderers ?? []).toReversed()) {
