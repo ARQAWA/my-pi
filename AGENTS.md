@@ -153,6 +153,13 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   a closed chat is reported with an open hint, never opened. Reads stored turns from the open tab, delivers as a follow-up, one turn at a time. Public Pi APIs only; no import from another
   extension folder, switch it off alone in `pi config`; subagents never load it. Contract and limits: [README](extensions/RQW-tabs-link/README.md),
   `DECISIONS.md` `[D-TABS-LINK]`. Tests: `test/extensions/RQW-tabs-link/`.
+- `extensions/RQW-btw/`: independent `/btw [text]` side chat in the main chat, Codex's side conversation simplified:
+  a full-screen view over the chat with its own transcript and input, several messages, no tools, answers shown whole.
+  It forks what the main model sees at opening (the last main request through `rqw:context-fork:v1`, else the current
+  branch) and grows from that mark; the main chat keeps running underneath. Escape or Ctrl+C leaves and forgets it:
+  nothing reaches the chat, the session file or the model context. Never waits for or runs a compaction; one shorter
+  retry after a provider overflow. Runtime patch of the main agent's stream function (`[D-SCOPE-RUNTIME-PATCH]`).
+  Decision: `DECISIONS.md` `[D-BTW]`. Tests: `test/extensions/RQW-btw/`.
 - `extensions/RQW-codex-compat/`: independent Codex compatibility on public Pi APIs today; no Pi source edit. Full parity is not implemented yet and,
   under `[D-SCOPE-RUNTIME-PATCH]`, no longer waits for a public Pi API. Offers Codex skill roots through `resources_discover`: `$CODEX_HOME/skills` and its `.system`,
   `~/.agents/skills`, `/etc/codex/skills` where the system has it (no other administrative config is read), project `.agents/skills` and, for trusted projects

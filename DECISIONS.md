@@ -59,6 +59,35 @@ Provenance:
   Evidence: `my-pi-evidence/designs/deferred/live-tail-measurement.md`.
   Carriers: `extensions/RQW-live-tail/index.ts`, `package.json`, `test/extensions/RQW-live-tail/live-tail.test.ts`.
 
+## Btw
+
+- **Side chat** `[D-BTW]`. The independently disableable `extensions/RQW-btw/` adds `/btw [text]` to the main chat:
+  a full-screen view over the chat with its own transcript and input, Codex's side conversation simplified. With text
+  it sends it at once; bare `/btw` opens an empty side chat. Several messages; answers appear whole after a spinner,
+  as Markdown; no tools (a tool call in an answer is not executed and is noted). Escape or Ctrl+C leaves, cancels a
+  running answer and forgets everything: nothing reaches the main chat, the session file or the model context, nothing
+  is saved or reopened. The main chat keeps running underneath; its editor and draft are untouched. The wheel (Pi's
+  fullscreen view), PageUp and PageDown, and Up or Down on an empty input scroll the side chat; scrolled up, new rows
+  never move the visible text. The model sees what the main model sees at opening, frozen: the last main request plus
+  finished messages after it (an unfinished tool call as text), through `rqw:context-fork:v1` (RQW-anthropic,
+  RQW-codex), so a cache hit is likely, not guaranteed; otherwise `modelRegistry.streamSimple` without a session id
+  with the current branch, prompt and active tool declarations, paying the whole context. Compaction, tree navigation
+  and a session switch drop the recorded request. The side chat never waits for or runs a compaction: a tail that does
+  not fit goes as cut text, older side exchanges stop being sent once it outgrows the window, and a provider overflow
+  gets one automatic shorter retry (latest compaction summary plus the newest part as text); a second failure shows the
+  error and keeps the chat. The last main request is recorded by a runtime patch of the main agent's stream function
+  under `[D-SCOPE-RUNTIME-PATCH]`; an unknown shape leaves only the fallback.
+  Owner (`16-27-59:58149`): «Надо накидать проект команды /btw из клауд кода в мейн чате на 1 стори поинт»
+  Owner (`16-27-59:58924`): «Может как-то сделать так, что когда я пишу «БТВ», открывается новый чат визуально, и там я пишу ответ, он пишет вопрос, я нажимаю Escape, и я могу там переписываться, как в кодексе. И по Ctrl+C или по Escape будет выход из этой хуйни. И это будет, как в кодексе, такая же механика, но упрощённая, без сохранения истории и прочего.»
+  Owner (`16-27-59:58937`): «И чтобы там можно было прокручивать историю, всю хуйню. И чтобы там работало всё полноценно. Допустим, я BTV открою. А ещё знаешь, что нужно сделать? Нужно, наверное, сделать: вдруг я открою, а там будет буквально перед Compaction сообщение. То он что, в Compaction уйдёт, а потом мне ответит? Это должно работать полноценно, нормально. Вот и всё.»
+  Owner (`16-27-59:59085`): «1ну давай первый варик», to Coordinator text: "1. рекомендую: 4 sp. /btw без чтения файлов, 2 sp.
+  оповещения 2 sp, карточка сворачивается вместе с работой. 2. 5 sp: /btw читает файлы. 3. 5 sp: карточка оповещений
+  всегда видна, работа до неё не сворачивается."
+  Coordinator text: Escape exits, as the owner said; read tools were left out by that choice.
+  Design: `my-pi-evidence/designs/btw/DESIGN.md`.
+  Reason: a side conversation about the session without touching the main run, its history or its context.
+  Carriers: `extensions/RQW-btw/`, `package.json`, `test/extensions/RQW-btw/btw.test.ts`.
+
 ## Tabs link
 
 - **Chats talk through three deferred tools** `[D-TABS-LINK]`. The independently disableable
