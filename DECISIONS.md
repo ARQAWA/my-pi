@@ -61,8 +61,10 @@ Provenance:
 
 - **Placeholder instead of typing** `[D-LIVE-TAIL]`. The independently disableable `extensions/RQW-live-tail/index.ts`
   registers one public `registerMarkdownTransformer`. For `messageType === "assistant" && isStreaming` it returns
-  «ответ готовится»; otherwise the original text. The finished answer, user text, thinking, tools and statuses stay
+  `writing answer` in the current theme's `dim` colour, without italic; otherwise the original text. The finished answer, user text, thinking, tools and statuses stay
   unchanged. No Pi source edit, no separate README, no dependency on other extensions.
+  Owner: «печатаю ответ надо заменить на writing answer и сделать визуально это что бы как бдуто служебная запись а не ответ в чате, что бы было ясно что это визуализация процесса».
+  Owner: «Пусть будет не курсивом, просто другим цветом шрифта и всё и да делай».
   Owner: «Мне не нужна анимация того, как агент что-то печатает на экране. Мне лучше видеть отзывчивый, 100% производительный, 100% супербыстрый, суперлегковесный интерфейс».
   Owner approved the chunk «отложенное» with «1». Measured (6.1.1.2, Markdown component only, width 100, 100-character updates,
   median of 5): parse and render of a streamed 10 000-character answer 139.5 ms before, 0.25 ms after; 50 000 characters
