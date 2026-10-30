@@ -85,7 +85,7 @@ export class ToolUi {
 	/** The session's cwd, read once at start: it is what Pi resolves the paths of calls against. */
 	private cwd: string | undefined;
 	private entries: SessionEntry[] = [];
-	private firstKeptEntryId: string | undefined;
+	private firstKeptEntryIds: ReadonlySet<string> | undefined;
 	/** Entries before this index only form groups no event can change again; they are not read again. */
 	private cut = 0;
 	private messages: unknown[] = [];
@@ -94,8 +94,10 @@ export class ToolUi {
 	private groups = new Map<string, CallGroup>();
 	/** Calls of the groups already stored in their final form; later rebuilds do not build those groups again. */
 	private final = new Set<string>();
-	/** The latest `invalidate` Pi gave each row, by tool call ID. */
-	private rows = new Map<string, () => void>();
+	/** The row state of each call, by tool call ID; its `context` is the latest one Pi gave (renderCall and renderResult get
+	 * different `invalidate` callbacks, so the callback is read at refresh time). Weak: the state belongs to the component,
+	 * and a row Pi no longer draws (an unloaded part of the history) must be free to go. */
+	private rows = new Map<string, WeakRef<RowState>>();
 	/** What each row drew last time it was asked to redraw: leader or not, active or not. */
 	private drawn = new Map<string, string>();
 	private textBreaks = new Set<number>();
@@ -121,7 +123,7 @@ export class ToolUi {
 		this.sessionManager = undefined;
 		this.cwd = undefined;
 		this.entries = [];
-		this.firstKeptEntryId = undefined;
+		this.firstKeptEntryIds = undefined;
 		this.cut = 0;
 		this.messages = [];
 		this.executions = [];
@@ -210,7 +212,7 @@ export class ToolUi {
 				const own = this.own(context);
 				own.context = context;
 				own.theme = theme;
-				this.rows.set(context.toolCallId, context.invalidate);
+				this.rows.set(context.toolCallId, new WeakRef(own));
 				this.drawn.set(context.toolCallId, this.signature(context.toolCallId));
 				// The original's call side runs from the start of execution on, as in Pi, so what it starts then (the bash
 				// clock) is right when the call is expanded later; its result side from the first expansion on.
@@ -246,8 +248,7 @@ export class ToolUi {
 		if (!this.sessionManager) return;
 		if (readEntries) {
 			this.entries = this.sessionManager.getBranch();
-			const latest = this.entries.findLast((entry) => entry.type === "compaction");
-			this.firstKeptEntryId = latest?.type === "compaction" ? latest.firstKeptEntryId : undefined;
+			this.firstKeptEntryIds = new Set(this.entries.flatMap((entry) => (entry.type === "compaction" ? [entry.firstKeptEntryId] : [])));
 		}
 		if (restart) {
 			this.cut = 0;
@@ -255,13 +256,13 @@ export class ToolUi {
 			this.final.clear();
 		}
 		const tail = buildTail(this.cut > 0 ? this.entries.slice(this.cut) : this.entries,
-			{ messages: this.messages, executions: this.executions, streaming: this.streaming }, this.final, this.firstKeptEntryId);
+			{ messages: this.messages, executions: this.executions, streaming: this.streaming }, this.final, this.firstKeptEntryIds);
 		for (const [id, g] of tail.groups) this.groups.set(id, g);
 		for (const id of tail.settled) this.final.add(id);
 		this.advance(tail.unsettledFrom);
 		for (const id of restart ? this.rows.keys() : tail.groups.keys()) {
-			const invalidate = this.rows.get(id);
-			if (!invalidate) continue;
+			const invalidate = this.rows.get(id)?.deref()?.context?.invalidate;
+			if (!invalidate) { this.rows.delete(id); this.drawn.delete(id); continue; }
 			const g = this.groups.get(id);
 			const drawn = this.signature(id);
 			// The leader of the active group shows the current call, which moves with every event; others only when

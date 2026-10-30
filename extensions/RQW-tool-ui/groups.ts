@@ -100,7 +100,7 @@ export function messageKey(m: unknown): string | undefined {
 
 /** The messages of the branch and of the stream, as one ordered list; group breaks for non-message entries.
  * A streamed message that is already saved counts once, at its saved place (each saved copy matches one streamed). */
-function timeline(entries: readonly SessionEntry[], live: LiveState, firstKeptEntryId?: string): unknown[] {
+function timeline(entries: readonly SessionEntry[], live: LiveState, firstKeptEntryIds?: ReadonlySet<string>): unknown[] {
 	const out: unknown[] = [];
 	const saved = new Map<string, number>();
 	const keep = (m: unknown) => {
@@ -108,8 +108,8 @@ function timeline(entries: readonly SessionEntry[], live: LiveState, firstKeptEn
 		if (k) saved.set(k, (saved.get(k) ?? 0) + 1);
 	};
 	for (const e of entries) {
-		// Pi may hide everything before this entry, even when the compaction split a tool run.
-		if (e.id === firstKeptEntryId) out.push({ role: "break" });
+		// Pi may hide everything before this entry, and the history loads in pieces cut here: every compaction's cut breaks a group.
+		if (firstKeptEntryIds?.has(e.id)) out.push({ role: "break" });
 		if (e.type === "message") {
 			out.push(e.message);
 			keep(e.message);
@@ -213,11 +213,11 @@ export function buildGroups(contextEntries: readonly SessionEntry[], live: LiveS
 
 /** Like {@link buildGroups}, for the entries from a group boundary on, with the calls events can still change.
  * The calls in `skip` belong to settled groups, which are not built again. */
-export function buildTail(contextEntries: readonly SessionEntry[], live: LiveState = {}, skip: ReadonlySet<string> = new Set(), firstKeptEntryId?: string): Tail {
+export function buildTail(contextEntries: readonly SessionEntry[], live: LiveState = {}, skip: ReadonlySet<string> = new Set(), firstKeptEntryIds?: ReadonlySet<string>): Tail {
 	const executions = new Map<string, LiveExecution>();
 	for (const x of live.executions ?? []) if (!executions.has(x.toolCallId)) executions.set(x.toolCallId, x);
 	const results = new Map<string, Record<string, unknown>>();
-	const messages = timeline(contextEntries, live, firstKeptEntryId);
+	const messages = timeline(contextEntries, live, firstKeptEntryIds);
 	for (const m of messages) {
 		const r = record(m);
 		if (r.role === "toolResult" && typeof r.toolCallId === "string" && !results.has(r.toolCallId)) results.set(r.toolCallId, r);
