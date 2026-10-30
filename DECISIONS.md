@@ -394,6 +394,32 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Accepted appearance: owner entry `f7d11547`, line 702: "Бля, заебись, вообще кайф нахуй" (owner words as recorded in the ledger);
   carrier `/tmp/my-pi-ui.html` and UI-port `browser-preview/index.html`. Visual approval is not runtime proof.
 
+- **Worked-for folds** `[D-UI-WORKED-FOR]`. Owner, verbatim:
+  > Надо сворачивать всю проделанную работу от моего сообщения к конечному Answer Response. Все промежуточные состояния, tool call и update надо свернуть туда, под плашку worked for столько-то секунд. И стрелочка вниз, чтобы её можно было развернуть и посмотреть, какие tool call свёрнуты туда.
+
+  > Мне надо, чтобы я мог развернуть это не через Ctrl+O, а кликом мышкой по этой стрелочке, чтобы она была вправо, а когда нажимаешь, шла вниз и была развёртка всего, что под ней. А через Ctrl+O мы переключаем старый вид.
+
+  > Кликаешь полностью по всей этой строке: Worked for, время. По всей этой строке кликаешь, и она разворачивается вниз, стрелку указывает. И стрелку надо сделать, когда она вправо, чтобы она была как бы не стрелка, а просто скобочка угловая вправо. А когда вниз — такая же скобочка угловая, только не вправо, а вниз. Вот так я хочу, чтобы это выглядело, а не полноценная стрелка. Это первое. Второе: время работы должно быть в секундах, если меньше минуты, а потом дальше в минутах. А если дошло до часов, то в часах, минутах. Сначала секунды, потом минуты, секунды, потом часы, минуты. Вот так.
+
+  > Только где ты пишешь 42 секунды, 2 минуты 3 секунды, 1 час 5 минут, пробел не надо между цифрой и единицами измерения, пожалуйста.
+
+  > Так, насчёт свёртывания заебись. Я посмотрел макет, но когда я кликнул на него, там развернулась какая-то залупа. А разворачиваться должно буквально то же самое, что было свёрнуто, блядь.
+
+  Once a turn has a successful final answer (stop, text, no tool calls) and the run has settled, every component
+  Pi drew between the user message and that answer folds under one dim row `worked for 42s ›`, `2m 03s`, `1h 05m`
+  (whole seconds rounded first; `worked` without valid times); open, `˅`. A left click anywhere on that row toggles
+  that fold only; press, drag and copy stay Pi's selection. Open shows literally the rows from before the fold, with
+  the current Ctrl+O and Ctrl+T state; Ctrl+O and Enter never toggle folds; no hints. The final answer and the user
+  message stay outside, unchanged. Time runs from the user message's timestamp to the saved entry of the final
+  answer, waiting and closed Pi included. Not folded: a turn ending in error, abort or length, a turn without work,
+  a turn cut by a compaction line, branch summary, `!` command or any compaction's first kept entry, and Pi's inline
+  mode (no mouse). A second answer in the same turn joins one fold. Folds start closed after a restart, reload,
+  rebuild or a reloaded history interval. Runtime patch under `[D-SCOPE-RUNTIME-PATCH]`: a wrapper on
+  `InteractiveMode.prototype.addMessageToChat` finds the chat container, an O(1) guard on its `render` rebinds on a
+  new transcript or a settled run, and fold members get own `render`/`handleMouse` that return nothing when hidden;
+  another shape keeps today's view.
+  Carriers: `extensions/RQW-tool-ui/{fold,groups,index}.ts`, its README, `test/extensions/RQW-tool-ui/fold.test.ts`.
+
 ## Agent cards
 
 - **Delivered results, not an agent board** `[D-UI-AGENT-CARDS]`. Owner: "Да с сабагентами +".

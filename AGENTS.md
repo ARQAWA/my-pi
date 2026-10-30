@@ -138,7 +138,8 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   collapsed wait cards. No activity-count producer, statusbar indicator or agent list here.
   Tests: `test/extensions/RQW-agent-ui/`; independent package filter and `/reload`.
 - `extensions/RQW-tool-ui/`: extension 18, between-answer tool summaries, current call header plus last four output
-  rows and status, immediate folding on answer text, Ctrl+O originals. Native thinking spacing and stock image output
+  rows and status, immediate folding on answer text, Ctrl+O originals. After a settled final answer, the turn's work
+  folds under a clickable `worked for 42s ›` row in fullscreen (runtime patch, `[D-UI-WORKED-FOR]`). Native thinking spacing and stock image output
   remain. Details: [Compact tool display](DECISIONS.md#compact-tool-display); tests: `test/extensions/RQW-tool-ui/`.
 - `extensions/RQW-skill-dollar/`: extension 19, `$skill` autocomplete at whitespace boundaries, all matches selectable
   through a four-row editor window, and Pi-format skill blocks for every mention on submit; an optional filter offer
