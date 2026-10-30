@@ -30,12 +30,12 @@ type Host = {
 	ui?: { requestRender?: () => void };
 };
 
-/** One completed boundary-local span: its work components and the final answer that stays outside. */
+/** One boundary-local span: work closed by an answer or a kept-entry cut. */
 export interface Fold {
 	label: string;
 	start: number;
 	open: boolean;
-	/** The final answer's component: outside the fold, it keys the open state. */
+	/** Open-state key: the final answer outside, or the prefix's first component inside. */
 	final: object;
 	/** Work components in Pi's order; the first owns the header. */
 	members: object[];
@@ -276,10 +276,27 @@ export class Folds {
 			const savedKeys = this.savedCardKeys(children, from);
 			let start = -1;
 			let spanKey: string | undefined;
+			const add = (end: number, anchor: object, span: TurnSpan) => {
+				const members = children.slice(start, end);
+				const lifted = members.filter((m) => this.users.has(m));
+				if (members.every((m) => this.wrappable(m)) && members.some((m) => !this.users.has(m) && !(m instanceof Spacer))) {
+					next.push({ label: span.label, start, open: this.opened.get(anchor) ?? false, final: anchor, members, lifted, revision: 0 });
+				}
+			};
+			const prefix = (end: number) => {
+				const span = spanKey ? this.index!.prefixes.get(spanKey) : undefined;
+				if (span && start >= 0) {
+					add(end, children[start], span);
+					this.currentStart = end;
+					start = -1;
+					spanKey = undefined;
+				}
+			};
 			this.currentStart = from;
 			for (let i = from; i < children.length; i++) {
 				const child = children[i];
 				if (child instanceof CompactionSummaryMessageComponent || child instanceof BranchSummaryMessageComponent || child instanceof BashExecutionComponent) {
+					prefix(i);
 					start = -1;
 					spanKey = undefined;
 					this.currentStart = i + 1;
@@ -287,21 +304,19 @@ export class Folds {
 				}
 				const key = savedKeys.get(child) ?? this.sourceKey(child);
 				const memberOf = key ? this.index!.members.get(key) : undefined;
+				// Unkeyed tool components belong to the preceding message; close only at the next message bundle.
+				if (key && memberOf !== spanKey) prefix(i);
 				if (memberOf) {
 					if (spanKey !== memberOf) { start = i; spanKey = memberOf; }
 				}
 				const span = child instanceof AssistantMessageComponent && key ? finals.get(key) : undefined;
 				if (!span) continue;
-				if (spanKey === key && start >= 0) {
-					const members = children.slice(start, i);
-					const lifted = members.filter((m) => this.users.has(m));
-					const wrappable = members.every((m) => this.wrappable(m));
-					if (wrappable && members.some((m) => !this.users.has(m) && !(m instanceof Spacer))) next.push({ label: span.label, start, open: this.opened.get(child) ?? false, final: child, members, lifted, revision: 0 });
-				}
+				if (spanKey === key && start >= 0) add(i, child, span);
 				start = -1;
 				spanKey = undefined;
 				this.currentStart = i + 1;
 			}
+			prefix(children.length);
 		}
 		// Only changed tail components need rebinding.
 		const tail = new Set(next.flatMap((fold) => fold.members));

@@ -135,9 +135,12 @@ profiles and skills for the ordinary `agent` runtime.
   with the current Ctrl+O and Ctrl+T state. The header is inserted before the first component's content, preserving
   its leading blank row when present. No original rows or blank rows are added, removed or trimmed.
 - Compaction and branch summary lines, `!` commands and every compaction's `firstKeptEntryId` are hard boundaries.
-  The unfinished prefix stays visible; the local suffix can fold at its own successful answer with its own clock.
-  A fold never crosses a kept-entry cut, even when both intervals are loaded. A wake-up without a new user message
-  can have its own fold. Not folded: an unfinished span ending in error, abort or length; a span without work; inline
+  At a kept-entry cut, the unfinished historical prefix gets its own closed `worked for <time>` fold, ending at
+  its last saved entry before the cut. Its clock starts at the first message/card, or the first visible assistant
+  work record when neither owner nor card starts it. The local suffix can fold at its own successful answer with
+  its own clock. This also applies to the non-lazy whole-branch view. A fold never crosses a kept-entry cut, even
+  when both intervals are loaded. A wake-up without a new user message can have its own fold.
+  Not folded: an unfinished span not closed by a kept-entry cut, including error, abort or length; a span without work; inline
   mode (no mouse, today's view). A successful retry can fold earlier errors within its own span.
 - Old turns fold too: on resume, reload, rebuild and whatever history interval is loaded. Every newly drawn transcript
   or interval starts closed; resize and redraws keep the open state.

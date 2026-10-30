@@ -145,7 +145,7 @@ it("keeps local suffix folds separate across two kept cuts while loading and unl
 		s.add(assistant([text("first suffix answer")], "stop", 10_000), 11_000);
 		s.compact(first, 12_000);
 		s.add(user("owner before second cut", 20_000), 20_000);
-		s.add(assistant([text("second unfinished prefix")], "toolUse", 21_000), 21_000);
+		s.add(assistant([text("second unfinished prefix")], "toolUse", 22_000), 22_000);
 		const second = s.add(assistant([text("second local work")], "toolUse", 24_000), 24_000);
 		s.card("identical result card", 25_000);
 		s.add(user("second lifted steering", 26_000), 26_000);
@@ -157,11 +157,16 @@ it("keeps local suffix folds separate across two kept cuts while loading and unl
 	assert.deepEqual(headers(fx), ["worked for 6s ›", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
 	assert.ok(has("second lifted steering") && !has("owner before second cut") && !has("second local work"));
 	loadOlder(fx);
-	assert.deepEqual(headers(fx), ["worked for 7s ›", "worked for 6s ›", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
-	for (const value of ["first lifted steering", "second lifted steering", "owner before second cut", "second unfinished prefix"]) assert.ok(has(value), value);
+	assert.deepEqual(headers(fx), ["worked for 7s ›", "worked for 2s ›", "worked for 6s ›", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
+	for (const value of ["first lifted steering", "second lifted steering", "owner before second cut"]) assert.ok(has(value), value);
+	assert.ok(!has("second unfinished prefix"));
+	click(fx, "worked for 2s ›");
+	assert.ok(has("second unfinished prefix") && !has("first local work") && !has("second local work"));
 	assert.ok(!has("first local work") && !has("second local work") && !has("identical result card"));
 	loadOlder(fx);
-	assert.ok(has("owner before first cut") && has("first unfinished prefix"));
+	assert.ok(has("owner before first cut") && !has("first unfinished prefix"));
+	click(fx, "worked for 1s ›");
+	assert.ok(has("first unfinished prefix") && !has("first local work") && !has("second local work"));
 	assert.equal(chatRows(fx).filter(row => row.includes("lifted steering")).length, 2);
 	click(fx, "worked for 7s ›");
 	assert.ok(has("first local work") && !has("second local work"));
@@ -173,7 +178,8 @@ it("keeps local suffix folds separate across two kept cuts while loading and unl
 	assert.deepEqual(headers(fx), ["worked for 6s ˅", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
 	assert.ok(!has("first lifted steering") && !has("owner before second cut"));
 	loadOlder(fx);
-	assert.deepEqual(headers(fx), ["worked for 7s ›", "worked for 6s ˅", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
+	assert.deepEqual(headers(fx), ["worked for 7s ›", "worked for 2s ›", "worked for 6s ˅", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
+	assert.ok(!has("second unfinished prefix"));
 	assert.ok(has("first lifted steering") && !has("first local work"));
 	assert.equal(chatRows(fx).filter(row => row.includes("identical result card")).length, 1);
 });
