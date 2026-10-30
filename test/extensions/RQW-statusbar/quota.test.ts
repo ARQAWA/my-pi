@@ -12,7 +12,9 @@ import { ICON, renderBar } from "../../../extensions/RQW-statusbar/render.ts";
 
 const MINUTE = 60_000;
 async function until(ready: () => boolean) {
-	for (let i = 0; i < 1000 && !ready(); i++) await new Promise<void>(resolve => setImmediate(resolve));
+	// Windows I/O can outlast many immediates; elapsed time is only a failure watchdog.
+	const deadline = performance.now() + 5_000;
+	while (!ready() && performance.now() < deadline) await new Promise<void>(resolve => setImmediate(resolve));
 	assert.ok(ready(), "quota operation completed");
 }
 
