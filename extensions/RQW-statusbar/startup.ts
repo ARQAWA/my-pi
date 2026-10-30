@@ -12,7 +12,7 @@ type Registry = {
 };
 const KEY = Symbol.for("rqw-statusbar/startup/1.4.0");
 const HOST_METHODS = ["createExtensionUIContext", "showError", "showExtensionError", "showManagedToolStatus"];
-const UI_RELEASE = ["select", "confirm", "input", "editor", "custom", "notify", "setEditorComponent", "setFooter", "setHeader", "setWidget"];
+const UI_RELEASE = ["select", "confirm", "input", "editor", "custom", "notify", "setEditorComponent", "setFooter"];
 
 function descriptor(target: object, name: string): PropertyDescriptor | undefined {
 	for (let at: object | null = target; at; at = Object.getPrototypeOf(at)) {

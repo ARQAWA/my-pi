@@ -33,10 +33,11 @@ export function startupHost(t: TestContext, options: { loaded?: boolean; slowGit
 	t.mock.method(childProcess, "spawnSync", () => ({ status: 0, stdout: "tool 1.0", error: undefined }));
 	const gitLookup = deferred();
 	let gitPending = false;
-	t.mock.method(fs, "stat", async () => {
+	const files: { stat(path: string): Promise<any> } = { async stat() {
 		if (options.slowGit) { gitPending = true; await gitLookup.promise; gitPending = false; }
 		throw Object.assign(new Error("missing"), { code: "ENOENT" });
-	});
+	} };
+	t.mock.method(fs, "stat", (path: string) => files.stat(path));
 	t.after(() => gitLookup.resolve());
 	syncBuiltinESMExports();
 	t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
@@ -103,8 +104,14 @@ export function startupHost(t: TestContext, options: { loaded?: boolean; slowGit
 		host.renderer.stop();
 	});
 	return {
-		host, chunks, handlers, commands, session, runner, entered, proceed, startCalled, gitLookup,
+		host, chunks, handlers, commands, session, runner, entered, proceed, startCalled, gitLookup, files,
 		get gitPending() { return gitPending; },
+		async reload() {
+			for (const handler of handlers.get("session_shutdown") ?? []) await handler({}, ctx);
+			handlers.clear(); commands.clear();
+			statusbar(pi as never);
+			await host.rebindCurrentSession();
+		},
 		get ctx() { return ctx; },
 		input(text: string) { input(text); },
 		frames() { return chunks.filter(text => text.includes("\x1b[?2026h")).map(stripTerminalSequences); },
