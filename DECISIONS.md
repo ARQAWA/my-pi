@@ -1368,6 +1368,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Status bar
 
+- **Our chrome on the first frame** `[D-STATUSBAR-STARTUP]`. The selected theme was already active; Pi painted its stock editor/footer before `session_start` installed RQW-statusbar. RQW-statusbar now holds only startup paints, not terminal input or queries, until both custom components are installed. Initial Git discovery no longer delays installation; the existing refresh fills the branch later. The self-contained Pi 1.4.0 runtime patch checks method shapes, scopes the hold to the loaded session and releases before dialogs, custom UI, notifications, managed-tool progress, errors, shutdown, disable or a 1000 ms cap. Unsupported shapes and exceptions stay stock; these escape paths may show stock chrome. No installed Pi files or theme settings are changed.
+  Owner, verbatim: «Смотри, каждый раз, когда я запускаю Pi, он на одну секунду отрисовывает мне тему старую, а потом рисует мне мою тему настоящую, оригинальную. Надо подумать, как эту хуйню пофиксить, чтобы всегда была отрисована моя выбранная тема оригинальная и даже на одну миллисекунду не отрисовывалась левая тема, не моя.»
+  Offered: (1) 3 SP: the first frame already shows our panel, startup dialogs keep working (recommended); (2) leave it. Owner: «Ну давай».
+  Reason: remove the transient stock layout without hiding an interactive startup prompt. Design: `my-pi-evidence/designs/startup-chrome/DESIGN.md`. Carriers: `extensions/RQW-statusbar/{startup,index}.ts`, its README and `test/extensions/RQW-statusbar/startup.test.ts`.
+
 - **Background compaction** `[D-STATUSBAR-BACKGROUND-COMPACTION]`. While the current session's background summary runs, `bg compaction` shimmers gold after the folder, using the existing shimmer loop. Owner: «надо сделать какую-то анимацию фонового compaction ... в статус-баре ... справа от папки чтобы был золотой переливающийся статус ... что-то минималистичное»; «2й вариант толье вместо бекграунд бг просто»; «тона только для лимитов не для компакшена». Carrier: `extensions/RQW-statusbar/{index,render}.ts`.
 
 - **Provider-limit badge colors** `[D-STATUSBAR-LIMIT-COLORS]`. Definitive `CC` choice, owner (`16-27-59:9432`, entry `d7037e66`): «2 бронза».

@@ -8,6 +8,7 @@ import { actionPhrase, CountsWatch, statusText } from "./activity.ts";
 import { QuotaConsumer } from "./quota.ts";
 import { type BorderSource, ContextEditor, type NativeActivity } from "./editor.ts";
 import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
+import { installStartup } from "./startup.ts";
 import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, contextRow, modelRow, placeLayout, activityRows } from "./render.ts";
 
 // Tools that never change the working tree or the branch.
@@ -64,7 +65,6 @@ export default function statusbar(pi: ExtensionAPI) {
 	let refresh: (() => void) | undefined;
 	let resample: (() => void) | undefined;
 	let dispose: (() => void) | undefined;
-	let installRevision = 0;
 	const rate = new RateMeter();
 	let working = false;
 	let unsubscribeFast: (() => void) | undefined;
@@ -149,7 +149,6 @@ export default function statusbar(pi: ExtensionAPI) {
 
 	/** Drops what this extension holds for the session: the GPT Fast subscription, the counts, timers, footer and border source. */
 	function release(): void {
-		installRevision++;
 		editor?.releaseIndicator();
 		editor = undefined;
 		showNativeSpinner();
@@ -196,177 +195,173 @@ export default function statusbar(pi: ExtensionAPI) {
 		}
 	};
 
-	async function install(ctx: ExtensionContext): Promise<void> {
-		release();
-		if (ctx.mode !== "tui" || !enabled) return;
-		const revision = installRevision;
-		let initialCwd = ctx.cwd;
-		let initialRepo = await findRepo(initialCwd);
-		while (revision === installRevision && initialCwd !== ctx.cwd) {
-			initialCwd = ctx.cwd;
-			initialRepo = await findRepo(initialCwd);
-		}
-		if (revision !== installRevision) return;
-		lightCtx = ctx;
-		unsubscribeFast = pi.events.on(FAST_GPT_CHANGED, () => { syncShimmer(); redraw?.(); });
-		jobs.start();
-		setActivity(ctx, true);
-		// Pi has no event for settings changes and hands out a full copy on every read: sample the compaction settings
-		// here and again at the turn and model events instead of on every frame.
-		let compaction = pi.getSettings().compaction;
-		resample = () => { compaction = pi.getSettings().compaction; };
-		let cacheKey: unknown[] = [];
-		let cached: Pick<BarState, "context" | "compactions"> = { compactions: 0 };
-		const contextState = (): Pick<BarState, "context" | "compactions"> => {
-			const model = ctx.model;
-			const manager = ctx.sessionManager as SessionManager;
-			const key = [manager, manager.getSessionId(), manager.getLeafId(), manager.getEntryCount(),
-				model, model?.contextWindow, compaction?.enabled, compaction?.reserveTokens, compaction?.keepRecentTokens];
-			if (key.length !== cacheKey.length || key.some((value, i) => value !== cacheKey[i])) {
-				const usage = ctx.getContextUsage();
-				cached = {
-					compactions: manager.getEntries().filter((entry) => entry.type === "compaction").length,
-					context: usage ? { tokens: usage.tokens, limit: contextLimit(pi, ctx, usage.contextWindow) } : undefined,
-				};
-				cacheKey = key;
-			}
-			return cached;
-		};
-		// The ID is read on every render; /new, resume, fork and /reload also reinstall through session_start.
-		let borderTheme = ctx.ui.theme;
-		let borderPaint = themePaint(borderTheme);
-		border = { context: () => contextState().context, sessionId: () => ctx.sessionManager.getSessionId(),
-			sessionName: () => sessionName, paint: () => {
-				if (borderTheme !== ctx.ui.theme) { borderTheme = ctx.ui.theme; borderPaint = themePaint(borderTheme); }
-				return borderPaint;
-			}, activity: () => chromeNow() };
-		// Another extension's editor is kept; the context row then stays in the footer.
-		if (ctx.ui.getEditorComponent() === undefined) ctx.ui.setEditorComponent(editorFactory);
-		ctx.ui.setFooter((tui, theme, footer) => {
-			let disposed = false;
-			let cwd: string | undefined = initialCwd;
-			let repo: RepoInfo | undefined = initialRepo;
-			let counts: GitCounts | undefined;
-			let branch: string | null = null;
-			let busy = false;
-			let again = false;
-			const roots = scratchRoots();
-			const paint = themePaint(theme);
-			active = true;
-			redraw = () => tui.requestRender();
-			syncShimmer();
+	function install(ctx: ExtensionContext): void {
+		const endStartup = startup.begin(ctx.ui);
+		try {
+			release();
+			if (ctx.mode !== "tui" || !enabled) return;
+			const initialCwd = ctx.cwd;
+			lightCtx = ctx;
+			unsubscribeFast = pi.events.on(FAST_GPT_CHANGED, () => { syncShimmer(); redraw?.(); });
+			jobs.start();
+			setActivity(ctx, true);
+			// Pi has no event for settings changes and hands out a full copy on every read: sample the compaction settings
+			// here and again at the turn and model events instead of on every frame.
+			let compaction = pi.getSettings().compaction;
+			resample = () => { compaction = pi.getSettings().compaction; };
+			let cacheKey: unknown[] = [];
+			let cached: Pick<BarState, "context" | "compactions"> = { compactions: 0 };
+			const contextState = (): Pick<BarState, "context" | "compactions"> => {
+				const model = ctx.model;
+				const manager = ctx.sessionManager as SessionManager;
+				const key = [manager, manager.getSessionId(), manager.getLeafId(), manager.getEntryCount(),
+					model, model?.contextWindow, compaction?.enabled, compaction?.reserveTokens, compaction?.keepRecentTokens];
+				if (key.length !== cacheKey.length || key.some((value, i) => value !== cacheKey[i])) {
+					const usage = ctx.getContextUsage();
+					cached = {
+						compactions: manager.getEntries().filter((entry) => entry.type === "compaction").length,
+						context: usage ? { tokens: usage.tokens, limit: contextLimit(pi, ctx, usage.contextWindow) } : undefined,
+					};
+					cacheKey = key;
+				}
+				return cached;
+			};
+			// The ID is read on every render; /new, resume, fork and /reload also reinstall through session_start.
+			let borderTheme = ctx.ui.theme;
+			let borderPaint = themePaint(borderTheme);
+			border = { context: () => contextState().context, sessionId: () => ctx.sessionManager.getSessionId(),
+				sessionName: () => sessionName, paint: () => {
+					if (borderTheme !== ctx.ui.theme) { borderTheme = ctx.ui.theme; borderPaint = themePaint(borderTheme); }
+					return borderPaint;
+				}, activity: () => chromeNow() };
+			// Another extension's editor is kept; the context row then stays in the footer.
+			if (ctx.ui.getEditorComponent() === undefined) ctx.ui.setEditorComponent(editorFactory);
+			ctx.ui.setFooter((tui, theme, footer) => {
+				let disposed = false;
+				let cwd: string | undefined = initialCwd;
+				let repo: RepoInfo | undefined;
+				let counts: GitCounts | undefined;
+				let branch: string | null = null;
+				let busy = false;
+				let again = false;
+				const roots = scratchRoots();
+				const paint = themePaint(theme);
+				active = true;
+				redraw = () => tui.requestRender();
+				syncShimmer();
 
-			async function refreshGit(): Promise<void> {
-				if (disposed) return;
-				if (busy) { again = true; return; }
-				busy = true;
-				try {
-					do {
-						again = false;
-						const targetCwd = ctx.cwd;
-						const target = await findRepo(targetCwd);
-						const [nextCounts, nextBranch] = target
-							? await Promise.all([gitCounts(target.root), gitBranch(target.root)])
-							: [undefined, null] as const;
-						if (!disposed && ctx.cwd === targetCwd) {
-							cwd = targetCwd;
-							repo = target;
-							counts = nextCounts;
-							branch = nextBranch;
+				async function refreshGit(): Promise<void> {
+					if (disposed) return;
+					if (busy) { again = true; return; }
+					busy = true;
+					try {
+						do {
+							again = false;
+							const targetCwd = ctx.cwd;
+							const target = await findRepo(targetCwd);
+							const [nextCounts, nextBranch] = target
+								? await Promise.all([gitCounts(target.root), gitBranch(target.root)])
+								: [undefined, null] as const;
+							if (!disposed && ctx.cwd === targetCwd) {
+								cwd = targetCwd;
+								repo = target;
+								counts = nextCounts;
+								branch = nextBranch;
+							}
+						} while (again && !disposed);
+					} finally { busy = false; }
+					if (!disposed) tui.requestRender();
+				}
+				refresh = () => { void refreshGit(); };
+				const stopBranch = footer.onBranchChange(refresh);
+				const poll = setInterval(refresh, GIT_POLL_MS);
+				poll.unref?.();
+				refresh();
+				const quotas = new QuotaConsumer(pi.events, ctx.sessionManager.getSessionId(), () => tui.requestRender());
+				let lastKey: unknown[] = [];
+				let lastStatuses = new Map<string, string>();
+				let cachedRows: string[] = [];
+				let cachedState: BarState | undefined;
+				let cachedPlace: ReturnType<typeof placeLayout> | undefined;
+				let lastFastFrame: number | undefined;
+				let lastBackgroundFrame: number | undefined;
+				let lastSessionId = ctx.sessionManager.getSessionId();
+				quotas.start();
+				const cleanup = () => {
+					if (disposed) return;
+					disposed = true;
+					clearInterval(poll);
+					quotas.stop();
+					stopBranch();
+					stopShimmer();
+					active = false;
+					rate.reset();
+					redraw = undefined;
+					refresh = undefined;
+					if (dispose === cleanup) dispose = undefined;
+				};
+				dispose = cleanup;
+				return {
+					render(width: number) {
+						if (disposed) return [];
+						if (cwd !== ctx.cwd) {
+							cwd = ctx.cwd;
+							repo = undefined;
+							counts = undefined;
+							branch = null;
+							queueMicrotask(() => { void refreshGit(); });
 						}
-					} while (again && !disposed);
-				} finally { busy = false; }
-				if (!disposed) tui.requestRender();
-			}
-			refresh = () => { void refreshGit(); };
-			const stopBranch = footer.onBranchChange(refresh);
-			const poll = setInterval(refresh, GIT_POLL_MS);
-			poll.unref?.();
-			refresh();
-			const quotas = new QuotaConsumer(pi.events, ctx.sessionManager.getSessionId(), () => tui.requestRender());
-			let lastKey: unknown[] = [];
-			let lastStatuses = new Map<string, string>();
-			let cachedRows: string[] = [];
-			let cachedState: BarState | undefined;
-			let cachedPlace: ReturnType<typeof placeLayout> | undefined;
-			let lastFastFrame: number | undefined;
-			let lastBackgroundFrame: number | undefined;
-			let lastSessionId = ctx.sessionManager.getSessionId();
-			quotas.start();
-			const cleanup = () => {
-				if (disposed) return;
-				disposed = true;
-				clearInterval(poll);
-				quotas.stop();
-				stopBranch();
-				stopShimmer();
-				active = false;
-				rate.reset();
-				redraw = undefined;
-				refresh = undefined;
-				if (dispose === cleanup) dispose = undefined;
-			};
-			dispose = cleanup;
-			return {
-				render(width: number) {
-					if (disposed) return [];
-					if (cwd !== ctx.cwd) {
-						cwd = ctx.cwd;
-						repo = undefined;
-						counts = undefined;
-						branch = null;
-						queueMicrotask(() => { void refreshGit(); });
-					}
-					const context = contextState();
-					const fast = fastState();
-					const sessionId = ctx.sessionManager.getSessionId();
-					if (lastSessionId !== sessionId) {
-						backgroundSessions.delete(lastSessionId);
-						lastSessionId = sessionId;
-						syncShimmer();
-					}
-					const backgroundFrame = backgroundSessions.has(sessionId)
-						? Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS : undefined;
-					const statuses = footer.getExtensionStatuses();
-					let statusChanged = statuses.size !== lastStatuses.size;
-					if (!statusChanged) for (const [name, text] of statuses) if (lastStatuses.get(name) !== text) { statusChanged = true; break; }
-					const key = [width, quotas.values.CX, quotas.values.CC, ctx.model, pi.getThinkingLevel(), context, rate.value(), ctx.cwd,
-						repo?.root, repo?.worktree?.project, repo?.worktree?.name, counts?.staged, counts?.unstaged, counts?.untracked, branch, !!fast];
-					if (statusChanged || key.length !== lastKey.length || key.some((value, i) => value !== lastKey[i])) {
-						lastStatuses = new Map(statuses);
-						cachedState = {
-							quotas: { ...quotas.values }, model: ctx.model, thinkingLevel: pi.getThinkingLevel(), ...context,
-							rate: rate.value(), fast, place: placeOf({ cwd: ctx.cwd, home: homedir(), scratchRoots: roots, worktree: repo?.worktree, branch }),
-							git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts }, backgroundFrame,
-							statuses: [...statuses].sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text),
-						};
-						cachedPlace = placeLayout(cachedState, width, paint);
-						cachedRows = [contextRow(cachedState.context, width, paint), modelRow(cachedState, width, paint), cachedPlace.first(), ...cachedPlace.rest];
-						lastKey = key;
-						lastFastFrame = fast?.frame;
-						lastBackgroundFrame = backgroundFrame;
-					} else if (cachedState && (fast?.frame !== lastFastFrame || backgroundFrame !== lastBackgroundFrame)) {
-						cachedRows = [...cachedRows];
-						if (fast?.frame !== lastFastFrame) {
-							cachedState.fast = fast;
-							cachedRows[1] = modelRow(cachedState, width, paint);
+						const context = contextState();
+						const fast = fastState();
+						const sessionId = ctx.sessionManager.getSessionId();
+						if (lastSessionId !== sessionId) {
+							backgroundSessions.delete(lastSessionId);
+							lastSessionId = sessionId;
+							syncShimmer();
+						}
+						const backgroundFrame = backgroundSessions.has(sessionId)
+							? Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS : undefined;
+						const statuses = footer.getExtensionStatuses();
+						let statusChanged = statuses.size !== lastStatuses.size;
+						if (!statusChanged) for (const [name, text] of statuses) if (lastStatuses.get(name) !== text) { statusChanged = true; break; }
+						const key = [width, quotas.values.CX, quotas.values.CC, ctx.model, pi.getThinkingLevel(), context, rate.value(), ctx.cwd,
+							repo?.root, repo?.worktree?.project, repo?.worktree?.name, counts?.staged, counts?.unstaged, counts?.untracked, branch, !!fast];
+						if (statusChanged || key.length !== lastKey.length || key.some((value, i) => value !== lastKey[i])) {
+							lastStatuses = new Map(statuses);
+							cachedState = {
+								quotas: { ...quotas.values }, model: ctx.model, thinkingLevel: pi.getThinkingLevel(), ...context,
+								rate: rate.value(), fast, place: placeOf({ cwd: ctx.cwd, home: homedir(), scratchRoots: roots, worktree: repo?.worktree, branch }),
+								git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts }, backgroundFrame,
+								statuses: [...statuses].sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text),
+							};
+							cachedPlace = placeLayout(cachedState, width, paint);
+							cachedRows = [contextRow(cachedState.context, width, paint), modelRow(cachedState, width, paint), cachedPlace.first(), ...cachedPlace.rest];
+							lastKey = key;
 							lastFastFrame = fast?.frame;
-						}
-						if (backgroundFrame !== lastBackgroundFrame) {
-							cachedState.backgroundFrame = backgroundFrame;
-							cachedRows[2] = cachedPlace!.first();
 							lastBackgroundFrame = backgroundFrame;
+						} else if (cachedState && (fast?.frame !== lastFastFrame || backgroundFrame !== lastBackgroundFrame)) {
+							cachedRows = [...cachedRows];
+							if (fast?.frame !== lastFastFrame) {
+								cachedState.fast = fast;
+								cachedRows[1] = modelRow(cachedState, width, paint);
+								lastFastFrame = fast?.frame;
+							}
+							if (backgroundFrame !== lastBackgroundFrame) {
+								cachedState.backgroundFrame = backgroundFrame;
+								cachedRows[2] = cachedPlace!.first();
+								lastBackgroundFrame = backgroundFrame;
+							}
 						}
-					}
-					return ctx.ui.getEditorComponent() === editorFactory ? cachedRows.slice(1) : cachedRows;
-				},
-				invalidate() {},
-				dispose: cleanup,
-			};
-		});
+						return ctx.ui.getEditorComponent() === editorFactory ? cachedRows.slice(1) : cachedRows;
+					},
+					invalidate() {},
+					dispose: cleanup,
+				};
+			});
+		} finally { endStartup(); }
 	}
 
-	pi.registerCommand("statusbar", {
+	const command: Parameters<ExtensionAPI["registerCommand"]>[1] = {
 		description: "Toggle the RQW status bar: /statusbar [on|off]",
 		handler: async (args, ctx) => {
 			if (ctx.mode !== "tui") return;
@@ -390,14 +385,18 @@ export default function statusbar(pi: ExtensionAPI) {
 				if (ctx.ui.getEditorComponent() === editorFactory) ctx.ui.setEditorComponent(undefined);
 			}
 		},
-	});
+	};
+	pi.registerCommand("statusbar", command);
+	const startup = installStartup(command.handler);
 
-	pi.on("session_start", async (_event, ctx) => {
+	function onStart(_event: unknown, ctx: ExtensionContext): void {
 		if (ctx.mode !== "tui") return;
 		sample(ctx);
-		await install(ctx);
-	});
+		install(ctx);
+	}
+	pi.on("session_start", onStart);
 	pi.on("session_shutdown", (_event, ctx) => {
+		startup.dispose();
 		unsubscribeBackground();
 		backgroundSessions.clear();
 		release();

@@ -4,6 +4,8 @@ Terminal footer, editor borders and activity display.
 
 Modules and resources live beside `index.ts`; subfolders group needed resources.
 
+Startup holds only the first paint until our editor and footer are installed, without waiting for Git; dialogs, custom UI, notifications, managed-tool progress, errors, shutdown, disable, incompatible shapes or a 1000 ms safety cap immediately restore stock painting. The self-contained Pi 1.4.0 runtime patch is in `startup.ts`; terminal input and queries are not held (`[D-STATUSBAR-STARTUP]`).
+
 ## Subscription limits
 
 The folder stays on the left; CX in soft light blue and CC in soft pink-red sit on the right, immediately before the git branch. Narrow rows wrap instead of losing provider limits.
