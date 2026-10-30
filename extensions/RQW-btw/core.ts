@@ -1,7 +1,6 @@
 // Shared /btw core: freezes what the main model sees now and sends side turns from that mark.
 // Nothing here writes to the chat, the session file or the model context of the main session.
-import { normalizeContext, type Api, type AssistantMessage, type Context, type Message, type Model, type SystemMessage, type ThinkingLevel, type UserMessage } from "@earendil-works/pi-ai";
-import { isContextOverflow } from "@earendil-works/pi-ai/utils/overflow";
+import { isContextOverflow, normalizeContext, type Api, type AssistantMessage, type Context, type Message, type Model, type SystemMessage, type ThinkingLevel, type UserMessage } from "@earendil-works/pi-ai";
 import { AgentSession, convertToLlm, DEFAULT_COMPACTION_SETTINGS, estimateTokens, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
 
 export const CONTEXT_FORK = "rqw:context-fork:v1";
