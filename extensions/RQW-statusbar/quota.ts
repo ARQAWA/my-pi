@@ -1,10 +1,49 @@
+import { createHash } from "node:crypto";
+import { mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 
 // Missing sources never imply a full or empty subscription.
-export const QUOTA_REFRESH_MS = 5 * 60 * 1000;
+export const QUOTA_REFRESH_MS = 60 * 1000;
+const QUOTA_CHECK_MS = 3 * 60 * 1000;
 export const QUOTA_COLORS = { CX: "139;197;255", CC: "255;152;170" } as const;
 export type Quotas = Partial<Record<keyof typeof QUOTA_COLORS, string>>;
+type Reading = { percent?: number; okAt?: number; checkedAt?: number };
+
+async function readCache(file: string): Promise<Reading> {
+	try {
+		const data = JSON.parse(await readFile(file, "utf8"));
+		return {
+			percent: typeof data.percent === "number" && Number.isFinite(data.percent) && data.percent >= 0 && data.percent <= 100 ? data.percent : undefined,
+			okAt: typeof data.okAt === "number" && Number.isFinite(data.okAt) ? data.okAt : undefined,
+			checkedAt: typeof data.checkedAt === "number" && Number.isFinite(data.checkedAt) ? data.checkedAt : undefined,
+		};
+	} catch { return {}; }
+}
+
+async function lockCache(file: string): Promise<boolean> {
+	try {
+		await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+		try { const lock = await open(`${file}.lock`, "wx", 0o600); await lock.close(); return true; }
+		catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") return false; }
+		if (Date.now() - (await stat(`${file}.lock`)).mtimeMs <= 30_000) return false;
+		await unlink(`${file}.lock`);
+		const lock = await open(`${file}.lock`, "wx", 0o600);
+		await lock.close();
+		return true;
+	} catch { return false; }
+}
+
+async function writeCache(file: string, record: Reading): Promise<void> {
+	const temporary = `${file}.${process.pid}.tmp`;
+	try {
+		await writeFile(temporary, JSON.stringify(record), { mode: 0o600 });
+		await rename(temporary, file);
+	} catch {} // A reader can briefly prevent rename on Windows; the next tick tries again.
+	finally { await unlink(temporary).catch(() => {}); }
+}
 type Snapshot = { windows: Record<string, { remainingPercent: number | null } | null> };
 type Access = { refresh(signal?: AbortSignal): Promise<Snapshot> };
 type Events = { emit(name: string, data: unknown): void };
@@ -12,6 +51,12 @@ const PROVIDERS = ["CX", "CC"] as const;
 type Dependencies = { readCredential: typeof readStoredCredential; fetch: typeof globalThis.fetch };
 const WEEK_SECONDS = 7 * 24 * 60 * 60;
 const URL = "https://chatgpt.com/backend-api/wham/usage";
+
+function accountKey(credential: ReturnType<typeof readStoredCredential>): string | undefined {
+	if (credential?.type !== "oauth") return;
+	const account = typeof credential.accountId === "string" && credential.accountId ? credential.accountId : credential.refresh;
+	return account ? createHash("sha256").update(account).digest("hex").slice(0, 16) : undefined;
+}
 
 function object(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid quota response");
@@ -66,6 +111,7 @@ export function quotaText(values: Quotas): string {
 /** The footer owns the timer and request lifetime. Offers are requested afresh each cycle. */
 export class QuotaConsumer {
 	readonly values: Quotas = {};
+	private accounts: Partial<Record<keyof Quotas, string>> = {};
 	private controller?: AbortController;
 	private revision = 0;
 	private timer?: ReturnType<typeof setInterval>;
@@ -84,7 +130,7 @@ export class QuotaConsumer {
 		this.stop();
 		this.controller = new AbortController();
 		void this.refresh();
-		this.timer = setInterval(() => { void this.refresh(); }, QUOTA_REFRESH_MS);
+		this.timer = setInterval(() => this.refresh(), QUOTA_REFRESH_MS);
 		this.timer.unref?.();
 	}
 	async refresh(): Promise<void> {
@@ -93,24 +139,50 @@ export class QuotaConsumer {
 		const revision = ++this.revision;
 		const current = () => !signal.aborted && revision === this.revision;
 		await Promise.all(PROVIDERS.map(async (id) => {
-			let access: Access | undefined;
 			try {
-				const credential = this.deps.readCredential(id === "CX" ? "openai-codex" : "anthropic");
+				const provider = id === "CX" ? "openai-codex" : "anthropic";
+				const credential = this.deps.readCredential(provider);
 				if (!credential) {
-					if (current()) { delete this.values[id]; this.changed(); }
+					if (current()) { delete this.values[id]; delete this.accounts[id]; this.changed(); }
 					return;
 				}
-				if (this.values[id] === undefined && current()) { this.values[id] = "???"; this.changed(); }
-				if (id === "CC") this.events.emit("rqw-anthropic:quota:v1", {
-					sessionId: this.sessionId, offer(value: Access) { access = value; },
-				});
-				// Claude Code's weekly window; Codex weekly comes from fetchUsage.
-				const percent = id === "CC" ? (await access?.refresh(signal))?.windows.seven_day?.remainingPercent
-					: await fetchUsage(signal, this.deps);
-				const valid = typeof percent === "number" && Number.isFinite(percent) && percent >= 0 && percent <= 100;
-				if (current()) this.values[id] = valid ? `${Math.round(percent)}%` : "???";
-			} catch { if (current()) this.values[id] = "???"; }
-			if (current()) this.changed();
+				const key = accountKey(credential);
+				if (!key) throw new Error("Quota account unavailable");
+				if (this.accounts[id] !== key) { delete this.values[id]; this.accounts[id] = key; }
+				const file = join(tmpdir(), "rqw-quota", `${id}-${key}.json`);
+				const show = (record: Reading) => {
+					if (!current()) return;
+					if (record.percent !== undefined) this.values[id] = `${record.percent}%`;
+					else this.values[id] ??= "???";
+					this.changed();
+				};
+				const fresh = (record: Reading) => record.checkedAt !== undefined && Date.now() - record.checkedAt < QUOTA_CHECK_MS;
+				let record = await readCache(file);
+				show(record);
+				if (!current() || fresh(record) || !await lockCache(file)) return;
+				try {
+					// Another tab may have finished between our first read and acquiring the lock.
+					record = await readCache(file);
+					show(record);
+					if (!current() || fresh(record)) return;
+					record.checkedAt = Date.now();
+					try {
+						let access: Access | undefined;
+						if (id === "CC") this.events.emit("rqw-anthropic:quota:v1", {
+							sessionId: this.sessionId, offer(value: Access) { access = value; },
+						});
+						const percent = id === "CC" ? (await access?.refresh(signal))?.windows.seven_day?.remainingPercent
+							: await fetchUsage(signal, this.deps);
+						if (typeof percent === "number" && Number.isFinite(percent) && percent >= 0 && percent <= 100) {
+							record.percent = Math.round(percent);
+							record.okAt = Date.now();
+						}
+					} catch {}
+					if (!current() || accountKey(this.deps.readCredential(provider)) !== key) return;
+					await writeCache(file, record);
+					show(record);
+				} finally { await unlink(`${file}.lock`).catch(() => {}); }
+			} catch { if (current()) { this.values[id] ??= "???"; this.changed(); } }
 		}));
 	}
 	stop(): void {
