@@ -133,7 +133,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   At most four words and 32 Unicode
   code points, overlong names rejected, never truncated; initial attempt plus up to three retries, then a warning
   preserving the old name. `/rename-gen` regenerates; native
-  `/name` stays unchanged. RQW-statusbar displays the native name in the top input border, gold and shimmering during compaction.
+  `/name` stays unchanged. The `rename_session` tool (one `name`) lets the agent set the native name. RQW-statusbar displays the native name in the top input border, gold and shimmering during compaction.
   Details: [Naming](DECISIONS.md#naming); tests: `test/extensions/RQW-naming/`.
 - `extensions/RQW-agent-ui/`: extension 17, compact delivered result cards for `agent`, including reviewer profiles,
   and for delivered `child_wait` results, full originals
