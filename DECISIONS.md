@@ -26,11 +26,12 @@ Provenance:
 
 ## Command cleanup
 
-- **Remove conflicting command entrances** `[D-COMMAND-CLEANUP]`. `RQW-commands` removes Pi's `/model`, `/thinking`, `/tree`, `/scoped-models`, `/share`, `/bug` and built-in llama from interactive suggestions and submission, and hides only RQW-session's `/session-deleted` suggestion. Other implementations and service execution remain. Pi's built-in command precedence stays. Shortcuts and menus are a separate, not yet ordered task. The checked runtime patch falls back to stock on incompatible Pi internals.
+- **Remove conflicting command entrances** `[D-COMMAND-CLEANUP]`. `RQW-commands` removes Pi's `/model`, `/thinking`, `/tree`, `/scoped-models`, `/share`, `/bug` and built-in llama from interactive suggestions and submission, and hides only RQW-session's `/session-deleted` suggestion. Other implementations and service execution remain. Pi's built-in command precedence stays. The four model and thinking cycle actions are disabled, including custom bindings; four settings items and hidden providers in the logout menu are hidden without changing settings or credentials. The checked runtime patch falls back to stock on incompatible Pi internals.
   Owner: «надо команды лишние коттрые конфликтуют с нашим харнесом выпилить нахуй через рантайм патч что бы они нам рабоатть не мешали составь аналитику и проект работы и открой мне его, спланируй на минимум сторей (в идеале на 1)».
   Owner: «убираем трии, финкинг убираем модел убираем».
   Owner: «да делай + к этому надо вырубить эти хоткеи шифт таб, ктрл л и ктрл п и шифт ктрл п».
   Owner: «три убирай».
+  Owner: «Пусть будет не курсивом, просто другим цветом шрифта и всё и да делай».
   Design: `my-pi-evidence/designs/command-cleanup/DESIGN.md`.
   Reason: remove conflicting interactive command entrances without editing Pi.
   Carriers: `extensions/RQW-commands/`, `package.json`, `test/extensions/RQW-commands/`.

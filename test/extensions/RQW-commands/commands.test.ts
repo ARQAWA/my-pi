@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { AgentSession, CustomEditor, ExtensionRunner, InteractiveMode, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { AgentSession, AgentSessionRuntime, SessionManager, CustomEditor, ExtensionRunner, InteractiveMode, SettingsSelectorComponent, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getKeybindings, setKeybindings } from "@earendil-works/pi-tui";
 import commands from "../../../extensions/RQW-commands/index.ts";
+
+const { KeybindingsManager } = await import(new URL("./core/keybindings.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
+const { initTheme } = await import(new URL("./modes/interactive/theme/theme.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const source = (path: string, source = "local") => ({ path, source, scope: "project" });
@@ -35,7 +41,7 @@ function fixture(options: { own?: boolean; duplicateLlama?: boolean; bad?: boole
  const makeEditor = () => new CustomEditor(ui as any, { borderColor: (s: string) => s } as any, { matches: () => false } as any);
  const editor = makeEditor();
  const warnings: string[] = []; const pending: string[] = []; const prompts: string[] = [];
- host.ui = ui; host.defaultEditor = editor; host.editor = editor;
+ host.ui = ui; host.defaultEditor = editor; host.editor = editor; host.keybindings = new KeybindingsManager();
  host.runtimeHost = { session: { promptTemplates: [{ name: "model", description: "template" }], extensionRunner: runner,
   resourceLoader: { getExtensions: () => ({ extensions }), getSkills: () => ({ skills: [{ name: "sample", filePath: "/skill", description: "skill" }] }) },
   scopedModels: [], modelRuntime: { getAvailableSnapshot: () => [] }, prompt: async (text: string) => { prompts.push(text); }, isCompacting: false, isStreaming: false,
@@ -165,5 +171,201 @@ test("incompatible autocomplete group leaves submissions and suggestions stock",
  try {
   const old = f.editor.onSubmit; const provider = f.host.createBaseAutocompleteProvider();
   assert.equal(f.editor.onSubmit, old); assert.ok((await suggestions(provider)).includes("tree")); assert.match(f.warnings[0], /incompatible.*command/i);
+ } finally { f.shutdown(); }
+});
+
+const disabledActions = ["app.thinking.cycle", "app.model.select", "app.model.cycleForward", "app.model.cycleBackward"];
+test("real editor blocks disabled actions, including custom and Windows bindings, without blocking other actions", () => {
+ const f = fixture();
+ try {
+  const kb = f.host.keybindings;
+  f.host.createBaseAutocompleteProvider();
+  const editor = new CustomEditor({ requestRender() {} } as any, { borderColor: (s: string) => s } as any, kb);
+  const seen: string[] = [];
+  for (const id of [...disabledActions, "app.thinking.toggle"]) editor.onAction(id as any, () => seen.push(id));
+  for (const input of ["\u001b[Z", "\u000c", "\u0010", "\u001b[112;6u"]) editor.handleInput(input);
+  kb.setUserBindings({ "app.thinking.cycle": "ctrl+g", "app.model.select": "ctrl+l", "app.model.cycleForward": "ctrl+p", "app.model.cycleBackward": "alt+p" });
+  for (const input of ["\u0007", "\u000c", "\u0010", "\u001bp", "\u0014"]) editor.handleInput(input);
+  assert.deepEqual(seen, ["app.thinking.toggle"]);
+  let arrows = 0; editor.onExtensionShortcut = data => { if (data === "\u001b[1;2A") { arrows++; return true; } return false; };
+  editor.handleInput("\u001b[1;2A"); assert.equal(arrows, 1);
+  kb.rebuild(); for (const id of disabledActions) assert.deepEqual(kb.getKeys(id), []);
+  f.shutdown(); assert.deepEqual(kb.getKeys("app.thinking.cycle"), ["ctrl+g"]);
+ } finally { f.shutdown(); }
+});
+
+test("Windows default Alt+P is disabled in the real editor", async () => {
+ const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+ let WindowsManager: typeof KeybindingsManager;
+ try {
+  Object.defineProperty(process, "platform", { value: "win32" });
+  const url = new URL("./core/keybindings.js?rqw-windows-test", import.meta.resolve("@earendil-works/pi-coding-agent"));
+  WindowsManager = (await import(url.href)).KeybindingsManager;
+ } finally { Object.defineProperty(process, "platform", original); }
+ const kb = new WindowsManager();
+ assert.deepEqual(kb.getKeys("app.model.cycleBackward"), ["alt+p"]);
+ const f = fixture();
+ try {
+  f.host.keybindings = kb; f.host.createBaseAutocompleteProvider();
+  const editor = new CustomEditor({ requestRender() {} } as any, { borderColor: (s: string) => s } as any, kb);
+  let changes = 0; editor.onAction("app.model.cycleBackward", () => changes++);
+  editor.handleInput("\u001bp"); assert.equal(changes, 0);
+  f.shutdown(); editor.handleInput("\u001bp"); assert.equal(changes, 1);
+ } finally { f.shutdown(); }
+});
+
+test("hotkeys command displays empty cells for disabled actions", async () => {
+ const f = fixture(); const previous = getKeybindings();
+ try {
+  f.host.createBaseAutocompleteProvider(); setKeybindings(f.host.keybindings); initTheme("dark");
+  for (const extension of f.host.session.resourceLoader.getExtensions().extensions) extension.shortcuts = new Map();
+  const children: any[] = []; f.host.chatContainer = { addChild: (child: any) => children.push(child) };
+  f.host.getMarkdownThemeWithSettings = () => ({});
+  await f.editor.onSubmit!("/hotkeys");
+  const text = children.find(child => typeof child.text === "string" && child.text.includes("Cycle thinking level"))?.text;
+  assert.match(text, /\| `` \| Cycle thinking level \|/);
+  assert.match(text, /\| `` \/ `` \| Cycle models \|/);
+  assert.match(text, /\| `` \| Open model selector \|/);
+ } finally { f.shutdown(); setKeybindings(previous); }
+ assert.equal(getKeybindings(), previous);
+});
+
+test("settings selector filters items and search through the real component", async () => {
+ const f = fixture(); const previous = getKeybindings();
+ try {
+  f.host.createBaseAutocompleteProvider(); setKeybindings(f.host.keybindings); initTheme("dark");
+  const settings = new Proxy({ getEnableSkillCommands: () => true, getAllModelThinkingLevels: () => ({}), getWarnings: () => ({}), getHttpIdleTimeoutMs: () => 0, getCacheWarmingMode: () => "off" }, { get(target: any, key: string) { return target[key] ?? (() => false); } });
+  f.host.session.settingsManager = settings;
+  f.host.session.modelRuntime.getAvailableSnapshot = () => [];
+  f.host.themeController = { getThemeSelection: () => "", getTerminalTheme: () => undefined };
+  let component: any;
+  f.host.editorContainer = { clear() {}, addChild(child: any) { component = child; } };
+  f.host.ui.setFocus = () => {};
+  await f.editor.onSubmit!("/settings");
+  const firstScreen = component.render(100).join("\n");
+  for (const label of ["Cache warming", "Default thinking level per model", "Double-escape action", "Tree filter mode"]) assert.ok(!firstScreen.includes(label), label);
+  const list: any = component.getSettingsList();
+  const ids = list.items.map((item: any) => item.id);
+  for (const id of ["cache-warming-mode", "model-thinking", "double-escape-action", "tree-filter-mode"]) assert.ok(!ids.includes(id), id);
+  assert.ok(ids.includes("theme"));
+  list.handleInput("c"); list.handleInput("a"); list.handleInput("c"); list.handleInput("h"); list.handleInput("e");
+  assert.ok(!list.filteredItems.some((item: any) => item.id === "cache-warming-mode"));
+  assert.ok(component.render(100).length > 0);
+ } finally { f.shutdown(); setKeybindings(previous); }
+ assert.equal(getKeybindings(), previous);
+});
+
+test("incompatible settings list leaves all items stock and restores keys", async () => {
+ const f = fixture(); const original = SettingsSelectorComponent.prototype.getSettingsList; const previous = getKeybindings();
+ try {
+  f.host.createBaseAutocompleteProvider(); setKeybindings(f.host.keybindings); initTheme("dark");
+  f.host.session.settingsManager = new Proxy({ getEnableSkillCommands: () => true, getAllModelThinkingLevels: () => ({}), getWarnings: () => ({}), getHttpIdleTimeoutMs: () => 0 }, { get(target: any, key: string) { return target[key] ?? (() => false); } });
+  f.host.session.modelRuntime.getAvailableSnapshot = () => []; f.host.themeController = { getThemeSelection: () => "", getTerminalTheme: () => undefined };
+  let component: any; f.host.editorContainer = { clear() {}, addChild(child: any) { component = child; } }; f.host.ui.setFocus = () => {};
+  SettingsSelectorComponent.prototype.getSettingsList = function() { const list = original.call(this); Object.defineProperty(list, "items", { writable: false }); return list; };
+  await f.editor.onSubmit!("/settings");
+  const list: any = original.call(component);
+  assert.ok(list.items.some((item: any) => item.id === "cache-warming-mode"));
+  assert.ok(f.host.keybindings.getKeys("app.model.select").length > 0);
+  assert.match(f.warnings[0], /incompatible.*controls/i);
+ } finally { SettingsSelectorComponent.prototype.getSettingsList = original; f.shutdown(); setKeybindings(previous); }
+ assert.equal(getKeybindings(), previous);
+});
+
+test("logout selector shows only currently visible provider credentials", async () => {
+ const f = fixture(); const previous = getKeybindings();
+ try {
+  f.host.createBaseAutocompleteProvider();
+  const credentials = ["anthropic", "openai-codex", "hidden"].map(providerId => ({ providerId, type: "oauth" }));
+  const removed: string[] = [];
+  f.host.session.modelRuntime = { listCredentials: async () => credentials, getProvider: (id: string) => ({ id, name: id, auth: {} }), getProviders: () => [{ id: "anthropic" }, { id: "openai-codex" }], logout: async (id: string) => { removed.push(id); } };
+  f.host.updateAvailableProviderCount = async () => {}; f.host.showStatus = () => {};
+  initTheme("dark"); setKeybindings(f.host.keybindings);
+  let component: any; f.host.editorContainer = { clear() {}, addChild(child: any) { component = child; } }; f.host.ui.setFocus = () => {};
+  await f.editor.onSubmit!("/logout"); await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(component.allProviders.map((item: any) => item.id), ["anthropic", "openai-codex"]);
+  assert.equal(credentials.length, 3);
+  component.handleInput("\r"); await Promise.resolve(); await Promise.resolve();
+  assert.deepEqual(removed, ["anthropic"]);
+  f.shutdown(); assert.equal((await f.host.getLogoutProviderOptions()).length, 3);
+ } finally { f.shutdown(); setKeybindings(previous); }
+ assert.equal(getKeybindings(), previous);
+});
+
+test("reload installs the new owner while an unrelated session stays stock", () => {
+ const first = fixture(); const plain = fixture({ own: false }); let next: ReturnType<typeof fixture> | undefined;
+ try {
+  first.host.createBaseAutocompleteProvider(); plain.host.createBaseAutocompleteProvider();
+  assert.deepEqual(first.host.keybindings.getKeys("app.model.select"), []);
+  assert.ok(plain.host.keybindings.getKeys("app.model.select").length > 0);
+  first.shutdown(); next = fixture(); first.host.runtimeHost.session = next.host.session;
+  first.host.createBaseAutocompleteProvider(); first.host.keybindings.rebuild();
+  assert.deepEqual(first.host.keybindings.getKeys("app.model.select"), []);
+  next.shutdown(); assert.ok(first.host.keybindings.getKeys("app.model.select").length > 0);
+ } finally { first.shutdown(); plain.shutdown(); next?.shutdown(); }
+});
+
+test("new session and resume events rebind controls to each owner", async () => {
+ const dir = mkdtempSync(join(tmpdir(), "rqw-command-session-"));
+ const first = fixture(); const owners = [first]; const events: string[] = [];
+ try {
+  const resume = SessionManager.create(dir, dir);
+  resume.appendMessage({ role: "user", content: [{ type: "text", text: "resume" }], timestamp: 1 });
+  const path = resume.getSessionFile()!;
+  const prepare = (f: ReturnType<typeof fixture>, manager: any) => {
+   f.host.session.sessionManager = manager; f.host.session.sessionFile = manager.getSessionFile();
+   f.host.session.abort = async () => {}; f.host.session.dispose = () => {};
+   return f.host.session;
+  };
+  const initial = prepare(first, SessionManager.inMemory(dir));
+  const runtime: any = new AgentSessionRuntime(initial, { cwd: dir, agentDir: dir } as any, async (options: any) => {
+   const next = fixture(); owners.push(next);
+   next.handlers.set("session_start", [(event: any) => events.push(event.reason)]);
+   const session = prepare(next, options.sessionManager);
+   await session.extensionRunner.emit(options.sessionStartEvent);
+   return { session, services: { cwd: dir, agentDir: dir }, diagnostics: [] } as any;
+  });
+  first.host.runtimeHost = runtime; first.host.autocompleteProviderWrappers = [];
+  runtime.setRebindSession(async () => { first.host.setupAutocompleteProvider(); });
+  first.host.setupAutocompleteProvider();
+  assert.deepEqual(first.host.keybindings.getKeys("app.model.select"), []);
+  await runtime.newSession();
+  assert.deepEqual(first.host.keybindings.getKeys("app.model.select"), []);
+  await runtime.switchSession(path);
+  assert.deepEqual(first.host.keybindings.getKeys("app.model.select"), []);
+  assert.deepEqual(events, ["new", "resume"]);
+  owners.at(-1)!.shutdown();
+  assert.ok(first.host.keybindings.getKeys("app.model.select").length > 0);
+ } finally { for (const owner of owners) owner.shutdown(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("incompatible manager falls back to stock with a controls warning", () => {
+ const f = fixture();
+ try {
+  f.host.keybindings.keysById = null;
+  const original = f.host.keybindings.rebuild;
+  f.host.createBaseAutocompleteProvider();
+  assert.equal(f.host.keybindings.rebuild, original);
+  assert.match(f.warnings[0], /incompatible.*controls/i);
+ } finally { f.shutdown(); }
+});
+
+test("shutdown restores both nested prototype patches", () => {
+ const original = Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "createBaseAutocompleteProvider")!.value;
+ const f = fixture();
+ try {
+  f.host.createBaseAutocompleteProvider();
+  assert.notEqual(Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "createBaseAutocompleteProvider")!.value, original);
+  f.shutdown();
+  assert.equal(Object.getOwnPropertyDescriptor(InteractiveMode.prototype, "createBaseAutocompleteProvider")!.value, original);
+ } finally { f.shutdown(); }
+});
+
+test("a foreign rebuild wrapper survives removal and stock bindings return", () => {
+ const f = fixture();
+ try {
+  f.host.createBaseAutocompleteProvider(); const kb = f.host.keybindings; const inner = kb.rebuild; let calls = 0;
+  const foreign = function(this: unknown) { calls++; return inner.call(this); }; kb.rebuild = foreign;
+  f.shutdown(); assert.equal(kb.rebuild, foreign); assert.ok(calls > 0); assert.ok(kb.getKeys("app.model.select").length > 0);
  } finally { f.shutdown(); }
 });
