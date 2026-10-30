@@ -1,5 +1,5 @@
 // Extension 5: asynchronous subagents with caller-local lifecycle and recursive delegation.
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { ProgressReports, PROGRESS_SKILL_PATH } from "./progress.ts";
 import registerMainProgress from "./main-progress.ts";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
@@ -24,7 +24,7 @@ import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-fi
 import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 import { Coordinator, type AcceptRecord, type Result, type WaitRecord, type RuntimeHandle, deadlineTimer, waitTimeout, targetIds, messageCount, statusDepth, waitResult } from "./coordinator.ts";
-import { ACCEPT_ENTRY, CHILD_ENTRY, WAIT_ENTRY, deliveredRuns, createChildManager, openChildManager, retainedChildManager, releaseChildManager, repairInterrupted } from "./persistence.ts";
+import { ACCEPT_ENTRY, BASE_ENTRY, CHILD_ENTRY, WAIT_ENTRY, deliveredRuns, createChildManager, openChildManager, retainedChildManager, releaseChildManager, repairInterrupted } from "./persistence.ts";
 
 const TOOLS = ["read", "bash", "edit", "write", "grep", "find"] as const;
 /** Pi's built-in tools a child gets when its caller has them active (the main session has them through RQW-settings). */
@@ -121,9 +121,12 @@ type Config = { system: string; base: string; cwd?: string; custom?: string; rol
 type SendBatch = { n: number; tasks: string[] };
 /** `delivery` is the id its message carries; the saved result is the outbox, so a restore sends the same id. Older records have none. */
 type SavedResult = { run: string; text: string; outcome: "completed" | "error"; meta: RunMeta; delivery?: string };
-type SavedChild = { version: 1; kind: string; id: number; epoch: string; sessionFile?: string; runNumber: number; state: "idle" | "running" | "interrupted" | "paused" | "completed" | "stopped"; config: Omit<Config, "model" | "system"> & { system?: string; system_tail?: string; model: { provider: string; id: string } }; fast: boolean; title?: string; task?: string; result?: SavedResult; progressSteps?: number; pending_sends?: SendBatch[]; history?: boolean; recovers?: string };
+type SavedChild = { version: 1; kind: string; id: number; epoch: string; sessionFile?: string; runNumber: number; state: "idle" | "running" | "interrupted" | "paused" | "completed" | "stopped"; config: Omit<Config, "model" | "system" | "base"> & { base?: string; base_ref?: string; system?: string; system_tail?: string; model: { provider: string; id: string } }; fast: boolean; title?: string; task?: string; result?: SavedResult; progressSteps?: number; pending_sends?: SendBatch[]; history?: boolean; recovers?: string };
 /** The text of the config and task as last written to the parent session; restore takes it from the saved record. */
 type Written = { config: string; task?: string };
+
+/** The id of a base prompt text in `rqw-agent-base` entries and in child configs' `base_ref`. */
+export const baseRef = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 
 /** Config and task are written once and again only when their text changes; restore takes them from the earlier full record. */
 export function childRecord<T extends { config?: unknown; task?: string }>(a: { written?: Written }, full: T): T | Omit<T, "config" | "task"> {
@@ -475,6 +478,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	let main: ExtensionContext | undefined;
 	let hydrated = false;
 	let branchIndex: { saved: Map<number, SavedChild>; delivered: Set<string>; waits: Map<string, WaitRecord> } | undefined;
+	/** Base prompt texts by ref, as written on the selected branch; reset with the branch. */
+	let bases: Map<string, string> | undefined;
 	/** Waits this runtime restored from the session, so a later partial fold does not raise them again. */
 	const restoredWaits = new Set<string>();
 	let initialRecovery = true;
@@ -672,23 +677,44 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			a.sends = a.sends.filter(batch => batch.n > done);
 		}
 		a.history ||= a.session.sessionManager.getBranch().some(entry => entry.type === "message" && entry.message.role === "user");
-		const { model, system, ...config } = a.config;
+		const { model, system, base, ...config } = a.config;
 		// Only the default prompt (base, reminder, role) is stored as its tail after the base the record keeps already; an own `system` stays whole.
-		const head = config.base.trimEnd();
+		const head = base.trimEnd();
+		// The base (the whole main prompt) is written once per branch as its own entry; records keep its ref.
+		const ref = baseRef(base);
 		const prompt = config.custom === undefined && head && system.startsWith(head) ? { system_tail: system.slice(head.length) } : { system };
 		const data: SavedChild = {
 			version: 1, kind: name, id: a.id, epoch: a.epoch,
 			sessionFile: a.session.sessionManager.getSessionFile(), runNumber: a.runNumber, state: a.state,
-			config: { ...prompt, ...config, model: { provider: model.provider, id: model.id } },
+			config: { ...prompt, ...config, base_ref: ref, model: { provider: model.provider, id: model.id } },
 			fast: a.fast.on, progressSteps: a.progress.steps, ...(a.title ? { title: a.title } : {}), ...(a.task !== undefined ? { task: a.task } : {}),
 			...(a.result ? { result: a.result } : {}),
 			history: a.history,
 			...(a.recovers ? { recovers: a.recovers } : {}),
 			...(a.sends.length ? { pending_sends: a.sends.map(batch => ({ n: batch.n, tasks: [...batch.tasks] })) } : {}),
 		};
-		pi.appendEntry(CHILD_ENTRY, childRecord(a, data));
+		const record = childRecord(a, data);
+		const known = branchBases();
+		if ("config" in record && !known.has(ref)) {
+			pi.appendEntry(BASE_ENTRY, { version: 1, ref, text: base });
+			known.set(ref, base);
+		}
+		pi.appendEntry(CHILD_ENTRY, record);
 		branchIndex?.saved.set(a.id, data);
 		return data;
+	}
+
+	/** The base texts on the caller's selected branch, read once per branch. */
+	function branchBases(): Map<string, string> {
+		if (bases) return bases;
+		if (!main) return new Map();
+		bases = new Map();
+		for (const entry of main.sessionManager.getBranch()) {
+			if (entry.type !== "custom" || entry.customType !== BASE_ENTRY) continue;
+			const data = entry.data as { version?: unknown; ref?: unknown; text?: unknown } | undefined;
+			if (data?.version === 1 && typeof data.ref === "string" && typeof data.text === "string") bases.set(data.ref, data.text);
+		}
+		return bases;
 	}
 
 	function saveSlot(data: SavedChild) {
@@ -832,8 +858,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			try {
 			if (!data.sessionFile && !retainedChildManager(ctx.sessionManager, name, data.id)) return;
 			// A record holds the whole `system` (own prompts, older records) or only its tail after `base`.
-			const { system_tail: tail, ...stored } = data.config ?? {} as Partial<SavedChild["config"]>;
-			const c = data.config && { ...stored, system: stored.system ?? (typeof tail === "string" && typeof stored.base === "string" ? stored.base.trimEnd() + tail : undefined) } as Omit<Config, "model"> & { model: { provider: string; id: string } };
+			const { system_tail: tail, base_ref: ref, ...stored } = data.config ?? {} as Partial<SavedChild["config"]>;
+			// Older records keep the base inline; newer ones name its `rqw-agent-base` entry.
+			const base = stored.base ?? (typeof ref === "string" ? branchBases().get(ref) : undefined);
+			const c = data.config && { ...stored, base, system: stored.system ?? (typeof tail === "string" && typeof base === "string" ? base.trimEnd() + tail : undefined) } as Omit<Config, "model"> & { model: { provider: string; id: string } };
 			if (!c || typeof c.system !== "string" || typeof c.base !== "string" || !Array.isArray(c.tools)
 				|| c.tools.some(tool => !TOOLS.includes(tool as typeof TOOLS[number])) || !THINKING.includes(c.thinking)
 				|| (c.builtins !== undefined && (!Array.isArray(c.builtins) || c.builtins.some(tool => !BUILTIN_TOOLS.includes(tool as typeof BUILTIN_TOOLS[number]))))
@@ -1665,7 +1693,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		generation = new AbortController();
 		for (const a of agents.values()) { coordinator.change(`${name}#${a.id}`, "branch_changed"); close(a); }
 		for (const id of [...savedSlots.keys(), ...recoveryErrors.keys()]) coordinator.change(`${name}#${id}`, "branch_changed");
-		agents.clear(); savedSlots.clear(); restoring.clear(); recoveryPending.clear(); recoveryErrors.clear(); hydrated = false; branchIndex = undefined; restoredWaits.clear(); main = ctx;
+		agents.clear(); savedSlots.clear(); restoring.clear(); recoveryPending.clear(); recoveryErrors.clear(); hydrated = false; branchIndex = undefined; bases = undefined; restoredWaits.clear(); main = ctx;
 		late.length = 0; unanswered.clear();
 	});
 	// agent_end still has the native run's live abort signal. before_settle no longer does.

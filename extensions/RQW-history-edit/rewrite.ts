@@ -11,7 +11,11 @@ export function rewriteSession(pi: ExtensionAPI, ctx: ExtensionContext, path: st
 	for (const entry of branch) if (manager.getLabel(entry.id)) targets.add(entry.id);
 	const labels = [...targets].map(id => [id, manager.getLabel(id)] as const);
 	const name = manager.getSessionName();
-	const children = before.filter(entry => entry.type === "custom" && entry.customType === "rqw-agent-child");
+	// A base already on the kept path stays there; any other is carried once, before its children in file order.
+	const baseRef = (entry: (typeof before)[number]) => entry.type === "custom" && entry.customType === "rqw-agent-base" ? (entry.data as { ref?: unknown } | undefined)?.ref : undefined;
+	const bases = new Set<unknown>(branch.map(baseRef).filter(ref => ref !== undefined));
+	const children = before.filter(entry => entry.type === "custom" && (entry.customType === "rqw-agent-child"
+		|| (entry.customType === "rqw-agent-base" && !bases.has(baseRef(entry)) && !!bases.add(baseRef(entry)))));
 	for (const [id, label] of labels) pi.setLabel(id, label);
 	if (name || branch.some(entry => entry.type === "session_info")) pi.setSessionName(name ?? "");
 	// Replay every child record in file order, including retained records, so newer state wins.
