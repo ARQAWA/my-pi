@@ -9,7 +9,7 @@ import { loadSkills } from "@earendil-works/pi-coding-agent";
 import { parse } from "smol-toml";
 import { ProfileCatalogue } from "../extensions/RQW-agent/profiles.ts";
 
-test("project reviewer profiles use Terra medium and the required review contracts", async () => {
+test("project reviewer profiles use Terra high and the required review contracts", async () => {
 	const fragments = {
 		"code-reviewer": [
 			"a concrete reachable trigger, input, state, or ordering",
@@ -54,7 +54,7 @@ test("project reviewer profiles use Terra medium and the required review contrac
 		const profile = parse(readFileSync(new URL(`../.pi/agents/${name}.toml`, import.meta.url), "utf8"));
 		assert.equal(profile.name, name);
 		assert.equal(profile.model, "gpt-6.1-terra");
-		assert.equal(profile.model_reasoning_effort, "medium");
+		assert.equal(profile.model_reasoning_effort, "high");
 		assert.equal(typeof profile.developer_instructions, "string");
 		for (const fragment of required) {
 			assert.ok((profile.developer_instructions as string).includes(fragment), `${name}: ${fragment}`);
@@ -71,7 +71,7 @@ test("project reviewer profiles use Terra medium and the required review contrac
 		assert.equal(skill?.filePath, join(root, ".pi", "skills", "testreview", "SKILL.md"));
 		const text = readFileSync(skill!.filePath, "utf8");
 		assert.ok(text.includes('agent_type: "requirements-test-reviewer"'));
-		assert.ok(text.includes("openai-codex/gpt-6.1-sol"));
+		assert.ok(text.includes("openai-codex/gpt-6.1-terra"));
 		assert.ok(!text.includes("role_file"));
 	} finally {
 		await rm(agentDir, { recursive: true, force: true });

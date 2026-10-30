@@ -990,8 +990,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   являются частью нашего harness. Не частью harness, а именно частью нашего репозитория. То есть code review должны
   быть внутри этого репозитория, а не harness. Это не входит в harness вообще.» The optional `testreview` skill and
   `requirements-test-reviewer` profile are repository-only under `.pi/`; RQW-review ships only Spotty, Bossy and their
-  blind/high skills. The local skill keeps the accepted requirements/test-plan review contract on Terra medium,
-  without test execution, mandatory commit pairs or a package `role_file`. The project `code-reviewer` and
+  blind/high skills. The local skill keeps the accepted requirements/test-plan review contract on Terra high,
+  without test execution, mandatory commit pairs or a package `role_file`. Owner: «переделай исполнителя с terra с high на xhi, подними всех терра на один уровеньи покажи как изменится матрица» «и покажи предполагаемую новую матрицу после принятия мной изменений потенциальных» «по матрице 1». The project `code-reviewer` and
   `test-reviewer` profiles remain local. Reason: code and test review belong to this repository's development workflow,
   not the shipped harness. Carriers: `.pi/agents/requirements-test-reviewer.toml`,
   `.pi/skills/testreview/SKILL.md`, `extensions/RQW-review/index.ts`.
@@ -1053,7 +1053,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `/Users/arkadijcukavin/Downloads/codex-subagents-full-pack (1).zip`.
   Owner, current task `reviewers-terra`, 2026-10-27:
   «Надо переписать viewer с Sol 6.1 на Terru, чтобы в споте был на Terra low, а босси на terra medium».
-  Reason for the model change: the owner's explicit choice. The code and test reviewer profiles use Terra medium too. Owner: «Ревью кода, ревью тестов пусть делает  Terra Medium тоже».
+  Reason for the model change: the owner's explicit choice. The code and test reviewer profiles use Terra high. Owner: «Ревью кода, ревью тестов пусть делает  Terra Medium тоже». Owner: «переделай исполнителя с terra с high на xhi, подними всех терра на один уровеньи покажи как изменится матрица» «и покажи предполагаемую новую матрицу после принятия мной изменений потенциальных» «по матрице 1».
   Reason: one profile mechanism rather than a parallel reviewer execution stack.
   Carriers: `extensions/RQW-review/index.ts`, `profiles/*.toml`, `skills/**/SKILL.md`, RQW-agent.
   Contract: [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).

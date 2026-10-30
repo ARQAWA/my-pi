@@ -28,7 +28,7 @@ function fixture(randomInt: (max: number) => number) {
 
 test("schema-valid category calls reach the guard and receive the drawn pair", () => {
 	const expected = [
-		["openai-codex/gpt-6.1-terra", "high"],
+		["openai-codex/gpt-6.1-terra", "xhigh"],
 		["anthropic/claude-sonnet-5-5", "high"],
 	];
 	for (const index of [0, 1]) {
