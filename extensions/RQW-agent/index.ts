@@ -1,6 +1,7 @@
 // Extension 5: asynchronous subagents with caller-local lifecycle and recursive delegation.
 import { randomUUID } from "node:crypto";
 import { ProgressReports, PROGRESS_SKILL_PATH } from "./progress.ts";
+import registerMainProgress from "./main-progress.ts";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { getCurrentTools, getSupportedThinkingLevels, StringEnum } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent, ExtensionAPI, ExtensionContext, ModelRuntime, SessionEntry, ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -422,6 +423,7 @@ const isAssistant = (m: { role: string }): m is AssistantMessage => m.role === "
 const runtimeOf = (ctx: ExtensionContext) => (ctx.modelRegistry as unknown as { runtime: ModelRuntime }).runtime;
 
 export default function agent(pi: ExtensionAPI) {
+	registerMainProgress(pi);
 	pi.on("resources_discover", () => ({ skillPaths: [PROGRESS_SKILL_PATH] }));
 	registerCaller(pi, pi.events, false, true, () => inheritedFastGpt(pi.events));
 }
