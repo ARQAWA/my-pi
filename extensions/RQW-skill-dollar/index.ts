@@ -2,8 +2,8 @@
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { stripFrontmatter, type ExtensionAPI,
-	type ExtensionContext, type SlashCommandInfo } from "@earendil-works/pi-coding-agent";
-import { installSkillCard } from "./card.ts";
+	type SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import { installHost } from "./host.ts";
 import {
 	fuzzyFilter,
 	type AutocompleteItem,
@@ -171,9 +171,8 @@ export default function skillDollar(pi: ExtensionAPI): void {
 	let tui: TUI | undefined;
 	let limitedEditor: RowEditor | undefined;
 	let previousRows: number | undefined;
-	let ui: ExtensionContext["ui"] | undefined;
-	// Installed at load: Pi builds the restored history before session_start, and those cards must be linked too.
-	let removeCard: (() => void) | undefined = installSkillCard(() => ui!.theme);
+	// The card remains active while Pi replaces the session runtime.
+	const host = installHost();
 
 	const restoreRows = () => {
 		if (limitedEditor && previousRows !== undefined) {
@@ -199,8 +198,6 @@ export default function skillDollar(pi: ExtensionAPI): void {
 
 	pi.on("session_start", (_event, ctx) => {
 		if (ctx.mode !== "tui") return;
-		ui = ctx.ui;
-		removeCard ??= installSkillCard(() => ui!.theme);
 		// A transient zero-row widget exposes the public TUI; removing it leaves no layout or factory change.
 		ctx.ui.setWidget(WIDGET_KEY, currentTui => {
 			tui = currentTui;
@@ -212,8 +209,7 @@ export default function skillDollar(pi: ExtensionAPI): void {
 
 	pi.on("session_shutdown", () => {
 		restoreRows();
-		removeCard?.();
-		removeCard = undefined;
+		if (host && !host.seen) host.dispose();
 		tui = undefined;
 	});
 	pi.on("input", event => {
