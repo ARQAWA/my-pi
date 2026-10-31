@@ -17,7 +17,7 @@ for nested children on the same channel. `noExtensions: true` stays unchanged; n
 `agent` start accepts `fork_turns: "all"` to copy the caller's current branch into a separate in-memory child session.
 The copy keeps conversation entries, compaction and context edits, but excludes service records and unfinished tool-call
 groups. The caller's model, thinking, current system prompt and available child tools are inherited. `tools` can narrow
-the base tools. The fork history is not saved to its own file and is lost on process restart or reload.
+the base tools. A nested fork copies its direct caller's branch, model and tools. The fork history is not saved to its own file and is lost on process restart or reload. An unfinished fork then returns an explicit lost-history error; an already saved result remains deliverable. The lost history cannot be resumed or extended.
 `model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` and `include` cannot accompany `all`.
 For an Anthropic or Codex fork, the first request copies the caller's last provider payload and appends the fork task
 as a user message. It retains the original instructions, ordered tools, model, thinking and cache identity. The Codex
@@ -236,6 +236,8 @@ There is no child-specific execution, turn, token, output-growth or wall-clock l
 management cancellation still apply. Wait timeout limits the caller's pause, never the child's lifetime.
 
 ## Background progress notifications
+
+Forks started with `fork_turns: "all"` never send automatic progress summaries to their parent. Ordinary children keep the behavior below.
 
 After 50 non-final assistant responses containing at least one `toolCall`, a child starts one background progress
 summary from its own cached context. Counting happens at `message_end`, before the tools finish: one response is

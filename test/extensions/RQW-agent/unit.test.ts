@@ -339,9 +339,11 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	const events = createEventBus();
 	setup?.(events);
-	const model = createFauxCore({ provider: "persist-test", models: [{ id: "model" }] }).getModel();
+	const core = createFauxCore({ provider: "persist-test", models: [{ id: "model" }, { id: "other" }] });
+	const model = core.getModel("model")!;
+	const other = core.getModel("other")!;
 	const requests: any[] = [];
-	const core = createFauxCore({ provider: "persist-test", models: [{ id: "model" }] });
+	const requestModels: string[] = [];
 	core.setResponses(Array.from({ length: responses }, () => async (context: any, options: any) => {
 		requests.push(context);
 		const answer = await response(context, options);
@@ -351,13 +353,13 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 		getModel: () => model, getPhysicalModel: () => model,
 		hasConfiguredAuth: () => true, getAuth: async () => ({ apiKey: "fake" }),
 		checkAuth: async () => ({}), isUsingOAuth: () => false,
-		getAvailableSnapshot: () => [model], getRegisteredProviderIds: () => [],
-		streamSimple: core.streamSimple,
+		getAvailableSnapshot: () => [model, other], getRegisteredProviderIds: () => [],
+		streamSimple: (selected: any, context: any, options: any) => { requestModels.push(selected.id); return core.streamSimple(selected, context, options); },
 	};
 	let definition: any;
 	const notices: string[] = [];
 	const ctx: any = {
-		cwd, sessionManager: parent, model, modelRegistry: { runtime: modelRuntime, find: () => model, hasConfiguredAuth: () => true },
+		cwd, sessionManager: parent, model, modelRegistry: { runtime: modelRuntime, find: (_provider: string, id: string) => id === "other" ? other : model, hasConfiguredAuth: () => true },
 		isIdle: () => true, isProjectTrusted: () => true, getSystemPrompt: () => "original prompt",
 		signal: new AbortController().signal, mode: "tui", ui: { notify: (message: string) => { notices.push(message); } },
 	};
@@ -370,7 +372,7 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
 	const runtime = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);
-	return { runtime, requests, ctx, events, notices, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { let result: unknown; for (const hook of hooks.get(name) ?? []) result = await hook(event, ctx); return result; },
+	return { runtime, requests, requestModels, ctx, events, notices, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { let result: unknown; for (const hook of hooks.get(name) ?? []) result = await hook(event, ctx); return result; },
 		execute: (params: any, callId = "call") => definition.execute(callId, params, new AbortController().signal, undefined, ctx) };
 }
 
@@ -385,6 +387,81 @@ function offerCatalog(events: ReturnType<typeof createEventBus>) {
 		execute: async () => ({ content: [{ type: "text", text: name }], details: {} }),
 	})), catalog));
 }
+
+test("only ordinary children send automatic progress after 50 tool responses", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	for (const fork of [false, true]) {
+		const parent = SessionManager.inMemory(root);
+		parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+		let steps = 0;
+		let summaries = 0;
+		const live = runtimeFixture(parent, root, () => ++steps <= 50
+			? fauxAssistantMessage([fauxToolCall("read", {}, { id: `read-${steps}` })], { stopReason: "toolUse" }) : "done", 52, false, offerCatalog);
+		live.events.on("rqw:context-fork:v1", (request: any) => { summaries++; request.offer(async () => fauxAssistantMessage("progress")); });
+		await live.execute({ action: "start", task: "work", tools: ["read"], ...(fork ? { fork_turns: "all" } : {}) });
+		await live.runtime.wait(new AbortController().signal);
+		assert.equal(summaries, fork ? 0 : 1);
+		assert.equal(parent.getBranch().filter((entry: any) => entry.customType === "agent_progress").length, fork ? 0 : 1);
+		live.runtime.close();
+	}
+});
+
+test("lost fork history returns an error and preserves an already saved result", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	for (const completed of [false, true]) {
+		const parent = SessionManager.create(root, join(root, completed ? "completed" : "running"));
+		parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+		const first = runtimeFixture(parent, root, completed ? () => "finished result" : () => new Promise<never>(() => {}));
+		await first.execute({ action: "start", fork_turns: "all", task: "check" });
+		if (completed) await first.runtime.wait(new AbortController().signal);
+		const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+		const result = await restored.execute({ action: "wait", ids: ["agent#1"] });
+		const branch = restored.ctx.sessionManager.getBranch();
+		const saved = branch.filter((entry: any) => entry.customType === "rqw-agent-child").at(-1).data.result;
+		assert.match(saved.text, completed ? /finished result/ : /fork history was lost/);
+		if (!completed) assert.match(JSON.stringify([result.details, branch]), /fork history was lost/);
+		await assert.rejects(restored.execute({ action: "send", id: "agent#1", task: "continue" }), /fork history was lost/);
+		assert.equal(restored.requests.length, 0);
+		if (completed) {
+			const find = restored.ctx.modelRegistry.find;
+			restored.ctx.modelRegistry.find = (provider: string, id: string) => id === "model" ? undefined : find(provider, id);
+		}
+		await restored.execute({ action: "restart", id: "agent#1", task: "new task", ...(completed ? { model: "persist-test/other" } : {}) });
+		await restored.runtime.wait(new AbortController().signal);
+		assert.equal(restored.requestModels.at(-1), completed ? "other" : "model");
+		const request = restored.requests.at(-1);
+		assert.match(JSON.stringify(request.messages), /new task/);
+		assert.doesNotMatch(JSON.stringify(request.messages.filter((message: any) => message.role !== "system")), /parent|fork history was lost/);
+		first.runtime.close();
+		restored.runtime.close();
+	}
+});
+
+test("nested fork inherits its direct caller branch, prompt and selected tools", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.inMemory(root);
+	parent.appendMessage({ role: "user", content: "root only", timestamp: 1 });
+	const live = runtimeFixture(parent, root, context => {
+		const messages = context.messages.filter((message: any) => message.role !== "system");
+		if (messages.some((message: any) => message.role === "user" && JSON.stringify(message.content).includes("fork task"))) return "fork done";
+		if (messages.some((message: any) => message.role === "toolResult")) return "outer done";
+		return fauxAssistantMessage([fauxToolCall("agent", { action: "start", fork_turns: "all", task: "fork task" }, { id: "nested-fork" })], { stopReason: "toolUse" });
+	}, 12, false, offerCatalog);
+	await live.execute({ action: "start", task: "outer task", role: "outer role", model: "persist-test/other", tools: ["read"] });
+	await live.runtime.wait(new AbortController().signal);
+	const request = live.requests.find((item: any) => JSON.stringify(item.messages).includes("fork task"));
+	assert.ok(request, "nested fork ran");
+	assert.equal(live.requestModels[live.requests.indexOf(request)], "other");
+	const text = JSON.stringify(request.messages);
+	assert.match(text, /outer task/);
+	assert.doesNotMatch(text, /root only/);
+	assert.match(text, /outer role/);
+	assert.deepEqual(getCurrentTools(request.messages.filter((message: any) => message.role === "system")).map((tool: any) => tool.name).sort(), ["agent", "rqw_readfile"]);
+	live.runtime.close();
+});
 
 test("a child without a tool subset gets the entire offered catalogue", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });

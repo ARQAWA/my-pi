@@ -97,7 +97,7 @@ type Params = Omit<Static<typeof PARAMETERS>, "tools"> & { tools?: string[] };
  * `system` is the whole prompt sent; `base` the main agent's prompt it was built from (handed down to nested callers);
  * `custom` the caller's full override, `role` its resolved role text, `profile` the loaded profile's provenance.
  */
-type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; prompt_file?: PromptFile; profile?: ProfileRef; profile_defaults?: { model: boolean; thinking: boolean; role: boolean }; alert_after_ms?: number; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
+type Config = { system: string; base: string; cwd?: string; custom?: string; role?: string; prompt_file?: PromptFile; profile?: ProfileRef; profile_defaults?: { model: boolean; thinking: boolean; role: boolean }; alert_after_ms?: number; fork_turns?: "all"; model: Model<Api>; thinking: Thinking; tools: string[]; builtins?: string[]; settings?: ReturnType<typeof childSettings> };
 /** Commands the child accepted: `tasks` become one user message, the `n`-th user message of its history. */
 type SendBatch = { n: number; tasks: string[] };
 /** `delivery` is the id its message carries; the saved result is the outbox, so a restore sends the same id. Older records have none. */
@@ -843,6 +843,33 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		return branchIndex;
 	}
 
+	function savedConfig(data: SavedChild): Omit<Config, "model"> & { model: { provider: string; id: string } } {
+		const { system_tail: tail, base_ref: ref, ...stored } = data.config ?? {} as Partial<SavedChild["config"]>;
+		const base = stored.base ?? (typeof ref === "string" ? branchBases().get(ref) : undefined);
+		const c = data.config && { ...stored, base, system: stored.system ?? (typeof tail === "string" && typeof base === "string" ? base.trimEnd() + tail : undefined) } as Omit<Config, "model"> & { model: { provider: string; id: string } };
+		if (c && Array.isArray(c.tools) && c.tools.every(tool => typeof tool === "string")) c.tools = selectors(c.tools, offeredFactory()?.catalogue);
+		if (!c || typeof c.system !== "string" || typeof c.base !== "string" || !Array.isArray(c.tools)
+			|| c.tools.some(tool => !TOOLS.includes(tool as typeof TOOLS[number])) || !THINKING.includes(c.thinking)
+			|| (c.builtins !== undefined && (!Array.isArray(c.builtins) || c.builtins.some(tool => !BUILTIN_TOOLS.includes(tool as typeof BUILTIN_TOOLS[number]))))
+			|| (c.settings !== undefined && (!c.settings || typeof c.settings !== "object" || Array.isArray(c.settings)))
+			|| (c.cwd !== undefined && typeof c.cwd !== "string")
+			|| (c.profile !== undefined && (!c.profile || typeof c.profile.name !== "string" || typeof c.profile.path !== "string" || typeof c.profile.sha256 !== "string"))
+			|| (data.task !== undefined && typeof data.task !== "string") || (data.title !== undefined && typeof data.title !== "string")
+			|| (data.sessionFile !== undefined && typeof data.sessionFile !== "string")
+			|| (data.result !== undefined && (!data.result || typeof data.result.run !== "string" || typeof data.result.text !== "string"
+				|| !["completed", "error"].includes(data.result.outcome) || !data.result.meta || typeof data.result.meta !== "object"
+				|| (data.result.delivery !== undefined && typeof data.result.delivery !== "string")))
+			|| !c.model || typeof c.model.provider !== "string" || typeof c.model.id !== "string"
+			|| typeof data.fast !== "boolean" || typeof data.epoch !== "string" || !Number.isSafeInteger(data.runNumber)
+			|| (data.history !== undefined && typeof data.history !== "boolean") || (data.recovers !== undefined && typeof data.recovers !== "string")
+			|| (data.progressSteps !== undefined && (!Number.isSafeInteger(data.progressSteps) || data.progressSteps < 0))
+			|| (data.pending_sends !== undefined && (!Array.isArray(data.pending_sends) || data.pending_sends.some(batch => !batch || !Number.isSafeInteger(batch.n) || batch.n < 1
+				|| !Array.isArray(batch.tasks) || !batch.tasks.length || batch.tasks.some(task => typeof task !== "string"))))
+			|| !["idle", "running", "interrupted", "paused", "completed"].includes(data.state))
+			throw new Error(`Invalid persisted configuration for ${name}#${data.id}`);
+		return c;
+	}
+
 	async function hydrate(ctx: ExtensionContext, signal: AbortSignal, onlyId?: number) {
 		if (hydrated && onlyId === undefined) return;
 		main = ctx;
@@ -856,55 +883,38 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (pending?.epoch === data.epoch) { await pending.promise; continue; }
 			const promise = (async () => {
 			try {
-			if (!data.sessionFile && !retainedChildManager(ctx.sessionManager, name, data.id)) return;
-			// A record holds the whole `system` (own prompts, older records) or only its tail after `base`.
-			const { system_tail: tail, base_ref: ref, ...stored } = data.config ?? {} as Partial<SavedChild["config"]>;
-			// Older records keep the base inline; newer ones name its `rqw-agent-base` entry.
-			const base = stored.base ?? (typeof ref === "string" ? branchBases().get(ref) : undefined);
-			const c = data.config && { ...stored, base, system: stored.system ?? (typeof tail === "string" && typeof base === "string" ? base.trimEnd() + tail : undefined) } as Omit<Config, "model"> & { model: { provider: string; id: string } };
-			if (c && Array.isArray(c.tools) && c.tools.every(tool => typeof tool === "string")) c.tools = selectors(c.tools, offeredFactory()?.catalogue);
-			if (!c || typeof c.system !== "string" || typeof c.base !== "string" || !Array.isArray(c.tools)
-				|| c.tools.some(tool => !TOOLS.includes(tool as typeof TOOLS[number])) || !THINKING.includes(c.thinking)
-				|| (c.builtins !== undefined && (!Array.isArray(c.builtins) || c.builtins.some(tool => !BUILTIN_TOOLS.includes(tool as typeof BUILTIN_TOOLS[number]))))
-				|| (c.settings !== undefined && (!c.settings || typeof c.settings !== "object" || Array.isArray(c.settings)))
-				|| (c.cwd !== undefined && typeof c.cwd !== "string")
-				|| (c.profile !== undefined && (!c.profile || typeof c.profile.name !== "string" || typeof c.profile.path !== "string" || typeof c.profile.sha256 !== "string"))
-				|| (data.task !== undefined && typeof data.task !== "string") || (data.title !== undefined && typeof data.title !== "string")
-				|| (data.sessionFile !== undefined && typeof data.sessionFile !== "string")
-				|| (data.result !== undefined && (!data.result || typeof data.result.run !== "string" || typeof data.result.text !== "string"
-					|| !["completed", "error"].includes(data.result.outcome) || !data.result.meta || typeof data.result.meta !== "object"
-					|| (data.result.delivery !== undefined && typeof data.result.delivery !== "string")))
-				|| !c.model || typeof c.model.provider !== "string" || typeof c.model.id !== "string"
-				|| typeof data.fast !== "boolean" || typeof data.epoch !== "string" || !Number.isSafeInteger(data.runNumber)
-				|| (data.history !== undefined && typeof data.history !== "boolean") || (data.recovers !== undefined && typeof data.recovers !== "string")
-				|| (data.progressSteps !== undefined && (!Number.isSafeInteger(data.progressSteps) || data.progressSteps < 0))
-				|| (data.pending_sends !== undefined && (!Array.isArray(data.pending_sends) || data.pending_sends.some(batch => !batch || !Number.isSafeInteger(batch.n) || batch.n < 1
-					|| !Array.isArray(batch.tasks) || !batch.tasks.length || batch.tasks.some(task => typeof task !== "string"))))
-				|| !["idle", "running", "interrupted", "paused", "completed"].includes(data.state))
-				throw new Error(`Invalid persisted configuration for ${name}#${data.id}`);
+			if (!data.sessionFile && !retainedChildManager(ctx.sessionManager, name, data.id)) {
+				if (data.config?.fork_turns !== "all") return;
+				if (onlyId !== undefined) throw new Error(`Cannot restore ${name}#${data.id}: fork history was lost on restart`);
+				const result = data.result ?? { run: `${data.epoch}:${data.runNumber}`, text: `error: ${name}#${data.id} fork history was lost on restart; cannot continue`, outcome: "error" as const, meta: { stop: "error" as const }, delivery: randomUUID() };
+				const lost: SavedChild = { ...data, state: "completed", result };
+				if (!data.result) { pi.appendEntry(CHILD_ENTRY, lost); saved.set(data.id, lost); }
+				saveSlot(lost);
+				return;
+			}
+			const c = savedConfig(data);
 			if (onlyId === undefined && data.state === "completed" && data.result && data.sessionFile) {
 				saveSlot(data);
 				return;
 			}
 			const model = ctx.modelRegistry.find(c.model.provider, c.model.id);
 			if (!model) throw new Error(`Cannot restore ${name}#${data.id}: model ${c.model.provider}/${c.model.id} is unavailable`);
+			const config: Config = { ...c, model, system: withCurrentReminder(c.system) };
 			const neverRunIdle = data.state === "idle" && data.runNumber === 0 && data.task === undefined;
 			// No history yet when saved: its file may be absent, and the accepted task still waits in `pending_sends`.
 			const unflushed = data.history === false;
 			let manager = retainedChildManager(ctx.sessionManager, name, data.id);
 			try {
-				if (data.sessionFile) manager = openChildManager(ctx.sessionManager, data.sessionFile, c.cwd ?? ctx.cwd, name, data.id);
+				if (data.sessionFile) manager = openChildManager(ctx.sessionManager, data.sessionFile, config.cwd ?? ctx.cwd, name, data.id);
 			} catch (error) {
 				// openChildManager checks ownership before an absent file may take this exception.
 				if (!(neverRunIdle || unflushed) || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-				manager ??= createChildManager(ctx.sessionManager, c.cwd ?? ctx.cwd, name, data.id);
+				manager ??= createChildManager(ctx.sessionManager, config.cwd ?? ctx.cwd, name, data.id);
 			}
 			if (!manager) throw new Error(`Cannot restore ${name}#${data.id}: missing child session`);
 			// Only a never-run idle generation can legitimately have no transcript; saved tasks never authorize replay.
 			if (data.sessionFile && !neverRunIdle && !unflushed && !manager.buildSessionProjection().messages.some(m => m.role !== "system"))
 				throw new Error(`Cannot restore ${name}#${data.id}: saved child history is empty; refusing to rebuild it from task metadata`);
-			// Saved prompts get the current subagent reminder; the record is rewritten in full at the next persist.
-			const config: Config = { ...c, model, system: withCurrentReminder(c.system) };
 			const fast = { on: data.fast };
 			const child = await createSession(config, ctx, signal, fast, labelOf(data.id), `${name}#${data.id}`, manager, true);
 			child.progress.steps = data.progressSteps ?? 0;
@@ -1240,7 +1250,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
 			const m = event.message;
 			if (m.stopReason !== "toolUse") a.progress.invalidate();
-			else a.progress.response(m, m.thinkingLevel as Parameters<ProgressReports["response"]>[1]);
+			else if (a.config.fork_turns !== "all") a.progress.response(m, m.thinkingLevel as Parameters<ProgressReports["response"]>[1]);
 			recordRunMessage(meta, m);
 			lastPushed = 0;
 			if (m.stopReason === "error") {
@@ -1552,6 +1562,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	async function act(params: Params, ctx: ExtensionContext, signal: AbortSignal, fork?: { seed: SessionEntry[]; system: string; model: Model<Api> | undefined; thinking: Thinking; tools: string[]; payload?: ForkPayload }) {
 		signal.throwIfAborted();
 		await hydrate(ctx, signal);
+		const number = localNumber(params.id);
+		const saved = number === undefined ? undefined : savedSlots.get(number) ?? recoveryErrors.get(number)?.data;
+		const lostFork = params.action === "restart" && number !== undefined && !agents.has(number)
+			&& saved?.config?.fork_turns === "all" && !saved.sessionFile ? saved : undefined;
 		if (params.action === "status") {
 			for (const id of targetIds(params.ids)) {
 				const number = localNumber(id)!;
@@ -1561,11 +1575,11 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			}
 		} else if (!["start", "wait", "stop"].includes(params.action)) {
 			const id = localNumber(params.id);
-			if (id !== undefined && savedSlots.has(id)) await hydrate(ctx, signal, id);
+			if (id !== undefined && savedSlots.has(id) && !lostFork) await hydrate(ctx, signal, id);
 		}
 		if ((params.system_file !== undefined || params.role_file !== undefined || params.include !== undefined || params.agent_type !== undefined) && params.action !== "start" && params.action !== "restart")
 			throw new Error("system_file, role_file, include and agent_type are only supported on start/restart");
-		if (params.agent_type !== undefined || (params.action === "restart" && find(params.id).config.profile)) await refreshProfiles(ctx);
+		if (params.agent_type !== undefined || (params.action === "restart" && (lostFork ? lostFork.config.profile : find(params.id).config.profile))) await refreshProfiles(ctx);
 		const task = params.include?.includes("user_messages") && params.task !== undefined
 			? appendUserMessages(params.task, ctx.sessionManager.getBranch()) : params.task;
 		switch (params.action) {
@@ -1574,6 +1588,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				if (!params.task) throw new Error("task is required");
 				const config = await resolveConfig(params, ctx, signal);
 				if (fork) {
+					config.fork_turns = "all";
 					if (!fork.model) throw new Error("No caller model for fork");
 					config.model = fork.model;
 					config.thinking = fork.thinking;
@@ -1688,21 +1703,30 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				return ok(`${name}#${a.id} stopped`);
 			}
 			case "restart": {
-				const old = find(params.id);
-				const config = await resolveConfig(params, ctx, signal, old.config);
+				const old = lostFork ? undefined : find(params.id);
+				const savedConfigValue = lostFork ? savedConfig(lostFork) : undefined;
+				const model = savedConfigValue && (params.model ? modelFor(params.model, ctx) : ctx.modelRegistry.find(savedConfigValue.model.provider, savedConfigValue.model.id));
+				if (savedConfigValue && !model) throw new Error(`Cannot restart ${name}#${lostFork!.id}: model ${savedConfigValue.model.provider}/${savedConfigValue.model.id} is unavailable`);
+				const previous = old?.config ?? { ...savedConfigValue!, model: model! };
+				const config = await resolveConfig(params, ctx, signal, previous);
 				signal.throwIfAborted();
-				old.state = "stopped"; old.sends = []; persist(old);
-				agents.delete(old.id);
+				const id = old?.id ?? lostFork!.id;
+				if (old) { old.state = "stopped"; old.sends = []; persist(old); agents.delete(id); }
+				else {
+					const stopped = { ...lostFork!, state: "stopped" as const, pending_sends: undefined };
+					pi.appendEntry(CHILD_ENTRY, stopped); branchIndex?.saved.set(id, stopped);
+					savedSlots.delete(id); recoveryErrors.delete(id); recoveryPending.delete(id);
+				}
 				onRunning();
-				coordinator.change(`${name}#${old.id}`, "restart");
-				close(old);
-				const fast = { on: params.fast_gpt ?? old.fast.on };
+				coordinator.change(`${name}#${id}`, "restart");
+				if (old) close(old);
+				const fast = { on: params.fast_gpt ?? old?.fast.on ?? lostFork!.fast };
 				config.settings = childSettings(pi.getSettings());
 				config.builtins = BUILTIN_TOOLS.filter(name => pi.getActiveTools().includes(name));
-				const manager = createChildManager(ctx.sessionManager, ctx.cwd, name, old.id);
-				const child = await createSession(config, ctx, signal, fast, labelOf(old.id), `${name}#${old.id}`, manager);
-				const title = given(params.title) ? params.title.trim() : old.title;
-				const a: Agent = { id: old.id, config, epoch: randomUUID(), runNumber: 0, state: "idle", fast, sends: [], ...(title ? { title } : {}), ...child };
+				const manager = createChildManager(ctx.sessionManager, ctx.cwd, name, id);
+				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`, manager);
+				const title = given(params.title) ? params.title.trim() : old?.title ?? lostFork?.title;
+				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, state: "idle", fast, sends: [], ...(title ? { title } : {}), ...child };
 				agents.set(a.id, a);
 				persist(a);
 				try {
