@@ -22,6 +22,19 @@ it("renders the context, model and repository rows", () => {
 	]);
 });
 
+it("keeps both background statuses before moving git to another row", () => {
+	const state: BarState = { ...sample, place: { kind: "folder", text: "a-very-long-folder-name" },
+		backgroundFrame: 0, prediction: { state: "aborted" }, git: { branch: "main", staged: 0, unstaged: 0, untracked: 0 } };
+	const roomy = renderBar(state, 55).map(strip);
+	assert.equal(roomy.length, 3);
+	assert.match(roomy[2], /bg compaction  prediction aborted.*main/);
+	const tight = renderBar(state, 39).map(strip);
+	assert.equal(tight.length, 4);
+	assert.match(tight[2], /bg compaction  prediction aborted/);
+	assert.match(tight[3], /main/);
+	assert.ok(tight.every((row) => row.length <= 39));
+});
+
 it("renders the fast marker and activity row", () => {
 	const row = strip(modelRow({ ...sample, fast: {} }, 80));
 	assert.ok(row.includes(`Sonnet 5.5 ${ICON.fast} hi`));

@@ -28,14 +28,14 @@ const ACTIVITY_KEY = "rqw-statusbar-activity";
 const FAST_GPT_QUERY = "rqw-settings:fast-gpt-query";
 const FAST_GPT_CHANGED = "rqw-settings:fast-gpt";
 type SessionManager = ExtensionContext["sessionManager"] & { getEntryCount(): number };
-const COLORS: Record<Exclude<Role, "effort">, ThemeColor> = {
+const COLORS: Record<Exclude<Role, "effort" | "predictionAbort">, ThemeColor> = {
 	bar: "text", barEmpty: "dim", label: "muted", model: "text", path: "text",
 	gitClean: "success", gitDirty: "warning", staged: "success", unstaged: "warning", warning: "warning",
 	untracked: "muted", sep: "dim", info: "muted",
 };
 export const themePaint = (theme: Theme): Paint => (role, text, level) => role === "effort"
 	? theme.getThinkingBorderColor((level ?? "off") as Parameters<Theme["getThinkingBorderColor"]>[0])(text)
-	: theme.fg(COLORS[role], text);
+	: role === "predictionAbort" ? theme.style(text, { fg: theme.colors.toolErrorBg }) : theme.fg(COLORS[role], text);
 
 export function scratchRoots(): string[] {
 	const roots = new Set([tmpdir(), join(homedir(), "tmp")]);
@@ -88,6 +88,7 @@ export default function statusbar(pi: ExtensionAPI) {
 		warningTimer.unref?.();
 	});
 	const backgroundSessions = new Set<string>();
+	let prediction: { sessionId: string; state: "brewing" | "aborted"; abortedUntil?: number } | undefined;
 	let animationStart = now();
 	let shimmer: ReturnType<typeof setInterval> | undefined;
 	let lightCtx: ExtensionContext | undefined;
@@ -115,7 +116,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	const stopShimmer = () => { if (shimmer) clearInterval(shimmer); shimmer = undefined; };
 	/** The shimmer timer only asks for redraws while the status letters or the working lightning need it and the footer is up;
 	 * re-checked on every tick. The phase comes from the elapsed time at render, so Pi's other redraws show it too. */
-	const wantsShimmer = () => active && ((status !== undefined && !status.retry) || (working && lightning) || backgroundSessions.has(lightCtx?.sessionManager.getSessionId() ?? ""));
+	const wantsShimmer = () => active && ((status !== undefined && !status.retry) || (working && lightning) || backgroundSessions.has(lightCtx?.sessionManager.getSessionId() ?? "") || (prediction?.sessionId === lightCtx?.sessionManager.getSessionId() && prediction?.state === "brewing"));
 	const syncShimmer = () => {
 		status = nativeActivity ? { ...nativeActivity, compacting: false } : statusText({ compacting, running, action: [...tools.values()].at(-1), counts: jobs.get() });
 		lightning = lit(lightCtx);
@@ -132,6 +133,18 @@ export default function statusbar(pi: ExtensionAPI) {
 		else backgroundSessions.delete(value.sessionId);
 		if (value.sessionId === lightCtx?.sessionManager.getSessionId()) { syncShimmer(); redraw?.(); }
 	});
+	const receivePrediction = (event: unknown) => {
+		const value = event as { sessionId?: unknown; state?: unknown; abortedUntil?: unknown } | null;
+		if (!value || typeof value.sessionId !== "string" || value.sessionId !== lightCtx?.sessionManager.getSessionId()) return;
+		if (value.state === "idle") prediction = undefined;
+		else if (value.state === "brewing") prediction = { sessionId: value.sessionId, state: "brewing" };
+		else if (value.state === "aborted" && typeof value.abortedUntil === "number" && Number.isFinite(value.abortedUntil) && value.abortedUntil > now())
+			prediction = { sessionId: value.sessionId, state: "aborted", abortedUntil: value.abortedUntil };
+		else return;
+		syncShimmer();
+		redraw?.();
+	};
+	const unsubscribePrediction = pi.events.on("rqw-predictions:activity", receivePrediction);
 	// The context row is drawn as the bottom border of this extension's editor. One factory per extension instance
 	// identifies our editor in `getEditorComponent()`; its border reads the current install's source.
 	let border: BorderSource | undefined;
@@ -181,6 +194,7 @@ export default function statusbar(pi: ExtensionAPI) {
 		stopShimmer();
 		border = undefined;
 		lightCtx = undefined;
+		prediction = undefined;
 	}
 
 	/** The main chat's state and session name, sampled from the live session through public getters. */
@@ -223,6 +237,7 @@ export default function statusbar(pi: ExtensionAPI) {
 			if (ctx.mode !== "tui" || !enabled) return;
 			const initialCwd = ctx.cwd;
 			lightCtx = ctx;
+			if (ctx.sessionManager) pi.events.emit("rqw-predictions:activity-query", { sessionId: ctx.sessionManager.getSessionId(), offer: receivePrediction });
 			unsubscribeFast = pi.events.on(FAST_GPT_CHANGED, () => { syncShimmer(); redraw?.(); });
 			jobs.start();
 			setActivity(ctx, true);
@@ -307,6 +322,7 @@ export default function statusbar(pi: ExtensionAPI) {
 				let cachedPlace: ReturnType<typeof placeLayout> | undefined;
 				let lastFastFrame: number | undefined;
 				let lastBackgroundFrame: number | undefined;
+				let lastPredictionFrame: number | undefined;
 				let lastSessionId = ctx.sessionManager.getSessionId();
 				const refreshWarning = () => {
 					if (!cachedState || cachedWidth === undefined) return;
@@ -347,16 +363,21 @@ export default function statusbar(pi: ExtensionAPI) {
 						if (lastSessionId !== sessionId) {
 							if (warning?.sessionId !== sessionId) clearWarning();
 							backgroundSessions.delete(lastSessionId);
+							prediction = undefined;
 							lastSessionId = sessionId;
+							pi.events.emit("rqw-predictions:activity-query", { sessionId, offer: receivePrediction });
 							syncShimmer();
 						}
 						const backgroundFrame = backgroundSessions.has(sessionId)
 							? Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS : undefined;
+						if (prediction?.state === "aborted" && prediction.abortedUntil !== undefined && prediction.abortedUntil <= now()) prediction = undefined;
+						const predictionState = prediction?.sessionId === sessionId ? prediction.state : undefined;
+						const predictionFrame = predictionState === "brewing" ? Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS : undefined;
 						const statuses = footer.getExtensionStatuses();
 						let statusChanged = statuses.size !== lastStatuses.size;
 						if (!statusChanged) for (const [name, text] of statuses) if (lastStatuses.get(name) !== text) { statusChanged = true; break; }
 						const key = [width, quotas.values.CX, quotas.values.CC, ctx.model, pi.getThinkingLevel(), context, rate.value(), ctx.cwd,
-							repo?.root, repo?.worktree?.project, repo?.worktree?.name, counts?.staged, counts?.unstaged, counts?.untracked, branch, !!fast];
+							repo?.root, repo?.worktree?.project, repo?.worktree?.name, counts?.staged, counts?.unstaged, counts?.untracked, branch, !!fast, backgroundFrame !== undefined, predictionState];
 						if (statusChanged || key.length !== lastKey.length || key.some((value, i) => value !== lastKey[i])) {
 							lastStatuses = new Map(statuses);
 							cachedWidth = width;
@@ -365,6 +386,7 @@ export default function statusbar(pi: ExtensionAPI) {
 								quotas: { ...quotas.values }, model: ctx.model, thinkingLevel: pi.getThinkingLevel(), ...context,
 								rate: rate.value(), fast, place: placeOf({ cwd: ctx.cwd, home: homedir(), scratchRoots: roots, worktree: repo?.worktree, branch }),
 								git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts }, backgroundFrame,
+								prediction: predictionState === "brewing" ? { state: "brewing", frame: predictionFrame! } : predictionState === "aborted" ? { state: "aborted" } : undefined,
 								statuses: [...statuses].sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text),
 							};
 							cachedPlace = placeLayout(cachedState, width, paint);
@@ -372,17 +394,21 @@ export default function statusbar(pi: ExtensionAPI) {
 							lastKey = key;
 							lastFastFrame = fast?.frame;
 							lastBackgroundFrame = backgroundFrame;
-						} else if (cachedState && (fast?.frame !== lastFastFrame || backgroundFrame !== lastBackgroundFrame)) {
+							lastPredictionFrame = predictionFrame;
+						} else if (cachedState && (fast?.frame !== lastFastFrame || backgroundFrame !== lastBackgroundFrame || predictionFrame !== lastPredictionFrame)) {
 							cachedRows = [...cachedRows];
 							if (fast?.frame !== lastFastFrame) {
 								cachedState.fast = fast;
 								cachedRows[1] = modelRow(cachedState, width, paint);
 								lastFastFrame = fast?.frame;
 							}
-							if (backgroundFrame !== lastBackgroundFrame) {
+							if (backgroundFrame !== lastBackgroundFrame || predictionFrame !== lastPredictionFrame) {
 								cachedState.backgroundFrame = backgroundFrame;
-								cachedRows[2] = cachedPlace!.first();
+								if (cachedState.prediction?.state === "brewing") cachedState.prediction.frame = predictionFrame!;
+								cachedPlace = placeLayout(cachedState, width, paint);
+								cachedRows = [...cachedRows.slice(0, 2), cachedPlace.first(), ...cachedPlace.rest];
 								lastBackgroundFrame = backgroundFrame;
+								lastPredictionFrame = predictionFrame;
 							}
 						}
 						return ctx.ui.getEditorComponent() === editorFactory ? cachedRows.slice(1) : cachedRows;
@@ -437,6 +463,7 @@ export default function statusbar(pi: ExtensionAPI) {
 		unsubscribeWarning();
 		early.dispose();
 		unsubscribeBackground();
+		unsubscribePrediction();
 		backgroundSessions.clear();
 		release();
 		running = false;

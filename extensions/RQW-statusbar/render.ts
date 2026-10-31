@@ -38,6 +38,7 @@ export type Role =
 	| "untracked"
 	| "sep"
 	| "info"
+	| "predictionAbort"
 	| "effort";
 export type Paint = (role: Role, text: string, level?: string) => string;
 export const plain: Paint = (_role, text) => text;
@@ -66,6 +67,7 @@ export interface BarState {
 	/** GPT Fast of the main chat: the lightning right after the model name, before the thinking level. `frame` is the shimmer step while the agent works, undefined when idle. */
 	fast?: { frame?: number };
 	backgroundFrame?: number;
+	prediction?: { state: "brewing"; frame: number } | { state: "aborted" };
 	/** Texts other extensions set with `ctx.ui.setStatus`, in key order. */
 	statuses: string[];
 }
@@ -251,13 +253,19 @@ export function gitText(git: BarState["git"], paint: Paint = plain): string {
 	return paint(dirty ? "gitDirty" : "gitClean", head) + (marks.length > 0 ? `${head ? " " : ""}${marks.join(" ")}` : "");
 }
 
-/** Row 3: the working place on the left, git on the right. */
+/** Row 3: the working place and background states on the left, git on the right. */
 export function placeRow(state: BarState, width: number, paint: Paint = plain, right = gitText(state.git, paint)): string {
-	const folder = ` ${paint("path", `${ICON[state.place.kind]} ${singleLine(state.place.text)}`)}`;
-	let left = folder;
-	if (state.backgroundFrame !== undefined) {
-		const room = width - (right ? visibleWidth(right) + 1 : 0) - visibleWidth(folder) - 2;
-		if (room >= 2) left += "  " + shimmerText(fitPlain("bg compaction", room), visibleWidth(folder) + 2, state.backgroundFrame, GOLD);
+	const labels = [state.backgroundFrame !== undefined ? "bg compaction" : "", state.prediction ? (state.prediction.state === "brewing" ? "prediction" : "prediction aborted") : ""].filter(Boolean);
+	const reserved = labels.reduce((sum, label) => sum + 2 + visibleWidth(label), 0);
+	const rightWidth = right ? visibleWidth(right) + 1 : 0;
+	const folderText = ` ${ICON[state.place.kind]} ${singleLine(state.place.text)}`;
+	let left = paint("path", fitPlain(folderText, Math.max(0, width - rightWidth - reserved)));
+	if (state.backgroundFrame !== undefined) left += "  " + shimmerText("bg compaction", visibleWidth(left) + 2, state.backgroundFrame, GOLD);
+	if (state.prediction) {
+		const text = state.prediction.state === "brewing"
+			? shimmerText("prediction", visibleWidth(left) + 2, state.prediction.frame, SILVER)
+			: paint("predictionAbort", "prediction aborted");
+		left += "  " + text;
 	}
 	return leftRight(left, right, width);
 }
@@ -265,15 +273,37 @@ export function placeRow(state: BarState, width: number, paint: Paint = plain, r
 /** Prepare the fixed quota layout once; animation redraws only its first row. */
 export function placeLayout(state: BarState, width: number, paint: Paint = plain): { first: () => string; rest: string[] } {
 	const quotas = state.quotas && quotaText(state.quotas);
-	if (!quotas || width <= 0) return { first: () => placeRow(state, width, paint), rest: [] };
 	const git = gitText(state.git, paint);
-	const base = { ...state, quotas: undefined, git: undefined };
-	const place = placeRow({ ...base, backgroundFrame: undefined }, width, paint);
-	const right = quotas + (git ? `  ${git}` : "");
-	if (visibleWidth(place) + visibleWidth(right) + 1 <= width) {
-		return { first: () => placeRow({ ...base, backgroundFrame: state.backgroundFrame }, width, paint, right), rest: [] };
+	if (!quotas && state.backgroundFrame === undefined && !state.prediction)
+		return { first: () => placeRow(state, width, paint, git), rest: [] };
+	const right = [quotas, git].filter(Boolean).join("  ");
+	const statusWidth = (state.backgroundFrame === undefined ? 0 : 2 + visibleWidth("bg compaction")) +
+		(state.prediction ? 2 + visibleWidth(state.prediction.state === "brewing" ? "prediction" : "prediction aborted") : 0);
+	if (width > 0 && statusWidth > width) {
+		const rows: string[] = [];
+		if (state.backgroundFrame !== undefined) {
+			if (width >= visibleWidth("bg compaction") + 2) {
+				rows.push(placeRow({ ...state, prediction: undefined }, width, paint, ""));
+			} else {
+				rows.push(...wrapTextWithAnsi(shimmerText("bg compaction", 0, state.backgroundFrame, GOLD), width));
+			}
+		}
+		if (state.prediction) {
+			const text = state.prediction.state === "brewing"
+				? shimmerText("prediction", 0, state.prediction.frame, SILVER)
+				: paint("predictionAbort", "prediction aborted");
+			rows.push(...wrapTextWithAnsi(text, width));
+		}
+		if (right) rows.push(...wrapTextWithAnsi(right, width).map((row) => leftRight("", row, width)));
+		return { first: () => rows[0] ?? "", rest: rows.slice(1) };
 	}
-	return { first: () => placeRow({ ...base, backgroundFrame: state.backgroundFrame }, width, paint),
+	if (!right || width <= 0) return { first: () => placeRow(state, width, paint, ""), rest: [] };
+	const place = placeRow(state, width, paint, "");
+	const minimumPlace = statusWidth ? 4 + statusWidth : visibleWidth(place);
+	if (minimumPlace + visibleWidth(right) + 1 <= width) {
+		return { first: () => placeRow(state, width, paint, right), rest: [] };
+	}
+	return { first: () => placeRow(state, width, paint, ""),
 		rest: wrapTextWithAnsi(right, width).map((row) => leftRight("", row, width)) };
 }
 
