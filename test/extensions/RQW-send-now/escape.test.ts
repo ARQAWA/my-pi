@@ -1,50 +1,12 @@
 import assert from "node:assert/strict";
 import { it, type TestContext } from "node:test";
-import { AgentSession, CustomEditor, createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import sendNow from "../../../extensions/RQW-send-now/index.ts";
+import { harness } from "./harness.ts";
 
-const ESC = "\x1b";
-
-/** A TUI session with a fake clock; `state` is what the test flips between presses. */
-function setup(t: TestContext) {
-	t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 10_000 });
-	const events = createEventBus();
-	const handlers = new Map<string, ((event: any, ctx: any) => void)[]>();
-	const sent: string[] = [];
-	const stops: unknown[] = [];
-	const notices: string[] = [];
-	const state = { idle: true, compacting: false, background: 0, queued: false, editor: "", autocomplete: false, aborts: 0, focused: true };
-	events.on("rqw:stop-background:v1", (value: any) => { stops.push(value); value.reply({ agents: state.background }); });
-	events.on("rqw:running-counts:request", (request: any) => request.reply({ version: 1, snapshot: () => ({ agents: state.background }), subscribe: () => () => {} }));
-	const pi = {
-		events, registerShortcut() {}, appendEntry() {}, sendUserMessage: (text: string) => sent.push(text),
-		on: (name: string, handler: any) => { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
-	};
-	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
-	sendNow(pi as unknown as ExtensionAPI);
-	let input: ((data: string) => unknown) | undefined;
-	const editor = Object.create(CustomEditor.prototype);
-	editor.isShowingAutocomplete = () => state.autocomplete;
-	const other = {};
-	const ctx = {
-		mode: "tui", model: {}, sessionManager: { getEntries: () => [], getSessionId: () => "session" },
-		hasPendingMessages: () => state.queued, isIdle: () => state.idle,
-		abort: () => { state.aborts++; state.idle = true; if (state.queued) state.editor = "steer me"; state.queued = false; },
-		ui: {
-			getEditorText: () => state.editor, setEditorText: (value: string) => { state.editor = value; }, notify: (text: string) => notices.push(text),
-			setWidget: (_key: string, factory: any) => { if (factory) factory({ getFocusedComponent: () => state.focused ? editor : other }); },
-			onTerminalInput: (handler: typeof input) => { input = handler; return () => {}; },
-		},
-	} as unknown as ExtensionContext;
-	const session = Object.create(AgentSession.prototype);
-	session.sessionManager = ctx.sessionManager;
-	session.getSteeringMessages = () => (state.queued ? ["steer me"] : []);
-	session.clearQueue = () => { state.queued = false; return { steering: [], followUp: ["held follow-up"] }; };
-	Object.defineProperty(session, "isCompacting", { get: () => state.compacting });
-	session._bindExtensionCore();
-	for (const handler of handlers.get("session_start")!) handler({}, ctx);
-	t.after(() => { for (const handler of handlers.get("session_shutdown")!) handler({}, ctx); });
-	return { press: (data = ESC) => input!(data), state, stops, sent, notices, tick: (ms: number) => t.mock.timers.tick(ms) };
+/** Idle at first; a test flips `state` between presses. */
+function setup(t: TestContext, provider = "openai-codex") {
+	const h = harness(t, { provider });
+	h.state.idle = true;
+	return h;
 }
 
 it("a single Escape while the turn works is left to Pi and stops no background", (t) => {
@@ -88,7 +50,7 @@ it("with only background running the first Escape is taken and the second stops 
 it("a double Escape moves held follow-ups back into the editor", (t) => {
 	const h = setup(t);
 	h.state.background = 1;
-	h.state.queued = true;
+	h.followUp("held follow-up");
 	h.state.editor = "typed";
 	assert.deepEqual(h.press(), { consume: true });
 	h.tick(50);
@@ -153,29 +115,33 @@ it("an open autocomplete list and other focused components keep their Escape", (
 	assert.equal(h.stops.length, 0);
 });
 
-it("a double Escape cancels a force-send that has not started and keeps its text", (t) => {
-	const h = setup(t);
+it("a double Escape cancels a force-send that has not started and keeps its text", async (t) => {
+	const h = setup(t, "anthropic");
 	h.state.idle = false;
-	h.state.queued = true;
-	assert.deepEqual(h.press("\r"), { consume: true });
-	h.state.idle = true;
+	await h.steer("steer me");
 	assert.deepEqual(h.press(), { consume: true });
 	assert.deepEqual(h.press(), { consume: true });
+	assert.equal(h.stops.length, 1);
+	await h.flush();
 	h.tick(1000);
 	assert.equal(h.state.editor, "steer me");
 	assert.deepEqual(h.sent, []);
 });
 
-it("a steering input that lands after the cancel is restored with the text, not left in Pi's queue", (t) => {
-	const h = setup(t);
+it("a steering input that lands after the cancel is restored with the text, not left in Pi's queue", async (t) => {
+	const h = setup(t, "anthropic");
 	h.state.idle = false;
-	h.state.queued = true;
-	assert.deepEqual(h.press("\r"), { consume: true });
+	await h.steer("steer me");
+	let finish!: (value: unknown) => void;
+	h.session._runInputHandlers = () => new Promise((resolve) => { finish = resolve; });
+	const late = h.session.prompt("late one", { streamingBehavior: "steer" });
 	assert.deepEqual(h.press(), { consume: true });
 	assert.deepEqual(h.press(), { consume: true });
-	h.state.queued = true; // the late input reaches Pi's queue after the cancel
+	finish({ text: "late one", images: undefined });
+	await late;
+	await h.flush();
 	h.tick(1000);
-	assert.equal(h.state.editor, "steer me\n\nsteer me");
-	assert.equal(h.state.queued, false);
+	assert.equal(h.state.editor, "steer me\n\nlate one");
+	assert.deepEqual(h.session._steeringMessages, []);
 	assert.deepEqual(h.sent, []);
 });

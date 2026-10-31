@@ -1,45 +1,8 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { AgentSession, CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import sendNow, { keptReply } from "../../../extensions/RQW-send-now/index.ts";
-
-it("empty Enter force-sends queued steering with a fake clock", (t) => {
-	t.mock.timers.enable({ apis: ["setTimeout"] });
-	const handlers = new Map<string, ((event: any, ctx: any) => void)[]>();
-	const sent: string[] = [];
-	const pi = {
-		on: (name: string, handler: any) => { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
-		sendUserMessage: (text: string) => sent.push(text), appendEntry() {},
-	};
-	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
-	sendNow(pi as unknown as ExtensionAPI);
-	t.after(() => { for (const handler of handlers.get("session_shutdown")!) handler({}, ctx); });
-	let editor = "";
-	let idle = false;
-	let queued = true;
-	let input: ((data: string) => unknown) | undefined;
-	const focused = Object.create(CustomEditor.prototype);
-	const ctx = {
-		mode: "tui", model: {}, sessionManager: { getEntries: () => [] },
-		hasPendingMessages: () => queued, isIdle: () => idle,
-		abort: () => { idle = true; queued = false; editor = "steer me"; },
-		ui: {
-			getEditorText: () => editor, setEditorText: (value: string) => { editor = value; }, notify() {},
-			setWidget: (_key: string, factory: any) => { if (factory) factory({ getFocusedComponent: () => focused }); },
-			onTerminalInput: (handler: typeof input) => { input = handler; return () => {}; },
-		},
-	} as unknown as ExtensionContext;
-	const session = Object.create(AgentSession.prototype);
-	session.sessionManager = ctx.sessionManager;
-	session.getSteeringMessages = () => ["steer me"];
-	session._bindExtensionCore();
-	for (const handler of handlers.get("session_start")!) handler({}, ctx);
-	assert.deepEqual(input!("\r"), { consume: true });
-	t.mock.timers.tick(0);
-	assert.deepEqual(sent, ["steer me"]);
-	assert.equal(editor, "");
-});
 
 it("keptReply preserves only interrupted text as a finished reply", () => {
 	const message = { role: "assistant", content: [{ type: "thinking", thinking: "x" }, { type: "text", text: "half" }],

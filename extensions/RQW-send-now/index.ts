@@ -1,17 +1,25 @@
-// Enter on an empty editor while the agent works and steering is queued: interrupt the turn and send the queue now.
+// Steering keys while the agent works: Ctrl+Enter or Alt+Enter with text queues steering; an empty Enter, an empty
+// Ctrl+Enter (Codex) or Escape (other providers) with steering queued interrupts the turn silently and sends it now.
 // Raw terminal input and public send APIs; queue.ts captures the owning Pi session in memory.
 import { CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, isKeyRelease, matchesKey, type TUI } from "@earendil-works/pi-tui";
+import { getKeybindings, isKeyRelease, isKeyRepeat, matchesKey, type TUI } from "@earendil-works/pi-tui";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { installQueue } from "./queue.ts";
+import { installQueue, type Steer } from "./queue.ts";
+import { installQuiet } from "./quiet.ts";
 
-/** Custom entry type: the timestamp of an interrupted reply whose text stays in the model's context. */
+/**
+ * Custom entry type: the timestamp of a reply a force-send interrupted. Its status row is not drawn; unless `unsent`
+ * is set (the send was cancelled or never happened), its text also stays in the model's context.
+ */
 export const ENTRY = "rqw-send-now";
 const POLL_MS = 20;
+/** Only Codex has the second Ctrl+Enter that forces; other providers force with Escape (and an empty Enter, as before). */
+const CODEX = "openai-codex";
 /** Two Escape presses within this time are one gesture. */
 const DOUBLE_ESCAPE_MS = 500;
 
-type Pending = { text: string; ctx: ExtensionContext; interrupted?: AssistantMessage; cancelled?: boolean };
+/** A force-send under way: the reserved steering, plus late arrivals routed in until it is sent or restored. */
+type Pending = { steers: Steer[]; ctx: ExtensionContext; release: () => void; settled: Promise<void>; onLate: (steer: Steer) => boolean; interrupted?: AssistantMessage; cancelled?: boolean };
 type FocusTUI = TUI & { getFocusedComponent(): unknown };
 
 /** The interrupted reply as the model will see it: its text only, as a finished reply; undefined when it has none. */
@@ -50,16 +58,6 @@ export default function sendNow(pi: ExtensionAPI) {
 		ctx.ui.notify(`${parts.length ? `Stopped: ${parts.join(", ")}` : "Nothing running"}${unstoppable ? `; ${unstoppable} file call${unstoppable === 1 ? "" : "s"} finishes on its own` : ""}`);
 	}
 	pi.registerShortcut?.("ctrl+\\", { description: "Stop session background work", handler: stopSession });
-	/** Steering messages queued through Pi since the queue was last empty; Pi exposes only "anything queued". */
-	let steering = 0;
-	/**
-	 * Steering inputs on their way to Pi's queue. Pi awaits the input handlers, then queues within the same
-	 * microtask chain, so each one has landed by the next macrotask; a batch of keys arrives synchronously before it.
-	 * Rule: an empty queue with nothing on its way means no steering is queued (also after Pi's dequeue key).
-	 */
-	let submitting = 0;
-	/** Set by before_agent_start: the run's next user message is its starting prompt, not a queued one. */
-	let startingPrompt = false;
 	let pending: Pending | undefined;
 	/** The first Escape of a possible double press; set only while something runs, captured on that press. */
 	let escapeAt: number | undefined;
@@ -79,50 +77,78 @@ export default function sendNow(pi: ExtensionAPI) {
 	};
 	/** Timestamps of interrupted replies this extension force-sent past; their text is replayed to the model. */
 	let kept = new Set<number>();
+	/** Timestamps of replies a force-send interrupted: their "Operation aborted" row is not drawn. */
+	let quiet = new Set<number>();
+	const releaseQuiet = installQuiet((message) => message.timestamp !== undefined && quiet.has(message.timestamp));
 
-	function restore(text: string, ctx: ExtensionContext, why: string) {
+	/** Puts text back in the editor before the draft, or after what is there when it is a later arrival. */
+	function restore(text: string, ctx: ExtensionContext, why: string, later = false) {
 		const current = ctx.ui.getEditorText();
-		ctx.ui.setEditorText([text, current].filter((part) => part.trim()).join("\n\n"));
+		ctx.ui.setEditorText((later ? [current, text] : [text, current]).filter((part) => part.trim()).join("\n\n"));
 		ctx.ui.notify(`Queued message not sent (${why}); it is back in the editor.`, "warning");
 	}
 
-	/** `text` plus anything still in Pi's queue, taken through Pi's restore; the user's editor draft stays put. */
-	function withLateQueue(text: string, ctx: ExtensionContext): string {
-		if (!ctx.hasPendingMessages()) return text;
-		const typed = ctx.ui.getEditorText();
-		ctx.ui.setEditorText("");
-		ctx.abort();
-		const late = ctx.ui.getEditorText();
-		ctx.ui.setEditorText(typed);
-		return [text, late].filter((part) => part.trim()).join("\n\n");
-	}
+	const joined = (steers: Steer[]) => steers.map((steer) => steer.text).filter((text) => text.trim()).join("\n\n");
 
 	function send() {
 		timer = undefined;
 		if (!pending) return;
-		const { text, ctx, interrupted, cancelled } = pending;
+		const job = pending;
+		const { ctx, interrupted } = job;
 		// Abort ends with agent_settled; compaction or a run another extension starts meanwhile is waited out too.
 		if (!ctx.isIdle()) {
 			timer = setTimeout(send, POLL_MS);
 			return;
 		}
 		pending = undefined;
-		// A steering message that was still on its way when the run was aborted lands in Pi's queue afterwards,
-		// where nothing would deliver it.
-		const all = withLateQueue(text, ctx);
-		if (!all.trim()) return;
-		if (cancelled) return restore(all, ctx, "stopped with Escape");
-		if (!ctx.model) return restore(all, ctx, "no model selected");
-		if (interrupted && keptReply(interrupted)) {
-			kept.add(interrupted.timestamp);
-			pi.appendEntry(ENTRY, { timestamp: interrupted.timestamp });
-		}
-		// The text is already expanded by Pi, so templates are not expanded again. Steer only if a run started meanwhile.
-		pi.sendUserMessage(all, { deliverAs: "steer" });
+		job.release();
+		const text = joined(job.steers);
+		const images = job.steers.flatMap((steer) => steer.images);
+		const unsent = (why: string) => {
+			if (interrupted) markInterrupted(interrupted, false);
+			if (text.trim()) restore(text, ctx, why);
+		};
+		if (!text.trim() && images.length === 0) return unsent("");
+		if (job.cancelled) return unsent("stopped with Escape");
+		if (!ctx.model) return unsent("no model selected");
+		// Pi's run path with the prepared text: the input handlers already ran when the steering was queued.
+		let started = false;
+		const run = queue.start(ctx.sessionManager, text, images, () => { started = true; if (interrupted) markInterrupted(interrupted, true); });
+		if (!run) return unsent("Pi cannot start the run");
+		run.catch((error) => { if (!started) unsent(error instanceof Error ? error.message : "the run did not start"); });
+	}
+
+	/** Persists the interrupted reply's mark, so resume and `/reload` draw it the same; replays its text only when the steering was sent. */
+	function markInterrupted(message: AssistantMessage, sent: boolean) {
+		if (sent) kept.add(message.timestamp);
+		pi.appendEntry(ENTRY, sent ? { timestamp: message.timestamp } : { timestamp: message.timestamp, unsent: true });
 	}
 
 	/**
-	 * Escape: one press leaves the running turn to Pi, which interrupts it. A second press within 500 ms stops the
+	 * Interrupts the turn without a notice and sends the user steering now. The steering leaves both Pi queues at once;
+	 * follow-ups and the editor draft stay. The send waits for the abort and for steering inputs still on their way.
+	 */
+	function forceSteering(ctx: ExtensionContext): boolean {
+		const job: Pending = { steers: [], ctx, release: () => {}, settled: Promise.resolve(), onLate: (steer) => { job.steers.push(steer); return true; } };
+		const forced = queue.force(ctx.sessionManager, (steer) => job.onLate(steer));
+		if (!forced) return false;
+		job.steers.push(...forced.taken);
+		job.release = forced.release;
+		job.settled = forced.settled;
+		pending = job;
+		void Promise.all([forced.aborted, forced.settled]).then(() => { if (pending === job) send(); });
+		return true;
+	}
+
+	/** True while user steering is queued in Pi or on its way into the queue. */
+	function steeringWaits(ctx: ExtensionContext): boolean {
+		const count = queue.steering(ctx.sessionManager);
+		return count !== undefined && count.queued + count.inflight > 0;
+	}
+
+	/**
+	 * Escape: one press leaves the running turn to Pi, which interrupts it (with user steering queued and a provider
+	 * other than Codex it is the force-send instead). A second press within 500 ms stops the
 	 * background (and cancels a force-send not yet started). With only background running the first press is taken
 	 * here, so Pi's own double-Escape action cannot fire; idle double Escape stays with the history editor.
 	 */
@@ -142,6 +168,8 @@ export default function sendNow(pi: ExtensionAPI) {
 		const working = !ctx.isIdle() || queue.session(ctx.sessionManager)?.isCompacting === true;
 		if (!working && !pending && !background()) return undefined;
 		escapeAt = now;
+		// Not Codex: Escape with steering queued is the force-send, so Pi's own Escape (restore the queue) is skipped.
+		if (!ctx.isIdle() && ctx.model?.provider !== CODEX && steeringWaits(ctx) && forceSteering(ctx)) return { consume: true };
 		return working ? undefined : { consume: true };
 	}
 
@@ -154,7 +182,8 @@ export default function sendNow(pi: ExtensionAPI) {
 	}
 
 	function onKey(data: string, ctx: ExtensionContext): { consume: true } | undefined {
-		if (isKeyRelease(data)) return undefined;
+		// A release or an auto-repeat is never a deliberate press.
+		if (isKeyRelease(data) || isKeyRepeat(data)) return undefined;
 		if (matchesKey(data, "escape")) return onEscape(ctx);
 		if (pending) return undefined;
 		const editor = tui?.getFocusedComponent();
@@ -170,63 +199,33 @@ export default function sendNow(pi: ExtensionAPI) {
 				return { consume: true };
 			}
 		}
+		const steerKey = matchesKey(data, "ctrl+enter") || matchesKey(data, "alt+enter");
 		if (ctx.ui.getEditorText().trim() && editor instanceof CustomEditor) {
 			const internal = editor as unknown as { actionHandlers?: Map<string, () => void>; handleInput?: (data: string) => void; isShowingAutocomplete?: () => boolean };
 			const followUp = internal.actionHandlers?.get("app.message.followUp");
 			if (typeof followUp === "function" && typeof internal.handleInput === "function" && typeof internal.isShowingAutocomplete === "function" && !internal.isShowingAutocomplete()) {
-				if (matchesKey(data, "alt+enter")) { internal.handleInput("\r"); return { consume: true }; }
+				// Ctrl+Enter and Alt+Enter: the editor's own submit, which queues steering while the agent works.
+				if (steerKey) { internal.handleInput("\r"); return { consume: true }; }
 				if (!ctx.isIdle() && getKeybindings().matches(data, "tui.input.submit")) { followUp(); return { consume: true }; }
 			}
 		}
-		if (!getKeybindings().matches(data, "tui.input.submit")) return undefined;
-		if (!ctx.hasPendingMessages() && submitting === 0) steering = 0;
-		const queuedSteering = queue.read(ctx.sessionManager);
-		if (queuedSteering === undefined) return undefined;
-		if (ctx.isIdle() || (queuedSteering === 0 && !(submitting > 0 && steering > 0)) || ctx.ui.getEditorText().trim()) return undefined;
-		// Only Pi's input editor: dialogs, selectors and overlays keep their own Enter.
-		if (!(tui?.getFocusedComponent() instanceof CustomEditor)) return undefined;
-		ctx.abort(); // Pi clears both queues into the editor, then aborts the run
-		const text = ctx.ui.getEditorText();
-		ctx.ui.setEditorText("");
-		const onItsWay = submitting > 0;
-		steering = 0;
-		submitting = 0;
-		if (!text.trim() && !onItsWay) return { consume: true };
-		pending = { text, ctx };
-		timer = setTimeout(send, 0);
-		return { consume: true };
+		// An empty Enter forces waiting steering, as before; on Codex a second Ctrl+Enter does too. Alt+Enter never forces.
+		const forceKey = getKeybindings().matches(data, "tui.input.submit") || (matchesKey(data, "ctrl+enter") && ctx.model?.provider === CODEX);
+		if (!forceKey || ctx.ui.getEditorText().trim() || ctx.isIdle() || !(editor instanceof CustomEditor)) return undefined;
+		if ((editor as unknown as { isShowingAutocomplete?: () => boolean }).isShowingAutocomplete?.() !== false) return undefined;
+		return steeringWaits(ctx) && forceSteering(ctx) ? { consume: true } : undefined;
 	}
 
-	pi.on("input", (event, ctx) => {
-		if (!event.streamingBehavior) return;
-		if (!ctx.hasPendingMessages() && submitting === 0) steering = 0;
-		if (event.streamingBehavior !== "steer") return;
-		steering++;
-		submitting++;
-		setTimeout(() => { submitting = Math.max(0, submitting - 1); }, 0);
-	});
-	pi.on("before_agent_start", (event) => {
-		startingPrompt = event.messageType === "user";
-	});
-	// Pi emits a run's starting prompt first, then delivers steering before follow-ups, so any other user message
-	// while steering is counted is a queued steering one.
-	pi.on("message_start", (event) => {
-		if (event.message.role !== "user") return;
-		if (startingPrompt) startingPrompt = false;
-		else if (steering > 0) steering--;
-	});
 	pi.on("message_end", (event) => {
 		const message = event.message;
-		if (pending && message.role === "assistant" && message.stopReason === "aborted") pending.interrupted = message;
+		if (pending && message.role === "assistant" && message.stopReason === "aborted") {
+			pending.interrupted = message;
+			quiet.add(message.timestamp);
+		}
 	});
 	pi.on("tool_execution_end", (_event, ctx) => reassertBracketedPaste(ctx));
 	pi.on("agent_end", (_event, ctx) => reassertBracketedPaste(ctx));
-	pi.on("agent_settled", (_event, ctx) => {
-		reassertBracketedPaste(ctx);
-		startingPrompt = false;
-		submitting = 0;
-		if (!ctx.hasPendingMessages()) steering = 0;
-	});
+	pi.on("agent_settled", (_event, ctx) => reassertBracketedPaste(ctx));
 
 	// Pi's next request drops an aborted reply; keep the text of the one a force-send interrupted, like oh-my-pi.
 	pi.on("context_with_system", (event) => {
@@ -245,13 +244,12 @@ export default function sendNow(pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {
 		escapeAt = undefined;
 		escapeQuietUntil = 0;
-		steering = 0;
-		submitting = 0;
-		startingPrompt = false;
 		reassertBracketedPaste(ctx);
-		kept = new Set(ctx.sessionManager.getEntries().flatMap((entry) =>
+		const marks = ctx.sessionManager.getEntries().flatMap((entry) =>
 			entry.type === "custom" && entry.customType === ENTRY && typeof (entry.data as { timestamp?: unknown })?.timestamp === "number"
-				? [(entry.data as { timestamp: number }).timestamp] : []));
+				? [entry.data as { timestamp: number; unsent?: boolean }] : []);
+		kept = new Set(marks.filter((mark) => !mark.unsent).map((mark) => mark.timestamp));
+		quiet = new Set(marks.map((mark) => mark.timestamp));
 		if (ctx.mode !== "tui") return;
 		if (pi.events) {
 			stopOffers = pi.events.on("rqw:running-counts:offer", (offer: any) => { if (offer?.version === 1) adopt(offer.source); });
@@ -270,20 +268,25 @@ export default function sendNow(pi: ExtensionAPI) {
 		stopOffers?.(); stopOffers = undefined;
 		for (const unsubscribe of sources.values()) unsubscribe();
 		sources.clear();
-		queue.release();
+		releaseQuiet();
 		unsubscribe?.();
 		unsubscribe = undefined;
 		tui = undefined;
 		if (timer) clearTimeout(timer);
 		timer = undefined;
-		// Reload, /new, /resume or quit before the send: the text goes back to the editor, nothing is lost.
-		if (pending) {
-			const { text, ctx } = pending;
-			pending = undefined;
-			try {
-				const all = withLateQueue(text, ctx);
-				if (all.trim()) restore(all, ctx, "the session ended first");
-			} catch {}
-		}
+		// Reload, /new, /resume or quit before the send: the text goes back to the editor, nothing is lost. Steering
+		// inputs still on their way keep being caught until they have settled, then they go back as well.
+		const job = pending;
+		pending = undefined;
+		if (!job) return queue.release();
+		const { steers, ctx, settled } = job;
+		// A late input that finds the context already invalid is left to Pi's own queue (the session stays on /reload).
+		const back = (text: string, later = false) => {
+			try { if (text.trim()) restore(text, ctx, "the session ended first", later); return true; } catch { return false; }
+		};
+		try { if (job.interrupted) markInterrupted(job.interrupted, false); } catch {}
+		back(joined(steers));
+		job.onLate = (steer) => back(steer.text, true);
+		void settled.then(() => { job.release(); queue.release(); });
 	});
 }

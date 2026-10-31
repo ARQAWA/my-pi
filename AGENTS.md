@@ -93,8 +93,8 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `extensions/RQW-session/`: extension 11, independent `/copy-session`, `/remove` (stock-identical: confirm, fresh session, then trash-else-unlink of the JSONL only) and `/cleanup` (deletes `.jsonl.children` trees whose JSONL is gone) commands.
   Also a runtime patch of `SessionManager.list`/`listAll` for a fast `/resume` list: reverse scan for the name, file size in the row instead of the message count, no message-text search (`[D-SESSION-FAST-LIST]`).
   Cleanup boundaries and limitations: `extensions/RQW-session/README.md`. Tests: `npm test`.
-- `extensions/RQW-send-now/`: extension 12, Enter queues follow-ups while working or waiting on background work; Option+Enter on macOS and Alt+Enter on Windows steer. Ctrl+backslash aborts the turn and requests a background stop; one Escape interrupts the turn, a double Escape within 500 ms does the same stop (`[D-KEYS-ESC]`). Empty Enter still force-sends queued steering. PCLI's VS Code terminal is not yet verified. Behavior and limits:
-  `extensions/RQW-send-now/README.md`. Tests: `test/extensions/RQW-send-now/send-now.test.ts`.
+- `extensions/RQW-send-now/`: extension 12, Enter queues follow-ups while working or waiting on background work; Ctrl+Enter and Alt+Enter with text queue steering (`[D-KEYS-STEER]`). An empty Enter, an empty Ctrl+Enter on Codex, and Escape on other providers interrupt silently and sends the waiting steering now. Ctrl+backslash aborts the turn and requests a background stop; one Escape interrupts the turn, a double Escape within 500 ms does the same stop (`[D-KEYS-ESC]`). PCLI's VS Code terminal does not send Ctrl+Enter yet. Behavior and limits:
+  `extensions/RQW-send-now/README.md`. Tests: `test/extensions/RQW-send-now/`.
 - `extensions/RQW-mouse/`: extension 13, on Windows Pi's fullscreen view enables mouse reporting again right after the
   terminal has started, so the wheel scrolls the conversation (the PCLI wheel bug) instead of the input history.
   Windows only; inert elsewhere. Cause, limits and proof: `DECISIONS.md` section PCLI. Tests: `npm test`; the ConPTY

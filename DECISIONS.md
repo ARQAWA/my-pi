@@ -1716,18 +1716,18 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Send now
 
-- **Enter sends queued steering** `[D-SENDNOW-ENTER]`. While the agent works, Enter with text queues steering as stock;
-  Enter on an empty editor while steering is queued interrupts the turn and sends the queue at once; with nothing queued
-  empty Enter does nothing; no other key changes except Escape (`[D-KEYS-ESC]`). Stock Pi 1.4.0 needs Escape then Enter.
+- **Enter sends queued steering** `[D-SENDNOW-ENTER]`. While the agent works, Enter with text queues a follow-up (`extensions/RQW-agent/README.md`
+  describes the hold); an empty Enter with steering waiting still force-sends (`[D-KEYS-STEER]`). The steering keys and the force-send are `[D-KEYS-STEER]`, Escape is
+  `[D-KEYS-ESC]`.
   Owner: «А ещё надо, чтобы у нас работала, как в OMP, Oh My Pie, отправка: я пишу сообщение, оно стоит в очереди на стекинг, и чтобы я мог через Enter его насильно отправить. Я не разобрался, как в Pi это сделать.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 145);
   «Мне надо, чтобы в Py я мог нажать Enter и сообщение ушло, чтобы не нажимать ебучие Escape, Enter. Это какой-то рак мозга, мне кажется. Надо проверить, можем мы сделать это или нет. Если можем, надо сделать» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 184)
   Carrier: `extensions/RQW-send-now/index.ts`, its own `pi.extensions` entry ([Isolation](#isolation)); behaviour and
   limits: `extensions/RQW-send-now/README.md`. Since: `d1f8b16`.
-- **Send now implementation** `[D-SENDNOW-API]`. The public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`. Current engineering choices: `ctx.ui.onTerminalInput`, `ctx.abort`, editor text,
-  `pi.sendUserMessage`; no custom editor, since RQW-statusbar owns `setEditorComponent`. The key is Pi's
-  `tui.input.submit`; only Pi's focused input editor triggers it. A version-checked runtime hook reads the owning Pi
-  session's real steering queue. During an in-flight input the provisional count also permits the gesture; incompatible
-  Pi shapes leave Enter to stock Pi. Leftovers after abort are sent or restored. Owner: «если по чтению очереди Pi для send now на один story point, то оставляем. Спроектируй его и дай мне свой вердикт.»; after the 1 SP verdict: «делай». Carrier: `extensions/RQW-send-now/queue.ts`. Since: `d1f8b16`.
+- **Send now implementation** `[D-SENDNOW-API]`. The public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`. Current engineering choices: `ctx.ui.onTerminalInput`, editor text,
+  `pi.sendUserMessage`; no custom editor, since RQW-statusbar owns `setEditorComponent`. Only Pi's focused input editor
+  triggers a key. A version-checked runtime hook (`queue.ts`) reads and takes the owning Pi session's real steering
+  queues and tracks the steering inputs on their way; incompatible Pi shapes leave the keys to stock Pi. Mechanism:
+  `[D-KEYS-STEER]`. Owner: «если по чтению очереди Pi для send now на один story point, то оставляем. Спроектируй его и дай мне свой вердикт.»; after the 1 SP verdict: «делай». Carrier: `extensions/RQW-send-now/queue.ts`. Since: `d1f8b16`.
 - **Escape: interrupt, stop background, history** `[D-KEYS-ESC]`. Part 1 of the keys design
   (`my-pi-evidence/designs/keys-hints/DESIGN.md`, section 2). One Escape while the turn (or a compaction) works is left to
   Pi, which interrupts it. A second Escape within 500 ms sends the existing `rqw:stop-background:v1` (the action of
@@ -1741,7 +1741,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   source on `rqw:running-counts:offer` (agents, reviews, background processes) and refuses its gesture and
   `/edit-history` while any runs, with or without RQW-send-now. RQW-scroll yields Escape while the turn or background works and keeps
   jump-to-latest when idle (default 3 below). Dialogs, selectors and an open autocomplete list keep their own Escape.
-  Not in this part: Ctrl+Enter steering, the Codex quick steer and the hints in the editor.
+  Not in this part: the Codex quick steer and the hints in the editor (Ctrl+Enter steering is `[D-KEYS-STEER]`).
   Owner (verbatim): «Да, и когда что-то в фоне работает, надо подсказку написать как остановить фон. Что типа control - это палка чтобы остановить ФОН, чтобы interrupt» «А если фона нету, то тогда Escape чтобы interrupt. И сначала пишем Escape чтобы interupt, а потом короче этот самый... А лучше знаешь как? Лучше два раза escape это двойной escape пусть будет остановка этого - остановка фона. То есть на обычный escape мы останавливаем этот самый, останавливая мейн поток, а на двойную escape мы пишем в таком же формате подсказку, что пока идет playing moves - escape короче interrupted а когда мы это самое... когда мы делаем этот скажите скажу когда мы с тобой скажи блять я тебе скажу нахуй когда мы с тобой делаем double escape а еще смотри это send now надо выпить потому что если мы на enter ставим на follow up то на command enter мы делаем steering и еще раз на command-enter мы делаю типа "Send now" Вот так надо сделать чтобы это работало»
   Owner (verbatim): «Так все нормально. Нет смысла на два раза Escape поменять историю, если у нас что-то в фоне работает. То есть мы должны сначала весь фон прервать, а потом уже историю менять.»
   Coordinator defaults: «Мелочи я решил сам. Скажи, если ты против: 1. Alt+Enter делает то же, что Ctrl+Enter. 2. Ctrl+\ остаётся запасной кнопкой стопа фона. 3. Если история прокручена вверх, Esc во время работы прерывает ход. В простое Esc, как раньше, возвращает вниз. 4. В VS Code Ctrl+Enter сам до pi не доходит. Поэтому PCLI добавит эту клавишу сам. Это ещё полбалла SP, выйдет вместе с браузером.» Owner answer: «По клавишам: да, все 4 части по порядку»
@@ -1753,12 +1753,36 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `extensions/RQW-send-now/index.ts`, `extensions/RQW-history-edit/index.ts`, `extensions/RQW-scroll/index.ts`. Tests:
   `test/extensions/RQW-send-now/escape.test.ts`, `test/extensions/RQW-history-edit/history-edit.test.ts`,
   `test/extensions/RQW-scroll/scroll.test.ts`.
+- **Steering keys and silent force** `[D-KEYS-STEER]`. Part 2 of the keys design
+  (`my-pi-evidence/designs/keys-hints/DESIGN.md`, section 1). Ctrl+Enter or Alt+Enter with text hands the editor its
+  own submit: while the agent works it queues steering, otherwise it sends (with only background running it starts the
+  main turn). Alt+Enter never forces. An empty Enter, as before, and an empty Ctrl+Enter with user steering waiting (queued, or still on its way
+  through input handlers) force (Ctrl+Enter only on Codex, `openai-codex`; on other providers an empty Ctrl+Enter does nothing and Escape forces). The
+  force interrupts the turn without any notice and sends the steering at once as a new message: it takes only user
+  steering out of both Pi queues in one step (follow-ups, other queued messages and the editor draft stay; images go
+  along), calls the session's own abort, waits for the abort and for the steering inputs still on their way, routes
+  steering that arrives meanwhile into the same message, and starts Pi's own run path (`_startRun`) with it, so input
+  handlers do not run twice. A busy steer from the editor goes straight to Pi's queue path, so a run that ends while its input handlers
+  await cannot turn it into a separate run (also with expansion turned off); registered commands stay stock. The interrupted
+  reply keeps its aborted stop reason and the custom entry `rqw-send-now` (`unsent: true` when the send was cancelled); a display patch of the assistant message
+  hides only that reply's "Operation aborted" row, also after `/reload` and resume. An aborted tool call still shows
+  its tool result. Second Escape within 500 ms cancels a force that has not started (`[D-KEYS-ESC]`). The Codex quick
+  steer (instant interrupt through the socket) and the hints are later parts; the VS Code Ctrl+Enter sequence ships
+  with PCLI.
+  Owner (verbatim, in order): «Да, и когда что-то в фоне работает, надо подсказку написать как остановить фон. Что типа control - это палка чтобы остановить ФОН, чтобы interrupt» «А если фона нету, то тогда Escape чтобы interrupt. И сначала пишем Escape чтобы interupt, а потом короче этот самый... А лучше знаешь как? Лучше два раза escape это двойной escape пусть будет остановка этого - остановка фона. То есть на обычный escape мы останавливаем этот самый, останавливая мейн поток, а на двойную escape мы пишем в таком же формате подсказку, что пока идет playing moves - escape короче interrupted а когда мы это самое... когда мы делаем этот скажите скажу когда мы с тобой скажи блять я тебе скажу нахуй когда мы с тобой делаем double escape а еще смотри это send now надо выпить потому что если мы на enter ставим на follow up то на command enter мы делаем steering и еще раз на command-enter мы делаю типа "Send now" Вот так надо сделать чтобы это работало» «Вот надо подсказку написать на фоллоуапе что типа это типа что короче и на фоловоке и на этом инвестилинге что у нас ковшен этот option enter и альт-энтера типо этот называется это короче даже знаешь как надо на винде control enter надо control enter сделать пусть будет да пусть быть control enter там и там это будет короче send now вот то есть типа если мы делаем если мы сделаем короче стилинг сразу не двойной enter а просто control enter он сразу и в send now делает сразу делать interrupt и продолжает хорошему бы еще чтобы интеракт работал по-нормальному то есть так же как он работает в клауд коде и также как он работает в этом, так же, как он Работает в кодекс. То есть не надо писать на Ctrl+Enter, на этот самый, на SendNow, не надо написать что было прервано просто надо останавливать тихо без уведомления и посылать» «сообщение сразу. И браузер держи в ветке, пока не доделаем» «Так, смотри у нас еще есть хоткейн и Ctrl+T это показать скрыть thinking надо его тоже удалить нахуй выключить»
+  Owner (verbatim): «А начать стилинга, ладно. Ставить механику такую же как есть привычную что control enter он сначала ставит в очередь на стилиндр если ход заканчивается - сразу его стилит а если я могу зафортить через второй control enter вот просто надо сделать так, что если это короче кодекс то он стилет моментально также как и кодекс сила это делает мгновенного он же через WebSocket работает, у них есть специальная хуйня, надо ее реализовать для нашего Кодекс тела транспорта а у этого, у CloudCode работает как обычно через очередь» «И в Cloud Code надо сделать как? Что, типа если у тебя в очереди Steering стоит то ты вторым Ctrl+Enter не форсишь. Ты просто нажимаешь Escape и он останавливает и тут же въебывает Steering так же, как в Cloud Cоде это нативно работает»
+  Coordinator defaults: «Мелочи я решил сам. Скажи, если ты против: 1. Alt+Enter делает то же, что Ctrl+Enter. 2. Ctrl+\ остаётся запасной кнопкой стопа фона. 3. Если история прокручена вверх, Esc во время работы прерывает ход. В простое Esc, как раньше, возвращает вниз. 4. В VS Code Ctrl+Enter сам до pi не доходит. Поэтому PCLI добавит эту клавишу сам. Это ещё полбалла SP, выйдет вместе с браузером.» Owner answer: «По клавишам: да, все 4 части по порядку»
+  Limits: a steering input that was not queued through the editor's busy prompt (an extension's `sendUserMessage`, a registered command) is not tracked; a session end restores the reserved text at once and the late inputs when they settle (an input that finds the context invalid stays in the session's own queue); key auto-repeats are ignored; a steer that reaches Pi's queue after its run has already ended is delivered with the next run, as the stock queue does; images of text restored into the editor
+  after a cancel or a missing model are dropped; the queue hook reads Pi 1.4.0 private fields and falls back to stock
+  keys when the shape differs, so check it on every Pi update, also on Windows PCLI. Terminals that do not send Ctrl+Enter
+  keep Alt+Enter. Carriers: `extensions/RQW-send-now/index.ts`, `queue.ts`, `quiet.ts`. Tests:
+  `test/extensions/RQW-send-now/steer.test.ts`, `queue.test.ts`, `escape.test.ts`, `keys.test.ts`.
 - **Interrupted reply kept** `[D-SENDNOW-REPLAY]`. For the reply a force-send interrupts, a `context_with_system` handler
   replays its text as a finished reply, kept across resume and `/reload` by the custom entry `rqw-send-now`; thinking and
   unfinished tool calls are dropped. Reason: oh-my-pi keeps the aborted reply; Pi drops it. Since: `d1f8b16`.
-- **Limits and proof** `[D-SENDNOW-LIMITS]`. Several queued messages go as one, joined by blank lines; images and custom
-  messages in Pi's queue are dropped as with Escape; a steering input swallowed during its provisional period can
-  still trigger the gesture. Tests: `test/extensions/RQW-send-now/send-now.test.ts`, `test/extensions/RQW-send-now/queue.test.ts`.
+- **Limits and proof** `[D-SENDNOW-LIMITS]`. Several queued messages go as one, joined by blank lines; follow-ups and
+  other queued messages stay in Pi's queue; images go with their text; images of text restored into the editor are
+  dropped, as in stock Pi. Limits of the force mechanism are in `[D-KEYS-STEER]`. Tests: `test/extensions/RQW-send-now/send-now.test.ts`, `test/extensions/RQW-send-now/queue.test.ts`.
   Since: `d1f8b16`.
 
 ## Providers

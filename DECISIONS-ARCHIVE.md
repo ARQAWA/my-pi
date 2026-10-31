@@ -7026,3 +7026,43 @@ Source: `79d0ddf9:DECISIONS.md`. Archived by the keys-esc change; exact commit: 
 Verbatim replaced text:
 
 > A running subagent or a session without a file prevents the edit.
+
+## A-0396 · archived 2026-10-31 · Send now · `[D-SENDNOW-ENTER]` Enter queues steering
+
+Status: SUPERSEDED by `[D-KEYS-STEER]` (DECISIONS.md#send-now): the force-send keeps its empty Enter and gains an empty Ctrl+Enter (Codex) and Escape (other providers); the text below says Enter queues steering, which is now a follow-up.
+Source: `81dadcf3:DECISIONS.md`. Archived by the keys-steer change; exact commit: `git log -S'A-0396' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> While the agent works, Enter with text queues steering as stock;
+>   Enter on an empty editor while steering is queued interrupts the turn and sends the queue at once; with nothing queued
+>   empty Enter does nothing; no other key changes except Escape (`[D-KEYS-ESC]`). Stock Pi 1.4.0 needs Escape then Enter.
+
+## A-0397 · archived 2026-10-31 · Send now · `[D-SENDNOW-API]` provisional count and ctx.abort
+
+Status: SUPERSEDED by `[D-KEYS-STEER]` (DECISIONS.md#send-now): the force reads the real queues and the tracked inputs, with no provisional count and no `ctx.abort`.
+Source: `81dadcf3:DECISIONS.md`. Archived by the keys-steer change; exact commit: `git log -S'A-0397' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> Current engineering choices: `ctx.ui.onTerminalInput`, `ctx.abort`, editor text,
+>   `pi.sendUserMessage`; no custom editor, since RQW-statusbar owns `setEditorComponent`. The key is Pi's
+>   `tui.input.submit`; only Pi's focused input editor triggers it. A version-checked runtime hook reads the owning Pi
+>   session's real steering queue. During an in-flight input the provisional count also permits the gesture; incompatible
+>   Pi shapes leave Enter to stock Pi. Leftovers after abort are sent or restored.
+
+## A-0398 · archived 2026-10-31 · Send now · `[D-SENDNOW-LIMITS]` limits
+
+Status: SUPERSEDED by `[D-KEYS-STEER]` (DECISIONS.md#send-now): the force no longer takes follow-ups, keeps images and has no provisional count.
+Source: `81dadcf3:DECISIONS.md`. Archived by the keys-steer change; exact commit: `git log -S'A-0398' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> Several queued messages go as one, joined by blank lines; images and custom
+>   messages in Pi's queue are dropped as with Escape; a steering input swallowed during its provisional period can
+>   still trigger the gesture.
+
+## A-0399 · archived 2026-10-31 · Send now · `[D-KEYS-ESC]` not in this part
+
+Status: SUPERSEDED by `[D-KEYS-STEER]` (DECISIONS.md#send-now): Ctrl+Enter steering is now part 2.
+Source: `81dadcf3:DECISIONS.md`. Archived by the keys-steer change; exact commit: `git log -S'A-0399' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> Not in this part: Ctrl+Enter steering, the Codex quick steer and the hints in the editor.
