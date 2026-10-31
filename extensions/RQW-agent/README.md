@@ -354,6 +354,14 @@ through `before_provider_request`; Anthropic requests are untouched. Default, ru
 
 In the main TUI, user follow-ups stay in Pi's queue while agents, background jobs or an unanswered notification wait remain. Ctrl+backslash cancels notification waits and interrupts running children without closing their histories. Other queued message roles remain visible to Pi. The queue patch checks Pi 1.4.0's shape and falls back to stock when incompatible. When the background ends in an idle session, a queued text-only follow-up starts a run without processing input twice. A message with images stays queued for the next run. The session-scoped `rqw:followup-hold:request` tells RQW-send-now whether this hold is available; without it the input extension leaves idle Enter to Pi.
 
+## Real final and the herdr dot
+
+The real final of the main session is: no running agents, no background jobs, no waiting `wait` and no undelivered notification. `real-final.ts` is the one shared gate for it. It takes the running-count offer (moved from the follow-up hold), answers `held()`, and runs actions given to `defer(key, action)` once the hold ends. A new `agent_start` drops all deferred actions; shutdown runs them at once. A check happens one microtask after a change, so a delivery that starts a turn in the same step is seen first. The coordinator reports every end of a wait or an unanswered notification through `onHoldChange`, so a cancelled `wait` releases the gate without any count change.
+
+With `HERDR_ENV=1` in a TUI session, `herdr-state.ts` finds the extension whose file is named `herdr-agent-state.*` in Pi's `_extensionRunner.extensions` and wraps its `agent_settled` handler. While the hold lasts, the call is deferred, so herdr's session dot stays "working". At the real final the original handler runs, with herdr's own `ctx.isIdle()` check. Without the variable, without such an extension or with another runner shape, nothing changes. No socket is opened and the herdr file is not edited. Pi's own `agent_settled` is not delayed: result delivery, receipts and the follow-up queue depend on it.
+
+Limits: the process exit itself cannot send a socket report, only `session_shutdown` flushes. If a delivery starts a turn in a later step, the dot may flicker idle for that moment. Terminal progress (OSC 9;4) and program status (OSC 7501) are separate steps and not done here.
+
 ## Wait, status and management
 
 `agent` accepts `wait`, `status`, `send`, `resume`, `interrupt`, `stop` and `restart`.

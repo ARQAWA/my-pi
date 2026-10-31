@@ -1,19 +1,15 @@
 import { VERSION, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { sessionOf } from "./fork-payload.ts";
+import type { RealFinal } from "./real-final.ts";
 
-const REQUEST = "rqw:running-counts:request";
-const OFFER = "rqw:running-counts:offer";
-type Source = { version: number; snapshot(): { agents?: number; backgroundProcesses?: number }; subscribe(listener: (value: unknown) => void): () => void };
 type Message = { role: string };
 type Queue = { messages: Message[]; mode: string; drain(): Message[]; peek(): Message[]; hasItems(): boolean; enqueue(message: Message): void; clear(): void };
 
 /** Hide only user follow-ups while the main caller still has work in the background. */
-export function registerFollowUpHold(pi: ExtensionAPI, waiting: (background: boolean) => boolean) {
+export function registerFollowUpHold(pi: ExtensionAPI, realFinal: RealFinal) {
 	let release = () => {};
 	let delivered = () => {};
-	let settled = () => {};
 	pi.on("message_start", event => { if (event.message.role === "user") delivered(); });
-	pi.on("agent_settled", () => settled());
 	pi.on("session_start", (_event, ctx) => {
 		release();
 		if (ctx.mode !== "tui") return;
@@ -28,18 +24,7 @@ export function registerFollowUpHold(pi: ExtensionAPI, waiting: (background: boo
 		const stopCapability = pi.events.on("rqw:followup-hold:request", (request: any) => {
 			if (request?.sessionId === ctx.sessionManager.getSessionId() && typeof request.reply === "function") request.reply();
 		});
-		const sources = new Map<Source, () => void>();
-		let changed = () => {};
-		const adopt = (value: unknown) => {
-			const source = value as Source;
-			if (!source || source.version !== 1 || typeof source.snapshot !== "function" || typeof source.subscribe !== "function" || sources.has(source)) return;
-			let ended = false;
-			const unsubscribe = source.subscribe(counts => { if (counts === null) { ended = true; sources.get(source)?.(); sources.delete(source); } changed(); });
-			if (ended) unsubscribe(); else sources.set(source, unsubscribe);
-		};
-		const stopOffer = pi.events.on(OFFER, (offer: any) => { if (offer?.version === 1) adopt(offer.source); });
-		pi.events.emit(REQUEST, { version: 1, reply: adopt });
-		const held = () => waiting([...sources.keys()].some(source => { const count = source.snapshot(); return (count.agents ?? 0) > 0 || (count.backgroundProcesses ?? 0) > 0; }));
+		const held = () => realFinal.held();
 		const original = { drain: queue.drain, peek: queue.peek, hasItems: queue.hasItems, enqueue: queue.enqueue, clear: queue.clear };
 		const privateSession = session as unknown as { _startRun?: (trigger: object) => Promise<void>; getSteeringMessages?: () => readonly string[]; clearQueue?: () => { steering: string[]; followUp: string[] } };
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -67,9 +52,8 @@ export function registerFollowUpHold(pi: ExtensionAPI, waiting: (background: boo
 				});
 			}, 0);
 		};
-		changed = schedule;
+		const stopChange = realFinal.onChange(schedule);
 		delivered = () => { if (running) seen = true; };
-		settled = schedule;
 		const visible = () => queue.messages.filter(message => message.role !== "user");
 		queue.peek = function () { if (!held()) return original.peek.call(this); const messages = visible(); return this.mode === "all" ? messages : messages.slice(0, 1); };
 		queue.hasItems = function () { return held() ? visible().length > 0 : original.hasItems.call(this); };
@@ -85,7 +69,8 @@ export function registerFollowUpHold(pi: ExtensionAPI, waiting: (background: boo
 		release = () => {
 			active = false;
 			if (timer) clearTimeout(timer);
-			delivered = () => {}; settled = () => {};
+			delivered = () => {};
+			stopChange();
 			if ((queue.messages.some(message => message.role === "user") || (inFlight && !seen)) && typeof privateSession.clearQueue === "function") {
 				const agent = session.agent as unknown as { steeringQueue?: Queue };
 				const otherFollowUps = queue.messages.filter(message => message.role !== "user");
@@ -97,8 +82,7 @@ export function registerFollowUpHold(pi: ExtensionAPI, waiting: (background: boo
 				ctx.ui.setEditorText([...restored.steering, ...restored.followUp, draft].filter(Boolean).join("\n\n"));
 			}
 			ctx.ui.setStatus("rqw-followup-hold", undefined);
-			stopCapability(); stopOffer();
-			for (const unsubscribe of sources.values()) unsubscribe();
+			stopCapability();
 			Object.assign(queue, original);
 			release = () => {};
 		};

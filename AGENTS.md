@@ -55,6 +55,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   Imports nothing from another extension folder: subagents get RQW-tools only when
   RQW-tools is loaded and offers them on `pi.events` channel `rqw-tools:subagent-tools`, otherwise Pi's stock
   tools. Child background cache warming is off; Anthropic prompt caching uses built-in 5m (`DECISIONS.md`, Agent).
+  `real-final.ts` is the shared gate for the real final (no agents, jobs, waits or undelivered notifications; `onHoldChange` from the coordinator). With `HERDR_ENV=1`, `herdr-state.ts` wraps the `agent_settled` handler of the user's `herdr-agent-state.*` extension so the herdr dot stays working until then (`[D-AGENT-REAL-FINAL]`).
   Children inherit the caller's GPT Fast at start; the optional `fast_gpt` parameter of `agent`
   overrides it (`false` when the user forbids Fast for subagents). An explicit `fast_gpt` on
   `send` or `restart` updates the retained value.

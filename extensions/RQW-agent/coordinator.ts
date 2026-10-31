@@ -103,6 +103,8 @@ export class Coordinator {
 	private callerAborted = false;
 	private caller?: ExtensionContext;
 	private unansweredNotifications = new Set<string>();
+	/** Called whenever a wait or an unanswered notification ends, so the real-final gate sees holds that no count reports. */
+	onHoldChange?: () => void;
 	private endSignal?: AbortSignal;
 	private diagnostics: { customType: string; content: string; display: boolean }[] = [];
 	private markAborted = () => { this.callerAborted = true; this.cancelNotificationWaits(true); };
@@ -114,7 +116,7 @@ export class Coordinator {
 		this.journal = journal;
 		pi.on("session_start", (_event, ctx) => { this.caller = ctx; });
 		pi.on("before_agent_start", (_event, ctx) => { this.caller = ctx; });
-		pi.on("session_tree", (_event, ctx) => { this.caller = ctx; this.unansweredNotifications.clear(); });
+		pi.on("session_tree", (_event, ctx) => { this.caller = ctx; this.unansweredNotifications.clear(); this.holdChanged(); });
 		// Real parentToolCallId links, independent of nestedCalls' bounded presentation log and ID spelling.
 		pi.on("tool_call", event => { if (event.parentToolCallId) this.parents.set(event.toolCallId, event.parentToolCallId); });
 		pi.on("tool_execution_end", event => {
@@ -167,6 +169,10 @@ export class Coordinator {
 		messages.forEach((message, i) => this.send(message, { triggerTurn: !aborted && !notifications && i === messages.length - 1 }));
 		this.flushNotifications(!aborted);
 		this.notify();
+		this.holdChanged();
+	}
+	private holdChanged() {
+		try { this.onHoldChange?.(); } catch { /* A hold listener must not break settlement. */ }
 	}
 	/** Busy notifications persist after the current turn; continue once unless a later answer already saw them. */
 	private needsNotificationTurn(ctx: ExtensionContext) {
@@ -178,6 +184,7 @@ export class Coordinator {
 				&& (e.details as { wait_id?: string } | undefined)?.wait_id === id);
 			if (at >= 0 && at < lastAnswer) this.unansweredNotifications.delete(id);
 		}
+		this.holdChanged();
 		return this.unansweredNotifications.size > 0;
 	}
 	private cancelNotificationWaits(uncommittedOnly = false) {
@@ -279,7 +286,7 @@ export class Coordinator {
 		const target = this.targets.get(id);
 		return run && target?.recovers === run ? target.run : run;
 	}
-	stopBackground() { this.callerAborted = true; this.cancelNotificationWaits(); this.unansweredNotifications.clear(); }
+	stopBackground() { this.callerAborted = true; this.cancelNotificationWaits(); this.unansweredNotifications.clear(); this.holdChanged(); }
 	holdsFollowUps(background: boolean) { return !this.callerAborted && (background || this.notificationWaits.size > 0 || this.unansweredNotifications.size > 0); }
 	hasWait(id: string) { return this.notificationWaits.has(id); }
 	/** A restored wait on `id` moves from the interrupted run `from` to the run `to` that continues it. */
@@ -461,6 +468,7 @@ export class Coordinator {
 		const cleanup = () => {
 			closed = true; this.notificationWaits.delete(owner); this.watchers.delete(watcher); this.activeWaits--;
 			cancelTimer(); signal.removeEventListener("abort", abort);
+			this.holdChanged();
 		};
 		// A canceled or replaced wait counts as closed only once its closing entry is saved; a failed write throws and the wait stays accepted.
 		const cancel = (uncommittedOnly = false, replacedBy?: string) => {
@@ -527,6 +535,7 @@ export class Coordinator {
 				try { this.send(message, { triggerTurn: triggerTurn && !busy }); }
 				catch {
 					this.unansweredNotifications.delete(owner);
+					this.holdChanged();
 					for (const r of claimed) { r.state = "held"; this.uncommitted.add(r); selection.held.add(r); }
 					selection.release(); return;
 				}
