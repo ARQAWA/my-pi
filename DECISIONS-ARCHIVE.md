@@ -6890,3 +6890,24 @@ Replacement owner quote: «теперь насчет агентов я хочу 
 Verbatim replaced text:
 
 > The `agent` description, the profile-list header and the `title`, `interrupt` and `model` parameter texts in `extensions/RQW-agent/index.ts` are Cursor's guidance with mapped names; Cursor's type catalogue is not carried, owner: «Нет мы вообще агентов никаких не переноси у нас свои агенты»; model-naming guidance dropped, owner: «Про имена моделей нахуй выбрасываем».
+
+## A-0385 · archived 2026-10-31 · Tools · Search method section from the grep description
+
+Status: SUPERSEDED by `[D-CURSOR-TOOLS]` (DECISIONS.md#tools).
+Archived by the D-CURSOR-TOOLS records change; exact commit: `git log -S'A-0385' -- DECISIONS-ARCHIVE.md`.
+Verbatim text as it was in DECISIONS.md:
+
+> - **Search method section** `[D-TOOLS-SEARCH-METHOD]`. The search wave method lives in the grep description; RQW-tools
+>   supplies the one-line `<search_method>` section through its own `before_agent_start` hook when read, grep and find
+>   are declared. Carriers: `extensions/RQW-tools/descriptions/grep.md`, `extensions/RQW-tools/index.ts`. Since: `04aa50f`.
+
+## A-0386 · archived 2026-10-31 · Tools · grep and find descriptions
+
+Status: SUPERSEDED by `[D-CURSOR-TOOLS]` (DECISIONS.md#tools).
+Archived by the D-CURSOR-TOOLS records change; exact commit: `git log -S'A-0386' -- DECISIONS-ARCHIVE.md`.
+Verbatim text as it was in DECISIONS.md:
+
+> - **grep and find descriptions** `[D-TOOLS-SEARCH-DESC]`. The search wave names the spellings to try, reads every file
+>   the hits already justify in one response, and stops when, for every implementation, it is known where each value is
+>   set, used and what the code does with it; find shows brace alternatives. Reason: chosen by rule completeness, then
+>   responses. Carriers: `extensions/RQW-tools/descriptions/grep.md`, `find.md`. Since: `9e13b55`.
