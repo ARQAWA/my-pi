@@ -8,7 +8,15 @@ Self-contained: no imports from other extensions. Requires RQW-agent to run a re
 | `blindreview` | blind | `spotty` | `gpt-6.1-terra` | medium |
 | `highreview` | high | `bossy` | `gpt-6.1-terra` | xhigh |
 
-Both wrappers read `skills/reviewer/SKILL.md` for the common review procedure. Initial and changed-object passes
+`selfcheck` is the executor's shell around the same loop: the finished executor starts a fork of itself with
+`agent` `fork_turns: "all"` (no model, thinking, profile, role or `include`) and waits for one report without editing
+the object. The fork checks against the owner's words, runs the affected tests and, where allowed, the product, fixes,
+then runs the blind loop of the reviewer skill until `CLEAN` and returns one report: problems, fixes, checks run and
+their results, unrun checks, rounds, `CLEAN` or the reason. The fork never starts another selfcheck fork; its blind
+reviewers are ordinary fresh agents without `fork_turns`. The package offers the skill; the repository PROCESS
+requires it.
+
+The blind and high wrappers read `skills/reviewer/SKILL.md` for the common review procedure. Initial and changed-object passes
 start a fresh ordinary `agent` with the selected `agent_type`, `role_file` set to the absolute package `REVIEWER.md`
 path, `include: ["user_messages"]` and a task containing `<agreement>` when needed, `<object>`, `<criterion>` and
 `<rejected_earlier>` when applicable. The explicit role file preserves the package review contract when a same-name
@@ -42,7 +50,7 @@ adapted for Pi. Both profiles share the canonical reviewer role with the approve
 actual mechanical placement and same-reviewer completion are specified by the common skill.
 
 On `pi.events` channel `rqw-agent:profiles`, request `{ offer(paths: string[]): void }`, this extension offers
-absolute paths to both TOML files. `resources_discover` returns absolute `skillPaths` for all three skills;
+absolute paths to both TOML files. `resources_discover` returns absolute `skillPaths` for all four skills;
 there is no static `pi.skills` entry. Disable RQW-review and reload to remove its offers and skills. With RQW-agent
 disabled, the skills report that the required agent is unavailable rather than starting another kind of reviewer.
 

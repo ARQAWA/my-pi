@@ -13,6 +13,6 @@ export default function reviewProfiles(pi: ExtensionAPI) {
 	});
 	pi.on("session_shutdown", stopOffering);
 	pi.on("resources_discover", () => ({
-		skillPaths: ["reviewer", "blindreview", "highreview"].map((name) => join(ROOT, "skills", name, "SKILL.md")),
+		skillPaths: ["reviewer", "blindreview", "highreview", "selfcheck"].map((name) => join(ROOT, "skills", name, "SKILL.md")),
 	}));
 }

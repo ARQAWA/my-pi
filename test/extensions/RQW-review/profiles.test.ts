@@ -20,7 +20,7 @@ it("offers native profiles and skills without registering a runner", () => {
 	assert.deepEqual(paths, ["spotty", "bossy"].map((name) => join(ROOT, "profiles", `${name}.toml`)));
 	assert.ok(paths.every(isAbsolute));
 	assert.deepEqual(handlers.get("resources_discover")!().skillPaths,
-		["reviewer", "blindreview", "highreview"].map((name) => join(ROOT, "skills", name, "SKILL.md")));
+		["reviewer", "blindreview", "highreview", "selfcheck"].map((name) => join(ROOT, "skills", name, "SKILL.md")));
 });
 
 it("pins the native reviewer models and efforts", () => {
@@ -47,6 +47,14 @@ it("keeps the canonical severity gate byte-identical in both profiles", () => {
 		"If only P3 remain, return CLEAN without reporting or mentioning them",
 		"SEVERITY:", "TRIGGER:", "RESULT_IF_UNFIXED:",
 	]) assert.ok(role.includes(fragment), fragment);
+});
+
+it("keeps the selfcheck fork bare and points to the reviewer skill", () => {
+	const skill = readFileSync(join(ROOT, "skills", "selfcheck", "SKILL.md"), "utf8");
+	assert.ok(skill.includes('fork_turns: "all"'));
+	assert.ok(skill.includes("Pass no `model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` or `include`"));
+	assert.ok(skill.includes("Do not start another selfcheck fork."));
+	assert.ok(skill.includes("`../reviewer/SKILL.md`"));
 });
 
 it("allows required review launches without authorizing unsolicited ones", () => {
