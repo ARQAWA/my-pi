@@ -46,6 +46,8 @@ Codex sessions use **stock Pi compaction**: Pi runs its own compaction with its 
 
 **Not fully public.** Pi's compaction methods stay untouched; retry ownership uses a temporary wrapper of the public agent stream callback. Other parts of this extension (session lifecycle, auth layers, prompt projection) still use private Pi internals.
 
+**Parity exception: parallel tool calls.** Every request sends `parallel_tool_calls: true`, also for Lite models where native Codex 0.163.0 sends `false`. The transport is native Codex adapted to our harness, and a parity setting that breaks our agent or tooling is not taken ([D-CODEX-PARALLEL](../../DECISIONS.md#codex-subscription-transport)). No option or `onPayload` hook turns it off: the transport sets it true on the final body after the hooks. Native Codex runs shell work through a synchronous `exec_command`; our tooling is asynchronous (`bash` and `codemode` run independently of other calls, a call still running after 12 s continues as `job#N` managed with the `job` tool, file tools run in parallel). Codex parity settings that assume synchronous one-at-a-time tool execution do not apply to this transport.
+
 ## Independence and verification
 
 No imports outside this extension folder; optional event-bus session policies bind RQW-agent/RQW-review children without an import dependency. Missing adapter means stock child behavior. Disable/reload/dispose must not unregister another owner's live provider or leak a child's continuation into its parent. Reviewer safety policy and wall cap remain theirs.

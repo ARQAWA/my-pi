@@ -29,6 +29,11 @@ it("serializes tools into the Lite additional_tools declaration", () => {
 	assert.equal("tools" in body, false);
 });
 
+it("lite model request with tools sends parallel_tool_calls true", () => {
+	assert.equal(build().parallel_tool_calls, true);
+	assert.equal(buildRequest({ model, context: context([TOOL]), capabilities: STABLE, identity }).parallel_tool_calls, true);
+});
+
 it("resolves model defaults and explicit efforts", () => {
 	assert.equal(codexModelCapabilities("gpt-6.1-sol").defaultReasoningLevel, "low");
 	assert.deepEqual(build().reasoning, { effort: "medium", summary: "auto", context: "all_turns" });

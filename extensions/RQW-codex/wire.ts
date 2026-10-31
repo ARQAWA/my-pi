@@ -46,7 +46,6 @@ export interface WireOptions {
 	/** Pi tier names `fast`/`priority`/`flex`/`default`, or native values. */
 	serviceTier?: string;
 	verbosity?: "low" | "medium" | "high";
-	parallelToolCalls?: boolean;
 	/** Stable default is off (codex-rs features/src/lib.rs:1919-1924). */
 	reasoningEffortOverride?: boolean;
 	/**
@@ -590,7 +589,7 @@ export function buildRequest(args: BuildRequestArgs): WireRequest {
 		input,
 		tools: lite ? undefined : tools,
 		tool_choice: "auto",
-		parallel_tool_calls: !lite && (options.parallelToolCalls ?? true),
+		parallel_tool_calls: true, // [D-CODEX-PARALLEL] always on, also for Lite; deliberate deviation from native Codex
 		reasoning,
 		store: false,
 		include: ["reasoning.encrypted_content"],
