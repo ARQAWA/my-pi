@@ -19,6 +19,6 @@ it("the subagent offer returns a report using the child's model and thinking", a
 		model: { provider: "anthropic", id: "claude-sonnet-5-5" },
 	});
 	const report = result.content[0].text;
-	assert.match(report, /search model gpt-6-sol, effort high/);
+	assert.match(report, /search model gpt-6.1-terra, effort high/);
 	assert.match(report, /done/);
 });

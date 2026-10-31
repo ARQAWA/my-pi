@@ -37,6 +37,16 @@ const MODELS: Readonly<Record<string, CodexModelCapabilities>> = deepFreeze({
 		supportVerbosity: true,
 		defaultVerbosity: "low",
 	},
+	"gpt-6.1-terra": {
+		slug: "gpt-6.1-terra",
+		useResponsesLite: true,
+		defaultReasoningLevel: "low",
+		supportedReasoningLevels: ["none", "low", "medium", "high", "xhigh", "max"],
+		supportsReasoningSummaryParameter: true,
+		defaultReasoningSummary: "none",
+		supportVerbosity: true,
+		defaultVerbosity: "low",
+	},
 	"gpt-6-sol": {
 		slug: "gpt-6-sol",
 		useResponsesLite: true,

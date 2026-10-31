@@ -6863,3 +6863,21 @@ Verbatim text as it was in DECISIONS.md at `2f66d55`, lines 432-435, and `INSTAL
 > no unrelated packages, settings, credentials or files.
 >
 > For the user, not an automatic install step: open `/settings` -> Theme and choose `RQW-theme` once.
+
+## A-0383 · archived 2026-10-31 · Web search · Model mapping: Sonnet to gpt-6-sol, Opus medium to high
+
+Status: SUPERSEDED by `[D-WEB-MAPPING]` (DECISIONS.md#web-search).
+Superseded: the commit of the parity mapping (branch `web-parity-map`). Archived by: the web-parity-map change.
+Verbatim text as it was in DECISIONS.md at `657306b`, lines 1737-1747:
+
+> - **Automatic model mapping** `[D-WEB-MAPPING]`. Owner (`16-27-59:4941`): «Да, всё именно так, как ты записал.» Owner (`16-27-59:4937`): «Давай так: для Haiku 5.5 будет Luna 5.6. Для Sonnet 5.5 будет Sol 6, а для Opus 5.5 будет Sol 6.1. Вот и всё.» Owner (`16-27-59:4945`): «Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться» The tool captures `ctx.model` and its own Pi API's `getThinkingLevel()` at each invocation, not the coordinator model; model arguments are absent. The model rule stays in [D-SCOPE-WEB-SEARCH-MODEL](#scope).
+>
+>   | Calling model | Search model | Thinking |
+>   | --- | --- | --- |
+>   | Recognized `openai-codex` GPT | Same exact model | Same level |
+>   | `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | Same level |
+>   | `anthropic/claude-sonnet-5-5` | `gpt-6-sol` | Same level |
+>   | `anthropic/claude-opus-5-5` | `gpt-6.1-sol` | low -> low, medium -> high, high -> xhigh, above high -> max |
+>   | Unknown or missing model, including unknown GPT slug | `gpt-6.1-sol` | low |
+>
+>   Owner's fallback (`16-27-59:6331`, entry `e3aba5d4`): «если короче это модель не опознанная то всегда по дефолту 6.1 сол лоу юзать» Known callers with unsupported thinking fail explicitly; Claude `off` and `minimal` stay unmapped. Carrier: `extensions/RQW-web/core/model-map.ts`.
