@@ -65,7 +65,6 @@ Completed undelivered results count zero. RQW-tools independently counts only Ma
 not child jobs again. Both producers use public `pi.events` v1 running-count sources; the consumer accepts
 missing `backgroundProcesses` from older v1 sources as zero. Either producer may be disabled alone.
 
-After the run ends, pending background work shimmers in the current theme's `warning` colour.
-Active work stays silver. At genuine idle there is no activity line. This changes no agent lists, cards,
+At genuine idle there is no activity line. This changes no visuals, timing, colours, agent lists, cards,
 settings or dependencies. Contract and owner sources: [Status bar](../../DECISIONS.md#status-bar).
 Source protocol: [Running-count contract](../RQW-agent/README.md#contract-for-p6).
