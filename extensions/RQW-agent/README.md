@@ -360,7 +360,19 @@ The real final of the main session is: no running agents, no background jobs, no
 
 With `HERDR_ENV=1` in a TUI session, `herdr-state.ts` finds the extension whose file is named `herdr-agent-state.*` in Pi's `_extensionRunner.extensions` and wraps its `agent_settled` handler. While the hold lasts, the call is deferred, so herdr's session dot stays "working". At the real final the original handler runs, with herdr's own `ctx.isIdle()` check. Without the variable, without such an extension or with another runner shape, nothing changes. No socket is opened and the herdr file is not edited. Pi's own `agent_settled` is not delayed: result delivery, receipts and the follow-up queue depend on it.
 
-Limits: the process exit itself cannot send a socket report, only `session_shutdown` flushes. If a delivery starts a turn in a later step, the dot may flicker idle for that moment. Terminal progress (OSC 9;4) and program status (OSC 7501) are separate steps and not done here.
+Limits: the process exit itself cannot send a socket report, only `session_shutdown` flushes. If a delivery starts a turn in a later step, the dot may flicker idle for that moment.
+
+### Terminal progress (OSC 9;4)
+
+In a TUI session `terminal-progress.ts` patches `ProcessTerminal.prototype.setProgress` and `start` of Pi's terminal class, so the progress indicator of iTerm2, Windows Terminal, Ghostty and the VS Code terminal stays on while the hold lasts, in every terminal that reads OSC 9;4. `setProgress(false)` is deferred through the gate: nothing is written, and Pi's own keepalive keeps writing "on". At the real final the original `setProgress(false)` runs. `setProgress(true)` cancels a deferred "off" and is written as usual. Without a hold the call goes through at once, as stock. `start()` runs Pi's own code first; if an "off" is still deferred, it turns the progress on again, because the `stop()` of a screen mode switch cleared it and Pi restores it only during a turn. On exit Pi's own `restoreOnExit` clears the progress as long as its keepalive runs, which the deferral never stops; `session_shutdown` also runs the deferred "off". After shutdown the patch is removed, or stays inert if another wrapper sits on top.
+
+Pi calls `setProgress` only with `terminal.showTerminalProgress`, which is `false` by default and which this package does not enable. Without it OSC 9;4 does not change.
+
+### Program status (OSC 7501)
+
+The same TUI patch holds `setProgramStatus` idle, done and error reports until the real final. If the terminal was not working, it first receives `working` with the same app and message, including when a dialog closes after the turn ends. Working and blocked reports pass through and cancel the deferred report. Clear passes through too. Without a hold the original method runs at once. Pi's `start()` repeats its stored status after a screen mode switch; Pi sends reports only after terminal support is confirmed or `PI_PROGRAM_STATUS=1`. Session shutdown flushes the deferred report. On process exit the deferred report is written synchronously only if support was confirmed. A new turn cancels it.
+
+If the class or its patched methods have another shape, nothing is patched. The patch is installed in TUI mode only. Tests: `test/extensions/RQW-agent/terminal-progress.test.ts`, on the real `ProcessTerminal` with terminal output captured.
 
 ## Wait, status and management
 

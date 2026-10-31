@@ -10,6 +10,8 @@ export type RealFinal = {
 	/** Runs `action` at the real final; at once when nothing is held. The same key replaces an earlier action. */
 	defer(key: string, action: () => unknown): void;
 	drop(key: string): void;
+	/** Whether an action for `key` still waits for the real final. */
+	deferred(key: string): boolean;
 	/** The hold may have changed without a count change, for example a cancelled wait. */
 	poke(): void;
 	onChange(listener: () => void): () => void;
@@ -60,6 +62,7 @@ export function registerRealFinal(pi: ExtensionAPI, waiting: (background: boolea
 		held,
 		defer(key, action) { if (held()) actions.set(key, action); else { actions.delete(key); run(action); } },
 		drop(key) { actions.delete(key); },
+		deferred: key => actions.has(key),
 		poke: changed,
 		onChange(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
 	};

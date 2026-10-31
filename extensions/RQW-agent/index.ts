@@ -23,6 +23,7 @@ import { forkPayloads, type ForkPayload } from "./fork-payload.ts";
 import { registerFollowUpHold } from "./followup-hold.ts";
 import { registerHerdrHold } from "./herdr-state.ts";
 import { registerRealFinal } from "./real-final.ts";
+import { registerTerminalProgressHold } from "./terminal-progress.ts";
 import { ProfileCatalogue, type ProfileRef } from "./profiles.ts";
 import { Activity } from "./activity.ts";
 import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-files.ts";
@@ -445,6 +446,7 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 		coordinator.onHoldChange = () => realFinal.poke();
 		registerFollowUpHold(pi, realFinal);
 		registerHerdrHold(pi, realFinal);
+		registerTerminalProgressHold(pi, realFinal);
 		let sessionId: string | undefined;
 		let stopNotice: (() => void) | undefined;
 		pi.on("session_start", (_event, ctx) => {
