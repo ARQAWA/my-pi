@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import anthropic from "../../../extensions/RQW-anthropic/index.ts";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import { normalizeContext, type AssistantMessage } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
@@ -181,6 +185,54 @@ describe("RQW-anthropic retry planning", () => {
 
 	const failure = (status: number, type: string, headers: Record<string, string>) =>
 		Response.json({ type: "error", error: { type, message: "fake" } }, { status, headers });
+
+	function warningsFor(session: Awaited<ReturnType<typeof compaction>>["session"]) {
+		const root = mkdtempSync(join(tmpdir(), "retry-warning-"));
+		const previous = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = root;
+		const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
+		const warnings: unknown[] = [];
+		try {
+			anthropic({ events: { on: () => () => {}, emit: (name: string, value: unknown) => {
+				if (name === "rqw:background-warning:v1") warnings.push(value);
+			} }, on: (name: string, handler: (event: unknown, ctx: unknown) => void) => handlers.set(name, handler),
+			registerProvider() {} } as never);
+		} finally {
+			if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous;
+		}
+		handlers.get("rqw-anthropic:session-bind")!({ session }, { sessionManager: session.sessionManager });
+		return { warnings, close: () => { handlers.get("session_shutdown")!({}, {}); rmSync(root, { recursive: true, force: true }); } };
+	}
+
+	it("emits a session warning for a refused turn, compaction, branch and bug-report retry", async () => {
+		for (const kind of ["turn", "compaction", "branch", "bug-report"]) {
+			const { session } = await compaction([failure(429, "rate_limit_error", { "x-should-retry": "false" })]);
+			const { warnings, close } = warningsFor(session);
+			try {
+				if (kind === "turn") await session.prompt("hello");
+				else if (kind === "compaction") await assert.rejects(session.compact());
+				else if (kind === "branch") {
+					const target = session.sessionManager.getBranch().find(entry => entry.type === "message")!;
+					await assert.rejects(session.navigateTree(target.id, { summarize: true }));
+				} else await assert.rejects(session.summarizeForBugReport({ signal: new AbortController().signal }));
+				assert.deepEqual(warnings, [{ sessionId: session.sessionId, text: "anthropic: no retry" }], kind);
+			} finally { close(); }
+		}
+	});
+
+	for (const scenario of ["bad request", "disabled", "exhausted"]) {
+		it(`does not warn for a ${scenario} turn that would not retry`, async () => {
+			const status = scenario === "bad request" ? 400 : 429;
+			const { session, times } = await compaction([failure(status, status === 400 ? "invalid_request_error" : "rate_limit_error", { "x-should-retry": "false" })], scenario === "exhausted" ? 0 : 3);
+			if (scenario === "disabled") session.settingsManager.setRetryEnabled(false);
+			const { warnings, close } = warningsFor(session);
+			try {
+				await session.prompt("hello");
+				assert.equal(times.length, 1);
+				assert.deepEqual(warnings, []);
+			} finally { close(); }
+		});
+	}
 
 	it("does not retry a summary the server marked x-should-retry false", async () => {
 		const { session, times } = await compaction([failure(429, "rate_limit_error", { "x-should-retry": "false" })]);

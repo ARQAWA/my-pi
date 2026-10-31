@@ -13,7 +13,22 @@ const PATCH = Symbol.for("rqw-anthropic/recovery-hooks");
 const NO_REPLAY = "rqw_anthropic_partial_stream";
 type Original = [object, string, PropertyDescriptor];
 type State = { count: number; originals: Original[] };
-type SummaryOperation = { runtime: ModelRuntime; active: boolean; pacing?: boolean; pending?: { rejection: HttpDiagnostic; signal?: AbortSignal } };
+type SummaryOperation = { session: AgentSession; runtime: ModelRuntime; active: boolean; pacing?: boolean; pending?: { rejection: HttpDiagnostic; signal?: AbortSignal } };
+const warningSinks = new WeakMap<AgentSession, () => void>();
+const warnedMessages = new WeakSet<AssistantMessage>();
+
+export function bindRetryWarning(session: AgentSession, notify: () => void): () => void {
+	warningSinks.set(session, notify);
+	return () => { if (warningSinks.get(session) === notify) warningSinks.delete(session); };
+}
+
+function warnIfForbidden(session: AgentSession, rejection: HttpDiagnostic | undefined, message?: AssistantMessage): void {
+	if (rejection?.shouldRetry !== false || (message && warnedMessages.has(message))) return;
+	const notify = warningSinks.get(session);
+	if (!notify) return;
+	if (message) warnedMessages.add(message);
+	notify();
+}
 const summaries = new AsyncLocalStorage<SummaryOperation>();
 type SummaryHandoff = { operation: SummaryOperation; model: unknown; apiKey?: string; origin?: AuthOrigin };
 
@@ -45,7 +60,10 @@ function paceByServer(manager: AgentSession["settingsManager"]): (() => void) | 
 			if (!operation?.pacing) return settings;
 			const served = (): number | undefined => {
 				const plan = planServerRetry(operation.pending?.rejection, settings.maxAgentDelayMs ?? 60_000);
-				if ("stop" in plan) throw new Error(plan.stop);
+				if ("stop" in plan) {
+					warnIfForbidden(operation.session, operation.pending?.rejection);
+					throw new Error(plan.stop);
+				}
 				return plan.delayMs;
 			};
 			return {
@@ -139,6 +157,13 @@ export function installRecoveryHooks(Runtime = ModelRuntime, Session = AgentSess
 			const descriptor = Object.getOwnPropertyDescriptor(Session.prototype, name);
 			if (typeof descriptor?.value === "function" && descriptor.configurable) originals.push([Session.prototype, name, descriptor]);
 		}
+		const classifyRetry = originals.find(([, name]) => name === "_isRetryableError")![2].value;
+		const wouldRetryTurn = (session: AgentSession, message: AssistantMessage): boolean => {
+			const internal = session as unknown as { _retryAttempt: number; _agentRunAbortRequested: boolean };
+			if (internal._agentRunAbortRequested || !classifyRetry.call(session, message)) return false;
+			const settings = session.settingsManager.getRetrySettings();
+			return settings.enabled && internal._retryAttempt < settings.maxRetries;
+		};
 		for (const [prototype, name, descriptor] of originals) {
 			const original = descriptor.value;
 			let wrapped;
@@ -185,7 +210,7 @@ export function installRecoveryHooks(Runtime = ModelRuntime, Session = AgentSess
 			} else if (name === "_runDefaultCompaction" || name === "navigateTree" || name === "summarizeForBugReport") {
 				wrapped = function(this: AgentSession, ...args: unknown[]) {
 					if (!enabled(this.modelRuntime)) return original.apply(this, args);
-					const operation: SummaryOperation = { runtime: this.modelRuntime, active: true };
+					const operation: SummaryOperation = { session: this, runtime: this.modelRuntime, active: true };
 					return summaries.run(operation, async () => {
 						// The bug-report summary has no retry callbacks: its policy follows the server instead.
 						operation.pacing = name === "summarizeForBugReport";
@@ -215,7 +240,10 @@ export function installRecoveryHooks(Runtime = ModelRuntime, Session = AgentSess
 					if (!enabled(this.modelRuntime)) return original.call(this, message, ...args);
 					if (protectedMessage(message)) return false;
 					const rejection = readHttpDiagnostic(message);
-					if (rejection?.shouldRetry === false) return false;
+					if (rejection?.shouldRetry === false) {
+						if (wouldRetryTurn(this, message)) warnIfForbidden(this, rejection, message);
+						return false;
+					}
 					const retryable = original.call(this, message, ...args);
 					if (retryable || rejection?.shouldRetry !== true || message.stopReason !== "error") return retryable;
 					const modelFor = (this as unknown as { _modelForMessage?(message: AssistantMessage): { contextWindow?: number } | undefined })._modelForMessage;
@@ -231,6 +259,7 @@ export function installRecoveryHooks(Runtime = ModelRuntime, Session = AgentSess
 					const settings = manager.getRetrySettings();
 					const plan = planServerRetry(rejection, settings.maxAgentDelayMs ?? 60_000);
 					if ("stop" in plan) {
+						if (rejection?.shouldRetry === false && wouldRetryTurn(this, message)) warnIfForbidden(this, rejection, message);
 						message.errorMessage = `${plan.stop} ${message.errorMessage ?? ""}`.trim();
 						return Promise.resolve(false);
 					}
@@ -254,6 +283,7 @@ export function installRecoveryHooks(Runtime = ModelRuntime, Session = AgentSess
 						operation.pending = undefined;
 						const plan = planServerRetry(pending?.rejection, this.settingsManager.getRetrySettings().maxAgentDelayMs ?? 60_000);
 						if ("stop" in plan) {
+							warnIfForbidden(this, pending?.rejection);
 							await callbacks.onRetryFinished?.(false, attempt, errorMessage);
 							throw new Error(`${plan.stop} ${errorMessage}`);
 						}

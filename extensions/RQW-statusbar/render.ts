@@ -25,6 +25,7 @@ export const ICON = {
 } as const;
 
 export type Role =
+	| "warning"
 	| "bar"
 	| "barEmpty"
 	| "label"
@@ -49,6 +50,7 @@ export function singleLine(text: string): string {
 export type PlaceKind = "folder" | "scratch" | "worktree";
 
 export interface BarState {
+	warning?: string;
 	quotas?: Quotas;
 	/** The session model; undefined shows "no-model", as omp. */
 	model?: { id: string; name?: string; reasoning?: boolean };
@@ -228,7 +230,12 @@ export function modelRow(state: BarState, width: number, paint: Paint = plain): 
 	if (state.rate !== undefined && Number.isFinite(state.rate) && state.rate > 0) {
 		right.push(paint("info", `${ICON.throughput}${state.rate.toFixed(1)} tok/s`));
 	}
-	return leftRight(left, right.join(dot), width);
+	const warning = singleLine(state.warning ?? "");
+	const rightText = right.join(dot);
+	if (warning && visibleWidth(left) + visibleWidth(rightText) + visibleWidth(warning) + 3 <= width) {
+		return leftRight(left, `${paint("warning", warning)}  ${rightText}`, width);
+	}
+	return leftRight(left, rightText, width);
 }
 
 /** The git part: branch and the counts of unstaged `*`, staged `+` and untracked `?` files. */

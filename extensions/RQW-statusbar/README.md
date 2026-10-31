@@ -34,6 +34,13 @@ rotated or written; settings and installed packages are untouched. No model call
 private APIs, cross-extension imports or new dependencies are used.
 No live credential or endpoint verification was performed.
 
+## Background warnings
+
+`pi.events` channel `rqw:background-warning:v1` accepts `{ sessionId, text }` for the current session.
+A warning appears in the theme's `warning` colour immediately before `cmp` for three seconds.
+A new warning replaces it and restarts the timer. It is hidden if the whole text cannot fit beside the existing row.
+Switching sessions, disabling the bar or shutting down clears it. The channel has no required producer.
+
 ## Background compaction
 
 While the current session's background summary runs, `bg compaction` shimmers in gold after the folder. It shares the existing animation timer and disappears when the request ends or the session changes. The folder and limits retain their existing narrow-row layout.

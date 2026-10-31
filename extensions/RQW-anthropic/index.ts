@@ -3,10 +3,10 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { CredentialStore, OAuthCredential, OAuthSelectPrompt } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
-import { getAgentDir, VERSION, type ExtensionAPI, type ModelRuntime, type ProviderConfig } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, VERSION, type AgentSession, type ExtensionAPI, type ModelRuntime, type ProviderConfig } from "@earendil-works/pi-coding-agent";
 import { LOGIN_HELP, refreshCredential, validateCredential } from "./auth.ts";
 import { installLifecycle, SESSION_BIND, type Lifecycle } from "./lifecycle.ts";
-import { installRecoveryHooks } from "./retry.ts";
+import { bindRetryWarning, installRecoveryHooks } from "./retry.ts";
 import { createOverlay } from "./transport.ts";
 import { installRegistrationGuard, BIND_STORE } from "./registration.ts";
 import { versionState } from "./wire.ts";
@@ -40,11 +40,13 @@ export default function anthropic(pi: ExtensionAPI) {
 		if (!cleaned && store && sessionId !== undefined && request.sessionId === sessionId) request.offer(quota);
 	});
 	let releaseRecovery: (() => void) | undefined;
+	let releaseWarning: (() => void) | undefined;
 	function cleanup() {
 		if (cleaned) return;
 		cleaned = true;
 		releaseFork();
 		releaseQuota();
+		releaseWarning?.();
 		quota.dispose();
 		overlay.forks.clear();
 		try { lifecycle?.release(); }
@@ -61,9 +63,13 @@ export default function anthropic(pi: ExtensionAPI) {
 		// Pi 1.4.0's native handler map carries this private exact-session binder.
 		pi.on(SESSION_BIND as "session_start", (event, ctx) => {
 			if (!cleaned) {
-				const session = (event as unknown as { session: { sessionId: string } }).session;
+				const session = (event as unknown as { session: AgentSession }).session;
 				lifecycle!.bindSession(ctx.sessionManager, session);
 				sessionId = session.sessionId;
+				releaseWarning?.();
+				releaseWarning = bindRetryWarning(session, () => pi.events.emit("rqw:background-warning:v1", {
+					sessionId: session.sessionId, text: "anthropic: no retry",
+				}));
 			}
 		});
 		Object.assign(overlay.streamSimple, { [BIND_STORE]: (credentials: CredentialStore, boundRuntime: ModelRuntime) => {

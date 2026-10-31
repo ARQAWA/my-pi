@@ -130,6 +130,12 @@ sharing the runtime without loading this extension. Already-offered forks keep i
 their own cancellation signal. Another session's snapshot stays intact. No consumer release event or additional
 Pi method patch is required. Adapter cleanup removes the inference listener and all remaining source snapshots.
 
+## Background warning
+
+When retry planning refuses an agent turn or summary retry because the server sent `x-should-retry: false`,
+the owning session emits `rqw:background-warning:v1` on `pi.events` with
+`{ sessionId, text: "anthropic: no retry" }`. No consumer is required.
+
 ## Recovery and security
 
 - Pi proactively refreshes expiring OAuth credentials under its store lock. This extension supplies a refresh

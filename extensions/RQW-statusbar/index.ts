@@ -30,7 +30,7 @@ const FAST_GPT_CHANGED = "rqw-settings:fast-gpt";
 type SessionManager = ExtensionContext["sessionManager"] & { getEntryCount(): number };
 const COLORS: Record<Exclude<Role, "effort">, ThemeColor> = {
 	bar: "text", barEmpty: "dim", label: "muted", model: "text", path: "text",
-	gitClean: "success", gitDirty: "warning", staged: "success", unstaged: "warning",
+	gitClean: "success", gitDirty: "warning", staged: "success", unstaged: "warning", warning: "warning",
 	untracked: "muted", sep: "dim", info: "muted",
 };
 export const themePaint = (theme: Theme): Paint => (role, text, level) => role === "effort"
@@ -68,6 +68,25 @@ export default function statusbar(pi: ExtensionAPI) {
 	const rate = new RateMeter();
 	let working = false;
 	let unsubscribeFast: (() => void) | undefined;
+	let warning: { sessionId: string; text: string } | undefined;
+	let warningTimer: ReturnType<typeof setTimeout> | undefined;
+	let updateWarning: (() => void) | undefined;
+	const clearWarning = () => {
+		if (warningTimer) clearTimeout(warningTimer);
+		warningTimer = undefined;
+		warning = undefined;
+		updateWarning?.();
+	};
+	const unsubscribeWarning = pi.events.on("rqw:background-warning:v1", (event: unknown) => {
+		const value = event as { sessionId?: unknown; text?: unknown } | null;
+		if (!value || typeof value.text !== "string" || !value.text.trim() || value.sessionId !== lightCtx?.sessionManager.getSessionId()) return;
+		clearWarning();
+		warning = { sessionId: value.sessionId as string, text: value.text };
+		updateWarning?.();
+		redraw?.();
+		warningTimer = setTimeout(() => { clearWarning(); redraw?.(); }, 3000);
+		warningTimer.unref?.();
+	});
 	const backgroundSessions = new Set<string>();
 	let animationStart = now();
 	let shimmer: ReturnType<typeof setInterval> | undefined;
@@ -150,6 +169,7 @@ export default function statusbar(pi: ExtensionAPI) {
 
 	/** Drops what this extension holds for the session: the GPT Fast subscription, the counts, timers, footer and border source. */
 	function release(): void {
+		clearWarning();
 		editor?.releaseIndicator();
 		editor = undefined;
 		showNativeSpinner();
@@ -282,15 +302,24 @@ export default function statusbar(pi: ExtensionAPI) {
 				let lastKey: unknown[] = [];
 				let lastStatuses = new Map<string, string>();
 				let cachedRows: string[] = [];
+				let cachedWidth: number | undefined;
 				let cachedState: BarState | undefined;
 				let cachedPlace: ReturnType<typeof placeLayout> | undefined;
 				let lastFastFrame: number | undefined;
 				let lastBackgroundFrame: number | undefined;
 				let lastSessionId = ctx.sessionManager.getSessionId();
+				const refreshWarning = () => {
+					if (!cachedState || cachedWidth === undefined) return;
+					cachedState.warning = warning?.text;
+					cachedRows = [...cachedRows];
+					cachedRows[1] = modelRow(cachedState, cachedWidth, paint);
+				};
+				updateWarning = refreshWarning;
 				quotas.start();
 				const cleanup = () => {
 					if (disposed) return;
 					disposed = true;
+					if (updateWarning === refreshWarning) updateWarning = undefined;
 					clearInterval(poll);
 					quotas.stop();
 					stopBranch();
@@ -316,6 +345,7 @@ export default function statusbar(pi: ExtensionAPI) {
 						const fast = fastState();
 						const sessionId = ctx.sessionManager.getSessionId();
 						if (lastSessionId !== sessionId) {
+							if (warning?.sessionId !== sessionId) clearWarning();
 							backgroundSessions.delete(lastSessionId);
 							lastSessionId = sessionId;
 							syncShimmer();
@@ -329,7 +359,9 @@ export default function statusbar(pi: ExtensionAPI) {
 							repo?.root, repo?.worktree?.project, repo?.worktree?.name, counts?.staged, counts?.unstaged, counts?.untracked, branch, !!fast];
 						if (statusChanged || key.length !== lastKey.length || key.some((value, i) => value !== lastKey[i])) {
 							lastStatuses = new Map(statuses);
+							cachedWidth = width;
 							cachedState = {
+								warning: warning?.text,
 								quotas: { ...quotas.values }, model: ctx.model, thinkingLevel: pi.getThinkingLevel(), ...context,
 								rate: rate.value(), fast, place: placeOf({ cwd: ctx.cwd, home: homedir(), scratchRoots: roots, worktree: repo?.worktree, branch }),
 								git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts }, backgroundFrame,
@@ -402,6 +434,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	pi.on("session_shutdown", (_event, ctx) => {
 		if (ctx.mode === "tui") early.freeze(ctx.ui, editorFactory, ownedFooter);
 		ownedFooter = undefined;
+		unsubscribeWarning();
 		early.dispose();
 		unsubscribeBackground();
 		backgroundSessions.clear();
