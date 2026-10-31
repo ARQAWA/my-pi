@@ -19,6 +19,12 @@ The copy keeps conversation entries, compaction and context edits, but excludes 
 groups. The caller's model, thinking, current system prompt and available child tools are inherited. `tools` can narrow
 the base tools. The fork history is not saved to its own file and is lost on process restart or reload.
 `model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` and `include` cannot accompany `all`.
+For an Anthropic fork, the first request copies the caller's last provider payload and appends the fork task as a user
+message. It retains the original system, ordered tools, thinking and cache markers, without adding a subagent reminder.
+If that payload is unavailable or used a different model, start fails before creating a child. Tools in the copied
+payload that the fork does not have return an error without execution. Available tools keep their child handlers.
+A pre-prompt compaction runs normally before the fork task request. Later requests use the child's normal session
+context and tools. Cache hits are determined by the provider, not guaranteed by this extension.
 The default `fork_turns: "none"` preserves ordinary clean starts. Forking is available only on `start`.
 
 ## Prompt and title

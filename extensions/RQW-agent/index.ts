@@ -19,6 +19,7 @@ import {
 import { type Static, Type } from "typebox";
 import { FOLLOW_UP, SUBAGENT_REMINDER, subagentPrompt, withCurrentReminder } from "./prompt.ts";
 import { forkBranch } from "./fork.ts";
+import { forkPayloads, type ForkPayload } from "./fork-payload.ts";
 import { ProfileCatalogue, type ProfileRef } from "./profiles.ts";
 import { Activity } from "./activity.ts";
 import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-files.ts";
@@ -449,6 +450,7 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 /** Caller-local state. Nested callers settle normally; startRun tracks their children across background wakeups. */
 export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events, backgroundCaller = false, coordinator = new Coordinator(pi, undefined, (type, data) => pi.appendEntry(type, data)), callerFast: () => boolean = () => inheritedFastGpt(toolEvents), displays = new Map<string, Display>(), onRunning: () => void = () => {}, basePrompt: (ctx: ExtensionContext) => string = ctx => ctx.getSystemPrompt(), labelPrefix = "", host?: CallerHost): RuntimeHandle {
 	const name = "agent";
+	const payloads = forkPayloads();
 	/** A child's display label in RQW-tools notes: the path from the main session, "agent#1/agent#2". */
 	const labelOf = (id: number) => `${labelPrefix}${name}#${id}`;
 	const agents = new Map<number, Agent>();
@@ -1020,7 +1022,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		return count;
 	}
 
-	async function createSession(config: Config, ctx: ExtensionContext, signal: AbortSignal, fast: { on: boolean }, label: string, childName: string, manager: SessionManager, coreMode = false, retainedBridge?: NotificationBridge): Promise<Child> {
+	async function createSession(config: Config, ctx: ExtensionContext, signal: AbortSignal, fast: { on: boolean }, label: string, childName: string, manager: SessionManager, coreMode = false, retainedBridge?: NotificationBridge, firstPayload?: { source: ForkPayload; task: string }): Promise<Child> {
 		signal.throwIfAborted();
 		const bridge = retainedBridge ?? new NotificationBridge(manager);
 		const cwd = config.cwd ?? ctx.cwd;
@@ -1124,10 +1126,24 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					});
 				});
 				const stream = session.agent.streamFunction;
+				let pendingPayload = firstPayload;
 				session.agent.streamFunction = (model, context, options) => {
 					check();
 					progress!.capture(model, context);
-					// Child Anthropic requests use the built-in 5m tier, before any adapter's OAuth fallback.
+					const first = pendingPayload;
+					if (first && options?.sessionId !== manager.getSessionId()) return stream(model, context, options);
+					if (first) {
+						const onPayload = options?.onPayload;
+						return stream(model, context, { ...options, sessionId: first.source.options.sessionId,
+							cacheRetention: first.source.options.cacheRetention, async onPayload(payload, requestModel) {
+								await onPayload?.(payload, requestModel);
+								const copy = structuredClone(first.source.payload);
+								(copy.messages as unknown[]).push({ role: "user", content: [{ type: "text", text: first.task }] });
+								pendingPayload = undefined;
+								return copy;
+							} });
+					}
+					// Ordinary child Anthropic requests use the built-in 5m tier.
 					return stream(model, context, model.api === "anthropic-messages" ? { ...options, cacheRetention: "short" } : options);
 				};
 				activity = new Activity(session, () => {
@@ -1496,7 +1512,9 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (params.fork_turns !== undefined && params.action !== "start") throw new Error("fork_turns is only supported on start");
 			if (params.fork_turns === "all" && [params.model, params.thinking, params.agent_type, params.system, params.system_file, params.role, params.role_file, params.include].some(value => value !== undefined))
 				throw new Error("fork_turns all cannot be combined with model, thinking, agent_type, system, system_file, role, role_file or include");
-			const fork = params.fork_turns === "all" ? { seed: forkBranch(ctx.sessionManager.getBranch()), system: ctx.getSystemPrompt(), model: ctx.model, thinking: pi.getThinkingLevel(), tools: pi.getActiveTools() } : undefined;
+			const fork = params.fork_turns === "all" ? { seed: forkBranch(ctx.sessionManager.getBranch()), system: ctx.getSystemPrompt(), model: ctx.model, thinking: pi.getThinkingLevel(), tools: pi.getActiveTools(), payload: payloads.get() } : undefined;
+			if (fork?.model?.api === "anthropic-messages" && (!fork.payload || fork.payload.model.id !== fork.model.id || fork.payload.model.provider !== fork.model.provider || !Array.isArray(fork.payload.payload.messages)))
+				throw new Error("Cannot fork Anthropic: caller's last provider payload is unavailable");
 			// Queue only registration/snapshot, never the waiting Promise or a tool that ignores abort.
 			if (params.action === "wait") {
 				const registration = coordinator.queue.then(async () => {
@@ -1520,7 +1538,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	pi.registerTool(definition);
 
 	/** `params` has no null fields: `execute` removed them (strict-mode providers send null for omitted optional fields). */
-	async function act(params: Params, ctx: ExtensionContext, signal: AbortSignal, fork?: { seed: SessionEntry[]; system: string; model: Model<Api> | undefined; thinking: Thinking; tools: string[] }) {
+	async function act(params: Params, ctx: ExtensionContext, signal: AbortSignal, fork?: { seed: SessionEntry[]; system: string; model: Model<Api> | undefined; thinking: Thinking; tools: string[]; payload?: ForkPayload }) {
 		signal.throwIfAborted();
 		await hydrate(ctx, signal);
 		if (params.action === "status") {
@@ -1548,7 +1566,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					if (!fork.model) throw new Error("No caller model for fork");
 					config.model = fork.model;
 					config.thinking = fork.thinking;
-					config.system = withCurrentReminder(fork.system);
+					config.system = fork.model.api === "anthropic-messages" ? fork.system : withCurrentReminder(fork.system);
 					config.base = fork.system;
 					const available = new Set(selectors(fork.tools, offeredFactory()?.catalogue));
 					config.tools = config.tools.filter(tool => available.has(tool));
@@ -1561,7 +1579,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				config.settings = childSettings(pi.getSettings());
 				config.builtins = BUILTIN_TOOLS.filter(name => (fork?.tools ?? pi.getActiveTools()).includes(name));
 				const manager = createChildManager(ctx.sessionManager, ctx.cwd, name, id, fork?.seed);
-				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`, manager);
+				const firstPayload = fork?.model?.api === "anthropic-messages" && fork.payload ? { source: fork.payload, task: task! } : undefined;
+				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`, manager, false, undefined, firstPayload);
 				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, state: "idle", fast, sends: [], ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };
 				agents.set(id, a);
 				try {
@@ -1692,16 +1711,19 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	}
 
 	pi.on("before_agent_start", async (_event, ctx) => {
+		payloads.bind(ctx);
 		main = ctx;
 		await refreshProfiles(ctx);
 		await resumeAll(ctx.signal ?? new AbortController().signal, true);
 	});
 	pi.on("session_start", async (_event, ctx) => {
+		payloads.bind(ctx);
 		main = ctx;
 		counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries(), name));
 		await refreshProfiles(ctx);
 	});
 	pi.on("session_tree", (_event, ctx) => {
+		payloads.clear();
 		generation.abort(new Error("The caller changed its session branch"));
 		generation = new AbortController();
 		for (const a of agents.values()) { coordinator.change(`${name}#${a.id}`, "branch_changed"); close(a); }
@@ -1761,6 +1783,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		unanswered.clear();
 	};
 	const shutdown = () => {
+		payloads.close();
 		lifetime.abort(new Error("The caller session is shutting down"));
 		abortAll();
 		for (const run of ownRuns) displays.delete(run);
