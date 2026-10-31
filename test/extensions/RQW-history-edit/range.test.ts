@@ -153,9 +153,9 @@ it("edits a history larger than the writer capacity through the command", async 
 	assert.deepEqual(bytes.subarray(0, f.prefix.length), f.prefix);
 	const records = bytes.toString().trim().split("\n").map(line => JSON.parse(line));
 	assert.ok(!records.some(entry => entry.id === "edit" || entry.id === "tail"));
-	// The retained running entry precedes the complete replay of both child records.
+	// The retained running entry is not replayed; the discarded completion follows it.
 	assert.deepEqual(records.filter(entry => entry.customType === "rqw-agent-child").map(entry => entry.data), [
-		{ id: 1, state: "running" }, { id: 1, state: "running" }, { id: 1, state: "completed" },
+		{ id: 1, state: "running" }, { id: 1, state: "completed" },
 	]);
 	assert.ok(records.some(entry => entry.type === "label" && entry.targetId === "m0" && entry.label === "kept"));
 	assert.ok(records.some(entry => entry.type === "session_info" && entry.name === "Synthetic session"));

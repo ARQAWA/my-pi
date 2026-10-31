@@ -35,6 +35,43 @@ it("cuts a leaf and sends the edited message after reopening", async () => {
 	} finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+it("avoids replaying the retained child prefix and preserves later state order", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "history-children-"));
+	try {
+		const path = join(dir, "session.jsonl");
+		writeFileSync(path, "original\n");
+		const root = { type: "message", id: "root", parentId: null, message: { role: "user", content: "root" } };
+		const child = (id: string, parentId: string, state: string) => ({ type: "custom", id, parentId, customType: "rqw-agent-child", data: { version: 1, kind: "agent", id: 1, epoch: "epoch", runNumber: 1, fast: false, state } });
+		const kept = child("kept", "root", "idle");
+		const config = { system: "synthetic prompt", base: "synthetic base", model: { provider: "test", id: "model" }, thinking: "off", tools: [] };
+		const abandoned = { ...child("abandoned", "root", "running"), data: { ...child("abandoned", "root", "running").data, config, task: "synthetic task" } };
+		const latest = child("latest", "kept", "completed");
+		const selected = { type: "message", id: "selected", parentId: "latest", message: { role: "user", content: "old" } };
+		const after = child("after", "selected", "stopped");
+		const entries: any[] = [root, kept, abandoned, latest, selected, after];
+		let branch: any[] = [root, kept, latest, selected, after];
+		const append = (entry: any) => {
+			const next = { ...entry, id: `new-${entries.length}`, parentId: branch.at(-1)?.id ?? null };
+			entries.push(next);
+			branch.push(next);
+			appendFileSync(path, `${JSON.stringify(next)}\n`);
+		};
+		const pi = { appendEntry: (customType: string, data: unknown) => append({ type: "custom", customType, data }) } as unknown as ExtensionAPI;
+		const manager = { getSessionFile: () => path, getBranch: () => branch.slice(), getEntries: () => entries.slice(),
+			getLeafId: () => branch.at(-1)?.id ?? null, getLabel: () => undefined, getSessionName: () => undefined,
+			getHeader: () => ({ type: "session", id: "s" }) };
+		const ctx = { isIdle: () => true, sessionManager: manager, ui: { notify: () => assert.fail("unexpected notice") },
+			navigateTree: async () => { branch = [root, kept, latest]; return { cancelled: false }; },
+			switchSession: async (_path: string, options: any) => { await options.withSession({ ui: { setEditorText() {} }, sendUserMessage: async () => {} }); return { cancelled: false }; } } as unknown as ExtensionCommandContext;
+		assert.deepEqual(await commitEdit(pi, ctx, "selected", "edited"), { committed: true });
+		const records = readFileSync(path, "utf8").trim().split("\n").map(line => JSON.parse(line));
+		const children = records.filter(entry => entry.customType === "rqw-agent-child").map(entry => entry.data);
+		assert.deepEqual(children.map(data => data.state), ["idle", "completed", "running", "completed", "stopped"]);
+		assert.deepEqual(children.findLast(data => data.config), abandoned.data);
+		assert.deepEqual(children.at(-1), after.data);
+	} finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 it("restores the original file when switching is cancelled", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "history-cancel-"));
 	try {
