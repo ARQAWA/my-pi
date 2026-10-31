@@ -3,7 +3,7 @@ import v8 from "node:v8";
 import vm from "node:vm";
 import { it } from "node:test";
 import { initTheme, InteractiveMode, SessionManager, type SessionEntry, type Theme } from "@earendil-works/pi-coding-agent";
-import { Container, stripTerminalSequences } from "@earendil-works/pi-tui";
+import { Container, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
 import toolUi from "../../../extensions/RQW-tool-ui/index.ts";
 import { classifyChange } from "../../../extensions/RQW-tool-ui/changes.ts";
 import { classify } from "../../../extensions/RQW-tool-ui/classify.ts";
@@ -27,6 +27,51 @@ it("classifies calls and nonzero exits", () => {
 	assert.equal(classify("read", { path: "a.ts", offset: 3, limit: 2 }, ok(), { toolCallId: "r" }).target, "a.ts L3-4");
 	const failed = classify("bash", { command: "false" }, ok("no", { details: { exitCode: 2 } }), { toolCallId: "b" });
 	assert.deepEqual([failed.kind, failed.status, failed.exitCode], ["run", "error", 2]);
+});
+
+it("renders new file tools and historical calls in compact and expanded views", () => {
+	const cases = [
+		{ name: "rqw_rg", args: { pattern: "needle", path: "src", glob: "*.ts", output_mode: "count" }, summary: "Searched 1 time", header: "rqw_rg needle in src glob: *.ts output_mode: count" },
+		{ name: "rqw_glob", args: { glob_pattern: "*.ts", target_directory: "src" }, summary: "Searched 1 time", header: "rqw_glob *.ts in src" },
+		{ name: "rqw_readfile", args: { path: "a.ts", offset: 3, limit: 2 }, summary: "Read 1 file", header: "rqw_readfile a.ts L3-4" },
+		{ name: "rqw_readfile", args: { path: "a", offset: -1, limit: 2 }, summary: "Read 1 file", header: "rqw_readfile a L-1 limit: 2" },
+		{ name: "rqw_readfile", args: { path: "a", limit: 5 }, summary: "Read 1 file", header: "rqw_readfile a limit: 5" },
+		{ name: "rqw_readfile", args: { path: "a", offset: 0 }, summary: "Read 1 file", header: "rqw_readfile a L0" },
+		{ name: "rqw_readfile", args: { path: "a", offset: 1, limit: 0 }, summary: "Read 1 file", header: "rqw_readfile a L1 limit: 0" },
+		{ name: "grep", args: { pattern: "old", path: "src" }, summary: "Searched 1 time", header: "grep old in src" },
+		{ name: "find", args: { pattern: "*.ts", path: "src" }, summary: "Searched 1 time", header: "find *.ts in src" },
+		{ name: "read", args: { path: "old.ts", offset: 1, limit: 2 }, summary: "Read 1 file", header: "read old.ts L1-2" },
+	];
+	const realTheme = { ...theme, bold: (text: string) => text } as Theme;
+	for (const { name, args, summary, header } of cases) {
+		const ui = new ToolUi();
+		ui.start({ getBranch: () => entries(assistant([call("id", name, args)]), result("id", name)), getCwd: () => "/w" } as never);
+		const renderer = ui.resolve(name, () => ({
+			renderCall: (originalArgs) => new Text(`PI CALL ${name}\n${Object.entries(originalArgs).map(([key, value]) => `${key}: ${value}`).join("\n")}`, 0, 0),
+			renderResult: (originalResult) => new Text(`PI RESULT ${(originalResult.content[0] as { text: string }).text}`, 0, 0),
+		}));
+		const state = {};
+		const context = (expanded: boolean) => ({ state, toolCallId: "id", args, outputPad: 0, invalidate() {}, expanded, showImages: false }) as never;
+		const row = renderer.renderCall!(args as never, realTheme, context(false));
+		const compact = row.render(120).map((line) => line.trim());
+		assert.equal(compact[0], summary, name);
+		assert.equal(compact[1], header, name);
+		renderer.renderCall!(args as never, realTheme, context(true));
+		renderer.renderResult!(ok("complete output") as never, { expanded: true, isPartial: false } as never, realTheme, context(true));
+		const original = row.render(120).join("\n");
+		assert.ok(original.includes(`PI CALL ${name}`), name);
+		for (const [key, value] of Object.entries(args)) {
+			assert.ok(original.includes(`${key}: ${value}`), `${name}: ${key}`);
+		}
+		assert.ok(original.includes("PI RESULT complete output"), name);
+		ui.shutdown();
+	}
+	const group = buildGroups(entries(assistant([
+		call("r1", "read", { path: "./a.ts" }), call("r2", "rqw_readfile", { path: "a.ts" }),
+		call("s1", "rqw_rg", { pattern: "x" }), call("s2", "rqw_glob", { glob_pattern: "*.ts" }),
+	]), result("r1"), result("r2", "rqw_readfile"), result("s1", "rqw_rg"), result("s2", "rqw_glob")));
+	const leader = [...group.values()].find((item) => item.isLeader);
+	assert.equal(collapsedRows(leader, 120, theme, "/w")[0], "Read 1 file · searched 2 times");
 });
 
 it("classifies confirmed edit and write counts", () => {

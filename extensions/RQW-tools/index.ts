@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	SettingsManager,
+	formatSkillsForPrompt,
 	createBashToolDefinition,
 	createLocalBashOperations,
 	createEditToolDefinition,
@@ -15,8 +16,11 @@ import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { createCountsProducer } from "./counts.ts";
 import { commandOf, createJobs, createJobTool, type JobHandle, type JobNotification, type Jobs, type JobsOptions } from "./jobs.ts";
 import { editRenderers, writeRenderers } from "./render.ts";
-import { withHiddenNote } from "./search.ts";
-import { installSelectionIntent, noToolSelection } from "./selection.ts";
+import { createRgToolDefinition } from "./rg.ts";
+import { createGlobToolDefinition } from "./glob.ts";
+import { createReadFileTool } from "./read-file.ts";
+import { installSelectionIntent, noToolSelection, selectionSession } from "./selection.ts";
+import { defaultSearchSelection, installSelectionAliases } from "./selection-alias.ts";
 import { createWriteSchema, executeWrite, prepareWriteArguments } from "./write.ts";
 
 const NO_LIMIT = 100000;
@@ -56,13 +60,22 @@ function safely(settings: () => any): any {
 
 /** Channel on which RQW-agent asks for fresh tools for each subagent session. */
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
-const BACKGROUNDABLE = ["bash", "codemode", "read", "edit", "write", "grep", "find"];
+const BACKGROUNDABLE = ["bash", "codemode", "rqw_readfile", "edit", "write", "rqw_rg", "rqw_glob"];
 const STARTUP_PROJECTION = "rqw-prompt:startup-projection";
 
 /** Apply the same optional prompt sections to normal turns and the startup projection. */
 function applyToolSections(options: any): void {
 	const visible = (name: string) => options.selectedTools.includes(name) && !options.hiddenTools.includes(name);
-	if (["grep", "find", "read"].every(visible)) {
+	if (options.selectedTools.includes("rqw_readfile") && !options.sections.skills) {
+		const skills = formatSkillsForPrompt(options.skills, "read").trim();
+		const original = "Use the read tool to load a skill's file when the task matches its description.";
+		if (skills.includes(original)) {
+			options.sections.skills = skills.replace(original, "Use the rqw_readfile tool to load a skill's file when the task matches its description.");
+		}
+	}
+	if (["rqw_rg", "rqw_glob"].every(visible)) {
+		options.sections.getting_work_done = "- When searching for text or files, prefer the dedicated search tools available to you (`rqw_rg`, `rqw_glob`) over shell search commands.";
+	} else if (["grep", "find", "read"].every(visible)) {
 		options.sections.search_method = "- Search with the grep and find tools and read files with read, following the method in the grep description.";
 	}
 	if (visible("bash")) {
@@ -92,15 +105,27 @@ export default function (pi: ExtensionAPI) {
 
 /** The extension; `backgroundAfterMs` is for tests (the product's threshold is 12 s). */
 export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?: number } = {}) {
-	const selectionShutdown = installSelectionIntent();
+	let selectionShutdown: (() => void) | undefined;
+	let aliasesShutdown: ((manager?: object, reload?: boolean) => void) | undefined;
+	try {
+		selectionShutdown = installSelectionIntent();
+		aliasesShutdown = installSelectionAliases();
+	} catch (error) {
+		console.warn(`RQW-tools: ${error instanceof Error ? error.message : String(error)}; using stock file tools.`);
+	}
+	let legacy = !aliasesShutdown;
 	const jobs = createJobs({ enabled: () => pi.getActiveTools().includes("job"), backgroundAfterMs: options.backgroundAfterMs });
-	for (const tool of createTools(process.cwd(), () => pi.getSettings(), { jobs })) pi.registerTool(tool);
+	for (const tool of createTools(process.cwd(), () => pi.getSettings(), { jobs, legacy })) {
+		if (["rqw_rg", "rqw_glob", "rqw_readfile"].includes(tool.name)) (tool as any).rqwSelectionFallback = () => { legacy = true; };
+		pi.registerTool(tool);
+	}
 	const counts = createCountsProducer(jobs, pi.events);
 	pi.on("session_start", () => counts.start());
 	pi.on("session_shutdown", () => counts.stop());
-	pi.on("session_shutdown", () => {
+	pi.on("session_shutdown", (event, ctx) => {
 		jobs.dispose();
-		selectionShutdown();
+		aliasesShutdown?.(ctx.sessionManager, event.reason === "reload");
+		selectionShutdown?.();
 	});
 	installNotifications(pi, jobs);
 
@@ -110,12 +135,23 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 	subscribeProjection();
 	pi.on("session_start", subscribeProjection);
 	pi.on("session_shutdown", () => { unsubscribeProjection?.(); unsubscribeProjection = undefined; });
-	pi.events.on(SUBAGENT_TOOLS, (request) => (request as { offer?: (factory: typeof createTools) => void })?.offer?.(createTools));
+	pi.events.on(SUBAGENT_TOOLS, (request) => {
+		const catalogue = legacy
+			? { names: ["read", "bash", "edit", "write", "grep", "find"], aliases: {} }
+			: { names: ["rqw_readfile", "bash", "edit", "write", "rqw_rg", "rqw_glob"], aliases: { read: "rqw_readfile", grep: "rqw_rg", find: "rqw_glob" } };
+		(request as { offer?: (factory: typeof createTools, catalogue: typeof catalogue) => void })?.offer?.(legacy ? (cwd, settings, options) => createTools(cwd, settings, { ...options, legacy: true }) : createTools, catalogue);
+	});
 
 	pi.on("session_start", (event, ctx) => {
 		if (event.reason !== "reload") {
 			const active = pi.getActiveTools();
-			const missing = noToolSelection(pi, ctx.sessionManager) ? ["grep", "find"].filter((name) => !active.includes(name)) : [];
+			const available = new Set(pi.getAllTools().filter((tool) => tool.exposure !== "hidden").map((tool) => tool.name));
+			let defaults = defaultSearchSelection(ctx.sessionManager, safely(() => pi.getSettings()), legacy,
+				legacy && selectionShutdown ? selectionSession(ctx.sessionManager) : undefined);
+			if (legacy && !defaults.length && selectionShutdown) {
+				try { if (noToolSelection(pi, ctx.sessionManager)) defaults = ["grep", "find"]; } catch { /* intent unavailable */ }
+			}
+			const missing = defaults.filter((name) => available.has(name) && !active.includes(name));
 			if (!active.includes("job") && [...active, ...missing].some((name) => BACKGROUNDABLE.includes(name))) missing.push("job");
 			if (missing.length > 0) pi.setActiveTools([...active, ...missing]);
 		}
@@ -163,7 +199,7 @@ function installNotifications(pi: ExtensionAPI, jobs: Jobs) {
 }
 
 /** Fresh base tools and one job registry for a main session or a subagent. */
-export function createTools(cwd: string, settings: () => any, options: JobsOptions & { jobs?: Jobs; codemode?: ToolDefinition<any, any, any> } = {}): ToolDefinition[] {
+export function createTools(cwd: string, settings: () => any, options: JobsOptions & { jobs?: Jobs; codemode?: ToolDefinition<any, any, any>; legacy?: boolean } = {}): ToolDefinition[] {
 	const tools: ToolDefinition[] = [];
 	const jobs = options.jobs ?? createJobs(options);
 	type Run = (id: string, params: any, signal: any, onUpdate: any, ctx: any, job?: JobHandle) => Promise<any>;
@@ -180,7 +216,7 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 					command: commandOf(name, params),
 					signal,
 					onUpdate,
-					process: name === "bash",
+					process: name === "bash" || name === "rqw_rg" || name === "rqw_glob",
 					timeoutSeconds: name === "bash" ? params?.timeout : undefined,
 				}, (job) => run(id, params, job.signal, job.onUpdate, ctx, job));
 			},
@@ -193,7 +229,7 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 	const notDefault = { defaultActive: false };
 
 	const read: any = createReadToolDefinition(cwd);
-	register("read", read, { ...notDefault, description: description("read") }, (id, params, signal, onUpdate, ctx) => {
+	register("read", read, { ...notDefault, exposure: options.legacy ? "direct" : "hidden", description: description("read") }, (id, params, signal, onUpdate, ctx) => {
 		const s = sessionSettings();
 		const options = s ? { autoResizeImages: s.images?.autoResize ?? true } : undefined;
 		const def: any = createReadToolDefinition(ctx?.cwd || process.cwd(), options);
@@ -202,7 +238,8 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 
 	const bash: any = createBashToolDefinition(cwd);
 	const bashText = description("bash") + (process.platform === "win32" ? "\n" + description("bash.win32") : "");
-	register("bash", bash, { ...notDefault, description: bashText }, (id, params, signal, onUpdate, ctx, job) => {
+	const bashParameters = withDescription(withDescription(bash.parameters, "command", "The command to execute"), "timeout", "Timeout in seconds; kills the command and its child processes. Without it there is no command deadline.");
+	register("bash", bash, { ...notDefault, description: bashText, parameters: bashParameters }, (id, params, signal, onUpdate, ctx, job) => {
 		const s = sessionSettings();
 		const options: any = s
 			? { commandPrefix: s.shellCommandPrefix, shellPath: SettingsManager.inMemory({ shellPath: s.shellPath }).getShellPath() }
@@ -242,18 +279,27 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 	const grep: any = createGrepToolDefinition(cwd);
 	register("grep", grep, {
 		...notDefault,
+		exposure: options.legacy ? "direct" : "hidden",
 		description: description("grep"),
 		prepareArguments: (input: unknown) => prepareSearchArguments(grep, input),
 		parameters: withDescription(grep.parameters, "limit", "Maximum number of matches (default: no cap; output is still cut at 50KB)."),
-	}, withHiddenNote("grep", withDefaultLimit(grep), cwd));
+	}, withDefaultLimit(grep));
 
 	const find: any = createFindToolDefinition(cwd);
 	register("find", find, {
 		...notDefault,
+		exposure: options.legacy ? "direct" : "hidden",
 		description: description("find"),
 		prepareArguments: (input: unknown) => prepareSearchArguments(find, input),
 		parameters: withDescription(find.parameters, "limit", "Maximum number of results (default: no cap; output is still cut at 50KB)."),
-	}, withHiddenNote("find", withDefaultLimit(find), cwd));
+	}, withDefaultLimit(find));
+
+	if (!options.legacy) {
+		for (const tool of [createReadFileTool(cwd, settings), createRgToolDefinition(cwd), createGlobToolDefinition(cwd)]) {
+			const overrides = tool.name === "rqw_readfile" ? { ...notDefault, promptGuidelines: [] } : notDefault;
+			register(tool.name, tool, overrides, (id, params, signal, onUpdate, ctx) => tool.execute(id, params, signal, onUpdate, ctx));
+		}
+	}
 
 	if (options.codemode) tools.push(groupCodemode(options.codemode, jobs));
 	tools.push({ ...createJobTool(jobs, description("job")), ...notDefault });

@@ -112,6 +112,11 @@ export function installSelectionIntent(Session: SessionClass = AgentSession, ver
 	return register(owner, state);
 }
 
+/** The captured session also carries default modifiers when an alias adapter cannot install. */
+export function selectionSession(manager: object): object | undefined {
+	return manager && (AgentSession.prototype as HookOwner)[HOOK]?.intents.get(manager)?.session.deref();
+}
+
 /** CLI flags and defaultTools remain selections in addition to the captured SDK intent. */
 export function noToolSelection(pi: ExtensionAPI, manager: object): boolean {
 	const binding = manager && (AgentSession.prototype as HookOwner)[HOOK]?.intents.get(manager);

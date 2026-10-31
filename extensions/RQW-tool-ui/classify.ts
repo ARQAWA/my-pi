@@ -146,10 +146,29 @@ export function classify(toolName: string, args: unknown, result: CallResult | u
 	const a = record(args);
 	const id = context.toolCallId ?? "";
 	const outputText = outputOf(result);
-	if (toolName === "read") {
+	if (toolName === "read" || toolName === "rqw_readfile") {
 		const path = str(a.path);
 		const key = path ? normalizePath(path, context.cwd, platform) : id;
-		return { kind: "read", target: readTarget(a), status: statusOf(result, context), countKey: key, countKeys: [key], outputText };
+		let target = readTarget(a);
+		if (toolName === "rqw_readfile" && !positive(a.offset)) {
+			if (typeof a.offset === "number" && Number.isInteger(a.offset)) target += ` L${a.offset}`;
+			if (typeof a.limit === "number" && Number.isInteger(a.limit)) target += ` limit: ${a.limit}`;
+		} else if (toolName === "rqw_readfile" && typeof a.limit === "number" && Number.isInteger(a.limit) && !positive(a.limit)) {
+			target += ` limit: ${a.limit}`;
+		}
+		return { kind: "read", target, status: statusOf(result, context), countKey: key, countKeys: [key], outputText };
+	}
+	if (toolName === "rqw_rg" || toolName === "rqw_glob") {
+		const pattern = oneLine(str(toolName === "rqw_rg" ? a.pattern : a.glob_pattern) ?? "");
+		const path = str(toolName === "rqw_rg" ? a.path : a.target_directory);
+		let target = toolName === "rqw_rg" ? `${pattern} in ${oneLine(path ?? ".")}` : path ? `${pattern} in ${oneLine(path)}` : pattern;
+		if (toolName === "rqw_rg") {
+			const glob = str(a.glob);
+			const mode = str(a.output_mode);
+			if (glob) target += ` glob: ${oneLine(glob)}`;
+			if (mode) target += ` output_mode: ${oneLine(mode)}`;
+		}
+		return { kind: "search", target, status: statusOf(result, context), countKey: id, countKeys: [id], outputText };
 	}
 	if (toolName === "grep" || toolName === "find") {
 		const pattern = oneLine(str(a.pattern) ?? "");

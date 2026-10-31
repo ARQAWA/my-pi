@@ -98,7 +98,7 @@ const PARAMETERS = Type.Object({
 	fast_gpt: Type.Optional(Type.Boolean({ description: "GPT Fast for this child; default: inherit yours. false when the user forbids Fast for subagents; send and restart may change it" })),
 	interrupt: Type.Optional(Type.Boolean({ description: "send only: first interrupt a running child (drops its queued messages, aborts its current turn, keeps history), then start task as soon as it has stopped; a plain send when it is idle. Only use when the user explicitly asks to interrupt or change what the running agent is doing." })),
 });
-type Params = Static<typeof PARAMETERS>;
+type Params = Omit<Static<typeof PARAMETERS>, "tools"> & { tools?: string[] };
 
 /**
  * `system` is the whole prompt sent; `base` the main agent's prompt it was built from (handed down to nested callers);
@@ -312,6 +312,8 @@ const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
  * `options.codemode`: the child's own Pi `codemode` definition, returned with background-job support.
  */
 type ToolsFactory = (cwd: string, settings: () => unknown, options?: { codemode?: ToolDefinition; notify?: (notification: JobNotification) => void; retain?: () => () => void }) => ToolDefinition[];
+type ToolCatalogue = { names: string[]; aliases: Record<string, string> };
+type ToolOffer = { factory: ToolsFactory; catalogue?: ToolCatalogue };
 
 type ExtensionFactory = (child: ExtensionAPI) => void;
 const SUBAGENT_EXTENSION_FACTORIES = "rqw-agent:subagent-extension-factories";
@@ -496,7 +498,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			return `${profile.name}: ${profile.description}; model=${model}; effort=${effort}; source=${profile.path}${profile.not_applied ? `; not applied: ${profile.not_applied.join(", ")}` : ""}${profile.error ? "; invalid profile" : ""}`;
 		});
 		const description = `${DESCRIPTION}\n\nAvailable agent_types and a quick description of what they do:\n${lines.join("\n") || "No profiles discovered."}`;
-		if (definition.description !== description) { definition.description = description; pi.registerTool(definition); }
+		const names = offeredFactory()?.catalogue?.names ?? [...TOOLS];
+		definition.description = description;
+		definition.parameters = toolParameters(names);
+		pi.registerTool(definition);
 	}
 
 	function deliver(result: Result) {
@@ -613,15 +618,28 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	}
 
 	/** The RQW-tools factory of subagent tools when RQW-tools is loaded; none (Pi's stock tools) otherwise. */
-	function offeredFactory(): ToolsFactory | undefined {
-		let factory = undefined as ToolsFactory | undefined;
-		// Pi's event bus calls every handler synchronously inside emit, so an offer is in place when emit returns.
+	function offeredFactory(): ToolOffer | undefined {
+		let offer: ToolOffer | undefined;
+		// Pi's event bus calls every handler synchronously inside emit.
 		toolEvents.emit(SUBAGENT_TOOLS, {
-			offer: (f: ToolsFactory) => {
-				factory = f;
-			},
+			offer: (factory: ToolsFactory, catalogue?: ToolCatalogue) => { offer = { factory, catalogue }; },
 		});
-		return factory;
+		return offer;
+	}
+
+	// Persist stock selector names, so the same subset works even when the offered extension is disabled.
+	function selectors(names: string[], catalogue?: ToolCatalogue): string[] {
+		const aliases = catalogue?.aliases ?? {};
+		return [...new Set(names.map(name => Object.entries(aliases).find(([, value]) => value === name)?.[0] ?? name))];
+	}
+
+	function selectedNames(names: string[], catalogue?: ToolCatalogue): string[] {
+		return [...new Set(names.map(name => catalogue?.aliases[name] ?? name))];
+	}
+
+	function toolParameters(names: string[]): typeof PARAMETERS {
+		return { ...PARAMETERS, properties: { ...PARAMETERS.properties,
+			tools: Type.Optional(Type.Array(StringEnum(names), { description: "Base subset; default all. Recursive agent delegation stays available." })) } } as typeof PARAMETERS;
 	}
 
 	/**
@@ -850,6 +868,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			// Older records keep the base inline; newer ones name its `rqw-agent-base` entry.
 			const base = stored.base ?? (typeof ref === "string" ? branchBases().get(ref) : undefined);
 			const c = data.config && { ...stored, base, system: stored.system ?? (typeof tail === "string" && typeof base === "string" ? base.trimEnd() + tail : undefined) } as Omit<Config, "model"> & { model: { provider: string; id: string } };
+			if (c && Array.isArray(c.tools) && c.tools.every(tool => typeof tool === "string")) c.tools = selectors(c.tools, offeredFactory()?.catalogue);
 			if (!c || typeof c.system !== "string" || typeof c.base !== "string" || !Array.isArray(c.tools)
 				|| c.tools.some(tool => !TOOLS.includes(tool as typeof TOOLS[number])) || !THINKING.includes(c.thinking)
 				|| (c.builtins !== undefined && (!Array.isArray(c.builtins) || c.builtins.some(tool => !BUILTIN_TOOLS.includes(tool as typeof BUILTIN_TOOLS[number]))))
@@ -1040,13 +1059,13 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		// definition built from the child's API, handed to the factory instead of being registered as it is. Without an
 		// offer it is registered exactly as Pi's built-in factory does. The offer is asked for at that point of the reload
 		// when the child has codemode, otherwise right after it.
-		let factory: ToolsFactory | undefined;
+		let offer: ToolOffer | undefined;
 		let codemode: ToolDefinition | undefined;
 		let childApi!: ExtensionAPI;
 		const withCodemode = (sub: ExtensionAPI) => {
-			factory = controller.signal.aborted || signal.aborted ? undefined : offeredFactory();
+			offer = controller.signal.aborted || signal.aborted ? undefined : offeredFactory();
 			// The built-in factory only calls `registerTool`; the rest of the API stays the child's for its callbacks.
-			if (factory) createCodemodeExtension()(Object.assign(Object.create(sub), { registerTool: (d: ToolDefinition) => void (codemode = d) }));
+			if (offer) createCodemodeExtension()(Object.assign(Object.create(sub), { registerTool: (d: ToolDefinition) => void (codemode = d) }));
 			else createCodemodeExtension()(sub);
 		};
 		const childExtensions = collectExtensionFactories(toolEvents);
@@ -1083,14 +1102,15 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		let jobs: JobControl | undefined;
 		try {
 			await untilAborted(resourceLoader.reload(), signal);
-			if (!builtins.includes("codemode")) factory = offeredFactory();
-			const customTools = factory ? offeredTools(factory, cwd, config.tools, codemode, bridge) : [];
+			if (!builtins.includes("codemode")) offer = offeredFactory();
+			const names = selectedNames(config.tools, offer?.catalogue);
+			const customTools = offer ? offeredTools(offer.factory, cwd, names, codemode, bridge) : [];
 			const jobTool = customTools.find((d) => d.name === "job") as (ToolDefinition & { jobs?: JobControl }) | undefined;
 			jobs = jobTool?.jobs;
 			signal.throwIfAborted();
 			creating = createAgentSession({
 				cwd, modelRuntime: runtimeOf(ctx), model: config.model, thinkingLevel: config.thinking,
-				tools: [...config.tools, ...(jobTool ? ["job"] : []), "agent", ...(web ? ["web"] : []), ...builtins],
+				tools: [...names, ...(jobTool ? ["job"] : []), "agent", ...(web ? ["web"] : []), ...builtins],
 				customTools, resourceLoader,
 				sessionManager: manager, settingsManager,
 			}).then(async ({ session }) => {
@@ -1466,7 +1486,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		return { system, base: root, cwd: ctx.cwd, ...(custom !== undefined ? { custom } : {}), ...(role !== undefined ? { role } : {}),
 			...(promptFile ? { prompt_file: promptFile } : {}), ...(profile ? { profile: { name: profile.name, path: profile.path, sha256: profile.sha256 },
 				profile_defaults: { model: profileModel, thinking: profileThinking, role: profileRole } } : {}),
-			model, thinking, tools: params.tools ?? fallback?.tools ?? [...TOOLS],
+			model, thinking, tools: selectors(params.tools ?? fallback?.tools ?? [...TOOLS], offeredFactory()?.catalogue),
 			...(alertAfter === undefined ? {} : { alert_after_ms: alertAfter }) };
 	}
 
@@ -1475,7 +1495,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		name,
 		label: "Agent",
 		description: DESCRIPTION,
-		parameters: PARAMETERS,
+		parameters: toolParameters(offeredFactory()?.catalogue?.names ?? [...TOOLS]),
 		execute: (toolCallId, raw, callerSignal, _onUpdate, ctx) => {
 			// Capture ctx.signal now: its getter can point at another run when the internal queue drains.
 			const signal = AbortSignal.any([lifetime.signal, generation.signal, callerSignal, ctx.signal].filter((s): s is AbortSignal => !!s));

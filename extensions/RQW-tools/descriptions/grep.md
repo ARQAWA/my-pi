@@ -1,6 +1,6 @@
 Search file contents with ripgrep; inside a git repository it respects .gitignore. Returns matching lines as path:line: text, paths relative to path.
 - Use this tool instead of rg or grep through bash.
-- Paths in .gitignore are skipped inside a git repository, so an empty answer does not prove a file is absent. Outside a git repository grep searches them, while find still skips them. When ignored paths also match, the answer ends with a note such as "Also 1757 files in ignored paths: node_modules/ 1757"; set path to a directory or file it names to search it.
+- Paths in .gitignore are skipped inside a git repository, so an empty answer does not prove a file is absent. Outside a git repository grep searches them, while find still skips them.
 - Default scope is the working directory; set path (a directory or one file) to narrow it. A glob with "/" matches from path, e.g. "src/*.ts" finds src/a.ts only; use "**/src/*.ts" for any depth.
 - pattern is a regex: escape metacharacters, e.g. "functionCall\(", "\{", "\}", or set literal.
 - Output is cut at 50KB, with no match cap unless you set limit; long lines are cut at 500 characters. If the output is cut at 50KB, narrow pattern, path or glob; for a cut line, read the file around it.

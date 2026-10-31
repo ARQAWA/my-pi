@@ -29,3 +29,11 @@ test("read keeps the stock schema", () => {
 	const tools = Object.fromEntries(createTools("/work", () => ({})).map(tool => [tool.name, tool as any]));
 	assert.deepEqual(Object.keys(tools.read.parameters.properties).sort(), ["limit", "offset", "path"]);
 });
+
+test("bash keeps the stock schema shape with the design's parameter descriptions", () => {
+	const tools = Object.fromEntries(createTools("/work", () => ({})).map(tool => [tool.name, tool as any]));
+	const properties = tools.bash.parameters.properties;
+	assert.deepEqual(Object.keys(properties).sort(), ["command", "timeout"]);
+	assert.equal(properties.command.description, "The command to execute");
+	assert.equal(properties.timeout.description, "Timeout in seconds; kills the command and its child processes. Without it there is no command deadline.");
+});

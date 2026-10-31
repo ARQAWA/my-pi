@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { Agent } from "@earendil-works/pi-agent-core";
-import { createFauxCore, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import { createFauxCore, fauxAssistantMessage, fauxProvider, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
 import { createEventBus, SessionManager, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { Activity, headTail } from "../../../extensions/RQW-agent/activity.ts";
 import { Coordinator } from "../../../extensions/RQW-agent/coordinator.ts";
@@ -335,9 +335,10 @@ test("interrupted tool calls receive durable error results without replay", asyn
 	assert.match(JSON.stringify(result.content), /Interrupted before a durable result/);
 });
 
-function runtimeFixture(parent: SessionManager, cwd: string, response: (context: any, options: any) => string | ReturnType<typeof fauxAssistantMessage> | Promise<string | ReturnType<typeof fauxAssistantMessage>> = () => "answer", responses = 8, codemode = false) {
+function runtimeFixture(parent: SessionManager, cwd: string, response: (context: any, options: any) => string | ReturnType<typeof fauxAssistantMessage> | Promise<string | ReturnType<typeof fauxAssistantMessage>> = () => "answer", responses = 8, codemode = false, setup?: (events: ReturnType<typeof createEventBus>) => void) {
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	const events = createEventBus();
+	setup?.(events);
 	const model = createFauxCore({ provider: "persist-test", models: [{ id: "model" }] }).getModel();
 	const requests: any[] = [];
 	const core = createFauxCore({ provider: "persist-test", models: [{ id: "model" }] });
@@ -372,6 +373,111 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 	return { runtime, requests, ctx, events, notices, parameters: () => definition.parameters, description: () => definition.description as string, async emit(name: string, event: any = {}) { let result: unknown; for (const hook of hooks.get(name) ?? []) result = await hook(event, ctx); return result; },
 		execute: (params: any, callId = "call") => definition.execute(callId, params, new AbortController().signal, undefined, ctx) };
 }
+
+const catalog = {
+	names: ["rqw_readfile", "bash", "edit", "write", "rqw_rg", "rqw_glob"],
+	aliases: { read: "rqw_readfile", grep: "rqw_rg", find: "rqw_glob" },
+};
+
+function offerCatalog(events: ReturnType<typeof createEventBus>) {
+	events.on("rqw-tools:subagent-tools", (request: any) => request.offer(() => catalog.names.map(name => ({
+		name, label: name, description: name, parameters: { type: "object", properties: {} },
+		execute: async () => ({ content: [{ type: "text", text: name }], details: {} }),
+	})), catalog));
+}
+
+test("a child without a tool subset gets the entire offered catalogue", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.inMemory(root);
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, () => "answer", 8, false, offerCatalog);
+	t.after(() => live.runtime.close());
+	await live.execute({ action: "start", task: "default" });
+	await live.runtime.wait(new AbortController().signal);
+	const names = getCurrentTools(live.requests[0].messages.filter((message: any) => message.role === "system")).map((tool: any) => tool.name);
+	assert.deepEqual(names.sort(), ["agent", "bash", "edit", "rqw_glob", "rqw_readfile", "rqw_rg", "write"].sort());
+});
+
+test("offered catalogue selects child tools and persists portable selectors", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, () => "answer", 8, false, offerCatalog);
+	assert.deepEqual(live.parameters().properties.tools.items.enum, catalog.names);
+	await live.execute({ action: "start", task: "one", tools: ["read", "rqw_rg"] });
+	await live.runtime.wait(new AbortController().signal);
+	assert.deepEqual(getCurrentTools(live.requests[0].messages.filter((message: any) => message.role === "system")).map((tool: any) => tool.name).filter((name: string) => name !== "agent"), ["rqw_readfile", "rqw_rg"]);
+	const record = parent.getBranch().find((entry: any) => entry.customType === "rqw-agent-child") as any;
+	assert.deepEqual(record.data.config.tools, ["read", "grep"]);
+	live.runtime.close();
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "send", id: "agent#1", task: "again" });
+	await restored.runtime.wait(new AbortController().signal);
+	assert.deepEqual(getCurrentTools(restored.requests.at(-1).messages.filter((message: any) => message.role === "system")).map((tool: any) => tool.name).filter((name: string) => name !== "agent"), ["read", "grep"]);
+	restored.runtime.close();
+});
+
+test("legacy saved subset resumes with the offered catalogue and restart preserves it", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => fauxAssistantMessage("failed", { stopReason: "error", errorMessage: "failed" }));
+	await first.execute({ action: "start", task: "old", tools: ["read", "find"] });
+	await first.runtime.wait(new AbortController().signal);
+	first.runtime.close();
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root, () => "answer", 8, false, offerCatalog);
+	await restored.execute({ action: "resume", id: "agent#1" });
+	await restored.runtime.wait(new AbortController().signal);
+	const names = () => getCurrentTools(restored.requests.at(-1).messages.filter((message: any) => message.role === "system")).map((tool: any) => tool.name).filter((name: string) => name !== "agent");
+	assert.deepEqual(names(), ["rqw_readfile", "rqw_glob"]);
+	await restored.execute({ action: "restart", id: "agent#1", task: "new" });
+	await restored.runtime.wait(new AbortController().signal);
+	assert.deepEqual(names(), ["rqw_readfile", "rqw_glob"]);
+	restored.runtime.close();
+});
+
+test("child codemode can call selected new names but not excluded names", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.inMemory(root);
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, context => {
+		if (context.messages.some((message: any) => message.role === "toolResult")) return "done";
+		return fauxAssistantMessage([fauxToolCall("codemode", { code: 'text(await tools.rqw_readfile({})); text("rqw_rg" in tools); text("read" in tools);' }, { id: "code" })], { stopReason: "toolUse" });
+	}, 8, true, offerCatalog);
+	await live.execute({ action: "start", task: "run", tools: ["rqw_readfile"] });
+	await live.runtime.wait(new AbortController().signal);
+	const result = live.requests.at(-1).messages.find((message: any) => message.role === "toolResult");
+	assert.match(JSON.stringify(result.content), /rqw_readfile/);
+	assert.match(JSON.stringify(result.content), /false.*false/);
+	live.runtime.close();
+});
+
+test("nested child codemode exposes exactly its selected tool subset", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.inMemory(root);
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, context => {
+		const task = context.messages.find((message: any) => message.role === "user")?.content?.[0]?.text;
+		if (context.messages.some((message: any) => message.role === "toolResult")) return "done";
+		if (task === "outer") return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "nested", tools: ["rqw_readfile"] }, { id: "delegate" })], { stopReason: "toolUse" });
+		return fauxAssistantMessage([fauxToolCall("codemode", { code: "text(JSON.stringify(ALL_TOOLS.map(tool => tool.name).sort()));" }, { id: "nested-code" })], { stopReason: "toolUse" });
+	}, 12, true, offerCatalog);
+	t.after(() => live.runtime.close());
+	await live.execute({ action: "start", task: "outer", tools: ["rqw_readfile"] });
+	await live.runtime.wait(new AbortController().signal);
+	const nested = live.requests.find((request: any) => request.messages.some((message: any) => message.role === "toolResult" && message.toolCallId === "nested-code"));
+	assert.ok(nested, "nested child completed codemode");
+	const result = nested.messages.find((message: any) => message.role === "toolResult" && message.toolCallId === "nested-code");
+	const output = result.content.filter((block: any) => block.type === "text").map((block: any) => block.text).join("");
+	const list = output.match(/\[[^\]]*\]/)?.[0];
+	assert.ok(list, output);
+	assert.deepEqual(JSON.parse(list), ["agent", "rqw_readfile"]);
+});
 
 const REMINDER = "<subagent>\nYou are running as a subagent under a parent agent. Do not spawn additional subagents unless requested by the user or by your instructions.\n</subagent>";
 

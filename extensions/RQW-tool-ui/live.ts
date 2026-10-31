@@ -66,8 +66,8 @@ export function tail(text: string): string[] {
 function header(call: LiveCall): string {
 	switch (call.kind) {
 		case "run": return `$ ${call.target}`;
-		case "read": return `read ${call.target}`;
-		case "search": return `${call.toolName === "find" ? "find" : "grep"} ${call.target}`;
+		case "read": return `${call.toolName === "rqw_readfile" ? "rqw_readfile" : "read"} ${call.target}`;
+		case "search": return `${call.toolName} ${call.target}`;
 		case "wait": return call.target ? `wait ${call.target}` : "wait";
 		default: return call.target; // edit/write and other tools already carry the tool name
 	}
