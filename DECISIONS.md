@@ -183,12 +183,14 @@ Provenance:
 - **Lean delivery path** `[D-WORK-LEAN-DELIVERY]`. Records (BACKLOG.md, DECISIONS.md, DECISIONS-ARCHIVE.md, INDEX.md,
   INSTALL.md, WORKFLOW-MANIFEST.md) go straight to main with no branch, review, runs, release or CI. Instructions
   (PROCESS.md, AGENTS.md, `.agents/**`) keep a branch and one spotty review, then go to main without runs. Executors run
-  only the touched extension's tests; the release runs the full check once. One release takes all ready branches. CI is
-  never waited for or polled; `qa-status` shows a red run. `pi update` runs only when `extensions/` or `package.json`
+  only the touched extension's tests; the release runs the full check once. One release takes all ready branches. A
+  release with code waits for a green CI on release before main, because local checks run only on macOS, CI also runs
+  Windows and VDI takes code from main; text never waits for CI. CI is not polled; `qa-status` shows a red run. `pi update` runs only when `extensions/` or `package.json`
   change. A re-review is done by a fresh reviewer that reads only the fix diff and the earlier findings. The coordinator
   does `stop` in the same call as the next step.
   Owner, 2026-10-31: «При изменении просто записей текстовых не должно быть никаких выкаток, никаких CI, запусков и прочей хуйни. Ты что, ебанулся нахуй? Ты что? Это же супернеэффективность. Мы очень долго работали над супернеэффективностью, и ты её сохранил, ты её ещё до сих пор гоняешь и токены на это тратишь. Давай, разберись. У нас всё должно быть суперлегковесное, быстрое, производительное, реактивное максимально. Надо найти все эти неэффективности и устранить их»
   Owner: «Они все должны быть 100% verified»
+  Owner, on the CI wait: «1. Для выкаток с кодом ждём CI перед main, для текста не ждём. 2. Не ждём никогда, как в отчёте.» Answer: «1».
   Owner on the report's edits: «выбираю 1» (all edits as in the report).
   Reason: text changes gain nothing from runs, release or CI; repeated reviews from scratch and waiting loops only spend tokens.
   Carrier: [PROCESS.md](PROCESS.md). Since: process-efficiency.
