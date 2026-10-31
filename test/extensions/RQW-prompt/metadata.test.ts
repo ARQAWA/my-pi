@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { it } from "node:test";
 import type { ExtensionAPI, NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
 import prompt, { STARTUP_PROJECTION, type StartupProjectionRequest } from "../../../extensions/RQW-prompt/index.ts";
@@ -55,4 +58,30 @@ it("projects the same public prefix for startup without changing other options",
 	assert.equal(request.error, undefined);
 	assert.match(request.options.customPrompt!, /- Model: fake\/two/);
 	assert.deepEqual(request.options.selectedTools, ["read", "bash"]);
+});
+
+it("the programs-on-PATH line lists probed programs but never rg or fd", () => {
+	const dir = mkdtempSync(join(tmpdir(), "rqw-prompt-path-"));
+	const savedPath = process.env.PATH;
+	const savedExt = process.env.PATHEXT;
+	try {
+		// Bare names for Unix, .exe and .cmd for Windows PATHEXT; git proves the probe sees this directory.
+		for (const name of ["git", "rg", "fd"]) {
+			for (const ext of ["", ".exe", ".cmd"]) {
+				const path = join(dir, name + ext);
+				writeFileSync(path, "");
+				chmodSync(path, 0o755);
+			}
+		}
+		process.env.PATH = dir;
+		process.env.PATHEXT = ".EXE;.CMD";
+		const hook = hooks();
+		const input = hook.options();
+		hook.prepare(input);
+		assert.match(input.customPrompt!, /programs on PATH: git\./);
+	} finally {
+		process.env.PATH = savedPath;
+		if (savedExt === undefined) delete process.env.PATHEXT; else process.env.PATHEXT = savedExt;
+		rmSync(dir, { recursive: true, force: true });
+	}
 });

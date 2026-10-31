@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const SYSTEM = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "SYSTEM.md"), "utf8").trimEnd();
 
-const ENV_PROGRAMS = ["git", "node", "bun", "npm", "pnpm", "python3", "python", "cargo", "rustc", "go", "java", "docker", "gh", "rg", "fd", "jq", "make", "cmake"];
+const ENV_PROGRAMS = ["git", "node", "bun", "npm", "pnpm", "python3", "python", "cargo", "rustc", "go", "java", "docker", "gh", "jq", "make", "cmake"];
 
 function onPath(name: string): boolean {
 	// Windows finds programs by PATHEXT suffixes such as .exe; Unix by the bare name.

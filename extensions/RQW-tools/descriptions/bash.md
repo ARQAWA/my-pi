@@ -2,6 +2,7 @@ Executes a given command in a fresh shell in the current working directory with 
 
 IMPORTANT: Use this tool for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files, sleeping) - use the specialized tools for this instead.
 
+- IMPORTANT: Avoid using this tool to run `rg`, `fd`, `grep`, `find`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.
 - Use rqw_rg, rqw_glob, rqw_readfile for file operations when applicable.
 - Do not truncate output with `head`, `tail`, or `sed -n` solely to limit its size; large output is saved to a terminal file.
 - Run independent commands as parallel bash calls. Chain dependent commands with `&&`.
