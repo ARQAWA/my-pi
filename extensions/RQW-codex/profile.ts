@@ -112,7 +112,7 @@ export const MODELS_JSON_SHA256 = "943ca7fe1d19ed019054158303f0dbbd80b3bef43b3aa
 export type CodexModelCapabilities = {
 	slug: string;
 	displayName: string;
-	/** use_responses_lite: Lite request shape (additional_tools prefix, parallel_tool_calls false). */
+	/** use_responses_lite: Lite request shape (additional_tools prefix). Native Lite sends parallel_tool_calls false; RQW-codex always sends true ([D-CODEX-PARALLEL]). */
 	useResponsesLite: boolean;
 	defaultReasoningLevel: string;
 	supportedReasoningLevels: readonly string[];

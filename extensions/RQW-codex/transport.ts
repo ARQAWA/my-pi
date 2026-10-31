@@ -885,7 +885,7 @@ export class CodexThreadTransport {
 	}
 
 	/**
-	 * Awaits onPayload exactly once, then validates the final body. A hook failure is a local refusal (no retry). With a signal,
+	 * Awaits onPayload exactly once, validates the final body and forces parallel_tool_calls true. A hook failure is a local refusal (no retry). With a signal,
 	 * the wait for the hook ends as soon as the signal aborts (a hung hook cannot hold it); a late hook result is ignored.
 	 * An abort is rethrown as AbortError, never as a LocalRequestError.
 	 */
@@ -907,6 +907,8 @@ export class CodexThreadTransport {
 			capabilities,
 			expectedServiceTier: typeof base.service_tier === "string" ? base.service_tier : undefined,
 		}));
+		// [D-CODEX-PARALLEL] a hook cannot turn parallel tool calls off; set after the hook, the sent body always carries true.
+		body.parallel_tool_calls = true;
 		if (durable) this.#history?.preparedRequest?.(body);
 		return body;
 	}

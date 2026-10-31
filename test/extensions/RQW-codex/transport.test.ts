@@ -93,6 +93,20 @@ it("SSE returns the completed assistant message", async () => {
 	assert.deepEqual((events.at(-1) as any).message.content.map(({ type, text }: any) => ({ type, text })), [{ type: "text", text: "Hi" }]);
 });
 
+const READ_TOOL = { name: "read", description: "Read a file", parameters: { type: "object", properties: { path: { type: "string" } } } };
+const WITH_TOOLS = { ...USER, tools: [READ_TOOL] } as Context;
+
+it("a lite request with tools sends parallel_tool_calls true, also after an onPayload hook sets it false", async () => {
+	const sockets = fakeSockets([[textEvents("resp_a", "a")], [textEvents("resp_b", "b")]]);
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: sockets.connect } });
+	await collect(transport.stream(MODEL, WITH_TOOLS));
+	await collect(transport.stream(MODEL, WITH_TOOLS, { onPayload: (body: any) => ({ ...body, parallel_tool_calls: false }) } as any));
+	assert.equal(sockets.sent[0].input[0].type, "additional_tools");
+	assert.equal(sockets.sent[0].parallel_tool_calls, true);
+	assert.equal(sockets.sent[1].parallel_tool_calls, true);
+	transport.dispose();
+});
+
 it("WebSocket returns text and ignores native unclassified wrappers", async () => {
 	const script = textEvents("resp_ws", "ok");
 	script.splice(-1, 0, { type: "error", status: 200, error: { code: "server_error" } }, { type: "error", error: { code: "server_error" } });
@@ -225,7 +239,7 @@ it("cache mechanics match the native reference in this scenario: key, prefix, co
 	// Every field the native comparator checks stays equal across warm-up, continuations and the full request.
 	const stable = ({ input: _input, previous_response_id: _previous, generate: _generate, client_metadata: _metadata, ...rest }: any) => rest;
 	assert.deepEqual(stable(warm), {
-		type: "response.create", model: "gpt-6-luna", stream: true, tool_choice: "auto", parallel_tool_calls: false,
+		type: "response.create", model: "gpt-6-luna", stream: true, tool_choice: "auto", parallel_tool_calls: true,
 		reasoning: { effort: "medium", context: "all_turns" }, store: false, include: ["reasoning.encrypted_content"],
 		prompt_cache_key: "root-session-1", text: { verbosity: "low" },
 	});
