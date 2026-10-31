@@ -107,6 +107,36 @@ it("a lite request with tools sends parallel_tool_calls true, also after an onPa
 	transport.dispose();
 });
 
+const withModel = (id: string) => ({ ...MODEL, id }) as unknown as Model<Api>;
+
+for (const id of ["gpt-6-luna", "gpt-5.6-luna"]) {
+	it(`${id} always sends service_tier priority, also after a hook deletes it`, async () => {
+		const sockets = fakeSockets([[textEvents("resp_a", "a")], [textEvents("resp_b", "b")]]);
+		const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: sockets.connect } });
+		await collect(transport.stream(withModel(id), USER));
+		await collect(transport.stream(withModel(id), USER, { onPayload: (body: any) => { const { service_tier: _removed, ...rest } = body; return rest; } } as any));
+		assert.equal(sockets.sent[0].service_tier, "priority");
+		assert.equal(sockets.sent[1].service_tier, "priority");
+		transport.dispose();
+	});
+}
+
+it("a hook that sets another service_tier cannot switch Luna off Fast", async () => {
+	const sockets = fakeSockets([[textEvents("resp_a", "a")]]);
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: sockets.connect } });
+	await collect(transport.stream(withModel("gpt-5.6-luna"), USER, { onPayload: (body: any) => ({ ...body, service_tier: "flex" }) } as any));
+	assert.equal(sockets.sent[0].service_tier, "priority");
+	transport.dispose();
+});
+
+it("a non-Luna model without Fast sends no service_tier", async () => {
+	const sockets = fakeSockets([[textEvents("resp_a", "a")]]);
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: sockets.connect } });
+	await collect(transport.stream(withModel("gpt-6.1-terra"), USER));
+	assert.equal(sockets.sent[0].service_tier, undefined);
+	transport.dispose();
+});
+
 it("WebSocket returns text and ignores native unclassified wrappers", async () => {
 	const script = textEvents("resp_ws", "ok");
 	script.splice(-1, 0, { type: "error", status: 200, error: { code: "server_error" } }, { type: "error", error: { code: "server_error" } });
@@ -239,7 +269,7 @@ it("cache mechanics match the native reference in this scenario: key, prefix, co
 	// Every field the native comparator checks stays equal across warm-up, continuations and the full request.
 	const stable = ({ input: _input, previous_response_id: _previous, generate: _generate, client_metadata: _metadata, ...rest }: any) => rest;
 	assert.deepEqual(stable(warm), {
-		type: "response.create", model: "gpt-6-luna", stream: true, tool_choice: "auto", parallel_tool_calls: true,
+		type: "response.create", model: "gpt-6-luna", stream: true, service_tier: "priority", tool_choice: "auto", parallel_tool_calls: true,
 		reasoning: { effort: "medium", context: "all_turns" }, store: false, include: ["reasoning.encrypted_content"],
 		prompt_cache_key: "root-session-1", text: { verbosity: "low" },
 	});

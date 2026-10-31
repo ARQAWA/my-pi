@@ -283,3 +283,6 @@ export function codexProfileSnapshot() {
 		models: CODEX_MODEL_SLUGS,
 	});
 }
+
+/** [D-CODEX-LUNA-FAST] Luna models always run on the Fast (priority) tier; no setting or hook turns it off. */
+export const ALWAYS_FAST_MODELS: ReadonlySet<string> = new Set(["gpt-6-luna", "gpt-5.6-luna"]);

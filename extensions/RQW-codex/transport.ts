@@ -30,11 +30,11 @@ import { prepareContextFork, type ContextForkRequest, type PreparedTurn } from "
 import { CodexError, classifyEvent, classifyHttp, classifyTransport, normalizeUsage } from "./errors.ts";
 import { mergeHeaders } from "./headers.ts";
 import { clientMetadata, identityHeaders, localPlatform, validateExtraMetadata, type CodexIdentity, type RequestKind } from "./metadata.ts";
-import { CODEX_ENDPOINT, CODEX_PROVIDER, CODEX_STABLE_FEATURES, codexModelCapabilities, type CodexModelCapabilities } from "./profile.ts";
+import { ALWAYS_FAST_MODELS, CODEX_ENDPOINT, CODEX_PROVIDER, CODEX_STABLE_FEATURES, codexModelCapabilities, type CodexModelCapabilities } from "./profile.ts";
 import { AuthRecoveryPolicy, HttpRetryPolicy, RetryPolicy, sleepAbortable, type InjectedSleep, type StreamTransport } from "./retry.ts";
 import { postEvents, SseError, type FetchLike } from "./sse.ts";
 import { connect, SocketError, type CodexSocket, type ErrorControl, type RawEvent, type ResponseHead } from "./websocket.ts";
-import { buildRequest, grammarToolInputProperties, prefixContext, validateFinalRequest, type WireItem, type WireModelInfo, type WireOptions, type WireRequest } from "./wire.ts";
+import { buildRequest, grammarToolInputProperties, orderBody, prefixContext, validateFinalRequest, type WireItem, type WireModelInfo, type WireOptions, type WireRequest } from "./wire.ts";
 import { completedContent, decidePartialHandoff, LiveResponsesPump, PendingErrorGate } from "./streaming.ts";
 
 /** Startup budget the first real turn may wait for a prewarm (owner decision; design §4). */
@@ -885,7 +885,7 @@ export class CodexThreadTransport {
 	}
 
 	/**
-	 * Awaits onPayload exactly once, validates the final body and forces parallel_tool_calls true. A hook failure is a local refusal (no retry). With a signal,
+	 * Awaits onPayload exactly once, validates the final body, forces parallel_tool_calls true and, for Luna models, service_tier priority. A hook failure is a local refusal (no retry). With a signal,
 	 * the wait for the hook ends as soon as the signal aborts (a hung hook cannot hold it); a late hook result is ignored.
 	 * An abort is rethrown as AbortError, never as a LocalRequestError.
 	 */
@@ -901,11 +901,14 @@ export class CodexThreadTransport {
 			throw new LocalRequestError("RQW-codex: the onPayload hook failed. Request not sent.");
 		}
 		signal?.throwIfAborted();
-		const body = (replaced ?? base) as Record<string, unknown>;
+		const hooked = (replaced ?? base) as Record<string, unknown>;
+		// [D-CODEX-LUNA-FAST] Luna is always Fast: forced after the hook, so the validator, continuation and prewarm all see "priority".
+		const alwaysFast = ALWAYS_FAST_MODELS.has(capabilities.slug);
+		const body = alwaysFast ? orderBody({ ...hooked, service_tier: "priority" }) : hooked;
 		localCall(() => validateFinalRequest({
 			body,
 			capabilities,
-			expectedServiceTier: typeof base.service_tier === "string" ? base.service_tier : undefined,
+			expectedServiceTier: alwaysFast ? "priority" : typeof base.service_tier === "string" ? base.service_tier : undefined,
 		}));
 		// [D-CODEX-PARALLEL] a hook cannot turn parallel tool calls off; set after the hook, the sent body always carries true.
 		body.parallel_tool_calls = true;
