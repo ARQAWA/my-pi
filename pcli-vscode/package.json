@@ -1,7 +1,7 @@
 {
   "name": "pcli",
   "displayName": "ARQAWA PCLI",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "arqawa",
   "repository": {
     "type": "git",
@@ -16,6 +16,14 @@
     "commands": [
       { "command": "pcli.newTab", "title": "New Tab", "category": "Pi CLI" },
       { "command": "pcli.update", "title": "Update", "category": "Pi CLI" }
+    ],
+    "keybindings": [
+      {
+        "key": "ctrl+enter",
+        "command": "workbench.action.terminal.sendSequence",
+        "when": "terminalFocus && pcli.terminalActive",
+        "args": { "text": "\u001b[13;5u" }
+      }
     ]
   },
   "scripts": {

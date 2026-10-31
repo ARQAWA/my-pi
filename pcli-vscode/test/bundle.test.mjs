@@ -19,8 +19,13 @@ function launch(root, agent) {
   let command;
   const terminals = [];
   const errors = [];
+  const contexts = [];
+  let changeActive;
   const vscode = {
-    commands: { registerCommand(name, callback) { if (name === 'pcli.newTab') command = callback; return {}; } },
+    commands: {
+      registerCommand(name, callback) { if (name === 'pcli.newTab') command = callback; return {}; },
+      executeCommand(...args) { contexts.push(args); },
+    },
     EventEmitter: class {
       listeners = [];
       event = (listener) => { this.listeners.push(listener); };
@@ -31,11 +36,13 @@ function launch(root, agent) {
     ViewColumn: { Active: 1 },
     window: {
       showErrorMessage(message) { errors.push(message); },
+      onDidChangeActiveTerminal(listener) { changeActive = listener; return {}; },
       createTerminal(options) {
         const terminal = { output: [], visible: false, input: (data) => options.pty.handleInput(data) };
         options.pty.onDidWrite((data) => terminal.output.push(data));
         terminals.push(terminal);
-        return { show() { terminal.visible = true; options.pty.open(); } };
+        const handle = { show() { terminal.visible = true; options.pty.open(); changeActive(handle); } };
+        return handle;
       },
     },
   };
@@ -68,7 +75,7 @@ function launch(root, agent) {
     extension: { packageJSON: { version: '0.0.2' } },
   });
   command();
-  return { terminals, errors, again: command };
+  return { terminals, errors, contexts, changeActive: (terminal) => changeActive(terminal), again: command };
 }
 
 function installed(root) {
@@ -86,13 +93,15 @@ test('materialization writes product resources, manifest and exact revision', as
   fs.writeFileSync(path.join(source, 'extensions', 'RQW-demo', 'index.ts'), 'export default () => {};');
   fs.mkdirSync(path.join(source, 'extensions', 'RQW-theme'));
   fs.writeFileSync(path.join(source, 'extensions', 'RQW-theme', 'theme.json'), '{"name":"demo"}');
+  fs.mkdirSync(path.join(source, 'extensions', 'RQW-browser'));
+  fs.writeFileSync(path.join(source, 'extensions', 'RQW-browser', 'index.ts'), 'export default () => {};');
   fs.mkdirSync(path.join(source, '.pi', 'agents'), { recursive: true });
   fs.writeFileSync(path.join(source, '.pi', 'agents', 'private.toml'), 'private');
   fs.writeFileSync(path.join(source, 'PROCESS.md'), 'development only');
   fs.writeFileSync(path.join(source, 'package.json'), JSON.stringify({
     name: 'my-pi', type: 'module', scripts: { test: 'development only' },
-    pi: { extensions: ['./extensions/RQW-demo/index.ts'], themes: ['./extensions/RQW-theme/theme.json'] },
-    dependencies: { ws: '8.22.0' }, devDependencies: { typebox: '1.3.27', typescript: '7.0.2' },
+    pi: { extensions: ['./extensions/RQW-demo/index.ts', './extensions/RQW-browser/index.ts'], themes: ['./extensions/RQW-theme/theme.json'] },
+    dependencies: { ws: '8.22.0', 'puppeteer-core': '25.3.0', '@puppeteer/browsers': '3.0.6' }, devDependencies: { typebox: '1.3.27', typescript: '7.0.2' },
     peerDependencies: { '@earendil-works/pi-coding-agent': '1.4.0', typebox: '*' },
   }));
   const bundle = materializeMyPi(source, path.join(root, 'my-pi'), sha);
@@ -103,8 +112,8 @@ test('materialization writes product resources, manifest and exact revision', as
   assert.equal(fs.existsSync(path.join(bundle, 'PROCESS.md')), false);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(bundle, 'package.json'))), {
     name: 'my-pi', private: true, type: 'module',
-    pi: { extensions: ['./extensions/RQW-demo/index.ts'], themes: ['./extensions/RQW-theme/theme.json'] },
-    dependencies: { ws: '8.22.0' },
+    pi: { extensions: ['./extensions/RQW-demo/index.ts', './extensions/RQW-browser/index.ts'], themes: ['./extensions/RQW-theme/theme.json'] },
+    dependencies: { ws: '8.22.0', 'puppeteer-core': '25.3.0', '@puppeteer/browsers': '3.0.6' },
     peerDependencies: { '@earendil-works/pi-coding-agent': '1.4.0', typebox: '*' },
   });
   const manifest = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url)));
@@ -134,8 +143,40 @@ test('materialization writes product resources, manifest and exact revision', as
       },
     }), sha);
     assert.equal(fs.existsSync(path.join(bundle, 'node_modules', 'ws')), true);
+    assert.equal(fs.existsSync(path.join(bundle, 'node_modules', 'puppeteer-core')), true);
+    assert.equal(fs.existsSync(path.join(bundle, 'node_modules', '@puppeteer', 'browsers')), true);
     assert.equal(fs.existsSync(path.join(bundle, 'node_modules', 'typebox')), false);
     assert.equal(fs.existsSync(path.join(bundle, 'node_modules', '@earendil-works', 'pi-coding-agent')), false);
+  } finally {
+    spawn.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
+
+test('prepublish refuses main before the browser and pinned dependencies arrive', async (t) => {
+  const root = fixture(t);
+  const source = path.join(root, 'source');
+  fs.mkdirSync(path.join(source, 'extensions'), { recursive: true });
+  fs.writeFileSync(path.join(source, 'package.json'), JSON.stringify({
+    name: 'my-pi', pi: { extensions: [] }, dependencies: { ws: '8.22.0' },
+  }));
+  fs.mkdirSync(path.join(root, 'my-pi'));
+  fs.writeFileSync(path.join(root, 'my-pi', '.revision'), 'previous');
+  const spawn = t.mock.method(childProcess, 'spawnSync', (_command, args) => {
+    if (args[0] === '-xf') fs.cpSync(source, args[args.indexOf('-C') + 1], { recursive: true });
+    else throw new Error('npm must not run for an incomplete release');
+    return { status: 0 };
+  });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(bundleMyPi(root, {
+      async fetch(url) {
+        return url.includes('/commits/')
+          ? { ok: true, json: async () => ({ sha: 'a'.repeat(40) }) }
+          : { ok: true, arrayBuffer: async () => new ArrayBuffer(0) };
+      },
+    }), /main must include RQW-browser/);
+    assert.equal(fs.readFileSync(path.join(root, 'my-pi', '.revision'), 'utf8'), 'previous');
   } finally {
     spawn.mock.restore();
     syncBuiltinESMExports();
@@ -210,6 +251,19 @@ test('fresh tab registers bundled package without touching credentials', (t) => 
   assert.equal(result.terminals[0].visible, true);
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(agent, 'settings.json'))), { packages: [path.join(root, 'my-pi')] });
   assert.equal(fs.existsSync(path.join(agent, 'auth.json')), false);
+});
+
+test('Ctrl+Enter context is set only while a PCLI tab is active', (t) => {
+  const root = fixture(t);
+  installed(root);
+  const result = launch(root, path.join(root, 'agent'));
+  assert.deepEqual(result.contexts, [['setContext', 'pcli.terminalActive', true]]);
+  result.changeActive({});
+  result.changeActive(undefined);
+  assert.deepEqual(result.contexts.slice(1), [
+    ['setContext', 'pcli.terminalActive', false],
+    ['setContext', 'pcli.terminalActive', false],
+  ]);
 });
 
 test('invalid settings stop tab without overwriting user data', (t) => {

@@ -1286,6 +1286,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl:4221` in the Pi USER session directory named in Provenance.
   Reason: the interface must be English; the owner approved translating the listed Russian messages.
   Carrier: `pcli-vscode/extension.js`; publication still requires a direct owner request. Since: `a55c859`.
+- **Ctrl+Enter keybinding** `[D-PCLI-CTRL-ENTER]`. VS Code's terminal does not pass Ctrl+Enter to Pi, so the extension
+  contributes the key `ctrl+enter` with `workbench.action.terminal.sendSequence`, args `{ "text": "\u001b[13;5u" }`,
+  `when: terminalFocus && pcli.terminalActive`. VS Code has no built-in context key for one terminal's name, so
+  `extension.js` sets the custom context `pcli.terminalActive` on every `onDidChangeActiveTerminal`: true only for a
+  terminal PCLI created. Other terminals keep their own Ctrl+Enter. Owner: «По клавишам: да, все 4 части по порядку»
+  (part 4: «В VS Code Ctrl+Enter сам до pi не доходит. Поэтому PCLI добавит эту клавишу сам.»).
+  Carrier: `pcli-vscode/package.json` `contributes.keybindings`, `pcli-vscode/extension.js`; tests `pcli-vscode/test/keybinding.test.mjs`, `pcli-vscode/test/bundle.test.mjs`.
 
 ## Anthropic subscription adapter
 

@@ -7,6 +7,11 @@ import { fileURLToPath } from 'node:url';
 export function materializeMyPi(source, output, sha) {
   const manifest = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8'));
   if (manifest.name !== 'my-pi' || !manifest.pi?.extensions) throw new Error('Invalid my-pi package');
+  if (!manifest.pi.extensions.includes('./extensions/RQW-browser/index.ts')
+    || manifest.dependencies?.['puppeteer-core'] !== '25.3.0'
+    || manifest.dependencies?.['@puppeteer/browsers'] !== '3.0.6') {
+    throw new Error('my-pi main must include RQW-browser and its pinned dependencies before this PCLI release');
+  }
   fs.mkdirSync(output);
   fs.cpSync(path.join(source, 'extensions'), path.join(output, 'extensions'), { recursive: true });
   const packaged = {

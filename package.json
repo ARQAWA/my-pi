@@ -48,7 +48,8 @@
       "./extensions/RQW-codex-compat/index.ts",
       "./extensions/RQW-tabs-link/index.ts",
       "./extensions/RQW-btw/index.ts",
-      "./extensions/RQW-predictions/index.ts"
+      "./extensions/RQW-predictions/index.ts",
+      "./extensions/RQW-browser/index.ts"
     ],
     "themes": [
       "./extensions/RQW-theme/theme.json"
@@ -65,6 +66,8 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
+    "@puppeteer/browsers": "3.0.6",
+    "puppeteer-core": "25.3.0",
     "smol-toml": "1.9.1",
     "ws": "8.22.0"
   }

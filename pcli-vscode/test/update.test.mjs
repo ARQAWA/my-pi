@@ -7,6 +7,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { EventEmitter } from 'node:events';
 import { gzipSync } from 'node:zlib';
+import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const { createUpdater } = require('../update-my-pi.js');
@@ -104,6 +105,7 @@ function fixture(t, options = {}) {
       withProgress(options, task) { progress.push(options.title); return task(); },
       showInformationMessage(message) { notifications.push(message); },
       showErrorMessage(message) { notifications.push(message); },
+      onDidChangeActiveTerminal() { return {}; },
       createTerminal(options) { return { show() { terminals.push(options.name); } }; },
     },
   };
@@ -161,6 +163,28 @@ test('palette update selects new code and reuses current libraries without chang
   assert.equal(fs.readFileSync(path.join(f.selected(), 'node_modules/ws/index.js'), 'utf8'), 'installed library');
   assert.equal(fs.readFileSync(path.join(first, 'extensions/demo/index.ts'), 'utf8'), 'new code');
   assert.equal(fs.readFileSync(path.join(f.agent, 'auth.json'), 'utf8'), 'auth unchanged');
+});
+
+test('palette update loads browser dependencies bundled with the new PCLI without a registry', async (t) => {
+  const f = fixture(t);
+  const dependencies = { ws: '1', other: '2', 'puppeteer-core': '25.3.0', '@puppeteer/browsers': '3.0.6' };
+  const manifestPath = path.join(f.bundled, 'package.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.dependencies = dependencies;
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  for (const [name, version] of Object.entries({ 'puppeteer-core': '25.3.0', '@puppeteer/browsers': '3.0.6' })) {
+    const dir = path.join(f.bundled, 'node_modules', name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, version, type: 'module', main: 'index.js' }));
+    fs.writeFileSync(path.join(dir, 'index.js'), `export default ${JSON.stringify(version)};`);
+  }
+  f.next('c'.repeat(40), archive(dependencies,
+    "import core from 'puppeteer-core'; import browsers from '@puppeteer/browsers'; export default [core, browsers];"));
+  await f.update();
+  assert.notEqual(f.selected(), f.bundled);
+  const module = await import(pathToFileURL(path.join(f.selected(), 'extensions/demo/index.ts')).href);
+  assert.deepEqual(module.default, ['25.3.0', '3.0.6']);
+  assert.ok(f.notifications.includes('my-pi updated. Open a new Pi tab to use it.'));
 });
 
 test('changed dependencies retain selected code and ask to update the extension', async (t) => {

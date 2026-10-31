@@ -31,7 +31,7 @@ jobs:
           echo "HOME=$HOME USERPROFILE=$USERPROFILE"
 
       - name: Synthetic package and tab tests
-        run: node --test pcli-vscode/test/bundle.test.mjs pcli-vscode/test/update.test.mjs pcli-vscode/test/quit.test.mjs
+        run: node --test pcli-vscode/test/bundle.test.mjs pcli-vscode/test/update.test.mjs pcli-vscode/test/quit.test.mjs pcli-vscode/test/keybinding.test.mjs
 
       - name: Build VSIX
         working-directory: pcli-vscode

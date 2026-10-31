@@ -18,6 +18,7 @@ let bundledPackage = '';
 let updater;
 let count = 0;
 const ptys = new Set();
+const pcliTerminals = new Set();
 
 // Кавычки: сначала для bash (одинарные кавычки с '\''), затем для PowerShell (удвоенные ')
 
@@ -75,6 +76,10 @@ function activate(context) {
   bundledPackage = path.join(context.extensionPath, 'my-pi');
   updater = createUpdater(context, globalThis.fetch, require('net'));
   context.subscriptions.push(
+    // Ctrl+Enter keybinding (package.json) applies only while a PCLI tab is active
+    vscode.window.onDidChangeActiveTerminal((active) => {
+      vscode.commands.executeCommand('setContext', 'pcli.terminalActive', pcliTerminals.has(active));
+    }),
     vscode.commands.registerCommand('pcli.newTab', () => openTab('pi ' + ++count)),
     vscode.commands.registerCommand('pcli.update', async () => {
       try {
@@ -233,6 +238,7 @@ function openTab(name) {
     pty: makePty(nodePty),
     location: { viewColumn: vscode.ViewColumn.Active },
   });
+  pcliTerminals.add(terminal);
   terminal.show();
 }
 
