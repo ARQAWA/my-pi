@@ -14,7 +14,7 @@ for (const [type, content, expected] of [
 ]) {
 	it(`renders ${type} as one line with the full original expanded`, () => {
 		const renderers = new Map<string, MessageRenderer>();
-		agentUi({ registerMessageRenderer: (name: string, renderer: MessageRenderer) => renderers.set(name, renderer), registerToolRenderer() {} } as never);
+		agentUi({ registerMessageRenderer: (name: string, renderer: MessageRenderer) => renderers.set(name, renderer), registerToolRenderer() {}, on() {} } as never);
 		const renderer = renderers.get(type);
 		assert.ok(renderer);
 		const message = { role: "custom", customType: type, content, display: true, timestamp: 0 };
@@ -37,7 +37,7 @@ for (const [type, content, expected] of [
 
 it("does not repaint a notification at an unchanged width and refreshes after invalidate", () => {
 	const renderers = new Map<string, MessageRenderer>();
-	agentUi({ registerMessageRenderer: (name: string, renderer: MessageRenderer) => renderers.set(name, renderer), registerToolRenderer() {} } as never);
+	agentUi({ registerMessageRenderer: (name: string, renderer: MessageRenderer) => renderers.set(name, renderer), registerToolRenderer() {}, on() {} } as never);
 	let paints = 0;
 	const counting = { ...theme, fg: (_role: string, text: string) => (paints++, text) };
 	const message = { role: "custom", customType: "agent_progress", content: "[notification] agent#7 has worked 50 tool-call steps", display: true, timestamp: 0 };

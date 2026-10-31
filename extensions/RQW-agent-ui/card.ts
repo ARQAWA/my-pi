@@ -72,6 +72,41 @@ export function shortModel(model: string): string {
 	return model.slice(model.lastIndexOf("/") + 1).replace(/^claude-/, "");
 }
 
+/** The short effort labels of the status bar (local copy of its rules). */
+const SHORT_EFFORT: Record<string, string> = { off: "no", minimal: "min", low: "lo", medium: "md", high: "hi", xhigh: "xh", max: "mx" };
+
+/** The part of Pi's model registry the card reads. */
+export interface ModelLookup {
+	find(provider: string, modelId: string): { name?: string; id: string } | undefined;
+}
+
+let lookup: ModelLookup | undefined;
+const labels = new Map<string, string>();
+
+/** Sets the registry the model names come from (session start); names resolved before are forgotten. */
+export function setModelLookup(next: ModelLookup | undefined): void {
+	lookup = next;
+	labels.clear();
+}
+
+/** The picker label of `provider/id`: the model name without `Claude `, single spaces; unknown models show `shortModel`. */
+export function modelLabel(model: string): string {
+	const known = labels.get(model);
+	if (known !== undefined) return known;
+	if (!lookup) return shortModel(model);
+	const slash = model.indexOf("/");
+	let found: ReturnType<ModelLookup["find"]>;
+	try {
+		found = slash < 0 ? undefined : lookup.find(model.slice(0, slash), model.slice(slash + 1));
+	} catch {
+		found = undefined;
+	}
+	const name = found ? (found.name || found.id).replace(/\s+/g, " ").trim().replace(/^Claude /, "") : "";
+	const label = name || shortModel(model);
+	labels.set(model, label);
+	return label;
+}
+
 /** `42`→`42s`, `12.3`→`12.3s`, `65`→`1m 05s`; undefined for anything that is not a finite number ≥ 0. */
 export function formatSeconds(seconds: unknown): string | undefined {
 	if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return undefined;
@@ -141,10 +176,11 @@ function header(card: ParsedCard, theme: CardTheme, width: number): string {
 	const meta: string[] = [];
 	if (card.model || card.thinking) {
 		const effort = card.thinking ? EFFORT[card.thinking] ?? ORDINARY : undefined;
+		const shortEffort = card.thinking ? SHORT_EFFORT[card.thinking] ?? card.thinking : "";
 		const paintedEffort = card.thinking && effort
-			? effort.bold ? theme.bold(theme.fg(effort.color, card.thinking)) : theme.fg(effort.color, card.thinking)
+			? effort.bold ? theme.bold(theme.fg(effort.color, shortEffort)) : theme.fg(effort.color, shortEffort)
 			: "";
-		meta.push((card.model ? dim(shortModel(card.model)) : "") + (card.model && paintedEffort ? dim(" ") : "") + paintedEffort);
+		meta.push((card.model ? theme.fg("text", modelLabel(card.model)) : "") + (card.model && paintedEffort ? dim(" ") : "") + paintedEffort);
 	}
 	if (card.seconds) meta.push(dim(card.seconds));
 	for (const part of meta) rest += dim(" · ") + part;

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { stripVTControlCharacters as strip } from "node:util";
 import { it } from "node:test";
-import { type CardTheme, createAgentCard } from "../../../extensions/RQW-agent-ui/card.ts";
+import type { MessageRenderer } from "@earendil-works/pi-coding-agent";
+import agentUi from "../../../extensions/RQW-agent-ui/index.ts";
+import { type CardTheme, createAgentCard, setModelLookup } from "../../../extensions/RQW-agent-ui/card.ts";
 import { createChildWaitCard } from "../../../extensions/RQW-agent-ui/child-wait.ts";
 import { createReviewCard, reviewCounts } from "../../../extensions/RQW-agent-ui/review.ts";
 import { selfShellWaitRenderers } from "../../../extensions/RQW-agent-ui/self.ts";
@@ -17,18 +19,31 @@ it("renders collapsed and expanded agent answers", () => {
 		outcome: "finished", model: "anthropic/claude-opus-5-5", thinking: "medium", seconds: 42,
 	});
 	const collapsed = createAgentCard(input as never, { expanded: false, outputPad: 0 }, identity as never)!;
-	assert.deepEqual(collapsed.render(80), ["agent#3 finished · opus-5-5 medium · 42s", "  First Second"]);
+	assert.deepEqual(collapsed.render(80), ["agent#3 finished · opus-5-5 md · 42s", "  First Second"]);
 	const expanded = createAgentCard(input as never, { expanded: true, outputPad: 0 }, identity as never)!;
-	assert.deepEqual(expanded.render(80), ["agent#3 finished · opus-5-5 medium · 42s", "  First", "  Second"]);
+	assert.deepEqual(expanded.render(80), ["agent#3 finished · opus-5-5 md · 42s", "  First", "  Second"]);
 });
 
-it("drops only the claude prefix from the model in the card", () => {
-	const render = (model: string) => {
-		const input = message("agent", "[agent#3] Done", { outcome: "finished", model, thinking: "high", seconds: 5 });
-		return createAgentCard(input as never, { expanded: false, outputPad: 0 }, identity as never)!.render(80)[0];
+it("shows the picker model label and the short effort in the card", () => {
+	const names: Record<string, string> = {
+		"anthropic/claude-sonnet-5-5": "Claude Sonnet 5.5", "openai-codex/gpt-6.1-terra": "GPT-6.1  Terra",
 	};
-	assert.equal(render("anthropic/claude-sonnet-5-5"), "agent#3 finished · sonnet-5-5 high · 5s");
-	assert.equal(render("openai-codex/gpt-6.1-terra"), "agent#3 finished · gpt-6.1-terra high · 5s");
+	setModelLookup({ find: (provider, id) => { const name = names[`${provider}/${id}`]; return name ? { id, name } : undefined; } });
+	const render = (model: string, thinking: string, theme: CardTheme = identity, width = 80) => {
+		const input = message("agent", "[agent#3] Done", { outcome: "finished", model, thinking, seconds: 5 });
+		return createAgentCard(input as never, { expanded: false, outputPad: 0 }, theme as never)!.render(width)[0];
+	};
+	assert.equal(render("anthropic/claude-sonnet-5-5", "medium"), "agent#3 finished · Sonnet 5.5 md · 5s");
+	assert.equal(render("openai-codex/gpt-6.1-terra", "xhigh"), "agent#3 finished · GPT-6.1 Terra xh · 5s");
+	assert.equal(render("anthropic/claude-unknown-1", "high"), "agent#3 finished · unknown-1 hi · 5s");
+	const tagged: CardTheme = { fg: (color, text) => `<${color}>${text}</>`, bold: (text) => `<b>${text}</b>` };
+	const wide = (thinking: string) => render("anthropic/claude-sonnet-5-5", thinking, tagged, 400);
+	assert.match(wide("low"), /<text>Sonnet 5\.5<\/>/);
+	assert.doesNotMatch(wide("low"), /<b><text>/);
+	assert.match(wide("medium"), /<b><thinkingMedium>md<\/><\/b>/);
+	assert.match(wide("low"), /<thinkingLow>lo<\/>/);
+	assert.doesNotMatch(wide("low"), /<b><thinkingLow>/);
+	setModelLookup(undefined);
 });
 
 it("shows verdict labels with semantic colors", () => {
@@ -199,4 +214,20 @@ it("does not repaint the remaining cards at an unchanged width and refreshes aft
 		assert.ok(refreshed.every((row) => strip(row).length <= 60));
 		assert.ok(squash(refreshed.join(" ")).includes(squash(answer)));
 	}
+});
+
+it("takes the model names from the registry of the started session", () => {
+	setModelLookup(undefined);
+	const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
+	const renderers = new Map<string, MessageRenderer>();
+	agentUi({
+		on: (name: string, handler: (event: unknown, ctx: unknown) => void) => handlers.set(name, handler),
+		registerMessageRenderer: (name: string, renderer: MessageRenderer) => renderers.set(name, renderer),
+		registerToolRenderer() {},
+	} as never);
+	const registry = { find: (_provider: string, id: string) => ({ id, name: "Claude Sonnet 5.5" }) };
+	handlers.get("session_start")!({ type: "session_start" }, { modelRegistry: registry });
+	const input = message("agent", "[agent#3] Done", { outcome: "finished", model: "anthropic/claude-sonnet-5-5", thinking: "medium" });
+	assert.equal(renderers.get("agent")!(input as never, { expanded: false, outputPad: 0 }, identity as never)!.render(80)[0], "agent#3 finished · Sonnet 5.5 md");
+	setModelLookup(undefined);
 });

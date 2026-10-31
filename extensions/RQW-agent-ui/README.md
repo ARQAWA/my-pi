@@ -91,7 +91,7 @@ agent#3 finished · opus-5-5 medium · 42s
   optional `title`, one line, muted; it gets only the width the rest of the header leaves and is cut with `…`, or left
   out below two cells), then the status `finished` / `failed` from `details.outcome` (nothing when absent, neutral),
   then ` · <model> <effort>` and ` · <seconds>` when `details` supplies them. Unknown or unusable parts are left out; no details at all gives just `agent#3`.
-- Model: `anthropic/claude-opus-5-5` shows as `opus-5-5` (only the `claude-` prefix is dropped); any other `provider/id` shows as `id`. Seconds: `42s`, `12.3s`,
+- Model: shown as its picker label, looked up once per model string in the Pi model registry captured at session start (name without `Claude `, e.g. `Sonnet 5.5`, `GPT-6.1 Terra`), in the `text` colour, not bold; an unknown model shows its id without the provider (and without `claude-`). Effort: the status-bar short label (`no`, `min`, `lo`, `md`, `hi`, `xh`, `mx`). Seconds: `42s`, `12.3s`,
   `1m 05s`.
 - Below the header the tail of the answer: its last 400 characters as plain text on one line, indented, cut at the front with `…`.
 
@@ -132,7 +132,7 @@ its colors and counts describe only the stored text.
 ## Colors
 
 Only the supplied Pi theme is painted with semantic colors, nothing hardcoded: header muted, `finished` `success`, `failed` and the answer of
-a failed run `error`, model and seconds `dim`. The effort uses Pi's own per-level theme tokens (`thinkingLow` to `thinkingMax`, the ones that colour the editor border by
+a failed run `error`, seconds `dim`, the model `text`, plain. The effort uses Pi's own per-level theme tokens (`thinkingLow` to `thinkingMax`, the ones that colour the editor border by
 level): `low`, `minimal` and `off` `thinkingLow`, plain; `medium` `thinkingMedium`, `high` `thinkingHigh`, `xhigh`
 `thinkingXhigh`, `max` `thinkingMax`, all bold. An unknown level is painted like `low`. The exact hue comes from the active theme (in
 RQW-theme: green, gold, purple, red).

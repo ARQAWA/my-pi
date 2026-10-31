@@ -5,7 +5,7 @@
 // Ctrl+O shows the full answer: expanded cards over tool-ui, original result text standalone. Only per-call public
 // renderer state is kept; no subscription, timer, process or session reference survives a switch or /reload.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { CARD_TYPES, type CardDetails, createAgentCard } from "./card.ts";
+import { CARD_TYPES, type CardDetails, createAgentCard, setModelLookup } from "./card.ts";
 import { createChildWaitCard } from "./child-wait.ts";
 import { createNotificationCard } from "./notification.ts";
 import { createReviewCard } from "./review.ts";
@@ -13,6 +13,7 @@ import { WAIT_TOOLS, waitResultRenderer } from "./wait.ts";
 import { selfShellWaitRenderers } from "./self.ts";
 
 export default function agentUi(pi: ExtensionAPI): void {
+	pi.on("session_start", (_event, ctx) => setModelLookup(ctx.modelRegistry));
 	for (const type of CARD_TYPES) pi.registerMessageRenderer<CardDetails>(type, createAgentCard);
 	pi.registerMessageRenderer("child_wait", (message, options, theme) =>
 		createChildWaitCard(message, options, theme) ?? createNotificationCard(message, options, theme));
