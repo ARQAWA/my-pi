@@ -45,7 +45,7 @@ type Entry = { type: string; id: string; parentId: string | null; summary?: stri
 /** Every panel a test opened; closed after each test so no spinner timer outlives it. */
 const panels = new Set<{ panel?: Panel; closed: boolean }>();
 
-function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replies = [] as Reply[], tree = [] as Entry[], rows = 30, mode = "tui" } = {}) {
+function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replies = [] as Reply[], tree = [] as Entry[], rows = 30, mode = "tui", resumed = false } = {}) {
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
 	const commands = new Map<string, { handler(args: string, ctx: unknown): Promise<void> }>();
 	const events = createEventBus();
@@ -62,6 +62,7 @@ function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replie
 	} as unknown as ExtensionAPI);
 
 	const entries = [{ type: "message", id: "e1", message: USER }];
+	if (resumed) entries.push({ type: "message", id: "e2", message: text("Earlier answer") });
 	let sessionId = "main";
 	const state = { projection, prompt: "CURRENT PROMPT", leaf: tree.at(-1)?.id ?? null };
 	const sessionManager = {
@@ -87,6 +88,17 @@ function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replie
 	const agent = { streamFunction: original as unknown };
 	const session = Object.create(AgentSession.prototype) as AgentSession;
 	Object.defineProperties(session, { sessionManager: { value: sessionManager }, agent: { value: agent } });
+	if (resumed) {
+		Object.defineProperties(session, {
+			_baseSystemPromptOptions: { value: {} },
+			_runSystemPromptOptions: { value: undefined, writable: true },
+			_hiddenDeclarations: { value: new Set() },
+			getActiveToolNames: { value: () => ["read"] },
+			// Pi before its first run: the getter builds the stock prompt from the base options.
+			systemPrompt: { get() { return (this._runSystemPromptOptions as { forceSystemPrompt?: string } | undefined)?.forceSystemPrompt ?? "STOCK PI PROMPT"; } },
+		});
+		events.on("rqw-prompt:startup-projection", data => { (data as { options: { forceSystemPrompt?: string } }).options.forceSystemPrompt = "RQW PROMPT"; });
+	}
 
 	const forks: Fork[] = [];
 	const provider: Request[] = [];
@@ -98,7 +110,8 @@ function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replie
 	const ctx = {
 		mode, model: MODEL, sessionManager,
 		isIdle: () => (session as unknown as { isIdle: boolean }).isIdle,
-		getSystemPrompt: () => state.prompt,
+		// Right after a resume Pi's own getter answers: its stock prompt, until another extension sets one.
+		getSystemPrompt: () => resumed && state.prompt === "CURRENT PROMPT" ? (session as unknown as { systemPrompt: string }).systemPrompt : state.prompt,
 		modelRegistry: {
 			streamSimple(model: Model<Api>, context: Context, options: Record<string, unknown>) {
 				provider.push({ model, context, options });
@@ -147,6 +160,25 @@ describe("RQW-btw", () => {
 	afterEach(() => {
 		for (const popup of panels) if (popup.panel && !popup.closed) popup.panel.handleInput("\x1b");
 		panels.clear();
+	});
+
+	it("uses the startup prompt after resuming before the first main request", async () => {
+		const earlier = text("Earlier answer");
+		const h = harness({ resumed: true, projection: [USER, earlier] });
+		await h.btw("question?");
+		assert.equal(h.provider[0].context.messages[0].content, "RQW PROMPT");
+		assert.deepEqual(h.provider[0].context.messages.slice(1, 3), [USER, earlier]);
+
+		h.request({ messages: [SYSTEM, USER] });
+		await h.btw("next?");
+		assert.equal(h.forks[0].context.messages[0].content, "MAIN PROMPT");
+	});
+
+	it("keeps a prompt another extension set after resuming before the first main request", async () => {
+		const h = harness({ resumed: true });
+		h.state.prompt = "PROMPT SET BY ANOTHER EXTENSION";
+		await h.btw("question?");
+		assert.equal(h.provider[0].context.messages[0].content, "PROMPT SET BY ANOTHER EXTENSION");
 	});
 
 	it("forks the last main request while the agent works and leaves the session and the next main request unchanged", async () => {
