@@ -47,6 +47,12 @@ const TERMINAL_TYPES: ReadonlySet<string> = new Set(["response.completed", "resp
 const STICKY_TURN_STATE = "x-codex-turn-state";
 const WS_START_MS = "x-codex-ws-stream-request-start-ms";
 
+/** What an SSE read resolves to when a waiting steering message releases the response early. */
+const PREEMPTED = Symbol("rqw-codex:preempted");
+
+/** Internal: the SSE read of the response was released for a steering message. It never reaches Pi as an error. */
+class Preempted extends Error {}
+
 /** Raw completed-item state supplied by the caller (for example a durable session store). */
 export interface RawItemHistory {
 	/** Raw completed backend items keyed by response id, as they were received. */
@@ -142,6 +148,21 @@ interface AttemptState {
 	responseId: string | undefined;
 	/** Only normal turn requests write raw items to the durable history; compaction candidates and prewarms never do. */
 	durable: boolean;
+	/** WebSocket attempt of a normal stream: the socket that takes the native Drain. */
+	socket?: CodexSocket;
+	/** SSE attempt of a normal stream: releases the read. The promise settles with PREEMPTED when it does. */
+	release?: () => void;
+	preempted?: Promise<typeof PREEMPTED>;
+	/** The attempt was already ended early: one interrupt per response. */
+	endedEarly?: boolean;
+	/** The attempt is over (terminal event handed out, or any other exit): a late steering message does not touch it. */
+	ended?: boolean;
+}
+
+/** The normal stream in flight: a user steering message waits in Pi (nudged) and the attempt that may end early. */
+interface Flight {
+	nudged: boolean;
+	attempt?: AttemptState;
 }
 
 interface AttemptResult {
@@ -414,6 +435,7 @@ export class CodexThreadTransport {
 	/** Retry delay owed before the next backend request after a tool handoff (scheduled after Pi's tools). */
 	#handoffDelayMs = 0;
 	#lastTurn: PreparedTurn | undefined;
+	#flight: Flight | undefined;
 
 	constructor(options: TransportOptions) {
 		// This transport is the ordinary subscription login (storeOAuth, account validated): the auth profile is fixed here.
@@ -475,6 +497,8 @@ export class CodexThreadTransport {
 		const pump = new LiveResponsesPump({ model, stream: outer, output: this.#emptyOutput(model), parserOptions: { grammarToolInputProperties: grammar } });
 		const linked = linkSignals([options.signal, this.#lifetime.signal]);
 		const signal = linked.signal;
+		const flight: Flight = { nudged: false };
+		this.#flight = flight;
 		const run = (async () => {
 			if (this.#disposed) throw new CodexError({ kind: "fatal" });
 			await this.#waitPrewarm(signal);
@@ -498,6 +522,44 @@ export class CodexThreadTransport {
 			},
 		);
 		return outer;
+	}
+
+	/**
+	 * A user steering message was queued in Pi: the response being read ends early, so the next request carries it. A WebSocket
+	 * response gets the native Drain (response.interrupt, read on to its terminal event); an SSE response is released and ends with
+	 * the items it completed. A response without an id yet is ended when response.created arrives. Without a stream in flight nothing
+	 * happens: Pi reads the steering message at the next tool boundary. Every pinned model is Lite (profile.ts), the only kind that takes Drain.
+	 */
+	nudge(): void {
+		const flight = this.#flight;
+		if (!flight) return;
+		flight.nudged = true;
+		this.#endEarly(flight);
+	}
+
+	#endEarly(flight: Flight): void {
+		const attempt = flight.attempt;
+		if (!flight.nudged || !attempt || attempt.ended || attempt.endedEarly || attempt.responseId === undefined) return;
+		attempt.endedEarly = true;
+		if (attempt.release) {
+			attempt.release();
+			return;
+		}
+		const socket = attempt.socket;
+		if (!socket?.isOpen) return;
+		// A broken Drain retires the socket, which the read loop reports through the ordinary retry policy.
+		void (async () => socket.interrupt(attempt.responseId as string, { mode: "drain" }))().catch(() => undefined);
+	}
+
+	/** The SSE read was released for a steering message: what completed ends the response as an ordinary stop or toolUse. */
+	async #finishPreempted(pump: LiveResponsesPump): Promise<void> {
+		await pump.retryBoundary();
+		const responseId = pump.output.responseId;
+		if (responseId !== undefined) this.#recordOutputs(responseId, pump.completedRawItems as WireItem[]);
+		const content = completedContent(pump.completedRawItems, pump.grammarToolInputProperties);
+		this.#completedOnce = true;
+		this.#resetTurn();
+		await pump.finish({ reason: content.some((block) => block.type === "toolCall") ? "toolUse" : "stop", completedContent: content });
 	}
 
 	/** Capture synchronously; inference owns a fresh transport and in-memory ledger, not this thread's continuation. */
@@ -1047,6 +1109,10 @@ export class CodexThreadTransport {
 						});
 				return await this.#finish(result, logical, pump);
 			} catch (raw) {
+				if (raw instanceof Preempted) {
+					await this.#finishPreempted(pump);
+					return;
+				}
 				if (isAbort(raw, signal)) throw abortError();
 				if (raw instanceof LocalRequestError && pump.completedRawItems.length === 0) throw raw;
 				const error = toCodexError(raw, this.#clock.now());
@@ -1184,6 +1250,18 @@ export class CodexThreadTransport {
 			// The saved owner is re-read before each HTTP attempt, after any retry delay; the fresh same-owner grant is used.
 			const cred = await this.#confirmOwner(ctx.cred, ctx.signal);
 			const state = newState(true);
+			// A steering message releases only this request: its own signal, on top of the caller's.
+			const release = new AbortController();
+			const request = linkSignals([ctx.signal, release.signal]);
+			let fire = () => {};
+			state.preempted = new Promise<typeof PREEMPTED>((resolve) => {
+				fire = () => resolve(PREEMPTED);
+			});
+			state.release = () => {
+				fire();
+				release.abort();
+			};
+			if (this.#flight) this.#flight.attempt = state;
 			try {
 				const gate: HeadGate = { failed: false, pending: undefined };
 				const source = gatedEvents((this.#deps.postEvents ?? postEvents)({
@@ -1191,7 +1269,7 @@ export class CodexThreadTransport {
 					headers: this.#sseHeaders(cred, ctx.options, ctx.requestKind, body),
 					body: payload,
 					fetch: this.#deps.fetch,
-					signal: ctx.signal,
+					signal: request.signal,
 					onResponse: (head) => this.#onHead(head, ctx.options, ctx.model, gate),
 				}), gate);
 				const terminal = await this.#collect(source, state, ctx.options, ctx.model, ctx.signal, undefined, ctx.pump);
@@ -1201,6 +1279,8 @@ export class CodexThreadTransport {
 				const decision = http.next(toCodexError(raw, this.#clock.now()));
 				if (!decision.retry) throw raw;
 				await sleepAbortable(decision.delayMs, ctx.signal, this.#deps.sleep);
+			} finally {
+				request.release();
 			}
 		}
 	}
@@ -1214,6 +1294,8 @@ export class CodexThreadTransport {
 		const prepared = this.#continuation.prepare(body, socket.socketIdentity);
 		const wire = prepared.mode === "incremental" ? prepared.body : body;
 		const state = newState(true);
+		state.socket = socket;
+		if (this.#flight) this.#flight.attempt = state;
 		await this.#send(socket, { type: "response.create", ...wire, client_metadata: this.#wsMetadata(wire, this.#clock.now()) }, ctx.signal, ctx.cred);
 		const terminal = await this.#collect(socket.events(), state, ctx.options, ctx.model, ctx.signal, socket, ctx.pump);
 		return { terminal, events: state.events, responseId: state.responseId, socketId: socket.socketIdentity, body };
@@ -1407,7 +1489,11 @@ export class CodexThreadTransport {
 			for (;;) {
 				reading = true;
 				// The read races the caller signal: a source that never ends (a silent socket, a stalled stream) cannot hold an abort.
-				const step = await untilAborted(iterator.next(), signal);
+				const read = untilAborted(iterator.next(), signal);
+				// An SSE response released for a steering message ends here; its pending read fails quietly with the released request.
+				if (state.preempted) read.catch(() => undefined);
+				const step = state.preempted ? await Promise.race([read, state.preempted]) : await read;
+				if (step === PREEMPTED) throw new Preempted();
 				reading = false;
 				if (step.done) break;
 				if (signal.aborted) throw abortError();
@@ -1427,6 +1513,7 @@ export class CodexThreadTransport {
 				if (event.type === "response.created") {
 					const id = (event.response as { id?: unknown } | undefined)?.id;
 					if (typeof id === "string") state.responseId = id;
+					if (this.#flight?.attempt === state) this.#endEarly(this.#flight);
 				}
 				if (state.durable && event.type === "response.output_item.done" && state.responseId !== undefined && typeof event.item === "object" && event.item !== null) {
 					this.#history?.recordItem?.(state.responseId, structuredClone(event.item) as WireItem);
@@ -1449,7 +1536,7 @@ export class CodexThreadTransport {
 				if (terminal) return;
 			}
 		} catch (error) {
-			if (error instanceof LocalRequestError) throw error;
+			if (error instanceof LocalRequestError || error instanceof Preempted) throw error;
 			if (isAbort(error, signal)) throw abortError();
 			// A socket here already passed the upgrade, even if response.created has not arrived yet.
 			throw toCodexError(error, this.#clock.now(), socket ? "established" : "connecting").withPartial(completedRawItems(state.events));
@@ -1457,6 +1544,7 @@ export class CodexThreadTransport {
 			// Any exit before the terminal was accepted (hook or parser refusal, early consumer return, end or failure of the source,
 			// abort) can leave unread frames on the socket: it is retired and never reused.
 			if (socket && !accepted) this.#retire(socket);
+			state.ended = true;
 			detach();
 			if (!reading) await iterator.return?.(undefined).catch(() => undefined);
 		}

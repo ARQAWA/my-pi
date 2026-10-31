@@ -7066,3 +7066,21 @@ Source: `81dadcf3:DECISIONS.md`. Archived by the keys-steer change; exact commit
 Verbatim replaced text:
 
 > Not in this part: Ctrl+Enter steering, the Codex quick steer and the hints in the editor.
+
+## A-0400 · archived 2026-10-31 · Send now · `[D-KEYS-ESC]` not in this part (Codex quick steer)
+
+Status: SUPERSEDED by `[D-CODEX-STEER]` (DECISIONS.md#codex-subscription-transport): the Codex quick steer is now part 3.
+Source: `c8e8ceee:DECISIONS.md`. Archived by the keys-codex change; exact commit: `git log -S'A-0400' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> Not in this part: the Codex quick steer and the hints in the editor (Ctrl+Enter steering is `[D-KEYS-STEER]`).
+
+## A-0401 · archived 2026-10-31 · Send now · `[D-KEYS-STEER]` later parts
+
+Status: SUPERSEDED by `[D-CODEX-STEER]` (DECISIONS.md#codex-subscription-transport): the Codex quick steer is now part 3; the hints stay a later part.
+Source: `c8e8ceee:DECISIONS.md`. Archived by the keys-codex change; exact commit: `git log -S'A-0401' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> The Codex quick
+>   steer (instant interrupt through the socket) and the hints are later parts; the VS Code Ctrl+Enter sequence ships
+>   with PCLI.

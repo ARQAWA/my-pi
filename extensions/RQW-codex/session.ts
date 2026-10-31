@@ -38,6 +38,8 @@ export interface SessionTransport {
 	/** Raw native send of one caller-built request (compaction). Required for backend compaction; absent means compaction refuses. */
 	sendRaw?(args: SendRawOptions): AsyncIterable<Record<string, unknown>>;
 	contextFork?(request: ContextForkRequest): (() => Promise<AssistantMessage>) | undefined;
+	/** A user steering message was queued in Pi: the response in flight ends early (native Drain, or an SSE release). */
+	nudge?(): void;
 	dispose(): void;
 }
 
@@ -982,10 +984,16 @@ export function createSessionController(options: SessionControllerOptions): Sess
 	// Automatic idle prewarm, after the controller exists (the deferred check reads it only when it fires). One public listener:
 	// agent_start / compaction_start arm; agent_settled (Pi _emitAgentSettled: after retries, compaction and queue, not agent_end) and
 	// a successful compaction_end schedule ONE zero-delay check. Only that check consumes the arm, and only when actually idle.
+	// The same listener sees the steering queue (Pi's queue_update, emitted by a real enqueue only): a longer queue is a new steering message.
+	let queuedSteers = 0;
 	unsubscribeAuto = typeof session.subscribe === "function" ? session.subscribe((event) => {
 		if (released) return;
-		const item = event as { type: string; aborted?: boolean; result?: unknown };
-		if (item.type === "agent_start" || item.type === "compaction_start") armAuto();
+		const item = event as { type: string; aborted?: boolean; result?: unknown; steering?: readonly unknown[] };
+		if (item.type === "queue_update") {
+			const count = item.steering?.length ?? 0;
+			if (count > queuedSteers) transport?.nudge?.();
+			queuedSteers = count;
+		} else if (item.type === "agent_start" || item.type === "compaction_start") armAuto();
 		else if (item.type === "agent_settled") {
 			// An aborted settled never warms automatically; the arm is dropped until the next start.
 			if (item.aborted) {

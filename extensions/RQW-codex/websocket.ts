@@ -292,6 +292,8 @@ class Connection implements CodexSocket {
 	private idleTimer: ReturnType<typeof setTimeout> | undefined;
 	private pending: PendingInterrupt | undefined;
 	private consumed = false;
+	// A terminal event of the current response has reached the socket (reset by the next send): a Drain would be late.
+	private terminalSeen = false;
 	private readonly items: Item[] = [];
 	private wake: (() => void) | undefined;
 	private openWaiter: { resolve: () => void; reject: (error: Error) => void } | undefined;
@@ -446,7 +448,10 @@ class Connection implements CodexSocket {
 		const type = typeof value.type === "string" ? value.type : "";
 		// Native ignores unclassified wrappers without ending the read or interrupt drain.
 		if (type === "error" && classifyEvent(value) === null) return;
-		if (TERMINAL_TYPES.has(type)) this.stopIdle();
+		if (TERMINAL_TYPES.has(type)) {
+			this.terminalSeen = true;
+			this.stopIdle();
+		}
 		this.push({ kind: "event", event: { text, value } });
 		this.observeInterrupt(type, value);
 	}
@@ -548,6 +553,7 @@ class Connection implements CodexSocket {
 	async send(object: unknown): Promise<void> {
 		if (!this.isOpen) throw new SocketError(undefined, {}, "websocket is not open", "closed");
 		const text = JSON.stringify(object);
+		this.terminalSeen = false;
 		this.armed = true;
 		this.armIdle();
 		try {
@@ -562,6 +568,8 @@ class Connection implements CodexSocket {
 	// deadline. Without a mode nothing is sent and the socket stays as it is (the caller then closes it).
 	async interrupt(responseId: string, mode: InterruptMode, signal?: AbortSignal): Promise<InterruptResult> {
 		if (!this.isOpen) throw new SocketError(undefined, {}, "websocket is not open", "closed");
+		// The response is already over: nothing to interrupt, and no pending interruption may be left for the next response.
+		if (this.terminalSeen) return { acknowledged: false, completed: false };
 		if (this.pending) throw new SocketError(undefined, {}, "an interruption is already pending", "interrupt-failed");
 		if (mode?.mode !== "drain" && mode?.mode !== "cancel") {
 			throw new SocketError(undefined, {}, "interrupt needs an explicit mode: drain, or cancel with a deadline", "interrupt-failed");
