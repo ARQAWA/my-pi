@@ -30,11 +30,11 @@ describe("RQW-models public selection", () => {
 		picker.handleInput("\r");
 		assert.equal(selected, models[1]);
 	});
-	it("does not offer or list Kimi models", () => {
-		const kimi = [model("kimi-for-coding", "kimi-coding"), model("k3.1-pro", "kimi-coding")];
+	it("does not offer or list unlisted provider models", () => {
+		const other = [model("other-model", "other-provider"), model("other-model-pro", "other-provider")];
 		const opus = model("claude-opus-5-5");
-		assert.deepEqual(pickerModels([...kimi, opus]), [opus]);
-		for (const entry of kimi) assert.equal(isListed(entry), false);
+		assert.deepEqual(pickerModels([...other, opus]), [opus]);
+		for (const entry of other) assert.equal(isListed(entry), false);
 	});
 	it("registers Terra with its limits and picker order", () => {
 		let catalog: Model<string>[] = [];
