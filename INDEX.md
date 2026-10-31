@@ -7,6 +7,7 @@
 - [extensions/](extensions/): independent package extensions and native theme data.
 - [extensions/RQW-codex-compat/](extensions/RQW-codex-compat/README.md): Codex skill roots, rules, instructions and compatibility matrix.
 - [extensions/RQW-tabs-link/](extensions/RQW-tabs-link/README.md): chat-to-chat tools for visible main Pi tabs.
+- [extensions/RQW-predictions/](extensions/RQW-predictions/README.md): gray next-message suggestion in the main input, Ctrl+E and Ctrl+R.
 - [test/](test/): extension and repository tests.
 - [scripts/](scripts/): CI watcher and status tools.
 - [pcli-vscode/](pcli-vscode/): bundled Windows VS Code terminal extension.
