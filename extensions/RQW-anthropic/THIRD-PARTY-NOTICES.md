@@ -1,9 +1,9 @@
 # Third-party notices
 
-The Claude Code billing format, fingerprint salt, checksum seed, version recovery policy and refresh header constants
+The Claude Code billing format, fingerprint salt, version recovery policy and refresh header constants
 in this extension are adapted from [oh-my-pi](https://github.com/can1357/oh-my-pi), inspected at the owner's local
 checkout: `packages/ai/src/providers/anthropic.ts`, `claude-code-fingerprint.ts`, and
-`packages/catalog/src/compat/rules/auth/anthropic.kdl`. The portable checksum implementation follows XXH64.
+`packages/catalog/src/compat/rules/auth/anthropic.kdl`.
 The Anthropic login implementation is delegated to the installed Pi, not copied here.
 
 The installed edxeth/pi-claude-auth 1.3.0 was a read-only research source. None of its source is vendored.

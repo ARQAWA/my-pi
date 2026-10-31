@@ -5,7 +5,7 @@ import { InMemoryCredentialStore, normalizeContext, type OAuthCredential, type S
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { recoverCredential, refreshCredential, TOKEN_URL } from "../../../extensions/RQW-anthropic/auth.ts";
 import { createOverlay, subscriptionFetch } from "../../../extensions/RQW-anthropic/transport.ts";
-import { billingBody, IDENTITY, versionState, xxh64 } from "../../../extensions/RQW-anthropic/wire.ts";
+import { billingBody, IDENTITY, versionState } from "../../../extensions/RQW-anthropic/wire.ts";
 
 const ACCESS = "sk-ant-oat01-fake-old";
 const NEXT = "sk-ant-oat01-fake-new";
@@ -36,15 +36,27 @@ async function store() {
 	return value;
 }
 
-it("adds a valid billing header without changing the request content", () => {
+it("adds the captured Claude Code billing block without cch and without changing the request content", () => {
 	const body = JSON.parse(billingBody(raw, "2.1.280", "session", "device"));
 	assert.equal(body.system[1].text, IDENTITY);
 	assert.equal(body.system[2].text, "Keep this instruction");
 	assert.deepEqual(body.messages, JSON.parse(raw).messages);
 	assert.deepEqual(JSON.parse(body.metadata.user_id), { device_id: "device", session_id: "session" });
-	const digest = /cch=([0-9a-f]{5})/.exec(body.system[0].text)![1];
-	body.system[0].text = body.system[0].text.replace(`cch=${digest}`, "cch=00000");
-	assert.equal(digest, (xxh64(new TextEncoder().encode(JSON.stringify(body)), 0x4d659218e32a3268n) & 0xfffffn).toString(16).padStart(5, "0"));
+});
+
+// Regression: real Claude Code 2.1.301 and 2.1.314 requests carry no cch field.
+it("sends the billing block exactly as captured, with no cch", async () => {
+	let sent = "";
+	const transport: typeof fetch = async (_input, init) => {
+		sent = String(init?.body);
+		return new Response("ok");
+	};
+	await subscriptionFetch(transport, await store(), versionState("2.1.280"), "session", "device")(url, {
+		method: "POST", body: raw, headers: { authorization: `Bearer ${ACCESS}` },
+	});
+	const body = JSON.parse(sent);
+	assert.equal(body.system[0].text, "x-anthropic-billing-header: cc_version=2.1.280.6f9; cc_entrypoint=cli;");
+	assert.equal(body.system[0].text.includes("cch"), false);
 });
 
 it("refreshes a rejected saved bearer and replays the request", async () => {
