@@ -67,10 +67,9 @@ export function splitPrefix(type: string, text: string): { id?: string; body: st
 	return match ? { id: match[1], body: text.slice(match[0].length) } : { body: text };
 }
 
-/** `anthropic/claude-opus-5-5` → `opus`; any other `provider/id` → `id`. */
+/** `anthropic/claude-sonnet-5-5` → `sonnet-5-5`; any other `provider/id` → `id`. */
 export function shortModel(model: string): string {
-	const id = model.slice(model.lastIndexOf("/") + 1);
-	return /^claude-([a-z]+)/.exec(id)?.[1] ?? id;
+	return model.slice(model.lastIndexOf("/") + 1).replace(/^claude-/, "");
 }
 
 /** `42`→`42s`, `12.3`→`12.3s`, `65`→`1m 05s`; undefined for anything that is not a finite number ≥ 0. */

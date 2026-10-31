@@ -17,9 +17,18 @@ it("renders collapsed and expanded agent answers", () => {
 		outcome: "finished", model: "anthropic/claude-opus-5-5", thinking: "medium", seconds: 42,
 	});
 	const collapsed = createAgentCard(input as never, { expanded: false, outputPad: 0 }, identity as never)!;
-	assert.deepEqual(collapsed.render(80), ["agent#3 finished · opus medium · 42s", "  First Second"]);
+	assert.deepEqual(collapsed.render(80), ["agent#3 finished · opus-5-5 medium · 42s", "  First Second"]);
 	const expanded = createAgentCard(input as never, { expanded: true, outputPad: 0 }, identity as never)!;
-	assert.deepEqual(expanded.render(80), ["agent#3 finished · opus medium · 42s", "  First", "  Second"]);
+	assert.deepEqual(expanded.render(80), ["agent#3 finished · opus-5-5 medium · 42s", "  First", "  Second"]);
+});
+
+it("drops only the claude prefix from the model in the card", () => {
+	const render = (model: string) => {
+		const input = message("agent", "[agent#3] Done", { outcome: "finished", model, thinking: "high", seconds: 5 });
+		return createAgentCard(input as never, { expanded: false, outputPad: 0 }, identity as never)!.render(80)[0];
+	};
+	assert.equal(render("anthropic/claude-sonnet-5-5"), "agent#3 finished · sonnet-5-5 high · 5s");
+	assert.equal(render("openai-codex/gpt-6.1-terra"), "agent#3 finished · gpt-6.1-terra high · 5s");
 });
 
 it("shows verdict labels with semantic colors", () => {

@@ -83,7 +83,7 @@ A finished answer starting with `CLEAN` or `FINDINGS:` shows its green or red ve
 Collapsed, two rows:
 
 ```
-agent#3 finished · opus medium · 42s
+agent#3 finished · opus-5-5 medium · 42s
   Проверил отступы.
 ```
 
@@ -91,7 +91,7 @@ agent#3 finished · opus medium · 42s
   optional `title`, one line, muted; it gets only the width the rest of the header leaves and is cut with `…`, or left
   out below two cells), then the status `finished` / `failed` from `details.outcome` (nothing when absent, neutral),
   then ` · <model> <effort>` and ` · <seconds>` when `details` supplies them. Unknown or unusable parts are left out; no details at all gives just `agent#3`.
-- Model: `anthropic/claude-opus-5-5` shows as `opus`; any other `provider/id` shows as `id`. Seconds: `42s`, `12.3s`,
+- Model: `anthropic/claude-opus-5-5` shows as `opus-5-5` (only the `claude-` prefix is dropped); any other `provider/id` shows as `id`. Seconds: `42s`, `12.3s`,
   `1m 05s`.
 - Below the header the tail of the answer: its last 400 characters as plain text on one line, indented, cut at the front with `…`.
 
