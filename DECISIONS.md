@@ -185,13 +185,14 @@ Provenance:
   (PROCESS.md, AGENTS.md, `.agents/**`) keep a branch and one spotty review, then go to main without runs. Executors run
   only the touched extension's tests; the release runs the full check once. One release takes all ready branches. A
   release with code waits for a green CI on release before main, because local checks run only on macOS, CI also runs
-  Windows and VDI takes code from main; text never waits for CI. CI is not polled; `qa-status` shows a red run. `pi update` runs only when `extensions/` or `package.json`
-  change. A re-review is done by a fresh reviewer that reads only the fix diff and the earlier findings. The coordinator
+  Windows and VDI takes code from main; text never waits for CI. CI is not polled; `qa-status` shows a red run. `pi update` runs on every release, right after release is pushed and before the CI wait and main.
+  A re-review is done by a fresh reviewer that reads only the fix diff and the earlier findings. The coordinator
   does `stop` in the same call as the next step.
   Owner, 2026-10-31: «При изменении просто записей текстовых не должно быть никаких выкаток, никаких CI, запусков и прочей хуйни. Ты что, ебанулся нахуй? Ты что? Это же супернеэффективность. Мы очень долго работали над супернеэффективностью, и ты её сохранил, ты её ещё до сих пор гоняешь и токены на это тратишь. Давай, разберись. У нас всё должно быть суперлегковесное, быстрое, производительное, реактивное максимально. Надо найти все эти неэффективности и устранить их»
   Owner: «Они все должны быть 100% verified»
   Coordinator asked: «1. Для выкаток с кодом ждём CI перед main, для текста не ждём. 2. Не ждём никогда, как в отчёте.» Owner: «1».
   Owner on the report's edits: «выбираю 1» (all edits as in the report).
+  Owner, 2026-10-31: «Всегда надо обновлять локальный Pi до выкатки на гпт» … «ой на гит»
   Reason: text changes gain nothing from runs, release or CI; repeated reviews from scratch and waiting loops only spend tokens.
   Carrier: [PROCESS.md](PROCESS.md). Since: process-efficiency.
 
