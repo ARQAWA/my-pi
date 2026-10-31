@@ -6,6 +6,8 @@ import { getKeybindings, isKeyRelease, isKeyRepeat, matchesKey, type TUI } from 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { installQueue, type Steer } from "./queue.ts";
 import { installQuiet } from "./quiet.ts";
+import { installHintEditor } from "./hint-editor.ts";
+import { installHintUI } from "./hint-ui.ts";
 
 /**
  * Custom entry type: the timestamp of a reply a force-send interrupted. Its status row is not drawn; unless `unsent`
@@ -68,12 +70,15 @@ export default function sendNow(pi: ExtensionAPI) {
 	let tui: FocusTUI | undefined;
 	const sources = new Map<any, () => void>();
 	let stopOffers: (() => void) | undefined;
+	let updateHint = () => {};
+	let stopHint = () => {};
 	const background = () => [...sources.keys()].some(source => { const counts = source.snapshot(); return (counts.agents ?? 0) > 0 || (counts.backgroundProcesses ?? 0) > 0; });
 	const adopt = (source: any) => {
 		if (!source || source.version !== 1 || typeof source.snapshot !== "function" || typeof source.subscribe !== "function" || sources.has(source)) return;
 		let ended = false;
-		const unsubscribe = source.subscribe((value: unknown) => { if (value === null) { ended = true; sources.get(source)?.(); sources.delete(source); } });
+		const unsubscribe = source.subscribe((value: unknown) => { if (value === null) { ended = true; sources.get(source)?.(); sources.delete(source); } updateHint(); });
 		if (ended) unsubscribe(); else sources.set(source, unsubscribe);
+		updateHint();
 	};
 	/** Timestamps of interrupted replies this extension force-sent past; their text is replayed to the model. */
 	let kept = new Set<number>();
@@ -223,6 +228,7 @@ export default function sendNow(pi: ExtensionAPI) {
 			quiet.add(message.timestamp);
 		}
 	});
+	pi.on("model_select", () => updateHint());
 	pi.on("tool_execution_end", (_event, ctx) => reassertBracketedPaste(ctx));
 	pi.on("agent_end", (_event, ctx) => reassertBracketedPaste(ctx));
 	pi.on("agent_settled", (_event, ctx) => reassertBracketedPaste(ctx));
@@ -255,6 +261,14 @@ export default function sendNow(pi: ExtensionAPI) {
 			stopOffers = pi.events.on("rqw:running-counts:offer", (offer: any) => { if (offer?.version === 1) adopt(offer.source); });
 			pi.events.emit("rqw:running-counts:request", { version: 1, reply: adopt });
 		}
+		let attachEditor = (_editor?: unknown) => {};
+		let currentEditor: unknown;
+		let editorSupported = () => false;
+		const hintUI = typeof ctx.ui.theme?.italic === "function" ? installHintUI(ctx.sessionManager, (editor) => {
+			currentEditor = editor;
+			attachEditor(editor);
+			pi.events.emit("rqw:editor-hint:editor-changed", { sessionId: ctx.sessionManager.getSessionId(), editor });
+		}, () => editorSupported()) : { release() {}, refresh() {} };
 		// The TUI is needed only to see what has focus; a widget factory is the public way to get it. Removed at once.
 		ctx.ui.setWidget(ENTRY, (instance) => {
 			tui = instance as FocusTUI;
@@ -262,9 +276,59 @@ export default function sendNow(pi: ExtensionAPI) {
 		}, { placement: "belowEditor" });
 		ctx.ui.setWidget(ENTRY, undefined);
 		unsubscribe = ctx.ui.onTerminalInput((data) => onKey(data, ctx));
+
+		if (typeof ctx.sessionManager.getSessionId !== "function") { hintUI.release(); return; }
+		const id = ctx.sessionManager.getSessionId();
+		let painter = false, brewing = false, compacting = false, retrying = false;
+		let hint: string | undefined;
+		const listeners = new Set<() => void>();
+		const editor = installHintEditor(() => painter ? undefined : hint, () => hintUI.refresh());
+		attachEditor = editor.attach;
+		editorSupported = editor.supported;
+		const source = { snapshot: () => hint, subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); } };
+		updateHint = () => {
+			const session = queue.session(ctx.sessionManager);
+			const tracked = queue.steering(ctx.sessionManager);
+			const steering = tracked ? Math.max(session?.getSteeringMessages()?.length ?? 0, tracked.queued + tracked.inflight) : 0;
+			const followUp = (session as any)?.getFollowUpMessages?.()?.length ?? (ctx.hasPendingMessages() ? 1 : 0);
+			const special = compacting || retrying || session?.isCompacting === true;
+			const working = !ctx.isIdle() || special;
+			const next = brewing ? "ctrl+r to interrupt"
+				: special ? "esc to interrupt"
+				: working && steering ? ctx.model?.provider === CODEX ? "ctrl+enter to send now" : "esc to send now"
+				: working ? "esc to interrupt"
+				: background() ? "esc esc to stop background"
+				: followUp ? "ctrl+enter to steer" : undefined;
+			if (hint === next) return;
+			hint = next;
+			for (const listener of listeners) listener();
+			editor.refresh();
+		};
+		const stopRequest = pi.events.on("rqw:editor-hint:request", (request: any) => { if (request?.sessionId === id) request.reply?.(source, currentEditor); });
+		const stopPainter = pi.events.on("rqw:editor-hint:painter", (event: any) => { if (event?.sessionId === id) { painter = event.active === true; editor.refresh(); } });
+		const stopActivity = pi.events.on("rqw-predictions:activity", (event: any) => { if (event?.sessionId === id) { brewing = event.state === "brewing"; updateHint(); } });
+		pi.events.emit("rqw:editor-hint:painter-query", { sessionId: id, reply: () => { painter = true; } });
+		const stopQueueWatch = queue.watch(ctx.sessionManager, updateHint);
+		const session = queue.session(ctx.sessionManager) as any;
+		let stopSessionEvents: (() => void) | undefined;
+		try { stopSessionEvents = session?.subscribe?.((event: any) => {
+			if (event.type === "compaction_start") compacting = true;
+			if (event.type === "compaction_end") compacting = false;
+			if (event.type === "auto_retry_start") retrying = true;
+			if (event.type === "auto_retry_end") retrying = false;
+			if (["queue_update", "agent_start", "agent_end", "agent_settled", "compaction_start", "compaction_end", "auto_retry_start", "auto_retry_end"].includes(event.type)) updateHint();
+		}); } catch { /* Unsupported session shape keeps Pi's behavior. */ }
+		if (typeof ctx.ui.theme?.italic === "function") editor.start(ctx);
+		updateHint();
+		pi.events.emit("rqw:editor-hint:offer", { sessionId: id, source });
+		stopHint = () => {
+			stopRequest(); stopPainter(); stopActivity(); stopQueueWatch(); stopSessionEvents?.();
+			listeners.clear(); editor.stop(); hintUI.release(); updateHint = () => {}; stopHint = () => {};
+		};
 	});
 
 	pi.on("session_shutdown", () => {
+		stopHint();
 		stopOffers?.(); stopOffers = undefined;
 		for (const unsubscribe of sources.values()) unsubscribe();
 		sources.clear();

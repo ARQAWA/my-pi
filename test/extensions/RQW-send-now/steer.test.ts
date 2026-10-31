@@ -306,7 +306,7 @@ it("a busy prompt that is a registered extension command is left to Pi", async (
 it("an incompatible queue shape leaves Ctrl+Enter and Escape to Pi", async (t) => {
 	const h = harness(t, { provider: "anthropic" });
 	await h.steer("waiting");
-	delete h.session._emitQueueUpdate;
+	h.session._emitQueueUpdate = undefined;
 	assert.equal(h.press(), undefined);
 	assert.equal(h.session.aborts, 0);
 	h.session._emitQueueUpdate = () => {};

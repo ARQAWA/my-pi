@@ -18,6 +18,10 @@ Nothing is sent by the extension; every other mode and every child session stays
 - The suggestion is kept until the next finished answer. Typing hides it, clearing the input shows the same one again.
   It is drawn whole and wrapped, in the theme's `dim` colour; the real buffer stays `""` until Tab.
   Tab inserts it as one undoable edit. Enter, Right, Shift+Tab and key releases do nothing special.
+- In an empty input the key hint is dim and italic, two spaces after the cursor. An idle chat with a saved Codex login
+  and an answer shows `ctrl+e to suggest`; a running request shows `ctrl+r to interrupt` instead of a ready suggestion.
+  RQW-send-now optionally supplies the current queue or work action. A ready suggestion replaces the idle hint and
+  stays non-italic. Typing, including a space, hides both. Hints never enter the buffer or history.
 
 ## Keys
 

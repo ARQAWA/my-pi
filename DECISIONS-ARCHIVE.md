@@ -7084,3 +7084,17 @@ Verbatim replaced text:
 > The Codex quick
 >   steer (instant interrupt through the socket) and the hints are later parts; the VS Code Ctrl+Enter sequence ships
 >   with PCLI.
+
+## A-0402 · archived 2026-10-31 · Send now · `[D-KEYS-ESC]` hints
+
+Status: SUPERSEDED by `[D-KEYS-HINTS]` (DECISIONS.md#send-now).
+Source: `c35a57c3:DECISIONS.md`. Verbatim replaced text:
+
+> Not in this part: the hints in the editor (Ctrl+Enter steering is `[D-KEYS-STEER]`, the Codex quick steer `[D-CODEX-STEER]`).
+
+## A-0403 · archived 2026-10-31 · Send now · `[D-KEYS-STEER]` hints
+
+Status: SUPERSEDED by `[D-KEYS-HINTS]` (DECISIONS.md#send-now).
+Source: `c35a57c3:DECISIONS.md`. Verbatim replaced text:
+
+> steer (instant interrupt through the socket) is `[D-CODEX-STEER]`; the hints are a later part; the VS Code Ctrl+Enter sequence ships

@@ -12,6 +12,8 @@ export type EditorActions = {
 	suggestion(): string | undefined;
 	/** False when the keys could not be freed from Pi's own actions: then they stay stock. */
 	hotkeys(): boolean;
+	/** The current key hint, never part of the editor buffer. */
+	hint(): string | undefined;
 };
 
 type FocusTUI = TUI & { getFocusedComponent(): unknown };
@@ -30,13 +32,15 @@ export function installEditor(actions: EditorActions) {
 	// The suggestion as the last render drew it: Tab takes only what was really shown.
 	let shown: string | undefined;
 	let cached: { text: string; width: number; padding: number; marker: string; paint: string; rows: string[] } | undefined;
+	let cachedHint: { text: string; width: number; padding: number; marker: string; theme: ExtensionContext["ui"]["theme"]; row: string } | undefined;
 	// Pi's own submit handler: every editor of the main chat, default or replaced, carries this exact function.
 	let mainSubmit: unknown;
 
 	/** The suggestion to show in this editor now, or undefined. */
 	function visible(editor: CustomEditor): string | undefined {
 		const text = actions.suggestion();
-		if (!text || !session || editor.getText() !== "") return undefined;
+		const hint = actions.hint();
+		if (!text || (hint && hint !== "ctrl+e to suggest") || !session || editor.getText() !== "") return undefined;
 		if (!session.isIdle() || session.hasPendingMessages() || editor.isShowingAutocomplete()) return undefined;
 		return tui?.getFocusedComponent() === editor ? text : undefined;
 	}
@@ -63,13 +67,24 @@ export function installEditor(actions: EditorActions) {
 	/** The empty editor's three rows with the middle one replaced; any other shape stays stock. */
 	function withSuggestion(editor: CustomEditor, rows: string[], width: number): string[] {
 		shown = undefined;
+		if (rows.length !== 3 || !session || editor.getText() !== "" || editor.isShowingAutocomplete() || tui?.getFocusedComponent() !== editor) return rows;
 		const text = visible(editor);
-		if (!text || rows.length !== 3) return rows;
 		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
 		const padding = Math.min((editor as unknown as EditorShape).getPaddingX(), maxPadding);
 		const marker = editor.focused && rows[1].includes(CURSOR_MARKER) ? CURSOR_MARKER : "";
-		shown = text;
-		return [rows[0], ...grayRows(text, width, padding, marker), rows[2]];
+		if (text) {
+			shown = text;
+			return [rows[0], ...grayRows(text, width, padding, marker), rows[2]];
+		}
+		const hint = actions.hint();
+		if (!hint || (hint === "ctrl+e to suggest" && (!session.isIdle() || session.hasPendingMessages())) || width - padding * 2 < 3 + visibleWidth(hint)) return rows;
+		const theme = session.ui.theme;
+		if (!cachedHint || cachedHint.text !== hint || cachedHint.width !== width || cachedHint.padding !== padding || cachedHint.marker !== marker || cachedHint.theme !== theme) {
+			const margin = " ".repeat(padding);
+			const fill = " ".repeat(width - padding * 2 - 3 - visibleWidth(hint));
+			cachedHint = { text: hint, width, padding, marker, theme, row: margin + marker + renderFakeCursor(" ") + "  " + theme.italic(theme.fg("dim", hint)) + fill + margin };
+		}
+		return [rows[0], cachedHint.row, rows[2]];
 	}
 
 	const gray = (line: string) => line === "" || !session ? line : session.ui.theme.fg("dim", line);
@@ -133,8 +148,8 @@ export function installEditor(actions: EditorActions) {
 	 * fixes Pi's submit handler (the focus may sit on the reload box at the start, so this can come later); a replaced
 	 * main editor carries the same handler. An editor without that wiring is never taken.
 	 */
-	function attach() {
-		const focused = tui?.getFocusedComponent();
+	function attach(replacement?: unknown) {
+		const focused = replacement ?? tui?.getFocusedComponent();
 		if (!(focused instanceof CustomEditor)) return;
 		if (mainSubmit === undefined && hasPiWiring(focused)) mainSubmit = focused.onSubmit;
 		if (mainSubmit === undefined || focused.onSubmit !== mainSubmit) return;
@@ -165,8 +180,10 @@ export function installEditor(actions: EditorActions) {
 			session = undefined;
 			shown = undefined;
 			cached = undefined;
+			cachedHint = undefined;
 			mainSubmit = undefined;
 		},
+		attach,
 		/** The suggestion changed: draw the editor again. */
 		refresh() {
 			tui?.requestRender();

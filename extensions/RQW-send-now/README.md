@@ -22,6 +22,17 @@ Steering keys and the silent force-send. Decisions and owner quotes:
 - In the TUI it also re-writes `\x1b[?2004h` (bracketed paste on) at `session_start`, after every `tool_execution_end` and at `agent_end` and `agent_settled`, so a child process that switched it off cannot turn pasted newlines into Enter.
 - Only in the interactive TUI. Print, JSON and RPC modes are unaffected.
 
+## Editor hints
+
+The empty main input shows one dim italic key hint, two spaces after the cursor. Priority is: prediction cancellation,
+waiting Codex steering, waiting other-provider steering, main interruption, background stop, and an idle follow-up.
+The exact texts are `ctrl+r to interrupt`, `ctrl+enter to send now`, `esc to send now`, `esc to interrupt`,
+`esc esc to stop background` and `ctrl+enter to steer`. Compaction and retry use `esc to interrupt`.
+Typed text, including a space, hides the hint. It is not input; Tab and Enter keep their own behavior.
+RQW-predictions paints the hint when available; otherwise this extension decorates the same editor instance.
+The old queue, hold and loader key hints are hidden while this painter is active and restored when it stops.
+The version-checked Pi UI patch leaves unsupported shapes stock.
+
 ## How
 
 No custom editor (RQW-statusbar owns that slot). A version-checked Pi 1.4.0 runtime hook (`queue.ts`) captures the owning session by its session manager, using weak references, and wraps `_queueUserInput`, `_queueSteer` and `prompt` on that session. The wrappers call whatever the prototype has at call time, so other wrappers stay; they are removed with the last lease, and the binding hook is restored when it is still on top. An incompatible shape disables the keys and leaves them to Pi. Check this hook on every Pi update, including Windows PCLI.
@@ -48,7 +59,7 @@ handler replays its text as a finished reply before the sent message. The choice
 - A force-send cancelled by a second Escape stays pending until the run has settled, then its text and any late
   steering return to the editor with a warning. The same happens when no model is selected. When the session ends
   (`/reload`, `/new`, `/resume`, quit) first, the reserved text returns at once and inputs still on their way are caught until they settle, then return after it; one that finds Pi's context already invalid is left to the session's own steering queue (the session survives `/reload`). A send Pi itself rejects later shows Pi's error.
-- The Codex quick steer (instant interrupt through the socket) and the key hints are later parts of the keys design.
+- Codex quick steering is owned by RQW-codex; it drains the current Lite response before the next request.
 - Pi's separate compaction queue is not visible to the force.
 
 ## Switch off

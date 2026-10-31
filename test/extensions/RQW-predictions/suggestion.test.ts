@@ -138,7 +138,7 @@ describe("RQW-predictions gray suggestion", () => {
 		assert.deepEqual(h.reached, [TAB]);
 	});
 
-	it("typing and Tab work while a new request is still open, and the old suggestion stays until the new one lands", async () => {
+	it("while a new request is open, its interrupt hint replaces the old suggestion", async () => {
 		const slow = deferred<ReturnType<typeof text>>();
 		const h = await ready("old one", { replies: [suggestion("old one"), slow.promise] });
 		h.key(CTRL_E);
@@ -146,9 +146,9 @@ describe("RQW-predictions gray suggestion", () => {
 		assert.equal(h.forks.length, 2);
 		h.key("x");
 		h.key("\x7f");
-		h.screen();
+		assert.equal(plain(h.screen()[1]).trim(), "ctrl+r to interrupt");
 		h.key(TAB);
-		assert.equal(h.editor.getText(), "old one");
+		assert.equal(h.editor.getText(), "");
 		slow.resolve(suggestion("new one"));
 		await settle();
 		assert.equal(h.controller.suggestion(), "new one");
@@ -156,7 +156,7 @@ describe("RQW-predictions gray suggestion", () => {
 
 	it("a null answer or ending the session leaves the editor stock", async () => {
 		const none = await ready(null);
-		assert.equal(plain(none.screen()[1]).trim(), "");
+		assert.equal(plain(none.screen()[1]).trim(), "ctrl+e to suggest");
 		const h = await ready();
 		h.fire("session_shutdown", { reason: "quit" });
 		assert.equal(plain(h.screen()[1]).includes("run the tests"), false);

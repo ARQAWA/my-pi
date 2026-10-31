@@ -22,6 +22,8 @@ export type Deps = {
 export type Controller = {
 	/** The ready suggestion, if any. */
 	suggestion(): string | undefined;
+	brewing(): boolean;
+	available(): boolean;
 	start(ctx: ExtensionContext): void;
 	stop(): void;
 	/** A turn ended: a new finished answer ends the old request and the old suggestion. Starts nothing. */
@@ -69,6 +71,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		if (!ctx) return;
 		const state = activity();
 		pi.events.emit(ACTIVITY, state);
+		deps.changed?.();
 		if (!consumer) ctx.ui.setStatus(STATUS_KEY, statusText(state.state));
 	}
 
@@ -145,6 +148,12 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 
 	return {
 		suggestion: () => ready,
+		brewing: () => current !== undefined,
+		available: () => {
+			if (!ctx || !ctx.model || !context.hasAnswer(ctx)) return false;
+			const status = ctx.modelRegistry.getProviderAuthStatus?.("openai-codex");
+			return status?.configured === true && status.source === "stored";
+		},
 		start(next) {
 			stop();
 			ctx = next;

@@ -11,6 +11,7 @@ export const ALT_ENTER = "\x1b\r";
 export function fakeSession(manager: object, onAbort: () => void, onRun: (trigger: any) => void = () => {}) {
 	const session: any = Object.create(AgentSession.prototype);
 	session.sessionManager = manager;
+	session._eventListeners = [];
 	session._steeringMessages = [];
 	session._followUpMessages = [];
 	session.emits = 0;

@@ -18,13 +18,13 @@ type Session = {
 	_extensionRunner?: { getCommand?(name: string): unknown };
 };
 /** Per session: the steering inputs still on their way into Pi's queue, and the sink that takes late ones during a force-send. */
-type Tracker = { inflight: Set<Promise<unknown>>; capture?: (steer: Steer) => boolean; own: Map<string, Function> };
+type Tracker = { inflight: Set<Promise<unknown>>; listeners: Set<() => void>; capture?: (steer: Steer) => boolean; own: Map<string, Function> };
 type State = { count: number; sessions: WeakMap<object, WeakRef<Session>>; trackers: WeakMap<Session, Tracker>; instrumented: Set<WeakRef<Session>>; wrapper: Function; original: PropertyDescriptor };
 type Prototype = Record<symbol, State | undefined>;
 type Queues = { display: string[]; delivery: unknown[]; emit: () => void };
 export type Force = { taken: Steer[]; aborted: Promise<void>; settled: Promise<void>; release(): void };
 
-const none = { start: (_identity: object, _text: string, _images: ImageContent[], _onStarted: () => void) => undefined as Promise<void> | undefined, session: (_identity: object) => undefined as Session | undefined, steering: (_identity: object) => undefined as { queued: number; inflight: number } | undefined, force: (_identity: object, _sink: (steer: Steer) => boolean) => undefined as Force | undefined, release() {} };
+const none = { start: (_identity: object, _text: string, _images: ImageContent[], _onStarted: () => void) => undefined as Promise<void> | undefined, session: (_identity: object) => undefined as Session | undefined, steering: (_identity: object) => undefined as { queued: number; inflight: number } | undefined, watch: (_identity: object, _listener: () => void) => () => {}, force: (_identity: object, _sink: (steer: Steer) => boolean) => undefined as Force | undefined, release() {} };
 
 /** Pi's queues as arrays, or undefined when their shape is not the 1.4.0 one. */
 function queuesOf(session: Session): Queues | undefined {
@@ -73,11 +73,13 @@ function instrument(state: State, session: Session) {
 	if (state.trackers.has(session)) return;
 	const prototype = Object.getPrototypeOf(session);
 	if (WRAPPED.some((name) => typeof prototype[name] !== "function")) return;
-	const tracker: Tracker = { inflight: new Set(), own: new Map() };
+	const tracker: Tracker = { inflight: new Set(), listeners: new Set(), own: new Map() };
 	const next = (name: string): Function => Object.getPrototypeOf(session)[name];
+	const notify = () => { for (const listener of tracker.listeners) { try { listener(); } catch { /* A display cannot break Pi's queue. */ } } };
 	const track = (run: Promise<unknown>) => {
 		tracker.inflight.add(run);
-		const done = () => { tracker.inflight.delete(run); };
+		notify();
+		const done = () => { tracker.inflight.delete(run); notify(); };
 		run.then(done, done);
 	};
 	tracker.own.set("_queueUserInput", function (this: Session, text: string, images: unknown, behavior: string, source: string) {
@@ -153,6 +155,11 @@ export function installQueue(SessionClass = AgentSession, version = VERSION) {
 				const queues = found && queuesOf(found.session);
 				return found && queues ? { queued: userSteers(queues).length, inflight: found.tracker.inflight.size } : undefined;
 			} catch { return undefined; }
+		},
+		watch(identity: object, listener: () => void): () => void {
+			const tracker = tracked(identity)?.tracker;
+			tracker?.listeners.add(listener);
+			return () => { tracker?.listeners.delete(listener); };
 		},
 		/**
 		 * Takes the user steering messages out of both queues at once (follow-ups and other messages stay), aborts the

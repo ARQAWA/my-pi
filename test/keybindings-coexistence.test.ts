@@ -1,9 +1,42 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { AgentSession, createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { stripVTControlCharacters } from "node:util";
 import { getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import predictions from "../extensions/RQW-predictions/index.ts";
 import scroll from "../extensions/RQW-scroll/index.ts";
+import sendNow from "../extensions/RQW-send-now/index.ts";
+import { harness, OTHER, settle, suggestion } from "./extensions/RQW-predictions/harness.ts";
+
+for (const extraFirst of [true, false]) it(`send-now and predictions share the editor, send-now ${extraFirst ? "first" : "last"}`, async t => {
+	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
+	let background = 0;
+	let changed = () => {};
+	const h = harness({ replies: [suggestion("next step")], extraFirst, extraInstall(pi) {
+		pi.events.on("rqw:running-counts:request", (request: any) => request.reply({ version: 1, snapshot: () => ({ agents: background }), subscribe(fn: () => void) { changed = fn; return () => {}; } }));
+		sendNow(pi);
+	} });
+	t.after(() => h.fire("session_shutdown", { reason: "quit" }));
+	assert.equal(Object.hasOwn(h.session, "_queueSteer"), true, "session was captured");
+	assert.ok((h.session as any)._eventListeners.length, "session events are observed");
+	const row = () => stripVTControlCharacters(h.screen()[1].replace(/\x1b_[^\x07]*\x07/g, "")).trim();
+	h.asked(); await settle();
+	assert.equal(row(), "next step");
+	h.state.idle = false;
+	(h.session as any)._emit({ type: "agent_start" });
+	assert.equal(row(), "esc to interrupt");
+	await (h.session as any)._queueSteer("adjust");
+	assert.equal(row(), "esc to send now");
+	h.setModel(OTHER);
+	assert.equal(row(), "ctrl+enter to send now");
+	(h.session as any)._steeringMessages = [];
+	h.state.idle = true; background = 1; changed();
+	assert.equal(row(), "esc esc to stop background");
+	background = 0; changed();
+	assert.equal(row(), "next step");
+	h.key("\t");
+	assert.equal(h.editor.getText(), "next step");
+});
 
 describe("scroll and predictions keybindings", () => {
 	const original = getKeybindings();

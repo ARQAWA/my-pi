@@ -52,7 +52,7 @@ export function deferred<T>() {
 }
 export const settle = () => new Promise(resolve => setImmediate(resolve));
 
-export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], consumer = false, keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[] } = {}) {
+export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], consumer = false, keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[], extraInstall = undefined as ((pi: ExtensionAPI) => void) | undefined, extraFirst = false } = {}) {
 	setKeybindings(keybindings as KeybindingsManager);
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
 	const events = createEventBus();
@@ -67,10 +67,12 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 		getThinkingLevel: () => "medium",
 	} as unknown as ExtensionAPI;
 	// `entry` loads the extension the way Pi does, with its real prompt loader; otherwise the loader is replaced.
+	if (extraFirst) extraInstall?.(pi);
 	const controller = entry ? (predictions(pi), undefined as never) : install(pi, {
 		source: { get(signal) { gets.push(signal); return prompts.shift() ?? Promise.resolve({ prompt: "PREDICT PROMPT" }); } },
 		now: () => clock.now,
 	}, () => cleared.push(1));
+	if (!extraFirst) extraInstall?.(pi);
 
 	const state = { idle: true, pending: false, sessionId: "main", branch: [{ type: "message", message: USER }, { type: "message", message: text("Tests run.") }] as unknown[] };
 	const sessionManager = {
@@ -80,9 +82,12 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 	};
 	const main: { context: Context; options: Record<string, unknown> }[] = [];
 	const original = (_model: Model<Api>, context: Context, options: Record<string, unknown>) => { main.push({ context, options }); return "main stream"; };
-	const agent = { streamFunction: original as unknown };
+	const agent = { streamFunction: original as unknown, steeringQueue: { messages: [] as unknown[] }, followUpQueue: { messages: [] as unknown[] },
+		steer(message: unknown) { this.steeringQueue.messages.push(message); } };
 	const session = Object.create(AgentSession.prototype) as AgentSession;
-	Object.defineProperties(session, { sessionManager: { value: sessionManager }, agent: { value: agent } });
+	Object.defineProperties(session, { sessionManager: { value: sessionManager }, agent: { value: agent },
+		_eventListeners: { value: [], writable: true }, _steeringMessages: { value: [], writable: true }, _followUpMessages: { value: [], writable: true } });
+	if (extraInstall) (session as any)._bindExtensionCore();
 	// Pi's isIdle getter reads this field; RQW-predictions borrows the session through that getter.
 	Object.defineProperty(session, "_isAgentRunActive", { get: () => !state.idle });
 
@@ -101,6 +106,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 		/** How many times the dim role was painted: a cheap render paints nothing again. */
 		paints: 0,
 		getBgAnsi: () => "\x1b[48;2;53;28;34m",
+		italic: (value: string) => `\x1b[3m${value}\x1b[23m`,
 		fg(color: string, value: string) {
 			if (color !== "dim") return value;
 			theme.paints++;
@@ -131,6 +137,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 		hasPendingMessages: () => state.pending,
 		getSystemPrompt: () => "CURRENT PROMPT",
 		modelRegistry: {
+			getProviderAuthStatus: () => ({ configured: true, source: "stored" }),
 			streamSimple(model: Model<Api>, context: Context, options: Record<string, unknown>) {
 				provider.push({ model, context, options });
 				return { result: next };
@@ -138,6 +145,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 		},
 		ui: {
 			theme,
+			getEditorText: () => editor.getText(), setEditorText: (value: string) => editor.setText(value),
 			notify: (message: string) => notes.push(message),
 			setStatus: (_key: string, value: string | undefined) => statuses.push(value),
 			setWidget: (_key: string, factory: unknown) => { if (typeof factory === "function") (factory as (tui: unknown) => unknown)(tui); },
