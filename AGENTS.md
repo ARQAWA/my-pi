@@ -31,7 +31,9 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   Contract: `extensions/RQW-context/README.md`. Tests: `npm test`.
 - `extensions/RQW-agent/`: extension 5, subagents; description and reminder adapt Codex 0.165.0 agent texts. `agent`
   (start, wait, status, send, resume, interrupt, stop, restart) runs in-process Pi sessions. Optional `agent_type`
-  selects a Codex TOML profile; without it the generic defaults stay. A profile's `developer_instructions` supplies the default role
+  selects a Codex TOML profile; without it the generic defaults stay. `start` with `fork_turns: "all"` copies the caller's current branch
+  into an in-memory child with the caller's model, prompt and tools (no model, thinking, `agent_type`, prompt options or `include`; history lost on restart,
+  `[D-AGENT-FORK-SELFCHECK]`); Main's coordinator guard lets such a start pass without a model category. A profile's `developer_instructions` supplies the default role
   after the main system prompt and subagent reminder, not a whole-prompt replacement. The catalogue always has Codex's built-in `default` and `worker` (no `explorer`; a user role of the same name replaces
   them). Project `.codex` layers are gated by Codex trust (administrative Codex config is not supported); six Codex role overrides Pi cannot apply are named
   `not applied` in the catalogue. Profile discovery, precedence,
@@ -64,6 +66,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   `resources_discover` supplies `skills/reviewer`, `skills/blindreview` and `skills/highreview`. The common blind/high skill
   carries only the review section of the owner's Codex skill, and the wrappers select Spotty or Bossy. Each pass
   starts a fresh ordinary `agent` with `agent_type`, the package `role_file` and `include: ["user_messages"]`; results are `agent#N` results.
+  The `selfcheck` skill (`skills/selfcheck`) lets the executor run its own self-check and this blind loop inside one `fork_turns: "all"` fork and return one report; each blind reviewer stays a fresh clean agent (`[D-AGENT-FORK-SELFCHECK]`).
   Read-only is an instruction, with no git guard or sandbox. Lifecycle, settings, Fast, caching and delivery are
   RQW-agent's. Without RQW-agent the reviewer cannot run; disabling RQW-review removes its own profiles and skills.
   Contract: `DECISIONS.md` section Review, `extensions/RQW-review/README.md`. Tests: `npm test`.

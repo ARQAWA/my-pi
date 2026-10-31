@@ -23,7 +23,7 @@ export type GuardOptions = { root: string; processFile?: string; now?: () => num
 /** The line appended to an allowed start's task, so the rule follows ordinary nested `agent` starts. */
 export function childInstruction(rules: Rules, now: number = Date.now()): string {
 	const parts = [
-		`[coordinator-guard] For Main's executor \`agent\` start or restart, pass the category name as model (${Object.keys(rules.agentModels).join(", ")}); thinking is optional; the guard draws the pair uniformly at random (${describePairs(rules, now)}); reviewer-profile calls instead use their exact reviewerProfiles pair; pass this line on in its task.`,
+		`[coordinator-guard] For Main's executor \`agent\` start or restart, pass the category name as model (${Object.keys(rules.agentModels).join(", ")}); thinking is optional; the guard draws the pair uniformly at random (${describePairs(rules, now)}); reviewer-profile calls instead use their exact reviewerProfiles pair; a start with fork_turns "all" passes no model, the fork inherits the caller's model; pass this line on in its task.`,
 	];
 	const temporary = restrictionText(rules, now);
 	if (temporary) parts.push(temporary);
@@ -47,6 +47,7 @@ export function promptSection(loaded: Loaded, processFile: string, now: number =
 		"- Main delegates research, edits, checks and fixes to subagents. When the owner asks Main to do such work personally (for example \"ты сам\" or \"you do it\"), Main objects and proposes a subagent for it; only an explicit owner override lets Main do that work itself. Main never edits or writes files in the checkout or its worktrees (edit and write there are blocked).",
 		`- Every executor start or restart by Main passes the category name as model (${Object.keys(rules.agentModels).join(", ")}); thinking is optional. The guard draws the pair uniformly at random: ${describePairs(rules, now)} (${LINK}).`,
 		`- Reviewer-profile starts and restarts instead use the exact pair for their agent_type: ${describeReviewerProfiles(rules)}. Existing agents keep their model through send/resume and are not restarted merely to switch models.`,
+		"- An `agent` start with `fork_turns: \"all\"` passes no model: the fork inherits the caller's model, so the prompt cache is reused, and the guard draws nothing and rewrites nothing.",
 		...(temporary ? [`- ${temporary}`] : []),
 	].join("\n");
 }
@@ -179,17 +180,20 @@ export function createCoordinatorGuard(options: GuardOptions) {
 			const { rules } = loaded;
 			const now = clock();
 			const allowed = `allowed: ${describePairs(rules, now)}; reviewer profiles: ${describeReviewerProfiles(rules)} (${LINK})`;
-			const profile = profileName(input, ctx);
-			if (profile !== undefined && Object.hasOwn(rules.reviewerProfiles, profile)) {
-				if (typeof input.model !== "string" || typeof input.thinking !== "string" || !isAllowed(rules, input.model, input.thinking, now, profile)) {
-					return { block: true, reason: `coordinator-guard: give the exact model and thinking for reviewer ${profile}; ${allowed}.` };
+			// A fork inherits the caller's model and prompt so its first request reuses the prompt cache: no category, no draw.
+			if (input.fork_turns !== "all") {
+				const profile = profileName(input, ctx);
+				if (profile !== undefined && Object.hasOwn(rules.reviewerProfiles, profile)) {
+					if (typeof input.model !== "string" || typeof input.thinking !== "string" || !isAllowed(rules, input.model, input.thinking, now, profile)) {
+						return { block: true, reason: `coordinator-guard: give the exact model and thinking for reviewer ${profile}; ${allowed}.` };
+					}
+				} else {
+					const pair = typeof input.model === "string" ? drawPair(rules, input.model, now, options.randomInt) : undefined;
+					if (!pair) {
+						return { block: true, reason: `coordinator-guard: pass the category name as model (${Object.keys(rules.agentModels).join(", ")}); the guard draws the pair uniformly at random. Main must not choose an explicit executor pair; ${allowed}.` };
+					}
+					[input.model, input.thinking] = pair;
 				}
-			} else {
-				const pair = typeof input.model === "string" ? drawPair(rules, input.model, now, options.randomInt) : undefined;
-				if (!pair) {
-					return { block: true, reason: `coordinator-guard: pass the category name as model (${Object.keys(rules.agentModels).join(", ")}); the guard draws the pair uniformly at random. Main must not choose an explicit executor pair; ${allowed}.` };
-				}
-				[input.model, input.thinking] = pair;
 			}
 			if (typeof input.task === "string") input.task = `${input.task}\n\n${childInstruction(rules, now)}`;
 			return undefined;

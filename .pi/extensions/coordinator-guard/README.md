@@ -102,6 +102,11 @@ This optional format is not an active repository rule. Product profiles are unch
   `thinking` are required. A named or inherited reviewer profile uses only its exact pair; every other call uses an exact executor pair.
   A reviewer-profile call supplies matching explicit model and effort values; restart may omit `agent_type` to inherit it. An allowed call with a `task` gets
   one generated line appended: ordinary nested `agent` starts need an explicit allowed executor pair.
+- Fork exception: an `agent` start or restart with `fork_turns: "all"` needs no model category and gets no drawn pair. The fork
+  inherits the caller's model, system prompt and tools so its first request reuses the caller's prompt cache; the guard leaves
+  `model` and `thinking` as they are (RQW-agent itself rejects `model`, `thinking`, `agent_type`, `system`, `role` and `include`
+  together with `all`, and `restart` with it). The task still gets the generated line. Every other start keeps the category
+  rule and the random draw; reviewer profiles keep their exact pairs. Decision: `DECISIONS.md` `[D-AGENT-FORK-SELFCHECK]`.
 - `edit` and `write`: every path (`path`, `edits[].path`, `files[].path`) is resolved like Pi does
   (`@`, `~`, file URLs, cwd) and canonicalised (symlinks, also dangling ones, and `..`). A path inside this
   checkout, the main checkout, any registered git worktree or the sibling `my-pi-worktrees` folder is blocked.
