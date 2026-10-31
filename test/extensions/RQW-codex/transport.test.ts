@@ -102,6 +102,7 @@ it("a lite request with tools sends parallel_tool_calls true, also after an onPa
 	await collect(transport.stream(MODEL, WITH_TOOLS));
 	await collect(transport.stream(MODEL, WITH_TOOLS, { onPayload: (body: any) => ({ ...body, parallel_tool_calls: false }) } as any));
 	assert.equal(sockets.sent[0].input[0].type, "additional_tools");
+	assert.equal(sockets.sent[0].reasoning.context, undefined);
 	assert.equal(sockets.sent[0].parallel_tool_calls, true);
 	assert.equal(sockets.sent[1].parallel_tool_calls, true);
 	transport.dispose();
@@ -270,7 +271,7 @@ it("cache mechanics match the native reference in this scenario: key, prefix, co
 	const stable = ({ input: _input, previous_response_id: _previous, generate: _generate, client_metadata: _metadata, ...rest }: any) => rest;
 	assert.deepEqual(stable(warm), {
 		type: "response.create", model: "gpt-6-luna", stream: true, service_tier: "priority", tool_choice: "auto", parallel_tool_calls: true,
-		reasoning: { effort: "medium", context: "all_turns" }, store: false, include: ["reasoning.encrypted_content"],
+		reasoning: { effort: "medium" }, store: false, include: ["reasoning.encrypted_content"],
 		prompt_cache_key: "root-session-1", text: { verbosity: "low" },
 	});
 	assert.deepEqual(warm.input, [{

@@ -36,8 +36,8 @@ it("lite model request with tools sends parallel_tool_calls true", () => {
 
 it("resolves model defaults and explicit efforts", () => {
 	assert.equal(codexModelCapabilities("gpt-6.1-sol").defaultReasoningLevel, "low");
-	assert.deepEqual(build().reasoning, { effort: "medium", summary: "auto", context: "all_turns" });
-	assert.deepEqual(build([TOOL], { reasoningEffort: "high" }).reasoning, { effort: "high", summary: "auto", context: "all_turns" });
+	assert.deepEqual(build().reasoning, { effort: "medium", summary: "auto" });
+	assert.deepEqual(build([TOOL], { reasoningEffort: "high" }).reasoning, { effort: "high", summary: "auto" });
 });
 
 it("regression: numeric additional_tools keys hash in native lexicographic order", () => {

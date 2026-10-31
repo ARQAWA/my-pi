@@ -569,7 +569,7 @@ export function buildRequest(args: BuildRequestArgs): WireRequest {
 	const reasoning: WireRequest["reasoning"] = {};
 	if (effort !== undefined) reasoning.effort = effort;
 	if ((capabilities.supports_reasoning_summary_parameter ?? true) && summary !== "none") reasoning.summary = summary;
-	if (lite) reasoning.context = "all_turns";
+	// [D-CODEX-PARALLEL] omit native Lite's all_turns for our parallel tooling.
 
 	if (overrideEnabled) {
 		// The baseline is the caller pin, moved by every trusted ledger item in position order; only a real change appends.
