@@ -12,6 +12,7 @@ import {
 	createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { groupCodemode, takeOverBuiltinCodemode } from "./codemode.ts";
+import { guardBash } from "./bash-guard.ts";
 import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { createCountsProducer } from "./counts.ts";
 import { commandOf, createJobs, createJobTool, type JobHandle, type JobNotification, type Jobs, type JobsOptions } from "./jobs.ts";
@@ -115,7 +116,7 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 	}
 	let legacy = !aliasesShutdown;
 	const jobs = createJobs({ enabled: () => pi.getActiveTools().includes("job"), backgroundAfterMs: options.backgroundAfterMs });
-	for (const tool of createTools(process.cwd(), () => pi.getSettings(), { jobs, legacy })) {
+	for (const tool of createTools(process.cwd(), () => pi.getSettings(), { jobs, get legacy() { return legacy; } })) {
 		if (["rqw_rg", "rqw_glob", "rqw_readfile"].includes(tool.name)) (tool as any).rqwSelectionFallback = () => { legacy = true; };
 		pi.registerTool(tool);
 	}
@@ -239,21 +240,22 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 	const bash: any = createBashToolDefinition(cwd);
 	const bashText = description("bash") + (process.platform === "win32" ? "\n" + description("bash.win32") : "");
 	const bashParameters = withDescription(withDescription(bash.parameters, "command", "The command to execute"), "timeout", "Timeout in seconds; kills the command and its child processes. Without it there is no command deadline.");
-	register("bash", bash, { ...notDefault, description: bashText, parameters: bashParameters }, (id, params, signal, onUpdate, ctx, job) => {
+	register("bash", bash, { ...notDefault, description: bashText, parameters: bashParameters }, async (id, params, signal, onUpdate, ctx, job) => {
+		guardBash(params.command, options.legacy);
 		const s = sessionSettings();
-		const options: any = s
+		const shellOptions: any = s
 			? { commandPrefix: s.shellCommandPrefix, shellPath: SettingsManager.inMemory({ shellPath: s.shellPath }).getShellPath() }
 			: undefined;
 		if (job) {
-			const stock = createLocalBashOperations({ shellPath: options?.shellPath });
+			const stock = createLocalBashOperations({ shellPath: shellOptions?.shellPath });
 			const operations = {
 				exec: (command: string, dir: string, o: any) =>
 					stock.exec(command, dir, { ...o, onData: (data: Buffer) => { job.data(data); o.onData(data); } }),
 			};
-			const def: any = createBashToolDefinition(ctx?.cwd || process.cwd(), { ...options, operations });
+			const def: any = createBashToolDefinition(ctx?.cwd || process.cwd(), { ...shellOptions, operations });
 			return def.execute(id, params, signal, onUpdate, ctx);
 		}
-		const def: any = createBashToolDefinition(ctx?.cwd || process.cwd(), options);
+		const def: any = createBashToolDefinition(ctx?.cwd || process.cwd(), shellOptions);
 		return def.execute(id, params, signal, onUpdate, ctx);
 	});
 

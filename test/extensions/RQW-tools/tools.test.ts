@@ -42,5 +42,6 @@ test("bash description starts its bullets with the dedicated-tool warning", () =
 	const tools = Object.fromEntries(createTools("/work", () => ({})).map(tool => [tool.name, tool as any]));
 	const bullets = tools.bash.description.split(/\r?\n/).filter((line: string) => line.startsWith("- "));
 	assert.equal(bullets[0], "- IMPORTANT: Avoid using this tool to run `rg`, `fd`, `grep`, `find`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.");
-	assert.equal(bullets[1], "- Search file contents with rqw_rg, not grep or rg. Find or list files with rqw_glob, not find, fd or ls. Read files with rqw_readfile, not cat, head or tail.");
+	assert.equal(bullets[1], "- Use rqw_rg, rqw_glob, rqw_readfile for file operations when applicable.");
+	assert.ok(!tools.bash.description.includes("Search file contents with rqw_rg"));
 });

@@ -6911,3 +6911,11 @@ Verbatim text as it was in DECISIONS.md:
 >   the hits already justify in one response, and stops when, for every implementation, it is known where each value is
 >   set, used and what the code does with it; find shows brace alternatives. Reason: chosen by rule completeness, then
 >   responses. Carriers: `extensions/RQW-tools/descriptions/grep.md`, `find.md`. Since: `9e13b55`.
+
+## A-0387 · archived 2026-10-31 · Tools · Second bash description bullet
+
+Status: SUPERSEDED by `[D-BASH-GUARD]` (DECISIONS.md#tools).
+Introduced: `d8f4347`. Archived by the bash-guard records change.
+Verbatim text as it was in DECISIONS.md:
+
+> The bash description gets a second bullet right after that line, our own text: «Search file contents with rqw_rg, not grep or rg. Find or list files with rqw_glob, not find, fd or ls. Read files with rqw_readfile, not cat, head or tail.», because Opus still searched with bash find and grep in the probe 01a190a6-c40c. Owner decision (Coordinator proposed this bullet; «Делаем? 1. Да, этот шаг, потом твоя проба. 2. Нет, оставляем как есть.»): «1».

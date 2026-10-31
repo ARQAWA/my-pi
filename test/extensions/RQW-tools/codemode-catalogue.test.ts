@@ -56,6 +56,32 @@ try { await tools.read({ path: "a.txt" }); } catch { text("old name unavailable"
 	assert.ok(fake.calls.some((args) => args.includes("--ignore-case")));
 });
 
+test("codemode tools.bash rejects a refused command", async () => {
+	let definition: any;
+	createCodemodeExtension({ models: false })({ registerTool: (tool: any) => { definition = tool; }, getAllTools: () => [] } as any);
+	const all: any[] = createTools(process.cwd(), () => ({ shellPath: "/nonexistent/rqw-guard-shell" }), { codemode: definition, enabled: () => false });
+	const bash = all.find(tool => tool.name === "bash");
+	const code = all.find(tool => tool.name === "codemode");
+	const ctx: any = {
+		cwd: process.cwd(), tools: [bash], sessionManager: { getBranch: () => [] },
+		async executeTool(_name: string, args: any, options: any) {
+			try {
+				const result = await bash.execute("script/bash", args, options.signal, undefined, undefined);
+				return { toolCall: { id: "script/bash" }, result, isError: false };
+			} catch (error) {
+				return { toolCall: { id: "script/bash" }, result: { content: [{ type: "text", text: String(error) }] }, isError: true };
+			}
+		},
+	};
+	const result: any = await code.execute("script", { code: `
+try { await tools.bash({ command: "cat f" }); text("unexpected success"); }
+catch (error) { text(String(error)); }
+` }, undefined, undefined, ctx);
+	const output = result.content.map((block: any) => block.text ?? "").join("\n");
+	assert.match(output, /Blocked: bash does not search, list or read files/);
+	assert.doesNotMatch(output, /unexpected success|Custom shell path not found/);
+});
+
 test("a slow new search becomes a cancellable background job", async (t) => {
 	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
 	const cwd = await mkdtemp(join(tmpdir(), "rqw-job-"));

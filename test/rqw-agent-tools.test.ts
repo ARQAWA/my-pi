@@ -22,6 +22,8 @@ test("real RQW-tools definitions reach default and nested children", async t => 
 		requests.push(context);
 		const task = context.messages.find((message: any) => message.role === "user")?.content?.[0]?.text;
 		const results = context.messages.filter((message: any) => message.role === "toolResult");
+		if (!results.some((result: any) => result.toolName === "bash"))
+			return fauxAssistantMessage([fauxToolCall("bash", { command: "cat f" }, { id: `${task}-bash` })], { stopReason: "toolUse" });
 		if (!results.some((result: any) => result.toolName === "rqw_readfile"))
 			return fauxAssistantMessage([fauxToolCall("rqw_readfile", { path: "sample.txt" }, { id: `${task}-read` })], { stopReason: "toolUse" });
 		if (task === "outer" && !results.some((result: any) => result.toolName === "agent"))
@@ -46,7 +48,7 @@ test("real RQW-tools definitions reach default and nested children", async t => 
 		on(name: string, hook: any) { hooks.set(name, [...hooks.get(name) ?? [], hook]); },
 		registerTool: (tool: any) => tools.set(tool.name, tool), registerCommand() {}, registerEntryRenderer() {},
 		appendEntry: (name: string, data: any) => parent.appendCustomEntry(name, data),
-		getSettings: () => ({ retry: { enabled: false }, compaction: { enabled: false } }),
+		getSettings: () => ({ shellPath: "/nonexistent/rqw-guard-shell", retry: { enabled: false }, compaction: { enabled: false } }),
 		getThinkingLevel: () => "off", getActiveTools: () => [],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
@@ -66,6 +68,9 @@ test("real RQW-tools definitions reach default and nested children", async t => 
 			const definition: any = definitions.find((tool: any) => tool.name === name);
 			assert.ok(definition.parameters.properties[field], `${task} has ${name}'s real schema`);
 		}
+		const bashResult = request.messages.find((message: any) => message.role === "toolResult" && message.toolCallId === `${task}-bash`);
+		assert.equal(bashResult?.isError, true);
+		assert.match(JSON.stringify(bashResult.content), /Blocked: bash does not search, list or read files/);
 		const result = request.messages.find((message: any) => message.role === "toolResult" && message.toolCallId === `${task}-read`);
 		assert.equal(result.isError, false);
 		assert.match(JSON.stringify(result.content), /actual factory result/);

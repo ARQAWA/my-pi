@@ -163,9 +163,12 @@ test("fallback keeps implicit stock search defaults", async () => {
 	const warn = console.warn;
 	console.warn = () => {};
 	try {
+		const bash = definitions.find(tool => tool.name === "bash");
+		await assert.rejects(bash.execute("call/1", { command: "cat f" }), /Use rqw_rg to search file contents, rqw_glob to find or list files, rqw_readfile to read files/);
 		refresh(session, ["read"]);
 		for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
 		assert.deepEqual(session.getActiveToolNames().sort(), ["find", "grep", "read"]);
+		await assert.rejects(bash.execute("call/2", { command: "cat f" }), /Use grep to search file contents, find to find or list files, read to read files/);
 		session._usesDefaultTools = false;
 		session.setActiveToolsByName(["read"]);
 		for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
