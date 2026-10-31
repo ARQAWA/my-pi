@@ -134,7 +134,9 @@ Pi method patch is required. Adapter cleanup removes the inference listener and 
 
 - Pi proactively refreshes expiring OAuth credentials under its store lock. This extension supplies a refresh
   handler using `https://api.anthropic.com/v1/oauth/token`, with at most two attempts for transient transport,
-  HTTP 429 or 5xx failures and a 15-second total budget in Pi's refresh path. A missing or blank saved refresh
+  HTTP 429 or 5xx failures and a 15-second total budget in Pi's refresh path. The wait before the second attempt
+  is the server's delay from the retry headers (100 ms without one); a delay that does not fit the budget, or
+  `x-should-retry: false`, ends the refresh without a second request. 400, 401 and 403 are never retried. A missing or blank saved refresh
   token fails before the token request. An omitted response refresh token retains a valid previous token. Pi
   applies its own minimum validity check; the adapter does not subtract another five minutes from the saved TTL.
 - An inference HTTP 401 gets one forced refresh/reuse of a newer saved bearer and one replay. The authoritative
@@ -148,6 +150,21 @@ Pi method patch is required. Adapter cleanup removes the inference listener and 
   Pi processes can reuse it without secret token history or a separate file. An unrelated login, unknown external
   rotation or evicted proof fails with new-turn and login guidance instead of switching accounts. A fresh turn
   can resolve the currently saved login.
+- An inference HTTP rejection (for example 429 or 529) adds the diagnostic `rqw_anthropic_http` to the error message:
+  `details` `{ status, shouldRetry?, retryAfterMs?, resetAt? }` from `x-should-retry`, `retry-after-ms`, `Retry-After`
+  (seconds or HTTP-date) and `anthropic-ratelimit-unified-reset`. No other header is kept, never auth or account
+  values. SDK retries stay off: Pi's retry settings (`enabled`, `maxRetries`) remain the single budget.
+  Retry planning follows the diagnostic through the reversible recovery hooks (`retry.ts`, `retry-hints.ts`):
+  `x-should-retry: false` forbids the automatic retry; `true` allows it also for an error text Pi does not
+  recognize, such as a 529 `api_error`; the server delay replaces Pi's backoff for the wait and stays abortable;
+  a delay above Pi's own `retry.maxAgentDelayMs` (60 s by default) ends with `Server requested Ns retry delay (max: Ms)`
+  and no retry. A turn that already produced text, thinking or a tool call is never replayed. Compaction and branch
+  summaries keep Pi's own retry loop and callbacks: a forbidden retry or too long delay ends the summary with the
+  same message, a server delay longer than Pi's backoff is waited in full (never shortened), and `Retry-After` is
+  shown in Pi's retry notice. The bug-report summary has no retry callbacks, so inside that operation only its retry
+  policy reads the directive. A limit of 0 in Pi's `retry.maxAgentDelayMs` is a bound too, and no wait exceeds the
+  timer maximum (about 24.8 days). If a private Pi retry method is missing or has another shape, that part of
+  the planning stays stock and the other hooks still install.
 - An explicit `claude_code_version_too_old` HTTP 400 may adopt the newer required version and replay once per
   request, including when another concurrent request already adopted a sufficient newer version.
   The default is `2.1.280`, as in the inspected omp source. `PI_AI_CLAUDE_CODE_VERSION=major.minor.patch` pins it

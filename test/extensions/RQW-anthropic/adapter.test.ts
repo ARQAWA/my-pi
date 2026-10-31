@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
-import { it } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { it, mock } from "node:test";
 import Anthropic from "@anthropic-ai/sdk";
 import { InMemoryCredentialStore, normalizeContext, type OAuthCredential, type SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import anthropic from "../../../extensions/RQW-anthropic/index.ts";
 import { recoverCredential, refreshCredential, TOKEN_URL } from "../../../extensions/RQW-anthropic/auth.ts";
 import { createOverlay, subscriptionFetch } from "../../../extensions/RQW-anthropic/transport.ts";
 import { billingBody, IDENTITY, versionState } from "../../../extensions/RQW-anthropic/wire.ts";
@@ -163,4 +168,179 @@ it("rejects OAuth in model headers on an unsupported origin", () => {
 	const overlay = createOverlay(base, () => undefined, "device");
 	assert.throws(() => overlay.streamSimple({ ...model, baseUrl: "https://untrusted.example", headers: { Authorization: `Bearer ${ACCESS}` } },
 		normalizeContext(context), { apiKey: "fake-key", fetch: async () => { throw new Error("unexpected network"); } }), /OAuth Authorization headers/);
+});
+
+// Retry planning needs the server's retry control, which the SDK reduces to error text.
+async function rejectedDiagnostic(status: number, type: string, headers: Record<string, string>) {
+	const overlay = createOverlay(base, () => undefined, "device");
+	const result = await overlay.streamSimple(model, normalizeContext(context), { apiKey: ACCESS, fetch: async () =>
+		Response.json({ type: "error", error: { type, message: "fake" } }, { status, headers }) }).result();
+	assert.equal(result.stopReason, "error");
+	return result.diagnostics?.find(item => item.type === "rqw_anthropic_http")?.details;
+}
+
+it("keeps the server's refusal to retry a 429", async () => {
+	assert.deepEqual(await rejectedDiagnostic(429, "rate_limit_error", { "x-should-retry": "false" }), { status: 429, shouldRetry: false });
+});
+
+it("keeps Retry-After seconds and the reset window of a 429", async () => {
+	const details = await rejectedDiagnostic(429, "rate_limit_error", {
+		"x-should-retry": "true", "retry-after": "30", "anthropic-ratelimit-unified-reset": "1793385000",
+		"x-secret-header": "must-not-be-kept",
+	});
+	assert.deepEqual(details, { status: 429, shouldRetry: true, retryAfterMs: 30_000, resetAt: 1_793_385_000_000 });
+});
+
+it("keeps Retry-After of a 529 overload", async () => {
+	assert.deepEqual(await rejectedDiagnostic(529, "overloaded_error", { "retry-after": "30" }), { status: 529, retryAfterMs: 30_000 });
+});
+
+// Refresh backoff, through the OAuth refresh Pi calls on the registered provider, with a fake network and clock.
+const settle = () => new Promise(resolve => setImmediate(resolve));
+type Refresh = (credential: OAuthCredential, signal?: AbortSignal) => Promise<OAuthCredential>;
+async function withRefresh(first: Response, run: (refresh: Refresh, sent: number[]) => Promise<void>) {
+	const agentDir = mkdtempSync(join(tmpdir(), "rqw-anthropic-"));
+	const savedDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	const handlers: Record<string, () => void> = {};
+	let provider: { oauth: { refreshToken: Refresh } } | undefined;
+	anthropic({ events: { on: () => () => {} }, on: (name: string, handler: () => void) => { handlers[name] = handler; },
+		registerProvider: (_name: string, config: typeof provider) => { provider = config; } } as unknown as ExtensionAPI);
+	const sent: number[] = [];
+	const bodies: string[] = [];
+	mock.method(globalThis, "fetch", async (_input: unknown, init?: RequestInit) => {
+		sent.push(Date.now());
+		bodies.push(String(init?.body));
+		return sent.length === 1 ? first : refreshed();
+	});
+	mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+	try {
+		await run(provider!.oauth.refreshToken, sent);
+		assert.ok(bodies.every(body => body === bodies[0]), "every attempt sends the same saved refresh token");
+	} finally {
+		mock.timers.reset();
+		mock.restoreAll();
+		handlers.session_shutdown!();
+		if (savedDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = savedDir;
+		rmSync(agentDir, { recursive: true, force: true });
+	}
+}
+function startRefresh(refresh: Refresh, signal = new AbortController().signal) {
+	const pending = refresh({ ...credential }, signal);
+	pending.catch(() => undefined);
+	return pending;
+}
+
+it("waits the server's Retry-After before the second refresh attempt", async () => {
+	await withRefresh(new Response(null, { status: 429, headers: { "retry-after": "5" } }), async (refresh, sent) => {
+		const pending = startRefresh(refresh);
+		await settle();
+		mock.timers.tick(100);
+		await settle();
+		assert.deepEqual(sent, [0]);
+		mock.timers.tick(4_900);
+		await settle();
+		assert.deepEqual(sent, [0, 5_000]);
+		const next = await pending;
+		assert.equal(next.access, NEXT);
+		assert.equal(next.refresh, "fake-rotated");
+	});
+});
+
+it("waits retry-after-ms before the second refresh attempt", async () => {
+	await withRefresh(new Response(null, { status: 503, headers: { "retry-after-ms": "2500" } }), async (refresh, sent) => {
+		const pending = startRefresh(refresh);
+		await settle();
+		mock.timers.tick(2_400);
+		await settle();
+		assert.deepEqual(sent, [0]);
+		mock.timers.tick(100);
+		await settle();
+		assert.deepEqual(sent, [0, 2_500]);
+		assert.equal((await pending).access, NEXT);
+	});
+});
+
+it("waits until an HTTP-date Retry-After before the second refresh attempt", async () => {
+	await withRefresh(new Response(null, { status: 429, headers: { "retry-after": "Thu, 01 Jan 1970 00:00:03 GMT" } }), async (refresh, sent) => {
+		const pending = startRefresh(refresh);
+		await settle();
+		mock.timers.tick(2_900);
+		await settle();
+		assert.deepEqual(sent, [0]);
+		mock.timers.tick(100);
+		await settle();
+		assert.deepEqual(sent, [0, 3_000]);
+		assert.equal((await pending).access, NEXT);
+	});
+});
+
+it("sends no second refresh when the server delay exceeds the deadline", async () => {
+	await withRefresh(new Response(null, { status: 429, headers: { "retry-after": "60" } }), async (refresh, sent) => {
+		const pending = startRefresh(refresh);
+		await settle();
+		mock.timers.tick(100);
+		await settle();
+		assert.deepEqual(sent, [0]);
+		await assert.rejects(pending, /Refresh HTTP 429.*deadline/);
+	});
+});
+
+it("does not retry a refresh the server forbids retrying", async () => {
+	await withRefresh(new Response(null, { status: 503, headers: { "x-should-retry": "false" } }), async (refresh, sent) => {
+		await assert.rejects(startRefresh(refresh), /Refresh HTTP 503/);
+		assert.deepEqual(sent, [0]);
+	});
+});
+
+it("stops waiting for the second refresh attempt when aborted", async () => {
+	await withRefresh(new Response(null, { status: 429, headers: { "retry-after": "5" } }), async (refresh, sent) => {
+		const controller = new AbortController();
+		const pending = startRefresh(refresh, controller.signal);
+		await settle();
+		controller.abort(new Error("fake abort"));
+		await assert.rejects(pending, /fake abort/);
+		mock.timers.tick(5_000);
+		await settle();
+		assert.deepEqual(sent, [0]);
+	});
+});
+
+it("never retries a rejected refresh and leaves the saved grant unchanged", async () => {
+	const credentials = await store();
+	for (const status of [400, 401, 403]) {
+		await withRefresh(new Response(null, { status, headers: { "retry-after": "1" } }), async (refresh, sent) => {
+			await assert.rejects(credentials.modify("anthropic", async current => refresh(current as OAuthCredential)),
+				new RegExp(`Refresh HTTP ${status}`));
+			assert.deepEqual(sent, [0]);
+			assert.deepEqual(await credentials.read("anthropic"), credential);
+		});
+	}
+});
+
+// Regression: the diagnostic described the synthetic 401/403 answer, not the server's own.
+it("keeps the server's retry control of a 401 or 403 that the transport turns into an error", async () => {
+	for (const status of [401, 403]) {
+		assert.deepEqual(await rejectedDiagnostic(status, "authentication_error", {
+			"retry-after": "7", "anthropic-ratelimit-unified-reset": "1793385000",
+		}), { status, retryAfterMs: 7_000, resetAt: 1_793_385_000_000 });
+	}
+});
+
+// Regression: a failed resend kept the diagnostic of the earlier version-update 400.
+it("drops the diagnostic of a version-update 400 when its resend fails without an answer", async () => {
+	const pinned = process.env.PI_AI_CLAUDE_CODE_VERSION;
+	delete process.env.PI_AI_CLAUDE_CODE_VERSION;
+	const overlay = createOverlay(base, () => undefined, "device");
+	if (pinned !== undefined) process.env.PI_AI_CLAUDE_CODE_VERSION = pinned;
+	let calls = 0;
+	const result = await overlay.streamSimple(model, normalizeContext(context), { apiKey: ACCESS, fetch: async () => {
+		if (++calls > 1) throw new Error("fake network down");
+		return Response.json({ type: "error", error: { type: "invalid_request_error", message: "claude_code_version_too_old: version 2.2.0 or newer is required" } },
+			{ status: 400, headers: { "retry-after": "7", "x-should-retry": "true" } });
+	} }).result();
+	assert.equal(calls, 2);
+	assert.equal(result.stopReason, "error");
+	assert.deepEqual(result.diagnostics?.filter(item => item.type === "rqw_anthropic_http") ?? [], []);
 });

@@ -1273,6 +1273,21 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   (`auth-boundary.ts`, `transport.ts`). Each request records its sent version, also under concurrency, with one bounded
   replay when an effective newer version meets a rejection; a pinned `PI_AI_CLAUDE_CODE_VERSION` forbids adaptation
   (`wire.ts`, `transport.ts`). Since: `071df1e`.
+- **Retry hints** `[D-ANTHROPIC-RETRY-HINTS]`. An inference HTTP rejection keeps a narrow diagnostic
+  `rqw_anthropic_http` on the error message, `details` `{ status, shouldRetry?, retryAfterMs?, resetAt? }`, read from
+  `x-should-retry`, `retry-after-ms`, `Retry-After` (seconds or HTTP-date) and `anthropic-ratelimit-unified-reset`.
+  No other header is read, never auth or account values. The OAuth refresh uses the same parser: on 429 or 5xx it waits
+  the server delay instead of 100 ms, inside the 15-second budget, never retries after `x-should-retry: false`, and sends
+  no second request when the delay does not fit. Still two attempts, abort and the credential grant unchanged; 400, 401
+  and 403 are never retried. SDK retries stay off. Retry planning uses the diagnostic through the recovery hooks
+  (`retry.ts`): `x-should-retry` false forbids and true allows the automatic retry of an agent turn, the server delay
+  replaces Pi's backoff, bounded by Pi's own `retry.maxAgentDelayMs` and abortable, a longer delay ends with a clear
+  error; Pi's `maxRetries` stays the one budget and a turn with output is never replayed. Compaction and branch
+  summaries keep Pi's retry loop and callbacks and get the same directives (a throw from `onRetryScheduled`, an extra
+  wait, an error-text hint for a server-allowed retry; the bug-report summary through its retry policy); nothing replaces
+  compaction. Bounds: Pi's `maxAgentDelayMs` including 0, and the timer maximum. A private retry method of another shape stays stock. Owner: «по антропикам оставляем то что есть сейчас и проведи ресерч как мы можем это улучшить за 1 стори поинт и надо ли что то улучшать»; «Есть ли еще какие то улучшения по антропику на минимальное количество сторей не обязательно на 1, мне надо все импрувменты которые будут полезны»; «по пакетам пакет один, пакет два делай. По пакетам Anthropic.»
+  Evidence: `my-pi-evidence/opencode-claude/REPORT.md` section «Все полезные улучшения». Carriers:
+  `extensions/RQW-anthropic/retry-hints.ts`, `transport.ts`, `auth.ts`.
 
 ## Models
 

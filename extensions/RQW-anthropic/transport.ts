@@ -3,15 +3,17 @@ import type { CredentialStore, Provider, SimpleStreamOptions } from "@earendil-w
 import { AuthRecoveryError, LOGIN_HELP, recoverCredential } from "./auth.ts";
 import { assertAnthropicAuthBoundary } from "./auth-boundary.ts";
 import { subscriptionCacheOptions } from "./cache.ts";
-import { AUTH_ORIGIN, protectPartialStream, STREAM_CONTRACT, type AuthOrigin } from "./retry.ts";
+import { AUTH_ORIGIN, protectPartialStream, STREAM_CONTRACT, summarySink, type AuthOrigin } from "./retry.ts";
 import { billingBody, versionState, type VersionState } from "./wire.ts";
 import { OVERLAY } from "./registration.ts";
 import { contextForks } from "./context-fork.ts";
+import { attachHttpDiagnostic, httpDiagnostic, type HttpDiagnostic } from "./retry-hints.ts";
 
 /** Retries HTTP rejections only, before any stream bytes can escape to the agent. */
 export function subscriptionFetch(
 	transport: typeof fetch, store: CredentialStore | undefined, version: VersionState,
 	sessionId: string, deviceId: string, initialSignal?: AbortSignal, origin?: AuthOrigin,
+	observe?: (response: Response | undefined) => void,
 ): typeof fetch {
 	return async (input, init) => {
 		const request = new Request(input, { ...init, redirect: "error" });
@@ -31,6 +33,8 @@ export function subscriptionFetch(
 		let versionRetried = false;
 		for (;;) {
 			signal.throwIfAborted();
+			// A resend starts clean: only the final answer, or none, may describe the failure.
+			observe?.(undefined);
 			const sentVersion = version.value;
 			headers.set("user-agent", `claude-cli/${sentVersion} (external, cli)`);
 			headers.set("x-app", "cli");
@@ -42,6 +46,7 @@ export function subscriptionFetch(
 				method: request.method, headers, signal, redirect: "error",
 				body: billingBody(raw, sentVersion, sessionId, deviceId),
 			});
+			observe?.(response);
 			if (response.status === 401) {
 				await response.body?.cancel();
 				if (authRetried || !store || !owned || !bearer) throw new AuthRecoveryError();
@@ -83,8 +88,11 @@ export function createOverlay(
 		const delegate = simple ? base.streamSimple.bind(base) : base.stream.bind(base);
 		if (!assertAnthropicAuthBoundary(model, options, process.env.ANTHROPIC_CUSTOM_HEADERS)) return delegate(model, context, options);
 		const transport = options?.fetch ?? globalThis.fetch;
+		let rejection: HttpDiagnostic | undefined;
 		const subscription = subscriptionFetch(transport, getStore(), version, options?.sessionId ?? randomUUID(), deviceId,
-			options?.signal, provenance?.[AUTH_ORIGIN]);
+			options?.signal, provenance?.[AUTH_ORIGIN],
+			// The server's own answer, before 401 and 403 are replaced by recovery or a synthetic error.
+			response => { rejection = response && !response.ok ? httpDiagnostic(response.status, response.headers) : undefined; });
 		const effective = subscriptionCacheOptions(options);
 		const retention = effective?.cacheRetention ??
 			((effective?.env?.PI_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION) === "long" ? "long" : "short");
@@ -102,7 +110,8 @@ export function createOverlay(
 			}
 		};
 		// A supplied SDK client skips Pi's OAuth builder and ignores this protected fetch.
-		return protectPartialStream(delegate(model, context, { ...subscriptionCacheOptions(options), client: undefined, maxRetries: 0, fetch }));
+		const stream = delegate(model, context, { ...subscriptionCacheOptions(options), client: undefined, maxRetries: 0, fetch });
+		return protectPartialStream(attachHttpDiagnostic(stream, () => rejection, summarySink(), options?.signal));
 	};
 	Object.assign(handler, { [OVERLAY]: true });
 	return { api: "anthropic-messages", streamSimple: handler, forks };

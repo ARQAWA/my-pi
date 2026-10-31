@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { setTimeout as sleep } from "node:timers/promises";
 import type { CredentialStore, OAuthCredential } from "@earendil-works/pi-ai";
 
 import { Type } from "typebox";
+import { retryHints, sleep } from "./retry-hints.ts";
 import { Compile } from "typebox/compile";
 
 const TokenResponse = Compile(Type.Object({
@@ -28,6 +28,8 @@ const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 export const LOGIN_HELP = "RQW-anthropic: subscription authentication failed. Retry the turn; if it persists, use /login anthropic. Saved credentials were not removed.";
 export const AUTH_FAILURE = Symbol.for("rqw-anthropic/auth-failure");
 const MAX_ROTATIONS = 256;
+const REFRESH_BUDGET_MS = 15_000;
+const RETRY_PAUSE_MS = 100;
 const TokenHash = Type.String({ pattern: "^[a-f0-9]{64}$" });
 const RefreshProof = Compile(Type.Object({
 	previous: Type.Array(TokenHash, { maxItems: MAX_ROTATIONS }),
@@ -67,6 +69,7 @@ export async function refreshCredential(
 	if (typeof credential.refresh !== "string" || credential.refresh.trim().length === 0) {
 		throw new AuthRecoveryError(`${LOGIN_HELP} Saved refresh token is invalid.`);
 	}
+	const started = Date.now();
 	for (let attempt = 0; attempt < 2; attempt++) {
 		signal.throwIfAborted();
 		let response: Response;
@@ -83,13 +86,18 @@ export async function refreshCredential(
 		} catch {
 			signal.throwIfAborted();
 			if (attempt === 1) throw new AuthRecoveryError(`${LOGIN_HELP} Token endpoint could not be reached.`);
-			await sleep(100, undefined, { signal });
+			await sleep(RETRY_PAUSE_MS, signal);
 			continue;
 		}
 		if (!response.ok) {
 			await response.body?.cancel();
-			if (attempt === 0 && (response.status === 429 || response.status >= 500)) {
-				await sleep(100, undefined, { signal });
+			const hints = retryHints(response.headers);
+			if (attempt === 0 && (response.status === 429 || response.status >= 500) && hints.shouldRetry !== false) {
+				const delay = hints.delayMs ?? RETRY_PAUSE_MS;
+				if (Date.now() - started + delay >= REFRESH_BUDGET_MS) {
+					throw new AuthRecoveryError(`${LOGIN_HELP} Refresh HTTP ${response.status}. Server retry delay exceeds the refresh deadline.`);
+				}
+				await sleep(delay, signal);
 				continue;
 			}
 			const meaning = response.status === 400 ? " Refresh grant was rejected or invalid." :
