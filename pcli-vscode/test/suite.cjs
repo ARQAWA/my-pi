@@ -138,9 +138,15 @@ async function main() {
   if (S === 'A') {
     const t3 = await tab('pi 3');
     const third = await until('pi.exe alive in pi 3', () => ours(piExe).find((p) => norm(p.Name) === 'pi.exe'), 60000);
-    await until('pi 3 ready for input', () => fs.existsSync(path.join(AGENT, `pcli-ready-${third.ProcessId}`)), 120000);
+    const ready = path.join(AGENT, `pcli-ready-${third.ProcessId}`);
+    await until('pi 3 ready for input', () => fs.existsSync(ready), 120000);
     await type(t3, '!echo PCLI_QUIT_$((6*7))');
-    await until('session with PCLI_QUIT_42', () => sessions().includes('PCLI_QUIT_42'), 60000);
+    try {
+      await until('session with PCLI_QUIT_42', () => sessions().includes('PCLI_QUIT_42'), 60000);
+    } catch (err) {
+      console.log('pi 3 terminal input: ' + fs.readFileSync(ready, 'utf8'));
+      throw err;
+    }
     await type(t3, '/quit');
     await until('pi.exe exits after /quit', () => piCount(piExe) === 0, 10000);
     const rest = ours(piExe);
