@@ -6881,3 +6881,12 @@ Verbatim text as it was in DECISIONS.md at `657306b`, lines 1737-1747:
 >   | Unknown or missing model, including unknown GPT slug | `gpt-6.1-sol` | low |
 >
 >   Owner's fallback (`16-27-59:6331`, entry `e3aba5d4`): «если короче это модель не опознанная то всегда по дефолту 6.1 сол лоу юзать» Known callers with unsupported thinking fail explicitly; Claude `off` and `minimal` stay unmapped. Carrier: `extensions/RQW-web/core/model-map.ts`.
+
+## A-0384 · archived 2026-10-31 · D-AGENT-PARITY · Cursor wording of the agent description
+
+Status: SUPERSEDED by `[D-AGENT-PARITY]` in DECISIONS.md: the `agent` description follows the Sonnet style.
+Archived by the agent-description-sonnet change; exact commit: `git log -S'A-0384' -- DECISIONS-ARCHIVE.md`.
+Replacement owner quote: «теперь насчет агентов я хочу как у соннета так же давай дифы».
+Verbatim replaced text:
+
+> The `agent` description, the profile-list header and the `title`, `interrupt` and `model` parameter texts in `extensions/RQW-agent/index.ts` are Cursor's guidance with mapped names; Cursor's type catalogue is not carried, owner: «Нет мы вообще агентов никаких не переноси у нас свои агенты»; model-naming guidance dropped, owner: «Про имена моделей нахуй выбрасываем».

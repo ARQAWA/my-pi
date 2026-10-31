@@ -29,10 +29,11 @@ for nested children on the same channel. `noExtensions: true` stays unchanged; n
   as `title` in `status`, in the wait result's display data (`results[i].display.title`) and in the message
   `details.title`. The package registers RQW-agent-ui before RQW-tool-ui for delivered-message cards and wait-result
   cards: collapsed waits are tool-ui's when it is loaded, Ctrl+O shows agent-ui's expanded wait cards. The delivered content keeps its `[agent#N] ...` format.
-- The `agent` description is Cursor's Subagent guidance with our tool names (`agent`, `read`, `find`, `grep`, `job wait`,
-  `title`): when not to use it, the examples, parallel starts, usage notes, the background-completion paragraph; Cursor's
-  type catalogue, model slugs, cloud links and self-fork are not carried. Our mechanics (`start`, `send`, `wait`,
-  `status`, profiles, files) follow it as the owner's own text. The profile list is appended under
+- The `agent` description follows the Sonnet style with our tool names (`agent`, `start`, `send`, `job wait`, `title`):
+  when to use and the cost of a fresh agent, doing small work yourself, briefing like a peer, short usage bullets, the
+  background paragraph, and a trust paragraph (finished work is not redone; hand-offs use links or verbatim quotes;
+  narrow checks only on listed signs). Our mechanics (`start`, `send`, `wait`, `status`, profiles, files) follow it
+  as the owner's own text. The profile list is appended under
   `Available agent_types and a quick description of what they do:`. The `title`, `interrupt` and `model` parameter
   descriptions carry the matching Cursor sentences; `model` states the exact omission order. No project-specific
   execution rules.
