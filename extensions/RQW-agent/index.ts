@@ -18,6 +18,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { FOLLOW_UP, SUBAGENT_REMINDER, subagentPrompt, withCurrentReminder } from "./prompt.ts";
+import { forkBranch } from "./fork.ts";
 import { ProfileCatalogue, type ProfileRef } from "./profiles.ts";
 import { Activity } from "./activity.ts";
 import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-files.ts";
@@ -37,7 +38,7 @@ export const DESCRIPTION = [
 	"Spawns an agent to work on the specified task with action start. It returns the agent id agent#N.",
 	"The spawned agent will have the base tools or the `tools` subset, job and web when they are offered, codemode and tool_search when you have them, and always the ability to spawn its own subagents.",
 	"Its final answer will be provided to you when it finishes.",
-	"Note that the spawned agent gets no surrounding context beyond its task, which may cause the agent to lack the context it needs to complete its task; `include: [\"user_messages\"]` adds your user's messages.",
+	"By default the spawned agent gets no surrounding context beyond its task; `include: [\"user_messages\"]` adds your user's messages. On start, `fork_turns: \"all\"` instead copies the current branch in memory, with the caller's prompt, model and tools; its history is not durable across restart.",
 	"Do not use job wait or poll; use status only for a check you need; continue with other work or end your turn. Never fabricate or predict a pending agent's results; the notification is never something you write yourself; if the user asks before it arrives, say the result has not arrived yet. The user may not have opened the agent's report: relay what matters.",
 	"Treat its result as finished work; don't redo its searches, reads or runs. When you hand its work to another agent or cite it, use source links or verbatim quotes, never a bare retelling, and cite only what you have seen in a source, opening just that spot if you have not. Check a claim only when it has no path and line, contradicts what you have seen, shows an obvious failure or misses a significant edge case, comes from a failed or incomplete run, or is a significant behavioral change no one has verified by a test or run; then check just that claim or send the same agent a short follow-up, and still run any check the user or a skill asks for.",
 	"",
@@ -66,6 +67,7 @@ export const DESCRIPTION = [
 
 const PARAMETERS = Type.Object({
 	action: StringEnum(["start", "wait", "status", "send", "resume", "interrupt", "stop", "restart"]),
+	fork_turns: Type.Optional(StringEnum(["none", "all"], { description: "start only: copy the current branch in memory with all; default none. all refuses model, thinking, agent_type, system, system_file, role, role_file and include." })),
 	id: Type.Optional(Type.String({ description: "Agent id to send a follow-up task to, resume, interrupt, stop or restart (from start): agent#N or N." })),
 	ids: Type.Optional(Type.Array(Type.String(), { description: "Agent ids to wait on or to inspect with status: full direct child IDs agent#N. Pass multiple ids to wait for whichever finishes first." })),
 	timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Timeout in milliseconds. Defaults to 300000, min 1, no max. Prefer longer waits (minutes) to avoid busy polling." })),
@@ -1491,6 +1493,10 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const signal = AbortSignal.any([lifetime.signal, generation.signal, callerSignal, ctx.signal].filter((s): s is AbortSignal => !!s));
 			if (!main) { main = ctx; counter = Math.max(counter, lastNumber(ctx.sessionManager.getEntries(), name)); }
 			const params = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== null)) as Params;
+			if (params.fork_turns !== undefined && params.action !== "start") throw new Error("fork_turns is only supported on start");
+			if (params.fork_turns === "all" && [params.model, params.thinking, params.agent_type, params.system, params.system_file, params.role, params.role_file, params.include].some(value => value !== undefined))
+				throw new Error("fork_turns all cannot be combined with model, thinking, agent_type, system, system_file, role, role_file or include");
+			const fork = params.fork_turns === "all" ? { seed: forkBranch(ctx.sessionManager.getBranch()), system: ctx.getSystemPrompt(), model: ctx.model, thinking: pi.getThinkingLevel(), tools: pi.getActiveTools() } : undefined;
 			// Queue only registration/snapshot, never the waiting Promise or a tool that ignores abort.
 			if (params.action === "wait") {
 				const registration = coordinator.queue.then(async () => {
@@ -1506,7 +1512,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				coordinator.queue = registration.catch(() => {});
 				return registration.then(({ waiting }) => waiting).then(withDisplays);
 			}
-			const next = coordinator.queue.then(() => { signal.throwIfAborted(); return act(params, ctx, signal); });
+			const next = coordinator.queue.then(() => { signal.throwIfAborted(); return act(params, ctx, signal, fork); });
 			coordinator.queue = next.catch(() => {});
 			return untilAborted(next, signal);
 		},
@@ -1514,7 +1520,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	pi.registerTool(definition);
 
 	/** `params` has no null fields: `execute` removed them (strict-mode providers send null for omitted optional fields). */
-	async function act(params: Params, ctx: ExtensionContext, signal: AbortSignal) {
+	async function act(params: Params, ctx: ExtensionContext, signal: AbortSignal, fork?: { seed: SessionEntry[]; system: string; model: Model<Api> | undefined; thinking: Thinking; tools: string[] }) {
 		signal.throwIfAborted();
 		await hydrate(ctx, signal);
 		if (params.action === "status") {
@@ -1538,14 +1544,23 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			case "start": {
 				if (!params.task) throw new Error("task is required");
 				const config = await resolveConfig(params, ctx, signal);
+				if (fork) {
+					if (!fork.model) throw new Error("No caller model for fork");
+					config.model = fork.model;
+					config.thinking = fork.thinking;
+					config.system = withCurrentReminder(fork.system);
+					config.base = fork.system;
+					const available = new Set(selectors(fork.tools, offeredFactory()?.catalogue));
+					config.tools = config.tools.filter(tool => available.has(tool));
+				}
 				signal.throwIfAborted();
 				if (counter >= Number.MAX_SAFE_INTEGER) throw new Error("Agent id space exhausted");
 				const id = ++counter;
 				pi.appendEntry(name, { id });
 				const fast = { on: params.fast_gpt ?? callerFast() };
 				config.settings = childSettings(pi.getSettings());
-				config.builtins = BUILTIN_TOOLS.filter(name => pi.getActiveTools().includes(name));
-				const manager = createChildManager(ctx.sessionManager, ctx.cwd, name, id);
+				config.builtins = BUILTIN_TOOLS.filter(name => (fork?.tools ?? pi.getActiveTools()).includes(name));
+				const manager = createChildManager(ctx.sessionManager, ctx.cwd, name, id, fork?.seed);
 				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`, manager);
 				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, state: "idle", fast, sends: [], ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };
 				agents.set(id, a);

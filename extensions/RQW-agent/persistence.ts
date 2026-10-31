@@ -4,6 +4,7 @@ import {
 	SessionManager,
 	type AgentSession,
 	type ExtensionContext,
+	type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 
 type ReadonlySessionManager = ExtensionContext["sessionManager"];
@@ -82,7 +83,8 @@ export function recordDelivery(parent: ReadonlySessionManager, run: string): voi
 	appendFileSync(path, `${run}\n`, "utf8");
 }
 
-export function createChildManager(parent: ReadonlySessionManager, cwd: string, kind: string, id: number): SessionManager {
+export function createChildManager(parent: ReadonlySessionManager, cwd: string, kind: string, id: number, seed?: SessionEntry[]): SessionManager {
+	if (seed) return retainChild(parent, kind, id, SessionManager.inMemory(cwd, undefined, seed));
 	const directory = childDirectory(parent, kind, id);
 	if (!directory) return retainChild(parent, kind, id, SessionManager.inMemory(cwd));
 	checkPath(parent.getSessionFile()!, true, parent.getSessionFile()!);

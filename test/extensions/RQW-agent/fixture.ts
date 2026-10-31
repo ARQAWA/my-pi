@@ -28,7 +28,7 @@ export async function world(t: TestContext) {
 	return { base, put, project: join(base, "project"), cwd: join(base, "project", "pkg") };
 }
 
-export function runtime(cwd: string, root: string, thinking = "off", extraModels: string[] = []) {
+export function runtime(cwd: string, root: string, thinking = "off", extraModels: string[] = [], activeTools: string[] = []) {
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
 	const parent = SessionManager.create(root, join(root, "parent"));
 	// Two models: the parent's `model` and a distinct `other`, so a profile model that is ignored shows.
@@ -55,7 +55,7 @@ export function runtime(cwd: string, root: string, thinking = "off", extraModels
 		registerTool: (tool: any) => { definition = tool; },
 		appendEntry: (name: string, data: any) => parent.appendCustomEntry(name, data),
 		getSettings: () => ({ retry: { enabled: false }, compaction: { enabled: false } }),
-		getThinkingLevel: () => thinking, getActiveTools: () => [],
+		getThinkingLevel: () => thinking, getActiveTools: () => activeTools,
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
 	const live = registerSessionRuntime(pi, pi.events, false, undefined, undefined, undefined, undefined, undefined, "", undefined);

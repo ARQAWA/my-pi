@@ -12,6 +12,15 @@ Any extension can explicitly offer inline child factories on `rqw-agent:subagent
 them to `DefaultResourceLoader.extensionFactories`. Each runs with the child's own `ExtensionAPI` and can reoffer itself
 for nested children on the same channel. `noExtensions: true` stays unchanged; no project or package resources are loaded.
 
+## Forking the caller's branch
+
+`agent` start accepts `fork_turns: "all"` to copy the caller's current branch into a separate in-memory child session.
+The copy keeps conversation entries, compaction and context edits, but excludes service records and unfinished tool-call
+groups. The caller's model, thinking, current system prompt and available child tools are inherited. `tools` can narrow
+the base tools. The fork history is not saved to its own file and is lost on process restart or reload.
+`model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` and `include` cannot accompany `all`.
+The default `fork_turns: "none"` preserves ordinary clean starts. Forking is available only on `start`.
+
 ## Prompt and title
 
 - Default prompt: the main agent's system prompt as Pi built it for the main run (RQW-prompt's text, project context
