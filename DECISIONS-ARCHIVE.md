@@ -7118,3 +7118,19 @@ Source: `ac5b508a:DECISIONS.md`. Verbatim replaced text:
 >   Limits: RQW-scroll reads the same counts offers and also yields Escape while background work runs, so a scrolled-up
 >   transcript with only background running arms and stops with two presses and jumps down again after it ends; a press
 >   within 500 ms of one that found work stays turn control even if the work ended in between. A force-send
+
+## A-0405 · archived 2026-10-31 · Send now · Escape did not send a queued follow-up
+
+Status: SUPERSEDED by `[D-KEYS-ESC]`, `[D-KEYS-STEER]`, `[D-KEYS-HINTS]` and `[D-SENDNOW-LIMITS]` (DECISIONS.md#send-now): Escape with a user follow-up queued is the silent force-send and sends the follow-up after the steering.
+Source: `5377fff2:DECISIONS.md`. Verbatim replaced text:
+
+> At the bottom, one Escape while the turn (or a compaction) works is left to Pi, which interrupts it. A second Escape within 500 ms sends
+
+> it takes only user
+>   steering out of both Pi queues in one step (follow-ups, other queued messages and the editor draft stay; images go
+>   along), calls
+
+> The priority is prediction cancellation, Codex steering force, other-provider steering force, main interruption,
+
+> Several queued messages go as one, joined by blank lines; follow-ups and
+>   other queued messages stay in Pi's queue;

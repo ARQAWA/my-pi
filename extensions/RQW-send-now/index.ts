@@ -1,5 +1,6 @@
 // Steering keys while the agent works: Ctrl+Enter or Alt+Enter with text queues steering; an empty Enter, an empty
 // Ctrl+Enter (Codex) or Escape (other providers) with steering queued interrupts the turn silently and sends it now.
+// Escape with a follow-up queued, on every provider, does the same and sends the follow-up after the steering.
 // Raw terminal input and public send APIs; queue.ts captures the owning Pi session in memory.
 import { CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, isKeyRelease, isKeyRepeat, matchesKey, type TUI } from "@earendil-works/pi-tui";
@@ -21,7 +22,7 @@ const CODEX = "openai-codex";
 const DOUBLE_ESCAPE_MS = 500;
 
 /** A force-send under way: the reserved steering, plus late arrivals routed in until it is sent or restored. */
-type Pending = { steers: Steer[]; ctx: ExtensionContext; release: () => void; settled: Promise<void>; onLate: (steer: Steer) => boolean; interrupted?: AssistantMessage; cancelled?: boolean };
+type Pending = { steers: Steer[]; followUps: Steer[]; ctx: ExtensionContext; release: () => void; settled: Promise<void>; onLate: (steer: Steer) => boolean; interrupted?: AssistantMessage; cancelled?: boolean };
 type FocusTUI = TUI & { getFocusedComponent(): unknown };
 
 /** The interrupted reply as the model will see it: its text only, as a finished reply; undefined when it has none. */
@@ -93,6 +94,8 @@ export default function sendNow(pi: ExtensionAPI) {
 		ctx.ui.notify(`Queued message not sent (${why}); it is back in the editor.`, "warning");
 	}
 
+	/** Steering first, including steering that arrived late, then the follow-ups an Escape took. */
+	const inOrder = (job: Pending) => [...job.steers, ...job.followUps];
 	const joined = (steers: Steer[]) => steers.map((steer) => steer.text).filter((text) => text.trim()).join("\n\n");
 
 	function send() {
@@ -107,8 +110,8 @@ export default function sendNow(pi: ExtensionAPI) {
 		}
 		pending = undefined;
 		job.release();
-		const text = joined(job.steers);
-		const images = job.steers.flatMap((steer) => steer.images);
+		const text = joined(inOrder(job));
+		const images = inOrder(job).flatMap((steer) => steer.images);
 		const unsent = (why: string) => {
 			if (interrupted) markInterrupted(interrupted, false);
 			if (text.trim()) restore(text, ctx, why);
@@ -131,13 +134,15 @@ export default function sendNow(pi: ExtensionAPI) {
 
 	/**
 	 * Interrupts the turn without a notice and sends the user steering now. The steering leaves both Pi queues at once;
-	 * follow-ups and the editor draft stay. The send waits for the abort and for steering inputs still on their way.
+	 * the editor draft stays, and so do follow-ups unless `withFollowUps` (Escape): they go after the steering. The send
+	 * waits for the abort and for steering inputs still on their way.
 	 */
-	function forceSteering(ctx: ExtensionContext): boolean {
-		const job: Pending = { steers: [], ctx, release: () => {}, settled: Promise.resolve(), onLate: (steer) => { job.steers.push(steer); return true; } };
-		const forced = queue.force(ctx.sessionManager, (steer) => job.onLate(steer));
+	function forceSteering(ctx: ExtensionContext, withFollowUps = false): boolean {
+		const job: Pending = { steers: [], followUps: [], ctx, release: () => {}, settled: Promise.resolve(), onLate: (steer) => { job.steers.push(steer); return true; } };
+		const forced = queue.force(ctx.sessionManager, (steer) => job.onLate(steer), withFollowUps);
 		if (!forced) return false;
 		job.steers.push(...forced.taken);
+		job.followUps.push(...forced.followUps);
 		job.release = forced.release;
 		job.settled = forced.settled;
 		pending = job;
@@ -151,9 +156,14 @@ export default function sendNow(pi: ExtensionAPI) {
 		return count !== undefined && count.queued + count.inflight > 0;
 	}
 
+	/** True while a user follow-up is queued in Pi (held ones too). */
+	function followUpWaits(ctx: ExtensionContext): boolean {
+		return (queue.followUps(ctx.sessionManager) ?? 0) > 0;
+	}
+
 	/**
-	 * Escape: one press leaves the running turn to Pi, which interrupts it (with user steering queued and a provider
-	 * other than Codex it is the force-send instead). A second press within 500 ms stops the
+	 * Escape: one press leaves the running turn to Pi, which interrupts it (with a user follow-up queued, or user
+	 * steering queued and a provider other than Codex, it is the force-send instead). A second press within 500 ms stops the
 	 * background (and cancels a force-send not yet started). With only background running the first press is taken
 	 * here, so Pi's own double-Escape action cannot fire; idle double Escape stays with the history editor.
 	 */
@@ -173,8 +183,10 @@ export default function sendNow(pi: ExtensionAPI) {
 		const working = !ctx.isIdle() || queue.session(ctx.sessionManager)?.isCompacting === true;
 		if (!working && !pending && !background()) return undefined;
 		escapeAt = now;
-		// Not Codex: Escape with steering queued is the force-send, so Pi's own Escape (restore the queue) is skipped.
-		if (!ctx.isIdle() && ctx.model?.provider !== CODEX && steeringWaits(ctx) && forceSteering(ctx)) return { consume: true };
+		// A queued follow-up, or steering on a provider other than Codex, makes Escape the force-send, so Pi's own Escape
+		// (restore the queue) is skipped.
+		const forces = (ctx.model?.provider !== CODEX && steeringWaits(ctx)) || followUpWaits(ctx);
+		if (!ctx.isIdle() && forces && forceSteering(ctx, true)) return { consume: true };
 		return working ? undefined : { consume: true };
 	}
 
@@ -296,7 +308,8 @@ export default function sendNow(pi: ExtensionAPI) {
 			const working = !ctx.isIdle() || special;
 			const next = brewing ? "ctrl+r to interrupt"
 				: special ? "esc to interrupt"
-				: working && steering ? ctx.model?.provider === CODEX ? "ctrl+enter to send now" : "esc to send now"
+				: working && steering && ctx.model?.provider === CODEX ? "ctrl+enter to send now"
+				: working && (steering || followUp) ? "esc to send now"
 				: working ? "esc to interrupt"
 				: background() ? "esc esc to stop background"
 				: followUp ? "ctrl+enter to steer" : undefined;
@@ -344,14 +357,30 @@ export default function sendNow(pi: ExtensionAPI) {
 		const job = pending;
 		pending = undefined;
 		if (!job) return queue.release();
-		const { steers, ctx, settled } = job;
+		const { ctx, settled } = job;
 		// A late input that finds the context already invalid is left to Pi's own queue (the session stays on /reload).
 		const back = (text: string, later = false) => {
 			try { if (text.trim()) restore(text, ctx, "the session ended first", later); return true; } catch { return false; }
 		};
 		try { if (job.interrupted) markInterrupted(job.interrupted, false); } catch {}
-		back(joined(steers));
-		job.onLate = (steer) => back(steer.text, true);
+		back(joined(inOrder(job)));
+		// Late steering goes before the restored follow-ups, so the editor keeps the order a send would have had.
+		const followUpText = joined(job.followUps);
+		const steeringText = joined(job.steers);
+		// The editor now starts with the restored steering, then the follow-ups; what was restored so far is this head.
+		let head = steeringText ? `${steeringText}\n\n` : "";
+		const backBeforeFollowUps = (text: string) => {
+			try {
+				const current = ctx.ui.getEditorText();
+				const intact = followUpText && current.startsWith(head) && current.startsWith(followUpText, head.length);
+				if (!intact || !text.trim()) return back(text, true);
+				ctx.ui.setEditorText(`${head}${text}\n\n${current.slice(head.length)}`);
+				head += `${text}\n\n`;
+				ctx.ui.notify("Queued message not sent (the session ended first); it is back in the editor.", "warning");
+				return true;
+			} catch { return false; }
+		};
+		job.onLate = (steer) => backBeforeFollowUps(steer.text);
 		void settled.then(() => { job.release(); queue.release(); });
 	});
 }

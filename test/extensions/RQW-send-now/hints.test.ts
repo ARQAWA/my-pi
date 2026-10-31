@@ -53,7 +53,7 @@ it("without predictions, shows the action for each queue and background state", 
 	const line = editor.render(80)[1];
 	assert.ok(line.includes(CURSOR_MARKER)); assert.ok(line.includes("\x1b[3m"));
 	session._followUpMessages.push("next"); emit({ type: "queue_update" });
-	assert.equal(row(), "esc to interrupt");
+	assert.equal(row(), "esc to send now");
 	await session._queueSteer("change");
 	assert.equal(row(), "ctrl+enter to send now");
 	emit({ type: "compaction_start" });
