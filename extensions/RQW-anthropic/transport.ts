@@ -9,6 +9,9 @@ import { OVERLAY } from "./registration.ts";
 import { contextForks } from "./context-fork.ts";
 import { attachHttpDiagnostic, httpDiagnostic, type HttpDiagnostic } from "./retry-hints.ts";
 
+// Shared side-request contract: preserve Claude Code identity without replacing the main snapshot.
+const SESSION_IDENTITY = Symbol.for("rqw-anthropic/session-identity");
+
 /** Retries HTTP rejections only, before any stream bytes can escape to the agent. */
 export function subscriptionFetch(
 	transport: typeof fetch, store: CredentialStore | undefined, version: VersionState,
@@ -85,14 +88,14 @@ export function createOverlay(
 	});
 	const handler = (model: Parameters<Provider["streamSimple"]>[0], context: Parameters<Provider["streamSimple"]>[1], options?: SimpleStreamOptions) => {
 		// Pi merges both entrypoints into this handler; retain the original options contract.
-		const provenance = options as (SimpleStreamOptions & { [STREAM_CONTRACT]?: string; [AUTH_ORIGIN]?: AuthOrigin }) | undefined;
+		const provenance = options as (SimpleStreamOptions & { [STREAM_CONTRACT]?: string; [AUTH_ORIGIN]?: AuthOrigin; [SESSION_IDENTITY]?: string }) | undefined;
 		const contract = provenance?.[STREAM_CONTRACT];
 		const simple = contract === "simple" || (!contract && options && ("reasoning" in options || "thinkingBudgets" in options));
 		const delegate = simple ? base.streamSimple.bind(base) : base.stream.bind(base);
 		if (!assertAnthropicAuthBoundary(model, options, process.env.ANTHROPIC_CUSTOM_HEADERS)) return delegate(model, context, options);
 		const transport = options?.fetch ?? globalThis.fetch;
 		let rejection: HttpDiagnostic | undefined;
-		const subscription = subscriptionFetch(transport, getStore(), version, options?.sessionId ?? randomUUID(), deviceId,
+		const subscription = subscriptionFetch(transport, getStore(), version, provenance?.[SESSION_IDENTITY] ?? options?.sessionId ?? randomUUID(), deviceId,
 			options?.signal, provenance?.[AUTH_ORIGIN],
 			// The server's own answer, before 401 and 403 are replaced by recovery or a synthetic error.
 			response => { rejection = response && !response.ok ? httpDiagnostic(response.status, response.headers) : undefined; },

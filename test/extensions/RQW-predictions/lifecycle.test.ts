@@ -383,9 +383,10 @@ describe("RQW-predictions context", () => {
 		h.setModel(OTHER);
 		h.key(CTRL_E);
 		await settle();
-		// No main request was recorded: no routing id, so no fork; the provider is called with the branch.
+		// No main request was recorded; Codex still gets no routing id for the main thread.
 		assert.equal(h.forks.length, 0);
 		assert.equal(h.provider[0].model, OTHER);
+		assert.equal(h.provider[0].options.sessionId, undefined);
 		const messages = h.provider[0].context.messages;
 		assert.equal(messages[0].role, "system");
 		assert.equal(messages[0].content, "CURRENT PROMPT");

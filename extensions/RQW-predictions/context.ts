@@ -4,6 +4,8 @@ import { normalizeContext, type Api, type AssistantMessage, type Context, type M
 import { AgentSession, convertToLlm, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
 
 export const CONTEXT_FORK = "rqw:context-fork:v1";
+// Transport identity only; unlike sessionId, this never registers a main-request snapshot.
+const SESSION_IDENTITY = Symbol.for("rqw-anthropic/session-identity");
 /** The reply shape of Codex's own prediction call: `{ suggestion: string | null }`. */
 const REPLY_SCHEMA = { type: "object", properties: { suggestion: { type: ["string", "null"] } }, required: ["suggestion"], additionalProperties: false };
 export const SCHEMA_RULE = `Return only JSON matching this schema: ${JSON.stringify(REPLY_SCHEMA)}.`;
@@ -175,9 +177,13 @@ export function installContext(pi: ExtensionAPI): PredictionContext {
 			const messages = [...messagesOf(ctx, capture), instruction];
 			const run = fork(capture, messages, signal);
 			if (run) return run();
-			// No sessionId: a transport would route the main session id into the main thread's controller.
 			const { model, reasoning } = capture;
-			return ctx.modelRegistry.streamSimple(model, normalizeContext({ messages }), { reasoning, signal }).result();
+			// Anthropic uses this as Claude Code identity. Codex must not reuse the main thread's controller.
+			const sessionId = model.provider === "anthropic" && model.api === "anthropic-messages"
+				? ctx.sessionManager.getSessionId() : undefined;
+			return ctx.modelRegistry.streamSimple(model, normalizeContext({ messages }), {
+				reasoning, signal, [SESSION_IDENTITY]: sessionId,
+			}).result();
 		},
 	};
 }
