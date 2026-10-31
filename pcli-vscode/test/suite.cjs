@@ -26,7 +26,7 @@ async function until(what, fn, ms) {
   }
 }
 
-function sessions() {
+function sessionFiles() {
   const out = [];
   const walk = (d) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
@@ -36,8 +36,10 @@ function sessions() {
     }
   };
   walk(AGENT);
-  return out.join('\n');
+  return out;
 }
+
+const sessions = () => sessionFiles().join('\n');
 
 // Every process whose name is pi.exe or whose command line holds the bundled pi.exe path (powershell, bash, pi)
 function ours(piExe) {
@@ -138,15 +140,13 @@ async function main() {
   if (S === 'A') {
     const t3 = await tab('pi 3');
     const third = await until('pi.exe alive in pi 3', () => ours(piExe).find((p) => norm(p.Name) === 'pi.exe'), 60000);
-    const ready = path.join(AGENT, `pcli-ready-${third.ProcessId}`);
-    await until('pi 3 ready for input', () => fs.existsSync(ready), 120000);
+    await until('pi 3 ready for input', () => fs.existsSync(path.join(AGENT, `pcli-ready-${third.ProcessId}`)), 120000);
+    // Pi persists bash output only after a user or assistant message exists in the session.
+    await type(t3, 'PCLI_QUIT_SESSION');
+    await until('pi 3 session created and model turn finished', () => sessionFiles().some((s) =>
+      s.includes('PCLI_QUIT_SESSION') && s.includes('"stopReason":"error"')), 120000);
     await type(t3, '!echo PCLI_QUIT_$((6*7))');
-    try {
-      await until('session with PCLI_QUIT_42', () => sessions().includes('PCLI_QUIT_42'), 60000);
-    } catch (err) {
-      console.log('pi 3 terminal input: ' + fs.readFileSync(ready, 'utf8'));
-      throw err;
-    }
+    await until('session with PCLI_QUIT_42', () => sessions().includes('PCLI_QUIT_42'), 60000);
     await type(t3, '/quit');
     await until('pi.exe exits after /quit', () => piCount(piExe) === 0, 10000);
     const rest = ours(piExe);

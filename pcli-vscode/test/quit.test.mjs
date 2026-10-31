@@ -44,8 +44,12 @@ test('scenario A rejects a /quit that needs a second Enter', async (t) => {
               "CONNECT llm.pcli.test:443 auth=pcli:it's\nCONNECT github.com:443 auth=pcli:it's\n");
             if (this.name === 'pi 3') assert.ok(now >= thirdReadyAt, 'input must wait for Pi readiness');
             if (text !== '\r') this.pending = text;
+            if (text === '\r' && this.pending === 'PCLI_QUIT_SESSION') {
+              fs.writeFileSync(path.join(agent, 'third.jsonl'), 'PCLI_QUIT_SESSION\n{"stopReason":"error"}\n');
+            }
             if (text === '\r' && this.pending === '!echo PCLI_QUIT_$((6*7))') {
-              fs.appendFileSync(path.join(agent, 'session.jsonl'), 'PCLI_QUIT_42\n');
+              const thirdSession = path.join(agent, 'third.jsonl');
+              if (fs.existsSync(thirdSession)) fs.appendFileSync(thirdSession, 'PCLI_QUIT_42\n');
             }
             if (text === '\r' && this.pending === '/quit') {
               this.quitAttempts += 1;
