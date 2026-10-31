@@ -49,6 +49,8 @@ function wrap(manager: Manager): (() => void) | undefined {
 	let active = true;
 	const wrappers: Record<Method, unknown> = {
 		getKeys(this: Manager, id: string) {
+			// A later layer may have restored this released one after shutdown.
+			if (!active) restore("getKeys");
 			const keys = base.getKeys.call(this, id);
 			return active ? freeKeys(id, keys) : keys;
 		},

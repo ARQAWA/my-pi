@@ -1,7 +1,7 @@
 // RQW-scroll: in Pi's fullscreen (alt-screen) view, Escape returns a scrolled-up transcript to the latest message.
 // Everywhere else Escape keeps Pi's own meaning. Decision and limits: DECISIONS.md section Scroll.
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, setKeybindings, isKeyRelease, matchesKey, type TUI } from "@earendil-works/pi-tui";
+import { getKeybindings, isKeyRelease, matchesKey, type TUI } from "@earendil-works/pi-tui";
 
 const WIDGET = "rqw-scroll";
 
@@ -35,22 +35,30 @@ export default function scroll(pi: ExtensionAPI) {
 			tui = t as Renderer;
 			return { render: () => [], invalidate() {} };
 		}, { placement: "belowEditor" });
-		// Public registry replacement: decorate display lookup, not matching or the user's bindings.
-		// Pi formats getKeys() for its indicator, but routes input through matches(). Keep every other
-		// method bound to the original manager (including config updates), without modifying it.
-		const original = getKeybindings();
-		let active = true;
-		const display = new Proxy(original, {
-			get(target, property) {
-				if (property === "getKeys") return (id: Parameters<typeof original.getKeys>[0]) => {
-					const keys = target.getKeys(id);
-					return active && id === "tui.altScreen.bottom" && shouldJump(tui) ? ["esc", ...keys.filter((k) => k !== "esc" && k !== "escape")] : keys;
-				};
-				const value = Reflect.get(target, property, target);
-				return typeof value === "function" ? value.bind(target) : value;
-			},
-		});
-		setKeybindings(display);
+		// Pi also retains the manager for input, so decorate its display lookup in place.
+		const manager = getKeybindings();
+		let releaseDisplay = () => {};
+		try {
+			if (typeof manager.getKeys !== "function" || !Array.isArray(manager.getKeys("tui.altScreen.bottom"))) throw new Error("incompatible keybindings");
+			// The check may have unlinked a released layer that had just returned to the top.
+			const base = manager.getKeys;
+			const own = Object.getOwnPropertyDescriptor(manager, "getKeys");
+			let active = true;
+			const unlink = () => {
+				if (manager.getKeys !== display) return;
+				if (own) Object.defineProperty(manager, "getKeys", own);
+				else delete (manager as { getKeys?: typeof base }).getKeys;
+			};
+			const display: typeof base = function(id) {
+				if (!active) unlink();
+				const keys = base.call(this, id);
+				return active && id === "tui.altScreen.bottom" && shouldJump(tui) ? ["esc", ...keys.filter((k) => k !== "esc" && k !== "escape")] : keys;
+			};
+			Object.defineProperty(manager, "getKeys", { value: display, writable: true, configurable: true });
+			releaseDisplay = () => { active = false; unlink(); };
+		} catch {
+			// An incompatible manager keeps Pi's stock display.
+		}
 		// Pi's viewport listener runs first and keeps its own keys (search close, Ctrl+End, paging).
 		const off = ui.onTerminalInput((data) => {
 			if (!matchesKey(data, "escape") || isKeyRelease(data) || !shouldJump(tui)) return undefined;
@@ -58,8 +66,7 @@ export default function scroll(pi: ExtensionAPI) {
 			return { consume: true };
 		});
 		dispose = () => {
-			active = false;
-			if (getKeybindings() === display) setKeybindings(original);
+			releaseDisplay();
 			off();
 			ui.setWidget(WIDGET, undefined);
 		};
