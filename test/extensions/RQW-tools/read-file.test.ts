@@ -240,3 +240,45 @@ test("rqw_readfile permits explicit ignored paths and respects abort", async (t)
 	controller.abort();
 	await assert.rejects(execute({ path: "missing" }, { cwd }, controller.signal), /aborted/);
 });
+
+// macOS names the screenshot with U+202F before AM/PM; the model usually sees a plain space.
+test("rqw_readfile opens a screenshot name with U+202F before PM", async (t) => {
+	const { cwd, text, execute } = await fixture(t);
+	const name = "pasted-image-20261031-10028\u202FPM";
+	await writeFile(join(cwd, `${name}.txt`), "narrow");
+	await t.test("plain space", async () => assert.equal(await text({ path: name.replace("\u202F", " ") + ".txt" }), "narrow"));
+	await t.test("exact U+202F", async () => assert.equal(await text({ path: `${name}.txt` }), "narrow"));
+	await t.test("exact U+202F, absolute", async () => assert.equal(await text({ path: join(cwd, `${name}.txt`) }), "narrow"));
+	await t.test("image", async () => {
+		const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==", "base64");
+		await writeFile(join(cwd, `${name}.png`), png);
+		for (const path of [name.replace("\u202F", " ") + ".png", `${name}.png`]) {
+			const result = await execute({ path });
+			assert.ok(result.content.some((block: any) => block.type === "image"), path);
+		}
+	});
+});
+
+test("rqw_readfile keeps the exact U+202F file when a plain-space sibling exists", async (t) => {
+	const { cwd, text, execute } = await fixture(t);
+	const exact = "shot 10028\u202FPM", plain = "shot 10028 PM";
+	await writeFile(join(cwd, `${exact}.txt`), "exact");
+	await writeFile(join(cwd, `${plain}.txt`), "plain");
+	assert.equal(await text({ path: `${exact}.txt` }), "exact");
+	assert.equal(await text({ path: `${plain}.txt` }), "plain");
+	const exactPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==", "base64");
+	const plainPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNg+M/wHwAEAQH/q842iQAAAABJRU5ErkJggg==", "base64");
+	await writeFile(join(cwd, `${exact}.png`), exactPng);
+	await writeFile(join(cwd, `${plain}.png`), plainPng);
+	// Resizing is off in the fixture, so the returned image is the source file.
+	const bytes = async (path: string) => Buffer.from((await execute({ path })).content.find((b: any) => b.type === "image").data, "base64");
+	assert.deepEqual(await bytes(`${exact}.png`), exactPng);
+	assert.deepEqual(await bytes(`${plain}.png`), plainPng);
+});
+
+test("rqw_readfile still reads foo for @foo even when a file named @foo exists", async (t) => {
+	const { cwd, text } = await fixture(t);
+	await writeFile(join(cwd, "foo"), "plain foo");
+	await writeFile(join(cwd, "@foo"), "at foo");
+	assert.equal(await text({ path: "@foo" }), "plain foo");
+});

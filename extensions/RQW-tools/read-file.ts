@@ -1,7 +1,8 @@
-import { open } from "node:fs/promises";
-import { createReadToolDefinition, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { constants } from "node:fs";
+import { access, open, readFile } from "node:fs/promises";
+import { createReadToolDefinition, detectSupportedImageMimeTypeFromFile, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { resolvePath } from "./keys.ts";
+import { resolveReadPath } from "./keys.ts";
 import { readDescription } from "./rg.ts";
 
 const MAX_LINES = 2000;
@@ -180,7 +181,7 @@ export function createReadFileTool(cwd: string, settings: () => any): ToolDefini
 			if (params.offset !== undefined && !Number.isSafeInteger(params.offset)) throw new Error("offset must be an integer");
 			if (params.limit !== undefined && (!Number.isSafeInteger(params.limit) || params.limit < 1)) throw new Error("limit must be at least 1");
 			const root = ctx?.cwd || cwd;
-			const path = resolvePath(params.path, root);
+			const path = await resolveReadPath(params.path, root);
 			const file = await open(path, "r");
 			let sample: Buffer;
 			try {
@@ -191,7 +192,13 @@ export function createReadFileTool(cwd: string, settings: () => any): ToolDefini
 			if (isImage(sample)) {
 				let options: any;
 				try { const s = settings(); options = s ? { autoResizeImages: s.images?.autoResize ?? true } : undefined; } catch { /* stock defaults */ }
-				const image: any = createReadToolDefinition(root, options);
+				// The stock tool resolves its path again and could pick a sibling name; pin every file operation to ours.
+				const pinned = {
+					readFile: () => readFile(path),
+					access: () => access(path, constants.R_OK),
+					detectImageMimeType: () => detectSupportedImageMimeTypeFromFile(path),
+				};
+				const image: any = createReadToolDefinition(root, { ...options, operations: pinned });
 				const result = await image.execute(id, { path }, signal, onUpdate, ctx);
 				if (!result.content.some((block: any) => block.type === "image") && !result.content.some((block: any) => block.type === "text" && block.text.startsWith("Read image file ["))) {
 					throw new Error("Unsupported or invalid image format");

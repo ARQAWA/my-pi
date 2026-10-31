@@ -6,15 +6,16 @@ import { fileURLToPath } from "node:url";
 
 // Same spaces Pi folds to " " before it resolves a path.
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
+const UNICODE_SPACES_KEEP_NARROW = /[\u00A0\u2000-\u200A\u205F\u3000]/g;
 // Git Bash, MSYS, Cygwin and WSL drive paths, as Pi reads them: "/c/x" -> "C:\x".
 const DRIVE = /^\/(?:mnt\/|cygdrive\/)?([a-z])(?:\/(.*))?$/i;
 
 // The pure string rules. Result is an absolute path in the path flavour of `platform`.
-function resolveLexical(p: string, cwd: string, platform: NodeJS.Platform, piArgument = true): string {
+function resolveLexical(p: string, cwd: string, platform: NodeJS.Platform, piArgument = true, keepNarrow = false): string {
   const win = platform === "win32";
   const P = win ? path.win32 : path.posix;
   if (piArgument) {
-    p = p.replace(UNICODE_SPACES, " ");
+    p = p.replace(keepNarrow ? UNICODE_SPACES_KEEP_NARROW : UNICODE_SPACES, " ");
     if (p.startsWith("@")) p = p.slice(1);
   }
   if (win && p.startsWith("/") && !p.startsWith("//") && !p.includes("\\")) {
@@ -69,6 +70,31 @@ function canonical(abs: string, P: path.PlatformPath): { key: string; existing?:
 /** Lexical resolution of a path for this platform, the same string rules Pi applies (`resolveToCwd`). */
 export function resolvePath(p: string, cwd: string): string {
   return resolveLexical(p, cwd, process.platform);
+}
+
+async function exists(abs: string): Promise<boolean> {
+  try { await fs.promises.access(abs); return true; } catch { return false; }
+}
+
+/**
+ * Path to open for a read: Pi's own resolution, then its macOS screenshot, NFD and curly-quote retries (same
+ * order as Pi's `resolveReadPathAsync`, which Pi does not export). Only a name that holds an exact U+202F is tried
+ * as written first, so it does not turn into a plain-space sibling.
+ */
+export async function resolveReadPath(p: string, cwd: string): Promise<string> {
+  const resolved = resolvePath(p, cwd);
+  if (p.includes("\u202F")) {
+    const exact = resolveLexical(p, cwd, process.platform, true, true);
+    if (await exists(exact)) return exact;
+  }
+  if (await exists(resolved)) return resolved;
+  const nfd = resolved.normalize("NFD");
+  const curly = (value: string) => value.replace(/'/g, "\u2019");
+  const variants = [resolved.replace(/ (AM|PM)\./gi, "\u202F$1."), nfd, curly(resolved), curly(nfd)];
+  for (const variant of variants) {
+    if (variant !== resolved && await exists(variant)) return variant;
+  }
+  return resolved;
 }
 
 // Locale-independent casing closure, not an exact APFS/Windows collation table. In particular, lowercase alone
