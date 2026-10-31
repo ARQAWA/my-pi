@@ -479,7 +479,8 @@ test("nested child codemode exposes exactly its selected tool subset", async t =
 	assert.deepEqual(JSON.parse(list), ["agent", "rqw_readfile"]);
 });
 
-const REMINDER = "<subagent>\nYou are running as a subagent under a parent agent. Do not spawn additional subagents unless requested by the user or by your instructions.\n</subagent>";
+const REMINDER = "<subagent>\nYou are an agent in a team of agents collaborating to complete a task.\nWhen you provide your final answer, that content is immediately delivered back to your parent agent.\nIn addition, your final answer may be read by a human, so ensure it is legible.\nAny earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user, your task, role or system prompt, or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.\n</subagent>";
+const CURSOR_REMINDER = "<subagent>\nYou are running as a subagent under a parent agent. Do not spawn additional subagents unless requested by the user or by your instructions.\n</subagent>";
 
 test("a finished child's pushed result message ends with the follow-up", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
@@ -596,10 +597,12 @@ test("an own system prompt that begins with the base is still saved whole", asyn
 	live.runtime.close();
 });
 
-test("a restored child with the legacy reminder gets the new one in place, role bytes unchanged", async t => {
-	const system = await restoredSystem(t, { role: "  R\n" }, text => text.replace(REMINDER, LEGACY_REMINDER));
-	assert.equal(system, `original prompt\n\n${REMINDER}\n\n<role>\nR\n</role>`);
-});
+for (const legacy of [LEGACY_REMINDER, CURSOR_REMINDER]) {
+	test("a restored child replaces an old reminder in place, role bytes unchanged", async t => {
+		const system = await restoredSystem(t, { role: "  R\n" }, text => text.replace(REMINDER, legacy));
+		assert.equal(system, `original prompt\n\n${REMINDER}\n\n<role>\nR\n</role>`);
+	});
+}
 
 test("a restored custom prompt saved without any reminder gets the reminder appended", async t => {
 	assert.equal(await restoredSystem(t, { system: "CUSTOM" }, () => "CUSTOM"), `CUSTOM\n\n${REMINDER}`);
@@ -670,16 +673,33 @@ test("custom system and system_file prompts still get the subagent reminder last
 	live.runtime.close();
 });
 
-test("registered description ends with Cursor's profile-list header and parameters carry Cursor guidance", async t => {
+test("registered description and parameters carry adapted Codex guidance", async t => {
 	const root = await temp(t);
 	const live = runtimeFixture(SessionManager.create(root, join(root, "parent")), root);
 	await live.emit("session_start");
-	assert.match(live.description(), /\n\nAvailable agent_types and a quick description of what they do:\n/);
-	assert.doesNotMatch(live.description(), /Agent types:/);
-	const { title, interrupt, model } = live.parameters().properties;
-	assert.ok(title.description.endsWith("Make it concrete and distinct, consider recent titles to avoid reuse."));
-	assert.ok(interrupt.description.endsWith("Only use when the user explicitly asks to interrupt or change what the running agent is doing."));
-	assert.equal(model.description, "provider/id. If omitted: on restart, the previous model if it was given explicitly (a previous model that came from the agent_type profile is dropped and the profile is re-read); otherwise the agent_type profile's model, if it has one; otherwise the caller's model. Omit model unless the user explicitly requested another model.");
+	assert.match(live.description(), /\n\nAvailable roles:\n/);
+	const properties = live.parameters().properties;
+	assert.equal(properties.id.description, "Agent id to send a follow-up task to, resume, interrupt, stop or restart (from start): agent#N or N.");
+	assert.equal(properties.ids.description, "Agent ids to wait on or to inspect with status: full direct child IDs agent#N. Pass multiple ids to wait for whichever finishes first.");
+	assert.equal(properties.timeout_ms.description, "Timeout in milliseconds. Defaults to 300000, min 1, no max. Prefer longer waits (minutes) to avoid busy polling.");
+	assert.equal(properties.messages.description, "Status peek length; default 8");
+	assert.equal(properties.until.description, "wait: first terminal result (default), or hold results until all selected targets are terminal");
+	assert.equal(properties.wake_on_alert.description, "wait: return on a new structured alert without consuming a result; default true");
+	assert.equal(properties.depth.description, "status: descendant generations to include, read-only; default 0");
+	assert.equal(properties.alert_after_ms.description, "start/restart: long-turn alert threshold in milliseconds, positive safe integer; disabled by default, inherited on restart");
+	assert.equal(properties.system.description, "Whole system prompt, replacing the default (your prompt and role); the subagent reminder is still appended after it; start, restart");
+	assert.equal(properties.role.description, "Short role text added after the default prompt; start, restart");
+	assert.equal(properties.system_file.description, "start, restart: UTF-8 whole-prompt file, relative to caller cwd; conflicts with system and either role option");
+	assert.equal(properties.role_file.description, "start, restart: UTF-8 role file, relative to caller cwd; conflicts with role and either system option");
+	assert.equal(properties.include.description, "start, restart: append verbatim user-role text from this caller's current session branch after the task");
+	assert.equal(properties.title.description, "Short title, 3-5 words, shown in status and result headers; start, restart. Make it concrete and distinct, consider recent titles to avoid reuse.");
+	assert.equal(properties.agent_type.description, "Agent type override for the new agent. Omit unless explicitly asked. Restart inherits and revalidates the selected agent_type. The roles are listed at the end of the tool description.");
+	assert.equal(properties.task.description, "Initial plain-text task for the new agent, or the message text to send to the target agent with send or restart.");
+	assert.equal(properties.model.description, "Model override for the new agent, as provider/id. Omit unless an explicit override is needed. If omitted: on restart, the previous model if it was given explicitly (a previous model that came from the agent_type profile is dropped and the profile is re-read); otherwise the agent_type profile's model, if it has one; otherwise the caller's model.");
+	assert.equal(properties.thinking.description, "Reasoning effort override for the new agent. Omit to inherit the parent effort, unless the selected agent_type sets one.");
+	assert.equal(properties.tools.description, "Base subset; default all. Recursive agent delegation stays available.");
+	assert.equal(properties.fast_gpt.description, "GPT Fast for this child; default: inherit yours. false when the user forbids Fast for subagents; send and restart may change it");
+	assert.equal(properties.interrupt.description, "send only: True interrupts the current task and starts this message as soon as the interrupted run has stopped; false or omitted queues it. A queued message reaches a running agent after its current tool call; an interrupt drops queued messages and keeps history.");
 	live.runtime.close();
 });
 

@@ -2,8 +2,18 @@
 // read through the public `ctx.getSystemPrompt()`), then the subagent reminder, then the caller's optional role.
 // DECISIONS.md, section Agent.
 
-/** Cursor's subagent reminder, always part of every child prompt. */
+/** Adapted Codex 0.165.0 reminder, always part of every child prompt. */
 export const SUBAGENT_REMINDER = [
+	"<subagent>",
+	"You are an agent in a team of agents collaborating to complete a task.",
+	"When you provide your final answer, that content is immediately delivered back to your parent agent.",
+	"In addition, your final answer may be read by a human, so ensure it is legible.",
+	"Any earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user, your task, role or system prompt, or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.",
+	"</subagent>",
+].join("\n");
+
+/** Cursor reminder kept to rebuild saved children. */
+const CURSOR_SUBAGENT_REMINDER = [
 	"<subagent>",
 	"You are running as a subagent under a parent agent. Do not spawn additional subagents unless requested by the user or by your instructions.",
 	"</subagent>",
@@ -31,10 +41,11 @@ export function subagentPrompt(base: string, role?: string, preserveRoleWhitespa
 }
 
 /**
- * Brings a persisted child prompt to the current reminder: the legacy block is replaced in place by the current one,
+ * Brings a persisted child prompt to the current reminder: the legacy blocks are replaced in place by the current one,
  * all other bytes unchanged; the reminder is appended only when it is still missing afterwards.
  */
 export function withCurrentReminder(system: string): string {
-	const replaced = system.replace(LEGACY_SUBAGENT_REMINDER, () => SUBAGENT_REMINDER);
+	const replaced = system.replace(LEGACY_SUBAGENT_REMINDER, () => SUBAGENT_REMINDER)
+		.replace(CURSOR_SUBAGENT_REMINDER, () => SUBAGENT_REMINDER);
 	return replaced.includes(SUBAGENT_REMINDER) ? replaced : `${replaced}\n\n${SUBAGENT_REMINDER}`;
 }

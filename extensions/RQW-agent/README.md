@@ -16,9 +16,7 @@ for nested children on the same channel. `noExtensions: true` stays unchanged; n
 
 - Default prompt: the main agent's system prompt as Pi built it for the main run (RQW-prompt's text, project context
   such as AGENTS.md, skills and `<cwd>` when they are loaded), read through the public `ctx.getSystemPrompt()` of Pi
-  1.4.0, then the subagent reminder (`SUBAGENT_REMINDER` in [prompt.ts](prompt.ts): Cursor's sentence between
-  `<subagent>` tags, "You are running as a subagent under a parent agent. Do not spawn additional subagents unless
-  requested by the user or by your instructions."), then the optional
+  1.4.0, then the adapted Codex 0.165.0 subagent reminder (`SUBAGENT_REMINDER` in [prompt.ts](prompt.ts)), then the optional
   `role` as `<role>...</role>`. A nested subagent gets the same main prompt (handed down, never its caller's prompt,
   so nothing repeats). `system` replaces the main prompt text; the subagent reminder is still appended after it
   (`system_file` too). There is no option to drop the reminder; a parent allows spawning by saying so in the task,
@@ -29,14 +27,9 @@ for nested children on the same channel. `noExtensions: true` stays unchanged; n
   as `title` in `status`, in the wait result's display data (`results[i].display.title`) and in the message
   `details.title`. The package registers RQW-agent-ui before RQW-tool-ui for delivered-message cards and wait-result
   cards: collapsed waits are tool-ui's when it is loaded, Ctrl+O shows agent-ui's expanded wait cards. The delivered content keeps its `[agent#N] ...` format.
-- The `agent` description follows the Sonnet style with our tool names (`agent`, `start`, `send`, `job wait`, `title`):
-  when to use and the cost of a fresh agent, doing small work yourself, briefing like a peer, short usage bullets, the
-  background paragraph, and a trust paragraph (finished work is not redone; hand-offs use links or verbatim quotes;
-  narrow checks only on listed signs). Our mechanics (`start`, `send`, `wait`, `status`, profiles, files) follow it
-  as the owner's own text. The profile list is appended under
-  `Available agent_types and a quick description of what they do:`. The `title`, `interrupt` and `model` parameter
-  descriptions carry the matching Cursor sentences; `model` states the exact omission order. No project-specific
-  execution rules.
+- The `agent` description and parameter descriptions adapt Codex 0.165.0 texts to this harness. They retain the
+  approved trust and result-delivery guidance and describe our lifecycle, profiles and prompt files. The profile list
+  is appended under `Available roles:`. No project-specific execution rules.
 
 ## Codex profiles
 
@@ -573,9 +566,9 @@ completed children are reused. Concurrent restoration shares a per-generation pr
 late construction. Saved answers still use the existing exactly-once delivery broker. No metadata format is added.
 
 Resume retains the saved resolved prompt and profile version, except the subagent reminder: when a child is restored
-from disk or resumed, `withCurrentReminder` in [prompt.ts](prompt.ts) rebuilds its saved `system`. The exact legacy
-reminder block (`LEGACY_SUBAGENT_REMINDER`) is replaced in place by the current `SUBAGENT_REMINDER`, a prompt with
-neither block gets the current one appended after a blank line, and a prompt that already has it is unchanged. The
+from disk or resumed, `withCurrentReminder` in [prompt.ts](prompt.ts) rebuilds its saved `system`. Either of the two exact legacy
+reminder blocks is replaced in place by the current `SUBAGENT_REMINDER`, a prompt with
+neither old nor current block gets the current one appended after a blank line, and a prompt that already has it is unchanged. The
 rest of the text, including a `<role>` block, stays byte for byte, and the rebuilt text is written back to the saved
 configuration at the next persist. Cost: the system prompt prefix changes once, so the first request of each restored
 or resumed child is a one-time provider prompt cache miss. Restart reloads its TOML. Restoring the parent makes

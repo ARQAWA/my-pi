@@ -29,7 +29,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   Pi's next checkpoint stores it through its normal threshold path, otherwise Pi compacts normally. Status channel
   `rqw-context:background-compaction` `{ sessionId, active }`; dispatch `rqw:background-summary:v1` (`[D-CONTEXT-BACKGROUND]`).
   Contract: `extensions/RQW-context/README.md`. Tests: `npm test`.
-- `extensions/RQW-agent/`: extension 5, subagents; description and reminder follow Cursor's Subagent guidance. `agent`
+- `extensions/RQW-agent/`: extension 5, subagents; description and reminder adapt Codex 0.165.0 agent texts. `agent`
   (start, wait, status, send, resume, interrupt, stop, restart) runs in-process Pi sessions. Optional `agent_type`
   selects a Codex TOML profile; without it the generic defaults stay. A profile's `developer_instructions` supplies the default role
   after the main system prompt and subagent reminder, not a whole-prompt replacement. The catalogue always has Codex's built-in `default` and `worker` (no `explorer`; a user role of the same name replaces

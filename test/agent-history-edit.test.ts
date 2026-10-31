@@ -8,7 +8,7 @@ import { createEventBus, SessionManager } from "@earendil-works/pi-coding-agent"
 import { registerSessionRuntime } from "../extensions/RQW-agent/index.ts";
 import historyEdit from "../extensions/RQW-history-edit/index.ts";
 
-const REMINDER = "<subagent>\nYou are running as a subagent under a parent agent. Do not spawn additional subagents unless requested by the user or by your instructions.\n</subagent>";
+const REMINDER = "<subagent>\nYou are an agent in a team of agents collaborating to complete a task.\nWhen you provide your final answer, that content is immediately delivered back to your parent agent.\nIn addition, your final answer may be read by a human, so ensure it is legible.\nAny earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user, your task, role or system prompt, or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.\n</subagent>";
 
 /** RQW-agent's runtime on `parent` with a faux model; Pi's host is the only fake. */
 function agentRuntime(parent: SessionManager, cwd: string) {
