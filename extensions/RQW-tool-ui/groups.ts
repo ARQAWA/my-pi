@@ -136,8 +136,11 @@ export function formatWorked(ms: number): string {
 	return `${Math.floor(seconds / 3600)}h ${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}m`;
 }
 
+/** The invisible session entry that tells whether an answer was the real final (background.ts): `{ key, final }`. */
+export const FINAL_ENTRY = "rqw-tool-ui-final";
+
 /** A successful answer: stopped normally, with text and without tool calls. */
-function isFinal(m: unknown): boolean {
+export function isFinal(m: unknown): boolean {
 	const r = record(m);
 	if (r.role !== "assistant" || r.stopReason !== "stop" || !Array.isArray(r.content)) return false;
 	const blocks = r.content.map(record);
@@ -148,8 +151,20 @@ export interface TurnSpan {
 	label: string;
 }
 
+/** The latest successful answer while nothing counted follows it: what a `rqw-tool-ui-final` entry can change. */
+interface Answer {
+	key: string;
+	end: number;
+	start: unknown;
+	/** The span's members before the answer. */
+	keys: string[];
+	closed: boolean;
+}
+
 /** Successful answers and kept-entry cuts close independent, boundary-local spans. Other hard boundaries discard
- * unfinished work. Times use the first visible message or delivered card, including an assistant-only suffix. */
+ * unfinished work. Times use the first visible message or delivered card, including an assistant-only suffix.
+ * An answer marked `final: false` by a `rqw-tool-ui-final` entry (given while agents or background processes still
+ * ran) does not close its span: it stays a member until the real final, or until `final: true` closes it. */
 export class TurnIndex {
 	readonly finals = new Map<string, TurnSpan>();
 	/** Cut-local unfinished prefixes, keyed independently of the neighbouring interval. */
@@ -163,14 +178,34 @@ export class TurnIndex {
 	private start: unknown;
 	private end = NaN;
 	private keys: string[] = [];
+	private last: Answer | undefined;
 
 	private span(end: number): TurnSpan {
 		const ms = end - Number(this.start);
 		return { label: typeof this.start === "number" && Number.isFinite(ms) && ms >= 0 ? `worked for ${formatWorked(ms)}` : "worked" };
 	}
 
+	/** Reopen the last answer's span (`final: false`) or close it on that answer again (`final: true`). */
+	private mark(data: unknown): void {
+		const { key, final } = record(data);
+		const last = this.last;
+		if (!last || last.key !== key || typeof final !== "boolean" || final === last.closed) return;
+		if (final) {
+			this.finals.set(last.key, this.span(last.end));
+			for (const member of last.keys) this.members.set(member, last.key);
+			this.start = undefined;
+			this.keys = [];
+		} else {
+			this.finals.delete(last.key);
+			for (const member of last.keys) this.members.delete(member);
+			this.start = last.start;
+			this.keys = [...last.keys, last.key];
+		}
+		last.closed = final;
+	}
+
 	append(entries: readonly SessionEntry[], kept: ReadonlySet<string> = new Set<string>()): void {
-		const clear = () => { this.start = undefined; this.keys = []; };
+		const clear = () => { this.start = undefined; this.keys = []; this.last = undefined; };
 		for (const e of entries) {
 			const position = this.position++;
 			if (kept.has(e.id)) {
@@ -182,6 +217,7 @@ export class TurnIndex {
 				clear();
 			}
 			if (e.type === "compaction" || e.type === "branch_summary") clear();
+			if (e.type === "custom" && e.customType === FINAL_ENTRY) { this.mark(e.data); continue; }
 			this.end = Date.parse(e.timestamp);
 			let message: unknown;
 			if (e.type === "custom_message" && e.display) message = { role: "custom", customType: e.customType, display: e.display, content: e.content, timestamp: Date.parse(e.timestamp) };
@@ -203,8 +239,13 @@ export class TurnIndex {
 			if (isFinal(message)) {
 				this.finals.set(key, this.span(this.end));
 				for (const member of this.keys) this.members.set(member, key);
+				const answer = { key, end: this.end, start: this.start, keys: this.keys, closed: true };
 				clear();
-			} else this.keys.push(key);
+				this.last = answer;
+			} else {
+				this.keys.push(key);
+				this.last = undefined;
+			}
 		}
 	}
 }

@@ -1,7 +1,7 @@
 // A minimal InteractiveMode: Pi's real prototype methods on a plain object, with a real SessionManager, Container and
 // TuiAltScreen over a fake terminal; the RQW-tool-ui extension loaded through a fake extension API.
 import { afterEach, mock } from "node:test";
-import { initTheme, InteractiveMode, SessionManager, type Theme } from "@earendil-works/pi-coding-agent";
+import { createEventBus, initTheme, InteractiveMode, SessionManager, type EventBus, type Theme } from "@earendil-works/pi-coding-agent";
 import { Container, stripTerminalSequences, type Terminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import toolUi from "../../../extensions/RQW-tool-ui/index.ts";
 
@@ -68,13 +68,22 @@ export interface Loaded {
 	/** Start the TUI session as Pi does after drawing the transcript. */
 	start(manager: SessionManager): void;
 	shutdown(): void;
+	/** The extension's `pi.events`: a counts producer offers its source here. */
+	events: EventBus;
+	/** Every `pi.appendEntry` call of the extension, in order. */
+	appended: { type: string; data: unknown }[];
 }
 
 /** Load the extension as Pi does: the factory, then `session_start` in TUI mode. */
 export function load(): Loaded {
 	const handlers = new Map<string, (event?: unknown, ctx?: unknown) => unknown>();
 	let resolve: Loaded["resolve"] = (_name, next) => next();
+	const events = createEventBus();
+	let manager: SessionManager | undefined;
+	const appended: Loaded["appended"] = [];
 	toolUi({
+		events,
+		appendEntry: (type: string, data: unknown) => { appended.push({ type, data }); manager?.appendCustomEntry(type, data); },
 		registerToolRenderer: (fn: Loaded["resolve"]) => { resolve = fn; },
 		on: (name: string, fn: (event?: unknown, ctx?: unknown) => unknown) => handlers.set(name, fn),
 	} as never);
@@ -82,8 +91,10 @@ export function load(): Loaded {
 		handlers,
 		resolve: (name, next) => resolve(name, next),
 		resolver: () => resolve,
-		start: (manager) => handlers.get("session_start")!({}, { mode: "tui", hasUI: true, sessionManager: manager, ui: { theme } }),
+		start: (started) => { manager = started; handlers.get("session_start")!({}, { mode: "tui", hasUI: true, sessionManager: started, ui: { theme } }); },
 		shutdown: () => handlers.get("session_shutdown")!(),
+		events,
+		appended,
 	};
 }
 
