@@ -39,12 +39,44 @@ test("rqw_readfile reads text, ranges and exact continuation", async (t) => {
 	assert.deepEqual(tool.prepareArguments({ path: "x", offset: null, limit: "null" }), { path: "x" });
 });
 
+test("rqw_readfile marks every tenth absolute line", async (t) => {
+	const { cwd, text } = await fixture(t);
+	const lines = Array.from({ length: 25 }, (_, i) => `line ${i + 1}`);
+	await writeFile(join(cwd, "numbered.txt"), lines.join("\n"));
+	const numbered = [...lines];
+	numbered[9] = "    10|line 10";
+	numbered[19] = "    20|line 20";
+	await t.test("whole file", async () => assert.equal(await text({ path: "numbered.txt" }), numbered.join("\n")));
+	await t.test("positive offset", async () => assert.equal(await text({ path: "numbered.txt", offset: 15 }), numbered.slice(14).join("\n")));
+	await t.test("negative offset", async () => assert.equal(await text({ path: "numbered.txt", offset: -8 }), numbered.slice(17).join("\n")));
+});
+
+test("rqw_readfile counts number prefixes in its byte budget", async (t) => {
+	const { cwd, text } = await fixture(t);
+	const lines = [...Array(9).fill("x"), "a".repeat(51180), "end"];
+	await writeFile(join(cwd, "numbered-bytes.txt"), lines.join("\n"));
+	const page = await text({ path: "numbered-bytes.txt" });
+	assert.equal(page, lines.slice(0, 9).join("\n") + "\n\n[Use offset=10 to continue.]");
+	assert.ok(Buffer.byteLength(page) <= 50 * 1024);
+	const next = await text({ path: "numbered-bytes.txt", offset: 10 });
+	assert.ok(next.startsWith("    10|"));
+	assert.ok(Buffer.byteLength(next) <= 50 * 1024);
+	await writeFile(join(cwd, "exact.txt"), [...Array(9).fill("x"), "a".repeat(51182)].join("\n"));
+	assert.equal(await text({ path: "exact.txt" }), Array(9).fill("x").join("\n") + "\n\n[Use offset=10 to continue.]");
+	await writeFile(join(cwd, "oversized.txt"), [...Array(9).fill("x"), "я".repeat(30000)].join("\n"));
+	const oversized = await text({ path: "oversized.txt", offset: 10 });
+	assert.ok(oversized.startsWith("    10|"));
+	assert.ok(oversized.endsWith("\n\n[Line 10 is not shown in full.]"));
+	assert.ok(Buffer.byteLength(oversized) <= 50 * 1024);
+});
+
 test("rqw_readfile bounds output and preserves Unicode on a long line", async (t) => {
 	const { cwd, text } = await fixture(t);
 	const lines = Array.from({ length: 2001 }, (_, i) => `line ${i + 1}`);
 	await writeFile(join(cwd, "many.txt"), lines.join("\n"));
 	const page = await text({ path: "many.txt" });
-	assert.equal(page, lines.slice(0, 2000).join("\n") + "\n\n[Use offset=2001 to continue.]");
+	const numbered = lines.slice(0, 2000).map((line, i) => (i + 1) % 10 === 0 ? `${String(i + 1).padStart(6)}|${line}` : line);
+	assert.equal(page, numbered.join("\n") + "\n\n[Use offset=2001 to continue.]");
 	assert.equal(await text({ path: "many.txt", offset: 2001 }), "line 2001");
 	await writeFile(join(cwd, "long.txt"), "Ж" + "я".repeat(30000));
 	const long = await text({ path: "long.txt" });

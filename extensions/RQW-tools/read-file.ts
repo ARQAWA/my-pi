@@ -140,15 +140,16 @@ async function readText(path: string, offset: number, limit: number | undefined,
 	for await (const line of input) {
 		lineNumber++;
 		if (lineNumber < start) continue;
+		const text = lineNumber % 10 === 0 ? `${String(lineNumber).padStart(6)}|${line.text}` : line.text;
 		const available = MAX_BYTES - bytes - (selected.length ? 1 : 0);
-		if (line.oversized || Buffer.byteLength(line.text) > available) {
+		if (line.oversized || Buffer.byteLength(text) > available) {
 			if (selected.length) return continuation(selected, lineNumber);
 			const suffix = line.hasNext ? ` Use offset=${lineNumber + 1} to continue.` : "";
 			const notice = `\n\n[Line ${lineNumber} is not shown in full.${suffix}]`;
-			return prefixBytes(line.text, MAX_BYTES - Buffer.byteLength(notice)) + notice;
+			return prefixBytes(text, MAX_BYTES - Buffer.byteLength(notice)) + notice;
 		}
-		selected.push(line.text);
-		bytes += Buffer.byteLength(line.text) + (selected.length > 1 ? 1 : 0);
+		selected.push(text);
+		bytes += Buffer.byteLength(text) + (selected.length > 1 ? 1 : 0);
 		if (selected.length >= Math.min(limit ?? MAX_LINES, MAX_LINES)) {
 			return line.hasNext ? continuation(selected, lineNumber + 1) : selected.join("\n");
 		}
