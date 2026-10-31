@@ -30,7 +30,7 @@
 **независимая проверка**
 17. каждой задаче одна короткая независимая проверка spotty, кроме записей. записи: BACKLOG, DECISIONS, DECISIONS-ARCHIVE, INDEX, INSTALL, манифест. bossy означает глубокую проверку по заказу. каждый проверяющий отдаёт все находки сразу.
 18. находке нужны доказательство и реальный вред. сверх заказа ничего не исправляй. подтверждённое исправляет исполнитель. доказательства уточняй у того же проверяющего. каждый круг новый проверяющий. он получает diff исправления и прошлые находки. читает только изменённые строки, пока чисто.
-19. выпуск с кодом: отдельно проверь код и тесты. code-reviewer проверяет код, test-reviewer проверяет тесты. spotty: gpt-6.1-terra medium. остальные проверяющие: gpt-6.1-terra high.
+19. выпуск с кодом: отдельно проверь код и тесты. code-reviewer проверяет код, test-reviewer проверяет тесты. spotty: gpt-6.1-terra medium. bossy: gpt-6.1-terra xhigh. остальные проверяющие: gpt-6.1-terra high.
 
 <a id="delivery"></a>
 **доставка**
@@ -65,7 +65,7 @@
   },
   "reviewerProfiles": {
     "spotty": ["openai-codex/gpt-6.1-terra", "medium"],
-    "bossy": ["openai-codex/gpt-6.1-terra", "high"],
+    "bossy": ["openai-codex/gpt-6.1-terra", "xhigh"],
     "code-reviewer": ["openai-codex/gpt-6.1-terra", "high"],
     "test-reviewer": ["openai-codex/gpt-6.1-terra", "high"],
     "requirements-test-reviewer": ["openai-codex/gpt-6.1-terra", "high"]

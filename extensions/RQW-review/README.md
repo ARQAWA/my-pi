@@ -5,8 +5,8 @@ Self-contained: no imports from other extensions. Requires RQW-agent to run a re
 
 | Skill | Level | `agent_type` | Default model | Default reasoning |
 |---|---|---|---|---|
-| `blindreview` | blind | `spotty` | `gpt-6.1-terra` | low |
-| `highreview` | high | `bossy` | `gpt-6.1-terra` | medium |
+| `blindreview` | blind | `spotty` | `gpt-6.1-terra` | medium |
+| `highreview` | high | `bossy` | `gpt-6.1-terra` | xhigh |
 
 Both wrappers read `skills/reviewer/SKILL.md` for the common review procedure. Initial and changed-object passes
 start a fresh ordinary `agent` with the selected `agent_type`, `role_file` set to the absolute package `REVIEWER.md`

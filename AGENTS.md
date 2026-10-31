@@ -58,7 +58,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   `send` or `restart` updates the retained value.
   Tests: `npm test`.
 - `extensions/RQW-review/`: extension 6, a provider of Codex profiles and native Agent Skills, not a separate runtime.
-  `profiles/spotty.toml` defaults to `gpt-6.1-terra` low; `profiles/bossy.toml` defaults to the same model medium. Both embed the same
+  `profiles/spotty.toml` defaults to `gpt-6.1-terra` medium; `profiles/bossy.toml` defaults to the same model xhigh. Both embed the same
   reviewer role in `developer_instructions`; the common skill explicitly loads the byte-identical `REVIEWER.md` through
   `role_file`, so personal or project same-name profiles cannot replace the package review contract. `rqw-agent:profiles` offers their paths to RQW-agent; public
   `resources_discover` supplies `skills/reviewer`, `skills/blindreview` and `skills/highreview`. The common blind/high skill

@@ -1077,8 +1077,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `fix-reviewer-evidence-output`.
 
 - **Reviewers are ordinary profiles** `[D-REVIEW-PROFILES]`. `RQW-review` is a small resource provider, not a tool
-  or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-terra` with `model_reasoning_effort = "low"`;
-  `profiles/bossy.toml` defaults to the same model with `"medium"`. RQW-agent resolves them to `openai-codex/gpt-6.1-terra`
+  or runtime. `profiles/spotty.toml` defaults to bare `gpt-6.1-terra` with `model_reasoning_effort = "medium"`;
+  `profiles/bossy.toml` defaults to the same model with `"xhigh"`. RQW-agent resolves them to `openai-codex/gpt-6.1-terra`
   without provider fallback. The common skill appends their byte-identical package `REVIEWER.md` role explicitly.
   The extension offers both absolute paths on `rqw-agent:profiles` and returns `skills/reviewer`, `skills/blindreview`
   and `skills/highreview` through public `resources_discover`, not static `pi.skills`. The common skill is only the
@@ -1098,6 +1098,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `/Users/arkadijcukavin/Downloads/codex-subagents-full-pack (1).zip`.
   Owner, current task `reviewers-terra`, 2026-10-27:
   «Надо переписать viewer с Sol 6.1 на Terru, чтобы в споте был на Terra low, а босси на terra medium».
+  Owner, 2026-10-31: «Я хочу что бы ревьюер блайнд был medium, а хай - xhigh».
   Reason for the model change: the owner's explicit choice. The code and test reviewer profiles use Terra high. Owner: «Ревью кода, ревью тестов пусть делает  Terra Medium тоже». Owner: «переделай исполнителя с terra с high на xhi, подними всех терра на один уровеньи покажи как изменится матрица» «и покажи предполагаемую новую матрицу после принятия мной изменений потенциальных» «по матрице 1».
   Reason: one profile mechanism rather than a parallel reviewer execution stack.
   Carriers: `extensions/RQW-review/index.ts`, `profiles/*.toml`, `skills/**/SKILL.md`, RQW-agent.

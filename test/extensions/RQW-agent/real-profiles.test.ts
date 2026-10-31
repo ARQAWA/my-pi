@@ -28,8 +28,8 @@ const PERSONAL_SHA = "8ca0dec75595b08693706d1a253f35f0e49ce80115449d89d2c9ccd6aa
 type Expected = { model: string; effort: string; prefix: string; sha256?: string };
 // origin/release: model, effort and the start of each role text, per profile.
 const PACKAGE: Record<string, Expected> = {
-	spotty: { model: TERRA, effort: "low", prefix: REVIEW_PREFIX, sha256: REVIEW_SHA },
-	bossy: { model: TERRA, effort: "medium", prefix: REVIEW_PREFIX, sha256: REVIEW_SHA },
+	spotty: { model: TERRA, effort: "medium", prefix: REVIEW_PREFIX, sha256: REVIEW_SHA },
+	bossy: { model: TERRA, effort: "xhigh", prefix: REVIEW_PREFIX, sha256: REVIEW_SHA },
 };
 const REPO_PROFILES: Record<string, Expected> = {
 	"code-reviewer": { model: TERRA, effort: "high", prefix: "You are an independent, read-only code reviewer on the implementation team's side. Find real defects", sha256: "d79b76ab709bab0520a52e2120f8d87d930393cd3d5556a1793bd058384ef30b" },
