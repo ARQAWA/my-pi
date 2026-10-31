@@ -3,7 +3,7 @@ import { SettingsList } from "@earendil-works/pi-tui";
 
 const MARK = "rqw-commands:controls-owner";
 const STATE = Symbol.for("rqw-commands/controls");
-const ACTIONS = ["app.thinking.cycle", "app.model.select", "app.model.cycleForward", "app.model.cycleBackward"];
+const ACTIONS = ["app.thinking.cycle", "app.model.select", "app.model.cycleForward", "app.model.cycleBackward", "app.thinking.toggle"];
 const HIDDEN = new Set(["cache-warming-mode", "model-thinking", "double-escape-action", "tree-filter-mode"]);
 const WARNING = "RQW-commands: incompatible Pi controls internals; controls cleanup is disabled.";
 type Fn = (...args: any[]) => any;

@@ -174,7 +174,7 @@ test("incompatible autocomplete group leaves submissions and suggestions stock",
  } finally { f.shutdown(); }
 });
 
-const disabledActions = ["app.thinking.cycle", "app.model.select", "app.model.cycleForward", "app.model.cycleBackward"];
+const disabledActions = ["app.thinking.cycle", "app.model.select", "app.model.cycleForward", "app.model.cycleBackward", "app.thinking.toggle"];
 test("real editor blocks disabled actions, including custom and Windows bindings, without blocking other actions", () => {
  const f = fixture();
  try {
@@ -182,11 +182,11 @@ test("real editor blocks disabled actions, including custom and Windows bindings
   f.host.createBaseAutocompleteProvider();
   const editor = new CustomEditor({ requestRender() {} } as any, { borderColor: (s: string) => s } as any, kb);
   const seen: string[] = [];
-  for (const id of [...disabledActions, "app.thinking.toggle"]) editor.onAction(id as any, () => seen.push(id));
+  for (const id of disabledActions) editor.onAction(id as any, () => seen.push(id));
   for (const input of ["\u001b[Z", "\u000c", "\u0010", "\u001b[112;6u"]) editor.handleInput(input);
   kb.setUserBindings({ "app.thinking.cycle": "ctrl+g", "app.model.select": "ctrl+l", "app.model.cycleForward": "ctrl+p", "app.model.cycleBackward": "alt+p" });
   for (const input of ["\u0007", "\u000c", "\u0010", "\u001bp", "\u0014"]) editor.handleInput(input);
-  assert.deepEqual(seen, ["app.thinking.toggle"]);
+  assert.deepEqual(seen, []);
   let arrows = 0; editor.onExtensionShortcut = data => { if (data === "\u001b[1;2A") { arrows++; return true; } return false; };
   editor.handleInput("\u001b[1;2A"); assert.equal(arrows, 1);
   kb.rebuild(); for (const id of disabledActions) assert.deepEqual(kb.getKeys(id), []);
