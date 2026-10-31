@@ -39,7 +39,7 @@ describe("RQW-predictions through the extension entry", () => {
 
 	it("the prompt Codex serves reaches the model as the last message with the reply rules, and is cached for 300000 ms", async t => {
 		const h = harness({ entry: true });
-		h.answer();
+		h.asked();
 		await until(() => h.forks.length === 1);
 
 		assert.equal(calls.length, 1);
@@ -54,13 +54,13 @@ describe("RQW-predictions through the extension entry", () => {
 		assert.ok(instruction.endsWith(SILENCE_RULE));
 
 		t.mock.timers.tick(299_999);
-		h.answer();
+		h.asked();
 		await until(() => h.forks.length === 2);
 		assert.equal(calls.length, 1);
 		assert.ok(String(last(h.forks[1].context).content).startsWith("SERVED PROMPT 1\n"));
 
 		t.mock.timers.tick(1);
-		h.answer();
+		h.asked();
 		await until(() => h.forks.length === 3);
 		assert.equal(calls.length, 2);
 		assert.ok(String(last(h.forks[2].context).content).startsWith("SERVED PROMPT 2\n"));

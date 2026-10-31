@@ -6974,3 +6974,12 @@ exact commit: `git log -S'A-0390' -- DECISIONS-ARCHIVE.md`.
 Verbatim replaced sentence:
 
 > `switchTuiMode` to a non-fullscreen mode (inline, exit transcript) draws everything first.
+
+## A-0391 · archived 2026-10-31 · Predictions · Automatic suggestion after each finished answer
+
+Status: SUPERSEDED by `[D-PREDICTIONS]` (DECISIONS.md#predictions): a suggestion starts only on Ctrl+E.
+Replacement owner quote: «И надо, чтобы саджестер сам по себе не соджествовал. Чтобы он просто на Ctrl + E начинал соджестить Когда я нажимаю Ctrl + Е, он должен начинать соджестить сразу же, immediately А сам по-себе автоматически он не соджестит».
+Archived by the remove-continue change; exact commit: `git log -S'A-0391' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text of `[D-PREDICTIONS]`:
+
+> It starts automatically after each finished answer and on Ctrl+E, and is skipped while the owner's queued messages wait.

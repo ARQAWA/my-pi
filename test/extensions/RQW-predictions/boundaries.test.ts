@@ -22,7 +22,7 @@ describe("RQW-predictions boundaries", () => {
 
 	it("another extension's dialog with its own editor never gets the suggestion, Tab, Ctrl+E or Ctrl+R", async () => {
 		const h = harness();
-		h.answer();
+		h.asked();
 		await settle();
 		const dialog = newEditor();
 		dialog.focused = true;
@@ -92,7 +92,7 @@ describe("RQW-predictions boundaries", () => {
 		h.fire("session_shutdown", { reason: "quit" });
 		(h.ctx as { mode: string }).mode = "print";
 		h.fire("session_start", { reason: "startup" });
-		h.answer();
+		h.asked();
 		await settle();
 		assert.equal(h.gets.length, 0);
 		assert.equal(h.controller.suggestion(), undefined);

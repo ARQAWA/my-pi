@@ -13,8 +13,6 @@ const REPLY_SCHEMA = { type: "object", properties: { suggestion: { type: ["strin
 export const SCHEMA_RULE = `Return only JSON matching this schema: ${JSON.stringify(REPLY_SCHEMA)}.`;
 /** The owner's rule, appended after the text Codex serves; it is not part of that text. */
 export const SILENCE_RULE = "If there is no obvious next user message, set suggestion to null.";
-/** A piece to insert is at most this many words: the owner asked for small steps. */
-export const MAX_WORDS = 6;
 /** The reason a transport gives when it cannot fork without running hosted tools. */
 export const HOSTED_TOOLS = "unsupported_hosted_tools";
 
@@ -41,35 +39,6 @@ export type Capture = {
 	shot?: { sessionId: string; messages: Message[]; after: MessageEndEvent["message"][] };
 };
 
-/** The text of the input around the cursor, as the model sees it. `key` names the exact text and cursor it was taken from. */
-export type Draft = { before: string; after: string; key: string };
-type Cursor = { line: number; col: number };
-
-/** The identity of a draft: the text and where the cursor is in it. */
-export const draftKey = (text: string, cursor: Cursor) => `${text}\u0000${cursor.line}:${cursor.col}`;
-
-/** Splits the editor text at the cursor; `expand` turns paste markers back into their content. */
-export function draftOf(text: string, cursor: Cursor, expand: (text: string) => string = value => value): Draft {
-	const lines = text.split("\n");
-	const line = lines[cursor.line] ?? "";
-	const before = [...lines.slice(0, cursor.line), line.slice(0, cursor.col)].join("\n");
-	const after = [line.slice(cursor.col), ...lines.slice(cursor.line + 1)].join("\n");
-	return { before: expand(before), after: expand(after), key: draftKey(text, cursor) };
-}
-
-const part = (tag: string, value: string) => value === "" ? `<${tag}></${tag}>` : `<${tag}>\n${value}\n</${tag}>`;
-
-/** The rule that turns the reply into a few words to insert at the cursor. It goes only into the last message. */
-export function insertRule({ before, after }: Draft): string {
-	return [
-		"The user has already started typing the next message. The cursor sits between the two parts below.",
-		part("before_cursor", before),
-		part("after_cursor", after),
-		`Set suggestion to only the next few words (at most ${MAX_WORDS}) to insert at the cursor, so that the text before, the suggestion and the text after read as one message.`,
-		"Start with a space when the words need one. Never repeat text that is already before or after the cursor.",
-	].join("\n");
-}
-
 export type PredictionContext = {
 	/** Starts recording main requests for this session. */
 	bind(ctx: ExtensionContext): void;
@@ -79,8 +48,8 @@ export type PredictionContext = {
 	/** True when the branch holds an assistant message: a fresh or empty chat has nothing to predict from. */
 	hasAnswer(ctx: ExtensionContext): boolean;
 	capture(ctx: ExtensionContext): Capture | undefined;
-	/** One model call with `prompt` (the served text) plus the reply rules as the last user message; a `draft` adds the insert rule. Rejects with Declined when no safe call exists. */
-	infer(ctx: ExtensionContext, capture: Capture, prompt: string, signal: AbortSignal, draft?: Draft): Promise<AssistantMessage>;
+	/** One model call with `prompt` (the served text) plus the reply rules as the last user message. Rejects with Declined when no safe call exists. */
+	infer(ctx: ExtensionContext, capture: Capture, prompt: string, signal: AbortSignal): Promise<AssistantMessage>;
 };
 
 export class Declined extends Error {}
@@ -110,8 +79,8 @@ function settle(messages: Message[]): Message[] {
 	return index < 0 ? messages : messages.slice(0, index);
 }
 
-/** The raw `suggestion` string of one answer; undefined when it has none. Throws when the request failed. */
-function replyOf(message: AssistantMessage): string | undefined {
+/** The text blocks of one answer as the model's suggestion; undefined when it has none to show. */
+export function parseSuggestion(message: AssistantMessage): string | undefined {
 	if (message.stopReason === "error" || message.stopReason === "aborted") {
 		throw new Error(message.errorMessage ?? "the model request failed");
 	}
@@ -120,43 +89,15 @@ function replyOf(message: AssistantMessage): string | undefined {
 	let value: unknown;
 	try { value = JSON.parse(text.trim()); } catch { return undefined; }
 	const suggestion = (value as { suggestion?: unknown } | null)?.suggestion;
-	return typeof suggestion === "string" ? suggestion : undefined;
-}
-
-/** The text blocks of one answer as the model's suggestion; undefined when it has none to show. */
-export function parseSuggestion(message: AssistantMessage): string | undefined {
-	const suggestion = replyOf(message);
-	return suggestion === undefined ? undefined : safeText(suggestion) || undefined;
-}
-
-/** The text up to the end of the first `limit` words; all of it when there are fewer. */
-function firstWords(value: string, limit: number): string {
-	const words = [...value.matchAll(/\S+/g)];
-	const last = words[limit - 1];
-	return words.length > limit && last ? value.slice(0, last.index + last[0].length) : value;
-}
-
-/**
- * The few words to insert at the cursor of `draft`; undefined when there is none. Unlike a suggestion the edges keep
- * their space, because it separates the piece from its neighbours: it is dropped only where the text before or
- * after the cursor already has one.
- */
-export function parsePiece(message: AssistantMessage, draft: Pick<Draft, "before" | "after">): string | undefined {
-	const reply = replyOf(message);
-	if (reply === undefined) return undefined;
-	let piece = firstWords(cleanText(reply).split("\n")[0], MAX_WORDS);
-	if (/\s$/.test(draft.before)) piece = piece.trimStart();
-	if (/^\s/.test(draft.after)) piece = piece.trimEnd();
-	return piece.trim() === "" ? undefined : piece;
+	return typeof suggestion === "string" ? safeText(suggestion) || undefined : undefined;
 }
 
 // Escape sequences first, then any other control character; line breaks stay, tabs become one space.
 const ESCAPES = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
 const CONTROLS = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
-function cleanText(value: string): string {
-	return value.replace(/\r\n?/g, "\n").replace(/\t/g, " ").replace(ESCAPES, "").replace(CONTROLS, "");
+export function safeText(value: string): string {
+	return value.replace(/\r\n?/g, "\n").replace(/\t/g, " ").replace(ESCAPES, "").replace(CONTROLS, "").trim();
 }
-export const safeText = (value: string): string => cleanText(value).trim();
 
 export function installContext(pi: ExtensionAPI): PredictionContext {
 	let snapshot: Snapshot | undefined;
@@ -262,10 +203,8 @@ export function installContext(pi: ExtensionAPI): PredictionContext {
 				? { sessionId: snapshot.sessionId, messages: snapshot.messages, after: snapshot.after.slice() } : undefined;
 			return { model, reasoning, shot };
 		},
-		async infer(ctx, capture, prompt, signal, draft) {
-			// The draft is new text, so it sits at the very end: everything before it keeps the cached prefix.
-			const insert = draft ? `${insertRule(draft)}\n` : "";
-			const instruction: Message = { role: "user", content: `${prompt}\n${insert}${SCHEMA_RULE}\n${SILENCE_RULE}`, timestamp: Date.now() };
+		async infer(ctx, capture, prompt, signal) {
+			const instruction: Message = { role: "user", content: `${prompt}\n${SCHEMA_RULE}\n${SILENCE_RULE}`, timestamp: Date.now() };
 			const messages = [...messagesOf(ctx, capture), instruction];
 			const run = fork(capture, messages, signal);
 			if (run) return run();

@@ -110,10 +110,10 @@ describe("RQW-predictions key freeing", () => {
 		assert.equal(manager.matches(CTRL_R, "app.session.rename"), true);
 		assert.equal(h.notes.length, 1);
 		assert.match(h.notes[0], /Ctrl\+E and Ctrl\+R/);
-		// Automatic predictions and the editor do not depend on the manual keys.
+		// Without the manual keys nothing starts a request, not even a finished answer.
 		h.answer();
 		await settle();
-		assert.equal(h.controller.suggestion(), "run the tests");
+		assert.equal(h.gets.length, 0);
 	});
 
 	it("a failed installation is rolled back completely", () => {

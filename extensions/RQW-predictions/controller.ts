@@ -1,7 +1,7 @@
-// The prediction lifecycle: one automatic attempt per finished answer, manual runs, storage, cancel and the status.
+// The prediction lifecycle: runs only on the owner's Ctrl+E, storage, cancel and the status.
 // Nothing here waits for the model: every run starts after control returns to the terminal.
 import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@earendil-works/pi-coding-agent";
-import { parsePiece, parseSuggestion, type Draft, type PredictionContext } from "./context.ts";
+import { parseSuggestion, type PredictionContext } from "./context.ts";
 
 export const ACTIVITY = "rqw-predictions:activity";
 export const ACTIVITY_QUERY = "rqw-predictions:activity-query";
@@ -24,35 +24,23 @@ export type Controller = {
 	suggestion(): string | undefined;
 	start(ctx: ExtensionContext): void;
 	stop(): void;
-	/** A turn ended: one automatic attempt for each new finished answer. */
+	/** A turn ended: a new finished answer ends the old request and the old suggestion. Starts nothing. */
 	answered(ctx: ExtensionContext, event: TurnEndEvent): void;
-	/** The few words to insert at the cursor of the draft they were asked for, if any. */
-	piece(): Piece | undefined;
 	/** The user's own request to generate. Does nothing while the chat works, has queued messages or a request runs. */
 	generate(): void;
-	/** The user's own request for a piece at the cursor of a non-empty draft; the same conditions as `generate`. */
-	continueDraft(draft: Draft): void;
-	/** A piece was taken: the next one for the new draft, started at once and quiet when it fails. */
-	chain(draft: Draft): void;
-	/** The editor's draft key now. A piece or a piece request for another key is dropped quietly, for good. */
-	moved(key: () => string): void;
-	/** The user's own cancel. Paints the status aborted when a request ran; a shown piece is removed. */
+	/** The user's own cancel. Paints the status aborted; does nothing without an active request. */
 	cancel(): void;
-	/** New work or another model: an unfinished request and a shown piece are dropped without the aborted paint. */
+	/** New work or another model: an unfinished request is dropped without the aborted paint. */
 	interrupt(): void;
 	/** Another branch: nothing of the old one stays. */
 	clear(): void;
 };
 
-/** A piece of text and the key of the draft it was asked for. */
-export type Piece = { text: string; key: string };
-/** `key` is set for a piece request: the draft it was asked for. */
-type Run = { id: number; abort: AbortController; key?: string };
+type Run = { id: number; abort: AbortController };
 
 export function createController(pi: ExtensionAPI, context: PredictionContext, deps: Deps): Controller {
 	let ctx: ExtensionContext | undefined;
 	let ready: string | undefined;
-	let piece: Piece | undefined;
 	let seenAnswer: string | undefined;
 	let current: Run | undefined;
 	let generation = 0;
@@ -102,14 +90,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 
 	const live = (run: Run) => current === run && !run.abort.signal.aborted;
 
-	/** Removes the shown piece, if any; the screen is told. */
-	function dismissPiece() {
-		if (!piece) return;
-		piece = undefined;
-		deps.changed?.();
-	}
-
-	async function attempt(run: Run, session: ExtensionContext, manual: boolean, draft?: Draft) {
+	async function attempt(run: Run, session: ExtensionContext) {
 		try {
 			if (!live(run) || session.hasPendingMessages()) return;
 			const capture = context.capture(session);
@@ -118,20 +99,15 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 			const served = await deps.source.get(run.abort.signal);
 			if (!live(run) || session.hasPendingMessages()) return;
 			if (served === null) {
-				if (manual) session.ui.notify("Prediction prompt is unavailable.", "warning");
+				session.ui.notify("Prediction prompt is unavailable.", "warning");
 				return;
 			}
-			const message = await context.infer(session, capture, served.prompt, run.abort.signal, draft);
+			const message = await context.infer(session, capture, served.prompt, run.abort.signal);
 			if (!live(run)) return;
-			if (draft) {
-				const text = parsePiece(message, draft);
-				piece = text === undefined ? undefined : { text, key: draft.key };
-			} else {
-				ready = parseSuggestion(message);
-			}
+			ready = parseSuggestion(message);
 			deps.changed?.();
 		} catch (error) {
-			if (live(run) && manual) session.ui.notify(`Prediction failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+			if (live(run)) session.ui.notify(`Prediction failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
 		} finally {
 			if (live(run)) {
 				current = undefined;
@@ -141,17 +117,13 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 	}
 
 	/** Starts one run after control returns to the terminal. */
-	function launch(session: ExtensionContext, manual: boolean, draft?: Draft) {
+	function launch(session: ExtensionContext) {
 		clearAborted();
-		dismissPiece();
-		const run: Run = { id: ++generation, abort: new AbortController(), key: draft?.key };
+		const run: Run = { id: ++generation, abort: new AbortController() };
 		current = run;
 		publish();
-		setImmediate(() => { void attempt(run, session, manual, draft); });
+		setImmediate(() => { void attempt(run, session); });
 	}
-
-	/** The same conditions for every manual or chained run. */
-	const mayRun = () => ctx && !current && ctx.isIdle() && !ctx.hasPendingMessages() && context.hasAnswer(ctx);
 
 	pi.events.on(ACTIVITY_QUERY, (data: unknown) => {
 		consumer = true;
@@ -167,21 +139,19 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		ctx?.ui.setStatus(STATUS_KEY, undefined);
 		ctx = undefined;
 		ready = undefined;
-		piece = undefined;
 		seenAnswer = undefined;
 		context.release();
 	}
 
 	return {
 		suggestion: () => ready,
-		piece: () => piece,
 		start(next) {
 			stop();
 			ctx = next;
 			context.bind(next);
 		},
 		stop,
-		answered(session, event) {
+		answered(_session, event) {
 			if (!ctx) return;
 			if (event.outcome !== "completed" || event.message.role !== "assistant" || event.message.stopReason !== "stop") return;
 			if (seenAnswer === event.messageEntryId) return;
@@ -189,31 +159,14 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 			// The new answer ends the old request and the old suggestion for good.
 			const wasBrewing = drop();
 			ready = undefined;
-			piece = undefined;
 			deps.changed?.();
-			if (session.hasPendingMessages()) {
-				if (wasBrewing) publish();
-				return;
-			}
-			launch(session, false);
+			if (wasBrewing) publish();
 		},
 		generate() {
-			if (ctx && mayRun()) launch(ctx, true);
-		},
-		continueDraft(draft) {
-			if (ctx && mayRun()) launch(ctx, true, draft);
-		},
-		chain(draft) {
-			if (ctx && mayRun()) launch(ctx, false, draft);
-		},
-		moved(key) {
-			const wanted = current ? current.key : piece?.key;
-			if (wanted === undefined || wanted === key()) return;
-			dismissPiece();
-			if (drop()) publish();
+			if (!ctx || current || !ctx.isIdle() || ctx.hasPendingMessages() || !context.hasAnswer(ctx)) return;
+			launch(ctx);
 		},
 		cancel() {
-			dismissPiece();
 			if (!drop()) return;
 			clearAborted();
 			abortedUntil = deps.now() + ABORTED_MS;
@@ -221,14 +174,12 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 			publish();
 		},
 		interrupt() {
-			dismissPiece();
 			if (drop()) publish();
 		},
 		clear() {
 			drop();
 			clearAborted();
 			ready = undefined;
-			piece = undefined;
 			seenAnswer = undefined;
 			context.drop();
 			deps.changed?.();

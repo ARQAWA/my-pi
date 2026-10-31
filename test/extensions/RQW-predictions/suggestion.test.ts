@@ -16,7 +16,7 @@ const body = (rows: string[]) => rows.slice(1, -1).map(plain);
 /** A harness whose first answer already produced `value`. */
 async function ready(value: string | null = "run the tests", options: Parameters<typeof harness>[0] = {}) {
 	const h = harness({ replies: [suggestion(value)], ...options });
-	h.answer();
+	h.asked();
 	await settle();
 	// The screen repaints when told a suggestion is there.
 	h.screen();
@@ -47,7 +47,7 @@ describe("RQW-predictions gray suggestion", () => {
 
 	it("tells the screen when a suggestion appears", async () => {
 		const h = harness({ replies: [suggestion("run the tests")] });
-		h.answer();
+		h.asked();
 		await settle();
 		assert.ok(h.renders() > 0);
 	});

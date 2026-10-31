@@ -8,9 +8,34 @@ import {
 } from "./harness.ts";
 
 describe("RQW-predictions generation", () => {
-	it("one finished answer makes one request with the full context and the served prompt last; the suggestion is kept", async () => {
+	it("a finished answer alone starts nothing, however long the chat waits", async () => {
 		const h = harness();
 		h.answer();
+		await settle();
+		h.answer();
+		h.fire("agent_settled");
+		await settle();
+		assert.equal(h.gets.length, 0);
+		assert.equal(h.forks.length, 0);
+		assert.equal(h.provider.length, 0);
+		assert.equal(h.controller.suggestion(), undefined);
+		assert.deepEqual(h.states(), []);
+	});
+
+	it("Ctrl+E right after an answer starts the request at once", async () => {
+		const h = harness();
+		h.answer();
+		assert.deepEqual(h.states(), []);
+		h.key(CTRL_E);
+		assert.deepEqual(h.states(), ["brewing"]);
+		await settle();
+		assert.equal(h.forks.length, 1);
+		assert.equal(h.controller.suggestion(), "run the tests");
+	});
+
+	it("Ctrl+E after an answer makes one request with the full context and the served prompt last; the suggestion is kept", async () => {
+		const h = harness();
+		h.asked();
 		await settle();
 		assert.equal(h.gets.length, 1);
 		assert.equal(h.forks.length, 1);
@@ -31,29 +56,23 @@ describe("RQW-predictions generation", () => {
 		assert.deepEqual(h.states(), ["brewing", "idle"]);
 	});
 
-	it("tool calls, errors, aborts and a repeated turn end start nothing extra", async () => {
+	it("tool calls, errors, aborts and a repeated turn end start nothing", async () => {
 		const h = harness();
 		h.answer(assistant([{ type: "toolCall", id: "t", name: "read", arguments: {} }], "toolUse"));
 		h.answer(failure(), "error");
 		h.answer(assistant([], "aborted"), "aborted");
-		await settle();
-		assert.equal(h.gets.length, 0);
 		h.answer();
-		await settle();
 		h.repeatTurn("answer-4");
 		await settle();
-		assert.equal(h.gets.length, 1);
-		assert.equal(h.forks.length, 1);
+		assert.equal(h.gets.length, 0);
+		assert.equal(h.forks.length, 0);
 	});
 
-	it("a queued user message at turn end skips the whole attempt for good", async () => {
+	it("a queued user message at Ctrl+E skips the request", async () => {
 		const h = harness();
-		h.state.pending = true;
 		h.answer();
-		await settle();
-		h.state.pending = false;
-		h.fire("agent_settled");
-		h.repeatTurn("answer-1");
+		h.state.pending = true;
+		h.key(CTRL_E);
 		await settle();
 		assert.equal(h.gets.length, 0);
 		assert.equal(h.forks.length, 0);
@@ -62,14 +81,14 @@ describe("RQW-predictions generation", () => {
 
 	it("a message queued before the prompt request or while it loads stops the model call", async () => {
 		const early = harness();
-		early.answer();
+		early.asked();
 		early.state.pending = true;
 		await settle();
 		assert.equal(early.gets.length, 0);
 
 		const late = deferred<{ prompt: string }>();
 		const h = harness({ prompts: [late.promise] });
-		h.answer();
+		h.asked();
 		await settle();
 		assert.equal(h.gets.length, 1);
 		h.state.pending = true;
@@ -83,13 +102,13 @@ describe("RQW-predictions generation", () => {
 
 	it("the model answering null, junk or a tool call shows nothing and never repeats", async () => {
 		const h = harness({ replies: [suggestion(null), text("not json"), assistant([{ type: "toolCall", id: "t", name: "read", arguments: {} }], "toolUse"), suggestion("   ")] });
-		for (let i = 0; i < 4; i++) { h.answer(); await settle(); assert.equal(h.controller.suggestion(), undefined); }
+		for (let i = 0; i < 4; i++) { h.asked(); await settle(); assert.equal(h.controller.suggestion(), undefined); }
 		assert.equal(h.forks.length, 4);
 	});
 
 	it("the shown text keeps line breaks and loses terminal control codes", async () => {
 		const h = harness({ replies: [suggestion("first\r\nsecond\x1b[31m red\x1b[0m\x07\tend")] });
-		h.answer();
+		h.asked();
 		await settle();
 		assert.equal(h.controller.suggestion(), "first\nsecond red end");
 	});
@@ -97,12 +116,12 @@ describe("RQW-predictions generation", () => {
 	it("a hosted-tool refusal from the transport allows no other request; without a transport the provider is called directly", async () => {
 		const refused = harness({ fork: false });
 		refused.events.on("rqw:context-fork:v1", data => (data as { decline(reason: string): void }).decline("unsupported_hosted_tools"));
-		refused.answer();
+		refused.asked();
 		await settle();
 		assert.equal(refused.provider.length, 0);
 
 		const h = harness({ fork: false });
-		h.answer();
+		h.asked();
 		await settle();
 		assert.equal(h.provider.length, 1);
 		assert.equal(h.provider[0].model, MODEL);
@@ -114,13 +133,13 @@ describe("RQW-predictions generation", () => {
 	it("never waits for the model: input works while the request is open, and a new answer drops the old request and suggestion", async () => {
 		const slow = deferred<ReturnType<typeof text>>();
 		const h = harness({ replies: [slow.promise, suggestion("second one")] });
-		h.answer();
+		h.asked();
 		await settle();
 		h.editor.setText("");
 		h.key("h");
 		assert.equal(h.editor.getText(), "h");
 		const first = h.forks[0].signal;
-		h.answer();
+		h.asked();
 		assert.equal(first.aborted, true);
 		await settle();
 		slow.resolve(suggestion("late one"));
@@ -130,22 +149,10 @@ describe("RQW-predictions generation", () => {
 		assert.equal(h.controller.suggestion(), undefined);
 	});
 
-	it("a failed automatic request keeps no old suggestion and starts no retry", async () => {
-		const h = harness({ replies: [suggestion("old"), failure()] });
-		h.answer();
-		await settle();
-		assert.equal(h.controller.suggestion(), "old");
-		h.answer();
-		await settle();
-		assert.equal(h.controller.suggestion(), undefined);
-		assert.equal(h.forks.length, 2);
-		assert.deepEqual(h.notes, []);
-	});
-
 	it("new work or another model ends the open request without the aborted paint; a model change keeps the ready one", async () => {
 		const slow = deferred<ReturnType<typeof text>>();
 		const h = harness({ replies: [slow.promise] });
-		h.answer();
+		h.asked();
 		await settle();
 		h.fire("agent_start");
 		assert.equal(h.forks[0].signal.aborted, true);
@@ -155,7 +162,7 @@ describe("RQW-predictions generation", () => {
 		assert.equal(h.controller.suggestion(), undefined);
 
 		const kept = harness({ replies: [suggestion("kept")] });
-		kept.answer();
+		kept.asked();
 		await settle();
 		kept.setModel(OTHER);
 		assert.equal(kept.controller.suggestion(), "kept");
@@ -171,14 +178,14 @@ describe("RQW-predictions generation", () => {
 	it("another session or branch leaves no result, request or status behind", async () => {
 		const slow = deferred<ReturnType<typeof text>>();
 		const h = harness({ replies: [slow.promise, suggestion("kept")] });
-		h.answer();
+		h.asked();
 		await settle();
 		h.switchTo("other");
 		assert.equal(h.forks[0].signal.aborted, true);
 		slow.resolve(suggestion("stale"));
 		await settle();
 		assert.equal(h.controller.suggestion(), undefined);
-		h.answer();
+		h.asked();
 		await settle();
 		assert.equal(h.controller.suggestion(), "kept");
 		h.fire("session_tree");
@@ -206,9 +213,7 @@ describe("RQW-predictions manual keys", () => {
 		assert.equal(h.gets.length, 1);
 		assert.equal(h.forks.length, 1);
 		assert.equal(h.editor.getCursor().col, 0);
-		// With text in the input the request is for a piece at the cursor, not for the empty-input suggestion.
-		assert.equal(h.controller.piece()?.text, "run the tests");
-		assert.equal(h.controller.suggestion(), undefined);
+		assert.equal(h.controller.suggestion(), "run the tests");
 		// The key is taken once: the editor's own handler never sees it.
 		assert.deepEqual(h.reached, ["\x01"]);
 		h.key(CTRL_R);
@@ -407,6 +412,7 @@ describe("RQW-predictions context", () => {
 		h.fire("message_end", { message: text("Done.") });
 		h.fire("message_end", { message: hanging });
 		h.fire("turn_end", { outcome: "completed", message: text("Done."), messageEntryId: "a1", toolResults: [], toolResultEntryIds: [] });
+		h.key(CTRL_E);
 		await settle();
 		const messages = h.forks[0].context.messages;
 		assert.deepEqual(messages.slice(0, -1), [SYSTEM, summary, picture, call, result, text("Done.")]);
