@@ -206,7 +206,9 @@ describe("RQW-predictions manual keys", () => {
 		assert.equal(h.gets.length, 1);
 		assert.equal(h.forks.length, 1);
 		assert.equal(h.editor.getCursor().col, 0);
-		assert.equal(h.controller.suggestion(), "run the tests");
+		// With text in the input the request is for a piece at the cursor, not for the empty-input suggestion.
+		assert.equal(h.controller.piece()?.text, "run the tests");
+		assert.equal(h.controller.suggestion(), undefined);
 		// The key is taken once: the editor's own handler never sees it.
 		assert.deepEqual(h.reached, ["\x01"]);
 		h.key(CTRL_R);

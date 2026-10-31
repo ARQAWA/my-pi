@@ -52,7 +52,7 @@ export function deferred<T>() {
 }
 export const settle = () => new Promise(resolve => setImmediate(resolve));
 
-export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], consumer = false, keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[] } = {}) {
+export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], consumer = false, keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[], prepare = undefined as ((editor: CustomEditor) => void) | undefined } = {}) {
 	setKeybindings(keybindings as KeybindingsManager);
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
 	const events = createEventBus();
@@ -117,6 +117,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 		const stockRender = editor.render;
 		editor.render = function(this: CustomEditor, columns: number) { return [...stockRender.call(this, columns), "EXTRA"]; };
 	}
+	prepare?.(editor);
 	let renders = 0;
 	const tui = { requestRender: () => { renders++; }, getFocusedComponent: () => focus };
 	// Pi gives its main editor the submit handler; a replaced editor gets the same one.

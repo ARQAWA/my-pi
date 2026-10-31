@@ -15,6 +15,10 @@ export function install(pi: ExtensionAPI, deps: Deps, clearSource: () => void = 
 		generate: controller.generate,
 		cancel: controller.cancel,
 		suggestion: controller.suggestion,
+		piece: controller.piece,
+		continueDraft: controller.continueDraft,
+		chain: controller.chain,
+		moved: controller.moved,
 		// The manual keys act only while Pi's own actions on them are freed.
 		hotkeys: keys.ensure,
 	});
