@@ -26,6 +26,7 @@ test('scenario A rejects a /quit that needs a second Enter', async (t) => {
 
   let alive = 0;
   let now = 0;
+  let thirdReadyAt = Infinity;
   const terminals = [];
   const vscode = {
     version: 'test',
@@ -33,6 +34,7 @@ test('scenario A rejects a /quit that needs a second Enter', async (t) => {
       executeCommand(command) {
         assert.equal(command, 'pcli.newTab');
         alive += 1;
+        if (terminals.length === 2) thirdReadyAt = now + 12000;
         const terminal = {
           name: `pi ${terminals.length + 1}`,
           pending: '',
@@ -40,6 +42,7 @@ test('scenario A rejects a /quit that needs a second Enter', async (t) => {
           sendText(text) {
             if (text === 'say hi') fs.writeFileSync(proxyLog,
               "CONNECT llm.pcli.test:443 auth=pcli:it's\nCONNECT github.com:443 auth=pcli:it's\n");
+            if (this.name === 'pi 3') assert.ok(now >= thirdReadyAt, 'input must wait for Pi readiness');
             if (text !== '\r') this.pending = text;
             if (text === '\r' && this.pending === '!echo PCLI_QUIT_$((6*7))') {
               fs.appendFileSync(path.join(agent, 'session.jsonl'), 'PCLI_QUIT_42\n');
@@ -100,6 +103,7 @@ test('scenario A rejects a /quit that needs a second Enter', async (t) => {
     Date: FakeDate,
     setTimeout(callback, ms) {
       now += ms;
+      if (now >= thirdReadyAt) fs.writeFileSync(path.join(agent, 'pcli-ready-1'), '');
       callback();
     },
   };
