@@ -6932,3 +6932,36 @@ Verbatim text before replacement:
 >   Carrier of the reminder: `extensions/RQW-agent/prompt.ts` (`FOLLOW_UP`, the Cursor completion follow-up after every delivered final result, owner: «Фразу ответа ребенка надо оставить. Надо, чтобы у нас работало так же, как в курсоре.», used in `index.ts` `resultMessage` and `coordinator.ts` results; `SUBAGENT_REMINDER`; `LEGACY_SUBAGENT_REMINDER` and `withCurrentReminder` only for rebuilding saved children: restore and resume replace the legacy block in place or append the reminder, with one accepted prompt-cache miss per restored child), `extensions/RQW-agent/index.ts` (`resolveConfig` appends it to custom prompts). The `agent` description in `extensions/RQW-agent/index.ts` follows the Sonnet style (when to use and the cost of a fresh agent, doing small work yourself, briefing like a peer, short usage bullets, background and never-invent-results, trusting finished work and handing it on with links or quotes), with our mechanics lines kept. Owner: «теперь насчет агентов я хочу как у соннета так же давай дифы»; «В остальном по саб агентам +++»; on trust: «Так насчет доверия агентам я понимаю что ты убрал, но надо подумать как это сохранить правило максимально ИНТЕЛЛЕКтуально иначе я не вижу смысла в саб агенте если ты его работу доп перепроверяешь?»; on retelling: «насчет пересказов это збс никаких пересказов топ либо ссылки либо цитаты»; «Так, первый пункт правил доверия к агентам. Их все нужно внести в правки описания агента. Я же их принял, я их одобрил. Почему ты их не внёс?». The profile-list header and the `title`, `interrupt` and `model` parameter texts stay Cursor's guidance with mapped names; Cursor's type catalogue is not carried, owner: «Нет мы вообще агентов никаких не переноси у нас свои агенты»; model-naming guidance dropped, owner: «Про имена моделей нахуй выбрасываем».
 >   Reason: share main's rules and context while allowing short role configuration and independent decomposition.
 >   Carrier: `extensions/RQW-agent/index.ts`, `extensions/RQW-agent/prompt.ts`; details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). Since: `c86e9bb`.
+
+## A-0389 · archived 2026-10-31 · Review · Quote-only admission and Main-owned cycle
+
+Status: SUPERSEDED by `[D-REVIEW-IMPACT]` (DECISIONS.md#review).
+Source: `c0416c1:DECISIONS.md`, Review. Archived by: reviewer-p2-gate;
+exact commit: `git log -S'A-0389' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced prompt fragment, cycle and verdict text:
+
+> Model defaults and
+>   the finding evidence format are unchanged.
+>
+> - **Review cycle on Main's side** `[D-REVIEW-CYCLE]`. The native `reviewer` skill and
+>   [PROCESS.md, Independent review](PROCESS.md#independent-review) carry the cycle canonically. Initial and changed-object
+>   passes start a fresh ordinary profile agent with `include: ["user_messages"]`. Admitted findings are fixed in one
+>   batch and changed places receive a fresh pass. Missing or malformed evidence is completed through `send` to the same
+>   reviewer, using retained inspection or an exact `UNCHECKED:`; a fresh reviewer is not started for format or confidence.
+>   The bounded provider/start-failure retry remains. Reviewers report evidenced requirement breaches, not taste,
+>   unsupported hypotheticals or new requirements. Owner (`16-27-59:5210`):
+>   «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
+>   Current concise-evidence and same-reviewer completion rule: [PROCESS.md, Independent review](PROCESS.md#independent-review).
+>   Reason: complete inspection without repeated reviewer startup for missing output detail. Carriers:
+>   `extensions/RQW-review/skills/reviewer/SKILL.md`, `blindreview/SKILL.md`, `highreview/SKILL.md`,
+>   [PROCESS.md, Independent review](PROCESS.md#independent-review). Since: the reviewer port; evidence completion updated
+>   by process-minimal-testing-review.
+>
+> - **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by concise concrete
+>   `CHECKED:` evidence for the inspected object and criterion, or `FINDINGS:` with numbered finding blocks. `CHECKED:`
+>   cites exact files, sections and source anchors without a long per-obligation checklist; a bare `CLEAN` is incomplete.
+>   `UNCHECKED:` names genuinely unavailable required evidence. Both reviewer profiles carry this format. The common
+>   skill sends incomplete evidence back to the same reviewer and never accepts it. Structure alone does not prove
+>   coverage; Main assesses the supplied evidence against the criterion. Results use the ordinary `agent#N` lifecycle.
+>   Carriers: `extensions/RQW-review/profiles/*.toml`, `skills/reviewer/SKILL.md`, RQW-agent.
+>   Since: subagent-profiles; concise evidence updated by process-minimal-testing-review.

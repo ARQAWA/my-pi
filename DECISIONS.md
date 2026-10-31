@@ -1067,8 +1067,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   system prompt and subagent reminder under `[D-AGENT-PROFILES]`; profile discovery and precedence stay unchanged.
   The original harness adaptations are the allowed read/search tools and read-only Bash, the brief-section sentence,
   and the truncated-read note. The owner-approved testing/review change additionally requires concise concrete
-  `CHECKED:` evidence instead of a long per-obligation checklist; see [PROCESS.md, Independent review](PROCESS.md#independent-review). Model defaults and
-  the finding evidence format are unchanged. Owner (`16-27-59:5210`, `16-27-59:5219`):
+  `CHECKED:` evidence instead of a long per-obligation checklist; see [PROCESS.md, Independent review](PROCESS.md#independent-review). Model defaults remain unchanged;
+  finding severity and pass admission follow `[D-REVIEW-IMPACT]`. Owner (`16-27-59:5210`, `16-27-59:5219`):
   «reviewer должен делать полное review и находить все расхождения, а не по одному.»
   «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
   «Я бы хотел его минимально улучшить, минимально усилить и без замеров просто использовать его.»
@@ -1110,26 +1110,46 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Carriers: `extensions/RQW-review/index.ts`, `profiles/*.toml`, `skills/**/SKILL.md`, RQW-agent.
   Contract: [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
   Since: subagent-profiles.
-- **Review cycle on Main's side** `[D-REVIEW-CYCLE]`. The native `reviewer` skill and
-  [PROCESS.md, Independent review](PROCESS.md#independent-review) carry the cycle canonically. Initial and changed-object
-  passes start a fresh ordinary profile agent with `include: ["user_messages"]`. Admitted findings are fixed in one
-  batch and changed places receive a fresh pass. Missing or malformed evidence is completed through `send` to the same
-  reviewer, using retained inspection or an exact `UNCHECKED:`; a fresh reviewer is not started for format or confidence.
-  The bounded provider/start-failure retry remains. Reviewers report evidenced requirement breaches, not taste,
-  unsupported hypotheticals or new requirements. Owner (`16-27-59:5210`):
-  «Reviewer должен находить всё говно и сразу выгребать его, чтобы main сразу всё почистил, чтобы это всё было быстро и производительно.»
-  Current concise-evidence and same-reviewer completion rule: [PROCESS.md, Independent review](PROCESS.md#independent-review).
-  Reason: complete inspection without repeated reviewer startup for missing output detail. Carriers:
-  `extensions/RQW-review/skills/reviewer/SKILL.md`, `blindreview/SKILL.md`, `highreview/SKILL.md`,
-  [PROCESS.md, Independent review](PROCESS.md#independent-review). Since: the reviewer port; evidence completion updated
-  by process-minimal-testing-review.
+- **Impact admission and executor-owned cycle** `[D-REVIEW-IMPACT]`. Findings need exact evidence, severity,
+  a concrete trigger and a wrong outcome in the ordered result. P0 critical, P1 high, P2 medium retain real bugs,
+  material owner requirements and regression-detection gaps. Data, security and destructive-action risks are at
+  least P2, including symlink protection. Grade omissions and unagreed additions by their impact, not automatically
+  critical. P3 are reported and fixed in the same batch only when the pass also has admitted P0-P2 findings.
+  A P3-only pass is CLEAN: drop its P3 without mentioning them. Never report P4, taste or no-impact hypotheticals.
+  Quotes alone do not admit findings; custom criteria cannot bypass the gate.
+  An unagreed element must change the ordered result, expand scope or add material risk, subject to that gate.
+  In this repository the executor first checks itself briefly: touched tests, product run where possible and
+  authorized, reread against the owner's words, fix. Text changes need no runs. It owns blind review, fixes and
+  fresh changed-object passes until CLEAN, then returns one report with problems, fixes and CLEAN status.
+  Changed-object passes check fixes, changed lines and affected paths, not the whole object again. Format slips
+  are corrected locally without a new pass; missing material evidence still prevents acceptance and is completed
+  with the same reviewer. Keep the bounded provider/start-failure retry. Blind stays Spotty medium, high Bossy xhigh.
+  A fork of the main chat is deferred separately, not implemented here.
+  Owner, verbatim and in order, supplied in the reviewer-p2-gate brief, 2026-10-31:
+  «Надо оптимизировать, ускорить процесс приемки, но при этом не потерять в контроле качества вообще никак. Выбросить только то, что не относится к контролю качества напрямую»
+  «Я имею в виду случаи исключительные, какая-то хуйня абсолютная, без которой всё и так будет работать. И это какая-то вкусовщина, хотя вкусовщину должно было исключить.»
+  «И надо оценку по соотношению потраченного времени, потраченных токенов на риск, который мы несём при сохранении проблемы. Это самая важная оценка, потому что наша задача — выявить критические штуки. Например, когда агент пропустил какое-то условие или добавил что-то от себя, что не согласовано. Этот пропуск и согласование входит в одну из категорий и влияет на заказанный конечный результат: сильно критически, слабо либо вообще не влияет. Что-то такое. Надо найти супер интеллектуальный баланс, потому что вроде как заказывать с неперфекционистом похоже на перфекционизм полный.»
+  «Погоди! Смотри, мы возвращаем blind на medium. Эта тема, что исполнитель чинит себя сам без нового круга, мне нравится.»
+  «Исполнитель выполнил работу свою полностью от начала до конца, потом forked самого себя и в этом форке сам себя перепроверил. Context засрался. Потом он поднял reviewer, reviewer перепроверил его вслепую, выдал ему ответ. Тот сам себя починил. После этого снова поднял blind reviewer, и так они довели всё это дело до конца. Потом он написал огромный отчёт основному агенту в ответ: «Так мы зафинализировали работу. Было столько-то проблем, столько-то исправлений. Статус clean».»
+  «Но самая главная здесь не оптимизация, а чтобы он качественно проверял, при этом без фанатизма.»
+  «Мы в теории можем вообще P3 отбросить и оставить только P0, P1, P2»
+  «Ну я к тому, что мы по три просто можем отбросить и даже про них не говорить.»
+  «А там защита ссылок я понял окей»
+  Latest owner correction, verbatim:
+  «Погоди, какую ты правку запустил? Я же это самое сказал что я понял, что там защита отсылок. Сказал окей типа мы не отбрасываем. Мы отбрацываем только если кроме МП3 ничего нету тогда мы отбрасываем»
+  The correction replaces the earlier proposal to discard every P3; only P3-only passes are discarded.
+  Reason: preserve quality and destructive-risk protection without low-only correction loops.
+  Evidence: `my-pi-evidence/reviewer-audit/REPORT.md`, offline examples in `VALIDATION.md` alongside it.
+  Carriers: `extensions/RQW-review/REVIEWER.md`, `profiles/*.toml`, `skills/reviewer/SKILL.md`,
+  [RQW-review README](extensions/RQW-review/README.md), [PROCESS.md](PROCESS.md#independent-review).
 
 - **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by concise concrete
-  `CHECKED:` evidence for the inspected object and criterion, or `FINDINGS:` with numbered finding blocks. `CHECKED:`
+  `CHECKED:` evidence for the inspected object and criterion, or `FINDINGS:` with numbered finding blocks.
+  Every finding has `SEVERITY`, `TRIGGER` and `RESULT_IF_UNFIXED` under `[D-REVIEW-IMPACT]`. `CHECKED:`
   cites exact files, sections and source anchors without a long per-obligation checklist; a bare `CLEAN` is incomplete.
   `UNCHECKED:` names genuinely unavailable required evidence. Both reviewer profiles carry this format. The common
   skill sends incomplete evidence back to the same reviewer and never accepts it. Structure alone does not prove
-  coverage; Main assesses the supplied evidence against the criterion. Results use the ordinary `agent#N` lifecycle.
+  coverage; the executor assesses the supplied evidence against the criterion. Results use the ordinary `agent#N` lifecycle.
   Carriers: `extensions/RQW-review/profiles/*.toml`, `skills/reviewer/SKILL.md`, RQW-agent.
   Since: subagent-profiles; concise evidence updated by process-minimal-testing-review.
 

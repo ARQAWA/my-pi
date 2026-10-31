@@ -8,6 +8,23 @@ import test from "node:test";
 import { loadSkills } from "@earendil-works/pi-coding-agent";
 import { parse } from "smol-toml";
 import { ProfileCatalogue } from "../extensions/RQW-agent/profiles.ts";
+import { reviewCounts } from "../extensions/RQW-agent-ui/review.ts";
+
+test("review cards count mixed-severity findings with the added protocol fields", () => {
+	const findings = ["P2", "P3"].map((severity, index) => [
+		`FINDING ${index + 1}`,
+		`SEVERITY: ${severity}`,
+		"TRIGGER: A guarded command is submitted.",
+		"RESULT_IF_UNFIXED: The command is refused incorrectly.",
+		"REQUIREMENT: Allowed commands remain usable. (request)",
+		"MISMATCH: The guard rejects the allowed command.",
+		'EVIDENCE: "return refused;" (guard.ts)',
+		"REQUIRED OUTCOME: The allowed command succeeds.",
+	].join("\n"));
+	const verdict = ["FINDINGS:", ...findings, "CHECKED: guard.ts",
+		"UNCHECKED:", "- external specification - unavailable"].join("\n");
+	assert.deepEqual(reviewCounts(verdict), { findings: 2, unchecked: 1 });
+});
 
 test("project reviewer profiles use Terra high and the required review contracts", async () => {
 	const fragments = {

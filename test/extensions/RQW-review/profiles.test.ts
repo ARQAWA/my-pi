@@ -31,3 +31,26 @@ it("pins the native reviewer models and efforts", () => {
 		["bossy", "gpt-6.1-terra", "xhigh"],
 	]);
 });
+
+it("keeps the canonical severity gate byte-identical in both profiles", () => {
+	const role = readFileSync(join(ROOT, "REVIEWER.md"), "utf8").replace(/\r\n/g, "\n");
+	for (const name of ["spotty", "bossy"]) {
+		const profile = parse(readFileSync(join(ROOT, "profiles", `${name}.toml`), "utf8"));
+		assert.equal(profile.developer_instructions, role);
+	}
+	for (const fragment of [
+		"Matching quotes alone do not admit a finding",
+		"Grade doc and record gaps by their real impact too",
+		"a gap that makes the ordered result wrong or breaks an owner decision is P0-P2",
+		"Any risk to data, security or a destructive action is at least P2",
+		"Report P3 findings only together with at least one admitted P0-P2 finding",
+		"If only P3 remain, return CLEAN without reporting or mentioning them",
+		"SEVERITY:", "TRIGGER:", "RESULT_IF_UNFIXED:",
+	]) assert.ok(role.includes(fragment), fragment);
+});
+
+it("allows required review launches without authorizing unsolicited ones", () => {
+	const skill = readFileSync(join(ROOT, "skills", "reviewer", "SKILL.md"), "utf8");
+	assert.ok(skill.includes("Launch a reviewer when the user, the caller's brief, an invoked skill or applicable project instructions require it."));
+	assert.ok(skill.includes("Without such a request or requirement, never launch one on your own initiative or as an automatic step of other work."));
+});

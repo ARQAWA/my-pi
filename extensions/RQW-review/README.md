@@ -17,6 +17,18 @@ precedence stay unchanged. Agent appends raw user messages in `<user_messages>` 
 them. A complete `CLEAN` needs concise concrete
 `CHECKED:` evidence and no `UNCHECKED:`. Missing or malformed evidence is completed by `send` to the same reviewer,
 which supplies evidence from retained inspection or marks the exact gap; a fresh reviewer is not started for format.
+The executor corrects format slips itself. Initial review covers the whole object; changed-object passes check
+all fixes, changed lines and affected paths, not the whole object again. Stop when no admitted finding remains
+and the required evidence is complete.
+
+Findings need exact source evidence, `SEVERITY`, a concrete `TRIGGER` and `RESULT_IF_UNFIXED` in the ordered result.
+P0 is critical, P1 high and P2 medium, including real regression-detection gaps. Data, security and destructive-action
+risks are at least P2. Grade missed owner conditions and unagreed additions by their impact, not automatically critical.
+Grade doc and record gaps by their real impact; gaps that make the ordered result wrong or break an owner decision
+are P0-P2. Report low-impact P3 wording, doc or record gaps, rare low-risk edges and test style only alongside admitted P0-P2 findings;
+the executor fixes the mixed batch together. A P3-only pass is `CLEAN`, with its P3 dropped and not mentioned.
+Never report P4, taste or no-impact hypotheticals. Matching quotes alone do not admit a finding.
+An unagreed element must change the ordered result, expand scope or add material risk, subject to this gate.
 
 `REVIEWER.md` is the canonical reviewer role. `profiles/spotty.toml` and `profiles/bossy.toml` retain byte-identical
 `developer_instructions` for direct profile use, while the common skill explicitly loads the file through `role_file`.
@@ -26,7 +38,7 @@ Main's model; explicit agent options can override these defaults.
 
 The source is the owner's Codex plugin `scope-focus`, developer A. Chukavin, with no licence text supplied.
 The common skill contains only its subagents skill's review section, with calls and user-message placement
-adapted for Pi. Both profiles share the canonical reviewer role with the approved concise-evidence amendment;
+adapted for Pi. Both profiles share the canonical reviewer role with the approved concise-evidence and severity amendments;
 actual mechanical placement and same-reviewer completion are specified by the common skill.
 
 On `pi.events` channel `rqw-agent:profiles`, request `{ offer(paths: string[]): void }`, this extension offers
