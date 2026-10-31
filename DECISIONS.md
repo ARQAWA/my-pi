@@ -1737,15 +1737,21 @@ The shipped independent `web` tool lives in `extensions/RQW-web/`; Contract: [RQ
 
 - **Own thin implementation** `[D-WEB-CLI]`. Owner (`16-27-59:4782`): «Надо посмотреть ее кишки, взять ее базу, облегчить ее.» Owner (`16-27-59:4888`): «Это будет просто CLI, которую агент будет вызывать из shell.» Owner (`16-27-59:4917`): «Делаем клон Codex, чтобы наш агент работал с этой хуйнёй так же, как с Codex.» The owner ordered a lightweight own base. Researched alternatives were not adopted: actively maintained MIT `pi-web-access` 0.44.0 has 9 direct dependencies, 208 lock entries and about 10.3 MB unpacked, many unrelated providers and features, and a different normal OpenAI search path; a separate Codex CLI duplicates the agent environment/auth; API-key Responses has different billing. Only batching, sourced answers, explicit errors and overflow continuation ideas are reused. Carrier: `extensions/RQW-web/`.
 - **Tool interface** `[D-WEB-INTERFACE]`. Owner (`16-27-59:4917`): «Если для агента это будет тяжело, то сделай две команды. А если казуально, то оставь одну» One tool `web` takes nonempty `queries` OR `urls`, optional URL-only `focus`, `mode: cached|live|indexed` and `response_length: short|medium|long`. It returns concise summaries, supporting links, statuses and actual search model/thinking. Carrier: `extensions/RQW-web/tool.ts`, `description.md`.
-- **Automatic model mapping** `[D-WEB-MAPPING]`. Owner (`16-27-59:4941`): «Да, всё именно так, как ты записал.» Owner (`16-27-59:4937`): «Давай так: для Haiku 5.5 будет Luna 5.6. Для Sonnet 5.5 будет Sol 6, а для Opus 5.5 будет Sol 6.1. Вот и всё.» Owner (`16-27-59:4945`): «Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться» The tool captures `ctx.model` and its own Pi API's `getThinkingLevel()` at each invocation, not the coordinator model; model arguments are absent. The model rule stays in [D-SCOPE-WEB-SEARCH-MODEL](#scope).
+- **Automatic model mapping** `[D-WEB-MAPPING]`. Owner: «кстати еще надо веб туллинг переделать что бы он давал паритетные модели соннету опусу и хайку» Owner: «нет уровень не тот же везде) щас скажу какой)))» Owner: «опус лоу и медиум берет тоже самое опус хай и выше берет сол хай
+  по терра берет хай для хай и икс хай для выше чем икс хай соннета
+  у хайку так же» Owner confirmed the table below: «да верная матрица». Owner (`16-27-59:4945`): «Не как аргументы CLI, а на уровне функционала tooling всё это будет пробрасываться, форвардиться» The tool captures `ctx.model` and its own Pi API's `getThinkingLevel()` at each invocation, not the coordinator model; model arguments are absent. The model rule stays in [D-SCOPE-WEB-SEARCH-MODEL](#scope).
 
-  | Calling model | Search model | Thinking |
-  | --- | --- | --- |
-  | Recognized `openai-codex` GPT | Same exact model | Same level |
-  | `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | Same level |
-  | `anthropic/claude-sonnet-5-5` | `gpt-6-sol` | Same level |
-  | `anthropic/claude-opus-5-5` | `gpt-6.1-sol` | low -> low, medium -> high, high -> xhigh, above high -> max |
-  | Unknown or missing model, including unknown GPT slug | `gpt-6.1-sol` | low |
+  | Caller | Search model | low | medium | high | xhigh | max |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | Recognized `openai-codex` GPT | Same exact model | Same level | Same level | Same level | Same level | Same level |
+  | `anthropic/claude-opus-5-5` | `gpt-6.1-sol` | low | medium | high | high | high |
+  | `anthropic/claude-sonnet-5-5` | `gpt-6.1-terra` | low | medium | high | xhigh | xhigh |
+  | `anthropic/claude-haiku-5-5` | `gpt-5.6-luna` | low | medium | high | xhigh | xhigh |
+  | Unknown or missing model, including unknown GPT slug | `gpt-6.1-sol` | low | low | low | low | low |
+
+  GPT callers pass the model and level through as is, now including `gpt-6.1-terra`; Pi `off` is sent as native `none` where the model supports it. Owner: «нет когда мы работаем на гпт моделях ты просто пробрасываешь модель как есь и ризонинг паритет»
+
+  Claude `ultra` is above every listed level and maps like `max`, per the owner's «выше чем икс хай» and «опус хай и выше».
 
   Owner's fallback (`16-27-59:6331`, entry `e3aba5d4`): «если короче это модель не опознанная то всегда по дефолту 6.1 сол лоу юзать» Known callers with unsupported thinking fail explicitly; Claude `off` and `minimal` stay unmapped. Carrier: `extensions/RQW-web/core/model-map.ts`.
 - **Engine** `[D-WEB-ENGINE]`. The existing Codex CLI 0.164.0 source research selected the Responses Lite path `web.run -> POST alpha/search -> function_call_output -> sourced answer`, not hosted-only `web_search`. Each target has an ephemeral web-only loop, no Pi AgentSession, stored history, provider registration, prewarm or compaction. Pure transport/auth code is a minimal local snapshot with original path and commit headers; no import reaches another extension. The snapshot retains the existing 0.163.0 transport pin. Reason: preserve the researched subscription mechanism while keeping RQW-web independently switchable. Carrier: `extensions/RQW-web/core/`, `vendor/`.

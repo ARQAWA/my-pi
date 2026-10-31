@@ -21,7 +21,7 @@ async function execute(input: { queries?: string[]; urls?: string[]; focus?: str
 it("returns a sourced report for a query", async () => {
 	const report = await execute({ queries: ["Pi documentation"] });
 	assert.match(report, /1 target, 1 ok, 0 failed/);
-	assert.match(report, /search model gpt-6-sol, effort high/);
+	assert.match(report, /search model gpt-6.1-terra, effort high/);
 	assert.match(report, /Answer for Pi documentation/);
 });
 
