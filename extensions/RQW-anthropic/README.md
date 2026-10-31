@@ -118,8 +118,8 @@ The fork uses the existing Anthropic builder and subscription transport with clo
 version state and abort signal. The version copy retains the current version and whether it was explicitly pinned
 by `PI_AI_CLAUDE_CODE_VERSION`; fork adoption does not change the source version. It keeps the source system
 blocks, tool order and actual cache retention, including
-children's explicit short policy. Matching message-prefix cache markers are retained. Billing checksums are
-recomputed normally, so cache reuse is best effort, never guaranteed. A cache miss causes no retry. Existing
+children's explicit short policy. Matching message-prefix cache markers are retained. The billing block has no
+checksum, so cache reuse is best effort, never guaranteed. A cache miss causes no retry. Existing
 bounded HTTP auth/version recovery remains; SDK retries are disabled. OAuth refresh may persist a rotated grant.
 There are no session callbacks, history writes, executor or tool loop. A returned tool call is just data for the
 consumer to reject. Errors and abort affect only the fork; stale-result cancellation belongs to its consumer.
@@ -168,9 +168,11 @@ Pi method patch is required. Adapter cleanup removes the inference listener and 
 
 ## What is and is not equivalent to omp
 
-The CLI billing block, original Claude Code identity, retained system role, first-user fingerprint and exact-body
-XXH64 checksum follow the inspected omp implementation. This is NOT the installed adapter's SDK entrypoint,
-system-to-user relocation or normalized-body checksum. Pi still handles tool conversion, parsing and feature betas.
+The CLI billing block, original Claude Code identity, retained system role, first-user fingerprint follow the
+inspected omp implementation. The billing block is sent as real Claude Code 2.1.301 and 2.1.314 send it:
+`x-anthropic-billing-header: cc_version=<version>.<suffix>; cc_entrypoint=cli;` with no `cch` field and no body
+checksum (98 captured blocks, none with `cch`; owner: «Этот варик принимаю на 1сп делай»). This is NOT the installed adapter's SDK entrypoint or
+system-to-user relocation. Pi still handles tool conversion, parsing and feature betas.
 The installation/session metadata uses our own stable device id, not a fabricated account uuid.
 
 Pi's own PKCE browser/copy-code flow is delegated unchanged, including its platform.claude.com exchange endpoint

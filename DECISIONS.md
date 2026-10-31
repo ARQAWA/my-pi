@@ -1228,7 +1228,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   session, not found in the Pi sessions): "они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать и выключать, как feature флаги". Toggle and migration: `extensions/RQW-anthropic/README.md`. Since: `8a1f2ed`.
 - **Login and omp wire** `[D-ANTHROPIC-WIRE]`. The overlay keeps Pi's catalog and parser, delegates Pi's PKCE
   browser/copy-code login, and uses omp's refresh endpoint and headers, CLI billing block, original system role and
-  exact-body XXH64 checksum. MIT attribution: `THIRD-PARTY-NOTICES.md`; no installed fork code is copied. Subscription
+  the billing block exactly as captured from real Claude Code 2.1.301 and 2.1.314:
+  `x-anthropic-billing-header: cc_version=<version>.<suffix>; cc_entrypoint=cli;` with no `cch` field and no body
+  checksum (98 captured blocks, none with `cch`). Owner: «Этот варик принимаю на 1сп делай»; evidence:
+  `my-pi-evidence/claude-code-reverse/{opus,sonnet,opus-2.1.301}/`, `my-pi-evidence/opencode-claude/REPORT.md`
+  section «Улучшения за 1 SP». MIT attribution: `THIRD-PARTY-NOTICES.md`; no installed fork code is copied. Subscription
   acceptance and billing, account rotation and all omp SDK headers are not claimed. Coordinator text (owner quotes C:3133,
   an omp session, not found in the Pi sessions): "чтобы он был такой же, как в OMP, чтобы у него был self-healing";
   "И чтобы можно было через него авторизоваться". Since: `071df1e`.
