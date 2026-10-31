@@ -35,6 +35,58 @@ it("shows the current activity in the widget after a cached frame", async (t) =>
 	await handlers.get("session_shutdown")!({}, ctx);
 });
 
+it("uses the current warning colour only while background work remains after the run", async (t) => {
+	t.mock.timers.enable({ apis: ["setInterval"] });
+	let clock = 0;
+	t.mock.method(performance, "now", () => clock);
+	const handlers = new Map<string, (event: unknown, ctx: any) => any>();
+	let counts = { agents: 1, backgroundProcesses: 1 };
+	let notify: (() => void) | undefined;
+	let command: unknown;
+	const source = { version: 1, snapshot: () => counts, subscribe: (fn: () => void) => { notify = fn; return () => {}; } };
+	const pi = {
+		events: { on: () => () => {}, emit: (name: string, request: any) => { if (name === "rqw:running-counts:request") request.reply(source); } },
+		getSettings: () => ({}), getSessionName: () => undefined, getThinkingLevel: () => "off",
+		registerCommand(_name: string, value: unknown) { command = value; }, on: (name: string, handler: any) => handlers.set(name, handler),
+	};
+	let widget: any;
+	let footer: any;
+	const ctx = {
+		mode: "tui", cwd: tmpdir(), model: undefined, isIdle: () => false, getContextUsage: () => undefined,
+		sessionManager: { getSessionId: () => "s", getLeafId: () => null, getEntryCount: () => 0, getEntries: () => [] },
+		ui: { theme: { fg: (role: string, text: string) => `<${role}>${text}</${role}>` }, getEditorComponent: () => ({}),
+			setEditorComponent() {}, setFooter: (factory: any) => { footer = factory; }, setWorkingIndicator() {}, setWidget: (_key: string, factory: any) => { widget = factory; } },
+	};
+	statusbar(pi as never);
+	bindTestHost(t, command);
+	await handlers.get("session_start")!({}, ctx);
+	let redraws = 0;
+	let refreshed: (() => void) | undefined;
+	const ready = new Promise<void>((resolve) => { refreshed = resolve; });
+	footer({ requestRender: () => { redraws++; refreshed?.(); } }, ctx.ui.theme, { onBranchChange: () => () => {}, getExtensionStatuses: () => new Map() });
+	await ready;
+	const view = widget();
+	assert.doesNotMatch(view.render(80)[0], /<warning>/);
+	await handlers.get("agent_settled")!({}, ctx);
+	const waiting = view.render(80)[0];
+	assert.match(waiting, /<warning>/);
+	assert.match(strip(waiting).replace(/<\/?warning>/g, ""), /Waiting for 1 agent, 1 background process/);
+	assert.strictEqual(view.render(80), view.render(80));
+	const before = redraws;
+	clock = 400;
+	t.mock.timers.tick(400);
+	assert.ok(redraws > before);
+	const animated = view.render(80)[0];
+	assert.notEqual(animated, waiting);
+	assert.match(animated, /<warning>/);
+	ctx.ui.theme = { fg: (role: string, text: string) => `[${role}]${text}[/${role}]` };
+	assert.match(view.render(80)[0], /\[warning\]/);
+	counts = { agents: 0, backgroundProcesses: 0 };
+	notify!();
+	assert.deepEqual(view.render(80), []);
+	await handlers.get("session_shutdown")!({}, ctx);
+});
+
 // One refresh asks git for the file counts and for the branch.
 const GIT_RUNS_PER_REFRESH = 2;
 

@@ -110,7 +110,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	let lightning = false;
 	/** The phase moves in shimmer ticks, the pace of the redraw timer, so renders within one tick are identical. */
 	const chromeNow = (): ActivityChrome | undefined =>
-		status && { text: status.text, compacting: status.compacting, retry: status.retry, frame: status.retry ? 0 : Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS };
+		status && { text: status.text, compacting: status.compacting, background: status.background, retry: status.retry, frame: status.retry ? 0 : Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS };
 	const fastState = (): BarState["fast"] =>
 		lightning ? { frame: working ? Math.floor((now() - animationStart) / FAST_STEP_MS) : undefined } : undefined;
 	const stopShimmer = () => { if (shimmer) clearInterval(shimmer); shimmer = undefined; };
@@ -209,13 +209,14 @@ export default function statusbar(pi: ExtensionAPI) {
 
 	/** Pi supplies one leading spacer. The active widget adds the status and one trailing empty line, idle adds nothing. */
 	const activityWidget = () => {
-		let last: { width: number; chrome: ActivityChrome; rows: string[] } | undefined;
+		let last: { width: number; chrome: ActivityChrome; theme: Theme | undefined; rows: string[] } | undefined;
 		return {
 			render(width: number): string[] {
 				const chrome = chromeNow();
 				if (!chrome) return [];
-				if (!last || last.width !== width || last.chrome.text !== chrome.text || last.chrome.compacting !== chrome.compacting || last.chrome.retry !== chrome.retry || last.chrome.frame !== chrome.frame)
-					last = { width, chrome, rows: activityRows(width, chrome) };
+				const theme = lightCtx?.ui.theme;
+				if (!last || last.width !== width || last.theme !== theme || last.chrome.text !== chrome.text || last.chrome.compacting !== chrome.compacting || last.chrome.background !== chrome.background || last.chrome.retry !== chrome.retry || last.chrome.frame !== chrome.frame)
+					last = { width, chrome, theme, rows: activityRows(width, chrome, theme ? themePaint(theme) : undefined) };
 				return last.rows;
 			},
 			invalidate() {},

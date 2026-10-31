@@ -544,15 +544,27 @@ export interface ActivityChrome {
 	text: string;
 	compacting: boolean;
 	retry?: boolean;
+	background?: boolean;
 	/** The phase in frames, fractional: elapsed time over the frame length, not a tick count. */
 	frame: number;
 }
 
 /** The activity widget's two rows; Pi supplies its single leading spacer, even when this component is empty. */
-export function activityRows(width: number, chrome: ActivityChrome | undefined): string[] {
+export function activityRows(width: number, chrome: ActivityChrome | undefined, paint: Paint = plain): string[] {
 	if (!chrome) return [];
 	const text = fitPlain(singleLine(chrome.text), Math.max(0, width - 1));
-	return [width > 0 ? " " + (chrome.retry ? styled("#ffb347", false, text) : shimmerText(text, 1, chrome.frame, chrome.compacting ? GOLD : SILVER)) : "", ""];
+	let content: string;
+	if (chrome.retry) content = styled("#ffb347", false, text);
+	else if (chrome.background) {
+		const position = silverGlintPosition(visibleWidth(text), chrome.frame);
+		let column = 0;
+		content = Array.from(graphemes.segment(text), ({ segment }) => {
+			const bright = shimmerPhase(column, position / SHIMMER_CELLS_PER_FRAME) > 0.85;
+			column += visibleWidth(segment);
+			return segment === " " ? segment : paint("warning", bright ? `\x1b[1m${segment}\x1b[22m` : segment);
+		}).join("");
+	} else content = shimmerText(text, 1, chrome.frame, chrome.compacting ? GOLD : SILVER);
+	return [width > 0 ? " " + content : "", ""];
 }
 
 /** A run of the top border: a rule, the hint, the title or the session ID. */

@@ -122,7 +122,7 @@ export interface StatusInput {
 }
 
 /** The status text of the upper border, or undefined when fully idle (no label, no reserved gap). */
-export function statusText(input: StatusInput): { text: string; compacting: boolean } | undefined {
+export function statusText(input: StatusInput): { text: string; compacting: boolean; background?: boolean } | undefined {
 	if (input.compacting) return { text: "Compacting context", compacting: true };
 	// Main's active thinking/tool text keeps its existing agent suffix, not a background-job action.
 	const parts = countParts(input.running ? { agents: input.counts.agents } : input.counts);
@@ -130,7 +130,7 @@ export function statusText(input: StatusInput): { text: string; compacting: bool
 		const head = input.action ?? "Planning next moves";
 		return { text: parts.length > 0 ? `${head} · ${parts.join(", ")}` : head, compacting: false };
 	}
-	if (parts.length > 0) return { text: `Waiting for ${parts.join(", ")}`, compacting: false };
+	if (parts.length > 0) return { text: `Waiting for ${parts.join(", ")}`, compacting: false, background: true };
 	return undefined;
 }
 
