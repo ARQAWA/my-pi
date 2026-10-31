@@ -190,7 +190,7 @@ Provenance:
   does `stop` in the same call as the next step.
   Owner, 2026-10-31: «При изменении просто записей текстовых не должно быть никаких выкаток, никаких CI, запусков и прочей хуйни. Ты что, ебанулся нахуй? Ты что? Это же супернеэффективность. Мы очень долго работали над супернеэффективностью, и ты её сохранил, ты её ещё до сих пор гоняешь и токены на это тратишь. Давай, разберись. У нас всё должно быть суперлегковесное, быстрое, производительное, реактивное максимально. Надо найти все эти неэффективности и устранить их»
   Owner: «Они все должны быть 100% verified»
-  Owner, on the CI wait: «1. Для выкаток с кодом ждём CI перед main, для текста не ждём. 2. Не ждём никогда, как в отчёте.» Answer: «1».
+  Coordinator asked: «1. Для выкаток с кодом ждём CI перед main, для текста не ждём. 2. Не ждём никогда, как в отчёте.» Owner: «1».
   Owner on the report's edits: «выбираю 1» (all edits as in the report).
   Reason: text changes gain nothing from runs, release or CI; repeated reviews from scratch and waiting loops only spend tokens.
   Carrier: [PROCESS.md](PROCESS.md). Since: process-efficiency.
