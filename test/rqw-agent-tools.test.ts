@@ -23,7 +23,7 @@ test("real RQW-tools definitions reach default and nested children", async t => 
 		const task = context.messages.find((message: any) => message.role === "user")?.content?.[0]?.text;
 		const results = context.messages.filter((message: any) => message.role === "toolResult");
 		if (!results.some((result: any) => result.toolName === "bash"))
-			return fauxAssistantMessage([fauxToolCall("bash", { command: "cat f" }, { id: `${task}-bash` })], { stopReason: "toolUse" });
+			return fauxAssistantMessage([fauxToolCall("bash", { command: "git grep foo" }, { id: `${task}-bash` })], { stopReason: "toolUse" });
 		if (!results.some((result: any) => result.toolName === "rqw_readfile"))
 			return fauxAssistantMessage([fauxToolCall("rqw_readfile", { path: "sample.txt" }, { id: `${task}-read` })], { stopReason: "toolUse" });
 		if (task === "outer" && !results.some((result: any) => result.toolName === "agent"))
@@ -70,7 +70,7 @@ test("real RQW-tools definitions reach default and nested children", async t => 
 		}
 		const bashResult = request.messages.find((message: any) => message.role === "toolResult" && message.toolCallId === `${task}-bash`);
 		assert.equal(bashResult?.isError, true);
-		assert.match(JSON.stringify(bashResult.content), /Blocked: bash does not search, list or read files/);
+		assert.match(JSON.stringify(bashResult.content), /Blocked: bash does not search, list or read files.*Use rqw_rg to search file contents/);
 		const result = request.messages.find((message: any) => message.role === "toolResult" && message.toolCallId === `${task}-read`);
 		assert.equal(result.isError, false);
 		assert.match(JSON.stringify(result.content), /actual factory result/);

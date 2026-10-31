@@ -694,7 +694,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   error names rqw_rg, rqw_glob and rqw_readfile (grep, find, read in the fallback). Quote-aware lexer, no full shell
   parser; nested `bash -c`, `eval` and other readers are known gaps. Applies to the main chat, subagents and codemode
   for every model; with RQW-tools off stock bash is unguarded. The second bash bullet is removed. Replaces the "no bash
-  guard" part of `[D-CURSOR-TOOLS]`.
+  guard" part of `[D-CURSOR-TOOLS]`. `git grep` is refused even after Git global options; other Git subcommands and piped grep filters stay allowed.
+  Owner decision (verbatim, with the proposal it answers): Coordinator proposed after probe 01a190ce-8e9c (Opus counted tests with `git grep -c`, the guard missed it): «Запретить git grep. Это чистый поиск по файлам, rqw_rg его полностью заменяет. git ls-files оставить. Он отвечает на вопрос git: что лежит в репозитории.» «Добавляем git grep в запрет? 1. Да. 2. Нет.» Also pending: «Принимаешь диффы? 1. Да, делаем. 2. Нет, сначала посмотрю страницу.» (Codex 0.165.0 agent texts, ~/Downloads/codex-agent-diffs.html). Owner: «да и по саб агентам да»
   Owner decision (Coordinator asked after three Opus probes, bash for search and listing despite both description
   lines: «Что делаем? 1. Принимаем, вторую строку убираем. 2. Принимаем, обе строки оставляем.»): «Вторую строку убираем и ебашим запрет на баш команды с уведомлением».
   Carriers: `extensions/RQW-tools/{bash-guard.ts,index.ts,descriptions/bash.md}`.

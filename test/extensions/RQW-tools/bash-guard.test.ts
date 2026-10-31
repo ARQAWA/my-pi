@@ -12,6 +12,15 @@ function message(part: string, legacy = false): string {
 }
 
 const blocked: [string, string][] = [
+	["git grep -c def tests", "git grep -c def tests"], ["git -C x grep foo", "git -C x grep foo"],
+	["git --no-pager grep foo", "git --no-pager grep foo"],
+	["git -c core.pager=cat grep foo", "git -c core.pager=cat grep foo"],
+	["git --git-dir=.git grep foo", "git --git-dir=.git grep foo"],
+	["git --git-dir .git --work-tree . --namespace ns grep foo", "git --git-dir .git --work-tree . --namespace ns grep foo"],
+	["make && git grep foo", "git grep foo"], ["true; git grep foo", "git grep foo"],
+	["git log | git grep foo", "git grep foo"],
+	["git ls-files | xargs git grep foo", "xargs git grep foo"],
+	["git ls-files | xargs git -C x grep foo", "xargs git -C x grep foo"],
 	["grep -rn x src", "grep -rn x src"], ["rg foo", "rg foo"],
 	["cd d && sed -n 1,5p f", "sed -n 1,5p f"], ["git status && cat f", "cat f"],
 	["npm test > l && tail l", "tail l"], ["echo \"$(cat f)\"", "cat f"],
@@ -33,6 +42,10 @@ const blocked: [string, string][] = [
 ];
 
 const allowed = [
+	"git ls-files", "git status", "git diff", "git show HEAD", "git log --grep x", "git -C grep status", "git -c grep.foo=bar status",
+	"git --version grep", "git --help grep", "git --exec-path grep", "git --html-path grep",
+	"git --list-cmds=main grep", "git --list-cmds grep",
+	"git ls-files | xargs git --version grep", "git ls-files | xargs git log --grep x",
 	"git log | grep x", "npm test 2>&1 | tail -20", "git diff | sed -n 1,5p",
 	"cat > f <<'EOF'\ngrep x f\nEOF", "sed -i 's/a/b/' f", "sed -i '' 's/a/b/' f",
 	"find . -name '*.pyc' -delete", "echo \"grep x f\"", "# cat f\necho ok", "node x.js < f",

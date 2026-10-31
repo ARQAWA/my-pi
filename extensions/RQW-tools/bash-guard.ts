@@ -92,6 +92,20 @@ function lex(command: string): Part[] {
 
 function name(word: string): string { return word.replace(/^\\/, "").split("/").pop()!.replace(/\.exe$/i, "").toLowerCase(); }
 
+function gitGrep(args: string[]): boolean {
+	for (let j = 0; j < args.length; j++) {
+		const arg = args[j];
+		if (["--version", "--help", "-v", "-h", "--exec-path", "--html-path", "--man-path", "--info-path", "--list-cmds"].includes(arg) || arg.startsWith("--list-cmds=")) return false;
+		if (["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix"].includes(arg)) {
+			j++;
+			continue;
+		}
+		if (arg.startsWith("-")) continue;
+		return arg === "grep";
+	}
+	return false;
+}
+
 function refused(part: Part): boolean {
 	const words = part.words;
 	let i = 0;
@@ -105,11 +119,13 @@ function refused(part: Part): boolean {
 	if (cmd === "xargs") {
 		for (let j = i + 1; j < words.length; j++) {
 			cmd = name(words[j]);
+			if (cmd === "git") return gitGrep(words.slice(j + 1));
 			if (listing.has(cmd) || searching.has(cmd) || reading.has(cmd)) return true;
 		}
 		return false;
 	}
 	const args = words.slice(i + 1);
+	if (cmd === "git") return gitGrep(args);
 	if (cmd === "find") {
 		const actions = new Set(["-print", "-print0", "-printf", "-fprint", "-fprint0", "-fprintf", "-ls", "-fls", "-exec", "-execdir", "-ok", "-okdir"]);
 		return !args.includes("-delete") || args.some(arg => actions.has(arg));

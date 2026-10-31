@@ -74,11 +74,11 @@ test("codemode tools.bash rejects a refused command", async () => {
 		},
 	};
 	const result: any = await code.execute("script", { code: `
-try { await tools.bash({ command: "cat f" }); text("unexpected success"); }
+try { await tools.bash({ command: "git grep foo" }); text("unexpected success"); }
 catch (error) { text(String(error)); }
 ` }, undefined, undefined, ctx);
 	const output = result.content.map((block: any) => block.text ?? "").join("\n");
-	assert.match(output, /Blocked: bash does not search, list or read files/);
+	assert.match(output, /Blocked: bash does not search, list or read files.*Use rqw_rg to search file contents/);
 	assert.doesNotMatch(output, /unexpected success|Custom shell path not found/);
 });
 
