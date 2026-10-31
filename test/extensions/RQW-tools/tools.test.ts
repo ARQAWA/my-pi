@@ -40,6 +40,6 @@ test("bash keeps the stock schema shape with the design's parameter descriptions
 
 test("bash description starts its bullets with the dedicated-tool warning", () => {
 	const tools = Object.fromEntries(createTools("/work", () => ({})).map(tool => [tool.name, tool as any]));
-	const bullets = tools.bash.description.split("\n").filter((line: string) => line.startsWith("- "));
+	const bullets = tools.bash.description.split(/\r?\n/).filter((line: string) => line.startsWith("- "));
 	assert.equal(bullets[0], "- IMPORTANT: Avoid using this tool to run `rg`, `fd`, `grep`, `find`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.");
 });
