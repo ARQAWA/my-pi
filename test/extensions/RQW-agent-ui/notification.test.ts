@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import type { MessageRenderer } from "@earendil-works/pi-coding-agent";
+import { initTheme } from "@earendil-works/pi-coding-agent";
 import agentUi from "../../../extensions/RQW-agent-ui/index.ts";
 
 const theme = { fg: (_role: string, text: string) => text, bold: (text: string) => text };
@@ -8,7 +9,7 @@ const codes: Record<string, number> = { muted: 90, thinkingHigh: 33, success: 32
 const colored = { ...theme, fg: (role: string, text: string) => `\x1b[${codes[role]}m${text}\x1b[39m` };
 
 for (const [type, content, expected] of [
-	["agent_progress", '[notification] agent#711 has worked 50 tool-call steps without communication.\nReport\n<skill name="agent-progress">\nFull instructions\n</skill>', "agent#711 progress: 50 steps"],
+	["agent_progress", '[notification] agent#711 has worked 50 tool-call steps without communication.\n\nThe agent continues working.\n\n<skill name="agent-progress">\nFull instructions\n</skill>', "agent#711 progress: 50 steps"],
 	["child_wait", JSON.stringify({ reason: "timeout", timed_out: true, results: [], statuses: [{ id: "agent#5", state: "running" }] }), "wait timed out: agent#5"],
 	["job", '[job] ' + JSON.stringify({ reason: "exit", results: [{ id: "job#3", state: "exited", result: "Full output\nSecond line" }], statuses: [] }), "job#3 done"],
 ]) {
@@ -54,4 +55,22 @@ it("does not repaint a notification at an unchanged width and refreshes after in
 	card.invalidate();
 	assert.deepEqual(card.render(20), narrow);
 	assert.ok(paints > afterWidth);
+});
+
+it("shows the whole progress summary under the collapsed header, not the instructions or skill", () => {
+	initTheme();
+	const renderers = new Map<string, MessageRenderer>();
+	agentUi({ registerMessageRenderer: (name: string, renderer: MessageRenderer) => renderers.set(name, renderer), registerToolRenderer() {}, on() {} } as never);
+	const summary = "First line of the report\n\n- point one\n- point two\nThe agent continues working.\n<skill name=\"x\">\n\nLast **bold** line";
+	const content = `[notification] agent#711 has worked 50 tool-call steps without communication.\n${summary}\nThe agent continues working. Check whether this child has drifted.\n\n<skill name="agent-progress">\nFull instructions\n</skill>`;
+	const message = { role: "custom", customType: "agent_progress", content, details: { id: "agent#711", steps: 50 }, display: true, timestamp: 0 };
+	const card = renderers.get("agent_progress")!(message as never, { expanded: false, outputPad: 0 }, theme as never)!;
+	const rows = card.render(80).map((row) => row.replace(/\x1b\[[0-9;]*m/g, ""));
+	assert.equal(rows[0], "agent#711 progress: 50 steps");
+	assert.deepEqual(rows.slice(1).map((row) => row.trim()).filter(Boolean), ["First line of the report", "- point one", "- point two", "The agent continues working.", '<skill name="x">', "Last bold line"]);
+	assert.ok(rows.slice(1).every((row) => !row || row.startsWith("  ")));
+	assert.ok(!rows.join("\n").includes("drifted") && !rows.join("\n").includes("Full instructions"));
+	// Ctrl+O still shows the whole original text.
+	const expanded = renderers.get("agent_progress")!(message as never, { expanded: true, outputPad: 0 }, theme as never)!;
+	assert.equal(expanded.render(1000).join("\n"), content);
 });

@@ -1,4 +1,5 @@
-import type { MessageRenderer } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme, type MessageRenderer } from "@earendil-works/pi-coding-agent";
+import { Markdown } from "@earendil-works/pi-tui";
 import { messageText } from "./card.ts";
 import { cached, clean, fit, padded, wrap } from "./fit.ts";
 
@@ -11,6 +12,17 @@ function detailsOf(content: string, details: unknown): Record<string, unknown> {
 function ids(details: Record<string, unknown>): string {
 	const items = [details.results, details.statuses, details.matched].find((value) => Array.isArray(value) && value.length);
 	return Array.isArray(items) ? items.flatMap((item) => typeof item?.id === "string" ? [item.id] : []).join(", ") : "";
+}
+
+/** The child's summary of a progress notice: the lines after the header, before the fixed instructions and the embedded skill. */
+function progressSummary(text: string): string {
+	const afterHeader = text.slice(text.indexOf("\n") + 1);
+	if (afterHeader === text) return "";
+	// The fixed skill block and sentence close the notice, so the last of each ends the summary, even if it quotes them.
+	const skillAt = afterHeader.lastIndexOf('\n\n<skill name="agent-progress">\n');
+	const beforeSkill = skillAt < 0 ? afterHeader : afterHeader.slice(0, skillAt);
+	const sentenceAt = beforeSkill.lastIndexOf("\nThe agent continues working.");
+	return clean(sentenceAt < 0 ? beforeSkill : beforeSkill.slice(0, sentenceAt)).trim();
 }
 
 /** Display only: expanded notifications retain all original text, including embedded skills. */
@@ -39,7 +51,16 @@ export const createNotificationCard: MessageRenderer = (message, options, theme)
 				+ paint(failed ? "error" : "muted", status) + muted(targets ? `: ${targets}` : "");
 		}
 	}
+	const progress = message.customType === "agent_progress" ? progressSummary(text) : "";
+	const collapsed = (width: number): string[] => {
+		if (width <= 0) return [];
+		const rows = [fit(summary, width)];
+		if (!progress) return rows;
+		const indent = width >= 8 ? "  " : "";
+		const markdown = new Markdown(progress, 0, 0, getMarkdownTheme(), { color: (value) => theme.fg("muted", value) });
+		return rows.concat(markdown.render(width - indent.length).map((row) => (row ? indent + row : row)));
+	};
 	return cached(padded((width) => options.expanded
 		? wrap(clean(text), width).map((line) => theme.fg("muted", line))
-		: width > 0 ? [fit(summary, width)] : [], options.outputPad));
+		: collapsed(width), options.outputPad));
 };
