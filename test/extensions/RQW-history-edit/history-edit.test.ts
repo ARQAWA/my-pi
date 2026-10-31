@@ -137,3 +137,50 @@ it("sends plain text and the selected and new images", async () => {
 		assert.deepEqual(sent, [{ type: "text", text: "edited" }, original, added]);
 	} finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+/** RQW-tools offers background processes on the counts channel without a `reviews` field. */
+function withBackground(snapshot: { agents?: number; backgroundProcesses?: number }) {
+	const handlers = new Map<string, any>();
+	let command: any;
+	let input: any;
+	let requested = "";
+	const notices: string[] = [];
+	historyEdit({ on: (name: string, handler: any) => handlers.set(name, handler),
+		events: { on() {}, emit(_name: string, request: any) { request.reply({ version: 1, snapshot: () => snapshot }); } },
+		registerCommand(_name: string, options: any) { command = options.handler; },
+		sendUserMessage: (text: string) => { requested = text; } } as unknown as ExtensionAPI);
+	const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getBranch: () => [] },
+		ui: { setWidget: (_key: string, factory: any) => factory?.({ getFocusedComponent: () => ({ actionHandlers: new Map() }) }),
+			onTerminalInput: (handler: any) => { input = handler; return () => {}; }, getEditorText: () => "", setEditorText() {},
+			notify: (message: string) => notices.push(message) } };
+	handlers.get("session_start")!({}, ctx);
+	return { press: () => input("\x1b"), command: () => command("", ctx), requested: () => requested, notices };
+}
+
+it("double escape does not open the history while a background process runs", async () => {
+	const previousNow = Date.now;
+	let now = 1000;
+	Date.now = () => now;
+	try {
+		const h = withBackground({ agents: 0, backgroundProcesses: 1 });
+		assert.equal(h.press(), undefined);
+		now += 100;
+		assert.equal(h.press(), undefined);
+		assert.equal(h.requested(), "");
+		await h.command();
+		assert.deepEqual(h.notices, ["Wait for background processes to finish."]);
+	} finally { Date.now = previousNow; }
+});
+
+it("double escape still opens the history when the counts are all zero", () => {
+	const previousNow = Date.now;
+	let now = 1000;
+	Date.now = () => now;
+	try {
+		const h = withBackground({ agents: 0, backgroundProcesses: 0 });
+		assert.equal(h.press(), undefined);
+		now += 100;
+		assert.deepEqual(h.press(), { consume: true });
+		assert.equal(h.requested(), "/edit-history");
+	} finally { Date.now = previousNow; }
+});

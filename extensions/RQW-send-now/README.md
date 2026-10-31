@@ -11,7 +11,13 @@ Force-send queued steering with Enter, the oh-my-pi gesture. Decision and owner 
 - Nothing queued, or only follow-ups: empty Enter does nothing,
   as in stock Pi.
 - Ctrl+backslash aborts the current turn, returns queued text to the editor and asks the session's extensions to stop background work. File calls may finish on their own.
-- Escape, Alt+Up and every other key stay Pi's. Dialogs, selectors and overlays keep their own Enter: the gesture
+- Escape: one press while the turn (or a compaction) works is Pi's and interrupts it. A second press within 500 ms
+  stops the session's background like Ctrl+backslash; Ctrl+backslash stays as an alias. With only background running the
+  first press is taken here (so Pi's own double Escape cannot open its tree), and the second also cancels a force-send that
+  has not started and returns its text to the editor. Busy is captured on the first press; for 500 ms after a stop more
+  presses are swallowed. Idle without background, Escape stays Pi's and RQW-history-edit's. An open autocomplete list
+  and other focused components keep their Escape.
+- Alt+Up and every other key stay Pi's. Dialogs, selectors and overlays keep their own Enter: the gesture
   acts only when Pi's input editor (`CustomEditor` or a subclass, such as RQW-statusbar's) has focus.
 - The key is Pi's configured `tui.input.submit` binding (`enter` by default; `\r` on Windows and legacy terminals,
   CSI-u under the Kitty protocol). Key releases and bracketed paste do not trigger it.
@@ -65,4 +71,4 @@ Like every RQW extension: `-extensions/RQW-send-now/index.ts` in the package ent
 
 ## Tests
 
-`test/extensions/RQW-send-now/send-now.test.ts` and `test/extensions/RQW-send-now/queue.test.ts`.
+`test/extensions/RQW-send-now/send-now.test.ts`, `escape.test.ts`, `queue.test.ts`, `gesture.test.ts`, `keys.test.ts` and `stop.test.ts`.

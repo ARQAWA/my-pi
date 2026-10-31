@@ -3,7 +3,7 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import { isKeyRelease, matchesKey, type TUI } from "@earendil-works/pi-tui";
 import { commitEdit, type CommitResult } from "./commit.ts";
 
-type CountsSource = { version: number; snapshot(): { agents: number; reviews: number } };
+type CountsSource = { version: number; snapshot(): { agents?: number; reviews?: number; backgroundProcesses?: number } };
 type Focused = { actionHandlers?: unknown; isShowingAutocomplete?(): boolean };
 type Renderer = TUI & { getFocusedComponent(): unknown };
 type Editing = { id: string; draft: string; images: ImageContent[] };
@@ -30,7 +30,8 @@ function isCountsOffer(data: unknown): data is { version: number; source: Counts
 }
 
 export default function historyEdit(pi: ExtensionAPI): void {
-	let counts: CountsSource | undefined;
+	// RQW-agent offers agents and reviews, RQW-tools offers background processes; each on the same channel.
+	const sources = new Set<CountsSource>();
 	let dispose: (() => void) | undefined;
 	let state: EditState = {};
 	let sessionPath: string | undefined;
@@ -38,8 +39,18 @@ export default function historyEdit(pi: ExtensionAPI): void {
 	let lastEscape = 0;
 	let suppressedUntil = 0;
 	const accept = (source: CountsSource) => {
-		if (source.version === 1 && typeof source.snapshot().reviews === "number") counts = source;
+		if (source.version === 1) sources.add(source);
 	};
+	const running = () => {
+		let agents = 0, processes = 0;
+		for (const source of sources) {
+			const counts = source.snapshot();
+			agents += (counts.agents ?? 0) + (counts.reviews ?? 0);
+			processes += counts.backgroundProcesses ?? 0;
+		}
+		return { agents, processes };
+	};
+	const busy = () => { const { agents, processes } = running(); return agents > 0 || processes > 0; };
 	const select = async (ctx: ExtensionContext, initial?: string) => {
 		const draft = ctx.ui.getEditorText();
 		const selected = await selectMessage(ctx, initial);
@@ -62,7 +73,7 @@ export default function historyEdit(pi: ExtensionAPI): void {
 		state.owner = owner;
 		state.ui = ctx.ui;
 		state.schedule = () => pi.sendUserMessage("/edit-history", { expandPromptTemplates: true });
-		counts = undefined;
+		sources.clear();
 		lastEscape = 0;
 		suppressedUntil = 0;
 		pi.events.emit("rqw:running-counts:request", { version: 1, reply: accept });
@@ -95,7 +106,7 @@ export default function historyEdit(pi: ExtensionAPI): void {
 			}
 			const now = Date.now();
 			if (now < suppressedUntil) return { consume: true };
-			if (!ctx.isIdle() || ctx.ui.getEditorText().trim()) { lastEscape = 0; return; }
+			if (!ctx.isIdle() || busy() || ctx.ui.getEditorText().trim()) { lastEscape = 0; return; }
 			if (lastEscape && now - lastEscape < 500) {
 				lastEscape = 0;
 				suppressedUntil = now + 500;
@@ -146,10 +157,10 @@ export default function historyEdit(pi: ExtensionAPI): void {
 					edit.ui?.notify("Previous branch restored.", "info");
 					return;
 				}
-				const running = counts?.snapshot();
-				if (running && (running.agents > 0 || running.reviews > 0)) {
+				const { agents, processes } = running();
+				if (agents > 0 || processes > 0) {
 					if (current) ctx.ui.setEditorText(current.text);
-					ctx.ui.notify("Wait for subagents to finish.", "warning");
+					ctx.ui.notify(agents > 0 ? "Wait for subagents to finish." : "Wait for background processes to finish.", "warning");
 					return;
 				}
 				if (current?.id !== undefined) {

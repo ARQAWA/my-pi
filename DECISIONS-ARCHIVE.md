@@ -7000,3 +7000,29 @@ Verbatim replaced text:
 >   model-switch retention, one attempt per generation and the local helper copy are design choices the owner approved
 >
 >   Reason: Codex's background mechanics with Pi's own summary, off the critical path, without timers or polling.
+
+## A-0393 · archived 2026-10-31 · Send now · `[D-SENDNOW-ENTER]` no other key changes
+
+Status: SUPERSEDED by `[D-KEYS-ESC]` (DECISIONS.md#send-now): Escape now has the double-press gesture.
+Source: `79d0ddf9:DECISIONS.md`. Archived by the keys-esc change; exact commit: `git log -S'A-0393' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> no other key changes (coordinator brief). Stock Pi 1.4.0 needs Escape then Enter.
+
+## A-0394 · archived 2026-10-31 · Scroll · `[D-SCROLL-ESC]` Escape always jumps
+
+Status: SUPERSEDED by `[D-KEYS-ESC]` (DECISIONS.md#send-now): while a turn works Escape belongs to turn control.
+Source: `79d0ddf9:DECISIONS.md`. Archived by the keys-esc change; exact commit: `git log -S'A-0394' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> - **Escape jumps down** `[D-SCROLL-ESC]`. Escape in Pi's fullscreen view returns a scrolled-up transcript to the latest
+>   message, as in Codex; at the bottom Escape stays stock, Ctrl+End stays, an open transcript search takes the first
+>   Escape. Package behaviour for every my-pi user.
+
+## A-0395 · archived 2026-10-31 · History edit · `[D-HISTORY-EDIT]` busy check
+
+Status: SUPERSEDED by `[D-KEYS-ESC]` (DECISIONS.md#send-now): background processes also prevent the edit.
+Source: `79d0ddf9:DECISIONS.md`. Archived by the keys-esc change; exact commit: `git log -S'A-0395' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced text:
+
+> A running subagent or a session without a file prevents the edit.

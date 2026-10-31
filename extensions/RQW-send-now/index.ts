@@ -8,8 +8,10 @@ import { installQueue } from "./queue.ts";
 /** Custom entry type: the timestamp of an interrupted reply whose text stays in the model's context. */
 export const ENTRY = "rqw-send-now";
 const POLL_MS = 20;
+/** Two Escape presses within this time are one gesture. */
+const DOUBLE_ESCAPE_MS = 500;
 
-type Pending = { text: string; ctx: ExtensionContext; interrupted?: AssistantMessage };
+type Pending = { text: string; ctx: ExtensionContext; interrupted?: AssistantMessage; cancelled?: boolean };
 type FocusTUI = TUI & { getFocusedComponent(): unknown };
 
 /** The interrupted reply as the model will see it: its text only, as a finished reply; undefined when it has none. */
@@ -30,7 +32,8 @@ function reassertBracketedPaste(ctx: ExtensionContext) {
 
 export default function sendNow(pi: ExtensionAPI) {
 	const queue = installQueue();
-	pi.registerShortcut?.("ctrl+\\", { description: "Stop session background work", handler: ctx => {
+	/** Stops the session's background work, as Ctrl+backslash and a double Escape do; a running turn is aborted first. */
+	function stopSession(ctx: ExtensionContext) {
 		if (!ctx.isIdle()) ctx.abort();
 		else {
 			const session = queue.session(ctx.sessionManager);
@@ -45,7 +48,8 @@ export default function sendNow(pi: ExtensionAPI) {
 		} });
 		const parts = [agents && `${agents} ${agents === 1 ? "agent" : "agents"}`, processes && `${processes} background ${processes === 1 ? "process" : "processes"}`].filter(Boolean);
 		ctx.ui.notify(`${parts.length ? `Stopped: ${parts.join(", ")}` : "Nothing running"}${unstoppable ? `; ${unstoppable} file call${unstoppable === 1 ? "" : "s"} finishes on its own` : ""}`);
-	} });
+	}
+	pi.registerShortcut?.("ctrl+\\", { description: "Stop session background work", handler: stopSession });
 	/** Steering messages queued through Pi since the queue was last empty; Pi exposes only "anything queued". */
 	let steering = 0;
 	/**
@@ -57,6 +61,10 @@ export default function sendNow(pi: ExtensionAPI) {
 	/** Set by before_agent_start: the run's next user message is its starting prompt, not a queued one. */
 	let startingPrompt = false;
 	let pending: Pending | undefined;
+	/** The first Escape of a possible double press; set only while something runs, captured on that press. */
+	let escapeAt: number | undefined;
+	/** After a double Escape stopped the work, further presses are swallowed until then, so they cannot open the history. */
+	let escapeQuietUntil = 0;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let unsubscribe: (() => void) | undefined;
 	let tui: FocusTUI | undefined;
@@ -92,7 +100,7 @@ export default function sendNow(pi: ExtensionAPI) {
 	function send() {
 		timer = undefined;
 		if (!pending) return;
-		const { text, ctx, interrupted } = pending;
+		const { text, ctx, interrupted, cancelled } = pending;
 		// Abort ends with agent_settled; compaction or a run another extension starts meanwhile is waited out too.
 		if (!ctx.isIdle()) {
 			timer = setTimeout(send, POLL_MS);
@@ -103,6 +111,7 @@ export default function sendNow(pi: ExtensionAPI) {
 		// where nothing would deliver it.
 		const all = withLateQueue(text, ctx);
 		if (!all.trim()) return;
+		if (cancelled) return restore(all, ctx, "stopped with Escape");
 		if (!ctx.model) return restore(all, ctx, "no model selected");
 		if (interrupted && keptReply(interrupted)) {
 			kept.add(interrupted.timestamp);
@@ -112,8 +121,42 @@ export default function sendNow(pi: ExtensionAPI) {
 		pi.sendUserMessage(all, { deliverAs: "steer" });
 	}
 
+	/**
+	 * Escape: one press leaves the running turn to Pi, which interrupts it. A second press within 500 ms stops the
+	 * background (and cancels a force-send not yet started). With only background running the first press is taken
+	 * here, so Pi's own double-Escape action cannot fire; idle double Escape stays with the history editor.
+	 */
+	function onEscape(ctx: ExtensionContext): { consume: true } | undefined {
+		const focused = tui?.getFocusedComponent();
+		if (!(focused instanceof CustomEditor) || (focused as unknown as { isShowingAutocomplete?: () => boolean }).isShowingAutocomplete?.() === true) return undefined;
+		const now = Date.now();
+		if (now < escapeQuietUntil) return { consume: true };
+		const first = escapeAt;
+		escapeAt = undefined;
+		if (first !== undefined && now - first < DOUBLE_ESCAPE_MS) {
+			escapeQuietUntil = now + DOUBLE_ESCAPE_MS;
+			if (pending) cancelPending();
+			stopSession(ctx);
+			return { consume: true };
+		}
+		const working = !ctx.isIdle() || queue.session(ctx.sessionManager)?.isCompacting === true;
+		if (!working && !pending && !background()) return undefined;
+		escapeAt = now;
+		return working ? undefined : { consume: true };
+	}
+
+	/**
+	 * A force-send that has not started is cancelled. It stays pending until the run has settled, like a send, so a
+	 * steering input still on its way is restored with the text instead of landing in Pi's queue afterwards.
+	 */
+	function cancelPending() {
+		pending!.cancelled = true;
+	}
+
 	function onKey(data: string, ctx: ExtensionContext): { consume: true } | undefined {
-		if (pending || isKeyRelease(data)) return undefined;
+		if (isKeyRelease(data)) return undefined;
+		if (matchesKey(data, "escape")) return onEscape(ctx);
+		if (pending) return undefined;
 		const editor = tui?.getFocusedComponent();
 		const session = queue.session(ctx.sessionManager);
 		let canHold = false;
@@ -200,6 +243,8 @@ export default function sendNow(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		escapeAt = undefined;
+		escapeQuietUntil = 0;
 		steering = 0;
 		submitting = 0;
 		startingPrompt = false;
