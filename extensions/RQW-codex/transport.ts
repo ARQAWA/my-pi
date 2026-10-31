@@ -26,7 +26,8 @@ import { PROVIDER_ID, credentialIdentity, validateCredential } from "./auth.ts";
 import { CODEX_AUTH_ORIGIN, type CodexAuthOrigin } from "./auth-runtime.ts";
 import { compressRequest } from "./compression.ts";
 import { Continuation } from "./continuation.ts";
-import { prepareContextFork, type ContextForkRequest, type PreparedTurn } from "./context-fork.ts";
+import { prepareContextFork, prepareContextForkCooperative, type ContextForkRequest, type Pause, type PreparedFork, type PreparedTurn } from "./context-fork.ts";
+import { slices } from "./slices.ts";
 import { CodexError, classifyEvent, classifyHttp, classifyTransport, normalizeUsage } from "./errors.ts";
 import { mergeHeaders } from "./headers.ts";
 import { clientMetadata, identityHeaders, localPlatform, validateExtraMetadata, type CodexIdentity, type RequestKind } from "./metadata.ts";
@@ -58,6 +59,11 @@ export interface RawItemHistory {
 	recordItem?(responseId: string, item: WireItem): void;
 	/** Optional per-request filter: false drops the raw output of this response from a request built from the given context. */
 	acceptRawResponse?(responseId: string, context: Context): boolean;
+	/**
+	 * Optional sliced read for a context fork. Binding is synchronous and cheap and fixes the branch it will read; the
+	 * returned read yields between slices and returns the accepted raw outputs of the `wanted` responses only.
+	 */
+	bindRawOutputs?(context: Context): (wanted: ReadonlySet<string>) => Generator<void, ReadonlyMap<string, readonly WireItem[]>>;
 }
 
 export interface TransportDependencies {
@@ -72,6 +78,8 @@ export interface TransportDependencies {
 	 * The product never sets this; the native differential tests mirror each pinned native case's provider config.
 	 */
 	providerRetries?: { requestMaxRetries?: number; streamMaxRetries?: number };
+	/** Event-loop yield between the slices of a cooperative context fork; tests stop preparation with it. */
+	pause?: Pause;
 }
 
 export interface TransportOptions {
@@ -121,6 +129,8 @@ export interface SendRawOptions {
 	 * equal the transport's own identity; authProfile is always subscription. The thread identity is never changed by it.
 	 */
 	identity?: CodexIdentity;
+	/** A 401 ends the call instead of recovering the login and sending the same request again. */
+	noAuthReplay?: boolean;
 }
 
 type Credential = OAuthCredential & { accountId: string };
@@ -491,11 +501,21 @@ export class CodexThreadTransport {
 	/** Capture synchronously; inference owns a fresh transport and in-memory ledger, not this thread's continuation. */
 	contextFork(request: ContextForkRequest): (() => Promise<AssistantMessage>) | undefined {
 		if (this.#disposed || !this.#lastTurn || this.#owner === undefined) return;
-		const captured = prepareContextFork({
-			turn: this.#lastTurn, request, identity: this.identity, capabilities: wireCapabilities(this.#lastTurn.model),
-			rawOutputs: this.#rawOutputs(request.context),
-		});
-		if (!captured) return;
+		const turn = this.#lastTurn;
+		const args = {
+			turn, request, identity: this.identity, capabilities: wireCapabilities(turn.model),
+			bindRawOutputs: () => this.#bindRawOutputs(request.context),
+		};
+		let prepare: () => Promise<PreparedFork>;
+		if (request.cooperative) {
+			const lazy = prepareContextForkCooperative(args, this.#deps.pause);
+			if (!lazy) return;
+			prepare = lazy;
+		} else {
+			const ready = prepareContextFork(args);
+			if (!ready) return;
+			prepare = async () => ready;
+		}
 		const owner = this.#owner;
 		const store = this.#store;
 		const dependencies = { ...this.#deps, providerRetries: { requestMaxRetries: 0 } };
@@ -505,12 +525,13 @@ export class CodexThreadTransport {
 			if (used) throw new Error("RQW-codex: context fork is one-shot");
 			used = true;
 			signal.throwIfAborted();
+			const captured = await prepare();
 			const fork = new CodexThreadTransport({ identity: captured.identity, store, dependencies });
 			const pump = new LiveResponsesPump({ model: captured.model, stream: createAssistantMessageEventStream(),
 				parserOptions: { grammarToolInputProperties: grammarToolInputProperties(captured.model, captured.context) } });
 			pump.setServiceTier(captured.body.service_tier);
 			try {
-				for await (const event of fork.sendRaw({ request: captured.body, model: captured.model, requestKind: "turn", signal, options: { preparedOwner: owner } })) {
+				for await (const event of fork.sendRaw({ request: captured.body, model: captured.model, requestKind: "turn", signal, options: { preparedOwner: owner }, noAuthReplay: request.cooperative === true })) {
 					await pump.push(event);
 				}
 				const message = await pump.finish();
@@ -651,6 +672,7 @@ export class CodexThreadTransport {
 					if (yielded || isAbort(raw, signal) || raw instanceof LocalRequestError) throw raw;
 					const error = toCodexError(raw, this.#clock.now());
 					if (error.kind === "unauthorized") {
+						if (args.noAuthReplay) throw raw;
 						const next = auth.next(error);
 						if (next.action === "reload" || next.action === "refresh") {
 							cred = await this.#recover(cred, next.action, signal);
@@ -926,6 +948,21 @@ export class CodexThreadTransport {
 			if (accept(responseId, context)) out.set(responseId, items);
 		}
 		return out;
+	}
+
+	/** Binds the raw-output read of a fork now; a history without a sliced read is read whole, as before, at this moment. */
+	#bindRawOutputs(context: Context): (wanted: ReadonlySet<string>) => Generator<void, ReadonlyMap<string, readonly WireItem[]>> {
+		const bound = this.#history?.bindRawOutputs?.(context);
+		if (bound) return bound;
+		// A copy of the entries at this moment: the ledger is cleared when this transport is disposed.
+		const all = new Map(this.#rawOutputs(context));
+		return function* (wanted) {
+			const out = new Map<string, readonly WireItem[]>();
+			yield* slices([...all], ([responseId, items]) => {
+				if (wanted.has(responseId)) out.set(responseId, structuredClone(items));
+			});
+			return out;
+		};
 	}
 
 	#recordOutputs(responseId: string, items: readonly WireItem[]): void {

@@ -14,6 +14,8 @@ export function subscriptionFetch(
 	transport: typeof fetch, store: CredentialStore | undefined, version: VersionState,
 	sessionId: string, deviceId: string, initialSignal?: AbortSignal, origin?: AuthOrigin,
 	observe?: (response: Response | undefined) => void,
+	/** False for a cooperative context fork: a rejected request is never sent again (no 401 recovery, no version replay). */
+	repeat = true,
 ): typeof fetch {
 	return async (input, init) => {
 		const request = new Request(input, { ...init, redirect: "error" });
@@ -49,12 +51,12 @@ export function subscriptionFetch(
 			observe?.(response);
 			if (response.status === 401) {
 				await response.body?.cancel();
-				if (authRetried || !store || !owned || !bearer) throw new AuthRecoveryError();
+				if (!repeat || authRetried || !store || !owned || !bearer) throw new AuthRecoveryError();
 				authRetried = true;
 				headers.set("authorization", `Bearer ${await recoverCredential(store, bearer, signal, transport)}`);
 				continue;
 			}
-			if (response.status === 400 && !versionRetried) {
+			if (response.status === 400 && repeat && !versionRetried) {
 				const text = await response.clone().text();
 				if (version.adopt(text, sentVersion)) {
 					await response.body?.cancel();
@@ -74,10 +76,11 @@ export function subscriptionFetch(
 export function createOverlay(
 	base: Provider, getStore: () => CredentialStore | undefined, deviceId: string,
 	version = versionState(),
+	repeat = true,
 ) {
-	const forks = contextForks(() => {
+	const forks = contextForks(single => {
 		const store = getStore();
-		const isolated = createOverlay(base, () => store, deviceId, version.fork());
+		const isolated = createOverlay(base, () => store, deviceId, version.fork(), !single);
 		return (model, context, options) => isolated.streamSimple(model, context as Parameters<Provider["streamSimple"]>[1], options);
 	});
 	const handler = (model: Parameters<Provider["streamSimple"]>[0], context: Parameters<Provider["streamSimple"]>[1], options?: SimpleStreamOptions) => {
@@ -92,7 +95,8 @@ export function createOverlay(
 		const subscription = subscriptionFetch(transport, getStore(), version, options?.sessionId ?? randomUUID(), deviceId,
 			options?.signal, provenance?.[AUTH_ORIGIN],
 			// The server's own answer, before 401 and 403 are replaced by recovery or a synthetic error.
-			response => { rejection = response && !response.ok ? httpDiagnostic(response.status, response.headers) : undefined; });
+			response => { rejection = response && !response.ok ? httpDiagnostic(response.status, response.headers) : undefined; },
+			repeat);
 		const effective = subscriptionCacheOptions(options);
 		const retention = effective?.cacheRetention ??
 			((effective?.env?.PI_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION) === "long" ? "long" : "short");

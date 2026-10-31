@@ -94,3 +94,71 @@ it("regression: a fork of a fork replays the first session's raw history exactly
 	assert.deepEqual(inputC.slice(prefixLength("thread-c")), historyOfA);
 	assert.deepEqual(inputC.filter((item) => item.id === "rs_raw_a" || item.id === "fc_raw_a"), RAW);
 });
+
+function recorded(name: string, responses: number) {
+	const session = new FileSession(join(root, `${name}.jsonl`), { type: "session", version: 3, id: `thread-${name}` });
+	session.appendMessage(USER);
+	const state = stateOf(session);
+	assert.equal(nativeInput(state), undefined);
+	const built = buildRequest({ model: MODEL, context: CONTEXT, options: {}, capabilities: CAPS, identity: { installationId: "inst", windowId: "win", rootSessionId: `thread-${name}`, threadId: `thread-${name}` } as never }).input;
+	state.rawHistory.preparedRequest?.({ model: CAPS.slug, input: built });
+	for (let i = 0; i < responses; i++) {
+		state.rawHistory.recordItem?.(`resp-${i}`, { type: "reasoning", id: `rs_${i}`, summary: [], encrypted_content: `E${i}` } as WireItem);
+		state.rawHistory.recordItem?.(`resp-${i}`, { type: "function_call", id: `fc_${i}`, call_id: `call_${i}`, name: "bash", arguments: "{}" } as WireItem);
+	}
+	return { session, state };
+}
+
+function drain<T>(steps: Generator<void, T>): { value: T; yields: number } {
+	let yields = 0;
+	let step = steps.next();
+	for (; !step.done; step = steps.next()) yields++;
+	return { value: step.value, yields };
+}
+
+const answered = (id: string, text: string) => ({ role: "assistant", responseId: id, content: [{ type: "text", text }], stopReason: "stop", timestamp: 2 });
+
+it("the sliced raw-output read returns the same items as the whole read for the wanted responses, in many small steps", () => {
+	const { state } = recorded("slices", 40);
+	state.settleTurn();
+	const wanted = new Set(["resp-3", "resp-39"]);
+	const whole = state.rawHistory.rawOutputs();
+	const { value, yields } = drain(state.rawHistory.bindRawOutputs!(CONTEXT)(wanted));
+	assert.ok(yields >= 5, `the walk over ${whole.size * 3} entries must pause often (paused ${yields} times)`);
+	assert.deepEqual([...value.keys()].sort(), ["resp-3", "resp-39"]);
+	for (const id of wanted) assert.deepEqual(value.get(id), whole.get(id));
+	assert.deepEqual(value.get("resp-3")!.map((item) => item.id), ["rs_3"], "a retired unpaired call stays out, as in the whole read");
+});
+
+it("a retired call comes back when the request carries its result, and the read never builds Pi's projection", () => {
+	const { session, state } = recorded("paired", 6);
+	const call = { role: "assistant", responseId: "resp-3", content: [{ type: "toolCall", id: "call_3", name: "bash", arguments: {} }], stopReason: "toolUse", timestamp: 2 };
+	session.appendMessage(call);
+	state.settleTurn();
+	let projections = 0;
+	const entries = session.getEntries.bind(session);
+	session.getEntries = () => { projections++; return entries(); };
+	const withResult = { messages: [USER, call,
+		{ role: "toolResult", toolCallId: "call_3", toolName: "bash", content: [], isError: false, timestamp: 3 }] } as unknown as Context;
+	const read = drain(state.rawHistory.bindRawOutputs!(withResult)(new Set(["resp-3"])));
+	assert.deepEqual(read.value.get("resp-3")!.map((item) => item.id), ["rs_3", "fc_3"]);
+	assert.equal(projections, 0, "no step walks the whole projected session");
+});
+
+it("a request that carries an edited answer gets no raw replay of it", () => {
+	const { session, state } = recorded("edited", 2);
+	session.appendMessage(answered("resp-1", "original"));
+	const read = (text: string) => drain(state.rawHistory.bindRawOutputs!({ messages: [USER, answered("resp-1", text)] } as unknown as Context)(new Set(["resp-1"]))).value;
+	assert.equal(read("original").has("resp-1"), true);
+	assert.equal(read("edited by the user").has("resp-1"), false);
+});
+
+it("a bound read keeps the branch of the moment it was bound, whatever the session does later", () => {
+	const { session, state } = recorded("bound", 4);
+	const read = state.rawHistory.bindRawOutputs!(CONTEXT);
+	const before = drain(read(new Set(["resp-2"]))).value;
+	session.entries.splice(0);
+	const after = drain(read(new Set(["resp-2"]))).value;
+	assert.deepEqual(after, before);
+	assert.equal(before.get("resp-2")!.length, 2);
+});

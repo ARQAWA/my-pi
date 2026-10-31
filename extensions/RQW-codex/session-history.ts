@@ -32,6 +32,7 @@ import {
 	type WireWindow,
 } from "./history.ts";
 import type { CodexIdentity } from "./metadata.ts";
+import { slices } from "./slices.ts";
 import type { RawItemHistory } from "./transport.ts";
 import { CODEX_MODEL_SLUGS, codexModelCapabilities } from "./profile.ts";
 import { buildRequest, prefixContext, toolWireFlags, transcriptItems, type WireItem, type WireModelInfo, type WireOptions } from "./wire.ts";
@@ -305,6 +306,7 @@ export class SessionWireState {
 			recordItem: (responseId, item) => this.#recordItem(responseId, item),
 			preparedRequest: (body) => this.#preparedRequest(body),
 			acceptRawResponse: (responseId, context) => this.#acceptRawResponse(responseId, context),
+			bindRawOutputs: (context) => this.#bindRawOutputs(context),
 		};
 	}
 
@@ -433,14 +435,20 @@ export class SessionWireState {
 		const boundary = lastPiCompactionIndex(branch);
 		const own: OwnEntry[] = [];
 		branch.forEach((entry, index) => {
-			if (index <= boundary || !isHistoryEntry(entry)) return;
-			const data = verifyData(entry.data);
-			if (!data) return;
-			const scope = String(data.scope);
-			if (scope !== this.#scopeHash && !this.#adopted.includes(scope)) return;
-			own.push({ id: entry.id, index, scope, data });
+			const found = this.#ownEntry(entry, index, boundary);
+			if (found) own.push(found);
 		});
 		return { branch, own };
+	}
+
+	/** This scope's verified history entry, or undefined for any other entry or one before the latest compaction. */
+	#ownEntry(entry: WireSessionEntry, index: number, boundary: number, scopeHash = this.#scopeHash, adopted = this.#adopted): OwnEntry | undefined {
+		if (index <= boundary || !isHistoryEntry(entry)) return;
+		const data = verifyData(entry.data);
+		if (!data) return;
+		const scope = String(data.scope);
+		if (scope !== scopeHash && !adopted.includes(scope)) return;
+		return { id: entry.id, index, scope, data };
 	}
 
 	#coverage(own: OwnEntry[]): Coverage {
@@ -582,6 +590,75 @@ export class SessionWireState {
 			if (isCallItem(item) && retired.has(callPairKey(entry.data.responseId, item.call_id))) continue;
 			list.push(structuredClone(item) as WireItem);
 		}
+		return out;
+	}
+
+	/**
+	 * Slice-by-slice twin of rawOutputs plus the acceptance filter, for a context fork. Binding is synchronous and cheap: it
+	 * takes the branch and the scope as they are now, so a later branch switch cannot change what the fork reads. The returned
+	 * read then needs only the `wanted` responses (the fork's few new answers) and walks that bound branch in slices.
+	 * The request context itself is the evidence of what the model saw: it decides which calls are paired with a result and
+	 * whether an answer is still the physical original. Pi's live projection is not consulted, because building it is one
+	 * unsliceable step over the whole session.
+	 */
+	#bindRawOutputs(context: Context): (wanted: ReadonlySet<string>) => Generator<void, ReadonlyMap<string, readonly WireItem[]>> {
+		const branch = [...this.#manager().getBranch()] as unknown as WireSessionEntry[];
+		const scopeHash = this.#scopeHash;
+		const adopted = [...this.#adopted];
+		return (wanted) => this.#readRawOutputs({ branch, scopeHash, adopted, context, wanted });
+	}
+
+	*#readRawOutputs(bound: { branch: WireSessionEntry[]; scopeHash: string; adopted: string[]; context: Context; wanted: ReadonlySet<string> }): Generator<void, ReadonlyMap<string, readonly WireItem[]>> {
+		const { branch, scopeHash, adopted, context, wanted } = bound;
+		const boundary = lastPiCompactionIndex(branch);
+		const own: OwnEntry[] = [];
+		const originals = new Map<string, unknown>();
+		yield* slices(branch, (entry, index) => {
+			const found = this.#ownEntry(entry, index, boundary, scopeHash, adopted);
+			if (found) own.push(found);
+			const message = (entry as { message?: { role?: unknown; responseId?: unknown; content?: unknown } }).message;
+			if (entry.type === "message" && message?.role === "assistant" && typeof message.responseId === "string" && wanted.has(message.responseId) && !originals.has(message.responseId)) {
+				originals.set(message.responseId, message.content);
+			}
+		});
+		// Pairing as pairedCallKeys does it, read from the request: a result pairs with a call of the nearest preceding answer.
+		const paired = new Set<string>();
+		const carried = new Map<string, unknown>();
+		let responseId: string | undefined;
+		let calls = new Set<string>();
+		yield* slices(context.messages, (message) => {
+			const m = message as { role?: unknown; responseId?: unknown; content?: unknown; toolCallId?: unknown };
+			if (m.role === "assistant") {
+				responseId = typeof m.responseId === "string" ? m.responseId : undefined;
+				if (responseId !== undefined && wanted.has(responseId) && !carried.has(responseId)) carried.set(responseId, m.content);
+				calls = new Set((Array.isArray(m.content) ? m.content : [])
+					.filter((block: { type?: unknown; id?: unknown }) => block?.type === "toolCall" && typeof block.id === "string")
+					.map((block: { id: string }) => normalizeCallId(block.id)));
+			} else if (m.role === "toolResult" && typeof m.toolCallId === "string" && responseId !== undefined) {
+				const callId = normalizeCallId(m.toolCallId);
+				if (calls.has(callId)) paired.add(callPairKey(responseId, callId));
+			}
+		});
+		const retired = new Set<string>();
+		yield* slices(own, (entry) => {
+			const { kind, responseId: id, callId } = entry.data as { kind?: unknown; responseId?: unknown; callId?: unknown };
+			if (kind !== "unpaired_call_retired" || typeof id !== "string" || !wanted.has(id)) return;
+			const key = callPairKey(id, String(callId));
+			if (!paired.has(key)) retired.add(key);
+		});
+		const out = new Map<string, WireItem[]>();
+		yield* slices(own, (entry) => {
+			const { kind, responseId: id, item } = entry.data as { kind?: unknown; responseId?: unknown; item?: unknown };
+			if (kind !== "item" || typeof id !== "string" || !wanted.has(id)) return;
+			const list = out.get(id) ?? [];
+			out.set(id, list);
+			if (isCallItem(item) && retired.has(callPairKey(id, item.call_id))) return;
+			list.push(structuredClone(item) as WireItem);
+		});
+		// An answer the request carries is replayed raw only when it is still the physical original.
+		yield* slices([...out.keys()], (id) => {
+			if (carried.has(id) && (!originals.has(id) || canonicalJson(carried.get(id)) !== canonicalJson(originals.get(id)))) out.delete(id);
+		});
 		return out;
 	}
 

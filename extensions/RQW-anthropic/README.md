@@ -114,6 +114,16 @@ normalized completed child transcript plus a tail report instruction, extending 
 Missing snapshots, another model, hosted tools and dangling tool calls receive no offer. Tool results must already
 be present; the fork neither waits for the child nor fabricates results. No idle-session condition is required.
 
+An optional `decline(reason)` on the request is called with `unsupported_hosted_tools` instead of a silent no-offer when the
+source carries hosted tools (decided once, when the source request is captured): that is a final refusal, the consumer must
+not answer by another path. A consumer without the callback sees the old no-offer. With `cooperative: true` the offer is
+still synchronous and looks only at lengths; `infer` then walks the context for unfinished tool calls, compares it with the
+source, and copies both in slices of 16 messages, yielding to the event loop and checking the signal between them, and the
+payload hook works in the same slices. A request that does not fit makes `infer` reject with `ContextForkUnavailable`
+(`reason`: `context_mismatch` or `unfinished_tool_calls`) before any model request: the caller may then use its ordinary
+path; every other rejection is final. A cooperative fork sends its one request once: no 401 recovery and no version replay
+(a plain fork keeps both). No retry is added. The provider's own payload build and the body serialization are not sliced.
+
 The fork uses the existing Anthropic builder and subscription transport with cloned context/options and its own
 version state and abort signal. The version copy retains the current version and whether it was explicitly pinned
 by `PI_AI_CLAUDE_CODE_VERSION`; fork adoption does not change the source version. It keeps the source system
