@@ -15,6 +15,7 @@ import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { createCountsProducer } from "./counts.ts";
 import { commandOf, createJobs, createJobTool, type JobHandle, type JobNotification, type Jobs, type JobsOptions } from "./jobs.ts";
 import { editRenderers, writeRenderers } from "./render.ts";
+import { withHiddenNote } from "./search.ts";
 import { installSelectionIntent, noToolSelection } from "./selection.ts";
 import { createWriteSchema, executeWrite, prepareWriteArguments } from "./write.ts";
 
@@ -244,7 +245,7 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 		description: description("grep"),
 		prepareArguments: (input: unknown) => prepareSearchArguments(grep, input),
 		parameters: withDescription(grep.parameters, "limit", "Maximum number of matches (default: no cap; output is still cut at 50KB)."),
-	}, withDefaultLimit(grep));
+	}, withHiddenNote("grep", withDefaultLimit(grep), cwd));
 
 	const find: any = createFindToolDefinition(cwd);
 	register("find", find, {
@@ -252,7 +253,7 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 		description: description("find"),
 		prepareArguments: (input: unknown) => prepareSearchArguments(find, input),
 		parameters: withDescription(find.parameters, "limit", "Maximum number of results (default: no cap; output is still cut at 50KB)."),
-	}, withDefaultLimit(find));
+	}, withHiddenNote("find", withDefaultLimit(find), cwd));
 
 	if (options.codemode) tools.push(groupCodemode(options.codemode, jobs));
 	tools.push({ ...createJobTool(jobs, description("job")), ...notDefault });
