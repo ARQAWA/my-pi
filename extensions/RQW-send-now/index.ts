@@ -1,7 +1,7 @@
 // Enter on an empty editor while the agent works and steering is queued: interrupt the turn and send the queue now.
 // Raw terminal input and public send APIs; queue.ts captures the owning Pi session in memory.
 import { CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getKeybindings, isKeyRelease, type TUI } from "@earendil-works/pi-tui";
+import { getKeybindings, isKeyRelease, matchesKey, type TUI } from "@earendil-works/pi-tui";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { installQueue } from "./queue.ts";
 
@@ -30,6 +30,22 @@ function reassertBracketedPaste(ctx: ExtensionContext) {
 
 export default function sendNow(pi: ExtensionAPI) {
 	const queue = installQueue();
+	pi.registerShortcut?.("ctrl+\\", { description: "Stop session background work", handler: ctx => {
+		if (!ctx.isIdle()) ctx.abort();
+		else {
+			const session = queue.session(ctx.sessionManager);
+			if (ctx.hasPendingMessages() && session?.clearQueue) {
+				const restored = session.clearQueue();
+				ctx.ui.setEditorText([...restored.steering, ...restored.followUp, ctx.ui.getEditorText()].filter(Boolean).join("\n\n"));
+			}
+		}
+		let agents = 0, processes = 0, unstoppable = 0;
+		pi.events.emit("rqw:stop-background:v1", { sessionId: ctx.sessionManager.getSessionId(), reply: (part: { agents?: number; backgroundProcesses?: number; unstoppable?: number }) => {
+			agents += part.agents ?? 0; processes += part.backgroundProcesses ?? 0; unstoppable += part.unstoppable ?? 0;
+		} });
+		const parts = [agents && `${agents} ${agents === 1 ? "agent" : "agents"}`, processes && `${processes} background ${processes === 1 ? "process" : "processes"}`].filter(Boolean);
+		ctx.ui.notify(`${parts.length ? `Stopped: ${parts.join(", ")}` : "Nothing running"}${unstoppable ? `; ${unstoppable} file call${unstoppable === 1 ? "" : "s"} finishes on its own` : ""}`);
+	} });
 	/** Steering messages queued through Pi since the queue was last empty; Pi exposes only "anything queued". */
 	let steering = 0;
 	/**
@@ -44,6 +60,15 @@ export default function sendNow(pi: ExtensionAPI) {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let unsubscribe: (() => void) | undefined;
 	let tui: FocusTUI | undefined;
+	const sources = new Map<any, () => void>();
+	let stopOffers: (() => void) | undefined;
+	const background = () => [...sources.keys()].some(source => { const counts = source.snapshot(); return (counts.agents ?? 0) > 0 || (counts.backgroundProcesses ?? 0) > 0; });
+	const adopt = (source: any) => {
+		if (!source || source.version !== 1 || typeof source.snapshot !== "function" || typeof source.subscribe !== "function" || sources.has(source)) return;
+		let ended = false;
+		const unsubscribe = source.subscribe((value: unknown) => { if (value === null) { ended = true; sources.get(source)?.(); sources.delete(source); } });
+		if (ended) unsubscribe(); else sources.set(source, unsubscribe);
+	};
 	/** Timestamps of interrupted replies this extension force-sent past; their text is replayed to the model. */
 	let kept = new Set<number>();
 
@@ -88,7 +113,29 @@ export default function sendNow(pi: ExtensionAPI) {
 	}
 
 	function onKey(data: string, ctx: ExtensionContext): { consume: true } | undefined {
-		if (pending || isKeyRelease(data) || !getKeybindings().matches(data, "tui.input.submit")) return undefined;
+		if (pending || isKeyRelease(data)) return undefined;
+		const editor = tui?.getFocusedComponent();
+		const session = queue.session(ctx.sessionManager);
+		let canHold = false;
+		if (background() && (ctx.isIdle() || session?.isCompacting)) pi.events.emit("rqw:followup-hold:request", { sessionId: ctx.sessionManager.getSessionId(), reply: () => { canHold = true; } });
+		if (canHold && getKeybindings().matches(data, "tui.input.submit") && editor instanceof CustomEditor) {
+			const internal = editor as unknown as { actionHandlers?: Map<string, () => void>; handleInput?: (data: string) => void; isShowingAutocomplete?: () => boolean; getExpandedText?: () => string; addToHistory?: (text: string) => void; setText?: (text: string) => void };
+			const text = (internal.getExpandedText?.() ?? ctx.ui.getEditorText()).trim();
+			if (text && !text.startsWith("/") && !text.startsWith("!") && typeof session?.followUp === "function" && typeof internal.actionHandlers?.get("app.message.followUp") === "function" && typeof internal.handleInput === "function" && internal.isShowingAutocomplete?.() === false && typeof internal.setText === "function") {
+				internal.addToHistory?.(text); internal.setText("");
+				void session.followUp(text).catch(() => restore(text, ctx, "queue failed"));
+				return { consume: true };
+			}
+		}
+		if (ctx.ui.getEditorText().trim() && editor instanceof CustomEditor) {
+			const internal = editor as unknown as { actionHandlers?: Map<string, () => void>; handleInput?: (data: string) => void; isShowingAutocomplete?: () => boolean };
+			const followUp = internal.actionHandlers?.get("app.message.followUp");
+			if (typeof followUp === "function" && typeof internal.handleInput === "function" && typeof internal.isShowingAutocomplete === "function" && !internal.isShowingAutocomplete()) {
+				if (matchesKey(data, "alt+enter")) { internal.handleInput("\r"); return { consume: true }; }
+				if (!ctx.isIdle() && getKeybindings().matches(data, "tui.input.submit")) { followUp(); return { consume: true }; }
+			}
+		}
+		if (!getKeybindings().matches(data, "tui.input.submit")) return undefined;
 		if (!ctx.hasPendingMessages() && submitting === 0) steering = 0;
 		const queuedSteering = queue.read(ctx.sessionManager);
 		if (queuedSteering === undefined) return undefined;
@@ -161,6 +208,10 @@ export default function sendNow(pi: ExtensionAPI) {
 			entry.type === "custom" && entry.customType === ENTRY && typeof (entry.data as { timestamp?: unknown })?.timestamp === "number"
 				? [(entry.data as { timestamp: number }).timestamp] : []));
 		if (ctx.mode !== "tui") return;
+		if (pi.events) {
+			stopOffers = pi.events.on("rqw:running-counts:offer", (offer: any) => { if (offer?.version === 1) adopt(offer.source); });
+			pi.events.emit("rqw:running-counts:request", { version: 1, reply: adopt });
+		}
 		// The TUI is needed only to see what has focus; a widget factory is the public way to get it. Removed at once.
 		ctx.ui.setWidget(ENTRY, (instance) => {
 			tui = instance as FocusTUI;
@@ -171,6 +222,9 @@ export default function sendNow(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", () => {
+		stopOffers?.(); stopOffers = undefined;
+		for (const unsubscribe of sources.values()) unsubscribe();
+		sources.clear();
 		queue.release();
 		unsubscribe?.();
 		unsubscribe = undefined;

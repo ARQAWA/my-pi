@@ -1,19 +1,19 @@
 import { AgentSession, VERSION } from "@earendil-works/pi-coding-agent";
 
 const PATCH = Symbol.for("rqw-send-now/queue");
-type Session = { sessionManager: object; getSteeringMessages(): readonly string[] };
+type Session = { sessionManager: object; getSteeringMessages(): readonly string[]; followUp?(text: string): Promise<unknown>; isCompacting?: boolean; clearQueue?(): { steering: string[]; followUp: string[] } };
 type State = { count: number; sessions: WeakMap<object, WeakRef<Session>>; wrapper: Function; original: PropertyDescriptor };
 type Prototype = Record<symbol, State | undefined>;
 
 /** Lease the Pi 1.4.0 binding hook without retaining sessions. */
 export function installQueue(SessionClass = AgentSession, version = VERSION) {
 	const prototype = SessionClass.prototype as unknown as Prototype;
-	if (version !== "1.4.0") return { read: (_identity: object) => undefined, release() {} };
+	if (version !== "1.4.0") return { session: (_identity: object) => undefined, read: (_identity: object) => undefined, release() {} };
 	let state = prototype[PATCH];
 	if (!state) {
 		const original = Object.getOwnPropertyDescriptor(prototype, "_bindExtensionCore");
 		if (!original || typeof original.value !== "function" || (!original.configurable && !original.writable)) {
-			return { read: (_identity: object) => undefined, release() {} };
+			return { session: (_identity: object) => undefined, read: (_identity: object) => undefined, release() {} };
 		}
 		const installed: State = { count: 0, sessions: new WeakMap(), original, wrapper: function(this: Session, ...args: unknown[]) {
 			if (installed.count > 0) {
@@ -31,7 +31,7 @@ export function installQueue(SessionClass = AgentSession, version = VERSION) {
 			Object.defineProperty(prototype, "_bindExtensionCore", { ...original, value: installed.wrapper });
 		} catch {
 			delete prototype[PATCH];
-			return { read: (_identity: object) => undefined, release() {} };
+			return { session: (_identity: object) => undefined, read: (_identity: object) => undefined, release() {} };
 		}
 		state = installed;
 	}
@@ -39,6 +39,7 @@ export function installQueue(SessionClass = AgentSession, version = VERSION) {
 	installed.count++;
 	let released = false;
 	return {
+		session(identity: object): Session | undefined { return released ? undefined : installed.sessions.get(identity)?.deref(); },
 		read(identity: object): number | undefined {
 			if (released) return undefined;
 			try {

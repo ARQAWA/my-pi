@@ -5,11 +5,12 @@ Force-send queued steering with Enter, the oh-my-pi gesture. Decision and owner 
 
 ## Behavior
 
-- While the agent works, Enter with text queues it as steering: stock Pi, unchanged.
+- While the agent works, Enter with text queues a follow-up. When the run is idle but background work remains, or during compaction with background work, Enter also queues it. Option+Enter on macOS and Alt+Enter on Windows send steering. PCLI uses the VS Code terminal; this key has not yet been verified there. Idle and compaction queueing require an active RQW-agent hold for the same session; otherwise Enter keeps Pi's behavior.
 - Enter on an empty editor while steering is queued interrupts the current turn and sends the queued text to the
   agent at once as a new user message. The editor is empty afterwards.
-- Nothing queued, or only follow-ups (Pi's follow-up key: Alt+Enter, Ctrl+Q on Windows): empty Enter does nothing,
+- Nothing queued, or only follow-ups: empty Enter does nothing,
   as in stock Pi.
+- Ctrl+backslash aborts the current turn, returns queued text to the editor and asks the session's extensions to stop background work. File calls may finish on their own.
 - Escape, Alt+Up and every other key stay Pi's. Dialogs, selectors and overlays keep their own Enter: the gesture
   acts only when Pi's input editor (`CustomEditor` or a subclass, such as RQW-statusbar's) has focus.
 - The key is Pi's configured `tui.input.submit` binding (`enter` by default; `\r` on Windows and legacy terminals,

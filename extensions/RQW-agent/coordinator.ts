@@ -19,6 +19,7 @@ export type RuntimeHandle = {
 	resume?(signal: AbortSignal, recoveredOnly?: boolean): Promise<number>;
 	settle?(aborted: boolean): void;
 	abortAll(): void;
+	stopBackground?(): number;
 	close(): void;
 };
 
@@ -278,6 +279,8 @@ export class Coordinator {
 		const target = this.targets.get(id);
 		return run && target?.recovers === run ? target.run : run;
 	}
+	stopBackground() { this.callerAborted = true; this.cancelNotificationWaits(); this.unansweredNotifications.clear(); }
+	holdsFollowUps(background: boolean) { return !this.callerAborted && (background || this.notificationWaits.size > 0 || this.unansweredNotifications.size > 0); }
 	hasWait(id: string) { return this.notificationWaits.has(id); }
 	/** A restored wait on `id` moves from the interrupted run `from` to the run `to` that continues it. */
 	follow(id: string, from: string, to: string) { for (const wait of this.notificationWaits.values()) wait.follow(id, from, to); }

@@ -4,7 +4,7 @@ import type { Api, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 export type ForkPayload = { model: Model<Api>; payload: Record<string, unknown>; options: SimpleStreamOptions };
 
 /** Find the session behind Pi 1.4's public context without keeping a prototype patch installed. */
-function sessionOf(ctx: ExtensionContext): AgentSession | undefined {
+export function sessionOf(ctx: ExtensionContext): AgentSession | undefined {
 	const prototype = AgentSession.prototype;
 	const descriptor = Object.getOwnPropertyDescriptor(prototype, "isIdle");
 	if (typeof descriptor?.get !== "function" || !descriptor.configurable) return undefined;

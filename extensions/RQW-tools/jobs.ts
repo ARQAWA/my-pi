@@ -482,6 +482,12 @@ export function createJobs(options: JobsOptions = {}) {
 		kill: killJob,
 		status: (ids: string[] | undefined, lines: number) => (ids ? ids.map(find) : [...jobs.values()]).map((job) => shown(job, lines)),
 		abortAll,
+		stopBackground() {
+			const active = [...jobs.values()].filter(job => job.ended === undefined);
+			for (const waiter of [...waiters]) waiter.cancel();
+			abortAll();
+			return { backgroundProcesses: active.filter(job => job.killable).length, unstoppable: active.filter(job => !job.killable).length };
+		},
 		dispose() { disposed = true; activityChanged(); activityListeners.clear(); for (const waiter of [...waiters]) waiter.cancel(); abortAll(); },
 		seen(n: number) { if (Number.isSafeInteger(n) && n > counter) counter = n; },
 		get size() { return jobs.size; },

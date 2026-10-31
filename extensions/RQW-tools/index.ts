@@ -120,6 +120,15 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 		if (["rqw_rg", "rqw_glob", "rqw_readfile"].includes(tool.name)) (tool as any).rqwSelectionFallback = () => { legacy = true; };
 		pi.registerTool(tool);
 	}
+	let stopNotice: (() => void) | undefined;
+	pi.on("session_start", (_event, ctx) => {
+		stopNotice?.();
+		const sessionId = ctx.sessionManager.getSessionId?.();
+		stopNotice = pi.events.on("rqw:stop-background:v1", (request: any) => {
+			if (request?.sessionId === sessionId && typeof request.reply === "function") request.reply(jobs.stopBackground());
+		});
+	});
+	pi.on("session_shutdown", () => { stopNotice?.(); stopNotice = undefined; });
 	const counts = createCountsProducer(jobs, pi.events);
 	pi.on("session_start", () => counts.start());
 	pi.on("session_shutdown", () => counts.stop());

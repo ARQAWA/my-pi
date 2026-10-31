@@ -20,6 +20,7 @@ import { type Static, Type } from "typebox";
 import { FOLLOW_UP, SUBAGENT_REMINDER, subagentPrompt, withCurrentReminder } from "./prompt.ts";
 import { forkBranch } from "./fork.ts";
 import { forkPayloads, type ForkPayload } from "./fork-payload.ts";
+import { registerFollowUpHold } from "./followup-hold.ts";
 import { ProfileCatalogue, type ProfileRef } from "./profiles.ts";
 import { Activity } from "./activity.ts";
 import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-files.ts";
@@ -438,6 +439,18 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 		});
 		pi.on("session_start", () => counts.start());
 		pi.on("session_shutdown", () => counts.stop());
+		registerFollowUpHold(pi, background => coordinator.holdsFollowUps(background));
+		let sessionId: string | undefined;
+		let stopNotice: (() => void) | undefined;
+		pi.on("session_start", (_event, ctx) => {
+			stopNotice?.();
+			sessionId = ctx.sessionManager.getSessionId();
+			stopNotice = pi.events.on("rqw:stop-background:v1", (request: any) => {
+				if (request?.sessionId !== sessionId || typeof request.reply !== "function") return;
+				request.reply({ agents: runtime.stopBackground?.() ?? 0 });
+			});
+		});
+		pi.on("session_shutdown", () => { stopNotice?.(); stopNotice = undefined; sessionId = undefined; });
 	}
 	pi.on("agent_end", async (_event, ctx) => {
 		if (!background && (ctx.mode === "print" || ctx.mode === "json") && ctx.signal) {
@@ -1857,6 +1870,17 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (depth > 0) for (const a of agents.values()) await a.children?.prepareStatus?.(depth - 1, signal);
 		},
 		runningCounts,
+		stopBackground() {
+			const count = runningCounts().agents;
+			mainAborted = true;
+			coordinator.stopBackground();
+			for (const a of agents.values()) {
+				a.next = undefined;
+				if (a.run && !a.run.quiet) requestInterrupt(a, a.run);
+				else { a.children?.abortAll(); a.jobs?.abortAll(); }
+			}
+			return count;
+		},
 		resume: resumeAll,
 		settle(aborted) {
 			if (main) coordinator.settleCore(main, aborted);

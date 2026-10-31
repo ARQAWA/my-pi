@@ -350,6 +350,10 @@ state. `fast-gpt.ts` sets `service_tier: "priority"` on the child's openai-codex
 through `before_provider_request`; Anthropic requests are untouched. Default, rule and quotes:
 [DECISIONS.md, Settings](../../DECISIONS.md#settings).
 
+## Follow-up hold
+
+In the main TUI, user follow-ups stay in Pi's queue while agents, background jobs or an unanswered notification wait remain. Ctrl+backslash cancels notification waits and interrupts running children without closing their histories. Other queued message roles remain visible to Pi. The queue patch checks Pi 1.4.0's shape and falls back to stock when incompatible. When the background ends in an idle session, a queued text-only follow-up starts a run without processing input twice. A message with images stays queued for the next run. The session-scoped `rqw:followup-hold:request` tells RQW-send-now whether this hold is available; without it the input extension leaves idle Enter to Pi.
+
 ## Wait, status and management
 
 `agent` accepts `wait`, `status`, `send`, `resume`, `interrupt`, `stop` and `restart`.
