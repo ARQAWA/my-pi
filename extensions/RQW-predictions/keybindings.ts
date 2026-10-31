@@ -1,6 +1,6 @@
 // Frees Ctrl+E and Ctrl+R from Pi's own actions in memory, so one key press is one action.
 // A light wrapper on the live keybindings manager: no settings file, no user binding and no Pi file is written.
-import { getKeybindings, matchesKey, type KeyId } from "@earendil-works/pi-tui";
+import { getKeybindings, matchesKey } from "@earendil-works/pi-tui";
 
 const LINE_END = "tui.editor.cursorLineEnd";
 const RENAME = "app.session.rename";
@@ -56,7 +56,9 @@ function wrap(manager: Manager): (() => void) | undefined {
 		},
 		matches(this: Manager, data: string, id: string) {
 			if (!active) return base.matches.call(this, data, id);
-			return this.getKeys(id).some(key => matchesKey(data, key as KeyId));
+			if (matchesKey(data, "ctrl+e") || matchesKey(data, "ctrl+r")) return false;
+			if (id === LINE_END && matchesKey(data, "end") && base.getKeys.call(this, id).some(isFreed)) return true;
+			return base.matches.call(this, data, id);
 		},
 		getResolvedBindings(this: Manager) {
 			const resolved = base.getResolvedBindings.call(this);

@@ -7098,3 +7098,23 @@ Status: SUPERSEDED by `[D-KEYS-HINTS]` (DECISIONS.md#send-now).
 Source: `c35a57c3:DECISIONS.md`. Verbatim replaced text:
 
 > steer (instant interrupt through the socket) is `[D-CODEX-STEER]`; the hints are a later part; the VS Code Ctrl+Enter sequence ships
+
+## A-0404 · archived 2026-10-31 · Escape scroll priority
+
+Status: SUPERSEDED by `[D-SCROLL-ESC]` and `[D-KEYS-ESC]`: scrolling takes the first Escape in every work state.
+Source: `ac5b508a:DECISIONS.md`. Verbatim replaced text:
+
+> - **Escape jumps down** `[D-SCROLL-ESC]`. Escape in Pi's fullscreen view returns a scrolled-up transcript to the latest
+>   message, as in Codex, while the main turn is idle; at the bottom Escape stays stock, Ctrl+End stays, an open
+>   transcript search takes the first Escape. While a turn works, Escape is turn control (`[D-KEYS-ESC]`) and does not
+>   jump. Package behaviour for every my-pi user.
+>
+>   (`my-pi-evidence/designs/keys-hints/DESIGN.md`, section 2). One Escape while the turn (or a compaction) works is left to
+>   Pi, which interrupts it. A second Escape within 500 ms sends the existing `rqw:stop-background:v1` (the action of
+>
+>   `/edit-history` while any runs, with or without RQW-send-now. RQW-scroll yields Escape while the turn or background works and keeps
+>   jump-to-latest when idle (default 3 below). Dialogs, selectors and an open autocomplete list keep their own Escape.
+>
+>   Limits: RQW-scroll reads the same counts offers and also yields Escape while background work runs, so a scrolled-up
+>   transcript with only background running arms and stops with two presses and jumps down again after it ends; a press
+>   within 500 ms of one that found work stays turn control even if the work ended in between. A force-send

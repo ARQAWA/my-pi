@@ -282,10 +282,11 @@ export default function sendNow(pi: ExtensionAPI) {
 		let painter = false, brewing = false, compacting = false, retrying = false;
 		let hint: string | undefined;
 		const listeners = new Set<() => void>();
-		const editor = installHintEditor(() => painter ? undefined : hint, () => hintUI.refresh());
+		const visibleHint = () => getKeybindings().getKeys("tui.altScreen.bottom").some(key => key === "esc" || key === "escape") ? "esc to jump to latest" : hint;
+		const editor = installHintEditor(() => painter ? undefined : visibleHint(), () => hintUI.refresh());
 		attachEditor = editor.attach;
 		editorSupported = editor.supported;
-		const source = { snapshot: () => hint, subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); } };
+		const source = { snapshot: visibleHint, subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); } };
 		updateHint = () => {
 			const session = queue.session(ctx.sessionManager);
 			const tracked = queue.steering(ctx.sessionManager);

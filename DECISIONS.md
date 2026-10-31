@@ -1631,10 +1631,9 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Scroll
 
-- **Escape jumps down** `[D-SCROLL-ESC]`. Escape in Pi's fullscreen view returns a scrolled-up transcript to the latest
-  message, as in Codex, while the main turn is idle; at the bottom Escape stays stock, Ctrl+End stays, an open
-  transcript search takes the first Escape. While a turn works, Escape is turn control (`[D-KEYS-ESC]`) and does not
-  jump. Package behaviour for every my-pi user.
+- **Escape jumps down** `[D-SCROLL-ESC]`. In fullscreen, the first Escape while the transcript is scrolled up returns to the latest message, whether the turn or background work is running or idle. It does not interrupt or arm a double Escape. At the bottom Escape keeps turn control (`[D-KEYS-ESC]`); Ctrl+End stays, and an open transcript search takes the first Escape. Package behaviour for every my-pi user.
+  Owner (verbatim): «Смотри, я листаю вверх, у меня на экране написано «Escape», чтобы скроллить вниз. Если в этот момент происходит генерация, агент работает, и в чате написано «Escape to interact», я нажимаю Escape, и у меня label пропадает, скролл вниз не происходит, а reasoning останавливается.»
+  Owner correction (verbatim): «Не напиздел. Не исчезает табличка, label не исчезает, просто reasoning останавливается и ничего не происходит»; «Не, он не завис, он прервался. Там появилась табличка красная: "Operation aborted", и всё».
   Owner: «Да, я также бы хотел перенастроить хоткеи, чтобы когда я скролю, jump to last message было на Escape» (session `2026-10-21T12-13-54-289Z_01a15e61`, line 53);
   «Хотя бы должен быть какой-то адекватный хоткей, который будет перехватываться всеми браузерами нормально. И чтобы он не конфликтовал с другими хоткеями.» (session `2026-10-21T12-13-54-289Z_01a15e61`, line 77);
   answer to coordinator option 1a: «Сделай Escape просто, что когда я открыл вверх, я Escape нажимаю, как в кодексе. В кодексе ты когда scroll вверх делаешь, нажимаешь Escape, и он тебя возвращает в самый низ чата. Так же сделай» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 100)
@@ -1729,8 +1728,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   queues and tracks the steering inputs on their way; incompatible Pi shapes leave the keys to stock Pi. Mechanism:
   `[D-KEYS-STEER]`. Owner: «если по чтению очереди Pi для send now на один story point, то оставляем. Спроектируй его и дай мне свой вердикт.»; after the 1 SP verdict: «делай». Carrier: `extensions/RQW-send-now/queue.ts`. Since: `d1f8b16`.
 - **Escape: interrupt, stop background, history** `[D-KEYS-ESC]`. Part 1 of the keys design
-  (`my-pi-evidence/designs/keys-hints/DESIGN.md`, section 2). One Escape while the turn (or a compaction) works is left to
-  Pi, which interrupts it. A second Escape within 500 ms sends the existing `rqw:stop-background:v1` (the action of
+  (`my-pi-evidence/designs/keys-hints/DESIGN.md`, section 2). While scrolled up, the first Escape only jumps to the latest message, in every work state, without arming a gesture. At the bottom, one Escape while the turn (or a compaction) works is left to Pi, which interrupts it. A second Escape within 500 ms sends the existing `rqw:stop-background:v1` (the action of
   Ctrl+backslash, which stays as an alias): a running turn is aborted, held follow-ups return to the editor, agents and
   background processes stop, file calls finish on their own. With only background (or a not yet started force-send)
   running, the first Escape is taken by RQW-send-now, so Pi's own double-Escape action cannot fire; the second also
@@ -1739,15 +1737,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   presses are swallowed, so the history cannot open by accident. Without anything running, double Escape in an empty
   editor keeps opening the history (`[D-HISTORY-EDIT]`); RQW-history-edit also reads the background counts of every
   source on `rqw:running-counts:offer` (agents, reviews, background processes) and refuses its gesture and
-  `/edit-history` while any runs, with or without RQW-send-now. RQW-scroll yields Escape while the turn or background works and keeps
-  jump-to-latest when idle (default 3 below). Dialogs, selectors and an open autocomplete list keep their own Escape.
+  `/edit-history` while any runs, with or without RQW-send-now. RQW-scroll takes the first Escape while scrolled up, also while work runs. Dialogs, selectors and an open autocomplete list keep their own Escape.
   Editor hints are `[D-KEYS-HINTS]` (Ctrl+Enter steering is `[D-KEYS-STEER]`, the Codex quick steer `[D-CODEX-STEER]`).
   Owner (verbatim): «Да, и когда что-то в фоне работает, надо подсказку написать как остановить фон. Что типа control - это палка чтобы остановить ФОН, чтобы interrupt» «А если фона нету, то тогда Escape чтобы interrupt. И сначала пишем Escape чтобы interupt, а потом короче этот самый... А лучше знаешь как? Лучше два раза escape это двойной escape пусть будет остановка этого - остановка фона. То есть на обычный escape мы останавливаем этот самый, останавливая мейн поток, а на двойную escape мы пишем в таком же формате подсказку, что пока идет playing moves - escape короче interrupted а когда мы это самое... когда мы делаем этот скажите скажу когда мы с тобой скажи блять я тебе скажу нахуй когда мы с тобой делаем double escape а еще смотри это send now надо выпить потому что если мы на enter ставим на follow up то на command enter мы делаем steering и еще раз на command-enter мы делаю типа "Send now" Вот так надо сделать чтобы это работало»
   Owner (verbatim): «Так все нормально. Нет смысла на два раза Escape поменять историю, если у нас что-то в фоне работает. То есть мы должны сначала весь фон прервать, а потом уже историю менять.»
   Coordinator defaults: «Мелочи я решил сам. Скажи, если ты против: 1. Alt+Enter делает то же, что Ctrl+Enter. 2. Ctrl+\ остаётся запасной кнопкой стопа фона. 3. Если история прокручена вверх, Esc во время работы прерывает ход. В простое Esc, как раньше, возвращает вниз. 4. В VS Code Ctrl+Enter сам до pi не доходит. Поэтому PCLI добавит эту клавишу сам. Это ещё полбалла SP, выйдет вместе с браузером.» Owner answer: «По клавишам: да, все 4 части по порядку»
-  Limits: RQW-scroll reads the same counts offers and also yields Escape while background work runs, so a scrolled-up
-  transcript with only background running arms and stops with two presses and jumps down again after it ends; a press
-  within 500 ms of one that found work stays turn control even if the work ended in between. A force-send
+  The scroll priority supersedes default 3 below. While scrolled up the editor hint does not promise interruption. See the owner's exact report and correction in `[D-SCROLL-ESC]`.
+  Limits: A force-send
   that is pending counts as work; a cancelled one stays pending until the run has settled, then its text and any late
   steering return to the editor. A stop with nothing running still shows "Nothing running". Carriers:
   `extensions/RQW-send-now/index.ts`, `extensions/RQW-history-edit/index.ts`, `extensions/RQW-scroll/index.ts`. Tests:

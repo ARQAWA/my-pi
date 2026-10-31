@@ -25,7 +25,7 @@ export function install(pi: ExtensionAPI, deps: Deps, clearSource: () => void = 
 		suggestion: controller.suggestion,
 		// The manual keys act only while Pi's own actions on them are freed.
 		hotkeys: keys.ensure,
-		hint: () => hint,
+		hint: () => controller.brewing() ? hint : offered?.snapshot() ?? hint,
 	});
 
 	const adopt = (source: typeof offered, mainEditor?: unknown) => {

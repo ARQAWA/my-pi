@@ -4,6 +4,7 @@ import { AgentSession, createEventBus, type ExtensionAPI, type ExtensionContext 
 import { stripVTControlCharacters } from "node:util";
 import { getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import predictions from "../extensions/RQW-predictions/index.ts";
+import historyEdit from "../extensions/RQW-history-edit/index.ts";
 import scroll from "../extensions/RQW-scroll/index.ts";
 import sendNow from "../extensions/RQW-send-now/index.ts";
 import { harness, OTHER, settle, suggestion } from "./extensions/RQW-predictions/harness.ts";
@@ -36,6 +37,51 @@ for (const extraFirst of [true, false]) it(`send-now and predictions share the e
 	assert.equal(row(), "next step");
 	h.key("\t");
 	assert.equal(h.editor.getText(), "next step");
+});
+
+for (const work of ["turn", "background", "idle"] as const) it(`Escape jumps before ${work} control in package order`, t => {
+	const original = getKeybindings();
+	t.after(() => setKeybindings(original));
+	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
+	let now = 1000;
+	t.mock.method(Date, "now", () => now);
+	let stops = 0;
+	let background = work === "background" ? 1 : 0;
+	const manager = new KeybindingsManager({
+		...TUI_KEYBINDINGS,
+		"app.interrupt": { defaultKeys: "escape", description: "Interrupt" },
+		"app.session.rename": { defaultKeys: "ctrl+r", description: "Rename" },
+	});
+	const h = harness({ entry: true, extraFirst: true, realKeys: true, keybindings: manager, extraInstall(pi) {
+		pi.events.on("rqw:running-counts:request", (request: any) => request.reply({ version: 1, snapshot: () => ({ agents: background }), subscribe: () => () => {} }));
+		pi.events.on("rqw:stop-background:v1", () => { stops++; background = 0; });
+		scroll(pi);
+		sendNow(pi);
+		historyEdit(pi);
+	} });
+	t.after(() => h.fire("session_shutdown", { reason: "quit" }));
+	let interrupts = 0;
+	h.editor.onEscape = () => { interrupts++; h.state.idle = true; };
+	h.state.idle = work !== "turn";
+	h.viewport.following = false;
+	const row = () => stripVTControlCharacters(h.screen()[1].replace(/\x1b_[^\x07]*\x07/g, "")).trim();
+	const scrolledHint = row();
+	h.dispatch("\x1b");
+	assert.equal(h.viewport.jumps, 1);
+	assert.equal(scrolledHint, "esc to jump to latest");
+	assert.equal(interrupts, 0);
+	assert.equal(stops, 0);
+	h.dispatch("\x1b[27;1:2u");
+	assert.equal(interrupts, 0, "a held scroll key must not interrupt");
+	assert.equal(stops, 0);
+	now += 100;
+	h.dispatch("\x1b");
+	assert.equal(interrupts, work === "turn" || work === "idle" ? 1 : 0);
+	assert.equal(stops, 0, "the scroll press did not arm a stop");
+	now += 100;
+	h.dispatch("\x1b");
+	if (work === "idle") assert.deepEqual(h.sent, ["/edit-history"]);
+	else assert.equal(stops, 1);
 });
 
 describe("scroll and predictions keybindings", () => {
@@ -92,6 +138,7 @@ describe("scroll and predictions keybindings", () => {
 				assert.equal(manager.matches("\x1b[F", "tui.editor.cursorLineEnd"), true);
 				assert.equal(manager.matches("\x18", "app.session.rename"), true);
 				assert.ok(live.getKeys("tui.altScreen.bottom").includes("esc"));
+				assert.equal(live.matches("\x1b", "tui.altScreen.bottom"), false, "the display hint must not change viewport input");
 				assert.ok([...listeners].some(listener => (listener("\x1b") as { consume?: boolean } | undefined)?.consume));
 				assert.equal(following, true);
 				following = false;

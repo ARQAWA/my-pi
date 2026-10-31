@@ -29,11 +29,12 @@ it("Escape jumps only from a scrolled fullscreen editor", () => {
 		assert.equal(input!("\x1b"), undefined);
 		following = false;
 		assert.ok(getKeybindings().getKeys("tui.altScreen.bottom").includes("esc"));
-		// While a turn works Escape belongs to turn control, even when the transcript is scrolled up.
+		// Scrolling takes priority even while a turn works.
 		idle = false;
-		assert.equal(input!("\x1b"), undefined);
-		assert.equal(jumps, 1);
+		assert.deepEqual(input!("\x1b"), { consume: true });
+		assert.equal(jumps, 2);
 		assert.equal(getKeybindings().getKeys("tui.altScreen.bottom").includes("esc"), false);
+		following = false;
 		idle = true;
 		autocomplete = true;
 		assert.equal(input!("\x1b"), undefined);
@@ -64,7 +65,7 @@ it("keeps the stock display if the manager cannot be decorated", () => {
 	}
 });
 
-it("Escape belongs to the double-press stop while background work runs, then jumps again", () => {
+it("Escape jumps while background work runs", () => {
 	const previousNow = Date.now;
 	let now = 1000;
 	Date.now = () => now;
@@ -82,19 +83,19 @@ it("Escape belongs to the double-press stop while background work runs, then jum
 	} } as unknown as ExtensionContext;
 	handlers.get("session_start")!({}, ctx);
 	try {
-		assert.equal(input!("\x1b"), undefined);
-		assert.equal(jumps, 0);
+		assert.deepEqual(input!("\x1b"), { consume: true });
+		assert.equal(jumps, 1);
 		background = 0;
 		now += 600;
 		assert.deepEqual(input!("\x1b"), { consume: true });
-		assert.equal(jumps, 1);
+		assert.equal(jumps, 2);
 	} finally {
 		Date.now = previousNow;
 		handlers.get("session_shutdown")!({}, ctx);
 	}
 });
 
-it("a second Escape within 500 ms of a press that found work is not taken for a jump", () => {
+it("Escape jumps even immediately after a press during work", () => {
 	const previousNow = Date.now;
 	let now = 1000;
 	Date.now = () => now;
@@ -110,15 +111,11 @@ it("a second Escape within 500 ms of a press that found work is not taken for a 
 	} } as unknown as ExtensionContext;
 	handlers.get("session_start")!({}, ctx);
 	try {
-		assert.equal(input!("\x1b"), undefined);
-		idle = true; // the turn ended between the presses
-		now += 300;
-		assert.equal(input!("\x1b"), undefined);
-		assert.equal(jumps, 0);
-		// Presses inside the window do not extend it: 300 + 250 ms after the first press the window is over.
-		now += 250;
 		assert.deepEqual(input!("\x1b"), { consume: true });
-		assert.equal(jumps, 1);
+		idle = true;
+		now += 300;
+		assert.deepEqual(input!("\x1b"), { consume: true });
+		assert.equal(jumps, 2);
 	} finally {
 		Date.now = previousNow;
 		handlers.get("session_shutdown")!({}, ctx);

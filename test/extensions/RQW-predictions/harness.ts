@@ -2,7 +2,7 @@
 // source, the fork listeners, the event bus and the TUI. The extension's own code runs for real.
 import { AgentSession, CustomEditor, createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { Api, AssistantMessage, Context, Message, Model } from "@earendil-works/pi-ai";
-import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
+import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, TuiAltScreen } from "@earendil-works/pi-tui";
 import predictions, { install } from "../../../extensions/RQW-predictions/index.ts";
 
 // Fixed texts from the design, not from the code under test.
@@ -52,16 +52,19 @@ export function deferred<T>() {
 }
 export const settle = () => new Promise(resolve => setImmediate(resolve));
 
-export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], consumer = false, keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[], extraInstall = undefined as ((pi: ExtensionAPI) => void) | undefined, extraFirst = false } = {}) {
+export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], consumer = false, keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[], extraInstall = undefined as ((pi: ExtensionAPI) => void) | undefined, extraFirst = false, realKeys = false } = {}) {
 	setKeybindings(keybindings as KeybindingsManager);
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
 	const events = createEventBus();
 	const clock = { now: 1000 };
 	const cleared: number[] = [];
+	const sent: string[] = [];
 	const gets: AbortSignal[] = [];
 	const pi = {
 		on(name: string, handler: (event: unknown, ctx: unknown) => unknown) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 		events,
+		registerCommand() {},
+		sendUserMessage(text: string) { sent.push(text); },
 		getActiveTools: () => ["read"],
 		getAllTools: () => [{ name: "read", description: "Read a file", parameters: { type: "object" } }],
 		getThinkingLevel: () => "medium",
@@ -114,7 +117,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 		},
 	};
 	const editor = new CustomEditor({ requestRender() {}, terminal: { rows: 40, columns: 80 } } as never,
-		{ borderColor: (value: string) => value, selectList: {} } as never, { matches: () => false } as never);
+		{ borderColor: (value: string) => value, selectList: {} } as never, (realKeys ? keybindings : { matches: () => false }) as never);
 	// What reaches the editor's own handler: the decoration sits on top of this spy.
 	const reached: string[] = [];
 	const stockInput = editor.handleInput;
@@ -124,7 +127,15 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 		editor.render = function(this: CustomEditor, columns: number) { return [...stockRender.call(this, columns), "EXTRA"]; };
 	}
 	let renders = 0;
-	const tui = { requestRender: () => { renders++; }, getFocusedComponent: () => focus };
+	const viewport = { following: true, jumps: 0 };
+	const tui = realKeys ? new TuiAltScreen({ rows: 40, columns: 80 } as never) : {} as TuiAltScreen;
+	Object.defineProperties(tui, {
+		mode: { value: "fullscreen" },
+		isFollowingOutput: { get: () => viewport.following },
+	});
+	tui.scrollToBottom = () => { viewport.following = true; viewport.jumps++; };
+	tui.requestRender = () => { renders++; };
+	tui.getFocusedComponent = () => focus as never;
 	// Pi gives its main editor the submit handler; a replaced editor gets the same one.
 	editor.onSubmit = () => {};
 	editor.onCtrlD = () => {};
@@ -159,7 +170,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 
 	let answers = 0;
 	const h = {
-		ctx, theme, state, reached, main, forks, provider, notes, statuses, activity, gets, cleared, events, editor, controller, fire, session, clock, original, agent,
+		ctx, theme, state, reached, main, forks, provider, notes, statuses, activity, gets, cleared, sent, events, editor, controller, fire, session, clock, original, agent, viewport,
 		setFocus(component: unknown) { focus = component; },
 		/** A main request, as the agent loop makes it. */
 		request: (context: Context, options: Record<string, unknown> = { sessionId: "main" }) =>
@@ -181,6 +192,11 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 		},
 		key(data: string) {
 			for (const listener of [...inputListeners]) listener(data);
+			(focus as { handleInput?(data: string): void }).handleInput?.(data);
+		},
+		dispatch(data: string) {
+			if ((tui as any).handleViewportInput(data)?.consume) return;
+			for (const listener of [...inputListeners]) if ((listener(data) as { consume?: boolean } | undefined)?.consume) return;
 			(focus as { handleInput?(data: string): void }).handleInput?.(data);
 		},
 		/** A main request and its answer, without the turn end. */

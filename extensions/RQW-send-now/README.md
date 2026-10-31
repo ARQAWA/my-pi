@@ -10,7 +10,7 @@ Steering keys and the silent force-send. Decisions and owner quotes:
 - Force-send: with user steering waiting (queued, or still on its way through input handlers), an empty Enter, an empty Ctrl+Enter on Codex (`openai-codex`) and Escape on other providers interrupt the turn without any notice and send the steering at once as a new user message. Several messages go as one, joined by blank lines, images with them. Follow-ups, other queued messages and the editor draft stay. On other providers an empty Ctrl+Enter does nothing (empty Enter and Escape force); on Codex Escape stays Pi's (interrupt, queue back to the editor). Without steering waiting, Escape stays Pi's.
 - The interrupted reply stays an aborted message in the session; only its "Operation aborted" row is not drawn (also after `/reload` and resume). An aborted tool call still shows its result.
 - Ctrl+backslash aborts the current turn, returns queued text to the editor and asks the session's extensions to stop background work. File calls may finish on their own.
-- Escape: one press while the turn (or a compaction) works is Pi's and interrupts it. A second press within 500 ms
+- Escape: while the fullscreen transcript is scrolled up, the first press jumps down without interrupting or arming a gesture. At the bottom, one press while the turn (or a compaction) works is Pi's and interrupts it. A second press within 500 ms
   stops the session's background like Ctrl+backslash; Ctrl+backslash stays as an alias. With only background running the
   first press is taken here (so Pi's own double Escape cannot open its tree), and the second also cancels a force-send that
   has not started and returns its text to the editor. Busy is captured on the first press; for 500 ms after a stop more
@@ -30,7 +30,7 @@ The exact texts are `ctrl+r to interrupt`, `ctrl+enter to send now`, `esc to sen
 `esc esc to stop background` and `ctrl+enter to steer`. Compaction and retry use `esc to interrupt`.
 Typed text, including a space, hides the hint. It is not input; Tab and Enter keep their own behavior.
 RQW-predictions paints the hint when available; otherwise this extension decorates the same editor instance.
-The old queue, hold and loader key hints are hidden while this painter is active and restored when it stops.
+While the transcript is scrolled up and Escape jumps down, the editor says `esc to jump to latest` instead of promising interruption. The old queue, hold and loader key hints are hidden while this painter is active and restored when it stops.
 The version-checked Pi UI patch leaves unsupported shapes stock.
 
 ## How
