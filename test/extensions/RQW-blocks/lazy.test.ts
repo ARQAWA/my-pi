@@ -246,6 +246,30 @@ it("switching to the real inline renderer, as inline mode does, shows the whole 
 	});
 });
 
+it("Ctrl+D prints only the drawn part as the exit transcript, nothing older is loaded", async () => {
+	await runAsync(compacted().manager, async (fx) => {
+		fx.screen.addChild(fx.host.documentContainer);
+		// What Pi's Ctrl+D shutdown touches besides the renderer; the process exit is caught.
+		Object.assign(fx.host.runtimeHost.session.settingsManager, { getFullscreenExitOutput: () => "transcript" });
+		Object.assign(fx.host.runtimeHost, { async dispose() {} });
+		Object.assign(fx.host, { footer: { dispose() {} }, footerDataProvider: { dispose() {} }, extensionTerminalInputSubscriptions: new Set(), signalCleanupHandlers: [] });
+		Object.assign(fx.host.themeController, { disableAutoSync() {} });
+		Object.assign(fx.host.ui, { stop() {} });
+		Object.assign(fx.host.ui.terminal, { async drainInput() {} });
+		const exit = process.exit;
+		const exited = new Promise((resolve) => { process.exit = resolve as never; });
+		try {
+			fx.host.handleCtrlD();
+			assert.equal(await exited, 0);
+		} finally { process.exit = exit; }
+		try {
+			assert.equal(fx.host.renderer instanceof TuiMainScreen, true);
+			const lines = fx.host.renderer.render(WIDTH).map(stripTerminalSequences).map((line: string) => line.trim());
+			assert.deepEqual(prompts(lines), all(5, 7));
+		} finally { fx.host.renderer.stop(); }
+	});
+});
+
 it("a loaded older interval follows the current tool output and thinking toggles", () => {
 	for (const toggled of [false, true]) {
 		run(buildSession(4, 2, 1, true).manager, (fx) => {

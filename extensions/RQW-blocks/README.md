@@ -7,7 +7,7 @@ not a session context. On a compatible Pi 1.4.0 startup, the first history is bu
 terminal starts, without waiting for session-start handlers. Pi subscribes before those handlers, and the usual later history
 redraw is skipped once. The editor's input history is transferred when the editor changes during startup or a session rebind,
 only for the displayed session. An incompatible startup shape keeps Pi's usual sequence. During a session switch the visible blocks keep their style until
-the new history is built; pending older history stops loading. On quit, the exit transcript still gets the whole history.
+the new history is built; pending older history stops loading. On quit, the exit transcript prints only what is drawn, so quitting stays instant on a long branch.
 The host releases its patches after Pi stops. Reload and a newly disabled extension are resolved against the current host's
 loaded extension paths.
 
@@ -29,7 +29,7 @@ kept, and an older interval that is partly visible stays loaded. An input up onl
 - Heights are taken again at the input (Ctrl+O, thinking and resize change them); after a resize nothing unloads before the next frame.
 - Unloading resets the text selection and the cached row layout. RQW-tool-ui keeps its redraw callbacks by tool call ID weakly, so unloaded tool components can be collected.
 - An older interval is drawn into Pi's own chat container with the drawn part set aside, so the worked-for folds of RQW-tool-ui (which track the chat by position) work in loaded intervals: they start closed, and closed again after an unload and a new load.
-- Switching to inline mode or to the exit transcript draws everything first.
+- Switching to inline mode draws everything first. The exit transcript does not: it prints the drawn part only, as Pi's own draws the compacted context.
 - Inline mode, a changed Pi shape and any failure draw the whole branch at once, as before.
 - The interval starts are 0 and each compaction's `firstKeptEntryId`; they must be found and strictly ascending, otherwise the whole branch is drawn at once.
 - RQW-tool-ui breaks tool groups at every compaction's cut, so "Read 5 files" splits there into "Read 3 files" and "Read 2 files".

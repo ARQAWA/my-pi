@@ -6965,3 +6965,12 @@ Verbatim replaced prompt fragment, cycle and verdict text:
 >   coverage; Main assesses the supplied evidence against the criterion. Results use the ordinary `agent#N` lifecycle.
 >   Carriers: `extensions/RQW-review/profiles/*.toml`, `skills/reviewer/SKILL.md`, RQW-agent.
 >   Since: subagent-profiles; concise evidence updated by process-minimal-testing-review.
+
+## A-0390 · archived 2026-10-31 · UI · Exit transcript draws the whole history
+
+Status: SUPERSEDED by `[D-UI-HISTORY]` (DECISIONS.md, quitting prints only the drawn history).
+Source: `6c6585a:DECISIONS.md`, `[D-UI-HISTORY]`. Archived by: fast-exit;
+exact commit: `git log -S'A-0390' -- DECISIONS-ARCHIVE.md`.
+Verbatim replaced sentence:
+
+> `switchTuiMode` to a non-fullscreen mode (inline, exit transcript) draws everything first.

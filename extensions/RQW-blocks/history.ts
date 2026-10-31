@@ -79,7 +79,9 @@ function historyTexts(host: Host, older: Entry[]): string[] {
 export function installHistory(prototype: any = InteractiveMode.prototype, beforeRender?: (host: any) => boolean): (() => void) & { reset?: (host: any) => void } {
 	const names = ["renderSessionEntries", "renderInitialMessages", "rebuildChatFromMessages", "handleEvent"];
 	if (names.some((name) => typeof prototype?.[name] !== "function")) return () => {};
-	const lazyNames = typeof prototype.switchTuiMode === "function" ? [...names, "switchTuiMode"] : names;
+	const lazyNames = [...names];
+	if (typeof prototype.switchTuiMode === "function") lazyNames.push("switchTuiMode");
+	if (typeof prototype.stopInteractiveTui === "function") lazyNames.push("stopInteractiveTui");
 	(globalThis as any)[ACTIVE]?.();
 	const own = Object.getOwnPropertyDescriptors(prototype);
 	const render = prototype.renderSessionEntries;
@@ -87,8 +89,11 @@ export function installHistory(prototype: any = InteractiveMode.prototype, befor
 	const rebuild = prototype.rebuildChatFromMessages;
 	const handle = prototype.handleEvent;
 	const switchMode = prototype.switchTuiMode;
-	// Lazy loading needs the mode switch too: inline mode and the exit transcript must get the whole history.
+	const stopTui = prototype.stopInteractiveTui;
+	// Lazy loading needs the mode switch too: inline mode must get the whole history.
 	const lazy = createLazy(render, typeof switchMode === "function");
+	// True while Pi stops the TUI: the exit transcript prints only what is drawn, so quitting stays instant on a long branch.
+	let stopping = false;
 	// Armed by a wrapper, used by the next `renderSessionEntries` call only.
 	let armed: Mode | undefined;
 	const arm = (mode: Mode, run: () => unknown) => {
@@ -120,8 +125,12 @@ export function installHistory(prototype: any = InteractiveMode.prototype, befor
 		return result;
 	};
 	if (typeof switchMode === "function") prototype.switchTuiMode = function (this: any, mode: unknown, ...args: unknown[]) {
-		if (mode !== "fullscreen") lazy.loadAll(this);
+		if (mode !== "fullscreen" && !stopping) lazy.loadAll(this);
 		return switchMode.call(this, mode, ...args);
+	};
+	if (typeof stopTui === "function") prototype.stopInteractiveTui = function (this: unknown, ...args: unknown[]) {
+		stopping = true;
+		try { return stopTui.apply(this, args); } finally { stopping = false; }
 	};
 	prototype.renderInitialMessages = function (this: unknown, ...args: unknown[]) { return arm("all", () => initial.apply(this, args)); };
 	prototype.rebuildChatFromMessages = function (this: unknown, ...args: unknown[]) { return arm("all", () => rebuild.apply(this, args)); };
