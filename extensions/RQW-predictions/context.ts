@@ -4,6 +4,8 @@ import { normalizeContext, type Api, type AssistantMessage, type Context, type M
 import { AgentSession, convertToLlm, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
 
 export const CONTEXT_FORK = "rqw:context-fork:v1";
+/** RQW-prompt's startup projection channel (literal, no import across folders). */
+const STARTUP_PROJECTION = "rqw-prompt:startup-projection";
 // Transport identity only; unlike sessionId, this never registers a main-request snapshot.
 const SESSION_IDENTITY = Symbol.for("rqw-anthropic/session-identity");
 /** The reply shape of Codex's own prediction call: `{ suggestion: string | null }`. */
@@ -101,12 +103,41 @@ export function installContext(pi: ExtensionAPI): PredictionContext {
 	let snapshot: Snapshot | undefined;
 	let release: (() => void) | undefined;
 
+	/**
+	 * Before the first run of this process, e.g. right after a resume, Pi's prompt is still its stock one: extensions
+	 * replace the prefix only in before_agent_start. The startup projection gives the prompt the next main request
+	 * will carry. Undefined when a run has already set the prompt or Pi's shape is not the expected one.
+	 */
+	function startupPrompt(ctx: ExtensionContext): string | undefined {
+		const session = sessionOf(ctx);
+		if (!session) return undefined;
+		const internals = session as unknown as { _baseSystemPromptOptions?: Record<string, unknown>; _runSystemPromptOptions?: unknown; _hiddenDeclarations?: Set<string> };
+		const getter = (Object.getOwnPropertyDescriptor(session, "systemPrompt")
+			?? Object.getOwnPropertyDescriptor(AgentSession.prototype, "systemPrompt"))?.get;
+		if (internals._runSystemPromptOptions !== undefined || !internals._baseSystemPromptOptions) return undefined;
+		if (!(internals._hiddenDeclarations instanceof Set) || typeof getter !== "function" || typeof session.getActiveToolNames !== "function") return undefined;
+		try {
+			const options = structuredClone(internals._baseSystemPromptOptions);
+			options.selectedTools = session.getActiveToolNames();
+			options.hiddenTools = [...internals._hiddenDeclarations];
+			const request = { options, model: ctx.model, error: undefined as string | undefined };
+			pi.events.emit(STARTUP_PROJECTION, request);
+			if (request.error) return undefined;
+			internals._runSystemPromptOptions = options;
+			try {
+				const projected: unknown = getter.call(session);
+				return typeof projected === "string" && projected.trim() ? projected : undefined;
+			} finally { internals._runSystemPromptOptions = undefined; }
+		} catch { return undefined; }
+	}
+
 	/** The prompt and the active tool declarations; only the chat without a recorded request needs it. */
 	function systemOf(ctx: ExtensionContext): SystemMessage {
 		const active = new Set(pi.getActiveTools());
 		const tools = pi.getAllTools().filter(tool => active.has(tool.name))
 			.map(({ name, description, parameters }) => ({ name, description, parameters }));
-		return { role: "system", content: ctx.getSystemPrompt(), toolsAdded: tools, timestamp: Date.now() };
+		const prompt = startupPrompt(ctx) ?? ctx.getSystemPrompt();
+		return { role: "system", content: prompt, toolsAdded: tools, timestamp: Date.now() };
 	}
 
 	function messagesOf(ctx: ExtensionContext, capture: Capture): Message[] {

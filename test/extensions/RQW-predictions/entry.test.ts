@@ -66,6 +66,29 @@ describe("RQW-predictions through the extension entry", () => {
 		assert.ok(String(last(h.forks[2].context).content).startsWith("SERVED PROMPT 2\n"));
 	});
 
+	it("right after a resume, before any main request, Ctrl+E sends the prompt the next main request will carry", async () => {
+		const h = harness({ entry: true, fork: false });
+		// Pi before its first run: the prompt getter still builds the stock prompt from the base options.
+		Object.defineProperties(h.session, {
+			_baseSystemPromptOptions: { value: { selectedTools: [], hiddenTools: [] } },
+			_runSystemPromptOptions: { value: undefined, writable: true },
+			_hiddenDeclarations: { value: new Set() },
+			getActiveToolNames: { value: () => ["read"] },
+			systemPrompt: { get() { return (this._runSystemPromptOptions as { customPrompt?: string } | undefined)?.customPrompt ?? "STOCK PI PROMPT"; } },
+		});
+		h.ctx.getSystemPrompt = () => (h.session as unknown as { systemPrompt: string }).systemPrompt;
+		// RQW-prompt's side of the startup projection.
+		h.events.on("rqw-prompt:startup-projection", data => { (data as { options: { customPrompt?: string } }).options.customPrompt = "RQW PROMPT"; });
+		h.key("\x05");
+		await until(() => h.provider.length === 1);
+		assert.equal(calls.length, 1);
+		assert.equal(h.provider.length, 1);
+		const [system] = h.provider[0].context.messages;
+		assert.equal(system.role, "system");
+		assert.equal(system.content, "RQW PROMPT");
+		assert.equal(h.ctx.getSystemPrompt(), "STOCK PI PROMPT", "Pi's own prompt state is left as it was");
+	});
+
 	it("without a saved login no request is made and a manual run says why", async () => {
 		writeFileSync(join(dir, "auth.json"), "{}");
 		const h = harness({ entry: true });
