@@ -281,7 +281,7 @@ function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<sym
 	for (const name of ["_runAutoCompaction", "compact"]) {
 		wrap(name, (original) => function (...args) {
 			if (!owned()) return original.apply(this, args);
-			supersede(background(this), name === "compact" ? "manual" : args[0]);
+			const finishBackground = supersede(background(this), name === "compact" ? "manual" : args[0]);
 			if (name === "compact") {
 				const session = this;
 				// Native compact aborts the current run before reading settings. Read its response limits then, not now.
@@ -291,7 +291,7 @@ function wrapRouting(proto: RoutingPrototype, runtime: ModelRuntime & Record<sym
 			}
 			const scope = physicalScope.getStore();
 			const physical = scope?.session === this ? scope.physical : this._limitsModel();
-			return withPhysical(this, physical, () => original.apply(this, args));
+			return Promise.resolve(withPhysical(this, physical, () => original.apply(this, args))).finally(finishBackground);
 		});
 	}
 	proto[WRAPPED_ROUTING] = true;

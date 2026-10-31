@@ -6983,3 +6983,20 @@ Archived by the remove-continue change; exact commit: `git log -S'A-0391' -- DEC
 Verbatim replaced text of `[D-PREDICTIONS]`:
 
 > It starts automatically after each finished answer and on Ctrl+E, and is skipped while the owner's queued messages wait.
+
+## A-0392 · archived 2026-10-31 · Context · Background compaction at the threshold
+
+Status: SUPERSEDED by `[D-CONTEXT-BACKGROUND]` (DECISIONS.md#context): Pi waits at the threshold.
+Source: `c39163c:DECISIONS.md`, `[D-CONTEXT-BACKGROUND]`. Archived by the background-compaction wait change.
+Verbatim replaced text:
+
+> summarized projected input. Not ready, stale, manual or overflow: the background request is aborted and Pi compacts
+>   normally, without waiting.
+>
+> `dispose()`. Entering a manual, overflow or not-ready threshold compaction aborts the request, even if a handler
+>   replaces the generator. A shape-checked `dispose` wrapper aborts a stopped subagent's request.
+>
+>   Coordinator text: adopting as soon as ready, no waiting at Pi's threshold, placement in RQW-context, children,
+>   model-switch retention, one attempt per generation and the local helper copy are design choices the owner approved
+>
+>   Reason: Codex's background mechanics with Pi's own summary, off the critical path, without timers or polling.

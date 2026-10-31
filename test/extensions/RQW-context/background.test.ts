@@ -394,23 +394,99 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		assert.deepEqual([...later.fileOps.written], ["B"]);
 	});
 
-	for (const [name, run] of [
-		["at Pi's threshold", (h: Awaited<ReturnType<typeof harness>>) => h.say(0.22)],
-		["on manual compaction", (h: Awaited<ReturnType<typeof harness>>) => h.session.compact()],
-	] as const) {
-		it(`a summary not ready ${name} is aborted and Pi compacts normally, without waiting`, async () => {
-			const h = await harness();
-			h.control.hold = true;
-			await toBackground(h);
-			const done = run(h);
-			await h.summary(2);
-			assert.equal(h.summaries[0].aborted, true);
-			h.release("FOREGROUND");
-			await done;
-			assert.equal(h.compactions().length, 1);
-			assert.match(h.compactions()[0].summary, /^FOREGROUND/);
-		});
-	}
+	it("waits at the threshold and uses the running background summary", async () => {
+		let entered!: () => void;
+		const threshold = new Promise<void>((resolve) => { entered = resolve; });
+		const h = await harness({}, (pi) => pi.on("session_before_compact", () => { entered(); }));
+		h.control.hold = true;
+		await toBackground(h);
+		const done = h.say(0.22);
+		await threshold;
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		try {
+			assert.equal(h.summaries.length, 1);
+			assert.equal(h.summaries[0].aborted, false);
+			assert.deepEqual(h.status.map((item: any) => item.active), [true]);
+			assert.equal(h.compactions().length, 0);
+		} finally {
+			for (const summary of h.summaries) summary.resolve("BACKGROUND");
+		}
+		await done;
+		assert.equal(h.summaries.length, 1);
+		assert.match(h.compactions()[0].summary, /^BACKGROUND/);
+		assert.deepEqual(h.status.map((item: any) => item.active), [true, false]);
+	});
+
+	it("waits for a failed background summary, then compacts normally", async () => {
+		let entered!: () => void;
+		const threshold = new Promise<void>((resolve) => { entered = resolve; });
+		const h = await harness({}, (pi) => pi.on("session_before_compact", () => { entered(); }));
+		h.control.hold = true;
+		await toBackground(h);
+		const done = h.say(0.22);
+		await threshold;
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		try {
+			assert.equal(h.summaries.length, 1);
+			assert.equal(h.summaries[0].aborted, false);
+		} finally {
+			h.summaries[0].reject(new Error("summary failed"));
+		}
+		await h.summary(2);
+		h.summaries[1].resolve("FOREGROUND");
+		await done;
+		assert.equal(h.compactions().length, 1);
+		assert.match(h.compactions()[0].summary, /^FOREGROUND/);
+	});
+
+	it("a summary that becomes stale during the wait is not used", async () => {
+		let entered!: () => void;
+		const threshold = new Promise<void>((resolve) => { entered = resolve; });
+		const h = await harness({}, (pi) => pi.on("session_before_compact", () => { entered(); }));
+		h.control.hold = true;
+		await toBackground(h);
+		const done = h.say(0.22);
+		await threshold;
+		h.manager.appendContextEdit(userIds(h)[0], { content: [{ type: "text", text: "changed" }] } as never);
+		h.summaries[0].resolve("STALE");
+		await h.summary(2);
+		h.summaries[1].resolve("FOREGROUND");
+		await done;
+		assert.match(h.compactions()[0].summary, /^FOREGROUND/);
+	});
+
+	it("aborting compaction ends the wait even when the background request ignores abort", async () => {
+		let entered!: () => void;
+		const threshold = new Promise<void>((resolve) => { entered = resolve; });
+		const h = await harness({}, (pi) => pi.on("session_before_compact", () => { entered(); }));
+		h.control.hold = true;
+		h.control.stubborn = true;
+		await toBackground(h);
+		const done = h.say(0.22);
+		await threshold;
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		assert.equal(h.session.isCompacting, true);
+		h.session.abortCompaction();
+		await done;
+		assert.equal(h.summaries[0].aborted, true);
+		assert.equal(h.summaries.length, 1);
+		assert.equal(h.compactions().length, 0);
+		assert.deepEqual(h.status.map((item: any) => item.active), [true, false]);
+		h.summaries[0].resolve("LATE");
+	});
+
+	it("a running summary is aborted for manual compaction", async () => {
+		const h = await harness();
+		h.control.hold = true;
+		await toBackground(h);
+		const done = h.session.compact();
+		await h.summary(2);
+		assert.equal(h.summaries[0].aborted, true);
+		h.release("FOREGROUND");
+		await done;
+		assert.equal(h.compactions().length, 1);
+		assert.match(h.compactions()[0].summary, /^FOREGROUND/);
+	});
 	it("overflow: a ready background summary is not used, Pi's normal overflow recovery summarizes", async () => {
 		const h = await harness();
 		h.control.hold = true;

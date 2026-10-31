@@ -736,12 +736,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `firstKeptEntryId` is the snapshot cut, so everything written meanwhile stays verbatim; `tokensBefore` comes from
   Pi's later preparation; file lists are the snapshot's, once. Fresh means the same base compaction, the snapshot leaf
   and cut still on the branch, no `context_edit` of a dependency, and an unchanged serialized previous compaction and
-  summarized projected input. Not ready, stale, manual or overflow: the background request is aborted and Pi compacts
-  normally, without waiting. Before each request the session dispatch `rqw:background-summary:v1` `{ type, signal }`
+  summarized projected input. At the threshold Pi waits for a running background request and takes its fresh result; failure,
+  abort or staleness falls back to normal compaction. Manual and overflow compaction abort it without waiting. Before each request the session dispatch `rqw:background-summary:v1` `{ type, signal }`
   lets a transport route it. The session's `pi.events` channel `rqw-context:background-compaction` carries
   `{ sessionId, active }`: true when the request starts, false once when it ends in any way, also on supersede, shutdown or
-  `dispose()`. Entering a manual, overflow or not-ready threshold compaction aborts the request, even if a handler
-  replaces the generator. A shape-checked `dispose` wrapper aborts a stopped subagent's request.
+  `dispose()`. Manual and overflow compaction abort the request; threshold compaction also aborts it when a handler
+  cancels or replaces the generator. Cancelling Pi's compaction aborts the wait and the request. A shape-checked `dispose`
+  wrapper aborts a stopped subagent's request.
   Children run the same mechanism through the shared prototypes, but load no RQW-context instance: they get no status
   event and no shutdown abort. A model switch keeps the candidate. Pi 1.4.0 refuses `context_edit` on a compaction
   entry; the dependency check still rejects one. The copied helpers must be compared with Pi on every Pi update.
@@ -754,10 +755,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   design's «no background progress UI»: «надо сделать какую-то анимацию фонового compaction ... в статус-баре ...
   справа от папки чтобы был золотой переливающийся статус ... что-то минималистичное»; mockup variant 2:
   «2й вариант толье вместо бекграунд бг просто»; «тона только для лимитов не для компакшена».
-  Coordinator text: adopting as soon as ready, no waiting at Pi's threshold, placement in RQW-context, children,
+  Owner, verbatim: «Еще смотри какая хуйня: если у нас идет BG compaction, если он активно идёт и мы достигли лимита compaction, и при этом BG compaction не закончил, то мы дожидаемся, пока он закончится. И как только он успешно завершится, мы начинаем следующий ход уже с ним. Так должно работать. Я так считаю, надо сделать.» «А сейчас я не знаю, как работает, но надо, чтобы было так.»
+  Coordinator text: adopting as soon as ready, placement in RQW-context, children,
   model-switch retention, one attempt per generation and the local helper copy are design choices the owner approved
   with the 7.5 SP design, not owner quotations.
-  Reason: Codex's background mechanics with Pi's own summary, off the critical path, without timers or polling.
+  Reason: reuse Pi's background summary and avoid a duplicate request at the threshold, without timers or polling.
   Carrier: `extensions/RQW-context/background.ts`, `extensions/RQW-context/index.ts` (checkpoint force),
   `extensions/RQW-context/README.md`. Since: background-compaction delivery.
 

@@ -40,6 +40,7 @@ export type Snapshot = {
 };
 type Candidate = Omit<Snapshot, "preparation"> & {
 	base: string | null; leafId: string | undefined; controller: AbortController; result?: Result;
+	done?: Promise<void>;
 	/** Reports the end of this request on the status channel, once, however and whenever it ends. */
 	close?: () => void;
 };
@@ -217,13 +218,11 @@ function cancel(candidate: Candidate | undefined): void {
 	candidate.close?.();
 }
 
-/**
- * Pi enters a compaction path. Anything but taking a ready, fresh summary at the threshold ends the background request
- * now, also when a `session_before_compact` handler cancels or supplies its own compaction and Pi never asks the generator.
- */
-export function supersede(session: BackgroundSession, reason: unknown): void {
+/** Preserve a threshold candidate through Pi's hooks; always close it when that compaction ends. */
+export function supersede(session: BackgroundSession, reason: unknown): () => void {
 	const candidate = state.candidates.get(session.sessionManager);
-	if (candidate && !(reason === "threshold" && ready(session))) cancel(candidate);
+	if (candidate && reason !== "threshold") cancel(candidate);
+	return () => cancel(candidate);
 }
 
 /** Checkpoint force: a ready summary that is still fresh. Costs nothing without a ready result. */
@@ -259,11 +258,14 @@ export function maybeStart(session: BackgroundSession, physical: unknown): void 
 	if (!preparation) return;
 	const sessionId = manager.getSessionId();
 	const events = state.events.get(manager);
+	let finish!: () => void;
+	candidate.done = new Promise<void>((resolve) => { finish = resolve; });
 	let open = true;
 	candidate.close = () => {
 		if (!open) return;
 		open = false;
 		events?.emit(BACKGROUND_EVENT, { sessionId, active: false });
+		finish();
 	};
 	events?.emit(BACKGROUND_EVENT, { sessionId, active: true });
 	state.own.run(true, async () => {
@@ -299,17 +301,28 @@ export function installBackground(proto: Record<string | symbol, any>, owned: ()
 		return;
 	}
 	const original = descriptor.value as Generator;
-	proto._runDefaultCompaction = function (this: BackgroundSession, ...args: any[]) {
+	proto._runDefaultCompaction = async function (this: BackgroundSession, ...args: any[]) {
 		if (!owned() || state.own.getStore()) return original.apply(this, args);
-		const [preparation, , , , reason] = args as [{ tokensBefore: number }, unknown, unknown, unknown, string];
+		const [preparation, , , signal, reason] = args as [{ tokensBefore: number }, unknown, unknown, AbortSignal, string];
 		const candidate = state.candidates.get(this.sessionManager);
-		// Checked again here: session_before_compact handlers ran after the checkpoint.
+		if (reason === "threshold" && candidate?.done && signal && typeof signal.addEventListener === "function" &&
+			typeof signal.removeEventListener === "function" && typeof signal.throwIfAborted === "function") {
+			const abort = () => cancel(candidate);
+			signal.addEventListener("abort", abort, { once: true });
+			try {
+				if (signal.aborted) abort();
+				await candidate.done;
+				signal.throwIfAborted();
+			} finally {
+				signal.removeEventListener("abort", abort);
+			}
+		}
+		// Checked after the wait: handlers or other work may have changed the snapshot.
 		if (reason === "threshold" && candidate?.result && fresh(this.sessionManager, candidate)) {
 			const result = candidate.result;
 			candidate.result = undefined;
-			return Promise.resolve({ ...result, firstKeptEntryId: candidate.keptId, tokensBefore: preparation.tokensBefore });
+			return { ...result, firstKeptEntryId: candidate.keptId, tokensBefore: preparation.tokensBefore };
 		}
-		// Manual, overflow, not ready or stale: Pi compacts normally, without waiting.
 		cancel(candidate);
 		return original.apply(this, args);
 	};
