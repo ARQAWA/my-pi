@@ -31,17 +31,19 @@ export function forkPayloads() {
 			const original = session.agent.streamFunction;
 			let active = true;
 			const wrapped: typeof original = (model, context, options) => {
-				if (!active || model.api !== "anthropic-messages" || options?.sessionId !== session.sessionManager.getSessionId()) return original(model, context, options);
+				if (!active || !["anthropic-messages", "openai-codex-responses"].includes(model.api) || options?.sessionId !== session.sessionManager.getSessionId()) return original(model, context, options);
 				const onPayload = options.onPayload;
-				return original(model, context, { ...options, async onPayload(payload, requestModel) {
-					const transformed = await onPayload?.(payload, requestModel) ?? payload;
-					if (active) {
-						last = undefined;
-						if (transformed && typeof transformed === "object" && !Array.isArray(transformed)) {
-							try { last = { model, payload: structuredClone(transformed as Record<string, unknown>), options: { cacheRetention: options.cacheRetention, sessionId: options.sessionId, reasoning: options.reasoning } }; }
-							catch { /* An uncopyable payload leaves forking unavailable, not the caller's request. */ }
-						}
+				const capture = (payload: unknown) => {
+					if (!active) return;
+					last = undefined;
+					if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+						try { last = { model, payload: structuredClone(payload as Record<string, unknown>), options: { cacheRetention: options.cacheRetention, sessionId: options.sessionId, reasoning: options.reasoning } }; }
+						catch { /* An uncopyable payload leaves forking unavailable, not the caller's request. */ }
 					}
+				};
+				return original(model, context, { ...options, onPreparedPayload: capture, async onPayload(payload, requestModel) {
+					const transformed = await onPayload?.(payload, requestModel) ?? payload;
+					capture(transformed);
 					return transformed;
 				} });
 			};

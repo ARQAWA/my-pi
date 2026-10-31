@@ -95,6 +95,8 @@ export interface TurnInfo {
 
 /** Pi stream options plus the Codex-specific fields this facade reads. */
 export type CodexStreamOptions = StreamOptions & {
+	/** Optional observer of the validated body, after transport-enforced changes. */
+	onPreparedPayload?: (body: Record<string, unknown>) => void;
 	reasoningEffort?: string;
 	reasoning?: string;
 	reasoningSummary?: WireOptions["reasoningSummary"];
@@ -934,7 +936,10 @@ export class CodexThreadTransport {
 		}));
 		// [D-CODEX-PARALLEL] a hook cannot turn parallel tool calls off; set after the hook, the sent body always carries true.
 		body.parallel_tool_calls = true;
-		if (durable) this.#history?.preparedRequest?.(body);
+		if (durable) {
+			options.onPreparedPayload?.(body);
+			this.#history?.preparedRequest?.(body);
+		}
 		return body;
 	}
 

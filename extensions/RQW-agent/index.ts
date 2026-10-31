@@ -1134,11 +1134,19 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					if (first && options?.sessionId !== manager.getSessionId()) return stream(model, context, options);
 					if (first) {
 						const onPayload = options?.onPayload;
-						return stream(model, context, { ...options, sessionId: first.source.options.sessionId,
-							cacheRetention: first.source.options.cacheRetention, async onPayload(payload, requestModel) {
+						return stream(model, context, { ...options,
+							...(model.api === "anthropic-messages"
+								? { sessionId: first.source.options.sessionId, cacheRetention: first.source.options.cacheRetention }
+								: { serviceTier: first.source.payload.service_tier ?? "default" }),
+							async onPayload(payload, requestModel) {
 								await onPayload?.(payload, requestModel);
 								const copy = structuredClone(first.source.payload);
-								(copy.messages as unknown[]).push({ role: "user", content: [{ type: "text", text: first.task }] });
+								if (model.api === "anthropic-messages") {
+									(copy.messages as unknown[]).push({ role: "user", content: [{ type: "text", text: first.task }] });
+								} else {
+									delete copy.previous_response_id;
+									(copy.input as unknown[]).push({ type: "message", role: "user", content: [{ type: "input_text", text: first.task }] });
+								}
 								pendingPayload = undefined;
 								return copy;
 							} });
@@ -1513,8 +1521,11 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (params.fork_turns === "all" && [params.model, params.thinking, params.agent_type, params.system, params.system_file, params.role, params.role_file, params.include].some(value => value !== undefined))
 				throw new Error("fork_turns all cannot be combined with model, thinking, agent_type, system, system_file, role, role_file or include");
 			const fork = params.fork_turns === "all" ? { seed: forkBranch(ctx.sessionManager.getBranch()), system: ctx.getSystemPrompt(), model: ctx.model, thinking: pi.getThinkingLevel(), tools: pi.getActiveTools(), payload: payloads.get() } : undefined;
-			if (fork?.model?.api === "anthropic-messages" && (!fork.payload || fork.payload.model.id !== fork.model.id || fork.payload.model.provider !== fork.model.provider || !Array.isArray(fork.payload.payload.messages)))
-				throw new Error("Cannot fork Anthropic: caller's last provider payload is unavailable");
+			if (fork?.model && ["anthropic-messages", "openai-codex-responses"].includes(fork.model.api)) {
+				const anthropic = fork.model.api === "anthropic-messages";
+				if (!fork.payload || fork.payload.model.id !== fork.model.id || fork.payload.model.provider !== fork.model.provider || fork.payload.model.api !== fork.model.api || !Array.isArray(fork.payload.payload[anthropic ? "messages" : "input"]))
+					throw new Error(`Cannot fork ${anthropic ? "Anthropic" : "Codex"}: caller's last provider payload is unavailable`);
+			}
 			// Queue only registration/snapshot, never the waiting Promise or a tool that ignores abort.
 			if (params.action === "wait") {
 				const registration = coordinator.queue.then(async () => {
@@ -1579,7 +1590,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				config.settings = childSettings(pi.getSettings());
 				config.builtins = BUILTIN_TOOLS.filter(name => (fork?.tools ?? pi.getActiveTools()).includes(name));
 				const manager = createChildManager(ctx.sessionManager, ctx.cwd, name, id, fork?.seed);
-				const firstPayload = fork?.model?.api === "anthropic-messages" && fork.payload ? { source: fork.payload, task: task! } : undefined;
+				const firstPayload = fork?.model && ["anthropic-messages", "openai-codex-responses"].includes(fork.model.api) && fork.payload ? { source: fork.payload, task: task! } : undefined;
 				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`, manager, false, undefined, firstPayload);
 				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, state: "idle", fast, sends: [], ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };
 				agents.set(id, a);
