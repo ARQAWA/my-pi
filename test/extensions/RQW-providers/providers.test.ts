@@ -38,14 +38,14 @@ it("returns only allowed providers while owned and restores all results on relea
 	assert.equal(session.scopedModels.length, models.length);
 });
 
-it("does not show kimi-coding as a provider", () => {
-	models.push({ id: "kimi-for-coding", provider: "kimi-coding" });
+it("does not show other-provider as a provider", () => {
+	models.push({ id: "other-model", provider: "other-provider" });
 	try {
 		const visibility = installVisibility(Runtime as never, Session as never);
 		const session = new Session();
 		visibility.own(session as never, () => true);
-		assert.ok(!session.modelRuntime.getProviders().some(provider => provider.id === "kimi-coding"));
-		assert.ok(!session.modelRuntime.getModels().some(model => model.provider === "kimi-coding"));
+		assert.ok(!session.modelRuntime.getProviders().some(provider => provider.id === "other-provider"));
+		assert.ok(!session.modelRuntime.getModels().some(model => model.provider === "other-provider"));
 		visibility.release();
 	} finally { models.pop(); }
 });
