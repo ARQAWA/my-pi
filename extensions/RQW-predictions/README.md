@@ -11,6 +11,10 @@ Nothing is sent by the extension; every other mode and every child session stays
   In every chat state (turn running, background only, idle, queued messages) it works: it generates at once, also
   repeats a failed run, and pressed while a request runs it cancels it: the footer status turns maroon for 2000 ms.
   Ctrl+R is freed from Pi's actions and does nothing here; RQW-send-now takes it to restart an interrupted turn.
+- An expired or rejected Codex login (saved token past `expires`, HTTP 401 from the prompt endpoint, or an `openai-codex`
+  model answering 401) shows `Ctrl+E failed: Codex token expired or rejected. Run /login openai-codex` in bold bright red
+  in the footer status key `rqw-predictions-error` for 5000 ms, then it disappears; a new Ctrl+E does not cut it short. The
+  token is never refreshed here and the hint stays. RQW-statusbar hides only the key `rqw-predictions`, so this one shows.
 - The request is a fork of what the main model last saw (the shared `rqw:context-fork:v1` contract, as `/btw`);
   without a transport offer it is one direct `streamSimple` call. The last user message is the prompt Codex serves,
   the JSON reply instruction and the owner's rule «if there is no obvious next user message, set suggestion to null».
@@ -18,7 +22,9 @@ Nothing is sent by the extension; every other mode and every child session stays
 - The prompt comes from `codex-prompt.ts`: Codex's own endpoint, the saved `openai-codex` login read-only, a 300000 ms cache.
   Predictions therefore need that login also in an Anthropic chat.
 - The suggestion is kept until the next finished answer. Typing hides it, clearing the input shows the same one again.
-  It is drawn whole and wrapped, in the theme's `dim` colour; the real buffer stays `""` until Tab.
+  It is drawn in the theme's `dim` colour, wrapped by the editor's own layout (`layoutText`) and cut at the editor's own
+  height limit (30% of the terminal rows, five at the least), so the input grows exactly as if the text were typed; there is
+  no scrolling. The real buffer stays `""` until Tab.
   Tab inserts it as one undoable edit. Enter, Right, Shift+Tab and key releases do nothing special.
 - In an empty input the key hint is dim and italic, two spaces after the cursor. A chat with a saved Codex login and an
   answer shows `ctrl+e to suggest` in every state, also while a request runs. It is the only hint of the input. The Esc
@@ -45,5 +51,5 @@ indicator from the channel, so the status stays right after `/statusbar off`. A 
 
 - Own folder only; no import from another extension. Each of RQW-statusbar, RQW-skill-dollar and the transports can be off.
 - The editor is decorated in place (`render`, `handleInput`); an editor shape other than border, one row, border stays stock.
-- Not done: scrolling of a suggestion taller than the screen (it is drawn whole), and speed measurements on macOS and Windows.
+- Not done: speed measurements on macOS and Windows. A suggestion taller than the editor's height limit is cut there, as typed text would be, with no scrolling.
 - Tests: `test/extensions/RQW-predictions/`.

@@ -438,3 +438,27 @@ describe("RQW-predictions context", () => {
 		assert.equal(JSON.stringify(messages).includes("c2"), false);
 	});
 });
+
+describe("RQW-predictions token errors", () => {
+	const plain = (row: string) => strip(row.replace(/\x1b_[^\x07]*\x07/g, ""));
+	const errorStatus = (h: ReturnType<typeof harness>) => h.keyed.filter(([key]) => key === "rqw-predictions-error");
+
+	it("a Codex model answering 401 shows it, and the Ctrl+E hint stays", async (t) => {
+		t.mock.timers.enable({ apis: ["setTimeout"] });
+		const h = harness({ replies: [{ ...failure(), errorMessage: "401 Unauthorized" }] });
+		h.setModel(OTHER);
+		h.answer();
+		h.key(CTRL_E);
+		await settle();
+		assert.match(strip(errorStatus(h).at(-1)![1]!), /Codex token expired or rejected/);
+		assert.equal(plain(h.screen()[1]).trim(), "ctrl+e to suggest");
+	});
+
+	it("an Anthropic 401 is not a Codex token failure", async () => {
+		const h = harness({ replies: [{ ...failure(), errorMessage: "401 Unauthorized" }] });
+		h.asked();
+		await settle();
+		assert.deepEqual(errorStatus(h), []);
+		assert.equal(h.notes.length, 1);
+	});
+});

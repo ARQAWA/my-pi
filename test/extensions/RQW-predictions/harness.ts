@@ -102,7 +102,9 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 	const activity: Activity[] = [];
 	events.on(ACTIVITY, data => { activity.push(data as Activity); });
 
+	/** The prediction key's values; `keyed` has every status call with its key. */
 	const statuses: (string | undefined)[] = [];
+	const keyed: [string, string | undefined][] = [];
 	const notes: string[] = [];
 	const inputListeners: ((data: string) => unknown)[] = [];
 	const theme = {
@@ -159,7 +161,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 			theme,
 			getEditorText: () => editor.getText(), setEditorText: (value: string) => editor.setText(value),
 			notify: (message: string) => notes.push(message),
-			setStatus: (_key: string, value: string | undefined) => statuses.push(value),
+			setStatus: (key: string, value: string | undefined) => { keyed.push([key, value]); if (key === "rqw-predictions") statuses.push(value); },
 			setWidget: (_key: string, factory: unknown) => { if (typeof factory === "function") (factory as (tui: unknown) => unknown)(tui); },
 			onTerminalInput(listener: (data: string) => unknown) { inputListeners.push(listener); return () => { inputListeners.splice(inputListeners.indexOf(listener), 1); }; },
 		},
@@ -169,7 +171,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 
 	let answers = 0;
 	const h = {
-		ctx, theme, state, reached, main, forks, provider, notes, statuses, activity, gets, cleared, sent, events, editor, controller, fire, session, clock, original, agent, viewport,
+		ctx, theme, state, reached, main, forks, provider, notes, statuses, keyed, activity, gets, cleared, sent, events, editor, controller, fire, session, clock, original, agent, viewport,
 		setFocus(component: unknown) { focus = component; },
 		/** A main request, as the agent loop makes it. */
 		request: (context: Context, options: Record<string, unknown> = { sessionId: "main" }) =>

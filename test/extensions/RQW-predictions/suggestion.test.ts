@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
+import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { CTRL_E, deferred, DIM, harness, settle, suggestion, text } from "./harness.ts";
 
@@ -115,10 +116,40 @@ describe("RQW-predictions gray suggestion", () => {
 		assert.ok(h.screen(60).length < rows.length);
 	});
 
-	it("a text taller than the screen is still drawn whole", async () => {
+	it("wraps and grows exactly like the same text typed into the editor", async () => {
+		const texts = [
+			"Please run the whole suite again, then compare the results with the last green build",
+			"averyveryverylongwordwithoutanyspaces and then some more words after it",
+			"two  spaces   and three   inside a sentence that wraps around twice more",
+			"漢字かな交じり文を折り返す漢字かな交じり文を折り返す\n\nthird line after a blank one",
+		];
+		for (const columns of [24, 37]) for (const value of texts) {
+			const typed = new CustomEditor({ requestRender() {}, terminal: { rows: 40, columns } } as never,
+				{ borderColor: (row: string) => row, selectList: {} } as never, { matches: () => false } as never);
+			typed.setText(value);
+			const h = await ready(value);
+			assert.deepEqual(body(h.screen(columns)).map(row => row.trimEnd()), body(typed.render(columns)).map(row => row.trimEnd()), `${columns}: ${value}`);
+		}
+	});
+
+	it("a tall text gets the same height as the same text typed: 30% of the terminal rows, no scrolling widget of its own", async () => {
 		const tall = Array.from({ length: 70 }, (_, i) => `step ${i}`).join("\n");
+		const typed = new CustomEditor({ requestRender() {}, terminal: { rows: 40, columns: 80 } } as never,
+			{ borderColor: (row: string) => row, selectList: {} } as never, { matches: () => false } as never);
+		typed.setText(tall);
 		const h = await ready(tall);
-		assert.equal(h.screen().length, 72);
+		const rows = h.screen();
+		assert.equal(rows.length, typed.render(80).length);
+		assert.equal(rows.length, 14);
+		assert.equal(plain(rows[1]).trimEnd(), "step 0");
+		assert.equal(plain(rows[2]), "step 1".padEnd(80));
+		assert.equal(plain(rows.at(-1)!), "─".repeat(80));
+		// A terminal of another height changes the limit, also at the same width.
+		(h.editor as unknown as { tui: { terminal: { rows: number } } }).tui.terminal.rows = 20;
+		assert.equal(h.screen().length, 8);
+		// Drawing it never leaves the suggestion in the editor's buffer.
+		assert.equal(h.editor.getText(), "");
+		assert.deepEqual(h.editor.getCursor(), { line: 0, col: 0 });
 	});
 
 	it("Tab is one undo step", async () => {
@@ -172,12 +203,12 @@ describe("RQW-predictions gray suggestion", () => {
 	});
 
 	it("repeated renders, as on animation frames, reuse the built rows; a new width or theme rebuilds them", async () => {
-		const long = Array.from({ length: 12 }, (_, i) => `step number ${i}`).join("\n");
+		const long = Array.from({ length: 6 }, (_, i) => `step number ${i}`).join("\n");
 		const h = await ready(long);
 		const first = h.screen();
 		const before = h.theme.paints;
 		for (let i = 0; i < 10; i++) assert.deepEqual(h.screen(), first);
-		// Twelve gray lines would cost 120 paints if each frame built them again.
+		// Six gray lines would cost 60 paints if each frame built them again.
 		assert.ok(h.theme.paints - before <= 10, `${h.theme.paints - before} paints`);
 
 		assert.ok(h.screen(8).length > first.length);

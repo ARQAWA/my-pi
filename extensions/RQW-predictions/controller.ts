@@ -1,12 +1,19 @@
 // The prediction lifecycle: runs only on the owner's Ctrl+E (start, or cancel while running), storage and the status.
 // Nothing here waits for the model: every run starts after control returns to the terminal.
 import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@earendil-works/pi-coding-agent";
+import { TokenError } from "./codex-prompt.ts";
 import { parseSuggestion, type PredictionContext } from "./context.ts";
 
 export const ACTIVITY = "rqw-predictions:activity";
 export const ACTIVITY_QUERY = "rqw-predictions:activity-query";
 const STATUS_KEY = "rqw-predictions";
 const ABORTED_MS = 2000;
+// RQW-statusbar hides STATUS_KEY and draws its own indicator, so the token error has a key of its own.
+const TOKEN_ERROR_KEY = "rqw-predictions-error";
+const TOKEN_ERROR_MS = 5000;
+const TOKEN_ERROR_TEXT = "Ctrl+E failed: Codex token expired or rejected. Run /login openai-codex";
+// Bold, bright red, whatever the theme.
+const BRIGHT_RED = "\x1b[1;91m";
 
 /** `abortedUntil` is a `performance.now()` value of this process. */
 export type Activity = { sessionId: string; state: "brewing" | "aborted" | "idle"; abortedUntil?: number };
@@ -45,6 +52,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 	let current: Run | undefined;
 	let abortedUntil: number | undefined;
 	let abortedTimer: ReturnType<typeof setTimeout> | undefined;
+	let tokenErrorTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const activity = (): Activity => {
 		const sessionId = ctx?.sessionManager.getSessionId() ?? "";
@@ -76,6 +84,26 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		abortedUntil = undefined;
 	}
 
+	function clearTokenError() {
+		if (!tokenErrorTimer) return;
+		clearTimeout(tokenErrorTimer);
+		tokenErrorTimer = undefined;
+		ctx?.ui.setStatus(TOKEN_ERROR_KEY, undefined);
+	}
+
+	function showTokenError(session: ExtensionContext) {
+		clearTokenError();
+		session.ui.setStatus(TOKEN_ERROR_KEY, `${BRIGHT_RED}${TOKEN_ERROR_TEXT}\x1b[22;39m`);
+		tokenErrorTimer = setTimeout(clearTokenError, TOKEN_ERROR_MS);
+	}
+
+	/** An expired or rejected Codex login, from the prompt source or from the Codex model's own answer. */
+	function isTokenFailure(error: unknown, session: ExtensionContext): boolean {
+		if (error instanceof TokenError) return true;
+		const message = error instanceof Error ? error.message : String(error);
+		return session.model?.provider === "openai-codex" && /\b401\b|unauthorized/i.test(message);
+	}
+
 	/** Ends the live request, if any, without any paint. Later results of it are ignored. */
 	function drop(): boolean {
 		if (!current) return false;
@@ -104,7 +132,9 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 			ready = parseSuggestion(message);
 			deps.changed?.();
 		} catch (error) {
-			if (live(run)) session.ui.notify(`Prediction failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+			if (!live(run)) return;
+			if (isTokenFailure(error, session)) showTokenError(session);
+			else session.ui.notify(`Prediction failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
 		} finally {
 			if (live(run)) {
 				current = undefined;
@@ -137,6 +167,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		if (ctx) pi.events.emit(ACTIVITY, { sessionId: ctx.sessionManager.getSessionId(), state: "idle" } satisfies Activity);
 		drop();
 		clearAborted();
+		clearTokenError();
 		ctx?.ui.setStatus(STATUS_KEY, undefined);
 		ctx = undefined;
 		ready = undefined;
