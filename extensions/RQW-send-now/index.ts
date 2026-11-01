@@ -16,7 +16,6 @@ import { interrupted, RESUME_NOTE, RESUME_TYPE } from "./resume.ts";
  * is set (the send was cancelled or never happened), its text also stays in the model's context.
  */
 export const ENTRY = "rqw-send-now";
-const POLL_MS = 20;
 /** Only Codex has the second Ctrl+Enter that forces; other providers force with Escape (and an empty Enter, as before). */
 const CODEX = "openai-codex";
 /** The wait tools' channel: `{ sessionId, call, open }` when a wait opens or closes (RQW-agent, RQW-tools). */
@@ -69,7 +68,8 @@ export default function sendNow(pi: ExtensionAPI) {
 	let escapeAt: number | undefined;
 	/** After a double Escape stopped the work, further presses are swallowed until then, so they cannot open the history. */
 	let escapeQuietUntil = 0;
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	/** Set when send() found Pi still busy: the session's next `agent_settled` event tries it again. */
+	let awaitingSettled = false;
 	let unsubscribe: (() => void) | undefined;
 	let tui: FocusTUI | undefined;
 	const sources = new Map<any, () => void>();
@@ -105,13 +105,12 @@ export default function sendNow(pi: ExtensionAPI) {
 	const joined = (steers: Steer[]) => steers.map((steer) => steer.text).filter((text) => text.trim()).join("\n\n");
 
 	function send() {
-		timer = undefined;
 		if (!pending) return;
 		const job = pending;
 		const { ctx, interrupted } = job;
 		// Abort ends with agent_settled; compaction or a run another extension starts meanwhile is waited out too.
 		if (!ctx.isIdle()) {
-			timer = setTimeout(send, POLL_MS);
+			awaitingSettled = true;
 			return;
 		}
 		pending = undefined;
@@ -369,6 +368,9 @@ export default function sendNow(pi: ExtensionAPI) {
 		try { stopSessionEvents = session?.subscribe?.((event: any) => {
 			if (event.type === "compaction_start") compacting = true;
 			if (event.type === "compaction_end") compacting = false;
+			// The session's own events come after every extension's agent_settled handler, so the run starts on a settled Pi.
+			// A manual compaction ends without agent_settled, so its end is a retry point too.
+			if ((event.type === "agent_settled" || event.type === "compaction_end") && awaitingSettled) { awaitingSettled = false; send(); }
 			if (event.type === "auto_retry_start") retrying = true;
 			if (event.type === "auto_retry_end") retrying = false;
 			if (["queue_update", "agent_start", "agent_end", "agent_settled", "compaction_start", "compaction_end", "auto_retry_start", "auto_retry_end"].includes(event.type)) updateHint();
@@ -392,8 +394,7 @@ export default function sendNow(pi: ExtensionAPI) {
 		unsubscribe?.();
 		unsubscribe = undefined;
 		tui = undefined;
-		if (timer) clearTimeout(timer);
-		timer = undefined;
+		awaitingSettled = false;
 		// Reload, /new, /resume or quit before the send: the text goes back to the editor, nothing is lost. Steering
 		// inputs still on their way keep being caught until they have settled, then they go back as well.
 		const job = pending;

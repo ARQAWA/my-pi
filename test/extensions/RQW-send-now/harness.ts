@@ -107,6 +107,8 @@ export function harness(t: TestContext, options: { factory?: typeof sendNow; pro
 		state, session, sent, entries, stops, notices, inputs, ctx, fire, events, manager, resumed,
 		press: (data = ESC) => input!(data),
 		tick: (ms: number) => t.mock.timers.tick(ms),
+		/** Pi's own `agent_settled` event, sent to the session's listeners after every extension handler ran. */
+		settle: () => session._emit({ type: "agent_settled", aborted: true }),
 		/** Lets promise chains finish; the fake clock does not touch setImmediate. */
 		flush: () => new Promise<void>((resolve) => setImmediate(resolve)),
 		/** A steering message queued through Pi's real queue method. */
