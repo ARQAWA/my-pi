@@ -1670,12 +1670,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   inline, print, JSON and RPC are unchanged. The TUI is reached through a `belowEditor` widget factory that renders no
   line; key releases are not consumed. Since: `72873eb`.
 - **Hint shows Esc** `[D-SCROLL-HINT]`. While Escape can jump, the fullscreen hint shows `Esc` with the configured bottom
-  keys (default `Esc/Ctrl+End`). `index.ts` replaces the `getKeybindings`/`setKeybindings` registry with a display facade
-  that decorates only `getKeys("tui.altScreen.bottom")`; matching and configuration delegate unchanged. Shutdown
-  restores the prior registry if it still owns the slot.
+  keys (default `Esc/Ctrl+End`). `index.ts` decorates `getKeys` of the live keybinding manager in place,
+  only for `"tui.altScreen.bottom"`; matching and configuration stay unchanged. Shutdown unlinks the decoration and
+  restores the manager's own or prototype `getKeys`.
   Owner: «Нашел баг: не Escape мы возвращаемся уже, а в надписи написано старый hotkey.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 727) Since: `8c29ff8`.
 - **Limits** `[D-SCROLL-LIMITS]`. A custom editor not extending `CustomEditor` gets stock Escape. With search open, the
-  first Escape closes search and the second jumps. The keybinding registry is process-global; the facade follows its
+  first Escape closes search and the second jumps. The keybinding manager is process-global; the decoration follows its
   owning interactive renderer. Since: `72873eb`.
 - **Proof** `[D-SCROLL-TESTS]`. Tests: `test/extensions/RQW-scroll/scroll.test.ts`. Since: `72873eb`.
 
