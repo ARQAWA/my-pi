@@ -56,13 +56,20 @@ function userSteers(queues: Queues): { at: number; steer: Steer }[] {
 	return found;
 }
 
-/** Takes the user messages out of one pair of Pi queues in one step; other messages stay. */
-function takeUserMessages(queues: Queues): Steer[] {
+/** Removes the user messages from one pair of Pi queues in one step, without an update; other messages stay. Returns each one with its delivery message. */
+function removeUserMessages(queues: Queues): { steer: Steer; message: unknown }[] {
 	const picked = userSteers(queues);
+	const taken = picked.map(({ at, steer }) => ({ steer, message: queues.delivery[at] }));
 	for (const { at } of [...picked].reverse()) queues.delivery.splice(at, 1);
 	for (const { steer } of picked) queues.display.splice(queues.display.indexOf(steer.text), 1);
-	if (picked.length > 0) queues.emit();
-	return picked.map((entry) => entry.steer);
+	return taken;
+}
+
+/** Takes the user messages out of one pair of Pi queues in one step; other messages stay. */
+function takeUserMessages(queues: Queues): Steer[] {
+	const taken = removeUserMessages(queues);
+	if (taken.length > 0) queues.emit();
+	return taken.map((entry) => entry.steer);
 }
 
 function isExtensionCommand(session: Session, text: string): boolean {
@@ -181,11 +188,9 @@ export function installQueue(SessionClass = AgentSession, version = VERSION) {
 			const follow = found && queuesOf(found.session, "followUp");
 			const steering = found && queuesOf(found.session);
 			if (!found || !follow || !steering || ((idle || defer) && typeof found.session._startRun !== "function") || (defer && typeof found.session.waitForIdle !== "function")) return false;
-			const picked = userSteers(follow);
+			const picked = removeUserMessages(follow);
 			if (!picked.length) return false;
-			const messages = picked.map(({ at }) => follow.delivery[at]);
-			for (const { at } of [...picked].reverse()) follow.delivery.splice(at, 1);
-			for (const { steer } of picked) follow.display.splice(follow.display.indexOf(steer.text), 1);
+			const messages = picked.map(({ message }) => message);
 			const remaining = idle ? picked.slice(1) : picked;
 			steering.display.push(...remaining.map(({ steer }) => steer.text));
 			steering.delivery.push(...(idle ? messages.slice(1) : messages));

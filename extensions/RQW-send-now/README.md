@@ -78,4 +78,4 @@ Like every RQW extension: `-extensions/RQW-send-now/index.ts` in the package ent
 
 ## Tests
 
-`test/extensions/RQW-send-now/`: `send-now.test.ts`, `steer.test.ts`, `escape.test.ts`, `queue.test.ts`, `keys.test.ts`, `stop.test.ts` and `resume.test.ts`, with the shared `harness.ts`.
+`test/extensions/RQW-send-now/`: `send-now.test.ts`, `steer.test.ts`, `escape.test.ts`, `queue.test.ts`, `keys.test.ts`, `stop.test.ts`, `resume.test.ts`, `gesture.test.ts` and `hints.test.ts`, with the shared `harness.ts`.

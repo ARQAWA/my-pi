@@ -201,6 +201,35 @@ it("background-only: starts the first follow-up and steers the rest", async (t) 
 	assert.equal(h.session.aborts, 0);
 });
 
+it("idle with a follow-up held by a wait and no running counts: an empty Ctrl+Enter starts it, as the hint promises", async (t) => {
+	const h = harness(t);
+	h.state.idle = true;
+	h.followUp("held");
+	assert.deepEqual(h.press(CTRL_ENTER), { consume: true });
+	await h.flush();
+	assert.deepEqual(h.sent, [steer("held")]);
+	assert.deepEqual(h.session._followUpMessages, []);
+	assert.equal(h.session.aborts, 0);
+});
+
+it("idle with nothing queued: an empty Ctrl+Enter does nothing", (t) => {
+	const h = harness(t);
+	h.state.idle = true;
+	assert.equal(h.press(CTRL_ENTER), undefined);
+	assert.deepEqual(h.sent, []);
+});
+
+it("idle with background work: only Enter probes the follow-up hold, other keys cost nothing", (t) => {
+	const h = harness(t);
+	h.state.idle = true; h.state.background = 1; h.state.editor = "later";
+	let probes = 0;
+	h.events.on("rqw:followup-hold:request", () => { probes++; });
+	for (const key of ["a", "\x1b[A", "\t"]) assert.equal(h.press(key), undefined);
+	assert.equal(probes, 0);
+	h.press("\r");
+	assert.equal(probes, 1);
+});
+
 it("manual compaction: follow-ups enter steering and start after compaction", async (t) => {
 	const h = harness(t);
 	h.state.compacting = true; h.state.background = 1; h.session.isStreaming = false;

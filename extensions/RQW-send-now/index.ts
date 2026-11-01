@@ -2,7 +2,7 @@
 // Ctrl+Enter (Codex) or Escape (other providers) with steering queued interrupts the turn silently and sends it now.
 // Escape with a follow-up queued, on every provider, does the same and sends the follow-up after the steering.
 // Ctrl+R in the idle main editor restarts an interrupted turn (resume.ts).
-// Raw terminal input and public send APIs; queue.ts captures the owning Pi session in memory.
+// Raw terminal input and Pi's private run path (`_startRun`); queue.ts captures the owning Pi session in memory.
 import { CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, isKeyRelease, isKeyRepeat, matchesKey, type TUI } from "@earendil-works/pi-tui";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -162,6 +162,14 @@ export default function sendNow(pi: ExtensionAPI) {
 		return (queue.followUps(ctx.sessionManager) ?? 0) > 0;
 	}
 
+	/** The focused input editor, or undefined when something else has focus. */
+	const focusedEditor = () => {
+		const focused = tui?.getFocusedComponent();
+		return focused instanceof CustomEditor ? focused : undefined;
+	};
+	/** Whether the editor's autocomplete list is open; undefined when the editor cannot say. */
+	const autocompleteOpen = (editor: CustomEditor) => (editor as unknown as { isShowingAutocomplete?: () => boolean }).isShowingAutocomplete?.();
+
 	/**
 	 * Escape: one press leaves the running turn to Pi, which interrupts it (with a user follow-up queued, or user
 	 * steering queued and a provider other than Codex, it is the force-send instead). A second press within 500 ms stops the
@@ -169,8 +177,8 @@ export default function sendNow(pi: ExtensionAPI) {
 	 * here, so Pi's own double-Escape action cannot fire; idle double Escape stays with the history editor.
 	 */
 	function onEscape(ctx: ExtensionContext): { consume: true } | undefined {
-		const focused = tui?.getFocusedComponent();
-		if (!(focused instanceof CustomEditor) || (focused as unknown as { isShowingAutocomplete?: () => boolean }).isShowingAutocomplete?.() === true) return undefined;
+		const editor = focusedEditor();
+		if (!editor || autocompleteOpen(editor) === true) return undefined;
 		const now = Date.now();
 		if (now < escapeQuietUntil) return { consume: true };
 		const first = escapeAt;
@@ -201,13 +209,48 @@ export default function sendNow(pi: ExtensionAPI) {
 
 	/** Ctrl+R: only the idle main editor with a model and a branch that ends in an interrupted turn; anything else is left alone. */
 	function onResume(ctx: ExtensionContext): { consume: true } | undefined {
-		const editor = tui?.getFocusedComponent();
-		if (!(editor instanceof CustomEditor) || (editor as unknown as { isShowingAutocomplete?: () => boolean }).isShowingAutocomplete?.() === true) return undefined;
+		const editor = focusedEditor();
+		if (!editor || autocompleteOpen(editor) === true) return undefined;
 		if (!ctx.isIdle() || !ctx.model || queue.session(ctx.sessionManager)?.isCompacting === true) return undefined;
 		if (!interrupted(ctx.sessionManager.getBranch())) return undefined;
 		// Pi's custom-message run: the session counts as busy at once, so a second press finds it busy.
 		pi.sendMessage({ customType: RESUME_TYPE, content: RESUME_NOTE, display: false }, { triggerTurn: true });
 		return { consume: true };
+	}
+
+	/** Idle or compacting with background work: Enter queues its text as a follow-up, so no turn starts. True when it did. */
+	function holdSubmit(ctx: ExtensionContext, editor: CustomEditor, session: ReturnType<typeof queue.session>): boolean {
+		if (!background() || !(ctx.isIdle() || session?.isCompacting)) return false;
+		let canHold = false;
+		pi.events.emit("rqw:followup-hold:request", { sessionId: ctx.sessionManager.getSessionId(), reply: () => { canHold = true; } });
+		if (!canHold) return false;
+		const internal = editor as unknown as { actionHandlers?: Map<string, () => void>; handleInput?: (data: string) => void; getExpandedText?: () => string; addToHistory?: (text: string) => void; setText?: (text: string) => void };
+		const text = (internal.getExpandedText?.() ?? ctx.ui.getEditorText()).trim();
+		const plain = text && !text.startsWith("/") && !text.startsWith("!");
+		if (!plain || typeof session?.followUp !== "function" || autocompleteOpen(editor) !== false) return false;
+		if (typeof internal.actionHandlers?.get("app.message.followUp") !== "function" || typeof internal.handleInput !== "function" || typeof internal.setText !== "function") return false;
+		internal.addToHistory?.(text);
+		internal.setText("");
+		void session.followUp(text).catch(() => restore(text, ctx, "queue failed"));
+		return true;
+	}
+
+	/** Text in the editor: Ctrl+Enter and Alt+Enter give the editor its own submit, which queues steering while the agent works; Enter queues a follow-up while it works. */
+	function submitText(ctx: ExtensionContext, editor: CustomEditor, data: string, steerKey: boolean): { consume: true } | undefined {
+		const internal = editor as unknown as { actionHandlers?: Map<string, () => void>; handleInput?: (data: string) => void };
+		const followUp = internal.actionHandlers?.get("app.message.followUp");
+		if (typeof followUp !== "function" || typeof internal.handleInput !== "function") return undefined;
+		if (steerKey) { internal.handleInput("\r"); return { consume: true }; }
+		if (!ctx.isIdle() && getKeybindings().matches(data, "tui.input.submit")) { followUp(); return { consume: true }; }
+		return undefined;
+	}
+
+	/** Empty Ctrl+Enter or Alt+Enter with follow-ups queued: they move into steering, or start the turn when nothing runs. */
+	function promoteFollowUps(ctx: ExtensionContext, session: ReturnType<typeof queue.session>): { consume: true } | undefined {
+		const idle = ctx.isIdle() && !session?.isCompacting;
+		const defer = session?.isCompacting === true && session.isStreaming === false;
+		if ((!(idle || defer) || ctx.model) && queue.promote(ctx.sessionManager, idle, defer, () => ctx.ui.notify("Queued messages not sent; the run did not start.", "warning"))) return { consume: true };
+		return undefined;
 	}
 
 	function onKey(data: string, ctx: ExtensionContext): { consume: true } | undefined {
@@ -216,41 +259,21 @@ export default function sendNow(pi: ExtensionAPI) {
 		if (matchesKey(data, "escape")) return onEscape(ctx);
 		if (pending) return undefined;
 		if (matchesKey(data, "ctrl+r")) return onResume(ctx);
-		const editor = tui?.getFocusedComponent();
+		const submit = getKeybindings().matches(data, "tui.input.submit");
+		const ctrlEnter = matchesKey(data, "ctrl+enter");
+		const steerKey = ctrlEnter || matchesKey(data, "alt+enter");
+		// Every other key is Pi's, and costs nothing more.
+		if (!submit && !steerKey) return undefined;
+		const editor = focusedEditor();
+		if (!editor) return undefined;
 		const session = queue.session(ctx.sessionManager);
-		let canHold = false;
-		if (background() && (ctx.isIdle() || session?.isCompacting)) pi.events.emit("rqw:followup-hold:request", { sessionId: ctx.sessionManager.getSessionId(), reply: () => { canHold = true; } });
-		if (canHold && getKeybindings().matches(data, "tui.input.submit") && editor instanceof CustomEditor) {
-			const internal = editor as unknown as { actionHandlers?: Map<string, () => void>; handleInput?: (data: string) => void; isShowingAutocomplete?: () => boolean; getExpandedText?: () => string; addToHistory?: (text: string) => void; setText?: (text: string) => void };
-			const text = (internal.getExpandedText?.() ?? ctx.ui.getEditorText()).trim();
-			if (text && !text.startsWith("/") && !text.startsWith("!") && typeof session?.followUp === "function" && typeof internal.actionHandlers?.get("app.message.followUp") === "function" && typeof internal.handleInput === "function" && internal.isShowingAutocomplete?.() === false && typeof internal.setText === "function") {
-				internal.addToHistory?.(text); internal.setText("");
-				void session.followUp(text).catch(() => restore(text, ctx, "queue failed"));
-				return { consume: true };
-			}
-		}
-		const steerKey = matchesKey(data, "ctrl+enter") || matchesKey(data, "alt+enter");
-		if (ctx.ui.getEditorText().trim() && editor instanceof CustomEditor) {
-			const internal = editor as unknown as { actionHandlers?: Map<string, () => void>; handleInput?: (data: string) => void; isShowingAutocomplete?: () => boolean };
-			const followUp = internal.actionHandlers?.get("app.message.followUp");
-			if (typeof followUp === "function" && typeof internal.handleInput === "function" && typeof internal.isShowingAutocomplete === "function" && !internal.isShowingAutocomplete()) {
-				// Ctrl+Enter and Alt+Enter: the editor's own submit, which queues steering while the agent works.
-				if (steerKey) { internal.handleInput("\r"); return { consume: true }; }
-				if (!ctx.isIdle() && getKeybindings().matches(data, "tui.input.submit")) { followUp(); return { consume: true }; }
-			}
-		}
-		if (steerKey && !ctx.ui.getEditorText().trim() && editor instanceof CustomEditor
-			&& (editor as unknown as { isShowingAutocomplete?: () => boolean }).isShowingAutocomplete?.() === false
-			&& (!ctx.isIdle() || session?.isCompacting || background()) && followUpWaits(ctx)) {
-			const idle = ctx.isIdle() && !session?.isCompacting;
-			const defer = session?.isCompacting === true && session.isStreaming === false;
-			if ((!(idle || defer) || ctx.model) && queue.promote(ctx.sessionManager, idle, defer, () => ctx.ui.notify("Queued messages not sent; the run did not start.", "warning"))) return { consume: true };
-			return undefined;
-		}
+		if (submit && holdSubmit(ctx, editor, session)) return { consume: true };
+		if (autocompleteOpen(editor) !== false) return undefined;
+		if (ctx.ui.getEditorText().trim()) return submitText(ctx, editor, data, steerKey);
+		if (steerKey && followUpWaits(ctx)) return promoteFollowUps(ctx, session);
 		// An empty Enter forces waiting steering, as before; on Codex a second Ctrl+Enter does too. Alt+Enter never forces.
-		const forceKey = getKeybindings().matches(data, "tui.input.submit") || (matchesKey(data, "ctrl+enter") && ctx.model?.provider === CODEX);
-		if (!forceKey || ctx.ui.getEditorText().trim() || ctx.isIdle() || !(editor instanceof CustomEditor)) return undefined;
-		if ((editor as unknown as { isShowingAutocomplete?: () => boolean }).isShowingAutocomplete?.() !== false) return undefined;
+		const forceKey = submit || (ctrlEnter && ctx.model?.provider === CODEX);
+		if (!forceKey || ctx.isIdle()) return undefined;
 		return steeringWaits(ctx) && forceSteering(ctx) ? { consume: true } : undefined;
 	}
 
