@@ -786,6 +786,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: a tool copy costs no generated tokens, and a full untruncated read copies text exactly. The measurement after 2026-10-29 did not reach its target (the share of retyped text stayed about the same); the owner kept the rule and asked to strengthen it: «оставляем правило пока и усилить в промпте»; after seeing the added sentence: «По правилу копирования давай добавим фразу в промпт.» Addition: one sentence on repeated briefs (re-review, retry, second agent) in the copy rule.
   Carrier: `extensions/RQW-prompt/SYSTEM.md`.
 
+- **Prompt update** `[D-PROMPT-ZORD]`. The current prompt uses the autonomous executor introduction; requires sourced citations and evidence matched to claims; acts on known facts without re-deriving or reopening decisions; keeps code readable and protects existing files and unrelated changes. It asks for brief progress updates, permits compact tables under the communication rule, reports outcomes faithfully, and defines agreement by the user's words or acceptance. Authorized changes proceed in short iterations; the executor retains responsibility for delegated work. The proposed G2 single-source rule was dropped.
+  Source: `my-pi-evidence/designs/zord-prompt/batch-1.md`, `batch-2.md`, `batch-3.md`; batch 3 records owner approval «+++» for batches 1 and 2 and «2й пункт выброси» for G2. These are reported by the design, not independently verified session quotations. Later prompt changes remain as carried in the files; this entry does not assert approval of H1, H2 or H3.
+  Reason: preserve the accepted prompt update and its limits for future changes.
+  Carriers: `extensions/RQW-prompt/SYSTEM.md`, `extensions/RQW-prompt/index.ts`.
+
 ### Prompt/tools isolation
 
 - **Conditional tool instructions** `[D-PROMPT-TOOL-ISOLATION]`. RQW-tools supplies the search-method section only when read, grep and find are visible, and the independent-execution/background-job section only when bash is visible. The same sections join the startup projection without an RQW-prompt dependency.

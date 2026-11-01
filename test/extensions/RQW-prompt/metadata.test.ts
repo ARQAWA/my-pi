@@ -40,6 +40,38 @@ it("builds the default prefix and preserves explicit prompts and hidden bash", (
 	assert.doesNotMatch(hidden.customPrompt!, /the bash tool runs bash/);
 });
 
+it("preserves a forced prompt before the agent starts", () => {
+	const hook = hooks();
+	const input = hook.options();
+	input.forceSystemPrompt = "FORCED";
+	hook.prepare(input);
+	assert.equal(input.forceSystemPrompt, "FORCED");
+	assert.equal(input.customPrompt, undefined);
+});
+
+it("preserves explicit prompts in startup projections", () => {
+	const hook = hooks();
+	for (const key of ["customPrompt", "forceSystemPrompt"] as const) {
+		const options = hook.options();
+		options[key] = "EXTERNAL";
+		const request: StartupProjectionRequest = { options };
+		hook.events.emit(STARTUP_PROJECTION, request);
+		assert.equal(options[key], "EXTERNAL");
+		if (key === "forceSystemPrompt") assert.equal(options.customPrompt, undefined);
+		assert.equal(request.error, undefined);
+	}
+});
+
+it("reports a startup projection error without writing a prefix", () => {
+	const hook = hooks();
+	const options = hook.options();
+	Object.defineProperty(options, "selectedTools", { get() { throw new Error("unavailable tools"); } });
+	const request: StartupProjectionRequest = { options };
+	hook.events.emit(STARTUP_PROJECTION, request);
+	assert.match(request.error!, /startup projection failed: unavailable tools/);
+	assert.equal(options.customPrompt, undefined);
+});
+
 it("regression d1007fd: only an unchanged owned prefix receives live model metadata", () => {
 	const hook = hooks();
 	const input = hook.options();
