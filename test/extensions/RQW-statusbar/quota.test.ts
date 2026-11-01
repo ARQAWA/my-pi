@@ -227,25 +227,43 @@ it("fresh account cache files display their values without a request", async (t)
 	assert.deepEqual(cache.reads, { CX: 0, CC: 0 });
 });
 
-it("a 429 preserves the good percent and records the attempt for every tab", async (t) => {
+it("a 429 keeps the good percent with a star and records the attempt for every tab", async (t) => {
 	const cache = setup(t);
 	const shown = await cache.openTab();
 	await until(() => shown().includes("CX 77%") && shown().includes("CC 77%") && cache.idle());
 	cache.response.status = 429;
 	t.mock.timers.tick(3 * MINUTE);
 	await until(() => cache.reads.CX === 2 && cache.reads.CC === 2 && cache.idle());
+	await until(() => shown().includes("CX *77%") && shown().includes("CC *77%"));
+	const row = shown.raw(160).join("\n");
+	assert.ok(row.includes("\x1b[38;2;139;197;255mCX *77%\x1b[39m"));
+	assert.ok(row.includes("\x1b[38;2;255;152;170mCC *77%\x1b[39m"));
 	for (const provider of ["CX", "CC"] as const) {
-		assert.ok(shown().includes(`${provider} 77%`));
 		assert.deepEqual(JSON.parse(readFileSync(cache.file(provider), "utf8")), {
 			percent: 77, okAt: Date.now() - 3 * MINUTE, checkedAt: Date.now(),
 		});
 	}
 	const other = await cache.openTab();
-	await until(() => other().includes("CX 77%") && other().includes("CC 77%"));
+	await until(() => other().includes("CX *77%") && other().includes("CC *77%"));
 	assert.deepEqual(cache.reads, { CX: 2, CC: 2 });
 	t.mock.timers.tick(3 * MINUTE);
 	await until(() => cache.reads.CX === 3 && cache.reads.CC === 3 && cache.idle());
 	assert.deepEqual(cache.reads, { CX: 3, CC: 3 });
+	assert.ok(shown().includes("CX *77%"));
+});
+
+it("a fresh value removes the star", async (t) => {
+	const cache = setup(t);
+	const shown = await cache.openTab();
+	await until(() => shown().includes("CX 77%") && shown().includes("CC 77%") && cache.idle());
+	cache.response.status = 429;
+	t.mock.timers.tick(3 * MINUTE);
+	await until(() => shown().includes("CX *77%") && shown().includes("CC *77%") && cache.idle());
+	cache.response.status = 200;
+	cache.response.percent = 64;
+	t.mock.timers.tick(3 * MINUTE);
+	await until(() => shown().includes("CX 64%") && shown().includes("CC 64%") && cache.idle());
+	assert.ok(!shown().includes("*"));
 });
 
 it("a stopped request writes neither a value nor an attempt timestamp", async (t) => {

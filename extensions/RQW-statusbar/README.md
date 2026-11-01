@@ -18,7 +18,9 @@ is the fallback identity. File names use the first 16 hex characters of its SHA-
 Files contain only `percent`, `okAt` and `checkedAt`. Tabs reuse each attempt for three minutes;
 an exclusive `.lock` file prevents parallel requests. Locks older than 30 seconds are replaced.
 Writes use a temporary file and rename; file errors retain the last displayed value.
-Failed reads keep the last good percentage; `???` means no good value for this account yet.
+Failed reads keep the last good percentage with a `*` directly before the number, in the same colour (`CX *77%`);
+the next good read removes the star. `???` means no good value for this account yet.
+The star shows when the last attempt (`checkedAt`) is newer than the last good value (`okAt`).
 Providers without credentials stay hidden. Disabling the footer or closing the session cancels requests
 and clears its timer, not the shared cache.
 
@@ -28,7 +30,7 @@ CX reads `https://chatgpt.com/backend-api/wham/usage` with the stored Codex acco
 it uses the main rate limit window lasting 604800 seconds.
 It does not depend on RQW-codex.
 Expired OAuth credentials, failed requests and unrecognized response shapes
-keep the last good percentage, or show `???` when none is available.
+keep the last good percentage marked with `*`, or show `???` when none is available.
 Requests have a five-second deadline. Tokens are never refreshed,
 rotated or written; settings and installed packages are untouched. No model calls,
 private APIs, cross-extension imports or new dependencies are used.

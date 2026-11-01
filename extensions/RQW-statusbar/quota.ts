@@ -23,6 +23,11 @@ async function readCache(file: string): Promise<Reading> {
 	} catch { return {}; }
 }
 
+/** The last attempt failed when it is newer than the last good value; a success stamps okAt after checkedAt. */
+function isStale(record: Reading): boolean {
+	return record.okAt !== undefined && record.checkedAt !== undefined && record.okAt < record.checkedAt;
+}
+
 async function lockCache(file: string): Promise<boolean> {
 	try {
 		await mkdir(dirname(file), { recursive: true, mode: 0o700 });
@@ -152,7 +157,7 @@ export class QuotaConsumer {
 				const file = join(tmpdir(), "rqw-quota", `${id}-${key}.json`);
 				const show = (record: Reading) => {
 					if (!current()) return;
-					if (record.percent !== undefined) this.values[id] = `${record.percent}%`;
+					if (record.percent !== undefined) this.values[id] = `${isStale(record) ? "*" : ""}${record.percent}%`;
 					else this.values[id] ??= "???";
 					this.changed();
 				};

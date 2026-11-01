@@ -843,6 +843,10 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Use public `readStoredCredential` for Codex; never write
   auth or refresh tokens. Keep the implementation inside the statusbar folder.
   Carriers: `extensions/RQW-statusbar/{index,render,quota}.ts` and its README.
+  Stale marker (amends the failed-read rule above): when a refresh fails, the last known percent stays with `*` directly before
+  the number, in the number's colour, e.g. `CX *77%`; a fresh value removes the star; with no value ever known the display stays `???`.
+  Owner (answer to the coordinator's question what to show when the quota cannot be fetched, option 1 being the last known percent): «1, но доабвить * что бы было ясно что это не актуальная инфа (или другой символ перед цифрой в том же цвете)».
+  Carrier: `extensions/RQW-statusbar/quota.ts` (`isStale`: a record whose `checkedAt` is newer than `okAt`; computed when the quota value changes, not per frame), `test/extensions/RQW-statusbar/quota.test.ts`.
 
 ## Isolation
 
