@@ -1,6 +1,7 @@
 // Steering keys while the agent works: Ctrl+Enter or Alt+Enter with text queues steering; an empty Enter, an empty
 // Ctrl+Enter (Codex) or Escape (other providers) with steering queued interrupts the turn silently and sends it now.
 // Escape with a follow-up queued, on every provider, does the same and sends the follow-up after the steering.
+// Ctrl+R in the idle main editor restarts an interrupted turn (resume.ts).
 // Raw terminal input and public send APIs; queue.ts captures the owning Pi session in memory.
 import { CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getKeybindings, isKeyRelease, isKeyRepeat, matchesKey, type TUI } from "@earendil-works/pi-tui";
@@ -8,6 +9,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { installQueue, type Steer } from "./queue.ts";
 import { installQuiet } from "./quiet.ts";
 import { installHintUI } from "./hint-ui.ts";
+import { interrupted, RESUME_NOTE, RESUME_TYPE } from "./resume.ts";
 
 /**
  * Custom entry type: the timestamp of a reply a force-send interrupted. Its status row is not drawn; unless `unsent`
@@ -197,11 +199,23 @@ export default function sendNow(pi: ExtensionAPI) {
 		pending!.cancelled = true;
 	}
 
+	/** Ctrl+R: only the idle main editor with a model and a branch that ends in an interrupted turn; anything else is left alone. */
+	function onResume(ctx: ExtensionContext): { consume: true } | undefined {
+		const editor = tui?.getFocusedComponent();
+		if (!(editor instanceof CustomEditor) || (editor as unknown as { isShowingAutocomplete?: () => boolean }).isShowingAutocomplete?.() === true) return undefined;
+		if (!ctx.isIdle() || !ctx.model || queue.session(ctx.sessionManager)?.isCompacting === true) return undefined;
+		if (!interrupted(ctx.sessionManager.getBranch())) return undefined;
+		// Pi's custom-message run: the session counts as busy at once, so a second press finds it busy.
+		pi.sendMessage({ customType: RESUME_TYPE, content: RESUME_NOTE, display: false }, { triggerTurn: true });
+		return { consume: true };
+	}
+
 	function onKey(data: string, ctx: ExtensionContext): { consume: true } | undefined {
 		// A release or an auto-repeat is never a deliberate press.
 		if (isKeyRelease(data) || isKeyRepeat(data)) return undefined;
 		if (matchesKey(data, "escape")) return onEscape(ctx);
 		if (pending) return undefined;
+		if (matchesKey(data, "ctrl+r")) return onResume(ctx);
 		const editor = tui?.getFocusedComponent();
 		const session = queue.session(ctx.sessionManager);
 		let canHold = false;

@@ -10,7 +10,7 @@ Nothing is sent by the extension; every other mode and every child session stays
 - Ctrl+E works when the current branch has both a user and an assistant message, including immediately after resume or a session switch. A clean branch has no hint and Ctrl+E does nothing.
   In every chat state (turn running, background only, idle, queued messages) it works: it generates at once, also
   repeats a failed run, and pressed while a request runs it cancels it: the footer status turns maroon for 2000 ms.
-  Ctrl+R is freed from Pi's actions and does nothing; another feature will take it.
+  Ctrl+R is freed from Pi's actions and does nothing here; RQW-send-now takes it to restart an interrupted turn.
 - The request is a fork of what the main model last saw (the shared `rqw:context-fork:v1` contract, as `/btw`);
   without a transport offer it is one direct `streamSimple` call. The last user message is the prompt Codex serves,
   the JSON reply instruction and the owner's rule «if there is no obvious next user message, set suggestion to null».
@@ -28,7 +28,7 @@ Nothing is sent by the extension; every other mode and every child session stays
 ## Keys
 
 `keybindings.ts` wraps the live Pi keybindings manager in memory and takes Ctrl+E and Ctrl+R away from every action:
-the line end keeps End; session rename in `/resume` loses Ctrl+R (use `/name`); Ctrl+R then does nothing. Nothing is written to any settings file.
+the line end keeps End; session rename in `/resume` loses Ctrl+R (use `/name`); Ctrl+R then does nothing in this extension. Nothing is written to any settings file.
 If the manager has an unknown shape nothing changes, a warning is shown and the manual keys stay off, so nothing
 is generated; Tab still accepts a suggestion. The keys are handled only by the decorated main editor.
 Terminals decide what arrives: Windows VS Code binds Ctrl+E to Quick Open, which the terminal never sees by default.

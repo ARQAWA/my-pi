@@ -7,7 +7,23 @@ import predictions from "../extensions/RQW-predictions/index.ts";
 import historyEdit from "../extensions/RQW-history-edit/index.ts";
 import scroll from "../extensions/RQW-scroll/index.ts";
 import sendNow from "../extensions/RQW-send-now/index.ts";
-import { harness, OTHER, settle, suggestion } from "./extensions/RQW-predictions/harness.ts";
+import { assistant, CTRL_R, harness, OTHER, settle, suggestion, USER } from "./extensions/RQW-predictions/harness.ts";
+
+it("Ctrl+R restarts an interrupted turn with predictions loaded, and generates nothing", async t => {
+	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
+	const resumed: unknown[] = [];
+	const h = harness({ realKeys: true, branch: [{ type: "message", message: USER }, { type: "message", message: assistant([], "aborted") }], extraInstall(pi) {
+		(pi as any).sendMessage = (message: unknown, options: unknown) => resumed.push({ message, options });
+		sendNow(pi);
+	} });
+	t.after(() => h.fire("session_shutdown", { reason: "quit" }));
+	h.dispatch(CTRL_R);
+	await settle();
+	assert.equal(resumed.length, 1);
+	assert.equal((resumed[0] as any).message.customType, "rqw-resume");
+	assert.equal(h.forks.length, 0, "Ctrl+R starts no prediction");
+	assert.deepEqual(h.reached, [], "the key never reaches the editor");
+});
 
 for (const extraFirst of [true, false]) it(`send-now and predictions share the editor, send-now ${extraFirst ? "first" : "last"}`, async t => {
 	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
