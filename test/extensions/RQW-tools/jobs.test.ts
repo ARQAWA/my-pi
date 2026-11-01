@@ -3,6 +3,9 @@ import test from "node:test";
 import { createTools } from "../../../extensions/RQW-tools/index.ts";
 import { createJobs } from "../../../extensions/RQW-tools/jobs.ts";
 import { createCountsProducer } from "../../../extensions/RQW-tools/counts.ts";
+import { AgentSession, createEventBus } from "@earendil-works/pi-coding-agent";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { createFauxCore, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 
 const spec = { tool: "bash", command: "work", process: true };
 const result = (text: string) => ({ content: [{ type: "text", text }] });
@@ -43,13 +46,52 @@ async function handedOff(t: any) {
 			signal.addEventListener("abort", () => reject(new Error("Operation aborted")));
 		}),
 	};
-	const tools = new Map(createTools(process.cwd(), () => ({}), { jobs, codemode }).map((tool) => [tool.name, tool as any]));
+	const events = createEventBus();
+	// The branch as the wait reads it: the assistant message that announced the calls of a batch is the newest entry.
+	const entries: any[] = [];
+	const manager = { getSessionId: () => "session", getLeafEntry: () => entries.at(-1), getEntry: (id: string) => entries.find((entry) => entry.id === id) };
+	const announce = (...calls: object[]) => entries.push({ id: `e${entries.length}`, parentId: entries.at(-1)?.id ?? null, type: "message", message: { role: "assistant", content: calls.map((call) => ({ type: "toolCall", ...call })) } });
+	const listeners = new Set<(event: any) => void>();
+	const messages: string[] = [];
+	const session = Object.assign(Object.create(AgentSession.prototype), {
+		sessionManager: manager, agent: { steeringQueue: { messages: [] } },
+		getSteeringMessages: () => messages,
+		subscribe: (listener: (event: any) => void) => { listeners.add(listener); return () => listeners.delete(listener); },
+	});
+	const ctx = { sessionManager: manager, isIdle: () => session.isIdle };
+	const tools = new Map(createTools(process.cwd(), () => ({}), { jobs, codemode, events }).map((tool) => [tool.name, tool as any]));
 	const pending = tools.get("codemode").execute("call", { code: "work" }, undefined, undefined, undefined);
 	t.mock.timers.tick(12);
 	await pending;
-	const job = (params: Record<string, unknown>, signal?: AbortSignal) => tools.get("job").execute("wait", params, signal);
-	return { jobs, control, job, notifications, advance: (ms: number) => { now += ms; t.mock.timers.tick(ms); } };
+	const job = (params: Record<string, unknown>, signal?: AbortSignal, call = "wait") => tools.get("job").execute(call, params, signal, undefined, ctx);
+	const wrap = (name: string) => ({ ...tools.get(name), execute: (id: string, params: unknown, signal: AbortSignal, update: unknown) => tools.get(name).execute(id, params, signal, update, ctx) });
+	return { entries, wrap, announce, jobs, control, job, notifications, events, messages, session, listeners, emit: (event: any) => { for (const listener of listeners) listener(event); }, advance: (ms: number) => { now += ms; t.mock.timers.tick(ms); } };
 }
+
+test("the child registry retains a background job and its result after final", async (t) => {
+	const { jobs, control, job, wrap, notifications } = await handedOff(t);
+	const core = createFauxCore({ provider: "final", models: [{ id: "model" }] });
+	core.setResponses([
+		() => fauxAssistantMessage("final", { timestamp: 1 }),
+		() => fauxAssistantMessage([fauxToolCall("job", { action: "wait", ids: ["job#1"] }, { id: "collect" })], { stopReason: "toolUse" }),
+		() => fauxAssistantMessage("collected", { timestamp: 2 }),
+	]);
+	const agent = new Agent({ streamFn: core.streamSimple, getApiKey: () => "key", initialState: { model: core.getModel("model")!, tools: [wrap("job")] as any } });
+	const waiting = Promise.withResolvers<void>();
+	agent.subscribe(event => { if (event.type === "tool_execution_start" && event.toolCallId === "collect") waiting.resolve(); });
+	await agent.prompt("finish");
+	assert.equal(jobs.status(["job#1"], 20)[0].state, "running");
+	assert.equal(wrap("job").jobs.hasJobs(), true);
+	const next = agent.prompt("collect");
+	await waiting.promise;
+	control.finish("late result");
+	await next;
+	assert.equal(wrap("job").jobs.hasJobs(), true);
+	assert.deepEqual(notifications, []);
+	const toolResult = agent.state.messages.find((message: any) => message.role === "toolResult" && message.toolCallId === "collect") as any;
+	assert.equal(toolResult.details.results[0].result, "late result");
+	assert.equal((await job({ action: "wait", ids: ["job#1"] })).details.results[0].result, "late result");
+});
 
 test("wait returns the exit result itself and sends no later notification", async (t) => {
 	const { jobs, control, job, notifications } = await handedOff(t);
@@ -106,6 +148,99 @@ test("an aborted wait rejects, leaves the job running and sends no notification"
 	control.finish("done");
 	await jobs.settled("job#1");
 	assert.deepEqual(notifications, []);
+});
+
+test("registered job wait responds to user steering but ignores service messages", async (t) => {
+	const { jobs, control, job, messages, session, listeners, emit } = await handedOff(t);
+	messages.push("already queued");
+	assert.equal((await job({ action: "wait", ids: ["job#1"] })).details.reason, "steered");
+	messages.length = 0;
+	session.agent.steeringQueue.messages.push({ role: "custom", customType: "service", content: "notice" });
+	let settled = false;
+	const waiting = job({ action: "wait", ids: ["job#1"] }).then((value: any) => { settled = true; return value; });
+	emit({ type: "queue_update", steering: [], followUp: ["service"] });
+	await Promise.resolve();
+	assert.equal(settled, false);
+	messages.push("new");
+	emit({ type: "queue_update", steering: [...messages], followUp: [] });
+	session.agent.steeringQueue.messages.push({ role: "user", content: "new" });
+	assert.equal((await waiting).details.reason, "steered");
+	assert.equal(listeners.size, 0);
+	assert.equal(jobs.status(["job#1"], 20)[0].state, "running");
+	messages.length = 0;
+	session.agent.steeringQueue.messages.length = 0;
+	control.finish("done");
+	await jobs.settled("job#1");
+	assert.equal((await job({ action: "wait", ids: ["job#1"] })).details.results[0].result, "done");
+});
+
+test("explicit child-core wake is scoped to its own job wait", async (t) => {
+	const { jobs, control, job, events } = await handedOff(t);
+	let settled = false;
+	const waiting = job({ action: "wait", ids: ["job#1"] }).then((value: any) => { settled = true; return value; });
+	events.emit("rqw:wait-steer:v1", { sessionId: "other" });
+	await Promise.resolve();
+	assert.equal(settled, false);
+	events.emit("rqw:wait-steer:v1", { sessionId: "session" });
+	assert.equal((await waiting).details.reason, "steered");
+	control.finish("done");
+	await jobs.settled("job#1");
+	assert.equal((await job({ action: "wait", ids: ["job#1"] })).details.results[0].result, "done");
+});
+
+const waitCall = (id: string) => ({ id, name: "job", arguments: { action: "wait", ids: ["job#1"] } });
+const bashCall = { id: "bash", name: "bash", arguments: { command: "make" } };
+
+test("a wait in a batch with other work returns work_pending at once, before or after the other call", async (t) => {
+	const { jobs, control, job, events, announce } = await handedOff(t);
+	const announced: unknown[] = [];
+	events.on("rqw:waiting:v1", (event: unknown) => announced.push(event));
+	for (const calls of [[waitCall("w"), bashCall], [bashCall, waitCall("w")]]) {
+		announce(...calls);
+		const outcome: any = await Promise.race([job({ action: "wait", ids: ["job#1"] }, undefined, "w"), flush().then(() => "blocked")]);
+		assert.notEqual(outcome, "blocked", "the wait must not hold the other call of its batch");
+		assert.equal(outcome.details.reason, "work_pending");
+		assert.equal(outcome.details.statuses[0].state, "running");
+	}
+	assert.deepEqual(announced, []);
+	control.finish("done");
+	await jobs.settled("job#1");
+	announce(waitCall("again"));
+	assert.equal((await job({ action: "wait", ids: ["job#1"] }, undefined, "again")).details.results[0].result, "done");
+});
+
+test("in Pi's sequential batch a wait before bash yields, so bash runs while the job goes on", async (t) => {
+	const { jobs, control, entries, wrap } = await handedOff(t);
+	const core = createFauxCore({ provider: "sequential", models: [{ id: "model" }] });
+	core.setResponses([
+		() => fauxAssistantMessage([fauxToolCall("job", { action: "wait", ids: ["job#1"] }, { id: "w" }), fauxToolCall("probe", {}, { id: "p" })], { stopReason: "toolUse", timestamp: 1 }),
+		() => fauxAssistantMessage("done", { timestamp: 1 }),
+	]);
+	const ran: string[] = [];
+	const probe = { name: "probe", label: "probe", description: "bash stand-in", parameters: { type: "object", properties: {} }, executionMode: "sequential", execute: async () => { ran.push("probe"); return result("ran"); } };
+	const agent = new Agent({ streamFn: core.streamSimple, getApiKey: () => "key", initialState: { model: core.getModel("model")!, tools: [wrap("job"), probe] as any } });
+	// Pi persists the assistant message before its tools run.
+	agent.subscribe((event) => { if (event.type === "message_end" && event.message.role === "assistant") entries.push({ id: `e${entries.length}`, parentId: entries.at(-1)?.id ?? null, type: "message", message: event.message }); });
+	t.after(() => agent.abort());
+	void agent.prompt("go");
+	for (let turn = 0; turn < 10 && !ran.length; turn++) await flush();
+	assert.deepEqual(ran, ["probe"]);
+	assert.equal(jobs.status(["job#1"], 20)[0].state, "running");
+	control.finish("done");
+});
+
+test("a wait alone, or with other waits, announces itself open until it returns", async (t) => {
+	const { jobs, control, job, events, announce } = await handedOff(t);
+	const announced: unknown[] = [];
+	events.on("rqw:waiting:v1", (event: unknown) => announced.push(event));
+	announce(waitCall("w"), { id: "a", name: "agent", arguments: { action: "wait", ids: ["agent#1"] } });
+	const waiting = job({ action: "wait", ids: ["job#1"] }, undefined, "w");
+	await flush();
+	assert.deepEqual(announced, [{ sessionId: "session", call: "w", open: true }]);
+	control.finish("done");
+	assert.equal((await waiting).details.reason, "exit");
+	assert.deepEqual(announced.at(-1), { sessionId: "session", call: "w", open: false });
+	await jobs.settled("job#1");
 });
 
 test("kill aborts a process job and returns the result itself", async (t) => {

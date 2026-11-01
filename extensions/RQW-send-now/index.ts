@@ -19,6 +19,8 @@ export const ENTRY = "rqw-send-now";
 const POLL_MS = 20;
 /** Only Codex has the second Ctrl+Enter that forces; other providers force with Escape (and an empty Enter, as before). */
 const CODEX = "openai-codex";
+/** The wait tools' channel: `{ sessionId, call, open }` when a wait opens or closes (RQW-agent, RQW-tools). */
+const WAITING = "rqw:waiting:v1";
 /** Two Escape presses within this time are one gesture. */
 const DOUBLE_ESCAPE_MS = 500;
 
@@ -72,6 +74,9 @@ export default function sendNow(pi: ExtensionAPI) {
 	let tui: FocusTUI | undefined;
 	const sources = new Map<any, () => void>();
 	let stopOffers: (() => void) | undefined;
+	let stopWaits: (() => void) | undefined;
+	/** The calls of the session's open waits. A wait opens only in a batch of waits, so with one open nothing else runs. */
+	const waits = new Set<string>();
 	let updateHint = () => {};
 	let stopHint = () => {};
 	const background = () => [...sources.keys()].some(source => { const counts = source.snapshot(); return (counts.agents ?? 0) > 0 || (counts.backgroundProcesses ?? 0) > 0; });
@@ -218,30 +223,14 @@ export default function sendNow(pi: ExtensionAPI) {
 		return { consume: true };
 	}
 
-	/** Idle or compacting with background work: Enter queues its text as a follow-up, so no turn starts. True when it did. */
-	function holdSubmit(ctx: ExtensionContext, editor: CustomEditor, session: ReturnType<typeof queue.session>): boolean {
-		if (!background() || !(ctx.isIdle() || session?.isCompacting)) return false;
-		let canHold = false;
-		pi.events.emit("rqw:followup-hold:request", { sessionId: ctx.sessionManager.getSessionId(), reply: () => { canHold = true; } });
-		if (!canHold) return false;
-		const internal = editor as unknown as { actionHandlers?: Map<string, () => void>; handleInput?: (data: string) => void; getExpandedText?: () => string; addToHistory?: (text: string) => void; setText?: (text: string) => void };
-		const text = (internal.getExpandedText?.() ?? ctx.ui.getEditorText()).trim();
-		const plain = text && !text.startsWith("/") && !text.startsWith("!");
-		if (!plain || typeof session?.followUp !== "function" || autocompleteOpen(editor) !== false) return false;
-		if (typeof internal.actionHandlers?.get("app.message.followUp") !== "function" || typeof internal.handleInput !== "function" || typeof internal.setText !== "function") return false;
-		internal.addToHistory?.(text);
-		internal.setText("");
-		void session.followUp(text).catch(() => restore(text, ctx, "queue failed"));
-		return true;
-	}
-
-	/** Text in the editor: Ctrl+Enter and Alt+Enter give the editor its own submit, which queues steering while the agent works; Enter queues a follow-up while it works. */
+	/** Text in the editor: Ctrl+Enter and Alt+Enter give the editor its own submit, which queues steering while the agent works; Enter queues a follow-up while it works, but steers when only a wait is open. */
 	function submitText(ctx: ExtensionContext, editor: CustomEditor, data: string, steerKey: boolean): { consume: true } | undefined {
 		const internal = editor as unknown as { actionHandlers?: Map<string, () => void>; handleInput?: (data: string) => void };
 		const followUp = internal.actionHandlers?.get("app.message.followUp");
 		if (typeof followUp !== "function" || typeof internal.handleInput !== "function") return undefined;
-		if (steerKey) { internal.handleInput("\r"); return { consume: true }; }
-		if (!ctx.isIdle() && getKeybindings().matches(data, "tui.input.submit")) { followUp(); return { consume: true }; }
+		const submit = !ctx.isIdle() && getKeybindings().matches(data, "tui.input.submit");
+		if (steerKey || (submit && waits.size > 0)) { internal.handleInput("\r"); return { consume: true }; }
+		if (submit) { followUp(); return { consume: true }; }
 		return undefined;
 	}
 
@@ -267,7 +256,6 @@ export default function sendNow(pi: ExtensionAPI) {
 		const editor = focusedEditor();
 		if (!editor) return undefined;
 		const session = queue.session(ctx.sessionManager);
-		if (submit && holdSubmit(ctx, editor, session)) return { consume: true };
 		if (autocompleteOpen(editor) !== false) return undefined;
 		if (ctx.ui.getEditorText().trim()) return submitText(ctx, editor, data, steerKey);
 		if (steerKey && followUpWaits(ctx)) return promoteFollowUps(ctx, session);
@@ -334,6 +322,13 @@ export default function sendNow(pi: ExtensionAPI) {
 
 		if (typeof ctx.sessionManager.getSessionId !== "function") { hintUI.release(); return; }
 		const id = ctx.sessionManager.getSessionId();
+		// Only a wait is open: the follow-ups queued so far move into steering now, not after the awaited work.
+		stopWaits = pi.events.on(WAITING, (event: any) => {
+			if (event?.sessionId !== id || typeof event.call !== "string") return;
+			if (!event.open) { waits.delete(event.call); return; }
+			waits.add(event.call);
+			if (!pending && followUpWaits(ctx)) promoteFollowUps(ctx, queue.session(ctx.sessionManager));
+		});
 		let compacting = false, retrying = false;
 		let hint: string | undefined;
 		// The activity line's source: the Esc hint.
@@ -389,6 +384,8 @@ export default function sendNow(pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		stopHint();
 		stopOffers?.(); stopOffers = undefined;
+		stopWaits?.(); stopWaits = undefined;
+		waits.clear();
 		for (const unsubscribe of sources.values()) unsubscribe();
 		sources.clear();
 		releaseQuiet();

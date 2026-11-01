@@ -57,8 +57,8 @@ The picker, theme palette, animation and other footer colours do not change.
 ## Activity and waits
 
 While Main is active, retain its existing thinking or tool activity text and agent-count suffix.
-After Main's full answer and run completion, pending work remains visible, for example
-`Waiting for 2 agents, 1 background process`. The two categories are agents and background processes;
+After Main's full answer and run completion, running background work remains visible, for example
+`Background: 2 agents, 1 background process`. This is a count, not an open wait. The two categories are agents and background processes;
 reviewer profiles are ordinary agents, with no worker or separate review category.
 
 RQW-agent counts active logical assignments, pending sends or native activity recursively. A native-idle

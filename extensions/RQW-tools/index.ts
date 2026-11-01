@@ -113,7 +113,7 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 	}
 	let legacy = !aliasesShutdown;
 	const jobs = createJobs({ enabled: () => pi.getActiveTools().includes("job"), backgroundAfterMs: options.backgroundAfterMs });
-	for (const tool of createTools(process.cwd(), () => pi.getSettings(), { jobs, get legacy() { return legacy; } })) {
+	for (const tool of createTools(process.cwd(), () => pi.getSettings(), { jobs, events: pi.events, get legacy() { return legacy; } })) {
 		if (["rqw_rg", "rqw_glob", "rqw_readfile"].includes(tool.name)) (tool as any).rqwSelectionFallback = () => { legacy = true; };
 		pi.registerTool(tool);
 	}
@@ -174,7 +174,7 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 }
 
 /** Fresh base tools and one job registry for a main session or a subagent. */
-export function createTools(cwd: string, settings: () => any, options: JobsOptions & { jobs?: Jobs; codemode?: ToolDefinition<any, any, any>; legacy?: boolean } = {}): ToolDefinition[] {
+export function createTools(cwd: string, settings: () => any, options: JobsOptions & { jobs?: Jobs; codemode?: ToolDefinition<any, any, any>; legacy?: boolean; events?: ExtensionAPI["events"] } = {}): ToolDefinition[] {
 	const tools: ToolDefinition[] = [];
 	const jobs = options.jobs ?? createJobs(options);
 	type Run = (id: string, params: any, signal: any, onUpdate: any, ctx: any, job?: JobHandle) => Promise<any>;
@@ -278,6 +278,6 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 	}
 
 	if (options.codemode) tools.push(groupCodemode(options.codemode, jobs));
-	tools.push({ ...createJobTool(jobs, description("job")), ...notDefault });
+	tools.push({ ...createJobTool(jobs, description("job"), options.events), ...notDefault });
 	return tools;
 }

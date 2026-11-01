@@ -7174,3 +7174,18 @@ Source: `8413081c:DECISIONS.md`. Verbatim replaced text:
 >   Decision: `CC` bronze, Codex gold. Reason: distinguish provider-limit badges by color.
 >   Carrier: `extensions/RQW-statusbar/quota.ts`. The direct Anthropic quota provider is delivered
 >   ([D-ANTHROPIC-QUOTA](#anthropic-subscription-adapter)).
+
+## A-0410 · Agent · real-final hold
+
+Status: SUPERSEDED by `[D-AGENT-REAL-FINAL]` (DECISIONS.md#agent).
+Source: `origin/main:DECISIONS.md`. Verbatim replaced text:
+
+> - **Terminal busy indicator until the real final** `[D-AGENT-REAL-FINAL]`. While the turn has ended but background work still runs, the terminal's own busy indicator stays "working" and goes out at the real final: no running agents, no background jobs, no waiting `wait`, no undelivered notification. Step 1 (done): the shared gate `real-final.ts` and the wrapper of the herdr integration's `agent_settled` handler, only with `HERDR_ENV=1`. Step 2 (done): `terminal-progress.ts` patches `ProcessTerminal.prototype.setProgress` and `start` so OSC 9;4 "off" waits for the real final and `start()` after a screen mode switch turns a deferred progress on again. Step 3 (done): the same patch defers OSC 7501 idle, done and error until the real final, restores working after a dialog, and flushes on shutdown or process exit; working and blocked cancel the deferred report. `terminal.showTerminalProgress` is not enabled by default (not approved). Pi's `agent_settled` itself is never delayed.
+>   Owner: «Ну и надо чтобы статус этого был желтенький, что он в работе пока у него висит какой-то фон.»
+>   Owner: «Я понял про что ты. Когда я говорил "желтый цвет", я имел в виду желтый кружочек внутри этого. Это статус в Herder или статус в iTerm, это никак не статус внутри самого агента. Это статус с боку припеку.»
+>   Owner: «Я про этот статус, который на скрине, я стрелочкой на него указал»
+>   Owner: «Я понял, короче»
+>   Owner: «Это должно работать одинаково и для Herder, и для iTerm, для всех таких терминалов»
+>   Owner: «1 целиком, run да но декомпозиция, статус herdr тоже да, тож декомп»
+>   Reason: the dot in herdr's sidebar must stay yellow while background work runs; herdr's integration is a user copy we cannot edit, and a separate report source is rejected by herdr. Design (not shipped): `/Users/arkadijcukavin/ai-project/my-pi-evidence/designs/busy-indicators/DESIGN.md`. Session locators of the quotes are not machine-verified (relayed in the task brief).
+>   Carriers: `extensions/RQW-agent/{real-final,herdr-state,terminal-progress,followup-hold,coordinator,index}.ts`; [contract](extensions/RQW-agent/README.md#real-final-and-the-herdr-dot), `test/extensions/RQW-agent/{real-final,terminal-progress,hold-change}.test.ts`.

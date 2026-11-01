@@ -136,7 +136,7 @@ export function formatWorked(ms: number): string {
 	return `${Math.floor(seconds / 3600)}h ${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}m`;
 }
 
-/** The invisible session entry that tells whether an answer was the real final (background.ts): `{ key, final }`. */
+/** Legacy invisible session entry recording whether an answer closed its span: `{ key, final }`. */
 export const FINAL_ENTRY = "rqw-tool-ui-final";
 
 /** A successful answer: stopped normally, with text and without tool calls. */

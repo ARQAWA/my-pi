@@ -7,12 +7,16 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { Agent } from "@earendil-works/pi-agent-core";
 import { createFauxCore, fauxAssistantMessage, fauxProvider, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
-import { createEventBus, SessionManager, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { AgentSession, createEventBus, SessionManager, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { formatProgramStatus, ProcessTerminal } from "@earendil-works/pi-tui";
+import { registerHerdrActivity } from "../../../extensions/RQW-agent/herdr-state.ts";
+import { registerRunningCounts } from "../../../extensions/RQW-agent/running-counts.ts";
+import { registerTerminalActivity } from "../../../extensions/RQW-agent/terminal-progress.ts";
 import { Activity, headTail } from "../../../extensions/RQW-agent/activity.ts";
 import { Coordinator } from "../../../extensions/RQW-agent/coordinator.ts";
 import { createCountsProducer, type CountsOffer, type RunningCounts } from "../../../extensions/RQW-agent/counts.ts";
 import { fastGpt, inheritedFastGpt } from "../../../extensions/RQW-agent/fast-gpt.ts";
-import { createChildManager, openChildManager, repairInterrupted, retainedChildManager } from "../../../extensions/RQW-agent/persistence.ts";
+import { createChildManager, openChildManager, recordDelivery, repairInterrupted, retainedChildManager } from "../../../extensions/RQW-agent/persistence.ts";
 import { ProfileCatalogue } from "../../../extensions/RQW-agent/profiles.ts";
 import { CONTEXT_FORK, ProgressReports, type ContextForkRequest } from "../../../extensions/RQW-agent/progress.ts";
 import { appendUserMessages, loadPromptFile } from "../../../extensions/RQW-agent/prompt-files.ts";
@@ -223,7 +227,7 @@ function coordinatorFixture(t: TestContext, busy = false, sessionFile?: string) 
 	const target = { id: "agent#1", run: "run", active: () => live, snapshot: () => ({ state: live ? "running" : "idle" }) };
 	coordinator.add(target);
 	return { coordinator, sent, branch, emit,
-		finish: () => { live = false; coordinator.publish(target.id, target.run, "answer", "completed", () => {}); } };
+		finish: () => { live = false; coordinator.publish(target.id, target.run, "answer", "completed"); } };
 }
 
 test("coordinator wait returns a completed child result", async t => {
@@ -247,29 +251,6 @@ test("the model-visible wait text carries the follow-up once, a repeat wait does
 	assert.doesNotMatch(repeated.content[0].text, /follow-up actions/);
 });
 
-function notified(t: TestContext, timeout = 100) {
-	const f = coordinatorFixture(t, true);
-	f.emit("before_agent_start");
-	const receipt = f.coordinator.notificationWait(["agent#1"], timeout, new AbortController().signal, "call");
-	f.branch.push({ type: "message", message: { role: "toolResult", toolCallId: "call", isError: false, content: receipt.content } });
-	f.emit("turn_end");
-	return { f, receipt };
-}
-
-test("a child_wait notification carries the follow-up, its waiting receipt does not", t => {
-	const { f, receipt } = notified(t);
-	assert.doesNotMatch(receipt.content[0].text, /follow-up actions/);
-	f.finish();
-	assert.equal(JSON.parse(f.sent[0].message.content).results[0].text, `answer\n\n${FOLLOW_UP}`);
-});
-
-test("a timed-out child_wait notification has no completed result and no follow-up", t => {
-	const { f } = notified(t, 0);
-	assert.equal(f.sent.length, 1);
-	assert.deepEqual(JSON.parse(f.sent[0].message.content).results, []);
-	assert.doesNotMatch(f.sent[0].message.content, /follow-up actions/);
-});
-
 test("receipt write failure still commits a wait result", async t => {
 	const root = await temp(t);
 	const sessionFile = join(root, "parent.jsonl");
@@ -287,27 +268,6 @@ test("receipt write failure still commits a wait result", async t => {
 	assert.equal(repeated.details.reason, "receipt");
 	assert.deepEqual(repeated.details.results, []);
 	assert.equal((repeated.details.receipts as any[])[0].delivered_via, "wait");
-});
-
-// Regression for a66f2c7: busy-parent notifications survive queue clearing and continue once.
-test("busy notification is retained and does not wake the parent repeatedly", t => {
-	const f = coordinatorFixture(t, true);
-	f.emit("before_agent_start");
-	const receipt = f.coordinator.notificationWait(["agent#1"], 100, new AbortController().signal, "call");
-	f.branch.push({ type: "message", message: { role: "toolResult", toolCallId: "call", isError: false,
-		content: [{ type: "text", text: JSON.stringify(receipt) }] } });
-	f.emit("turn_end");
-	f.finish();
-	assert.equal(f.sent.length, 1);
-	assert.equal(f.sent[0].options.triggerTurn, false);
-	assert.equal(f.sent[0].message.details.results[0].text, `answer\n\n${FOLLOW_UP}`);
-	assert.deepEqual(f.emit("agent_before_settle"), { continue: true });
-	f.branch.push(
-		{ type: "custom_message", customType: "child_wait", details: { wait_id: receipt.details.wait_id } },
-		{ type: "message", message: { role: "assistant", content: "seen" } },
-	);
-	assert.equal(f.emit("agent_before_settle"), undefined);
-	assert.equal(f.sent.length, 1);
 });
 
 test("child sessions persist below their parent and reopen", async t => {
@@ -376,6 +336,252 @@ function runtimeFixture(parent: SessionManager, cwd: string, response: (context:
 		execute: (params: any, callId = "call", signal = new AbortController().signal) => definition.execute(callId, params, signal, undefined, ctx) };
 }
 
+async function commitWait(live: ReturnType<typeof runtimeFixture>, parent: SessionManager, id = "agent#1") {
+	const result = await live.execute({ action: "wait", ids: [id] });
+	parent.appendMessage({ role: "toolResult", toolCallId: "call", toolName: "agent", content: result.content, details: result.details, isError: false, timestamp: 1 });
+	await live.emit("turn_end");
+	return result;
+}
+
+function steeringSession(manager: SessionManager) {
+	const listeners = new Set<(event: any) => void>();
+	const session = Object.assign(Object.create(AgentSession.prototype), {
+		sessionManager: manager, agent: { steeringQueue: { messages: [] } },
+		getSteeringMessages: () => messages,
+		subscribe: (listener: (event: any) => void) => { listeners.add(listener); return () => listeners.delete(listener); },
+	});
+	const messages: string[] = [];
+	return { session, messages, emit: (event: any) => { for (const listener of listeners) listener(event); }, listeners };
+}
+
+test("registered agent wait wakes for queued and newly enqueued steering without losing held results", async t => {
+	const root = await temp(t);
+	const manager = SessionManager.inMemory(root);
+	const pending = Promise.withResolvers<string>();
+	const live = runtimeFixture(manager, root, context => context.messages.some((message: any) => JSON.stringify(message.content).includes("slow")) ? pending.promise : "first answer");
+	t.after(() => live.runtime.close());
+	const source = steeringSession(manager);
+	live.ctx.isIdle = () => source.session.isIdle;
+	await live.execute({ action: "start", task: "first" });
+	await live.execute({ action: "start", task: "slow" });
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	source.messages.push("already queued");
+	const queued = await live.execute({ action: "wait", ids: ["agent#2"] });
+	assert.equal(queued.details.reason, "steered");
+	source.messages.length = 0;
+	source.session.agent.steeringQueue.messages.push({ role: "custom", customType: "service", content: "notice" });
+	let settled = false;
+	const waiting = live.execute({ action: "wait", ids: ["agent#2"] }).then((value: any) => { settled = true; return value; });
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(settled, false);
+	source.emit({ type: "queue_update", steering: [], followUp: ["service"] });
+	source.messages.push("next");
+	source.emit({ type: "queue_update", steering: [...source.messages], followUp: [] });
+	source.session.agent.steeringQueue.messages.push({ role: "user", content: "next" });
+	assert.equal((await waiting).details.reason, "steered");
+	assert.equal(source.listeners.size, 0);
+	assert.equal((await live.execute({ action: "status", ids: ["agent#2"] })).details.statuses[0].state !== "completed", true);
+	pending.resolve("slow answer");
+	source.messages.length = 0;
+	source.session.agent.steeringQueue.messages.length = 0;
+	const result = await live.execute({ action: "wait", ids: ["agent#2"] });
+	assert.match(result.details.results[0].text, /slow answer/);
+});
+
+/** The assistant message that announces a batch of tool calls, as Pi persists it before the tools run. */
+function announceBatch(manager: SessionManager, ...calls: object[]) {
+	manager.appendMessage({ role: "assistant", content: calls.map(call => ({ type: "toolCall", ...call })), stopReason: "toolUse", timestamp: 1 } as any);
+}
+const agentWait = (id: string, target = "agent#1") => ({ id, name: "agent", arguments: { action: "wait", ids: [target] } });
+const bashCall = { id: "bash", name: "bash", arguments: { command: "make" } };
+
+test("an agent wait in a batch with other work returns work_pending at once and consumes nothing", async t => {
+	const root = await temp(t);
+	const manager = SessionManager.inMemory(root);
+	const live = runtimeFixture(manager, root);
+	t.after(() => live.runtime.close());
+	const announced: unknown[] = [];
+	live.events.on("rqw:waiting:v1", (event: unknown) => announced.push(event));
+	await live.execute({ action: "start", task: "first" });
+	for (const calls of [[agentWait("w"), bashCall], [bashCall, agentWait("w")]]) {
+		announceBatch(manager, ...calls);
+		const outcome: any = await Promise.race([live.execute({ action: "wait", ids: ["agent#1"] }, "w"), new Promise(resolve => setImmediate(() => resolve("blocked")))]);
+		assert.notEqual(outcome, "blocked", "the wait must not hold the other call of its batch");
+		assert.equal(outcome.details.reason, "work_pending");
+		assert.deepEqual(outcome.details.results, []);
+	}
+	assert.deepEqual(announced, []);
+	announceBatch(manager, agentWait("again"));
+	const result = await live.execute({ action: "wait", ids: ["agent#1"] }, "again");
+	assert.match(result.details.results[0].text, /answer/);
+});
+
+test("codemode agent wait returns immediately without consuming the child answer", async t => {
+	const root = await temp(t);
+	const manager = SessionManager.inMemory(root);
+	const pending = Promise.withResolvers<string>();
+	const live = runtimeFixture(manager, root, () => pending.promise);
+	t.after(() => live.runtime.close());
+	await live.execute({ action: "start", task: "slow" });
+	announceBatch(manager, { id: "script", name: "codemode", arguments: {} });
+	announceBatch(manager, { id: "later", name: "bash", arguments: {} });
+	const result: any = await Promise.race([live.execute({ action: "wait", ids: ["agent#1"] }, "script/1"), new Promise(resolve => setImmediate(() => resolve("blocked")))]);
+	assert.notEqual(result, "blocked");
+	assert.equal(result.details.reason, "direct_wait_required");
+	assert.deepEqual(result.details.results, []);
+	announceBatch(manager, agentWait("direct"));
+	const direct = live.execute({ action: "wait", ids: ["agent#1"] }, "direct");
+	await new Promise(resolve => setImmediate(resolve));
+	pending.resolve("answer");
+	assert.match((await direct).details.results[0].text, /answer/);
+});
+
+test("in Pi's sequential batch an agent wait before bash yields, so bash runs while the child goes on", async t => {
+	const root = await temp(t);
+	const manager = SessionManager.inMemory(root);
+	const pending = Promise.withResolvers<string>();
+	const live = runtimeFixture(manager, root, () => pending.promise);
+	t.after(() => live.runtime.close());
+	await live.execute({ action: "start", task: "slow" });
+	const core = createFauxCore({ provider: "sequential", models: [{ id: "model" }] });
+	core.setResponses([
+		() => fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "w" }), fauxToolCall("probe", {}, { id: "p" })], { stopReason: "toolUse", timestamp: 1 }),
+		() => fauxAssistantMessage("done", { timestamp: 1 }),
+	]);
+	const ran: string[] = [];
+	const wait = { name: "agent", label: "agent", description: "agent", parameters: live.parameters(), execute: (id: string, params: any, signal: AbortSignal) => live.execute(params, id, signal) };
+	const probe = { name: "probe", label: "probe", description: "bash stand-in", parameters: { type: "object", properties: {} }, executionMode: "sequential", execute: async () => { ran.push("probe"); return { content: [{ type: "text", text: "ran" }], details: {} }; } };
+	const agent = new Agent({ streamFn: core.streamSimple, getApiKey: () => "key", initialState: { model: core.getModel("model")!, tools: [wait, probe] as any } });
+	// Pi persists the assistant message before its tools run.
+	agent.subscribe(event => { if (event.type === "message_end" && event.message.role === "assistant") manager.appendMessage(event.message); });
+	t.after(() => agent.abort());
+	void agent.prompt("go");
+	for (let turn = 0; turn < 10 && !ran.length; turn++) await new Promise(resolve => setImmediate(resolve));
+	assert.deepEqual(ran, ["probe"]);
+	pending.resolve("late");
+});
+
+test("a real open wait keeps both activity indicators busy until it closes", async t => {
+	const env = process.env.HERDR_ENV; process.env.HERDR_ENV = "1";
+	t.after(() => { if (env === undefined) delete process.env.HERDR_ENV; else process.env.HERDR_ENV = env; });
+	const writes: string[] = [];
+	t.mock.method(process.stdout, "write", (chunk: string) => { writes.push(String(chunk)); return true; });
+	const root = await temp(t);
+	const manager = SessionManager.inMemory(root);
+	const pending = Promise.withResolvers<string>();
+	const live = runtimeFixture(manager, root, () => pending.promise);
+	t.after(() => live.runtime.close());
+	await live.execute({ action: "start", task: "slow" });
+	const core = createFauxCore({ provider: "waiting-main", models: [{ id: "model" }] });
+	core.setResponses([
+		() => fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "wait" })], { stopReason: "toolUse", timestamp: 1 }),
+		() => fauxAssistantMessage("done", { timestamp: 2 }),
+	]);
+	const wait = { name: "agent", label: "agent", description: "agent", parameters: live.parameters(), execute: (id: string, params: any, signal: AbortSignal) => live.execute(params, id, signal) };
+	const main = new Agent({ streamFn: core.streamSimple, getApiKey: () => "key", initialState: { model: core.getModel("model")!, tools: [wait] as any } });
+	const states: string[] = [];
+	const herdr = { path: "herdr-agent-state.ts", handlers: new Map<string, Function[]>([
+		["agent_start", [() => states.push("working")]],
+		["agent_settled", [(_event: unknown, ctx: any) => { if (ctx.isIdle()) states.push("idle"); }]],
+	]) };
+	const session: any = Object.assign(Object.create(AgentSession.prototype), { sessionManager: manager, agent: main, _extensionRunner: { extensions: [herdr] }, getSteeringMessages: () => [], subscribe: () => () => {} });
+	Object.defineProperty(session, "_isAgentRunActive", { get: () => main.state.isStreaming });
+	const ctx: any = { mode: "tui", sessionManager: manager, isIdle: () => session.isIdle };
+	live.ctx.isIdle = ctx.isIdle;
+	const hooks = new Map<string, Function[]>();
+	const pi: any = { events: live.events, on(name: string, fn: Function) { hooks.set(name, [...hooks.get(name) ?? [], fn]); } };
+	const counts = registerRunningCounts(pi);
+	registerHerdrActivity(pi, counts); registerTerminalActivity(pi, counts);
+	for (const hook of hooks.get("session_start") ?? []) hook({}, ctx);
+	const term = new ProcessTerminal(); (term as any).programStatusSupported = true;
+	const reporterPath = new URL("./modes/interactive/program-status-reporter.js", import.meta.resolve("@earendil-works/pi-coding-agent"));
+	const { ProgramStatusReporter } = await import(reporterPath.href);
+	const reporter = new ProgramStatusReporter(() => term, () => undefined);
+	t.after(() => { for (const hook of hooks.get("session_shutdown") ?? []) hook({}, ctx); (term as any).clearProgressInterval(); main.abort(); });
+	const opened = Promise.withResolvers<void>();
+	live.events.on("rqw:waiting:v1", (event: any) => { if (event.call === "wait" && event.open) opened.resolve(); });
+	main.subscribe(event => {
+		reporter.handleEvent(event);
+		if (event.type === "agent_start") {
+			for (const hook of herdr.handlers.get("agent_start")!) hook(event, ctx);
+		}
+		if (event.type === "turn_start") term.setProgress(true);
+		if (event.type === "agent_end") term.setProgress(false);
+		if (event.type === "message_end" && event.message.role === "assistant") manager.appendMessage(event.message);
+	});
+	const run = main.prompt("go");
+	await opened.promise;
+	assert.equal(main.state.isStreaming, true);
+	assert.deepEqual(states, ["working"]);
+	assert.equal((term as any).programStatus.state, "working");
+	assert.ok(writes.includes(formatProgramStatus({ state: "working", app: "pi" })));
+	pending.resolve("answer");
+	await run;
+	reporter.handleEvent({ type: "agent_settled", aborted: false });
+	for (const hook of herdr.handlers.get("agent_settled")!) hook({}, ctx);
+	assert.equal(main.state.isStreaming, false);
+	assert.deepEqual(states, ["working", "idle"]);
+	assert.equal((term as any).programStatus.state, "done");
+});
+
+test("an agent wait alone announces itself open until it returns", async t => {
+	const root = await temp(t);
+	const manager = SessionManager.inMemory(root);
+	const pending = Promise.withResolvers<string>();
+	const live = runtimeFixture(manager, root, () => pending.promise);
+	t.after(() => live.runtime.close());
+	const announced: unknown[] = [];
+	live.events.on("rqw:waiting:v1", (event: unknown) => announced.push(event));
+	await live.execute({ action: "start", task: "slow" });
+	announceBatch(manager, agentWait("w"), { id: "j", name: "job", arguments: { action: "wait", ids: ["job#1"] } });
+	const waiting = live.execute({ action: "wait", ids: ["agent#1"] }, "w");
+	await new Promise(resolve => setImmediate(resolve));
+	assert.deepEqual(announced, [{ sessionId: manager.getSessionId(), call: "w", open: true }]);
+	pending.resolve("late answer");
+	assert.equal((await waiting).details.reason, "result");
+	assert.deepEqual(announced.at(-1), { sessionId: manager.getSessionId(), call: "w", open: false });
+});
+
+test("send wakes a restored child core waiting for its own child", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const initial = runtimeFixture(parent, root, () => "seed done");
+	await initial.execute({ action: "start", task: "seed", tools: [] });
+	await initial.runtime.wait(new AbortController().signal);
+	initial.runtime.close();
+	const reopened = SessionManager.open(parent.getSessionFile()!);
+	const nested = Promise.withResolvers<string>();
+	const waiting = Promise.withResolvers<void>();
+	const redirected = Promise.withResolvers<any>();
+	const live = runtimeFixture(reopened, root, context => {
+		const messages = context.messages;
+		if (messages.some((message: any) => message.role === "user" && JSON.stringify(message.content).includes("nested task"))) return nested.promise;
+		if (messages.some((message: any) => message.role === "user" && JSON.stringify(message.content).includes("new direction"))) { redirected.resolve(context); return "steered answer"; }
+		if (messages.some((message: any) => message.role === "toolResult" && message.toolCallId === "start-nested"))
+			return fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "nested-wait" })], { stopReason: "toolUse" });
+		return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "nested task", tools: [] }, { id: "start-nested" })], { stopReason: "toolUse" });
+	}, 20);
+	live.events.on("rqw-codex:session-policy", (request: any) => {
+		request.session.subscribe((event: any) => {
+			if (event.type === "tool_execution_start" && event.toolCallId === "nested-wait") waiting.resolve();
+		});
+	});
+	try {
+		await live.execute({ action: "send", id: "agent#1", task: "start nested" });
+		await waiting.promise;
+		await live.execute({ action: "send", id: "agent#1", task: "new direction" });
+		const request = await redirected.promise;
+		const waitResult = request.messages.find((message: any) => message.role === "toolResult" && message.toolCallId === "nested-wait");
+		assert.equal(JSON.parse(waitResult.content[0].text).reason, "steered");
+		nested.resolve("nested done");
+		await live.runtime.wait(new AbortController().signal);
+	} finally {
+		nested.resolve("nested done");
+		live.runtime.close();
+	}
+});
+
 const catalog = {
 	names: ["rqw_readfile", "bash", "edit", "write", "rqw_rg", "rqw_glob"],
 	aliases: { read: "rqw_readfile", grep: "rqw_rg", find: "rqw_glob" },
@@ -404,6 +610,107 @@ test("only ordinary children send automatic progress after 50 tool responses", a
 		assert.equal(summaries, fork ? 0 : 1);
 		assert.equal(parent.getBranch().filter((entry: any) => entry.customType === "agent_progress").length, fork ? 0 : 1);
 		live.runtime.close();
+	}
+});
+
+test("a progress notice received by a busy caller gets one continuation", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.inMemory(root);
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const gate = Promise.withResolvers<ReturnType<typeof fauxAssistantMessage>>();
+	let steps = 0;
+	const live = runtimeFixture(parent, root, () => ++steps <= 50
+		? fauxAssistantMessage([fauxToolCall("read", {}, { id: `read-${steps}` })], { stopReason: "toolUse" }) : gate.promise, 52, false, offerCatalog);
+	t.after(() => { gate.resolve(fauxAssistantMessage("done")); live.runtime.close(); });
+	live.ctx.isIdle = () => false;
+	live.events.on("rqw:context-fork:v1", (request: any) => request.offer(async () => fauxAssistantMessage("progress")));
+	await live.execute({ action: "start", task: "work", tools: ["read"] });
+	await until(() => parent.getBranch().some((entry: any) => entry.customType === "agent_progress"));
+	assert.deepEqual(await live.emit("agent_before_settle"), { continue: true });
+	parent.appendMessage(fauxAssistantMessage("seen"));
+	assert.equal(await live.emit("agent_before_settle"), undefined);
+});
+
+test("nested progress wakes its idle parent after its final", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.inMemory(root);
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const report = Promise.withResolvers<ReturnType<typeof fauxAssistantMessage>>();
+	const childGate = Promise.withResolvers<ReturnType<typeof fauxAssistantMessage>>();
+	const live = runtimeFixture(parent, root, context => {
+		const task = userTexts(context)[0];
+		const results = context.messages.filter((message: any) => message.role === "toolResult");
+		if (task === "nested") return results.length < 50
+			? fauxAssistantMessage([fauxToolCall("rqw_readfile", {}, { id: `nested-${results.length}` })], { stopReason: "toolUse" }) : childGate.promise;
+		if (JSON.stringify(context.messages).includes("has worked 50 tool-call steps")) return "saw progress";
+		if (results.length) return "parent final";
+		return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "nested", tools: ["rqw_readfile"] }, { id: "delegate" })], { stopReason: "toolUse" });
+	}, 60, false, offerCatalog);
+	t.after(() => { report.resolve(fauxAssistantMessage("progress")); childGate.resolve(fauxAssistantMessage("done")); live.runtime.close(); });
+	live.events.on("rqw:context-fork:v1", (request: any) => request.offer(() => report.promise));
+	await live.execute({ action: "start", task: "outer", tools: ["rqw_readfile"] });
+	const final = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.match(final.details.results[0].text, /^parent final/);
+	await until(() => live.requests.some((request: any) => userTexts(request)[0] === "nested" && request.messages.filter((message: any) => message.role === "toolResult").length === 50));
+	report.resolve(fauxAssistantMessage("progress"));
+	await until(() => live.requests.some((request: any) => JSON.stringify(request.messages).includes("has worked 50 tool-call steps")));
+});
+
+test("old result inbox records stay historical when a child resumes", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root);
+	await first.execute({ action: "start", task: "first", tools: [] });
+	await first.runtime.wait(new AbortController().signal);
+	const child = retainedChildManager(parent, "agent", 1)!;
+	for (const type of ["agent", "child_wait", "job"]) {
+		child.appendCustomEntry("rqw-agent-inbox", { version: 1, id: type, message: { customType: type, content: `old ${type}`, display: true } });
+	}
+	first.runtime.close();
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "send", id: "agent#1", task: "continue" });
+	await restored.runtime.wait(new AbortController().signal);
+	assert.doesNotMatch(JSON.stringify(restored.requests), /old (agent|child_wait|job)/);
+	restored.runtime.close();
+});
+
+test("an old inbox receipt is delivered only after its message reaches the branch", async t => {
+	const root = await temp(t);
+	for (const scenario of ["unseen", "seen", "other-branch", "earlier-call", "sibling-inbox"]) {
+		const parent = SessionManager.create(root, join(root, scenario));
+		parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+		const first = runtimeFixture(parent, root);
+		await first.execute({ action: "start", task: "task", tools: [] });
+		await first.runtime.wait(new AbortController().signal);
+		const saved = (parent.getBranch() as any[]).findLast(entry => entry.customType === "rqw-agent-child" && entry.data.result).data.result;
+		const details = { results: [{ run: saved.run, delivery: saved.delivery }] };
+		const beforeInbox = parent.getLeafId()!;
+		parent.appendCustomEntry("rqw-agent-inbox", { version: 1, id: "old", message: { customType: "child_wait", content: "old", display: true, details } });
+		if (scenario === "sibling-inbox") parent.branch(beforeInbox);
+		if (scenario === "seen") parent.appendCustomMessageEntry("child_wait", "old", true, { ...details, rqw_agent_inbox: "old" });
+		if (scenario === "other-branch" || scenario === "earlier-call") {
+			const inbox = parent.getLeafId()!;
+			const accept = () => parent.appendCustomEntry("rqw-agent-accept", { version: 1, ok: true, root: "same-call", results: [{ run: saved.run, delivery: saved.delivery }] });
+			const unrelated = () => parent.appendMessage({ role: "toolResult", toolCallId: "same-call", toolName: "codemode", content: [{ type: "text", text: "unrelated" }], isError: false, timestamp: 1 });
+			if (scenario === "other-branch") { accept(); parent.branch(inbox); unrelated(); parent.branch(inbox); }
+			else { unrelated(); accept(); }
+		}
+		recordDelivery(parent, saved.run);
+		first.runtime.close();
+		const manager = SessionManager.open(parent.getSessionFile()!);
+		const inboxBranch = manager.getLeafId()!;
+		const restored = runtimeFixture(manager, root);
+		const result = await commitWait(restored, manager);
+		assert.equal(result.details.results.length, scenario === "seen" ? 0 : 1);
+		if (scenario !== "seen") {
+			assert.equal(result.details.results[0].delivery, saved.delivery);
+			manager.branch(inboxBranch);
+			await restored.emit("session_tree");
+			const repeated = await restored.execute({ action: "wait", ids: ["agent#1"] }, "repeat");
+			assert.deepEqual(repeated.details.results, []);
+		}
+		restored.runtime.close();
 	}
 });
 
@@ -608,7 +915,9 @@ test("nested child codemode exposes exactly its selected tool subset", async t =
 	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
 	const live = runtimeFixture(parent, root, context => {
 		const task = context.messages.find((message: any) => message.role === "user")?.content?.[0]?.text;
-		if (context.messages.some((message: any) => message.role === "toolResult")) return "done";
+		const results = context.messages.filter((message: any) => message.role === "toolResult");
+		if (task === "outer" && results.length === 1) return fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "wait-nested" })], { stopReason: "toolUse" });
+		if (results.length) return "done";
 		if (task === "outer") return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "nested", tools: ["rqw_readfile"] }, { id: "delegate" })], { stopReason: "toolUse" });
 		return fauxAssistantMessage([fauxToolCall("codemode", { code: "text(JSON.stringify(ALL_TOOLS.map(tool => tool.name).sort()));" }, { id: "nested-code" })], { stopReason: "toolUse" });
 	}, 12, true, offerCatalog);
@@ -624,10 +933,65 @@ test("nested child codemode exposes exactly its selected tool subset", async t =
 	assert.deepEqual(JSON.parse(list), ["agent", "rqw_readfile"]);
 });
 
+test("a nested child continues after its parent's final and is collected by a later wait", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.inMemory(root);
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const gate = Promise.withResolvers<string>();
+	const entered = Promise.withResolvers<void>();
+	const live = runtimeFixture(parent, root, context => {
+		const messages = context.messages;
+		const users = userTexts(context);
+		if (users[0] === "nested") { entered.resolve(); return gate.promise; }
+		const results = messages.filter((message: any) => message.role === "toolResult");
+		if (users.includes("collect")) {
+			if (results.some((message: any) => message.toolCallId === "collect-wait")) return "collected";
+			return fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "collect-wait" })], { stopReason: "toolUse" });
+		}
+		if (results.length) return "parent final";
+		return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "nested", tools: [] }, { id: "start-nested" })], { stopReason: "toolUse" });
+	}, 12);
+	t.after(() => { gate.resolve("nested answer"); live.runtime.close(); });
+	await live.execute({ action: "start", task: "outer", tools: [] });
+	await entered.promise;
+	let first: any;
+	void live.execute({ action: "wait", ids: ["agent#1"] }).then(result => { first = result; }).catch(() => {});
+	await until(() => first !== undefined);
+	assert.match(first.details.results[0].text, /^parent final/);
+	assert.equal(live.runtime.runningCounts().agents, 1);
+	await live.execute({ action: "send", id: "agent#1", task: "collect" });
+	await until(() => live.requests.some((request: any) => userTexts(request).includes("collect")));
+	gate.resolve("nested answer");
+	const second = await live.execute({ action: "wait", ids: ["agent#1"] }, "second");
+	assert.match(second.details.results[0].text, /^collected/);
+	const request = live.requests.findLast((item: any) => item.messages.some((message: any) => message.role === "toolResult" && message.toolCallId === "collect-wait"));
+	assert.match(JSON.stringify(request.messages), /nested answer/);
+});
+
 const REMINDER = "<subagent>\nYou are an agent in a team of agents collaborating to complete a task.\nWhen you provide your final answer, that content is immediately delivered back to your parent agent.\nIn addition, your final answer may be read by a human, so ensure it is legible.\nAny earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user, your task, role or system prompt, or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.\n</subagent>";
 const CURSOR_REMINDER = "<subagent>\nYou are running as a subagent under a parent agent. Do not spawn additional subagents unless requested by the user or by your instructions.\n</subagent>";
 
-test("a finished child's pushed result message ends with the follow-up", async t => {
+test("send preserves an unread result across another run and restart", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, context => `answer ${userTexts(context).at(-1)}`);
+	await live.execute({ action: "start", task: "one", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	await live.execute({ action: "send", id: "agent#1", task: "two" });
+	await live.runtime.wait(new AbortController().signal);
+	live.runtime.close();
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	t.after(() => restored.runtime.close());
+	const first = await commitWait(restored, restored.ctx.sessionManager);
+	assert.match(first.details.results[0].text, /^answer one/);
+	const second = await commitWait(restored, restored.ctx.sessionManager);
+	assert.match(second.details.results[0].text, /^answer two/);
+	const repeat = await restored.execute({ action: "wait", ids: ["agent#1"] }, "repeat");
+	assert.deepEqual(repeat.details.results, []);
+});
+
+test("a finished child is silent until an explicit wait", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const root = await temp(t);
 	const parent = SessionManager.create(root, join(root, "parent"));
@@ -636,7 +1000,11 @@ test("a finished child's pushed result message ends with the follow-up", async t
 	await live.execute({ action: "start", task: "one", tools: [] });
 	await live.runtime.wait(new AbortController().signal);
 	const pushed = parent.getEntries().filter((entry: any) => entry.type === "custom_message" && entry.customType === "agent") as any[];
-	assert.deepEqual(pushed.map(entry => entry.content), [`[agent#1] answer\n\n${FOLLOW_UP}`]);
+	assert.deepEqual(pushed, []);
+	const waited = await commitWait(live, parent);
+	assert.equal(waited.details.results[0].text, `answer\n\n${FOLLOW_UP}`);
+	const repeated = await live.execute({ action: "wait", ids: ["agent#1"] }, "repeat");
+	assert.deepEqual(repeated.details.results, []);
 	live.runtime.close();
 });
 
@@ -966,7 +1334,10 @@ test("completed children wait without opening siblings and materialize only for 
 	assert.equal(beforeStatus.details.results.length, 1);
 	await statusOnly.execute({ action: "status", ids: ["agent#1"] });
 	const afterStatus = await statusOnly.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(afterStatus.details.results.length, 0);
+	assert.equal(afterStatus.details.results.length, 1);
+	assert.notEqual(afterStatus.details.results[0].run, beforeStatus.details.results[0].run);
+	const repeatedStatus = await statusOnly.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(repeatedStatus.details.results.length, 0);
 	statusOnly.runtime.close();
 });
 
@@ -1026,6 +1397,7 @@ test("five finished idle minutes release a session and send wakes the same histo
 	await live.runtime.wait(new AbortController().signal);
 	const initial = await live.execute({ action: "status", ids: ["agent#1"] });
 	const original = JSON.parse(initial.details.statuses[0].messages.find((message: any) => message.role === "assistant").text);
+	await commitWait(live, parent);
 	now = 299999;
 	t.mock.timers.tick(299999);
 	const awake = await live.execute({ action: "wait", ids: ["agent#1"] });
@@ -1060,7 +1432,7 @@ test("five finished idle minutes release a session and send wakes the same histo
 	live.runtime.close();
 });
 
-test("filtered nested delivery survives five-minute hibernation and wake", async t => {
+test("direct wait after codemode survives five-minute hibernation and wake", async t => {
 	const nested = Promise.withResolvers<ReturnType<typeof fauxAssistantMessage>>();
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	let now = 0;
@@ -1072,11 +1444,15 @@ test("filtered nested delivery survives five-minute hibernation and wake", async
 		const task = context.messages.find((message: any) => message.role === "user")?.content?.[0]?.text;
 		const tools = context.messages.filter((message: any) => message.role === "toolResult");
 		if (task === "delegate" && tools.length === 0)
-			return fauxAssistantMessage([fauxToolCall("codemode", { code: 'await tools.agent({ action: "start", task: "nested", tools: [] }); const waiting = tools.agent({ action: "wait", ids: ["agent#1"] }); await tools.agent({ action: "status", ids: ["agent#1"] }); await tools.read({ path: "release-model" }); text(JSON.parse(await waiting).results[0]?.text === ' + JSON.stringify(`nested answer\n\n${FOLLOW_UP}`) + ' ? "consumed" : "missing");' }, { id: "outer/filtered" })], { stopReason: "toolUse" });
-		if (task === "delegate" && tools.length === 1 && context.messages.some((message: any) => message.role === "user" && message.content?.[0]?.text === "wake"))
+			return fauxAssistantMessage([fauxToolCall("codemode", { code: 'await tools.agent({ action: "start", task: "nested", tools: [] }); text(await tools.agent({ action: "wait", ids: ["agent#1"] })); await tools.read({ path: "release-model" });' }, { id: "outer/filtered" })], { stopReason: "toolUse" });
+		if (task === "delegate" && tools.length === 1) {
+			if (!JSON.stringify(tools[0].content).includes("direct_wait_required")) return "missing direct wait reason";
 			return fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "wake/wait" })], { stopReason: "toolUse" });
-		if (task === "delegate" && tools.length === 1)
-			return tools[0].content.some((part: any) => part.text === "consumed") ? "consumed" : "missing";
+		}
+		if (task === "delegate" && tools.length === 2 && !context.messages.some((message: any) => message.role === "user" && message.content?.[0]?.text === "wake"))
+			return JSON.stringify(tools[1].content).includes("receipt") ? "received" : "missing";
+		if (task === "delegate" && tools.length === 2 && context.messages.some((message: any) => message.role === "user" && message.content?.[0]?.text === "wake"))
+			return fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "wake/again" })], { stopReason: "toolUse" });
 		return task === "nested" ? nested.promise : JSON.stringify(context.messages.filter((message: any) => message.role !== "system" && message.role !== "assistant" && JSON.stringify(message.content).includes("nested answer")).length);
 	}, 16, true);
 	live.events.on("rqw-tools:subagent-tools", (request: any) => request.offer(() => [{
@@ -1085,9 +1461,9 @@ test("filtered nested delivery survives five-minute hibernation and wake", async
 	}]));
 	await live.execute({ action: "start", task: "delegate", tools: ["read"] });
 	await live.runtime.wait(new AbortController().signal);
-	await live.execute({ action: "wait", ids: ["agent#1"] });
+	await commitWait(live, parent);
 	const beforeSleep = await live.execute({ action: "status", ids: ["agent#1"] });
-	assert.ok(beforeSleep.details.statuses[0].messages.some((message: any) => message.role === "assistant" && message.text === "consumed"));
+	assert.ok(beforeSleep.details.statuses[0].messages.some((message: any) => message.role === "assistant" && message.text === "received"));
 	now = 300000;
 	t.mock.timers.tick(300000);
 	const result = await live.execute({ action: "wait", ids: ["agent#1"] });
@@ -1097,11 +1473,11 @@ test("filtered nested delivery survives five-minute hibernation and wake", async
 	await live.execute({ action: "send", id: "agent#1", task: "wake" });
 	await live.runtime.wait(new AbortController().signal);
 	const wake = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(wake.details.results[0].text, `0\n\n${FOLLOW_UP}`);
+	assert.equal(wake.details.results[0].text, `1\n\n${FOLLOW_UP}`);
 	live.runtime.close();
 });
 
-test("background holds and uncommitted notifications block overdue sleep until settlement", async t => {
+test("an uncommitted answer blocks sleep until its wait result is saved", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	let now = 0;
 	t.mock.method(performance, "now", () => now);
@@ -1109,43 +1485,67 @@ test("background holds and uncommitted notifications block overdue sleep until s
 	const parent = SessionManager.create(root, join(root, "parent"));
 	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
 	const live = runtimeFixture(parent, root);
-	let retain!: () => () => void;
-	live.events.on("rqw-tools:subagent-tools", (request: any) => request.offer((_cwd: string, _settings: any, options: any) => {
-		retain = options.retain;
+	let options: any;
+	live.events.on("rqw-tools:subagent-tools", (request: any) => request.offer((_cwd: string, _settings: any, value: any) => {
+		options = value;
 		return [];
 	}));
 	await live.execute({ action: "start", task: "task", tools: [] });
 	await live.runtime.wait(new AbortController().signal);
-	const release = retain();
+	assert.equal("notify" in options, false);
+	assert.equal("retain" in options, false);
 	now = 300000;
 	t.mock.timers.tick(300000);
-	const held = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(held.details.statuses[0].run_id, 1);
-	release();
+	const waiting = await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(waiting.details.statuses[0].run_id, 1);
+	assert.match(waiting.details.results[0].text, /answer/);
+	parent.appendMessage({ role: "toolResult", toolCallId: "call", toolName: "agent", content: waiting.content, details: waiting.details, isError: false, timestamp: 1 });
+	await live.emit("turn_end");
 	now = 600000;
 	t.mock.timers.tick(300000);
-	const released = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(released.details.statuses[0].run_id, undefined);
-	live.runtime.close();
-
-	const pending = runtimeFixture(parent, root);
-	pending.ctx.mode = "print";
-	await pending.emit("agent_end");
-	await pending.execute({ action: "start", task: "pending task", tools: [] });
-	await pending.runtime.wait(new AbortController().signal);
-	now = 900000;
-	t.mock.timers.tick(300000);
-	await pending.emit("tool_call", { toolCallId: "call", parentToolCallId: "outer" });
-	const waiting = await pending.execute({ action: "wait", ids: ["agent#2"] });
-	assert.equal(waiting.details.statuses[0].run_id, 1);
-	assert.equal(waiting.details.results[0].text, `answer\n\n${FOLLOW_UP}`);
-	parent.appendMessage({ role: "toolResult", toolCallId: "outer", toolName: "codemode", content: [{ type: "text", text: "filtered answer" }], details: {}, isError: false, timestamp: 1 });
-	await pending.emit("turn_end");
-	now = 1200000;
-	t.mock.timers.tick(300000);
-	const settled = await pending.execute({ action: "wait", ids: ["agent#2"] });
+	const settled = await live.execute({ action: "wait", ids: ["agent#1"] });
 	assert.equal(settled.details.statuses[0].run_id, undefined);
-	pending.runtime.close();
+	live.runtime.close();
+});
+
+test("a finished child keeps its job registry through the idle deadline", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	let now = 0;
+	t.mock.method(performance, "now", () => now);
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	let disposed = false;
+	let factories = 0;
+	const job = Promise.withResolvers<string>();
+	const live = runtimeFixture(parent, root, context => {
+		const users = userTexts(context);
+		const results = context.messages.filter((message: any) => message.role === "toolResult");
+		if (!users.includes("collect")) return "final";
+		if (results.some((result: any) => result.toolCallId === "collect-job")) return "collected";
+		return fauxAssistantMessage([fauxToolCall("job", {}, { id: "collect-job" })], { stopReason: "toolUse" });
+	});
+	live.events.on("rqw-tools:subagent-tools", (request: any) => request.offer(() => {
+		factories++;
+		return [{
+			name: "job", label: "Job", description: "Job control", parameters: { type: "object", properties: {} },
+			jobs: { abortAll() {}, dispose() { disposed = true; }, hasJobs: () => true },
+			execute: async () => ({ content: [{ type: "text", text: await job.promise }], details: {} }),
+		}];
+	}));
+	await live.execute({ action: "start", task: "task", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	await commitWait(live, parent);
+	now = 300000;
+	t.mock.timers.tick(300000);
+	await live.execute({ action: "send", id: "agent#1", task: "collect" });
+	job.resolve("late result");
+	await live.runtime.wait(new AbortController().signal);
+	const collected = live.requests.at(-1).messages.find((message: any) => message.role === "toolResult" && message.toolCallId === "collect-job");
+	assert.match(JSON.stringify(collected), /late result/);
+	assert.equal(factories, 1);
+	assert.equal(disposed, false);
+	live.runtime.close();
 });
 
 test("a running child's queued progress notice does not hold a finished sibling awake", async t => {
@@ -1173,6 +1573,7 @@ test("a running child's queued progress notice does not hold a finished sibling 
 	}]));
 	await live.execute({ action: "start", task: "sleep sibling", tools: [] });
 	await live.runtime.wait(new AbortController().signal);
+	await commitWait(live, parent);
 	await live.emit("agent_end");
 	await live.execute({ action: "start", task: "work", tools: ["read"] });
 	await entered.promise;
@@ -1524,33 +1925,22 @@ async function crashedDuringWait(t: TestContext, restoredAt = 1000, restoredResp
 	return { id, root, clock, restored, sent, plain: () => restored.ctx.sessionManager.getBranch().filter((entry: any) => entry.type === "custom_message" && entry.customType === "agent") };
 }
 
-test("a wait open at the crash delivers one child_wait with the answer of the resumed run", async t => {
+test("an old open wait is not restored and its resumed answer remains available", async t => {
 	const crash = await crashedDuringWait(t);
-	assert.equal(crash.sent().length, 0);
+	const before = crash.restored.ctx.sessionManager.getBranch().filter((entry: any) => entry.customType === "rqw-agent-wait").length;
 	await crash.restored.runtime.resume!(new AbortController().signal, true);
 	await crash.restored.runtime.wait(new AbortController().signal);
-	const [sent, ...more] = crash.sent();
-	assert.equal(more.length, 0);
-	assert.deepEqual([sent.wait_id, sent.reason, sent.results[0].text.split("\n\n")[0]], [crash.id, "result", "answer"]);
-	assert.equal(crash.plain().length, 0);
-	crash.restored.runtime.close();
-});
-
-test("a restored wait ends with target_changed when its child is restarted", async t => {
-	const crash = await crashedDuringWait(t);
 	assert.equal(crash.sent().length, 0);
-	await crash.restored.execute({ action: "restart", id: "agent#1" });
-	assert.deepEqual(crash.sent().map(sent => [sent.wait_id, sent.reason]), [[crash.id, "target_changed"]]);
+	assert.equal(crash.plain().length, 0);
+	assert.equal(crash.restored.ctx.sessionManager.getBranch().filter((entry: any) => entry.customType === "rqw-agent-wait").length, before);
+	const answer = await crash.restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.match(answer.details.results[0].text, /^answer/);
+	const again = await crash.restored.execute({ action: "wait", ids: ["agent#1"] }, "again");
+	assert.deepEqual(again.details.results, []);
 	crash.restored.runtime.close();
 });
 
-test("a wait whose deadline passed during the crash times out at once", async t => {
-	const crash = await crashedDuringWait(t, 70000);
-	assert.deepEqual(crash.sent().map(sent => [sent.wait_id, sent.reason, sent.timed_out]), [[crash.id, "timeout", true]]);
-	crash.restored.runtime.close();
-});
-
-test("a saved answer that was not delivered before the crash is sent with the same delivery id", async t => {
+test("a saved answer remains available after a crash with the same delivery id", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const root = await temp(t);
 	const parent = SessionManager.create(root, join(root, "parent"));
@@ -1569,7 +1959,9 @@ test("a saved answer that was not delivered before the crash is sent with the sa
 	const restored = runtimeFixture(SessionManager.open(file), root);
 	await restored.execute({ action: "status", ids: ["agent#1"] });
 	const pushed = restored.ctx.sessionManager.getBranch().filter((entry: any) => entry.type === "custom_message" && entry.customType === "agent") as any[];
-	assert.deepEqual(pushed.map(entry => entry.details.delivery), [saved]);
+	assert.deepEqual(pushed, []);
+	const answer = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(answer.details.results[0].delivery, saved);
 	restored.runtime.close();
 });
 
@@ -1592,7 +1984,11 @@ async function crashedInsideCodemode(t: TestContext, waitFailed: boolean, outerF
 	parent.appendMessage({ role: "toolResult", toolCallId: "outer", toolName: "codemode", content: [{ type: "text", text: "ok" }], isError: outerFailed, timestamp: 1 });
 	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
 	await restored.execute({ action: "status", ids: ["agent#1"] });
-	return (restored.ctx.sessionManager.getBranch() as any[]).filter(entry => entry.type === "custom_message" && entry.customType === "agent").length;
+	const answer = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	const count = answer.details.results.length;
+	restored.runtime.close();
+	first.runtime.close();
+	return count;
 }
 
 test("an answer a codemode wait took is not sent again after a crash before its receipt", async t => {
@@ -1631,6 +2027,7 @@ test("a child that went to sleep leaves no live session manager behind", async t
 	await live.execute({ action: "start", task: "task", tools: [] });
 	await live.runtime.wait(new AbortController().signal);
 	assert.ok(managers() > before);
+	await commitWait(live, parent);
 	now = 300000;
 	t.mock.timers.tick(300000);
 	const asleep = await live.execute({ action: "wait", ids: ["agent#1"] });
@@ -1686,108 +2083,6 @@ test("a joined batch that is already in the history is not sent again", async t 
 	restored.runtime.close();
 });
 
-test("interrupting a child that waits for its recovery wakes its restored wait and keeps it paused", async t => {
-	const crash = await crashedDuringWait(t);
-	await crash.restored.execute({ action: "interrupt", id: "agent#1" });
-	assert.deepEqual(crash.sent().map(sent => [sent.wait_id, sent.reason, sent.changed[0].change]), [[crash.id, "target_changed", "interrupt"]]);
-	await crash.restored.runtime.resume!(new AbortController().signal, true);
-	assert.equal(crash.restored.requests.length, 0);
-	crash.restored.runtime.close();
-});
-
-test("a restored wait still follows its child after a second crash", async t => {
-	const crash = await crashedDuringWait(t, 1000, () => new Promise<never>(() => {}));
-	await crash.restored.runtime.resume!(new AbortController().signal, true);
-	await until(() => crash.restored.requests.length === 1);
-	const second = runtimeFixture(SessionManager.open(crash.restored.ctx.sessionManager.getSessionFile()!), crash.root);
-	await second.execute({ action: "status", ids: ["agent#1"] });
-	await second.runtime.resume!(new AbortController().signal, true);
-	await second.runtime.wait(new AbortController().signal);
-	const sent = (second.ctx.sessionManager.getBranch() as any[]).filter(entry => entry.customType === "child_wait");
-	assert.deepEqual(sent.map(entry => [entry.details.wait_id, entry.details.reason]), [[crash.id, "result"]]);
-	second.runtime.close();
-});
-
-test("a wait whose tool result was never saved is not raised after a crash", async t => {
-	t.mock.timers.enable({ apis: ["setTimeout"] });
-	const root = await temp(t);
-	const parent = SessionManager.create(root, join(root, "parent"));
-	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
-	const first = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
-	await first.execute({ action: "start", task: "long task", tools: [] });
-	await until(() => first.requests.length === 1);
-	savedWait(parent, "call1", 60000, false);
-	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
-	await restored.execute({ action: "status", ids: ["agent#1"] });
-	await restored.runtime.resume!(new AbortController().signal, true);
-	await restored.runtime.wait(new AbortController().signal);
-	const branch = restored.ctx.sessionManager.getBranch() as any[];
-	assert.equal(branch.filter(entry => entry.customType === "child_wait").length, 0);
-	assert.equal(branch.filter(entry => entry.type === "custom_message" && entry.customType === "agent").length, 1);
-	restored.runtime.close();
-});
-
-/** The child record already holds the next run, written as crash recovery or as an ordinary run; the wait still names the earlier one. */
-async function waitBehindChild(t: TestContext, recovery: boolean) {
-	const bump = async (file: string) => {
-		const lines = (await readFile(file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
-		for (const entry of lines) if (entry.customType === "rqw-agent-child") {
-			if (recovery) entry.data.recovers = `${entry.data.epoch}:${entry.data.runNumber}`;
-			entry.data.runNumber++;
-		}
-		await writeFile(file, `${lines.map(entry => JSON.stringify(entry)).join("\n")}\n`);
-	};
-	const crash = await crashedDuringWait(t, 1000, undefined, bump);
-	await crash.restored.runtime.resume!(new AbortController().signal, true);
-	await crash.restored.runtime.wait(new AbortController().signal);
-	const reasons = crash.sent().map(sent => [sent.wait_id, sent.reason]);
-	crash.restored.runtime.close();
-	return { crash, reasons };
-}
-
-test("a wait keeps following its child when the crash came between the child's record and the wait's", async t => {
-	const { crash, reasons } = await waitBehindChild(t, true);
-	assert.deepEqual(reasons, [[crash.id, "result"]]);
-});
-
-test("a wait ends with target_changed when the child's next run is not a crash recovery", async t => {
-	const { crash, reasons } = await waitBehindChild(t, false);
-	assert.deepEqual(reasons, [[crash.id, "target_changed"]]);
-});
-
-test("a child_wait saved in a nested caller's durable inbox ends its wait on restore", async t => {
-	const inbox = async (file: string, waitId: string) => {
-		const lines = (await readFile(file, "utf8")).split("\n").filter(Boolean);
-		const last = JSON.parse(lines.at(-1)!);
-		const entry = { type: "custom", id: "inbox001", parentId: last.id, timestamp: last.timestamp, customType: "rqw-agent-inbox",
-			data: { version: 1, id: "message-1", message: { customType: "child_wait", content: "{}", display: true, details: { wait_id: waitId } } } };
-		await writeFile(file, `${lines.join("\n")}\n${JSON.stringify(entry)}\n`);
-	};
-	const crash = await crashedDuringWait(t, 1000, undefined, inbox);
-	await crash.restored.runtime.resume!(new AbortController().signal, true);
-	await crash.restored.runtime.wait(new AbortController().signal);
-	assert.equal(crash.sent().length, 0);
-	crash.restored.runtime.close();
-});
-
-test("a recovery that already completed before the crash still ends its restored wait with the result", async t => {
-	// The child record holds a finished run that continued the one the wait recorded; its answer is saved.
-	const finished = async (file: string) => {
-		const lines = (await readFile(file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
-		for (const entry of lines) if (entry.customType === "rqw-agent-child") {
-			const data = entry.data;
-			data.recovers = `${data.epoch}:${data.runNumber}`;
-			data.runNumber++;
-			data.state = "completed";
-			data.result = { run: `${data.epoch}:${data.runNumber}`, text: "answer", outcome: "completed", meta: { model: "persist-test/model", stop: "stop" }, delivery: "saved-delivery" };
-		}
-		await writeFile(file, `${lines.map(entry => JSON.stringify(entry)).join("\n")}\n`);
-	};
-	const crash = await crashedDuringWait(t, 1000, undefined, finished);
-	assert.deepEqual(crash.sent().map(sent => [sent.wait_id, sent.reason, sent.results[0].text.split("\n\n")[0]]), [[crash.id, "result", "answer"]]);
-	crash.restored.runtime.close();
-});
-
 test("a restarted child whose history never reached its file restarts with its one accepted task", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const root = await temp(t);
@@ -1840,9 +2135,9 @@ test("a saved wait whose child_wait was persisted before the crash is not raised
 	assert.equal(crash.plain.length, 0);
 });
 
-test("a saved wait whose child_wait was not persisted before the crash is raised again", async t => {
+test("a saved wait whose child_wait was not persisted does not wake on restore", async t => {
 	const crash = await crashedAfterChildAnswer(t, false);
-	assert.deepEqual(crash.waits.map((entry: any) => [entry.details.wait_id, entry.details.reason, entry.details.results[0].text.split("\n\n")[0]]), [[crash.id, "result", "answer"]]);
+	assert.deepEqual(crash.waits, []);
 	assert.equal(crash.plain.length, 0);
 });
 
@@ -1876,6 +2171,32 @@ test("a direct wait stays open and returns the first finished child by itself", 
 	assert.deepEqual(resultTexts(result.details), [["agent#2", "answer of b"]]);
 	assert.equal(result.terminate, undefined);
 	f.release("a");
+	f.live.runtime.close();
+});
+
+test("steering releases a wait-all's held answer and leaves both children available", async t => {
+	const f = await gatedChildren(t, ["a", "b"]);
+	const source = steeringSession(f.parent);
+	f.live.ctx.isIdle = () => source.session.isIdle;
+	const waiting = f.live.execute({ action: "wait", ids: ["agent#1", "agent#2"], until: "all" });
+	let settled = false;
+	void waiting.then(() => { settled = true; });
+	f.release("a");
+	await f.settle();
+	source.emit({ type: "queue_update", steering: [], followUp: ["service"] });
+	await Promise.resolve();
+	assert.equal(settled, false);
+	source.messages.push("new direction");
+	source.emit({ type: "queue_update", steering: [...source.messages], followUp: [] });
+	source.session.agent.steeringQueue.messages.push({ role: "user" });
+	assert.equal((await waiting).details.reason, "steered");
+	source.messages.length = 0;
+	source.session.agent.steeringQueue.messages.length = 0;
+	const first = await f.live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(first.details.results.length + first.details.receipts.length, 1);
+	f.release("b");
+	const second = await f.live.execute({ action: "wait", ids: ["agent#2"] });
+	assert.deepEqual(resultTexts(second.details), [["agent#2", "answer of b"]]);
 	f.live.runtime.close();
 });
 
@@ -1932,7 +2253,7 @@ test("a direct wait ends with target_changed when its child is interrupted", asy
 	f.live.runtime.close();
 });
 
-test("an aborted direct wait stops only the wait; the answer still reaches the parent", async t => {
+test("an aborted direct wait leaves the answer for a later wait", async t => {
 	const f = await gatedChildren(t, ["a"]);
 	const controller = new AbortController();
 	const waiting = f.live.execute({ action: "wait", ids: ["agent#1"] }, "call", controller.signal);
@@ -1942,22 +2263,38 @@ test("an aborted direct wait stops only the wait; the answer still reaches the p
 	f.release("a");
 	await f.live.runtime.wait(new AbortController().signal);
 	const plain = (f.parent.getBranch() as any[]).filter(entry => entry.type === "custom_message" && entry.customType === "agent");
-	assert.equal(plain.length, 1);
-	assert.match(JSON.stringify(plain[0].content), /answer of a/);
+	assert.equal(plain.length, 0);
+	const result = await f.live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.match(result.details.results[0].text, /answer of a/);
 	f.live.runtime.close();
 });
 
-test("an answer a direct wait returned is sent as a message when its tool result is lost", async t => {
+test("an error tool result with wait details does not lose the answer after restart", async t => {
+	const f = await gatedChildren(t, ["a"]);
+	const waiting = f.live.execute({ action: "wait", ids: ["agent#1"] });
+	f.release("a");
+	const result = await waiting;
+	f.parent.appendMessage({ role: "toolResult", toolCallId: "call", toolName: "agent", content: result.content, details: result.details, isError: true, timestamp: 1 });
+	f.live.runtime.close();
+	const restored = runtimeFixture(SessionManager.open(f.parent.getSessionFile()!), f.live.ctx.cwd);
+	t.after(() => restored.runtime.close());
+	const again = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(again.details.results[0].delivery, result.details.results[0].delivery);
+});
+
+test("an answer a direct wait returned remains available when its tool result is lost", async t => {
 	const f = await gatedChildren(t, ["a"]);
 	const waiting = f.live.execute({ action: "wait", ids: ["agent#1"] });
 	f.release("a");
 	const result = await waiting;
 	assert.equal(result.details.reason, "result");
-	// The result's call failed in the branch: the answer was not delivered, so it comes back as a message.
+	// A failed tool result releases the answer for another wait.
 	f.parent.appendMessage({ role: "toolResult", toolCallId: "call", toolName: "agent", content: [{ type: "text", text: "failed" }], isError: true, timestamp: 1 });
 	await f.live.emit("turn_end");
 	const plain = (f.parent.getBranch() as any[]).filter(entry => entry.type === "custom_message" && entry.customType === "agent");
-	assert.deepEqual(plain.map((entry: any) => entry.details.delivery), [result.details.results[0].delivery]);
+	assert.deepEqual(plain, []);
+	const again = await f.live.execute({ action: "wait", ids: ["agent#1"] }, "again");
+	assert.equal(again.details.results[0].delivery, result.details.results[0].delivery);
 	f.live.runtime.close();
 });
 

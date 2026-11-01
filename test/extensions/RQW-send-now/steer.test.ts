@@ -219,15 +219,15 @@ it("idle with nothing queued: an empty Ctrl+Enter does nothing", (t) => {
 	assert.deepEqual(h.sent, []);
 });
 
-it("idle with background work: only Enter probes the follow-up hold, other keys cost nothing", (t) => {
+it("idle with background work: Enter never probes a follow-up hold", (t) => {
 	const h = harness(t);
 	h.state.idle = true; h.state.background = 1; h.state.editor = "later";
 	let probes = 0;
 	h.events.on("rqw:followup-hold:request", () => { probes++; });
 	for (const key of ["a", "\x1b[A", "\t"]) assert.equal(h.press(key), undefined);
 	assert.equal(probes, 0);
-	h.press("\r");
-	assert.equal(probes, 1);
+	assert.equal(h.press("\r"), undefined);
+	assert.equal(probes, 0);
 });
 
 it("manual compaction: follow-ups enter steering and start after compaction", async (t) => {

@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { steeringWait } from "./steering-wait.ts";
 
 export const BACKGROUND_AFTER_MS = 12_000;
 export const DEFAULT_WAIT_MS = 300_000;
@@ -107,7 +109,7 @@ function sleep(ms: number, stop: Promise<unknown>): Promise<void> {
 
 export type Jobs = ReturnType<typeof createJobs>;
 
-export function createJobTool(jobs: Jobs, description: string): any {
+export function createJobTool(jobs: Jobs, description: string, events?: ExtensionAPI["events"]): any {
 	const json = (details: Record<string, unknown>) => ({
 		content: [{ type: "text" as const, text: JSON.stringify(details) }],
 		details,
@@ -124,7 +126,7 @@ export function createJobTool(jobs: Jobs, description: string): any {
 			lines: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "Output lines shown per job; default 20" })),
 			until: Type.Optional(Type.String({ description: "wait: also return when a job's output matches this JavaScript regular expression (readiness); a leading (?i) ignores case" })),
 		}),
-		async execute(_id: string, raw: any, signal: AbortSignal | undefined) {
+		async execute(toolCallId: string, raw: any, signal: AbortSignal | undefined, _onUpdate: unknown, ctx?: ExtensionContext) {
 			const params = Object.fromEntries(Object.entries(raw ?? {}).filter(([, value]) => value !== null)) as any;
 			const lines = lineCount(params.lines);
 			const ids = (value: unknown, required: boolean): string[] | undefined => {
@@ -143,7 +145,12 @@ export function createJobTool(jobs: Jobs, description: string): any {
 					}
 					const waitIds = ids(params.ids, true)!;
 					const timeout = waitTimeout(params.timeout_ms);
-					return json(await jobs.wait(waitIds, timeout, lines, signal, until));
+					const steering = steeringWait(ctx, events, toolCallId);
+					try {
+						if (steering.reason) return json({ reason: steering.reason, timed_out: false, statuses: jobs.status(waitIds, lines) });
+						return json(await jobs.wait(waitIds, timeout, lines, signal, until, steering.signal));
+					}
+					finally { steering.close(); }
 				}
 				case "status": return json({ statuses: jobs.status(ids(params.ids, false), lines) });
 				case "kill": {
@@ -153,7 +160,7 @@ export function createJobTool(jobs: Jobs, description: string): any {
 				default: throw new Error(`Unknown action: ${params.action}`);
 			}
 		},
-		jobs: { abortAll: () => jobs.abortAll(), dispose: () => jobs.dispose() },
+		jobs: { abortAll: () => jobs.abortAll(), dispose: () => jobs.dispose(), hasJobs: () => jobs.size > 0 },
 	};
 }
 
@@ -360,7 +367,7 @@ export function createJobs(options: JobsOptions = {}) {
 	const endedOf = (selected: Job[]) => selected.filter((job) => job.ended !== undefined);
 	const matchingOf = (selected: Job[], until?: RegExp) => until ? selected.filter((job) => job.ended === undefined && until.test(job.tail || job.latest)) : [];
 
-	async function wait(ids: string[], timeoutMs: number, lines: number, signal?: AbortSignal, until?: RegExp) {
+	async function wait(ids: string[], timeoutMs: number, lines: number, signal?: AbortSignal, until?: RegExp, steering?: AbortSignal) {
 		const selected = ids.map(find);
 		const ended = () => endedOf(selected);
 		const matching = () => matchingOf(selected, until);
@@ -369,16 +376,21 @@ export function createJobs(options: JobsOptions = {}) {
 				if (signal?.aborted) resolve();
 				signal?.addEventListener("abort", () => resolve(), { once: true });
 			});
+			const steered = new Promise<void>((resolve) => {
+				if (steering?.aborted) resolve();
+				else steering?.addEventListener("abort", () => resolve(), { once: true });
+			});
 			const matched = Promise.withResolvers<void>();
 			const check = () => { if (matching().length) matched.resolve(); };
 			if (until) for (const job of selected) job.listeners.add(check);
 			try {
-				const any = Promise.race([...selected.map((job) => job.done), aborted, matched.promise]);
+				const any = Promise.race([...selected.map((job) => job.done), aborted, steered, matched.promise]);
 				await sleep(timeoutMs, any);
 				signal?.throwIfAborted();
-				if (ended().length && ended().length < selected.length)
-					await sleep(SETTLE_MS, Promise.race([Promise.all(selected.map((job) => job.done)), aborted]));
+				if (!steering?.aborted && ended().length && ended().length < selected.length)
+					await sleep(SETTLE_MS, Promise.race([Promise.all(selected.map((job) => job.done)), aborted, steered]));
 				signal?.throwIfAborted();
+				if (steering?.aborted) return { reason: "steered", timed_out: false, statuses: selected.map((job) => status(job, lines)) };
 			} finally {
 				for (const job of selected) job.listeners.delete(check);
 			}

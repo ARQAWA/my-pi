@@ -27,14 +27,11 @@ export function installHintUI(identity: object, editorChanged: (editor: unknown)
 	const hosts = new Set<Target>();
 	const restored: (() => void)[] = [];
 	const decorated = new WeakSet<object>();
-	const statuses = new Map<Target, string | undefined>();
-	let originalStatus = (_host: Target, _text: string | undefined) => {};
 	let active = true, suspended = false;
 	const refresh = () => {
 		if (!active) return;
 		for (const host of hosts) {
 			host.updatePendingMessagesDisplay?.();
-			if (statuses.has(host)) originalStatus(host, statuses.get(host));
 		}
 	};
 	const owns = (host: Target) => active && host.sessionManager === identity;
@@ -76,13 +73,6 @@ export function installHintUI(identity: object, editorChanged: (editor: unknown)
 			}
 			return result;
 		});
-		wrap("setExtensionStatus", original => {
-			originalStatus = (host, text) => { original.call(host, "rqw-followup-hold", supported() ? undefined : text); };
-			return function(this: Target, key: string, text: string | undefined) {
-				if (owns(this) && key === "rqw-followup-hold") { hosts.add(this); statuses.set(this, text); return originalStatus(this, text); }
-				return original.call(this, key, text);
-			};
-		});
 		wrap("updatePendingMessagesDisplay", original => function(this: Target, ...args: any[]) {
 			const result = original.apply(this, args);
 			if (owns(this) && supported()) {
@@ -110,7 +100,6 @@ export function installHintUI(identity: object, editorChanged: (editor: unknown)
 		for (const restore of restored.reverse()) restore();
 		for (const restore of undo.reverse()) restore();
 		for (const host of hosts) {
-			if (statuses.has(host)) host.setExtensionStatus("rqw-followup-hold", statuses.get(host));
 			host.updatePendingMessagesDisplay?.();
 		}
 	} };

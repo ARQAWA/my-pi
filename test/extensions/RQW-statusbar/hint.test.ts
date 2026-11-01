@@ -71,6 +71,23 @@ it("leaves the hint out when it does not fit whole and when nothing is shown", a
 	assert.deepEqual(rows.render(80), []);
 });
 
+it("shows the background count and stop hint while the main run is idle", async (t) => {
+	const s = await setup(t);
+	await s.handlers.get("agent_settled")!({}, s.ctx);
+	let listener: ((value: unknown) => void) | undefined;
+	let counts = { agents: 2, backgroundProcesses: 1 };
+	s.events.emit("rqw:running-counts:offer", { version: 1, source: {
+		version: 1, snapshot: () => counts,
+		subscribe: (next: (value: unknown) => void) => { listener = next; return () => { listener = undefined; }; },
+	} });
+	s.hint.text = "esc esc to stop background";
+	const rows = s.rows();
+	assert.equal(strip(rows.render(100)[0]), " Background: 2 agents, 1 background process  esc esc to stop background");
+	counts = { agents: 0, backgroundProcesses: 0 };
+	listener?.(counts);
+	assert.deepEqual(rows.render(100), []);
+});
+
 it("paints the hint once per text and reuses the rows of an unchanged frame", async (t) => {
 	const s = await setup(t);
 	s.hint.text = "esc to interrupt";
