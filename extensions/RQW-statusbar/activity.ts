@@ -153,6 +153,7 @@ export function actionPhrase(toolName: string, args: unknown): string {
 			return command ? `Running ${command}` : "Running command";
 		}
 		case "read":
+		case "rqw_readfile":
 			return `Reading ${lastPathPart(path()) || "file"}`;
 		case "edit":
 			return `Editing ${lastPathPart(path()) || "file"}`;
@@ -160,6 +161,8 @@ export function actionPhrase(toolName: string, args: unknown): string {
 			return `Writing ${lastPathPart(path()) || "file"}`;
 		case "grep":
 		case "find":
+		case "rqw_rg":
+		case "rqw_glob":
 			return "Searching files";
 		default:
 			return `Running ${singleLine(toolName) || "tool"}`;

@@ -1503,12 +1503,6 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 - **Background compaction** `[D-STATUSBAR-BACKGROUND-COMPACTION]`. While the current session's background summary runs, `bg compaction` shimmers gold after the folder, using the existing shimmer loop. Owner: «надо сделать какую-то анимацию фонового compaction ... в статус-баре ... справа от папки чтобы был золотой переливающийся статус ... что-то минималистичное»; «2й вариант толье вместо бекграунд бг просто»; «тона только для лимитов не для компакшена». Carrier: `extensions/RQW-statusbar/{index,render}.ts`.
 
-- **Provider-limit badge colors** `[D-STATUSBAR-LIMIT-COLORS]`. Definitive `CC` choice, owner (`16-27-59:9432`, entry `d7037e66`): «2 бронза».
-  This answers the bronze/orange question in assistant entry `05b22f2b`, `16-27-59:9416`.
-  Decision: `CC` bronze, Codex gold. Reason: distinguish provider-limit badges by color.
-  Carrier: `extensions/RQW-statusbar/quota.ts`. The direct Anthropic quota provider is delivered
-  ([D-ANTHROPIC-QUOTA](#anthropic-subscription-adapter)).
-
 - **Independent extension** `[D-STATUSBAR-EXT]`. `extensions/RQW-statusbar/` has its own `pi.extensions` entry and
   imports nothing from another extension folder. Coordinator text (owner quote C:3133, an omp session, not found in the
   Pi sessions): "Просто нужны элементы и расположение их отображения, и всё". No other omp UI is copied. Since: `0f356c4`.

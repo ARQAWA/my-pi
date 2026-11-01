@@ -12,7 +12,7 @@ import { installEarly } from "./early.ts";
 import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, contextRow, modelRow, placeLayout, activityRows } from "./render.ts";
 
 // Tools that never change the working tree or the branch.
-const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "web", "tool_search"]);
+const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "rqw_readfile", "rqw_glob", "rqw_rg", "web", "tool_search"]);
 const GIT_POLL_MS = 10_000;
 /** Thirty nominal redraws per second; travel follows elapsed time independently of this timer. */
 const SHIMMER_MS = 1000 / 30;

@@ -7163,3 +7163,14 @@ Status: SUPERSEDED by `[D-AGENT-FORK-SELFCHECK]` (DECISIONS.md#agent).
 Source: `3343b55f:DECISIONS.md`. Verbatim replaced text:
 
 > - **Fork of the caller for self-check** `[D-AGENT-FORK-SELFCHECK]`. `agent` `start` with `fork_turns: "all"` copies the caller's current branch into an in-memory child with the caller's model, thinking, system prompt and tools. It takes no `model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` or `include`, so its first request reuses the caller's prompt cache; the default `"none"` keeps ordinary clean starts. The fork runs the executor's self-check and the blind loop (spotty, medium, fresh clean reviewers) on its own and gives the caller one report; the caller waits and does not touch the checked object meanwhile. A fork history is not durable: after a restart a missing history is an explicit error, never a silent CLEAN. Forks send no progress reports to the parent. The coordinator guard lets a `fork_turns: "all"` start or restart pass without a model category and draws nothing; every other start keeps the category rule and the random draw, and reviewer profiles keep their exact pairs. Design: `my-pi-evidence/designs/fork-selfcheck/DESIGN.md`. The P3 rule belongs to the reviewer gate: P0-P2 are always reported, P3 only together with them, a P3-only result is CLEAN.
+
+## A-0409 · archived 2026-11-01 · Provider-limit badge colors
+
+Status: SUPERSEDED by `[D-STATUSBAR-SUBSCRIPTION-LIMITS]` (DECISIONS.md#subscription-limits): the owner later chose pink-red CC and light blue CX.
+Source: `8413081c:DECISIONS.md`. Verbatim replaced text:
+
+> - **Provider-limit badge colors** `[D-STATUSBAR-LIMIT-COLORS]`. Definitive `CC` choice, owner (`16-27-59:9432`, entry `d7037e66`): «2 бронза».
+>   This answers the bronze/orange question in assistant entry `05b22f2b`, `16-27-59:9416`.
+>   Decision: `CC` bronze, Codex gold. Reason: distinguish provider-limit badges by color.
+>   Carrier: `extensions/RQW-statusbar/quota.ts`. The direct Anthropic quota provider is delivered
+>   ([D-ANTHROPIC-QUOTA](#anthropic-subscription-adapter)).
