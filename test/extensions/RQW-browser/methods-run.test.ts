@@ -281,6 +281,7 @@ async function opened(options: Any = {}, open: Record<string, unknown> = {}) {
 }
 
 afterEach(async () => {
+	mock.restoreAll();
 	mock.timers.reset();
 	for (const env of environments.splice(0)) await env.call({ action: "close", all: true });
 });
@@ -369,8 +370,14 @@ it("clicks, checks and unchecks an observed control", async () => {
 	box.type = "checkbox";
 	env.env.nodes.set(4, box);
 	mock.timers.enable({ apis: ["setTimeout", "Date"] });
+	const setTimer = globalThis.setTimeout;
+	mock.method(globalThis, "setTimeout", ((callback: (...args: any[]) => void, delay?: number, ...args: any[]) => {
+		const timer = setTimer(callback, delay, ...args);
+		if (delay === 16 || delay === 34) setImmediate(() => mock.timers.tick(delay));
+		return timer;
+	}) as typeof setTimeout);
 	for (const [method, state, clicks] of [["click", false, 1], ["check", true, 2], ["check", true, 2], ["uncheck", false, 3]] as const) {
-		const result = await advance(env.runSteps([{ method: "id", args: [1] }, { method, args: [] }]));
+		const result = await env.runSteps([{ method: "id", args: [1] }, { method, args: [] }]);
 		assert.equal(result.stopped, null);
 		assert.equal(box.checked, state);
 		assert.equal(env.env.mouse.length, clicks);
@@ -378,7 +385,7 @@ it("clicks, checks and unchecks an observed control", async () => {
 	const banner = env.element(new FakeElement());
 	banner.id = "banner";
 	box.hit = banner;
-	const refused = await advance(env.runSteps([{ method: "id", args: [1] }, { method: "click", args: [] }]));
+	const refused = await env.runSteps([{ method: "id", args: [1] }, { method: "click", args: [] }]);
 	assert.equal(refused.stopped, "error");
 	assert.match(refused.summary, /covered by <div#banner>/);
 	assert.equal(env.env.mouse.length, 3);
