@@ -75,6 +75,50 @@ it("shows only the plain tail of a long collapsed answer, cut to the width", () 
 	assert.equal(card.render(40), rows);
 });
 
+it("reads the verdict of a finished answer without splitting the whole body", () => {
+	const render = (body: string) =>
+		createAgentCard(message("agent", `[agent#7] ${body}`, { outcome: "finished" }) as never, { expanded: false, outputPad: 0 }, identity as never)!.render(80)[0];
+	const split = String.prototype.split;
+	const trim = String.prototype.trim;
+	String.prototype.split = function (this: string, ...args: Parameters<typeof split>) {
+		if (this.length > 1000) throw new Error("whole body split");
+		return split.apply(this, args);
+	} as typeof split;
+	String.prototype.trim = function (this: string) {
+		if (this.length > 1000) throw new Error("whole body trimmed");
+		return trim.call(this);
+	};
+	try {
+		assert.equal(render(longAnswer), "agent#7 finished");
+		assert.equal(render(`\n \r\n CLEAN \r\n${longAnswer}`), "agent#7 CLEAN");
+		assert.equal(render(`CLEAN\rtext ${longAnswer}`), "agent#7 finished");
+		assert.equal(render("x".repeat(100000)), "agent#7 finished");
+		assert.equal(render(`CLEAN${" ".repeat(300)}text`), "agent#7 finished");
+		assert.equal(render("FINDINGS: 2 \r\nproof"), "agent#7 2 findings");
+	} finally {
+		String.prototype.split = split;
+		String.prototype.trim = trim;
+	}
+});
+
+it("works out the verdict of a finished answer once per card across widths", () => {
+	const card = createAgentCard(message("agent", `[agent#7] ${longAnswer}`, { outcome: "finished" }) as never, { expanded: false, outputPad: 0 }, identity as never)!;
+	const search = String.prototype.search;
+	let scans = 0;
+	String.prototype.search = function (this: string, ...args: Parameters<typeof search>) {
+		if (this.length > 1000) scans++;
+		return search.apply(this, args);
+	} as typeof search;
+	try {
+		card.render(80);
+		card.render(60);
+		card.render(40);
+	} finally {
+		String.prototype.search = search;
+	}
+	assert.equal(scans, 1);
+});
+
 it("shows the plain tail in a collapsed child wait result", () => {
 	const details = { reason: "result", results: [{ id: "agent#7", outcome: "completed", text: longAnswer }] };
 	const card = createChildWaitCard(message("child_wait", JSON.stringify(details), details) as never,
