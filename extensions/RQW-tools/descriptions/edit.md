@@ -1,4 +1,4 @@
-Replace exact text in files. For one file give path and edits: [{oldText, newText}, ...]. For several files use one call and put a path on each edits[] entry; the top-level path is the default for entries without their own.
+Replace exact text in files. For several files use one call and put a path on each edits[] entry; the top-level path is the default for entries without their own. For one file give path and edits: [{oldText, newText}, ...].
 - All edits of one file are matched against the original file, not one after another. Each oldText must occur exactly once in that file and must not overlap another edit of it. A name that occurs several times, as in a rename, needs one edit per occurrence with enough of its line to be unique, or one edit whose oldText spans all of them.
 - A text-matching or validation failure leaves that file untouched; the other files are still edited. Cancellation or an I/O error can happen after a file changes. A cancelled file reported as "Possibly changed" has details.files[].outcome = "possibly_changed": read it before retrying. Do not blindly resend cancelled or I/O-failed edits.
 - Read a file before editing it.

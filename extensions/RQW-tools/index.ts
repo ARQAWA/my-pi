@@ -61,7 +61,7 @@ function safely(settings: () => any): any {
 
 /** Channel on which RQW-agent asks for fresh tools for each subagent session. */
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
-const BACKGROUNDABLE = ["bash", "codemode", "rqw_readfile", "edit", "write", "rqw_rg", "rqw_glob"];
+const BACKGROUNDABLE = ["bash", "codemode", "rqw_readfile", "edit", "write", "rqw_rg", "rqw_glob", "read", "grep", "find"];
 const STARTUP_PROJECTION = "rqw-prompt:startup-projection";
 
 /** Apply the same optional prompt sections to normal turns and the startup projection. */

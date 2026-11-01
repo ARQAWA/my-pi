@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { AgentSession, createCodemodeExtension, createEventBus, createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { createTools, installRqwTools } from "../../../extensions/RQW-tools/index.ts";
@@ -145,7 +148,10 @@ test("startup keeps unexcluded default search and does not bypass selection", as
 	}
 });
 
-test("fallback keeps implicit stock search defaults", async () => {
+test("fallback keeps implicit stock search defaults and backgrounds slow reads", async (t) => {
+	const cwd = await mkdtemp(join(tmpdir(), "rqw-fallback-"));
+	t.after(() => rm(cwd, { recursive: true, force: true }));
+	await writeFile(join(cwd, "file.txt"), "content");
 	const events = createEventBus();
 	const handlers = new Map<string, Function[]>();
 	const definitions: any[] = [];
@@ -156,10 +162,10 @@ test("fallback keeps implicit stock search defaults", async () => {
 		setActiveTools: (names: string[]) => session.setActiveToolsByName(names),
 		on(name: string, handler: Function) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 	};
-	installRqwTools(pi);
+	installRqwTools(pi, { backgroundAfterMs: 12 });
 	session = host(undefined, undefined, undefined, definitions);
 	session._defaultToolModifiers = undefined;
-	const ctx = { sessionManager: session.sessionManager, mode: "print", isIdle: () => true };
+	const ctx = { cwd, sessionManager: session.sessionManager, mode: "print", isIdle: () => true };
 	const warn = console.warn;
 	console.warn = () => {};
 	try {
@@ -167,12 +173,17 @@ test("fallback keeps implicit stock search defaults", async () => {
 		await assert.rejects(bash.execute("call/1", { command: "cat f" }), /Use rqw_rg to search file contents, rqw_glob to find or list files, rqw_readfile to read files/);
 		refresh(session, ["read"]);
 		for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
-		assert.deepEqual(session.getActiveToolNames().sort(), ["find", "grep", "read"]);
+		assert.deepEqual(session.getActiveToolNames().sort(), ["find", "grep", "job", "read"]);
+		t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
+		const read = definitions.find(tool => tool.name === "read");
+		const pending = read.execute("call", { path: "file.txt" }, undefined, undefined, ctx);
+		t.mock.timers.tick(12);
+		assert.match((await pending).content[0].text, /job#1/);
 		await assert.rejects(bash.execute("call/2", { command: "cat f" }), /Use grep to search file contents, find to find or list files, read to read files/);
 		session._usesDefaultTools = false;
 		session.setActiveToolsByName(["read"]);
 		for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
-		assert.deepEqual(session.getActiveToolNames(), ["read"]);
+		assert.deepEqual(session.getActiveToolNames().sort(), ["job", "read"]);
 	} finally {
 		console.warn = warn;
 		for (const handler of handlers.get("session_shutdown") ?? []) await handler({ reason: "shutdown" }, ctx);
@@ -207,7 +218,7 @@ test("adapter installation fallback honors modifiers and narrow selections", asy
 		refresh(session, ["read"]);
 		let ctx = { sessionManager: session.sessionManager, mode: "print", isIdle: () => true };
 		for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "startup" }, ctx);
-		assert.deepEqual(session.getActiveToolNames().sort(), ["find", "read"]);
+		assert.deepEqual(session.getActiveToolNames().sort(), ["find", "job", "read"]);
 		session = host(["read"], undefined, undefined, definitions);
 		session._usesDefaultTools = false;
 		prototype.bindExtensions.call(session, {});
