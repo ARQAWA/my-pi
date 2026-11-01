@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { harness, last, settle, SILENCE_RULE } from "./harness.ts";
+import { CTRL_E, harness, last, settle, SILENCE_RULE, text, USER } from "./harness.ts";
 
 // The extension is loaded as Pi loads it, with its real prompt loader. Only the network, Pi's saved login and the clock are fake.
 const START = 1_700_000_000_000;
@@ -87,6 +87,30 @@ describe("RQW-predictions through the extension entry", () => {
 		assert.equal(system.role, "system");
 		assert.equal(system.content, "RQW PROMPT");
 		assert.equal(h.ctx.getSystemPrompt(), "STOCK PI PROMPT", "Pi's own prompt state is left as it was");
+	});
+
+	it("history on resume enables the hint and Ctrl+E, while a clean branch stays silent", async () => {
+		const h = harness({ entry: true, fork: false, branch: [] });
+		assert.equal(h.screen().join("").includes("ctrl+e to suggest"), false);
+		h.key(CTRL_E);
+		await settle();
+		assert.equal(calls.length, 0);
+		assert.equal(h.provider.length, 0);
+		assert.deepEqual(h.notes, []);
+
+		h.state.branch = [{ type: "message", message: USER }, { type: "message", message: text("Done") }];
+		h.switchTo("resumed");
+		assert.equal(h.screen().join("").includes("ctrl+e to suggest"), true);
+		h.key(CTRL_E);
+		await until(() => h.provider.length === 1);
+		assert.equal(h.provider.length, 1);
+		h.state.branch = [{ type: "message", message: USER }];
+		h.fire("session_tree");
+		assert.equal(h.screen().join("").includes("ctrl+e to suggest"), false);
+		h.state.branch.push({ type: "message", message: text("Done") });
+		h.answer();
+		assert.equal(h.screen().join("").includes("ctrl+e to suggest"), true);
+		h.fire("session_shutdown", { reason: "quit" });
 	});
 
 	it("without a saved login no request is made and a manual run says why", async () => {

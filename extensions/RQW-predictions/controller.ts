@@ -41,6 +41,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 	let ctx: ExtensionContext | undefined;
 	let ready: string | undefined;
 	let seenAnswer: string | undefined;
+	let hasHistory = false;
 	let current: Run | undefined;
 	let generation = 0;
 	let abortedUntil: number | undefined;
@@ -132,6 +133,12 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		ctx?.ui.setStatus(STATUS_KEY, undefined);
 	});
 
+	function updateHistory() {
+		const branch = ctx?.sessionManager.getBranch() ?? [];
+		hasHistory = branch.some(entry => entry.type === "message" && entry.message.role === "user")
+			&& branch.some(entry => entry.type === "message" && entry.message.role === "assistant");
+	}
+
 	function stop() {
 		if (ctx) pi.events.emit(ACTIVITY, { sessionId: ctx.sessionManager.getSessionId(), state: "idle" } satisfies Activity);
 		drop();
@@ -140,24 +147,28 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		ctx = undefined;
 		ready = undefined;
 		seenAnswer = undefined;
+		hasHistory = false;
 		context.release();
 	}
 
 	return {
 		suggestion: () => ready,
 		available: () => {
-			if (!ctx || !ctx.model || !context.hasAnswer(ctx)) return false;
+			if (!ctx || !ctx.model || !hasHistory) return false;
 			const status = ctx.modelRegistry.getProviderAuthStatus?.("openai-codex");
 			return status?.configured === true && status.source === "stored";
 		},
 		start(next) {
 			stop();
 			ctx = next;
+			updateHistory();
 			context.bind(next);
 		},
 		stop,
 		answered(_session, event) {
 			if (!ctx) return;
+			updateHistory();
+			deps.changed?.();
 			if (event.outcome !== "completed" || event.message.role !== "assistant" || event.message.stopReason !== "stop") return;
 			if (seenAnswer === event.messageEntryId) return;
 			seenAnswer = event.messageEntryId;
@@ -170,7 +181,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		toggle() {
 			if (!ctx) return;
 			if (!drop()) {
-				if (context.hasAnswer(ctx)) launch(ctx);
+				if (hasHistory) launch(ctx);
 				return;
 			}
 			clearAborted();
@@ -186,6 +197,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 			clearAborted();
 			ready = undefined;
 			seenAnswer = undefined;
+			updateHistory();
 			context.drop();
 			deps.changed?.();
 			publish();

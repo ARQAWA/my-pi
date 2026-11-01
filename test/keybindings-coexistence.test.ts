@@ -129,7 +129,7 @@ describe("scroll and predictions keybindings", () => {
 				scrollToBottom() { jumps++; following = true; },
 				getFocusedComponent: () => ({ actionHandlers: new Map() }), requestRender() {},
 			};
-			const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "test" }, ui: {
+			const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "test", getBranch: () => [] }, ui: {
 				setWidget(_key: string, factory: any) { if (factory) factory(tui); },
 				onTerminalInput(listener: (data: string) => unknown) { listeners.add(listener); return () => listeners.delete(listener); },
 				setStatus() {}, notify(message: string) { assert.fail(message); },

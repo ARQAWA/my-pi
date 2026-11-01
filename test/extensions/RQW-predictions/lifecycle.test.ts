@@ -339,8 +339,7 @@ describe("RQW-predictions manual keys", () => {
 	});
 
 	it("an empty chat with no answer has nothing to predict from", async () => {
-		const h = harness();
-		h.state.branch = [{ type: "message", message: USER }];
+		const h = harness({ branch: [{ type: "message", message: USER }] });
 		h.key(CTRL_E);
 		await settle();
 		assert.equal(h.gets.length, 0);

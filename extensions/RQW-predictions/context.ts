@@ -45,8 +45,6 @@ export type PredictionContext = {
 	release(): void;
 	record(message: MessageEndEvent["message"]): void;
 	drop(): void;
-	/** True when the branch holds an assistant message: a fresh or empty chat has nothing to predict from. */
-	hasAnswer(ctx: ExtensionContext): boolean;
 	capture(ctx: ExtensionContext): Capture | undefined;
 	/** One model call with `prompt` (the served text) plus the reply rules as the last user message. Rejects with Declined when no safe call exists. */
 	infer(ctx: ExtensionContext, capture: Capture, prompt: string, signal: AbortSignal): Promise<AssistantMessage>;
@@ -193,7 +191,6 @@ export function installContext(pi: ExtensionAPI): PredictionContext {
 		},
 		record(message) { snapshot?.after.push(message); },
 		drop() { snapshot = undefined; },
-		hasAnswer: ctx => ctx.sessionManager.getEntries().some(entry => entry.type === "message" && entry.message.role === "assistant"),
 		capture(ctx) {
 			const model = ctx.model;
 			if (!model) return undefined;

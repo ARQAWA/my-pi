@@ -52,7 +52,7 @@ export function deferred<T>() {
 }
 export const settle = () => new Promise(resolve => setImmediate(resolve));
 
-export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], consumer = false, keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[], extraInstall = undefined as ((pi: ExtensionAPI) => void) | undefined, extraFirst = false, realKeys = false } = {}) {
+export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], consumer = false, keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[], extraInstall = undefined as ((pi: ExtensionAPI) => void) | undefined, extraFirst = false, realKeys = false, branch = [{ type: "message", message: USER }, { type: "message", message: text("Tests run.") }] as unknown[] } = {}) {
 	setKeybindings(keybindings as KeybindingsManager);
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
 	const events = createEventBus();
@@ -77,10 +77,11 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 	}, () => cleared.push(1));
 	if (!extraFirst) extraInstall?.(pi);
 
-	const state = { idle: true, pending: false, sessionId: "main", branch: [{ type: "message", message: USER }, { type: "message", message: text("Tests run.") }] as unknown[] };
+	const state = { idle: true, pending: false, sessionId: "main", branch };
 	const sessionManager = {
 		getSessionId: () => state.sessionId,
 		getEntries: () => state.branch,
+		getBranch: () => state.branch,
 		buildSessionProjection: () => ({ messages: projection }),
 	};
 	const main: { context: Context; options: Record<string, unknown> }[] = [];
