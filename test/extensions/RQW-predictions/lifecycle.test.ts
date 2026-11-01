@@ -356,7 +356,7 @@ describe("RQW-predictions manual keys", () => {
 });
 
 describe("RQW-predictions status", () => {
-	it("without a footer consumer the stock status line shows brewing and the aborted text, then clears", async (t) => {
+	it("the stock status line shows brewing and the aborted text, then clears", async (t) => {
 		t.mock.timers.enable({ apis: ["setTimeout"] });
 		const h = harness({ replies: [deferred<ReturnType<typeof text>>().promise] });
 		h.key(CTRL_E);
@@ -369,15 +369,17 @@ describe("RQW-predictions status", () => {
 		assert.equal(h.statuses.at(-1), undefined);
 	});
 
-	it("a footer consumer that asks gets the state through offer and the stock line stays out", async () => {
-		const h = harness({ consumer: true });
+	it("a footer that asked for the state gets it, and the stock status line stays, so it survives /statusbar off", async () => {
+		const h = harness({ replies: [deferred<ReturnType<typeof text>>().promise] });
 		let offered: unknown;
 		h.events.emit(ACTIVITY_QUERY, { offer: (state: unknown) => { offered = state; } });
 		assert.deepEqual(offered, { sessionId: "main", state: "idle" });
 		h.key(CTRL_E);
 		await settle();
-		assert.equal(h.statuses.filter(value => value !== undefined).length, 0);
-		assert.deepEqual(h.states(), ["brewing", "idle"]);
+		h.events.emit(ACTIVITY_QUERY, { offer: (state: unknown) => { offered = state; } });
+		assert.deepEqual(offered, { sessionId: "main", state: "brewing" });
+		assert.equal(h.statuses.at(-1), "prediction");
+		assert.deepEqual(h.states(), ["brewing"]);
 	});
 });
 

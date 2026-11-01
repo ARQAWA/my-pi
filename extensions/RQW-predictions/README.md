@@ -36,9 +36,10 @@ Terminals decide what arrives: Windows VS Code binds Ctrl+E to Quick Open, which
 ## Footer status
 
 State goes out on `pi.events` channel `rqw-predictions:activity` as `{ sessionId, state, abortedUntil? }` with `state`
-`brewing`, `aborted` or `idle` (`abortedUntil` is a `performance.now()` value). A footer answers by asking on
-`rqw-predictions:activity-query` with `offer(state)`; the first query also tells this extension that a footer exists.
-Without one, the stock `ui.setStatus` line shows `prediction` and a maroon `prediction aborted`.
+`brewing`, `aborted` or `idle` (`abortedUntil` is a `performance.now()` value). The stock `ui.setStatus` key
+`rqw-predictions` always shows `prediction` and a maroon `prediction aborted`. RQW-statusbar hides that key and draws its own
+indicator from the channel, so the status stays right after `/statusbar off`. A footer that starts later asks on
+`rqw-predictions:activity-query` with `offer(state)` and gets the current state.
 
 ## Boundaries
 

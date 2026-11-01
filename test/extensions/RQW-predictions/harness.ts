@@ -52,7 +52,7 @@ export function deferred<T>() {
 }
 export const settle = () => new Promise(resolve => setImmediate(resolve));
 
-export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], consumer = false, keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[], extraInstall = undefined as ((pi: ExtensionAPI) => void) | undefined, extraFirst = false, realKeys = false, branch = [{ type: "message", message: USER }, { type: "message", message: text("Tests run.") }] as unknown[] } = {}) {
+export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[], extraInstall = undefined as ((pi: ExtensionAPI) => void) | undefined, extraFirst = false, realKeys = false, branch = [{ type: "message", message: USER }, { type: "message", message: text("Tests run.") }] as unknown[] } = {}) {
 	setKeybindings(keybindings as KeybindingsManager);
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
 	const events = createEventBus();
@@ -165,9 +165,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 		},
 	};
 	const fire = (name: string, event: unknown = {}) => { for (const handler of handlers.get(name) ?? []) handler(event, ctx); };
-	if (consumer) events.on(ACTIVITY_QUERY, () => {});
 	fire("session_start", { reason: "startup" });
-	if (consumer) events.emit(ACTIVITY_QUERY, { offer() {} });
 
 	let answers = 0;
 	const h = {

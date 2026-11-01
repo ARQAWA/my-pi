@@ -401,7 +401,8 @@ export default function statusbar(pi: ExtensionAPI) {
 						if (prediction?.state === "aborted" && prediction.abortedUntil !== undefined && prediction.abortedUntil <= now()) prediction = undefined;
 						const predictionState = prediction?.sessionId === sessionId ? prediction.state : undefined;
 						const predictionFrame = predictionState === "brewing" ? Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS : undefined;
-						const statuses = footer.getExtensionStatuses();
+						// RQW-predictions mirrors its state into the stock status line; the prediction indicator replaces it.
+						const statuses = new Map([...footer.getExtensionStatuses()].filter(([name]) => name !== "rqw-predictions"));
 						let statusChanged = statuses.size !== lastStatuses.size;
 						if (!statusChanged) for (const [name, text] of statuses) if (lastStatuses.get(name) !== text) { statusChanged = true; break; }
 						const key = [width, quotas.values.CX, quotas.values.CC, ctx.model, pi.getThinkingLevel(), context, rate.value(), ctx.cwd,

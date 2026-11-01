@@ -66,7 +66,7 @@ export function installEditor(actions: EditorActions) {
 	function withSuggestion(editor: CustomEditor, rows: string[], width: number): string[] {
 		shown = undefined;
 		if (rows.length !== 3 || !session || editor.getText() !== "" || editor.isShowingAutocomplete() || tui?.getFocusedComponent() !== editor) return rows;
-		const text = visible(editor);
+		const text = actions.suggestion();
 		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
 		const padding = Math.min((editor as unknown as EditorShape).getPaddingX(), maxPadding);
 		const marker = editor.focused && rows[1].includes(CURSOR_MARKER) ? CURSOR_MARKER : "";

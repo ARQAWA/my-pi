@@ -26,7 +26,7 @@ export type Controller = {
 	start(ctx: ExtensionContext): void;
 	stop(): void;
 	/** A turn ended: a new finished answer ends the old request and the old suggestion. Starts nothing. */
-	answered(ctx: ExtensionContext, event: TurnEndEvent): void;
+	answered(event: TurnEndEvent): void;
 	/** The user's Ctrl+E, in every chat state: a running request is cancelled (status aborted), otherwise one starts. */
 	toggle(): void;
 	/** New work or another model: an unfinished request is dropped without the aborted paint. */
@@ -35,7 +35,7 @@ export type Controller = {
 	clear(): void;
 };
 
-type Run = { id: number; abort: AbortController };
+type Run = { abort: AbortController };
 
 export function createController(pi: ExtensionAPI, context: PredictionContext, deps: Deps): Controller {
 	let ctx: ExtensionContext | undefined;
@@ -43,11 +43,8 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 	let seenAnswer: string | undefined;
 	let hasHistory = false;
 	let current: Run | undefined;
-	let generation = 0;
 	let abortedUntil: number | undefined;
 	let abortedTimer: ReturnType<typeof setTimeout> | undefined;
-	// Set when the footer's own consumer asks for the state; without one the stock status line shows it.
-	let consumer = false;
 
 	const activity = (): Activity => {
 		const sessionId = ctx?.sessionManager.getSessionId() ?? "";
@@ -55,7 +52,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		return abortedUntil === undefined ? { sessionId, state: "idle" } : { sessionId, state: "aborted", abortedUntil };
 	};
 
-	/** Stock footer text for the state, for a chat without the footer consumer. */
+	/** Stock status line text for the state; RQW-statusbar hides this key and draws its own indicator. */
 	function statusText(state: Activity["state"]): string | undefined {
 		if (state === "idle" || !ctx) return undefined;
 		if (state === "brewing") return "prediction";
@@ -70,7 +67,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		const state = activity();
 		pi.events.emit(ACTIVITY, state);
 		deps.changed?.();
-		if (!consumer) ctx.ui.setStatus(STATUS_KEY, statusText(state.state));
+		ctx.ui.setStatus(STATUS_KEY, statusText(state.state));
 	}
 
 	function clearAborted() {
@@ -84,7 +81,6 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		if (!current) return false;
 		const run = current;
 		current = undefined;
-		generation++;
 		run.abort.abort();
 		return true;
 	}
@@ -120,17 +116,15 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 	/** Starts one run after control returns to the terminal. */
 	function launch(session: ExtensionContext) {
 		clearAborted();
-		const run: Run = { id: ++generation, abort: new AbortController() };
+		const run: Run = { abort: new AbortController() };
 		current = run;
 		publish();
 		setImmediate(() => { void attempt(run, session); });
 	}
 
+	// A footer that starts later, such as after /statusbar on, asks for the state it missed.
 	pi.events.on(ACTIVITY_QUERY, (data: unknown) => {
-		consumer = true;
 		(data as { offer?(state: Activity): void } | undefined)?.offer?.(activity());
-		// The footer shows it now; remove a stock line shown before the footer asked.
-		ctx?.ui.setStatus(STATUS_KEY, undefined);
 	});
 
 	function updateHistory() {
@@ -165,7 +159,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 			context.bind(next);
 		},
 		stop,
-		answered(_session, event) {
+		answered(event) {
 			if (!ctx) return;
 			updateHistory();
 			deps.changed?.();

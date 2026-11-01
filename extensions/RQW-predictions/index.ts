@@ -43,7 +43,7 @@ export function install(pi: ExtensionAPI, deps: Deps, clearSource: () => void = 
 		update();
 	});
 	pi.on("message_end", event => context.record(event.message));
-	pi.on("turn_end", (event, ctx) => controller.answered(ctx, event));
+	pi.on("turn_end", event => controller.answered(event));
 	pi.on("agent_start", () => controller.interrupt());
 	pi.on("model_select", () => { controller.interrupt(); update(); });
 	pi.on("agent_settled", () => update());
