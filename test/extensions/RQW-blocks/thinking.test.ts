@@ -27,6 +27,33 @@ it("removes hidden thinking rows and spacing while keeping shown thinking and re
 	assert.deepEqual(plain(component), stock);
 });
 
+it("drops bookkeeping of collected components so restore does not scan them", () => {
+	initTheme();
+	const RealWeakRef = globalThis.WeakRef;
+	const RealRegistry = globalThis.FinalizationRegistry;
+	let derefs = 0;
+	const finalizers: (() => void)[] = [];
+	globalThis.WeakRef = class extends RealWeakRef<any> {
+		deref() { derefs++; return super.deref(); }
+	} as unknown as WeakRefConstructor;
+	// Collection is simulated: every registered component counts as collected.
+	globalThis.FinalizationRegistry = class {
+		cleanup: (held: unknown) => void;
+		constructor(cleanup: (held: unknown) => void) { this.cleanup = cleanup; }
+		register(_target: object, held: unknown) { finalizers.push(() => this.cleanup(held)); }
+	} as unknown as FinalizationRegistryConstructor;
+	const restore = installThinking();
+	try {
+		for (let i = 0; i < 100; i++) new AssistantMessageComponent(message([{ type: "text", text: "answer" }]), true).render(80);
+		for (const finalize of finalizers) finalize();
+	} finally {
+		restore();
+		globalThis.WeakRef = RealWeakRef;
+		globalThis.FinalizationRegistry = RealRegistry;
+	}
+	assert.equal(derefs, 0);
+});
+
 it("does not leave a blank row before an error or length status after hidden thinking", () => {
 	initTheme();
 	const restore = installThinking();
