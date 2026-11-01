@@ -98,10 +98,10 @@ This optional format is not an active repository rule. Product profiles are unch
 
 ## What it does for Main
 
-- `tool_call` on `agent` `start` and `restart` (a missing `action` counts as `start`): `model` and
-  `thinking` are required. A named or inherited reviewer profile uses only its exact pair; every other call uses an exact executor pair.
-  A reviewer-profile call supplies matching explicit model and effort values; restart may omit `agent_type` to inherit it. An allowed call with a `task` gets
-  one generated line appended: ordinary nested `agent` starts need an explicit allowed executor pair.
+- `tool_call` on `agent` `start` and `restart` (a missing `action` counts as `start`): Main supplies an executor
+  category in `model`; the guard draws a model and effort pair randomly from that category. A named or inherited reviewer
+  profile instead uses its exact pair. A reviewer-profile call supplies matching explicit model and effort values; restart
+  may omit `agent_type` to inherit it. An allowed call with a `task` gets one generated line appended.
 - Fork exception: an `agent` start or restart with `fork_turns: "all"` needs no model category and gets no drawn pair. The fork
   inherits the caller's model, system prompt and tools so its first request reuses the caller's prompt cache; the guard leaves
   `model` and `thinking` as they are (RQW-agent itself rejects `model`, `thinking`, `agent_type`, `system`, `role` and `include`
