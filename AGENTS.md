@@ -32,7 +32,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `extensions/RQW-agent/`: extension 5, subagents; description and reminder adapt Codex 0.165.0 agent texts. `agent`
   (start, wait, status, send, resume, interrupt, stop, restart) runs in-process Pi sessions. Optional `agent_type`
   selects a Codex TOML profile; without it the generic defaults stay. `start` with `fork_turns: "all"` copies the caller's current branch
-  into an in-memory child with the caller's model, prompt and tools (no model, thinking, `agent_type`, prompt options or `include`; history lost on restart,
+  into a child with the caller's model, prompt and tools (no model, thinking, `agent_type`, prompt options or `include`; durable when its parent has a session file,
   `[D-AGENT-FORK-SELFCHECK]`); Main's coordinator guard lets such a start pass without a model category. A profile's `developer_instructions` supplies the default role
   after the main system prompt and subagent reminder, not a whole-prompt replacement. The catalogue always has Codex's built-in `default` and `worker` (no `explorer`; a user role of the same name replaces
   them). Project `.codex` layers are gated by Codex trust (administrative Codex config is not supported); six Codex role overrides Pi cannot apply are named

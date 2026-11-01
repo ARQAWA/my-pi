@@ -43,7 +43,7 @@ export const DESCRIPTION = [
 	"Spawns an agent to work on the specified task with action start. It returns the agent id agent#N.",
 	"The spawned agent will have the base tools or the `tools` subset, job and web when they are offered, codemode and tool_search when you have them, and always the ability to spawn its own subagents.",
 	"Its final answer will be provided to you when it finishes.",
-	"By default the spawned agent gets no surrounding context beyond its task; `include: [\"user_messages\"]` adds your user's messages. On start, `fork_turns: \"all\"` instead copies the current branch in memory, with the caller's prompt, model and tools; its history is not durable across restart.",
+	"By default the spawned agent gets no surrounding context beyond its task; `include: [\"user_messages\"]` adds your user's messages. On start, `fork_turns: \"all\"` instead copies the current branch with the caller's prompt, model and tools; it is durable when the parent has a session file.",
 	"Do not use job wait or poll; use status only for a check you need; continue with other work or end your turn. Never fabricate or predict a pending agent's results; the notification is never something you write yourself; if the user asks before it arrives, say the result has not arrived yet. The user may not have opened the agent's report: relay what matters.",
 	"Treat its result as finished work; don't redo its searches, reads or runs. When you hand its work to another agent or cite it, use source links or verbatim quotes, never a bare retelling, and cite only what you have seen in a source, opening just that spot if you have not. Check a claim only when it has no path and line, contradicts what you have seen, shows an obvious failure or misses a significant edge case, comes from a failed or incomplete run, or is a significant behavioral change no one has verified by a test or run; then check just that claim or send the same agent a short follow-up, and still run any check the user or a skill asks for.",
 	"",
@@ -72,7 +72,7 @@ export const DESCRIPTION = [
 
 const PARAMETERS = Type.Object({
 	action: StringEnum(["start", "wait", "status", "send", "resume", "interrupt", "stop", "restart"]),
-	fork_turns: Type.Optional(StringEnum(["none", "all"], { description: "start only: copy the current branch in memory with all; default none. all refuses model, thinking, agent_type, system, system_file, role, role_file and include." })),
+	fork_turns: Type.Optional(StringEnum(["none", "all"], { description: "start only: copy the current branch with all; default none. all refuses model, thinking, agent_type, system, system_file, role, role_file and include." })),
 	id: Type.Optional(Type.String({ description: "Agent id to send a follow-up task to, resume, interrupt, stop or restart (from start): agent#N or N." })),
 	ids: Type.Optional(Type.Array(Type.String(), { description: "Agent ids to wait on or to inspect with status: full direct child IDs agent#N. Pass multiple ids to wait for whichever finishes first." })),
 	timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Timeout in milliseconds. Defaults to 300000, min 1, no max. Prefer longer waits (minutes) to avoid busy polling." })),

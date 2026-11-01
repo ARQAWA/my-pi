@@ -12,7 +12,7 @@ import { Activity, headTail } from "../../../extensions/RQW-agent/activity.ts";
 import { Coordinator } from "../../../extensions/RQW-agent/coordinator.ts";
 import { createCountsProducer, type CountsOffer, type RunningCounts } from "../../../extensions/RQW-agent/counts.ts";
 import { fastGpt, inheritedFastGpt } from "../../../extensions/RQW-agent/fast-gpt.ts";
-import { createChildManager, openChildManager, repairInterrupted } from "../../../extensions/RQW-agent/persistence.ts";
+import { createChildManager, openChildManager, repairInterrupted, retainedChildManager } from "../../../extensions/RQW-agent/persistence.ts";
 import { ProfileCatalogue } from "../../../extensions/RQW-agent/profiles.ts";
 import { CONTEXT_FORK, ProgressReports, type ContextForkRequest } from "../../../extensions/RQW-agent/progress.ts";
 import { appendUserMessages, loadPromptFile } from "../../../extensions/RQW-agent/prompt-files.ts";
@@ -392,7 +392,7 @@ test("only ordinary children send automatic progress after 50 tool responses", a
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const root = await temp(t);
 	for (const fork of [false, true]) {
-		const parent = SessionManager.inMemory(root);
+		const parent = SessionManager.create(root, join(root, fork ? "fork" : "ordinary"));
 		parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
 		let steps = 0;
 		let summaries = 0;
@@ -407,6 +407,19 @@ test("only ordinary children send automatic progress after 50 tool responses", a
 	}
 });
 
+test("a fork of an in-memory caller stays in memory", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.inMemory(root);
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	await live.execute({ action: "start", fork_turns: "all", task: "check" });
+	await live.runtime.wait(new AbortController().signal);
+	const fork = retainedChildManager(parent, "agent", 1)!;
+	assert.equal(fork.getSessionFile(), undefined);
+	assert.match(JSON.stringify(fork.buildSessionContext()), /parent/);
+	live.runtime.close();
+});
+
 test("lost fork history returns an error and preserves an already saved result", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const root = await temp(t);
@@ -416,7 +429,16 @@ test("lost fork history returns an error and preserves an already saved result",
 		const first = runtimeFixture(parent, root, completed ? () => "finished result" : () => new Promise<never>(() => {}));
 		await first.execute({ action: "start", fork_turns: "all", task: "check" });
 		if (completed) await first.runtime.wait(new AbortController().signal);
-		const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+		first.runtime.close();
+		// Simulate records from the earlier in-memory fork implementation.
+		const parentFile = parent.getSessionFile()!;
+		const lines = (await readFile(parentFile, "utf8")).trimEnd().split("\n").map(line => {
+			const entry = JSON.parse(line);
+			if (entry.customType === "rqw-agent-child") delete entry.data.sessionFile;
+			return JSON.stringify(entry);
+		});
+		await writeFile(parentFile, `${lines.join("\n")}\n`);
+		const restored = runtimeFixture(SessionManager.open(parentFile), root);
 		const result = await restored.execute({ action: "wait", ids: ["agent#1"] });
 		const branch = restored.ctx.sessionManager.getBranch();
 		const saved = branch.filter((entry: any) => entry.customType === "rqw-agent-child").at(-1).data.result;
@@ -439,10 +461,51 @@ test("lost fork history returns an error and preserves an already saved result",
 	}
 });
 
+test("a persisted fork stores its reviewer beneath its own session", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, context => {
+		const messages = context.messages.filter((message: any) => message.role !== "system");
+		if (messages.some((message: any) => message.role === "user" && JSON.stringify(message.content).includes("review task"))) return "review done";
+		if (messages.some((message: any) => message.role === "toolResult")) return "fork done";
+		return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "review task" }, { id: "review" })], { stopReason: "toolUse" });
+	}, 12);
+	await live.execute({ action: "start", fork_turns: "all", task: "fork task" });
+	await live.runtime.wait(new AbortController().signal);
+	const forkDir = `${parent.getSessionFile()}.children/agent-1`;
+	const forkFile = join(forkDir, (await readdir(forkDir)).find(file => file.endsWith(".jsonl"))!);
+	const reviewDir = `${forkFile}.children/agent-1`;
+	const reviewFile = join(reviewDir, (await readdir(reviewDir)).find(file => file.endsWith(".jsonl"))!);
+	assert.equal(SessionManager.open(forkFile).getHeader()?.parentSession, parent.getSessionFile());
+	assert.equal(SessionManager.open(reviewFile).getHeader()?.parentSession, forkFile);
+	live.runtime.close();
+});
+
+test("a failed persisted fork resumes after reload with its copied branch", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "copied parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => fauxAssistantMessage("failed", { stopReason: "error", errorMessage: "provider down" }));
+	await first.execute({ action: "start", fork_turns: "all", task: "fork task" });
+	await first.runtime.wait(new AbortController().signal);
+	first.runtime.close();
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "resume", id: "agent#1" });
+	await restored.runtime.wait(new AbortController().signal);
+	const messages = JSON.stringify(restored.requests.at(-1).messages);
+	assert.match(messages, /copied parent/);
+	assert.match(messages, /fork task/);
+	assert.doesNotMatch(messages, /fork history was lost/);
+	restored.runtime.close();
+});
+
 test("nested fork inherits its direct caller branch, prompt and selected tools", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const root = await temp(t);
-	const parent = SessionManager.inMemory(root);
+	const parent = SessionManager.create(root, join(root, "parent"));
 	parent.appendMessage({ role: "user", content: "root only", timestamp: 1 });
 	const live = runtimeFixture(parent, root, context => {
 		const messages = context.messages.filter((message: any) => message.role !== "system");
@@ -460,6 +523,11 @@ test("nested fork inherits its direct caller branch, prompt and selected tools",
 	assert.doesNotMatch(text, /root only/);
 	assert.match(text, /outer role/);
 	assert.deepEqual(getCurrentTools(request.messages.filter((message: any) => message.role === "system")).map((tool: any) => tool.name).sort(), ["agent", "rqw_readfile"]);
+	const outerDir = `${parent.getSessionFile()}.children/agent-1`;
+	const outerFile = join(outerDir, (await readdir(outerDir)).find(file => file.endsWith(".jsonl"))!);
+	const nestedDir = `${outerFile}.children/agent-1`;
+	const nestedFile = join(nestedDir, (await readdir(nestedDir)).find(file => file.endsWith(".jsonl"))!);
+	assert.equal(SessionManager.open(nestedFile).getHeader()?.parentSession, outerFile);
 	live.runtime.close();
 });
 

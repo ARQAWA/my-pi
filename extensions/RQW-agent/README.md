@@ -14,10 +14,10 @@ for nested children on the same channel. `noExtensions: true` stays unchanged; n
 
 ## Forking the caller's branch
 
-`agent` start accepts `fork_turns: "all"` to copy the caller's current branch into a separate in-memory child session.
+`agent` start accepts `fork_turns: "all"` to copy the caller's current branch into a separate child session.
 The copy keeps conversation entries, compaction and context edits, but excludes service records and unfinished tool-call
 groups. The caller's model, thinking, current system prompt and available child tools are inherited. `tools` can narrow
-the base tools. A nested fork copies its direct caller's branch, model and tools. The fork history is not saved to its own file and is lost on process restart or reload. An unfinished fork then returns an explicit lost-history error; an already saved result remains deliverable. The lost history cannot be resumed or extended.
+the base tools. A nested fork copies its direct caller's branch, model and tools. A persisted caller stores the fork and its descendants as durable child sessions, linked to their direct parents. A fork of an in-memory caller stays in memory. Forks created by the earlier in-memory implementation cannot recover lost history after restart; an already saved result remains deliverable.
 `model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` and `include` cannot accompany `all`.
 For an Anthropic or Codex fork, the first request copies the caller's last provider payload and appends the fork task
 as a user message. It retains the original instructions, ordered tools, model, thinking and cache identity. The Codex
@@ -639,7 +639,7 @@ No old tool call is automatically executed again. The model decides whether anot
 the interrupted result. Recovery is fail-closed: a missing or empty JSONL of an established or unknown history is a `recovery_error` of that
 child alone, never a new history. Only a saved state of `idle`, `runNumber` 0 and no task, as a task-less `restart` writes
 it, may restore an empty retained or new session under the same id, with no task message. The saved task and configuration are provenance only and are never turned into a task
-message, a rebuilt history or an inferred transcript. Pi writes a child's file with its first user message. A record
+message, a rebuilt history or an inferred transcript. Pi writes an ordinary child's file with its first user message; a persisted fork writes its copied branch at creation. A record
 keeps `history`: false until a persist sees that message (a record without the field counts as true). When the process
 ended while it was false and the file is absent, restore opens a new empty session and sends the accepted task from
 `pending_sends`, so one task arrives. With `history` true a missing file stays a `recovery_error`. The other children are

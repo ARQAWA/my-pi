@@ -1,4 +1,4 @@
-import { appendFileSync, lstatSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { appendFileSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import {
 	SessionManager,
@@ -84,12 +84,15 @@ export function recordDelivery(parent: ReadonlySessionManager, run: string): voi
 }
 
 export function createChildManager(parent: ReadonlySessionManager, cwd: string, kind: string, id: number, seed?: SessionEntry[]): SessionManager {
-	if (seed) return retainChild(parent, kind, id, SessionManager.inMemory(cwd, undefined, seed));
 	const directory = childDirectory(parent, kind, id);
-	if (!directory) return retainChild(parent, kind, id, SessionManager.inMemory(cwd));
+	if (!directory) return retainChild(parent, kind, id, SessionManager.inMemory(cwd, undefined, seed));
 	checkPath(parent.getSessionFile()!, true, parent.getSessionFile()!);
 	checkPath(directory, true, parent.getSessionFile()!);
-	return retainChild(parent, kind, id, SessionManager.create(cwd, directory, { parentSession: parent.getSessionFile() }));
+	const manager = SessionManager.create(cwd, directory, { parentSession: parent.getSessionFile() });
+	if (!seed) return retainChild(parent, kind, id, manager);
+	const file = manager.getSessionFile()!;
+	writeFileSync(file, [manager.getHeader(), ...seed].map(entry => JSON.stringify(entry)).join("\n") + "\n", { flag: "wx" });
+	return retainChild(parent, kind, id, SessionManager.open(file, directory, cwd));
 }
 
 export function openChildManager(parent: ReadonlySessionManager, childFile: string, cwd: string, kind: string, id: number): SessionManager {

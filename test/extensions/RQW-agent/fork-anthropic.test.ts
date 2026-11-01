@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { test } from "node:test";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { AgentSession, createEventBus, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -28,7 +29,7 @@ function response(kind: "answer" | "summary" | "tools") {
 
 for (const compact of [false, true]) test(`Anthropic fork preserves payload and tool access${compact ? " after compaction" : ""}`, async t => {
 	const w = await world(t);
-	const parent = SessionManager.inMemory(w.cwd);
+	const parent = SessionManager.create(w.cwd, join(w.base, "parent"));
 	const initial = parent.appendMessage({ role: "user", content: "caller message", timestamp: 1 });
 	if (compact) {
 		parent.appendCompaction("old compaction summary", initial, 100);
