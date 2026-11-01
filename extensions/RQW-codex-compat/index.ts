@@ -1,6 +1,6 @@
 // RQW-codex-compat: Codex skill roots, skill rules and project instructions on Pi's public extension APIs.
 import { getAgentDir, parseArgs, stripFrontmatter, type ExtensionAPI, type NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
-import { disabledPaths, fitBudget, scopeOf, scopeRank, skillRules, skillSettings, type SkillLike } from "./catalog.ts";
+import { byteOrder, disabledPaths, fitBudget, scopeOf, scopeRank, skillRules, skillSettings, type SkillLike } from "./catalog.ts";
 import { defaultEnv, loadContext, type CodexContext, type Env } from "./config.ts";
 import { instructionFiles } from "./instructions.ts";
 import { readFileSync, realpathSync, statSync } from "node:fs";
@@ -43,7 +43,7 @@ function catalogOf(ctx: CodexContext, given: readonly Skill[], contextWindow?: n
 	const roots = skillRoots(ctx, true);
 	const rank = (skill: Skill) => scopeRank(scopeOf(skill.filePath, roots, skill.sourceInfo?.scope));
 	// Codex budget order: System, Admin, Repo, User; the last skills are the first to go.
-	const skills = enabledSkills(ctx, given).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name) || a.filePath.localeCompare(b.filePath));
+	const skills = enabledSkills(ctx, given).sort((a, b) => rank(a) - rank(b) || byteOrder(a.name, b.name) || byteOrder(a.filePath, b.filePath));
 	// The limit is `skills.max_context_tokens`, else 2% of the model's context window, as in Codex.
 	const limit = settings.maxContextTokens ?? (contextWindow && contextWindow > 0 ? Math.max(1, Math.floor(contextWindow * 2 / 100)) : undefined);
 	// Neither a configured limit nor a known window: Codex's 8000-character fallback.

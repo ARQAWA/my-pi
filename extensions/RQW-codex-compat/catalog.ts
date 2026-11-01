@@ -12,6 +12,7 @@ const MAX_CONFIGURED_TOKENS = 10_000;
 const MAX_DESCRIPTION_CHARS = 1_024;
 
 export const real = (path: string) => { try { return realpathSync(path); } catch { return resolve(path); } };
+export const byteOrder = (a: string, b: string) => Buffer.compare(Buffer.from(a), Buffer.from(b));
 const selectorKey = (rule: Rule) => "name" in rule.selector ? `name:${rule.selector.name}` : `path:${rule.selector.path}`;
 
 /** `skills.config` entries of the user layer; a repeated selector keeps only its last position. */

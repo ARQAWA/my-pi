@@ -82,6 +82,18 @@ it("skills.max_context_tokens fits Codex's per-line budget: round-robin descript
 	assert.deepEqual((await run(Math.ceil((path + 15) / 4))).map(skill => [skill.name, skill.description]), [["a", ""]]);
 });
 
+it("catalog budget keeps skills in UTF-8 byte order", async (t) => {
+	const w = world(t);
+	const filePath = w.path("skill/SKILL.md");
+	const skills = ["a", "_", "A", "-"].map(name => ({ name, description: "description", filePath }));
+	const limit = Math.ceil(Buffer.byteLength(`- -: (file: ${filePath})\n`) / 4);
+	w.put("codex/config.toml", `[skills]\nmax_context_tokens = ${limit}\n`);
+	const pi = fakePi({ env: w.env });
+	const options = { cwd: w.cwd, skills, contextFiles: [] };
+	await pi.fire("before_agent_start", { systemPromptOptions: options }, {});
+	assert.deepEqual(options.skills.map(skill => skill.name), ["-"]);
+});
+
 it("without a configured limit the catalog gets 2% of the model's context window", async (t) => {
 	const w = world(t);
 	for (let i = 0; i < 12; i++) w.skill(`codex/skills/s${i}`, `s${i}`, "d".repeat(1000));
