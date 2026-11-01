@@ -243,7 +243,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Carriers: `.pi/extensions/`, `scripts/`, local development test suites.
 - **Development executor models** `[D-WORK-MODELS]`. Every new Main-started executor, work, research, test, QA, regression,
   operational or outside-queue agent uses the category matrix: code, mechanical, ordinary, analysis, hardest and design. Exact executor pairs and reviewer-profile exceptions live in the `coordinator-rules` JSON block of
-  [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main names `model` and `thinking` explicitly.
+  [PROCESS.md, Subagent models](PROCESS.md#subagent-models). Main supplies the category in `model`; the coordinator guard draws the model and thinking pair randomly.
   Analysis is a separate executor category. Owner: «2й хочу - опус медиум и сол медиум».
   There is no executor rotation or ratio bookkeeping.
   Already running or preserved Sol agents may finish their current tasks through ordinary `send` and `resume` and
@@ -270,6 +270,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Workspace hygiene** `[D-WORK-HYGIENE]`. Preserve the user's changes and secrets; do not fix unrelated failures;
   temporary files go to OS temporary storage; no forks. Reason: the owner's work and credentials stay intact.
   Carrier: this entry. Since: `8f2ea64`.
+- **Process reminder** `[D-WORK-PROCESS-REMINDER]`. A repo-only hook reads `PROCESS.md` fresh and adds a reminder to main-session requests, not the product or child sessions. Owner: «может быть надо тебе хук какой»; approval: «да делаем». Carrier: `.pi/extensions/process-reminder/`.
+- **Development quality checks** `[D-WORK-QUALITY-CHECKS]`. Oxlint checks source; `scripts/check.mjs` runs lint and tests in parallel and offers `--typecheck`; the repo-only `post-edit-lint` checks edits. Owner: «Но надо, чтобы это всё ускоряло разработку, а не замедляло, наоборот.» «Это все нужно внедрить супер эффективно, что бы оно работало паралельно запуска тестам». Carriers: `.oxlintrc.json`, `scripts/check.mjs`, `.pi/extensions/post-edit-lint/`.
 - **Heavy checks in CI, saved logs** `[D-WORK-CI-LOGS]`. Owner (`16-27-59:992`, then `16-27-59:1042`):
   «Сделай так, чтобы у тебя были логи числа прогонов на Mac. Это что за хуйня? Такого не должно быть.»
   «Ты запускаешь тесты или что? Ты не можешь проверить это? Это что за хуйня? Почему так, блядь?»
@@ -291,7 +293,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   line-by-line bounded review standard; [PROCESS.md](PROCESS.md#independent-review) defines invocation.
   Reason: one discoverable role and one source for its instructions and model defaults.
   Carrier: `.pi/agents/code-reviewer.toml`; source: the owner's messages supplied with this task.
-- **Independent review** `[D-WORK-FINAL-CHECK]`. Every task gets one independent review, short for small tasks.
+- **Independent review** `[D-WORK-FINAL-CHECK]`. Every task except records gets one independent review, short for small tasks.
   Use `spotty` by default and `bossy` for an owner-requested high review. The `code-reviewer` and `test-reviewer`
   profiles remain available. Findings need evidence and impact; missing evidence goes back to the same reviewer.
   Owner: «Ревьюеров циклических надо будет переработать, чтобы они работали так же, как слепые ревьюеры: чтобы они не по одной находке находили и цикл перезапускали, а чтобы они находили сразу все косяки и отдавали их пачкой, и потом заново перепроверяли.» `code-reviewer` and `test-reviewer` return every finding of a pass at once; a re-review checks the fixes and changed lines and returns all remaining findings at once.
@@ -1150,7 +1152,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Changed-object passes check fixes, changed lines and affected paths, not the whole object again. Format slips
   are corrected locally without a new pass; missing material evidence still prevents acceptance and is completed
   with the same reviewer. Keep the bounded provider/start-failure retry. Blind stays Spotty medium, high Bossy xhigh.
-  A fork of the main chat is deferred separately, not implemented here.
+  The self-check fork is implemented under `[D-AGENT-FORK-SELFCHECK]`.
   Owner, verbatim and in order, supplied in the reviewer-p2-gate brief, 2026-10-31:
   «Надо оптимизировать, ускорить процесс приемки, но при этом не потерять в контроле качества вообще никак. Выбросить только то, что не относится к контролю качества напрямую»
   «Я имею в виду случаи исключительные, какая-то хуйня абсолютная, без которой всё и так будет работать. И это какая-то вкусовщина, хотя вкусовщину должно было исключить.»
