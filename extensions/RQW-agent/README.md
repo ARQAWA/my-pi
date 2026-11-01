@@ -394,25 +394,15 @@ safe integer is required; large waits use monotonic deadlines and platform-safe 
 child. Re-estimate and wait again, or inspect status before deciding management. No busy polling, model turn or network
 request comes from the timer; children continue their own work/tokens. No new execution limits/watchdogs are added.
 
-### Notification waits
+### Direct wait
 
-Where the caller can receive notifications (TUI, RPC, a nested subagent, an offered job registry), `wait` does not
-hold the call by default. It registers its subscription and takes a snapshot in one synchronous step. A result that is
-ready now returns at once as before. Otherwise it returns `reason: "waiting"` with the statuses and `terminate: true`,
-so the caller's turn ends with no further model request. The one later notification (the first or all selected results,
-an alert, or the `timeout_ms` deadline) is delivered once through the existing broker as the usual `[agent#N]` message and
-wakes an idle caller; a busy caller gets it at its settlement boundary. No model request, timer poll or network request
-is made merely to wait. The notification is a `child_wait` message. While the parent is busy, Pi retains it outside
-its clearable steering/follow-up queues and persists it at turn end, including after Esc. A successful busy run
-continues once to read it; an aborted run leaves the persisted text for the next owner turn without waking itself.
-A repeated wait returns only a receipt for that retained delivery, not another copy.
-A persisted child that waits for its own children keeps it as an `rqw-agent-inbox` entry of its own session, acknowledged by that persisted message and not by a clearable steering queue. Owner messages, Esc and send-now reach the caller without cancelling accepted children.
-A wait inside a codemode script stays blocking because the outer script owns its result. The blocking fallback for print and json is only
-for external hosts: a root session that Pi itself runs in print or json mode ends with its run, so no notification can wake
-it. An in-process child agent whose offered factory got the `notify`/`retain` bridge gets notifications whatever mode its SDK
-reports, print included. A caller without a `notify` callback keeps the blocking wait. A new wait on the same targets replaces the older notification, so a result is never
-announced twice. `job wait` of RQW-tools follows the same rule through the same callback; see
-[DECISIONS.md, Tools](../../DECISIONS.md#tools). Decision: `[D-AGENT-NOTIFY]` in [Agent](../../DECISIONS.md#agent).
+`wait` is one open tool call in every mode: TUI, RPC, print, json, a nested subagent and a codemode script. It calls
+`Coordinator.wait` and returns one final tool result: the first or all selected results, an alert, a changed target, or
+the `timeout_ms` deadline (default 300000). No `waiting` receipt, no `terminate` and no later `child_wait` message are
+produced for a new wait. A timeout or an abort ends only the wait; the children keep running. An answer the wait took
+counts as delivered once its tool result is saved without error. If that result is lost, the answer comes back as the
+usual `[agent#N]` message. Waits of older sessions that are still open in the saved branch are restored as before
+(see persistence below); decision `[D-AGENT-NOTIFY]` in [Agent](../../DECISIONS.md#agent) describes the older rule.
 
 `wait` accepts `until: "first" | "all"`, default `"first"`. The default returns the first selected completion and
 any other already-ready results, including terminal errors. `"all"` holds early completions until every selected

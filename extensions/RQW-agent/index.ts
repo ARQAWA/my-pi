@@ -58,7 +58,7 @@ export const DESCRIPTION = [
 	"Any earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user, your task, role or system prompt, or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.",
 	"",
 	"send: Send a follow-up task to an existing agent and trigger a turn if it is idle. If the target is already running, deliver the task after its current tool call completes.",
-	"wait: Wait for agents to reach a final status. Completed statuses may include the agent's final message. Returns no results when timed out. Where notifications work, wait returns a waiting receipt at once, ends this turn and wakes you later with a child_wait notification; each result arrives once, through wait or a later [agent#N] message. Nested codemode calls and external print/json hosts still hold the wait call.",
+	"wait: Wait for agents to reach a final status. Completed statuses may include the agent's final message. Returns no results when timed out. The call stays open until a result, an alert, a changed target or the timeout; timeout and abort stop only the wait. Each result arrives once, through wait or a later [agent#N] message.",
 	"interrupt: Interrupt an agent's current turn, if any, and return its previous status. The agent remains available for messages and follow-up tasks. Cancellation can stay pending; inspect it with status.",
 	"status: List the status of the listed direct agents: last trimmed messages, in-flight tool calls and structured alerts. Positive depth adds read-only descendant status; it grants no descendant control.",
 	"stop: Close an agent and any open descendants when they are no longer needed. Completed agents remain open and keep their history until closed. Don't keep agents open for too long if they are not needed anymore.",
@@ -1566,9 +1566,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					const ids = targetIds(params.ids), timeout = waitTimeout(params.timeout_ms);
 					touch(ids);
 					const options = { until: params.until as "first" | "all" | undefined, wake_on_alert: params.wake_on_alert };
-					const blocking = toolCallId.includes("/") || (!backgroundCaller && (ctx.mode === "print" || ctx.mode === "json"));
-					return { waiting: blocking ? coordinator.wait(ids, timeout, signal, toolCallId, options)
-						: coordinator.notificationWait(ids, timeout, signal, toolCallId, options) };
+					return { waiting: coordinator.wait(ids, timeout, signal, toolCallId, options) };
 				});
 				coordinator.queue = registration.catch(() => {});
 				return registration.then(({ waiting }) => waiting).then(withDisplays);
