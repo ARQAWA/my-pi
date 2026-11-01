@@ -11,7 +11,6 @@ import { createBrowserExtension } from "../../../extensions/RQW-browser/index.ts
 
 type Any = any;
 const globals = globalThis as Any;
-const tick = () => new Promise<void>(resolve => setImmediate(resolve));
 const GUID = "0f8fad5b-d9cb-469f-a165-70867728950e";
 
 class FakeStorage {
@@ -204,10 +203,9 @@ it("saves managed downloads under their suggested names and preserves them on cl
 	assert.equal(method, "Browser.setDownloadBehavior");
 	assert.deepEqual([behavior.behavior, behavior.downloadPath, behavior.eventsEnabled], ["allowAndName", join(env.cwd, "saved"), true]);
 	await writeFile(join(behavior.downloadPath, GUID), "data");
-	browser.session.emit("Browser.downloadWillBegin", { guid: GUID, url: "https://app.test/a", suggestedFilename: "a.txt", frameId: "F1" });
-	browser.session.emit("Browser.downloadProgress", { guid: GUID, state: "completed", receivedBytes: 4 });
+	await browser.session.emit("Browser.downloadWillBegin", { guid: GUID, url: "https://app.test/a", suggestedFilename: "a.txt", frameId: "F1" });
+	await browser.session.emit("Browser.downloadProgress", { guid: GUID, state: "completed", receivedBytes: 4 });
 	const path = join(behavior.downloadPath, "a.txt");
-	for (let i = 0; i < 50 && !existsSync(path); i++) await tick();
 	assert.equal(await readFile(path, "utf8"), "data");
 	await env.call({ action: "close" });
 	assert.equal(browser.session.detached, 1);
