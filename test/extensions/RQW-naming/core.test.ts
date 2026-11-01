@@ -19,12 +19,12 @@ function registry(reply = '["Lisbon trip", "Travel plans"]') {
 
 describe("RQW-naming public core", () => {
 	it("returns the best valid name from one request", async () => {
-		const name = await generateSessionName({ context: "Plan a Lisbon trip", provider: "anthropic", registry: registry(), signal: new AbortController().signal });
+		const name = await generateSessionName({ context: [{ role: "user", content: "Plan a Lisbon trip", timestamp: 0 }], provider: "anthropic", registry: registry(), signal: new AbortController().signal });
 		assert.equal(name, "Lisbon trip");
 	});
 
 	it("returns the name when the model provides exactly one candidate", async () => {
-		const name = await generateSessionName({ context: "Plan a Lisbon trip", provider: "anthropic", registry: registry('["Lisbon trip"]'), signal: new AbortController().signal });
+		const name = await generateSessionName({ context: [{ role: "user", content: "Plan a Lisbon trip", timestamp: 0 }], provider: "anthropic", registry: registry('["Lisbon trip"]'), signal: new AbortController().signal });
 		assert.equal(name, "Lisbon trip");
 	});
 

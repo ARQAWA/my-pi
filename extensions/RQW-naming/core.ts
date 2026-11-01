@@ -1,5 +1,5 @@
 import {
-	type AssistantMessage, type Context, contentText, type Model,
+	type AssistantMessage, type Context, contentText, type ImageContent, type Message, type Model, type TextContent,
 } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
@@ -38,20 +38,32 @@ export async function selectNamingModel(registry: NamingRegistry, signal: AbortS
 	return { model, reasoning: NAMING_REASONING };
 }
 
-function generationPrompt(context: string): string {
-	return [
+function generationPrompt(messages: Message[]): (TextContent | ImageContent)[] {
+	const content: (TextContent | ImageContent)[] = [{ type: "text", text: [
 		`Read the conversation and propose 1 to ${NAME_COUNT} different short names for this session.`,
 		"Rank them by how well their meaning describes the conversation, best first.",
 		"Reply with only a JSON array of strings.",
 		`Each name must have at most ${MAX_NAME_WORDS} words and at most ${MAX_NAME_CODE_POINTS} Unicode code points, with no line breaks or control characters.`,
-		"",
+		"Image attachments follow their message in the order numbered in its content.",
 		"<conversation>",
-		context,
-		"</conversation>",
-	].join("\n");
+	].join("\n") }];
+	for (const message of messages) {
+		const images: ImageContent[] = [];
+		let serialized: unknown = message;
+		if ((message.role === "user" || message.role === "toolResult") && Array.isArray(message.content)) {
+			serialized = { ...message, content: message.content.map((block) => {
+				if (block.type !== "image") return block;
+				images.push(block);
+				return { type: "image", attachment: images.length, mimeType: block.mimeType };
+			}) };
+		}
+		content.push({ type: "text", text: JSON.stringify(serialized) }, ...images);
+	}
+	content.push({ type: "text", text: "</conversation>" });
+	return content;
 }
 
-async function complete(registry: NamingRegistry, selected: NamingSelection, prompt: string, signal: AbortSignal): Promise<string> {
+async function complete(registry: NamingRegistry, selected: NamingSelection, prompt: (TextContent | ImageContent)[], signal: AbortSignal): Promise<string> {
 	signal.throwIfAborted();
 	const context: Context = { systemPrompt: SYSTEM, messages: [{ role: "user", content: prompt, timestamp: 0 }] };
 	const message: AssistantMessage = await registry.streamSimple(selected.model, context, { reasoning: selected.reasoning, signal }).result();
@@ -70,7 +82,7 @@ export function parseCandidates(text: string): string[] {
 }
 
 /** One request generates and ranks candidates; use the best valid name. */
-export async function generateSessionName(input: { context: string; registry: NamingRegistry; signal: AbortSignal; provider: string | undefined }): Promise<string> {
+export async function generateSessionName(input: { context: Message[]; registry: NamingRegistry; signal: AbortSignal; provider: string | undefined }): Promise<string> {
 	const { context, registry, signal, provider } = input;
 	if (signal.aborted) throw new Error("Naming aborted");
 	const selected = await selectNamingModel(registry, signal, provider);
