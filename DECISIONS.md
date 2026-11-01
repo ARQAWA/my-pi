@@ -1732,7 +1732,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   2.3 ms (2.3) at 200; stock Remove Session 7.1 ms (7.7) and 11.0 ms (11.4); stock list 2.5 ms (3.0) and 10.7 ms (13.3);
   `SessionManager.open` alone waits 1.2 ms (1.2) at both sizes; the full runtime switch was not measured. Our `/remove` total grows with the other sessions (64 ms at 40, 299 ms at 200). No change to Pi or to
   `/remove`. Evidence: `my-pi-evidence/designs/deferred/session-paths-measurement.md`.
-- **Proof** `[D-SESSION-TESTS]`. Tests: `test/extensions/RQW-session/session.test.ts`. Since: `db5ab64`.
+- **Proof** `[D-SESSION-TESTS]`. Tests: `test/extensions/RQW-session/session.test.ts`, `test/extensions/RQW-session/list.test.ts`. Since: `db5ab64`.
 
 ## Send now
 

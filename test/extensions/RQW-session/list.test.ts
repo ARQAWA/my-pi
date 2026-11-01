@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { appendFile, mkdir, mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { afterEach, beforeEach, it } from "node:test";
 import { SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import sessionCommands from "../../../extensions/RQW-session/index.ts";
@@ -123,6 +123,16 @@ it("listAll with the default agent dir, as /resume calls it, scans every project
 	} finally {
 		if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previous;
 	}
+});
+
+it("uses stock listing for a relative session directory", async () => {
+	await session("a", user("hello"));
+	const relativeDir = relative(process.cwd(), dir);
+	const expectedList = await stock.list(cwd, relativeDir);
+	const expectedAll = await stock.listAll(relativeDir);
+	assert.equal(expectedList[0]?.messageCount, 1);
+	assert.deepEqual(await SessionManager.list(cwd, relativeDir), expectedList);
+	assert.deepEqual(await SessionManager.listAll(relativeDir), expectedAll);
 });
 
 it("keeps the stock functions when their shape differs", async () => {

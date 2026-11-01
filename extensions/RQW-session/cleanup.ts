@@ -10,8 +10,8 @@ const missing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === "
  * `agent-N/` directories, each with a child's `<ts>_<uuid>.jsonl` and possibly its own `.jsonl.children` tree.
  * Only directory listings are read (no file content), plus one existence check right before each delete.
  * Names compare case-insensitively on every platform, so the rule only ever keeps more. Symlinks and files are skipped.
- * The current session is never touched: its own tree and any tree containing its file (or the target of a symlinked file) are kept (also when reached through a symlinked or differently cased path), but orphans
- * inside it are still cleaned. An unreadable directory counts as failed, except a missing one; only a confirmed ENOENT
+ * The current session's tree is never entered, including through symlinked or differently cased paths. Trees containing
+ * its file (or a symlink target) are kept. An unreadable directory counts as failed, except a missing one; only a confirmed ENOENT
  * on the sibling permits a delete.
  */
 export async function cleanupOrphanedChildren(agentDir: string, currentSessionFile: string | undefined): Promise<{ removed: number; failed: number }> {
@@ -30,8 +30,11 @@ export async function cleanupOrphanedChildren(agentDir: string, currentSessionFi
 	// Lexical match first; a tree with the current name is also compared by the real path of its directory.
 	const isCurrent = async (dir: string, name: string) => {
 		if (resolve(dir, name).toLowerCase() === current) return true;
-		if (name.toLowerCase() !== currentName || !currentDir) return false;
-		return realpath(dir).then(path => path.toLowerCase() === currentDir, () => true);
+		if (name.toLowerCase() !== currentName && name.toLowerCase() !== `${basename(currentTarget ?? "")}.children`) return false;
+		return realpath(dir).then(path => {
+			const tree = join(path, name).toLowerCase();
+			return tree === current || tree === `${currentTarget}.children` || (name.toLowerCase() === currentName && path.toLowerCase() === currentDir);
+		}, () => true);
 	};
 	let removed = 0;
 	let failed = 0;
@@ -46,7 +49,8 @@ export async function cleanupOrphanedChildren(agentDir: string, currentSessionFi
 		await Promise.all(entries.filter(entry => entry.isDirectory() && entry.name.endsWith(TREE)).map(async entry => {
 			const path = join(dir, entry.name);
 			const owner = entry.name.slice(0, -".children".length);
-			if (files.has(owner.toLowerCase()) || await isCurrent(dir, entry.name) || await containsCurrent(path)) return walkTree(path);
+			if (await isCurrent(dir, entry.name)) return;
+			if (files.has(owner.toLowerCase()) || await containsCurrent(path)) return walkTree(path);
 			// The listing may be stale: a session file created meanwhile keeps its tree; only ENOENT confirms absence.
 			try { await access(join(dir, owner)); return; }
 			catch (error) { if (!missing(error)) { failed++; return; } }

@@ -19,6 +19,47 @@ it("copy-session passes the exact public session id to the clipboard", async () 
 	assert.deepEqual(notes, ["Session ID copied: session-1"]);
 });
 
+it("copy-session reports clipboard failures as errors", async () => {
+	const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+	registerSessionCommands({ on: () => undefined, registerCommand: (name: string, command: Omit<RegisteredCommand, "name" | "sourceInfo">) => commands.set(name, command) } as unknown as ExtensionAPI,
+		async () => { throw new Error("clipboard unavailable"); });
+	const notes: string[] = [];
+	const ctx = { sessionManager: { getSessionId: () => "session-1" }, ui: { notify: (text: string, level: string) => notes.push(`${level}:${text}`) } } as unknown as ExtensionCommandContext;
+	await commands.get("copy-session")!.handler("", ctx);
+	assert.deepEqual(notes, ["error:Could not copy session ID: clipboard unavailable"]);
+});
+
+it("remove keeps the session after No, Escape, or without a UI", async () => {
+	const root = await mkdtemp(join(tmpdir(), "rqw-session-"));
+	try {
+		const file = join(root, "session.jsonl");
+		await writeFile(file, "session data");
+		await mkdir(`${file}.children`);
+		const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+		let switches = 0;
+		let deletes = 0;
+		registerSessionCommands({ on: () => undefined, registerCommand: (name: string, command: Omit<RegisteredCommand, "name" | "sourceInfo">) => commands.set(name, command) } as unknown as ExtensionAPI,
+			async () => {}, () => { deletes++; unlinkSync(file); return { status: 0 }; });
+		for (const [hasUI, answer] of [[true, "1. No"], [true, undefined], [false, "2. Yes"]] as const) {
+			const ctx = {
+				hasUI,
+				sessionManager: { getSessionFile: () => file },
+				ui: { select: async () => answer, notify: () => {} },
+				newSession: async (options: { withSession: (fresh: unknown) => Promise<void> }) => {
+					switches++;
+					await options.withSession({ ui: { notify: () => {} } });
+					return { cancelled: false };
+				},
+			} as unknown as ExtensionCommandContext;
+			await commands.get("remove")!.handler("", ctx);
+			assert.equal(existsSync(file), true);
+			assert.equal(existsSync(`${file}.children`), true);
+		}
+		assert.equal(switches, 0);
+		assert.equal(deletes, 0);
+	} finally { await rm(root, { recursive: true, force: true }); }
+});
+
 it("remove switches to a fresh session, then deletes only the JSONL like stock /resume", async () => {
 	const root = await mkdtemp(join(tmpdir(), "rqw-session-"));
 	try {
@@ -81,6 +122,7 @@ it("cleanup removes only orphaned child trees and reports the count", async () =
 		await mkdir(join(b, "orphan2.jsonl.children"), { recursive: true });
 		await mkdir(outside);
 		await writeFile(join(a, "live.jsonl"), "{}\n");
+		await writeFile(join(a, "current.jsonl"), "{}\n");
 		await writeFile(join(a, "file.jsonl.children"), "not a directory");
 		await writeFile(join(outside, "keep.txt"), "x");
 		await symlink(outside, join(a, "link.jsonl.children"));
@@ -105,11 +147,11 @@ it("cleanup removes only orphaned child trees and reports the count", async () =
 		assert.equal(existsSync(join(b, "orphan2.jsonl.children")), false);
 		assert.equal(existsSync(join(a, "live.jsonl.children", "agent-2", "gone.jsonl.children")), false);
 		assert.equal(existsSync(join(kid, "child.jsonl.children", "agent-2", "deep.jsonl.children")), false);
-		assert.equal(existsSync(join(a, "current.jsonl.children", "agent-1", "gone.jsonl.children")), false);
+		assert.equal(existsSync(join(a, "current.jsonl.children", "agent-1", "gone.jsonl.children")), true);
 		assert.equal(existsSync(join(kid, "child.jsonl.children", "agent-1", "grand.jsonl.children")), true);
 		assert.equal(existsSync(join(a, "Cased.jsonl.children")), true);
 		for (const kept of [join(a, "live.jsonl.children"), join(a, "current.jsonl.children"), join(a, "file.jsonl.children"), join(a, "link.jsonl.children"), join(outside, "keep.txt")]) assert.equal(existsSync(kept), true);
-		assert.match(notes[0]!, /\b5\b/);
+		assert.match(notes[0]!, /\b4\b/);
 		await commands.get("cleanup")!.handler("", ctx);
 		assert.doesNotMatch(notes[1]!, /\b[1-9]\b/);
 		// An unreadable (non-ENOENT) sessions path is a failure, not "nothing to clean"; a missing one is clean.
@@ -150,7 +192,7 @@ it("cleanup keeps the current tree behind a symlinked path and keeps trees it ca
 		// The session file is spelled through the alias; its own tree has no JSONL but must stay.
 		await run(join(alias, "cur.jsonl"));
 		assert.equal(existsSync(join(real, "cur.jsonl.children")), true);
-		assert.equal(existsSync(join(real, "cur.jsonl.children", "agent-1", "gone.jsonl.children")), false);
+		assert.equal(existsSync(join(real, "cur.jsonl.children", "agent-1", "gone.jsonl.children")), true);
 		// The current session is nested in an orphaned ancestor tree (no parent JSONL): the ancestor must stay too.
 		await mkdir(join(real, "parent.jsonl.children", "agent-1"), { recursive: true });
 		await run(join(alias, "parent.jsonl.children", "agent-1", "cur2.jsonl"));
@@ -158,9 +200,11 @@ it("cleanup keeps the current tree behind a symlinked path and keeps trees it ca
 		// The current file is a symlink into an orphaned tree: that tree contains its target and must stay.
 		await mkdir(join(real, "target.jsonl.children", "agent-1"), { recursive: true });
 		await writeFile(join(real, "target.jsonl.children", "agent-1", "cur3.jsonl"), "{}\n");
+		const targetTree = join(real, "target.jsonl.children", "agent-1", "cur3.jsonl.children");
+		await mkdir(join(targetTree, "agent-1", "gone.jsonl.children"), { recursive: true });
 		await symlink(join(real, "target.jsonl.children", "agent-1", "cur3.jsonl"), join(real, "cur3link.jsonl"));
 		await run(join(real, "cur3link.jsonl"));
-		assert.equal(existsSync(join(real, "target.jsonl.children")), true);
+		assert.equal(existsSync(join(targetTree, "agent-1", "gone.jsonl.children")), true);
 		if (process.platform === "win32" || process.getuid?.() === 0) return;
 		// Listable but not searchable: the sibling check fails with EACCES, so the tree stays and a warning is shown.
 		const locked = join(agent, "sessions", "b");
