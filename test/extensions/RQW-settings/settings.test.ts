@@ -59,3 +59,61 @@ it("keeps an explicit tool selection unchanged", () => {
 it("regression: manual tool removal survives reload", () => {
 	assert.deepEqual(activeTools(false, true), ["bash", "read"]);
 });
+
+it("an unknown Pi shape turns off only the patched parts and keeps /fast-gpt", () => {
+	const prototype = AgentSession.prototype as unknown as Record<string, unknown>;
+	const names = ["bindExtensions", "_bindExtensionCore"];
+	const natives = names.map(name => Object.getOwnPropertyDescriptor(prototype, name)!);
+	for (const [index, name] of names.entries()) Object.defineProperty(prototype, name, { ...natives[index], value: undefined });
+	const handlers = new Map<string, ((event: any, ctx: any) => void)[]>();
+	const commands: string[] = [];
+	const notes: string[] = [];
+	const pi = {
+		on: (name: string, handler: (event: any, ctx: any) => void) => handlers.set(name, [...(handlers.get(name) ?? []), handler]),
+		registerCommand: (name: string) => commands.push(name),
+		events: { on: () => () => {}, emit: () => {} },
+		getSettings: () => ({}),
+		getAllTools: () => [{ name: "codemode" }],
+		getActiveTools: () => ["bash"],
+		setActiveTools: () => assert.fail("default tools must stay untouched on an unknown shape"),
+	};
+	try {
+		settings(pi as unknown as ExtensionAPI);
+		assert.ok(commands.includes("fast-gpt"));
+		const ctx = { hasUI: true, sessionManager: {}, ui: { notify: (text: string) => notes.push(text) } };
+		for (const handler of handlers.get("session_start") ?? []) handler({ reason: "startup" }, ctx);
+		assert.equal(notes.filter(text => text.startsWith("RQW-settings:") && text.endsWith("that part is off")).length, 2);
+		for (const handler of handlers.get("session_shutdown") ?? []) handler({}, {});
+	} finally {
+		for (const [index, name] of names.entries()) Object.defineProperty(prototype, name, natives[index]);
+	}
+});
+
+it("a session without the expected intent fields gets no default tools and a warning, not an error", () => {
+	const prototype = AgentSession.prototype;
+	const native = Object.getOwnPropertyDescriptor(prototype, "bindExtensions")!;
+	Object.defineProperty(prototype, "bindExtensions", { ...native, value: function () { return "native"; } });
+	const handlers = new Map<string, ((event: any, ctx: any) => void)[]>();
+	const notes: string[] = [];
+	const pi = {
+		on: (name: string, handler: (event: any, ctx: any) => void) => handlers.set(name, [...(handlers.get(name) ?? []), handler]),
+		registerCommand() {},
+		events: { on: () => () => {}, emit: () => {} },
+		getSettings: () => ({}),
+		getAllTools: () => [{ name: "codemode" }],
+		getActiveTools: () => ["bash"],
+		setActiveTools: () => assert.fail("default tools must stay untouched on an unknown session shape"),
+	};
+	const manager = {};
+	try {
+		settings(pi as unknown as ExtensionAPI);
+		prototype.bindExtensions.call({ sessionManager: manager } as never, undefined as never);
+		const ctx = { hasUI: true, sessionManager: manager, ui: { notify: (text: string) => notes.push(text) } };
+		for (const handler of handlers.get("session_start") ?? []) handler({ reason: "startup" }, ctx);
+		assert.equal(notes.length, 1);
+		assert.match(notes[0], /^RQW-settings: .*session intent was not captured/);
+	} finally {
+		for (const handler of handlers.get("session_shutdown") ?? []) handler({}, {});
+		Object.defineProperty(prototype, "bindExtensions", native);
+	}
+});
