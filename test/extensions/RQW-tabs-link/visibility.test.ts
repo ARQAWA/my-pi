@@ -67,9 +67,11 @@ it("the four tools never reach a model provider", async (t) => {
 	registerApiProvider({ api: FAKE_API, stream: reached, streamSimple: reached }, "rqw-tabs-link-test");
 	t.after(() => unregisterApiProviders("rqw-tabs-link-test"));
 	recv.world.entries.push({ id: "u1", type: "message", parentId: null, timestamp: "2026-01-01T00:00:00Z", message: { role: "user", content: "hi" } });
+	// An answer already saved, so the wait returns at once and needs no timer another test may have faked.
+	recv.world.entries.push({ id: "a1", type: "message", parentId: "u1", timestamp: "2026-01-01T00:00:01Z", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "ok" }] } });
 	await send.run("list_chats", {});
 	await send.run("read_chat", { chatId: "recv" });
 	await send.run("send_message_to_chat", { chatId: "recv", prompt: "go", model: "p/other" });
-	await send.run("wait_answer", { chatId: "recv", afterEntryId: "u1", timeout_ms: 0 });
+	await send.run("wait_answer", { chatId: "recv", afterEntryId: "u1", timeout_ms: 500 });
 	assert.equal(calls, 0);
 });
