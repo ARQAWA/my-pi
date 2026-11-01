@@ -9,7 +9,7 @@ export type Steer = { text: string; images: ImageContent[] };
 type PromptOptions = { streamingBehavior?: string; expandPromptTemplates?: boolean; images?: ImageContent[]; source?: string; preflightResult?: (result: string) => void };
 type Session = {
 	sessionManager: object; getSteeringMessages(): readonly string[]; followUp?(text: string): Promise<unknown>; isCompacting?: boolean; clearQueue?(): { steering: string[]; followUp: string[] };
-	isStreaming?: boolean; abort?(): Promise<unknown>; _isEmittingAgentSettled?: boolean;
+	isStreaming?: boolean; waitForIdle?(): Promise<void>; abort?(): Promise<unknown>; _isEmittingAgentSettled?: boolean;
 	_steeringMessages?: unknown; _followUpMessages?: unknown; agent?: { steeringQueue?: { messages?: unknown }; followUpQueue?: { messages?: unknown } }; _emitQueueUpdate?(): void;
 	_queueUserInput?(text: string, images: ImageContent[] | undefined, behavior: string, source: string): Promise<string>;
 	_runInputHandlers?(text: string, images: ImageContent[] | undefined, source: string, behavior: string | undefined): Promise<{ text: string; images?: ImageContent[] } | undefined>;
@@ -24,7 +24,7 @@ type Prototype = Record<symbol, State | undefined>;
 type Queues = { display: string[]; delivery: unknown[]; emit: () => void };
 export type Force = { taken: Steer[]; followUps: Steer[]; aborted: Promise<void>; settled: Promise<void>; release(): void };
 
-const none = { followUps: (_identity: object) => undefined as number | undefined, start: (_identity: object, _text: string, _images: ImageContent[], _onStarted: () => void) => undefined as Promise<void> | undefined, session: (_identity: object) => undefined as Session | undefined, steering: (_identity: object) => undefined as { queued: number; inflight: number } | undefined, watch: (_identity: object, _listener: () => void) => () => {}, force: (_identity: object, _sink: (steer: Steer) => boolean) => undefined as Force | undefined, release() {} };
+const none = { promote: (_identity: object, _idle: boolean, _defer: boolean, _failed: () => void) => false, followUps: (_identity: object) => undefined as number | undefined, start: (_identity: object, _text: string, _images: ImageContent[], _onStarted: () => void) => undefined as Promise<void> | undefined, session: (_identity: object) => undefined as Session | undefined, steering: (_identity: object) => undefined as { queued: number; inflight: number } | undefined, watch: (_identity: object, _listener: () => void) => () => {}, force: (_identity: object, _sink: (steer: Steer) => boolean) => undefined as Force | undefined, release() {} };
 
 /** Pi's steering or follow-up queues as arrays, or undefined when their shape is not the 1.4.0 one. */
 function queuesOf(session: Session, kind: "steering" | "followUp" = "steering"): Queues | undefined {
@@ -174,6 +174,54 @@ export function installQueue(SessionClass = AgentSession, version = VERSION) {
 				const queues = found && queuesOf(found.session, "followUp");
 				return queues ? userSteers(queues).length : undefined;
 			} catch { return undefined; }
+		},
+		/** Moves already prepared follow-ups into steering without rerunning input handlers. */
+		promote(identity: object, idle: boolean, defer: boolean, failed: () => void): boolean {
+			const found = tracked(identity);
+			const follow = found && queuesOf(found.session, "followUp");
+			const steering = found && queuesOf(found.session);
+			if (!found || !follow || !steering || ((idle || defer) && typeof found.session._startRun !== "function") || (defer && typeof found.session.waitForIdle !== "function")) return false;
+			const picked = userSteers(follow);
+			if (!picked.length) return false;
+			const messages = picked.map(({ at }) => follow.delivery[at]);
+			for (const { at } of [...picked].reverse()) follow.delivery.splice(at, 1);
+			for (const { steer } of picked) follow.display.splice(follow.display.indexOf(steer.text), 1);
+			const remaining = idle ? picked.slice(1) : picked;
+			steering.display.push(...remaining.map(({ steer }) => steer.text));
+			steering.delivery.push(...(idle ? messages.slice(1) : messages));
+			follow.emit();
+			const start = () => {
+				if (released) return;
+				if (defer) {
+					if (found.session.isStreaming || found.session.isCompacting) return;
+					const at = steering.delivery.indexOf(messages[0]);
+					if (at < 0) return;
+					steering.delivery.splice(at, 1);
+					steering.display.splice(steering.display.indexOf(picked[0].steer.text), 1);
+					steering.emit();
+				}
+				const first = picked[0].steer;
+				let started = false;
+				const run = found.session._startRun!({ messageType: "user", prompt: first.text, images: first.images }, () => { started = true; });
+				void run.catch(() => {
+					if (started) return;
+					const restored = [0];
+					for (let i = 1; i < messages.length; i++) {
+						const at = steering.delivery.indexOf(messages[i]);
+						if (at < 0) continue;
+						steering.delivery.splice(at, 1);
+						steering.display.splice(steering.display.indexOf(picked[i].steer.text), 1);
+						restored.push(i);
+					}
+					follow.display.unshift(...restored.map(i => picked[i].steer.text));
+					follow.delivery.unshift(...restored.map(i => messages[i]));
+					follow.emit();
+					failed();
+				});
+			};
+			if (idle) start();
+			else if (defer) void found.session.waitForIdle!().then(start, failed);
+			return true;
 		},
 		watch(identity: object, listener: () => void): () => void {
 			const tracker = tracked(identity)?.tracker;

@@ -53,9 +53,9 @@ it("without predictions, shows the action for each queue and background state", 
 	const line = editor.render(80)[1];
 	assert.ok(line.includes(CURSOR_MARKER)); assert.ok(line.includes("\x1b[3m"));
 	session._followUpMessages.push("next"); emit({ type: "queue_update" });
-	assert.equal(row(), "esc to send now");
+	assert.equal(row(), "ctrl+enter to steer");
 	await session._queueSteer("change");
-	assert.equal(row(), "ctrl+enter to send now");
+	assert.equal(row(), "ctrl+enter to steer");
 	emit({ type: "compaction_start" });
 	assert.equal(row(), "esc to interrupt");
 	emit({ type: "compaction_end" });
@@ -63,7 +63,7 @@ it("without predictions, shows the action for each queue and background state", 
 	assert.equal(row(), "esc to interrupt");
 	emit({ type: "auto_retry_end" });
 	state.provider = "anthropic"; emit({ type: "queue_update" });
-	assert.equal(row(), "esc to send now");
+	assert.equal(row(), "ctrl+enter to steer");
 	session._steeringMessages = []; state.idle = true; state.background = 1; countChanged();
 	assert.equal(row(), "esc esc to stop background");
 	state.background = 0; countChanged();

@@ -226,6 +226,14 @@ export default function sendNow(pi: ExtensionAPI) {
 				if (!ctx.isIdle() && getKeybindings().matches(data, "tui.input.submit")) { followUp(); return { consume: true }; }
 			}
 		}
+		if (steerKey && !ctx.ui.getEditorText().trim() && editor instanceof CustomEditor
+			&& (editor as unknown as { isShowingAutocomplete?: () => boolean }).isShowingAutocomplete?.() === false
+			&& (!ctx.isIdle() || session?.isCompacting || background()) && followUpWaits(ctx)) {
+			const idle = ctx.isIdle() && !session?.isCompacting;
+			const defer = session?.isCompacting === true && session.isStreaming === false;
+			if ((!(idle || defer) || ctx.model) && queue.promote(ctx.sessionManager, idle, defer, () => ctx.ui.notify("Queued messages not sent; the run did not start.", "warning"))) return { consume: true };
+			return undefined;
+		}
 		// An empty Enter forces waiting steering, as before; on Codex a second Ctrl+Enter does too. Alt+Enter never forces.
 		const forceKey = getKeybindings().matches(data, "tui.input.submit") || (matchesKey(data, "ctrl+enter") && ctx.model?.provider === CODEX);
 		if (!forceKey || ctx.ui.getEditorText().trim() || ctx.isIdle() || !(editor instanceof CustomEditor)) return undefined;
@@ -308,8 +316,9 @@ export default function sendNow(pi: ExtensionAPI) {
 			const working = !ctx.isIdle() || special;
 			const next = brewing ? "ctrl+r to interrupt"
 				: special ? "esc to interrupt"
+				: working && followUp ? "ctrl+enter to steer"
 				: working && steering && ctx.model?.provider === CODEX ? "ctrl+enter to send now"
-				: working && (steering || followUp) ? "esc to send now"
+				: working && steering ? "esc to send now"
 				: working ? "esc to interrupt"
 				: background() ? "esc esc to stop background"
 				: followUp ? "ctrl+enter to steer" : undefined;

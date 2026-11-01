@@ -7134,3 +7134,16 @@ Source: `5377fff2:DECISIONS.md`. Verbatim replaced text:
 
 > Several queued messages go as one, joined by blank lines; follow-ups and
 >   other queued messages stay in Pi's queue;
+
+## A-0406 · Send now · follow-up steering key
+
+Status: SUPERSEDED by `[D-KEYS-STEER]` and `[D-KEYS-HINTS]` (DECISIONS.md#send-now).
+Source: `acc4a0a7:DECISIONS.md`. Verbatim replaced text:
+
+> main turn). Alt+Enter never forces. An empty Enter, as before, and an empty Ctrl+Enter with user steering waiting (queued, or still on its way
+
+> An empty Enter and an empty Ctrl+Enter still leave follow-ups queued.
+
+> The priority is prediction cancellation, Codex steering force (`ctrl+enter to send now`), the Escape force for other-provider steering or any queued follow-up (`esc to send now`), main interruption, background stop, follow-up steering, then prediction generation.
+
+> other queued messages stay in Pi's queue, except that Escape sends the user follow-ups too (`[D-KEYS-STEER]`);

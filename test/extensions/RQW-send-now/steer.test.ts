@@ -18,25 +18,20 @@ it("Ctrl+Enter and Alt+Enter with text give the editor its own submit, busy or i
 	assert.deepEqual(h.sent, []);
 });
 
-it("Codex: an empty Ctrl+Enter silently sends the waiting steering and leaves follow-ups and the draft", async (t) => {
+it("Codex: an empty Ctrl+Enter silently sends waiting steering", async (t) => {
 	const h = harness(t);
 	await h.steer("use the smaller patch");
-	h.followUp("check the result later");
 	assert.deepEqual(h.press(CTRL_ENTER), { consume: true });
 	assert.equal(h.session.aborts, 1);
 	assert.deepEqual(h.session._steeringMessages, []);
 	assert.deepEqual(h.session.agent.steeringQueue.messages, []);
-	assert.deepEqual(h.session._followUpMessages, ["check the result later"]);
-	assert.equal(h.session.agent.followUpQueue.messages.length, 1);
 	await h.flush();
 	assert.deepEqual(h.sent, [steer("use the smaller patch")]);
 	assert.deepEqual(h.notices, []);
 });
 
-it("Codex: an empty Ctrl+Enter with nothing steering, or with only a follow-up, does nothing", async (t) => {
+it("Codex: empty steering keys with nothing queued do nothing", (t) => {
 	const h = harness(t);
-	assert.equal(h.press(CTRL_ENTER), undefined);
-	h.followUp("later");
 	assert.equal(h.press(CTRL_ENTER), undefined);
 	assert.equal(h.press(ALT_ENTER), undefined);
 	assert.equal(h.session.aborts, 0);
@@ -170,14 +165,74 @@ it("Escape takes only user follow-ups; other queued follow-up messages stay", as
 	assert.deepEqual(h.sent, [steer("mine")]);
 });
 
-it("a follow-up with steering waiting is not sent by an empty Ctrl+Enter or Enter, only by Escape", async (t) => {
+for (const provider of ["openai-codex", "anthropic"]) {
+	for (const key of [CTRL_ENTER, ALT_ENTER]) {
+		it(`${provider}: empty steering key moves follow-ups without aborting`, async (t) => {
+			const h = harness(t, { provider });
+			const image = { type: "image", data: "abc", mimeType: "image/png" };
+			const custom = { role: "custom", content: "agent result", timestamp: 1 };
+			await h.steer("existing");
+			h.followUp("first");
+			h.session.agent.followUpQueue.messages[0].content.push(image);
+			h.session.agent.followUpQueue.messages.push(custom);
+			h.followUp("second");
+			assert.deepEqual(h.press(key), { consume: true });
+			assert.equal(h.session.aborts, 0);
+			assert.deepEqual(h.sent, []);
+			assert.deepEqual(h.session._followUpMessages, []);
+			assert.deepEqual(h.session.agent.followUpQueue.messages, [custom]);
+			assert.deepEqual(h.session._steeringMessages, ["existing", "first", "second"]);
+			assert.deepEqual(h.session.agent.steeringQueue.messages.map((m: any) => m.content), [
+				[{ type: "text", text: "existing" }], [{ type: "text", text: "first" }, image], [{ type: "text", text: "second" }],
+			]);
+		});
+	}
+}
+
+it("background-only: starts the first follow-up and steers the rest", async (t) => {
 	const h = harness(t);
-	await h.steer("steer");
-	h.followUp("follow");
-	h.press(CTRL_ENTER);
+	h.state.idle = true; h.state.background = 1;
+	h.followUp("first"); h.followUp("second");
+	assert.deepEqual(h.press(ALT_ENTER), { consume: true });
 	await h.flush();
-	assert.deepEqual(h.sent, [steer("steer")]);
-	assert.deepEqual(h.session._followUpMessages, ["follow"]);
+	assert.deepEqual(h.sent, [steer("first")]);
+	assert.deepEqual(h.session._followUpMessages, []);
+	assert.deepEqual(h.session._steeringMessages, ["second"]);
+	assert.equal(h.session.aborts, 0);
+});
+
+it("manual compaction: follow-ups enter steering and start after compaction", async (t) => {
+	const h = harness(t);
+	h.state.compacting = true; h.state.background = 1; h.session.isStreaming = false;
+	let finish!: () => void;
+	h.session.waitForIdle = () => new Promise<void>(resolve => { finish = resolve; });
+	const image = { type: "image", data: "abc", mimeType: "image/png" };
+	h.followUp("first"); h.session.agent.followUpQueue.messages[0].content.push(image);
+	h.followUp("second");
+	assert.deepEqual(h.press(CTRL_ENTER), { consume: true });
+	assert.deepEqual(h.session._steeringMessages, ["first", "second"]);
+	assert.deepEqual(h.session._followUpMessages, []);
+	assert.deepEqual(h.sent, []);
+	h.state.compacting = false; h.state.idle = true; finish();
+	await h.flush();
+	assert.deepEqual(h.sent, [steer("first", [image])]);
+	assert.deepEqual(h.session._steeringMessages, ["second"]);
+	assert.equal(h.session.aborts, 0);
+});
+
+it("background-only: a failed start restores queued messages and images", async (t) => {
+	const h = harness(t);
+	h.state.idle = true; h.state.background = 1;
+	const image = { type: "image", data: "abc", mimeType: "image/png" };
+	h.followUp("first"); h.session.agent.followUpQueue.messages[0].content.push(image);
+	h.followUp("second");
+	h.session._startRun = async () => { throw new Error("failed"); };
+	assert.deepEqual(h.press(CTRL_ENTER), { consume: true });
+	await h.flush();
+	assert.deepEqual(h.session._followUpMessages, ["first", "second"]);
+	assert.deepEqual(h.session.agent.followUpQueue.messages[0].content, [{ type: "text", text: "first" }, image]);
+	assert.deepEqual(h.session._steeringMessages, []);
+	assert.match(h.notices[0], /not sent/);
 });
 
 it("a second Escape within 500 ms cancels the follow-up force and returns its text to the editor", async (t) => {
@@ -209,13 +264,13 @@ it("images of the steering go with it", async (t) => {
 	assert.deepEqual(h.sent, [steer("look at this\n\nand this", [image])]);
 });
 
-it("only user steering is taken; other queued messages and a same-text follow-up stay", async (t) => {
+it("plain Enter takes only user steering; other queued messages and a same-text follow-up stay", async (t) => {
 	const h = harness(t);
 	const custom = { role: "custom", content: "from an extension", timestamp: 1 };
 	h.session.agent.steeringQueue.messages.push(custom);
 	await h.steer("same text");
 	h.followUp("same text");
-	h.press(CTRL_ENTER);
+	h.press("\r");
 	await h.flush();
 	assert.deepEqual(h.session.agent.steeringQueue.messages, [custom]);
 	assert.deepEqual(h.session._followUpMessages, ["same text"]);
