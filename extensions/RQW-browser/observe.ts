@@ -1,7 +1,5 @@
 import type { ElementHandle, Frame, JSHandle, Page, SerializedAXNode } from "puppeteer-core";
 import { untilAborted } from "./abort.ts";
-import { resolveAriaRef } from "./aria.ts";
-import { normalizeSelector, parseAriaRefSelector } from "./selectors.ts";
 
 // Adapted from oh-my-pi 18.8.9 (browser/tab-worker.ts), MIT; see THIRD-PARTY-NOTICES.md.
 
@@ -9,14 +7,12 @@ import { normalizeSelector, parseAriaRefSelector } from "./selectors.ts";
 declare module "puppeteer-core" {
 	interface Frame {
 		mainRealm(): Realm;
-		isolatedRealm(): Realm;
 		readonly accessibility: Accessibility;
 		/** Changes on every navigation that loads a document; a back/forward cache restore keeps the previous value. */
 		readonly _loaderId: string;
 		readonly client: CDPSession;
 	}
 	interface Realm {
-		adoptHandle<T extends JSHandle>(handle: T): Promise<T>;
 		adoptBackendNode(backendNodeId: number): Promise<JSHandle>;
 	}
 	interface SerializedAXNode {
@@ -67,13 +63,6 @@ export interface Observation {
 	elements: ObservationEntry[];
 }
 
-export interface ObserveOptions {
-	includeAll?: boolean;
-	viewportOnly?: boolean;
-	selector?: string;
-	compact?: boolean;
-}
-
 /** Where an observed element lives; `tab.id(n)` resolves it to a handle on use. */
 interface ObservedElement {
 	frame: Frame;
@@ -91,7 +80,7 @@ function isObservedDocumentGone(element: ObservedElement): boolean {
 }
 
 function staleError(id: number): Error {
-	return new Error(`Element id ${id} is stale. Run tab.observe() again.`);
+	return new Error(`Element id ${id} is stale. Inspect a fresh view.`);
 }
 
 /**
@@ -131,13 +120,11 @@ async function resolveObservedElement(observed: ObservedElement): Promise<Elemen
 /** The numbered elements of the latest observation of one tab. */
 export class ObservedElements {
 	#elements = new Map<number, ObservedElement>();
-	#counter = 0;
 	#nextViewId = Number.MAX_SAFE_INTEGER;
-	#viewMode = false;
 
 	add(element: ObservedElement): number {
-		const id = this.#viewMode ? this.#nextViewId-- : ++this.#counter;
-		if (id <= 0 || this.#counter >= this.#nextViewId) throw new Error("Observation id space exhausted.");
+		const id = this.#nextViewId--;
+		if (id <= 0) throw new Error("Observation id space exhausted.");
 		this.#elements.set(id, element);
 		return id;
 	}
@@ -145,25 +132,22 @@ export class ObservedElements {
 	/** Forget every id; called on navigation and at the start of each observation. */
 	clear(): void {
 		this.#elements.clear();
-		this.#counter = 0;
-		this.#viewMode = false;
 	}
 
-	/** View ids never overlap ordinary observation ids or earlier view ids. */
+	/** View ids never overlap earlier view ids. */
 	beginView(): void {
 		this.clear();
-		this.#viewMode = true;
 	}
 
 	async resolve(id: number): Promise<ElementHandle> {
 		const element = this.#elements.get(id);
-		if (!element) throw new Error(`Unknown element id ${id}. Run tab.observe() to refresh the element list.`);
+		if (!element) throw new Error(`Unknown element id ${id}. Inspect a fresh view.`);
 		if (isObservedDocumentGone(element)) {
 			this.clear();
 			throw staleError(id);
 		}
 		const handle = await resolveObservedElement(element);
-		// An observe() during the await renumbers ids, so the id may now name another element.
+		// A later view may have invalidated this id during the await.
 		if (!handle || this.#elements.get(id) !== element) {
 			await handle?.dispose().catch(() => undefined);
 			if (this.#elements.get(id) === element) this.clear();
@@ -184,16 +168,6 @@ function isInteractiveNode(node: SerializedAXNode): boolean {
 	);
 }
 
-// Page function: serialized into the page, so it must stay self-contained.
-function composedContains(ancestor: unknown, descendant: unknown): boolean {
-	for (let current = descendant as Node | null; current; ) {
-		if (current === ancestor) return true;
-		const root = current.getRootNode() as ShadowRoot;
-		current = (current as Element).parentElement ?? root.host ?? null;
-	}
-	return false;
-}
-
 function withTimeout<T>(work: Promise<T>, ms: number, timeout: Error, signal: AbortSignal): Promise<T> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const expired = new Promise<never>((_, reject) => {
@@ -202,22 +176,6 @@ function withTimeout<T>(work: Promise<T>, ms: number, timeout: Error, signal: Ab
 	return untilAborted(Promise.race([work, expired]), signal).finally(() => clearTimeout(timer));
 }
 
-async function snapshotFrame(frame: Frame, interestingOnly: boolean, root: ElementHandle | null): Promise<SerializedAXNode | null> {
-	if (root) {
-		const owner = await frame.frameElement();
-		if (!owner) return null;
-		const scoped = await root.frame.mainRealm().adoptHandle(owner).finally(() => owner.dispose().catch(() => undefined));
-		try {
-			// The owner may sit in a web component's shadow root under `root`, where `Node.contains` stops.
-			if (!(await root.evaluate(composedContains, scoped))) return null;
-		} finally {
-			await scoped.dispose().catch(() => undefined);
-		}
-	}
-	return await frame.accessibility.snapshot({ interestingOnly });
-}
-
-/** One frame's accessibility tree; ids observed in it resolve in that frame. */
 export interface FrameSnapshot {
 	frame: Frame;
 	snapshot: SerializedAXNode;
@@ -226,11 +184,11 @@ export interface FrameSnapshot {
 /**
  * Accessibility snapshots of `frames` and their descendants, each with its frame, in frame-tree
  * order. A frame that does not answer by `deadline` is left out with its descendants, so one dead
- * iframe never costs the page its observation. With `root`, only frames inside it are read.
+ * iframe never costs the page its observation.
  */
 async function snapshotFrames(
 	frames: Frame[],
-	options: { interestingOnly: boolean; root: ElementHandle | null; deadline: number; signal: AbortSignal; missed?: string[] },
+	options: { deadline: number; signal: AbortSignal; missed: string[] },
 ): Promise<FrameSnapshot[]> {
 	const snapshots = await Promise.all(
 		frames.map(async (frame): Promise<FrameSnapshot[]> => {
@@ -238,21 +196,21 @@ async function snapshotFrames(
 			let snapshot: SerializedAXNode | null;
 			try {
 				snapshot = await withTimeout(
-					snapshotFrame(frame, options.interestingOnly, options.root),
+					frame.accessibility.snapshot({ interestingOnly: false }),
 					Math.max(0, options.deadline - Date.now()),
 					timeout,
 					options.signal,
 				);
 			} catch (error) {
 				if (options.signal.aborted) throw error;
-				options.missed?.push(frame.url());
+				options.missed.push(frame.url());
 				return [];
 			}
 			if (!snapshot) {
-				if (!options.root) options.missed?.push(frame.url());
+				options.missed.push(frame.url());
 				return [];
 			}
-			return [{ frame, snapshot }, ...(await snapshotFrames(frame.childFrames(), { ...options, root: null }))];
+			return [{ frame, snapshot }, ...(await snapshotFrames(frame.childFrames(), options))];
 		}),
 	);
 	return snapshots.flat();
@@ -274,12 +232,8 @@ async function collectObservationEntries(
 	node: SerializedAXNode,
 	entries: ObservationEntry[],
 	options: {
-		viewportOnly: boolean;
-		includeAll: boolean;
-		compact: boolean;
 		interactiveAncestors: Set<SerializedAXNode>;
-		viewNodes?: Map<SerializedAXNode, ObservationEntry>;
-		signal: AbortSignal;
+		viewNodes: Map<SerializedAXNode, ObservationEntry>;
 	},
 ): Promise<void> {
 	const emptyStructural =
@@ -288,90 +242,58 @@ async function collectObservationEntries(
 		!options.interactiveAncestors.has(node);
 	if (
 		node.backendNodeId !== undefined &&
-		(options.includeAll || isInteractiveNode(node)) &&
-		!(options.compact && emptyStructural)
+		!emptyStructural
 	) {
 		const observed: ObservedElement = { frame, backendNodeId: node.backendNodeId, loaderId: node.loaderId };
-		let inViewport = true;
-		if (options.viewportOnly) {
-			const handle = await untilAborted(resolveObservedElement(observed), options.signal, late => { void late.then(found => found?.dispose()).catch(() => {}); });
-			inViewport = (await handle?.isIntersectingViewport().catch(() => false)) ?? false;
-			await handle?.dispose().catch(() => undefined);
-		}
-		if (inViewport) {
-			const id = registry.add(observed);
-			const states: string[] = [];
-			if (node.disabled) states.push("disabled");
-			if (node.checked !== undefined) states.push(`checked=${String(node.checked)}`);
-			if (node.pressed !== undefined) states.push(`pressed=${String(node.pressed)}`);
-			if (node.selected !== undefined) states.push(`selected=${String(node.selected)}`);
-			if (node.expanded !== undefined) states.push(`expanded=${String(node.expanded)}`);
-			if (node.required) states.push("required");
-			if (node.readonly) states.push("readonly");
-			if (node.multiselectable) states.push("multiselectable");
-			if (node.multiline) states.push("multiline");
-			if (node.modal) states.push("modal");
-			if (node.focused) states.push("focused");
-			const entry: ObservationEntry = {
-				id,
-				role: node.role,
-				name: node.name,
-				value: node.value,
-				description: node.description,
-				keyshortcuts: node.keyshortcuts,
-				states,
-			};
-			entries.push(entry);
-			options.viewNodes?.set(node, entry);
-		}
+		const id = registry.add(observed);
+		const states: string[] = [];
+		if (node.disabled) states.push("disabled");
+		if (node.checked !== undefined) states.push(`checked=${String(node.checked)}`);
+		if (node.pressed !== undefined) states.push(`pressed=${String(node.pressed)}`);
+		if (node.selected !== undefined) states.push(`selected=${String(node.selected)}`);
+		if (node.expanded !== undefined) states.push(`expanded=${String(node.expanded)}`);
+		if (node.required) states.push("required");
+		if (node.readonly) states.push("readonly");
+		if (node.multiselectable) states.push("multiselectable");
+		if (node.multiline) states.push("multiline");
+		if (node.modal) states.push("modal");
+		if (node.focused) states.push("focused");
+		const entry: ObservationEntry = {
+			id,
+			role: node.role,
+			name: node.name,
+			value: node.value,
+			description: node.description,
+			keyshortcuts: node.keyshortcuts,
+			states,
+		};
+		entries.push(entry);
+		options.viewNodes.set(node, entry);
 	}
 	for (const child of node.children ?? []) {
 		await collectObservationEntries(registry, frame, child, entries, options);
 	}
 }
 
-/** Number the interactive elements of the page and its frames; ids feed `tab.id(n)` until the next observation. */
-export async function observe(page: Page, registry: ObservedElements, options: ObserveOptions, signal: AbortSignal, view?: { missed: string[]; nodes: Map<SerializedAXNode, ObservationEntry>; trees: FrameSnapshot[] }): Promise<Observation> {
-	if (view) registry.beginView();
-	else registry.clear();
-	const includeAll = options.includeAll ?? false;
-	const viewportOnly = options.viewportOnly ?? false;
-	let root: ElementHandle | null = null;
-	if (options.selector) {
-		root =
-			parseAriaRefSelector(options.selector) !== null
-				? await untilAborted(resolveAriaRef(page, options.selector), signal)
-				: await untilAborted(page.$(normalizeSelector(options.selector)), signal);
-		if (!root) throw new Error(`tab.observe: selector ${JSON.stringify(options.selector)} matched no element`);
-	}
-	let snapshot: SerializedAXNode | null;
-	let frameSnapshots: FrameSnapshot[];
-	try {
-		snapshot = await untilAborted(page.accessibility.snapshot({ interestingOnly: !includeAll, root: root ?? undefined }), signal);
-		frameSnapshots = await snapshotFrames(page.mainFrame().childFrames(), {
-			interestingOnly: !includeAll,
-			root,
-			deadline: Date.now() + FRAME_SNAPSHOT_TIMEOUT_MS,
-			signal,
-			missed: view?.missed,
-		});
-	} finally {
-		await root?.dispose().catch(() => undefined);
-	}
+/** Build the full compact accessibility observation used by view. */
+export async function observe(page: Page, registry: ObservedElements, signal: AbortSignal, view: { missed: string[]; nodes: Map<SerializedAXNode, ObservationEntry>; trees: FrameSnapshot[] }): Promise<Observation> {
+	registry.beginView();
+	const snapshot = await untilAborted(page.accessibility.snapshot({ interestingOnly: false }), signal);
+	const frameSnapshots = await snapshotFrames(page.mainFrame().childFrames(), {
+		deadline: Date.now() + FRAME_SNAPSHOT_TIMEOUT_MS,
+		signal,
+		missed: view.missed,
+	});
 	if (!snapshot) throw new Error("Accessibility snapshot unavailable");
 	const entries: ObservationEntry[] = [];
 	const interactiveAncestors = new Set<SerializedAXNode>();
 	const trees: FrameSnapshot[] = [{ frame: page.mainFrame(), snapshot }, ...frameSnapshots];
 	for (const tree of trees) {
-		view?.trees.push(tree);
-		if (options.compact) collectInteractiveObservationAncestors(tree.snapshot, interactiveAncestors);
+		view.trees.push(tree);
+		collectInteractiveObservationAncestors(tree.snapshot, interactiveAncestors);
 		await collectObservationEntries(registry, tree.frame, tree.snapshot, entries, {
-			includeAll,
-			viewportOnly,
-			compact: options.compact ?? false,
 			interactiveAncestors,
-			viewNodes: view?.nodes,
-			signal,
+			viewNodes: view.nodes,
 		});
 	}
 	const geometry = await untilAborted(

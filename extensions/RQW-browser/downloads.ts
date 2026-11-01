@@ -1,43 +1,23 @@
 import { lstat, mkdir, rename, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type { Browser, CDPSession, Page } from "puppeteer-core";
-import { untilAborted } from "./abort.ts";
 import { devtoolsFrameId } from "./frames.ts";
 
 // Adapted from oh-my-pi 18.8.9 (browser/downloads.ts), MIT; see THIRD-PARTY-NOTICES.md.
 
-/** Completed download metadata returned by tab download helpers. */
-export interface BrowserDownload {
-	path: string;
-	suggestedFilename: string;
-	url: string;
-	bytes: number;
-}
-
 interface DownloadStarted {
 	guid: string;
-	url: string;
 	suggestedFilename: string;
 }
 
 interface DownloadProgress {
 	guid: string;
 	state: "inProgress" | "completed" | "canceled";
-	receivedBytes: number;
 	/** Saved location on completion, in whichever folder Chromium was pointed at last. */
 	filePath?: string;
 }
 
-interface PendingDownload extends DownloadStarted {
-	receivedBytes: number;
-}
-
-interface DownloadWaiter {
-	resolve(value: BrowserDownload): void;
-	reject(error: unknown): void;
-	signal: AbortSignal;
-	onAbort: () => void;
-}
+type PendingDownload = DownloadStarted;
 
 /** Chromium names an `allowAndName` download after its GUID, a lowercase UUID. */
 const DOWNLOAD_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -53,9 +33,6 @@ export class DownloadManager {
 	#attaching?: Promise<void>;
 	#closed = false;
 	readonly #pending = new Map<string, PendingDownload>();
-	readonly #completed: BrowserDownload[] = [];
-	readonly #unclaimed: BrowserDownload[] = [];
-	readonly #waiters: DownloadWaiter[] = [];
 	#willBegin?: (event: DownloadStarted & { frameId: string }) => void;
 	#progress?: (event: DownloadProgress) => void;
 
@@ -92,35 +69,6 @@ export class DownloadManager {
 		this.#directory = resolved;
 	}
 
-	/** Wait for the next completed download that nobody has claimed yet. */
-	async wait(signal: AbortSignal): Promise<BrowserDownload> {
-		if (this.#unclaimed.length === 0) {
-			// Whoever pointed Chromium last wins and resets it when closing, so point it here again.
-			await untilAborted(this.enable(this.#directory), signal, late => { late.catch(() => {}); });
-		}
-		const ready = this.#unclaimed.shift();
-		if (ready) return { ...ready };
-		if (signal.aborted) throw signal.reason;
-		return await new Promise<BrowserDownload>((resolvePromise, reject) => {
-			const waiter: DownloadWaiter = {
-				resolve: resolvePromise,
-				reject,
-				signal,
-				onAbort: () => {
-					this.#removeWaiter(waiter);
-					reject(signal.reason);
-				},
-			};
-			signal.addEventListener("abort", waiter.onAbort, { once: true });
-			this.#waiters.push(waiter);
-		});
-	}
-
-	/** Return every completed download for this tab. */
-	list(): BrowserDownload[] {
-		return this.#completed.map(download => ({ ...download }));
-	}
-
 	/** Detach event listeners and reject outstanding waits. */
 	async close(): Promise<void> {
 		this.#closed = true;
@@ -128,10 +76,6 @@ export class DownloadManager {
 		if (!session) return;
 		if (this.#willBegin) session.off("Browser.downloadWillBegin", this.#willBegin);
 		if (this.#progress) session.off("Browser.downloadProgress", this.#progress);
-		for (const waiter of this.#waiters.splice(0)) {
-			waiter.signal.removeEventListener("abort", waiter.onAbort);
-			waiter.reject(new Error("Tab closed while waiting for a download"));
-		}
 		this.#session = undefined;
 		await session.detach().catch(() => undefined);
 	}
@@ -146,21 +90,15 @@ export class DownloadManager {
 		this.#willBegin = event => {
 			// Every session hears every download in the browser; keep the ones this tab's frames started.
 			if (!this.#page.frames().some(frame => devtoolsFrameId(frame) === event.frameId)) return;
-			this.#pending.set(event.guid, { guid: event.guid, url: event.url, suggestedFilename: event.suggestedFilename, receivedBytes: 0 });
+			this.#pending.set(event.guid, { guid: event.guid, suggestedFilename: event.suggestedFilename });
 		};
 		this.#progress = event => {
 			const pending = this.#pending.get(event.guid);
 			if (!pending) return;
-			pending.receivedBytes = event.receivedBytes;
 			if (event.state === "inProgress") return;
 			this.#pending.delete(event.guid);
-			if (event.state === "canceled") {
-				this.#rejectNext(new Error(`Download canceled: ${pending.url}`));
-				return;
-			}
-			void this.#complete(pending, event.filePath).catch(error => {
-				this.#rejectNext(new Error(`Download failed: ${pending.url}: ${error instanceof Error ? error.message : String(error)}`));
-			});
+			if (event.state === "canceled") return;
+			void this.#complete(pending, event.filePath).catch(() => {});
 		};
 		session.on("Browser.downloadWillBegin", this.#willBegin as never);
 		session.on("Browser.downloadProgress", this.#progress as never);
@@ -176,29 +114,9 @@ export class DownloadManager {
 		const name = typeof pending.suggestedFilename === "string" ? basename(pending.suggestedFilename) : "";
 		const target = join(directory, name);
 		const movable = this.#perTab && name !== "" && name !== "." && name !== ".." && (await canMoveDownload(source, pending.guid, target));
-		const downloadPath = movable ? await rename(source, target).then(() => target, () => source) : source;
-		const download: BrowserDownload = { path: downloadPath, suggestedFilename: pending.suggestedFilename, url: pending.url, bytes: pending.receivedBytes };
-		this.#completed.push(download);
-		const waiter = this.#waiters.shift();
-		if (!waiter) {
-			this.#unclaimed.push(download);
-			return;
-		}
-		waiter.signal.removeEventListener("abort", waiter.onAbort);
-		waiter.resolve({ ...download });
+		if (movable) await rename(source, target).catch(() => {});
 	}
 
-	#rejectNext(error: Error): void {
-		const waiter = this.#waiters.shift();
-		if (!waiter) return;
-		waiter.signal.removeEventListener("abort", waiter.onAbort);
-		waiter.reject(error);
-	}
-
-	#removeWaiter(waiter: DownloadWaiter): void {
-		const index = this.#waiters.indexOf(waiter);
-		if (index >= 0) this.#waiters.splice(index, 1);
-	}
 }
 
 /** Chromium reports a download complete a moment before the file shows up under its final name. */

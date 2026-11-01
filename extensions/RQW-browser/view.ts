@@ -14,7 +14,7 @@ function text(value: string | number): string {
 /** Render the same observation and ids used by tab.id(), without repeating accessible names. */
 export async function view(page: Page, registry: ObservedElements, signal: AbortSignal, visibleText?: string[]): Promise<string> {
 	const capture = { missed: [] as string[], nodes: new Map<SerializedAXNode, ObservationEntry>(), trees: [] as FrameSnapshot[] };
-	const observation = await observe(page, registry, { includeAll: true, compact: true }, signal, capture);
+	const observation = await observe(page, registry, signal, capture);
 	const suppressed = new Set<SerializedAXNode>();
 	function meaningful(node: SerializedAXNode): boolean {
 		const entry = capture.nodes.get(node);
