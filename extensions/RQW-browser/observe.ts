@@ -58,8 +58,6 @@ export interface ObservationEntry {
 export interface Observation {
 	url: string;
 	title: string;
-	viewport: { width: number; height: number; deviceScaleFactor: number };
-	scroll: { x: number; y: number; width: number; height: number; scrollWidth: number; scrollHeight: number };
 	elements: ObservationEntry[];
 }
 
@@ -296,30 +294,5 @@ export async function observe(page: Page, registry: ObservedElements, signal: Ab
 			viewNodes: view.nodes,
 		});
 	}
-	const geometry = await untilAborted(
-		page.evaluate(() => {
-			const win = globalThis as unknown as {
-				scrollX: number;
-				scrollY: number;
-				innerWidth: number;
-				innerHeight: number;
-				devicePixelRatio: number;
-				document: { documentElement: { scrollWidth: number; scrollHeight: number } };
-			};
-			const doc = win.document.documentElement;
-			return {
-				viewport: { width: win.innerWidth, height: win.innerHeight, deviceScaleFactor: win.devicePixelRatio },
-				scroll: {
-					x: win.scrollX,
-					y: win.scrollY,
-					width: win.innerWidth,
-					height: win.innerHeight,
-					scrollWidth: doc.scrollWidth,
-					scrollHeight: doc.scrollHeight,
-				},
-			};
-		}),
-		signal,
-	);
-	return { url: page.url(), title: await untilAborted(page.title(), signal), ...geometry, elements: entries };
+	return { url: page.url(), title: await untilAborted(page.title(), signal), elements: entries };
 }

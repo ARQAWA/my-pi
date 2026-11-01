@@ -34,8 +34,7 @@ import {
 import type { CodexIdentity } from "./metadata.ts";
 import { slices } from "./slices.ts";
 import type { RawItemHistory } from "./transport.ts";
-import { CODEX_MODEL_SLUGS, codexModelCapabilities } from "./profile.ts";
-import { buildRequest, prefixContext, toolWireFlags, transcriptItems, type WireItem, type WireModelInfo, type WireOptions } from "./wire.ts";
+import { buildRequest, prefixContext, transcriptItems, type WireItem, type WireModelInfo, type WireOptions } from "./wire.ts";
 
 export type SessionWireOptions = {
 	session: AgentSession;
@@ -43,25 +42,6 @@ export type SessionWireOptions = {
 	modelHash: string;
 	runtimeLeaseId?: string;
 };
-
-/** Settings of one native turn, recorded from the actual prepared turn request (never persisted: body, headers, auth). */
-export type NativeTurnSettings = {
-	model: string;
-	compHash: string;
-	contextWindow: number;
-	inputModalities: ("text" | "image")[];
-	supportsStrictMode: boolean;
-	supportsOpenAIGrammarTools: boolean;
-	reasoningEffort?: string;
-	reasoningSummary?: "auto" | "concise" | "detailed" | "none";
-	serviceTier?: string;
-	turnId?: string;
-};
-
-/** Whitelists of the recorded turn settings: any other value is not persisted. */
-const KNOWN_EFFORTS: ReadonlySet<unknown> = new Set(["low", "medium", "high", "xhigh", "max", "ultra"]);
-const KNOWN_SUMMARIES: ReadonlySet<unknown> = new Set(["auto", "concise", "detailed", "none"]);
-const KNOWN_SERVICE_TIERS: ReadonlySet<unknown> = new Set(["priority", "flex"]);
 
 export type NativeInputArgs = {
 	context: Context;
@@ -396,12 +376,6 @@ export class SessionWireState {
 		return [...this.#prefix(args), ...loaded.items.map((envelope) => structuredClone(envelope.item)), ...entries.flatMap(({ items }) => items), ...transient];
 	}
 
-	/** Settings of the latest verified turn of this owner and thread on the actual branch; undefined when absent. */
-	get previousTurnSettings(): NativeTurnSettings | undefined {
-		const latest = this.#scan().own.filter((entry) => entry.data.kind === "turn-settings").at(-1);
-		return latest ? (structuredClone(latest.data.settings) as NativeTurnSettings) : undefined;
-	}
-
 	/** Estimated tokens of the native projection (estimated, not usage). Undefined without a valid checkpoint. */
 	projectTokens(): number | undefined {
 		const args = this.#last;
@@ -707,48 +681,10 @@ export class SessionWireState {
 		}
 	}
 
-	/**
-	 * Records the settings of a normal turn request (client_metadata turn blob request_kind 'turn'). Manual baselines have no
-	 * such blob and prewarm, compaction and generate:false requests are skipped. Deduped against the latest entry on the branch.
-	 */
-	#recordTurnSettings(body: Record<string, unknown>): void {
-		const args = this.#last;
-		if (!args || body.generate === false) return;
-		const blob = (body.client_metadata as Record<string, unknown> | undefined)?.["x-codex-turn-metadata"];
-		if (typeof blob !== "string") return;
-		let meta: { request_kind?: unknown; turn_id?: unknown };
-		try {
-			meta = JSON.parse(blob) as { request_kind?: unknown; turn_id?: unknown };
-		} catch {
-			return;
-		}
-		if (meta?.request_kind !== "turn") return;
-		const model = args.model as unknown as { id: string; input?: unknown; contextWindow?: unknown };
-		if (!CODEX_MODEL_SLUGS.includes(model.id)) return;
-		const reasoning = (body.reasoning ?? {}) as { effort?: unknown; summary?: unknown };
-		const flags = toolWireFlags(args.model);
-		const settings: NativeTurnSettings = {
-			model: model.id,
-			compHash: codexModelCapabilities(model.id).compactionHash,
-			contextWindow: model.contextWindow as number,
-			inputModalities: (Array.isArray(model.input) ? model.input : []).filter((m): m is "text" | "image" => m === "text" || m === "image"),
-			supportsStrictMode: flags.supportsStrictMode,
-			supportsOpenAIGrammarTools: flags.supportsOpenAIGrammarTools,
-		};
-		if (KNOWN_EFFORTS.has(reasoning.effort)) settings.reasoningEffort = reasoning.effort as string;
-		if (KNOWN_SUMMARIES.has(reasoning.summary)) settings.reasoningSummary = reasoning.summary as NativeTurnSettings["reasoningSummary"];
-		if (KNOWN_SERVICE_TIERS.has(body.service_tier)) settings.serviceTier = body.service_tier as string;
-		if (typeof meta.turn_id === "string") settings.turnId = meta.turn_id;
-		const latest = this.#scan().own.filter((entry) => entry.data.kind === "turn-settings").at(-1);
-		if (latest && canonicalJson(latest.data.settings) === canonicalJson(settings)) return;
-		this.#history.appendEntry({ kind: "turn-settings", settings });
-	}
-
 	/** Seeds the built request input once, without the prefix (nativeInput prepends the fresh prefix). */
 	#preparedRequest(body: Record<string, unknown>): void {
 		const args = this.#last;
 		if (!args || !this.#trusted) return;
-		this.#recordTurnSettings(body);
 		if (body.generate === false) return;
 		const loaded = this.#history.load();
 		if (loaded.mode === "native" && hasBase(loaded)) return;

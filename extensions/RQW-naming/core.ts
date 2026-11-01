@@ -17,11 +17,10 @@ export type NamingSelection = { model: Model<any>; reasoning: typeof NAMING_REAS
 
 const SYSTEM = "You name chat sessions. Follow the reply format exactly.";
 
-/** A candidate is usable only if it is short enough in both words and code points, and has no control characters. */
+/** A candidate is usable only if it is short enough in both words and code points. */
 export function isValidSessionName(name: string): boolean {
 	const trimmed = name.trim();
 	if (trimmed.length === 0) return false;
-	if (/\p{Cc}/u.test(trimmed)) return false;
 	if (trimmed.split(/\s+/).length > MAX_NAME_WORDS) return false;
 	return Array.from(trimmed).length <= MAX_NAME_CODE_POINTS;
 }
@@ -43,7 +42,7 @@ function generationPrompt(messages: Message[]): (TextContent | ImageContent)[] {
 		`Read the conversation and propose 1 to ${NAME_COUNT} different short names for this session.`,
 		"Rank them by how well their meaning describes the conversation, best first.",
 		"Reply with only a JSON array of strings.",
-		`Each name must have at most ${MAX_NAME_WORDS} words and at most ${MAX_NAME_CODE_POINTS} Unicode code points, with no line breaks or control characters.`,
+		`Each name must have at most ${MAX_NAME_WORDS} words and at most ${MAX_NAME_CODE_POINTS} Unicode code points.`,
 		"Image attachments follow their message in the order numbered in its content.",
 		"<conversation>",
 	].join("\n") }];

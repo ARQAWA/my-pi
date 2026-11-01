@@ -141,8 +141,9 @@ function expandMentions(text: string, skills: Skill[]): string | undefined {
 
 	for (const match of text.matchAll(MENTION)) {
 		const linked = match[2]?.trim();
-		const path = linked?.startsWith(SKILL_PATH_PREFIX) ? linked.slice(SKILL_PATH_PREFIX.length) : linked;
-		const skill = linked === undefined ? byName.get(match[3]) : skills.find(candidate => candidate.filePath === path);
+		if (linked !== undefined && !linked.startsWith(SKILL_PATH_PREFIX)) continue;
+		const path = linked?.slice(SKILL_PATH_PREFIX.length);
+		const skill = path === undefined ? byName.get(match[3]) : skills.find(candidate => candidate.filePath === path);
 		if (!skill) continue;
 		found = true;
 		const end = match.index + match[0].length;

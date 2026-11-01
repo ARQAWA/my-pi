@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { afterEach, it } from "node:test";
 import { AssistantMessageComponent, UserMessageComponent, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
-import { Folds, installFolds } from "../../../extensions/RQW-tool-ui/fold.ts";
 import { buildTurns, formatWorked } from "../../../extensions/RQW-tool-ui/groups.ts";
 import { assistant, call, load, makeHost, makeScreen, result, Session, text, liveTheme, user } from "./fold-host.ts";
 
@@ -175,16 +174,6 @@ it("keeps all rows visible if an inherited user update method cannot be wrapped"
 		assert.ok(m.row("worked for") < 0 && m.row("prompt 0") >= 0 && m.row("update 0") >= 0);
 		assert.deepEqual(m.host.chatContainer.render(80), m.stock.chatContainer.render(80));
 	} finally { Object.defineProperty(prototype, "rebuild", descriptor); }
-});
-
-it("leaves a foreign container shape visible and unchanged", () => {
-	const prototype = { addMessageToChat(this: { chatContainer: { rows: string[] } }, message: string) { this.chatContainer.rows.push(message); } };
-	const restore = installFolds(new Folds(), prototype);
-	try {
-		const host = Object.assign(Object.create(prototype), { chatContainer: { rows: ["old work"], render() { return this.rows; } } });
-		host.addMessageToChat("new answer");
-		assert.deepEqual(host.chatContainer.render(), ["old work", "new answer"]);
-	} finally { restore(); }
 });
 
 it("leaves a turn visible and unfolded when one component cannot take the wrapper", () => {

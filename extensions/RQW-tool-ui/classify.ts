@@ -1,8 +1,6 @@
 // Pure classification of one tool call for the summary line and the live block. No filesystem access;
 // the inputs are never mutated. Edit and write are classified by changes.ts into the same shape.
-import { homedir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ToolRenderContext } from "./index.ts";
 
 export type Kind = "read" | "search" | "run" | "wait" | "other" | "edit";
@@ -13,9 +11,7 @@ export interface Classified {
 	/** One-line display target: path and range, pattern and place, command, waited IDs or tool and argument. */
 	target: string;
 	status: Status;
-	/** Read: normalized path; wait: the first waited ID; edit/write: the first file; others: the tool call ID. */
-	countKey: string;
-	/** Every key this call counts under: one per waited ID for wait, one per file for edit/write, else `[countKey]`. */
+	/** Every key this call counts under: one per waited ID for wait, one per file for read, edit and write, else the tool call ID. */
 	countKeys: string[];
 	/** The text content of the result, joined by newlines. */
 	outputText: string;
@@ -56,51 +52,16 @@ export function str(value: unknown): string | undefined {
 	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-/** Pi 1.4.0 `normalizeWindowsShellPath` (utils/paths.js): Git Bash, MSYS, Cygwin and WSL drive paths to `C:\` form. */
-function windowsShellPath(filePath: string): string {
-	if (!filePath.startsWith("/") || filePath.startsWith("//") || filePath.includes("\\")) return filePath;
-	const match = /^\/(?:mnt\/|cygdrive\/)?([a-z])(?:\/(.*))?$/i.exec(filePath);
-	if (!match) return filePath;
-	return `${match[1].toUpperCase()}:\\${(match[2] ?? "").replace(/\//g, "\\")}`;
-}
-
-const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
-
 /**
- * The lexical steps of Pi 1.4.0 `normalizePath` (utils/paths.js), in its order: optional space folding and `@`
- * stripping, Windows shell drive forms, `~`, `~/` (and `~\` on Windows) with the home folder, then `file://` URLs.
- * A `file://` URL Node rejects stays as written: a classifier never throws. Home and URL conversion are lexical.
- */
-function lexical(input: string, win: boolean, tool: boolean): string {
-	let p = input;
-	if (tool) {
-		p = p.replace(UNICODE_SPACES, " ");
-		if (p.startsWith("@")) p = p.slice(1);
-	}
-	if (win) p = windowsShellPath(p);
-	const P = win ? path.win32 : path.posix;
-	if (p === "~") return homedir();
-	if (p.startsWith("~/") || (win && p.startsWith("~\\"))) return P.join(homedir(), p.slice(2));
-	if (/^file:\/\//.test(p)) {
-		try { return fileURLToPath(p, { windows: win }); } catch { return p; }
-	}
-	return p;
-}
-
-/**
- * The same file under different spellings counts once, resolved lexically as Pi's `resolveToCwd` does on `platform`
- * (default: the host): Unicode spaces (NBSP, U+2000-200A, U+202F, U+205F, U+3000) read as a space, a leading `@` is
- * dropped, `~` and `file://` forms are expanded, and the same expansions (without space folding) apply to `cwd`.
- * Windows: shell drive forms (`/c/`, `/mnt/c/`, `/cygdrive/c/`) and `\` separators are the same as `C:/`; drive
- * letter case is kept as written, Pi does not fold case. POSIX: `\` is an ordinary character.
- * With `cwd`, the lexical path is resolved against the lexical `cwd` by `path.win32.resolve` or `path.posix.resolve`
- * (root-relative Windows paths keep the cwd drive, UNC roots stay intact). Also `./`, `..` and repeated slashes.
- * No filesystem access. Windows UNC roots keep their double separator (`//server/share`).
+ * The same file under different spellings counts once, resolved lexically on `platform` (default: the host):
+ * with `cwd`, the path is resolved against it by `path.win32.resolve` or `path.posix.resolve`; `./`, `..` and
+ * repeated slashes fold, and Windows `\` separators and `C:/` are the same. Drive letter case is kept as
+ * written. No filesystem access. Windows UNC roots keep their double separator (`//server/share`).
  */
 export function normalizePath(input: string, cwd?: string, platform: string = process.platform): string {
 	const win = platform === "win32";
-	let p = lexical(input, win, true);
-	if (cwd) p = (win ? path.win32 : path.posix).resolve(lexical(cwd, win, false), p);
+	let p = input;
+	if (cwd) p = (win ? path.win32 : path.posix).resolve(cwd, p);
 	if (win) p = p.replace(/\\/g, "/");
 	const drive = win ? /^[A-Za-z]:/.exec(p)?.[0] ?? "" : "";
 	const rooted = p.slice(drive.length).startsWith("/");
@@ -156,7 +117,7 @@ export function classify(toolName: string, args: unknown, result: CallResult | u
 		} else if (toolName === "rqw_readfile" && typeof a.limit === "number" && Number.isInteger(a.limit) && !positive(a.limit)) {
 			target += ` limit: ${a.limit}`;
 		}
-		return { kind: "read", target, status: statusOf(result, context), countKey: key, countKeys: [key], outputText };
+		return { kind: "read", target, status: statusOf(result, context), countKeys: [key], outputText };
 	}
 	if (toolName === "rqw_rg" || toolName === "rqw_glob") {
 		const pattern = oneLine(str(toolName === "rqw_rg" ? a.pattern : a.glob_pattern) ?? "");
@@ -168,26 +129,26 @@ export function classify(toolName: string, args: unknown, result: CallResult | u
 			if (glob) target += ` glob: ${oneLine(glob)}`;
 			if (mode) target += ` output_mode: ${oneLine(mode)}`;
 		}
-		return { kind: "search", target, status: statusOf(result, context), countKey: id, countKeys: [id], outputText };
+		return { kind: "search", target, status: statusOf(result, context), countKeys: [id], outputText };
 	}
 	if (toolName === "grep" || toolName === "find") {
 		const pattern = oneLine(str(a.pattern) ?? "");
 		const path = str(a.path);
 		const target = toolName === "grep" ? `${pattern} in ${oneLine(path ?? ".")}` : path ? `${pattern} in ${oneLine(path)}` : pattern;
-		return { kind: "search", target, status: statusOf(result, context), countKey: id, countKeys: [id], outputText };
+		return { kind: "search", target, status: statusOf(result, context), countKeys: [id], outputText };
 	}
 	if (toolName === "bash") {
 		const exitCode = exitCodeOf(result);
 		const failed = exitCode !== undefined && exitCode !== 0;
-		return { kind: "run", target: oneLine(str(a.command) ?? ""), status: statusOf(result, context, failed), countKey: id, countKeys: [id],
+		return { kind: "run", target: oneLine(str(a.command) ?? ""), status: statusOf(result, context, failed), countKeys: [id],
 			outputText, ...(exitCode !== undefined ? { exitCode } : {}) };
 	}
 	if (WAITERS.has(toolName) && a.action === "wait") {
 		const ids = [...new Set((Array.isArray(a.ids) ? a.ids : []).filter((x): x is string => typeof x === "string" && x.length > 0))];
-		return { kind: "wait", target: ids.map(oneLine).join(" "), status: statusOf(result, context), countKey: ids[0] ?? id, countKeys: ids,
+		return { kind: "wait", target: ids.map(oneLine).join(" "), status: statusOf(result, context), countKeys: ids,
 			outputText };
 	}
 	const first = Object.values(a).find((value): value is string => typeof value === "string" && oneLine(value).length > 0);
 	const target = first === undefined ? oneLine(toolName) : `${oneLine(toolName)} ${oneLine(first)}`;
-	return { kind: "other", target, status: statusOf(result, context), countKey: id, countKeys: [id], outputText };
+	return { kind: "other", target, status: statusOf(result, context), countKeys: [id], outputText };
 }

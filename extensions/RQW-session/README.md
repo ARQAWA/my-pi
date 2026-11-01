@@ -15,7 +15,8 @@ Independent session commands (`/copy-session`, `/remove`, `/cleanup`) and a fast
 
 - `/cleanup`: deletes, permanently and without a dialog, every `<name>.jsonl.children` directory whose sibling
   `<name>.jsonl` no longer exists, under Pi's `sessions/` directory (`PI_CODING_AGENT_DIR`, normally `~/.pi/agent`).
-  One asynchronous `readdir` per project folder, run in parallel; no file content is read. Skipped: the current
+  One asynchronous `readdir` per project folder, run in parallel; no file content is read. Only trees directly in a
+  project folder are checked: trees nested inside a live session's tree are not searched. Skipped: the current
   session's own tree, files, symlinks and anything outside `sessions/`. It notifies the count removed, or
   `Nothing to clean`. Pi temp files (`pi-bash-*` and the like) have no session owner and are left to the OS.
 

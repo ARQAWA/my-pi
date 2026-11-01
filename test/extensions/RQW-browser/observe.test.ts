@@ -163,10 +163,6 @@ function setup() {
 		on() {},
 		off() {},
 		accessibility: main.accessibility,
-		evaluate: async () => ({
-			viewport: { width: 800, height: 600, deviceScaleFactor: 2 },
-			scroll: { x: 0, y: 10, width: 800, height: 600, scrollWidth: 800, scrollHeight: 2000 },
-		}),
 	};
 	const browser = { target: () => ({ createCDPSession: async () => ({ send: async () => {}, on() {}, off() {}, detach: async () => {} }) }), newPage: async () => page, close: async () => {}, disconnect: async () => {} };
 	let tool: Any;

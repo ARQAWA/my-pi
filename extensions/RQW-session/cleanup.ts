@@ -2,12 +2,10 @@ import { access, readdir, realpath, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
 const TREE = ".jsonl.children";
-const AGENT_DIR = /^agent-\d+$/;
 const missing = (error: unknown) => (error as NodeJS.ErrnoException)?.code === "ENOENT";
 
 /**
- * Deletes `<name>.jsonl.children` directories whose `<name>.jsonl` sibling is gone. RQW-agent layout: a tree holds
- * `agent-N/` directories, each with a child's `<ts>_<uuid>.jsonl` and possibly its own `.jsonl.children` tree.
+ * Deletes `<name>.jsonl.children` directories whose `<name>.jsonl` sibling is gone, one listing per project folder.
  * Only directory listings are read (no file content), plus one existence check right before each delete.
  * Names compare case-insensitively on every platform, so the rule only ever keeps more. Symlinks and files are skipped.
  * The current session's tree is never entered, including through symlinked or differently cased paths. Trees containing
@@ -42,7 +40,7 @@ export async function cleanupOrphanedChildren(agentDir: string, currentSessionFi
 		try { return await readdir(dir, { withFileTypes: true }); }
 		catch (error) { if (!missing(error)) failed++; return []; }
 	};
-	// A directory that holds sessions: orphan trees are deleted, live ones are searched for nested agent directories.
+	// A project folder: orphan trees are deleted, live ones are left alone.
 	const walk = async (dir: string): Promise<void> => {
 		const entries = await list(dir);
 		const files = new Set(entries.map(entry => entry.name.toLowerCase()));
@@ -50,16 +48,12 @@ export async function cleanupOrphanedChildren(agentDir: string, currentSessionFi
 			const path = join(dir, entry.name);
 			const owner = entry.name.slice(0, -".children".length);
 			if (await isCurrent(dir, entry.name)) return;
-			if (files.has(owner.toLowerCase()) || await containsCurrent(path)) return walkTree(path);
+			if (files.has(owner.toLowerCase()) || await containsCurrent(path)) return;
 			// The listing may be stale: a session file created meanwhile keeps its tree; only ENOENT confirms absence.
 			try { await access(join(dir, owner)); return; }
 			catch (error) { if (!missing(error)) { failed++; return; } }
 			try { await rm(path, { recursive: true, force: true }); removed++; } catch { failed++; }
 		}));
-	};
-	const walkTree = async (tree: string): Promise<void> => {
-		const entries = await list(tree);
-		await Promise.all(entries.filter(entry => entry.isDirectory() && AGENT_DIR.test(entry.name)).map(entry => walk(join(tree, entry.name))));
 	};
 	const sessions = join(agentDir, "sessions");
 	let projects;

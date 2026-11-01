@@ -338,7 +338,6 @@ export function createBrowserExtension(deps: BrowserDependencies = {}) {
 				const cwd = ctx?.cwd ?? process.cwd();
 				const controller = new AbortController();
 				const action: string = input.action;
-				if (action === "call") throw new Error('Browser action "call" is not available; use "run".');
 				if (input.action === "run") validateRun(input, cwd);
 				if (input.action === "screenshot" || input.action === "markdown") validateTabLook(input);
 				const timeout = input.action === "run" ? Math.ceil((input.timeout ?? 60) * 1000) : Math.max(1, Math.min(300, input.timeout ?? 30)) * 1000;

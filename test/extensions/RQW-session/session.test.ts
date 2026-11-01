@@ -145,13 +145,14 @@ it("cleanup removes only orphaned child trees and reports the count", async () =
 		await commands.get("cleanup")!.handler("", ctx);
 		assert.equal(existsSync(join(a, "orphan.jsonl.children")), false);
 		assert.equal(existsSync(join(b, "orphan2.jsonl.children")), false);
-		assert.equal(existsSync(join(a, "live.jsonl.children", "agent-2", "gone.jsonl.children")), false);
-		assert.equal(existsSync(join(kid, "child.jsonl.children", "agent-2", "deep.jsonl.children")), false);
+		// A live session's tree is not searched: nested folders stay.
+		assert.equal(existsSync(join(a, "live.jsonl.children", "agent-2", "gone.jsonl.children")), true);
+		assert.equal(existsSync(join(kid, "child.jsonl.children", "agent-2", "deep.jsonl.children")), true);
 		assert.equal(existsSync(join(a, "current.jsonl.children", "agent-1", "gone.jsonl.children")), true);
 		assert.equal(existsSync(join(kid, "child.jsonl.children", "agent-1", "grand.jsonl.children")), true);
 		assert.equal(existsSync(join(a, "Cased.jsonl.children")), true);
 		for (const kept of [join(a, "live.jsonl.children"), join(a, "current.jsonl.children"), join(a, "file.jsonl.children"), join(a, "link.jsonl.children"), join(outside, "keep.txt")]) assert.equal(existsSync(kept), true);
-		assert.match(notes[0]!, /\b4\b/);
+		assert.match(notes[0]!, /\b2\b/);
 		await commands.get("cleanup")!.handler("", ctx);
 		assert.doesNotMatch(notes[1]!, /\b[1-9]\b/);
 		// An unreadable (non-ENOENT) sessions path is a failure, not "nothing to clean"; a missing one is clean.

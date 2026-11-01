@@ -69,14 +69,12 @@ profiles and skills for the ordinary `agent` runtime.
 ### Data and render functions
 
 - `classify.ts`: `classify(toolName, args, result, context)` turns one call into
-  `{ kind, target, status, countKey, countKeys, outputText, exitCode? }` for `rqw_readfile`/`read`,
+  `{ kind, target, status, countKeys, outputText, exitCode? }` for `rqw_readfile`/`read`,
   `rqw_rg`/`rqw_glob` and legacy `grep`/`find`, `bash`,
   `agent` waits (one count key per waited ID) and every other tool. Stored standalone `review` waits retain the same
   classification only for legacy history compatibility.
-  The `read` count key is the lexically normalized path, as Pi 1.4.0 `resolveToCwd` resolves it (no filesystem
-  access): Unicode spaces (NBSP, U+2000-200A, U+202F, U+205F, U+3000) fold to a space, a leading `@` goes, `~`, `~/`
-  (Windows also `~\`) expand with the home folder, `file://` URLs become paths, Windows shell drive forms (`/c/`) read as
-  `C:`; the cwd base gets the same expansions except space folding. The same file under any of these spellings counts once.
+  The `read` count key is the lexically normalized path (no filesystem access): relative to the cwd, `./`, `..` and repeated
+  slashes fold, and on Windows `\` and `/` are the same. The same file under any of these spellings counts once.
 - `changes.ts`: `classifyChange(toolName, args, result, context)` for `edit` and `write`: the same fields plus each
   file's own status and `+added -removed`, counted only from the confirmed result (Pi's diff or patch, RQW multi-file
   `details.files[]`, written content lines), never from the requested text or the disk. RQW `edit` groups paths by filesystem identity, which can merge

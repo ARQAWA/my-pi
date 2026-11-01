@@ -26,8 +26,7 @@ export const safeId = (id: string) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(
 export function stateDir(platform: string, env: Record<string, string | undefined>, home: string, agentDir: string): string {
 	const profile = createHash("sha256").update(agentDir).digest("hex").slice(0, 16);
 	if (platform === "win32") return win32.join(env.LOCALAPPDATA ?? win32.join(home, "AppData", "Local"), "my-pi", "tabs-link", profile);
-	if (platform === "darwin") return posix.join(home, "Library", "Application Support", "my-pi", "tabs-link", profile);
-	return posix.join(env.XDG_STATE_HOME ?? posix.join(home, ".local", "state"), "my-pi", "tabs-link", profile);
+	return posix.join(home, "Library", "Application Support", "my-pi", "tabs-link", profile);
 }
 
 const chatsDir = (dir: string) => join(dir, "chats");

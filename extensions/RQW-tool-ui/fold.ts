@@ -4,13 +4,12 @@
 // chat container, one O(1) guard on that container instance notices a rebuilt or reloaded transcript. The components
 // stay where Pi put them, in the same order and identity. Any other shape keeps today's tool-ui view.
 import {
-	AssistantMessageComponent, BashExecutionComponent, BranchSummaryMessageComponent, CompactionSummaryMessageComponent, InteractiveMode,
+	AssistantMessageComponent, BashExecutionComponent, BranchSummaryMessageComponent, CompactionSummaryMessageComponent,
 	type SessionEntry, type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Spacer, truncateToWidth, TuiAltScreen, visibleWidth } from "@earendil-works/pi-tui";
 import { messageKey, TurnIndex, type TurnSpan } from "./groups.ts";
 
-const ACTIVE = Symbol.for("rqw-tool-ui.folds");
 /** What a hidden component draws: nothing, shared. */
 const NONE: string[] = Object.freeze([]) as unknown as string[];
 
@@ -424,29 +423,4 @@ export class Folds {
 		if (this.chat) this.chat.mouseLayout = undefined;
 		this.host?.ui?.requestRender?.();
 	}
-}
-
-/** Install the folds on Pi's interactive mode; returns the cleanup. Another shape installs nothing. */
-export function installFolds(folds: Folds, prototype: any = InteractiveMode.prototype): () => void {
-	if (typeof prototype?.addMessageToChat !== "function") return () => {};
-	const own = Object.getOwnPropertyDescriptor(prototype, "addMessageToChat");
-	const original = prototype.addMessageToChat;
-	(globalThis as Record<symbol, unknown>)[ACTIVE] = folds;
-	const wrapper = function (this: Host, ...args: unknown[]) {
-		const active = (globalThis as Record<symbol, unknown>)[ACTIVE] === folds;
-		if (active) folds.attach(this);
-		const before = (this.chatContainer as Chat | undefined)?.children?.length ?? 0;
-		const result = original.apply(this, args);
-		if (active) folds.message(this, args[0], before);
-		return result;
-	};
-	prototype.addMessageToChat = wrapper;
-	return () => {
-		folds.detach();
-		if (prototype.addMessageToChat === wrapper) {
-			if (own) Object.defineProperty(prototype, "addMessageToChat", own);
-			else delete prototype.addMessageToChat;
-		}
-		if ((globalThis as Record<symbol, unknown>)[ACTIVE] === folds) delete (globalThis as Record<symbol, unknown>)[ACTIVE];
-	};
 }

@@ -38,13 +38,12 @@ export function rewriteSession(pi: ExtensionAPI, ctx: ExtensionContext, path: st
 	replaceSessionFile(path, lines());
 }
 
-export function replaceSessionFile(path: string, content: string | Buffer | Iterable<string>): void {
+function replaceSessionFile(path: string, content: Iterable<string>): void {
 	const temporary = `${path}.rqw-edit-${process.pid}.tmp`;
 	try {
 		const fd = openSync(temporary, "w");
 		try {
-			if (typeof content === "string" || Buffer.isBuffer(content)) writeFileSync(fd, content);
-			else for (const line of content) writeFileSync(fd, line);
+			for (const line of content) writeFileSync(fd, line);
 		} finally {
 			closeSync(fd);
 		}

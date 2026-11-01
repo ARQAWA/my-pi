@@ -227,6 +227,7 @@ it("same-name skills: $name takes the first, a skill:// link takes its own path,
 	assert.doesNotMatch(linked.text, /keep body/);
 	assert.match(linked.text, /\n\nuse now$/);
 	assert.equal(await input({ text: "use [$keep](skill:///nowhere/SKILL.md)", source: "interactive" }, {}), undefined);
+	assert.equal(await input({ text: `use [$keep](${second})`, source: "interactive" }, {}), undefined);
 });
 
 // The temp root of `setup` is the directory above a skill folder; the filter only has the skills to learn it from.
