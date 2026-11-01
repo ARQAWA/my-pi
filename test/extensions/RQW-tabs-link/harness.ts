@@ -29,6 +29,8 @@ export function fakeNet(): NetLike & { written: Buffer[]; silent: Set<number>; o
 		connect(port) {
 			const connection = ++net.connections;
 			const [client, server] = duplexPair();
+			client.on("close", () => server.destroy());
+			server.on("close", () => client.destroy());
 			const accept = servers.get(port);
 			if (!accept) {
 				queueMicrotask(() => client.destroy(Object.assign(new Error("refused"), { code: "ECONNREFUSED" })));
@@ -56,6 +58,7 @@ export type World = {
 	level: string;
 	models: FakeModel[];
 	entries: any[];
+	branchReads?: () => void;
 	sent: { message: any; options: any }[];
 	/** When true, Pi records a sent message at once, as it does for an idle chat. */
 	autoRecord: boolean;
@@ -83,7 +86,7 @@ export type Tab = {
 	ctx: (mode?: string) => ExtensionContext;
 	fire(name: string, event?: object, mode?: string): Promise<unknown>;
 	/** Runs a registered tool as the model would. */
-	run(name: string, params: object, callId?: string): Promise<any>;
+	run(name: string, params: object, callId?: string, signal?: AbortSignal): Promise<any>;
 };
 
 export function tempDir(t: TestContext): string {
@@ -147,12 +150,12 @@ export function openTab(deps: Partial<Deps> & { dir: string }, id: string, extra
 		sessionManager: {
 			getSessionId: () => session.id, getSessionName: () => session.name, getCwd: () => "/work",
 			getSessionFile: () => session.file, getSessionDir: () => "/sessions",
-			getEntries: () => world.entries, getBranch: () => world.entries,
+			getEntries: () => world.entries, getBranch: () => { world.branchReads?.(); return world.entries; },
 		},
 		ui: { notify: (message: string) => notices.push(message) },
 	}) as unknown as ExtensionContext;
-	const run = (name: string, params: object, callId = "call-1") =>
-		tools.find(tool => tool.name === name)!.execute(callId, params as never, undefined, undefined, ctx() as never);
+	const run = (name: string, params: object, callId = "call-1", signal?: AbortSignal) =>
+		tools.find(tool => tool.name === name)!.execute(callId, params as never, signal, undefined, ctx() as never);
 	return { pi, handlers, tools, notices, session, world, ctx, fire, run };
 }
 

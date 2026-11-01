@@ -8,7 +8,7 @@ Subagents never load this extension: RQW-agent starts children with `noExtension
 
 ## Tools
 
-All three are plain code. There is no model call, no summary, no fuzzy search and no waiting for a reply.
+All four are plain code. There is no model call, no summary and no fuzzy search. Only `wait_answer` waits.
 Equal input and equal state give an equal result. Errors have a fixed code and text.
 
 1. `list_chats({query?, cursor?, limit?})` returns `chats, nextCursor, untrustedDataNotice`. A chat is
@@ -20,7 +20,16 @@ Equal input and equal state give an equal result. Errors have a fixed code and t
    `{chatId, status}` with `accepted`, `delivered` or `unknown`. It never returns the reply; read it later with
    `read_chat`. Errors: `closed`, `not_found`, `queue_full`, `model_unavailable`, `duplicate_conflict`, `bad_request`.
 
-The tools mirror Codex `list_threads`, `read_thread` and `send_message_to_thread`; `chatId` is the Pi session id.
+4. `wait_answer({chatId, afterEntryId, timeout_ms?})` holds one call until the open chat has a saved final answer after
+   `afterEntryId`: the id of the last item of `read_chat`, or `null` for a branch with no entries, which returns its
+   first final answer even if already saved. It returns `{chatId, reason: "answer", entry}`, or `reason` `timeout`,
+   `target_changed` or `aborted`; `timeout_ms` defaults to 300000, at most 3600000. A closed chat, also one that
+   closes during the wait, is the error `closed`. It is the next answer, not the reply to a particular message. A
+   streaming part never counts. A timeout or an abort does not stop the chat. Input from the user interrupting the
+   wait is not part of this tool.
+
+The model sees one fixed prompt line naming all four tools and the search key `rqwchat`.
+The first three tools mirror Codex `list_threads`, `read_thread` and `send_message_to_thread`; `chatId` is the Pi session id.
 
 ## Closed and missing chats
 
@@ -70,6 +79,12 @@ crash undoes an override that is still in place; the restore marker is stored be
 Each tab listens on `127.0.0.1` on a random port; requests carry a random secret and a random generation token that is
 new at every session start. Frames are JSON lines of at most 64 KiB; a larger answer is sent as several chunks and
 is never cut. The registry is one file per chat in the profile's state folder.
+
+The internal `wait_answer` channel operation holds one authenticated connection. It takes `afterEntryId` (an entry id
+or null for the start of the branch) and `timeoutMs`. It returns the next saved final assistant entry as
+`{reason: "answer", entry}`, or `{reason: "timeout"}` / `{reason: "target_changed"}`. History edits and the same
+output visibility as `read_chat` apply. The receiver subscribes before rechecking the branch; a disconnected caller
+releases its listener and timer. The `wait_answer` tool is the model's way to it.
 
 A chat is held by a numbered lock folder with its owner (process id, instance id, generation token, port) already
 inside. The holder listens before it takes the lock. Nothing is deleted to make room: a lock is replaced by the next

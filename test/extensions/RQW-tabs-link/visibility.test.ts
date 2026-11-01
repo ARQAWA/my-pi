@@ -5,9 +5,9 @@ import { createToolSearchExtension } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { FAKE_API, openTab, pairOfTabs, tempDir } from "./harness.ts";
 
-// The fixed line, copied literally from the approved design; the code constant must not be its own reference.
-const HINT = 'Chat tools for other open Pi chats: list_chats, read_chat, send_message_to_chat. Load them with tool_search query "rqwchat".';
-const NAMES = ["list_chats", "read_chat", "send_message_to_chat"];
+// The fixed line, copied literally; the code constant must not be its own reference.
+const HINT = 'Chat tools for other open Pi chats: list_chats, read_chat, send_message_to_chat, wait_answer. Load them with tool_search query "rqwchat".';
+const NAMES = ["list_chats", "read_chat", "send_message_to_chat", "wait_answer"];
 
 async function started(t: Parameters<typeof tempDir>[0]) {
 	const tab = openTab({ dir: tempDir(t) }, "chat-a");
@@ -16,7 +16,7 @@ async function started(t: Parameters<typeof tempDir>[0]) {
 }
 const promptOptions = (customPrompt?: string) => ({ systemPromptOptions: { customPrompt, sections: {} as Record<string, string> } });
 
-it("the three tools are deferred and the prompt gets one fixed hint section, also with a custom prompt", async (t) => {
+it("the four tools are deferred and the prompt gets one fixed hint section, also with a custom prompt", async (t) => {
 	const tab = await started(t);
 	assert.deepEqual(tab.tools.map(tool => [tool.name, tool.exposure]), NAMES.map(name => [name, "deferred"]));
 	for (const tool of tab.tools) assert.match(tool.description, /Search key: rqwchat\.$/);
@@ -29,7 +29,7 @@ it("the three tools are deferred and the prompt gets one fixed hint section, als
 	assert.deepEqual(hints, [HINT, HINT, HINT]);
 });
 
-it("the real tool_search finds exactly the three chat tools, even among many foreign chat tools", async (t) => {
+it("the real tool_search finds exactly the four chat tools, even among many foreign chat tools", async (t) => {
 	const tab = await started(t);
 	for (let n = 0; n < 12; n++) {
 		tab.pi.registerTool({
@@ -42,7 +42,7 @@ it("the real tool_search finds exactly the three chat tools, even among many for
 	assert.deepEqual([...found.details.loaded].sort(), [...NAMES].sort());
 });
 
-it("without an active tool_search there is no hint and the three tools are active directly", async (t) => {
+it("without an active tool_search there is no hint and the four tools are active directly", async (t) => {
 	const tab = await started(t);
 	tab.world.active = ["read"];
 	const event = promptOptions();
@@ -59,7 +59,7 @@ it("a non-TUI mode adds no hint and no tools", async (t) => {
 	assert.deepEqual(event.systemPromptOptions.sections, {});
 });
 
-it("the three tools never reach a model provider", async (t) => {
+it("the four tools never reach a model provider", async (t) => {
 	const { recv, send } = await pairOfTabs(t);
 	// pi-ai's real provider registry: any model call through the fake models' api would land here.
 	let calls = 0;
@@ -70,5 +70,6 @@ it("the three tools never reach a model provider", async (t) => {
 	await send.run("list_chats", {});
 	await send.run("read_chat", { chatId: "recv" });
 	await send.run("send_message_to_chat", { chatId: "recv", prompt: "go", model: "p/other" });
+	await send.run("wait_answer", { chatId: "recv", afterEntryId: "u1", timeout_ms: 0 });
 	assert.equal(calls, 0);
 });

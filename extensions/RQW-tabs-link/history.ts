@@ -132,6 +132,21 @@ function displayItem(item: HistoryItem, includeOutputs: boolean, outputLimit: nu
   return result;
 }
 
+export function answerAfter(entries: readonly SessionEntry[], index: number): HistoryItem | undefined {
+  const edits = new Map(entries.filter((entry) => entry.type === "context_edit").map((entry) => [entry.targetId, entry.replacement]));
+  for (const entry of entries.slice(index + 1)) {
+    if (entry.type !== "message" || entry.message.role !== "assistant" || entry.message.stopReason !== "stop") continue;
+    const edit = edits.get(entry.id);
+    if (edit === null) continue;
+    if (edit) {
+      const { details: _details, ...message } = entry.message as typeof entry.message & { details?: unknown };
+      return displayItem({ ...entry, message: { ...message, content: edit.content } }, false, 2000);
+    }
+    return displayItem(entry, false, 2000);
+  }
+  return undefined;
+}
+
 export function readChat(target: ReadTarget, options: ReadOptions = {}) {
   if (target.status === "closed") return { error: "closed", chatId: target.chatId, openHint: target.openHint, message: "Chat is closed. Ask the user to open it." };
   const limit = Math.min(10, Math.max(1, Math.trunc(options.turnLimit ?? 1)));

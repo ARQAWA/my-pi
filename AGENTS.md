@@ -157,8 +157,8 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
 - `extensions/RQW-dyslexia/`: adds the owner's exact Communication rule and override after each user message in request context, not in history, the system prompt or subagents. Deterministic placement preserves the cached prefix. Self-contained and independently disableable in `pi config`; no host-file access.
   Tests: `test/extensions/RQW-dyslexia/`.
 - `extensions/RQW-live-tail/`: independent light screen. One public `registerMarkdownTransformer` replaces assistant text that is still streaming with `writing answer` in the current theme's `dim` colour, without italic; the finished answer, user text and thinking stay unchanged. No README; disable it alone in `pi config` (`[D-LIVE-TAIL]`). Tests: `test/extensions/RQW-live-tail/`.
-- `extensions/RQW-tabs-link/`: independent chat-to-chat link for visible main Pi tabs on one computer. Three deferred plain-code tools
-  `list_chats`, `read_chat`, `send_message_to_chat` (no model call), found through `tool_search` by the key `rqwchat` and one fixed prompt line. You open the tabs;
+- `extensions/RQW-tabs-link/`: independent chat-to-chat link for visible main Pi tabs on one computer. Four deferred plain-code tools
+  `list_chats`, `read_chat`, `send_message_to_chat`, `wait_answer` (no model call), found through `tool_search` by the key `rqwchat` and one fixed prompt line. You open the tabs;
   a closed chat is reported with an open hint, never opened. Reads stored turns from the open tab, delivers as a follow-up, one turn at a time. Public Pi APIs only; no import from another
   extension folder, switch it off alone in `pi config`; subagents never load it. Contract and limits: [README](extensions/RQW-tabs-link/README.md),
   `DECISIONS.md` `[D-TABS-LINK]`. Tests: `test/extensions/RQW-tabs-link/`.
