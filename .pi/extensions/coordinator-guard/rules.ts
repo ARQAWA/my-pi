@@ -5,16 +5,10 @@ import { randomInt } from "node:crypto";
 export const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 export type Pair = [model: string, thinking: string];
-/** Optional GPT-only override, active while now < untilMs. */
-export type GptOnlyRestriction = { until: string; untilMs: number };
 export type Rules = {
 	agentModels: Record<string, Pair[]>;
 	reviewerProfiles: Record<string, Pair>;
-	temporaryGptOnly?: GptOnlyRestriction;
 };
-
-const GPT_MODEL = "openai-codex/gpt-6.1-sol";
-const UTC_SECONDS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 const FENCE = /^```json coordinator-rules[ \t]*\r?\n([\s\S]*?)^```[ \t]*$/gm;
 
@@ -57,26 +51,7 @@ export function parseRules(markdown: string): Rules {
 			reviewerProfiles[name] = parsePair(pair, `reviewerProfiles.${name}`);
 		}
 	}
-	const rules: Rules = { agentModels, reviewerProfiles };
-	// An absent key means no temporary restriction; a present key must parse.
-	if (data.temporaryGptOnly !== undefined) rules.temporaryGptOnly = parseRestriction(data.temporaryGptOnly);
-	return rules;
-}
-
-function parseRestriction(raw: any): GptOnlyRestriction {
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-		throw new Error('temporaryGptOnly must be an object {"until": "...Z", "arbiterTitlePrefix": "..."}');
-	}
-	const { until } = raw;
-	if (typeof until !== "string" || !UTC_SECONDS.test(until)) throw new Error('temporaryGptOnly.until must be a UTC time like "2026-10-28T16:00:00Z"');
-	const untilMs = Date.parse(until);
-	// Date.parse rolls an impossible date such as 02-30 over; the round trip rejects it.
-	if (Number.isNaN(untilMs) || new Date(untilMs).toISOString().slice(0, 19) + "Z" !== until) throw new Error(`temporaryGptOnly.until is not a real date: ${until}`);
-	return { until, untilMs };
-}
-
-export function restrictionActive(rules: Rules, now: number): boolean {
-	return rules.temporaryGptOnly !== undefined && now < rules.temporaryGptOnly.untilMs;
+	return { agentModels, reviewerProfiles };
 }
 
 export type Loaded = { ok: true; rules: Rules } | { ok: false; error: string };
@@ -91,18 +66,17 @@ export function loadRules(file: string): Loaded {
 }
 
 /** Executors use table pairs; a named reviewer profile may instead use its own exact pair. */
-export function isAllowed(rules: Rules, model: string, thinking: string, now: number, agentType?: string): boolean {
+export function isAllowed(rules: Rules, model: string, thinking: string, agentType?: string): boolean {
 	const reviewerPair = agentType === undefined ? undefined : rules.reviewerProfiles[agentType];
 	const inTable = reviewerPair === undefined && Object.values(rules.agentModels).some((pairs) => pairs.some(([m, t]) => m === model && t === thinking));
 	const inReviewerProfile = reviewerPair?.[0] === model && reviewerPair[1] === thinking;
-	return (inTable || inReviewerProfile) && (!restrictionActive(rules, now) || model === GPT_MODEL);
+	return inTable || inReviewerProfile;
 }
 
 /** Draw uniformly from the category's currently permitted pairs. */
-export function drawPair(rules: Rules, category: string, now: number, random: (max: number) => number = randomInt): Pair | undefined {
+export function drawPair(rules: Rules, category: string, random: (max: number) => number = randomInt): Pair | undefined {
 	const pairs = Object.hasOwn(rules.agentModels, category) ? rules.agentModels[category] : undefined;
-	const allowed = pairs?.filter(([model, thinking]) => isAllowed(rules, model, thinking, now));
-	return allowed?.length ? allowed[random(allowed.length)] : undefined;
+	return pairs?.length ? pairs[random(pairs.length)] : undefined;
 }
 
 export function describeReviewerProfiles(rules: Rules): string {
@@ -110,21 +84,11 @@ export function describeReviewerProfiles(rules: Rules): string {
 }
 
 /** The one allowed-pair rendering used in reasons, the prompt and child tasks. */
-export function describePairs(rules: Rules, now: number): string {
-	const gptOnly = restrictionActive(rules, now);
+export function describePairs(rules: Rules): string {
 	const classes: string[] = [];
 	for (const [name, pairs] of Object.entries(rules.agentModels)) {
-		const shown = gptOnly ? pairs.filter(([model]) => model === GPT_MODEL) : pairs;
-		if (shown.length === 0) continue;
-		const list = shown.map(([model, thinking]) => `${model} ${thinking}`).join(", ");
+		const list = pairs.map(([model, thinking]) => `${model} ${thinking}`).join(", ");
 		classes.push(`${name}: ${list}`);
 	}
 	return classes.join("; ");
-}
-
-/** The temporary rule as one sentence group for the prompt and the child line; undefined once it has expired. */
-export function restrictionText(rules: Rules, now: number): string | undefined {
-	const restriction = rules.temporaryGptOnly;
-	if (!restriction || !restrictionActive(rules, now)) return undefined;
-	return `Temporary rule until ${restriction.until}: only the allowed ${GPT_MODEL} task pairs may be used. All Anthropic models are blocked, including benchmark arbiters. After that time the normal table applies again.`;
 }

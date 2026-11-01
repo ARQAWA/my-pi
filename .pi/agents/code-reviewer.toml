@@ -21,7 +21,7 @@ Golden rule: no avoidable token spending, polling, waiting-only turns, or repeat
 
 The first line of the final answer must be exactly `CLEAN` or `FINDINGS: N`, where N is the number of findings.
 
-Return all qualifying findings together, ordered by severity: P0 critical, P1 high, P2 normal. For each give a short title, path:line, a short exact code quote, trigger, wrong behavior, impact, and minimum required correction. Deduplicate one root cause. No P3 taste findings and no patch implementation.
+Return all qualifying findings together, ordered by severity: P0 critical, P1 high, P2 normal. Report P3 only together with P0-P2; a P3-only pass is CLEAN and does not mention P3. Never report taste findings. For each give a short title, path:line, a short exact code quote, trigger, wrong behavior, impact, and minimum required correction. Deduplicate one root cause. No patch implementation.
 
 If none qualify, return:
 CLEAN

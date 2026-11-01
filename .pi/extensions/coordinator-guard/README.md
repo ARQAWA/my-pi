@@ -81,21 +81,6 @@ keep their models through `send` and `resume`, which the guard leaves untouched.
 data-driven: changing the root block updates both the next turn's prompt and the next tool call without reloading
 guard code.
 
-## Optional temporary override format
-
-The active policy is permanent and has no `temporaryGptOnly` key; see
-[Subagent models](../../../PROCESS.md#subagent-models). The guard needs no policy-specific code.
-Its generic parser still supports an optional `temporaryGptOnly` object with a UTC `until` deadline.
-When present, it permits only the table's `openai-codex/gpt-6.1-sol` pairs before that deadline.
-This optional format is not an active repository rule. Product profiles are unchanged.
-
-- `until` is a real UTC time with seconds and a `Z`. At that exact instant the normal table applies again.
-  The clock is read on every call, so expiry needs no reload or edit of `PROCESS.md`.
-- While active, Main's prompt, the line appended to every allowed task and refusal reasons state the restriction
-  and expiry. Their allowed lists show only GPT pairs. After expiry the temporary text disappears.
-- An absent key means no temporary restriction. A present malformed key or deadline fails closed:
-  every start and restart is blocked, even after the intended expiry.
-
 ## What it does for Main
 
 - `tool_call` on `agent` `start` and `restart` (a missing `action` counts as `start`): Main supplies an executor
