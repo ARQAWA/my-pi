@@ -452,8 +452,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   All tool calls between assistant answers share a muted summary with confirmed edit/read/search/run/wait/other
   counts. Latest top-level call leads; current call shows its header, last four output rows and status. The next
   call folds the previous; answer text immediately folds the live block. Ctrl+O shows every original at its place
-  and toggles back. Native thinking spacer rows remain; stock Pi image output is unchanged. The earlier public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`; this extension currently uses public APIs without Pi patches, private fields or method replacement. Unsupported nested-result details remain omitted, not invented.
-  Reason: compact progress without losing original calls. Carriers: `extensions/RQW-tool-ui/{index,groups,render,summary,live}.ts`,
+  and toggles back. Native thinking spacer rows remain; stock Pi image output is unchanged. The earlier public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`; `host.ts` patches Pi in memory and reads host internals with shape checks and stock fallback. Unsupported nested-result details remain omitted, not invented.
+  Reason: compact progress without losing original calls. Carriers: `extensions/RQW-tool-ui/{host,index,groups,render,summary,live}.ts`,
   its README, `package.json` and `test/isolation.test.ts`.
   Accepted appearance: owner entry `f7d11547`, line 702: "Бля, заебись, вообще кайф нахуй" (owner words as recorded in the ledger);
   carrier `/tmp/my-pi-ui.html` and UI-port `browser-preview/index.html`. Visual approval is not runtime proof.
@@ -477,8 +477,15 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Accepted clock recommendation: «часы идут от твоего сообщения. если тебя нет, от карточки агента. пауза перед ними не считается.»
   Accepted cut recommendation: «кусок после линии сжатия тоже сворачивать. сейчас он остаётся открытым.»
 
-  Each successful final answer (stop, text, no tool calls) closes an independent span after the run settles.
-  Earlier answers, including questions, stay outside later folds; later tools and notifications never remove them.
+  Each successful final answer (stop, text, no tool calls) closes an independent span after the run settles,
+  unless agents or background processes are still running. Owner: «они должны сворочиваться все в одну строку»
+  when such an answer is not the real final (`my-pi-evidence/designs/followup-hold/DESIGN.md`, «Заказ»).
+  The extension reads `rqw:running-counts:request/offer` and writes invisible `rqw-tool-ui-final` entries with
+  `{ key, final: false }` for such answers. When the idle session remains quiet for 500 ms after background work
+  ends, it writes `{ key, final: true }` if no message or card followed; a new run can close the span instead.
+  Marks preserve the verdict in history; sessions without marks keep the earlier behavior. A pending mark is not
+  restored after exit or session switch, so it can remain unclosed on resume.
+  Earlier real final answers, including questions, stay outside later folds; later tools and notifications never remove them.
   User messages no longer split spans. The closed fold lifts every owner user message, in order, above one dim
   `worked for 42s ›` row and the final answer. Agent cards and tools fold. Open, `˅`, restores exactly the original
   rows and user positions, with the current Ctrl+O and Ctrl+T state.
@@ -497,16 +504,16 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Restart, reload, rebuild and reloaded history intervals start closed; redraw and resize preserve open state.
   Runtime patch under `[D-SCOPE-RUNTIME-PATCH]`: `InteractiveMode.prototype.addMessageToChat` records message
   bundles and finds the chat container; its O(1) render guard rebinds on a new transcript or settled run.
-  Components keep place, order and identity; hidden members return without original render. No timers.
-  An unexpected shape keeps today's view.
+  Components keep place, order and identity; hidden members return without original render. The real-final
+  check uses the 500 ms timer described above. An unexpected shape keeps today's view.
   The header owner caches original user/skill bundle rows and their mouse transforms; source updates invalidate
   that cache. Closed messages appear once above the header, including a sole owner message after an agent card.
   Opening removes the projection and restores their original order without moving any components.
   Every loaded interval binds separately, including local suffixes after older cuts. Source-update wrappers and
   lifted-row references are released on unload. Own and inherited descriptors are checked before wrapping; an
   unsupported component leaves its entire span visible. Skill-dollar compatibility is tested without a product import.
-  Carriers: `extensions/RQW-tool-ui/{fold,groups,index}.ts`, its README, `test/extensions/RQW-tool-ui/fold.test.ts`,
-  `test/lazy-folds.test.ts` and `test/worked-for-skills.test.ts`.
+  Carriers: `extensions/RQW-tool-ui/{background,fold,groups,host,index}.ts`, its README,
+  `test/extensions/RQW-tool-ui/{fold,real-final}.test.ts`, `test/lazy-folds.test.ts` and `test/worked-for-skills.test.ts`.
 
 ## Agent cards
 

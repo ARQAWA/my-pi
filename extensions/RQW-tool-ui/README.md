@@ -51,7 +51,7 @@ The theme is distributed separately through `pi.themes`, not as an extension.
 - Groups come from the whole active branch, `ctx.sessionManager.getBranch()` (RQW-blocks lets Pi draw it all after a compaction, so calls before the compaction keep this view), plus the streaming state (`groups.ts`). The state is
   prepared before `renderSessionEntries`, keyed by the live session and extension runtime. `session_start` does not
   rebuild the groups. On shutdown, event data and session references are released while the old visible rows stay
-  intact until Pi replaces the transcript or stops. No timers of its own.
+  intact until Pi replaces the transcript or stops. The real-final check uses a 500 ms timer, described below.
 - Accepted limit: every model step with thinking keeps Pi's own blank row and, while thinking is hidden, its label row;
   this extension cannot remove them.
 
@@ -69,7 +69,8 @@ profiles and skills for the ordinary `agent` runtime.
 ### Data and render functions
 
 - `classify.ts`: `classify(toolName, args, result, context)` turns one call into
-  `{ kind, target, status, countKey, countKeys, outputText, exitCode? }` for `read`, `grep`/`find`, `bash`,
+  `{ kind, target, status, countKey, countKeys, outputText, exitCode? }` for `rqw_readfile`/`read`,
+  `rqw_rg`/`rqw_glob` and legacy `grep`/`find`, `bash`,
   `agent` waits (one count key per waited ID) and every other tool. Stored standalone `review` waits retain the same
   classification only for legacy history compatibility.
   The `read` count key is the lexically normalized path, as Pi 1.4.0 `resolveToCwd` resolves it (no filesystem
@@ -109,7 +110,7 @@ profiles and skills for the ordinary `agent` runtime.
   error output and status in the current card even when nested calls succeeded. Its failure remains in the folded
   summary, without an extra parent tool count or recounting a propagated nested failure. Nested details and expanded
   originals are unchanged.
-- Tests: run `node --test test/extensions/RQW-tool-ui/render.test.ts`.
+- Tests: `test/extensions/RQW-tool-ui/render.test.ts`.
 
 ### Worked-for folds (`fold.ts`)
 
@@ -145,9 +146,10 @@ profiles and skills for the ordinary `agent` runtime.
   - When the busy state falls to zero in an idle session and the last entry is still that mark (no message and no
     delivered card after it) for 500 ms, it saves `{ key, final: true }`. The span then closes on the marked answer,
     timed to that answer. A woken run that starts first makes no `final: true`.
-  - A history is read from these entries, so a resumed session shows the same folds. A mark for an answer that is not
-    the latest successful one, or one that follows later messages, is ignored. Old sessions without marks fold as
-    before. Only TUI sessions write marks; the settle check reads only the end of the branch and only while busy.
+  - History reads these entries. A mark for an answer that is not the latest successful one, or one that follows
+    later messages, is ignored. Old sessions without marks fold as before. A pending mark is not restored after
+    exit or session switch, so it can remain unclosed on resume. Only TUI sessions write marks; the settle check
+    reads only the end of the branch and only while busy.
 - Open shows literally the rows from before the fold: the same components, renderers, colors, padding and blank rows,
   with the current Ctrl+O and Ctrl+T state. The header is inserted before the first component's content, preserving
   its leading blank row when present. No original rows or blank rows are added, removed or trimmed.
@@ -178,9 +180,10 @@ profiles and skills for the ordinary `agent` runtime.
   `test/extensions/RQW-tool-ui/real-final.test.ts` covers the real final: marks in history and live, a fake counts
   producer and a hand-fired timer. `test/lazy-folds.test.ts`
   covers local suffixes through two kept-entry cuts, lifted owners, repeated identical cards, interval reload and
-  released source-update wrappers. `test/worked-for-skills.test.ts` loads skill-dollar only in a root compatibility
-  fixture: linked multi-skill user cards, skill-only cards, Ctrl+O/Ctrl+T, exact expanded originals, rebuild and inline.
-  Run: `npm run check -- --typecheck --test 'test/extensions/RQW-tool-ui/*.test.ts' test/lazy-folds.test.ts test/worked-for-skills.test.ts`.
+  released source-update wrappers. `test/lazy-prefix-folds.test.ts` covers the lazy prefix. `test/worked-for-skills.test.ts`
+  loads skill-dollar only in a root compatibility fixture: linked multi-skill user cards, skill-only cards, Ctrl+O/Ctrl+T,
+  exact expanded originals, rebuild and inline. Run the extension tests and isolation check with
+  `npm run check -- --test 'test/extensions/RQW-tool-ui/*.test.ts' test/isolation.test.ts`.
 
 ## On and off
 

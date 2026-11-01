@@ -2,13 +2,13 @@
 // amendment): a tool call without a renderCall, a result without a renderResult (or whose renderer throws), and a tool
 // Pi has no definition for are drawn exactly as Pi 1.4.0 draws them in the expanded (Ctrl+O) view.
 //
-// Source, pinned to @earendil-works/pi-coding-agent 1.4.0 (`PI_FALLBACK_VERSION`, checked by test/original.test.ts):
+// Source, pinned to @earendil-works/pi-coding-agent 1.4.0 (`PI_FALLBACK_VERSION`, checked by render.test.ts):
 // - dist/core/tools/render-utils.js:56 `getTextOutput`, :81 `formatToolCallWithArgs` (expanded branch only)
 // - dist/utils/ansi.js `stripAnsi` (ansi-regex/strip-ansi, MIT, Sindre Sorhus), dist/utils/shell.js:165
 //   `sanitizeBinaryOutput`, render-utils.js `replaceTabs`
 // - dist/modes/interactive/components/tool-execution.js:95-111 `createCallFallback`/`createResultFallback` (expanded:
 //   every line), :311 `formatToolExecution`, :200-204 the background by state, :50-51 the box and text paddings
-// When Pi is upgraded, compare these sources again; test/original.test.ts compares the rows with Pi's own component.
+// When Pi is upgraded, compare these sources again.
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, getImageDimensions, imageFallback } from "@earendil-works/pi-tui";
 

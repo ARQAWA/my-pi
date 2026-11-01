@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import v8 from "node:v8";
 import vm from "node:vm";
 import { it } from "node:test";
-import { initTheme, InteractiveMode, SessionManager, type SessionEntry, type Theme } from "@earendil-works/pi-coding-agent";
+import { initTheme, InteractiveMode, SessionManager, VERSION, type SessionEntry, type Theme } from "@earendil-works/pi-coding-agent";
 import { Container, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
 import toolUi from "../../../extensions/RQW-tool-ui/index.ts";
 import { classifyChange } from "../../../extensions/RQW-tool-ui/changes.ts";
 import { classify } from "../../../extensions/RQW-tool-ui/classify.ts";
+import { PI_FALLBACK_VERSION } from "../../../extensions/RQW-tool-ui/fallback.ts";
 import { buildGroups } from "../../../extensions/RQW-tool-ui/groups.ts";
 import { renderLive } from "../../../extensions/RQW-tool-ui/live.ts";
 import { collapsedRows, ToolUi } from "../../../extensions/RQW-tool-ui/render.ts";
@@ -22,6 +23,10 @@ const result = (id: string, name = "read", extra: object = {}) => ({
 const entries = (...messages: unknown[]) => messages.map((message, i) => ({
 	type: "message", id: `e${i}`, parentId: i ? `e${i - 1}` : null, timestamp: "t", message,
 })) as SessionEntry[];
+
+it("pins the copied fallback to the installed Pi version", () => {
+	assert.equal(PI_FALLBACK_VERSION, VERSION);
+});
 
 it("classifies calls and nonzero exits", () => {
 	assert.equal(classify("read", { path: "a.ts", offset: 3, limit: 2 }, ok(), { toolCallId: "r" }).target, "a.ts L3-4");
