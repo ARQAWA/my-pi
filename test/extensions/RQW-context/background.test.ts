@@ -447,12 +447,36 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		await toBackground(h);
 		const done = h.say(0.22);
 		await threshold;
-		h.manager.appendContextEdit(userIds(h)[0], { content: [{ type: "text", text: "changed" }] } as never);
+		h.manager.appendContextEdit(userIds(h)[0], { content: [{ type: "text", text: "CHANGED_REQUIREMENT" }] } as never);
 		h.summaries[0].resolve("STALE");
 		await h.summary(2);
-		h.summaries[1].resolve("FOREGROUND");
+		// The foreground summary is asked about the edited text, not the one Pi prepared before the wait.
+		assert.ok(!JSON.stringify(h.summaries[0].context).includes("CHANGED_REQUIREMENT"));
+		assert.ok(JSON.stringify(h.summaries[1].context).includes("CHANGED_REQUIREMENT"));
+		// The scripted summarizer reports what it was asked about; the active context then carries that report.
+		h.summaries[1].resolve(JSON.stringify(h.summaries[1].context).includes("CHANGED_REQUIREMENT") ? "SAW CHANGED_REQUIREMENT" : "SAW OLD INPUT");
 		await done;
-		assert.match(h.compactions()[0].summary, /^FOREGROUND/);
+		assert.match(h.compactions()[0].summary, /^SAW CHANGED_REQUIREMENT/);
+		assert.ok(JSON.stringify(h.manager.buildSessionProjection().messages).includes("SAW CHANGED_REQUIREMENT"));
+	});
+
+	it("nothing left to summarize after the wait: no compaction, the stale input is not summarized", async () => {
+		let entered!: () => void;
+		const threshold = new Promise<void>((resolve) => { entered = resolve; });
+		const h = await harness({}, (pi) => pi.on("session_before_compact", () => { entered(); }));
+		h.control.hold = true;
+		await toBackground(h);
+		const done = h.say(0.22);
+		await threshold;
+		const messages = h.manager.getBranch().filter((entry: any) => entry.type === "message" && entry.message.role !== "system");
+		for (const entry of messages.slice(0, -2)) h.manager.appendContextEdit(entry.id, null);
+		// A foreground request, if one is wrongly made, answers at once instead of hanging the test.
+		h.control.hold = false;
+		h.summaries[0].resolve("STALE");
+		await done;
+		assert.equal(h.summaries.length, 1);
+		assert.equal(h.compactions().length, 0);
+		assert.deepEqual(h.status.map((item: any) => item.active), [true, false]);
 	});
 
 	it("aborting compaction ends the wait even when the background request ignores abort", async () => {

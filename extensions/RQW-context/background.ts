@@ -324,6 +324,14 @@ export function installBackground(proto: Record<string | symbol, any>, owned: ()
 			return { ...result, firstKeptEntryId: candidate.keptId, tokensBefore: preparation.tokensBefore };
 		}
 		cancel(candidate);
+		// Pi prepared its input before the wait; an edit made meanwhile must reach the foreground summary.
+		if (reason === "threshold" && candidate?.done) {
+			const settings = this.settingsManager.getCompactionSettings(this.model);
+			const current = prepareSnapshot(this.sessionManager.getBranch(), settings, preparation.tokensBefore);
+			// Pi's manual compaction refuses the same case; never summarize the stale input instead.
+			if (!current) throw new Error("Nothing to compact (session too small)");
+			args[0] = current.preparation;
+		}
 		return original.apply(this, args);
 	};
 	proto[WRAPPED_GENERATOR] = original;
