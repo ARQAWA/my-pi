@@ -162,3 +162,31 @@ it("a bound read keeps the branch of the moment it was bound, whatever the sessi
 	assert.deepEqual(after, before);
 	assert.equal(before.get("resp-2")!.length, 2);
 });
+
+it("the raw-response filter of a request reads Pi's projection once, however many responses it checks", () => {
+	const { session, state } = recorded("accept", 30);
+	const ids = Array.from({ length: 30 }, (_, i) => `resp-${i}`);
+	for (const id of ids) session.appendMessage(answered(id, `text ${id}`));
+	let projections = 0;
+	const entries = session.getEntries.bind(session);
+	session.getEntries = () => { projections++; return entries(); };
+	const carried = [USER, answered("resp-1", "edited by the user"), answered("resp-2", "text resp-2")];
+	const accepted = state.rawHistory.acceptRawResponses!(ids, { messages: carried } as unknown as Context);
+	assert.equal(projections, 1);
+	assert.equal(accepted.has("resp-1"), false, "an edited answer of the request is not replayed raw");
+	assert.equal(accepted.has("resp-2"), true, "an unchanged answer of the request is");
+	assert.equal(accepted.size, 29);
+});
+
+it("a physically edited or deleted answer gets no raw replay, an untouched one does", () => {
+	const { session, state } = recorded("projected", 3);
+	const targets = [0, 1, 2].map((i) => session.appendMessage(answered(`resp-${i}`, `text ${i}`)).id);
+	const contextEdit = (targetId: string, replacement: unknown) => {
+		const entry = { type: "context_edit", id: `edit-${targetId}`, parentId: session.entries.at(-1)!.id, timestamp: "2026-01-01T00:00:00.000Z", targetId, replacement };
+		session.entries.push(entry as unknown as SessionEntry);
+	};
+	contextEdit(targets[0], { content: "changed by the user" });
+	contextEdit(targets[1], null);
+	const accepted = state.rawHistory.acceptRawResponses!(["resp-0", "resp-1", "resp-2"], CONTEXT);
+	assert.deepEqual([...accepted], ["resp-2"]);
+});

@@ -64,7 +64,7 @@ export interface RawItemHistory {
 	/** Called at each actual response.output_item.done, before the terminal event of that response. */
 	recordItem?(responseId: string, item: WireItem): void;
 	/** Optional per-request filter: false drops the raw output of this response from a request built from the given context. */
-	acceptRawResponse?(responseId: string, context: Context): boolean;
+	acceptRawResponses?(responseIds: Iterable<string>, context: Context): Set<string>;
 	/**
 	 * Optional sliced read for a context fork. Binding is synchronous and cheap and fixes the branch it will read; the
 	 * returned read yields between slices and returns the accepted raw outputs of the `wanted` responses only.
@@ -192,6 +192,12 @@ function abortError(): Error {
 /** Digest of the bearer; the token itself is never stored or logged. */
 function accessDigest(access: string): string {
 	return createHash("sha256").update(access).digest("hex").slice(0, 16);
+}
+
+/** Order- and case-insensitive digest of the explicit request headers (they carry the bearer, so never kept raw). */
+function headersKey(headers: Record<string, string> | undefined): string {
+	const entries = Object.entries(headers ?? {}).map(([name, value]) => [name.toLowerCase(), value]).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+	return accessDigest(JSON.stringify(entries));
 }
 
 /** One controller that aborts when any source aborts; release() removes the listeners. */
@@ -416,7 +422,7 @@ export class CodexThreadTransport {
 	#turnState: string | undefined;
 	#transport: StreamTransport = "websocket";
 	#continuation = new Continuation();
-	#socket: { socket: CodexSocket; socketId: string; revision: number; digest: string } | undefined;
+	#socket: { socket: CodexSocket; socketId: string; revision: number; digest: string; headers: string | undefined } | undefined;
 	#owner: string | undefined;
 	#digest: string | undefined;
 	#revision = 0;
@@ -1008,11 +1014,12 @@ export class CodexThreadTransport {
 	/** Raw outputs for a request built from context: the history's accepted responses only (no filter without a context). */
 	#rawOutputs(context?: Context): ReadonlyMap<string, readonly WireItem[]> {
 		const selected = this.#history ? this.#history.rawOutputs() : this.#ledger;
-		const accept = this.#history?.acceptRawResponse?.bind(this.#history);
+		const accept = this.#history?.acceptRawResponses?.bind(this.#history);
 		if (context === undefined || accept === undefined) return selected;
+		const accepted = accept(selected.keys(), context);
 		const out = new Map<string, readonly WireItem[]>();
 		for (const [responseId, items] of selected) {
-			if (accept(responseId, context)) out.set(responseId, items);
+			if (accepted.has(responseId)) out.set(responseId, items);
 		}
 		return out;
 	}
@@ -1337,7 +1344,8 @@ export class CodexThreadTransport {
 	): Promise<CodexSocket> {
 		const digest = accessDigest(cred.access);
 		const current = this.#socket;
-		if (current && current.socketId === socketId && current.revision === this.#revision && current.digest === digest && current.socket.isOpen) {
+		if (current && current.socketId === socketId && current.revision === this.#revision && current.digest === digest && current.socket.isOpen
+			&& this.#headersMatch(current, options, requestKind)) {
 			return current.socket;
 		}
 		this.#dropSocket();
@@ -1378,8 +1386,16 @@ export class CodexThreadTransport {
 			void socket.close().catch(() => undefined);
 			throw abortError();
 		}
-		this.#socket = { socket, socketId, revision: this.#revision, digest };
+		this.#socket = { socket, socketId, revision: this.#revision, digest, headers: requestKind === "prewarm" ? undefined : headersKey(options.headers) };
 		return socket;
+	}
+
+	/** Changed explicit request headers need a new handshake. A prewarm sends none: its socket takes the first turn's headers. */
+	#headersMatch(current: { headers: string | undefined }, options: CodexStreamOptions, requestKind: RequestKind): boolean {
+		if (requestKind === "prewarm") return true;
+		const key = headersKey(options.headers);
+		current.headers ??= key;
+		return current.headers === key;
 	}
 
 	/**

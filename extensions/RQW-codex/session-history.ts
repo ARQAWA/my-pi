@@ -142,25 +142,38 @@ function pairedCallKeys(manager: SessionManagerLike): Set<string> {
 	return out;
 }
 
-/** The physical assistant message of a raw response on the current branch (raw Pi entry), or undefined. */
-function rawAssistantEntry(manager: SessionManagerLike, responseId: string): (SessionEntry & { message: { content?: unknown } }) | undefined {
-	return manager.getBranch().find((entry) => {
+type RawAssistantEntry = SessionEntry & { message: { content?: unknown } };
+
+/** One read of the current branch for source checks: the first raw assistant entry per response id, and Pi's projection (built once, on first use). */
+type ResponseSources = { raw: Map<string, RawAssistantEntry>; projected(): Map<string, unknown[]> };
+
+function responseSources(manager: SessionManagerLike): ResponseSources {
+	const raw = new Map<string, RawAssistantEntry>();
+	for (const entry of manager.getBranch()) {
 		const message = (entry as { message?: { role?: unknown; responseId?: unknown } }).message;
-		return entry.type === "message" && message?.role === "assistant" && message.responseId === responseId;
-	}) as (SessionEntry & { message: { content?: unknown } }) | undefined;
+		if (entry.type === "message" && message?.role === "assistant" && typeof message.responseId === "string" && !raw.has(message.responseId)) {
+			raw.set(message.responseId, entry as RawAssistantEntry);
+		}
+	}
+	let projected: Map<string, unknown[]> | undefined;
+	return { raw, projected: () => (projected ??= projectedMessages(manager.getEntries(), manager.getLeafId())) };
 }
 
 /**
  * Current state of the assistant message behind a raw response: absent (no such message), deleted (Pi's projection shows
  * nothing for it), edited (its projected content differs from the original) or same.
  */
-function responseSourceState(manager: SessionManagerLike, responseId: string): "absent" | "same" | "edited" | "deleted" {
-	const raw = rawAssistantEntry(manager, responseId);
+function sourceState(sources: ResponseSources, responseId: string): "absent" | "same" | "edited" | "deleted" {
+	const raw = sources.raw.get(responseId);
 	if (!raw) return "absent";
-	const projected = projectedMessages(manager.getEntries(), manager.getLeafId()).get(raw.id) ?? sessionEntryToContextMessages(raw);
+	const projected = sources.projected().get(raw.id) ?? sessionEntryToContextMessages(raw);
 	if (projected.length === 0) return "deleted";
 	const current = projected.find((message) => (message as { role?: unknown; responseId?: unknown }).role === "assistant" && (message as { responseId?: unknown }).responseId === responseId) as { content?: unknown } | undefined;
 	return canonicalJson(current?.content) === canonicalJson(raw.message.content) ? "same" : "edited";
+}
+
+function responseSourceState(manager: SessionManagerLike, responseId: string): "absent" | "same" | "edited" | "deleted" {
+	return sourceState(responseSources(manager), responseId);
 }
 
 /** Replays one entry's system tool changes into the running catalog: removals first, then additions, as Pi does. */
@@ -305,7 +318,7 @@ export class SessionWireState {
 			recordOutputs: (responseId, items) => this.#recordOutputs(responseId, items),
 			recordItem: (responseId, item) => this.#recordItem(responseId, item),
 			preparedRequest: (body) => this.#preparedRequest(body),
-			acceptRawResponse: (responseId, context) => this.#acceptRawResponse(responseId, context),
+			acceptRawResponses: (responseIds, context) => this.#acceptRawResponses(responseIds, context),
 			bindRawOutputs: (context) => this.#bindRawOutputs(context),
 		};
 	}
@@ -552,17 +565,29 @@ export class SessionWireState {
 		return window;
 	}
 
-	/** Raw response filter for a request built from context: an edited or removed physical message is never replayed raw. */
-	#acceptRawResponse(responseId: string, context: Context): boolean {
-		const state = this.#view.responseSourceState?.(responseId) ?? "absent";
-		if (state === "edited" || state === "deleted") return false;
-		const requested = (context.messages as Array<{ role?: unknown; responseId?: unknown; content?: unknown }>).find(
-			(message) => message.role === "assistant" && message.responseId === responseId,
-		);
-		if (requested === undefined) return true;
-		// The request carries this assistant message: its content must be the physical original, or the raw output is unproven.
-		if (state === "absent") return false;
-		return canonicalJson(requested.content) === canonicalJson(rawAssistantEntry(this.#manager(), responseId)?.message.content);
+	/**
+	 * Raw response filter for a request built from context: an edited or removed physical message is never replayed raw.
+	 * One read of the branch serves every response of the request.
+	 */
+	#acceptRawResponses(responseIds: Iterable<string>, context: Context): Set<string> {
+		const requested = new Map<string, unknown>();
+		for (const message of context.messages as Array<{ role?: unknown; responseId?: unknown; content?: unknown }>) {
+			if (message.role === "assistant" && typeof message.responseId === "string" && !requested.has(message.responseId)) requested.set(message.responseId, message.content);
+		}
+		let sources: ResponseSources | undefined;
+		const accepted = new Set<string>();
+		for (const responseId of responseIds) {
+			sources ??= responseSources(this.#manager());
+			const state = sourceState(sources, responseId);
+			if (state === "edited" || state === "deleted") continue;
+			if (!requested.has(responseId)) {
+				accepted.add(responseId);
+				continue;
+			}
+			// The request carries this assistant message: its content must be the physical original, or the raw output is unproven.
+			if (state === "same" && canonicalJson(requested.get(responseId)) === canonicalJson(sources.raw.get(responseId)?.message.content)) accepted.add(responseId);
+		}
+		return accepted;
 	}
 
 	/** Fresh prefix for this request: the same builder the transport uses, with an empty transcript. */

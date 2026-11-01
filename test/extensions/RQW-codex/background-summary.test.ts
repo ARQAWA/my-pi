@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, it } from "node:test";
-import type { AgentSession, ExtensionAPI, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { generateSummary, type AgentSession, type ExtensionAPI, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { createCodexExtension } from "../../../extensions/RQW-codex/index.ts";
 import { SESSION_BIND } from "../../../extensions/RQW-codex/lifecycle.ts";
@@ -8,6 +8,7 @@ import { BACKGROUND_SUMMARY } from "../../../extensions/RQW-codex/session-compac
 
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { SESSION_POLICY_CHANNEL, type SessionPolicyRequest } from "../../../extensions/RQW-codex/registration.ts";
+import { CODEX_RETRY_OWNED_DIAGNOSTIC } from "../../../extensions/RQW-codex/retry.ts";
 
 const SUMMARY_ID = "019a0000-0000-7000-8000-000000000001";
 const ACCOUNT = "acct_test_1";
@@ -18,6 +19,8 @@ const model = {
 	baseUrl: "https://chatgpt.com/backend-api", reasoning: true, input: ["text"],
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 500000, maxTokens: 100000, thinkingLevelMap: {},
 } as unknown as Model<Api>;
+/** A Codex summary result whose own retry budget is already spent. */
+const EXHAUSTED = { role: "assistant", stopReason: "error", provider: "openai-codex", api: "openai-codex-responses", errorMessage: "terminated", diagnostics: [{ type: CODEX_RETRY_OWNED_DIAGNOSTIC }] };
 const releases: Array<() => void> = [];
 afterEach(() => { for (const release of releases.splice(0)) release(); });
 
@@ -80,6 +83,7 @@ function setup(sessionModel: Model<Api> = model) {
 		registerProvider: (_id: string, value: typeof config) => { config = value; },
 		unregisterProvider: () => { config = undefined; },
 	} as unknown as ModelRuntime;
+	let streamCalls = 0;
 	const makeSession = (sessionId: string) => {
 		const entries: any[] = [];
 		const sessionManager = {
@@ -93,7 +97,7 @@ function setup(sessionModel: Model<Api> = model) {
 			},
 		};
 		return { sessionId, modelRuntime: runtime, model: sessionModel, sessionManager,
-			agent: { state: { tools: [] } }, _hiddenDeclarations: new Set(),
+			agent: { state: { tools: [] }, streamFunction: async () => { streamCalls++; return { result: async () => EXHAUSTED }; } }, _hiddenDeclarations: new Set(),
 			subscribe: () => () => undefined, dispose: noop, _isRetryableError: () => false,
 		} as unknown as AgentSession;
 	};
@@ -124,7 +128,7 @@ function setup(sessionModel: Model<Api> = model) {
 	/** Awaits the routed summary to its final result; proves a real request went over the fake network. */
 	const finish = async (signal: AbortSignal) => (await summary(signal).result()) as { content: Array<{ text?: string }> };
 	const finishSession = async (sessionId: string) => (await config!.streamSimple(model, { messages: [{ role: "user", content: "hello", timestamp: 1 }] }, { sessionId }).result()) as { content: Array<{ text?: string }> };
-	return { dispatch, bindChild, summary, finish, finishSession, network, store: async () => { await store.modify("openai-codex", async () => ({ type: "oauth", access: ACCESS, refresh: "refresh", expires: EXPIRES * 1000, accountId: ACCOUNT } as never)); } };
+	return { session, streamCalls: () => streamCalls, dispatch, bindChild, summary, finish, finishSession, network, store: async () => { await store.modify("openai-codex", async () => ({ type: "oauth", access: ACCESS, refresh: "refresh", expires: EXPIRES * 1000, accountId: ACCOUNT } as never)); } };
 }
 
 it("routes a registered background summary through the real request-local transport without a compaction", async () => {
@@ -176,4 +180,28 @@ it("ignores the background dispatch of a session that is not on a Codex model", 
 	const controller = new AbortController();
 	dispatch(controller.signal);
 	assert.throws(() => summary(controller.signal), /no bound controller/);
+});
+
+const RETRY = { enabled: true, maxRetries: 2, baseDelayMs: 0 };
+const summarize = (session: AgentSession, signal: AbortSignal) => generateSummary(
+	[{ role: "user", content: "hello", timestamp: 1 }], model, 0, "key", undefined, signal, undefined, undefined, undefined,
+	(streamModel, context, options) => session.agent.streamFunction(streamModel, context, options), undefined, RETRY,
+);
+
+it("Pi's summary retries an exhausted Codex failure of a background summary no more than once", async () => {
+	const { session, streamCalls, dispatch } = setup();
+	const controller = new AbortController();
+	dispatch(controller.signal);
+	await assert.rejects(summarize(session, controller.signal), /Summarization failed: terminated/);
+	assert.equal(streamCalls(), 1);
+});
+
+it("a background summary's retry guard ends with its signal", async () => {
+	const { session, dispatch } = setup();
+	const controller = new AbortController();
+	dispatch(controller.signal);
+	const request = () => session.agent.streamFunction(model, { messages: [{ role: "user", content: "summarize", timestamp: 1 }] } as never, { cacheRetention: "none", sessionId: SUMMARY_ID, signal: controller.signal } as never);
+	await assert.rejects((await request()).result(), /Summarization failed: terminated/);
+	controller.abort();
+	assert.equal(((await (await request()).result()) as { errorMessage?: string }).errorMessage, "terminated");
 });

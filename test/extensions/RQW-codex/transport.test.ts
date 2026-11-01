@@ -298,3 +298,49 @@ it("cache mechanics match the native reference in this scenario: key, prefix, co
 	assert.deepEqual([first.message.usage.cacheRead, first.message.usage.input], [64, 36]);
 	assert.deepEqual([second.message.usage.cacheRead, second.message.usage.input], [90, 10]);
 });
+
+const sseBody = (events: unknown[]) => new Response(new ReadableStream<Uint8Array>({
+	start(controller) {
+		for (const value of events) controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`));
+		controller.close();
+	},
+}), { status: 200, headers: { "content-type": "text/event-stream" } });
+
+it("SSE skips an unknown error wrapper and still completes without a retry", async () => {
+	let fetches = 0;
+	const [created, ...rest] = textEvents("resp_wrapper", "Hi");
+	const fetch = async () => { fetches++; return sseBody([created, { type: "error", message: "noise" }, ...rest]); };
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: upgradeRequired, fetch: fetch as any } });
+	const events = await collect(transport.stream(MODEL, USER));
+	assert.equal(events.at(-1)?.type, "done");
+	assert.equal(fetches, 1);
+});
+
+it("SSE still ends the request at a classified error wrapper", async () => {
+	const [created, ...rest] = textEvents("resp_fatal", "Hi");
+	const fetch = async () => sseBody([created, { type: "error", status: 400, error: { code: "invalid_prompt", message: "bad" } }, ...rest]);
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: upgradeRequired, fetch: fetch as any } });
+	const events = await collect(transport.stream(MODEL, USER));
+	assert.equal(events.at(-1)?.type, "error");
+});
+
+it("changed explicit request headers open a new socket; unchanged ones reuse it", async () => {
+	const sockets = fakeSockets([[textEvents("resp_a", "a")], [textEvents("resp_b", "b")], [textEvents("resp_c", "c")]]);
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: sockets.connect } });
+	await collect(transport.stream(MODEL, USER, { headers: { "OpenAI-Project": "project-a" } } as any));
+	await collect(transport.stream(MODEL, USER, { headers: { "openai-project": "project-a" } } as any));
+	assert.equal(sockets.connects.length, 1);
+	await collect(transport.stream(MODEL, USER, { headers: { "OpenAI-Project": "project-b" } } as any));
+	assert.equal(sockets.connects.length, 2);
+	assert.equal(sockets.heads[1]["OpenAI-Project"], "project-b");
+	transport.dispose();
+});
+
+it("a prewarmed socket is reused by the first turn whatever headers it brings", async () => {
+	const sockets = fakeSockets([[textEvents("resp_warm", "w")], [textEvents("resp_a", "a")]]);
+	const transport = new CodexThreadTransport({ identity: IDENTITY, store: await seededStore(), dependencies: { ...timing().dependencies, connect: sockets.connect } });
+	await transport.prewarm(MODEL, USER);
+	await collect(transport.stream(MODEL, USER, { headers: { "OpenAI-Project": "project-a" } } as any));
+	assert.equal(sockets.connects.length, 1);
+	transport.dispose();
+});
