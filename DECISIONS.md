@@ -312,13 +312,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   The accepted style and its question follow-up are supplied with this implementation order.
   Superseded text is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0352.
   Since: owner-chat-style squash.
-- **CI evidence for a test file that dies** `[D-WORK-CI-EVIDENCE]`. Coordinator decision (technical), no owner quote:
-  the `npm test` steps keep Node's default log output and also write a TAP copy, uploaded on failure with the job's macOS
-  crash reports. Reason: a test file once died silently on macOS Node 24 and its exit code or signal was not recoverable
-  from the spec reporter. Carriers: `scripts/ci-npm-test.sh`, `.github/workflows/tests.yml` (artifact `test-evidence-*`,
-  with `/Library/Logs/DiagnosticReports`). Since: `8547d59`.
-  CI floor, accepted by the owner and relayed by the coordinator: `tests.yml` keeps Node 22.19.0 and resolves Node 24
-  as `>=24.22.0 <25`; the matrix labels stay `22.19.0` and `24` for artifact names. Reason: require the shipped V8
+- **CI Node floor** `[D-WORK-CI-NODE-FLOOR]`. CI floor, accepted by the owner and relayed by the coordinator: `tests.yml` keeps Node 22.19.0 and resolves Node 24
+  as `>=24.22.0 <25`; the matrix labels stay `22.19.0` and `24`. Reason: require the shipped V8
   baseline fix without allowing a runner-cached 24.21.0; the incident's exact cause remains unproven.
 
 ## Scope

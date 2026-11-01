@@ -7189,3 +7189,17 @@ Source: `origin/main:DECISIONS.md`. Verbatim replaced text:
 >   Owner: «1 целиком, run да но декомпозиция, статус herdr тоже да, тож декомп»
 >   Reason: the dot in herdr's sidebar must stay yellow while background work runs; herdr's integration is a user copy we cannot edit, and a separate report source is rejected by herdr. Design (not shipped): `/Users/arkadijcukavin/ai-project/my-pi-evidence/designs/busy-indicators/DESIGN.md`. Session locators of the quotes are not machine-verified (relayed in the task brief).
 >   Carriers: `extensions/RQW-agent/{real-final,herdr-state,terminal-progress,followup-hold,coordinator,index}.ts`; [contract](extensions/RQW-agent/README.md#real-final-and-the-herdr-dot), `test/extensions/RQW-agent/{real-final,terminal-progress,hold-change}.test.ts`.
+
+## A-0411 · Work policy · CI test evidence
+
+Status: superseded by removal of unordered TAP and failure reports; the Node floor remains in `[D-WORK-CI-NODE-FLOOR]`.
+Source: `e00dca9b:DECISIONS.md`. Verbatim replaced text:
+
+> - **CI evidence for a test file that dies** `[D-WORK-CI-EVIDENCE]`. Coordinator decision (technical), no owner quote:
+>   the `npm test` steps keep Node's default log output and also write a TAP copy, uploaded on failure with the job's macOS
+>   crash reports. Reason: a test file once died silently on macOS Node 24 and its exit code or signal was not recoverable
+>   from the spec reporter. Carriers: `scripts/ci-npm-test.sh`, `.github/workflows/tests.yml` (artifact `test-evidence-*`,
+>   with `/Library/Logs/DiagnosticReports`). Since: `8547d59`.
+>   CI floor, accepted by the owner and relayed by the coordinator: `tests.yml` keeps Node 22.19.0 and resolves Node 24
+>   as `>=24.22.0 <25`; the matrix labels stay `22.19.0` and `24` for artifact names. Reason: require the shipped V8
+>   baseline fix without allowing a runner-cached 24.21.0; the incident's exact cause remains unproven.
