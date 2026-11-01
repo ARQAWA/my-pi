@@ -142,7 +142,7 @@ function shortSummary(text: string): string {
 }
 
 /** Isolated, bounded tool loop. Browser work stays inside the caller's existing queue. */
-export async function executeRun(input: RunInput, ctx: ExtensionContext, selection: Awaited<ReturnType<typeof checkRunModel>>, signal: AbortSignal, page: RunPage, call: (chain: Step[]) => Promise<unknown>, folder: string, capture: (index: number, markdown: string) => Promise<RunResult["steps"][number]["files"]>): Promise<RunResult> {
+export async function executeRun(input: RunInput, ctx: ExtensionContext, selection: Awaited<ReturnType<typeof checkRunModel>>, signal: AbortSignal, page: RunPage, call: (chain: Step[]) => Promise<unknown>, folder: string, captureMarkdown: boolean, capture: (index: number, markdown: string) => Promise<RunResult["steps"][number]["files"]>): Promise<RunResult> {
 	let incomplete = false;
 	let completed = 0;
 	let mutations = 0;
@@ -162,11 +162,13 @@ export async function executeRun(input: RunInput, ctx: ExtensionContext, selecti
 		return { summary: shortSummary(stopped === "error" || stopped === "cancelled" ? `${message}; last confirmed action: ${completed ? input.actions[completed - 1] : "none"}` : message), reached, page: { name: page.name, url: page.url, title: page.title }, stopped, steps, files: { folder, recording: null, script: null, recording_error: null } };
 	};
 	async function refresh(preserveIds = false) {
-		const observed = await call([{ method: preserveIds ? "captureView" : "view", args: [] }]) as { markdown: string; text: string[] };
-		fullView = observed.markdown;
-		const current = truncateView(fullView);
-		visibleText = observed.text;
+		if (!preserveIds || captureMarkdown) {
+			const observed = await call([{ method: preserveIds ? "captureView" : "view", args: [] }]) as { markdown: string; text: string[] };
+			fullView = observed.markdown;
+			visibleText = observed.text;
+		}
 		if (!preserveIds) {
+			const current = truncateView(fullView);
 			ids = new Map();
 			page.summary = current.text;
 			modelView = current.text.replace(/\[id:(\d+)\]/g, (_match, value: string) => {

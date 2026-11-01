@@ -22,10 +22,10 @@ async function button(page: Page, label: string, signal: AbortSignal): Promise<v
 	} finally { await handle.dispose(); }
 }
 
-export async function startRecording(browser: Browser, signal: AbortSignal): Promise<Page | null> {
+export async function startRecording(browser: Browser, signal: AbortSignal, waitForWindow: boolean): Promise<Page | null> {
 	const matches = (target: ReturnType<Browser["targets"]>[number]) => target.url().startsWith("devtools://") && target.url().includes("hasOtherClients=true");
 	let target = browser.targets().find(matches);
-	if (!target && typeof browser.waitForTarget === "function") {
+	if (!target && waitForWindow && typeof browser.waitForTarget === "function") {
 		try { target = await untilAborted(browser.waitForTarget(matches, { timeout: 5000 }), signal); }
 		catch (error) { if (signal.aborted) throw error; }
 	}

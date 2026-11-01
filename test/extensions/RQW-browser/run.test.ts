@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import { createBrowserExtension } from "../../../extensions/RQW-browser/index.ts";
+import { setup as setupRun, call, done, reply } from "./run-helper.ts";
 
 function setup(provider = "anthropic", available: any[] = [{ provider, id: provider === "anthropic" ? "claude-haiku-5-5" : "gpt-6-luna", reasoning: true }]) {
 	let tool: any;
@@ -73,6 +74,15 @@ it("gives the model no call chain, only open, tabs, screenshot, markdown, run an
 	]) assert.ok(env.tool.description.includes(line), line);
 	await assert.rejects(env.call({ action: "call", name: "main", chain: [{ method: "url", args: [] }] }), /"call" is not available; use "run"/);
 	assert.equal(env.loads(), 0);
+});
+
+it("does not wait for DevTools on an existing tab with default recording", async () => {
+	const env = setupRun([reply(call(0)), done()], { waitForTarget: async () => ({ asPage: async () => { throw new Error("unexpected wait"); } }) });
+	await env.call({ action: "open", name: "existing" });
+	const result = await env.call({ action: "run", name: "existing", actions: ["first"], expected: "Done" });
+	assert.equal(result.files.recording_error, "No DevTools window for this tab.");
+	assert.equal(result.stopped, null);
+	await env.shutdown();
 });
 
 it("does not re-enable direct calls with the removed test option", async () => {

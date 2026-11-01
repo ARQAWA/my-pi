@@ -1,4 +1,4 @@
-import { lstat, mkdir, rename, stat } from "node:fs/promises";
+import { link, lstat, mkdir, stat, unlink } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type { Browser, CDPSession, Page } from "puppeteer-core";
 import { devtoolsFrameId } from "./frames.ts";
@@ -98,7 +98,7 @@ export class DownloadManager {
 			if (event.state === "inProgress") return;
 			this.#pending.delete(event.guid);
 			if (event.state === "canceled") return;
-			void this.#complete(pending, event.filePath).catch(() => {});
+			return this.#complete(pending, event.filePath).catch(() => {});
 		};
 		session.on("Browser.downloadWillBegin", this.#willBegin as never);
 		session.on("Browser.downloadProgress", this.#progress as never);
@@ -113,8 +113,10 @@ export class DownloadManager {
 		// reported where Chromium saved it.
 		const name = typeof pending.suggestedFilename === "string" ? basename(pending.suggestedFilename) : "";
 		const target = join(directory, name);
-		const movable = this.#perTab && name !== "" && name !== "." && name !== ".." && (await canMoveDownload(source, pending.guid, target));
-		if (movable) await rename(source, target).catch(() => {});
+		const movable = this.#perTab && name !== "" && name !== "." && name !== ".." && (await canMoveDownload(source, pending.guid));
+		if (movable) {
+			try { await link(source, target); await unlink(source); } catch { /* Leave the download where Chromium saved it. */ }
+		}
 	}
 
 }
@@ -132,12 +134,11 @@ async function waitForFile(file: string): Promise<void> {
 }
 
 /**
- * Whether `source` is a regular file saved under a UUID-shaped download GUID, and `target` is free or a file it may
- * replace. The peer names the GUID, the saved path and the suggested name, so a symlink or directory stays where it is.
+ * Whether `source` is a regular file saved under a UUID-shaped download GUID. A symlink or directory stays where it is.
  */
-async function canMoveDownload(source: string, guid: string, target: string): Promise<boolean> {
+async function canMoveDownload(source: string, guid: string): Promise<boolean> {
 	if (!DOWNLOAD_GUID.test(guid) || basename(source) !== guid) return false;
-	return (await entryKind(source)) === "file" && (await entryKind(target)) !== "other";
+	return (await entryKind(source)) === "file";
 }
 
 /** What a path names, without following a symlink there. */

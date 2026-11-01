@@ -195,6 +195,17 @@ it("writes requested captures at the start and after each operation", async () =
 	await disabled.shutdown();
 });
 
+it("only observes intermediate chain steps when Markdown capture needs them", async () => {
+	for (const markdown of [false, true]) {
+		const env = setup([reply(chainCall([{ method: "press", args: ["A"] }, { method: "press", args: ["B"] }])), done()]);
+		const result = await env.call({ ...task, actions: ["press twice"], capture: { markdown }, record: false });
+		assert.equal(result.stopped, null);
+		assert.deepEqual(env.observations, markdown ? ["", "A", "AB"] : ["", "AB"]);
+		if (markdown) assert.match(await readFile(result.steps[1].files.markdown, "utf8"), /Ready/);
+		await env.shutdown();
+	}
+});
+
 it("keeps all page Markdown and preserves targets across read operations in one chain", async () => {
 	const longText = `${"x".repeat(17000)}END-OF-PAGE`;
 	const env = setup([reply(chainCall([{ method: "id", args: [1] }, { method: "isVisible", args: [] }, { method: "id", args: [1] }, { method: "isEnabled", args: [] }])), done()], { pageText: longText });

@@ -379,14 +379,14 @@ export function createBrowserExtension(deps: BrowserDependencies = {}) {
 							let recorder: Page | null = null;
 							let recordingError: string | null = null;
 							if (input.record !== false) {
-								try { recorder = await startRecording(tab.browser, combined); if (!recorder) recordingError = "No DevTools window for this tab."; }
+								try { recorder = await startRecording(tab.browser, combined, Boolean(address) || input.record === true); if (!recorder) recordingError = "No DevTools window for this tab."; }
 								catch (error) { recordingError = error instanceof Error ? error.message : String(error); }
 								if (!recorder && input.record === true && recordingError === "No DevTools window for this tab.") throw new Error(recordingError);
 							}
 							executingRun = true;
 							const result = await executeRun({ actions: input.actions!, expected: input.expected!, conditions: input.conditions, credentials: input.credentials }, ctx, selected, combined,
 								{ name: tabName, url: tab.page.url(), title: "", summary: "" },
-								async chain => await callChain(tab, chain, { signal: combined, budgetMs: Math.max(1, deadline - Date.now()), images, resize: deps.resizeImage ?? resizePiImage, runView: chain.length === 1 && ["view", "captureView"].includes(chain[0]?.method ?? "") }), folder, async (index, markdown) => {
+								async chain => await callChain(tab, chain, { signal: combined, budgetMs: Math.max(1, deadline - Date.now()), images, resize: deps.resizeImage ?? resizePiImage, runView: chain.length === 1 && ["view", "captureView"].includes(chain[0]?.method ?? "") }), folder, input.capture?.markdown === true, async (index, markdown) => {
 									const prefix = join(folder, String(index).padStart(2, "0"));
 									const files = { screenshot: null as string | null, markdown: null as string | null, html: null as string | null };
 									if (input.capture?.screenshot) { files.screenshot = `${prefix}.png`; await writeFile(files.screenshot, await untilAborted(tab.page.screenshot({ type: "png" }), combined)); }

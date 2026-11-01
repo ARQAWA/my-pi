@@ -29,7 +29,7 @@ class FakeSession {
 	detached = 0;
 	on(event: string, handler: (event: Any) => void) { (this.handlers[event] ??= []).push(handler); }
 	off(event: string, handler: (event: Any) => void) { this.handlers[event] = (this.handlers[event] ?? []).filter(known => known !== handler); }
-	emit(event: string, payload: Any) { for (const handler of this.handlers[event] ?? []) handler(payload); }
+	emit(event: string, payload: Any) { return Promise.all((this.handlers[event] ?? []).map(handler => handler(payload))); }
 	async send(method: string, params: Any) { this.sent.push([method, params]); }
 	async detach() { this.detached++; }
 }
@@ -212,6 +212,20 @@ it("saves managed downloads under their suggested names and preserves them on cl
 	await env.call({ action: "close" });
 	assert.equal(browser.session.detached, 1);
 	assert.equal(await readFile(path, "utf8"), "data");
+	await env.shutdown();
+});
+
+it("keeps both downloads when the suggested name already exists", async () => {
+	const env = setup();
+	await env.call({ action: "open", downloads: "saved" });
+	const browser = env.browsers[0];
+	const directory = browser.session.sent[0][1].downloadPath;
+	await writeFile(join(directory, "a.txt"), "original");
+	await writeFile(join(directory, GUID), "new");
+	await browser.session.emit("Browser.downloadWillBegin", { guid: GUID, suggestedFilename: "a.txt", frameId: "F1" });
+	await browser.session.emit("Browser.downloadProgress", { guid: GUID, state: "completed" });
+	assert.equal(await readFile(join(directory, "a.txt"), "utf8"), "original");
+	assert.equal(await readFile(join(directory, GUID), "utf8"), "new");
 	await env.shutdown();
 });
 
