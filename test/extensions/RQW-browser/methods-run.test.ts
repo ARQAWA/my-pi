@@ -462,9 +462,13 @@ it("does not wait for a finished handle to be disposed", async () => {
 
 it("times out an exact text wait that only partially matches", async () => {
 	const env = await opened();
-	env.env.body.innerText = "All Saved now";
-	mock.timers.enable({ apis: ["setTimeout", "Date"] });
-	const result = await advance(env.runSteps([{ method: "waitForText", args: ["Saved", { exact: true, timeout: 300 }] }]));
+	let textRead = false;
+	Object.defineProperty(env.env.body, "innerText", { get: () => { textRead = true; return "All Saved now"; } });
+	mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+	const running = env.runSteps([{ method: "waitForText", args: ["Saved", { exact: true, timeout: 300 }] }]);
+	while (!textRead) await new Promise<void>(resolve => setImmediate(resolve));
+	mock.timers.tick(300);
+	const result = await running;
 	assert.equal(result.stopped, "error");
 	assert.match(result.summary, /waitForText.*timed out after 300ms/);
 });
