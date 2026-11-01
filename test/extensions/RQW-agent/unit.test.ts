@@ -1187,6 +1187,87 @@ test("a running child's queued progress notice does not hold a finished sibling 
 	live.runtime.close();
 });
 
+test("stop releases only recoverable durable child history and preserves older branches", async t => {
+	const root = await temp(t);
+	for (const durable of [true, false]) {
+		const parent = durable ? SessionManager.create(root, join(root, "parent")) : SessionManager.inMemory(root);
+		parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+		const live = runtimeFixture(parent, root);
+		await live.execute({ action: "start", task: "first task", tools: [] });
+		await live.runtime.wait(new AbortController().signal);
+		const beforeStop = parent.getLeafId()!;
+		assert.ok(retainedChildManager(parent, "agent", 1));
+		await live.execute({ action: "stop", id: "agent#1" });
+		if (durable) await until(() => !retainedChildManager(parent, "agent", 1));
+		else assert.ok(retainedChildManager(parent, "agent", 1));
+		parent.branch(beforeStop);
+		await live.emit("session_tree");
+		await live.execute({ action: "send", id: "agent#1", task: "second task" });
+		await live.runtime.wait(new AbortController().signal);
+		assert.deepEqual(userTexts(live.requests.at(-1)), ["first task", "second task"]);
+		live.runtime.close();
+	}
+});
+
+test("stop releases a running child after its durable history settles", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const entered = Promise.withResolvers<void>();
+	const response = Promise.withResolvers<string>();
+	const live = runtimeFixture(parent, root, async () => { entered.resolve(); return response.promise; });
+	await live.execute({ action: "start", task: "first task", tools: [] });
+	await entered.promise;
+	await live.execute({ action: "stop", id: "agent#1" });
+	response.resolve("answer");
+	await until(() => !retainedChildManager(parent, "agent", 1));
+	live.runtime.close();
+});
+
+test("stop retains history when an intermediate saved entry is malformed", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	let session: AgentSession | undefined;
+	live.events.on("rqw-codex:session-policy", (request: any) => { session = request.session; });
+	await live.execute({ action: "start", task: "first task", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	const disposed = Promise.withResolvers<void>();
+	const dispose = session!.dispose.bind(session);
+	t.mock.method(session!, "dispose", () => { dispose(); disposed.resolve(); });
+	const manager = retainedChildManager(parent, "agent", 1)!;
+	const file = manager.getSessionFile()!;
+	const lines = (await readFile(file, "utf8")).split("\n");
+	const user = lines.findIndex(line => line.includes('"role":"user"'));
+	assert.ok(user > 0 && user < lines.length - 2);
+	lines[user] = "malformed";
+	await writeFile(file, lines.join("\n"));
+	await live.execute({ action: "stop", id: "agent#1" });
+	await disposed.promise;
+	assert.equal(retainedChildManager(parent, "agent", 1), manager);
+	live.runtime.close();
+});
+
+test("stop keeps an unflushed durable child available to its earlier branch", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root);
+	await live.execute({ action: "start", task: "old task", tools: [] });
+	await live.runtime.wait(new AbortController().signal);
+	await live.execute({ action: "restart", id: "agent#1", tools: [] });
+	const beforeStop = parent.getLeafId()!;
+	await live.execute({ action: "stop", id: "agent#1" });
+	assert.ok(retainedChildManager(parent, "agent", 1));
+	parent.branch(beforeStop);
+	await live.emit("session_tree");
+	await live.execute({ action: "send", id: "agent#1", task: "first task" });
+	await live.runtime.wait(new AbortController().signal);
+	assert.deepEqual(userTexts(live.requests.at(-1)), ["first task"]);
+	live.runtime.close();
+});
+
 test("a replaced generation and a parent with running descendants stay safe at old deadlines", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	let now = 0;

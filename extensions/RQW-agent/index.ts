@@ -1,5 +1,6 @@
 // Extension 5: asynchronous subagents with caller-local lifecycle and recursive delegation.
 import { createHash, randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { ProgressReports, PROGRESS_SKILL_PATH } from "./progress.ts";
 import registerMainProgress from "./main-progress.ts";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
@@ -1411,7 +1412,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		}
 	}
 
-	function close(a: Agent, preserveBridge = false) {
+	function close(a: Agent, preserveBridge = false, afterClose?: () => void) {
 		a.cancelSleep?.(); a.cancelSleep = undefined;
 		a.progress.invalidate();
 		if (!preserveBridge) a.bridge.close();
@@ -1433,6 +1434,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				catch { /* Explicit stop ends retained work too. */ }
 			}
 			a.session.dispose();
+			afterClose?.();
 		})();
 		onRunning();
 	}
@@ -1719,7 +1721,16 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				agents.delete(a.id);
 				onRunning();
 				coordinator.change(`${name}#${a.id}`, "stop");
-				close(a);
+				close(a, false, () => {
+					const manager = a.session.sessionManager;
+					const file = manager.getSessionFile();
+					if (!file || !ctx.sessionManager.getSessionFile() || retainedChildManager(ctx.sessionManager, name, a.id) !== manager) return;
+					try {
+						const saved = openChildManager(ctx.sessionManager, file, a.config.cwd ?? ctx.cwd, name, a.id, false);
+						if (saved.getSessionId() === manager.getSessionId() && isDeepStrictEqual(saved.getEntries(), manager.getEntries()))
+							releaseChildManager(ctx.sessionManager, name, a.id);
+					} catch { /* Keep the manager when its history cannot be reopened. */ }
+				});
 				return ok(`${name}#${a.id} stopped`);
 			}
 			case "restart": {

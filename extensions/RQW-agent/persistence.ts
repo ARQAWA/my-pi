@@ -21,7 +21,7 @@ export function retainedChildManager(parent: ReadonlySessionManager, kind: strin
 	return retainedChildren.get(parent)?.get(`${kind}#${id}`);
 }
 
-/** Forgets the retained manager of a child that went to sleep: its history is reopened from its file when needed. */
+/** Forgets a retained manager whose history can be reopened from its file. */
 export function releaseChildManager(parent: ReadonlySessionManager, kind: string, id: number): void {
 	retainedChildren.get(parent)?.delete(`${kind}#${id}`);
 }
@@ -95,7 +95,7 @@ export function createChildManager(parent: ReadonlySessionManager, cwd: string, 
 	return retainChild(parent, kind, id, SessionManager.open(file, directory, cwd));
 }
 
-export function openChildManager(parent: ReadonlySessionManager, childFile: string, cwd: string, kind: string, id: number): SessionManager {
+export function openChildManager(parent: ReadonlySessionManager, childFile: string, cwd: string, kind: string, id: number, retain = true): SessionManager {
 	const directory = childDirectory(parent, kind, id);
 	if (!directory) throw new Error("Cannot open a durable child of an in-memory parent");
 	const file = resolve(childFile);
@@ -112,7 +112,8 @@ export function openChildManager(parent: ReadonlySessionManager, childFile: stri
 	if (!lstatSync(directory).isDirectory() || !lstatSync(file).isFile()) {
 		throw new Error("Child session must be a regular file in its owned directory");
 	}
-	return retainChild(parent, kind, id, SessionManager.open(file, directory, cwd));
+	const manager = SessionManager.open(file, directory, cwd);
+	return retain ? retainChild(parent, kind, id, manager) : manager;
 }
 
 export function repairInterrupted(session: AgentSession): boolean {
