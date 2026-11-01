@@ -7147,3 +7147,12 @@ Source: `acc4a0a7:DECISIONS.md`. Verbatim replaced text:
 > The priority is prediction cancellation, Codex steering force (`ctrl+enter to send now`), the Escape force for other-provider steering or any queued follow-up (`esc to send now`), main interruption, background stop, follow-up steering, then prediction generation.
 
 > other queued messages stay in Pi's queue, except that Escape sends the user follow-ups too (`[D-KEYS-STEER]`);
+
+## A-0407 · archived 2026-11-01 · Send now and Predictions · key hints in the editor
+
+Status: SUPERSEDED by `[D-KEYS-HINTS]` (DECISIONS.md#send-now) and `[D-PREDICTIONS]`: the input shows only `ctrl+e to suggest`, the Esc hints are on the activity line, Ctrl+E toggles in every state and Ctrl+R is free.
+Source: `16085f2f:DECISIONS.md`. Verbatim replaced text:
+
+> **Editor key hints** `[D-KEYS-HINTS]`. Part 4 of the keys design. A dim italic hint in the strictly empty main editor starts two spaces after the cursor. The priority is prediction cancellation, queued follow-up during a turn (`ctrl+enter to steer`), Codex steering force (`ctrl+enter to send now`), the Escape force for other-provider steering (`esc to send now`), main interruption, background stop, follow-up steering, then prediction generation. A ready prediction replaces the idle hint; hints never enter the buffer or history, and Tab accepts only a ready prediction. Retry and compaction use the interruption hint. Predictions paints the offered send-now action; send-now paints its own fallback when predictions is off. Old outside queue, hold and loader key hints are hidden while the painter is active. Rendering uses cached rows; incompatible Pi shapes stay stock. Carriers: `extensions/RQW-predictions/editor.ts`, `extensions/RQW-send-now/hint-editor.ts`, `hint-ui.ts`. Tests: `test/extensions/RQW-predictions/hints.test.ts`, `test/extensions/RQW-send-now/hints.test.ts`.
+
+> It starts only when the owner presses Ctrl+E, immediately, and never by itself after an answer; it is skipped while the owner's queued messages wait. A new finished answer drops the old suggestion. Ctrl+R aborts a brewing suggestion and shows a 2 s burgundy state.

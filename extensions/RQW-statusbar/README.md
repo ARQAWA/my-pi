@@ -65,6 +65,11 @@ Completed undelivered results count zero. RQW-tools independently counts only Ma
 not child jobs again. Both producers use public `pi.events` v1 running-count sources; the consumer accepts
 missing `backgroundProcesses` from older v1 sources as zero. Either producer may be disabled alone.
 
+RQW-send-now's Esc key hint (for example `esc esc to stop background`) is drawn dim italic two spaces right of the
+activity text, taken from its `rqw:activity-hint:offer` source on `pi.events`; nothing is imported. It is left out when
+it does not fit whole and beside Pi's own retry and summary text (they carry their key).
+Without RQW-send-now or with the status bar off no hint is drawn. The painted hint is cached per text and theme.
+
 At genuine idle there is no activity line. This changes no visuals, timing, colours, agent lists, cards,
 settings or dependencies. Contract and owner sources: [Status bar](../../DECISIONS.md#status-bar).
 Source protocol: [Running-count contract](../RQW-agent/README.md#contract-for-p6).

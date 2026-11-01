@@ -27,6 +27,11 @@ const ACTIVITY_KEY = "rqw-statusbar-activity";
 // RQW-settings owns /fast-gpt. Its channels on pi.events are the only coupling; nobody answering means no lightning.
 const FAST_GPT_QUERY = "rqw-settings:fast-gpt-query";
 const FAST_GPT_CHANGED = "rqw-settings:fast-gpt";
+// RQW-send-now supplies the Esc key hints for the activity line. Its channels on pi.events are the only coupling;
+// nobody answering means no hint.
+const HINT_REQUEST = "rqw:activity-hint:request";
+const HINT_OFFER = "rqw:activity-hint:offer";
+interface HintSource { snapshot(): string | undefined; subscribe(listener: () => void): () => void }
 type SessionManager = ExtensionContext["sessionManager"] & { getEntryCount(): number };
 const COLORS: Record<Exclude<Role, "effort" | "predictionAbort">, ThemeColor> = {
 	bar: "text", barEmpty: "dim", label: "muted", model: "text", path: "text",
@@ -89,6 +94,8 @@ export default function statusbar(pi: ExtensionAPI) {
 	});
 	const backgroundSessions = new Set<string>();
 	let prediction: { sessionId: string; state: "brewing" | "aborted"; abortedUntil?: number } | undefined;
+	let hintSource: HintSource | undefined;
+	let unsubscribeHints: (() => void) | undefined;
 	let animationStart = now();
 	let shimmer: ReturnType<typeof setInterval> | undefined;
 	let lightCtx: ExtensionContext | undefined;
@@ -145,6 +152,16 @@ export default function statusbar(pi: ExtensionAPI) {
 		redraw?.();
 	};
 	const unsubscribePrediction = pi.events.on("rqw-predictions:activity", receivePrediction);
+	const adoptHints = (source: HintSource | undefined) => {
+		unsubscribeHints?.();
+		hintSource = source;
+		unsubscribeHints = source?.subscribe(() => redraw?.());
+		redraw?.();
+	};
+	const unsubscribeHintOffer = pi.events.on(HINT_OFFER, (event: unknown) => {
+		const value = event as { sessionId?: unknown; source?: HintSource } | null;
+		if (value?.source && value.sessionId === lightCtx?.sessionManager.getSessionId()) adoptHints(value.source);
+	});
 	// The context row is drawn as the bottom border of this extension's editor. One factory per extension instance
 	// identifies our editor in `getEditorComponent()`; its border reads the current install's source.
 	let border: BorderSource | undefined;
@@ -188,6 +205,7 @@ export default function statusbar(pi: ExtensionAPI) {
 		showNativeSpinner();
 		unsubscribeFast?.();
 		unsubscribeFast = undefined;
+		adoptHints(undefined);
 		dispose?.();
 		resample = undefined;
 		jobs.stop();
@@ -208,14 +226,23 @@ export default function statusbar(pi: ExtensionAPI) {
 	}
 
 	/** Pi supplies one leading spacer. The active widget adds the status and one trailing empty line, idle adds nothing. */
-	const activityWidget = () => {
+	const activityWidget = (ctx: ExtensionContext) => () => {
 		let last: { width: number; chrome: ActivityChrome; rows: string[] } | undefined;
+		// The dim italic hint is painted once per text and theme.
+		let painted: { hint: string; theme: Theme; value: string } | undefined;
+		const paintHint = (hint: string): string => {
+			const theme = ctx.ui.theme;
+			if (!painted || painted.hint !== hint || painted.theme !== theme) painted = { hint, theme, value: theme.italic(theme.fg("dim", hint)) };
+			return painted.value;
+		};
 		return {
 			render(width: number): string[] {
-				const chrome = chromeNow();
-				if (!chrome) return [];
-				if (!last || last.width !== width || last.chrome.text !== chrome.text || last.chrome.compacting !== chrome.compacting || last.chrome.retry !== chrome.retry || last.chrome.frame !== chrome.frame)
-					last = { width, chrome, rows: activityRows(width, chrome) };
+				const current = chromeNow();
+				if (!current) return [];
+				// Pi's own retry and summary text carries its key already, so only our own status text gets a hint.
+				const chrome: ActivityChrome = { ...current, hint: nativeActivity ? undefined : hintSource?.snapshot() };
+				if (!last || last.width !== width || last.chrome.text !== chrome.text || last.chrome.compacting !== chrome.compacting || last.chrome.retry !== chrome.retry || last.chrome.hint !== chrome.hint || last.chrome.frame !== chrome.frame)
+					last = { width, chrome, rows: activityRows(width, chrome, paintHint) };
 				return last.rows;
 			},
 			invalidate() {},
@@ -223,7 +250,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	};
 	const setActivity = (ctx: ExtensionContext, show: boolean): void => {
 		try {
-			ctx.ui.setWidget(ACTIVITY_KEY, show ? activityWidget : undefined,
+			ctx.ui.setWidget(ACTIVITY_KEY, show ? activityWidget(ctx) : undefined,
 				show ? { placement: "aboveEditor" } : undefined);
 		} catch {
 			// A widget error must not prevent the footer/editor install or stock restore.
@@ -240,6 +267,7 @@ export default function statusbar(pi: ExtensionAPI) {
 			if (ctx.sessionManager) pi.events.emit("rqw-predictions:activity-query", { sessionId: ctx.sessionManager.getSessionId(), offer: receivePrediction });
 			unsubscribeFast = pi.events.on(FAST_GPT_CHANGED, () => { syncShimmer(); redraw?.(); });
 			jobs.start();
+			if (ctx.sessionManager) pi.events.emit(HINT_REQUEST, { sessionId: ctx.sessionManager.getSessionId(), reply: adoptHints });
 			setActivity(ctx, true);
 			// Pi has no event for settings changes and hands out a full copy on every read: sample the compaction settings
 			// here and again at the turn and model events instead of on every frame.
@@ -464,6 +492,7 @@ export default function statusbar(pi: ExtensionAPI) {
 		early.dispose();
 		unsubscribeBackground();
 		unsubscribePrediction();
+		unsubscribeHintOffer();
 		backgroundSessions.clear();
 		release();
 		running = false;

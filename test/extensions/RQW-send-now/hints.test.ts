@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { AgentSession, CustomEditor, InteractiveMode, createEventBus, initTheme, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Container, CURSOR_MARKER } from "@earendil-works/pi-tui";
+import { Container } from "@earendil-works/pi-tui";
 import sendNow from "../../../extensions/RQW-send-now/index.ts";
 import { fakeSession } from "./harness.ts";
 
 const plain = (row: string) => stripVTControlCharacters(row.replace(/\x1b_[^\x07]*\x07/g, ""));
 
-it("without predictions, shows the action for each queue and background state", async t => {
+it("offers the Esc hint for each queue and background state and never draws it in the editor", async t => {
 	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
 	const events = createEventBus();
 	const handlers = new Map<string, Function[]>();
@@ -37,10 +37,21 @@ it("without predictions, shows the action for each queue and background state", 
 			setWidget(_key: string, factory: any) { if (factory) factory(tui); },
 			onTerminalInput(fn: Function) { listeners.push(fn); return () => { const index = listeners.indexOf(fn); if (index >= 0) listeners.splice(index, 1); }; } } };
 	const fire = (name: string) => { for (const fn of handlers.get(name) ?? []) fn({}, ctx); };
+	let offered: any;
+	events.on("rqw:activity-hint:offer", (offer: any) => { offered = offer; });
 	fire("session_start");
 	t.after(() => fire("session_shutdown"));
-	const row = () => plain(editor.render(80)[1]).trim();
-	assert.equal(row(), "");
+	assert.equal(offered.sessionId, "main");
+	let source: any;
+	events.emit("rqw:activity-hint:request", { sessionId: "other", reply: () => assert.fail("another session") });
+	events.emit("rqw:activity-hint:request", { sessionId: "main", reply: (value: unknown) => { source = value; } });
+	assert.equal(source, offered.source);
+	// The editor stays empty in every state; the hint is what the activity line draws.
+	const row = () => {
+		assert.equal(plain(editor.render(80)[1]).trim(), "");
+		return source.snapshot();
+	};
+	assert.equal(row(), undefined);
 	state.idle = false; emit({ type: "agent_start" });
 	assert.equal(row(), "esc to interrupt");
 	let finish!: (value: undefined) => void;
@@ -50,8 +61,6 @@ it("without predictions, shows the action for each queue and background state", 
 	finish(undefined); await pending;
 	assert.equal(row(), "esc to interrupt");
 	session._runInputHandlers = async (text: string, images: unknown) => ({ text, images });
-	const line = editor.render(80)[1];
-	assert.ok(line.includes(CURSOR_MARKER)); assert.ok(line.includes("\x1b[3m"));
 	session._followUpMessages.push("next"); emit({ type: "queue_update" });
 	assert.equal(row(), "ctrl+enter to steer");
 	await session._queueSteer("change");
@@ -74,13 +83,11 @@ it("without predictions, shows the action for each queue and background state", 
 	assert.equal(row(), "esc esc to stop background");
 	stopLateSource();
 	assert.equal(row(), "ctrl+enter to steer");
-	editor.setText(" "); assert.equal(row().includes("ctrl+enter"), false);
-	editor.setText(""); editor.handleInput("\t"); editor.handleInput("\r");
+	editor.handleInput("\t"); editor.handleInput("\r");
 	assert.equal(editor.getText(), "");
-	assert.equal(plain(editor.render(10)[1]).trim(), "");
 });
 
-it("removes the old outside hints while keeping queue rows, loader and retry countdown", t => {
+it("removes the old outside hints only while a consumer draws the Esc hints, keeping queue rows, loader and retry countdown", t => {
 	initTheme();
 	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
 	const events = createEventBus();
@@ -112,6 +119,12 @@ it("removes the old outside hints while keeping queue rows, loader and retry cou
 	fire("session_start");
 	host.updatePendingMessagesDisplay();
 	host.setExtensionStatus("rqw-followup-hold", "follow-up waits for the final answer");
+	// Without a consumer Pi's own hints stay.
+	assert.match(plain(host.pendingMessagesContainer.children.map((child: any) => child.text ?? "").join(" ")), /edit all queued messages/);
+	assert.equal(statuses.get("rqw-followup-hold"), "follow-up waits for the final answer");
+	let source: any;
+	events.emit("rqw:activity-hint:request", { sessionId: "main", reply: (value: unknown) => { source = value; } });
+	const stopConsumer = source.subscribe(() => {});
 	assert.doesNotMatch(plain(host.pendingMessagesContainer.children.map((child: any) => child.text ?? "").join(" ")), /edit all queued messages/);
 	assert.equal(statuses.get("rqw-followup-hold"), undefined);
 	input("x"); focused = editor;
@@ -124,11 +137,17 @@ it("removes the old outside hints while keeping queue rows, loader and retry cou
 	host.showStatusIndicator(indicator);
 	assert.match(plain(indicator.render()[0]), /Retrying \(1\/3\) in 5s/);
 	assert.doesNotMatch(plain(indicator.render()[0]), /to cancel/);
-	assert.doesNotMatch(plain(host.extensionWidgetsAbove.get("rqw-statusbar-activity").render(80)[0]), /to cancel/);
+	// The activity line's retry text keeps its own key: it is the hint there.
+	assert.match(plain(host.extensionWidgetsAbove.get("rqw-statusbar-activity").render(80)[0]), /Retrying 1\/3 in 5s · esc to cancel/);
 	focused = {}; input("x");
 	focused = editor;
 	assert.doesNotMatch(plain(indicator.render()[0]), /to cancel/);
 	assert.doesNotMatch(plain(host.pendingMessagesContainer.children.map((child: any) => child.text ?? "").join(" ")), /edit all queued messages/);
+	assert.equal(statuses.get("rqw-followup-hold"), undefined);
+	stopConsumer();
+	assert.equal(statuses.get("rqw-followup-hold"), "follow-up waits for the final answer");
+	assert.match(host.pendingMessagesContainer.children.map((child: any) => child.text ?? "").join(" "), /edit all queued messages/);
+	source.subscribe(() => {});
 	assert.equal(statuses.get("rqw-followup-hold"), undefined);
 	fire("session_shutdown");
 	assert.equal(statuses.get("rqw-followup-hold"), "follow-up waits for the final answer");

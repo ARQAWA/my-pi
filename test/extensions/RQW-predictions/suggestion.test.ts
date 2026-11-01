@@ -86,15 +86,16 @@ describe("RQW-predictions gray suggestion", () => {
 		assert.deepEqual(h.reached, [TAB]);
 	});
 
-	it("is hidden while the chat works, a message waits, or another component has the focus", async () => {
+	it("stays visible while the chat works or a message waits, and Tab takes it; it is hidden when another component has the focus", async () => {
 		const h = await ready();
 		h.state.idle = false;
-		assert.equal(plain(h.screen()[1]).includes("run the tests"), false);
-		h.key(TAB);
-		assert.equal(h.editor.getText(), "");
-		h.state.idle = true;
+		assert.equal(plain(h.screen()[1]).trim(), "run the tests");
 		h.state.pending = true;
-		assert.equal(plain(h.screen()[1]).includes("run the tests"), false);
+		assert.equal(plain(h.screen()[1]).trim(), "run the tests");
+		h.key(TAB);
+		assert.equal(h.editor.getText(), "run the tests");
+		h.editor.setText("");
+		h.state.idle = true;
 		h.state.pending = false;
 		h.setFocus({});
 		assert.equal(plain(h.screen()[1]).includes("run the tests"), false);
@@ -138,7 +139,7 @@ describe("RQW-predictions gray suggestion", () => {
 		assert.deepEqual(h.reached, [TAB]);
 	});
 
-	it("while a new request is open, its interrupt hint replaces the old suggestion", async () => {
+	it("while a new request is open, the old suggestion stays on the screen until the new one replaces it", async () => {
 		const slow = deferred<ReturnType<typeof text>>();
 		const h = await ready("old one", { replies: [suggestion("old one"), slow.promise] });
 		h.key(CTRL_E);
@@ -146,12 +147,12 @@ describe("RQW-predictions gray suggestion", () => {
 		assert.equal(h.forks.length, 2);
 		h.key("x");
 		h.key("\x7f");
-		assert.equal(plain(h.screen()[1]).trim(), "ctrl+r to interrupt");
-		h.key(TAB);
-		assert.equal(h.editor.getText(), "");
+		assert.equal(plain(h.screen()[1]).trim(), "old one");
 		slow.resolve(suggestion("new one"));
 		await settle();
-		assert.equal(h.controller.suggestion(), "new one");
+		assert.equal(plain(h.screen()[1]).trim(), "new one");
+		h.key(TAB);
+		assert.equal(h.editor.getText(), "new one");
 	});
 
 	it("a null answer or ending the session leaves the editor stock", async () => {

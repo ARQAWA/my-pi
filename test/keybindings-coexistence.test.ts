@@ -21,19 +21,28 @@ for (const extraFirst of [true, false]) it(`send-now and predictions share the e
 	assert.equal(Object.hasOwn(h.session, "_queueSteer"), true, "session was captured");
 	assert.ok((h.session as any)._eventListeners.length, "session events are observed");
 	const row = () => stripVTControlCharacters(h.screen()[1].replace(/\x1b_[^\x07]*\x07/g, "")).trim();
+	let source: any;
+	h.events.emit("rqw:activity-hint:request", { sessionId: "main", reply: (value: unknown) => { source = value; } });
 	h.asked(); await settle();
 	assert.equal(row(), "next step");
+	assert.equal(source.snapshot(), undefined);
+	// The Esc hints go to the activity line; the ready prediction stays in the input all the time.
 	h.state.idle = false;
 	(h.session as any)._emit({ type: "agent_start" });
-	assert.equal(row(), "esc to interrupt");
+	assert.equal(source.snapshot(), "esc to interrupt");
+	assert.equal(row(), "next step");
 	await (h.session as any)._queueSteer("adjust");
-	assert.equal(row(), "esc to send now");
+	assert.equal(source.snapshot(), "esc to send now");
+	assert.equal(row(), "next step");
 	h.setModel(OTHER);
-	assert.equal(row(), "ctrl+enter to send now");
+	assert.equal(source.snapshot(), "ctrl+enter to send now");
+	assert.equal(row(), "next step");
 	(h.session as any)._steeringMessages = [];
 	h.state.idle = true; background = 1; changed();
-	assert.equal(row(), "esc esc to stop background");
+	assert.equal(source.snapshot(), "esc esc to stop background");
+	assert.equal(row(), "next step");
 	background = 0; changed();
+	assert.equal(source.snapshot(), undefined);
 	assert.equal(row(), "next step");
 	h.key("\t");
 	assert.equal(h.editor.getText(), "next step");
@@ -65,10 +74,10 @@ for (const work of ["turn", "background", "idle"] as const) it(`Escape jumps bef
 	h.state.idle = work !== "turn";
 	h.viewport.following = false;
 	const row = () => stripVTControlCharacters(h.screen()[1].replace(/\x1b_[^\x07]*\x07/g, "")).trim();
-	const scrolledHint = row();
+	// No text hint announces the jump: RQW-scroll's own badge does that. The input keeps its one hint.
+	assert.equal(row(), "ctrl+e to suggest");
 	h.dispatch("\x1b");
 	assert.equal(h.viewport.jumps, 1);
-	assert.equal(scrolledHint, "esc to jump to latest");
 	assert.equal(interrupts, 0);
 	assert.equal(stops, 0);
 	h.dispatch("\x1b[27;1:2u");

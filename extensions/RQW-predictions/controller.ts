@@ -1,4 +1,4 @@
-// The prediction lifecycle: runs only on the owner's Ctrl+E, storage, cancel and the status.
+// The prediction lifecycle: runs only on the owner's Ctrl+E (start, or cancel while running), storage and the status.
 // Nothing here waits for the model: every run starts after control returns to the terminal.
 import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@earendil-works/pi-coding-agent";
 import { parseSuggestion, type PredictionContext } from "./context.ts";
@@ -22,16 +22,13 @@ export type Deps = {
 export type Controller = {
 	/** The ready suggestion, if any. */
 	suggestion(): string | undefined;
-	brewing(): boolean;
 	available(): boolean;
 	start(ctx: ExtensionContext): void;
 	stop(): void;
 	/** A turn ended: a new finished answer ends the old request and the old suggestion. Starts nothing. */
 	answered(ctx: ExtensionContext, event: TurnEndEvent): void;
-	/** The user's own request to generate. Does nothing while the chat works, has queued messages or a request runs. */
-	generate(): void;
-	/** The user's own cancel. Paints the status aborted; does nothing without an active request. */
-	cancel(): void;
+	/** The user's Ctrl+E, in every chat state: a running request is cancelled (status aborted), otherwise one starts. */
+	toggle(): void;
 	/** New work or another model: an unfinished request is dropped without the aborted paint. */
 	interrupt(): void;
 	/** Another branch: nothing of the old one stays. */
@@ -95,12 +92,12 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 
 	async function attempt(run: Run, session: ExtensionContext) {
 		try {
-			if (!live(run) || session.hasPendingMessages()) return;
+			if (!live(run)) return;
 			const capture = context.capture(session);
 			if (!capture) return;
 			// The check above and the prompt request have no await between them.
 			const served = await deps.source.get(run.abort.signal);
-			if (!live(run) || session.hasPendingMessages()) return;
+			if (!live(run)) return;
 			if (served === null) {
 				session.ui.notify("Prediction prompt is unavailable.", "warning");
 				return;
@@ -148,7 +145,6 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 
 	return {
 		suggestion: () => ready,
-		brewing: () => current !== undefined,
 		available: () => {
 			if (!ctx || !ctx.model || !context.hasAnswer(ctx)) return false;
 			const status = ctx.modelRegistry.getProviderAuthStatus?.("openai-codex");
@@ -171,12 +167,12 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 			deps.changed?.();
 			if (wasBrewing) publish();
 		},
-		generate() {
-			if (!ctx || current || !ctx.isIdle() || ctx.hasPendingMessages() || !context.hasAnswer(ctx)) return;
-			launch(ctx);
-		},
-		cancel() {
-			if (!drop()) return;
+		toggle() {
+			if (!ctx) return;
+			if (!drop()) {
+				if (context.hasAnswer(ctx)) launch(ctx);
+				return;
+			}
 			clearAborted();
 			abortedUntil = deps.now() + ABORTED_MS;
 			abortedTimer = setTimeout(() => { clearAborted(); publish(); }, ABORTED_MS);

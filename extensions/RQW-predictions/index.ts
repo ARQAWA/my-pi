@@ -9,40 +9,26 @@ import { installKeybindings } from "./keybindings.ts";
 export function install(pi: ExtensionAPI, deps: Deps, clearSource: () => void = () => {}) {
 	const context = installContext(pi);
 	let hint: string | undefined;
-	let offered: { snapshot(): string | undefined; subscribe(listener: () => void): () => void } | undefined;
-	let unsubscribeOffer: (() => void) | undefined;
 	let session: Parameters<typeof controller.start>[0] | undefined;
+	// The only hint of the input: the Esc hints live on the activity line, drawn by RQW-statusbar.
 	const update = () => {
-		hint = controller.brewing() ? "ctrl+r to interrupt" : offered?.snapshot() ?? (controller.available() && keys.ensure() ? "ctrl+e to suggest" : undefined);
+		hint = controller.available() && keys.ensure() ? "ctrl+e to suggest" : undefined;
 		editor.refresh();
 	};
 	const controller = createController(pi, context, { ...deps, changed: update });
 	let notify: ((message: string) => void) | undefined;
 	const keys = installKeybindings(message => notify?.(message));
 	const editor = installEditor({
-		generate: controller.generate,
-		cancel: controller.cancel,
+		toggle: controller.toggle,
 		suggestion: controller.suggestion,
-		// The manual keys act only while Pi's own actions on them are freed.
+		// The manual key acts only while Pi's own actions on it are freed.
 		hotkeys: keys.ensure,
-		hint: () => controller.brewing() ? hint : offered?.snapshot() ?? hint,
+		hint: () => hint,
 	});
 
-	const adopt = (source: typeof offered, mainEditor?: unknown) => {
-		if (mainEditor) editor.attach(mainEditor);
-		unsubscribeOffer?.();
-		offered = source;
-		unsubscribeOffer = source?.subscribe(update);
-		update();
-	};
-	pi.events.on("rqw:editor-hint:painter-query", (value: any) => {
-		if (session && value?.sessionId === session.sessionManager.getSessionId()) value.reply?.();
-	});
+	// A replaced main editor is announced by the key-hint code of RQW-send-now when it is loaded.
 	pi.events.on("rqw:editor-hint:editor-changed", (value: any) => {
 		if (session && value?.sessionId === session.sessionManager.getSessionId()) editor.attach(value.editor);
-	});
-	pi.events.on("rqw:editor-hint:offer", (value: any) => {
-		if (session && value?.sessionId === session.sessionManager.getSessionId()) adopt(value.source);
 	});
 
 	pi.on("session_start", (_event, ctx) => {
@@ -53,8 +39,7 @@ export function install(pi: ExtensionAPI, deps: Deps, clearSource: () => void = 
 		controller.start(ctx);
 		editor.start(ctx);
 		keys.ensure();
-		pi.events.emit("rqw:editor-hint:request", { sessionId: ctx.sessionManager.getSessionId(), reply: adopt });
-		pi.events.emit("rqw:editor-hint:painter", { sessionId: ctx.sessionManager.getSessionId(), active: true });
+		pi.events.emit("rqw:editor-hint:request", { sessionId: ctx.sessionManager.getSessionId(), reply: (mainEditor?: unknown) => { if (mainEditor) editor.attach(mainEditor); } });
 		update();
 	});
 	pi.on("message_end", event => context.record(event.message));
@@ -65,8 +50,7 @@ export function install(pi: ExtensionAPI, deps: Deps, clearSource: () => void = 
 	pi.on("session_compact", () => context.drop());
 	pi.on("session_tree", () => controller.clear());
 	pi.on("session_shutdown", event => {
-		if (session) pi.events.emit("rqw:editor-hint:painter", { sessionId: session.sessionManager.getSessionId(), active: false });
-		unsubscribeOffer?.(); unsubscribeOffer = undefined; offered = undefined; session = undefined; hint = undefined;
+		session = undefined; hint = undefined;
 		editor.stop();
 		controller.stop();
 		keys.release();

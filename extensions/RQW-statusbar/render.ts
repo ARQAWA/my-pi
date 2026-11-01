@@ -544,15 +544,27 @@ export interface ActivityChrome {
 	text: string;
 	compacting: boolean;
 	retry?: boolean;
+	/** The key hint after the status text, plain; drawn only when it fits whole. */
+	hint?: string;
 	/** The phase in frames, fractional: elapsed time over the frame length, not a tick count. */
 	frame: number;
 }
 
-/** The activity widget's two rows; Pi supplies its single leading spacer, even when this component is empty. */
-export function activityRows(width: number, chrome: ActivityChrome | undefined): string[] {
+/** Spaces between the status text and its key hint. */
+const HINT_GAP = 2;
+
+/**
+ * The activity widget's two rows; Pi supplies its single leading spacer, even when this component is empty.
+ * `paintHint` styles the key hint (dim italic); the caller caches it.
+ */
+export function activityRows(width: number, chrome: ActivityChrome | undefined, paintHint: (hint: string) => string = (hint) => hint): string[] {
 	if (!chrome) return [];
-	const text = fitPlain(singleLine(chrome.text), Math.max(0, width - 1));
-	return [width > 0 ? " " + (chrome.retry ? styled("#ffb347", false, text) : shimmerText(text, 1, chrome.frame, chrome.compacting ? GOLD : SILVER)) : "", ""];
+	if (width <= 0) return ["", ""];
+	const text = fitPlain(singleLine(chrome.text), width - 1);
+	const label = " " + (chrome.retry ? styled("#ffb347", false, text) : shimmerText(text, 1, chrome.frame, chrome.compacting ? GOLD : SILVER));
+	const hint = singleLine(chrome.hint ?? "");
+	const fits = hint !== "" && width - 1 - visibleWidth(text) - HINT_GAP >= visibleWidth(hint);
+	return [fits ? label + " ".repeat(HINT_GAP) + paintHint(hint) : label, ""];
 }
 
 /** A run of the top border: a rule, the hint, the title or the session ID. */

@@ -7,7 +7,6 @@ import { getKeybindings, isKeyRelease, isKeyRepeat, matchesKey, type TUI } from 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { installQueue, type Steer } from "./queue.ts";
 import { installQuiet } from "./quiet.ts";
-import { installHintEditor } from "./hint-editor.ts";
 import { installHintUI } from "./hint-ui.ts";
 
 /**
@@ -281,14 +280,13 @@ export default function sendNow(pi: ExtensionAPI) {
 			stopOffers = pi.events.on("rqw:running-counts:offer", (offer: any) => { if (offer?.version === 1) adopt(offer.source); });
 			pi.events.emit("rqw:running-counts:request", { version: 1, reply: adopt });
 		}
-		let attachEditor = (_editor?: unknown) => {};
 		let currentEditor: unknown;
-		let editorSupported = () => false;
-		const hintUI = typeof ctx.ui.theme?.italic === "function" ? installHintUI(ctx.sessionManager, (editor) => {
+		// The Esc hints are drawn by a consumer (RQW-statusbar's activity line); without one Pi's own hints stay.
+		const listeners = new Set<() => void>();
+		const hintUI = installHintUI(ctx.sessionManager, (editor) => {
 			currentEditor = editor;
-			attachEditor(editor);
 			pi.events.emit("rqw:editor-hint:editor-changed", { sessionId: ctx.sessionManager.getSessionId(), editor });
-		}, () => editorSupported()) : { release() {}, refresh() {} };
+		}, () => listeners.size > 0);
 		// The TUI is needed only to see what has focus; a widget factory is the public way to get it. Removed at once.
 		ctx.ui.setWidget(ENTRY, (instance) => {
 			tui = instance as FocusTUI;
@@ -299,14 +297,17 @@ export default function sendNow(pi: ExtensionAPI) {
 
 		if (typeof ctx.sessionManager.getSessionId !== "function") { hintUI.release(); return; }
 		const id = ctx.sessionManager.getSessionId();
-		let painter = false, brewing = false, compacting = false, retrying = false;
+		let compacting = false, retrying = false;
 		let hint: string | undefined;
-		const listeners = new Set<() => void>();
-		const visibleHint = () => getKeybindings().getKeys("tui.altScreen.bottom").some(key => key === "esc" || key === "escape") ? "esc to jump to latest" : hint;
-		const editor = installHintEditor(() => painter ? undefined : visibleHint(), () => hintUI.refresh());
-		attachEditor = editor.attach;
-		editorSupported = editor.supported;
-		const source = { snapshot: visibleHint, subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); } };
+		// The activity line's source: the Esc hint.
+		const source = {
+			snapshot: () => hint,
+			subscribe(listener: () => void) {
+				listeners.add(listener);
+				hintUI.refresh();
+				return () => { listeners.delete(listener); hintUI.refresh(); };
+			},
+		};
 		updateHint = () => {
 			const session = queue.session(ctx.sessionManager);
 			const tracked = queue.steering(ctx.sessionManager);
@@ -314,8 +315,7 @@ export default function sendNow(pi: ExtensionAPI) {
 			const followUp = (session as any)?.getFollowUpMessages?.()?.length ?? (ctx.hasPendingMessages() ? 1 : 0);
 			const special = compacting || retrying || session?.isCompacting === true;
 			const working = !ctx.isIdle() || special;
-			const next = brewing ? "ctrl+r to interrupt"
-				: special ? "esc to interrupt"
+			const next = special ? "esc to interrupt"
 				: working && followUp ? "ctrl+enter to steer"
 				: working && steering && ctx.model?.provider === CODEX ? "ctrl+enter to send now"
 				: working && steering ? "esc to send now"
@@ -324,13 +324,10 @@ export default function sendNow(pi: ExtensionAPI) {
 				: followUp ? "ctrl+enter to steer" : undefined;
 			if (hint === next) return;
 			hint = next;
-			for (const listener of listeners) listener();
-			editor.refresh();
+			for (const listener of [...listeners]) listener();
 		};
-		const stopRequest = pi.events.on("rqw:editor-hint:request", (request: any) => { if (request?.sessionId === id) request.reply?.(source, currentEditor); });
-		const stopPainter = pi.events.on("rqw:editor-hint:painter", (event: any) => { if (event?.sessionId === id) { painter = event.active === true; editor.refresh(); } });
-		const stopActivity = pi.events.on("rqw-predictions:activity", (event: any) => { if (event?.sessionId === id) { brewing = event.state === "brewing"; updateHint(); } });
-		pi.events.emit("rqw:editor-hint:painter-query", { sessionId: id, reply: () => { painter = true; } });
+		const stopEditorRequest = pi.events.on("rqw:editor-hint:request", (request: any) => { if (request?.sessionId === id) request.reply?.(currentEditor); });
+		const stopRequest = pi.events.on("rqw:activity-hint:request", (request: any) => { if (request?.sessionId === id) request.reply?.(source); });
 		const stopQueueWatch = queue.watch(ctx.sessionManager, updateHint);
 		const session = queue.session(ctx.sessionManager) as any;
 		let stopSessionEvents: (() => void) | undefined;
@@ -341,12 +338,11 @@ export default function sendNow(pi: ExtensionAPI) {
 			if (event.type === "auto_retry_end") retrying = false;
 			if (["queue_update", "agent_start", "agent_end", "agent_settled", "compaction_start", "compaction_end", "auto_retry_start", "auto_retry_end"].includes(event.type)) updateHint();
 		}); } catch { /* Unsupported session shape keeps Pi's behavior. */ }
-		if (typeof ctx.ui.theme?.italic === "function") editor.start(ctx);
 		updateHint();
-		pi.events.emit("rqw:editor-hint:offer", { sessionId: id, source });
+		pi.events.emit("rqw:activity-hint:offer", { sessionId: id, source });
 		stopHint = () => {
-			stopRequest(); stopPainter(); stopActivity(); stopQueueWatch(); stopSessionEvents?.();
-			listeners.clear(); editor.stop(); hintUI.release(); updateHint = () => {}; stopHint = () => {};
+			stopEditorRequest(); stopRequest(); stopQueueWatch(); stopSessionEvents?.();
+			listeners.clear(); hintUI.release(); updateHint = () => {}; stopHint = () => {};
 		};
 	});
 

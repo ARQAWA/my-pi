@@ -26,13 +26,16 @@ Steering keys and the silent force-send (Escape also sends a queued follow-up). 
 
 ## Editor hints
 
-The empty main input shows one dim italic key hint, two spaces after the cursor. Priority is: prediction cancellation,
-queued follow-up while the turn works, waiting Codex steering, waiting other-provider steering, main interruption, background stop, and an idle follow-up.
-The exact texts are `ctrl+r to interrupt`, `ctrl+enter to send now`, `esc to send now`, `esc to interrupt`,
+The Esc hints are drawn on the activity line, dim italic, two spaces right of its text, for example
+`Waiting for 2 agents  esc esc to stop background`. This extension only supplies the text: it answers
+`rqw:activity-hint:request` and offers `rqw:activity-hint:offer` on `pi.events` with `{ sessionId, source: { snapshot, subscribe } }`;
+RQW-statusbar draws it. Priority is: queued follow-up while the turn works, waiting Codex steering, waiting
+other-provider steering, main interruption, background stop, and an idle follow-up.
+The exact texts are `ctrl+enter to send now`, `esc to send now`, `esc to interrupt`,
 `esc esc to stop background` and `ctrl+enter to steer`. Compaction and retry use `esc to interrupt`.
-Typed text, including a space, hides the hint. It is not input; Tab and Enter keep their own behavior.
-RQW-predictions paints the hint when available; otherwise this extension decorates the same editor instance.
-While the transcript is scrolled up and Escape jumps down, the editor says `esc to jump to latest` instead of promising interruption. The old queue, hold and loader key hints are hidden while this painter is active and restored when it stops.
+The input has no hint of this extension. The scrolled-up jump is announced only by RQW-scroll's badge over the
+transcript. Pi's old queue, hold and loader key hints are hidden
+while a consumer draws the Esc hints and restored when it stops; without RQW-statusbar Pi's own hints stay.
 The version-checked Pi UI patch leaves unsupported shapes stock.
 
 ## How
