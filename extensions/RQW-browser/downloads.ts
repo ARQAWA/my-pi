@@ -33,6 +33,8 @@ export class DownloadManager {
 	#attaching?: Promise<void>;
 	#closed = false;
 	readonly #pending = new Map<string, PendingDownload>();
+	readonly #completions = new Set<Promise<void>>();
+	readonly #errors: unknown[] = [];
 	#willBegin?: (event: DownloadStarted & { frameId: string }) => void;
 	#progress?: (event: DownloadProgress) => void;
 
@@ -78,6 +80,8 @@ export class DownloadManager {
 		if (this.#progress) session.off("Browser.downloadProgress", this.#progress);
 		this.#session = undefined;
 		await session.detach().catch(() => undefined);
+		await Promise.all(this.#completions);
+		if (this.#errors.length) throw this.#errors[0];
 	}
 
 	async #attach(): Promise<void> {
@@ -98,7 +102,10 @@ export class DownloadManager {
 			if (event.state === "inProgress") return;
 			this.#pending.delete(event.guid);
 			if (event.state === "canceled") return;
-			return this.#complete(pending, event.filePath).catch(() => {});
+			const completion = this.#complete(pending, event.filePath).catch(error => { this.#errors.push(error); });
+			this.#completions.add(completion);
+			void completion.then(() => this.#completions.delete(completion));
+			return completion;
 		};
 		session.on("Browser.downloadWillBegin", this.#willBegin as never);
 		session.on("Browser.downloadProgress", this.#progress as never);
@@ -115,7 +122,8 @@ export class DownloadManager {
 		const target = join(directory, name);
 		const movable = this.#perTab && name !== "" && name !== "." && name !== ".." && (await canMoveDownload(source, pending.guid));
 		if (movable) {
-			try { await link(source, target); await unlink(source); } catch { /* Leave the download where Chromium saved it. */ }
+			await link(source, target);
+			await unlink(source);
 		}
 	}
 

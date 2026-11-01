@@ -226,6 +226,7 @@ it("keeps both downloads when the suggested name already exists", async () => {
 	await browser.session.emit("Browser.downloadProgress", { guid: GUID, state: "completed" });
 	assert.equal(await readFile(join(directory, "a.txt"), "utf8"), "original");
 	assert.equal(await readFile(join(directory, GUID), "utf8"), "new");
+	await assert.rejects(env.call({ action: "close" }), /EEXIST/);
 	await env.shutdown();
 });
 
@@ -237,10 +238,9 @@ it("cleans an empty download folder and keeps a safely named download", async ()
 	const browser = env.browsers[1];
 	const directory = browser.session.sent[0][1].downloadPath;
 	await writeFile(join(directory, GUID), "safe");
-	browser.session.emit("Browser.downloadWillBegin", { guid: GUID, url: "https://app.test/a", suggestedFilename: "../../escape.txt", frameId: "F1" });
-	browser.session.emit("Browser.downloadProgress", { guid: GUID, state: "completed", receivedBytes: 4 });
+	await browser.session.emit("Browser.downloadWillBegin", { guid: GUID, url: "https://app.test/a", suggestedFilename: "../../escape.txt", frameId: "F1" });
+	await browser.session.emit("Browser.downloadProgress", { guid: GUID, state: "completed", receivedBytes: 4 });
 	const path = join(directory, "escape.txt");
-	for (let i = 0; i < 50 && !existsSync(path); i++) await tick();
 	assert.equal(await readFile(path, "utf8"), "safe");
 	await env.call({ action: "close", all: true });
 	assert.equal(existsSync(empty), false);

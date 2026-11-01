@@ -228,11 +228,14 @@ export function createBrowserExtension(deps: BrowserDependencies = {}) {
 				} else if (tab.owned) await tab.browser.close();
 				else await tab.browser.disconnect();
 			} finally {
-				await tab.downloads?.close();
-				// Only an empty folder goes: a download is the user's file.
-				if (tab.downloadsFolder) await rmdir(tab.downloadsFolder).catch(() => {});
-				if (!deferProfile && tab.profile) await rm(tab.profile, { recursive: true, force: true });
-				if (!deferProfile && tab.claimed) profilesInUse.delete(tab.claimed);
+				try {
+					await tab.downloads?.close();
+				} finally {
+					// Only an empty folder goes: a download is the user's file.
+					if (tab.downloadsFolder) await rmdir(tab.downloadsFolder).catch(() => {});
+					if (!deferProfile && tab.profile) await rm(tab.profile, { recursive: true, force: true });
+					if (!deferProfile && tab.claimed) profilesInUse.delete(tab.claimed);
+				}
 			}
 		}
 		async function open(input: { name?: string; url?: string; app?: { path?: string; cdp_url?: string; args?: string[] }; headed?: boolean; viewport?: { width: number; height: number; scale?: number }; wait_until?: "load" | "domcontentloaded" | "networkidle0" | "networkidle2"; dialogs?: "accept" | "dismiss"; downloads?: string; persist?: boolean; record?: boolean }, signal: AbortSignal, budgetMs: number, cwd: string) {
