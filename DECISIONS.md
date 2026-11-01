@@ -255,6 +255,16 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Carriers: [PROCESS.md, Subagent models](PROCESS.md#subagent-models), `AGENTS.md` and
   `.pi/extensions/coordinator-guard/` with its tests. The superseded 2:1
   rotation is preserved verbatim in `DECISIONS-ARCHIVE.md`, A-0362, from `967769a`.
+- **Model slots** `[D-WORK-SLOTS]`. The coordinator guard keeps a live list of Main's direct `agent` starts, with the agent id
+  and the resolved model. One slot is one direct start with all its own helpers; helpers are not counted. Limits per model sit in
+  the `slots` object of the `coordinator-rules` block of [PROCESS.md](PROCESS.md#subagent-models): `openai-codex/gpt-6.1-sol` 5,
+  `anthropic/claude-opus-5-5` 5, `openai-codex/gpt-6.1-terra` 10, `anthropic/claude-sonnet-5-5` 10. A category start draws randomly
+  among the pair's models that have a free slot and is refused with `slots full: <model> n/n` when none is free. Reviewer-profile
+  starts count on their fixed model and are refused when full; `fork_turns: "all"` starts count on the caller's model. An agent leaves
+  the list when its final result is delivered (wait) or it is stopped; `restart` and `send` keep its slot. No polling and no tokens:
+  the guard reads `tool_call` and `tool_execution_end` events of Main. Owner: «Я хочу сделать очередь для выполнения задач более интеллектульной / Т.е. смотри для моделей / 5 слотов для сол md/hi / 5 слотов для opus md/hi / 10 слотов для terra и 10 для sonnet / как думаешь, получится у тебя таким образом следить за этим? / Нужно самое простое решение инжинерное не на базе токенов, подумай как следует»; to the question what a slot is (one task with all its helpers, or every agent, even nested): «1».
+  Reason: spread the work over the model pools within their capacity by a mechanical rule instead of model attention.
+  Carriers: `.pi/extensions/coordinator-guard/` with `test/coordinator-guard.test.ts`, [PROCESS.md](PROCESS.md).
 
 - **Process file and manifesto** `[D-WORK-PROCESS-LINK]`. The reading contract is carried in
   [PROCESS.md](PROCESS.md), linked from `AGENTS.md`. `WORKFLOW-MANIFEST.md` is the owner's

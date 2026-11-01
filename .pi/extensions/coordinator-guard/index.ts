@@ -6,7 +6,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { acquireLock, LOCK_NAME, processStart, releaseLock } from "./lock.ts";
 import { canonical, gitCommonDir, isInside, protectedRoots, resolveToolPath } from "./paths.ts";
-import { describePairs, describeReviewerProfiles, drawPair, isAllowed, loadRules, type Loaded, type Rules } from "./rules.ts";
+import { categoryPairs, describePairs, describeReviewerProfiles, describeSlots, drawPair, isAllowed, loadRules, type Loaded, type Rules } from "./rules.ts";
+import { Slots } from "./slots.ts";
 
 const LINK = "PROCESS.md#subagent-models";
 const SECTION = "coordinator_rules";
@@ -14,14 +15,14 @@ const NOTE_SECTION = "coordinator_note";
 // Pi builds a new instance of this extension (and may load the module afresh) on /new, /resume, /fork and /reload,
 // so what must outlive them lives on globalThis: the role this chat chose at its start, and this process's start time.
 const SHARED = Symbol.for("my-pi.coordinator-guard.shared");
-type Shared = { role?: "coordinator" | "direct"; holderPid?: number; start?: string | null };
+type Shared = { role?: "coordinator" | "direct"; holderPid?: number; start?: string | null; slots?: Slots };
 const shared = (): Shared => ((globalThis as Record<symbol, unknown>)[SHARED] ??= {}) as Shared;
 
-export type GuardOptions = { root: string; processFile?: string; randomInt?: (max: number) => number };
+export type GuardOptions = { root: string; processFile?: string; randomInt?: (max: number) => number; slots?: Slots };
 
 /** The line appended to an allowed start's task, so the rule follows ordinary nested `agent` starts. */
 export function childInstruction(rules: Rules): string {
-	return `[coordinator-guard] For Main's executor \`agent\` start or restart, pass the category name as model (${Object.keys(rules.agentModels).join(", ")}); thinking is optional; the guard draws the pair uniformly at random (${describePairs(rules)}); reviewer-profile calls instead use their exact reviewerProfiles pair; a start with fork_turns "all" passes no model, the fork inherits the caller's model; pass this line on in its task.`;
+	return `[coordinator-guard] For Main's executor \`agent\` start or restart, pass the category name as model (${Object.keys(rules.agentModels).join(", ")}); thinking is optional; the guard draws the pair at random among the models with a free slot (${describePairs(rules)}); reviewer-profile calls instead use their exact reviewerProfiles pair; a start with fork_turns "all" passes no model, the fork inherits the caller's model; pass this line on in its task.`;
 }
 
 export function promptSection(loaded: Loaded, processFile: string): string {
@@ -38,9 +39,10 @@ export function promptSection(loaded: Loaded, processFile: string): string {
 	return [
 		head,
 		"- Main delegates research, edits, checks and fixes to subagents. When the owner asks Main to do such work personally (for example \"ты сам\" or \"you do it\"), Main objects and proposes a subagent for it; only an explicit owner override lets Main do that work itself. Main never edits or writes files in the checkout or its worktrees (edit and write there are blocked).",
-		`- Every executor start or restart by Main passes the category name as model (${Object.keys(rules.agentModels).join(", ")}); thinking is optional. The guard draws the pair uniformly at random: ${describePairs(rules)} (${LINK}).`,
+		`- Every executor start or restart by Main passes the category name as model (${Object.keys(rules.agentModels).join(", ")}); thinking is optional. The guard draws the pair at random among the models that still have a free slot: ${describePairs(rules)} (${LINK}).`,
 		`- Reviewer-profile starts and restarts instead use the exact pair for their agent_type: ${describeReviewerProfiles(rules)}. Existing agents keep their model through send/resume and are not restarted merely to switch models.`,
 		"- An `agent` start with `fork_turns: \"all\"` passes no model: the fork inherits the caller's model, so the prompt cache is reused, and the guard draws nothing and rewrites nothing.",
+		...(Object.keys(rules.slots).length ? [`- Slots: one direct start with all its own helpers is one slot; helpers are not counted. Limits: ${describeSlots(rules)}. Reviewer and fork starts count on their model. A start whose models are all full is refused with "slots full: <model> n/n". A slot frees when the agent's final result is delivered by wait or the agent is stopped; send and restart keep it.`] : []),
 	].join("\n");
 }
 
@@ -69,6 +71,12 @@ function profileName(input: Record<string, any>, ctx: ExtensionContext): string 
 	return undefined;
 }
 
+/** The full child id of a `send`, `resume`, `restart` or `stop` target, spelled `agent#N` or `N`. */
+function agentId(value: unknown): string | undefined {
+	const match = typeof value === "string" ? /^(?:agent#)?([1-9]\d*)$/.exec(value) : null;
+	return match ? `agent#${match[1]}` : undefined;
+}
+
 function editPaths(input: any): string[] | undefined {
 	if (!input || typeof input !== "object") return undefined;
 	const paths: unknown[] = [];
@@ -89,6 +97,7 @@ export function createCoordinatorGuard(options: GuardOptions) {
 		// normal direct agent stays normal through /new, /resume, /fork and /reload, even after the coordinator quits;
 		// only a chat started afterwards takes the lock (see SHARED above for how it survives the new instance).
 		const saved = shared();
+		const slots = options.slots ?? (saved.slots ??= new Slots());
 		let coordinator = saved.role !== "direct";
 		let holderPid = saved.holderPid;
 		const common = gitCommonDir(root);
@@ -100,6 +109,8 @@ export function createCoordinatorGuard(options: GuardOptions) {
 		pi.on("session_start", (event, ctx) => {
 			const reason = (event as { reason?: string }).reason ?? "startup";
 			const state = shared();
+			// A reload keeps the children, so it keeps their slots; any other start or switch begins without agents.
+			if (reason !== "reload") slots.clear();
 			let notice: string | undefined;
 			if (lockFile && reason !== "startup" && state.role === "direct") {
 				coordinator = false; // a normal chat keeps its role; the lock is not touched
@@ -134,6 +145,13 @@ export function createCoordinatorGuard(options: GuardOptions) {
 			shared().role = undefined;
 		});
 
+		// RQW-agent closes its children when the branch changes.
+		pi.on("session_tree", () => slots.clear());
+
+		pi.on("tool_execution_end", (event) => {
+			if (event.toolName === "agent") slots.end(event.toolCallId, event.result, event.isError);
+		});
+
 		pi.on("before_agent_start", (event) => {
 			if (!coordinator) {
 				event.systemPromptOptions.sections[NOTE_SECTION] = directNote(holderPid);
@@ -163,29 +181,53 @@ export function createCoordinatorGuard(options: GuardOptions) {
 
 			if (name !== "agent") return undefined;
 			const action = input.action ?? "start";
-			const starts = action === "start" || action === "restart";
-			if (!starts) return undefined;
+			if (action === "send" || action === "resume" || action === "stop") {
+				const id = agentId(input.id);
+				// Only an agent whose final was delivered needs a slot again; a live agent keeps its own.
+				const model = action === "stop" || id === undefined ? undefined : slots.endedModelOf(id);
+				const loaded = model === undefined ? undefined : loadRules(processFile);
+				if (model !== undefined && loaded?.ok && !slots.isFree(loaded.rules.slots, model, undefined, id)) {
+					return { block: true, reason: `coordinator-guard: ${id} has no slot to return to, slots full: ${slots.describeFull(loaded.rules.slots, [model])}.` };
+				}
+				slots.begin(event.toolCallId, { action, id, model, holds: model !== undefined });
+				return undefined;
+			}
+			if (action !== "start" && action !== "restart") return undefined;
 
 			const loaded = loadRules(processFile);
 			if (!loaded.ok) return { block: true, reason: `coordinator-guard: coordinator-rules in ${processFile} is unreadable: ${loaded.error}` };
 			const { rules } = loaded;
 			const allowed = `allowed: ${describePairs(rules)}; reviewer profiles: ${describeReviewerProfiles(rules)} (${LINK})`;
+			// A restart keeps the slot its agent already holds; a start, a restart of an ended agent or a restart on another model holds a new one until it ends.
+			const id = action === "restart" ? agentId(input.id) : undefined;
+			const own = id === undefined ? undefined : slots.modelOf(id);
+			let model: string | undefined;
 			// A fork inherits the caller's model and prompt so its first request reuses the prompt cache: no category, no draw.
-			if (input.fork_turns !== "all") {
+			if (input.fork_turns === "all") {
+				model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+			} else {
 				const profile = profileName(input, ctx);
 				if (profile !== undefined && Object.hasOwn(rules.reviewerProfiles, profile)) {
 					if (typeof input.model !== "string" || typeof input.thinking !== "string" || !isAllowed(rules, input.model, input.thinking, profile)) {
 						return { block: true, reason: `coordinator-guard: give the exact model and thinking for reviewer ${profile}; ${allowed}.` };
 					}
+					model = input.model;
 				} else {
-					const pair = typeof input.model === "string" ? drawPair(rules, input.model, options.randomInt) : undefined;
-					if (!pair) {
-						return { block: true, reason: `coordinator-guard: pass the category name as model (${Object.keys(rules.agentModels).join(", ")}); the guard draws the pair uniformly at random. Main must not choose an explicit executor pair; ${allowed}.` };
+					const pairs = typeof input.model === "string" ? categoryPairs(rules, input.model) : undefined;
+					if (!pairs) {
+						return { block: true, reason: `coordinator-guard: pass the category name as model (${Object.keys(rules.agentModels).join(", ")}); the guard draws the pair at random among the models with a free slot. Main must not choose an explicit executor pair; ${allowed}.` };
 					}
+					const pair = drawPair(pairs, (m) => slots.isFree(rules.slots, m, own), options.randomInt);
+					if (!pair) return { block: true, reason: `coordinator-guard: slots full: ${slots.describeFull(rules.slots, pairs.map(([m]) => m))}.` };
 					[input.model, input.thinking] = pair;
+					model = pair[0];
 				}
 			}
+			if (model !== undefined && !slots.isFree(rules.slots, model, own)) {
+				return { block: true, reason: `coordinator-guard: slots full: ${slots.describeFull(rules.slots, [model])}.` };
+			}
 			if (typeof input.task === "string") input.task = `${input.task}\n\n${childInstruction(rules)}`;
+			slots.begin(event.toolCallId, { action, id, model, holds: own !== model });
 			return undefined;
 		});
 	};

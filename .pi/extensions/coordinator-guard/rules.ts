@@ -8,6 +8,8 @@ export type Pair = [model: string, thinking: string];
 export type Rules = {
 	agentModels: Record<string, Pair[]>;
 	reviewerProfiles: Record<string, Pair>;
+	/** Most direct starts of Main per model at one time; a model without an entry has no limit. */
+	slots: Record<string, number>;
 };
 
 const FENCE = /^```json coordinator-rules[ \t]*\r?\n([\s\S]*?)^```[ \t]*$/gm;
@@ -51,7 +53,19 @@ export function parseRules(markdown: string): Rules {
 			reviewerProfiles[name] = parsePair(pair, `reviewerProfiles.${name}`);
 		}
 	}
-	return { agentModels, reviewerProfiles };
+	return { agentModels, reviewerProfiles, slots: parseSlots(data.slots) };
+}
+
+function parseSlots(value: any): Record<string, number> {
+	if (value === undefined) return {};
+	if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("slots must be an object of model limits");
+	const slots: Record<string, number> = {};
+	for (const [model, limit] of Object.entries(value)) {
+		if (!/^[^/\s]+\/\S+$/.test(model)) throw new Error(`slots.${model}: model must be "provider/id"`);
+		if (!Number.isSafeInteger(limit) || (limit as number) < 1) throw new Error(`slots.${model} must be a positive integer`);
+		slots[model] = limit as number;
+	}
+	return slots;
 }
 
 export type Loaded = { ok: true; rules: Rules } | { ok: false; error: string };
@@ -73,10 +87,15 @@ export function isAllowed(rules: Rules, model: string, thinking: string, agentTy
 	return inTable || inReviewerProfile;
 }
 
-/** Draw uniformly from the category's currently permitted pairs. */
-export function drawPair(rules: Rules, category: string, random: (max: number) => number = randomInt): Pair | undefined {
-	const pairs = Object.hasOwn(rules.agentModels, category) ? rules.agentModels[category] : undefined;
-	return pairs?.length ? pairs[random(pairs.length)] : undefined;
+/** The category's permitted pairs, or undefined for an unknown category. */
+export function categoryPairs(rules: Rules, category: string): Pair[] | undefined {
+	return Object.hasOwn(rules.agentModels, category) ? rules.agentModels[category] : undefined;
+}
+
+/** Draw uniformly from the pairs whose model still has a free slot; undefined when none is free. */
+export function drawPair(pairs: Pair[], isFree: (model: string) => boolean, random: (max: number) => number = randomInt): Pair | undefined {
+	const free = pairs.filter(([model]) => isFree(model));
+	return free.length ? free[random(free.length)] : undefined;
 }
 
 export function describeReviewerProfiles(rules: Rules): string {
@@ -91,4 +110,9 @@ export function describePairs(rules: Rules): string {
 		classes.push(`${name}: ${list}`);
 	}
 	return classes.join("; ");
+}
+
+/** The slot limits as rendered in the prompt. */
+export function describeSlots(rules: Rules): string {
+	return Object.entries(rules.slots).map(([model, limit]) => `${model} ${limit}`).join(", ");
 }
