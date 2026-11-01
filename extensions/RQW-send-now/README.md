@@ -34,6 +34,8 @@ RQW-statusbar draws it. Priority is: queued follow-up while the turn works, wait
 other-provider steering, main interruption, background stop, and an idle follow-up.
 The exact texts are `ctrl+enter to send now`, `esc to send now`, `esc to interrupt`,
 `esc esc to stop background` and `ctrl+enter to steer`. Compaction and retry use `esc to interrupt`.
+While the fullscreen transcript is scrolled up the first Escape only jumps down, so the three Esc hints are not
+offered then (`ctrl+enter` hints stay); the scroll state is read when the activity line asks, not per frame.
 The input has no hint of this extension. The scrolled-up jump is announced only by RQW-scroll's badge over the
 transcript. Pi's old queue, hold and loader key hints are hidden
 while a consumer draws the Esc hints and restored when it stops; without RQW-statusbar Pi's own hints stay.

@@ -56,7 +56,7 @@ export function harness(t: TestContext, options: { factory?: typeof sendNow; pro
 	const inputs: string[] = [];
 	/** The custom messages Pi started a run for, after the extension sent them through its public API. */
 	const resumed: any[] = [];
-	const state = { idle: false, compacting: false, background: 0, editor: "", autocomplete: false, focused: true, provider: options.provider ?? "openai-codex", model: true, ctrlAborts: 0 };
+	const state = { idle: false, compacting: false, background: 0, editor: "", autocomplete: false, focused: true, provider: options.provider ?? "openai-codex", model: true, ctrlAborts: 0, mode: "fullscreen", following: true };
 	events.on("rqw:stop-background:v1", (value: any) => { stops.push(value); value.reply({ agents: state.background }); });
 	events.on("rqw:running-counts:request", (request: any) => request.reply({ version: 1, snapshot: () => ({ agents: state.background }), subscribe: () => () => {} }));
 	const pi = {
@@ -94,7 +94,7 @@ export function harness(t: TestContext, options: { factory?: typeof sendNow; pro
 		},
 		ui: {
 			getEditorText: () => state.editor, setEditorText: (value: string) => { state.editor = value; }, notify: (text: string) => notices.push(text),
-			setWidget: (_key: string, factory: any) => { if (factory) factory({ getFocusedComponent: () => state.focused ? editor : {} }); },
+			setWidget: (_key: string, factory: any) => { if (factory) factory({ get mode() { return state.mode; }, get isFollowingOutput() { return state.following; }, getFocusedComponent: () => state.focused ? editor : {} }); },
 			onTerminalInput: (handler: typeof input) => { input = handler; return () => {}; },
 		},
 	} as unknown as ExtensionContext;

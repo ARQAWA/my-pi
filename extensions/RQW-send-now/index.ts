@@ -24,7 +24,7 @@ const DOUBLE_ESCAPE_MS = 500;
 
 /** A force-send under way: the reserved steering, plus late arrivals routed in until it is sent or restored. */
 type Pending = { steers: Steer[]; followUps: Steer[]; ctx: ExtensionContext; release: () => void; settled: Promise<void>; onLate: (steer: Steer) => boolean; interrupted?: AssistantMessage; cancelled?: boolean };
-type FocusTUI = TUI & { getFocusedComponent(): unknown };
+type FocusTUI = TUI & { getFocusedComponent(): unknown; isFollowingOutput?: boolean };
 
 /** The interrupted reply as the model will see it: its text only, as a finished reply; undefined when it has none. */
 export function keptReply(message: AssistantMessage): AssistantMessage | undefined {
@@ -337,8 +337,11 @@ export default function sendNow(pi: ExtensionAPI) {
 		let compacting = false, retrying = false;
 		let hint: string | undefined;
 		// The activity line's source: the Esc hint.
+		// Scrolled up in the fullscreen view the first Escape only jumps down (RQW-scroll), so no Esc hint is true. The
+		// scroll state is a cheap read, taken when the activity line asks, not tracked per frame.
+		const scrolledUp = () => tui?.mode === "fullscreen" && tui.isFollowingOutput === false;
 		const source = {
-			snapshot: () => hint,
+			snapshot: () => hint?.startsWith("esc") && scrolledUp() ? undefined : hint,
 			subscribe(listener: () => void) {
 				listeners.add(listener);
 				hintUI.refresh();

@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from "node:util";
 import { AgentSession, CustomEditor, InteractiveMode, createEventBus, initTheme, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import sendNow from "../../../extensions/RQW-send-now/index.ts";
-import { fakeSession } from "./harness.ts";
+import { fakeSession, harness } from "./harness.ts";
 
 const plain = (row: string) => stripVTControlCharacters(row.replace(/\x1b_[^\x07]*\x07/g, ""));
 
@@ -153,4 +153,31 @@ it("removes the old outside hints only while a consumer draws the Esc hints, kee
 	assert.equal(statuses.get("rqw-followup-hold"), "follow-up waits for the final answer");
 	assert.match(plain(indicator.render()[0]), /to cancel/);
 	assert.match(host.pendingMessagesContainer.children.map((child: any) => child.text ?? "").join(" "), /edit all queued messages/);
+});
+
+it("offers no Esc hint while the fullscreen transcript is scrolled up, because the first Esc only jumps down", t => {
+	const h = harness(t);
+	let source: any;
+	h.events.emit("rqw:activity-hint:request", { sessionId: "session", reply: (value: unknown) => { source = value; } });
+	const emit = (type: string) => { for (const fn of [...h.session._eventListeners]) fn({ type }); };
+	emit("agent_start");
+	assert.equal(source.snapshot(), "esc to interrupt");
+	h.state.following = false;
+	assert.equal(source.snapshot(), undefined);
+	h.state.following = true;
+	assert.equal(source.snapshot(), "esc to interrupt");
+	// Background only: the first Esc is taken for the double press, but a scrolled-up one jumps.
+	h.state.idle = true; h.state.background = 1; emit("agent_settled");
+	assert.equal(source.snapshot(), "esc esc to stop background");
+	h.state.following = false;
+	assert.equal(source.snapshot(), undefined);
+	// Hints that do not use Esc stay.
+	h.state.idle = false; h.state.background = 0;
+	h.followUp("next"); emit("queue_update");
+	assert.equal(source.snapshot(), "ctrl+enter to steer");
+	// Only the fullscreen view scrolls; another renderer keeps the hint.
+	h.session._followUpMessages = []; h.session.agent.followUpQueue.messages = []; emit("queue_update");
+	assert.equal(source.snapshot(), undefined);
+	h.state.mode = "inline";
+	assert.equal(source.snapshot(), "esc to interrupt");
 });
