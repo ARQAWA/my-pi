@@ -83,7 +83,11 @@ const QUESTION_ROOM = 8192;
 /** Messages as text, cut from the start to at most `limit` characters. */
 function asText(messages: readonly Message[], limit = Infinity): string {
 	if (messages.length === 0) return "";
-	const text = JSON.stringify(messages.map(item => ({ role: item.role, content: item.content })));
+	return cutText(JSON.stringify(messages.map(item => ({ role: item.role, content: item.content }))), limit);
+}
+
+/** Text cut from the start to at most `limit` characters, marked as cut. */
+function cutText(text: string, limit: number): string {
 	return text.length <= limit ? text : CUT + text.slice(text.length - Math.max(0, limit - CUT.length));
 }
 
@@ -95,22 +99,28 @@ function firstQuestion(message: UserMessage, tail: string): UserMessage {
 }
 
 /** Side answers go back as text only: no unexecuted tool call, no thinking replay. */
+function textOnly(message: Message): Message {
+	if (message.role !== "assistant") return message;
+	const text = message.content.filter(part => part.type === "text");
+	// An answer that only called a tool still needs content on the wire.
+	return { ...message, content: text.length > 0 ? text : [{ type: "text" as const, text: "(no text; tool calls were not executed)" }] };
+}
+
 function sideTurns(turns: readonly Message[], tail: string): Message[] {
 	let first = true;
 	return turns.map(message => {
 		if (message.role === "user" && first) { first = false; return firstQuestion(message, tail); }
-		if (message.role !== "assistant") return message;
-		const text = message.content.filter(part => part.type === "text");
-		// An answer that only called a tool still needs content on the wire.
-		return { ...message, content: text.length > 0 ? text : [{ type: "text" as const, text: "(no text; tool calls were not executed)" }] };
+		return textOnly(message);
 	});
 }
 
 /** Drops whole leading side exchanges until the rest fits the window; the newest question is always sent. */
 function unsent(mark: Mark, turns: readonly Message[]): number {
 	const room = budget(mark.model) - tokens(mark.messages) - Math.ceil((mark.tail.length + INSTRUCTION.length) / 4);
+	// Counted in the form that is sent: thinking never leaves the side chat.
+	const sent = turns.map(textOnly);
 	let skip = 0;
-	while (tokens(turns.slice(skip)) > room) {
+	while (tokens(sent.slice(skip)) > room) {
 		const next = turns.findIndex((message, i) => i > skip && message.role === "user");
 		if (next < 0) break;
 		skip = next;
@@ -218,7 +228,8 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 		const summary = latest !== undefined ? `Summary of the earlier conversation:\n${latest}\n\n` : "";
 		const room = Math.floor(budget(mark.model) / 2 - tokens([system])) * 4 - summary.length;
 		const rest = mark.messages.filter(message => message.role !== "system");
-		const cut = asText(rest, room - mark.tail.length) + (mark.tail ? `\n${mark.tail}` : "");
+		// The unsent tail is the newest part: one text, cut from the start.
+		const cut = cutText([asText(rest), mark.tail].filter(part => part !== "").join("\n"), room);
 		return { ...mark, sessionId: undefined, messages: [system], tail: summary + cut };
 	}
 

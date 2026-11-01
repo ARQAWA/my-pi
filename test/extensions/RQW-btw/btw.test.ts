@@ -335,6 +335,32 @@ describe("RQW-btw", () => {
 		assert.deepEqual([...new Set(seen.map(row => row.trim()))], ["q3", UNSENT_NOTE]);
 	});
 
+	it("counts side answers without their thinking, so long thinking does not push earlier questions out", async () => {
+		const thinking = assistant([{ type: "thinking", thinking: "hmm ".repeat(25_000) }, { type: "text", text: "a1" }]);
+		const h = harness({ replies: [thinking] });
+		h.setModel(SMALL);
+		h.request({ messages: [SYSTEM, USER] });
+		await h.btw("q1");
+		await h.say("q2");
+
+		const messages = h.forks[1].context.messages;
+		assert.equal(messages[2].content, `${INSTRUCTION}\n\nQuestion: q1`);
+		assert.deepEqual(messages[3], { ...thinking, content: [{ type: "text", text: "a1" }] });
+		assert.ok(!shows(h.screen(), UNSENT_NOTE));
+	});
+
+	it("cuts a long unsent tail in the overflow retry to half of the window, keeping the newest text", async () => {
+		const big = user("old ".repeat(100_000) + "NEWEST LINE");
+		const h = harness({ replies: [overflow()], projection: [SYSTEM, USER, toolCall("c"), big] });
+		h.setModel(SMALL);
+		await h.btw("q1");
+
+		assert.equal(h.provider.length, 2);
+		const retry = h.provider[1].context;
+		assert.match(String(last(retry).content), /\[earlier part cut\] .*NEWEST LINE.*Question: q1$/s);
+		assert.ok(size(retry) <= SMALL.contextWindow / 2 + 100);
+	});
+
 	it("retries a provider overflow once in a shorter form without compacting and marks the answer", async () => {
 		const h = harness({ replies: [overflow()], tree: [
 			{ type: "compaction", id: "c1", parentId: null, summary: "SUMMARY OF EARLIER WORK" },
