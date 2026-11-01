@@ -176,29 +176,6 @@ export function editorBorder(context: BarState["context"], hiddenLineCount: numb
 	return hint(text) + contextRow(context, rest, paint);
 }
 
-/** The text of a border row without its rules: what must survive when the border gives room to the session ID. */
-const borderText = (line: string) => stripVTControlCharacters(line).replace(/─/g, " ").replace(/ +/g, " ").trim();
-
-/**
- * The editor's top border with the session ID at its right end: `── <working…> ──── <session-id> ──`.
- * `stock(width)` is Pi's own top border (the embedded working status and the up-arrow `N more` hint); it is drawn at
- * the reduced width and must keep exactly the same text and end in at least two rule cells, otherwise the ID is
- * dropped and Pi's border at the full width is returned. The ID is never cut and has one plain space on each side.
- */
-export function sessionTopBorder(width: number, sessionId: string | undefined, stock: (width: number) => string,
-	border: (text: string) => string = (text) => text, paint: Paint = plain): string {
-	const full = stock(width);
-	const id = singleLine(sessionId ?? "");
-	if (!id || id.includes(" ")) return full;
-	const rest = width - visibleWidth(id) - 4;
-	if (rest < 2) return full;
-	const left = stock(rest);
-	if (visibleWidth(left) !== rest || !stripVTControlCharacters(left).endsWith("──") || borderText(left) !== borderText(full)) {
-		return full;
-	}
-	return left + border(" ") + paint("label", id) + border(" ──");
-}
-
 /** Bright yellow, a paler yellow, white and back: SGR foreground colours of one shimmer cycle. */
 export const SHIMMER = ["38;5;220", "38;5;226", "38;5;229", "97", "38;5;229", "38;5;226"] as const;
 /** Static bright yellow for the idle lightning. */
@@ -467,7 +444,6 @@ const styled = (hex: string, bold: boolean, text: string) =>
 	`\x1b[${bold ? "1;" : ""}38;2;${rgbOf(hex).join(";")}m${text}\x1b[22;39m`;
 
 /** Keep the old travel distance per phase frame; the elapsed-time frame is now twice as fast. */
-export const SHIMMER_PERIOD_CELLS = 2 * Math.PI / 0.32;
 export const SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32;
 export const SILVER_PLATEAU_CELLS = 3;
 export const GOLD_PLATEAU_CELLS = 3;
