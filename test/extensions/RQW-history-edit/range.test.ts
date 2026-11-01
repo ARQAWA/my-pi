@@ -7,7 +7,7 @@ import { it, type TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import historyEdit from "../../../extensions/RQW-history-edit/index.ts";
 
-type Fault = "write" | "rename" | "navigate" | "navigate-cancel" | "switch-cancel" | "switch-throw" | "loaded-switch-throw" | "restore-cancel" | "restore-throw" | "rollback-write";
+type Fault = "write" | "rename" | "navigate" | "navigate-cancel" | "switch-cancel" | "switch-throw" | "loaded-switch-throw" | "restore-cancel" | "restore-throw" | "rollback-write" | "backup-remove";
 
 function fixture(t: TestContext, fault?: Fault) {
 	const dir = fs.mkdtempSync(join(tmpdir(), "history-range-"));
@@ -105,6 +105,11 @@ function fixture(t: TestContext, fault?: Fault) {
 	install();
 	const write = fs.writeFileSync;
 	const rename = fs.renameSync;
+	const remove = fs.rmSync;
+	t.mock.method(fs, "rmSync", (...args: Parameters<typeof fs.rmSync>) => {
+		if (fault === "backup-remove" && String(args[0]).endsWith(".bak")) throw new Error("backup locked");
+		return remove(...args);
+	});
 	t.mock.method(fs, "writeFileSync", (...args: Parameters<typeof fs.writeFileSync>) => {
 		const [file, data] = args;
 		if (typeof file === "number" || String(file).endsWith(".tmp")) {
@@ -128,9 +133,10 @@ function fixture(t: TestContext, fault?: Fault) {
 	const submit = async (text: string) => {
 		editor = text;
 		if (terminalInput("\r")?.consume) { await flush(); return; }
-		// Pi handles built-in commands and shell input before the input hook.
-		if (text === "/help") { normalCommands.push(text); return; }
-		if (text.startsWith("!")) { shellCommands.push(text); return; }
+		// Pi trims input before handling built-in commands and shell input.
+		const trimmed = text.trim();
+		if (trimmed === "/help") { normalCommands.push(trimmed); return; }
+		if (trimmed.startsWith("!")) { shellCommands.push(trimmed); return; }
 		const result = handlers.get("input")!({ source: "interactive", text }, ctx);
 		if (result?.action !== "handled") await send(text);
 		await flush();
@@ -161,6 +167,22 @@ it("edits a history larger than the writer capacity through the command", async 
 	assert.ok(records.some(entry => entry.type === "session_info" && entry.name === "Synthetic session"));
 	assert.equal(f.notices.some(notice => notice.level === "error"), false);
 	assert.equal(fs.readdirSync(f.dir).some(name => /\.(tmp|bak)$/.test(name)), false);
+});
+
+it("keeps the committed history when backup removal fails", async t => {
+	const f = fixture(t, "backup-remove");
+	await f.open();
+	await f.submit("replacement");
+	assert.deepEqual(f.sent, [[{ type: "text", text: "replacement" }, f.image]]);
+	f.load();
+	assert.deepEqual(f.branch().at(-1).message.content, [{ type: "text", text: "replacement" }, f.image]);
+	assert.ok(!f.branch().some(entry => entry.id === "tail"));
+	const backups = fs.readdirSync(f.dir).filter(name => name.endsWith(".bak"));
+	assert.equal(backups.length, 1);
+	assert.ok(f.notices.some(notice => notice.level === "warning" && notice.text.includes(join(f.dir, backups[0]))));
+	await f.submit("next message");
+	assert.equal(f.sent.length, 2);
+	assert.equal(f.sent[1], "next message");
 });
 
 for (const fault of ["write", "rename", "navigate", "navigate-cancel", "switch-cancel", "switch-throw", "loaded-switch-throw"] as const) {
@@ -221,7 +243,7 @@ for (const fault of ["restore-cancel", "restore-throw", "rollback-write"] as con
 	});
 }
 
-for (const text of ["/help", "!echo hello", "ordinary message"] as const) {
+for (const text of ["/help", "!echo hello", "  /help", "  !echo hello", "ordinary message"] as const) {
 	it(`restoration consumes ${text} and the next Enter follows Pi's normal path`, async t => {
 		const f = fixture(t, "restore-throw");
 		await f.open();
@@ -235,10 +257,23 @@ for (const text of ["/help", "!echo hello", "ordinary message"] as const) {
 		assert.equal(f.editor, text);
 		assert.deepEqual(f.notices.at(-1), { text: "Previous branch restored.", level: "info" });
 		await f.submit(f.editor);
-		assert.deepEqual(f.normalCommands, text === "/help" ? [text] : []);
-		assert.deepEqual(f.shellCommands, text.startsWith("!") ? [text] : []);
+		assert.deepEqual(f.normalCommands, text.trim() === "/help" ? [text.trim()] : []);
+		assert.deepEqual(f.shellCommands, text.trim().startsWith("!") ? [text.trim()] : []);
 		assert.deepEqual(f.sent, text === "ordinary message" ? [text] : []);
 		assert.ok(f.branch().some(entry => entry.id === "tail"));
+	});
+}
+
+for (const text of ["  /help", "  !echo hello"]) {
+	it(`edits command-like text literally: ${text}`, async t => {
+		const f = fixture(t);
+		await f.open();
+		await f.submit(text);
+		assert.deepEqual(f.normalCommands, []);
+		assert.deepEqual(f.shellCommands, []);
+		assert.deepEqual(f.sent, [[{ type: "text", text }, f.image]]);
+		f.load();
+		assert.deepEqual(f.branch().at(-1).message.content, [{ type: "text", text }, f.image]);
 	});
 }
 

@@ -90,7 +90,8 @@ export default function historyEdit(pi: ExtensionAPI): void {
 			if (!(focused?.actionHandlers instanceof Map) || focused.isShowingAutocomplete?.()) return;
 			if ((state.editing || state.retryRestore) && matchesKey(data, "enter")) {
 				const text = ctx.ui.getEditorText();
-				if (text.startsWith("/") || text.startsWith("!")) {
+				const trimmed = text.trimStart();
+				if (trimmed.startsWith("/") || trimmed.startsWith("!")) {
 					submit({ id: state.editing?.id, text, images: state.editing?.images });
 					return { consume: true };
 				}

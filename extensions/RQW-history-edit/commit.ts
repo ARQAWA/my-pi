@@ -25,6 +25,7 @@ export async function commitEdit(pi: ExtensionAPI, ctx: ExtensionCommandContext,
 	let ownsBackup = false;
 	let originalLeafId = ctx.sessionManager.getLeafId();
 	let navigated = false;
+	let committed = false;
 	let failure: unknown;
 	try {
 		// Anchor the original branch on disk before navigation or metadata replay.
@@ -47,14 +48,18 @@ export async function commitEdit(pi: ExtensionAPI, ctx: ExtensionCommandContext,
 					}
 				},
 			});
-			if (!switched.cancelled) {
-				rmSync(backup);
-				ownsBackup = false;
-				return { committed: true };
-			}
+			committed = !switched.cancelled;
 		}
 	} catch (error) {
 		failure = error;
+	}
+	if (committed) {
+		try {
+			rmSync(backup);
+		} catch (error) {
+			ui.notify(`History edited, but backup could not be removed: ${backup}. ${String(error)}`, "warning");
+		}
+		return { committed: true };
 	}
 	const restore = async (current: ExtensionCommandContext): Promise<boolean> => {
 		try {
