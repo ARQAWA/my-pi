@@ -22,7 +22,7 @@ test("stop background notice reaches only the owning tools session", async () =>
 	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);
 });
 
-test("stop cancels a waiting search before it can notify", async t => {
+test("stop kills a searched job under an open wait and sends no message", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
 	const cwd = await mkdtemp(join(tmpdir(), "rqw-stop-"));
 	t.after(() => rm(cwd, { recursive: true, force: true }));
@@ -38,13 +38,43 @@ test("stop cancels a waiting search before it can notify", async t => {
 	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
 	const pending = tools.get("rqw_rg").execute("call", { pattern: "hello" }, undefined, undefined, ctx);
 	await running; t.mock.timers.tick(12); await pending;
-	const wait = await tools.get("job").execute("wait", { action: "wait", ids: ["job#1"] });
-	assert.equal(wait.details.reason, "waiting");
+	const waiting = tools.get("job").execute("wait", { action: "wait", ids: ["job#1"] });
 	const replies: any[] = [];
 	events.emit("rqw:stop-background:v1", { sessionId: "main", reply: (part: any) => replies.push(part) });
 	assert.deepEqual(replies, [{ backgroundProcesses: 1, unstoppable: 0 }]);
-	await Promise.resolve(); await Promise.resolve();
+	const wait = await waiting;
+	assert.equal(wait.details.reason, "exit");
+	assert.equal(wait.details.results[0].state, "killed");
 	assert.equal(fake.killed, 1);
+	assert.deepEqual(messages, []);
+	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);
+});
+
+test("a job that exits under an open wait sends no chat message", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"], now: 0 });
+	const cwd = await mkdtemp(join(tmpdir(), "rqw-exit-"));
+	t.after(() => rm(cwd, { recursive: true, force: true }));
+	const fake = new FakeRipgrep();
+	let child: any;
+	const spawn = fake.spawn;
+	fake.spawn = (...args: Parameters<typeof spawn>) => (child = spawn(...args));
+	fake.install(t);
+	fake.handler = () => ({ hang: true });
+	const hooks = new Map<string, Function[]>(), tools = new Map<string, any>();
+	const messages: unknown[] = [];
+	const pi: any = { events: createEventBus(), registerTool: (tool: any) => tools.set(tool.name, tool), getActiveTools: () => ["job"], getAllTools: () => [], getSettings: () => ({}), sendMessage: (message: unknown) => messages.push(message), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]) };
+	installRqwTools(pi, { backgroundAfterMs: 12 });
+	const ctx = { cwd, mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "main", getEntries: () => [] } };
+	for (const hook of hooks.get("session_start") ?? []) await hook({ reason: "reload" }, ctx);
+	const pending = tools.get("rqw_rg").execute("call", { pattern: "hello" }, undefined, undefined, ctx);
+	await fake.started(); t.mock.timers.tick(12); await pending;
+	const waiting = tools.get("job").execute("wait", { action: "wait", ids: ["job#1"] });
+	await new Promise(resolve => setImmediate(resolve));
+	child.stdout.end(); child.stderr.end(); child.emit("close", 1);
+	const wait = await waiting;
+	assert.equal(wait.details.reason, "exit");
+	assert.equal(wait.details.results[0].state, "exited");
+	await new Promise(resolve => setImmediate(resolve));
 	assert.deepEqual(messages, []);
 	for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx);
 });

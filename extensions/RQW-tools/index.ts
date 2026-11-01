@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	SettingsManager,
 	formatSkillsForPrompt,
@@ -15,7 +15,7 @@ import { groupCodemode, takeOverBuiltinCodemode } from "./codemode.ts";
 import { guardBash } from "./bash-guard.ts";
 import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { createCountsProducer } from "./counts.ts";
-import { commandOf, createJobs, createJobTool, type JobHandle, type JobNotification, type Jobs, type JobsOptions } from "./jobs.ts";
+import { commandOf, createJobs, createJobTool, type JobHandle, type Jobs, type JobsOptions } from "./jobs.ts";
 import { editRenderers, writeRenderers } from "./render.ts";
 import { createRgToolDefinition } from "./rg.ts";
 import { createGlobToolDefinition } from "./glob.ts";
@@ -97,9 +97,6 @@ function projectToolSections(request: unknown): void {
 	}
 }
 
-export type { JobNotification } from "./jobs.ts";
-const JOB_MESSAGE = "job";
-
 export default function (pi: ExtensionAPI) {
 	installRqwTools(pi);
 }
@@ -137,7 +134,6 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 		aliasesShutdown?.(ctx.sessionManager, event.reason === "reload");
 		selectionShutdown?.();
 	});
-	installNotifications(pi, jobs);
 
 	pi.on("before_agent_start", (event) => applyToolSections(event.systemPromptOptions));
 	let unsubscribeProjection: (() => void) | undefined;
@@ -175,37 +171,6 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 		}
 		takeOverBuiltinCodemode(pi, jobs);
 	});
-}
-
-/** Deliver finished notification waits into the main chat. */
-function installNotifications(pi: ExtensionAPI, jobs: Jobs) {
-	let main: ExtensionContext | undefined;
-	let aborted = false;
-	const held: JobNotification[] = [];
-	const message = (n: JobNotification) => ({ customType: JOB_MESSAGE, content: `[job] ${n.text}`, display: true, details: { delivery: n.id, ...n.details } });
-	const deliver = (n: JobNotification) => {
-		if (main?.isIdle() === false) held.push(n);
-		else pi.sendMessage(message(n), { triggerTurn: true });
-	};
-	pi.on("session_start", (_event, ctx) => {
-		main = ctx;
-		jobs.setNotify(ctx.mode === "print" || ctx.mode === "json" ? undefined : deliver);
-	});
-	pi.on("agent_start", () => { aborted = false; });
-	pi.on("agent_end", (_event, ctx) => {
-		if (ctx.signal?.aborted) aborted = true;
-		else ctx.signal?.addEventListener("abort", () => { aborted = true; }, { once: true });
-	});
-	pi.on("agent_before_settle", () => {
-		if (aborted || !held.length) return;
-		for (const n of held.splice(0)) pi.sendMessage(message(n), { triggerTurn: false });
-		return { continue: true };
-	});
-	pi.on("agent_settled", (event) => {
-		const rest = held.splice(0);
-		rest.forEach((n, i) => pi.sendMessage(message(n), { triggerTurn: !event.aborted && i === rest.length - 1 }));
-	});
-	pi.on("session_shutdown", () => { held.length = 0; });
 }
 
 /** Fresh base tools and one job registry for a main session or a subagent. */

@@ -15,11 +15,8 @@ const MAX_TIMER_MS = 2_147_483_647;
 const SETTLE_MS = 250;
 
 export type JobState = "running" | "exited" | "failed" | "killed" | "timed_out";
-export type JobNotification = { id: string; text: string; details: Record<string, unknown> };
 export type JobsOptions = {
 	backgroundAfterMs?: number;
-	notify?: (notification: JobNotification) => void;
-	retain?: () => () => void;
 	enabled?: () => boolean;
 };
 export type RunSpec = {
@@ -57,9 +54,6 @@ type Job = {
 	path?: string;
 	stream?: WriteStream;
 	spec: RunSpec;
-	endSeen?: boolean;
-	delivered?: boolean;
-	reporting?: boolean;
 	listeners: Set<() => void>;
 };
 
@@ -111,26 +105,12 @@ function sleep(ms: number, stop: Promise<unknown>): Promise<void> {
 	});
 }
 
-function runAfter(ms: number, run: () => void): () => void {
-	const deadline = performance.now() + ms;
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const step = () => {
-		const left = deadline - performance.now();
-		if (left <= 0) return run();
-		timer = setTimeout(step, Math.min(left, MAX_TIMER_MS));
-	};
-	step();
-	return () => clearTimeout(timer);
-}
-
-type Waiter = { selected: Job[]; cancel(): void };
 export type Jobs = ReturnType<typeof createJobs>;
 
 export function createJobTool(jobs: Jobs, description: string): any {
-	const json = (details: Record<string, unknown>, terminate = false) => ({
+	const json = (details: Record<string, unknown>) => ({
 		content: [{ type: "text" as const, text: JSON.stringify(details) }],
 		details,
-		...(terminate ? { terminate: true } : {}),
 	});
 	return {
 		name: "job",
@@ -144,7 +124,7 @@ export function createJobTool(jobs: Jobs, description: string): any {
 			lines: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "Output lines shown per job; default 20" })),
 			until: Type.Optional(Type.String({ description: "wait: also return when a job's output matches this JavaScript regular expression (readiness); a leading (?i) ignores case" })),
 		}),
-		async execute(id: string, raw: any, signal: AbortSignal | undefined) {
+		async execute(_id: string, raw: any, signal: AbortSignal | undefined) {
 			const params = Object.fromEntries(Object.entries(raw ?? {}).filter(([, value]) => value !== null)) as any;
 			const lines = lineCount(params.lines);
 			const ids = (value: unknown, required: boolean): string[] | undefined => {
@@ -163,9 +143,7 @@ export function createJobTool(jobs: Jobs, description: string): any {
 					}
 					const waitIds = ids(params.ids, true)!;
 					const timeout = waitTimeout(params.timeout_ms);
-					if (id.includes("/") || !jobs.canNotify()) return json(await jobs.wait(waitIds, timeout, lines, signal, until));
-					const watched = jobs.watch(waitIds, timeout, lines, until);
-					return json(watched.result, watched.waiting);
+					return json(await jobs.wait(waitIds, timeout, lines, signal, until));
 				}
 				case "status": return json({ statuses: jobs.status(ids(params.ids, false), lines) });
 				case "kill": {
@@ -184,8 +162,6 @@ export function createJobs(options: JobsOptions = {}) {
 	const jobs = new Map<number, Job>();
 	let counter = 0;
 	let disposed = false;
-	let notifyTo = options.notify;
-	const waiters = new Set<Waiter>();
 	const activityListeners = new Set<() => void>();
 	const backgroundCount = () => disposed ? 0 : [...jobs.values()].filter((job) => job.ended === undefined).length;
 	function activityChanged() {
@@ -230,10 +206,6 @@ export function createJobs(options: JobsOptions = {}) {
 			output_path: job.path,
 			output_bytes: job.bytes,
 		};
-	}
-	function shown(job: Job, lines?: number) {
-		if (job.ended !== undefined) { job.endSeen = true; job.delivered = true; }
-		return status(job, lines);
 	}
 	function kill(job: Job) {
 		if (job.ended === undefined) job.controller.abort();
@@ -375,14 +347,14 @@ export function createJobs(options: JobsOptions = {}) {
 			reason: "match",
 			timed_out: false,
 			matched: hits.map((job) => ({ id: idOf(job), line: (job.tail || job.latest).split("\n").reverse().find((line) => until!.test(line)) ?? "" })),
-			statuses: selected.map((job) => shown(job, lines)),
+			statuses: selected.map((job) => status(job, lines)),
 		};
-		if (!finished.length) return { reason: "timeout", timed_out: true, statuses: selected.map((job) => shown(job, lines)) };
+		if (!finished.length) return { reason: "timeout", timed_out: true, statuses: selected.map((job) => status(job, lines)) };
 		return {
 			reason: "exit",
 			timed_out: false,
-			results: finished.map((job) => ({ ...shown(job, lines), result: job.result ?? "" })),
-			statuses: selected.filter((job) => !finished.includes(job)).map((job) => shown(job, lines)),
+			results: finished.map((job) => ({ ...status(job, lines), result: job.result ?? "" })),
+			statuses: selected.filter((job) => !finished.includes(job)).map((job) => status(job, lines)),
 		};
 	}
 	const endedOf = (selected: Job[]) => selected.filter((job) => job.ended !== undefined);
@@ -390,7 +362,6 @@ export function createJobs(options: JobsOptions = {}) {
 
 	async function wait(ids: string[], timeoutMs: number, lines: number, signal?: AbortSignal, until?: RegExp) {
 		const selected = ids.map(find);
-		for (const other of [...waiters]) if (other.selected.some((job) => selected.includes(job))) other.cancel();
 		const ended = () => endedOf(selected);
 		const matching = () => matchingOf(selected, until);
 		if (!ended().length && !matching().length) {
@@ -415,57 +386,12 @@ export function createJobs(options: JobsOptions = {}) {
 		return report(selected, lines, until, ended());
 	}
 
-	function watch(ids: string[], timeoutMs: number, lines: number, until?: RegExp): { result: Record<string, unknown>; waiting: boolean } {
-		const selected = ids.map(find);
-		for (const other of [...waiters]) if (other.selected.some((job) => selected.includes(job))) other.cancel();
-		if (endedOf(selected).length || matchingOf(selected, until).length) return { result: report(selected, lines, until, endedOf(selected)), waiting: false };
-		const release = options.retain?.() ?? (() => {});
-		let done = false;
-		let settle: ReturnType<typeof setTimeout> | undefined;
-		const stopDeadline = runAfter(timeoutMs, () => fire(true));
-		const fresh = () => selected.filter((job) => job.ended !== undefined && !job.delivered && !job.reporting);
-		const allEnded = () => selected.every((job) => job.ended !== undefined);
-		const waiter: Waiter = { selected, cancel };
-		function cancel(releaseHold = true) {
-			if (done) return;
-			done = true;
-			stopDeadline();
-			clearTimeout(settle);
-			for (const job of selected) job.listeners.delete(check);
-			waiters.delete(waiter);
-			if (releaseHold) release();
-		}
-		function fire(deadline: boolean) {
-			settle = undefined;
-			if (done) return;
-			const finished = fresh();
-			if (!finished.length && !matchingOf(selected, until).length && !deadline) {
-				if (allEnded()) cancel();
-				return;
-			}
-			cancel(false);
-			try { notifyTo?.({ id: randomUUID(), text: JSON.stringify(report(selected, lines, until, finished)), details: report(selected, lines, until, finished) }); }
-			finally { release(); }
-		}
-		function check() {
-			if (done) return;
-			if (fresh().length) {
-				if (allEnded()) { clearTimeout(settle); fire(false); }
-				else settle ??= setTimeout(() => fire(false), SETTLE_MS);
-			} else if (matchingOf(selected, until).length) fire(false);
-		}
-		for (const job of selected) { job.listeners.add(check); void job.done.then(check); }
-		waiters.add(waiter);
-		return { result: { reason: "waiting", timed_out: false, deadline_ms: timeoutMs, statuses: selected.map((job) => shown(job, lines)) }, waiting: true };
-	}
-
 	async function killJob(id: string) {
 		const job = find(id);
 		if (job.ended === undefined && !job.killable) return { ...status(job), cannot_kill: "a running file tool call finishes on its own" };
-		job.reporting = true;
 		kill(job);
-		try { await sleep(5000, job.done); } finally { job.reporting = false; }
-		return shown(job);
+		await sleep(5000, job.done);
+		return status(job);
 	}
 
 	return {
@@ -476,19 +402,15 @@ export function createJobs(options: JobsOptions = {}) {
 		},
 		run,
 		wait,
-		watch,
-		canNotify: () => notifyTo !== undefined,
-		setNotify(notify: JobsOptions["notify"]) { notifyTo = notify; },
 		kill: killJob,
-		status: (ids: string[] | undefined, lines: number) => (ids ? ids.map(find) : [...jobs.values()]).map((job) => shown(job, lines)),
+		status: (ids: string[] | undefined, lines: number) => (ids ? ids.map(find) : [...jobs.values()]).map((job) => status(job, lines)),
 		abortAll,
 		stopBackground() {
 			const active = [...jobs.values()].filter(job => job.ended === undefined);
-			for (const waiter of [...waiters]) waiter.cancel();
 			abortAll();
 			return { backgroundProcesses: active.filter(job => job.killable).length, unstoppable: active.filter(job => !job.killable).length };
 		},
-		dispose() { disposed = true; activityChanged(); activityListeners.clear(); for (const waiter of [...waiters]) waiter.cancel(); abortAll(); },
+		dispose() { disposed = true; activityChanged(); activityListeners.clear(); abortAll(); },
 		seen(n: number) { if (Number.isSafeInteger(n) && n > counter) counter = n; },
 		get size() { return jobs.size; },
 		settled: (id: string) => find(id).done,
