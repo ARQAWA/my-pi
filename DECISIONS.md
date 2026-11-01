@@ -1285,7 +1285,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   write right after `terminal.start` equals Pi's earlier set for each multiplexer variant and repeats after every restart;
   Pi's disable runs on every stop; nothing is added with the mouse off, in regular mode or on non-Windows platforms;
   owner counting, `/reload`, a hook Pi defines on the class and a foreign wrapper; loading through Pi's resource loader
-  with the same `TuiAltScreen` class. Capture: job `mouse` of `.github/workflows/pcli.yml` (`workflow_dispatch` or a
+  with the same `TuiAltScreen` class. Capture: job `mouse` of `.github/workflows/pcli.yml` (a
   push to branch `pcli`) runs `pcli-vscode/test/mouse.mjs` and `pcli-vscode/test/mouse-suite.cjs` in a real VS Code, starting the
   PCLI chain stock and with `-e extensions/RQW-mouse/index.ts`; expected `?1000h` count 0 stock and 1 with the extension.
   Since: `8f6251a`.
