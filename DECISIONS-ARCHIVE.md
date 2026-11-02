@@ -7736,3 +7736,10 @@ Status: SUPERSEDED by [D-KEYS-STEER] (DECISIONS.md#send-now): the current queue 
 Introduced: `a9873f64`. Source: `cdaae4c8:DECISIONS.md`, lines 1846-1846. Verbatim replaced text:
 
 > The public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`.
+
+## A-0463 · archived 2026-11-02 · Quality control · retired timer
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): background work no longer holds the fold open.
+Introduced: `80732f36`. Source: `c8355adc:DECISIONS.md`, line 1984. Verbatim replaced text:
+
+> RQW-tool-ui 500 ms real-final timer (the active record above, «When the idle session remains quiet for 500 ms»);
