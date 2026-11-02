@@ -163,10 +163,15 @@ test("a completion during a tool call waits for settlement", async t => {
 	assert.equal(f.sent.length, 1);
 });
 
-test("non-interactive sessions retain explicit waits only", async t => {
+test("rpc delivers like the terminal, without drawing a card", async t => {
 	const f = setup(t, "rpc");
-	f.finish(); f.emit("agent_settled", { aborted: false }); await Promise.resolve();
-	assert.equal(f.sent.length, 0);
+	f.emit("agent_settled", { aborted: false }); await Promise.resolve();
+	assert.equal(f.branch.length, 0);
+	f.finish(); await Promise.resolve();
+	assert.equal(f.sent.length, 1);
+	assert.equal(f.sent[0].options.triggerTurn, true);
+	assert.equal(JSON.parse(f.sent[0].message.content).results[0].text, "answer");
+	assert.equal(f.branch.length, 0);
 });
 
 test("two ready sources produce one request", async t => {
