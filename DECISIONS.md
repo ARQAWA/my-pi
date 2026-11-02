@@ -918,6 +918,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Agent
 
+- **History repair direction** `[D-AGENT-HISTORY-REPAIR]`. Owner: «Слушай, смотри, если у нас падает агент, и там история грязная, то есть там типа история кривая, но выброси ты, блядь, пару этих сломанных строк и запусти с того места, где есть история. Зачем запускать с нуля? агентов. Надо в будущем предусмотреть такую систему восстановления, чтобы не перезапускать заново все и токены не сжигать на эту хуйню. То есть там, где мы можем починить, надо чинить, но надо это все продумать так, чтобы это было.. Супер легковес, но максимально минимально». General pairing repair is a future design, not implemented by the narrow interrupted-result fix.
+
 - **Durable delivery receipts** `[D-AGENT-DELIVERY-RECEIPTS]`. Caller coordinators append committed result run IDs, one per line, to `<owning-session-file>.children/delivered`, creating it on first write. Hydration combines this append-only file with the existing branch scan. In-memory sessions skip it. Historical children no longer block five-minute hibernation; filtered codemode results remain consumed after wake or restart. Receipt writes are best effort: a write error does not prevent delivery from committing; repeat delivery after wake is acceptable in that case. This supersedes the historical-child guard in `666ad9f`.
   Owner: «Почему мы не пишем в память то, что нам нужно? Есть данные, которые у нас должны быть durable. Почему мы не можем их писать в какие-то временные файлы ... чтобы это всё было не в одной огромной простыне, а чтобы это можно было просто прочитать с файла. И всё.»
   Owner clarification: «Придут повторно, и что случится?»

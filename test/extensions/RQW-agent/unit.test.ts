@@ -2271,6 +2271,36 @@ test("a tool call cut off by a crash gets an error result when the child is reco
 	restored.runtime.close();
 });
 
+test("resume removes results of aborted assistant tool calls from the provider request", async t => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const first = runtimeFixture(parent, root, () => new Promise<never>(() => {}));
+	await first.execute({ action: "start", task: "task", tools: [] });
+	await until(() => first.requests.length === 1);
+	first.runtime.close();
+	const directory = `${parent.getSessionFile()}.children/agent-1`;
+	const [file] = await readdir(directory);
+	const child = SessionManager.open(join(directory, file));
+	child.appendMessage(fauxAssistantMessage([fauxToolCall("read", {}, { id: "valid-call" })], { stopReason: "toolUse" }));
+	child.appendMessage({ role: "toolResult", toolCallId: "valid-call", toolName: "read", content: [{ type: "text", text: "completed" }], isError: false, timestamp: 2 });
+	child.appendMessage(fauxAssistantMessage([fauxToolCall("read", {}, { id: "aborted-call" })], { stopReason: "aborted" }));
+	child.appendMessage({ role: "toolResult", toolCallId: "aborted-call", toolName: "read", content: [{ type: "text", text: "interrupted" }], isError: true, timestamp: 2 });
+	child.appendMessage(fauxAssistantMessage([], { stopReason: "error" }));
+	child.appendMessage({ role: "user", content: [{ type: "text", text: "continue" }], timestamp: 3 });
+	child.appendMessage(fauxAssistantMessage([], { stopReason: "error" }));
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root);
+	await restored.execute({ action: "resume", id: "agent#1" });
+	await restored.runtime.wait(new AbortController().signal);
+	const messages = restored.requests.at(-1).messages;
+	assert.deepEqual(userTexts(restored.requests.at(-1)), ["task", "continue"]);
+	assert.equal(messages.some((message: any) => message.role === "assistant" && message.content.some((part: any) => part.type === "toolCall" && part.id === "valid-call")), true);
+	assert.equal(messages.some((message: any) => message.role === "toolResult" && message.toolCallId === "valid-call"), true);
+	assert.equal(messages.some((message: any) => message.role === "toolResult" && message.toolCallId === "aborted-call"), false);
+	restored.runtime.close();
+});
+
 test("a joined batch that is already in the history is not sent again", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	const root = await temp(t);

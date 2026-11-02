@@ -1136,6 +1136,16 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				let pendingPayload = firstPayload;
 				session.agent.streamFunction = (model, context, options) => {
 					check();
+					// Pi drops failed assistant turns, so their results must not reach the provider alone.
+					let discarded = new Set<string>();
+					const messages = context.messages.filter(message => {
+						if (message.role === "assistant") {
+							discarded = new Set(message.stopReason === "aborted" || message.stopReason === "error"
+								? message.content.filter(part => part.type === "toolCall").map(part => part.id) : []);
+						}
+						return message.role !== "toolResult" || !discarded.has(message.toolCallId);
+					});
+					context = { ...context, messages };
 					progress!.capture(model, context);
 					const first = pendingPayload;
 					if (first && options?.sessionId !== manager.getSessionId()) return stream(model, context, options);
