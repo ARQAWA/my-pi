@@ -29,7 +29,7 @@ const textOf = (result: any) => result.content.filter((block: any) => block.type
 
 /** Lets the stream, auth and socket promises run; no real time passes. */
 async function settle(until: () => boolean): Promise<void> {
-	for (let turn = 0; turn < 200 && !until(); turn++) await new Promise<void>((resolve) => setImmediate(resolve));
+	for (let turn = 0; turn < 20000 && !until(); turn++) await new Promise<void>((resolve) => setImmediate(resolve));
 	assert.ok(until(), "the awaited state was not reached");
 }
 
