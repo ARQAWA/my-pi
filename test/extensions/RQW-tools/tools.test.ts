@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -33,7 +34,7 @@ test("edit bounds and marks a truncated nearest match", async (t) => {
 	t.after(() => rm(cwd, { recursive: true, force: true }));
 	const text = "x".repeat(1_000_000);
 	await writeFile(join(cwd, "long.txt"), text);
-	const edit: any = createTools(cwd, () => ({})).find((tool) => tool.name === "edit");
+	const edit: any = createTools(cwd, () => ({}), { descriptions }).find((tool) => tool.name === "edit");
 	await assert.rejects(edit.execute("call", { path: "long.txt", edits: [{ oldText: "x".repeat(200) + "y", newText: "replacement" }] }, undefined, undefined, { cwd }), (error: Error) => {
 		assert.match(error.message, /Nearest match at lines 1-1:/);
 		assert.match(error.message, /truncated/i);
@@ -43,7 +44,7 @@ test("edit bounds and marks a truncated nearest match", async (t) => {
 });
 
 test("edit and write descriptions introduce the multi-file form first", () => {
-	const tools = Object.fromEntries(createTools("/work", () => ({})).map(tool => [tool.name, tool as any]));
+	const tools = Object.fromEntries(createTools("/work", () => ({}), { descriptions }).map(tool => [tool.name, tool as any]));
 	for (const name of ["edit", "write"]) {
 		const description = tools[name].description;
 		assert.ok(description.indexOf("several files") < description.indexOf("one file"));
@@ -52,12 +53,12 @@ test("edit and write descriptions introduce the multi-file form first", () => {
 });
 
 test("read keeps the stock schema", () => {
-	const tools = Object.fromEntries(createTools("/work", () => ({})).map(tool => [tool.name, tool as any]));
+	const tools = Object.fromEntries(createTools("/work", () => ({}), { descriptions }).map(tool => [tool.name, tool as any]));
 	assert.deepEqual(Object.keys(tools.read.parameters.properties).sort(), ["limit", "offset", "path"]);
 });
 
 test("bash keeps the stock schema shape with the design's parameter descriptions", () => {
-	const tools = Object.fromEntries(createTools("/work", () => ({})).map(tool => [tool.name, tool as any]));
+	const tools = Object.fromEntries(createTools("/work", () => ({}), { descriptions }).map(tool => [tool.name, tool as any]));
 	const properties = tools.bash.parameters.properties;
 	assert.deepEqual(Object.keys(properties).sort(), ["command", "timeout"]);
 	assert.equal(properties.command.description, "The command to execute");
@@ -65,7 +66,7 @@ test("bash keeps the stock schema shape with the design's parameter descriptions
 });
 
 test("bash description starts its bullets with the dedicated-tool warning", () => {
-	const tools = Object.fromEntries(createTools("/work", () => ({})).map(tool => [tool.name, tool as any]));
+	const tools = Object.fromEntries(createTools("/work", () => ({}), { descriptions }).map(tool => [tool.name, tool as any]));
 	const bullets = tools.bash.description.split(/\r?\n/).filter((line: string) => line.startsWith("- "));
 	assert.equal(bullets[0], "- IMPORTANT: Avoid using this tool to run `rg`, `fd`, `grep`, `find`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or after you have verified that a dedicated tool cannot accomplish your task. Instead, use the appropriate dedicated tool as this will provide a much better experience for the user.");
 	assert.equal(bullets[1], "- Use rqw_rg, rqw_glob, rqw_readfile for file operations when applicable.");

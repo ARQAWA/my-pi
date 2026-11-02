@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,7 +9,7 @@ import { createReadFileTool } from "../../../extensions/RQW-tools/read-file.ts";
 async function fixture(t: any) {
 	const cwd = await mkdtemp(join(tmpdir(), "rqw read кириллица-"));
 	t.after(() => rm(cwd, { recursive: true, force: true }));
-	const tool: any = createReadFileTool(cwd, () => ({ images: { autoResize: false } }));
+	const tool: any = createReadFileTool(cwd, () => ({ images: { autoResize: false } }), descriptions.rqw_readfile);
 	const execute = (params: any, ctx: any = { cwd }, signal?: AbortSignal) => tool.execute("test", params, signal, undefined, ctx);
 	const text = async (params: any) => (await execute(params)).structuredContent;
 	return { cwd, tool, execute, text };
@@ -213,7 +214,7 @@ test("rqw_readfile delegates image processing and reports non-vision models", as
 	large.write("BM"); large.writeUInt32LE(70, 2); large.writeUInt32LE(54, 10); large.writeUInt32LE(40, 14);
 	large.writeInt32LE(2, 18); large.writeInt32LE(2, 22); large.writeUInt16LE(1, 26); large.writeUInt16LE(24, 28);
 	await writeFile(join(cwd, "large.bmp"), large);
-	const resizing: any = createReadFileTool(cwd, () => ({ images: { autoResize: true } }));
+	const resizing: any = createReadFileTool(cwd, () => ({ images: { autoResize: true } }), descriptions.rqw_readfile);
 	const resized = await resizing.execute("test", { path: "large.bmp" }, undefined, undefined, { cwd, model: { input: ["image"], inputLimits: { images: { resize: { maxWidth: 1, maxHeight: 1 } } } } });
 	const attachment = resized.content.find((block: any) => block.type === "image");
 	assert.ok(attachment);

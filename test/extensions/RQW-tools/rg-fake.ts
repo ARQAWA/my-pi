@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire, syncBuiltinESMExports } from "node:module";
@@ -246,12 +247,12 @@ export async function project(t: TestContext, tree: VFile[] = [], reply?: Reply 
 	if (reply) rg.handler = typeof reply === "function" ? reply : () => reply;
 	const abs = (...parts: string[]) => join(cwd, ...parts);
 	const search = async (params: any, options?: any) => {
-		const tool: any = createRgToolDefinition(cwd, options);
+		const tool: any = createRgToolDefinition(cwd, descriptions.rqw_rg, options);
 		const result = await tool.execute("call-1", tool.prepareArguments(params), undefined, undefined, { cwd });
 		return result.content[0].text as string;
 	};
 	const glob = async (params: any, options?: any) => {
-		const tool: any = createGlobToolDefinition(cwd, options);
+		const tool: any = createGlobToolDefinition(cwd, descriptions.rqw_glob, options);
 		const result = await tool.execute("call-1", tool.prepareArguments(params), undefined, undefined, { cwd });
 		return result.content[0].text as string;
 	};

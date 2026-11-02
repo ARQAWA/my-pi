@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import test from "node:test";
@@ -107,7 +108,7 @@ test("a listing that outlives the backend limit is killed and marked incomplete"
 
 test("abort before launch runs nothing; abort during the listing kills rg", async (t) => {
 	const p = await project(t, [], { hang: true });
-	const tool: any = createGlobToolDefinition(p.cwd);
+	const tool: any = createGlobToolDefinition(p.cwd, descriptions.rqw_glob);
 	const before = new AbortController();
 	before.abort();
 	await assert.rejects(tool.execute("c", { glob_pattern: "*" }, before.signal, undefined, { cwd: p.cwd }), /Operation aborted/);

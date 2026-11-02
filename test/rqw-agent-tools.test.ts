@@ -1,3 +1,4 @@
+import { descriptions } from "./extensions/RQW-tools/descriptions.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -53,7 +54,7 @@ test("real RQW-tools definitions reach default and nested children", async t => 
 		getThinkingLevel: () => "off", getActiveTools: () => [], getAllTools: () => [],
 		sendMessage: (message: any) => parent.appendCustomMessageEntry(message.customType, message.content, message.display, message.details),
 	};
-	installRqwTools(pi);
+	installRqwTools(pi, { descriptions });
 	registerAgent(pi);
 	t.after(async () => { for (const hook of hooks.get("session_shutdown") ?? []) await hook({ reason: "shutdown" }, ctx); });
 	const call = (id: string, params: any) => tools.get("agent").execute(id, params, ctx.signal, undefined, ctx);
