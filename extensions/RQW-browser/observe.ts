@@ -3,7 +3,7 @@ import { untilAborted } from "./abort.ts";
 
 // Adapted from oh-my-pi 18.8.9 (browser/tab-worker.ts), MIT; see THIRD-PARTY-NOTICES.md.
 
-// Pinned puppeteer-core 25.3.0 members that its published types strip as @internal; they exist at run time.
+// Pinned puppeteer-core 25.16.0 members that its published types strip as @internal; they exist at run time.
 declare module "puppeteer-core" {
 	interface Frame {
 		mainRealm(): Realm;

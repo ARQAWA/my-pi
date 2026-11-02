@@ -2,7 +2,7 @@
 
 ## Puppeteer (Apache-2.0)
 
-`puppeteer-core` 25.3.0 and `@puppeteer/browsers` 3.0.6 are by the Chromium Authors.
+`puppeteer-core` 25.16.0 and `@puppeteer/browsers` 3.0.6 are by the Chromium Authors.
 Their source files carry Google copyright notices and SPDX identifier Apache-2.0; the license text is in
 `LICENSE-APACHE-2.0.txt`. Their bundled third-party code retains its own notices in the installed packages.
 Other npm dependencies retain their licenses in their installed package files.

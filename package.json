@@ -69,7 +69,7 @@
   },
   "dependencies": {
     "@puppeteer/browsers": "3.0.6",
-    "puppeteer-core": "25.3.0",
+    "puppeteer-core": "25.16.0",
     "smol-toml": "1.9.1",
     "ws": "8.22.0"
   }
