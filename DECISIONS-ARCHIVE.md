@@ -7758,3 +7758,75 @@ Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): the
 Introduced: `0fcab111`. Source: `733143f1:DECISIONS.md`, line 544. Verbatim replaced text:
 
 >   when such an answer is not the real final (`my-pi-evidence/designs/followup-hold/DESIGN.md`, «Заказ»).
+
+## A-0466 · archived 2026-11-02 · Settings · duplicate default tools
+
+Status: SUPERSEDED by [D-SETTINGS-DEFAULT-TOOLS] (DECISIONS.md#settings): the live decision states the current rule.
+Introduced: `bbc27ca0`. Source: `e4a7aafd:DECISIONS.md`, lines 864-864. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> - **Default tools** `[D-SETTINGS-DEFAULT-TOOLS]`. `RQW-settings` enables `codemode` and `tool_search` by default. Coordinator question, 2026-11-02: retain the defaults despite the lost original source? ... Carrier: `extensions/RQW-settings/`.
+
+## A-0467 · archived 2026-11-02 · Settings · unverified source
+
+Status: SUPERSEDED by [D-SETTINGS-DEFAULT-TOOLS] (DECISIONS.md#settings): the live decision states the current rule.
+Introduced: `3430f322`. Source: `e4a7aafd:DECISIONS.md`, lines 871-871. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Coordinator text: the historical CodeMode/Tool Search owner quotation is not verified in the permitted Pi USER sources.
+
+## A-0468 · archived 2026-11-02 · Settings · theme supersession
+
+Status: SUPERSEDED by [D-SETTINGS-SETUP] (DECISIONS.md#settings): the live decision states the current rule.
+Introduced: `5c52247b`. Source: `e4a7aafd:DECISIONS.md`, lines 884-884. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> Supersedes in part `[D-UI-NATIVE-THEME]` (manual one-time theme selection, "no activation code", "unrelated settings stay untouched") and the `INSTALL.md` rule "change nothing else: no unrelated packages, settings, credentials or files".
+
+## A-0469 · archived 2026-11-02 · Subscription limits · refresh cadence
+
+Status: SUPERSEDED by [D-STATUSBAR-SUBSCRIPTION-LIMITS] (DECISIONS.md#subscription-limits): the live decision states the current rule.
+Introduced: `8ccc8e51`. Source: `e4a7aafd:DECISIONS.md`, lines 897-897. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> Refresh immediately and every five minutes while active.
+
+## A-0470 · archived 2026-11-02 · Subscription limits · failed data
+
+Status: SUPERSEDED by [D-STATUSBAR-SUBSCRIPTION-LIMITS] (DECISIONS.md#subscription-limits): the live decision states the current rule.
+Introduced: `8ccc8e51`. Source: `e4a7aafd:DECISIONS.md`, lines 898-899. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> Missing or failed data is `???`, never an invented 0% or 100%; failed reads
+>   discard displayed stale data.
+
+## A-0471 · archived 2026-11-02 · Subscription limits · old refresh description
+
+Status: SUPERSEDED by [D-STATUSBAR-SUBSCRIPTION-LIMITS] (DECISIONS.md#subscription-limits): the live decision states the current rule.
+Introduced: `8ccc8e51`. Source: `e4a7aafd:DECISIONS.md`, lines 902-903. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> five-minute refresh and partial delivery when a source cannot be read in this runtime.
+
+## A-0472 · archived 2026-11-02 · Status bar · old compaction label
+
+Status: SUPERSEDED by [D-STATUSBAR-ANIMATION] (DECISIONS.md#status-bar): the live decision states the current rule.
+Introduced: `d4bf9a6c`. Source: `e4a7aafd:DECISIONS.md`, lines 1699-1699. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+>   Gold compaction has one left-to-right glint across each full strip and the `Compaction` label.
+
+## A-0473 · archived 2026-11-02 · Anthropic package integration · old package count
+
+Status: SUPERSEDED by [D-ANTHROPIC-PKG] (DECISIONS.md#anthropic-package-integration): the live decision states the current rule.
+Introduced: `97f7e9a2`. Source: `e4a7aafd:DECISIONS.md`, lines 1756-1756. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> RQW-anthropic is the ninth of the 30 `pi.extensions` entries;
+
+## A-0474 · archived 2026-11-02 · Anthropic adapter · benchmark pointer
+
+Status: SUPERSEDED by [D-ANTHROPIC-PROOF] (DECISIONS.md#anthropic-subscription-adapter): the live decision states the current rule.
+Introduced: `3430f322`. Source: `e4a7aafd:DECISIONS.md`, lines 1456-1458. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> The status of old Claude benchmark campaigns is recorded once in
+>   [Work policy](#work-policy).
+
+## A-0475 · archived 2026-11-02 · Models · thinking shortcut
+
+Status: SUPERSEDED by [D-COMMAND-CLEANUP] (DECISIONS.md#command-cleanup): the live decision states the current rule.
+Introduced: `3430f322`. Source: `e4a7aafd:DECISIONS.md`, lines 1557-1557. Verbatim replaced text (an ellipsis marks kept owner quotes):
+
+> Shift+Tab and provider definitions stay stock.

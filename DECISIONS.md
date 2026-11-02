@@ -861,14 +861,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Settings
 
-- **Default tools** `[D-SETTINGS-DEFAULT-TOOLS]`. `RQW-settings` enables `codemode` and `tool_search` by default. Coordinator question, 2026-11-02: retain the defaults despite the lost original source? Owner: «Так, про код моды Tool Search оставить включенными. Я точно помню, что я просил их включать, поэтому получается источник утерян.» Carrier: `extensions/RQW-settings/`.
-
 - **Background cache warming** `[D-SETTINGS-WARMING]`. Background warming is off inside RQW-settings regardless of user configuration; normal inference still writes and reads prompt caches. A reversible session-owned `getCacheWarmingMode` policy leaves settings files, environment and cache-miss notices unchanged, restores the native getter on shutdown, and preserves other owners and foreign hooks through reload. All children, including reviewer profiles, carry the policy owned by RQW-agent.
   Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 440, in `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`.
   Reason: Pi's own generic warmer stays off. The one background request is the separate main-chat Anthropic warm `[D-ANTHROPIC-WARM]` ([Anthropic subscription adapter](#anthropic-subscription-adapter)), ordered by the owner; children are never warmed. Earlier reason: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0419.
   Carrier: `extensions/RQW-settings/cache-warming.ts`. Since: `b91f832`.
-- **Default tools and reload** `[D-SETTINGS-DEFAULT-TOOLS]`. RQW-settings activates registered built-in `codemode` and `tool_search` at `session_start` only without an explicit CLI or `defaultTools` selection, using the same selection policy as RQW-tools for grep/find. Disabled built-ins are not added. The default codemode mode stays `on`; Pi adds codemode call signatures to the seven RQW-tools descriptions, including `job`. On `/reload` both extensions leave the existing active set alone, preserving user changes. Replaces the former `[D-SETTINGS-CODEMODE]`, which the archive still cites.
-  Coordinator text: the historical CodeMode/Tool Search owner quotation is not verified in the permitted Pi USER sources.
+- **Default tools and reload** `[D-SETTINGS-DEFAULT-TOOLS]`. Owner: «Так, про код моды Tool Search оставить включенными. Я точно помню, что я просил их включать, поэтому получается источник утерян.» RQW-settings activates registered built-in `codemode` and `tool_search` at `session_start` only without an explicit CLI or `defaultTools` selection, using the same selection policy as RQW-tools for grep/find. Disabled built-ins are not added. The default codemode mode stays `on`; Pi adds codemode call signatures to the seven RQW-tools descriptions, including `job`. On `/reload` both extensions leave the existing active set alone, preserving user changes. Replaces the former `[D-SETTINGS-CODEMODE]`, which the archive still cites.
   Reason: useful defaults must not override explicit selections.
   Carrier: `extensions/RQW-settings/index.ts`, `extensions/RQW-settings/selection.ts`, `extensions/RQW-tools/index.ts`, `extensions/RQW-tools/selection.ts`. Since: `3720200`.
 - **GPT Fast** `[D-SETTINGS-GPT-FAST]`. `/fast-gpt [on|off]` toggles the main chat's OpenAI priority processing, with no argument toggling it; `FAST_GPT_DEFAULT = false`. Only matching `openai-codex` request bodies receive `service_tier: "priority"` through `before_provider_request`; Anthropic is untouched. State survives reload and new sessions in the process, not restarts, and has no settings key. The hook applies to SSE and WebSocket request bodies; Pi accounts for the response's service tier. Luna models remain Fast under `[D-CODEX-LUNA-FAST]`. The main-chat indicator belongs to [Status bar](#status-bar).
@@ -881,7 +878,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner: the exact inheritance instruction is recorded in GPT Fast above.
   Reason: child tier follows the caller's choice without live coupling or cross-extension imports.
   Carrier: `extensions/RQW-agent/fast-gpt.ts`, `index.ts`. Since: `fa05edf`.
-- **Identical setup on every machine** `[D-SETTINGS-SETUP]`. Supersedes in part `[D-UI-NATIVE-THEME]` (manual one-time theme selection, "no activation code", "unrelated settings stay untouched") and the `INSTALL.md` rule "change nothing else: no unrelated packages, settings, credentials or files". Every machine with my-pi starts configured like the owner's working machine. `extensions/RQW-settings/setup-profile.json` holds `setupVersion` and the portable settings: `quietStartup`, `outputPad`, `terminal.showImages`, `autocompleteMaxVisible`, `steeringMode`, `followUpMode`, `transport`, `hideThinkingBlock`, `markdown.mermaid`, `showCacheMissNotices`, `warnings.anthropicExtraUsage`, `collapseChangelog`, `enableInstallTelemetry`, `defaultProjectTrust`, `doubleEscapeAction`, `treeFilterMode`, `tuiMode`, `compaction.enabled`, `theme` (`RQW-theme`) and `editorPaddingX`. A runtime bridge (`[D-SCOPE-RUNTIME-PATCH]`) on Pi 1.4.0's `DefaultResourceLoader.updateThemesFromPaths` applies it once, after the extensions and themes are loaded and before the interface is built, in one settings lock: the listed keys replace existing values, other keys stay, and the marker `rqwSetupVersion` is written in the same write. With the marker present nothing is applied again, so later owner changes stay. Project settings keep priority in memory. Packages, paths, project trust, credentials and `lastChangelogVersion` are never written. An invalid settings file, a changed Pi shape, or an extension or the theme of the package filtered out writes nothing and shows a warning at session start; Pi stays stock. The profile is not rerun when `setupVersion` is unchanged. A package fully excluded by an old filter, and the Windows PCLI bootstrap, are not covered here.
+- **Identical setup on every machine** `[D-SETTINGS-SETUP]`. The `INSTALL.md` rule "change nothing else: no unrelated packages, settings, credentials or files" is superseded. Every machine with my-pi starts configured like the owner's working machine. `extensions/RQW-settings/setup-profile.json` holds `setupVersion` and the portable settings: `quietStartup`, `outputPad`, `terminal.showImages`, `autocompleteMaxVisible`, `steeringMode`, `followUpMode`, `transport`, `hideThinkingBlock`, `markdown.mermaid`, `showCacheMissNotices`, `warnings.anthropicExtraUsage`, `collapseChangelog`, `enableInstallTelemetry`, `defaultProjectTrust`, `doubleEscapeAction`, `treeFilterMode`, `tuiMode`, `compaction.enabled`, `theme` (`RQW-theme`) and `editorPaddingX`. A runtime bridge (`[D-SCOPE-RUNTIME-PATCH]`) on Pi 1.4.0's `DefaultResourceLoader.updateThemesFromPaths` applies it once, after the extensions and themes are loaded and before the interface is built, in one settings lock: the listed keys replace existing values, other keys stay, and the marker `rqwSetupVersion` is written in the same write. With the marker present nothing is applied again, so later owner changes stay. Project settings keep priority in memory. Packages, paths, project trust, credentials and `lastChangelogVersion` are never written. An invalid settings file, a changed Pi shape, or an extension or the theme of the package filtered out writes nothing and shows a warning at session start; Pi stays stock. The profile is not rerun when `setupVersion` is unchanged. A package fully excluded by an old filter, and the Windows PCLI bootstrap, are not covered here.
   Owner, verbatim: «Да, и самое главное, когда мы устанавливаем весь наш harness на систему, надо, чтобы там уже всё было активно, все наши настройки чтобы уже были активны, чтобы все тачки, на которые я поставлю Pi и поставлю наш My Pi harness, чтобы они все идентично были настроены, как эта рабочая тачка. Я имею в виду подключенные плагины, темы сразу должны быть все активированы, все настройки должны быть активированы, как здесь. Это суперкритически важно.»
   Owner, verbatim: «Да. Всю работу делаем минимальным количеством story points в соответствии с нашими workflow, манифестом работы, ценностями и стандартами качества»
   Source: delegated task of 2026-10-29, design `my-pi-evidence/designs/identical-setup/DESIGN.md`.
@@ -894,12 +891,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   The folder stays on the left; limits sit on the right immediately before the git branch, wrapping when they do not fit.
   Owner: «Надо еще это статус бар перенести лимиты по провайдерам на право и поставить их прямо перед веткой на 0 sp задача в общий текущий пак».
   The folder row shows CX soft light blue (`139;197;255`) and CC soft pink-red (`255;152;170`), one remaining percent each (owner recolour: «CC красным ближе к розовому, а СХ синим ближе к голубому», soft bright colours):
-  the weekly window. Refresh immediately and every five minutes while active.
-  Missing or failed data is `???`, never an invented 0% or 100%; failed reads
-  discard displayed stale data. Disable/shutdown cancels requests and releases the timer.
+  the weekly window. Refresh immediately, check the shared cache every minute, and fetch again when its last check is at least three minutes old.
+  Without a known value the display is `???`, never an invented 0% or 100%. Disable/shutdown cancels requests and releases the timer.
   Owner: «Надо, чтобы ты разобрался, как это запилить, и сделал отображение, чтобы в real time эта хуйня работала. Не в real time, а хотя бы чтобы она раз в пять минут.»
   Owner chose option 1: remaining native-window percentages, honest `???` state,
-  five-minute refresh and partial delivery when a source cannot be read in this runtime.
+  partial delivery when a source cannot be read in this runtime.
   CC consumes the existing optional Anthropic event offer. CX independently uses
   Pi's public `readStoredCredential` for one-off read-only stored OAuth reads, without
   auth resolution, token refresh, rotation or writes. CX requests the wham usage source
@@ -1454,8 +1450,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Proof boundary** `[D-ANTHROPIC-PROOF]`. Tests: `test/extensions/RQW-anthropic/adapter.test.ts`,
   `test/extensions/RQW-anthropic/quota.test.ts`, `test/extensions/RQW-anthropic/retry.test.ts`,
   `test/extensions/RQW-anthropic/context-fork.test.ts`, `test/extensions/RQW-anthropic/main-warm.test.ts`. They do not prove live subscription acceptance, billing or actual
-  Windows execution. The status of old Claude benchmark campaigns is recorded once in
-  [Work policy](#work-policy). Independent review follows `PROCESS.md`. Since: `8a1f2ed`.
+  Windows execution. Independent review follows `PROCESS.md`. Since: `8a1f2ed`.
 - **Header boundary, per-request version** `[D-ANTHROPIC-HEADERS]`. Engineering follow-up to four review findings:
   the adapter rejects subscription Authorization headers before delegation and keeps ordinary API-key gateway behavior
   (`auth-boundary.ts`, `transport.ts`). Each request records its sent version, also under concurrency, with one bounded
@@ -1554,7 +1549,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner: «Надо вернуть старое управление моделями: Shift + Вверх/Вниз будет смена модели, Shift + Вверх — к более сильным, Shift + Вниз — к более слабым. А Shift + Влево/Вправо — это будет смена ризенинга, так же, как и раньше это было в ОМП.» (session `2026-10-21T16-27-59-062Z_01a15f4a`, line 2361)
   Carrier: `extensions/RQW-models/index.ts`. Since: `ac33dcc`.
 - **`/rqw-models`** `[D-MODELS-COMMAND]`. The extension's authenticated listed-model picker via `ctx.ui.select`. Pi's
-  built-in model shortcuts stay reserved and are emptied, not replaced; Shift+Tab and provider definitions stay stock. In
+  built-in model shortcuts stay reserved and are emptied, not replaced; Shift+Tab is disabled by `[D-COMMAND-CLEANUP]`; provider definitions stay stock. In
   print/JSON mode it does nothing; RPC can supply the standard select dialog. Since: `e6c21e2`.
 - **Only listed models** `[D-MODELS-LISTED]`. Only models of the list (any provider variant matched by `familyOf`) can be
   selected or used anywhere, including CLI `pi --model`, restored sessions and `agent` subagent models.
@@ -1677,11 +1672,13 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   neighbouring letters; gold is the smoothest. No unrelated animation behavior changes.
   Owner: «Да, и во время compaction анимация должна идти поверх заголовка, поверх названия сессии.»
   «Надо серебряный сделать более плавным и золотой нужно сделать максимально плавным А пиковые цвета чтобы были на серебре в три символа, а на золоте в шесть-семь символов»
+  Coordinator note: the six-to-seven-character gold peak in this quote was replaced by the three-character correction below.
   «Надо, чтобы пиковые цвета были очень яркие, но при этом спуск вниз до базового цвета был довольно размазанным.»
   Source: the same local owner session as `[D-STATUSBAR-ACTIVITY]`, USER entries at lines 6399 and 6413;
   Neither shimmer has a slant; timing follows `[D-STATUSBAR-ANIMATION]`. Reason: smoother highlights with the owner's peak widths.
   Gold correction, owner task request on 2026-10-25, source: current `statusbar-compaction-glint` task:
   "Replace this with ONE glint, matching the silver status animation's approach, travelling across the whole strip AND the `Compaction` label."
+  Coordinator note: the old `Compaction` label was replaced by the current context meter; the strip still shimmers.
   "Use the final width clarification: THREE characters at the peak, not seven."
   "Keep the current animation speed exactly; the owner explicitly likes it."
   "Make the falloff very soft, distributed and smooth, with an expensive-looking continuous gradient."
@@ -1696,7 +1693,6 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Silver stops change from `#5f5e5c, #8d8d8c, #ffffff` to `#5f5e5c, #6b6a68, #878685`:
   each channel is `base + Math.round((oldStop - base) / 4)` above the unchanged base.
   Relative gradient shape, three-cell crest, width, falloff, label and all silver mechanics stay unchanged.
-  Gold compaction has one left-to-right glint across each full strip and the `Compaction` label.
   Each complete flight takes 1250 ms and the next starts immediately: period 1250 ms, no pause or reverse.
   Gold palette, intensity, width, gradient, crest, softness, label and scope are unchanged.
   Owner source: current `statusbar-silver-gold-cycle` task, 2026-10-25:
@@ -1706,6 +1702,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   The lightning keeps its 120 ms colour step.
   Silver correction source: current `statusbar-silver-loop` task, owner steering on 2026-10-25:
   "the silver glint at the top must appear at the left, fly VERY FAST left-to-right at one constant linear speed, fully disappear after passing the right edge, then remain absent for exactly 2 seconds before the next flight."
+  Coordinator note: the two-second pause in this quote was replaced by the 2500 ms rule above.
   "The owner explicitly leaves the flight duration to our visual judgment; choose a genuinely fast duration and show deterministic timing/render evidence."
   This supersedes silver's earlier back-and-forth motion and retained speed, not gold or other UI.
   The title animates during compaction, not otherwise. Input text and effort colours do not animate.
@@ -1716,6 +1713,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner correction: «1а», supplied by Main in this task on 2026-10-25: hide the stock row as before the change.
   `activityRows` supplies status and trailing blank; Pi supplies the leading spacer. Idle returns `[]`.
   Owner: «Сделай анимацию блика 30фпс, 50 ту мач и сделай ее более плавной и что бы был 1 блик на статусе который катается туда сюда, а не бесконечное количество»
+  Coordinator note: the back-and-forth motion in this quote was replaced by the one-way silver cycle above.
   Source: `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 6774,
   Soft falloff, layout and static title stay unchanged; silver intensity and gold timing follow the current amendment above.
   Carrier: `extensions/RQW-statusbar/{index,render}.ts`.
@@ -1753,7 +1751,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 ## Anthropic package integration
 
 - **Package integration** `[D-ANTHROPIC-PKG]`. Coordinator integration brief (C:3376), not an owner quotation:
-  RQW-anthropic is the ninth of the 30 `pi.extensions` entries; package fixtures use fake authenticated allowed
+  RQW-anthropic is listed in `pi.extensions`; package fixtures use fake authenticated allowed
   providers, not a visibility bypass. Proof boundary:
   `[D-ANTHROPIC-PROOF]`. Since: `071df1e`.
 
