@@ -301,6 +301,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: every decision stays checkable by history while the documents agents read routinely carry only current
   rules. Carriers: `DECISIONS.md`, `DECISIONS-ARCHIVE.md`, `BACKLOG.md`, `PROCESS.md`.
   Since: the docs-cleanup squash (`git log -S'D-WORK-ARCHIVE' -- DECISIONS.md`).
+  Entries without an owner quote: about 107 technical records of shipped code stay in `DECISIONS.md`. Main's question, 2026-11-02: «Около сотни записей в решениях без твоей цитаты. Это технические записи к уже выпущенному коду. 1. Оставить как есть. 2. Перенести в архив.» Owner: «1».
 - **Coordinator** `[D-WORK-COORDINATOR]`. Main is the coordinator, not an independent implementer. Owner (`13-49-40:282`):
   «Да, он как техлид/тимлид, координатор, но не исполнитель самостоятельный.»
   Reason: orchestration and acceptance stay with Main, execution with subagents.
