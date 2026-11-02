@@ -528,23 +528,11 @@ export interface ActivityChrome {
 /** Spaces between the status text and its key hint. */
 const HINT_GAP = 2;
 
-/** Agent rows are prepared separately so the shimmer never repaints them. */
-export function agentRows(width: number, list: AgentLine[], dim: boolean, paint: (role: "muted" | "dim" | "text", text: string) => string): string[] {
-	return list.map((agent) => {
-		const state = agent.state;
-		const id = singleLine(agent.id);
-		const title = singleLine(agent.title ?? "");
-		const suffix = width >= visibleWidth(` · ${state}`) ? ` · ${state}` : state;
-		let room = Math.max(0, width - visibleWidth(suffix));
-		const idWidth = visibleWidth(id);
-		const indent = " ".repeat(Math.min(3 + 2 * agent.depth, Math.max(0, room - idWidth)));
-		room -= indent.length;
-		const shownId = fitPlain(id, room);
-		room -= visibleWidth(shownId);
-		const shownTitle = title && room > 1 ? ` ${fitPlain(title, room - 1)}` : "";
-		if (dim || state === "idle" || state === "afk") return paint("dim", indent + shownId + shownTitle + suffix);
-		return indent + paint("muted", shownId) + (shownTitle ? " " + paint("dim", shownTitle.slice(1)) : "") + paint(state === "working" ? "text" : "dim", suffix);
-	});
+/** The one dim line with the number of idle subagents (asleep or interrupted too); absent at zero. Prepared separately so the shimmer never repaints it. */
+export function agentRows(width: number, list: AgentLine[], paint: (role: "dim", text: string) => string): string[] {
+	const idle = list.filter((agent) => agent.state === "idle" || agent.state === "afk").length;
+	if (idle === 0) return [];
+	return [paint("dim", fitPlain(` ${idle} idle ${idle === 1 ? "agent" : "agents"}`, width))];
 }
 
 /** Pi supplies one leading spacer; a visible widget ends with one empty row. */
