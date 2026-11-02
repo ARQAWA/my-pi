@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import { parse } from "smol-toml";
@@ -11,10 +10,9 @@ import { runtime, world } from "./fixture.ts";
  * Regression guard for the shipped, personal and repo reviewer profiles. Copies of the real package and repo
  * profile files are resolved through the same path `agent start` uses (resolveConfig), and the result is compared
  * with values written down here as origin/release resolves them: not with the files being tested.
- * The owner's personal Codex files are never copied into this repo; a fixture CODEX_HOME mirrors their shape.
+ * The owner's personal Codex files are never read; a fixture CODEX_HOME mirrors their shape.
  */
 const REPO = join(import.meta.dirname, "..", "..", "..");
-const PERSONAL = join(homedir(), ".codex", "agents");
 const TERRA = "gpt-6.1-terra";
 const REVIEW_PREFIX = "You are a read-only blind reviewer on Main's team: Main does the work, you check it, and together you deliver";
 const DEFAULT_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
@@ -22,8 +20,6 @@ const DEFAULT_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
 /** sha256 of a UTF-8 text with LF endings (git may check files out with CRLF on Windows); the pinned values below are of origin/release, never of the files under test. */
 const digest = (text: string) => createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
 const REVIEW_SHA = "d1ff2eead51911be6d62e883a8f0151212255f03bc10cb993c1966b455d33f8f";
-/** sha256 of the owner's personal spotty and bossy developer_instructions; checked only where those files exist. */
-const PERSONAL_SHA = "8ca0dec75595b08693706d1a253f35f0e49ce80115449d89d2c9ccd6aa7c03af";
 
 type Expected = { model: string; effort: string; prefix: string; sha256?: string };
 // origin/release: model, effort and the start of each role text, per profile.
@@ -46,14 +42,13 @@ function personalToml(name: string, effort: string, role: string) {
 	return `name = "${name}"\ndescription = "placeholder ${name}"\nmodel = "${TERRA}"\nmodel_reasoning_effort = "${effort}"\nsandbox_mode = "read-only"\ndeveloper_instructions = """\n${role}\nsecond line\n"""\n`;
 }
 
-async function setup(t: Parameters<typeof world>[0], personal: "none" | "fixture" | "real") {
+async function setup(t: Parameters<typeof world>[0], personal: "none" | "fixture") {
 	const w = await world(t);
 	await cp(join(REPO, "extensions", "RQW-review", "profiles"), join(w.base, "package-profiles"), { recursive: true });
 	await cp(join(REPO, ".pi", "agents"), join(w.project, ".pi", "agents"), { recursive: true });
 	await cp(join(REPO, "extensions", "RQW-review", "REVIEWER.md"), join(w.base, "REVIEWER.md"));
 	await mkdir(join(w.base, "codex", "agents"), { recursive: true });
 	if (personal === "fixture") for (const [name, e] of Object.entries(FIXTURE_PERSONAL)) await writeFile(join(w.base, "codex", "agents", `${name}.toml`), personalToml(name, e.effort, e.prefix));
-	if (personal === "real") await cp(PERSONAL, join(w.base, "codex", "agents"), { recursive: true });
 	const run = runtime(w.cwd, w.base, "off", [TERRA]);
 	run.events.on("rqw-agent:profiles", (request: any) => request.offer([join(w.base, "package-profiles")]));
 	return { w, run };
@@ -67,7 +62,7 @@ const saved = (run: ReturnType<typeof runtime>, id: number) => {
 };
 
 /** Starts one child per profile through the real start path and checks everything the owner's setup relies on. */
-async function check(t: Parameters<typeof world>[0], personal: "none" | "fixture" | "real", table: Record<string, Expected>) {
+async function check(t: Parameters<typeof world>[0], personal: "none" | "fixture", table: Record<string, Expected>) {
 	const { w, run } = await setup(t, personal);
 	t.after(() => run.live.close());
 	// The profile file the resolver should have read: a copy of the same-name file that wins in this world.
@@ -103,12 +98,6 @@ test("package and repo profiles start with their release model, thinking, tools,
 
 test("fixture personal spotty and bossy outrank the package ones and keep model, thinking and role by shape", async (t) => {
 	await check(t, "fixture", FIXTURE_PERSONAL);
-});
-
-test("the real personal spotty and bossy, when this machine has them, keep their release model and thinking", async (t) => {
-	const present = await readdir(PERSONAL).catch(() => []);
-	if (!(present as string[]).includes("spotty.toml") || !(present as string[]).includes("bossy.toml")) return t.skip("no personal profiles on this machine");
-	await check(t, "real", { spotty: { ...PACKAGE.spotty, sha256: PERSONAL_SHA }, bossy: { ...PACKAGE.bossy, sha256: PERSONAL_SHA } });
 });
 
 test("role_file, explicit model, thinking and fast_gpt keep their ordinary meaning with a reviewer profile", async (t) => {

@@ -7,23 +7,26 @@ import { reportTimings, text, world } from "./synthetic/world.ts";
 
 after(() => reportTimings(import.meta.filename));
 
-// RQW-cwd knows system folders only on macOS and Windows.
-const supported = process.platform === "darwin" || process.platform === "win32";
-
-/** Makes `folder` the home folder for the extension, and gives the real function and the process folder back after the test. */
+/**
+ * Makes `folder` the home folder for the extension, and gives the real function and the process folder back after the test.
+ * RQW-cwd knows system folders only on macOS and Windows, so any other system reads as macOS for the restart.
+ */
 function homeIs(t: TestContext, folder: string): void {
 	const homedir = os.homedir;
 	const cwd = process.cwd();
+	const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+	if (process.platform !== "darwin" && process.platform !== "win32") Object.defineProperty(process, "platform", { ...platform, value: "darwin" });
 	os.homedir = () => folder;
 	syncBuiltinESMExports();
 	t.after(() => {
 		os.homedir = homedir;
+		Object.defineProperty(process, "platform", platform);
 		syncBuiltinESMExports();
 		process.chdir(cwd);
 	});
 }
 
-it("a chat started in the home folder moves to the temp folder as a new chat", { skip: !supported }, async (t) => {
+it("a chat started in the home folder moves to the temp folder as a new chat", async (t) => {
 	const w = await world(t);
 	w.model.script(text("first answer"));
 	await w.submit("first question");
@@ -53,7 +56,7 @@ it("a chat started in the home folder moves to the temp folder as a new chat", {
 	assert.doesNotMatch(JSON.stringify(request.context.messages), /first question/);
 });
 
-it("a subfolder of the home folder stays where it is", { skip: !supported }, async (t) => {
+it("a subfolder of the home folder stays where it is", async (t) => {
 	const w = await world(t);
 	w.model.script(text("first answer"));
 	await w.submit("first question");
