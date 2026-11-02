@@ -172,6 +172,53 @@ it("double escape does not open the history while a background process runs", as
 	} finally { Date.now = previousNow; }
 });
 
+it("blocks both entrances during this session's background compaction", async () => {
+	const handlers = new Map<string, any>();
+	const events = new Map<string, any>();
+	let command: any;
+	let input: any;
+	let requested = "";
+	const notices: string[] = [];
+	let opened = 0;
+	let editor = "";
+	const previousNow = Date.now;
+	let now = 1000;
+	Date.now = () => now;
+	try {
+		historyEdit({ on: (name: string, handler: any) => handlers.set(name, handler),
+			events: { on: (name: string, handler: any) => events.set(name, handler), emit() {} },
+			registerCommand: (_name: string, options: any) => { command = options.handler; },
+			sendUserMessage: (text: string) => { requested = text; } } as unknown as ExtensionAPI);
+		const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "one", getBranch: () => [
+			{ type: "message", id: "a", message: { role: "user", content: "hello" } },
+		] }, ui: { setWidget: (_key: string, factory: any) => factory?.({ getFocusedComponent: () => ({ actionHandlers: new Map() }) }),
+			onTerminalInput: (handler: any) => { input = handler; return () => {}; }, getEditorText: () => editor,
+			setEditorText: (text: string) => { editor = text; },
+			notify: (message: string) => notices.push(message), custom: async () => { opened++; return "a"; } } };
+		handlers.get("session_start")!({}, ctx);
+		const activity = events.get("rqw-context:background-compaction")!;
+		activity({ sessionId: "one", active: true });
+		input("\x1b"); now += 100; input("\x1b");
+		assert.equal(requested, "");
+		await command("", ctx);
+		assert.deepEqual(notices, ["Wait for background processes to finish."]);
+		activity({ sessionId: "other", active: false });
+		await command("", ctx);
+		assert.equal(opened, 0);
+		activity({ sessionId: "one", active: false });
+		await command("", ctx);
+		assert.equal(opened, 1);
+		activity({ sessionId: "one", active: true });
+		input("\x1b");
+		assert.equal(opened, 1);
+		assert.equal(editor, "");
+		const next = { ...ctx, sessionManager: { ...ctx.sessionManager, getSessionId: () => "two" } };
+		handlers.get("session_start")!({}, next);
+		await command("", next);
+		assert.equal(opened, 2);
+	} finally { Date.now = previousNow; }
+});
+
 it("double escape still opens the history when the counts are all zero", () => {
 	const previousNow = Date.now;
 	let now = 1000;

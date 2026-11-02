@@ -35,6 +35,8 @@ export default function historyEdit(pi: ExtensionAPI): void {
 	let dispose: (() => void) | undefined;
 	let state: EditState = {};
 	let sessionPath: string | undefined;
+	let sessionId: string | undefined;
+	let compacting = false;
 	const owner = {};
 	let lastEscape = 0;
 	let suppressedUntil = 0;
@@ -50,7 +52,7 @@ export default function historyEdit(pi: ExtensionAPI): void {
 		}
 		return { agents, processes };
 	};
-	const busy = () => { const { agents, processes } = running(); return agents > 0 || processes > 0; };
+	const busy = () => { const { agents, processes } = running(); return agents > 0 || processes > 0 || compacting; };
 	const select = async (ctx: ExtensionContext, initial?: string) => {
 		const draft = ctx.ui.getEditorText();
 		const selected = await selectMessage(ctx, initial);
@@ -66,8 +68,14 @@ export default function historyEdit(pi: ExtensionAPI): void {
 	pi.events.on("rqw:running-counts:offer", data => {
 		if (isCountsOffer(data) && data.version === 1) accept(data.source);
 	});
+	pi.events.on("rqw-context:background-compaction", data => {
+		const event = data as { sessionId?: unknown; active?: unknown } | undefined;
+		if (sessionId && event?.sessionId === sessionId && typeof event.active === "boolean") compacting = event.active;
+	});
 	pi.on("session_start", (_event, ctx) => {
 		dispose?.();
+		sessionId = ctx.sessionManager?.getSessionId?.();
+		compacting = false;
 		sessionPath = ctx.sessionManager?.getSessionFile?.();
 		state = sessionPath ? activeEdits.get(sessionPath) ?? {} : {};
 		state.owner = owner;
@@ -102,7 +110,7 @@ export default function historyEdit(pi: ExtensionAPI): void {
 				const old = state.editing;
 				state.editing = undefined;
 				ctx.ui.setEditorText(old.draft);
-				void select(ctx, old.id);
+				if (!compacting) void select(ctx, old.id);
 				return { consume: true };
 			}
 			const now = Date.now();
@@ -159,7 +167,7 @@ export default function historyEdit(pi: ExtensionAPI): void {
 					return;
 				}
 				const { agents, processes } = running();
-				if (agents > 0 || processes > 0) {
+				if (agents > 0 || processes > 0 || compacting) {
 					if (current) ctx.ui.setEditorText(current.text);
 					ctx.ui.notify(agents > 0 ? "Wait for subagents to finish." : "Wait for background processes to finish.", "warning");
 					return;
