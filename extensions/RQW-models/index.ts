@@ -1,14 +1,13 @@
-import { getSupportedThinkingLevels, type AnyModel, type Model, type Provider } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels, type AnyModel, type Provider } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { AgentSession, ModelRuntime, parseArgs, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { ModelEffortPicker, sameModel, stepDraft, type Draft, type PickerSpec, type Step } from "./picker.ts";
+import { ModelEffortPicker, sameModel, stepDraft, type ChatModel, type Draft, type PickerSpec, type Step } from "./picker.ts";
 
 export const FAMILIES = [
 	"claude-opus-5-5", "claude-sonnet-5-5", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "claude-haiku-5-5", "gpt-5.6-luna", "gpt-6-luna",
 ] as const;
 const ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type Level = typeof ORDER[number];
-type ChatModel = Model<string>;
 // OMP reasoning-arrows ORDER/CAPS intersected with its canonical model efforts.
 const FAMILY_LEVELS: Record<typeof FAMILIES[number], readonly Level[]> = {
 	"claude-opus-5-5": ["low", "medium", "high", "xhigh", "max"],
@@ -22,7 +21,7 @@ const FAMILY_LEVELS: Record<typeof FAMILIES[number], readonly Level[]> = {
 };
 
 /** Match the same generation, including proxy paths, dated aliases and Bedrock IDs. */
-export function familyOf(model: ChatModel): number {
+export function familyOf(model: { id: string }): number {
 	const claude = model.id.match(/(?:^|[/.])claude-(opus|sonnet|haiku)-5[.-]5(?:-\d{8})?(?:-v\d+:\d+)?$/i);
 	const id = claude ? `claude-${claude[1].toLowerCase()}-5-5` : model.id.split("/").at(-1)?.toLowerCase();
 	return FAMILIES.indexOf(id as typeof FAMILIES[number]);
@@ -63,7 +62,7 @@ const pickerSpec = (models: ChatModel[]): PickerSpec => ({
 });
 
 /** Any provider variant of the listed families may be selected or requested; nothing else. */
-export const isListed = (model: { id: string } | undefined) => !!model && familyOf(model as ChatModel) >= 0;
+export const isListed = (model: { id: string } | undefined) => !!model && familyOf(model) >= 0;
 const name = (model: { provider: string; id: string }) => `${model.provider}/${model.id}`;
 export const notListed = (model: { provider: string; id: string }) =>
 	`${name(model)} is not in the RQW models list. Allowed: ${FAMILIES.join(", ")}.`;
@@ -75,6 +74,7 @@ const SESSION_MASK = Symbol.for("rqw-models/session-mask");
 const RUNTIME_MASK = Symbol.for("rqw-models/runtime-mask");
 const CATALOG_MASK = Symbol.for("rqw-models/catalog-mask");
 type Masked = { [key: symbol]: Mask | undefined };
+const masked = (target: object): Masked => target as Masked;
 type PrepareRequest = (this: ModelRuntime, model: AnyModel, options?: unknown) => Promise<unknown>;
 
 function override(target: object, props: Record<string, PropertyDescriptor>): () => void {
@@ -89,7 +89,7 @@ function override(target: object, props: Record<string, PropertyDescriptor>): ()
 }
 
 function lease(target: object, key: symbol, install: (mask: Mask) => () => void): [Mask, () => void] {
-	const holder = target as Masked;
+	const holder = masked(target);
 	let mask = holder[key];
 	if (!mask) {
 		const created: Mask = { count: 0, restore: () => {}, cleanups: new Set() };
@@ -272,7 +272,7 @@ export default function modelsExtension(pi: ExtensionAPI) {
 			releaseRuntime();
 			releaseSession();
 			// Drops only our composition layer; another extension's registration stays.
-			if (!(runtime as Masked)[RUNTIME_MASK]) released.add(runtime);
+			if (!masked(runtime)[RUNTIME_MASK]) released.add(runtime);
 			dropCatalog();
 			recompose(runtime);
 		};
