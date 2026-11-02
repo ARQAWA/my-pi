@@ -7262,3 +7262,17 @@ Status: SUPERSEDED by `[D-TOOLS-BG]` and `[D-TOOLS-NOTIFY]` in DECISIONS.md#tool
 > - **Background jobs** `[D-TOOLS-BG]`. A call still running after 12 seconds returns `job#N` with output and a log path. `job wait`, `status` and `kill` return results, status and exit codes; `job wait` stays open until the result, its timeout or an interruption, and no later completion notification is sent (`[D-AGENT-REAL-FINAL]`). Jobs survive Esc and new messages, and end on kill, child interrupt or session shutdown. Running file-tool calls finish on their own. There are no execution claims, resource holds, file snapshots or effects reports. Carriers: `extensions/RQW-tools/{index.ts,jobs.ts,codemode.ts,counts.ts}`.
 >
 > - **Notification waits and independent jobs** `[D-TOOLS-NOTIFY]`. Superseded in part by the wait-as-tool decision (`[D-AGENT-REAL-FINAL]`): `job wait` is an ordinary tool call that blocks until the job ends, its timeout or an interruption. It returns no `waiting` receipt and sends no later notification. A newer wait on the same job replaces the older one. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0414.
+
+## A-0417 · archived 2026-11-02 · PROCESS rule 1 · delete only after the owner answers
+
+Status: SUPERSEDED by PROCESS.md rule 1 and `[D-DELETE-UNORDERED]` (DECISIONS.md#quality-control): never-ordered things are deleted at once with the proof in the report; only disputed ones are asked first.
+Source: `1172461c:PROCESS.md`, rule 1, verbatim:
+
+> 1. делай только заказанное и согласованное. несогласованное покажи с доказательством, спроси владельца. удаляй только после ответа владельца. оставляй только с его явного разрешения.
+
+## A-0418 · archived 2026-11-02 · Unordered elements · scope of the decision
+
+Status: SUPERSEDED by `[D-DELETE-UNORDERED]` (DECISIONS.md#quality-control): the rule is general, not only for extension audits.
+Source: `1172461c:DECISIONS.md`, the replaced opening of the Decision paragraph, verbatim:
+
+> Decision: what the extension audits prove unordered, and no owner source or active decision asks for, is deleted. Deleted: 
