@@ -979,7 +979,7 @@ test("a child whose helper still runs gives its parent no final; the helper's an
 	gate.resolve("nested answer");
 	await until(() => waited !== undefined);
 	assert.equal(outerRequests(live).length, 3);
-	assert.deepEqual(waited.details.results.map((item: any) => item.text.split("\n\n")[0]), ["all done"]);
+	assert.deepEqual(waited.details.results.map(item => item.text.split("\n\n")[0]), ["all done"]);
 	const woken = outerRequests(live).at(-1).messages.filter((message: any) => JSON.stringify(message.content).includes("nested answer"));
 	assert.equal(woken.length, 1);
 });
@@ -996,7 +996,7 @@ test("send wakes a waiting child at once and keeps its run open", async t => {
 	await live.execute({ action: "send", id: "agent#1", task: "stop it" });
 	await until(() => waited !== undefined);
 	assert.equal(outerRequests(live).filter((request: any) => userTexts(request).includes("stop it")).length, 2, "one turn for the send, one after the stop");
-	assert.deepEqual(waited.details.results.map((item: any) => item.text.split("\n\n")[0]), ["stopped it"]);
+	assert.deepEqual(waited.details.results.map(item => item.text.split("\n\n")[0]), ["stopped it"]);
 	gate.resolve("nested answer");
 });
 

@@ -16,7 +16,7 @@ test("background work leaves Pi's follow-up queue unchanged", async t => {
 	const source = { version: 1, snapshot: () => ({ backgroundProcesses: 1 }), subscribe: () => () => {} };
 	events.on("rqw:running-counts:request", (request: any) => request.reply(source));
 	const manager = { getSessionId: () => "main", getEntries: () => [], getBranch: () => [], getSessionFile: () => undefined, getLeafEntry: () => undefined };
-	const session = Object.assign(Object.create(AgentSession.prototype), { sessionManager: manager, agent: new Agent(), _isAgentRunActive: false });
+	const session = Object.assign(Object.create(AgentSession.prototype), { sessionManager: manager, agent: new Agent({ streamFn: () => { throw new Error("unexpected stream"); } }), _isAgentRunActive: false });
 	const ctx: any = { cwd: root, mode: "tui", sessionManager: manager, isIdle: () => session.isIdle, ui: { notify() {}, setStatus() {} } };
 	const pi: any = { events, on(name: string, fn: Function) { hooks.set(name, [...hooks.get(name) ?? [], fn]); }, registerCommand() {}, registerTool() {}, registerEntryRenderer() {}, getThinkingLevel: () => "off", getActiveTools: () => [] };
 	agent(pi);
