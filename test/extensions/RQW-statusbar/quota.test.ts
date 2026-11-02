@@ -71,7 +71,8 @@ function setup(t: TestContext) {
 		for (const stop of shutdown) await stop();
 		await until(idle);
 		process.chdir(previousCwd);
-		rmSync(root, { recursive: true, force: true });
+		// a late cache write can land while the folder is removed
+		rmSync(root, { recursive: true, force: true, maxRetries: 5 });
 		if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = saved;
 		t.mock.restoreAll();
