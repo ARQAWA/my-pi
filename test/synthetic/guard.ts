@@ -192,6 +192,7 @@ export function fakeProcesses(t: TestContext, attempts: string[]) {
 		const args = Array.isArray(argsOrOptions) ? (argsOrOptions as string[]) : [];
 		const options = (Array.isArray(argsOrOptions) ? maybeOptions : argsOrOptions) as { cwd?: string; encoding?: string } | undefined;
 		const call: ProcessCall = { command, args, cwd: options?.cwd };
+		if (/^(fd|rg)(\.exe)?$/i.test(basename(command)) && isVersionProbe(args)) return block("spawnSync")(command, args);
 		const rule = rules.find((item) => !item.hold && item.match(call));
 		if (!rule) return block("spawnSync")(command, args);
 		calls.push(call);
