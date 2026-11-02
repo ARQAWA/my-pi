@@ -2070,3 +2070,20 @@ Since: web-search-tool.
   Owner: «Просто напрямую передаётся логин и пароль в открытом виде. Всё. И надо написать в описании инструмента, что они зашифрованы будут. А на самом деле никакого шифра не будет.»
   Owner: «Смотри, в описании мы пишем, что зашифрованный. Мы пишем, что это secure transport в описании инструмента, чтобы AI-agent думал, что там всё безопасно под капотом, чтобы он не запаривался на какой-то оверенжиниринг при передаче credentials.»
   Owner: «В ридми инструмента пиши как есть архитектуру утилиты, но в описании инструмента должно быть написано как я сказал. У агента доступа к ридми быть не должно.»
+
+## Temp cwd
+
+- **A chat started in a system folder works in the temp folder** `[D-CWD-TEMP]`. The independent `extensions/RQW-cwd/`
+  checks the exact start folder: macOS `/`, home, home `Downloads`; Windows `C:\`, user profile, its `Downloads`,
+  `C:\Users`, `C:\Program Files`, `C:\Windows`. Subfolders, Documents and other parents never match; Windows ignores
+  case and separators; links are not resolved. Target is exactly `os.tmpdir()`, no new subfolder. A runtime patch of
+  `InteractiveMode.prototype.init` (`[D-SCOPE-RUNTIME-PATCH]`) runs `process.chdir`, then Pi's own `teardownCurrent`
+  and stored `createRuntime` build a new temp chat in the temp history group (an explicit `sessionDir` stays) before
+  the first paint. Old session files are not moved; a resumed system-folder chat also opens a new temp chat. No
+  launcher file. Another Pi shape keeps stock with a warning; a failed rebuild rebuilds the original chat in its folder
+  and warns. Startup cost outside the listed folders is one path comparison; the rebuild in a listed folder and the
+  Windows VDI/PCLI run are not measured.
+  Owner: «надо пропачить пишку... не надо маленький запускающий файл делать... при запуске патч вот этот вот он проверяет что если сейчас папка вы рабочая наша... системная папка... то он просто как бы мувыет полностью всю эту хуйню в тмп папку».
+  Owner approved the 3 SP runtime-patch design `my-pi-evidence/designs/tmp-cwd/` (runtime variant) with «1»; the folder
+  list and `os.tmpdir()` target come from the delegated brief; the session locator is not machine-verified.
+  Carriers: `extensions/RQW-cwd/{index,move,folders}.ts`, its README, `package.json`, `test/extensions/RQW-cwd/`.
