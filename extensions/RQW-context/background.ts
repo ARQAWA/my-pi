@@ -4,6 +4,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import * as Pi from "@earendil-works/pi-coding-agent";
 import { installHook, isHooked } from "./hooks.ts";
+import { projectSession } from "./projection.ts";
 
 export const BACKGROUND_PERCENT = 0.65;
 /** Status channel on the session's `pi.events`: `{ sessionId, active }`. */
@@ -159,7 +160,7 @@ const SAFE_PROJECTION = Symbol.for("rqw:safe-projection:v1");
 /** Pi's projection of a branch; Pi's own call overflows the stack on a tail of about 120000 entries. */
 function project(branch: Entry[]): Projected[] {
 	const offered = (globalThis as { [SAFE_PROJECTION]?: unknown })[SAFE_PROJECTION];
-	const projection = typeof offered === "function" ? offered(branch) : Pi.buildSessionProjection(branch as never);
+	const projection = typeof offered === "function" ? offered(branch) : projectSession(branch);
 	return projection.entries as Projected[];
 }
 

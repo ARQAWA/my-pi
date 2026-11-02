@@ -25,7 +25,7 @@ async function updatedInstance(cap: number): Promise<typeof context> {
 	const dir = mkdtempSync(join(here, ".reload-copy-"));
 	copies.push(dir);
 	mkdirSync(dir, { recursive: true });
-	for (const file of ["index.ts", "background.ts", "large-tail.ts", "hooks.ts"]) cpSync(join(source, file), join(dir, file));
+	for (const file of ["index.ts", "background.ts", "large-tail.ts", "hooks.ts", "projection.ts"]) cpSync(join(source, file), join(dir, file));
 	const index = join(dir, "index.ts");
 	const counting = "function runRequest<T>(agent: NativeAgent, run: () => T): T {";
 	const code = readFileSync(index, "utf8");
