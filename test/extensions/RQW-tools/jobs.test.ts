@@ -102,20 +102,42 @@ test("wait returns the exit result itself and sends no later notification", asyn
 	assert.equal(outcome.details.reason, "exit");
 	assert.equal(outcome.details.results[0].result, "done");
 	assert.equal(outcome.details.results[0].state, "exited");
+	assert.deepEqual(JSON.parse(outcome.content[0].text), [{ id: "job#1", state: "exited", result: "done" }]);
 	assert.equal(outcome.terminate, undefined);
 	await jobs.settled("job#1");
 	assert.deepEqual(notifications, []);
 });
 
+test("wait returns only finished results while another job runs", async (t) => {
+	const { jobs, control, job, advance } = await handedOff(t);
+	let finishSecond!: () => void;
+	const second = jobs.run(spec, () => new Promise(resolve => { finishSecond = () => resolve(result("second")); }));
+	advance(12);
+	await second;
+	control.finish("first");
+	await jobs.settled("job#1");
+	const outcome = await job({ action: "wait", ids: ["job#1", "job#2"] });
+	assert.deepEqual(JSON.parse(outcome.content[0].text), [{ id: "job#1", state: "exited", result: "first" }]);
+	finishSecond();
+	await jobs.settled("job#2");
+});
+
 test("wait times out with the job still running and sends no later notification", async (t) => {
 	const { jobs, control, job, notifications, advance } = await handedOff(t);
+	control.update("progress");
 	const waiting = job({ action: "wait", ids: ["job#1"], timeout_ms: 1000 });
 	await flush();
 	advance(1000);
 	const outcome = await waiting;
 	assert.equal(outcome.details.reason, "timeout");
 	assert.equal(outcome.details.timed_out, true);
-	assert.equal(outcome.details.statuses[0].state, "running");
+	assert.equal(outcome.content[0].text, "timeout; still running: job#1");
+	const status = JSON.parse((await job({ action: "status", ids: ["job#1"] })).content[0].text).statuses[0];
+	assert.equal(status.state, "running");
+	assert.equal(status.command, "work");
+	assert.equal(status.elapsed_seconds, 1);
+	assert.equal(status.tail, "progress");
+	assert.ok(status.output_path);
 	control.finish("late");
 	await jobs.settled("job#1");
 	assert.equal(jobs.status(["job#1"], 20)[0].state, "exited");
@@ -130,20 +152,19 @@ test("wait returns when the output matches until and the job keeps running", asy
 	control.update("server ready");
 	const outcome = await waiting;
 	assert.equal(outcome.details.reason, "match");
-	assert.equal(outcome.details.matched[0].id, "job#1");
-	assert.equal(outcome.details.statuses[0].state, "running");
+	assert.equal(outcome.content[0].text, "match; still running: job#1");
 	control.finish("done");
 	await jobs.settled("job#1");
 	assert.deepEqual(notifications, []);
 });
 
-test("an aborted wait rejects, leaves the job running and sends no notification", async (t) => {
+test("an aborted wait returns a short line, leaves the job running and sends no notification", async (t) => {
 	const { jobs, control, job, notifications } = await handedOff(t);
 	const controller = new AbortController();
 	const waiting = job({ action: "wait", ids: ["job#1"] }, controller.signal);
 	await flush();
 	controller.abort();
-	await assert.rejects(waiting, /abort/i);
+	assert.equal((await waiting).content[0].text, "interrupted; still running: job#1");
 	assert.equal(jobs.status(["job#1"], 20)[0].state, "running");
 	control.finish("done");
 	await jobs.settled("job#1");
@@ -153,7 +174,7 @@ test("an aborted wait rejects, leaves the job running and sends no notification"
 test("registered job wait responds to user steering but ignores service messages", async (t) => {
 	const { jobs, control, job, messages, session, listeners, emit } = await handedOff(t);
 	messages.push("already queued");
-	assert.equal((await job({ action: "wait", ids: ["job#1"] })).details.reason, "steered");
+	assert.equal((await job({ action: "wait", ids: ["job#1"] })).content[0].text, "steered; still running: job#1");
 	messages.length = 0;
 	session.agent.steeringQueue.messages.push({ role: "custom", customType: "service", content: "notice" });
 	let settled = false;
@@ -164,13 +185,14 @@ test("registered job wait responds to user steering but ignores service messages
 	messages.push("new");
 	emit({ type: "queue_update", steering: [...messages], followUp: [] });
 	session.agent.steeringQueue.messages.push({ role: "user", content: "new" });
-	assert.equal((await waiting).details.reason, "steered");
+	assert.equal((await waiting).content[0].text, "steered; still running: job#1");
 	assert.equal(listeners.size, 0);
 	assert.equal(jobs.status(["job#1"], 20)[0].state, "running");
 	messages.length = 0;
 	session.agent.steeringQueue.messages.length = 0;
 	control.finish("done");
 	await jobs.settled("job#1");
+	messages.push("queued after completion");
 	assert.equal((await job({ action: "wait", ids: ["job#1"] })).details.results[0].result, "done");
 });
 
@@ -200,7 +222,7 @@ test("a wait in a batch with other work returns work_pending at once, before or 
 		const outcome: any = await Promise.race([job({ action: "wait", ids: ["job#1"] }, undefined, "w"), flush().then(() => "blocked")]);
 		assert.notEqual(outcome, "blocked", "the wait must not hold the other call of its batch");
 		assert.equal(outcome.details.reason, "work_pending");
-		assert.equal(outcome.details.statuses[0].state, "running");
+		assert.equal(outcome.content[0].text, "work_pending; still running: job#1");
 	}
 	assert.deepEqual(announced, []);
 	control.finish("done");

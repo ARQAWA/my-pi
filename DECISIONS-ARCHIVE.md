@@ -7254,3 +7254,11 @@ Source: `de414a26:DECISIONS.md`. Verbatim replaced text:
 >   VS Code settings; strict TLS fails and `http.proxyStrictSSL: false` works; CONNECT with proxy credentials; paths with
 >   Cyrillic, spaces and an apostrophe; no `pi.exe` left after closing tabs, `/quit` or VS Code. Not covered: a real model
 >   call and the corporate VDI restrictions. Since: `3b6d6c1`.
+
+## A-0416 · Tools · background job waits
+
+Status: SUPERSEDED by `[D-TOOLS-BG]` and `[D-TOOLS-NOTIFY]` in DECISIONS.md#tools. Source: `c740dadf:DECISIONS.md`. Verbatim replaced text:
+
+> - **Background jobs** `[D-TOOLS-BG]`. A call still running after 12 seconds returns `job#N` with output and a log path. `job wait`, `status` and `kill` return results, status and exit codes; `job wait` stays open until the result, its timeout or an interruption, and no later completion notification is sent (`[D-AGENT-REAL-FINAL]`). Jobs survive Esc and new messages, and end on kill, child interrupt or session shutdown. Running file-tool calls finish on their own. There are no execution claims, resource holds, file snapshots or effects reports. Carriers: `extensions/RQW-tools/{index.ts,jobs.ts,codemode.ts,counts.ts}`.
+>
+> - **Notification waits and independent jobs** `[D-TOOLS-NOTIFY]`. Superseded in part by the wait-as-tool decision (`[D-AGENT-REAL-FINAL]`): `job wait` is an ordinary tool call that blocks until the job ends, its timeout or an interruption. It returns no `waiting` receipt and sends no later notification. A newer wait on the same job replaces the older one. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0414.

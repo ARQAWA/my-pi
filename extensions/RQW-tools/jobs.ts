@@ -148,8 +148,14 @@ export function createJobTool(jobs: Jobs, description: string, events?: Extensio
 					const timeout = waitTimeout(params.timeout_ms);
 					const steering = steeringWait(ctx, events, toolCallId);
 					try {
-						if (steering.reason) return json({ reason: steering.reason, timed_out: false, statuses: jobs.status(waitIds, lines) });
-						return json(await jobs.wait(waitIds, timeout, lines, signal, until, steering.signal));
+						const statuses = steering.reason ? jobs.status(waitIds, lines) : undefined;
+						const details = steering.reason && (steering.reason !== "steered" || statuses!.every(job => job.state === "running"))
+							? { reason: steering.reason, timed_out: false, running: statuses!.filter(job => job.state === "running").map(job => job.id) }
+							: await jobs.wait(waitIds, timeout, lines, signal, until, steering.signal);
+						const text = "results" in details && details.results?.length
+							? JSON.stringify(details.results)
+							: `${details.reason}; still running: ${details.running?.join(", ") || "none"}`;
+						return { content: [{ type: "text" as const, text }], details };
 					}
 					finally { steering.close(); }
 				}
@@ -349,21 +355,14 @@ export function createJobs(options: JobsOptions = {}) {
 		return { content: [{ type: "text", text: handoffText(job) }], details: { job: status(job) } };
 	}
 
-	function report(selected: Job[], lines: number, until: RegExp | undefined, finished: Job[]) {
-		const hits = until ? selected.filter((job) => job.ended === undefined && until.test(job.tail || job.latest)) : [];
-		if (!finished.length && hits.length) return {
-			reason: "match",
-			timed_out: false,
-			matched: hits.map((job) => ({ id: idOf(job), line: (job.tail || job.latest).split("\n").reverse().find((line) => until!.test(line)) ?? "" })),
-			statuses: selected.map((job) => status(job, lines)),
-		};
-		if (!finished.length) return { reason: "timeout", timed_out: true, statuses: selected.map((job) => status(job, lines)) };
-		return {
+	function report(selected: Job[], until: RegExp | undefined, finished: Job[]) {
+		if (finished.length) return {
 			reason: "exit",
 			timed_out: false,
-			results: finished.map((job) => ({ ...status(job, lines), result: job.result ?? "" })),
-			statuses: selected.filter((job) => !finished.includes(job)).map((job) => status(job, lines)),
+			results: finished.map((job) => ({ id: idOf(job), state: job.state, ...(job.exitCode !== undefined ? { exit_code: job.exitCode } : {}), result: job.result ?? "" })),
 		};
+		const matched = matchingOf(selected, until);
+		return { reason: matched.length ? "match" : "timeout", timed_out: !matched.length, running: selected.filter(job => job.ended === undefined).map(idOf) };
 	}
 	const endedOf = (selected: Job[]) => selected.filter((job) => job.ended !== undefined);
 	const matchingOf = (selected: Job[], until?: RegExp) => until ? selected.filter((job) => job.ended === undefined && until.test(job.tail || job.latest)) : [];
@@ -387,16 +386,14 @@ export function createJobs(options: JobsOptions = {}) {
 			try {
 				const any = Promise.race([...selected.map((job) => job.done), aborted, steered, matched.promise]);
 				await sleep(timeoutMs, any);
-				signal?.throwIfAborted();
-				if (!steering?.aborted && ended().length && ended().length < selected.length)
+				if (!signal?.aborted && !steering?.aborted && ended().length && ended().length < selected.length)
 					await sleep(SETTLE_MS, Promise.race([Promise.all(selected.map((job) => job.done)), aborted, steered]));
-				signal?.throwIfAborted();
-				if (steering?.aborted) return { reason: "steered", timed_out: false, statuses: selected.map((job) => status(job, lines)) };
+				if ((signal?.aborted || steering?.aborted) && !ended().length) return { reason: signal?.aborted ? "interrupted" : "steered", timed_out: false, running: selected.filter(job => job.ended === undefined).map(idOf) };
 			} finally {
 				for (const job of selected) job.listeners.delete(check);
 			}
 		}
-		return report(selected, lines, until, ended());
+		return report(selected, until, ended());
 	}
 
 	async function killJob(id: string) {

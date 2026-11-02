@@ -147,7 +147,7 @@ class NotificationBridge {
 			if (entry.type !== "custom" || entry.customType !== INBOX_ENTRY) continue;
 			const data = entry.data as { version?: number; id?: string; message?: InboxMessage } | undefined;
 			if (data?.version === 1 && typeof data.id === "string" && data.message
-				&& !["agent", "child_wait", "job"].includes(data.message.customType)) this.inbox.set(data.id, data.message);
+				&& !["agent", "child_wait"].includes(data.message.customType)) this.inbox.set(data.id, data.message);
 		}
 		this.reconcile();
 	}
