@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { after, it } from "node:test";
 import { simulateRipgrep, type VFile } from "./extensions/RQW-tools/rg-fake.ts";
 import { bashCommand, call, isTask, reportTimings, ripgrep, text, world } from "./synthetic/world.ts";
@@ -12,6 +13,17 @@ function toolResultText(w: World, toolCallId: string): string {
 	const result = w.requests.flatMap((request) => request.context.messages).findLast((message) => message.role === "toolResult" && message.toolCallId === toolCallId) as any;
 	return JSON.stringify(result?.content ?? "");
 }
+
+it("scripts synchronous processes and blocks unscripted ones", async (t) => {
+	const w = await world(t);
+	w.processes.reply((call) => call.command === "trash", { stdout: "trashed", code: 2 });
+	const result = spawnSync("trash", ["file"], { encoding: "utf8" });
+	assert.equal(result.stdout, "trashed");
+	assert.equal(result.status, 2);
+	assert.equal(w.processes.calls.at(-1)?.command, "trash");
+	assert.throws(() => spawnSync("unknown", ["--version"]), /process blocked/);
+	assert.deepEqual(w.processAttempts, ["spawnSync unknown"]);
+});
 
 it("a shell command is answered by its fake process, and only that one", async (t) => {
 	const w = await world(t);

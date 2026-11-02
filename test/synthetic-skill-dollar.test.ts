@@ -31,6 +31,9 @@ it("suggests a skill and sends its instructions after selection", async (t) => {
 	assert.match(content, /Follow the synthetic instruction\./);
 	assert.match(content, /please/);
 	w.see("done");
+	const screen = w.screen();
+	assert.equal(screen.filter((line) => line.includes("└ skill") && line.includes("world-check")).length, 1);
+	assert.ok(screen.every((line) => !line.includes("[skill] world-check") && !line.includes("Follow the synthetic instruction.")));
 	assert.deepEqual(w.networkAttempts, []);
 	assert.deepEqual(w.model.unscripted, []);
 });
