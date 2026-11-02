@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import os from "node:os";
 import { syncBuiltinESMExports } from "node:module";
 import { after, it, type TestContext } from "node:test";
@@ -45,7 +45,11 @@ it("a chat started in the home folder moves to the temp folder as a new chat", {
 	assert.ok(existsSync(w2.sessionFile!));
 	const request = w2.requests.filter((item) => item.background === undefined).at(-1)!;
 	const system = request.context.messages.find((message) => message.role === "system") as unknown as { sections: { cwd: string } };
-	assert.ok(system.sections.cwd.includes(os.tmpdir()), "the prompt names the temp folder");
+	// Pi writes the folder with forward slashes; Windows may name the temp folder in its short or long form.
+	const slashes = (path: string) => path.replace(/\\/g, "/").toLowerCase();
+	const named = [os.tmpdir(), realpathSync.native(os.tmpdir())].map(slashes);
+	assert.ok(named.some((folder) => slashes(system.sections.cwd).includes(folder)), "the prompt names the temp folder");
+	assert.ok(!slashes(system.sections.cwd).includes(slashes(w.dirs.project)), "the old project folder is gone from the prompt");
 	assert.doesNotMatch(JSON.stringify(request.context.messages), /first question/);
 });
 
