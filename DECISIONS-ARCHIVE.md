@@ -7830,3 +7830,50 @@ Status: SUPERSEDED by [D-COMMAND-CLEANUP] (DECISIONS.md#command-cleanup): the li
 Introduced: `3430f322`. Source: `e4a7aafd:DECISIONS.md`, lines 1557-1557. Verbatim replaced text (an ellipsis marks kept owner quotes):
 
 > Shift+Tab and provider definitions stay stock.
+
+## A-0476 · archived 2026-11-02 · Agent profiles · fork wording
+
+Status: SUPERSEDED by [D-AGENT-PROFILES] (DECISIONS.md#agent): the current decision states the rule.
+Introduced: `689da9c9`. Source: `0a00468c:DECISIONS.md`, lines 970-971. Verbatim replaced text:
+
+> Async work, tools, settings, caching, steering,
+>   interrupt and durable recovery stay on RQW-agent; no new engine, parent-history fork or sibling messaging is added.
+
+## A-0477 · archived 2026-11-02 · Agent · child settings fork
+
+Status: SUPERSEDED by [D-AGENT-CHILD-SETTINGS] (DECISIONS.md#agent): the current decision states the rule.
+Introduced: `9033f24b`. Source: `0a00468c:DECISIONS.md`, lines 1063-1063. Verbatim replaced text:
+
+> Parent-history fork and MCP for children are deferred in [BACKLOG](BACKLOG.md), not present features; child web access and durable resume are delivered
+
+## A-0478 · archived 2026-11-02 · Agent · history repair
+
+Status: SUPERSEDED by [D-AGENT-PERSIST] (DECISIONS.md#agent): the current decision states the rule.
+Introduced: `7cff2f5d`. Source: `0a00468c:DECISIONS.md`, lines 1100-1101. Verbatim replaced text:
+
+> a tool call without a result gets an explicit interrupted/error result, never a
+>   replay.
+
+## A-0479 · archived 2026-11-02 · Prompt · wait wording
+
+Status: SUPERSEDED by [D-PROMPT-ZORD] (DECISIONS.md#prompt): the current decision states the rule.
+Introduced: `761b310d`. Source: `0a00468c:DECISIONS.md`, lines 851-851. Verbatim replaced text:
+
+> no wait ends a turn, a wait is an ordinary blocking tool call (`[D-AGENT-REAL-FINAL]`, `[D-AGENT-WAIT]`).
+
+## A-0480 · archived 2026-11-02 · Send now · old wait receipts
+
+Status: SUPERSEDED by [D-KEYS-RESUME] (DECISIONS.md#send-now): the current decision states the rule.
+Introduced: `3343b55f`. Source: `0a00468c:DECISIONS.md`, lines 1917-1917. Verbatim replaced text:
+
+> (the receipt of `extensions/RQW-agent/coordinator.ts` and `extensions/RQW-tools/jobs.ts`)
+
+## A-0481 · archived 2026-11-02 · Agent · notification stub
+
+Status: SUPERSEDED by [D-AUTO-WAIT-EVERYWHERE] (DECISIONS.md#auto-wait): the current decision states the rule.
+Introduced: `e77acd0f`. Source: `0a00468c:DECISIONS.md`, lines 1135-1138. Verbatim replaced text:
+
+> - **Notification waits for children** `[D-AGENT-NOTIFY]`. Owner quotes: `[D-TOOLS-NOTIFY]` (`16-27-59:4876`, `16-27-59:4937`). Superseded in part by the wait-as-tool decision (`[D-AGENT-REAL-FINAL]`): the `wait` action of `agent` is removed (`[D-AUTO-WAIT-EVERYWHERE]`); results arrive automatically as one message, and no model request is made merely to wait. Owner messages reach the agent
+>   without cancelling accepted children. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0414.
+>   Carrier: `extensions/RQW-agent/index.ts`, `coordinator.ts`, `descriptions/*.md`. Since: the final squash of branch `agent-async`.
+>   Old `rqw-agent-wait` records stay in the session but are never resumed ([RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume)).
