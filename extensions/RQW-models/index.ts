@@ -412,17 +412,10 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		await bound.session.setModel(model);
 		return true;
 	};
-	const startDefault = async (reason: string, ctx: ExtensionContext, args: ReturnType<typeof parseArgs>, models: () => Promise<ChatModel[]>) => {
-		if (reason !== "startup" && reason !== "new") return;
-		if (reason === "startup") {
-			if (args.continue || args.resume || args.session) return;
-			if (ctx.sessionManager.getBranch().some((entry) => entry.type === "message" || entry.type === "compaction" || entry.type === "branch_summary")) return;
-		}
-		// Pi has already resolved model patterns, scoped suffixes and thinking precedence.
-		if (args.model !== undefined || args.models !== undefined) return;
+	const startDefault = async (reason: string, models: () => Promise<ChatModel[]>) => {
+		if (reason !== "startup") return;
 		const opus = (await models()).find((model) => FAMILIES[familyOf(model)] === "claude-opus-5-5");
-		if (opus && !(await setStartupModel(opus))) return;
-		applyThinking(args.thinking);
+		if (opus && await setStartupModel(opus)) pi.setThinkingLevel("medium");
 	};
 	pi.on("session_start", async (event, ctx) => {
 		invalidateSession();
@@ -434,7 +427,8 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		// Only an actual choice waits for the availability pass.
 		let pass: Promise<ChatModel[]> | undefined;
 		const models = () => pass ??= settled(ctx);
-		await startDefault(event.reason, ctx, args, models);
+		await startDefault(event.reason, models);
+		if (event.reason !== "startup") return;
 		// CLI --model/--models, a saved default or a restored session may name a model outside the list.
 		const current = liveContext.model;
 		if (!current || isListed(current)) return;
