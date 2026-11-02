@@ -36,6 +36,31 @@ it("smoke: every extension loads quietly, a turn is drawn and saved", async (t) 
 	assert.deepEqual(w.networkAttempts, []);
 });
 
+it("applies the real setup profile once and preserves the owner's later choice", async (t) => {
+	const w = await world(t);
+	const settingsFile = `${w.dirs.agent}/settings.json`;
+	const settings = JSON.parse(readFileSync(settingsFile, "utf8"));
+	assert.equal(settings.rqwSetupVersion, 1);
+	assert.equal(settings.theme, "RQW-theme");
+	assert.equal(settings.quietStartup, true);
+	assert.equal(settings.outputPad, 1);
+	w.settings.setTheme("dark");
+	const restarted = await w.restart();
+	assert.equal(restarted.settings.getTheme(), "dark");
+});
+
+it("scenario settings override the setup profile without replacing later choices on restart", async (t) => {
+	const w = await world(t, { settings: { hideThinkingBlock: false, theme: "dark", websockets: true, terminal: { showTerminalProgress: true } } });
+	assert.equal(w.settings.getHideThinkingBlock(), false);
+	assert.equal(w.settings.getTheme(), "dark");
+	assert.equal(w.settings.getSettings().transport, "websocket");
+	assert.deepEqual(w.settings.getSettings().terminal, { showImages: false, showTerminalProgress: true });
+	w.settings.setTheme("RQW-theme");
+	const restarted = await w.restart();
+	assert.equal(restarted.settings.getTheme(), "RQW-theme");
+	assert.equal(restarted.settings.getHideThinkingBlock(), false);
+});
+
 it("a second world patches Pi the same way, and the first one gave everything back", async (t) => {
 	const before = { home: process.env.HOME, fetch: globalThis.fetch, now: Date.now };
 	const first = await world(t);

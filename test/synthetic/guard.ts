@@ -5,6 +5,7 @@ import http from "node:http";
 import https from "node:https";
 import { syncBuiltinESMExports } from "node:module";
 import net from "node:net";
+import { basename } from "node:path";
 import { PassThrough } from "node:stream";
 import tls from "node:tls";
 import type { TestContext } from "node:test";
@@ -171,7 +172,7 @@ const FIRST_FAKE_PID = 2_000_000_000;
 
 /**
  * Pi's own `--version` probe of fd and rg gets an answer. `spawn` goes through the rules the test adds with
- * `reply` and `hold`; a spawn no rule takes, and every other child_process entry, is recorded in `attempts` and throws.
+ * `reply` and `hold`; `spawnSync` uses `reply`. A call no rule takes, and every other child_process entry, is recorded in `attempts` and throws.
  * Fake processes finish in real turns, never in timers. Their pids are far above any real one.
  */
 export function fakeProcesses(t: TestContext, attempts: string[]) {
@@ -182,11 +183,24 @@ export function fakeProcesses(t: TestContext, attempts: string[]) {
 
 	const block = (name: string) => (command: string, ...rest: unknown[]) => {
 		const args = Array.isArray(rest[0]) ? (rest[0] as string[]) : undefined;
-		if (name === "spawnSync" && isVersionProbe(args)) return { status: 0, stdout: Buffer.from("tool 1.0"), stderr: Buffer.alloc(0), error: undefined };
+		if (name === "spawnSync" && /^(fd|rg)(\.exe)?$/i.test(basename(command)) && isVersionProbe(args)) return { status: 0, stdout: Buffer.from("tool 1.0"), stderr: Buffer.alloc(0), error: undefined };
 		attempts.push(`${name} ${command}`);
 		throw new BlockedCall(`synthetic world: process blocked: ${name} ${command}`);
 	};
-	for (const name of ["spawnSync", "exec", "execSync", "execFile", "execFileSync", "fork"] as const) t.mock.method(childProcess, name, block(name) as never);
+	for (const name of ["exec", "execSync", "execFile", "execFileSync", "fork"] as const) t.mock.method(childProcess, name, block(name) as never);
+	t.mock.method(childProcess, "spawnSync", ((command: string, argsOrOptions?: unknown, maybeOptions?: unknown) => {
+		const args = Array.isArray(argsOrOptions) ? (argsOrOptions as string[]) : [];
+		const options = (Array.isArray(argsOrOptions) ? maybeOptions : argsOrOptions) as { cwd?: string; encoding?: string } | undefined;
+		const call: ProcessCall = { command, args, cwd: options?.cwd };
+		const rule = rules.find((item) => !item.hold && item.match(call));
+		if (!rule) return block("spawnSync")(command, args);
+		calls.push(call);
+		const answer = typeof rule.answer === "function" ? rule.answer(call) : (rule.answer ?? {});
+		const output = (value: string | undefined) => options?.encoding && options.encoding !== "buffer" ? (value ?? "") : Buffer.from(value ?? "");
+		const stdout = output(answer.stdout);
+		const stderr = output(answer.stderr);
+		return { pid: 0, output: [null, stdout, stderr], stdout, stderr, status: answer.code ?? 0, signal: null };
+	}) as never);
 
 	const fakeChild = (settled: Promise<ProcessAnswer>) => {
 		const child: any = new EventEmitter();
