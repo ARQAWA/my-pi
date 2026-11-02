@@ -46,15 +46,9 @@ export function createTodoPanel() {
 						rows.push(theme.fg("text", line.slice(0, 4)) + theme.fg("accent", line.slice(4, 5)) + theme.fg("text", line.slice(5)));
 					}
 					const nextItems = items.slice(itemIndex + 1).filter(open);
-					const blocked = focus.status === "active" ? items.find(item => item !== focus && item.status === "blocked") : undefined;
-					const slots = 3 - rows.length - (blocked ? 1 : 0);
-					for (const item of nextItems.filter(value => value !== blocked).slice(0, slots)) {
+					for (const item of nextItems.slice(0, 3 - rows.length)) {
 						const text = item.status === "blocked" ? `! ${safe(item.text)} · ${safe(item.note ?? "")}` : `○ ${safe(item.text)}`;
 						rows.push(theme.fg(item.status === "blocked" ? "warning" : "muted", truncateToWidth(text, Math.max(0, width), "…")));
-					}
-					if (blocked) {
-						while (rows.length < 2) rows.push("");
-						rows.push(theme.fg("warning", truncateToWidth(`! ${safe(blocked.text)} · ${safe(blocked.note ?? "")}`, Math.max(0, width), "…")));
 					}
 					while (rows.length < 3) rows.push("");
 					cache = { width, rows };

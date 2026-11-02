@@ -24,7 +24,7 @@ function host() {
 const clean = (rows: string[]) => rows.map(stripVTControlCharacters);
 const current = (h: ReturnType<typeof host>) => [...h.widgets.values()].at(-1)!;
 
-it("shows the active item, its real step and a blocked item ahead of other next items", () => {
+it("shows the active item, its real step and the next open item", () => {
 	const h = host();
 	const panel = createTodoPanel();
 	const state: State = { items: [
@@ -40,8 +40,12 @@ it("shows the active item, its real step and a blocked item ahead of other next 
 	assert.equal(rows.length, 3);
 	assert.match(clean(rows)[0], /^▸ Панель\s+step 2 of 3 · item 2 of 4$/);
 	assert.match(clean(rows)[1], /^\s+▸ Рисую$/);
-	assert.equal(clean(rows)[2], "! Выпуск · Жду ответа");
-	assert.match(rows[2], /\x1b\[33m/);
+	assert.equal(clean(rows)[2], "○ Тесты");
+	panel.update(h.ctx, { items: [state.items[1], state.items[3]] });
+	const blockedRows = current(h).render(60);
+	assert.equal(blockedRows.length, 3);
+	assert.equal(clean(blockedRows)[2], "! Выпуск · Жду ответа");
+	assert.match(blockedRows[2], /\x1b\[33m/);
 });
 
 it("follows the focus, prioritizes blocked without active and removes a closed list immediately", () => {
@@ -103,7 +107,7 @@ it("caches by width and state, reinserts last, and clips terminal text", () => {
 	assert.ok(h.paints > beforeInvalidation);
 });
 
-it("keeps an earlier blocked item visible and leaves unused rows empty", () => {
+it("leaves unused rows empty when no open items follow the focus", () => {
 	const h = host();
 	const panel = createTodoPanel();
 	panel.update(h.ctx, { items: [
@@ -113,7 +117,7 @@ it("keeps an earlier blocked item visible and leaves unused rows empty", () => {
 	const rows = clean(current(h).render(50));
 	assert.match(rows[0], /^▸ Работа\s+item 2 of 2$/);
 	assert.equal(rows[1], "");
-	assert.equal(rows[2], "! Выпуск · Ответ");
+	assert.equal(rows[2], "");
 	panel.update(h.ctx, { items: [{ id: "a", text: "Один", status: "pending", steps: [{ text: "Готово", status: "done" }] }] });
 	const single = clean(current(h).render(50));
 	assert.match(single[0], /^▸ Один\s+item 1 of 1$/);
