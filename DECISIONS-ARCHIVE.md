@@ -7623,3 +7623,68 @@ Status: MERGED by [D-SCOPE-RUNTIME-PATCH] (DECISIONS.md#scope): the restriction 
 Introduced: `a9873f64`. Source: `8bc85e26:DECISIONS.md`, line 516. Verbatim replaced text:
 
 > The earlier public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`;
+
+## A-0449 · archived 2026-11-02 · Tools · wrapped stock tools
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `7666300c`. Source: `c27f7c49:DECISIONS.md`, lines 694-694. Verbatim replaced text:
+
+> - **Wrapped stock tools** `[D-TOOLS-WRAPPERS]`. RQW-tools wraps read, bash, edit, write, grep and find. Read, write, edit, find and grep use stock parallel execution; bash and codemode run independently. Multi-file edit and write, bounded Windows retry, our descriptions and background jobs stay in `extensions/RQW-tools/`.
+
+## A-0450 · archived 2026-11-02 · Tools · search limits
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `8889fdf3`. Source: `c27f7c49:DECISIONS.md`, lines 707-710. Verbatim replaced text:
+
+> - **Search and output limits** `[D-TOOLS-LIMITS]`. grep and find get no match cap by default (`limit` 100000 when unset);
+>   the stock 50KB output cap stays; read and bash keep the stock 2000 lines / 50KB. Reason: Pi's default 100 grep matches
+>   cuts the broad first search wave; omp-lite's 51 200-character budget equals 50KB for ASCII. Carriers:
+>   `extensions/RQW-tools/index.ts`, the descriptions. Since: `8889fdf`.
+
+## A-0451 · archived 2026-11-02 · Tools · read description
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `3430f322`. Source: `c27f7c49:DECISIONS.md`, lines 730-732. Verbatim replaced text:
+
+> - **read description** `[D-TOOLS-READ-DESC]`. Read a needed file whole in one call and read every file needed next in
+>   one response; bash does not read or search files. Carriers: `extensions/RQW-tools/descriptions/read.md`, `bash.md`.
+>   Since: `a0bd1b1`.
+
+## A-0452 · archived 2026-11-02 · Tools · description precision
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `3430f322`. Source: `c27f7c49:DECISIONS.md`, lines 733-737. Verbatim replaced text:
+
+> - **Description precision** `[D-TOOLS-DESC-PRECISION]`. grep respects .gitignore inside a git repository only; a grep
+>   glob with "/" matches from path; find also returns directories; the edit hint may be absent; a cut grep line is read
+>   around instead of narrowing; a tool result that names cat or sed overrides the ban; a long file written in parts is
+>   the one exception to one edit call per file. Carriers: the six descriptions in `extensions/RQW-tools/descriptions/`.
+>   Since: `a56e291`.
+
+## A-0453 · archived 2026-11-02 · Tools · conditional tool instructions
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `7666300c`. Source: `c27f7c49:DECISIONS.md`, lines 868-868. Verbatim replaced text:
+
+> - **Conditional tool instructions** `[D-PROMPT-TOOL-ISOLATION]`. RQW-tools supplies the search-method section only when read, grep and find are visible, and the independent-execution/background-job section only when bash is visible. The same sections join the startup projection without an RQW-prompt dependency.
+
+## A-0454 · archived 2026-11-02 · Tools · shipped delivery
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `fd1ea75c`. Source: `c27f7c49:DECISIONS.md`, lines 754-754. Verbatim replaced text:
+
+> Shipped delivery: release and main `5b12cd329638bb78f2666fd58aebf9fb653e0cc3`.
+
+## A-0455 · archived 2026-11-02 · Tools · scope pointer
+
+Status: SUPERSEDED by [D-CURSOR-TOOLS] (DECISIONS.md#tools): the live record states the current scope.
+Introduced: `fd1ea75c`. Source: `c27f7c49:DECISIONS.md`, lines 754-754. Verbatim replaced text:
+
+> Narrows the grep and find parts of `[D-TOOLS-WRAPPERS]`, `[D-TOOLS-LIMITS]`, `[D-TOOLS-READ-DESC]`, `[D-TOOLS-DESC-PRECISION]` and `[D-PROMPT-TOOL-ISOLATION]`, which still describe edit, write, bash and the stock fallback.
+
+## A-0456 · archived 2026-11-02 · Tools · answered coordinator question
+
+Status: SUPERSEDED by [D-AGENT-CODEX-TEXT] (DECISIONS.md#agent): the question was answered and the text was delivered.
+Introduced: `fe606648`. Source: `c27f7c49:DECISIONS.md`, lines 784-784. Verbatim replaced text:
+
+> Also pending: «Принимаешь диффы? 1. Да, делаем. 2. Нет, сначала посмотрю страницу.» (Codex 0.165.0 agent texts, ~/Downloads/codex-agent-diffs.html).
