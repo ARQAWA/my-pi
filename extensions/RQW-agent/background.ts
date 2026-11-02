@@ -20,6 +20,9 @@ export const AUTO_RESULTS = "rqw-auto-wait-results";
 /** Some work of these sources is still running. */
 export const backgroundLive = (sources: AutoSource[]) => sources.some(source => source.snapshot().targets.length > 0);
 
+/** The ids of all work still running in these sources. */
+export const backgroundIds = (sources: AutoSource[]) => sources.flatMap(source => source.snapshot().targets);
+
 /** Some finished result of these sources is not delivered yet. */
 export const backgroundReady = (sources: AutoSource[]) => sources.some(source => source.snapshot().ready);
 

@@ -11,6 +11,8 @@ export type RuntimeHandle = {
 	pending(): boolean;
 	/** The caller's automatic result source for its own children; undefined until it has started or restored one. */
 	autoSource?(): AutoSource | undefined;
+	/** The child finished, whether or not its result was delivered; false for a running, lost or unknown one. */
+	finished?(id: string): boolean;
 	wait(signal: AbortSignal): Promise<void>;
 	ids(): string[];
 	/** Compact read-only diagnostics; depth counts generations below these direct children. */
