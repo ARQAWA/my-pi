@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { stream as anthropic } from "@earendil-works/pi-ai/api/anthropic-messages";
@@ -5,7 +6,7 @@ import { stream as codex } from "@earendil-works/pi-ai/api/openai-codex-response
 import { createTools } from "../../../extensions/RQW-tools/index.ts";
 
 const expected = ["rqw_glob", "rqw_readfile", "rqw_rg"];
-const tools = createTools(process.cwd(), () => ({})).filter((tool) => expected.includes(tool.name))
+const tools = createTools(process.cwd(), () => ({}), { descriptions }).filter((tool) => expected.includes(tool.name))
 	.map(({ name, description, parameters }) => ({ name, description, parameters }));
 const context: any = { messages: [
 	{ role: "system", content: "system", timestamp: 1, toolsAdded: tools },

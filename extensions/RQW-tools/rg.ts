@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { access, stat } from "node:fs/promises";
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { createGrepToolDefinition, getAgentDir, type ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -17,10 +16,6 @@ export const SEARCH_TIMEOUT_MS = 25000;
 const INT32_MAX = 2147483647;
 /** Room kept free for the footer lines, which are always shown. */
 export const FOOTER_RESERVE = 1024;
-
-export function readDescription(name: string): string {
-	return readFileSync(new URL(`./descriptions/${name}.md`, import.meta.url), "utf-8").trimEnd();
-}
 
 const OUTPUT_MODES = ["content", "files_with_matches", "count"] as const;
 type OutputMode = (typeof OUTPUT_MODES)[number];
@@ -70,13 +65,22 @@ export function dropNulls(input: unknown, required: string[]): unknown {
 
 // ---- ripgrep binary ----
 
-function findRipgrep(): string | undefined {
+async function exists(file: string): Promise<boolean> {
+	try {
+		await access(file);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function findRipgrep(): Promise<string | undefined> {
 	const executable = process.platform === "win32" ? "rg.exe" : "rg";
 	const managed = path.join(getAgentDir(), "bin", executable);
-	if (existsSync(managed)) return managed;
+	if (await exists(managed)) return managed;
 	for (const directory of (process.env.PATH ?? "").split(path.delimiter)) {
 		const candidate = directory ? path.join(directory, executable) : "";
-		if (candidate && existsSync(candidate)) return candidate;
+		if (candidate && await exists(candidate)) return candidate;
 	}
 	return undefined;
 }
@@ -110,10 +114,10 @@ function bootstrapNative(cwd: string, createGrep: typeof createGrepToolDefinitio
 
 /** Pi's managed rg, then PATH, then Pi's own download; the PATH name when only Pi's probe found it. */
 export async function resolveRipgrep(cwd: string, createGrep: typeof createGrepToolDefinition = createGrepToolDefinition): Promise<string> {
-	const found = findRipgrep();
+	const found = await findRipgrep();
 	if (found) return found;
 	await bootstrapNative(cwd, createGrep);
-	return findRipgrep() ?? "rg";
+	return await findRipgrep() ?? "rg";
 }
 
 // ---- process ----
@@ -659,11 +663,11 @@ export function formatScan(result: Scan, query: Query, isDirectory: boolean): Fo
 
 // ---- tool ----
 
-export function createRgToolDefinition(cwd: string, options: RgOptions = {}): ToolDefinition<any, any, any> {
+export function createRgToolDefinition(cwd: string, description: string, options: RgOptions = {}): ToolDefinition<any, any, any> {
 	return {
 		name: "rqw_rg",
 		label: "rg",
-		description: readDescription("rqw_rg"),
+		description,
 		promptSnippet: "Search file contents with ripgrep (respects .gitignore)",
 		parameters: rgSchema,
 		prepareArguments: (input: unknown) => dropNulls(input, ["pattern"]) as any,

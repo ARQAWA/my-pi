@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	SettingsManager,
@@ -12,6 +11,7 @@ import {
 	createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { groupCodemode, takeOverBuiltinCodemode } from "./codemode.ts";
+import { loadDescriptions, type Descriptions } from "./descriptions.ts";
 import { guardBash } from "./bash-guard.ts";
 import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { createCountsProducer } from "./counts.ts";
@@ -26,9 +26,7 @@ import { createWriteSchema, executeWrite, prepareWriteArguments } from "./write.
 
 const NO_LIMIT = 100000;
 
-function description(name: string): string {
-	return readFileSync(new URL(`./descriptions/${name}.md`, import.meta.url), "utf-8").trimEnd();
-}
+type ToolsOptions = JobsOptions & { descriptions: Descriptions; jobs?: Jobs; codemode?: ToolDefinition<any, any, any>; legacy?: boolean };
 
 /** Copy of a stock object schema with one property description replaced. */
 function withDescription(schema: any, property: string, text: string): any {
@@ -97,12 +95,13 @@ function projectToolSections(request: unknown): void {
 	}
 }
 
-export default function (pi: ExtensionAPI) {
-	installRqwTools(pi);
+export default async function (pi: ExtensionAPI) {
+	installRqwTools(pi, { descriptions: await loadDescriptions() });
 }
 
 /** The extension; `backgroundAfterMs` is for tests (the product's threshold is 12 s). */
-export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?: number } = {}) {
+export function installRqwTools(pi: ExtensionAPI, options: { descriptions: Descriptions; backgroundAfterMs?: number }) {
+	const { descriptions } = options;
 	let selectionShutdown: (() => void) | undefined;
 	let aliasesShutdown: ((manager?: object, reload?: boolean) => void) | undefined;
 	try {
@@ -113,7 +112,7 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 	}
 	let legacy = !aliasesShutdown;
 	const jobs = createJobs({ enabled: () => pi.getActiveTools().includes("job"), backgroundAfterMs: options.backgroundAfterMs });
-	for (const tool of createTools(process.cwd(), () => pi.getSettings(), { jobs, get legacy() { return legacy; } })) {
+	for (const tool of createTools(process.cwd(), () => pi.getSettings(), { jobs, descriptions, get legacy() { return legacy; } })) {
 		if (["rqw_rg", "rqw_glob", "rqw_readfile"].includes(tool.name)) (tool as any).rqwSelectionFallback = () => { legacy = true; };
 		pi.registerTool(tool);
 	}
@@ -157,7 +156,9 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 		const catalogue = legacy
 			? { names: ["read", "bash", "edit", "write", "grep", "find"], aliases: {} }
 			: { names: ["rqw_readfile", "bash", "edit", "write", "rqw_rg", "rqw_glob"], aliases: { read: "rqw_readfile", grep: "rqw_rg", find: "rqw_glob" } };
-		(request as { offer?: (factory: typeof createTools, offeredCatalogue: typeof catalogue) => void })?.offer?.(legacy ? (cwd, settings, options) => createTools(cwd, settings, { ...options, legacy: true }) : createTools, catalogue);
+		const factory = (cwd: string, settings: () => any, own: Omit<ToolsOptions, "descriptions"> = {}) =>
+			createTools(cwd, settings, legacy ? { ...own, descriptions, legacy: true } : { ...own, descriptions });
+		(request as { offer?: (factory: unknown, offeredCatalogue: typeof catalogue) => void })?.offer?.(factory, catalogue);
 	});
 
 	pi.on("session_start", (event, ctx) => {
@@ -186,7 +187,8 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 }
 
 /** Fresh base tools and one job registry for a main session or a subagent. */
-export function createTools(cwd: string, settings: () => any, options: JobsOptions & { jobs?: Jobs; codemode?: ToolDefinition<any, any, any>; legacy?: boolean } = {}): ToolDefinition[] {
+export function createTools(cwd: string, settings: () => any, options: ToolsOptions): ToolDefinition[] {
+	const { descriptions } = options;
 	const tools: ToolDefinition[] = [];
 	const jobs = options.jobs ?? createJobs(options);
 	type Run = (id: string, params: any, signal: any, onUpdate: any, ctx: any, job?: JobHandle) => Promise<any>;
@@ -216,7 +218,7 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 	const notDefault = { defaultActive: false };
 
 	const read: any = createReadToolDefinition(cwd);
-	register("read", read, { ...notDefault, exposure: options.legacy ? "direct" : "hidden", description: description("read") }, (id, params, signal, onUpdate, ctx) => {
+	register("read", read, { ...notDefault, exposure: options.legacy ? "direct" : "hidden", description: descriptions.read }, (id, params, signal, onUpdate, ctx) => {
 		const s = sessionSettings();
 		const options = s ? { autoResizeImages: s.images?.autoResize ?? true } : undefined;
 		const def: any = createReadToolDefinition(ctx?.cwd || process.cwd(), options);
@@ -224,7 +226,7 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 	});
 
 	const bash: any = createBashToolDefinition(cwd);
-	const bashText = description("bash") + (process.platform === "win32" ? "\n" + description("bash.win32") : "");
+	const bashText = descriptions.bash + (process.platform === "win32" ? "\n" + descriptions["bash.win32"] : "");
 	const bashParameters = withDescription(withDescription(bash.parameters, "command", "The command to execute"), "timeout", "Timeout in seconds; kills the command and its child processes. Without it there is no command deadline.");
 	register("bash", bash, { ...notDefault, description: bashText, parameters: bashParameters }, async (id, params, signal, onUpdate, ctx, job) => {
 		guardBash(params.command, options.legacy);
@@ -249,7 +251,7 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 	register("edit", edit, {
 		...notDefault,
 		constrainedSampling: undefined,
-		description: description("edit"),
+		description: descriptions.edit,
 		parameters: createEditSchema(edit.parameters),
 		prepareArguments: (input: any) => prepareEditArguments(edit.prepareArguments, input),
 		...editRenderers(edit),
@@ -258,7 +260,7 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 	const write: any = createWriteToolDefinition(cwd);
 	register("write", write, {
 		...notDefault,
-		description: description("write"),
+		description: descriptions.write,
 		parameters: createWriteSchema(write.parameters),
 		prepareArguments: prepareWriteArguments,
 		...writeRenderers(write),
@@ -268,7 +270,7 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 	register("grep", grep, {
 		...notDefault,
 		exposure: options.legacy ? "direct" : "hidden",
-		description: description("grep"),
+		description: descriptions.grep,
 		prepareArguments: (input: unknown) => prepareSearchArguments(grep, input),
 		parameters: withDescription(grep.parameters, "limit", "Maximum number of matches (default: no cap; output is still cut at 50KB)."),
 	}, withDefaultLimit(grep));
@@ -277,19 +279,19 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 	register("find", find, {
 		...notDefault,
 		exposure: options.legacy ? "direct" : "hidden",
-		description: description("find"),
+		description: descriptions.find,
 		prepareArguments: (input: unknown) => prepareSearchArguments(find, input),
 		parameters: withDescription(find.parameters, "limit", "Maximum number of results (default: no cap; output is still cut at 50KB)."),
 	}, withDefaultLimit(find));
 
 	if (!options.legacy) {
-		for (const tool of [createReadFileTool(cwd, settings), createRgToolDefinition(cwd), createGlobToolDefinition(cwd)]) {
+		for (const tool of [createReadFileTool(cwd, settings, descriptions.rqw_readfile), createRgToolDefinition(cwd, descriptions.rqw_rg), createGlobToolDefinition(cwd, descriptions.rqw_glob)]) {
 			const overrides = tool.name === "rqw_readfile" ? { ...notDefault, promptGuidelines: [] } : notDefault;
 			register(tool.name, tool, overrides, (id, params, signal, onUpdate, ctx) => tool.execute(id, params, signal, onUpdate, ctx));
 		}
 	}
 
 	if (options.codemode) tools.push(groupCodemode(options.codemode, jobs));
-	tools.push({ ...createJobTool(jobs, description("job")), ...notDefault });
+	tools.push({ ...createJobTool(jobs, descriptions.job), ...notDefault });
 	return tools;
 }

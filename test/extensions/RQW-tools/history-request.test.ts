@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createFauxCore, fauxAssistantMessage } from "@earendil-works/pi-ai";
@@ -23,7 +24,7 @@ test("next request removes the old catalogue and adds its replacements", async (
 		systemPromptOverride: () => "system", extensionFactories: [rqwTools] } as never);
 	await loader.reload();
 	const manager = SessionManager.inMemory(cwd);
-	const old = createTools(cwd, () => ({}), { legacy: true }).filter((tool) => ["read", "grep", "find"].includes(tool.name));
+	const old = createTools(cwd, () => ({}), { descriptions, legacy: true }).filter((tool) => ["read", "grep", "find"].includes(tool.name));
 	manager.appendMessage({ role: "system", content: "system", timestamp: 1, toolsAdded: old.map(({ name, description, parameters }) => ({ name, description, parameters })) } as any);
 	const { session } = await createAgentSession({ cwd, modelRuntime, model: model as never, resourceLoader: loader, settingsManager, sessionManager: manager });
 	try {
