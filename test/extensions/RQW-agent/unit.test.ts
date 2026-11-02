@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { queryObjects } from "node:v8";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { Agent } from "@earendil-works/pi-agent-core";
 import { createFauxCore, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
@@ -11,6 +11,7 @@ import { AgentSession, createEventBus, SessionManager, type AgentSessionEvent } 
 import { Activity, headTail } from "../../../extensions/RQW-agent/activity.ts";
 import { type AutoSource, takeBackground, untilBackgroundChange } from "../../../extensions/RQW-agent/background.ts";
 import { takeFrom } from "./consumer.ts";
+import { countSyncSessionReads } from "./fixture.ts";
 import { Coordinator } from "../../../extensions/RQW-agent/coordinator.ts";
 import { createCountsProducer, type CountsOffer, type RunningCounts } from "../../../extensions/RQW-agent/counts.ts";
 import { fastGpt, inheritedFastGpt } from "../../../extensions/RQW-agent/fast-gpt.ts";
@@ -479,9 +480,9 @@ test("child sessions persist below their parent and reopen", async t => {
 	const root = await temp(t);
 	const parent = SessionManager.create(root, join(root, "parent"));
 	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
-	const child = createChildManager(parent, root, "agent", 1);
+	const child = await createChildManager(parent, root, "agent", 1);
 	child.appendMessage({ role: "user", content: "child", timestamp: 2 });
-	const reopened = openChildManager(parent, child.getSessionFile()!, root, "agent", 1);
+	const reopened = await openChildManager(parent, child.getSessionFile()!, root, "agent", 1);
 	assert.deepEqual(reopened.buildSessionContext(), child.buildSessionContext());
 	assert.equal(reopened.getHeader()?.parentSession, parent.getSessionFile());
 });
@@ -1542,6 +1543,88 @@ test("five finished idle minutes release a session and send wakes the same histo
 	live.runtime.close();
 });
 
+for (const action of ["status", "send"]) {
+	test(`waking a released child by ${action} reads its file without a synchronous reopen`, async t => {
+		t.mock.timers.enable({ apis: ["setTimeout"] });
+		let now = 0;
+		t.mock.method(performance, "now", () => now);
+		const root = await temp(t);
+		const parent = SessionManager.create(root, join(root, "parent"));
+		parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+		let released = false;
+		const live = runtimeFixture(parent, root);
+		live.events.on("rqw-codex:session-policy", (request: any) => { request.release = () => { released = true; }; });
+		await live.execute({ action: "start", task: "original task", tools: [] });
+		await live.runtime.wait(new AbortController().signal);
+		await commitWait(live, parent);
+		const before = structuredClone(retainedChildManager(parent, "agent", 1)!.getEntries());
+		now = 300000;
+		t.mock.timers.tick(300000);
+		await until(() => released);
+		assert.equal(retainedChildManager(parent, "agent", 1), undefined);
+		live.ctx.mode = "print";
+		await live.emit("agent_end");
+		const reads = countSyncSessionReads(t);
+		await live.execute(action === "status" ? { action, ids: ["agent#1"] } : { action, id: "agent#1", task: "wake task" });
+		const synchronous = reads.count();
+		reads.stop();
+		assert.equal(synchronous, 0);
+		if (action === "send") await live.runtime.wait(new AbortController().signal);
+		const woke = retainedChildManager(parent, "agent", 1)!;
+		assert.deepEqual(woke.getEntries().slice(0, before.length), before);
+		live.runtime.close();
+	});
+}
+
+test("a reopened child file follows Pi's own reading rules", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const child = await createChildManager(parent, root, "agent", 1);
+	child.appendMessage({ role: "user", content: "task", timestamp: 1 });
+	const leaf = child.appendMessage(fauxAssistantMessage("answer", { timestamp: 1 }));
+	const file = child.getSessionFile()!;
+	// A malformed line, a blank line and a last line without its newline.
+	const tail = { type: "custom", id: "tail", parentId: leaf, timestamp: "x", customType: "x" };
+	await writeFile(file, `${await readFile(file, "utf8")}not json\n\n${JSON.stringify(tail)}`);
+	const copy = join(root, "stock.jsonl");
+	await writeFile(copy, await readFile(file));
+	const stock = SessionManager.open(copy, root, root);
+	const reopened = await openChildManager(parent, file, root, "agent", 1);
+	assert.deepEqual(reopened.getEntries(), stock.getEntries());
+	assert.equal(reopened.getEntries().at(-1)?.id, "tail");
+	assert.equal((await readFile(file, "utf8")).endsWith("\n"), true);
+	const foreign = join(dirname(file), "foreign.jsonl");
+	await writeFile(foreign, `${JSON.stringify({ type: "custom", id: "x" })}\n`);
+	await assert.rejects(openChildManager(parent, foreign, root, "agent", 1), /not a valid/);
+});
+
+test("a child file of an older format is migrated without a synchronous rewrite", async t => {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const child = await createChildManager(parent, root, "agent", 1);
+	child.appendMessage({ role: "user", content: "task", timestamp: 1 });
+	child.appendMessage(fauxAssistantMessage("answer", { timestamp: 1 }));
+	const file = child.getSessionFile()!;
+	// Version 2 holds a role that version 3 renames.
+	const lines = (await readFile(file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
+	lines[0].version = 2;
+	lines[1].message.role = "hookMessage";
+	await writeFile(file, `${lines.map(line => JSON.stringify(line)).join("\n")}\n`);
+	await writeFile(`${file}.migrating`, "left by an interrupted migration");
+	const reads = countSyncSessionReads(t);
+	const reopened = await openChildManager(parent, file, root, "agent", 1);
+	const synchronous = reads.count();
+	reads.stop();
+	assert.equal(synchronous, 0);
+	assert.equal((reopened.getEntries()[0] as any).message.role, "custom");
+	const saved = (await readFile(file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line));
+	assert.equal(saved[0].version, 3);
+	assert.equal(saved[1].message.role, "custom");
+	assert.deepEqual(saved.slice(1), reopened.getEntries());
+});
+
 test("an uncommitted answer blocks sleep until its wait result is saved", async t => {
 	t.mock.timers.enable({ apis: ["setTimeout"] });
 	let now = 0;
@@ -1701,12 +1784,12 @@ test("a child file matches only the exact saved history of its own session", asy
 	const root = await temp(t);
 	const parent = SessionManager.create(root, join(root, "parent"));
 	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
-	const child = createChildManager(parent, root, "agent", 1);
+	const child = await createChildManager(parent, root, "agent", 1);
 	child.appendMessage({ role: "user", content: "task", timestamp: 1 });
 	child.appendMessage(fauxAssistantMessage("answer", { timestamp: 1 }));
 	const file = child.getSessionFile()!;
 	assert.equal(await savedHistoryMatches(parent, file, "agent", 1, child), true);
-	const other = createChildManager(parent, root, "agent", 2);
+	const other = await createChildManager(parent, root, "agent", 2);
 	assert.equal(await savedHistoryMatches(parent, file, "agent", 1, other), false, "another session's history");
 	await writeFile(file, `${await readFile(file, "utf8")}${JSON.stringify({ type: "custom", id: "foreign", parentId: null, timestamp: "x", customType: "x" })}\n`);
 	assert.equal(await savedHistoryMatches(parent, file, "agent", 1, child), false, "a line the history lacks");

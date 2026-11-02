@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { test } from "node:test";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
 import { retainedChildManager } from "../../../extensions/RQW-agent/persistence.ts";
-import { runtime, world } from "./fixture.ts";
+import { countSyncSessionReads, runtime, world } from "./fixture.ts";
 
 test("fork start copies the selected branch and its projection without unfinished tools or service state", async t => {
 	const w = await world(t);
@@ -82,4 +84,24 @@ test("ordinary start still begins with a clean history", async t => {
 	const messages = JSON.stringify(run.requests[0].messages);
 	assert.match(messages, /ordinary/);
 	assert.doesNotMatch(messages, /parent history/);
+});
+
+test("fork start writes the branch without reading any session file back", async t => {
+	const w = await world(t);
+	const run = runtime(w.cwd, w.base);
+	for (let i = 0; i < 40; i++) run.parent.appendMessage({ role: "user", content: `history ${i}`, timestamp: i });
+	const reads = countSyncSessionReads(t);
+	await run.execute({ action: "start", fork_turns: "all", task: "fork task", tools: [] });
+	const synchronous = reads.count();
+	reads.stop();
+	await run.live.wait(new AbortController().signal);
+	run.live.close();
+	assert.equal(synchronous, 0);
+	const fork = retainedChildManager(run.parent, "agent", 1)!;
+	assert.ok(fork.getEntries().filter(entry => entry.type === "message").length >= 40);
+	// The file holds one JSON line per entry, and Pi reads the same history from it.
+	const file = fork.getSessionFile()!;
+	const lines = (await readFile(file, "utf8")).split("\n").filter(Boolean);
+	assert.equal(lines.length, fork.getEntries().length + 1);
+	assert.deepEqual(SessionManager.open(file, dirname(file), w.cwd).getEntries(), fork.getEntries());
 });
