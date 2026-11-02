@@ -1,7 +1,7 @@
 // Safe session projection. Pi 1.4.0 `buildContextEntries` (dist/core/session-manager.js:227) passes the whole tail after
 // the latest compaction to `push(...)`; a tail of about 120000 entries throws `RangeError: Maximum call stack size
 // exceeded` in every caller of the projection. This copy builds the same result with loops. It runs only after the stock
-// call has thrown a RangeError, so every session that works today keeps Pi's own code path.
+// call has thrown a RangeError. Append-only manager steps reuse the previous result after that guarded first call.
 import * as Pi from "@earendil-works/pi-coding-agent";
 
 type Entry = { id: string; parentId?: string | null; type: string; [key: string]: any };
@@ -13,7 +13,7 @@ type Projection = {
 	model: { provider: string; modelId: string } | null;
 };
 type Index = Map<string, Entry>;
-type Manager = { getEntries(): Entry[]; leafId: string | null | undefined; byId: Index };
+type Manager = { getEntries(): Entry[]; leafId: string | null | undefined; byId: Index; fileEntries?: Entry[] };
 type Method = (this: Manager) => unknown;
 
 /** Process-wide offer for code that calls Pi's free `buildSessionProjection(entries, leafId)` directly. */
@@ -127,6 +127,67 @@ function probeManager(): Manager {
 
 const sameResult = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 
+type Cached = { file: Entry[]; index: Index; size: number; leaf: Entry | undefined; result: Entry[] | Projection };
+
+// Pi gives messages to its mutable agent state. Never expose the cache's arrays to that state.
+function copyResult(result: Entry[] | Projection): Entry[] | Projection {
+	return Array.isArray(result) ? result.slice() : { ...result, entries: result.entries.slice(), messages: result.messages.slice() };
+}
+
+/** Pi's entries are append-only. A new file, index, branch, edit or compaction rebuilds through the guarded path. */
+function incremental(original: Method, safe: (manager: Manager) => Entry[] | Projection, projection: boolean, overflowed: WeakSet<object>): Method {
+	const cache = new WeakMap<Manager, Cached>();
+	return function (this: Manager) {
+		const file = Array.isArray(this.fileEntries) ? this.fileEntries : undefined;
+		const leaf = this.leafId ? this.byId.get(this.leafId) : undefined;
+		const old = cache.get(this);
+		if (file && old && old.file === file && old.index === this.byId && this.byId.size >= old.size &&
+			(!old.leaf || this.byId.get(old.leaf.id) === old.leaf)) {
+			const added: Entry[] = [];
+			let at = leaf;
+			while (at && at !== old.leaf && added.length <= this.byId.size - old.size) {
+				added.push(at);
+				at = at.parentId ? this.byId.get(at.parentId) : undefined;
+			}
+			if (at === old.leaf && !added.some((entry) => entry.type === "context_edit" || entry.type === "compaction")) {
+				added.reverse();
+				let result = old.result;
+				if (added.length) {
+					if (projection) {
+						const previous = result as Projection;
+						const projected = added.map((sourceEntry) => ({ sourceEntry, messages: projectEntry(sourceEntry, undefined) }));
+						const messages = projected.flatMap((entry) => entry.messages);
+						let { thinkingLevel, model } = previous;
+						for (const entry of added) {
+							if (entry.type === "thinking_level_change") thinkingLevel = entry.thinkingLevel;
+							else if (entry.type === "model_change") model = { provider: entry.provider, modelId: entry.modelId };
+							else if (entry.type === "message" && entry.message.role === "assistant") model = { provider: entry.message.provider, modelId: entry.message.model };
+						}
+						result = { entries: previous.entries.concat(projected), messages: messages.length ? previous.messages.concat(messages) : previous.messages, thinkingLevel, model };
+					} else result = (result as Entry[]).concat(added);
+				}
+				cache.set(this, { file, index: this.byId, size: this.byId.size, leaf, result });
+				return copyResult(result);
+			}
+		}
+		let result: Entry[] | Projection;
+		if (overflowed.has(this)) result = safe(this);
+		else {
+			try { result = original.call(this) as Entry[] | Projection; }
+			catch (error) {
+				if (!isOverflow(error)) throw error;
+				overflowed.add(this);
+				result = safe(this);
+			}
+		}
+		if (file && (this.leafId === null || leaf)) {
+			cache.set(this, { file, index: this.byId, size: this.byId.size, leaf, result });
+			return copyResult(result);
+		}
+		return result;
+	};
+}
+
 /**
  * Wraps `buildContextEntries` and `buildSessionProjection` of the SessionManager prototype. The probe compares Pi's two
  * methods with the safe copy on a tiny branch; any other shape leaves the stock methods. A manager that overflowed once
@@ -150,19 +211,8 @@ export function installSafeProjection(proto: Record<string | symbol, any>): bool
 		return false;
 	}
 	const overflowed = new WeakSet<object>();
-	const guard = (original: Method, safe: (manager: Manager) => unknown): Method => function (this: Manager) {
-		if (!overflowed.has(this)) {
-			try {
-				return original.call(this);
-			} catch (error) {
-				if (!isOverflow(error)) throw error;
-				overflowed.add(this);
-			}
-		}
-		return safe(this);
-	};
-	proto.buildContextEntries = guard(stock.buildContextEntries!, (manager) => safeContextEntries(manager.getEntries(), manager.leafId, manager.byId));
-	proto.buildSessionProjection = guard(stock.buildSessionProjection!, (manager) => safeSessionProjection(manager.getEntries(), manager.leafId, manager.byId));
+	proto.buildContextEntries = incremental(stock.buildContextEntries!, (manager) => safeContextEntries(manager.getEntries(), manager.leafId, manager.byId), false, overflowed);
+	proto.buildSessionProjection = incremental(stock.buildSessionProjection!, (manager) => safeSessionProjection(manager.getEntries(), manager.leafId, manager.byId), true, overflowed);
 	proto[INSTALLED] = stock;
 	(globalThis as Record<symbol, unknown>)[SAFE_PROJECTION] = guardedProjection;
 	return true;
