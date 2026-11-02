@@ -149,7 +149,7 @@ test("batch ancestor targets are rejected when the directory appears during vali
 	}, undefined, undefined, { cwd }, cwd), /one inside the other/);
 	assert.equal(writes, 0);
 	fs.realpath = original;
-	const result = await executeWrite(async () => ({ content: [] }), "w", {
+	const result: any = await executeWrite(async () => ({ content: [] }), "w", {
 		files: [{ path: parent, content: "one" }, { path: `${parent}-other`, content: "two" }],
 	}, undefined, undefined, { cwd }, cwd);
 	assert.deepEqual(result.details.files, [
