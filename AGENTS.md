@@ -139,9 +139,9 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   preserving the old name. `/rename-gen` regenerates; native
   `/name` stays unchanged. The `rename_session` tool (one `name`) lets the agent set the native name. RQW-statusbar displays the native name in the top input border, gold and shimmering during compaction.
   Details: [Naming](DECISIONS.md#naming); tests: `test/extensions/RQW-naming/`.
-- `extensions/RQW-agent-ui/`: extension 17, compact delivered result cards for `agent`, including reviewer profiles,
-  and for delivered `child_wait` results, full originals
-  through Ctrl+O. Loaded before tool-ui. With both loaded, a collapsed wait result is tool-ui's (`Waited for N agents`,
+- `extensions/RQW-agent-ui/`: extension 17, compact result cards for the `agent` `wait` result, including reviewer profiles,
+  full originals through Ctrl+O; a one-line `agent_progress` notice card with its summary. Cards of older stored `agent`
+  and `child_wait` messages stay; stored `review`, `job`, `code_writer` and `shell_runner` messages have no card. Loaded before tool-ui. With both loaded, a collapsed wait result is tool-ui's (`Waited for N agents`,
   live block `wait <ids>`) and Ctrl+O shows agent-ui's expanded wait cards; with tool-ui off, agent-ui shows its
   collapsed wait cards. No activity-count producer, statusbar indicator or agent list here.
   Tests: `test/extensions/RQW-agent-ui/`; independent package filter and `/reload`.
