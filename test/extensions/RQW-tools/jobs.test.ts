@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createTools } from "../../../extensions/RQW-tools/index.ts";
@@ -26,7 +27,7 @@ async function handedOff(t: any) {
 			signal.addEventListener("abort", () => reject(new Error("Operation aborted")));
 		}),
 	};
-	const tools = new Map(createTools(process.cwd(), () => ({}), { jobs, codemode }).map((tool) => [tool.name, tool as any]));
+	const tools = new Map(createTools(process.cwd(), () => ({}), { descriptions, jobs, codemode }).map((tool) => [tool.name, tool as any]));
 	const pending = tools.get("codemode").execute("call", { code: "work" }, undefined, undefined, undefined);
 	t.mock.timers.tick(12);
 	const handoff: any = await pending;
@@ -154,7 +155,7 @@ test("counts follow a handed-off job until it ends", async (t) => {
 	counts.stop();
 });
 
-const ownerOf = (jobs: any) => (createTools(process.cwd(), () => ({}), { jobs }).find(tool => tool.name === "job") as any).jobs;
+const ownerOf = (jobs: any) => (createTools(process.cwd(), () => ({}), { descriptions, jobs }).find(tool => tool.name === "job") as any).jobs;
 
 test("the job tool hands its owner a running count, a result source and a hold only while a job runs or is undelivered", async (t) => {
 	const { jobs, control } = await handedOff(t);

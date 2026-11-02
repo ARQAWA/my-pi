@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -19,7 +20,7 @@ test("codemode calls all new tools in parallel and rejects the old name", async 
 		: { stdout: jsonLines(fileEvents("./a.txt", [{ n: 1, text: "hello" }])) };
 	let definition: any;
 	createCodemodeExtension({ models: false })({ registerTool: (tool: any) => { definition = tool; }, getAllTools: () => [] } as any);
-	const all: any[] = createTools(cwd, () => ({}), { codemode: definition, enabled: () => false });
+	const all: any[] = createTools(cwd, () => ({}), { descriptions, codemode: definition, enabled: () => false });
 	const tools = all.filter((tool) => ["rqw_readfile", "rqw_rg", "rqw_glob"].includes(tool.name));
 	const code = all.find((tool) => tool.name === "codemode");
 	const ctx: any = {
@@ -70,7 +71,7 @@ test("a script that calls job status sees the finished job as undelivered; its r
 	await running;
 	let definition: any;
 	createCodemodeExtension({ models: false })({ registerTool: (tool: any) => { definition = tool; }, getAllTools: () => [] } as any);
-	const all: any[] = createTools(process.cwd(), () => ({}), { jobs, codemode: definition });
+	const all: any[] = createTools(process.cwd(), () => ({}), { descriptions, jobs, codemode: definition });
 	const code = all.find(tool => tool.name === "codemode");
 	const job = all.find(tool => tool.name === "job");
 	const ctx: any = { cwd: process.cwd(), tools: [job], sessionManager: { getBranch: () => [] },
@@ -98,7 +99,7 @@ test("a script that calls job status sees the finished job as undelivered; its r
 test("codemode tools.bash rejects a refused command", async () => {
 	let definition: any;
 	createCodemodeExtension({ models: false })({ registerTool: (tool: any) => { definition = tool; }, getAllTools: () => [] } as any);
-	const all: any[] = createTools(process.cwd(), () => ({ shellPath: "/nonexistent/rqw-guard-shell" }), { codemode: definition, enabled: () => false });
+	const all: any[] = createTools(process.cwd(), () => ({ shellPath: "/nonexistent/rqw-guard-shell" }), { descriptions, codemode: definition, enabled: () => false });
 	const bash = all.find(tool => tool.name === "bash");
 	const code = all.find(tool => tool.name === "codemode");
 	const ctx: any = {
@@ -130,7 +131,7 @@ test("a slow new search becomes a cancellable background job", async (t) => {
 	const running = new Promise<void>((resolve) => { started = resolve; });
 	fake.handler = () => { started(); return { hang: true }; };
 	const jobs = createJobs({ backgroundAfterMs: 12 });
-	const rg: any = createTools(cwd, () => ({}), { jobs }).find((tool) => tool.name === "rqw_rg");
+	const rg: any = createTools(cwd, () => ({}), { descriptions, jobs }).find((tool) => tool.name === "rqw_rg");
 	const pending = rg.execute("call", { pattern: "hello" }, undefined, undefined, { cwd });
 	await running;
 	t.mock.timers.tick(12);

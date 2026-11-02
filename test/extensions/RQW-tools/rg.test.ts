@@ -1,9 +1,12 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import test from "node:test";
-import { createRgToolDefinition } from "../../../extensions/RQW-tools/rg.ts";
+import { createRgToolDefinition, resolveRipgrep } from "../../../extensions/RQW-tools/rg.ts";
 import { NOISE_DIRS, resolveInputPath } from "../../../extensions/RQW-tools/search-policy.ts";
 import { fileEvents, jsonLines, manyHits, project } from "./rg-fake.ts";
 
@@ -238,7 +241,7 @@ test("a search that outlives the backend limit is killed and marked incomplete",
 
 test("abort before launch runs nothing; abort during the search kills the process", async (t) => {
 	const p = await project(t, [], { hang: true });
-	const tool: any = createRgToolDefinition(p.cwd);
+	const tool: any = createRgToolDefinition(p.cwd, descriptions.rqw_rg);
 	const before = new AbortController();
 	before.abort();
 	await assert.rejects(tool.execute("c", { pattern: "x" }, before.signal, undefined, { cwd: p.cwd }), /Operation aborted/);
@@ -290,6 +293,32 @@ test("a missing rg is installed by Pi's own ensure step once for parallel cold s
 	assert.equal(two, "src/a.ts:1");
 	assert.equal(ensures, 1);
 	assert.deepEqual(p.rg.binaries, [managed, managed]);
+});
+
+test("rg is found without blocking calls: Pi's managed copy first, then the first PATH folder that has one", async (t) => {
+	const root = await mkdtemp(join(tmpdir(), "rqw-rg-find-"));
+	const saved = { path: process.env.PATH, agent: process.env.PI_CODING_AGENT_DIR };
+	const exists = t.mock.method(fs, "existsSync");
+	syncBuiltinESMExports();
+	t.after(async () => {
+		exists.mock.restore();
+		syncBuiltinESMExports();
+		for (const [key, value] of [["PATH", saved.path], ["PI_CODING_AGENT_DIR", saved.agent]] as const) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+		await rm(root, { recursive: true, force: true });
+	});
+	const executable = process.platform === "win32" ? "rg.exe" : "rg";
+	const [agent, bare, first, second] = ["agent", "bare", "first", "second"].map((name) => join(root, name));
+	for (const folder of [join(agent, "bin"), bare, first, second]) await mkdir(folder, { recursive: true });
+	for (const folder of [first, second]) await writeFile(join(folder, executable), "binary");
+	process.env.PI_CODING_AGENT_DIR = agent;
+	process.env.PATH = ["", bare, first, second].join(delimiter);
+	assert.equal(await resolveRipgrep(root), join(first, executable));
+	await writeFile(join(agent, "bin", executable), "binary");
+	assert.equal(await resolveRipgrep(root), join(agent, "bin", executable));
+	assert.deepEqual(exists.mock.calls.filter((call) => String(call.arguments[0]).startsWith(root)), []);
 });
 
 test("a failed download is Pi's error, not a search result, and the next call tries again", async (t) => {
