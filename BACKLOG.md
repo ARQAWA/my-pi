@@ -52,7 +52,7 @@ prerequisite constraints remain evidence; prerequisite delivery never starts a h
 ### AGENT-STATES-UI details
 
 <a id="agent-states-ui"></a>AGENT-STATES-UI is delivered in [D-STATUSBAR-WAITS](DECISIONS.md#status-bar): the waiting
-wording, the child process count, the per-agent states and the agent list. The sources below are retained as the owner's
+wording, the child process count and the idle-agent count line. The sources below are retained as the owner's
 verbatim record. Delivery does not resume other held UI work.
 
 Owner sources in session `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`:

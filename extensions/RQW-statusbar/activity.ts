@@ -9,17 +9,10 @@ export const COUNTS_VERSION = 1;
 export const COUNTS_REQUEST = "rqw:running-counts:request";
 export const COUNTS_OFFER = "rqw:running-counts:offer";
 
-export interface AgentLine {
-	id: string;
-	title?: string;
-	state: "working" | "waiting" | "afk" | "idle";
-	depth: number;
-}
-
 export interface RunningCounts {
 	agents: number;
 	backgroundProcesses?: number;
-	agentList?: AgentLine[];
+	idleAgents?: number;
 }
 
 type CountsListener = (counts: RunningCounts | null) => void;
@@ -30,10 +23,8 @@ interface CountsSource {
 }
 
 const zero = (): RunningCounts => ({ agents: 0 });
-const sameList = (a: AgentLine[] = [], b: AgentLine[] = []) => a.length === b.length && a.every((line, i) =>
-	line.id === b[i].id && line.title === b[i].title && line.state === b[i].state && line.depth === b[i].depth);
 const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents &&
-	(a.backgroundProcesses ?? 0) === (b.backgroundProcesses ?? 0) && sameList(a.agentList, b.agentList);
+	(a.backgroundProcesses ?? 0) === (b.backgroundProcesses ?? 0) && (a.idleAgents ?? 0) === (b.idleAgents ?? 0);
 
 /** Sums the live agent counts of this session; a source that ends (`null`) is dropped at once. */
 export class CountsWatch {
@@ -106,10 +97,9 @@ export class CountsWatch {
 			const counts = source.snapshot();
 			next.agents += counts.agents;
 			if (counts.backgroundProcesses) next.backgroundProcesses = (next.backgroundProcesses ?? 0) + counts.backgroundProcesses;
-			if (counts.agentList?.length) (next.agentList ??= []).push(...counts.agentList.map(line => ({ ...line })));
+			if (counts.idleAgents) next.idleAgents = (next.idleAgents ?? 0) + counts.idleAgents;
 		}
 		const changed = !same(next, this.total);
-		if (this.total.agentList && sameList(next.agentList, this.total.agentList)) next.agentList = this.total.agentList;
 		this.total = next;
 		if (changed) this.changed();
 	}

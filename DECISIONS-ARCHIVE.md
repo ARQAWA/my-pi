@@ -7877,3 +7877,33 @@ Introduced: `e77acd0f`. Source: `0a00468c:DECISIONS.md`, lines 1135-1138. Verbat
 >   without cancelling accepted children. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0414.
 >   Carrier: `extensions/RQW-agent/index.ts`, `coordinator.ts`, `descriptions/*.md`. Since: the final squash of branch `agent-async`.
 >   Old `rqw-agent-wait` records stay in the session but are never resumed ([RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume)).
+
+## A-0482 · archived 2026-11-02 · Statusbar · per-agent list
+
+Status: SUPERSEDED by [D-STATUSBAR-WAITS] (DECISIONS.md#status-bar): the owner rejected the list; the status bar shows one dim idle-agent count line.
+Introduced: `562fb21f`. Source: `8a5244fc:DECISIONS.md`, lines 1629-1633. Verbatim replaced text:
+
+>   RQW-agent gives every agent of the tree one state. `working`: Pi runs the child or a queued send is about to.
+>   `waiting`: its assignment (`a.run`) stays open for its jobs or children. `afk`: paused or interrupted, no assignment.
+>   `idle`: the rest, including a finished child kept in memory or asleep. The count is only `working` plus `waiting`,
+>   recursively; a waiting parent and its working descendant each count. Completed undelivered results count zero,
+>   and genuine idle or AFK with no pending work counts nothing.
+
+## A-0483 · archived 2026-11-02 · Statusbar · per-agent list
+
+Status: SUPERSEDED by [D-STATUSBAR-WAITS] (DECISIONS.md#status-bar): the owner rejected the list; the status bar shows one dim idle-agent count line.
+Introduced: `562fb21f`. Source: `8a5244fc:DECISIONS.md`, lines 1638-1643. Verbatim replaced text:
+
+>   The source's optional `agentList` holds one line `{ id, title?, state, depth }` per agent, nested agents right after their parent
+>   (a nested id is its path, `agent#1/agent#2`). The status bar draws it under the status text, `agent#3 Title · working`,
+>   indented two spaces per level, all agents, never cut to a few; id `muted`, title `dim`, `working` `text`, `waiting` `dim`,
+>   `idle` and `afk` rows wholly `dim`. When everything is idle the list stays, dim, with no status text. Narrow width cuts the
+>   title, then the indent, then the id; the state stays. The rows are cached and redrawn only when the list changes; no timer.
+>   The consumer accepts optional `backgroundProcesses` and `agentList`, treating their absence in older v1 sources as zero and empty.
+
+## A-0484 · archived 2026-11-02 · Statusbar · owner answers on the agent list
+
+Status: SUPERSEDED by [D-STATUSBAR-WAITS] (DECISIONS.md#status-bar): the owner's later words reject the list.
+Introduced: `562fb21f`. Source: `8a5244fc:DECISIONS.md`, line 1646. Verbatim replaced text:
+
+>   agent list when everything is idle: «1» = показывать тусклым; list length: «1» = все агенты.
