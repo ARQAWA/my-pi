@@ -1532,7 +1532,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (params.fork_turns !== undefined && params.action !== "start") throw new Error("fork_turns is only supported on start");
 			if (params.fork_turns === "all" && [params.model, params.thinking, params.agent_type, params.system, params.system_file, params.role, params.role_file, params.include].some(value => value !== undefined))
 				throw new Error("fork_turns all cannot be combined with model, thinking, agent_type, system, system_file, role, role_file or include");
-			const fork = params.fork_turns === "all" ? { seed: forkBranch(ctx.sessionManager.getBranch()), system: ctx.getSystemPrompt(), model: ctx.model, thinking: pi.getThinkingLevel(), tools: pi.getActiveTools(), payload: payloads.get() } : undefined;
+			const fork = params.fork_turns === "all" ? { leaf: ctx.sessionManager.getLeafEntry(), system: ctx.getSystemPrompt(), model: ctx.model, thinking: pi.getThinkingLevel(), tools: pi.getActiveTools(), payload: payloads.get() } : undefined;
 			if (fork?.model && ["anthropic-messages", "openai-codex-responses"].includes(fork.model.api)) {
 				const anthropic = fork.model.api === "anthropic-messages";
 				if (!fork.payload || fork.payload.model.id !== fork.model.id || fork.payload.model.provider !== fork.model.provider || fork.payload.model.api !== fork.model.api || !Array.isArray(fork.payload.payload[anthropic ? "messages" : "input"]))
@@ -1546,7 +1546,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	pi.registerTool(definition);
 
 	/** `params` has no null fields: `execute` removed them (strict-mode providers send null for omitted optional fields). */
-	async function act(params: Params, ctx: ExtensionContext, signal: AbortSignal, fork?: { seed: SessionEntry[]; system: string; model: Model<Api> | undefined; thinking: Thinking; tools: string[]; payload?: ForkPayload }) {
+	async function act(params: Params, ctx: ExtensionContext, signal: AbortSignal, fork?: { leaf: SessionEntry | undefined; system: string; model: Model<Api> | undefined; thinking: Thinking; tools: string[]; payload?: ForkPayload }) {
 		signal.throwIfAborted();
 		await hydrate(ctx, signal);
 		const number = localNumber(params.id);
@@ -1591,7 +1591,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				const fast = { on: params.fast_gpt ?? callerFast() };
 				config.settings = childSettings(pi.getSettings());
 				config.builtins = BUILTIN_TOOLS.filter(name => (fork?.tools ?? pi.getActiveTools()).includes(name));
-				const manager = await createChildManager(ctx.sessionManager, ctx.cwd, name, id, fork?.seed);
+				const manager = await createChildManager(ctx.sessionManager, ctx.cwd, name, id, fork && await forkBranch(ctx.sessionManager, fork.leaf));
 				const firstPayload = fork?.model && ["anthropic-messages", "openai-codex-responses"].includes(fork.model.api) && fork.payload ? { source: fork.payload, task: task! } : undefined;
 				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`, manager, false, undefined, firstPayload);
 				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, state: "idle", fast, sends: [], ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };

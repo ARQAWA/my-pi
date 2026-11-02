@@ -259,7 +259,7 @@ const SLICE_MS = 4;
 const WRITE_CHUNK_CHARS = 1024 * 1024;
 
 /** Awaited between work items: yields to the event loop once the current slice has run for `SLICE_MS`. */
-function slicePacer(): () => Promise<void> {
+export function slicePacer(): () => Promise<void> {
 	let slice = performance.now();
 	return async () => {
 		if (performance.now() - slice <= SLICE_MS) return;
