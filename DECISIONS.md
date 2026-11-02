@@ -319,6 +319,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   [PROCESS.md](PROCESS.md), linked from `AGENTS.md`. `WORKFLOW-MANIFEST.md` is the owner's
   personal lifelong record and aspiration, not package behavior, a gate or an overriding procedure. Owner (`13-49-40:204`):
   «Манифест того, как я делаю свою личную работу.»
+  Coordinator question, 2026-11-02: change lines 21, 37 and «Общение» where they conflict with the rules, or keep the manifesto as the owner's personal record? Option 1: leave it as the owner's personal record. Owner: «1».
   Reason: one procedure that agents reload; the manifesto stays the owner's own. Carriers: `AGENTS.md`, `PROCESS.md`,
   `WORKFLOW-MANIFEST.md`. Since: `8f2ea64`.
 - **Branches, squash and history** `[D-WORK-BRANCHES]`. Branch bases, task squash destination, release promotion
@@ -330,7 +331,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   temporary files go to OS temporary storage; no forks. Reason: the owner's work and credentials stay intact.
   Carrier: this entry. Since: `8f2ea64`.
 - **Process reminder** `[D-WORK-PROCESS-REMINDER]`. A repo-only hook reads `PROCESS.md` fresh and adds a reminder to main-session requests, not the product or child sessions. Owner: «может быть надо тебе хук какой»; approval: «да делаем». Carrier: `.pi/extensions/process-reminder/`.
-- **Development quality checks** `[D-WORK-QUALITY-CHECKS]`. Oxlint checks source; `scripts/check.mjs` runs lint and tests in parallel and offers `--typecheck`; the repo-only `post-edit-lint` checks edits. Owner: «Но надо, чтобы это всё ускоряло разработку, а не замедляло, наоборот.» «Это все нужно внедрить супер эффективно, что бы оно работало паралельно запуска тестам». Carriers: `.oxlintrc.json`, `scripts/check.mjs`, `.pi/extensions/post-edit-lint/`.
+- **Development quality checks** `[D-WORK-QUALITY-CHECKS]`. Oxlint checks source; `scripts/check.mjs` runs lint and tests in parallel and offers `--typecheck` and `--knip`; the repo-only `post-edit-lint` checks edits. Owner (`16-27-59:16351`): «1а (елси это не те что выше)
+2а
+3а
+4а
+5а» and «Это все нужно внедрить супер эффективно, что бы оно работало паралельно запуска тестам». Owner: «Но надо, чтобы это всё ускоряло разработку, а не замедляло, наоборот.» Carriers: `.oxlintrc.json`, `scripts/check.mjs`, `.pi/extensions/post-edit-lint/`.
+- **LSP pilot refused** `[D-WORK-LSP-PILOT]`. The 2026-10-27 pilot rejected `@ian-pascoe/pi-lsp@0.15.1`: the real TypeScript server delivered no diagnostics, clean output was not silent, and warm edits slowed down in the reported measurements. Raw measurements were not retained; unexecuted cases remain unverified. Evidence and limits: `my-pi-evidence/quality-research/lsp-pilot.md`.
 - **Heavy checks in CI, saved logs** `[D-WORK-CI-LOGS]`. Owner (`16-27-59:992`, then `16-27-59:1042`):
   «Сделай так, чтобы у тебя были логи числа прогонов на Mac. Это что за хуйня? Такого не должно быть.»
   «Ты запускаешь тесты или что? Ты не можешь проверить это? Это что за хуйня? Почему так, блядь?»
@@ -348,6 +354,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   reruns. Carrier: [PROCESS.md, Sufficient proof](PROCESS.md#sufficient-proof-without-idle-reruns). Since: `8f2ea64`.
 - **Bounded code-review profile** `[D-WORK-CODE-PROFILE]`. Owner, current code-review prompt task:
   «они должны быть на Sol 6.1 Low, должны работать супербыстро и суперчётко»
+  The model was later replaced by Terra high; see `[D-REVIEW-PROFILES]`.
   The project-native `code-reviewer` profile replaces the Markdown role. Its instructions carry the read-only,
   line-by-line bounded review standard; [PROCESS.md](PROCESS.md#independent-review) defines invocation.
   Reason: one discoverable role and one source for its instructions and model defaults.
@@ -872,6 +879,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Settings
 
+- **Default tools** `[D-SETTINGS-DEFAULT-TOOLS]`. `RQW-settings` enables `codemode` and `tool_search` by default. Coordinator question, 2026-11-02: retain the defaults despite the lost original source? Owner: «Так, про код моды Tool Search оставить включенными. Я точно помню, что я просил их включать, поэтому получается источник утерян.» Carrier: `extensions/RQW-settings/`.
+
 - **Background cache warming** `[D-SETTINGS-WARMING]`. Background warming is off inside RQW-settings regardless of user configuration; normal inference still writes and reads prompt caches. A reversible session-owned `getCacheWarmingMode` policy leaves settings files, environment and cache-miss notices unchanged, restores the native getter on shutdown, and preserves other owners and foreign hooks through reload. All children, including reviewer profiles, carry the policy owned by RQW-agent.
   Owner: «Да, и вообще надо убрать прогрев кэша, чтобы кэш прогревался, когда уходит сообщение первое, не раньше этого.» Source: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 440, in `~/.pi/agent/sessions/--Users-arkadijcukavin-ai-project-my-pi--/`.
   Reason: Pi's own generic warmer stays off. The one background request is the separate main-chat Anthropic warm `[D-ANTHROPIC-WARM]` ([Anthropic subscription adapter](#anthropic-subscription-adapter)), ordered by the owner; children are never warmed. Earlier reason: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0419.
@@ -1152,6 +1161,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Old `rqw-agent-wait` records stay in the session but are never resumed ([RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume)).
 
 - **Fork of the caller for self-check** `[D-AGENT-FORK-SELFCHECK]`. `agent` `start` with `fork_turns: "all"` copies the caller's current branch into a child with the caller's model, thinking, system prompt and tools. It takes no `model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` or `include`, so its first request reuses the caller's prompt cache; the default `"none"` keeps ordinary clean starts. The fork runs the executor's self-check and the blind loop (spotty, medium, fresh clean reviewers) on its own and gives the caller one report; the caller waits and does not touch the checked object meanwhile. A persisted caller stores its fork under its own `.children` tree, linked by `parentSession`, with the copied branch; descendants use the same layout and resume works after restart. A caller without a session file keeps its fork in memory. Previously created in-memory forks cannot recover missing history. Forks send no progress reports to the parent. The coordinator guard lets a `fork_turns: "all"` start or restart pass without a model category and draws nothing; every other start keeps the category rule and the random draw, and reviewer profiles keep their exact pairs. Design: `my-pi-evidence/designs/fork-selfcheck/DESIGN.md`. The P3 rule belongs to the reviewer gate: P0-P2 are always reported, P3 only together with them, a P3-only result is CLEAN.
+  Coordinator question, 2026-11-02: the owner asked for a real subagent rather than RAM; the coordinator explained that the fork is a real subagent with its own ID and resumable session file on disk, while all subagents run inside the Pi process. Option 1: keep it as is. Owner: «Ну да, так и должно работать, как ты писал. Ничего не меняем поэтому сыл в чеку.»
   Owner: «Это так не должно быть! Все саб агенты должны быть на диске и должны быть прилинкованы к родителям Вне диска только редчайшые кейсы»; to «1. Форк сохранять на диск, как обычного ребёнка, со ссылкой на родителя. Тогда и все его ревьюеры лягут в .children. Это 1–2 SP.»: «ДА».
   Owner (2026-10-31, verbatim excerpts): «Погоди! Смотри, мы возвращаем blind на medium. Эта тема, что исполнитель чинит себя сам без нового круга, мне нравится.» … «Исполнитель выполнил работу свою полностью от начала до конца, потом forked самого себя и в этом форке сам себя перепроверил. Context засрался. Потом он поднял reviewer, reviewer перепроверил его вслепую, выдал ему ответ. Тот сам себя починил. После этого снова поднял blind reviewer, и так они довели всё это дело до конца. Потом он написал огромный отчёт основному агенту в ответ: «Так мы зафинализировали работу. Было столько-то проблем, столько-то исправлений. Статус clean».» … «Но самая главная здесь не оптимизация, а чтобы он качественно проверял, при этом без фанатизма.» … «Мы в теории можем вообще P3 отбросить и оставить только P0, P1, P2»
   Coordinator answered that dropping P3 keeps every P0-P2, with one condition: «риск для данных или безопасности считается не ниже P2», and proposed: «P3 и вкусовщина не считаются замечаниями. исполнитель сам ведёт цикл до clean и сдаёт один отчёт. повторный круг смотрит только правки. blind остаётся на medium.» and the fork of the main chat later, separately. Owner: «Ну я к тому, что мы по три просто можем отбросить и даже про них не говорить.» «А там защита ссылок я понял окей»
@@ -1170,7 +1180,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Review
 
-- **Repository requirements-based test review** `[D-REVIEW-TEST-REQUIREMENTS]`. Owner: «review тестов и review кода
+- **Repository requirements-based test review** `[D-REVIEW-TEST-REQUIREMENTS]`. Owner (`16-27-59:1568`): «Мне надо, чтобы в этой ситуации reviewer закрывал такие моменты, что код проверок соответствует требованиям, соответствует тест-плану, acceptance критериям.» Owner: «review тестов и review кода
   являются частью нашего harness. Не частью harness, а именно частью нашего репозитория. То есть code review должны
   быть внутри этого репозитория, а не harness. Это не входит в harness вообще.» The optional `testreview` skill and
   `requirements-test-reviewer` profile are repository-only under `.pi/`; RQW-review ships only Spotty, Bossy and their
@@ -1992,7 +2002,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Awareness through the shared watcher** `[D-QA-STATUS]`. Owner: «Новую задачу ставишь, и чтобы автоматически тебе приходило состояние, когда ты работаешь с бранчой, о том, что нужно проверить запуски CI/CD.» and «И ты сам тоже можешь проверять, если ты в процессе работы находишься, если ты сейчас онлайн. Это не должен быть постоянный, перманентно висящий процесс». Later owner answer (`16-27-59:5060`, entry `46a9e546`): «Окей, насчёт одного скрипта раз в минуту я согласен.» Decision: no timer or local cron; the shared watcher is started on demand. `scripts/qa-status.mjs` (`npm run qa-status`, for subagents) and the dev-only, repo-local `.pi/extensions/qa-status/` read its file instead of making their own `gh` rounds; the extension shows a message on session start and on a changed red state, and `/qa` shows the full view. Reason: the extension is useless outside this repository and must not ship in the package, so it is not an `RQW-*` extension and is not in `pi.extensions`; an unreadable or stale cache is reported as unavailable, never as green. Carrier: `.pi/extensions/qa-status/index.ts`, `scripts/qa-status.mjs`, `scripts/ci-watch.mjs`.
   The status shows the latest push runs of `tests.yml` on `release` and `pcli.yml` on `pcli`, plus the current branch's tests. The bounded cache is awareness, not merge proof.
   Since: `3bdac4f`.
-- **Scoped test-review profile** `[D-QA-TEST-REVIEWER]`. Owner: «они должны быть на Sol 6.1 Low, должны работать супербыстро и суперчётко» and «без перфекционизма, без удушья, без жёсткой ёбки».
+- **Scoped test-review profile** `[D-QA-TEST-REVIEWER]`. Owner: «они должны быть на Sol 6.1 Low, должны работать супербыстро и суперчётко» and «без перфекционизма, без удушья, без жёсткой ёбки». The model was later replaced by Terra high; see `[D-REVIEW-PROFILES]`.
   Source: the owner's test/code-review prompt request in this repository session, 2026-10-24.
   Decision: use the project Codex TOML profile `test-reviewer` for read-only, bounded test review, inspecting every
   scoped line and reporting real detection gaps or regressions by severity, without invented requirements or nits.
