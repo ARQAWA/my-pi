@@ -555,13 +555,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 - **Named resource, native selection** `[D-UI-NATIVE-THEME]`. Owner: "да".
   Source: the `18-16-12` session file, USER entry `a6718225`, line 815, accepting coordinator proposal
-  `74a328d8`, line 814. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default). Coordinator text: an ordinary named Pi theme, selected once, persisted by Pi across
-  reload/restart, switched back through native theme selection rather than disabling an extension.
-  `pi.themes` distributes `./extensions/RQW-theme/theme.json`, named `RQW-theme`. Select through `/settings` -> Theme
-  (initial selection superseded in part by `[D-SETTINGS-SETUP]`: the setup profile now selects it once automatically; later selection stays native).
-  Pi may persist only the theme choice; auth and unrelated settings stay untouched (superseded in part by `[D-SETTINGS-SETUP]`: the managed profile keys are written once). Native menus keep their structure
+  `74a328d8`, line 814. Owner words as recorded in the UI-port ledger; the source session file is no longer on disk, so the span is not machine-verified (taken by default). Coordinator text: an ordinary named Pi theme, persisted by Pi across
+  reload/restart, switched later through native theme selection rather than disabling an extension.
+  `pi.themes` distributes `./extensions/RQW-theme/theme.json`, named `RQW-theme`. `[D-SETTINGS-SETUP]` selects it once automatically; later selection stays native through `/settings` -> Theme.
+  Writes are limited to the managed profile keys of `[D-SETTINGS-SETUP]`; other keys, packages, paths, trust and credentials stay untouched, and the theme itself writes nothing. Native menus keep their structure
   and behavior; supported roles and terminal-default delegation only, no universal terminal-canvas promise.
-  No `pi.extensions` entry for the theme, no transient override or automatic restore-on-disable. The earlier "no activation code" is superseded in part by `[D-SETTINGS-SETUP]`.
+  No `pi.extensions` entry for the theme, no transient override or automatic restore-on-disable.
   Reason: native persistence without unsupported lifecycle hooks. Carriers: `package.json`,
   `extensions/RQW-theme/theme.json`, `INSTALL.md`.
 
@@ -1430,7 +1429,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner, inline efforts and brighter text (2026-10-28): «Effort идут прямо после модели через пробел ... неактивные Effort — едва заметным серым цветом, а активные Effort подсвечиваются жирным и того цвета, который по нашей палитре. Там не должно быть никакой стрелочки-указателя Effort.»
   and «надо всю цветовую палитру ... именно цвета серебристые, надо всю поднять на несколько тонов ... Задний фон графитовый, это всё мы оставляем, а именно цвет шрифта, надо поднять его тональность».
   Theme text tones raised by about +0x20: `steel` 5f5e5c to 7f7e7c, `smoke` 8d8d8c to adadac, `silver` b6b6b5 to d6d6d5,
-  `chalk` d6d6dd to e6e6ec, `thinkingMinimal` 4a4846 to 6a6866.
+  `chalk` d6d6dd to e6e6ec, `thinkingMinimal` 4a4846 to 6a6866, `thinkingOff` `graphite` to 5a5856.
   Owner: «менюшка моделей была вертикальная, а менюшка effort была горизонтальная» and
   «все effort были в ряд, и когда я влево, вправо нажимаю, чтобы он переключал effort». Model labels use the statusbar rule: name or ID without `Claude `,
   preserving provider/model identity. Owner: «Как в status bar написана модель, так же она должна быть и в picker написана.»
@@ -1879,8 +1878,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Owner, what he liked: «Мне нравится, что когда ты запускаешь карточки рабочие, у них есть цвета: зелёные — это какие-то команды, фиолетовые — ответы от агентов, серые — это запуски, красные — это отказы.» Source: `16-27-59:4251` (see Provenance above).
   Owner, keep grey and red, find analogues: «А когда запущено то, что было зелёное и фиолетовое, надо придумать им какие-то аналоги.» Source: `16-27-59:4544`.
   Owner, the choice: «По дизайню - бирюза сланец вибираю ответ C» Source: `16-27-59:4654`.
-  Reason: option C of the comparison page gave the coolest pair with the least decoration; every text pair on the four cards meets WCAG AA 4.5:1 (minimum 4.56:1).
+  Reason: option C of the comparison page gave the coolest pair with the least decoration; the three cards share one lightness and keep the text readable.
   Carrier: `extensions/RQW-theme/theme.json`, `extensions/RQW-theme/README.md`. The theme is registered in `package.json` `pi.themes` ([Native theme](#native-theme)); RQW-settings selects it once on first start (`[D-SETTINGS-SETUP]`); later choice stays native through `/settings` -> Theme.
+
+- **Gold accent kept** `[D-THEME-ACCENT-GOLD]`. `accent` in `RQW-theme` is `sourceGold` (`#c9a227`), unlike the empty `accent` of the owner's OMP theme. Owner answered «1» to the question "Оставить золотой accent в диалогах и списках?" (option 1: keep, record in `DECISIONS.md`), 2026-11-02. Dialog and list accents, the `/btw` label and the model picker use it.
+  Reason: `/btw` and the model picker already rely on the gold accent. Carriers: `extensions/RQW-theme/theme.json`, `test/extensions/RQW-theme/schema.test.ts`.
 
 ## Quality control
 
