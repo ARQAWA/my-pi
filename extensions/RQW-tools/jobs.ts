@@ -149,7 +149,7 @@ export function createJobTool(jobs: Jobs, description: string, events?: Extensio
 					const steering = steeringWait(ctx, events, toolCallId);
 					try {
 						const statuses = steering.reason ? jobs.status(waitIds, lines) : undefined;
-						const details = steering.reason && (steering.reason !== "steered" || statuses!.every(job => job.state === "running"))
+						const details = steering.reason
 							? { reason: steering.reason, timed_out: false, running: statuses!.filter(job => job.state === "running").map(job => job.id) }
 							: await jobs.wait(waitIds, timeout, lines, signal, until, steering.signal);
 						// A direct wait's result is saved as the tool result, so it counts as delivered; inside codemode the script may still drop it.
