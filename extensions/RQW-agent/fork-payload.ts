@@ -41,11 +41,12 @@ export function forkPayloads() {
 						catch { /* An uncopyable payload leaves forking unavailable, not the caller's request. */ }
 					}
 				};
-				return original(model, context, { ...options, onPreparedPayload: capture, async onPayload(payload, requestModel) {
+				const extendedOptions = { ...options, onPreparedPayload: capture, async onPayload(payload, requestModel) {
 					const transformed = await onPayload?.(payload, requestModel) ?? payload;
 					capture(transformed);
 					return transformed;
-				} });
+				} } satisfies SimpleStreamOptions & { onPreparedPayload: (payload: unknown) => void };
+				return original(model, context, extendedOptions);
 			};
 			session.agent.streamFunction = wrapped;
 			release = () => { active = false; if (session.agent.streamFunction === wrapped) session.agent.streamFunction = original; };
