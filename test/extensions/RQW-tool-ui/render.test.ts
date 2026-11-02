@@ -52,7 +52,7 @@ it("renders new file tools and historical calls in compact and expanded views", 
 		const ui = new ToolUi();
 		ui.start({ getBranch: () => entries(assistant([call("id", name, args)]), result("id", name)), getCwd: () => "/w" } as never);
 		const renderer = ui.resolve(name, () => ({
-			renderCall: (originalArgs) => new Text(`PI CALL ${name}\n${Object.entries(originalArgs).map(([key, value]) => `${key}: ${value}`).join("\n")}`, 0, 0),
+			renderCall: (originalArgs) => new Text(`PI CALL ${name}\n${Object.entries(originalArgs as Record<string, unknown>).map(([key, value]) => `${key}: ${value}`).join("\n")}`, 0, 0),
 			renderResult: (originalResult) => new Text(`PI RESULT ${(originalResult.content[0] as { text: string }).text}`, 0, 0),
 		}));
 		const state = {};

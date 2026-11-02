@@ -16,8 +16,9 @@ it("the editor promotes a queued follow-up and routes Enter while a chat wait is
 	t.after(unbridge);
 	const tool = send.tools.find(item => item.name === "wait_answer")!;
 	const run = () => tool.execute("wait", { chatId: "recv", afterEntryId: null } as never, undefined, undefined, ctx as never);
+	const reason = async () => ((await run()).details as { reason: string }).reason;
 	editor.followUp("queued follow-up");
-	assert.equal((await run()).details.reason, "steered");
+	assert.equal(await reason(), "steered");
 	assert.deepEqual(editor.session._followUpMessages, []);
 	assert.deepEqual(editor.session._steeringMessages, ["queued follow-up"]);
 	editor.session.clearQueue();
@@ -28,6 +29,6 @@ it("the editor promotes a queued follow-up and routes Enter while a chat wait is
 	assert.deepEqual(editor.press("\r"), { consume: true });
 	assert.deepEqual(editor.inputs, ["\r"]);
 	await editor.steer("new input");
-	assert.equal((await pending).details.reason, "steered");
+	assert.equal(((await pending).details as { reason: string }).reason, "steered");
 	await editor.flush();
 });
