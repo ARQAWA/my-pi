@@ -124,7 +124,7 @@ it("opening a prefix never absorbs the kept suffix or its final answer", async (
 	assert.ok(m.rows().includes("prefix last work") && !m.rows().includes("suffix work"));
 	assert.ok(m.rows().includes("boundary answer") && m.rows().includes("worked for 3s ›"));
 	m.click("worked for 3s ›");
-	assert.ok(m.rows().includes("suffix work") && m.rows().includes("worked for 42s ˅"));
+	assert.ok(m.rows().includes("suffix work") && m.rows().includes("worked for 42s"));
 });
 
 it("reloading an opened prefix closes it without closing an opened kept-tail fold", async () => {
@@ -132,7 +132,7 @@ it("reloading an opened prefix closes it without closing an opened kept-tail fol
 	m.click("worked for 11s ›");
 	m.loadOlder(); m.click("worked for 42s ›"); m.unload(); m.loadOlder();
 	assert.ok(m.rows().includes("worked for 42s ›") && !m.rows().includes("prefix work"));
-	assert.ok(m.rows().includes("worked for 11s ˅"));
+	assert.ok(m.rows().includes("worked for 11s"));
 });
 
 it("loading measures the closed prefix before moving the rows being read", async () => {

@@ -116,7 +116,7 @@ profiles and skills for the ordinary `agent` runtime.
   closes its own span. Earlier answers, including questions to the owner, never enter a later fold except where old
   history explicitly marked them non-final. A later tool or background work never cancels their boundary.
   Work folds under one dim row, indented by `outputPad`:
-  `worked for 42s ›`. Open, the angle turns to `˅`. The final answer, with its thinking, stays outside and unchanged.
+  `worked for 42s ›`. Open, the row has no arrow at all. The final answer, with its thinking, stays outside and unchanged.
   While the agent works, the live view is today's.
 - User messages no longer split spans. All owner messages, including skill-invocation bundles and messages sent
   mid-work, appear in order above the closed header. Opening returns them to their original positions among the work.
@@ -136,8 +136,14 @@ profiles and skills for the ordinary `agent` runtime.
   fold even when background work remains. The extension no longer writes `rqw-tool-ui-final` entries. History still
   reads old `{ key, final }` marks; a mark for another answer or after later messages is ignored.
 - Open shows literally the rows from before the fold: the same components, renderers, colors, padding and blank rows,
-  with the current Ctrl+O and Ctrl+T state. The header is inserted before the first component's content, preserving
-  its leading blank row when present. No original rows or blank rows are added, removed or trimmed.
+  with the current Ctrl+O and Ctrl+T state. The header is inserted under the first message of the span (a user
+  message with its skill parts, or the first card), not above it: into the rows of the first member after that message,
+  after its leading blank row when present. With one message that is the closed place; with several it moves up under
+  the first, so a very tall first message never has to be scrolled past. Closed, it stays under the last. A span with
+  no member after its first message (a lone card, or an assistant message with its tools) draws the header below
+  that message's last row, with no blank row added. Unkeyed tool components join the first message only when it is an
+  assistant message. `fold.at` holds the member that draws the header, found once when the span is bound; the same member draws and handles the click, and the existing row cache is reused. No original rows or
+  blank rows are added, removed or trimmed.
 - Compaction and branch summary lines, `!` commands and every compaction's `firstKeptEntryId` are hard boundaries.
   At a kept-entry cut, the unfinished historical prefix gets its own closed `worked for <time>` fold, ending at
   its last saved entry before the cut. Its clock starts at the first message/card, or the first visible assistant

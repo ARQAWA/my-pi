@@ -84,22 +84,22 @@ it("a fold in a loaded interval starts closed, and is closed again after an unlo
 	assert.ok(!chatRows(fx).some((row: string) => row.includes("update 1")));
 	// A click on its header opens it.
 	click(fx, "worked for 11s ›");
-	assert.ok(chatRows(fx).includes("worked for 11s ˅") && chatRows(fx).some((row: string) => row.includes("update 1")));
+	assert.ok(chatRows(fx).includes("worked for 11s") && chatRows(fx).some((row: string) => row.includes("update 1")));
 	// And a fold of the latest interval, which stays drawn the whole time.
 	click(fx, "worked for 14s ›");
-	assert.ok(chatRows(fx).includes("worked for 14s ˅"));
+	assert.ok(chatRows(fx).includes("worked for 14s"));
 	// Escape: the loaded interval goes. The kept fold stays open.
 	fx.screen.scrollToBottom();
 	fx.frame();
 	assert.deepEqual(prompts(fx), ["prompt 3", "prompt 4", "prompt 5"]);
-	assert.deepEqual(headers(fx), ["worked for 13s ›", "worked for 14s ˅", "worked for 15s ›"]);
+	assert.deepEqual(headers(fx), ["worked for 13s ›", "worked for 14s", "worked for 15s ›"]);
 	// Loaded again: closed, as new components.
 	loadOlder(fx);
-	assert.deepEqual(headers(fx), ["worked for 11s ›", "worked for 12s ›", "worked for 13s ›", "worked for 14s ˅", "worked for 15s ›"]);
+	assert.deepEqual(headers(fx), ["worked for 11s ›", "worked for 12s ›", "worked for 13s ›", "worked for 14s", "worked for 15s ›"]);
 	assert.ok(!chatRows(fx).some((row: string) => row.includes("update 1")));
 	// Its header still works.
 	click(fx, "worked for 11s ›");
-	assert.ok(chatRows(fx).includes("worked for 11s ˅"));
+	assert.ok(chatRows(fx).includes("worked for 11s"));
 });
 
 it("an unloaded interval's components get their own render and mouse handling back", () => {
@@ -177,10 +177,10 @@ it("keeps local suffix folds separate across two kept cuts while loading and unl
 	assert.equal(chatRows(fx).filter(row => row.includes("identical result card")).length, 2);
 	fx.screen.scrollToBottom();
 	fx.frame();
-	assert.deepEqual(headers(fx), ["worked for 6s ˅", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
+	assert.deepEqual(headers(fx), ["worked for 6s", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
 	assert.ok(!has("first lifted steering") && !has("owner before second cut"));
 	loadOlder(fx);
-	assert.deepEqual(headers(fx), ["worked for 7s ›", "worked for 2s ›", "worked for 6s ˅", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
+	assert.deepEqual(headers(fx), ["worked for 7s ›", "worked for 2s ›", "worked for 6s", "worked for 12s ›", "worked for 13s ›", "worked for 14s ›"]);
 	assert.ok(!has("second unfinished prefix"));
 	assert.ok(has("first lifted steering") && !has("first local work"));
 	assert.equal(chatRows(fx).filter(row => row.includes("identical result card")).length, 1);

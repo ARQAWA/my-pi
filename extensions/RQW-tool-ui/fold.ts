@@ -36,8 +36,12 @@ export interface Fold {
 	open: boolean;
 	/** Open-state key: the final answer outside, or the prefix's first component inside. */
 	final: object;
-	/** Work components in Pi's order; the first owns the header. */
+	/** Work components in Pi's order; the first draws the closed header. */
 	members: object[];
+	/** Member that draws the open header: the one right after the first message, else the last one (`tail`). */
+	at: number;
+	/** No member follows the first message: the open header goes below the rows of the member `at`. */
+	tail: boolean;
 	/** Original user bundles, including their spacers, projected only while closed. */
 	lifted: object[];
 	revision: number;
@@ -45,6 +49,9 @@ export interface Fold {
 	/** Cached rows and mouse transforms share the same width and revision. */
 	cache?: { width: number; theme: Theme; pad: number; open: boolean; revision: number; lines?: string[]; rows: string[]; header: string; headerY: number; ranges: RowRange[] };
 }
+
+/** The member that draws and clicks the header: the first one closed, the one after the first message open. */
+const carrier = (fold: Fold): object => fold.members[fold.open ? fold.at : 0];
 
 /** A component inside a fold, with the own `render` and `handleMouse` it had before. */
 interface Bound {
@@ -92,7 +99,7 @@ export class Folds {
 			const base = own ?? (Object.getPrototypeOf(this) as Renders).render;
 			if (!b || b.fold.disabled) return base.call(this, width);
 			const fold = b.fold;
-			if (fold.members[0] !== this) return fold.open ? base.call(this, width) : NONE;
+			if (carrier(fold) !== this) return fold.open ? base.call(this, width) : NONE;
 			return folds.owner(fold, fold.open ? base.call(this, width) : undefined, width) ?? base.call(this, width);
 		};
 		this.click = function (this: object, event: Mouse): unknown {
@@ -101,7 +108,7 @@ export class Folds {
 			const base = own ?? (Object.getPrototypeOf(this) as Handles).handleMouse;
 			const fold = b?.fold;
 			if (!fold || fold.disabled) return base?.call(this, event);
-			if (fold.members[0] !== this) return fold.open ? base?.call(this, event) : undefined;
+			if (carrier(fold) !== this) return fold.open ? base?.call(this, event) : undefined;
 			const cache = fold.cache;
 			if (!cache) return undefined;
 			if (event.y === cache.headerY) {
@@ -124,7 +131,8 @@ export class Folds {
 		}])) as Record<UpdateName, Update>;
 	}
 
-	/** Closed: cached original user rows, then the header. Open: one inserted header, all original rows in place. */
+	/** Closed: cached original user rows, then the header with `›`. Open: one arrowless header inserted into the rows
+	 * of the member after the first message; all original rows stay in place. */
 	private owner(fold: Fold, lines: string[] | undefined, width: number): string[] | undefined {
 		try {
 			const theme = this.theme?.();
@@ -133,7 +141,7 @@ export class Folds {
 			const c = fold.cache;
 			const same = c && c.width === width && c.theme === theme && c.pad === pad && c.open === fold.open && c.revision === fold.revision;
 			if (same && c.lines === lines) return c.rows;
-			const header = same ? c.header : truncateToWidth(" ".repeat(pad) + theme.fg("dim", `${fold.label} ${fold.open ? "˅" : "›"}`), Math.max(0, width));
+			const header = same ? c.header : truncateToWidth(" ".repeat(pad) + theme.fg("dim", fold.open ? fold.label : `${fold.label} ›`), Math.max(0, width));
 			const rows: string[] = [];
 			const ranges: RowRange[] = [];
 			let headerY: number;
@@ -150,10 +158,11 @@ export class Folds {
 				rows.push(header);
 			} else {
 				const source = lines ?? NONE;
-				headerY = source.length > 0 && visibleWidth(source[0]) === 0 ? 1 : 0;
+				headerY = fold.tail ? source.length : source.length > 0 && visibleWidth(source[0]) === 0 ? 1 : 0;
 				rows.push(...source.slice(0, headerY), header, ...source.slice(headerY));
-				ranges.push({ component: fold.members[0], from: 0, to: headerY, sourceY: 0, height: source.length },
-					{ component: fold.members[0], from: headerY + 1, to: rows.length, sourceY: headerY, height: source.length });
+				const at = fold.members[fold.at];
+				ranges.push({ component: at, from: 0, to: headerY, sourceY: 0, height: source.length },
+					{ component: at, from: headerY + 1, to: rows.length, sourceY: headerY, height: source.length });
 			}
 			fold.cache = { width, theme, pad, open: fold.open, revision: fold.revision, lines, rows, header, headerY, ranges };
 			return rows;
@@ -294,7 +303,7 @@ export class Folds {
 				const members = children.slice(start, end);
 				const lifted = members.filter((m) => this.users.has(m));
 				if (members.every((m) => this.wrappable(m)) && members.some((m) => !this.users.has(m) && !(m instanceof Spacer))) {
-					next.push({ label: span.label, start, open: this.opened.get(anchor) ?? false, final: anchor, members, lifted, revision: 0 });
+					next.push({ label: span.label, start, open: this.opened.get(anchor) ?? false, final: anchor, members, ...this.afterFirstMessage(members), lifted, revision: 0 });
 				}
 			};
 			const prefix = (end: number) => {
@@ -341,6 +350,20 @@ export class Folds {
 		for (const fold of next) for (const m of fold.members) this.bound.set(m, { ...(this.bound.get(m) ?? this.wrap(m)), fold });
 		this.list.push(...next);
 		this.dirty = chat.children.length;
+	}
+
+	/** The member after the first message: its components share one key; unkeyed tool rows join only an assistant
+	 * message. Without a later member the last one carries the header below its rows. */
+	private afterFirstMessage(members: object[]): { at: number; tail: boolean } {
+		const key = this.sourceKey(members[0]);
+		const joinsTools = members[0] instanceof AssistantMessageComponent;
+		let at = 1;
+		while (at < members.length) {
+			const next = this.sourceKey(members[at]);
+			if (next === undefined ? !joinsTools : next !== key) break;
+			at++;
+		}
+		return at < members.length ? { at, tail: false } : { at: members.length - 1, tail: true };
 	}
 
 	private sourceKey(component: object): string | undefined {

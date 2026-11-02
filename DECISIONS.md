@@ -495,8 +495,14 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   restored after exit or session switch, so it can remain unclosed on resume.
   Earlier real final answers, including questions, stay outside later folds; later tools and notifications never remove them.
   User messages no longer split spans. The closed fold lifts every owner user message, in order, above one dim
-  `worked for 42s ›` row and the final answer. Agent cards and tools fold. Open, `˅`, restores exactly the original
-  rows and user positions, with the current Ctrl+O and Ctrl+T state.
+  `worked for 42s ›` row and the final answer. Agent cards and tools fold. Open restores exactly the original
+  rows and user positions, with the current Ctrl+O and Ctrl+T state. The open row has no arrow and sits under the
+  first message of the span, closed it stays under the last. Owner order, verbatim:
+  > Смотри: сворачивание worked for, а свёрнутая версия висит под сообщениями, а развёрнутая версия висит над первым сообщением. Надо, чтобы развёрнутая версия висела под первым сообщением, потому что если первое сообщение будет очень высокое, то скроллить его невероятно тяжело. Надо убрать в развёрнутой версии стрелочку, которая вниз указывает. Надо стрелочку вообще убрать. Когда она свёрнута, стрелочка есть направо, а когда развёрнута — стрелочки нет.
+
+  Owner approval and clarification of the mockup (`my-pi-evidence/designs/worked-for-placement/MOCKUP.md`), verbatim:
+  «раскрытый блок, он типа встает под самое первое сообщение, а так же как он стоит под последним сообщением, ну, свернутом, в свернутом статусе, под последнее мое сообщение, только под первое мое сообщение из этого. чанка то есть если в чанке всего одно сообщение то значит он остается на месте если там несколько то он уходит под первое сообщение вот а визуально окей. да, вот. получается, что да, делаем два сторипоинта.»
+  The earlier `˅` of the open state is superseded by this order. Carrier: `extensions/RQW-tool-ui/fold.ts` (`Fold.at`).
   Time starts with the span's first message timestamp, or a delivered card's saved timestamp when it starts without
   an owner message; it ends with the final answer's saved entry timestamp. The preceding idle pause is excluded;
   waiting and closed Pi within the span count. Round whole seconds first: `42s`, `2m 03s`, `1h 05m`; no space before
