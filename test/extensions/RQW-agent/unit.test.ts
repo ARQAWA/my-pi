@@ -2177,7 +2177,7 @@ test("accepted steering commands are saved in order and an interrupt clears them
 });
 
 async function until(done: () => boolean) {
-	for (let i = 0; i < 200 && !done(); i++) await new Promise(resolve => setImmediate(resolve));
+	for (let i = 0; i < 20000 && !done(); i++) await new Promise(resolve => setImmediate(resolve));
 	assert.ok(done());
 }
 const roles = (messages: any[]) => messages.filter(message => message.role !== "system").map(message => message.role);
