@@ -223,8 +223,56 @@ describe("RQW-models public selection", () => {
 		assert.deepEqual(calls, cancel ? [] : ["model:claude-sonnet-5-5", "thinking:xhigh"]);
 	});
 
-	it("regression 4b0e7f4: an unlisted restored model falls back to authenticated Opus first", async t => {
-		const run = async (available: Model<string>[]) => {
+	it("selects authenticated Opus medium at startup regardless of CLI options and history", async t => {
+		const opus = model("claude-opus-5-5", "bedrock");
+		const sonnet = model("claude-sonnet-5-5");
+		let current = sonnet;
+		let thinking = "high";
+		let available = [opus, sonnet];
+		let history: { type: string }[] = [];
+		const handlers = new Map<string, (event: any, ctx: any) => Promise<void>>();
+		const pi = {
+			registerShortcut() {}, registerCommand() {},
+			on: (name: string, handler: any) => { handlers.set(name, handler); return () => {}; },
+			getThinkingLevel: () => thinking,
+			setThinkingLevel: (level: string) => { thinking = level; },
+			setModel: async (next: Model<string>) => { current = next; return true; },
+		};
+		extension(pi as unknown as ExtensionAPI);
+		const ctx = {
+			get model() { return current; }, hasUI: true,
+			modelRegistry: { getAvailable: () => available },
+			sessionManager: { getBranch: () => history }, isIdle: () => true,
+			ui: { notify() {} },
+		} as unknown as ExtensionContext;
+		const argv = process.argv;
+		t.after(() => { process.argv = argv; handlers.get("session_shutdown")!({}, ctx); });
+		for (const entries of [[], [{ type: "message" }]]) {
+			history = entries;
+			for (const args of [[], ["--model", "anthropic/claude-sonnet-5-5", "--thinking", "high"], ["--models", "anthropic/claude-sonnet-5-5", "--continue"]]) {
+				process.argv = [...argv.slice(0, 2), ...args];
+				current = sonnet;
+				thinking = "high";
+				await handlers.get("session_start")!({ reason: "startup" }, ctx);
+				assert.equal(current, opus);
+				assert.equal(thinking, "medium");
+			}
+		}
+		current = sonnet;
+		thinking = "high";
+		for (const reason of ["new", "resume", "fork", "reload"]) {
+			await handlers.get("session_start")!({ reason }, ctx);
+			assert.equal(current, sonnet);
+			assert.equal(thinking, "high");
+		}
+		available = [sonnet];
+		await handlers.get("session_start")!({ reason: "startup" }, ctx);
+		assert.equal(current, sonnet);
+		assert.equal(thinking, "high");
+	});
+
+	it("preserves unlisted models on non-startup and falls back on startup", async t => {
+		const run = async (available: Model<string>[], reason: string) => {
 			const handlers = new Map<string, (event: any, ctx: any) => Promise<void>>();
 			let current = model("outside", "other");
 			let thinking = "high";
@@ -243,7 +291,7 @@ describe("RQW-models public selection", () => {
 				ui: { notify() {} },
 			} as unknown as ExtensionContext;
 			t.after(() => handlers.get("session_shutdown")!({}, ctx));
-			await handlers.get("session_start")!({ type: "session_start", reason: "resume" }, ctx);
+			await handlers.get("session_start")!({ type: "session_start", reason }, ctx);
 			return { current, thinking };
 		};
 		const argv = process.argv;
@@ -251,8 +299,13 @@ describe("RQW-models public selection", () => {
 		try {
 			const unlisted = model("outside-model", "other");
 			const opus = model("claude-opus-5-5");
-			assert.equal((await run([unlisted, opus])).current, opus);
-			assert.equal((await run([unlisted])).current.id, "outside");
+			for (const reason of ["new", "resume", "fork", "reload"]) {
+				const result = await run([unlisted, opus], reason);
+				assert.equal(result.current.id, "outside");
+				assert.equal(result.thinking, "high");
+			}
+			assert.equal((await run([unlisted, opus], "startup")).current, opus);
+			assert.equal((await run([unlisted], "startup")).current.id, "outside");
 		} finally {
 			process.argv = argv;
 		}

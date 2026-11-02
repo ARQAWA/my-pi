@@ -224,7 +224,8 @@ it("routes the initial Codex prewarm before the world starts, also after restart
 	const server = codexServer(false);
 	const routes = networkRoutes();
 	routes.ws((options) => options.host === "chatgpt.com" && options.path.startsWith("/backend-api/codex/responses"), server.request);
-	const w = await wireWorld(t, { routes });
+	const credentials: NonNullable<WorldOptions["credentials"]> = {};
+	const w = await wireWorld(t, { routes, credentials });
 	await useCodex(w);
 	await w.until(() => server.prewarms.length === 1, "model change prewarm");
 	assert.equal(server.connections.length, 1);
@@ -236,6 +237,7 @@ it("routes the initial Codex prewarm before the world starts, also after restart
 	server.turns[0].connection.send(...whole("first", "hello"));
 	await w.settle();
 
+	credentials.anthropic = { type: "api_key", key: "" };
 	const restarted = await restartWire(t, w);
 	assert.equal(restarted.session.model?.provider, "openai-codex");
 	await restarted.until(() => server.prewarms.length === 2, "startup prewarm");
@@ -246,7 +248,8 @@ it("routes the initial Codex prewarm before the world starts, also after restart
 // The world blocks the network from the start of a build when no route is configured:
 // the blocked attempt is the proof that the session's start opened exactly one WebSocket for its prewarm.
 it("a session that starts on Codex opens one WebSocket for the prewarm, and a failed warm leaves the turn to connect itself", async (t) => {
-	const w = await wireWorld(t);
+	const credentials: NonNullable<WorldOptions["credentials"]> = {};
+	const w = await wireWorld(t, { credentials });
 	const first = codexServer();
 	await useCodex(w);
 	await w.until(() => first.prewarms.length === 1, "the prewarm after the model choice");
@@ -256,6 +259,7 @@ it("a session that starts on Codex opens one WebSocket for the prewarm, and a fa
 	first.turns[0].connection.send(...whole("resp_1", "hello"));
 	await w.settle();
 
+	credentials.anthropic = { type: "api_key", key: "" };
 	const restarted = await restartWire(t, w);
 	assert.equal(restarted.session.model?.id, "gpt-6.1-terra");
 	assert.deepEqual(restarted.networkAttempts, ["https.request"], "one connect at start, blocked because no route exists yet");
