@@ -2489,7 +2489,7 @@ test("switching or forking the session is refused while a child runs and allowed
 	await until(() => live.requests.length === 1);
 	assert.deepEqual(await live.emit("session_before_switch", event), { cancel: true });
 	assert.deepEqual(await live.emit("session_before_fork", { type: "session_before_fork", entryId: "e1" }), { cancel: true });
-	assert.deepEqual(live.notices, ["дождись сабагентов", "дождись сабагентов"]);
+	assert.deepEqual(live.notices, ["Wait for the agents to finish.", "Wait for the agents to finish."]);
 	gate.resolve();
 	await live.runtime.wait(new AbortController().signal);
 	assert.equal(await live.emit("session_before_switch", event), undefined);

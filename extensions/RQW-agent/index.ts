@@ -1817,7 +1817,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 	// Pi's switch (/new, /resume) and /fork run session_shutdown, which would abort the running children: refuse until they end.
 	const blockSwitch = (_event: unknown, ctx: ExtensionContext) => {
 		if (!runningCounts().agents) return undefined;
-		ctx.ui.notify("дождись сабагентов", "warning");
+		ctx.ui.notify("Wait for the agents to finish.", "warning");
 		return { cancel: true };
 	};
 	pi.on("session_before_switch", blockSwitch);

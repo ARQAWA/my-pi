@@ -54,7 +54,7 @@ it("ведёт список через скилл, сохраняет препя
 	await w.submit("разрешаю публикацию");
 	w.see("Выпуск готов.");
 	w.notSee("Жду разрешения владельца");
-	assert.ok(!w.screen().some(line => line.includes("пункт 2 из 2")), "closed panel disappears");
+	assert.ok(!w.screen().some(line => line.includes("item 2 of 2")), "closed panel disappears");
 	assert.deepEqual(w.model.unscripted, []);
 	assert.deepEqual(w.networkAttempts, []);
 	assert.deepEqual(w.processAttempts, []);

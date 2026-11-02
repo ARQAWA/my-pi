@@ -9,11 +9,11 @@ type Entry = { version: 1; waitId: string; phase: "open" | "update" | "close"; t
 
 function status(reason: string) {
 	switch (reason) {
-		case "open": return { text: "ожидание", color: "dim" as const, note: "Ждём готовый результат." };
-		case "result": return { text: "завершено", color: "success" as const, note: "Получен результат, чат продолжает работу." };
-		case "input": return { text: "прервано вводом", color: "warning" as const, note: "Работа агентов продолжается." };
-		case "targets_changed": return { text: "ожидание изменено", color: "dim" as const, note: "" };
-		default: return { text: "ожидание прервано", color: "dim" as const, note: "" };
+		case "open": return { text: "waiting", color: "dim" as const, note: "Waiting for a result." };
+		case "result": return { text: "completed", color: "success" as const, note: "Result received. The chat continues." };
+		case "input": return { text: "interrupted by input", color: "warning" as const, note: "Agents continue working." };
+		case "targets_changed": return { text: "wait changed", color: "dim" as const, note: "" };
+		default: return { text: "wait interrupted", color: "dim" as const, note: "" };
 	}
 }
 
@@ -46,11 +46,8 @@ export function waitCard(pi: ExtensionAPI) {
 			const directAgents = snapshot.targets.filter(id => id.startsWith("agent#")).length;
 			const agents = snapshot.counts?.agents ?? directAgents;
 			const jobs = snapshot.counts?.backgroundProcesses ?? (snapshot.targets.length - directAgents);
-			const label = (count: number, one: string, few: string, many: string) => {
-				const n = count % 100;
-				return `${count} ${n >= 11 && n <= 14 ? many : n % 10 === 1 ? one : n % 10 >= 2 && n % 10 <= 4 ? few : many}`;
-			};
-			const count = [agents && label(agents, "агент", "агента", "агентов"), jobs && label(jobs, "задача", "задачи", "задач")].filter(Boolean).join(", ");
+			const label = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
+			const count = [agents && label(agents, "agent"), jobs && label(jobs, "job")].filter(Boolean).join(", ");
 			const header = theme.fg("toolTitle", "wait") + (phase === "open" ? theme.fg("muted", ` ${count}`) + theme.fg("dim", " · ") : " ") + theme.fg(state.color, state.text);
 			const targetLines: string[] = [];
 			for (const id of snapshot.targets) {
@@ -61,7 +58,7 @@ export function waitCard(pi: ExtensionAPI) {
 				if (previous && visibleWidth(`${previous} ${target}`) <= inner) targetLines[targetLines.length - 1] = `${previous} ${target}`;
 				else targetLines.push(target);
 			}
-			const note = phase === "input" && jobs ? "Работа продолжается." : state.note;
+			const note = phase === "input" && jobs ? "Work continues." : state.note;
 			const lines = [header, ...targetLines.map(line => theme.fg("muted", line)), ...(note ? [theme.fg("dim", note)] : [])];
 			const bg = phase === "result" ? "toolSuccessBg" : "toolPendingBg";
 			const draw = (line: string) => {

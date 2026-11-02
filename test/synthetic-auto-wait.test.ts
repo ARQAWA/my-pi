@@ -28,9 +28,9 @@ it("while a child runs the chat shows one wait card with the child's id and titl
 	await w.submit("go");
 	await w.until(() => child.arrived, "the child's request");
 
-	w.see("wait 1 агент");
+	w.see("wait 1 agent");
 	w.see("agent#1 Count");
-	w.see("Ждём готовый результат.");
+	w.see("Waiting for a result.");
 	assert.equal(customEntries(w, "rqw-auto-wait-v1").filter((entry) => entry.data.phase === "open").length, 1);
 });
 
@@ -42,7 +42,7 @@ it("the open card follows direct children started and stopped while it is visibl
 	w.model.script(call("agent", { action: "start", task: "first child", title: "First" }, "c1"), text("started"));
 	await w.submit("go");
 	await w.until(() => first.arrived, "first child starts");
-	w.see("wait 1 агент");
+	w.see("wait 1 agent");
 
 	const main = w.model.hold(request => JSON.stringify(request.context.messages).includes("external wake"));
 	const busy = w.session.sendCustomMessage({ customType: "external-wake", content: "external wake", display: false }, { triggerTurn: true });
@@ -53,17 +53,17 @@ it("the open card follows direct children started and stopped while it is visibl
 	await invoke({ action: "start", task: "second child", title: "Second" });
 	await w.until(() => second.arrived, "second child starts");
 	await w.tick(16);
-	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 агента")), "card repaints after start");
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 agents")), "card repaints after start");
 	w.see("agent#2 Second");
 	assert.equal(customEntries(w, "rqw-auto-wait-v1").filter(entry => entry.data.phase === "open").length, 1);
 
 	await invoke({ action: "stop", id: "agent#2" });
 	await w.until(() => true, "stop notification arrives");
 	await w.tick(16);
-	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 1 агент")), "card repaints after stop");
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 1 agent")), "card repaints after stop");
 	w.notSee("agent#2 Second");
 	await invoke({ action: "stop", id: "agent#1" });
-	await w.until(() => !w.screen().join("\n").includes("wait 1 агент"), "card closes after last stop");
+	await w.until(() => !w.screen().join("\n").includes("wait 1 agent"), "card closes after last stop");
 	await invoke({ action: "start", task: "third child", title: "Third" });
 	await w.until(() => third.arrived, "third child starts");
 	assert.equal(customEntries(w, "rqw-auto-wait-v1").filter(entry => entry.data.phase === "open").length, 1);
@@ -86,16 +86,16 @@ it("a delivered child stays idle and is excluded from the active counts", async 
 	const invoke = (args: object) => tool.execute("external", args as never, new AbortController().signal, undefined, runner.createToolContext("external", undefined));
 	await invoke({ action: "start", task: "finished child", title: "Finished" });
 	await w.until(() => finished.arrived, "second child starts");
-	w.see("wait 2 агента");
+	w.see("wait 2 agents");
 	finished.reply(text("done"));
 	await w.until(() => wakeRequests(w).length === 1, "finished child delivered");
 	await w.settle();
 	w.see("Waiting for 1 agent");
 	w.see("1 idle agent");
 	const rows = w.screen();
-	const card = rows.slice(rows.findIndex(line => line.includes("wait 1 агент")), rows.findIndex(line => line.includes("wait 1 агент")) + 4).join("\n");
+	const card = rows.slice(rows.findIndex(line => line.includes("wait 1 agent")), rows.findIndex(line => line.includes("wait 1 agent")) + 4).join("\n");
 	assert.match(card, /agent#1 Active/);
-	assert.doesNotMatch(card, /agent#2|2 агента/);
+	assert.doesNotMatch(card, /agent#2|2 agents/);
 	await invoke({ action: "stop", id: "agent#1" });
 	await invoke({ action: "stop", id: "agent#2" });
 	await w.until(() => [1, 2].every(id => !retainedChildManager(w.session.sessionManager, "agent", id)), "children close");
@@ -111,14 +111,14 @@ it("the card and status count the same active tree and its jobs", async (t) => {
 	w.model.script(call("agent", { action: "start", task: "parent task", title: "Parent" }, "c1"), text("started"));
 	await w.submit("go");
 	await w.until(() => parent.arrived, "parent starts");
-	w.see("wait 1 агент");
+	w.see("wait 1 agent");
 	parent.reply(call("agent", { action: "start", task: "nested task", title: "Nested" }, "n1"));
 	await w.until(() => nested.arrived, "nested child starts");
 	await w.until(() => w.screen().join("\n").includes("Waiting for 2 agents"), "whole tree counted");
 	await w.tick(16);
-	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 агента")), "card repaints for nested agent");
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 agents")), "card repaints for nested agent");
 	const rows = w.screen();
-	const cardStart = rows.findIndex(line => line.includes("wait 2 агента"));
+	const cardStart = rows.findIndex(line => line.includes("wait 2 agents"));
 	assert.ok(cardStart >= 0);
 	assert.doesNotMatch(rows.slice(cardStart, cardStart + 4).join("\n"), /agent#1\.1/);
 	const waitId = customEntries(w, "rqw-auto-wait-v1").find(entry => entry.data.phase === "open")!.data.waitId;
@@ -127,19 +127,19 @@ it("the card and status count the same active tree and its jobs", async (t) => {
 	await w.tick(12_000);
 	await w.until(() => w.screen().join("\n").includes("Waiting for 2 agents, 1 background process"), "nested job counted");
 	await w.tick(16);
-	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 агента, 1 задача")), "card repaints for nested job");
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 agents, 1 job")), "card repaints for nested job");
 	const nestedWake = w.model.hold(isTask("nested task"));
 	const parentWake = w.model.hold(isTask("parent task"));
 	process.finish({ stdout: "done\n" });
 	await w.until(() => nestedWake.arrived, "nested child receives job result");
 	await w.until(() => w.screen().join("\n").includes("Waiting for 2 agents") && !w.screen().join("\n").includes("background process"), "nested job ends");
 	await w.tick(16);
-	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 агента · ожидание")), "card removes nested job");
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 agents · waiting")), "card removes nested job");
 	nestedWake.reply(text("nested done"));
 	await w.until(() => parentWake.arrived, "parent receives nested result");
 	await w.until(() => w.screen().join("\n").includes("Waiting for 1 agent"), "nested agent ends");
 	await w.tick(16);
-	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 1 агент · ожидание")), "card removes nested agent");
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 1 agent · waiting")), "card removes nested agent");
 	const entries = customEntries(w, "rqw-auto-wait-v1");
 	assert.equal(entries.filter(entry => entry.data.phase === "open").length, 1);
 	assert.equal(entries.some(entry => entry.data.waitId === waitId && entry.data.phase === "close"), false);
@@ -165,16 +165,16 @@ it("the open card follows a new background job and its delivered result", async 
 	await w.tick(12_000);
 	await running;
 	await w.until(() => w.screen().join("\n").includes("job#1"), "job appears on the card");
-	w.see("wait 1 агент, 1 задача");
+	w.see("wait 1 agent, 1 job");
 	assert.equal(customEntries(w, "rqw-auto-wait-v1").filter(entry => entry.data.phase === "open").length, 1);
 	process.finish({ stdout: "done\n" });
 	await w.until(() => wakeRequests(w).length === 1, "job result delivered");
 	await w.settle();
-	w.see("wait 1 агент");
+	w.see("wait 1 agent");
 	const rows = w.screen();
-	const start = rows.findIndex(line => line.includes("wait 1 агент"));
+	const start = rows.findIndex(line => line.includes("wait 1 agent"));
 	assert.ok(start >= 0);
-	assert.doesNotMatch(rows.slice(start, start + 4).join("\n"), /job#1|задач/);
+	assert.doesNotMatch(rows.slice(start, start + 4).join("\n"), /job#1|job/);
 	const agent = runner.getToolDefinition("agent")!;
 	await agent.execute("stop-child", { action: "stop", id: "agent#1" } as never, new AbortController().signal,
 		undefined, runner.createToolContext("stop-child", undefined));
@@ -212,8 +212,8 @@ it("a message from the user closes the wait card as interrupted, the child keeps
 	await w.submit("go");
 	await w.submit("something else");
 
-	w.see("прервано вводом");
-	w.see("Работа агентов продолжается.");
+	w.see("interrupted by input");
+	w.see("Agents continue working.");
 	w.see("other answered");
 	assert.deepEqual(customEntries(w, "rqw-auto-wait-v1").filter((entry) => entry.data.phase === "close").map((entry) => entry.data.reason), ["input"]);
 	// The child was not stopped: it still waits for its answer, and a new open card follows the turn.
@@ -279,7 +279,7 @@ it("after a reload the open wait card still draws", async (t) => {
 	w.model.script(call("agent", { action: "start", task: "count files", title: "Count" }, "c1"), text("started"));
 	await w.submit("go");
 	await w.until(() => child.arrived, "the child's request");
-	w.see("wait 1 агент");
+	w.see("wait 1 agent");
 
 	await w.session.reload();
 	await w.until(() => true, "the reload settles");

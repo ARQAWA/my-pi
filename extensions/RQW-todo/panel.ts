@@ -31,7 +31,7 @@ export function createTodoPanel() {
 					const itemIndex = items.indexOf(focus);
 					const steps = focus.steps ?? [];
 					const step = steps.find(value => value.status === "active") ?? steps.find(value => value.status === "pending");
-					const progress = `${step ? `шаг ${steps.indexOf(step) + 1} из ${steps.length} · ` : ""}пункт ${itemIndex + 1} из ${items.length}`;
+					const progress = `${step ? `step ${steps.indexOf(step) + 1} of ${steps.length} · ` : ""}item ${itemIndex + 1} of ${items.length}`;
 					const label = focus.status === "blocked" ? `! ${safe(focus.text)} · ${safe(focus.note ?? "")}` : `▸ ${safe(focus.text)}`;
 					const rightWidth = visibleWidth(progress);
 					const room = Math.max(0, width - rightWidth - 1);

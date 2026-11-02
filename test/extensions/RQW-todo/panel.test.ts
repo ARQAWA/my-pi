@@ -38,7 +38,7 @@ it("shows the active item, its real step and a blocked item ahead of other next 
 	panel.update(h.ctx, state);
 	const rows = current(h).render(60);
 	assert.equal(rows.length, 3);
-	assert.match(clean(rows)[0], /^▸ Панель\s+шаг 2 из 3 · пункт 2 из 4$/);
+	assert.match(clean(rows)[0], /^▸ Панель\s+step 2 of 3 · item 2 of 4$/);
 	assert.match(clean(rows)[1], /^\s+▸ Рисую$/);
 	assert.equal(clean(rows)[2], "! Выпуск · Жду ответа");
 	assert.match(rows[2], /\x1b\[33m/);
@@ -55,12 +55,12 @@ it("follows the focus, prioritizes blocked without active and removes a closed l
 	] };
 	panel.update(h.ctx, pending);
 	const pendingRows = clean(current(h).render(40));
-	assert.match(pendingRows[0], /^▸ Первое\s+пункт 2 из 4$/);
+	assert.match(pendingRows[0], /^▸ Первое\s+item 2 of 4$/);
 	assert.deepEqual(pendingRows.slice(1), ["○ Второе", "○ Третье"]);
 	const blocked: State = { items: [pending.items[0], { id: "b", text: "Жду", status: "blocked", note: "Ответ" }, pending.items[2], pending.items[3]] };
 	panel.update(h.ctx, blocked);
 	const rows = current(h).render(40);
-	assert.match(clean(rows)[0], /^! Жду · Ответ\s+пункт 2 из 4$/);
+	assert.match(clean(rows)[0], /^! Жду · Ответ\s+item 2 of 4$/);
 	assert.match(rows[0], /\x1b\[33m/);
 	assert.equal(clean(rows)[1], "○ Второе");
 	const before = h.renders;
@@ -111,11 +111,11 @@ it("keeps an earlier blocked item visible and leaves unused rows empty", () => {
 		{ id: "active", text: "Работа", status: "active" },
 	] });
 	const rows = clean(current(h).render(50));
-	assert.match(rows[0], /^▸ Работа\s+пункт 2 из 2$/);
+	assert.match(rows[0], /^▸ Работа\s+item 2 of 2$/);
 	assert.equal(rows[1], "");
 	assert.equal(rows[2], "! Выпуск · Ответ");
 	panel.update(h.ctx, { items: [{ id: "a", text: "Один", status: "pending", steps: [{ text: "Готово", status: "done" }] }] });
 	const single = clean(current(h).render(50));
-	assert.match(single[0], /^▸ Один\s+пункт 1 из 1$/);
+	assert.match(single[0], /^▸ Один\s+item 1 of 1$/);
 	assert.deepEqual(single.slice(1), ["", ""]);
 });

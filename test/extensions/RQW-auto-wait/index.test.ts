@@ -50,12 +50,12 @@ test("a wait card uses the mockup states, padding and cached width", async t => 
 	const running = card.render(80);
 	assert.equal(running.length, 5);
 	assert.equal(running[0], " ".repeat(79));
-	assert.match(running[1], /wait 1 агент · ожидание/);
+	assert.match(running[1], /wait 1 agent · waiting/);
 	assert.match(running[2], /agent#1/);
-	assert.match(running[3], /Ждём готовый результат/);
+	assert.match(running[3], /Waiting for a result/);
 	assert.ok(colors.includes("toolPendingBg:1"));
 	assert.ok(painted.some(([role, text]) => role === "toolTitle" && text === "wait"));
-	assert.ok(painted.some(([role, text]) => role === "dim" && text === "ожидание"));
+	assert.ok(painted.some(([role, text]) => role === "dim" && text === "waiting"));
 	assert.ok(painted.some(([role, text]) => role === "muted" && text === "agent#1"));
 	assert.equal(card.render(80), running);
 	const narrow = card.render(9);
@@ -68,10 +68,20 @@ test("a wait card uses the mockup states, padding and cached width", async t => 
 	assert.ok(colors.includes("toolPendingBg:2"));
 	colors.length = 0;
 	f.emit("input");
-	assert.match(card.render(80).join("\n"), /прервано вводом/);
+	assert.match(card.render(80).join("\n"), /interrupted by input/);
 	assert.ok(colors.includes("warning") && colors.includes("toolPendingBg:2"));
-	assert.ok(painted.some(([role, text]) => role === "warning" && text === "прервано вводом"));
+	assert.ok(painted.some(([role, text]) => role === "warning" && text === "interrupted by input"));
 	assert.equal(f.branch.length, 2);
+});
+
+test("input leaves background jobs working", async t => {
+	const f = setup(t);
+	f.setTargets(["job#4"]);
+	f.emit("agent_settled", { aborted: false }); await Promise.resolve();
+	const theme = { fg: (_role: string, text: string) => text, bg: (_role: string, text: string) => text };
+	const card = f.renderer()(f.branch[0], {}, theme);
+	f.emit("input");
+	assert.match(card.render(80).join("\n"), /Work continues\./);
 });
 
 test("unchanged active counts do not append card updates", async t => {
@@ -121,8 +131,9 @@ test("a result closes the card with the success background", async t => {
 	const painted: [string, string][] = [];
 	const card = f.renderer()(f.branch[0], {}, { fg: (role: string, text: string) => { painted.push([role, text]); return text; }, bg: (role: string, text: string) => { colors.push(role); return text; } });
 	f.finish(); await Promise.resolve();
-	assert.match(card.render(80)[1], /wait завершено/);
-	assert.ok(painted.some(([role, text]) => role === "success" && text === "завершено"));
+	assert.match(card.render(80)[1], /wait completed/);
+	assert.match(card.render(80).join("\n"), /Result received\. The chat continues\./);
+	assert.ok(painted.some(([role, text]) => role === "success" && text === "completed"));
 	assert.ok(colors.includes("toolSuccessBg"));
 });
 
@@ -136,7 +147,7 @@ test("changed targets update the card and replay marks it interrupted", async t 
 	assert.equal(f.branch[1].data.phase, "update");
 	assert.match(card.render(80).join("\n"), /job#4/);
 	f.emit("session_tree");
-	assert.match(card.render(80).join("\n"), /ожидание прервано/);
+	assert.match(card.render(80).join("\n"), /wait interrupted/);
 	assert.match(card.render(80).join("\n"), /job#4/);
 	assert.equal(f.sent.length, 0);
 });
@@ -274,8 +285,8 @@ test("stopping background work cancels a scheduled wake", async t => {
 	assert.equal(f.sent.length, 0);
 	assert.equal(f.branch.at(-1).data.reason, "stop");
 	const card = f.renderer()(f.branch[0], {}, { fg: (_role: string, text: string) => text, bg: (_role: string, text: string) => text });
-	assert.match(card.render(80).join("\n"), /ожидание прервано/);
-	assert.doesNotMatch(card.render(80).join("\n"), /продолжается/);
+	assert.match(card.render(80).join("\n"), /wait interrupted/);
+	assert.doesNotMatch(card.render(80).join("\n"), /continues/);
 });
 
 test("branch change cancels the scheduled wake", async t => {
