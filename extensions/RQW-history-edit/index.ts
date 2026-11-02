@@ -1,7 +1,7 @@
 import { SessionManager, UserMessageSelectorComponent, type ExtensionAPI, type ExtensionCommandContext, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { isKeyRelease, matchesKey, type TUI } from "@earendil-works/pi-tui";
-import { commitEdit, type CommitResult } from "./commit.ts";
+import { commitEdit, hasSessionFile, NO_SESSION_FILE, type CommitResult } from "./commit.ts";
 import { installSafeProjection } from "./projection.ts";
 
 type CountsSource = { version: number; snapshot(): { agents?: number; reviews?: number; backgroundProcesses?: number } };
@@ -184,7 +184,11 @@ export default function historyEdit(pi: ExtensionAPI): void {
 						edit.ui?.setEditorText(current.text);
 						if (result.retryRestore && edit.owner !== owner) queueMicrotask(() => edit.schedule?.());
 					} else edit.editing = undefined;
-				} else if (ctx.mode === "tui") await select(ctx);
+				} else if (ctx.mode === "tui") {
+					// Both entrances end here: the gesture requests this command.
+					if (hasSessionFile(ctx)) await select(ctx);
+					else ctx.ui.notify(NO_SESSION_FILE, "warning");
+				}
 			} finally {
 				edit.inFlight = false;
 				if (path && !edit.retryRestore && !edit.pending) activeEdits.delete(path);
