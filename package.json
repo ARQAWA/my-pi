@@ -51,7 +51,8 @@
       "./extensions/RQW-btw/index.ts",
       "./extensions/RQW-predictions/index.ts",
       "./extensions/RQW-browser/index.ts",
-      "./extensions/RQW-cwd/index.ts"
+      "./extensions/RQW-cwd/index.ts",
+      "./extensions/RQW-links/index.ts"
     ],
     "themes": [
       "./extensions/RQW-theme/theme.json"

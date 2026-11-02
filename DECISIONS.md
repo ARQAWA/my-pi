@@ -461,6 +461,12 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   results, including reviewer-profile agents. Naming registers no competing tool/message renderer and keeps the existing producers first.
   Reason: preserve independent cards and compact tools without changing execution. Carrier: `package.json`.
 
+## File links
+
+- **Clickable Markdown file links** `[D-FILE-LINKS]`. Owner, verbatim: «Кстати, по какой-то причине, блядь, короче, я не могу по ссылке открыть файлы. То есть я, допустим, ты мне даешь ссылку на Breakdown файл, я нажимаю, там вылезает ошибка, что типа минус 50, блядь, в ITARME. В Herder иногда открывает. вайтерми нихуя не открывается в iTurme 2 вот может быть даже в этом в с коде не откроется и это ху<unk>во потому что я хочу чтобы ссылки которые ты мне даешь я мог открыть из терминала по control клик или команд клик в зависимости от операционки это надо тоже отдать».
+  `RQW-links` patches Pi's Markdown renderer in memory after a shape and version check. Local Markdown links resolve against the session working directory to percent-encoded absolute `file://` URIs; a trailing `:line` is removed from the URI, not the label. Windows drive paths are supported; web and other URI schemes stay unchanged. Plain code spans remain plain text. Unsupported renderer shapes and terminals without hyperlink support retain stock behavior. Terminal link handlers, including Herdr, are outside this change.
+  Reason: terminal hyperlink handlers need absolute file URIs rather than relative paths. Carriers: `extensions/RQW-links/`, `package.json`, `test/extensions/RQW-links/`.
+
 ## Compact tool display
 
 - **Between-answer summaries** `[D-UI-TOOL-DISPLAY]`. Owner sources below name entries of
