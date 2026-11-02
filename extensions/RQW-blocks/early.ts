@@ -12,18 +12,20 @@ const normalize = (path: string) => {
 const ownPath = normalize(fileURLToPath(new URL("./index.ts", import.meta.url)));
 
 type InstallStyles = (theme: () => Theme, supported: { compaction: boolean; branch: boolean; bash: boolean; thinking: boolean }) => () => void;
-type Binding = { shutdown: (event: any, ctx: any) => void; restyle?: (next: InstallStyles) => void };
+/** Everything the host hook runs that a newer module may change. */
+type Parts = { installStyles: InstallStyles; installHistory: typeof installHistory; startWithHistory: typeof startWithHistory; rebindWithHistory: typeof rebindWithHistory };
+type Binding = { shutdown: (event: any, ctx: any) => void; update?: (next: Parts) => void };
 
 /**
  * One host hook survives extension reloads: a factory alone never changes the visible host, and a gap would draw stock
- * blocks. A reloaded module hands its block styles to the running binding, which swaps them in one step, so /reload
- * applies the new styles. The history and start hooks stay the first module's until Pi restarts; so does a binding of
- * an earlier release, which has no `restyle`.
+ * blocks. A reloaded module hands its styles, history and start code to the running binding, which swaps them in one
+ * step, so /reload applies the new code. A binding of an earlier release has no `update` and stays until a restart.
  */
 export function installEarly(installStyles: InstallStyles): Binding {
+	let parts: Parts = { installStyles, installHistory, startWithHistory, rebindWithHistory };
 	const existing = (globalThis as any)[ACTIVE] as Binding | undefined;
 	if (existing) {
-		existing.restyle?.(installStyles);
+		existing.update?.(parts);
 		return existing;
 	}
 	const proto = InteractiveMode.prototype as any;
@@ -68,7 +70,7 @@ export function installEarly(installStyles: InstallStyles): Binding {
 			}
 			const nextUi = next.createExtensionUIContext();
 			if (typeof nextUi?.theme?.fg !== "function" || typeof nextUi.theme.getColorMode !== "function") throw new Error("unsupported theme");
-			if (!releaseStyles) releaseStyles = installStyles(() => ui!.theme, supported);
+			if (!releaseStyles) releaseStyles = parts.installStyles(() => ui!.theme, supported);
 			ui = nextUi; host = next; session = current; generation = extensions.runtime;
 			return true;
 		} catch {
@@ -77,13 +79,13 @@ export function installEarly(installStyles: InstallStyles): Binding {
 			return false;
 		}
 	};
-	const history = installHistory(proto, prepare);
+	let history = parts.installHistory(proto, prepare);
 	const init = Object.getOwnPropertyDescriptor(proto, "init")!;
 	const stop = Object.getOwnPropertyDescriptor(proto, "stop")!;
 	const rebind = Object.getOwnPropertyDescriptor(proto, "rebindCurrentSession")!;
-	const rebindWrapper = function (this: any, ...args: unknown[]) { return prepare(this) ? rebindWithHistory(this, () => rebind.value.apply(this, args)) : rebind.value.apply(this, args); };
+	const rebindWrapper = function (this: any, ...args: unknown[]) { return prepare(this) ? parts.rebindWithHistory(this, () => rebind.value.apply(this, args)) : rebind.value.apply(this, args); };
 	const initWrapper = function (this: any, ...args: unknown[]) {
-		return prepare(this) ? startWithHistory(this, () => init.value.apply(this, args)) : init.value.apply(this, args);
+		return prepare(this) ? parts.startWithHistory(this, () => init.value.apply(this, args)) : init.value.apply(this, args);
 	};
 	const stopWrapper = function (this: any, ...args: unknown[]) {
 		try { return stop.value.apply(this, args); }
@@ -103,11 +105,14 @@ export function installEarly(installStyles: InstallStyles): Binding {
 	proto.stop = stopWrapper;
 	proto.rebindCurrentSession = rebindWrapper;
 	const binding: Binding = {
-		restyle(next) {
-			installStyles = next;
-			if (!releaseStyles) return;
-			releaseStyles();
-			try { releaseStyles = installStyles(() => ui!.theme, supported); } catch { releaseStyles = undefined; }
+		update(next) {
+			parts = next;
+			if (releaseStyles) {
+				releaseStyles();
+				try { releaseStyles = parts.installStyles(() => ui!.theme, supported); } catch { releaseStyles = undefined; }
+			}
+			// The new history hook restores the old one, then installs itself in the same step.
+			history = parts.installHistory(proto, prepare);
 		},
 		shutdown(event, ctx) {
 			if (event?.reason !== "quit" && host && ctx?.sessionManager === session?.sessionManager) history.reset?.(host);

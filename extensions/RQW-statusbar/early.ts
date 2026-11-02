@@ -6,7 +6,8 @@ import { scratchRoots, themePaint } from "./index.ts";
 type Target = Record<string, any>;
 type Owner = { handler: Function; enabled: () => boolean };
 type Binding = { owner?: Owner; restore: () => void; freeze: () => void };
-type Registry = { owners: Set<Owner>; hosts: Map<Target, Binding>; undo: (() => void)[] };
+// `bind` is what the process-wide host hooks run; the newest module instance owns it, so /reload applies new code.
+type Registry = { owners: Set<Owner>; hosts: Map<Target, Binding>; undo: (() => void)[]; bind?: (host: Target, registry: Registry) => void };
 const KEY = Symbol.for("rqw-statusbar/early/1.4.0");
 function cleanup(registry: Registry): void {
 	if (registry.owners.size || registry.hosts.size) return;
@@ -71,11 +72,11 @@ export function installEarly(handler: Function, enabled: () => boolean) {
 	let registry = global[KEY];
 	if (!registry) {
 		if (VERSION !== "1.4.0") return { freeze(_ui?: ExtensionUIContext, _factory?: unknown, _footer?: unknown) {}, disable(_ui?: ExtensionUIContext, _factory?: unknown, _footer?: unknown) {}, enable() {}, canInstallFooter(_footer?: unknown) { return true; }, dispose() {} };
-		const state: Registry = { owners: new Set(), hosts: new Map(), undo: [] };
+		const state: Registry = { owners: new Set(), hosts: new Map(), undo: [], bind };
 		const proto = InteractiveMode.prototype as unknown as Target;
 		try {
 			for (const name of ["init", "rebindCurrentSession", "renderSessionEntries"]) {
-				if (!wrap(proto, name, original => function(this: Target, ...args: any[]) { bind(this, state); return original.apply(this, args); }, state.undo)) throw new Error("unsupported host");
+				if (!wrap(proto, name, original => function(this: Target, ...args: any[]) { state.bind?.(this, state); return original.apply(this, args); }, state.undo)) throw new Error("unsupported host");
 			}
 			if (!wrap(proto, "stop", original => function(this: Target, ...args: any[]) {
 				try { return original.apply(this, args); } finally { state.hosts.get(this)?.restore(); state.hosts.delete(this); cleanup(state); }
@@ -84,6 +85,8 @@ export function installEarly(handler: Function, enabled: () => boolean) {
 		global[KEY] = registry = state;
 	}
 	const state = registry;
+	// A registry of an earlier release ignores this field and keeps its own hooks until a restart.
+	state.bind = bind;
 	const owner = { handler, enabled };
 	state.owners.add(owner);
 	const inactive = new Set<Target>();

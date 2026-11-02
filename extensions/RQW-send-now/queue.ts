@@ -19,7 +19,8 @@ type Session = {
 };
 /** Per session: the steering inputs still on their way into Pi's queue, and the sink that takes late ones during a force-send. */
 type Tracker = { inflight: Set<Promise<unknown>>; listeners: Set<() => void>; capture?: (steer: Steer) => boolean; own: Map<string, Function> };
-type State = { count: number; sessions: WeakMap<object, WeakRef<Session>>; trackers: WeakMap<Session, Tracker>; instrumented: Set<WeakRef<Session>>; wrapper: Function; original: PropertyDescriptor };
+// `instrument` is what the binding hook runs for a new session; the newest module instance owns it, so /reload applies new code.
+type State = { count: number; sessions: WeakMap<object, WeakRef<Session>>; trackers: WeakMap<Session, Tracker>; instrumented: Set<WeakRef<Session>>; wrapper: Function; original: PropertyDescriptor; instrument?: typeof instrument };
 type Prototype = Record<symbol, State | undefined>;
 type Queues = { display: string[]; delivery: unknown[]; emit: () => void };
 export type Force = { taken: Steer[]; followUps: Steer[]; aborted: Promise<void>; settled: Promise<void>; release(): void };
@@ -86,12 +87,16 @@ async function queueAsIs(session: Session, text: string, images: ImageContent[] 
 	return "queued";
 }
 
-/** Wraps three methods on the session itself; each calls what the prototype has at call time, so other wrappers stay. */
+/**
+ * Wraps three methods on the session itself; each calls what the prototype has at call time, so other wrappers stay.
+ * A session instrumented by an earlier module instance keeps its tracker (in-flight inputs, listeners, a running
+ * force-send's sink) and gets this module's wrappers over it.
+ */
 function instrument(state: State, session: Session) {
-	if (state.trackers.has(session)) return;
 	const prototype = Object.getPrototypeOf(session);
 	if (WRAPPED.some((name) => typeof prototype[name] !== "function")) return;
-	const tracker: Tracker = { inflight: new Set(), listeners: new Set(), own: new Map() };
+	const known = state.trackers.get(session);
+	const tracker: Tracker = known ?? { inflight: new Set(), listeners: new Set(), own: new Map() };
 	const next = (name: string): Function => Object.getPrototypeOf(session)[name];
 	const notify = () => { for (const listener of tracker.listeners) { try { listener(); } catch { /* A display cannot break Pi's queue. */ } } };
 	const track = (run: Promise<unknown>) => {
@@ -123,6 +128,7 @@ function instrument(state: State, session: Session) {
 		return queued.then((result) => options.preflightResult?.(result));
 	});
 	for (const [name, value] of tracker.own) Object.defineProperty(session, name, { value, configurable: true, writable: true });
+	if (known) return;
 	state.trackers.set(session, tracker);
 	state.instrumented.add(new WeakRef(session));
 }
@@ -141,7 +147,7 @@ export function installQueue(SessionClass = AgentSession, version = VERSION) {
 					const identity = this.sessionManager;
 					if (identity && (typeof identity === "object" || typeof identity === "function") && typeof this.getSteeringMessages === "function") {
 						installed.sessions.set(identity, new WeakRef(this));
-						instrument(installed, this);
+						(installed.instrument ?? instrument)(installed, this);
 					}
 				} catch { /* Capture must not affect Pi. */ }
 			}
@@ -155,6 +161,14 @@ export function installQueue(SessionClass = AgentSession, version = VERSION) {
 			return none;
 		}
 		state = installed;
+		installed.instrument = instrument;
+	} else {
+		// A reloaded module: its wrappers replace the earlier ones on every session already instrumented.
+		state.instrument = instrument;
+		for (const ref of state.instrumented) {
+			const session = ref.deref();
+			if (session) instrument(state, session);
+		}
 	}
 	const installed = state;
 	installed.count++;

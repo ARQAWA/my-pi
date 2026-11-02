@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { initTheme } from "@earendil-works/pi-coding-agent";
+import { initTheme, InteractiveMode } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { installHistory } from "../../../extensions/RQW-blocks/history.ts";
 import { installCompaction } from "../../../extensions/RQW-blocks/index.ts";
@@ -88,6 +88,28 @@ it("keeps the history when a compaction is stored at a turn boundary", async () 
 		assert.deepEqual(prompts(lines), all(4));
 		assert.ok(at(lines, "answer 3") < at(lines, "Compacted from") && at(lines, "Compacted from") < at(lines, "after"));
 	} finally { restore(); }
+});
+
+it("a history hook that another wrapper covers goes inert when a newer one is installed", () => {
+	const proto = InteractiveMode.prototype as any;
+	const names = ["renderSessionEntries", "renderInitialMessages", "rebuildChatFromMessages", "handleEvent", "switchTuiMode", "stopInteractiveTui"];
+	const saved = names.map((name) => [name, Object.getOwnPropertyDescriptor(proto, name)] as const);
+	let early = 0, late = 0;
+	try {
+		installHistory(proto, () => { early++; return true; });
+		// Another extension wraps above it, as the skill cards do, so the first hook cannot be taken off.
+		const covered = proto.renderSessionEntries;
+		proto.renderSessionEntries = function (this: unknown, ...args: unknown[]) { return covered.apply(this, args); };
+		const restore = installHistory(proto, () => { late++; return true; });
+		const host = makeHost(compacted().manager);
+		host.renderInitialMessages();
+		assert.deepEqual(prompts(rows(host)), all(6));
+		assert.equal(early, 0);
+		assert.ok(late > 0);
+		restore();
+	} finally {
+		for (const [name, descriptor] of saved) if (descriptor) Object.defineProperty(proto, name, descriptor); else delete proto[name];
+	}
 });
 
 it("ignores a prototype of another shape", () => {

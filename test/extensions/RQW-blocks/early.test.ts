@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 import { it } from "node:test";
@@ -100,6 +103,50 @@ it("a reloaded module's block styles replace the running ones in one step", asyn
 		assert.deepEqual(events, ["installed"]);
 		assert.doesNotMatch(s.draw(), /compaction · 1\.2k tokens/);
 	} finally { s.close(); }
+});
+
+it("a reloaded module's history and start hooks replace the running ones", async () => {
+	const here = dirname(fileURLToPath(import.meta.url));
+	const folder = join(here, "../../../extensions/RQW-blocks");
+	const dir = mkdtempSync(join(here, ".reload-copy-"));
+	const marks = Symbol.for("rqw-blocks-test.updated");
+	const global = globalThis as any;
+	const s = await setup();
+	// Loading Pi's next runtime runs the first module's factory, so it comes before the updated module's.
+	const next = await loader.loadExtensions([path], fileURLToPath(root));
+	try {
+		assert.match(s.draw(), /compaction · 1\.2k tokens/);
+		for (const file of readdirSync(folder)) if (file.endsWith(".ts")) cpSync(join(folder, file), join(dir, file));
+		// The updated module records which of its hooks run.
+		const mark = (name: string) => `(globalThis as any)[Symbol.for("rqw-blocks-test.updated")] = [...((globalThis as any)[Symbol.for("rqw-blocks-test.updated")] ?? []), "${name}"];`;
+		const edit = (file: string, anchor: string, name: string) => {
+			const code = readFileSync(join(dir, file), "utf8");
+			assert.ok(code.includes(anchor), anchor);
+			writeFileSync(join(dir, file), code.replace(anchor, `${anchor}\n${mark(name)}`));
+		};
+		edit("history.ts", 'const names = ["renderSessionEntries", "renderInitialMessages", "rebuildChatFromMessages", "handleEvent"];', "history");
+		edit("startup.ts", "export function rebindWithHistory(host: any, run: () => Promise<unknown>): Promise<unknown> {", "rebind");
+		const updated = await import(pathToFileURL(join(dir, "early.ts")).href);
+		updated.installEarly(() => () => {});
+		assert.deepEqual(global[marks], ["history"]);
+
+		s.host.runtimeHost.session = {
+			...s.host.runtimeHost.session, sessionManager: session("new question"),
+			resourceLoader: { getExtensions: () => next, getThemes: () => ({ themes: [] }) },
+			async bindExtensions() {},
+		};
+		Object.assign(s.host, {
+			pendingMessagesContainer: new Container(), programStatus: { reset() {} },
+			applyRuntimeSettings() {}, subscribeToAgent() {}, setupAutocompleteProvider() {}, setupExtensionShortcuts() {},
+			showLoadedResources() {}, showStartupNoticesIfNeeded() {}, async updateAvailableProviderCount() {}, updateTerminalTitle() {},
+		});
+		await s.host.rebindCurrentSession({ renderBeforeBind: true });
+		assert.deepEqual(global[marks], ["history", "rebind"]);
+	} finally {
+		delete global[marks];
+		s.close();
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 it("styles the first history and keeps it during a session change", async () => {
