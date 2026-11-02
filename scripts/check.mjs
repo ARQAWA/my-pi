@@ -25,9 +25,28 @@ export async function runCheck(args, run) {
   return results.every(result => result.status === "fulfilled" && result.value === 0) ? 0 : 1;
 }
 
-function runNpm(name, args) {
+/**
+ * npm sets npm_execpath only for scripts it starts; a direct `node scripts/check.mjs` falls back to npm on PATH.
+ * @param {string[]} args
+ * @param {NodeJS.ProcessEnv} env
+ * @param {NodeJS.Platform} platform
+ */
+export function npmCommand(args, env, platform) {
+  if (env.npm_execpath) return { command: process.execPath, args: [env.npm_execpath, ...args], shell: false };
+  if (platform !== "win32") return { command: "npm", args, shell: false };
+  // npm.cmd needs a shell, which joins arguments unquoted: keep each one whole.
+  return { command: "npm", args: args.map(arg => /\s/.test(arg) ? `"${arg}"` : arg), shell: true };
+}
+
+/**
+ * @param {string} name
+ * @param {string[]} args
+ * @param {{ env?: NodeJS.ProcessEnv, platform?: NodeJS.Platform, launch?: typeof spawn }} [world]
+ */
+export function runNpm(name, args, { env = process.env, platform = process.platform, launch = spawn } = {}) {
   return new Promise(resolve => {
-    const child = spawn(process.execPath, [process.env.npm_execpath, ...args], { stdio: "inherit" });
+    const npm = npmCommand(args, env, platform);
+    const child = launch(npm.command, npm.args, { stdio: "inherit", shell: npm.shell });
     child.on("error", error => {
       console.error(`${name}: ${error.message}`);
       resolve(1);

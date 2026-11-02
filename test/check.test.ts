@@ -2,7 +2,44 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { Worker } from "node:worker_threads";
-import { runCheck } from "../scripts/check.mjs";
+import { EventEmitter } from "node:events";
+import { npmCommand, runCheck, runNpm } from "../scripts/check.mjs";
+
+function fakeLaunch(calls: unknown[][], code: number) {
+  return (command: string, args: string[], options: unknown) => {
+    calls.push([command, args, options]);
+    const child = new EventEmitter();
+    setImmediate(() => child.emit("close", code));
+    return child;
+  };
+}
+
+test("a direct node start launches npm from PATH and reports its exit code", async () => {
+  const calls: unknown[][] = [];
+  assert.equal(await runNpm("typecheck", ["run", "typecheck"], { env: {}, platform: "darwin", launch: fakeLaunch(calls, 3) as never }), 3);
+  assert.deepEqual(calls, [["npm", ["run", "typecheck"], { stdio: "inherit", shell: false }]]);
+});
+
+test("a start through npm launches node with npm_execpath", async () => {
+  const calls: unknown[][] = [];
+  assert.equal(await runNpm("lint", ["run", "lint"], { env: { npm_execpath: "/npm-cli.js" }, platform: "darwin", launch: fakeLaunch(calls, 0) as never }), 0);
+  assert.deepEqual(calls, [[process.execPath, ["/npm-cli.js", "run", "lint"], { stdio: "inherit", shell: false }]]);
+});
+
+test("on Windows a direct start keeps a test path with spaces as one argument", () => {
+  assert.deepEqual(npmCommand(["exec", "--", "node", "--test", "my tests/a.test.ts"], {}, "win32"),
+    { command: "npm", args: ["exec", "--", "node", "--test", '"my tests/a.test.ts"'], shell: true });
+});
+
+test("check runs npm through npm_execpath when npm started it", () => {
+  assert.deepEqual(npmCommand(["run", "lint"], { npm_execpath: "/npm-cli.js" }, "darwin"),
+    { command: process.execPath, args: ["/npm-cli.js", "run", "lint"], shell: false });
+});
+
+test("check falls back to npm on PATH when started directly with node", () => {
+  assert.deepEqual(npmCommand(["run", "typecheck"], {}, "darwin"), { command: "npm", args: ["run", "typecheck"], shell: false });
+  assert.deepEqual(npmCommand(["test"], {}, "win32"), { command: "npm", args: ["test"], shell: true });
+});
 
 test("check starts all jobs together and waits for all after a typecheck failure", async () => {
   const jobs = new Map();
