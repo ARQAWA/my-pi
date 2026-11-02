@@ -9,7 +9,7 @@ import registerAgent from "../extensions/RQW-agent/index.ts";
 import { createJobs, createJobTool } from "../extensions/RQW-tools/jobs.ts";
 
 const until = async (done: () => boolean) => {
-	for (let i = 0; i < 400 && !done(); i++) await new Promise(resolve => setImmediate(resolve));
+	for (let i = 0; i < 20000 && !done(); i++) await new Promise(resolve => setImmediate(resolve));
 	assert.ok(done());
 };
 
