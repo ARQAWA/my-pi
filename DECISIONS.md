@@ -483,11 +483,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **Dropped tools** `[D-SCOPE-DROPPED]`. Loading of `eval`, `lsp` and `ast_grep` is dropped for good; Pi has its own
   codemode. Coordinator text (historical unverified attribution): "eval нахуй не нужен, lsp ... ast-grep ...
   выбросить всё это на помойку". Carrier: their absence from `extensions/`. Since: `ee0421a`.
-- **Postponed features** `[D-SCOPE-POSTPONED]`. Postponed, not dropped: `custom`, the
-  `define-goal` skill and work orders, and the task list with the check before stopping (later switched on by a skill).
-  Coordinator text (historical unverified attribution): "мы их не упраздняем, а откладываем". Status of each item:
-  [BACKLOG.md](BACKLOG.md). The agent runtime and reviewer profiles are separate decisions:
-  [Agent](#agent), [Review](#review). Since: `d28ae41`.
+- **Dropped deferred work** `[D-SCOPE-POSTPONED]`. The owner dropped `custom`, `define-goal` and work orders,
+  search of old history after compaction, and native code search. Owner (2026-11-02): «Поиск по коду и поиск по старой истории пусле сжатия выбрасывай» and «Defined Goal тоже выбрасывай.» The latter refers to the whole `I05` row as presented to the owner, including `custom` and work orders. The task list was delivered separately ([Todo panel](#todo-panel)). The agent runtime and reviewer profiles are separate decisions: [Agent](#agent), [Review](#review).
 ## UI activation
 
 - **Enable the ready interface now** `[D-UI-ENABLE-NOW]`. Owner: «1а».

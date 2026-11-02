@@ -7923,3 +7923,13 @@ Status: SUPERSEDED by `[D-MODELS-EFFORT]`: the owner chose to remove Terra off.
 Introduced: `80732f36`. Source: `ed10109e:DECISIONS.md`, line 2005. Verbatim replaced text:
 
 > RQW-models permanent `off` for Terra (`[D-WEB-MAPPING]` passes `off` as native `none`; the audit itself asks for an owner decision)
+
+## A-0487 · archived 2026-11-02 · Scope · postponed features
+
+Status: SUPERSEDED by `[D-SCOPE-POSTPONED]` in DECISIONS.md; the owner dropped the deferred work. Source: `e8022c53:DECISIONS.md`, lines 486-490. Verbatim replaced text:
+
+> - **Postponed features** `[D-SCOPE-POSTPONED]`. Postponed, not dropped: `custom`, the
+>   `define-goal` skill and work orders, and the task list with the check before stopping (later switched on by a skill).
+>   Coordinator text (historical unverified attribution): "мы их не упраздняем, а откладываем". Status of each item:
+>   [BACKLOG.md](BACKLOG.md). The agent runtime and reviewer profiles are separate decisions:
+>   [Agent](#agent), [Review](#review). Since: `d28ae41`.
