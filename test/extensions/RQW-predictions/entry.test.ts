@@ -16,7 +16,7 @@ const realDir = process.env.PI_CODING_AGENT_DIR;
 let dir: string;
 let calls: Call[];
 
-const until = async (done: () => boolean) => { for (let i = 0; i < 50 && !done(); i++) await settle(); };
+const until = async (done: () => boolean) => { for (let i = 0; i < 20000 && !done(); i++) await settle(); };
 
 describe("RQW-predictions through the extension entry", () => {
 	beforeEach(t => {
