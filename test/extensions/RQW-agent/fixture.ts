@@ -1,10 +1,42 @@
+import fs from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { TestContext } from "node:test";
 import { createFauxCore, fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { createEventBus, SessionManager } from "@earendil-works/pi-coding-agent";
 import { registerSessionRuntime } from "../../../extensions/RQW-agent/index.ts";
+
+/**
+ * Counts, from now until `stop`, Pi's `SessionManager.open` calls and the synchronous opens or whole-file reads of a
+ * `.jsonl` session file, also the whole-file rewrite of a migration. A synchronous read of a long session freezes the UI, so the count must stay zero.
+ */
+export function countSyncSessionReads(t: TestContext) {
+	let sessionFileReads = 0;
+	const isSessionFile = (path: unknown) => typeof path === "string" && path.endsWith(".jsonl");
+	const { openSync, readFileSync } = fs;
+	const open = t.mock.method(SessionManager, "open");
+	const patches = [
+		t.mock.method(fs, "openSync", (...args: Parameters<typeof openSync>) => {
+			if (isSessionFile(args[0]) && (args[1] === undefined || args[1] === "r" || args[1] === "w")) sessionFileReads++;
+			return openSync(...args);
+		}),
+		t.mock.method(fs, "readFileSync", (...args: Parameters<typeof readFileSync>) => {
+			if (isSessionFile(args[0])) sessionFileReads++;
+			return readFileSync(...args);
+		}),
+	];
+	syncBuiltinESMExports();
+	return {
+		count: () => open.mock.callCount() + sessionFileReads,
+		stop() {
+			for (const patch of patches) patch.mock.restore();
+			open.mock.restore();
+			syncBuiltinESMExports();
+		},
+	};
+}
 
 /** A Codex world in temporary folders; the real ~/.codex and ~/.pi are never read. */
 export async function world(t: TestContext) {

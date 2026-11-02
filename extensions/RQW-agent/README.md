@@ -216,6 +216,9 @@ Running descendants, uncommitted results or progress notices, queued messages an
 Delivery/queue settlement rechecks overdue children without polling. Sleep is not stop: send, explicit resume and
 exact status restore the same file, history, caller-local ID and session ID. No lifecycle state or metadata format is
 added. Disposal can release provider sockets/continuations; ordinary cache expiry and reconnect still apply.
+Waking reads the child file asynchronously in 4 ms slices (`openChildManager`), and a fork start writes its seed the same way
+and builds the manager from those entries without reading the file back (`createChildManager`); neither freezes the UI.
+If Pi's `SessionManager` constructor has another shape, Pi's own synchronous `open` is the fallback.
 Idle retained sessions do not keep the parent assignment pending. Each `start` is clean; explicit `send` reuses history,
 and `resume` retries an interrupted or failed provider request without adding a message. Send pays its input tokens and may
 trigger Pi compaction or a new cache write after expiry. There is no child-count cap. Caller shutdown aborts

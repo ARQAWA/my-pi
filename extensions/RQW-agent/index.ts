@@ -890,11 +890,11 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const unflushed = data.history === false;
 			let manager = retainedChildManager(ctx.sessionManager, name, data.id);
 			try {
-				if (data.sessionFile) manager = openChildManager(ctx.sessionManager, data.sessionFile, config.cwd ?? ctx.cwd, name, data.id);
+				if (data.sessionFile) manager = await openChildManager(ctx.sessionManager, data.sessionFile, config.cwd ?? ctx.cwd, name, data.id);
 			} catch (error) {
 				// openChildManager checks ownership before an absent file may take this exception.
 				if (!(neverRunIdle || unflushed) || (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-				manager ??= createChildManager(ctx.sessionManager, config.cwd ?? ctx.cwd, name, data.id);
+				manager ??= await createChildManager(ctx.sessionManager, config.cwd ?? ctx.cwd, name, data.id);
 			}
 			if (!manager) throw new Error(`Cannot restore ${name}#${data.id}: missing child session`);
 			// Only a never-run idle generation can legitimately have no transcript; saved tasks never authorize replay.
@@ -1591,7 +1591,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				const fast = { on: params.fast_gpt ?? callerFast() };
 				config.settings = childSettings(pi.getSettings());
 				config.builtins = BUILTIN_TOOLS.filter(name => (fork?.tools ?? pi.getActiveTools()).includes(name));
-				const manager = createChildManager(ctx.sessionManager, ctx.cwd, name, id, fork?.seed);
+				const manager = await createChildManager(ctx.sessionManager, ctx.cwd, name, id, fork?.seed);
 				const firstPayload = fork?.model && ["anthropic-messages", "openai-codex-responses"].includes(fork.model.api) && fork.payload ? { source: fork.payload, task: task! } : undefined;
 				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`, manager, false, undefined, firstPayload);
 				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, state: "idle", fast, sends: [], ...(given(params.title) ? { title: params.title.trim() } : {}), ...child };
@@ -1716,7 +1716,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 				const fast = { on: params.fast_gpt ?? old?.fast.on ?? lostFork!.fast };
 				config.settings = childSettings(pi.getSettings());
 				config.builtins = BUILTIN_TOOLS.filter(name => pi.getActiveTools().includes(name));
-				const manager = createChildManager(ctx.sessionManager, ctx.cwd, name, id);
+				const manager = await createChildManager(ctx.sessionManager, ctx.cwd, name, id);
 				const child = await createSession(config, ctx, signal, fast, labelOf(id), `${name}#${id}`, manager);
 				const title = given(params.title) ? params.title.trim() : old?.title ?? lostFork?.title;
 				const a: Agent = { id, config, epoch: randomUUID(), runNumber: 0, state: "idle", fast, sends: [], ...(title ? { title } : {}), ...child };
