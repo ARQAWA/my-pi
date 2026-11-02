@@ -70,6 +70,7 @@ it("the channel needs the secret and the generation and rebuilds a large answer 
 	const server = await startServer(net, { secret: "s3", generation: () => generation, instanceId: "me" }, { big: () => ({ big }) });
 	const target = { port: server.port, secret: "s3", generation: "g1" };
 	assert.deepEqual(await request(net, { ...target, secret: "nope" }, "big", undefined, 50), { ok: false, code: "unauthorized" });
+	assert.deepEqual(await request(net, { ...target, secret: "éé" }, "big", undefined, 50), { ok: false, code: "unauthorized" });
 	assert.deepEqual(await request(net, target, "missing", undefined, 50), { ok: false, code: "unknown_op" });
 	assert.deepEqual(await request(net, target, "big", undefined, 50), { ok: true, result: { big } });
 	assert.ok(net.written.length > 3);

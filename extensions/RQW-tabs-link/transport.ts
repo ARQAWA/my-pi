@@ -20,7 +20,11 @@ export type Handler = (params: unknown, signal: AbortSignal) => unknown;
 export type Auth = { secret: string; generation: () => string; instanceId: string };
 export type Server = { port: number; close(): void };
 
-const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const same = (a: string, b: string) => {
+	const left = Buffer.from(a);
+	const right = Buffer.from(b);
+	return left.length === right.length && timingSafeEqual(left, right);
+};
 
 /** Serves the handlers on a random local port; a request needs the secret and the current generation. */
 export function startServer(net: NetLike, auth: Auth, handlers: Record<string, Handler>): Promise<Server> {
