@@ -691,7 +691,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ## Tools
 
-- **Wrapped stock tools** `[D-TOOLS-WRAPPERS]`. RQW-tools wraps read, bash, edit, write, grep and find. Read, write, edit, find and grep use stock parallel execution; bash and codemode run independently. Multi-file edit and write, bounded Windows retry, our descriptions and background jobs stay in `extensions/RQW-tools/`.
+- **Base tools** `[D-TOOLS-WRAPPERS]`. RQW-tools supplies `rqw_readfile`, `rqw_rg` and `rqw_glob`; stock read, grep and find stay hidden as fallback. Read, write, edit and search tools use stock parallel execution; bash and codemode run independently. Multi-file edit and write, bounded Windows retry, our descriptions and background jobs stay in `extensions/RQW-tools/`.
 
 - **edit without strict sampling** `[D-TOOLS-EDIT-STRICT]`. Our edit sets `constrainedSampling` to undefined, so Pi does
   not send it as an Anthropic `strict` tool; read, bash and write keep the stock `strict: "prefer"`. Owner
@@ -704,10 +704,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 - **In-place writes with Windows retry** `[D-TOOLS-WIN-RETRY]`. In-place writes stay; on Windows `EBUSY`/`EPERM`/`EACCES`
   are retried for about 1.5 s. Reason: temp file plus rename fails on Windows when another process holds the file.
   Carriers: `extensions/RQW-tools/retry.ts`, `edit.ts`, `write.ts`. Since: `8889fdf`.
-- **Search and output limits** `[D-TOOLS-LIMITS]`. grep and find get no match cap by default (`limit` 100000 when unset);
-  the stock 50KB output cap stays; read and bash keep the stock 2000 lines / 50KB. Reason: Pi's default 100 grep matches
-  cuts the broad first search wave; omp-lite's 51 200-character budget equals 50KB for ASCII. Carriers:
-  `extensions/RQW-tools/index.ts`, the descriptions. Since: `8889fdf`.
+- **Search and output limits** `[D-TOOLS-LIMITS]`. `rqw_rg` defaults to 2000 entries and 50 KiB, with `head_limit: 0` removing the entry cap; `rqw_glob` returns at most 2000 paths or 50 KiB. `rqw_readfile` and bash return at most 2000 lines or 50 KiB. In the stock fallback, grep and find default to `limit` 100000 and retain the stock output cap. Carriers: `extensions/RQW-tools/index.ts`, `rg.ts`, `glob.ts` and the descriptions.
   GREP-NULL correction: every optional grep/find field equal to JSON `null`, `undefined` or the string `"null"`
   is removed before argument validation, preserving required `pattern`, explicit booleans, zero and other values.
   Reason: a literal `"null"` otherwise becomes a glob/path or an invalid option. Source: GREP-NULL audit section 5
@@ -727,14 +724,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   edit per occurrence with enough of its line. A line telling the model that bash sees the changed files again was
   rejected. Carriers: `extensions/RQW-tools/descriptions/edit.md`, `write.md`.
   Since: `1628f8c`.
-- **read description** `[D-TOOLS-READ-DESC]`. Read a needed file whole in one call and read every file needed next in
-  one response; bash does not read or search files. Carriers: `extensions/RQW-tools/descriptions/read.md`, `bash.md`.
-  Since: `a0bd1b1`.
-- **Description precision** `[D-TOOLS-DESC-PRECISION]`. grep respects .gitignore inside a git repository only; a grep
-  glob with "/" matches from path; find also returns directories; the edit hint may be absent; a cut grep line is read
-  around instead of narrowing; a tool result that names cat or sed overrides the ban; a long file written in parts is
-  the one exception to one edit call per file. Carriers: the six descriptions in `extensions/RQW-tools/descriptions/`.
-  Since: `a56e291`.
+- **read description** `[D-TOOLS-READ-DESC]`. `rqw_readfile` supports whole and ranged reads; its description asks for parallel reads of potentially useful files. Stock read is the fallback. Carriers: `extensions/RQW-tools/descriptions/rqw_readfile.md`, `read.md`.
+- **Description precision** `[D-TOOLS-DESC-PRECISION]`. The stock grep and find fallback retains the former descriptions. The edit hint may be absent; a long file written in parts is the exception to one edit call per file. Carriers: `extensions/RQW-tools/descriptions/`.
 - **Implementations that do not run** `[D-TOOLS-INACTIVE-IMPL]`. The prompt asks, for an implementation that does not
   run, where its value is set, where it is used and what that code does; a line asking to name every setting on the
   code path was rejected. Carrier:
@@ -751,7 +742,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 - **Waits and independent jobs** `[D-TOOLS-NOTIFY]`. A finished job's result arrives automatically as one message through the registry's source; `job wait` is removed (`[D-AUTO-WAIT-EVERYWHERE]`). No other completion notification is sent. Earlier wording: [DECISIONS-ARCHIVE.md](DECISIONS-ARCHIVE.md), A-0414 and A-0416.
 
-- **Cursor-style file tools** `[D-CURSOR-TOOLS]`. Our own `rqw_rg`, `rqw_glob` and `rqw_readfile` replace stock grep, find and read for every model, for codemode and for subagents; stock tools stay only as the fallback. Descriptions are based on Cursor Desktop 3.27.22, changed for names, real parameter differences, real implementation facts and the removed terminal-rg exception. The `rqw_rg` description also ends with the design's funnel workflow for wide and deep search in the fewest turns, so it is no longer Cursor-verbatim. Broad searches skip `.git`, dependencies and common caches; an explicit path or glob reaches them. No `.cursorignore` and no hidden-match note; bash search and read commands are refused by `[D-BASH-GUARD]` (removed also from the old grep and find wrappers). System prompt: in `<general>` the line "- If a tool exists for an action, prefer to use the tool instead of shell commands (e.g rqw_readfile over cat)." and in the getting_work_done section the line "- When searching for text or files, prefer the dedicated search tools available to you (`rqw_rg`, `rqw_glob`) over shell search commands."; the skills hint names `rqw_readfile`. Shipped delivery: release and main `5b12cd329638bb78f2666fd58aebf9fb653e0cc3`. The bash description now opens with Claude Code's line steering away from `rg`, `fd`, `grep`, `find`, `cat`, `head`, `tail`, `sed`, `awk` and `echo`, and `rg` and `fd` are dropped from the programs-on-PATH line, because Opus searched through bash. Owner decision (Coordinator proposed this after Opus searched with bash in the probe 01a19075-25c1, because Claude Code gives Opus only Bash, Read and Agent: add to bash.md the Claude Code line plus four search commands and remove rg and fd from the programs-on-PATH line; «Делаем? 1. Да, обе правки. Потом ты снова гоняешь opus. 2. Нет, пусть opus ищет через bash, как в Claude Code.»): «1». Narrows the grep and find parts of `[D-TOOLS-WRAPPERS]`, `[D-TOOLS-LIMITS]`, `[D-TOOLS-READ-DESC]`, `[D-TOOLS-DESC-PRECISION]` and `[D-PROMPT-TOOL-ISOLATION]`, which still describe edit, write, bash and the stock fallback.
+- **Cursor-style file tools** `[D-CURSOR-TOOLS]`. Our own `rqw_rg`, `rqw_glob` and `rqw_readfile` replace stock grep, find and read for every model, for codemode and for subagents; stock tools stay only as the fallback. Descriptions are based on Cursor Desktop 3.27.22, changed for names, real parameter differences, real implementation facts and the removed terminal-rg exception. The `rqw_rg` description also ends with the design's funnel workflow for wide and deep search in the fewest turns, so it is no longer Cursor-verbatim. Broad searches skip `.git`, dependencies and common caches; an explicit path or glob reaches them. No `.cursorignore` and no hidden-match note; bash search and read commands are refused by `[D-BASH-GUARD]` (removed also from the old grep and find wrappers). System prompt: in `<general>` the line "- If a tool exists for an action, prefer to use the tool instead of shell commands (e.g rqw_readfile over cat)." and in the getting_work_done section the line "- When searching for text or files, prefer the dedicated search tools available to you (`rqw_rg`, `rqw_glob`) over shell search commands."; the skills hint names `rqw_readfile`. The bash description now opens with Claude Code's line steering away from `rg`, `fd`, `grep`, `find`, `cat`, `head`, `tail`, `sed`, `awk` and `echo`, and `rg` and `fd` are dropped from the programs-on-PATH line, because Opus searched through bash. Owner decision (Coordinator proposed this after Opus searched with bash in the probe 01a19075-25c1, because Claude Code gives Opus only Bash, Read and Agent: add to bash.md the Claude Code line plus four search commands and remove rg and fd from the programs-on-PATH line; «Делаем? 1. Да, обе правки. Потом ты снова гоняешь opus. 2. Нет, пусть opus ищет через bash, как в Claude Code.»): «1».
   `rqw_readfile` prefixes every tenth absolute text line with its right-aligned number and `|`, including ranged and tail reads.
   Coordinator: «сверх заказа, отдельно: 1. номер каждой десятой строки при чтении, как у cursor. 1 SP.» Owner: «так же добавь номер каждой 10й строки»
   Owner: «Так блять сравни вот с замерами когда мы реверсили курсор как там юзал агент в каком порядке вызывал и как у нас и спроектируй на основе знания тулов самый эффективный воркфлоу для максимально жадного быстрого поиска по теме глубокого превосходящего семантическое и дай мне краткий проект как это должно работать»
@@ -781,7 +772,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   parser; nested `bash -c`, `eval` and other readers are known gaps. Applies to the main chat, subagents and codemode
   for every model; with RQW-tools off stock bash is unguarded. The second bash bullet is removed. Replaces the "no bash
   guard" part of `[D-CURSOR-TOOLS]`. `git grep` is refused even after Git global options; other Git subcommands and piped grep filters stay allowed.
-  Owner decision (verbatim, with the proposal it answers): Coordinator proposed after probe 01a190ce-8e9c (Opus counted tests with `git grep -c`, the guard missed it): «Запретить git grep. Это чистый поиск по файлам, rqw_rg его полностью заменяет. git ls-files оставить. Он отвечает на вопрос git: что лежит в репозитории.» «Добавляем git grep в запрет? 1. Да. 2. Нет.» Also pending: «Принимаешь диффы? 1. Да, делаем. 2. Нет, сначала посмотрю страницу.» (Codex 0.165.0 agent texts, ~/Downloads/codex-agent-diffs.html). Owner: «да и по саб агентам да»
+  Owner decision (verbatim, with the proposal it answers): Coordinator proposed after probe 01a190ce-8e9c (Opus counted tests with `git grep -c`, the guard missed it): «Запретить git grep. Это чистый поиск по файлам, rqw_rg его полностью заменяет. git ls-files оставить. Он отвечает на вопрос git: что лежит в репозитории.» «Добавляем git grep в запрет? 1. Да. 2. Нет.» Owner: «да и по саб агентам да»
   Owner decision (Coordinator asked after three Opus probes, bash for search and listing despite both description
   lines: «Что делаем? 1. Принимаем, вторую строку убираем. 2. Принимаем, обе строки оставляем.»): «Вторую строку убираем и ебашим запрет на баш команды с уведомлением».
   Carriers: `extensions/RQW-tools/{bash-guard.ts,index.ts,descriptions/bash.md}`.
@@ -865,7 +856,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 
 ### Prompt/tools isolation
 
-- **Conditional tool instructions** `[D-PROMPT-TOOL-ISOLATION]`. RQW-tools supplies the search-method section only when read, grep and find are visible, and the independent-execution/background-job section only when bash is visible. The same sections join the startup projection without an RQW-prompt dependency.
+- **Conditional tool instructions** `[D-PROMPT-TOOL-ISOLATION]`. RQW-tools supplies `getting_work_done` when `rqw_rg` and `rqw_glob` are visible, or the search-method section when stock read, grep and find are visible; the independent-execution/background-job section is supplied only when bash is visible. The same sections join the startup projection without an RQW-prompt dependency.
 
 ## Settings
 
