@@ -7,9 +7,7 @@ import { assistant, load, makeHost, makeScreen, Session, text, theme, thinking, 
 const cleanups: (() => void)[] = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
 
-function open() {
-	const session = new Session();
-	cleanups.push(() => session.end());
+function standard(session: Session) {
 	session.add(user("first owner", 0), 0);
 	session.add(assistant([thinking("work thinking"), text("hidden skill work")], "toolUse", 1_000), 1_000);
 	const skills = '<skill name="alpha" location="/skills/alpha.md">\nalpha private body\n</skill>\n\n' +
@@ -17,6 +15,12 @@ function open() {
 	session.add(user(skills, 2_000), 2_000);
 	session.add(user('<skill name="gamma" location="/skills/gamma.md">\ngamma private body\n</skill>', 3_000), 3_000);
 	session.add(assistant([thinking("answer thinking"), text("skill answer")], "stop", 4_000), 5_000);
+}
+
+function open(build: (session: Session) => void = standard) {
+	const session = new Session();
+	cleanups.push(() => session.end());
+	build(session);
 	cleanups.push(installSkillCard(() => theme));
 	const loaded = load();
 	cleanups.push(() => loaded.shutdown());
@@ -78,4 +82,25 @@ it("rebuilds skill-compatible history closed and restores originals in inline mo
 	assert.ok(m.row("worked for 5s ›") >= 0 && m.row("hidden skill work") < 0);
 	assert.equal(m.screen.frame().filter(row => row.includes("owner mid skill")).length, 1);
 	assert.equal(m.screen.frame().filter(row => row.includes("└ skill")).length, 2);
+});
+
+it("open, the header follows a whole first skill message and its text, and the original rows stay as they were", () => {
+	const m = open((session) => {
+		const skills = '<skill name="alpha" location="/skills/alpha.md">\nalpha private body\n</skill>\n\n' +
+			'<skill name="beta" location="/skills/beta.md">\nbeta private body\n</skill>\n\nfirst skill text';
+		session.add(user(skills, 0), 0);
+		session.add(assistant([text("first skill work")], "toolUse", 1_000), 1_000);
+		session.add(user("second skill owner", 2_000), 2_000);
+		session.add(assistant([text("first skill answer")], "stop", 3_000), 4_000);
+	});
+	const closed = m.row("worked for 4s ›");
+	assert.ok(m.row("first skill text") < m.row("second skill owner") && m.row("second skill owner") < closed);
+	m.click(79, "worked for 4s ›");
+	const header = m.row("worked for 4s");
+	assert.equal(m.screen.frame()[header], " worked for 4s");
+	const skillRows = m.screen.frame().flatMap((row, y) => row.includes("└ skill") ? [y] : []);
+	assert.equal(skillRows.length, 1);
+	assert.ok(m.row("first skill text") < skillRows[0] && skillRows[0] < header);
+	assert.ok(header < m.row("first skill work") && m.row("first skill work") < m.row("second skill owner"));
+	assert.deepEqual(m.host.chatContainer.render(80).filter(row => !row.includes("worked for")), m.stock.chatContainer.render(80));
 });

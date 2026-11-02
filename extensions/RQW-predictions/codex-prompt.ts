@@ -8,6 +8,8 @@ const JWT_AUTH_CLAIM = "https://api.openai.com/auth";
 export const PREDICTION_CONFIG_URL = "https://chatgpt.com/backend-api/wham/predictions/config";
 /** Codex `staleTime: 3e5`: a result stays fresh for exactly five minutes. */
 export const PREDICTION_PROMPT_TTL_MS = 300_000;
+export const EXPIRED_HELP = "The saved openai-codex access token has expired. Use an openai-codex model once or run /login openai-codex, then retry.";
+export const REJECTED_HELP = "The openai-codex access token was rejected (HTTP 401). Use an openai-codex model once or run /login openai-codex, then retry.";
 export const LOGIN_HELP = "Predictions read the saved openai-codex login read-only. Run /login openai-codex in Pi and retry.";
 
 export interface PredictionPrompt {
@@ -34,6 +36,9 @@ export class PredictionAuthError extends Error {
 		super(message);
 	}
 }
+
+/** The saved login is expired or the server rejected it: the owner must log in again. */
+export class TokenError extends PredictionAuthError {}
 
 interface Owner {
 	accountId: string;
@@ -66,7 +71,8 @@ function authClaim(access: string): Record<string, unknown> | undefined {
 
 function ownerOf(credential: Credential | undefined, now: number): Owner {
 	if (credential?.type !== "oauth" || !nonEmptyString(credential.access)) throw new PredictionAuthError();
-	if (typeof credential.expires !== "number" || credential.expires <= now) throw new PredictionAuthError();
+	if (typeof credential.expires !== "number") throw new PredictionAuthError();
+	if (credential.expires <= now) throw new TokenError(EXPIRED_HELP);
 	const claim = authClaim(credential.access);
 	const fromToken = nonEmptyString(claim?.chatgpt_account_id) ? claim.chatgpt_account_id : undefined;
 	const stored = nonEmptyString(credential.accountId) ? credential.accountId : undefined;
@@ -116,8 +122,10 @@ export function createPromptSource(options: PromptSourceOptions = {}): PromptSou
 		const headers = { Authorization: `Bearer ${owner.access}`, "ChatGPT-Account-ID": owner.accountId, Accept: "application/json" };
 		try {
 			const response = await doFetch(PREDICTION_CONFIG_URL, { method: "GET", headers, signal });
+			if (response.status === 401) throw new TokenError(REJECTED_HELP);
 			return response.ok ? parseConfig(await response.text()) : null;
-		} catch {
+		} catch (error) {
+			if (error instanceof TokenError) throw error;
 			signal.throwIfAborted();
 			return null;
 		}

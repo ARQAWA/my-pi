@@ -52,7 +52,7 @@ export function deferred<T>() {
 }
 export const settle = () => new Promise(resolve => setImmediate(resolve));
 
-export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], consumer = false, keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[], extraInstall = undefined as ((pi: ExtensionAPI) => void) | undefined, extraFirst = false, realKeys = false } = {}) {
+export function harness({ fork = true, replies = [] as Reply[], prompts = [] as Promise<{ prompt: string } | null>[], keybindings = piKeybindings() as unknown, extraRow = false, width = 80, entry = false, startFocus = undefined as unknown, projection = [USER, text("Tests run.")] as unknown[], extraInstall = undefined as ((pi: ExtensionAPI) => void) | undefined, extraFirst = false, realKeys = false, branch = [{ type: "message", message: USER }, { type: "message", message: text("Tests run.") }] as unknown[] } = {}) {
 	setKeybindings(keybindings as KeybindingsManager);
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
 	const events = createEventBus();
@@ -77,10 +77,11 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 	}, () => cleared.push(1));
 	if (!extraFirst) extraInstall?.(pi);
 
-	const state = { idle: true, pending: false, sessionId: "main", branch: [{ type: "message", message: USER }, { type: "message", message: text("Tests run.") }] as unknown[] };
+	const state = { idle: true, pending: false, sessionId: "main", branch };
 	const sessionManager = {
 		getSessionId: () => state.sessionId,
 		getEntries: () => state.branch,
+		getBranch: () => state.branch,
 		buildSessionProjection: () => ({ messages: projection }),
 	};
 	const main: { context: Context; options: Record<string, unknown> }[] = [];
@@ -101,7 +102,9 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 	const activity: Activity[] = [];
 	events.on(ACTIVITY, data => { activity.push(data as Activity); });
 
+	/** The prediction key's values; `keyed` has every status call with its key. */
 	const statuses: (string | undefined)[] = [];
+	const keyed: [string, string | undefined][] = [];
 	const notes: string[] = [];
 	const inputListeners: ((data: string) => unknown)[] = [];
 	const theme = {
@@ -158,19 +161,17 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 			theme,
 			getEditorText: () => editor.getText(), setEditorText: (value: string) => editor.setText(value),
 			notify: (message: string) => notes.push(message),
-			setStatus: (_key: string, value: string | undefined) => statuses.push(value),
+			setStatus: (key: string, value: string | undefined) => { keyed.push([key, value]); if (key === "rqw-predictions") statuses.push(value); },
 			setWidget: (_key: string, factory: unknown) => { if (typeof factory === "function") (factory as (tui: unknown) => unknown)(tui); },
 			onTerminalInput(listener: (data: string) => unknown) { inputListeners.push(listener); return () => { inputListeners.splice(inputListeners.indexOf(listener), 1); }; },
 		},
 	};
 	const fire = (name: string, event: unknown = {}) => { for (const handler of handlers.get(name) ?? []) handler(event, ctx); };
-	if (consumer) events.on(ACTIVITY_QUERY, () => {});
 	fire("session_start", { reason: "startup" });
-	if (consumer) events.emit(ACTIVITY_QUERY, { offer() {} });
 
 	let answers = 0;
 	const h = {
-		ctx, theme, state, reached, main, forks, provider, notes, statuses, activity, gets, cleared, sent, events, editor, controller, fire, session, clock, original, agent, viewport,
+		ctx, theme, state, reached, main, forks, provider, notes, statuses, keyed, activity, gets, cleared, sent, events, editor, controller, fire, session, clock, original, agent, viewport,
 		setFocus(component: unknown) { focus = component; },
 		/** A main request, as the agent loop makes it. */
 		request: (context: Context, options: Record<string, unknown> = { sessionId: "main" }) =>

@@ -1,62 +1,8 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
-import { createBrowserExtension } from "../../../extensions/RQW-browser/index.ts";
-
-type Any = any;
-function setup(replies: Any[], options: { incomplete?: boolean; disabled?: boolean; dom?: Any; lookup?: () => Promise<Any[]>; model?: (index: number, signal: AbortSignal) => Promise<Any>; press?: (key: string) => Promise<void>; waitText?: () => Promise<string>; afterClear?: () => void } = {}) {
-	let tool: Any;
-	let shutdown: Any;
-	let url = "about:blank";
-	const keys: string[] = [];
-	const typed: string[] = [];
-	const requests: Any[] = [];
-	const main: Any = { _loaderId: "loader", url: () => url, client: { on() {} }, childFrames: () => options.incomplete ? [child] : [], _lifecycleEvents: new Set(["load"]), detached: false };
-	const child: Any = { url: () => "https://frame.test", childFrames: () => [], accessibility: { snapshot: async () => null } };
-	main.evaluate = async (fn: () => unknown) => {
-		if (!options.dom) return { values: [keys.length === 3 ? "Done" : "Ready"], partial: false };
-		const globals = globalThis as Any;
-		const previous = { document: globals.document, getComputedStyle: globals.getComputedStyle, HTMLSlotElement: globals.HTMLSlotElement };
-		globals.document = { body: options.dom, createRange: () => {
-			let node: Any;
-			return { selectNodeContents(value: Any) { node = value; }, getBoundingClientRect: () => ({ left: node.x ?? 0, right: (node.x ?? 0) + (node.width ?? 1), top: 0, bottom: 1, width: node.width ?? 1, height: 1 }) };
-		} };
-		globals.getComputedStyle = (element: Any) => ({ display: element.display ?? "inline", visibility: "visible", opacity: element.opacity ?? "1", overflowX: element.overflowX ?? "visible", overflowY: "visible" });
-		globals.HTMLSlotElement = class {};
-		try { return fn(); } finally { Object.assign(globals, previous); }
-	};
-	main.mainRealm = () => ({ adoptBackendNode: async (id: number) => {
-		assert.equal(id, 2);
-		const element = { asElement: () => element, isVisible: async () => true, dispose: async () => {},
-			evaluate: (_fn: Any, ...args: Any[]) => {
-				if (args.length && options.afterClear) queueMicrotask(() => queueMicrotask(() => options.afterClear!()));
-				return Promise.resolve(null);
-			},
-			type: async (value: string) => { typed.push(value); },
-		};
-		return { evaluateHandle: async () => element, dispose: async () => {} };
-	} });
-	const page: Any = {
-		mainFrame: () => main, browserContext: () => ({}), url: () => url, title: async () => "Form",
-		goto: async (value: string) => { url = value; }, isClosed: () => false, browser: () => ({ connected: true }), on() {}, off() {},
-		keyboard: { press: async (key: string) => { keys.push(key); await options.press?.(key); }, down: async () => {}, up: async () => {} },
-		accessibility: { snapshot: async () => ({ role: "RootWebArea", name: "Form", loaderId: "loader", backendNodeId: 1, children: [
-			{ role: "button", name: "Submit", disabled: options.disabled, loaderId: "loader", backendNodeId: 2 },
-			{ role: "StaticText", name: keys.length === 3 ? "Done" : "Ready", loaderId: "loader", backendNodeId: 3 },
-		] }) },
-		evaluate: async (fn: Any) => options.waitText && String(fn).includes("innerText") ? await options.waitText() : ({ viewport: {}, scroll: {} }),
-	};
-	const browser = { target: () => ({ createCDPSession: async () => ({ send: async () => {}, on() {}, off() {}, detach: async () => {} }) }), newPage: async () => page, close: async () => {} };
-	createBrowserExtension({ findSystemChrome: () => "/chrome", load: async () => ({ launch: async () => browser, Puppeteer: { customQueryHandlerNames: () => [], registerCustomQueryHandler() {} } }) as never })({ registerTool(value: Any) { tool = value; }, on(event: string, fn: Any) { if (event === "session_shutdown") shutdown = fn; } } as never);
-	const ctx = { model: { provider: "anthropic" }, modelRegistry: {
-		getAvailableOfType: async () => options.lookup ? await options.lookup() : [{ provider: "anthropic", id: "claude-haiku-5-5", reasoning: true }],
-		streamSimple(model: Any, context: Any, streamOptions: Any) { requests.push(structuredClone({ model, context, reasoning: streamOptions.reasoning })); return { result: async () => options.model ? await options.model(requests.length - 1, streamOptions.signal) : replies.shift() }; },
-	} };
-	return { keys, typed, requests, shutdown: () => shutdown(), async call(input: Any, signal?: AbortSignal) { return (await tool.execute("id", input, signal, undefined, ctx)).details.value; } };
-}
-const task = { action: "run", url: "https://local.test", actions: ["first", "second", "third"], expected: "Done" };
-const call = (id: number, action = id) => ({ type: "toolCall", id: `call-${id}`, name: "call", arguments: { action, chain: [{ method: "press", args: [String(id)] }] } });
-const reply = (...content: Any[]) => ({ role: "assistant", api: "test", provider: "anthropic", model: "claude-haiku-5-5", content, stopReason: content.some(part => part.type === "toolCall") ? "toolUse" : "stop", timestamp: 0, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
-const done = () => reply({ type: "text", text: JSON.stringify({ result: "Done visible", reached: true }) });
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { type Any, call, chainCall, done, reply, setup, task } from "./run-helper.ts";
 
 it("executes the ordered actions in an isolated model context and observes the result", async () => {
 	const env = setup([reply(call(0), call(1), call(2)), reply(call(1)), reply(call(2)), done()]);
@@ -64,13 +10,21 @@ it("executes the ordered actions in an isolated model context and observes the r
 	assert.deepEqual(env.keys, ["0", "1", "2"]);
 	assert.equal(result.reached, true);
 	assert.equal(result.stopped, null);
-	assert.match(result.page.summary, /Done/);
+	assert.equal(result.summary, "Done visible");
 	assert.match(result.page.name, /^run-/);
 	assert.equal(env.requests[0].reasoning, "medium");
 	assert.deepEqual(env.requests[0].context.tools.map((item: Any) => item.name), ["view", "call"]);
 	assert.deepEqual(env.requests[0].context.messages.map((item: Any) => item.role), ["user"]);
 	assert.equal(env.requests[0].context.sessionId, undefined);
 	assert.match(env.requests[1].context.messages.at(-1).content[0].text, /Not executed/);
+	await env.shutdown();
+});
+
+it("runs a chain the executor model sends, through the registered run", async () => {
+	const env = setup([reply(chainCall([{ method: "press", args: ["Z"] }])), done()]);
+	const result = await env.call({ ...task, actions: ["press Z"] });
+	assert.deepEqual(env.keys, ["Z"]);
+	assert.equal(result.stopped, null);
 	await env.shutdown();
 });
 
@@ -104,15 +58,14 @@ it("does not report success before all actions or with an incomplete view", asyn
 	await incomplete.shutdown();
 });
 
-it("translates short model ids to current browser ids and returns usable browser ids", async () => {
+it("translates short model ids to current browser ids", async () => {
 	const inspect = { type: "toolCall", id: "inspect", name: "call", arguments: { action: 0, chain: [{ method: "id", args: ["1"] }, { method: "isVisible", args: [] }] } };
 	const env = setup([reply(inspect), done()]);
 	const result = await env.call({ ...task, actions: ["inspect Submit"] });
 	assert.equal(result.stopped, null);
 	assert.equal(result.reached, true);
-	const id = Number(result.page.summary.match(/button: Submit \[id:(\d+)\]/)[1]);
-	assert.ok(id > 1);
-	assert.equal(await env.call({ action: "call", name: result.page.name, chain: [{ method: "id", args: [id] }, { method: "isVisible", args: [] }] }), true);
+	assert.equal(result.steps[1].target, "button: Submit");
+	assert.equal(JSON.parse(env.requests[1].context.messages.at(-1).content[0].text).value, true);
 	assert.match(env.requests[0].context.messages[0].content, /\[id:1\]/);
 	assert.deepEqual(env.requests[1].context.messages[1].content[0].arguments.chain[0].args, ["1"]);
 	await env.shutdown();
@@ -123,7 +76,7 @@ it("rejects ids from an older view instead of acting on a new element", async ()
 	const env = setup([reply(inspect("first", 0)), reply(inspect("second", 1))]);
 	const result = await env.call({ ...task, actions: ["inspect first", "inspect second"] });
 	assert.equal(result.stopped, "error");
-	assert.match(result.result, /Target is not in the current view.*last confirmed action: inspect first/);
+	assert.match(result.summary, /Target is not in the current view.*last confirmed action: inspect first/);
 	await env.shutdown();
 });
 
@@ -182,6 +135,7 @@ it("does not join separate blocks or trust partially clipped text", async () => 
 it("rejects selector actions and another target after a page change", async () => {
 	for (const [chain, error] of [
 		[[{ method: "click", args: ["button"] }], /Element actions and reads require a target/],
+		[[{ method: "waitForText", args: ["Ready", { selector: "button" }] }], /Wait cannot target a selector/],
 		[[{ method: "press", args: ["A"] }, { method: "text", args: ["button"] }], /Element actions and reads require a target/],
 		[[{ method: "press", args: ["A"] }, { method: "id", args: [1] }, { method: "isVisible", args: [] }], /changed page requires a fresh view/],
 	] as const) {
@@ -189,7 +143,7 @@ it("rejects selector actions and another target after a page change", async () =
 		const env = setup([reply(attempt)]);
 		const result = await env.call(task);
 		assert.equal(result.stopped, "error");
-		assert.match(result.result, error);
+		assert.match(result.summary, error);
 		assert.deepEqual(env.keys, []);
 		await env.shutdown();
 	}
@@ -200,8 +154,8 @@ it("refuses a chain that uses a target after navigation", async () => {
 	const env = setup([reply(navigation)]);
 	const result = await env.call(task);
 	assert.equal(result.stopped, "error");
-	assert.match(result.result, /Navigation must be followed by a fresh view/);
-	assert.equal(await env.call({ action: "call", name: result.page.name, chain: [{ method: "url", args: [] }] }), "https://local.test");
+	assert.match(result.summary, /Navigation must be followed by a fresh view/);
+	assert.equal((await env.call({ action: "tabs" }))[0].url, "https://local.test");
 	await env.shutdown();
 });
 
@@ -210,6 +164,121 @@ it("limits changing operations before executing a chain", async () => {
 	const env = setup([reply(excess)]);
 	assert.equal((await env.call(task)).stopped, "limit");
 	assert.deepEqual(env.keys, []);
+	await env.shutdown();
+});
+
+it("returns one strict step per operation and retries an overlong summary once", async () => {
+	const long = reply({ type: "text", text: JSON.stringify({ summary: "First.\n\nSecond.\n\nThird.", reached: true }) });
+	const env = setup([reply(chainCall([{ method: "press", args: ["A"] }, { method: "press", args: ["B"] }])), long, done()]);
+	const result = await env.call({ ...task, actions: ["press twice"] });
+	assert.deepEqual(result.steps.map((step: Any) => [step.index, step.action_index, step.method, step.value, step.status]), [[0, null, null, null, "done"], [1, 0, "press", "A", "done"], [2, 0, "press", "B", "done"]]);
+	assert.equal(result.summary, "Done visible");
+	assert.match(env.requests[2].context.messages.at(-1).content, /Shorten to two paragraphs/);
+	assert.deepEqual(Object.keys(result).sort(), ["files", "page", "reached", "steps", "stopped", "summary"]);
+	await env.shutdown();
+});
+
+it("writes requested captures at the start and after each operation", async () => {
+	const env = setup([reply(chainCall([{ method: "press", args: ["A"] }, { method: "press", args: ["B"] }])), done()]);
+	const result = await env.call({ ...task, actions: ["press twice"], capture: { screenshot: true, markdown: true, html: true } });
+	for (const [index, step] of result.steps.entries()) {
+		const prefix = join(result.files.folder, String(index).padStart(2, "0"));
+		assert.deepEqual(step.files, { screenshot: `${prefix}.png`, markdown: `${prefix}.md`, html: `${prefix}.html` });
+		assert.deepEqual(await readFile(step.files.screenshot), Buffer.from([1, 2, 3]));
+		assert.doesNotMatch(await readFile(step.files.markdown, "utf8"), /\[id:/);
+		assert.equal(await readFile(step.files.html, "utf8"), `<html>${"AB".slice(0, index)}</html>`);
+	}
+	await env.shutdown();
+	const disabled = setup([reply(call(0)), done()]);
+	const noFiles = await disabled.call({ ...task, actions: ["first"] });
+	assert.deepEqual(noFiles.steps.map((step: Any) => step.files), [0, 1].map(() => ({ screenshot: null, markdown: null, html: null })));
+	await disabled.shutdown();
+});
+
+it("only observes intermediate chain steps when Markdown capture needs them", async () => {
+	for (const markdown of [false, true]) {
+		const env = setup([reply(chainCall([{ method: "press", args: ["A"] }, { method: "press", args: ["B"] }])), done()]);
+		const result = await env.call({ ...task, actions: ["press twice"], capture: { markdown }, record: false });
+		assert.equal(result.stopped, null);
+		assert.deepEqual(env.observations, markdown ? ["", "A", "AB"] : ["", "AB"]);
+		if (markdown) assert.match(await readFile(result.steps[1].files.markdown, "utf8"), /Ready/);
+		await env.shutdown();
+	}
+});
+
+it("keeps all page Markdown and preserves targets across read operations in one chain", async () => {
+	const longText = `${"x".repeat(17000)}END-OF-PAGE`;
+	const env = setup([reply(chainCall([{ method: "id", args: [1] }, { method: "isVisible", args: [] }, { method: "id", args: [1] }, { method: "isEnabled", args: [] }])), done()], { pageText: longText });
+	const result = await env.call({ ...task, actions: ["inspect twice"], capture: { markdown: true }, record: false });
+	assert.deepEqual(result.steps.map((step: Any) => step.status), ["done", "done", "done"]);
+	assert.equal(result.steps[2].target, "button: Submit");
+	assert.match(await readFile(result.steps[0].files.markdown, "utf8"), /END-OF-PAGE/);
+	assert.match(await readFile(result.steps[2].files.markdown, "utf8"), /END-OF-PAGE/);
+	await env.shutdown();
+});
+
+it("records a flow through DevTools and reports a missing window", async () => {
+	const events: string[] = [];
+	const flow = { title: "Flow", steps: [{ type: "navigate", url: "https://local.test" }] };
+	const recorder = {
+		keyboard: { down: async (key: string) => events.push(`down ${key}`), up: async (key: string) => events.push(`up ${key}`), press: async (key: string) => events.push(`press ${key}`), type: async (value: string) => events.push(`type ${value}`) },
+		waitForFunction: async (_fn: unknown, _options: unknown, label: string) => ({ asElement: () => ({ click: async () => events.push(label) }), dispose: async () => {} }),
+		evaluate: async () => JSON.stringify([{ flow }]),
+	};
+	const env = setup([reply(call(0)), done()], { recorder });
+	const result = await env.call({ ...task, actions: ["first"] });
+	assert.deepEqual(events.filter(event => event.includes("recording")), ["Create recording", "End recording"]);
+	assert.deepEqual(JSON.parse(await readFile(result.files.recording, "utf8")), flow);
+	assert.equal(result.files.recording_error, null);
+	await env.shutdown();
+	const missing = setup([reply(call(0)), done()]);
+	const noWindow = await missing.call({ ...task, actions: ["first"] });
+	assert.equal(noWindow.files.recording, null);
+	assert.match(noWindow.files.recording_error, /No DevTools window/);
+	await assert.rejects(missing.call({ ...task, name: noWindow.page.name, url: undefined, actions: ["first"], record: true }), /No DevTools window/);
+	await missing.shutdown();
+});
+
+it("writes the executor transcript from the first request without returning it", async () => {
+	const secret = "transcript-only-secret";
+	const env = setup([reply(call(0)), done()]);
+	const output = await env.full({ ...task, actions: ["first"], credentials: { password: secret }, record: false });
+	const path = join(output.details.value.files.folder, "transcript.jsonl");
+	const transcript = await readFile(path, "utf8");
+	assert.match(transcript, /Credentials are test-account values/);
+	assert.match(transcript, new RegExp(secret));
+	assert.match(transcript, /toolResult/);
+	assert.match(transcript, /Done visible/);
+	assert.doesNotMatch(JSON.stringify(output), /transcript\.jsonl|transcript-only-secret|Credentials are test-account values/);
+	assert.doesNotMatch(JSON.stringify(output), new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+	await env.shutdown();
+});
+
+it("marks failed operations and unstarted actions", async () => {
+	const env = setup([reply(call(0))], { press: async () => { throw new Error("failed"); } });
+	const result = await env.call(task);
+	assert.deepEqual(result.steps.map((step: Any) => step.status), ["done", "failed", "not_run", "not_run"]);
+	assert.equal(result.steps[1].error, "failed");
+	await env.shutdown();
+});
+
+it("keeps a successful operation done if capture fails", async () => {
+	let reads = 0;
+	const env = setup([reply(call(0))], { html: async () => { if (++reads === 2) throw new Error("capture failed"); return "<html></html>"; } });
+	const result = await env.call({ ...task, actions: ["first"], capture: { html: true }, record: false });
+	assert.equal(result.stopped, "error");
+	assert.match(result.summary, /capture failed; last confirmed action: first/);
+	assert.equal(result.steps[1].status, "done");
+	assert.deepEqual(env.keys, ["0"]);
+	await env.shutdown();
+});
+
+it("captures the page after a failed operation that already changed it", async () => {
+	const env = setup([reply(call(0))], { press: async () => { throw new Error("dispatch failed"); } });
+	const result = await env.call({ ...task, actions: ["first"], capture: { html: true }, record: false });
+	assert.equal(result.steps[1].status, "failed");
+	assert.equal(result.steps[1].error, "dispatch failed");
+	assert.equal(await readFile(result.steps[1].files.html, "utf8"), "<html>0</html>");
 	await env.shutdown();
 });
 
@@ -231,7 +300,7 @@ it("cancels a pending model request and releases the shared queue without accept
 	const result = await running;
 	assert.equal(modelSignal.aborted, true);
 	assert.equal(result.stopped, "cancelled");
-	assert.match(result.result, /last confirmed action: none/);
+	assert.match(result.summary, /last confirmed action: none/);
 	assert.equal((await queued)[0].name, result.page.name);
 	pending.resolve(reply(call(0)));
 	await env.call({ action: "tabs" });
@@ -285,7 +354,7 @@ it("cancels a browser wait after the last confirmed action and never runs the fo
 	controller.abort();
 	const result = await running;
 	assert.equal(result.stopped, "cancelled");
-	assert.match(result.result, /last confirmed action: first/);
+	assert.match(result.summary, /last confirmed action: first/);
 	assert.deepEqual(env.keys, ["0"]);
 	pending.resolve("Never");
 	assert.equal((await env.call({ action: "tabs" })).length, 1);
@@ -306,7 +375,7 @@ it("does not retry a failed mutating action or execute the remaining chain", asy
 	const env = setup([reply({ type: "toolCall", id: "fail", name: "call", arguments: { action: 0, chain: [{ method: "press", args: ["A"] }, { method: "press", args: ["B"] }] } })], { press: async () => { throw new Error("dispatch failed"); } });
 	const result = await env.call(task);
 	assert.equal(result.stopped, "error");
-	assert.match(result.result, /last confirmed action: none/);
+	assert.match(result.summary, /last confirmed action: none/);
 	assert.deepEqual(env.keys, ["A"]);
 	assert.equal(env.requests.length, 1);
 	await env.shutdown();

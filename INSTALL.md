@@ -49,7 +49,7 @@ The first start after install applies the setup profile once: RQW-settings write
 global `~/.pi/agent/settings.json`, before Pi builds its interface. Packages, credentials and all other keys stay as
 they were. Later changes by the owner stay; the profile is not applied again. If an extension or the theme of this
 package is switched off or filtered, or the file is not valid JSON, nothing is written and Pi shows a warning at
-start; fix the cause and restart Pi. Reload alone does not apply a profile that failed before.
+start; fix the cause and reload or restart Pi to retry the profile.
 
 ## History editing
 
@@ -69,8 +69,7 @@ binds none of them itself.
 ## Compact interface and theme
 
 Normal package loading enables compact tool display, agent cards and automatic session naming. Reviewer profiles `spotty` and `bossy` deliver ordinary `agent#N` results and use the same agent
-cards and agent count category as other subagents. Standalone `[review#N]` cards remain only for legacy session
-history, not current reviewer delivery. With both agent-ui and tool-ui loaded, a collapsed wait result is tool-ui's (`Waited for N agents` in the summary, `wait <ids>` in the live block);
+cards and agent count category as other subagents. With both agent-ui and tool-ui loaded, a collapsed wait result is tool-ui's (`Waited for N agents` in the summary, `wait <ids>` in the live block);
 with tool-ui off, agent-ui shows its collapsed wait cards. Ctrl+O shows full original tool and agent results,
 including agent-ui's expanded wait cards, and folds back. Native thinking spacer rows remain and stock image
 output is unchanged.
@@ -106,13 +105,13 @@ excludes nothing.
 ```
 
 - It takes effect after `/reload` or a restart. To switch the extension on again, delete its line.
-- The streaming placeholder «ответ готовится» switches off alone with `-extensions/RQW-live-tail/index.ts`.
+- The streaming placeholder `writing answer` switches off alone with `-extensions/RQW-live-tail/index.ts`.
 - The `/btw` side chat switches off alone with `-extensions/RQW-btw/index.ts`.
 - The compact UI switches independently with `-extensions/RQW-tool-ui/index.ts`,
   `-extensions/RQW-agent-ui/index.ts` and `-extensions/RQW-naming/index.ts`, one exclusion per extension.
   Tool-ui off restores stock old and new tool calls, except that agent-ui then shows its collapsed wait cards;
-  agent-ui off restores stock agent results, including reviewer-profile results, and stock rendering of legacy review
-  history; naming off stops automatic generation and removes `/rename-gen`, leaving the persisted native name and `/name`.
+  agent-ui off restores stock agent results, including reviewer-profile results;
+  naming off stops automatic generation and removes `/rename-gen`, leaving the persisted native name and `/name`.
   The separate activity indicator and static title belong to RQW-statusbar, switched with
   `-extensions/RQW-statusbar/index.ts` or `/statusbar off`; cards do not own that indicator. It shows the actual
   running agent counts, including reviewer profiles, with no separate review category; ordinary busy letters shimmer

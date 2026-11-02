@@ -1,6 +1,6 @@
 // Shared /btw core: freezes what the main model sees now and sends side turns from that mark.
 // Nothing here writes to the chat, the session file or the model context of the main session.
-import { isContextOverflow, normalizeContext, type Api, type AssistantMessage, type Context, type Message, type Model, type SystemMessage, type ThinkingLevel, type UserMessage } from "@earendil-works/pi-ai";
+import { isContextOverflow, normalizeContext, type Api, type AssistantMessage, type Context, type Message, type Model, type SystemMessage, type ModelThinkingLevel, type UserMessage } from "@earendil-works/pi-ai";
 import { AgentSession, convertToLlm, DEFAULT_COMPACTION_SETTINGS, estimateTokens, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
 
 export const CONTEXT_FORK = "rqw:context-fork:v1";
@@ -11,7 +11,7 @@ type ContextForkRequest = {
 	sessionId: string;
 	model: Model<Api>;
 	context: Context;
-	reasoning?: ThinkingLevel;
+	reasoning?: ModelThinkingLevel;
 	signal: AbortSignal;
 	offer(infer: () => Promise<AssistantMessage>): void;
 };
@@ -19,7 +19,6 @@ type Snapshot = {
 	sessionId: string;
 	model: Model<Api>;
 	messages: Message[];
-	reasoning?: ThinkingLevel;
 	after: MessageEndEvent["message"][];
 };
 
@@ -28,7 +27,7 @@ export type Mark = {
 	/** The main session id when the mark is the last main request; the fork can then reuse its cached prefix. */
 	sessionId: string | undefined;
 	model: Model<Api>;
-	reasoning?: ThinkingLevel;
+	reasoning?: ModelThinkingLevel;
 	messages: readonly Message[];
 	/** Messages after the sent part, as text for the first question: an unfinished tool call or a cut tail. */
 	tail: string;
@@ -83,7 +82,11 @@ const QUESTION_ROOM = 8192;
 /** Messages as text, cut from the start to at most `limit` characters. */
 function asText(messages: readonly Message[], limit = Infinity): string {
 	if (messages.length === 0) return "";
-	const text = JSON.stringify(messages.map(item => ({ role: item.role, content: item.content })));
+	return cutText(JSON.stringify(messages.map(item => ({ role: item.role, content: item.content }))), limit);
+}
+
+/** Text cut from the start to at most `limit` characters, marked as cut. */
+function cutText(text: string, limit: number): string {
 	return text.length <= limit ? text : CUT + text.slice(text.length - Math.max(0, limit - CUT.length));
 }
 
@@ -95,22 +98,28 @@ function firstQuestion(message: UserMessage, tail: string): UserMessage {
 }
 
 /** Side answers go back as text only: no unexecuted tool call, no thinking replay. */
+function textOnly(message: Message): Message {
+	if (message.role !== "assistant") return message;
+	const text = message.content.filter(part => part.type === "text");
+	// An answer that only called a tool still needs content on the wire.
+	return { ...message, content: text.length > 0 ? text : [{ type: "text" as const, text: "(no text; tool calls were not executed)" }] };
+}
+
 function sideTurns(turns: readonly Message[], tail: string): Message[] {
 	let first = true;
 	return turns.map(message => {
 		if (message.role === "user" && first) { first = false; return firstQuestion(message, tail); }
-		if (message.role !== "assistant") return message;
-		const text = message.content.filter(part => part.type === "text");
-		// An answer that only called a tool still needs content on the wire.
-		return { ...message, content: text.length > 0 ? text : [{ type: "text" as const, text: "(no text; tool calls were not executed)" }] };
+		return textOnly(message);
 	});
 }
 
 /** Drops whole leading side exchanges until the rest fits the window; the newest question is always sent. */
 function unsent(mark: Mark, turns: readonly Message[]): number {
 	const room = budget(mark.model) - tokens(mark.messages) - Math.ceil((mark.tail.length + INSTRUCTION.length) / 4);
+	// Counted in the form that is sent: thinking never leaves the side chat.
+	const sent = turns.map(textOnly);
 	let skip = 0;
-	while (tokens(turns.slice(skip)) > room) {
+	while (tokens(sent.slice(skip)) > room) {
 		const next = turns.findIndex((message, i) => i > skip && message.role === "user");
 		if (next < 0) break;
 		skip = next;
@@ -139,7 +148,7 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 		const wrapped: typeof original = function(this: unknown, model, context, options) {
 			if (active && options?.sessionId !== undefined && options.sessionId === manager.getSessionId()) {
 				hasMainRequest = true;
-				snapshot = { sessionId: options.sessionId, model, messages: context.messages, reasoning: options.reasoning, after: [] };
+				snapshot = { sessionId: options.sessionId, model, messages: context.messages, after: [] };
 			}
 			return original.call(this, model, context, options);
 		};
@@ -218,7 +227,8 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 		const summary = latest !== undefined ? `Summary of the earlier conversation:\n${latest}\n\n` : "";
 		const room = Math.floor(budget(mark.model) / 2 - tokens([system])) * 4 - summary.length;
 		const rest = mark.messages.filter(message => message.role !== "system");
-		const cut = asText(rest, room - mark.tail.length) + (mark.tail ? `\n${mark.tail}` : "");
+		// The unsent tail is the newest part: one text, cut from the start.
+		const cut = cutText([asText(rest), mark.tail].filter(part => part !== "").join("\n"), room);
 		return { ...mark, sessionId: undefined, messages: [system], tail: summary + cut };
 	}
 
@@ -233,7 +243,10 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 			if (infer) return infer();
 		}
 		// No sessionId: RQW-codex would route the main session id into the main thread's controller.
-		return ctx.modelRegistry.streamSimple(model, normalizeContext({ messages }), { reasoning, signal }).result();
+		const options = reasoning === "off"
+			? model.provider === "openai-codex" ? { reasoningEffort: "none" as const, signal } : { signal }
+			: { reasoning, signal };
+		return ctx.modelRegistry.streamSimple(model, normalizeContext({ messages }), options).result();
 	}
 
 	pi.on("session_start", (_event, ctx) => bind(ctx));
@@ -252,7 +265,7 @@ export function installBtwCore(pi: ExtensionAPI): BtwCore {
 			if (!model) return undefined;
 			const shot = snapshot && sameModel(snapshot.model, model) ? snapshot : undefined;
 			const level = pi.getThinkingLevel();
-			const reasoning = shot ? shot.reasoning : level === "off" ? undefined : level;
+			const reasoning = level;
 			const frozen = { system: systemOf(ctx), leafId: ctx.sessionManager.getLeafId() };
 			const { kept, running } = settle(shot ? [...shot.messages, ...convertToLlm(shot.after)] : fallback(ctx, frozen.system));
 			if (!shot || tokens(kept) + tokens(running) <= budget(model)) {

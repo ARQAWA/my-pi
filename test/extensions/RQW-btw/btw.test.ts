@@ -45,7 +45,7 @@ type Entry = { type: string; id: string; parentId: string | null; summary?: stri
 /** Every panel a test opened; closed after each test so no spinner timer outlives it. */
 const panels = new Set<{ panel?: Panel; closed: boolean }>();
 
-function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replies = [] as Reply[], tree = [] as Entry[], rows = 30, mode = "tui", resumed = false } = {}) {
+function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replies = [] as Reply[], tree = [] as Entry[], rows = 30, mode = "tui", resumed = false, level = "medium" } = {}) {
 	const handlers = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
 	const commands = new Map<string, { handler(args: string, ctx: unknown): Promise<void> }>();
 	const events = createEventBus();
@@ -58,7 +58,7 @@ function harness({ fork = true, projection = [SYSTEM, USER] as Message[], replie
 			{ name: "read", description: "Read a file", parameters: { type: "object" } },
 			{ name: "write", description: "Write a file", parameters: { type: "object" } },
 		],
-		getThinkingLevel: () => "medium",
+		getThinkingLevel: () => level,
 	} as unknown as ExtensionAPI);
 
 	const entries = [{ type: "message", id: "e1", message: USER }];
@@ -192,7 +192,7 @@ describe("RQW-btw", () => {
 		const fork = h.forks[0];
 		assert.equal(fork.sessionId, "main");
 		assert.equal(fork.model, MODEL);
-		assert.equal(fork.reasoning, "high");
+		assert.equal(fork.reasoning, "medium");
 		assert.deepEqual(fork.context.messages.slice(0, -1), [SYSTEM, USER, text("Tests run.")]);
 		assert.equal(last(fork.context).content, `${INSTRUCTION}\n\nQuestion: what changed?`);
 		assert.equal(h.provider.length, 0);
@@ -335,6 +335,32 @@ describe("RQW-btw", () => {
 		assert.deepEqual([...new Set(seen.map(row => row.trim()))], ["q3", UNSENT_NOTE]);
 	});
 
+	it("counts side answers without their thinking, so long thinking does not push earlier questions out", async () => {
+		const thinking = assistant([{ type: "thinking", thinking: "hmm ".repeat(25_000) }, { type: "text", text: "a1" }]);
+		const h = harness({ replies: [thinking] });
+		h.setModel(SMALL);
+		h.request({ messages: [SYSTEM, USER] });
+		await h.btw("q1");
+		await h.say("q2");
+
+		const messages = h.forks[1].context.messages;
+		assert.equal(messages[2].content, `${INSTRUCTION}\n\nQuestion: q1`);
+		assert.deepEqual(messages[3], { ...thinking, content: [{ type: "text", text: "a1" }] });
+		assert.ok(!shows(h.screen(), UNSENT_NOTE));
+	});
+
+	it("cuts a long unsent tail in the overflow retry to half of the window, keeping the newest text", async () => {
+		const big = user("old ".repeat(100_000) + "NEWEST LINE");
+		const h = harness({ replies: [overflow()], projection: [SYSTEM, USER, toolCall("c"), big] });
+		h.setModel(SMALL);
+		await h.btw("q1");
+
+		assert.equal(h.provider.length, 2);
+		const retry = h.provider[1].context;
+		assert.match(String(last(retry).content), /\[earlier part cut\] .*NEWEST LINE.*Question: q1$/s);
+		assert.ok(size(retry) <= SMALL.contextWindow / 2 + 100);
+	});
+
 	it("retries a provider overflow once in a shorter form without compacting and marks the answer", async () => {
 		const h = harness({ replies: [overflow()], tree: [
 			{ type: "compaction", id: "c1", parentId: null, summary: "SUMMARY OF EARLIER WORK" },
@@ -394,13 +420,40 @@ describe("RQW-btw", () => {
 		assert.ok(shows(h.screen(), "side answer"));
 	});
 
+	it("asks the fork for off, not the main request's high, after high and on overflow retry", async () => {
+		const h = harness({ level: "off", replies: [overflow()] });
+		h.setModel(OTHER);
+		h.request({ messages: [SYSTEM, USER] });
+		assert.equal(h.main[0].options.reasoning, "high");
+		await h.btw("q?");
+		assert.equal(h.forks.length, 1);
+		assert.equal(h.forks[0].reasoning, "off");
+		// The overflow retry goes through the provider, again without the main request's high.
+		assert.equal(h.provider.length, 1);
+		assert.equal(h.provider[0].options.reasoningEffort, "none");
+		assert.equal(h.provider[0].options.reasoning, undefined);
+	});
+
+	it("without a snapshot sends Codex native none and no reasoning option to other providers when thinking is off", async () => {
+		const codex = harness({ level: "off", fork: false });
+		codex.setModel(OTHER);
+		await codex.btw("q?");
+		assert.equal(codex.provider[0].options.reasoningEffort, "none");
+		assert.equal(codex.provider[0].options.reasoning, undefined);
+
+		const other = harness({ level: "off", fork: false });
+		await other.btw("q?");
+		assert.equal(other.provider[0].options.reasoningEffort, undefined);
+		assert.equal(other.provider[0].options.reasoning, undefined);
+	});
+
 	it("sends without a fork listener as one normalized provider request without a session id", async () => {
 		const h = harness({ fork: false });
 		h.request({ messages: [SYSTEM, USER] });
 		await h.btw("q?");
 		assert.equal(h.provider.length, 1);
 		assert.equal(h.provider[0].options.sessionId, undefined);
-		assert.equal(h.provider[0].options.reasoning, "high");
+		assert.equal(h.provider[0].options.reasoning, "medium");
 		assert.equal(h.provider[0].context.messages[0].role, "system");
 	});
 

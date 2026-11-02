@@ -47,7 +47,7 @@ function tail(model: string, options: NormalizedBuildSystemPromptOptions): strin
 		"</project-context>",
 		"",
 		"<critical>",
-		"- Each response MUST advance the task; stop only at completion, at a stated blocker, or when a wait tool ends your turn.",
+		"- Each response MUST advance the task. Do everything you can; while a blocker or a wait holds, keep doing all other work that is possible. Stop only when nothing more can be done: the task is complete, a blocker is stated, or you wait for results you cannot speed up.",
 		"- When you have enough information to act, act. Do not ask for confirmation when tools or repo context can answer, or re-derive facts already established in the conversation.",
 		"- Before yielding, MUST verify significant behavioral changes: run the specific test, command, or scenario covering the change.",
 		"</critical>",

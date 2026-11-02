@@ -1,6 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { basename, extname } from "node:path";
-import type { ElementHandle, Frame, KeyInput, KeyPressOptions, MouseButton, Page } from "puppeteer-core";
+import type { ElementHandle, KeyInput, KeyPressOptions, MouseButton, Page } from "puppeteer-core";
 import { aborted, untilAborted } from "./abort.ts";
 import { sleep } from "./ops.ts";
 
@@ -71,10 +69,6 @@ export class ClickRefusedError extends Error {
 		super(`Click refused: ${refusal}`, options);
 		this.refusal = refusal;
 	}
-}
-
-function requireFiniteNumber(value: number, label: string): void {
-	if (!Number.isFinite(value)) throw new Error(`${label} must be a finite number`);
 }
 
 /**
@@ -286,66 +280,6 @@ export async function fillElement(handle: ElementHandle, value: string, signal: 
 	await untilAborted(handle.type(value, { delay: 0 }), signal);
 }
 
-/** Resolve text-query matches to the first visible clickable candidate in document order. */
-async function actionableTextTarget(handles: ElementHandle[], track: (handle: ElementHandle) => void): Promise<ElementHandle | null> {
-	const candidates: Array<{ handle: ElementHandle; x: number; y: number; owned: boolean }> = [];
-	for (const handle of handles) {
-		let candidate = handle;
-		let owned = false;
-		try {
-			const proxy = await handle.evaluateHandle(el =>
-				(el as Element).closest('a,button,[role="button"],[role="link"],input[type="button"],input[type="submit"]'),
-			);
-			const element = proxy.asElement();
-			if (element) {
-				candidate = element as ElementHandle;
-				owned = candidate !== handle;
-				if (owned) track(candidate);
-			} else await proxy.dispose();
-			const rect = await candidate.evaluate(el => {
-				const box = (el as Element).getBoundingClientRect();
-				return { x: box.left, y: box.top, width: box.width, height: box.height };
-			});
-			if (rect.width >= 1 && rect.height >= 1 && (await candidate.isIntersectingViewport())) {
-				candidates.push({ handle: candidate, x: rect.x, y: rect.y, owned });
-			} else if (owned) await candidate.dispose().catch(() => undefined);
-		} catch {
-			if (owned) await candidate.dispose().catch(() => undefined);
-		}
-	}
-	candidates.sort((a, b) => a.y - b.y || a.x - b.x);
-	const winner = candidates.shift();
-	for (const candidate of candidates) {
-		if (candidate.owned) await candidate.handle.dispose().catch(() => undefined);
-	}
-	return winner?.handle ?? null;
-}
-
-/** Click the actionable match chosen for a Puppeteer `text/` selector, polling until one is visible. */
-export async function clickTextMatch(scope: Page | Frame, selector: string, label: string, signal: AbortSignal): Promise<void> {
-	for (;;) {
-		aborted(signal);
-		const handles = await untilAborted(scope.$$(selector), signal, late => { void late.then(found => found.forEach(handle => void handle.dispose().catch(() => {}))).catch(() => {}); });
-		// Ancestor handles made while inspecting; the page may never answer, so they are released from here, also after cancellation.
-		const created: ElementHandle[] = [];
-		const track = (handle: ElementHandle) => {
-			created.push(handle);
-			if (signal.aborted) void handle.dispose().catch(() => undefined);
-		};
-		try {
-			const target = await untilAborted(actionableTextTarget(handles, track), signal);
-			if (!target) {
-				await sleep(50, signal);
-				continue;
-			}
-			await clickElement(target, label, signal);
-			return;
-		} finally {
-			for (const handle of [...handles, ...created]) void handle.dispose().catch(() => undefined);
-		}
-	}
-}
-
 /** Set a native checkable control or ARIA switch to the requested state idempotently. */
 export async function setElementChecked(handle: ElementHandle, checked: boolean, label: string, signal: AbortSignal): Promise<void> {
 	const state = await untilAborted(
@@ -453,73 +387,6 @@ export async function selectOptions(handle: ElementHandle, values: string[], lab
 	return outcome.selected as string[];
 }
 
-export async function scrollElementIntoView(handle: ElementHandle, signal: AbortSignal): Promise<void> {
-	await untilAborted(handle.evaluate(scrollToCenter), signal);
-}
-
-// Uploads
-
-interface FilePayload {
-	name: string;
-	type: string;
-	data: string;
-}
-
-const MIME_TYPES: Readonly<Record<string, string>> = {
-	".txt": "text/plain", ".md": "text/markdown", ".html": "text/html", ".csv": "text/csv", ".json": "application/json",
-	".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
-	".webp": "image/webp", ".svg": "image/svg+xml", ".zip": "application/zip",
-};
-
-/** Upload files through an input, native chooser trigger, or synthetic drop-zone event sequence. */
-export async function uploadFilesToElement(page: Page, handle: ElementHandle, absolutePaths: string[], label: string, signal: AbortSignal): Promise<void> {
-	const inputType = (await untilAborted(
-		handle.evaluate(el => {
-			const element = el as unknown as PageElement;
-			return { tag: element.tagName, type: element.type ?? "" };
-		}),
-		signal,
-	)) as { tag: string; type: string };
-	if (inputType.tag === "INPUT" && inputType.type.toLowerCase() === "file") {
-		await untilAborted((handle as unknown as { uploadFile: (...paths: string[]) => Promise<void> }).uploadFile(...absolutePaths), signal);
-		return;
-	}
-
-	const chooserPromise = page.waitForFileChooser({ timeout: 400 }).catch(() => null);
-	await clickElement(handle, label, signal);
-	const chooser = await untilAborted(chooserPromise, signal);
-	if (chooser) {
-		await untilAborted(chooser.accept(absolutePaths), signal);
-		return;
-	}
-
-	const files: FilePayload[] = [];
-	for (const absolute of absolutePaths) {
-		aborted(signal);
-		const data = (await readFile(absolute)).toString("base64");
-		files.push({ name: basename(absolute), type: MIME_TYPES[extname(absolute).toLowerCase()] ?? "application/octet-stream", data });
-	}
-	await untilAborted(
-		handle.evaluate((el, payloads) => {
-			const element = el as unknown as PageElement;
-			const page = globalThis as unknown as {
-				DataTransfer: new () => { items: { add(file: unknown): void } };
-				File: new (parts: unknown[], name: string, options: { type: string }) => unknown;
-				DragEvent: new (type: string, options: { bubbles: boolean; cancelable: boolean; dataTransfer: unknown }) => unknown;
-			};
-			const transfer = new page.DataTransfer();
-			for (const payload of payloads) {
-				const bytes = Uint8Array.from(atob(payload.data), character => character.charCodeAt(0));
-				transfer.items.add(new page.File([bytes], payload.name, { type: payload.type }));
-			}
-			for (const type of ["dragenter", "dragover", "drop"]) {
-				element.dispatchEvent(new page.DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }));
-			}
-		}, files),
-		signal,
-	);
-}
-
 // Keys
 
 /** Split `Control+Shift+a` into its keys; a lone `+` (or a name without `+`) is one key. */
@@ -582,36 +449,4 @@ export async function pressKey(page: Page, combo: string, signal: AbortSignal, o
 		// Not awaited: a page blocked by a dialog never answers, and CDP keeps the commands in order anyway.
 		for (const modifier of pressed.reverse()) void page.keyboard.up(modifier).catch(() => undefined);
 	}
-}
-
-// Mouse
-
-export async function mouseMove(page: Page, x: number, y: number, options: { steps?: number }, signal: AbortSignal): Promise<void> {
-	requireFiniteNumber(x, "mouseMove x");
-	requireFiniteNumber(y, "mouseMove y");
-	await untilAborted(page.mouse.move(x, y, options), signal);
-}
-
-export async function clickAt(page: Page, x: number, y: number, options: ClickAtOptions, signal: AbortSignal): Promise<void> {
-	requireFiniteNumber(x, "clickAt x");
-	requireFiniteNumber(y, "clickAt y");
-	await untilAborted(page.mouse.click(x, y, { button: options.button, count: options.clickCount }), signal);
-}
-
-/** Queue a wheel event without treating a delayed renderer acknowledgement as a dispatch failure. */
-export async function dispatchScroll(dispatch: () => Promise<void>, signal: AbortSignal, ackMs = 2_000): Promise<void> {
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const acknowledged = new Promise<void>(resolve => { timer = setTimeout(resolve, ackMs); });
-	try {
-		await untilAborted(Promise.race([dispatch(), acknowledged]), signal);
-	} finally {
-		clearTimeout(timer);
-	}
-}
-
-/** Queue one raw mouse-wheel event without waiting for scroll settlement. */
-export async function wheel(page: Page, deltaX: number, deltaY: number, signal: AbortSignal): Promise<void> {
-	requireFiniteNumber(deltaX, "wheel deltaX");
-	requireFiniteNumber(deltaY, "wheel deltaY");
-	await untilAborted(page.mouse.wheel({ deltaX, deltaY }), signal);
 }

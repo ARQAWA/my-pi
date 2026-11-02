@@ -8,20 +8,45 @@ import { installSetupBridge } from "./setup.ts";
 
 const DEFAULT_ON = ["codemode", "tool_search"];
 
+/** A patch of an unknown Pi shape stays off with a warning; the other parts keep working on stock Pi. */
+function tryInstall(install: () => () => void, problems: string[]): (() => void) | undefined {
+	try {
+		return install();
+	} catch (error) {
+		problems.push(`RQW-settings: ${error instanceof Error ? error.message : String(error)}; that part is off`);
+		return undefined;
+	}
+}
+
+type Notifier = { hasUI: boolean; ui: { notify(message: string, type: "warning"): void } };
+
+function warn(ctx: Notifier, message: string): void {
+	if (ctx.hasUI) ctx.ui.notify(message, "warning");
+	else console.error(message);
+}
+
 export default function settings(pi: ExtensionAPI) {
-	const releaseSelection = installSelectionIntent();
+	const problems: string[] = [];
+	const releaseSelection = tryInstall(installSelectionIntent, problems);
 	const releaseSetup = installSetupBridge(pi);
-	const releaseCache = installCacheDefault(pi);
+	const releaseCache = tryInstall(() => installCacheDefault(pi), problems);
 	installFastGpt(pi);
-	pi.on("session_shutdown", () => { releaseSetup(); releaseCache(); releaseSelection(); });
+	pi.on("session_shutdown", () => { releaseSetup(); releaseCache?.(); releaseSelection?.(); });
 	// Same captured SDK intent and CLI/settings predicate as grep and find. A tool is added only when
 	// it is registered, so a user who turned off `builtin:codemode` or `builtin:tool-search` gets no error. The
 	// handler reads the active set at call time, so it keeps whatever RQW-tools added, whichever runs first.
 	// Not on `reload`: Pi keeps the active set through a reload, including tools the user switched off during the
 	// session, and adding them again would override that choice.
 	pi.on("session_start", (event, ctx) => {
-		if (event.reason === "reload") return;
-		if (!noToolSelection(pi, ctx.sessionManager)) return;
+		for (const message of problems.splice(0)) warn(ctx, message);
+		if (event.reason === "reload" || !releaseSelection) return;
+		try {
+			if (!noToolSelection(pi, ctx.sessionManager)) return;
+		} catch (error) {
+			// The session did not have the shape the capture needs: no default tools, everything else stays.
+			warn(ctx, `RQW-settings: ${error instanceof Error ? error.message : String(error)}`);
+			return;
+		}
 		const registered = new Set(pi.getAllTools().map((tool) => tool.name));
 		const active = pi.getActiveTools();
 		const missing = DEFAULT_ON.filter((name) => registered.has(name) && !active.includes(name));

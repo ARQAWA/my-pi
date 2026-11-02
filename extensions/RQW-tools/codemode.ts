@@ -2,7 +2,7 @@ import { createCodemodeExtension, type ExtensionAPI, type ToolDefinition } from 
 import { commandOf, type Jobs } from "./jobs.ts";
 
 export const CODEMODE_BACKGROUND_LINE =
-	"A script still running after 12 seconds continues in the background as a job; see the job tool. Tool calls inside a script never do.";
+	"A script still running after 12 seconds continues in the background as a job; see the job tool. Tool calls inside a script never do. Call agent wait and job wait directly, not inside codemode; a nested wait returns direct_wait_required without consuming results.";
 
 /** Keep Pi's codemode definition and add only the background-job lifecycle. */
 export function groupCodemode(definition: ToolDefinition<any, any, any>, jobs: Jobs): ToolDefinition<any, any, any> {

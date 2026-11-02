@@ -6,7 +6,10 @@ import { Container, stripTerminalSequences, type Terminal, TuiAltScreen } from "
 import toolUi from "../../../extensions/RQW-tool-ui/index.ts";
 
 const hosts: any[] = [];
+/** Message renderers by custom type, as extensions register them; the hosts ask for them by type. Cleared after each test. */
+export const messageRenderers: Record<string, unknown> = {};
 afterEach(() => {
+	for (const type of Object.keys(messageRenderers)) delete messageRenderers[type];
 	for (const host of hosts.splice(0)) {
 		try { host.stop("none"); } catch { /* The minimal host omits unrelated shutdown services. */ }
 	}
@@ -165,7 +168,7 @@ export function makeHost(manager: SessionManager, loaded: Loaded | undefined, re
 			sessionManager: manager,
 			settingsManager: { getShowTerminalProgress: () => false, getShowCacheMissNotices: () => false, getShowImages: () => false, getImageWidthCells: () => 60, getCodeBlockIndent: () => "  ", setHideThinkingBlock() {} },
 			modelRuntime: {}, thinkingLevel: "off", retryAttempt: 0,
-			extensionRunner: { getMessageRenderer: () => undefined, getMarkdownTransformers: () => [], resolveToolRenderers: (name: string, next: () => unknown) => loaded ? loaded.resolve(name, next) : next() },
+			extensionRunner: { getMessageRenderer: (type: string) => messageRenderers[type], getMarkdownTransformers: () => [], resolveToolRenderers: (name: string, next: () => unknown) => loaded ? loaded.resolve(name, next) : next() },
 			getToolDefinition: () => undefined,
 		} },
 	});

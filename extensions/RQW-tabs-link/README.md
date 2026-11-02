@@ -8,7 +8,7 @@ Subagents never load this extension: RQW-agent starts children with `noExtension
 
 ## Tools
 
-All three are plain code. There is no model call, no summary, no fuzzy search and no waiting for a reply.
+All four are plain code. There is no model call, no summary and no fuzzy search. Only `wait_answer` waits.
 Equal input and equal state give an equal result. Errors have a fixed code and text.
 
 1. `list_chats({query?, cursor?, limit?})` returns `chats, nextCursor, untrustedDataNotice`. A chat is
@@ -20,7 +20,17 @@ Equal input and equal state give an equal result. Errors have a fixed code and t
    `{chatId, status}` with `accepted`, `delivered` or `unknown`. It never returns the reply; read it later with
    `read_chat`. Errors: `closed`, `not_found`, `queue_full`, `model_unavailable`, `duplicate_conflict`, `bad_request`.
 
-The tools mirror Codex `list_threads`, `read_thread` and `send_message_to_thread`; `chatId` is the Pi session id.
+4. `wait_answer({chatId, afterEntryId, timeout_ms?})` holds one call until the open chat has a saved final answer after
+   `afterEntryId`: the id of the last item of `read_chat`, or `null` for a branch with no entries, which returns its
+   first final answer even if already saved. It returns `{chatId, reason: "answer", entry}`, or `reason` `timeout`,
+   `target_changed` or `aborted`; `timeout_ms` defaults to 300000, at most 3600000. A closed chat, also one that
+   closes during the wait, is the error `closed`. It is the next answer, not the reply to a particular message. A
+   streaming part never counts. User input releases the wait with `reason: "steered"`. A timeout, abort or user input
+   does not stop the target chat. A mixed batch returns `work_pending` immediately; a call inside codemode returns
+   `direct_wait_required`. Call it directly in a wait-only batch.
+
+The model sees one fixed prompt line naming all four tools and the search key `rqwchat`.
+The first three tools mirror Codex `list_threads`, `read_thread` and `send_message_to_thread`; `chatId` is the Pi session id.
 
 ## Closed and missing chats
 
@@ -28,12 +38,9 @@ A session file without an open owner is `closed`, with or without an earlier reg
 return `chatId`, `openHint` and "Chat is closed. Ask the user to open it." The hint is shown, never run: open a new
 tab and use `/resume`, or run `pi --session <id>` (with `--session-dir` for a custom folder).
 
-`not_found` needs a complete search that found no session file. An unreadable folder, or an owner that stays
-silent, gives `unknown`. A silent owner is never taken for a closed chat.
-
-Limit: the search covers Pi's session store of the profile, this tab's own session folder and the folders recorded by
-registered chats. A closed chat in a custom `--session-dir` that no tab ever registered cannot be found and returns
-`not_found`, although it exists.
+The search covers Pi's session store of the profile, this tab's own session folder and the folders recorded by
+registered chats. An absent result is `unknown` because another custom `--session-dir` may exist. An unreadable
+folder or a silent owner also gives `unknown`. A silent owner is never taken for a closed chat.
 
 ## Delivery
 
@@ -70,6 +77,12 @@ crash undoes an override that is still in place; the restore marker is stored be
 Each tab listens on `127.0.0.1` on a random port; requests carry a random secret and a random generation token that is
 new at every session start. Frames are JSON lines of at most 64 KiB; a larger answer is sent as several chunks and
 is never cut. The registry is one file per chat in the profile's state folder.
+
+The internal `wait_answer` channel operation holds one authenticated connection. It takes `afterEntryId` (an entry id
+or null for the start of the branch) and `timeoutMs`. It returns the next saved final assistant entry as
+`{reason: "answer", entry}`, or `{reason: "timeout"}` / `{reason: "target_changed"}`. History edits and the same
+output visibility as `read_chat` apply. The receiver subscribes before rechecking the branch; a disconnected caller
+releases its listener and timer. The `wait_answer` tool is the model's way to it.
 
 A chat is held by a numbered lock folder with its owner (process id, instance id, generation token, port) already
 inside. The holder listens before it takes the lock. Nothing is deleted to make room: a lock is replaced by the next

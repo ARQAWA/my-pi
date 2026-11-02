@@ -48,5 +48,5 @@ cache) works with all providers visible, and this extension hides providers with
   it; an inactive pass-through may remain rather than clobbering that foreign wrapper.
 - Another extension that registers a provider other than the two allowed ones registers it, but it is not listed.
 
-Tests: `test/extensions/RQW-providers/providers.test.ts`, `test/codex-coexistence.test.ts`,
+Tests: `test/extensions/RQW-providers/providers.test.ts`, `test/extensions/RQW-providers/lifecycle.test.ts`,
 `test/isolation.test.ts`.

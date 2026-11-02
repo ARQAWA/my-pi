@@ -8,17 +8,22 @@ The Pi 1.4.0 runtime patch in `early.ts` decorates the stock editor and footer b
 
 ## Subscription limits
 
-The folder stays on the left; CX in soft light blue and CC in soft pink-red sit on the right, immediately before the git branch. Narrow rows wrap instead of losing provider limits.
+The folder stays on the left; CXC and CX in soft light blue and CC in soft pink-red sit on the right, immediately before the git branch. Narrow rows wrap instead of losing provider limits.
 Each provider shows one remaining percent: CX and CC the weekly window.
+CXC, shown before CX, is the Codex credits balance as Codex shows it: whole credits with a dot between thousands
+(`10.000`), or `Unlimited`. It comes from the same CX request. No credits means no CXC block;
+stale data gets the same `*` star as the percent.
 Providers without stored login credentials are hidden. Unknown values show `???`.
 The active footer checks the shared cache immediately and once a minute, independently of model responses.
 Files in the system temporary directory under `rqw-quota/` are separate per provider and account.
 Codex credentials supply `accountId`; Pi's Anthropic credentials have no account ID, so the refresh token
 is the fallback identity. File names use the first 16 hex characters of its SHA-256 hash, never a token.
-Files contain only `percent`, `okAt` and `checkedAt`. Tabs reuse each attempt for three minutes;
+Files contain only `percent`, `credits` (raw digits or `Unlimited`), `okAt` and `checkedAt`. Tabs reuse each attempt for three minutes;
 an exclusive `.lock` file prevents parallel requests. Locks older than 30 seconds are replaced.
 Writes use a temporary file and rename; file errors retain the last displayed value.
-Failed reads keep the last good percentage; `???` means no good value for this account yet.
+Failed reads keep the last good percentage with a `*` directly before the number, in the same colour (`CX *77%`);
+the next good read removes the star. `???` means no good value for this account yet.
+The star shows when the last attempt (`checkedAt`) is newer than the last good value (`okAt`).
 Providers without credentials stay hidden. Disabling the footer or closing the session cancels requests
 and clears its timer, not the shared cache.
 
@@ -28,7 +33,7 @@ CX reads `https://chatgpt.com/backend-api/wham/usage` with the stored Codex acco
 it uses the main rate limit window lasting 604800 seconds.
 It does not depend on RQW-codex.
 Expired OAuth credentials, failed requests and unrecognized response shapes
-keep the last good percentage, or show `???` when none is available.
+keep the last good percentage marked with `*`, or show `???` when none is available.
 Requests have a five-second deadline. Tokens are never refreshed,
 rotated or written; settings and installed packages are untouched. No model calls,
 private APIs, cross-extension imports or new dependencies are used.
@@ -55,8 +60,8 @@ The picker, theme palette, animation and other footer colours do not change.
 ## Activity and waits
 
 While Main is active, retain its existing thinking or tool activity text and agent-count suffix.
-After Main's full answer and run completion, pending work remains visible, for example
-`Waiting for 2 agents, 1 background process`. The two categories are agents and background processes;
+After Main's full answer and run completion, running background work remains visible, for example
+`Background: 2 agents, 1 background process`. This is a count, not an open wait. The two categories are agents and background processes;
 reviewer profiles are ordinary agents, with no worker or separate review category.
 
 RQW-agent counts active logical assignments, pending sends or native activity recursively. A native-idle
@@ -64,6 +69,11 @@ child waiting for its jobs or children still counts, and its active descendant c
 Completed undelivered results count zero. RQW-tools independently counts only Main's actual background jobs,
 not child jobs again. Both producers use public `pi.events` v1 running-count sources; the consumer accepts
 missing `backgroundProcesses` from older v1 sources as zero. Either producer may be disabled alone.
+
+RQW-send-now's Esc key hint (for example `esc esc to stop background`) is drawn dim italic two spaces right of the
+activity text, taken from its `rqw:activity-hint:offer` source on `pi.events`; nothing is imported. It is left out when
+it does not fit whole and beside Pi's own retry and summary text (they carry their key).
+Without RQW-send-now or with the status bar off no hint is drawn. The painted hint is cached per text and theme.
 
 At genuine idle there is no activity line. This changes no visuals, timing, colours, agent lists, cards,
 settings or dependencies. Contract and owner sources: [Status bar](../../DECISIONS.md#status-bar).

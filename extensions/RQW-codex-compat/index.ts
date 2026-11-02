@@ -1,10 +1,10 @@
 // RQW-codex-compat: Codex skill roots, skill rules and project instructions on Pi's public extension APIs.
 import { getAgentDir, parseArgs, stripFrontmatter, type ExtensionAPI, type NormalizedBuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
-import { disabledPaths, fitBudget, scopeOf, scopeRank, skillRules, skillSettings, type SkillLike } from "./catalog.ts";
+import { byteOrder, disabledPaths, fitBudget, real, scopeOf, scopeRank, skillRules, skillSettings, type SkillLike } from "./catalog.ts";
 import { defaultEnv, loadContext, type CodexContext, type Env } from "./config.ts";
 import { instructionFiles } from "./instructions.ts";
-import { readFileSync, realpathSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
 import { orderSameName, scanRoots, withScanned } from "./selection.ts";
 import { skillRoots, type SkillRoot } from "./skills.ts";
 
@@ -18,22 +18,24 @@ export interface CompatDeps {
 const STARTUP_PROJECTION = "rqw-prompt:startup-projection";
 /** Sessions already warned; kept on `globalThis` because a reload runs this factory again. */
 const warnedSessions = ((globalThis as Record<symbol, unknown>)[Symbol.for("rqw-codex-compat:warned")] ??= new Set<string>()) as Set<string>;
-/** Channel on which RQW-skill-dollar asks for a skill filter; `offer` takes `(skills) => skills` (literal, no import). */
 const FALLBACK_CHARS = 8000;
 const SKILL_FILTER = "rqw-skill-dollar:filter";
 
 type Skill = NormalizedBuildSystemPromptOptions["skills"][number];
 /** What the selection needs of a skill: Pi's skills, and the name, description and path of a command. */
 type Selectable = SkillLike & { baseDir?: string; sourceInfo?: { scope?: string } };
-const real = (path: string) => { try { return realpathSync(path); } catch { return path; } };
 
-/** The skills a Codex config leaves enabled: `skills.config` rules and the bundled switch. */
-function enabledSkills<T extends Selectable>(ctx: CodexContext, skills: readonly T[]): T[] {
+/** The skills a Codex config leaves enabled: `skills.config` rules, the bundled switch and project trust as just read. */
+function enabledSkills<T extends Selectable>(ctx: CodexContext, skills: readonly T[], scope = scopeOf(skillRoots(ctx, true))): T[] {
 	const settings = skillSettings(ctx.effective);
-	const roots = skillRoots(ctx, true);
 	const disabled = disabledPaths(skillRules(ctx), skills);
+	// Trust removed since the resources were loaded: the skills of that layer leave the list at once.
+	// A skill linked into that folder from elsewhere counts too: its own path and its real path are both checked.
+	const untrusted = ctx.layers.filter(layer => !layer.trusted).flatMap(layer => [join(layer.folder, "skills"), real(join(layer.folder, "skills"))].map(dir => dir + sep));
+	const inUntrusted = (path: string) => untrusted.some(prefix => path.startsWith(prefix));
 	return skills.filter(skill => !disabled.has(real(skill.filePath))
-		&& (settings.bundled || scopeOf(skill.filePath, roots, skill.sourceInfo?.scope) !== "system"));
+		&& !inUntrusted(skill.filePath) && !inUntrusted(real(skill.filePath))
+		&& (settings.bundled || scope(skill.filePath, skill.sourceInfo?.scope) !== "system"));
 }
 
 /** The model-visible skills: enabled ones, none when instructions are off, else fitted to the catalog limit. */
@@ -41,9 +43,12 @@ function catalogOf(ctx: CodexContext, given: readonly Skill[], contextWindow?: n
 	const settings = skillSettings(ctx.effective);
 	if (!settings.includeInstructions) return [];
 	const roots = skillRoots(ctx, true);
-	const rank = (skill: Skill) => scopeRank(scopeOf(skill.filePath, roots, skill.sourceInfo?.scope));
+	const scope = scopeOf(roots);
 	// Codex budget order: System, Admin, Repo, User; the last skills are the first to go.
-	const skills = enabledSkills(ctx, given).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name) || a.filePath.localeCompare(b.filePath));
+	const skills = enabledSkills(ctx, given, scope)
+		.map(skill => ({ skill, rank: scopeRank(scope(skill.filePath, skill.sourceInfo?.scope)) }))
+		.sort((a, b) => a.rank - b.rank || byteOrder(a.skill.name, b.skill.name) || byteOrder(a.skill.filePath, b.skill.filePath))
+		.map(({ skill }) => skill);
 	// The limit is `skills.max_context_tokens`, else 2% of the model's context window, as in Codex.
 	const limit = settings.maxContextTokens ?? (contextWindow && contextWindow > 0 ? Math.max(1, Math.floor(contextWindow * 2 / 100)) : undefined);
 	// Neither a configured limit nor a known window: Codex's 8000-character fallback.
@@ -96,7 +101,6 @@ export default function codexCompat(pi: ExtensionAPI, deps: CompatDeps = {}): vo
 	});
 	// The prewarm knows its model only by name; the registry of the session gives the window.
 	let registry: { find(provider: string, id: string): { contextWindow?: number } | undefined } | undefined;
-	pi.on("session_start", (_event, ctx) => { registry = ctx.modelRegistry; refresh(ctx.cwd); });
 	pi.on("before_agent_start", (event, ctx) => {
 		const truncated = apply(event.systemPromptOptions, ctx.model?.contextWindow);
 		// One warning per session, also across a reload of the extension: the session id is the key.
@@ -121,7 +125,7 @@ export default function codexCompat(pi: ExtensionAPI, deps: CompatDeps = {}): vo
 		ordered = { key, result };
 		return result;
 	};
-	// RQW-skill-dollar lists and expands only skills a Codex config leaves enabled.
+	// RQW-skill-dollar asks for a skill filter; `offer` takes `(skills) => skills` (literal, no import).
 	pi.events.on(SKILL_FILTER, request => {
 		(request as { offer?: (filter: (skills: Skill[], submit?: boolean) => Skill[]) => void })?.offer?.((skills, submit) => selectable(skills, undefined, submit) ?? skills);
 	});
@@ -159,6 +163,6 @@ export default function codexCompat(pi: ExtensionAPI, deps: CompatDeps = {}): vo
 		});
 	};
 	subscribe();
-	pi.on("session_start", subscribe);
+	pi.on("session_start", (_event, ctx) => { registry = ctx.modelRegistry; refresh(ctx.cwd); subscribe(); });
 	pi.on("session_shutdown", () => { unsubscribe?.(); unsubscribe = undefined; });
 }

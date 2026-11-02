@@ -5,6 +5,7 @@
 - [DECISIONS.md](DECISIONS.md): accepted product decisions.
 - [BACKLOG.md](BACKLOG.md): open and deferred work.
 - [extensions/](extensions/): independent package extensions and native theme data.
+- [extensions/RQW-auto-wait/](extensions/RQW-auto-wait/README.md): automatic main-chat wait for background results.
 - [extensions/RQW-codex-compat/](extensions/RQW-codex-compat/README.md): Codex skill roots, rules, instructions and compatibility matrix.
 - [extensions/RQW-tabs-link/](extensions/RQW-tabs-link/README.md): chat-to-chat tools for visible main Pi tabs.
 - [extensions/RQW-predictions/](extensions/RQW-predictions/README.md): gray next-message suggestion in the main input, Ctrl+E and Ctrl+R.

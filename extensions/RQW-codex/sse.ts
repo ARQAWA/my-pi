@@ -5,12 +5,19 @@
 // total or header deadline on HTTP model requests). Error bodies are read only for allowlisted control fields (bounded
 // in bytes and time) and never attached.
 import { CookieJar, assertTransportOrigin, sharedCookieJar } from "./cookies.ts";
+import { classifyEvent } from "./errors.ts";
 import { readErrorControl } from "./websocket.ts";
 import type { ErrorControl, OnResponse, RawEvent } from "./websocket.ts";
 
 export const SSE_IDLE_TIMEOUT_MS = 300_000;
 
-const TERMINAL_TYPES: ReadonlySet<string> = new Set(["response.completed", "response.incomplete", "response.failed", "error"]);
+const TERMINAL_TYPES: ReadonlySet<string> = new Set(["response.completed", "response.incomplete", "response.failed"]);
+
+// An `error` wrapper ends the stream only when it classifies as an error; an unknown wrapper is skipped (responses.rs:345-353).
+function isTerminal(record: Record<string, unknown>): boolean {
+	if (record.type === "error") return classifyEvent(record) !== null;
+	return typeof record.type === "string" && TERMINAL_TYPES.has(record.type);
+}
 
 export type SseErrorKind = "status" | "redirect" | "content-type" | "eof" | "idle";
 
@@ -187,7 +194,7 @@ export async function* postEvents(options: PostEventsOptions): AsyncGenerator<Ra
 				if (typeof value === "object" && value !== null && !Array.isArray(value)) {
 					const record = value as Record<string, unknown>;
 					yield { text: payload, value: record };
-					if (typeof record.type === "string" && TERMINAL_TYPES.has(record.type)) return;
+					if (isTerminal(record)) return;
 				}
 				// Consumer time is not charged to the watchdog: it restarts when the consumer asks for more.
 				startWatch();

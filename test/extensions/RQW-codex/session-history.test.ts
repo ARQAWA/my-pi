@@ -60,8 +60,8 @@ class FileSession {
 	getBranch(fromId?: string) {
 		const byId = new Map(this.entries.map((entry) => [entry.id, entry]));
 		const path: SessionEntry[] = [];
-		for (let current = byId.get(fromId ?? this.getLeafId() ?? ""); current; current = current.parentId ? byId.get(current.parentId) : undefined) path.unshift(current);
-		return path;
+		for (let current = byId.get(fromId ?? this.getLeafId() ?? ""); current; current = current.parentId ? byId.get(current.parentId) : undefined) path.push(current);
+		return path.reverse();
 	}
 	buildSessionProjection() {
 		return buildSessionProjection(this.entries, this.getLeafId());
@@ -161,4 +161,60 @@ it("a bound read keeps the branch of the moment it was bound, whatever the sessi
 	const after = drain(read(new Set(["resp-2"]))).value;
 	assert.deepEqual(after, before);
 	assert.equal(before.get("resp-2")!.length, 2);
+});
+
+it("the raw-response filter of a request reads Pi's projection once, however many responses it checks", () => {
+	const { session, state } = recorded("accept", 30);
+	const ids = Array.from({ length: 30 }, (_, i) => `resp-${i}`);
+	for (const id of ids) session.appendMessage(answered(id, `text ${id}`));
+	let projections = 0;
+	const entries = session.getEntries.bind(session);
+	session.getEntries = () => { projections++; return entries(); };
+	const carried = [USER, answered("resp-1", "edited by the user"), answered("resp-2", "text resp-2")];
+	const accepted = state.rawHistory.acceptRawResponses!(ids, { messages: carried } as unknown as Context);
+	assert.equal(projections, 1);
+	assert.equal(accepted.has("resp-1"), false, "an edited answer of the request is not replayed raw");
+	assert.equal(accepted.has("resp-2"), true, "an unchanged answer of the request is");
+	assert.equal(accepted.size, 29);
+});
+
+it("a long tail after a compaction is projected through the offered safe projection, not Pi's own call", () => {
+	const { session, state } = recorded("long-tail", 2);
+	const answer = session.appendMessage(answered("resp-0", "text"));
+	const stamp = "2026-01-01T00:00:00.000Z";
+	let parentId = answer.id;
+	const push = (entry: Record<string, unknown>) => { session.entries.push({ ...entry, parentId, timestamp: stamp } as unknown as SessionEntry); parentId = entry.id as string; };
+	push({ type: "compaction", id: "cmp", summary: "sum", firstKeptEntryId: session.entries[0]!.id, tokensBefore: 1 });
+	// More than Pi's push(...) accepts; the chain is cheap to build and walk.
+	for (let i = 0; i < 200_000; i++) push({ type: "custom_message", id: `t${i}`, customType: "x", content: "c", display: false });
+	const key = Symbol.for("rqw:safe-projection:v1");
+	const shared = globalThis as Record<symbol, unknown>;
+	const previous = shared[key];
+	try {
+		delete shared[key];
+		assert.throws(() => state.rawHistory.acceptRawResponses!(["resp-0"], CONTEXT), RangeError);
+		const seen: unknown[] = [];
+		// An answer that the offered projection shows as removed gets no raw replay.
+		shared[key] = (entries: SessionEntry[], leafId: string | null) => {
+			seen.push([entries.length, leafId]);
+			return { entries: [{ sourceEntry: answer, messages: [] }], messages: [] };
+		};
+		assert.equal(state.rawHistory.acceptRawResponses!(["resp-0"], CONTEXT).has("resp-0"), false);
+		assert.deepEqual(seen, [[session.entries.length, session.getLeafId()]]);
+	} finally {
+		if (previous === undefined) delete shared[key]; else shared[key] = previous;
+	}
+});
+
+it("a physically edited or deleted answer gets no raw replay, an untouched one does", () => {
+	const { session, state } = recorded("projected", 3);
+	const targets = [0, 1, 2].map((i) => session.appendMessage(answered(`resp-${i}`, `text ${i}`)).id);
+	const contextEdit = (targetId: string, replacement: unknown) => {
+		const entry = { type: "context_edit", id: `edit-${targetId}`, parentId: session.entries.at(-1)!.id, timestamp: "2026-01-01T00:00:00.000Z", targetId, replacement };
+		session.entries.push(entry as unknown as SessionEntry);
+	};
+	contextEdit(targets[0], { content: "changed by the user" });
+	contextEdit(targets[1], null);
+	const accepted = state.rawHistory.acceptRawResponses!(["resp-0", "resp-1", "resp-2"], CONTEXT);
+	assert.deepEqual([...accepted], ["resp-2"]);
 });

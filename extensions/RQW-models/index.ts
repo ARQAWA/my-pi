@@ -1,6 +1,6 @@
-import { getSupportedThinkingLevels, type AnyModel, type Model } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels, type AnyModel, type Model, type Provider } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
-import { AgentSession, parseArgs, type ExtensionAPI, type ExtensionContext, type ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { AgentSession, ModelRuntime, parseArgs, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { ModelEffortPicker, sameModel, stepDraft, type Draft, type PickerSpec, type Step } from "./picker.ts";
 
 export const FAMILIES = [
@@ -73,6 +73,7 @@ export const notListed = (model: { provider: string; id: string }) =>
 type Mask = { count: number; restore: () => void; cleanups: Set<() => void>; warn?: (text: string) => void };
 const SESSION_MASK = Symbol.for("rqw-models/session-mask");
 const RUNTIME_MASK = Symbol.for("rqw-models/runtime-mask");
+const CATALOG_MASK = Symbol.for("rqw-models/catalog-mask");
 type Masked = { [key: symbol]: Mask | undefined };
 type PrepareRequest = (this: ModelRuntime, model: AnyModel, options?: unknown) => Promise<unknown>;
 
@@ -124,6 +125,62 @@ function sessionOf(ctx: ExtensionContext): AgentSession | undefined {
 	return session && session.sessionManager === ctx.sessionManager && session.modelRuntime ? session : undefined;
 }
 
+const CODEX = "openai-codex";
+const TERRA = "gpt-6.1-terra";
+
+// Pi 1.4.0 has no catalog hook that keeps another extension's transport, so Terra joins openai-codex where the runtime composes it.
+type Composing = {
+	composeProvider: (providerId: string) => Provider | undefined;
+	recomposeProvider: (providerId: string) => unknown;
+	updateModelSnapshot: () => void;
+};
+
+let terraModel: ChatModel | undefined;
+function terra(): ChatModel {
+	if (!terraModel) {
+		const codex = builtinProviders().find((provider) => provider.id === CODEX)!;
+		const sol = codex.getModels().find((model) => model.id === "gpt-6.1-sol")!;
+		terraModel = { ...sol, id: TERRA, name: "GPT-6.1 Terra", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1_050_000, maxTokens: 128_000,
+			thinkingLevelMap: { off: "none", minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" } };
+	}
+	return terraModel;
+}
+
+function withTerra(provider: Provider): Provider {
+	const add = <T extends { id: string }>(models: readonly T[]) => models.some((model) => model.id === TERRA) ? models : [...models, terra() as unknown as T];
+	return { ...provider, getModels: () => add(provider.getModels()), getAllModels: () => add(provider.getAllModels?.() ?? provider.getModels()) } as Provider;
+}
+
+function composing(runtime: ModelRuntime): Composing | undefined {
+	const shape = runtime as unknown as Partial<Composing>;
+	return typeof shape.composeProvider === "function" && typeof shape.recomposeProvider === "function" && typeof shape.updateModelSnapshot === "function"
+		? shape as Composing : undefined;
+}
+
+function recompose(runtime: ModelRuntime) {
+	const internals = composing(runtime);
+	if (!internals) return;
+	internals.recomposeProvider(CODEX);
+	internals.updateModelSnapshot();
+}
+
+// Runtimes whose last owner ended: the shared layer stays for other runtimes but no longer adds Terra here.
+const released = new WeakSet<object>();
+
+/** Layer over every runtime's composition; the last holder removes it. Pi restores a saved model before session_start, so hold it from load. */
+function holdTerra(): () => void {
+	const prototype = ModelRuntime.prototype as unknown as Partial<Composing>;
+	const original = prototype.composeProvider;
+	if (typeof original !== "function") return () => {};
+	return lease(prototype, CATALOG_MASK, () => override(prototype, {
+		composeProvider: { writable: true, value: function(this: ModelRuntime, providerId: string) {
+			const provider = original.call(this, providerId);
+			return provider && providerId === CODEX && !released.has(this) ? withTerra(provider) : provider;
+		} },
+	}))[1];
+}
+
 function maskRuntime(runtime: ModelRuntime) {
 	const prototype = () => Object.getPrototypeOf(runtime) as ModelRuntime;
 	return lease(runtime, RUNTIME_MASK, () => {
@@ -160,13 +217,10 @@ function maskSession(session: AgentSession) {
 }
 
 export default function modelsExtension(pi: ExtensionAPI) {
-	const codex = builtinProviders().find((provider) => provider.id === "openai-codex")!;
-	const sol = codex.getModels().find((model) => model.id === "gpt-6.1-sol")!;
-	const terra = { ...sol, id: "gpt-6.1-terra", name: "GPT-6.1 Terra", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 1_050_000, maxTokens: 128_000,
-		thinkingLevelMap: { off: "none", minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" } };
-	const addTerra = <T extends { id: string }>(models: readonly T[]) => models.some((model) => model.id === terra.id) ? models : [...models, terra];
-	pi.registerProvider({ ...codex, getModels: () => addTerra(codex.getModels()), getAllModels: () => addTerra(codex.getAllModels?.() ?? codex.getModels()) });
+	let releaseTerra: (() => void) | undefined;
+	const holdCatalog = () => { releaseTerra ??= holdTerra(); };
+	const dropCatalog = () => { releaseTerra?.(); releaseTerra = undefined; };
+	holdCatalog();
 	// Event contexts have live getters; the TUI shortcut dispatcher passes snapshots.
 	let liveContext: ExtensionContext;
 	// Pi invokes shortcut handlers without awaiting the previous press.
@@ -211,7 +265,17 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		unbind();
 		const [sessionMask, releaseSession] = maskSession(session);
 		const [, releaseRuntime] = maskRuntime(session.modelRuntime);
-		const release = () => { sessionMask.cleanups.delete(release); releaseRuntime(); releaseSession(); };
+		released.delete(session.modelRuntime);
+		const runtime = session.modelRuntime;
+		const release = () => {
+			sessionMask.cleanups.delete(release);
+			releaseRuntime();
+			releaseSession();
+			// Drops only our composition layer; another extension's registration stays.
+			if (!(runtime as Masked)[RUNTIME_MASK]) released.add(runtime);
+			dropCatalog();
+			recompose(runtime);
+		};
 		sessionMask.cleanups.add(release);
 		sessionMask.warn = (text) => warn(ctx, text);
 		bound = { session, release };
@@ -364,6 +428,8 @@ export default function modelsExtension(pi: ExtensionAPI) {
 		invalidateSession();
 		liveContext = ctx;
 		bind(ctx);
+		holdCatalog();
+		if (bound) recompose(bound.session.modelRuntime);
 		const args = parseArgs(process.argv.slice(2));
 		// Only an actual choice waits for the availability pass.
 		let pass: Promise<ChatModel[]> | undefined;
@@ -384,5 +450,6 @@ export default function modelsExtension(pi: ExtensionAPI) {
 	pi.on("session_shutdown", () => {
 		invalidateSession();
 		unbind();
+		dropCatalog();
 	});
 }

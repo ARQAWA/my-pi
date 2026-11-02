@@ -27,7 +27,7 @@ test("Enter queues and Alt+Enter steers while the agent works", t => {
 	for (const hook of hooks.get("session_shutdown") ?? []) hook({}, ctx);
 });
 
-test("Enter queues without starting a turn while background work is running", async t => {
+test("Enter remains a native submit while background work is running", async t => {
 	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
 	const hooks = new Map<string, ((event: any, ctx: any) => void)[]>();
 	let key: (data: string) => unknown = () => undefined;
@@ -36,8 +36,7 @@ test("Enter queues without starting a turn while background work is running", as
 	let text = "later";
 	const events = createEventBus();
 	events.on("rqw:running-counts:request", (request: any) => request.reply({ version: 1, snapshot: () => ({ agents: 1 }), subscribe: () => () => {} }));
-	let canHold = false;
-	events.on("rqw:followup-hold:request", (request: any) => { if (canHold && request.sessionId === "main") request.reply(); });
+	events.on("rqw:followup-hold:request", (request: any) => request.reply());
 	const editor = Object.assign(Object.create(CustomEditor.prototype), { actionHandlers: new Map([["app.message.followUp", () => {}]]), handleInput: (data: string) => submitted.push(data), isShowingAutocomplete: () => false, getExpandedText: () => text, addToHistory() {}, setText: (value: string) => { text = value; } });
 	const pi: any = { events, on: (name: string, fn: any) => hooks.set(name, [...hooks.get(name) ?? [], fn]), sendUserMessage() {}, appendEntry() {} };
 	sendNow(pi as ExtensionAPI);
@@ -47,12 +46,9 @@ test("Enter queues without starting a turn while background work is running", as
 	const ctx: any = { mode: "tui", sessionManager: manager, isIdle: () => true, hasPendingMessages: () => false,
 		ui: { getEditorText: () => text, setWidget: (_name: string, factory: any) => { factory?.({ getFocusedComponent: () => editor }); }, onTerminalInput: (fn: typeof key) => { key = fn; return () => {}; }, notify() {} } };
 	for (const hook of hooks.get("session_start") ?? []) hook({}, ctx);
-	assert.equal(key("\r"), undefined, "without the holding extension Pi keeps its normal submit");
-	canHold = true;
-	assert.deepEqual(key("\r"), { consume: true });
-	await Promise.resolve();
-	assert.deepEqual(queued, ["later"]);
-	assert.equal(text, "");
+	assert.equal(key("\r"), undefined, "Pi receives Enter immediately");
+	assert.deepEqual(queued, []);
+	assert.equal(text, "later");
 	text = "steer now";
 	assert.deepEqual(key("\x1b\r"), { consume: true });
 	assert.deepEqual(submitted, ["\r"]);
@@ -61,6 +57,6 @@ test("Enter queues without starting a turn while background work is running", as
 	ctx.isIdle = () => false;
 	assert.deepEqual(key("\r"), { consume: true });
 	await Promise.resolve();
-	assert.deepEqual(queued, ["later", "during compaction"]);
+	assert.deepEqual(queued, []);
 	for (const hook of hooks.get("session_shutdown") ?? []) hook({}, ctx);
 });

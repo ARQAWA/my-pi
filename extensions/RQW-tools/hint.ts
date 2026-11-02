@@ -68,7 +68,12 @@ export async function nearestMatchHint(absolutePath: string, oldText: string): P
 		const shown = lines.slice(bestStart, bestStart + Math.min(size, MAX_SHOWN));
 		const first = bestStart + 1;
 		const last = bestStart + size;
-		return [`Nearest match at lines ${first}-${last}:`, ...shown.map((l, i) => `${first + i}|${l}`)].join("\n");
+		const output = shown.map((line, i) => {
+			const text = line.slice(0, MAX_LINE);
+			return `${first + i}|${text}${line.length > MAX_LINE ? " [truncated]" : ""}`;
+		});
+		if (shown.length < size) output.push("[remaining lines truncated]");
+		return [`Nearest match at lines ${first}-${last}:`, ...output].join("\n");
 	} catch {
 		return undefined;
 	}

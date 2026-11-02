@@ -130,6 +130,15 @@ describe("codex prediction prompt source", () => {
 		assert.equal(calls.length, 0);
 	});
 
+	it("tells an expired access token apart from a missing login, still without a request", async () => {
+		const { source, state, calls } = setup();
+		state.credential = login("acc-1", START);
+		await assert.rejects(source.get(), (error: Error) => error instanceof PredictionAuthError && /expired/.test(error.message) && /\/login openai-codex/.test(error.message));
+		state.credential = undefined;
+		await assert.rejects(source.get(), (error: Error) => error instanceof PredictionAuthError && !/expired/.test(error.message) && /\/login openai-codex/.test(error.message));
+		assert.equal(calls.length, 0);
+	});
+
 	it("rejects a stored account id that disagrees with the token claim", async () => {
 		const { source, state, calls } = setup();
 		state.credential = { ...(login("acc-1") as object), accountId: "acc-2" } as Credential;

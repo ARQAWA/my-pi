@@ -53,7 +53,10 @@ export default function mouse(pi: ExtensionAPI) {
 	if (process.platform !== "win32") return;
 	const proto = TuiAltScreen?.prototype as unknown as Record<string, unknown> | undefined;
 	const base = proto && (Object.getPrototypeOf(proto) as Record<string, unknown> | null);
-	if (!proto || typeof proto.beforeTerminalStart !== "function" || typeof base?.afterTerminalStart !== "function" || !Object.isExtensible(proto)) {
+	// The hook patch() will call: the class's own data property if Pi defines one (a getter has no value), else the inherited one.
+	const own = proto && Object.getOwnPropertyDescriptor(proto, "afterTerminalStart");
+	const hook = own ? own.value : base?.afterTerminalStart;
+	if (!proto || typeof proto.beforeTerminalStart !== "function" || typeof hook !== "function" || !Object.isExtensible(proto) || own?.configurable === false) {
 		throw new Error("RQW-mouse: TuiAltScreen.beforeTerminalStart or the afterTerminalStart hook not found; the fix is built for Pi 1.4.0, nothing is changed");
 	}
 	const state = (shared[STATE] ??= { owners: new Set() });

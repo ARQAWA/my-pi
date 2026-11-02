@@ -65,10 +65,11 @@ export function validateCredential(value: unknown): OAuthCredential {
 	return value as OAuthCredential;
 }
 
-/** Native proactive rule: JWT exp within 5 minutes, else last_refresh older than 8 days when there is no exp. */
+/** Native proactive rule: JWT exp within 5 minutes; without exp the stored expires with the same window, then last_refresh older than 8 days. */
 export function needsRefresh(credential: OAuthCredential, now: number): boolean {
 	const exp = jwtExpiryMs(credential.access);
 	if (exp !== undefined) return exp <= now + PROACTIVE_WINDOW_MS;
+	if (credential.expires <= now + PROACTIVE_WINDOW_MS) return true;
 	const lastRefresh = credential.last_refresh;
 	return typeof lastRefresh === "number" && Number.isFinite(lastRefresh) && lastRefresh < now - NO_EXP_REFRESH_MS;
 }

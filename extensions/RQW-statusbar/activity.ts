@@ -130,7 +130,7 @@ export function statusText(input: StatusInput): { text: string; compacting: bool
 		const head = input.action ?? "Planning next moves";
 		return { text: parts.length > 0 ? `${head} · ${parts.join(", ")}` : head, compacting: false };
 	}
-	if (parts.length > 0) return { text: `Waiting for ${parts.join(", ")}`, compacting: false };
+	if (parts.length > 0) return { text: `Background: ${parts.join(", ")}`, compacting: false };
 	return undefined;
 }
 
@@ -153,6 +153,7 @@ export function actionPhrase(toolName: string, args: unknown): string {
 			return command ? `Running ${command}` : "Running command";
 		}
 		case "read":
+		case "rqw_readfile":
 			return `Reading ${lastPathPart(path()) || "file"}`;
 		case "edit":
 			return `Editing ${lastPathPart(path()) || "file"}`;
@@ -160,6 +161,8 @@ export function actionPhrase(toolName: string, args: unknown): string {
 			return `Writing ${lastPathPart(path()) || "file"}`;
 		case "grep":
 		case "find":
+		case "rqw_rg":
+		case "rqw_glob":
 			return "Searching files";
 		default:
 			return `Running ${singleLine(toolName) || "tool"}`;

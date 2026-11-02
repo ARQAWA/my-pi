@@ -6,7 +6,7 @@ export interface ContextForkRequest {
 	sessionId: string;
 	model: Model<Api>;
 	context: Context;
-	reasoning?: ThinkingLevel;
+	reasoning?: ThinkingLevel | "off";
 	signal: AbortSignal;
 	/** Prepare in small slices that yield to the event loop; the offer is still made synchronously. */
 	cooperative?: boolean;
@@ -151,7 +151,11 @@ export function contextForks(captureStream: (single: boolean) => Stream, pause: 
 				const { model, context, body, options } = forked;
 				const between = cooperative ? pause : async () => {};
 				if (reasoning !== undefined) {
-					options.reasoning = reasoning;
+					options.reasoning = reasoning === "off" ? undefined : reasoning;
+					if (reasoning === "off") {
+						delete (options as Record<string, unknown>).thinkingEnabled;
+						delete (options as Record<string, unknown>).thinkingBudgetTokens;
+					}
 					Object.assign(options, { [STREAM_CONTRACT]: "simple" });
 				}
 				const result = await stream(model, context, { ...options, signal, async onPayload(payload) {

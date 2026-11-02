@@ -3,10 +3,7 @@ import type { CredentialStore } from "@earendil-works/pi-ai";
 // Claude Code 2.1.310's plain usage read.
 export const QUOTA_URL = "https://api.anthropic.com/api/oauth/usage";
 export const QUOTA_EVENT = "rqw-anthropic:quota:v1";
-export const QUOTA_WINDOWS = [
-	"five_hour", "seven_day", "seven_day_oauth_apps", "seven_day_opus", "seven_day_sonnet",
-	"cinder_cove", "wattle_ember",
-] as const;
+export const QUOTA_WINDOWS = ["seven_day"] as const;
 export type QuotaWindowName = typeof QUOTA_WINDOWS[number];
 export type QuotaWindow = {
 	utilization: number | null;
@@ -18,7 +15,6 @@ export type QuotaSnapshot = {
 	windows: Partial<Record<QuotaWindowName, QuotaWindow | null>>;
 };
 export type QuotaAccess = {
-	read(): QuotaSnapshot | undefined;
 	refresh(signal?: AbortSignal): Promise<QuotaSnapshot>;
 };
 export type QuotaRequest = { sessionId: string; offer(access: QuotaAccess): void };
@@ -99,23 +95,11 @@ export async function fetchQuota(
 /** The consumer owns its refresh cadence; loading the provider alone sends nothing. */
 export function createQuotaCache(getStore: () => CredentialStore | undefined): QuotaAccess & { dispose(): void } {
 	const lifetime = new AbortController();
-	let cached: QuotaSnapshot | undefined;
-	let revision = 0;
-	let cachedRevision = 0;
 	return {
-		read: () => cached && structuredClone(cached),
 		async refresh(signal = new AbortController().signal) {
-			const current = ++revision;
 			const combined = AbortSignal.any([lifetime.signal, signal]);
-			const result = await fetchQuota(getStore(), combined);
-			combined.throwIfAborted();
-			// Failed newer refreshes do not block an earlier success from becoming the latest cached success.
-			if (current > cachedRevision) {
-				cachedRevision = current;
-				cached = structuredClone(result);
-			}
-			return result;
+			return fetchQuota(getStore(), combined);
 		},
-		dispose() { lifetime.abort(); cached = undefined; },
+		dispose() { lifetime.abort(); },
 	};
 }

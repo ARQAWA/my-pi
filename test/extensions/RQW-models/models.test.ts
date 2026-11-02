@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import type { Model } from "@earendil-works/pi-ai";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { InMemoryCredentialStore, type Model } from "@earendil-works/pi-ai";
+import { AgentSession, ModelRuntime, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import extension, { FAMILIES, familyOf, isListed, levelsFor, pickerModels } from "../../../extensions/RQW-models/index.ts";
 import { ModelEffortPicker, stepDraft, type PickerSpec } from "../../../extensions/RQW-models/picker.ts";
 
@@ -11,6 +11,33 @@ const model = (id: string, provider = "anthropic"): Model<string> => ({
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 128_000, maxTokens: 8_000,
 	thinkingLevelMap: { xhigh: "xhigh", max: "max" },
 });
+
+// Real ModelRuntime with in-memory credentials; the session is a prototype-only stand-in the probe can find.
+async function newRuntime(stubRefresh = true) {
+	const runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false });
+	// Pi's registrations start a background refresh that recomposes providers; keep it out so only this extension's own recompose counts.
+	if (stubRefresh) runtime.refresh = async () => ({ aborted: false, errors: new Map() });
+	return runtime;
+}
+
+async function runtimeFixture(stubRefresh = true) {
+	const runtime = await newRuntime(stubRefresh);
+	const overlay = {
+		api: "openai-codex-responses" as const,
+		streamSimple: (() => { throw new Error("unused"); }) as never,
+		oauth: { name: "test", login: async () => ({ access: "a", refresh: "r", expires: 4_102_444_800_000 }), refreshToken: async (c: any) => c, getApiKey: (c: any) => c.access },
+	};
+	const session = (owned = runtime) => {
+		const sessionManager = { getBranch: () => [] };
+		const fake = Object.assign(Object.create(AgentSession.prototype), { sessionManager, _modelRuntime: owned }) as AgentSession;
+		const handlers = new Map<string, (event: any, ctx: any) => unknown>();
+		const pi = { registerShortcut() {}, registerCommand() {}, on: (name: string, handler: any) => { handlers.set(name, handler); return () => {}; } };
+		extension(pi as unknown as ExtensionAPI);
+		const ctx = { hasUI: false, sessionManager, isIdle: () => (fake as any).isIdle, model: undefined } as unknown as ExtensionContext;
+		return { start: async () => { await handlers.get("session_start")!({ type: "session_start", reason: "resume" }, ctx); }, stop: () => handlers.get("session_shutdown")!({}, ctx), fake };
+	};
+	return { runtime, overlay, session };
+}
 
 describe("RQW-models public selection", () => {
 	it("renders the statusbar's human names without changing model identity", () => {
@@ -36,16 +63,60 @@ describe("RQW-models public selection", () => {
 		assert.deepEqual(pickerModels([...other, opus]), [opus]);
 		for (const entry of other) assert.equal(isListed(entry), false);
 	});
-	it("registers Terra with its limits and picker order", () => {
-		let catalog: Model<string>[] = [];
-		const pi = { registerProvider(provider: any) { if (typeof provider === "object") catalog = provider.getAllModels(); },
-			registerShortcut() {}, registerCommand() {}, on() {} };
-		extension(pi as unknown as ExtensionAPI);
+	it("has Terra before session_start, where Pi restores a saved model", async t => {
+		const { runtime, session } = await runtimeFixture(false);
+		const owner = session();
+		t.after(() => owner.stop());
+		// Pi's service setup refreshes the runtime right after loading extensions; session creation then looks the saved model up.
+		await runtime.refresh({ allowNetwork: false });
+		assert.equal(runtime.getModel("openai-codex", "gpt-6.1-terra")?.name, "GPT-6.1 Terra");
+	});
+	for (const overlayFirst of [false, true]) it(`adds Terra and keeps another extension's Codex transport (${overlayFirst ? "transport first" : "models first"})`, async t => {
+		const { runtime, overlay, session } = await runtimeFixture();
+		const owner = session();
+		t.after(() => owner.stop());
+		if (overlayFirst) runtime.registerProvider("openai-codex", overlay);
+		await owner.start();
+		// The picker reads this snapshot right after session_start, before any background refresh.
+		assert.ok(runtime.getModels("openai-codex").some(model => model.id === "gpt-6.1-terra"));
+		if (!overlayFirst) runtime.registerProvider("openai-codex", overlay);
+		const catalog = [...runtime.getModels("openai-codex")];
 		const terra = catalog.find(model => model.id === "gpt-6.1-terra")!;
 		assert.equal(catalog.filter(model => model.id === terra.id).length, 1);
 		assert.deepEqual([terra.provider, terra.contextWindow, terra.maxTokens], ["openai-codex", 1_050_000, 128_000]);
 		assert.deepEqual(levelsFor(terra), ["off", "low", "medium", "high", "xhigh", "max"]);
 		assert.deepEqual(pickerModels(catalog).map(model => model.id), ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-5.6-luna", "gpt-6-luna"]);
+		assert.equal(runtime.getRegisteredProviderConfig("openai-codex")?.streamSimple, overlay.streamSimple);
+		assert.ok(runtime.getAllModels("openai-codex").some(model => model.id === "gpt-6.1-terra"));
+	});
+	for (const release of ["shutdown", "dispose"] as const) for (const firstOut of [0, 1]) it(`removes Terra only after the last owner ends (${release}, session ${firstOut} first)`, async t => {
+		t.mock.method(AgentSession.prototype, "dispose", () => {});
+		const { runtime, overlay, session } = await runtimeFixture();
+		const owners = [session(), session()];
+		t.after(() => owners.forEach(owner => owner.stop()));
+		runtime.registerProvider("openai-codex", overlay);
+		for (const owner of owners) await owner.start();
+		const hasTerra = () => runtime.getModels("openai-codex").some(model => model.id === "gpt-6.1-terra");
+		const end = (owner: typeof owners[number]) => release === "shutdown" ? owner.stop() : owner.fake.dispose();
+		end(owners[firstOut]);
+		assert.ok(hasTerra(), "the other session still owns the addition");
+		end(owners[1 - firstOut]);
+		assert.ok(!hasTerra(), "Terra is gone with its last owner");
+		assert.equal(runtime.getRegisteredProviderConfig("openai-codex")?.streamSimple, overlay.streamSimple);
+		assert.ok(runtime.getModels("openai-codex").some(model => model.id === "gpt-6.1-sol"));
+	});
+	it("keeps Terra on a runtime until its own last owner ends, whatever other runtimes do", async t => {
+		const { runtime: first, session } = await runtimeFixture();
+		const second = await newRuntime();
+		const owners = [session(first), session(second)];
+		t.after(() => owners.forEach(owner => owner.stop()));
+		for (const owner of owners) await owner.start();
+		const hasTerra = (runtime: ModelRuntime) => runtime.getModels("openai-codex").some(model => model.id === "gpt-6.1-terra");
+		owners[0].stop();
+		assert.ok(!hasTerra(first), "the ended owner's runtime loses Terra although another runtime still holds the layer");
+		assert.ok(hasTerra(second));
+		owners[1].stop();
+		assert.ok(!hasTerra(second));
 	});
 	it("lists each supported family once and steps the draft without wrapping", () => {
 		const opus = model("claude-opus-5-5");
@@ -96,7 +167,7 @@ describe("RQW-models public selection", () => {
 		assert.equal(result, undefined);
 	});
 
-	for (const cancel of [false, true]) it(`${cancel ? "Esc cancels" : "Enter commits"} a changed model and effort through fake Pi`, async () => {
+	for (const cancel of [false, true]) it(`${cancel ? "Esc cancels" : "Enter commits"} a changed model and effort through fake Pi`, async t => {
 		const opus = model("claude-opus-5-5");
 		const sonnet = model("claude-sonnet-5-5");
 		let current = opus;
@@ -139,6 +210,7 @@ describe("RQW-models public selection", () => {
 				},
 			},
 		} as unknown as ExtensionContext;
+		t.after(() => { for (const handler of handlers.get("session_shutdown") ?? []) handler({}, ctx); });
 		for (const handler of handlers.get("session_start") ?? []) await handler({ reason: "resume" }, ctx);
 		await shortcuts.get("shift+down")!(ctx);
 		assert.equal(current, cancel ? opus : sonnet);
@@ -146,7 +218,7 @@ describe("RQW-models public selection", () => {
 		assert.deepEqual(calls, cancel ? [] : ["model:claude-sonnet-5-5", "thinking:xhigh"]);
 	});
 
-	it("regression 4b0e7f4: an unlisted restored model falls back to authenticated Opus first", async () => {
+	it("regression 4b0e7f4: an unlisted restored model falls back to authenticated Opus first", async t => {
 		const run = async (available: Model<string>[]) => {
 			const handlers = new Map<string, (event: any, ctx: any) => Promise<void>>();
 			let current = model("outside", "other");
@@ -165,6 +237,7 @@ describe("RQW-models public selection", () => {
 				sessionManager: { getBranch: () => [] }, isIdle: () => true,
 				ui: { notify() {} },
 			} as unknown as ExtensionContext;
+			t.after(() => handlers.get("session_shutdown")!({}, ctx));
 			await handlers.get("session_start")!({ type: "session_start", reason: "resume" }, ctx);
 			return { current, thinking };
 		};

@@ -181,7 +181,7 @@ it("the tool schemas refuse run-control inputs and read_chat reports a closed ch
 		assert.equal(error.error, "closed");
 		assert.match(error.openHint, /pi --session closed-chat/);
 	}
-	assert.equal(await code(send.run("read_chat", { chatId: "nothing-here" })), "not_found");
+	assert.equal(await code(send.run("read_chat", { chatId: "nothing-here" })), "unknown");
 });
 
 it("read_chat returns the stored turns of an open chat", async (t) => {

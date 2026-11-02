@@ -9,17 +9,16 @@ Dialog and list accents use gold (`#c9a227`).
 
 ## Card backgrounds
 
-The four card surfaces are direct hex values of option C on the comparison page:
+The three card surfaces are direct hex values of option C on the comparison page:
 
 | Token | Card | Colour |
 | --- | --- | --- |
 | `toolPendingBg` | running tool | `#222222` dark grey |
 | `toolSuccessBg` | finished tool | `#062b29` turquoise |
 | `toolErrorBg` | failed tool | `#351c22` dark red |
-| `customMessageBg` | agent answer (custom message) | `#192538` slate |
 
-All four have the same OKLCH lightness, about 26 %. Text contrast on the surfaces is at least 4.56:1 (the muted
-output text `#8d8d8c` on the turquoise), the main text `#d6d6dd` stays above 10:1.
+Agent answers (custom messages) have no background: `customMessageBg` is empty and `customMessageLabel` is gold.
+All three cards have about the same OKLCH lightness, 26 %.
 
 No other token reuses these values. The export info panel `infoBg` keeps `panel`, selected rows keep `cardHi`,
 user messages keep `card`.

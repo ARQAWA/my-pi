@@ -33,7 +33,7 @@ test("agent tool delivers a child's 50-step progress through the Anthropic fork"
 			progressResult.resolve({ error: "too many cache_control blocks" });
 			return Response.json({ type: "error", error: { type: "invalid_request_error", message: "too many cache_control blocks" } }, { status: 400 });
 		}
-		const progress = JSON.stringify(body.messages).includes("Summarize what you did in the most recent 50 assistant responses");
+		const progress = JSON.stringify(body.messages).includes("Summarize what you did recently");
 		if (!progress && ++turns > 50) return held.promise;
 		const events: any[] = [
 			{ type: "message_start", message: { id: "fake", model: body.model, usage: { input_tokens: 1, output_tokens: 0 } } },
@@ -83,7 +83,7 @@ test("agent tool delivers a child's 50-step progress through the Anthropic fork"
 		const notice = await progressResult.promise;
 		assert.equal(turns >= 50, true);
 		assert.match(String(notice.content ?? notice.error ?? ""), /progress report/);
-		assert.equal(bodies.filter(body => JSON.stringify(body.messages).includes("Summarize what you did in the most recent 50 assistant responses")).length, 1);
+		assert.equal(bodies.filter(body => JSON.stringify(body.messages).includes("Summarize what you did recently")).length, 1);
 	} finally {
 		held.resolve(new Response("", { status: 500 }));
 		await execute({ action: "stop", id: "agent#1" });

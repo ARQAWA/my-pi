@@ -152,6 +152,16 @@ function extractFileOpsFromMessage(message: Message, fileOps: FileOps): void {
 
 // ---------------------------------------------------------------------------------------------------------------
 
+/** Optional process-wide offer of RQW-history-edit: Pi's projection that survives a long tail after a compaction. */
+const SAFE_PROJECTION = Symbol.for("rqw:safe-projection:v1");
+
+/** Pi's projection of a branch; Pi's own call overflows the stack on a tail of about 120000 entries. */
+function project(branch: Entry[]): Projected[] {
+	const offered = (globalThis as { [SAFE_PROJECTION]?: unknown })[SAFE_PROJECTION];
+	const projection = typeof offered === "function" ? offered(branch) : Pi.buildSessionProjection(branch as never);
+	return projection.entries as Projected[];
+}
+
 /** The newest projected compaction and the first projected index after it, as Pi's preparation derives them. */
 function boundary(projected: Projected[]) {
 	const previousIndex = projected.findIndex((entry) => entry.sourceEntry.type === "compaction" && entry.messages.length > 0);
@@ -164,7 +174,7 @@ const signatureOf = (previous: Entry | undefined, inputs: Projected[]) =>
 /** Pi's projected preparation of `branch`, plus what a later freshness check compares. */
 export function prepareSnapshot(branch: Entry[], settings: Settings, tokensBefore: number): Snapshot | undefined {
 	if (branch.at(-1)?.type === "compaction") return undefined;
-	const projected = Pi.buildSessionProjection(branch as never).entries as unknown as Projected[];
+	const projected = project(branch);
 	const { previous, start } = boundary(projected);
 	const cut = findProjectedCutPoint(projected, start, projected.length, settings.keepRecentTokens);
 	const keptId = projected[cut.firstKeptEntryIndex]?.sourceEntry.id;
@@ -205,7 +215,7 @@ function fresh(manager: SessionManagerLike, candidate: Candidate): boolean {
 	if (branch.slice(leafIndex + 1).some((entry) => entry.type === "context_edit" && candidate.dependencyIds.has(entry.targetId))) {
 		return false;
 	}
-	const projected = Pi.buildSessionProjection(branch as never).entries as unknown as Projected[];
+	const projected = project(branch);
 	const keptIndex = projected.findIndex((entry) => entry.sourceEntry.id === candidate.keptId);
 	const { previous, start } = boundary(projected);
 	return keptIndex >= start && signatureOf(previous, projected.slice(start, keptIndex)) === candidate.inputSignature;
@@ -324,6 +334,14 @@ export function installBackground(proto: Record<string | symbol, any>, owned: ()
 			return { ...result, firstKeptEntryId: candidate.keptId, tokensBefore: preparation.tokensBefore };
 		}
 		cancel(candidate);
+		// Pi prepared its input before the wait; an edit made meanwhile must reach the foreground summary.
+		if (reason === "threshold" && candidate?.done) {
+			const settings = this.settingsManager.getCompactionSettings(this.model);
+			const current = prepareSnapshot(this.sessionManager.getBranch(), settings, preparation.tokensBefore);
+			// Pi's manual compaction refuses the same case; never summarize the stale input instead.
+			if (!current) throw new Error("Nothing to compact (session too small)");
+			args[0] = current.preparation;
+		}
 		return original.apply(this, args);
 	};
 	proto[WRAPPED_GENERATOR] = original;

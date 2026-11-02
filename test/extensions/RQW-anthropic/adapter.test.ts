@@ -64,6 +64,32 @@ it("sends the billing block exactly as captured, with no cch", async () => {
 	assert.equal(body.system[0].text.includes("cch"), false);
 });
 
+it("uses one-hour OAuth caching by default and respects explicit retention", async () => {
+	const previous = process.env.PI_CACHE_RETENTION;
+	const overlay = createOverlay(base, () => undefined, "device");
+	try {
+		for (const [environment, retention, long] of [
+			[undefined, undefined, true],
+			[undefined, "short", false],
+			["short", undefined, false],
+			["long", undefined, true],
+		] as const) {
+			if (environment === undefined) delete process.env.PI_CACHE_RETENTION;
+			else process.env.PI_CACHE_RETENTION = environment;
+			let body = "";
+			const result = await overlay.streamSimple(model, normalizeContext(context), {
+				apiKey: ACCESS, ...(retention ? { cacheRetention: retention } : {}),
+				fetch: async (_input, init) => { body = String(init?.body); return response([start, ...finish]); },
+			}).result();
+			assert.equal(result.stopReason, "stop");
+			assert.equal(body.includes('"ttl":"1h"'), long);
+		}
+	} finally {
+		if (previous === undefined) delete process.env.PI_CACHE_RETENTION;
+		else process.env.PI_CACHE_RETENTION = previous;
+	}
+});
+
 it("refreshes a rejected saved bearer and replays the request", async () => {
 	const credentials = await store();
 	let inference = 0;

@@ -58,6 +58,9 @@ test("real RQW-tools definitions reach default and nested children", async t => 
 	const call = (id: string, params: any) => tools.get("agent").execute(id, params, ctx.signal, undefined, ctx);
 	await call("start", { action: "start", task: "outer" });
 	await call("outer/wait", { action: "wait", ids: ["agent#1"] });
+	// The outer child finishes while its nested child may still run; let that child finish too.
+	for (let turn = 0; turn < 200 && !requests.some((item: any) => item.messages.some((message: any) => message.toolCallId === "nested-read")); turn++)
+		await new Promise(resolve => setImmediate(resolve));
 	for (const task of ["outer", "nested"]) {
 		const request = requests.find((item: any) => item.messages.some((message: any) => message.role === "user" && message.content?.[0]?.text === task)
 			&& item.messages.some((message: any) => message.role === "toolResult" && message.toolCallId === `${task}-read`));

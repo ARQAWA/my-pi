@@ -4,6 +4,9 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 type Target = Record<string, any>;
 
+/** The widget key of this extension's start (`ENTRY` in index.ts). */
+const START_WIDGET = "rqw-send-now";
+
 /** Remove only Pi's known key suffix, leaving the spinner, label and countdown intact. */
 function withoutKey(line: string): string {
 	const plain = stripVTControlCharacters(line);
@@ -13,7 +16,10 @@ function withoutKey(line: string): string {
 	return truncateToWidth(line, width, "") + " ".repeat(Math.max(0, visibleWidth(line) - width));
 }
 
-/** Hide the old outside key hints only while this session has the editor painter. */
+/**
+ * Hide Pi's old outside key hints only while this session's Esc hints have a consumer (`supported`). Also reports the
+ * main editor when this extension's start widget is set, so a replaced editor is found.
+ */
 export function installHintUI(identity: object, editorChanged: (editor: unknown) => void, supported: () => boolean) {
 	if (VERSION !== "1.4.0") return { release() {}, refresh() {} };
 	const proto = InteractiveMode.prototype as unknown as Target;
@@ -21,13 +27,11 @@ export function installHintUI(identity: object, editorChanged: (editor: unknown)
 	const hosts = new Set<Target>();
 	const restored: (() => void)[] = [];
 	const decorated = new WeakSet<object>();
-	const statuses = new Map<Target, string | undefined>();
-	let originalStatus = (_host: Target, _text: string | undefined) => {};
 	let active = true, suspended = false;
 	const refresh = () => {
+		if (!active) return;
 		for (const host of hosts) {
 			host.updatePendingMessagesDisplay?.();
-			if (statuses.has(host)) originalStatus(host, statuses.get(host));
 		}
 	};
 	const owns = (host: Target) => active && host.sessionManager === identity;
@@ -42,12 +46,6 @@ export function installHintUI(identity: object, editorChanged: (editor: unknown)
 		};
 		component[name] = wrapped;
 		restored.push(() => { if (component[name] === wrapped) { if (own) Object.defineProperty(component, name, own); else delete component[name]; } });
-	}
-	function widget(host: Target) {
-		const component = host.extensionWidgetsAbove?.get("rqw-statusbar-activity");
-		if (!component || decorated.has(component)) return;
-		decorated.add(component);
-		decorate(component, "render", true);
 	}
 	function wrap(name: string, make: (original: Function) => Function) {
 		const descriptor = Object.getOwnPropertyDescriptor(proto, name);
@@ -70,17 +68,10 @@ export function installHintUI(identity: object, editorChanged: (editor: unknown)
 		wrap("setExtensionWidget", original => function(this: Target, ...args: any[]) {
 			const result = original.apply(this, args);
 			if (owns(this)) {
-				hosts.add(this); widget(this);
-				if (args[0] === "rqw-send-now-hint" && typeof args[1] === "function") editorChanged(this.editor);
+				hosts.add(this);
+				if (args[0] === START_WIDGET && typeof args[1] === "function") editorChanged(this.editor);
 			}
 			return result;
-		});
-		wrap("setExtensionStatus", original => {
-			originalStatus = (host, text) => { original.call(host, "rqw-followup-hold", supported() ? undefined : text); };
-			return function(this: Target, key: string, text: string | undefined) {
-				if (owns(this) && key === "rqw-followup-hold") { hosts.add(this); statuses.set(this, text); return originalStatus(this, text); }
-				return original.call(this, key, text);
-			};
 		});
 		wrap("updatePendingMessagesDisplay", original => function(this: Target, ...args: any[]) {
 			const result = original.apply(this, args);
@@ -109,7 +100,6 @@ export function installHintUI(identity: object, editorChanged: (editor: unknown)
 		for (const restore of restored.reverse()) restore();
 		for (const restore of undo.reverse()) restore();
 		for (const host of hosts) {
-			if (statuses.has(host)) host.setExtensionStatus("rqw-followup-hold", statuses.get(host));
 			host.updatePendingMessagesDisplay?.();
 		}
 	} };

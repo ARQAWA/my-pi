@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test --experimental-test-isolation=none \"test/extensions/*/*.test.ts\" \"test/*.test.ts\"",
+    "test": "node --test --experimental-test-isolation=none \"test/extensions/*/*.test.ts\" \"test/*.test.ts\" \"pcli-vscode/test/*.test.mjs\"",
     "lint": "oxlint --config .oxlintrc.json extensions test .pi",
     "knip": "knip --config knip.config.mjs --cache --no-progress --reporter compact --max-show-issues 20",
     "check": "node scripts/check.mjs",
@@ -25,6 +25,7 @@
       "./extensions/RQW-tools/index.ts",
       "./extensions/RQW-context/index.ts",
       "./extensions/RQW-agent/index.ts",
+      "./extensions/RQW-auto-wait/index.ts",
       "./extensions/RQW-review/index.ts",
       "./extensions/RQW-statusbar/index.ts",
       "./extensions/RQW-models/index.ts",
@@ -49,7 +50,8 @@
       "./extensions/RQW-tabs-link/index.ts",
       "./extensions/RQW-btw/index.ts",
       "./extensions/RQW-predictions/index.ts",
-      "./extensions/RQW-browser/index.ts"
+      "./extensions/RQW-browser/index.ts",
+      "./extensions/RQW-cwd/index.ts"
     ],
     "themes": [
       "./extensions/RQW-theme/theme.json"

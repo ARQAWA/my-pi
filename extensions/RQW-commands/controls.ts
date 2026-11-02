@@ -3,12 +3,12 @@ import { SettingsList } from "@earendil-works/pi-tui";
 
 const MARK = "rqw-commands:controls-owner";
 const STATE = Symbol.for("rqw-commands/controls");
-const ACTIONS = ["app.thinking.cycle", "app.model.select", "app.model.cycleForward", "app.model.cycleBackward", "app.thinking.toggle"];
+const ACTIONS = ["app.thinking.cycle", "app.model.select", "app.model.cycleForward", "app.model.cycleBackward", "app.thinking.toggle", "app.session.fork"];
 const HIDDEN = new Set(["cache-warming-mode", "model-thinking", "double-escape-action", "tree-filter-mode"]);
 const WARNING = "RQW-commands: incompatible Pi controls internals; controls cleanup is disabled.";
 type Fn = (...args: any[]) => any;
 type Owner = { token: object; live: () => boolean };
-type Policy = { owner: Owner; keybindings: any; descriptor?: PropertyDescriptor; rebuild: Fn; wrapper: Fn; active: boolean };
+type Policy = { owner: Owner; keybindings: any; descriptor?: PropertyDescriptor; wrapper: Fn; active: boolean };
 type State = { owners: Set<Owner>; hosts: Map<any, Policy>; descriptors: Map<string, PropertyDescriptor>; wrappers: Map<string, Fn> };
 
 function owns(host: any, owner: Owner): boolean {
@@ -42,7 +42,7 @@ function bind(state: State, host: any, owner: Owner) {
  if (!(kb?.keysById instanceof Map) || ["rebuild", "matches", "getKeys", "getResolvedBindings"].some(name => typeof kb[name] !== "function") ||
   (descriptor && (!descriptor.configurable || !descriptor.writable)) || (!descriptor && !Object.isExtensible(kb)) || ACTIONS.some(id => !kb.keysById.has(id))) throw new Error(WARNING);
  const rebuild = kb.rebuild as Fn;
- const policy: Policy = { owner, keybindings: kb, descriptor, rebuild, active: true, wrapper: () => {} };
+ const policy: Policy = { owner, keybindings: kb, descriptor, active: true, wrapper: () => {} };
  policy.wrapper = function(this: any, ...args: unknown[]) {
   const result = rebuild.apply(this, args);
   if (policy.active && owns(host, owner)) for (const id of ACTIONS) kb.keysById.set(id, []);
@@ -58,7 +58,7 @@ export function installControls(pi: ExtensionAPI, registerShutdown = true): () =
  const proto = InteractiveMode.prototype as any;
  let state = proto[STATE] as State | undefined;
  if (!state) {
-  const names = ["createBaseAutocompleteProvider", "showSelector", "getLogoutProviderOptions"];
+  const names = ["createBaseAutocompleteProvider", "showSelector", "getLogoutProviderOptions", "showUserMessageSelector"];
   const descriptors = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(proto, name)]));
   if (names.some(name => { const d = descriptors.get(name); return !d?.configurable || !d.writable || typeof d.value !== "function"; })) throw new Error(WARNING);
   state = { owners: new Set(), hosts: new Map(), descriptors: descriptors as Map<string, PropertyDescriptor>, wrappers: new Map() };
@@ -105,6 +105,11 @@ export function installControls(pi: ExtensionAPI, registerShutdown = true): () =
     return result.filter((entry: any) => visible.has(entry.id));
    } catch { fail(s, this); return result; }
   });
+  const fork = descriptors.get(names[3])!.value as Fn;
+  s.wrappers.set(names[3], function(this: any, ...args: unknown[]) {
+   if (current(s, this)) return;
+   return fork.apply(this, args);
+  });
   for (const name of names) Object.defineProperty(proto, name, { ...descriptors.get(name), value: s.wrappers.get(name) });
   Object.defineProperty(proto, STATE, { configurable: true, value: s });
  }
@@ -124,6 +129,7 @@ export function installControls(pi: ExtensionAPI, registerShutdown = true): () =
   if (!s.owners.size) {
    for (const [name, descriptor] of s.descriptors) if (Object.getOwnPropertyDescriptor(proto, name)?.value === s.wrappers.get(name)) Object.defineProperty(proto, name, descriptor);
    if (proto[STATE] === s) delete proto[STATE];
+   proto[Symbol.for("rqw-session/clone-restore")]?.();
   }
  };
  if (registerShutdown) pi.on("session_shutdown", dispose);

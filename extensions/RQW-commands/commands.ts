@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 const MARK = "rqw-commands:owner";
 const STATE = Symbol.for("rqw-commands/patch");
 const BUILTINS = ["settings", "model", "tree", "thinking", "scoped-models", "export", "import", "share", "bug", "copy", "name", "session", "changelog", "hotkeys", "fork", "clone", "trust", "login", "logout", "new", "compact", "resume", "reload", "quit"];
-const REMOVED = new Set(["model", "thinking", "tree", "scoped-models", "share", "bug"]);
+const REMOVED = new Set(["model", "thinking", "tree", "scoped-models", "share", "bug", "fork"]);
 const SESSION_COMMAND = resolve(fileURLToPath(new URL("../RQW-session/index.ts", import.meta.url)));
 const WARNING = "RQW-commands: incompatible Pi command internals; command cleanup is disabled.";
 
@@ -23,7 +23,7 @@ function isBuiltinLlama(command: any): boolean {
 }
 function blocked(host: Host, input: string): boolean {
  const text = input.trim();
- if (["/tree", "/scoped-models", "/share"].includes(text)) return true;
+ if (["/tree", "/scoped-models", "/share", "/fork"].includes(text)) return true;
  if (["/model", "/thinking", "/bug"].some(name => text === name || text.startsWith(name + " "))) return true;
  if (!text.startsWith("/")) return false;
  const name = text.slice(1).split(" ", 1)[0];
@@ -146,6 +146,7 @@ export function installCommands(pi: ExtensionAPI, registerShutdown = true): () =
   if (s.owners.size === 0) {
    for (const [name, descriptor] of s.descriptors) if (Object.getOwnPropertyDescriptor(proto, name)?.value === s.wrappers.get(name)) Object.defineProperty(proto, name, descriptor);
    if (proto[STATE] === s) delete proto[STATE];
+   proto[Symbol.for("rqw-session/clone-restore")]?.();
   }
  };
  if (registerShutdown) pi.on("session_shutdown", dispose);

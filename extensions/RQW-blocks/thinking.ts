@@ -9,10 +9,16 @@ export function installThinking(prototype: any = AssistantMessageComponent.proto
 	const own = Object.getOwnPropertyDescriptor(prototype, "updateContent");
 	const ownRender = Object.getOwnPropertyDescriptor(prototype, "render");
 	const seen = new WeakSet<object>();
-	const instances: WeakRef<any>[] = [];
+	const instances = new Set<WeakRef<any>>();
+	const collected = new FinalizationRegistry<WeakRef<any>>(ref => instances.delete(ref));
 	prototype.updateContent = function (message: any, ...args: unknown[]) {
 		const result = original.call(this, message, ...args);
-		if (!seen.has(this)) { seen.add(this); instances.push(new WeakRef(this)); }
+		if (!seen.has(this)) {
+			seen.add(this);
+			const ref = new WeakRef(this);
+			instances.add(ref);
+			collected.register(this, ref);
+		}
 		try {
 			const container = this.contentContainer;
 			if (!Array.isArray(message?.content) || !Array.isArray(container?.children) || typeof container.removeChild !== "function" || typeof this.hideThinkingBlock !== "boolean" || !(this.thinkingVisibilityOverrides instanceof Map)) return result;

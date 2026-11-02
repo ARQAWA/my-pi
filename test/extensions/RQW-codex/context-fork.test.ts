@@ -43,7 +43,7 @@ function sockets(replies: Record<string, unknown>[][]) {
 }
 
 /** A transport that has completed one turn, so its prepared request is the fork source. */
-async function started(source: Context, hook?: (body: any) => unknown, extra: { replies?: Record<string, unknown>[][]; history?: RawItemHistory; fetch?: any } = {}) {
+async function started(source: Context, hook?: (body: any) => unknown, extra: { replies?: Record<string, unknown>[][]; history?: RawItemHistory; fetch?: any; model?: Model<Api> } = {}) {
 	const store = new InMemoryCredentialStore();
 	await store.modify("openai-codex", async () => ({ type: "oauth", access: access(), refresh: "refresh-1", expires: 4_000_000_000_000, accountId: ACCOUNT }) as never);
 	const wire = sockets(extra.replies ?? [answer("resp_main"), answer("resp_fork")]);
@@ -51,7 +51,7 @@ async function started(source: Context, hook?: (body: any) => unknown, extra: { 
 	const pause = () => new Promise<void>((resolve) => { gates.push(resolve); });
 	const transport = new CodexThreadTransport({ identity: IDENTITY, store, history: extra.history, dependencies: {
 		clock: { now: () => 1_000_000 }, random: () => 0.5, sleep: async () => {}, connect: wire.connect, pause, fetch: extra.fetch } });
-	const events = transport.stream(MODEL, source, hook ? { onPayload: hook } as any : undefined);
+	const events = transport.stream(extra.model ?? MODEL, source, hook ? { onPayload: hook } as any : undefined);
 	for await (const event of events) void event;
 	return { transport, wire, gates };
 }
@@ -107,6 +107,16 @@ it("an abort between slices stops a cooperative fork before anything is sent", a
 	gates.splice(0).forEach((open) => open());
 	await assert.rejects(done, { name: "AbortError" });
 	assert.equal(wire.sent.length, 1);
+	transport.dispose();
+});
+
+it("an off fork sends native none instead of the source effort", async () => {
+	const source = history(3);
+	const model = { ...MODEL, id: "gpt-6.1-terra" };
+	const { transport, wire } = await started(source, undefined, { model });
+	const call = request(extend(source, "report"), { model, reasoning: "off" });
+	await transport.contextFork(call.value)!();
+	assert.equal(wire.sent[1].reasoning.effort, "none");
 	transport.dispose();
 });
 

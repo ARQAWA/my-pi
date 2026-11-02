@@ -23,6 +23,39 @@ describe("turn projection", () => {
     assert.ok(typeof item.originalChars === "number" && item.originalChars > 0);
   });
 
+  const open = (entries: SessionEntry[]) => ({ status: "open" as const, chat: { id: "chat", title: null, cwd: "/", status: "open" as const }, generation: "1", inProgress: false, entries });
+  const itemsOf = (result: ReturnType<typeof readChat>) => {
+    assert.ok("turns" in result && result.turns);
+    return result.turns[0].items;
+  };
+
+  it("reduces custom records to metadata unless outputs are requested", () => {
+    const entries = [
+      entry("u", { type: "message", message: { role: "user", content: "question" } }),
+      entry("c", { type: "custom", customType: "other-extension", data: { blob: "internal-blob" } }),
+    ];
+    const hidden = itemsOf(readChat(open(entries)))[1];
+    assert.deepEqual(hidden, { id: "c", type: "custom", customType: "other-extension", parentId: null, timestamp: "2026-01-01T00:00:00Z" });
+    const shown = itemsOf(readChat(open(entries), { includeOutputs: true }))[1];
+    assert.deepEqual(shown.data, { blob: "internal-blob" });
+    const cut = itemsOf(readChat(open(entries), { includeOutputs: true, maxOutputCharsPerItem: 5 }))[1];
+    assert.match(cut.data as string, /\[details truncated\]$/);
+    assert.equal(cut.truncated, true);
+  });
+
+  it("drops details of an entry whose content was replaced", () => {
+    const result = readChat(open([
+      entry("u", { type: "message", message: { role: "user", content: "question" } }),
+      entry("t", { type: "message", message: { role: "toolResult", content: [{ type: "text", text: "old" }], details: { old: "leaked-tool" } } }),
+      entry("m", { type: "custom_message", customType: "x", content: "old", display: true, details: { old: "leaked-custom" } }),
+      entry("e1", { type: "context_edit", targetId: "t", replacement: { content: [{ type: "text", text: "new" }] } }),
+      entry("e2", { type: "context_edit", targetId: "m", replacement: { content: "new" } }),
+    ]), { includeOutputs: true });
+    const text = JSON.stringify(result);
+    assert.doesNotMatch(text, /leaked/);
+    assert.match(text, /new/);
+  });
+
   it("keeps historical turns across compaction, applies edits, and retains tool cycles in the current turn", () => {
     const turns = projectTurns([
       entry("u1", { type: "message", message: { role: "user", content: "secret" } }),

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
+import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { CTRL_E, deferred, DIM, harness, settle, suggestion, text } from "./harness.ts";
 
@@ -86,15 +87,16 @@ describe("RQW-predictions gray suggestion", () => {
 		assert.deepEqual(h.reached, [TAB]);
 	});
 
-	it("is hidden while the chat works, a message waits, or another component has the focus", async () => {
+	it("stays visible while the chat works or a message waits, and Tab takes it; it is hidden when another component has the focus", async () => {
 		const h = await ready();
 		h.state.idle = false;
-		assert.equal(plain(h.screen()[1]).includes("run the tests"), false);
-		h.key(TAB);
-		assert.equal(h.editor.getText(), "");
-		h.state.idle = true;
+		assert.equal(plain(h.screen()[1]).trim(), "run the tests");
 		h.state.pending = true;
-		assert.equal(plain(h.screen()[1]).includes("run the tests"), false);
+		assert.equal(plain(h.screen()[1]).trim(), "run the tests");
+		h.key(TAB);
+		assert.equal(h.editor.getText(), "run the tests");
+		h.editor.setText("");
+		h.state.idle = true;
 		h.state.pending = false;
 		h.setFocus({});
 		assert.equal(plain(h.screen()[1]).includes("run the tests"), false);
@@ -114,10 +116,29 @@ describe("RQW-predictions gray suggestion", () => {
 		assert.ok(h.screen(60).length < rows.length);
 	});
 
-	it("a text taller than the screen is still drawn whole", async () => {
+	it("wraps and grows exactly like the same text typed into the editor", async () => {
+		const texts = [
+			"Please run the whole suite again, then compare the results with the last green build",
+			"averyveryverylongwordwithoutanyspaces and then some more words after it",
+			"two  spaces   and three   inside a sentence that wraps around twice more",
+			"漢字かな交じり文を折り返す漢字かな交じり文を折り返す\n\nthird line after a blank one",
+		];
+		for (const columns of [24, 37]) for (const value of texts) {
+			const typed = new CustomEditor({ requestRender() {}, terminal: { rows: 40, columns } } as never,
+				{ borderColor: (row: string) => row, selectList: {} } as never, { matches: () => false } as never);
+			typed.setText(value);
+			const h = await ready(value);
+			assert.deepEqual(body(h.screen(columns)).map(row => row.trimEnd()), body(typed.render(columns)).map(row => row.trimEnd()), `${columns}: ${value}`);
+		}
+	});
+
+	it("shows every line of a tall suggestion before Tab inserts it", async () => {
 		const tall = Array.from({ length: 70 }, (_, i) => `step ${i}`).join("\n");
 		const h = await ready(tall);
-		assert.equal(h.screen().length, 72);
+		assert.deepEqual(body(h.screen()).map(row => row.trimEnd()), tall.split("\n"));
+		assert.equal(h.editor.getText(), "");
+		h.key(TAB);
+		assert.equal(h.editor.getText(), tall);
 	});
 
 	it("Tab is one undo step", async () => {
@@ -138,7 +159,7 @@ describe("RQW-predictions gray suggestion", () => {
 		assert.deepEqual(h.reached, [TAB]);
 	});
 
-	it("while a new request is open, its interrupt hint replaces the old suggestion", async () => {
+	it("while a new request is open, the old suggestion stays on the screen until the new one replaces it", async () => {
 		const slow = deferred<ReturnType<typeof text>>();
 		const h = await ready("old one", { replies: [suggestion("old one"), slow.promise] });
 		h.key(CTRL_E);
@@ -146,12 +167,12 @@ describe("RQW-predictions gray suggestion", () => {
 		assert.equal(h.forks.length, 2);
 		h.key("x");
 		h.key("\x7f");
-		assert.equal(plain(h.screen()[1]).trim(), "ctrl+r to interrupt");
-		h.key(TAB);
-		assert.equal(h.editor.getText(), "");
+		assert.equal(plain(h.screen()[1]).trim(), "old one");
 		slow.resolve(suggestion("new one"));
 		await settle();
-		assert.equal(h.controller.suggestion(), "new one");
+		assert.equal(plain(h.screen()[1]).trim(), "new one");
+		h.key(TAB);
+		assert.equal(h.editor.getText(), "new one");
 	});
 
 	it("a null answer or ending the session leaves the editor stock", async () => {
@@ -171,12 +192,12 @@ describe("RQW-predictions gray suggestion", () => {
 	});
 
 	it("repeated renders, as on animation frames, reuse the built rows; a new width or theme rebuilds them", async () => {
-		const long = Array.from({ length: 12 }, (_, i) => `step number ${i}`).join("\n");
+		const long = Array.from({ length: 6 }, (_, i) => `step number ${i}`).join("\n");
 		const h = await ready(long);
 		const first = h.screen();
 		const before = h.theme.paints;
 		for (let i = 0; i < 10; i++) assert.deepEqual(h.screen(), first);
-		// Twelve gray lines would cost 120 paints if each frame built them again.
+		// Six gray lines would cost 60 paints if each frame built them again.
 		assert.ok(h.theme.paints - before <= 10, `${h.theme.paints - before} paints`);
 
 		assert.ok(h.screen(8).length > first.length);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { appendFile, mkdir, mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import { SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import sessionCommands from "../../../extensions/RQW-session/index.ts";
 import { installFastList } from "../../../extensions/RQW-session/list.ts";
@@ -12,11 +12,13 @@ let dir: string;
 const cwd = join(tmpdir(), "rqw-list-project");
 
 const handlers = new Map<string, () => void>();
+describe("fast session list", () => {
 beforeEach(async () => {
 	dir = await mkdtemp(join(tmpdir(), "rqw-list-"));
 	sessionCommands({ on: (name: string, handler: () => void) => handlers.set(name, handler), registerCommand: () => undefined } as unknown as ExtensionAPI);
 });
 afterEach(async () => {
+	handlers.get("session_shutdown")?.();
 	Object.assign(SessionManager, stock);
 	await rm(dir, { recursive: true, force: true });
 });
@@ -125,9 +127,33 @@ it("listAll with the default agent dir, as /resume calls it, scans every project
 	}
 });
 
+it("uses stock listing for a relative session directory", async () => {
+	// A dir under the working directory stays relative on every drive, unlike the temp dir on Windows CI.
+	const relativeDir = join(".rqw-list-relative", String(process.pid));
+	const localDir = join(process.cwd(), relativeDir);
+	await mkdir(localDir, { recursive: true });
+	try {
+		await runRelative(relativeDir, localDir);
+	} finally {
+		await rm(join(process.cwd(), ".rqw-list-relative"), { recursive: true, force: true });
+	}
+});
+
+async function runRelative(relativeDir: string, localDir: string) {
+	const path = join(localDir, "a.jsonl");
+	await writeFile(path, header("a") + user("hello"));
+	await utimes(path, new Date("2026-03-04T05:06:07.000Z"), new Date("2026-03-04T05:06:07.000Z"));
+	const expectedList = await stock.list(cwd, relativeDir);
+	const expectedAll = await stock.listAll(relativeDir);
+	assert.equal(expectedList[0]?.messageCount, 1);
+	assert.deepEqual(await SessionManager.list(cwd, relativeDir), expectedList);
+	assert.deepEqual(await SessionManager.listAll(relativeDir), expectedAll);
+}
+
 it("keeps the stock functions when their shape differs", async () => {
 	const fake = { list: async () => [], listAll: async () => [] } as never as Parameters<typeof installFastList>[0];
 	const before = [fake.list, fake.listAll];
 	installFastList(fake);
 	assert.deepEqual([fake.list, fake.listAll], before);
+});
 });

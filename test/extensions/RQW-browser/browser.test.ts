@@ -125,12 +125,11 @@ it("loads lazily and launches separate profiles with path and display settings",
 	assert.equal(env.browsers[1].closed, 1);
 });
 
-it("names tabs and runs the chain in order", async () => {
+it("names and lists tabs", async () => {
 	const env = setup();
 	await env.call({ action: "open", name: "one", url: "https://one.test" });
 	await env.call({ action: "open", name: "two", url: "https://two.test" });
 	assert.deepEqual(await env.call({ action: "tabs" }), [{ name: "one", url: "https://one.test" }, { name: "two", url: "https://two.test" }]);
-	assert.equal(await env.call({ action: "call", name: "two", chain: [{ method: "url", args: [] }, { method: "title", args: [] }] }), "title of https://two.test");
 	await env.call({ action: "close", name: "one" });
 	assert.equal(env.browsers[0].closed, 1);
 	assert.equal(env.browsers[1].closed, 0);
@@ -325,20 +324,19 @@ it("cancels a pending launch and cleans a late browser and profile", async () =>
 });
 
 it("serializes simultaneous tool calls and honors cancellation while queued", async () => {
-	const pending = deferred<string>();
-	const env = setup({ titleWait: pending.promise });
-	await env.call({ action: "open" });
-	const first = env.call({ action: "call", chain: [{ method: "title", args: [] }] });
+	const pending = deferred<void>();
+	const env = setup({ viewportWait: pending.promise });
+	const first = env.call({ action: "open", viewport: { width: 800, height: 600 } });
+	while (!env.browsers[0]?.viewport) await new Promise<void>(resolve => setImmediate(resolve));
 	const controller = new AbortController();
 	const second = env.call({ action: "close" }, controller.signal);
 	controller.abort();
 	await assert.rejects(second, /abort/i);
-	assert.equal(env.browsers[0].closed, 0);
 	const third = env.call({ action: "close" });
 	await new Promise<void>(resolve => setImmediate(resolve));
 	assert.equal(env.browsers[0].closed, 0);
-	pending.resolve("done");
-	assert.equal(await first, "done");
+	pending.resolve();
+	await first;
 	await third;
 	assert.equal(env.browsers[0].closed, 1);
 	await env.shutdown();

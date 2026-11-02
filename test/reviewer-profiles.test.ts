@@ -8,22 +8,17 @@ import test from "node:test";
 import { loadSkills } from "@earendil-works/pi-coding-agent";
 import { parse } from "smol-toml";
 import { ProfileCatalogue } from "../extensions/RQW-agent/profiles.ts";
-import { reviewCounts } from "../extensions/RQW-agent-ui/review.ts";
+import { createAgentCard } from "../extensions/RQW-agent-ui/card.ts";
 
-test("review cards count mixed-severity findings with the added protocol fields", () => {
-	const findings = ["P2", "P3"].map((severity, index) => [
-		`FINDING ${index + 1}`,
-		`SEVERITY: ${severity}`,
-		"TRIGGER: A guarded command is submitted.",
-		"RESULT_IF_UNFIXED: The command is refused incorrectly.",
-		"REQUIREMENT: Allowed commands remain usable. (request)",
-		"MISMATCH: The guard rejects the allowed command.",
-		'EVIDENCE: "return refused;" (guard.ts)',
-		"REQUIRED OUTCOME: The allowed command succeeds.",
-	].join("\n"));
-	const verdict = ["FINDINGS:", ...findings, "CHECKED: guard.ts",
-		"UNCHECKED:", "- external specification - unavailable"].join("\n");
-	assert.deepEqual(reviewCounts(verdict), { findings: 2, unchecked: 1 });
+test("the reviewer's first line is the one the agent card reads", () => {
+	const role = readFileSync(new URL("../extensions/RQW-review/REVIEWER.md", import.meta.url), "utf8");
+	assert.ok(role.includes("the first characters must be `CLEAN` or `FINDINGS: N`, where N is the number of findings you return"));
+	const template = /^ {4}(FINDINGS: <N>)$/m.exec(role)?.[1];
+	assert.ok(template, "the answer template carries the numbered first line");
+	const answer = [template.replace("<N>", "2"), "FINDING 1", "SEVERITY: P2", "FINDING 2", "SEVERITY: P3", "CHECKED: guard.ts"].join("\n");
+	const card = createAgentCard({ role: "custom", customType: "agent", content: `[agent#5] ${answer}`, details: { outcome: "finished" }, display: true, timestamp: 0 } as never,
+		{ expanded: false, outputPad: 0 }, { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never)!;
+	assert.equal(card.render(80)[0], "agent#5 2 findings");
 });
 
 test("project reviewer profiles use Terra high and the required review contracts", async () => {

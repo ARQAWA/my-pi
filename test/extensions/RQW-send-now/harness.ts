@@ -6,6 +6,8 @@ export const ESC = "\x1b";
 export const CTRL_ENTER = "\x1b[13;5u";
 export const CTRL_ENTER_OTHER_KEYS = "\x1b[27;5;13~";
 export const ALT_ENTER = "\x1b\r";
+export const CTRL_R = "\x12";
+export const CTRL_R_RELEASE = "\x1b[114;5:3u";
 
 /** Pi's session with its queues as plain data; the queue methods are Pi's real ones. */
 export function fakeSession(manager: object, onAbort: () => void, onRun: (trigger: any) => void = () => {}) {
@@ -41,7 +43,7 @@ export function fakeSession(manager: object, onAbort: () => void, onRun: (trigge
 }
 
 /** A TUI session with a fake clock; `state` is what a test flips between presses. */
-export function harness(t: TestContext, options: { factory?: typeof sendNow; provider?: string } = {}) {
+export function harness(t: TestContext, options: { factory?: typeof sendNow; provider?: string; manager?: object } = {}) {
 	t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 10_000 });
 	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
 	const events = createEventBus();
@@ -52,11 +54,18 @@ export function harness(t: TestContext, options: { factory?: typeof sendNow; pro
 	const stops: unknown[] = [];
 	const notices: string[] = [];
 	const inputs: string[] = [];
-	const state = { idle: false, compacting: false, background: 0, editor: "", autocomplete: false, focused: true, provider: options.provider ?? "openai-codex", model: true, ctrlAborts: 0 };
+	/** The custom messages Pi started a run for, after the extension sent them through its public API. */
+	const resumed: any[] = [];
+	const state = { idle: false, compacting: false, background: 0, editor: "", autocomplete: false, focused: true, provider: options.provider ?? "openai-codex", model: true, ctrlAborts: 0, mode: "fullscreen", following: true };
 	events.on("rqw:stop-background:v1", (value: any) => { stops.push(value); value.reply({ agents: state.background }); });
 	events.on("rqw:running-counts:request", (request: any) => request.reply({ version: 1, snapshot: () => ({ agents: state.background }), subscribe: () => () => {} }));
 	const pi = {
 		events, registerShortcut() {}, appendEntry: (_type: string, data: unknown) => entries.push(data), sendUserMessage() {},
+		// Pi's own routing of a custom message: a run starts only for an idle session with triggerTurn, else it is queued.
+		sendMessage: (message: any, sendOptions: any) => {
+			session.isStreaming = !state.idle;
+			void session.sendCustomMessage(message, sendOptions);
+		},
 		on: (name: string, handler: any) => { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 	};
 	(options.factory ?? sendNow)(pi as unknown as ExtensionAPI);
@@ -66,8 +75,14 @@ export function harness(t: TestContext, options: { factory?: typeof sendNow; pro
 		actionHandlers: new Map([["app.message.followUp", () => inputs.push("follow-up")]]),
 		handleInput: (data: string) => inputs.push(data),
 	});
-	const manager = { getEntries: () => [] as unknown[], getSessionId: () => "session" };
-	const session = fakeSession(manager, () => { state.idle = true; }, (trigger) => sent.push({ prompt: trigger.prompt, images: trigger.images ?? [] }));
+	const manager = options.manager ?? { getEntries: () => [] as unknown[], getBranch: () => [] as unknown[], getSessionId: () => "session" };
+	const session = fakeSession(manager, () => { state.idle = true; }, (trigger) => {
+		if (trigger.messageType !== "custom") return void sent.push({ prompt: trigger.prompt, images: trigger.images ?? [] });
+		// The run Pi starts for a custom message: the session is busy at once and the message is saved on the branch.
+		resumed.push(trigger.message);
+		state.idle = false;
+		(manager as any).appendCustomMessageEntry?.(trigger.message.customType, trigger.message.content, trigger.message.display);
+	});
 	const ctx = {
 		mode: "tui", get model() { return state.model ? { provider: state.provider } : undefined; }, sessionManager: manager,
 		hasPendingMessages: () => session._steeringMessages.length + session._followUpMessages.length > 0, isIdle: () => state.idle,
@@ -79,7 +94,7 @@ export function harness(t: TestContext, options: { factory?: typeof sendNow; pro
 		},
 		ui: {
 			getEditorText: () => state.editor, setEditorText: (value: string) => { state.editor = value; }, notify: (text: string) => notices.push(text),
-			setWidget: (_key: string, factory: any) => { if (factory) factory({ getFocusedComponent: () => state.focused ? editor : {} }); },
+			setWidget: (_key: string, factory: any) => { if (factory) factory({ get mode() { return state.mode; }, get isFollowingOutput() { return state.following; }, getFocusedComponent: () => state.focused ? editor : {} }); },
 			onTerminalInput: (handler: typeof input) => { input = handler; return () => {}; },
 		},
 	} as unknown as ExtensionContext;
@@ -89,9 +104,11 @@ export function harness(t: TestContext, options: { factory?: typeof sendNow; pro
 	fire("session_start");
 	t.after(() => fire("session_shutdown"));
 	return {
-		state, session, sent, entries, stops, notices, inputs, ctx, fire, events, manager,
+		state, session, sent, entries, stops, notices, inputs, ctx, fire, events, manager, resumed,
 		press: (data = ESC) => input!(data),
 		tick: (ms: number) => t.mock.timers.tick(ms),
+		/** Pi's own `agent_settled` event, sent to the session's listeners after every extension handler ran. */
+		settle: () => session._emit({ type: "agent_settled", aborted: true }),
 		/** Lets promise chains finish; the fake clock does not touch setImmediate. */
 		flush: () => new Promise<void>((resolve) => setImmediate(resolve)),
 		/** A steering message queued through Pi's real queue method. */

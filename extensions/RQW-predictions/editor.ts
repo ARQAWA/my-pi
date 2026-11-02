@@ -1,18 +1,18 @@
-// The main input editor: the gray suggestion, Tab, and the keys Ctrl+E and Ctrl+R are handled here and nowhere else.
+// The main input editor: the gray suggestion, Tab, the Ctrl+E key and its one hint are handled here and nowhere else.
 // The editor instance is decorated in place, so RQW-statusbar keeps its own editor factory.
 import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, isKeyRelease, isKeyRepeat, matchesKey, renderFakeCursor, visibleWidth, wrapTextWithAnsi, type TUI } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, isKeyRelease, isKeyRepeat, matchesKey, renderFakeCursor, visibleWidth, type TUI } from "@earendil-works/pi-tui";
 
 const WIDGET_KEY = "rqw-predictions-editor-access";
 
 export type EditorActions = {
-	generate(): void;
-	cancel(): void;
+	/** Ctrl+E: starts a request, or cancels the running one. */
+	toggle(): void;
 	/** The ready suggestion, if any. */
 	suggestion(): string | undefined;
 	/** False when the keys could not be freed from Pi's own actions: then they stay stock. */
 	hotkeys(): boolean;
-	/** The current key hint, never part of the editor buffer. */
+	/** The current key hint, never part of the editor buffer; a ready suggestion is drawn over it. */
 	hint(): string | undefined;
 };
 
@@ -20,6 +20,7 @@ type FocusTUI = TUI & { getFocusedComponent(): unknown };
 type Input = (data: string) => void;
 type Render = (width: number) => string[];
 type EditorShape = { getPaddingX(): number; insertTextAtCursor(text: string): void };
+type Layout = { state: unknown; layoutText?(width: number): { text: string }[] };
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const firstGrapheme = (line: string) => [...graphemes.segment(line)][0]?.segment ?? "";
 type Decoration = { editor: CustomEditor; release(): void };
@@ -39,21 +40,30 @@ export function installEditor(actions: EditorActions) {
 	/** The suggestion to show in this editor now, or undefined. */
 	function visible(editor: CustomEditor): string | undefined {
 		const text = actions.suggestion();
-		const hint = actions.hint();
-		if (!text || (hint && hint !== "ctrl+e to suggest") || !session || editor.getText() !== "") return undefined;
-		if (!session.isIdle() || session.hasPendingMessages() || editor.isShowingAutocomplete()) return undefined;
+		if (!text || !session || editor.getText() !== "" || editor.isShowingAutocomplete()) return undefined;
 		return tui?.getFocusedComponent() === editor ? text : undefined;
 	}
 
-	/** The gray body rows, built once and rebuilt only when the text, the width, the cursor marker or the theme change. */
-	function grayRows(text: string, width: number, padding: number, marker: string): string[] {
+	/** Wrap the suggestion using the editor's layout, restoring its buffer afterwards. */
+	function layoutLines(editor: CustomEditor, text: string, room: number): string[] {
+		const own = editor as unknown as Layout;
+		const buffer = own.state;
+		own.state = { lines: text.split("\n"), cursorLine: 0, cursorCol: 0 };
+		try {
+			return own.layoutText!(room).map(line => line.text);
+		} finally {
+			own.state = buffer;
+		}
+	}
+
+	/** The gray body rows, rebuilt when their text or appearance changes. */
+	function grayRows(editor: CustomEditor, text: string, width: number, padding: number, marker: string): string[] {
 		const paint = session!.ui.theme.fg("dim", "x");
 		if (cached && cached.text === text && cached.width === width && cached.padding === padding && cached.marker === marker && cached.paint === paint) return cached.rows;
 		const contentWidth = Math.max(1, width - padding * 2);
 		const room = Math.max(1, contentWidth - (padding ? 0 : 1));
 		const margin = " ".repeat(padding);
-		// Wrapped like the editor wraps its own text.
-		const lines = text.split("\n").flatMap(line => line === "" ? [""] : wrapTextWithAnsi(line, room));
+		const lines = layoutLines(editor, text, room);
 		const rows = lines.map((line, index) => {
 			const first = index === 0 ? firstGrapheme(line) : "";
 			const display = index === 0 ? marker + renderFakeCursor(first || " ") + gray(line.slice(first.length)) : gray(line);
@@ -68,16 +78,16 @@ export function installEditor(actions: EditorActions) {
 	function withSuggestion(editor: CustomEditor, rows: string[], width: number): string[] {
 		shown = undefined;
 		if (rows.length !== 3 || !session || editor.getText() !== "" || editor.isShowingAutocomplete() || tui?.getFocusedComponent() !== editor) return rows;
-		const text = visible(editor);
+		const text = actions.suggestion();
 		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
 		const padding = Math.min((editor as unknown as EditorShape).getPaddingX(), maxPadding);
 		const marker = editor.focused && rows[1].includes(CURSOR_MARKER) ? CURSOR_MARKER : "";
-		if (text) {
+		if (text && typeof (editor as unknown as Layout).layoutText === "function") {
 			shown = text;
-			return [rows[0], ...grayRows(text, width, padding, marker), rows[2]];
+			return [rows[0], ...grayRows(editor, text, width, padding, marker), rows[2]];
 		}
 		const hint = actions.hint();
-		if (!hint || (hint === "ctrl+e to suggest" && (!session.isIdle() || session.hasPendingMessages())) || width - padding * 2 < 3 + visibleWidth(hint)) return rows;
+		if (!hint || width - padding * 2 < 3 + visibleWidth(hint)) return rows;
 		const theme = session.ui.theme;
 		if (!cachedHint || cachedHint.text !== hint || cachedHint.width !== width || cachedHint.padding !== padding || cachedHint.marker !== marker || cachedHint.theme !== theme) {
 			const margin = " ".repeat(padding);
@@ -111,10 +121,9 @@ export function installEditor(actions: EditorActions) {
 				}
 			}
 			if (active && actions.hotkeys() && !editor.isShowingAutocomplete()) {
-				const generate = matchesKey(data, "ctrl+e");
-				if (generate || matchesKey(data, "ctrl+r")) {
+				if (matchesKey(data, "ctrl+e")) {
 					// A key release or a held key repeat is swallowed: one press is one action.
-					if (!isKeyRelease(data) && !isKeyRepeat(data)) (generate ? actions.generate : actions.cancel)();
+					if (!isKeyRelease(data) && !isKeyRepeat(data)) actions.toggle();
 					return;
 				}
 			}

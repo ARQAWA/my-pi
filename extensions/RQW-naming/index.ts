@@ -1,6 +1,6 @@
-import { convertToLlm, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, MessageEndEvent } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { generateSessionName, type NamingRegistry } from "./core.ts";
+import { generateSessionName, type NamingMessage, type NamingRegistry } from "./core.ts";
 
 /** Initial attempt plus three retries. */
 const ATTEMPTS = 4;
@@ -42,7 +42,7 @@ export default function (pi: ExtensionAPI) {
 		catch { /* the UI of a replaced context is gone */ }
 	};
 
-	async function generate(ctx: ExtensionContext, run: Run, context: string, registry: NamingRegistry, provider: string | undefined) {
+	async function generate(ctx: ExtensionContext, run: Run, context: NamingMessage[], registry: NamingRegistry, provider: string | undefined) {
 		let name: string | undefined;
 		for (let attempt = 0; attempt < ATTEMPTS && name === undefined; attempt++) {
 			try { name = await generateSessionName({ context, registry, signal: run.controller.signal, provider }); }
@@ -62,13 +62,26 @@ export default function (pi: ExtensionAPI) {
 		current = run;
 		const provider = ctx.model?.provider;
 		void (async () => {
-			let context: string;
+			let context: NamingMessage[];
 			try {
-				// message_end reaches extensions BEFORE Pi appends that message to the session.
-				const messages = ctx.sessionManager.buildSessionProjection().messages;
+				const branch = ctx.sessionManager.getBranch();
+				const edits = new Map(branch.filter((entry) => entry.type === "context_edit").map((entry) => [entry.targetId, entry.replacement]));
+				const messages = branch.flatMap((entry) => {
+					if (entry.type !== "message") return [];
+					if (!edits.has(entry.id)) return [entry.message];
+					const replacement = edits.get(entry.id);
+					if (!replacement) return [];
+					return [{ ...entry.message, content: replacement.content }];
+				});
+				// message_end reaches extensions before Pi appends that message to the session.
 				const available = pendingMessage ? [...messages, pendingMessage] : messages;
-				// Pi's serializeConversation truncates tool results; preserve all available context here.
-				context = JSON.stringify(convertToLlm(available));
+				context = [];
+				for (const message of available) {
+					if (message.role !== "user" && message.role !== "assistant") continue;
+					const text = typeof message.content === "string" ? message.content
+						: message.content.filter((block) => block.type === "text").map((block) => block.text).join("\n");
+					if (text) context.push({ role: message.role, content: text });
+				}
 			}
 			catch { return warn(run, ctx); }
 			try { await generate(ctx, run, context, ctx.modelRegistry, provider); }

@@ -13,7 +13,8 @@ defaults:
     shell: bash
 
 jobs:
-  e2e:
+  # ConPTY capture checks the bundled pi.exe, stock and with RQW-mouse.
+  mouse:
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
@@ -23,21 +24,22 @@ jobs:
         with:
           node-version: 22
 
-      - name: Facts
-        run: |
-          where bash
-          "/c/Program Files/Git/bin/bash.exe" --version
-          node --version
-          echo "HOME=$HOME USERPROFILE=$USERPROFILE"
-
       - name: Synthetic package and tab tests
-        run: node --test pcli-vscode/test/bundle.test.mjs pcli-vscode/test/update.test.mjs pcli-vscode/test/quit.test.mjs pcli-vscode/test/keybinding.test.mjs
+        run: node --test pcli-vscode/test/bundle.test.mjs pcli-vscode/test/update.test.mjs pcli-vscode/test/keybinding.test.mjs
 
-      - name: Build VSIX
+      - name: Bundled Pi and the VS Code test runner
         working-directory: pcli-vscode
         run: |
           npm install --no-audit --no-fund
           node fetch-pi.mjs
+
+      - name: ConPTY capture, ?1000h count without and with RQW-mouse
+        working-directory: pcli-vscode
+        run: node test/mouse.mjs
+
+      - name: Build VSIX
+        working-directory: pcli-vscode
+        run: |
           (yes || true) | npx --yes @vscode/vsce@latest package --target win32-x64 --skip-license --no-dependencies -o pcli.vsix
           ls -l pcli.vsix
           unzip -l pcli.vsix | grep -i 'pi\.exe'
@@ -49,54 +51,7 @@ jobs:
           echo "$manifest" | grep -Eq '<Description[^>]*></Description>'
           echo "PASS empty <Description> in extension.vsixmanifest"
 
-      - name: E2E in real VS Code
-        working-directory: pcli-vscode
-        run: |
-          # Self-signed cert for the fake HTTPS model llm.pcli.test (MSYS must not rewrite /CN=...)
-          MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 -nodes -subj /CN=llm.pcli.test \
-            -addext subjectAltName=DNS:llm.pcli.test -keyout llm.key -out llm.crt -days 2
-          node test/proxy.cjs proxy.log llm.crt llm.key > proxy.out 2>&1 &
-          for i in $(seq 30); do grep -q ready proxy.out && break; sleep 1; done
-          grep ready proxy.out
-          node test/run.mjs pcli.vsix
-
-      - name: Proxy out
-        if: always()
-        working-directory: pcli-vscode
-        run: cat proxy.out || true
-
-      - name: Proxy log
-        if: always()
-        working-directory: pcli-vscode
-        run: cat proxy.log || true
-
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: pcli-e2e
-          path: |
-            pcli-vscode/pcli.vsix
-            pcli-vscode/proxy.log
-            ${{ runner.temp }}/pcli-e2e/agent-*/**/*.jsonl
-
-  # ConPTY capture: how often the mouse-enable command ?1000h comes out of the pseudo terminal when the bundled pi.exe
-  # (Bun build of Pi 1.4.0) starts, stock (expected 0) and with my-pi's RQW-mouse loaded (expected 1).
-  mouse:
-    runs-on: windows-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Bundled Pi and the VS Code test runner
-        working-directory: pcli-vscode
-        run: |
-          npm install --no-audit --no-fund
-          node fetch-pi.mjs
-
-      - name: ConPTY capture, ?1000h count without and with RQW-mouse
-        working-directory: pcli-vscode
-        run: node test/mouse.mjs
+          name: pcli-vsix
+          path: pcli-vscode/pcli.vsix

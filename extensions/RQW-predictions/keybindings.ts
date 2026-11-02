@@ -1,4 +1,5 @@
-// Frees Ctrl+E and Ctrl+R from Pi's own actions in memory, so one key press is one action.
+// Frees Ctrl+E and Ctrl+R from Pi's own actions in memory, so one key press is one action. Ctrl+E generates; Ctrl+R is
+// freed and does nothing here (RQW-send-now restarts an interrupted turn with it).
 // A light wrapper on the live keybindings manager: no settings file, no user binding and no Pi file is written.
 import { getKeybindings, matchesKey } from "@earendil-works/pi-tui";
 

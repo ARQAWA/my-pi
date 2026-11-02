@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { executeEdit } from "../../../extensions/RQW-tools/edit.ts";
 import { createTools } from "../../../extensions/RQW-tools/index.ts";
@@ -23,6 +26,29 @@ test("multi-file write and edit return confirmed results", async () => {
 		{ path: "a.txt", ok: true, details: { path: "a.txt", edits: [{ oldText: "alpha", newText: "one" }] } },
 		{ path: "nested/b.txt", ok: true, details: { path: "nested/b.txt", edits: [{ oldText: "beta", newText: "two" }] } },
 	]);
+});
+
+test("edit bounds and marks a truncated nearest match", async (t) => {
+	const cwd = await mkdtemp(join(tmpdir(), "rqw-hint-"));
+	t.after(() => rm(cwd, { recursive: true, force: true }));
+	const text = "x".repeat(1_000_000);
+	await writeFile(join(cwd, "long.txt"), text);
+	const edit: any = createTools(cwd, () => ({})).find((tool) => tool.name === "edit");
+	await assert.rejects(edit.execute("call", { path: "long.txt", edits: [{ oldText: "x".repeat(200) + "y", newText: "replacement" }] }, undefined, undefined, { cwd }), (error: Error) => {
+		assert.match(error.message, /Nearest match at lines 1-1:/);
+		assert.match(error.message, /truncated/i);
+		assert.ok(Buffer.byteLength(error.message) < 20_000);
+		return true;
+	});
+});
+
+test("edit and write descriptions introduce the multi-file form first", () => {
+	const tools = Object.fromEntries(createTools("/work", () => ({})).map(tool => [tool.name, tool as any]));
+	for (const name of ["edit", "write"]) {
+		const description = tools[name].description;
+		assert.ok(description.indexOf("several files") < description.indexOf("one file"));
+		assert.ok(description.includes("several files"));
+	}
 });
 
 test("read keeps the stock schema", () => {

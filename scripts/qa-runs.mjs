@@ -6,7 +6,7 @@ const newest = (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || 
 
 export const workflowRuns = (runs, workflow) => runs.filter((r) => r.path?.split("@")[0] === `.github/workflows/${workflow}`).sort(newest);
 
-// The three newest scheduled or dispatched main runs of tests.yml and pcli.yml.
-export const MAIN_WORKFLOWS = [["main tests", "tests.yml"], ["main pcli", "pcli.yml"]];
-export const mainRuns = (runs, workflow) => workflowRuns(runs, workflow)
-	.filter((r) => r.head_branch === "main" && ["schedule", "workflow_dispatch"].includes(r.event)).slice(0, 3);
+// The three newest push runs for each delivery workflow.
+export const DELIVERY_WORKFLOWS = [["release tests", "tests.yml", "release"], ["pcli", "pcli.yml", "pcli"]];
+export const deliveryRuns = (runs, workflow, branch) => workflowRuns(runs, workflow)
+	.filter((r) => r.head_branch === branch && r.event === "push").slice(0, 3);

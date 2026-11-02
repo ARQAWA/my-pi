@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { AgentSession, CustomEditor, InteractiveMode, createEventBus, initTheme, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Container, CURSOR_MARKER } from "@earendil-works/pi-tui";
+import { Container } from "@earendil-works/pi-tui";
 import sendNow from "../../../extensions/RQW-send-now/index.ts";
-import { fakeSession } from "./harness.ts";
+import { fakeSession, harness } from "./harness.ts";
 
 const plain = (row: string) => stripVTControlCharacters(row.replace(/\x1b_[^\x07]*\x07/g, ""));
 
-it("without predictions, shows the action for each queue and background state", async t => {
+it("offers the Esc hint for each queue and background state and never draws it in the editor", async t => {
 	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
 	const events = createEventBus();
 	const handlers = new Map<string, Function[]>();
@@ -37,10 +37,21 @@ it("without predictions, shows the action for each queue and background state", 
 			setWidget(_key: string, factory: any) { if (factory) factory(tui); },
 			onTerminalInput(fn: Function) { listeners.push(fn); return () => { const index = listeners.indexOf(fn); if (index >= 0) listeners.splice(index, 1); }; } } };
 	const fire = (name: string) => { for (const fn of handlers.get(name) ?? []) fn({}, ctx); };
+	let offered: any;
+	events.on("rqw:activity-hint:offer", (offer: any) => { offered = offer; });
 	fire("session_start");
 	t.after(() => fire("session_shutdown"));
-	const row = () => plain(editor.render(80)[1]).trim();
-	assert.equal(row(), "");
+	assert.equal(offered.sessionId, "main");
+	let source: any;
+	events.emit("rqw:activity-hint:request", { sessionId: "other", reply: () => assert.fail("another session") });
+	events.emit("rqw:activity-hint:request", { sessionId: "main", reply: (value: unknown) => { source = value; } });
+	assert.equal(source, offered.source);
+	// The editor stays empty in every state; the hint is what the activity line draws.
+	const row = () => {
+		assert.equal(plain(editor.render(80)[1]).trim(), "");
+		return source.snapshot();
+	};
+	assert.equal(row(), undefined);
 	state.idle = false; emit({ type: "agent_start" });
 	assert.equal(row(), "esc to interrupt");
 	let finish!: (value: undefined) => void;
@@ -50,12 +61,10 @@ it("without predictions, shows the action for each queue and background state", 
 	finish(undefined); await pending;
 	assert.equal(row(), "esc to interrupt");
 	session._runInputHandlers = async (text: string, images: unknown) => ({ text, images });
-	const line = editor.render(80)[1];
-	assert.ok(line.includes(CURSOR_MARKER)); assert.ok(line.includes("\x1b[3m"));
 	session._followUpMessages.push("next"); emit({ type: "queue_update" });
-	assert.equal(row(), "esc to interrupt");
+	assert.equal(row(), "ctrl+enter to steer");
 	await session._queueSteer("change");
-	assert.equal(row(), "ctrl+enter to send now");
+	assert.equal(row(), "ctrl+enter to steer");
 	emit({ type: "compaction_start" });
 	assert.equal(row(), "esc to interrupt");
 	emit({ type: "compaction_end" });
@@ -63,7 +72,7 @@ it("without predictions, shows the action for each queue and background state", 
 	assert.equal(row(), "esc to interrupt");
 	emit({ type: "auto_retry_end" });
 	state.provider = "anthropic"; emit({ type: "queue_update" });
-	assert.equal(row(), "esc to send now");
+	assert.equal(row(), "ctrl+enter to steer");
 	session._steeringMessages = []; state.idle = true; state.background = 1; countChanged();
 	assert.equal(row(), "esc esc to stop background");
 	state.background = 0; countChanged();
@@ -74,13 +83,11 @@ it("without predictions, shows the action for each queue and background state", 
 	assert.equal(row(), "esc esc to stop background");
 	stopLateSource();
 	assert.equal(row(), "ctrl+enter to steer");
-	editor.setText(" "); assert.equal(row().includes("ctrl+enter"), false);
-	editor.setText(""); editor.handleInput("\t"); editor.handleInput("\r");
+	editor.handleInput("\t"); editor.handleInput("\r");
 	assert.equal(editor.getText(), "");
-	assert.equal(plain(editor.render(10)[1]).trim(), "");
 });
 
-it("removes the old outside hints while keeping queue rows, loader and retry countdown", t => {
+it("removes the old outside hints only while a consumer draws the Esc hints, keeping queue rows, loader and retry countdown", t => {
 	initTheme();
 	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
 	const events = createEventBus();
@@ -112,26 +119,65 @@ it("removes the old outside hints while keeping queue rows, loader and retry cou
 	fire("session_start");
 	host.updatePendingMessagesDisplay();
 	host.setExtensionStatus("rqw-followup-hold", "follow-up waits for the final answer");
+	// Without a consumer Pi's own hints stay.
+	assert.match(plain(host.pendingMessagesContainer.children.map((child: any) => child.text ?? "").join(" ")), /edit all queued messages/);
+	assert.equal(statuses.get("rqw-followup-hold"), "follow-up waits for the final answer");
+	let source: any;
+	events.emit("rqw:activity-hint:request", { sessionId: "main", reply: (value: unknown) => { source = value; } });
+	const stopConsumer = source.subscribe(() => {});
 	assert.doesNotMatch(plain(host.pendingMessagesContainer.children.map((child: any) => child.text ?? "").join(" ")), /edit all queued messages/);
-	assert.equal(statuses.get("rqw-followup-hold"), undefined);
+	assert.equal(statuses.get("rqw-followup-hold"), "follow-up waits for the final answer");
 	input("x"); focused = editor;
 	const rows = host.pendingMessagesContainer.children.map((child: any) => child.text ?? "").join(" ");
 	assert.match(plain(rows), /Follow-up: read the result/);
 	assert.doesNotMatch(plain(rows), /edit all queued messages/);
 	host.setExtensionStatus("rqw-followup-hold", "follow-up waits for the final answer");
-	assert.equal(statuses.get("rqw-followup-hold"), undefined);
+	assert.equal(statuses.get("rqw-followup-hold"), "follow-up waits for the final answer");
 	const indicator = { kind: "retry", render: () => [" Retrying (1/3) in 5s... (esc to cancel)"], renderInBorder: () => "Retrying (1/3) in 5s... (esc to cancel)", dispose() {} };
 	host.showStatusIndicator(indicator);
 	assert.match(plain(indicator.render()[0]), /Retrying \(1\/3\) in 5s/);
 	assert.doesNotMatch(plain(indicator.render()[0]), /to cancel/);
-	assert.doesNotMatch(plain(host.extensionWidgetsAbove.get("rqw-statusbar-activity").render(80)[0]), /to cancel/);
+	// The activity line's retry text keeps its own key: it is the hint there.
+	assert.match(plain(host.extensionWidgetsAbove.get("rqw-statusbar-activity").render(80)[0]), /Retrying 1\/3 in 5s · esc to cancel/);
 	focused = {}; input("x");
 	focused = editor;
 	assert.doesNotMatch(plain(indicator.render()[0]), /to cancel/);
 	assert.doesNotMatch(plain(host.pendingMessagesContainer.children.map((child: any) => child.text ?? "").join(" ")), /edit all queued messages/);
-	assert.equal(statuses.get("rqw-followup-hold"), undefined);
+	assert.equal(statuses.get("rqw-followup-hold"), "follow-up waits for the final answer");
+	stopConsumer();
+	assert.equal(statuses.get("rqw-followup-hold"), "follow-up waits for the final answer");
+	assert.match(host.pendingMessagesContainer.children.map((child: any) => child.text ?? "").join(" "), /edit all queued messages/);
+	source.subscribe(() => {});
+	assert.equal(statuses.get("rqw-followup-hold"), "follow-up waits for the final answer");
 	fire("session_shutdown");
 	assert.equal(statuses.get("rqw-followup-hold"), "follow-up waits for the final answer");
 	assert.match(plain(indicator.render()[0]), /to cancel/);
 	assert.match(host.pendingMessagesContainer.children.map((child: any) => child.text ?? "").join(" "), /edit all queued messages/);
+});
+
+it("offers no Esc hint while the fullscreen transcript is scrolled up, because the first Esc only jumps down", t => {
+	const h = harness(t);
+	let source: any;
+	h.events.emit("rqw:activity-hint:request", { sessionId: "session", reply: (value: unknown) => { source = value; } });
+	const emit = (type: string) => { for (const fn of [...h.session._eventListeners]) fn({ type }); };
+	emit("agent_start");
+	assert.equal(source.snapshot(), "esc to interrupt");
+	h.state.following = false;
+	assert.equal(source.snapshot(), undefined);
+	h.state.following = true;
+	assert.equal(source.snapshot(), "esc to interrupt");
+	// Background only: the first Esc is taken for the double press, but a scrolled-up one jumps.
+	h.state.idle = true; h.state.background = 1; emit("agent_settled");
+	assert.equal(source.snapshot(), "esc esc to stop background");
+	h.state.following = false;
+	assert.equal(source.snapshot(), undefined);
+	// Hints that do not use Esc stay.
+	h.state.idle = false; h.state.background = 0;
+	h.followUp("next"); emit("queue_update");
+	assert.equal(source.snapshot(), "ctrl+enter to steer");
+	// Only the fullscreen view scrolls; another renderer keeps the hint.
+	h.session._followUpMessages = []; h.session.agent.followUpQueue.messages = []; emit("queue_update");
+	assert.equal(source.snapshot(), undefined);
+	h.state.mode = "inline";
+	assert.equal(source.snapshot(), "esc to interrupt");
 });

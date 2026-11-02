@@ -4,7 +4,7 @@ import { stripVTControlCharacters as strip } from "node:util";
 import type { Message } from "@earendil-works/pi-ai";
 import {
 	ABORTED_MS, ACTIVITY_QUERY, assistant, CTRL_E, CTRL_E_RELEASE, CTRL_R, CTRL_R_RELEASE, deferred, failure, harness, last, MODEL,
-	OTHER, settle, SILENCE_RULE, suggestion, text, USER, SYSTEM,
+	OTHER, piKeybindings, settle, SILENCE_RULE, suggestion, text, USER, SYSTEM,
 } from "./harness.ts";
 
 describe("RQW-predictions generation", () => {
@@ -68,23 +68,14 @@ describe("RQW-predictions generation", () => {
 		assert.equal(h.forks.length, 0);
 	});
 
-	it("a queued user message at Ctrl+E skips the request", async () => {
-		const h = harness();
-		h.answer();
-		h.state.pending = true;
-		h.key(CTRL_E);
+	it("a queued user message neither skips nor stops a request", async () => {
+		const queued = harness();
+		queued.answer();
+		queued.state.pending = true;
+		queued.key(CTRL_E);
 		await settle();
-		assert.equal(h.gets.length, 0);
-		assert.equal(h.forks.length, 0);
-		assert.equal(h.controller.suggestion(), undefined);
-	});
-
-	it("a message queued before the prompt request or while it loads stops the model call", async () => {
-		const early = harness();
-		early.asked();
-		early.state.pending = true;
-		await settle();
-		assert.equal(early.gets.length, 0);
+		assert.equal(queued.forks.length, 1);
+		assert.equal(queued.controller.suggestion(), "run the tests");
 
 		const late = deferred<{ prompt: string }>();
 		const h = harness({ prompts: [late.promise] });
@@ -94,9 +85,8 @@ describe("RQW-predictions generation", () => {
 		h.state.pending = true;
 		late.resolve({ prompt: "PREDICT PROMPT" });
 		await settle();
-		assert.equal(h.forks.length, 0);
-		assert.equal(h.provider.length, 0);
-		assert.equal(h.controller.suggestion(), undefined);
+		assert.equal(h.forks.length, 1);
+		assert.equal(h.controller.suggestion(), "run the tests");
 		assert.equal(h.states().at(-1), "idle");
 	});
 
@@ -216,8 +206,6 @@ describe("RQW-predictions manual keys", () => {
 		assert.equal(h.controller.suggestion(), "run the tests");
 		// The key is taken once: the editor's own handler never sees it.
 		assert.deepEqual(h.reached, ["\x01"]);
-		h.key(CTRL_R);
-		assert.deepEqual(h.reached, ["\x01"]);
 	});
 
 	it("manual runs repeat without a limit and replace the old suggestion", async () => {
@@ -245,32 +233,26 @@ describe("RQW-predictions manual keys", () => {
 		assert.equal(h.controller.suggestion(), undefined);
 	});
 
-	it("no request while the chat works, a message is queued while idle, or a request runs", async () => {
-		const slow = deferred<ReturnType<typeof text>>();
-		const h = harness({ replies: [slow.promise] });
-		h.state.idle = false;
-		h.key(CTRL_E);
-		h.state.idle = true;
-		h.state.pending = true;
-		h.key(CTRL_E);
-		await settle();
-		assert.equal(h.gets.length, 0);
-		h.state.pending = false;
-		h.key(CTRL_E);
-		await settle();
-		h.key(CTRL_E);
-		await settle();
-		assert.equal(h.gets.length, 1);
-		slow.resolve(suggestion("x"));
-	});
-
-	it("a queued message that appears after planning but before the prompt request stops a manual run", async () => {
-		const h = harness();
-		h.key(CTRL_E);
-		h.state.pending = true;
-		await settle();
-		assert.equal(h.gets.length, 0);
-	});
+	for (const [name, idle, pending] of [["idle", true, false], ["a running turn", false, false], ["a queued message", true, true], ["a running turn with a queued message", false, true]] as const) {
+		it(`Ctrl+E starts a request and the next Ctrl+E cancels it in this state: ${name}`, async () => {
+			const h = harness({ replies: [deferred<ReturnType<typeof text>>().promise, suggestion("again")] });
+			h.ran();
+			h.state.idle = idle;
+			h.state.pending = pending;
+			h.key(CTRL_E);
+			await settle();
+			assert.equal(h.gets.length, 1);
+			assert.equal(h.forks.length, 1);
+			assert.deepEqual(h.states(), ["brewing"]);
+			h.key(CTRL_E);
+			assert.equal(h.forks[0].signal.aborted, true);
+			assert.deepEqual(h.states(), ["brewing", "aborted"]);
+			h.key(CTRL_E);
+			await settle();
+			assert.equal(h.forks.length, 2);
+			assert.equal(h.controller.suggestion(), "again");
+		});
+	}
 
 	it("key release and key repeat do nothing", async () => {
 		const h = harness();
@@ -284,19 +266,17 @@ describe("RQW-predictions manual keys", () => {
 		assert.equal(h.gets.length, 1);
 	});
 
-	it("Ctrl+R cancels only the own request, paints aborted for 2000 ms and drops the late answer", async (t) => {
+	it("Ctrl+E while a request runs cancels it, paints aborted for 2000 ms and drops the late answer", async (t) => {
 		t.mock.timers.enable({ apis: ["setTimeout"] });
 		const slow = deferred<ReturnType<typeof text>>();
 		const h = harness({ replies: [slow.promise] });
 		h.ran();
 		h.key(CTRL_E);
 		await settle();
-		h.key(CTRL_R);
+		h.key(CTRL_E);
 		assert.equal(h.forks[0].signal.aborted, true);
 		assert.deepEqual(h.states(), ["brewing", "aborted"]);
 		assert.equal(h.activity.at(-1)!.abortedUntil, h.clock.now + ABORTED_MS);
-		h.key(CTRL_R);
-		assert.equal(h.activity.length, 2);
 		slow.resolve(suggestion("late"));
 		await settle();
 		assert.equal(h.controller.suggestion(), undefined);
@@ -307,18 +287,36 @@ describe("RQW-predictions manual keys", () => {
 		assert.equal(h.states().at(-1), "idle");
 	});
 
-	it("Ctrl+R without a request does nothing, and a new run ends the aborted paint", async (t) => {
+	it("a new run ends the aborted paint", async (t) => {
 		t.mock.timers.enable({ apis: ["setTimeout"] });
-		const h = harness({ replies: [deferred<ReturnType<typeof text>>().promise] });
-		h.key(CTRL_R);
-		assert.equal(h.activity.length, 0);
+		const h = harness({ replies: [deferred<ReturnType<typeof text>>().promise, deferred<ReturnType<typeof text>>().promise] });
 		h.key(CTRL_E);
 		await settle();
-		h.key(CTRL_R);
+		h.key(CTRL_E);
+		assert.equal(h.states().at(-1), "aborted");
 		h.key(CTRL_E);
 		assert.equal(h.states().at(-1), "brewing");
 		t.mock.timers.tick(ABORTED_MS);
 		assert.equal(h.states().at(-1), "brewing");
+	});
+
+	it("Ctrl+R is free: it cancels nothing, starts nothing and reaches no Pi action", async () => {
+		const h = harness({ realKeys: true, keybindings: piKeybindings(), replies: [deferred<ReturnType<typeof text>>().promise] });
+		h.ran();
+		let renames = 0;
+		h.editor.onAction("app.session.rename", () => { renames++; });
+		h.key(CTRL_R);
+		await settle();
+		assert.equal(h.gets.length, 0);
+		assert.deepEqual(h.states(), []);
+		h.key(CTRL_E);
+		await settle();
+		h.key(CTRL_R);
+		h.key(CTRL_R_RELEASE);
+		assert.equal(h.forks[0].signal.aborted, false);
+		assert.deepEqual(h.states(), ["brewing"]);
+		assert.equal(renames, 0);
+		assert.equal(h.editor.getText(), "");
 	});
 
 	it("keys reach only the main editor and are not taken while autocomplete shows or the editor lost focus", async () => {
@@ -341,8 +339,7 @@ describe("RQW-predictions manual keys", () => {
 	});
 
 	it("an empty chat with no answer has nothing to predict from", async () => {
-		const h = harness();
-		h.state.branch = [{ type: "message", message: USER }];
+		const h = harness({ branch: [{ type: "message", message: USER }] });
 		h.key(CTRL_E);
 		await settle();
 		assert.equal(h.gets.length, 0);
@@ -359,28 +356,30 @@ describe("RQW-predictions manual keys", () => {
 });
 
 describe("RQW-predictions status", () => {
-	it("without a footer consumer the stock status line shows brewing and the aborted text, then clears", async (t) => {
+	it("the stock status line shows brewing and the aborted text, then clears", async (t) => {
 		t.mock.timers.enable({ apis: ["setTimeout"] });
 		const h = harness({ replies: [deferred<ReturnType<typeof text>>().promise] });
 		h.key(CTRL_E);
 		await settle();
 		assert.equal(h.statuses.at(-1), "prediction");
-		h.key(CTRL_R);
+		h.key(CTRL_E);
 		assert.equal(strip(h.statuses.at(-1)!), "prediction aborted");
 		assert.match(h.statuses.at(-1)!, /^\x1b\[38;2;53;28;34m/);
 		t.mock.timers.tick(ABORTED_MS);
 		assert.equal(h.statuses.at(-1), undefined);
 	});
 
-	it("a footer consumer that asks gets the state through offer and the stock line stays out", async () => {
-		const h = harness({ consumer: true });
+	it("a footer that asked for the state gets it, and the stock status line stays, so it survives /statusbar off", async () => {
+		const h = harness({ replies: [deferred<ReturnType<typeof text>>().promise] });
 		let offered: unknown;
 		h.events.emit(ACTIVITY_QUERY, { offer: (state: unknown) => { offered = state; } });
 		assert.deepEqual(offered, { sessionId: "main", state: "idle" });
 		h.key(CTRL_E);
 		await settle();
-		assert.equal(h.statuses.filter(value => value !== undefined).length, 0);
-		assert.deepEqual(h.states(), ["brewing", "idle"]);
+		h.events.emit(ACTIVITY_QUERY, { offer: (state: unknown) => { offered = state; } });
+		assert.deepEqual(offered, { sessionId: "main", state: "brewing" });
+		assert.equal(h.statuses.at(-1), "prediction");
+		assert.deepEqual(h.states(), ["brewing"]);
 	});
 });
 
@@ -437,5 +436,29 @@ describe("RQW-predictions context", () => {
 		assert.deepEqual(messages.slice(2, -1), [picture, call, result, text("Done.")]);
 		assert.equal(last(h.provider[0].context).role, "user");
 		assert.equal(JSON.stringify(messages).includes("c2"), false);
+	});
+});
+
+describe("RQW-predictions token errors", () => {
+	const plain = (row: string) => strip(row.replace(/\x1b_[^\x07]*\x07/g, ""));
+	const errorStatus = (h: ReturnType<typeof harness>) => h.keyed.filter(([key]) => key === "rqw-predictions-error");
+
+	it("a Codex model answering 401 shows it, and the Ctrl+E hint stays", async (t) => {
+		t.mock.timers.enable({ apis: ["setTimeout"] });
+		const h = harness({ replies: [{ ...failure(), errorMessage: "401 Unauthorized" }] });
+		h.setModel(OTHER);
+		h.answer();
+		h.key(CTRL_E);
+		await settle();
+		assert.match(strip(errorStatus(h).at(-1)![1]!), /Codex token expired or rejected/);
+		assert.equal(plain(h.screen()[1]).trim(), "ctrl+e to suggest");
+	});
+
+	it("an Anthropic 401 is not a Codex token failure", async () => {
+		const h = harness({ replies: [{ ...failure(), errorMessage: "401 Unauthorized" }] });
+		h.asked();
+		await settle();
+		assert.deepEqual(errorStatus(h), []);
+		assert.equal(h.notes.length, 1);
 	});
 });

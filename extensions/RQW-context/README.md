@@ -19,6 +19,16 @@ Independent context-window and compaction policy for Pi 1.4.0.
   the window minus estimated input minus 4096, with a floor of one token. Oversized input and prose-heavy
   summaries can therefore remain unrecoverable; this extension adds no recovery algorithm.
 
+Huge-tail compaction (`large-tail.ts`):
+
+- When the safe projection offer exists but Pi's free projection throws `RangeError`, the existing manual and automatic
+  entrances use one shared bypass, not copies of Pi's private methods. It prepares through `prepareSnapshot`, calls
+  the normal generator and stores a normal `appendCompaction` entry, then refreshes the session context.
+- Before/after extension hooks, cancellation, error events, idle state, queued messages and overflow retry remain.
+  Threshold compaction can adopt a ready/running background summary through the same generator seam.
+- The offer and the session methods used by the bypass are checked. Missing seams, no offer and ordinary branches
+  stay on the native path. This fixes the stack overflow, not a single retained message larger than the model window.
+
 Background compaction (`background.ts`):
 
 - At Pi's checkpoints, from 65% of W and below Pi's own threshold, Pi's own summary generator runs without being
@@ -38,6 +48,9 @@ Background compaction (`background.ts`):
 - The projected preparation is a local copy of Pi 1.4.0 helpers that neither the npm root nor the compiled bundle
   exports. The oracle tests compare it with Pi's `prepareCompaction`; recheck them on every Pi update. Without the
   summary generator seam background compaction stays off and W/R works as before.
+- The projection of the branch goes through `globalThis[Symbol.for("rqw:safe-projection:v1")]` when RQW-history-edit
+  offers it (Pi's own call overflows the stack on a tail of about 120000 entries after a compaction); without the offer
+  it is Pi's `buildSessionProjection`.
 - Manual or overflow compaction aborts the request. At the threshold it is also aborted when a
   `session_before_compact` handler cancels or supplies the compaction and Pi never asks the generator. A disposed
   session, such as a stopped subagent, aborts it too, through a shape-checked `dispose` wrapper.

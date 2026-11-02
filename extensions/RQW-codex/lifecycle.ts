@@ -209,7 +209,7 @@ function isOwnedCodexDiagnostic(message: unknown): boolean {
 }
 
 /** Pi's standalone summary helper retries returned errors separately from AgentSession._isRetryableError. */
-function suppressSummaryRetries(session: AgentSession): Cleanup {
+export function suppressSummaryRetries(session: AgentSession): Cleanup {
 	const agent = session.agent;
 	const original = agent.streamFunction;
 	let active = true;

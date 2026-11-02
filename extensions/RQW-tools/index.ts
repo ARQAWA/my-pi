@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
 	SettingsManager,
 	formatSkillsForPrompt,
@@ -15,7 +15,7 @@ import { groupCodemode, takeOverBuiltinCodemode } from "./codemode.ts";
 import { guardBash } from "./bash-guard.ts";
 import { createEditSchema, executeEdit, prepareEditArguments } from "./edit.ts";
 import { createCountsProducer } from "./counts.ts";
-import { commandOf, createJobs, createJobTool, type JobHandle, type JobNotification, type Jobs, type JobsOptions } from "./jobs.ts";
+import { commandOf, createJobs, createJobTool, type JobHandle, type Jobs, type JobsOptions } from "./jobs.ts";
 import { editRenderers, writeRenderers } from "./render.ts";
 import { createRgToolDefinition } from "./rg.ts";
 import { createGlobToolDefinition } from "./glob.ts";
@@ -61,7 +61,7 @@ function safely(settings: () => any): any {
 
 /** Channel on which RQW-agent asks for fresh tools for each subagent session. */
 const SUBAGENT_TOOLS = "rqw-tools:subagent-tools";
-const BACKGROUNDABLE = ["bash", "codemode", "rqw_readfile", "edit", "write", "rqw_rg", "rqw_glob"];
+const BACKGROUNDABLE = ["bash", "codemode", "rqw_readfile", "edit", "write", "rqw_rg", "rqw_glob", "read", "grep", "find"];
 const STARTUP_PROJECTION = "rqw-prompt:startup-projection";
 
 /** Apply the same optional prompt sections to normal turns and the startup projection. */
@@ -97,9 +97,6 @@ function projectToolSections(request: unknown): void {
 	}
 }
 
-export type { JobNotification } from "./jobs.ts";
-const JOB_MESSAGE = "job";
-
 export default function (pi: ExtensionAPI) {
 	installRqwTools(pi);
 }
@@ -116,11 +113,23 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 	}
 	let legacy = !aliasesShutdown;
 	const jobs = createJobs({ enabled: () => pi.getActiveTools().includes("job"), backgroundAfterMs: options.backgroundAfterMs });
-	for (const tool of createTools(process.cwd(), () => pi.getSettings(), { jobs, get legacy() { return legacy; } })) {
+	for (const tool of createTools(process.cwd(), () => pi.getSettings(), { jobs, events: pi.events, get legacy() { return legacy; } })) {
 		if (["rqw_rg", "rqw_glob", "rqw_readfile"].includes(tool.name)) (tool as any).rqwSelectionFallback = () => { legacy = true; };
 		pi.registerTool(tool);
 	}
 	let stopNotice: (() => void) | undefined;
+	let auto: ReturnType<Jobs["autoSource"]> | undefined;
+	let autoSession: string | undefined;
+	pi.events.on("rqw:auto-wait:request:v1", (request: any) => {
+		if (auto && request?.sessionId === autoSession && typeof request.offer === "function") request.offer(auto.source);
+	});
+	pi.on("session_start", (_event, ctx) => {
+		auto?.close();
+		autoSession = ctx.sessionManager.getSessionId();
+		auto = jobs.autoSource();
+		pi.events.emit("rqw:auto-wait:offer:v1", { sessionId: autoSession, source: auto.source });
+	});
+	pi.on("session_shutdown", () => { auto?.close(); auto = undefined; autoSession = undefined; });
 	pi.on("session_start", (_event, ctx) => {
 		stopNotice?.();
 		const sessionId = ctx.sessionManager.getSessionId?.();
@@ -137,7 +146,6 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 		aliasesShutdown?.(ctx.sessionManager, event.reason === "reload");
 		selectionShutdown?.();
 	});
-	installNotifications(pi, jobs);
 
 	pi.on("before_agent_start", (event) => applyToolSections(event.systemPromptOptions));
 	let unsubscribeProjection: (() => void) | undefined;
@@ -177,39 +185,8 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 	});
 }
 
-/** Deliver finished notification waits into the main chat. */
-function installNotifications(pi: ExtensionAPI, jobs: Jobs) {
-	let main: ExtensionContext | undefined;
-	let aborted = false;
-	const held: JobNotification[] = [];
-	const message = (n: JobNotification) => ({ customType: JOB_MESSAGE, content: `[job] ${n.text}`, display: true, details: { delivery: n.id, ...n.details } });
-	const deliver = (n: JobNotification) => {
-		if (main?.isIdle() === false) held.push(n);
-		else pi.sendMessage(message(n), { triggerTurn: true });
-	};
-	pi.on("session_start", (_event, ctx) => {
-		main = ctx;
-		jobs.setNotify(ctx.mode === "print" || ctx.mode === "json" ? undefined : deliver);
-	});
-	pi.on("agent_start", () => { aborted = false; });
-	pi.on("agent_end", (_event, ctx) => {
-		if (ctx.signal?.aborted) aborted = true;
-		else ctx.signal?.addEventListener("abort", () => { aborted = true; }, { once: true });
-	});
-	pi.on("agent_before_settle", () => {
-		if (aborted || !held.length) return;
-		for (const n of held.splice(0)) pi.sendMessage(message(n), { triggerTurn: false });
-		return { continue: true };
-	});
-	pi.on("agent_settled", (event) => {
-		const rest = held.splice(0);
-		rest.forEach((n, i) => pi.sendMessage(message(n), { triggerTurn: !event.aborted && i === rest.length - 1 }));
-	});
-	pi.on("session_shutdown", () => { held.length = 0; });
-}
-
 /** Fresh base tools and one job registry for a main session or a subagent. */
-export function createTools(cwd: string, settings: () => any, options: JobsOptions & { jobs?: Jobs; codemode?: ToolDefinition<any, any, any>; legacy?: boolean } = {}): ToolDefinition[] {
+export function createTools(cwd: string, settings: () => any, options: JobsOptions & { jobs?: Jobs; codemode?: ToolDefinition<any, any, any>; legacy?: boolean; events?: ExtensionAPI["events"] } = {}): ToolDefinition[] {
 	const tools: ToolDefinition[] = [];
 	const jobs = options.jobs ?? createJobs(options);
 	type Run = (id: string, params: any, signal: any, onUpdate: any, ctx: any, job?: JobHandle) => Promise<any>;
@@ -313,6 +290,6 @@ export function createTools(cwd: string, settings: () => any, options: JobsOptio
 	}
 
 	if (options.codemode) tools.push(groupCodemode(options.codemode, jobs));
-	tools.push({ ...createJobTool(jobs, description("job")), ...notDefault });
+	tools.push({ ...createJobTool(jobs, description("job"), options.events), ...notDefault });
 	return tools;
 }

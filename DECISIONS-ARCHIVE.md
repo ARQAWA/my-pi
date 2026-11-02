@@ -7118,3 +7118,139 @@ Source: `ac5b508a:DECISIONS.md`. Verbatim replaced text:
 >   Limits: RQW-scroll reads the same counts offers and also yields Escape while background work runs, so a scrolled-up
 >   transcript with only background running arms and stops with two presses and jumps down again after it ends; a press
 >   within 500 ms of one that found work stays turn control even if the work ended in between. A force-send
+
+## A-0405 · archived 2026-10-31 · Send now · Escape did not send a queued follow-up
+
+Status: SUPERSEDED by `[D-KEYS-ESC]`, `[D-KEYS-STEER]`, `[D-KEYS-HINTS]` and `[D-SENDNOW-LIMITS]` (DECISIONS.md#send-now): Escape with a user follow-up queued is the silent force-send and sends the follow-up after the steering.
+Source: `5377fff2:DECISIONS.md`. Verbatim replaced text:
+
+> At the bottom, one Escape while the turn (or a compaction) works is left to Pi, which interrupts it. A second Escape within 500 ms sends
+
+> it takes only user
+>   steering out of both Pi queues in one step (follow-ups, other queued messages and the editor draft stay; images go
+>   along), calls
+
+> The priority is prediction cancellation, Codex steering force, other-provider steering force, main interruption,
+
+> Several queued messages go as one, joined by blank lines; follow-ups and
+>   other queued messages stay in Pi's queue;
+
+## A-0406 · Send now · follow-up steering key
+
+Status: SUPERSEDED by `[D-KEYS-STEER]` and `[D-KEYS-HINTS]` (DECISIONS.md#send-now).
+Source: `acc4a0a7:DECISIONS.md`. Verbatim replaced text:
+
+> main turn). Alt+Enter never forces. An empty Enter, as before, and an empty Ctrl+Enter with user steering waiting (queued, or still on its way
+
+> An empty Enter and an empty Ctrl+Enter still leave follow-ups queued.
+
+> The priority is prediction cancellation, Codex steering force (`ctrl+enter to send now`), the Escape force for other-provider steering or any queued follow-up (`esc to send now`), main interruption, background stop, follow-up steering, then prediction generation.
+
+> other queued messages stay in Pi's queue, except that Escape sends the user follow-ups too (`[D-KEYS-STEER]`);
+
+## A-0407 · archived 2026-11-01 · Send now and Predictions · key hints in the editor
+
+Status: SUPERSEDED by `[D-KEYS-HINTS]` (DECISIONS.md#send-now) and `[D-PREDICTIONS]`: the input shows only `ctrl+e to suggest`, the Esc hints are on the activity line, Ctrl+E toggles in every state and Ctrl+R is free.
+Source: `16085f2f:DECISIONS.md`. Verbatim replaced text:
+
+> **Editor key hints** `[D-KEYS-HINTS]`. Part 4 of the keys design. A dim italic hint in the strictly empty main editor starts two spaces after the cursor. The priority is prediction cancellation, queued follow-up during a turn (`ctrl+enter to steer`), Codex steering force (`ctrl+enter to send now`), the Escape force for other-provider steering (`esc to send now`), main interruption, background stop, follow-up steering, then prediction generation. A ready prediction replaces the idle hint; hints never enter the buffer or history, and Tab accepts only a ready prediction. Retry and compaction use the interruption hint. Predictions paints the offered send-now action; send-now paints its own fallback when predictions is off. Old outside queue, hold and loader key hints are hidden while the painter is active. Rendering uses cached rows; incompatible Pi shapes stay stock. Carriers: `extensions/RQW-predictions/editor.ts`, `extensions/RQW-send-now/hint-editor.ts`, `hint-ui.ts`. Tests: `test/extensions/RQW-predictions/hints.test.ts`, `test/extensions/RQW-send-now/hints.test.ts`.
+
+> It starts only when the owner presses Ctrl+E, immediately, and never by itself after an answer; it is skipped while the owner's queued messages wait. A new finished answer drops the old suggestion. Ctrl+R aborts a brewing suggestion and shows a 2 s burgundy state.
+
+## A-0408 · Agent · in-memory self-check forks
+
+Status: SUPERSEDED by `[D-AGENT-FORK-SELFCHECK]` (DECISIONS.md#agent).
+Source: `3343b55f:DECISIONS.md`. Verbatim replaced text:
+
+> - **Fork of the caller for self-check** `[D-AGENT-FORK-SELFCHECK]`. `agent` `start` with `fork_turns: "all"` copies the caller's current branch into an in-memory child with the caller's model, thinking, system prompt and tools. It takes no `model`, `thinking`, `agent_type`, `system`, `system_file`, `role`, `role_file` or `include`, so its first request reuses the caller's prompt cache; the default `"none"` keeps ordinary clean starts. The fork runs the executor's self-check and the blind loop (spotty, medium, fresh clean reviewers) on its own and gives the caller one report; the caller waits and does not touch the checked object meanwhile. A fork history is not durable: after a restart a missing history is an explicit error, never a silent CLEAN. Forks send no progress reports to the parent. The coordinator guard lets a `fork_turns: "all"` start or restart pass without a model category and draws nothing; every other start keeps the category rule and the random draw, and reviewer profiles keep their exact pairs. Design: `my-pi-evidence/designs/fork-selfcheck/DESIGN.md`. The P3 rule belongs to the reviewer gate: P0-P2 are always reported, P3 only together with them, a P3-only result is CLEAN.
+
+## A-0409 · archived 2026-11-01 · Provider-limit badge colors
+
+Status: SUPERSEDED by `[D-STATUSBAR-SUBSCRIPTION-LIMITS]` (DECISIONS.md#subscription-limits): the owner later chose pink-red CC and light blue CX.
+Source: `8413081c:DECISIONS.md`. Verbatim replaced text:
+
+> - **Provider-limit badge colors** `[D-STATUSBAR-LIMIT-COLORS]`. Definitive `CC` choice, owner (`16-27-59:9432`, entry `d7037e66`): «2 бронза».
+>   This answers the bronze/orange question in assistant entry `05b22f2b`, `16-27-59:9416`.
+>   Decision: `CC` bronze, Codex gold. Reason: distinguish provider-limit badges by color.
+>   Carrier: `extensions/RQW-statusbar/quota.ts`. The direct Anthropic quota provider is delivered
+>   ([D-ANTHROPIC-QUOTA](#anthropic-subscription-adapter)).
+
+## A-0410 · Agent · real-final hold
+
+Status: SUPERSEDED by `[D-AGENT-REAL-FINAL]` (DECISIONS.md#agent).
+Source: `origin/main:DECISIONS.md`. Verbatim replaced text:
+
+> - **Terminal busy indicator until the real final** `[D-AGENT-REAL-FINAL]`. While the turn has ended but background work still runs, the terminal's own busy indicator stays "working" and goes out at the real final: no running agents, no background jobs, no waiting `wait`, no undelivered notification. Step 1 (done): the shared gate `real-final.ts` and the wrapper of the herdr integration's `agent_settled` handler, only with `HERDR_ENV=1`. Step 2 (done): `terminal-progress.ts` patches `ProcessTerminal.prototype.setProgress` and `start` so OSC 9;4 "off" waits for the real final and `start()` after a screen mode switch turns a deferred progress on again. Step 3 (done): the same patch defers OSC 7501 idle, done and error until the real final, restores working after a dialog, and flushes on shutdown or process exit; working and blocked cancel the deferred report. `terminal.showTerminalProgress` is not enabled by default (not approved). Pi's `agent_settled` itself is never delayed.
+>   Owner: «Ну и надо чтобы статус этого был желтенький, что он в работе пока у него висит какой-то фон.»
+>   Owner: «Я понял про что ты. Когда я говорил "желтый цвет", я имел в виду желтый кружочек внутри этого. Это статус в Herder или статус в iTerm, это никак не статус внутри самого агента. Это статус с боку припеку.»
+>   Owner: «Я про этот статус, который на скрине, я стрелочкой на него указал»
+>   Owner: «Я понял, короче»
+>   Owner: «Это должно работать одинаково и для Herder, и для iTerm, для всех таких терминалов»
+>   Owner: «1 целиком, run да но декомпозиция, статус herdr тоже да, тож декомп»
+>   Reason: the dot in herdr's sidebar must stay yellow while background work runs; herdr's integration is a user copy we cannot edit, and a separate report source is rejected by herdr. Design (not shipped): `/Users/arkadijcukavin/ai-project/my-pi-evidence/designs/busy-indicators/DESIGN.md`. Session locators of the quotes are not machine-verified (relayed in the task brief).
+>   Carriers: `extensions/RQW-agent/{real-final,herdr-state,terminal-progress,followup-hold,coordinator,index}.ts`; [contract](extensions/RQW-agent/README.md#real-final-and-the-herdr-dot), `test/extensions/RQW-agent/{real-final,terminal-progress,hold-change}.test.ts`.
+
+## A-0411 · Work policy · CI test evidence
+
+Status: superseded by removal of unordered TAP and failure reports; the Node floor remains in `[D-WORK-CI-NODE-FLOOR]`.
+Source: `e00dca9b:DECISIONS.md`. Verbatim replaced text:
+
+> - **CI evidence for a test file that dies** `[D-WORK-CI-EVIDENCE]`. Coordinator decision (technical), no owner quote:
+>   the `npm test` steps keep Node's default log output and also write a TAP copy, uploaded on failure with the job's macOS
+>   crash reports. Reason: a test file once died silently on macOS Node 24 and its exit code or signal was not recoverable
+>   from the spec reporter. Carriers: `scripts/ci-npm-test.sh`, `.github/workflows/tests.yml` (artifact `test-evidence-*`,
+>   with `/Library/Logs/DiagnosticReports`). Since: `8547d59`.
+>   CI floor, accepted by the owner and relayed by the coordinator: `tests.yml` keeps Node 22.19.0 and resolves Node 24
+>   as `>=24.22.0 <25`; the matrix labels stay `22.19.0` and `24` for artifact names. Reason: require the shipped V8
+>   baseline fix without allowing a runner-cached 24.21.0; the incident's exact cause remains unproven.
+
+## A-0412 · archived 2026-11-02 · Agent cards · cards on the message path, indicator text
+
+Status: SUPERSEDED by `[D-UI-AGENT-CARDS]` (DECISIONS.md#agent-cards): a current result arrives as the `wait` result, and the indicator is only `[D-STATUSBAR-ACTIVITY]`'s.
+Source: `de414a26:DECISIONS.md`. Verbatim replaced text:
+
+> Agent custom results show compact cards: ID, outcome, available actual
+>   T17 cards belong to agent-ui, T18 indicator to statusbar: actual running agent counts, including reviewers, come
+>   from the existing activity producer, not a second registry in the cards. Ordinary busy letters shimmer silver;
+>   compaction status and synchronized chrome shimmer gold; the title shimmers gold during compaction.
+>   Title and activity placement follow [D-STATUSBAR-ACTIVITY](#status-bar).
+>   The indicator's existing decision is [D-STATUSBAR-ACTIVITY](#status-bar).
+
+## A-0413 · archived 2026-11-02 · Review · verdict without a number
+
+Status: SUPERSEDED by `[D-REVIEW-VERDICT]` (DECISIONS.md#review): the first line is `FINDINGS: N`.
+Source: `de414a26:DECISIONS.md`. Verbatim replaced text:
+
+> - **Verdict format** `[D-REVIEW-VERDICT]`. The reviewer's last message is `CLEAN` followed by concise concrete
+>   `CHECKED:` evidence for the inspected object and criterion, or `FINDINGS:` with numbered finding blocks.
+
+## A-0414 · Tools and Agent · notification waits
+
+Status: wording SUPERSEDED in part by the wait-as-tool decision (`[D-AGENT-REAL-FINAL]`, owner approval «1»): no wait returns a receipt or sends a later notification.
+Source: `de414a26:DECISIONS.md`. Verbatim replaced passages (an ellipsis marks unchanged text left out):
+
+> - **Background jobs** `[D-TOOLS-BG]`. ... `job wait`, `status` and `kill` return results, status and exit codes; a completion wait sends one notification. ...
+
+> - **Notification waits and independent jobs** `[D-TOOLS-NOTIFY]`. Where notifications are available, `job wait` returns `waiting` at once and one later notification carries the result. Inside codemode or without a notification callback it blocks. A newer wait on the same job replaces the older one.
+
+> - **Notification waits for children** `[D-AGENT-NOTIFY]`. ... Taken by default (coordinator text, not an owner quote): where the caller can
+>   receive notifications, `wait` on `agent` returns a `waiting` receipt at once with
+>   `terminate: true` and the result later wakes the caller once through the existing delivery broker.
+>   A wait inside a codemode script stays blocking,
+>   as does an external root print/json host and any caller without a `notify` callback (an in-process child agent with the bridge
+>   is not affected by its SDK mode). A timeout or alert
+>   is one notification, not periodic polling, and no model request is made merely to wait. Owner messages reach the agent
+>   without cancelling accepted children. Same callback as `[D-TOOLS-NOTIFY]`. Reason: a waiting agent must not hold a call.
+>   Crash recovery (coordinator text): an accepted notification wait is saved as `rqw-agent-wait` entries in the parent session and a restore raises the open ones with their id, targets and remaining deadline, as described in the [RQW-agent README](extensions/RQW-agent/README.md#persistence-and-resume).
+
+## A-0415 · PCLI · end-to-end proof
+
+Status: SUPERSEDED by `[D-PCLI-TESTS]` (DECISIONS.md#pcli).
+Source: `de414a26:DECISIONS.md`. Verbatim replaced text:
+
+> - **End-to-end proof** `[D-PCLI-E2E]`. `.github/workflows/pcli.yml` on `windows-latest` builds the VSIX, installs it into
+>   a real VS Code and runs `pcli-vscode/test/run.mjs` and `pcli-vscode/test/suite.cjs`: Pi answers through a local proxy
+>   `pcli-vscode/test/proxy.cjs` with a fake HTTPS model, with the proxy from the environment under a hostile Git Bash profile and from
+>   VS Code settings; strict TLS fails and `http.proxyStrictSSL: false` works; CONNECT with proxy credentials; paths with
+>   Cyrillic, spaces and an apostrophe; no `pi.exe` left after closing tabs, `/quit` or VS Code. Not covered: a real model
+>   call and the corporate VDI restrictions. Since: `3b6d6c1`.

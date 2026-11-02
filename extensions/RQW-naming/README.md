@@ -11,8 +11,9 @@ Native `/name` remains unchanged.
 - Generate in the background once after the first user message, and after every
   successful compaction. Reloading/resuming an existing conversation does not
   repeat the first-message trigger.
-- Use all currently available projected context, including the compaction summary
-  and kept messages; do not recover discarded context or shorten it locally.
+- Use the latest 50,000 estimated tokens of user and assistant text from the
+  active session branch, including messages before compaction. Exclude tool calls, tool results, thinking, images, custom
+  entries and compaction summaries. An oversized boundary message contributes its tail.
 - Match the current session provider: `anthropic/claude-haiku-5-5` for Claude, `openai-codex/gpt-5.6-luna` for GPT.
   All use `low` reasoning without fallback. Credential availability is checked
   through the public model registry, not its private runtime field.
@@ -38,9 +39,10 @@ Verified against both installed and worktree Pi 1.4.0:
 native persistence and name-change notification. The latter also fires for
 native `/name`. `session_start`, `message_end`, `session_compact`, and
 `session_shutdown` provide lifecycle boundaries. Public
-`sessionManager.buildSessionProjection` and `convertToLlm` provide
-compaction-aware context, serialized in full (Pi's summarization serializer
-would truncate tool results). The first-user event message is included explicitly
+`sessionManager.getBranch` supplies active session history, including messages before
+compaction. Context edits are applied before user and assistant text is selected
+and serialized under the 50,000-token budget.
+The first-user event message is included explicitly
 because Pi persists it only after notifying extensions. Public registry
 availability/streaming provide the model request path with explicit `low`
 reasoning. No other extension needs to import this folder.

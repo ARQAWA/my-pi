@@ -1,13 +1,33 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { AgentSession, createEventBus, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { AgentSession, createEventBus, SessionManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { stripVTControlCharacters } from "node:util";
 import { getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import predictions from "../extensions/RQW-predictions/index.ts";
 import historyEdit from "../extensions/RQW-history-edit/index.ts";
+import { uninstallSafeProjection } from "../extensions/RQW-history-edit/projection.ts";
 import scroll from "../extensions/RQW-scroll/index.ts";
 import sendNow from "../extensions/RQW-send-now/index.ts";
-import { harness, OTHER, settle, suggestion } from "./extensions/RQW-predictions/harness.ts";
+import { assistant, CTRL_R, harness, OTHER, settle, suggestion, USER } from "./extensions/RQW-predictions/harness.ts";
+
+// The history-edit extension patches SessionManager.prototype when it loads; every test puts Pi's methods back.
+afterEach(() => uninstallSafeProjection(SessionManager.prototype as never));
+
+it("Ctrl+R restarts an interrupted turn with predictions loaded, and generates nothing", async t => {
+	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
+	const resumed: unknown[] = [];
+	const h = harness({ realKeys: true, branch: [{ type: "message", message: USER }, { type: "message", message: assistant([], "aborted") }], extraInstall(pi) {
+		(pi as any).sendMessage = (message: unknown, options: unknown) => resumed.push({ message, options });
+		sendNow(pi);
+	} });
+	t.after(() => h.fire("session_shutdown", { reason: "quit" }));
+	h.dispatch(CTRL_R);
+	await settle();
+	assert.equal(resumed.length, 1);
+	assert.equal((resumed[0] as any).message.customType, "rqw-resume");
+	assert.equal(h.forks.length, 0, "Ctrl+R starts no prediction");
+	assert.deepEqual(h.reached, [], "the key never reaches the editor");
+});
 
 for (const extraFirst of [true, false]) it(`send-now and predictions share the editor, send-now ${extraFirst ? "first" : "last"}`, async t => {
 	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
@@ -21,19 +41,28 @@ for (const extraFirst of [true, false]) it(`send-now and predictions share the e
 	assert.equal(Object.hasOwn(h.session, "_queueSteer"), true, "session was captured");
 	assert.ok((h.session as any)._eventListeners.length, "session events are observed");
 	const row = () => stripVTControlCharacters(h.screen()[1].replace(/\x1b_[^\x07]*\x07/g, "")).trim();
+	let source: any;
+	h.events.emit("rqw:activity-hint:request", { sessionId: "main", reply: (value: unknown) => { source = value; } });
 	h.asked(); await settle();
 	assert.equal(row(), "next step");
+	assert.equal(source.snapshot(), undefined);
+	// The Esc hints go to the activity line; the ready prediction stays in the input all the time.
 	h.state.idle = false;
 	(h.session as any)._emit({ type: "agent_start" });
-	assert.equal(row(), "esc to interrupt");
+	assert.equal(source.snapshot(), "esc to interrupt");
+	assert.equal(row(), "next step");
 	await (h.session as any)._queueSteer("adjust");
-	assert.equal(row(), "esc to send now");
+	assert.equal(source.snapshot(), "esc to send now");
+	assert.equal(row(), "next step");
 	h.setModel(OTHER);
-	assert.equal(row(), "ctrl+enter to send now");
+	assert.equal(source.snapshot(), "ctrl+enter to send now");
+	assert.equal(row(), "next step");
 	(h.session as any)._steeringMessages = [];
 	h.state.idle = true; background = 1; changed();
-	assert.equal(row(), "esc esc to stop background");
+	assert.equal(source.snapshot(), "esc esc to stop background");
+	assert.equal(row(), "next step");
 	background = 0; changed();
+	assert.equal(source.snapshot(), undefined);
 	assert.equal(row(), "next step");
 	h.key("\t");
 	assert.equal(h.editor.getText(), "next step");
@@ -65,10 +94,10 @@ for (const work of ["turn", "background", "idle"] as const) it(`Escape jumps bef
 	h.state.idle = work !== "turn";
 	h.viewport.following = false;
 	const row = () => stripVTControlCharacters(h.screen()[1].replace(/\x1b_[^\x07]*\x07/g, "")).trim();
-	const scrolledHint = row();
+	// No text hint announces the jump: RQW-scroll's own badge does that. The input keeps its one hint.
+	assert.equal(row(), "ctrl+e to suggest");
 	h.dispatch("\x1b");
 	assert.equal(h.viewport.jumps, 1);
-	assert.equal(scrolledHint, "esc to jump to latest");
 	assert.equal(interrupts, 0);
 	assert.equal(stops, 0);
 	h.dispatch("\x1b[27;1:2u");
@@ -120,7 +149,7 @@ describe("scroll and predictions keybindings", () => {
 				scrollToBottom() { jumps++; following = true; },
 				getFocusedComponent: () => ({ actionHandlers: new Map() }), requestRender() {},
 			};
-			const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "test" }, ui: {
+			const ctx = { mode: "tui", isIdle: () => true, sessionManager: { getSessionId: () => "test", getBranch: () => [] }, ui: {
 				setWidget(_key: string, factory: any) { if (factory) factory(tui); },
 				onTerminalInput(listener: (data: string) => unknown) { listeners.add(listener); return () => listeners.delete(listener); },
 				setStatus() {}, notify(message: string) { assert.fail(message); },

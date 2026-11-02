@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { test } from "node:test";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { AgentSession, createEventBus, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -29,7 +30,7 @@ function calls() {
 
 test("Codex fork sends the caller's prepared prefix with isolated tool execution", async t => {
 	const w = await world(t);
-	const parent = SessionManager.inMemory(w.cwd);
+	const parent = SessionManager.create(w.cwd, join(w.base, "parent"));
 	parent.appendMessage({ role: "user", content: "caller message", timestamp: 1 });
 	const store = new InMemoryCredentialStore();
 	await store.modify("openai-codex", async () => ({ type: "oauth", access, refresh: "refresh", expires: 4_000_000_000_000, accountId: "test" }) as never);

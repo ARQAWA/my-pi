@@ -34,8 +34,7 @@ import {
 import type { CodexIdentity } from "./metadata.ts";
 import { slices } from "./slices.ts";
 import type { RawItemHistory } from "./transport.ts";
-import { CODEX_MODEL_SLUGS, codexModelCapabilities } from "./profile.ts";
-import { buildRequest, prefixContext, toolWireFlags, transcriptItems, type WireItem, type WireModelInfo, type WireOptions } from "./wire.ts";
+import { buildRequest, prefixContext, transcriptItems, type WireItem, type WireModelInfo, type WireOptions } from "./wire.ts";
 
 export type SessionWireOptions = {
 	session: AgentSession;
@@ -43,25 +42,6 @@ export type SessionWireOptions = {
 	modelHash: string;
 	runtimeLeaseId?: string;
 };
-
-/** Settings of one native turn, recorded from the actual prepared turn request (never persisted: body, headers, auth). */
-export type NativeTurnSettings = {
-	model: string;
-	compHash: string;
-	contextWindow: number;
-	inputModalities: ("text" | "image")[];
-	supportsStrictMode: boolean;
-	supportsOpenAIGrammarTools: boolean;
-	reasoningEffort?: string;
-	reasoningSummary?: "auto" | "concise" | "detailed" | "none";
-	serviceTier?: string;
-	turnId?: string;
-};
-
-/** Whitelists of the recorded turn settings: any other value is not persisted. */
-const KNOWN_EFFORTS: ReadonlySet<unknown> = new Set(["low", "medium", "high", "xhigh", "max", "ultra"]);
-const KNOWN_SUMMARIES: ReadonlySet<unknown> = new Set(["auto", "concise", "detailed", "none"]);
-const KNOWN_SERVICE_TIERS: ReadonlySet<unknown> = new Set(["priority", "flex"]);
 
 export type NativeInputArgs = {
 	context: Context;
@@ -84,10 +64,18 @@ type Coverage = { baseIndex: number; covered: Set<string>; responses: Set<string
 
 const SOURCE_ROLES: ReadonlySet<string> = new Set(["user", "system", "toolResult", "assistant"]);
 
+/** Optional process-wide offer of RQW-history-edit: Pi's projection that survives a long tail after a compaction. */
+const SAFE_PROJECTION = Symbol.for("rqw:safe-projection:v1");
+type Projection = ReturnType<SessionManagerLike["buildSessionProjection"]>;
+type Project = (entries: SessionEntry[], leafId: string | null) => Projection;
+
 /** Pi's projected messages per raw entry id on the branch ending at leafId (edits and omissions applied). */
 function projectedMessages(entries: SessionEntry[], leafId: string | null): Map<string, unknown[]> {
 	const out = new Map<string, unknown[]>();
-	for (const entry of buildSessionProjection(entries, leafId).entries) out.set(entry.sourceEntry.id, entry.messages);
+	// Pi's own call overflows the stack on a tail of about 120000 entries after a compaction.
+	const offered = (globalThis as { [SAFE_PROJECTION]?: unknown })[SAFE_PROJECTION];
+	const project: Project = typeof offered === "function" ? offered as Project : buildSessionProjection as unknown as Project;
+	for (const entry of project(entries, leafId).entries) out.set(entry.sourceEntry.id, entry.messages);
 	return out;
 }
 
@@ -142,25 +130,38 @@ function pairedCallKeys(manager: SessionManagerLike): Set<string> {
 	return out;
 }
 
-/** The physical assistant message of a raw response on the current branch (raw Pi entry), or undefined. */
-function rawAssistantEntry(manager: SessionManagerLike, responseId: string): (SessionEntry & { message: { content?: unknown } }) | undefined {
-	return manager.getBranch().find((entry) => {
+type RawAssistantEntry = SessionEntry & { message: { content?: unknown } };
+
+/** One read of the current branch for source checks: the first raw assistant entry per response id, and Pi's projection (built once, on first use). */
+type ResponseSources = { raw: Map<string, RawAssistantEntry>; projected(): Map<string, unknown[]> };
+
+function responseSources(manager: SessionManagerLike): ResponseSources {
+	const raw = new Map<string, RawAssistantEntry>();
+	for (const entry of manager.getBranch()) {
 		const message = (entry as { message?: { role?: unknown; responseId?: unknown } }).message;
-		return entry.type === "message" && message?.role === "assistant" && message.responseId === responseId;
-	}) as (SessionEntry & { message: { content?: unknown } }) | undefined;
+		if (entry.type === "message" && message?.role === "assistant" && typeof message.responseId === "string" && !raw.has(message.responseId)) {
+			raw.set(message.responseId, entry as RawAssistantEntry);
+		}
+	}
+	let projected: Map<string, unknown[]> | undefined;
+	return { raw, projected: () => (projected ??= projectedMessages(manager.getEntries(), manager.getLeafId())) };
 }
 
 /**
  * Current state of the assistant message behind a raw response: absent (no such message), deleted (Pi's projection shows
  * nothing for it), edited (its projected content differs from the original) or same.
  */
-function responseSourceState(manager: SessionManagerLike, responseId: string): "absent" | "same" | "edited" | "deleted" {
-	const raw = rawAssistantEntry(manager, responseId);
+function sourceState(sources: ResponseSources, responseId: string): "absent" | "same" | "edited" | "deleted" {
+	const raw = sources.raw.get(responseId);
 	if (!raw) return "absent";
-	const projected = projectedMessages(manager.getEntries(), manager.getLeafId()).get(raw.id) ?? sessionEntryToContextMessages(raw);
+	const projected = sources.projected().get(raw.id) ?? sessionEntryToContextMessages(raw);
 	if (projected.length === 0) return "deleted";
 	const current = projected.find((message) => (message as { role?: unknown; responseId?: unknown }).role === "assistant" && (message as { responseId?: unknown }).responseId === responseId) as { content?: unknown } | undefined;
 	return canonicalJson(current?.content) === canonicalJson(raw.message.content) ? "same" : "edited";
+}
+
+function responseSourceState(manager: SessionManagerLike, responseId: string): "absent" | "same" | "edited" | "deleted" {
+	return sourceState(responseSources(manager), responseId);
 }
 
 /** Replays one entry's system tool changes into the running catalog: removals first, then additions, as Pi does. */
@@ -305,7 +306,7 @@ export class SessionWireState {
 			recordOutputs: (responseId, items) => this.#recordOutputs(responseId, items),
 			recordItem: (responseId, item) => this.#recordItem(responseId, item),
 			preparedRequest: (body) => this.#preparedRequest(body),
-			acceptRawResponse: (responseId, context) => this.#acceptRawResponse(responseId, context),
+			acceptRawResponses: (responseIds, context) => this.#acceptRawResponses(responseIds, context),
 			bindRawOutputs: (context) => this.#bindRawOutputs(context),
 		};
 	}
@@ -381,12 +382,6 @@ export class SessionWireState {
 		if (loaded.mode !== "native" || !hasBase(loaded)) return undefined;
 		const { entries, transient } = this.#pendingWith(args, known);
 		return [...this.#prefix(args), ...loaded.items.map((envelope) => structuredClone(envelope.item)), ...entries.flatMap(({ items }) => items), ...transient];
-	}
-
-	/** Settings of the latest verified turn of this owner and thread on the actual branch; undefined when absent. */
-	get previousTurnSettings(): NativeTurnSettings | undefined {
-		const latest = this.#scan().own.filter((entry) => entry.data.kind === "turn-settings").at(-1);
-		return latest ? (structuredClone(latest.data.settings) as NativeTurnSettings) : undefined;
 	}
 
 	/** Estimated tokens of the native projection (estimated, not usage). Undefined without a valid checkpoint. */
@@ -552,17 +547,29 @@ export class SessionWireState {
 		return window;
 	}
 
-	/** Raw response filter for a request built from context: an edited or removed physical message is never replayed raw. */
-	#acceptRawResponse(responseId: string, context: Context): boolean {
-		const state = this.#view.responseSourceState?.(responseId) ?? "absent";
-		if (state === "edited" || state === "deleted") return false;
-		const requested = (context.messages as Array<{ role?: unknown; responseId?: unknown; content?: unknown }>).find(
-			(message) => message.role === "assistant" && message.responseId === responseId,
-		);
-		if (requested === undefined) return true;
-		// The request carries this assistant message: its content must be the physical original, or the raw output is unproven.
-		if (state === "absent") return false;
-		return canonicalJson(requested.content) === canonicalJson(rawAssistantEntry(this.#manager(), responseId)?.message.content);
+	/**
+	 * Raw response filter for a request built from context: an edited or removed physical message is never replayed raw.
+	 * One read of the branch serves every response of the request.
+	 */
+	#acceptRawResponses(responseIds: Iterable<string>, context: Context): Set<string> {
+		const requested = new Map<string, unknown>();
+		for (const message of context.messages as Array<{ role?: unknown; responseId?: unknown; content?: unknown }>) {
+			if (message.role === "assistant" && typeof message.responseId === "string" && !requested.has(message.responseId)) requested.set(message.responseId, message.content);
+		}
+		let sources: ResponseSources | undefined;
+		const accepted = new Set<string>();
+		for (const responseId of responseIds) {
+			sources ??= responseSources(this.#manager());
+			const state = sourceState(sources, responseId);
+			if (state === "edited" || state === "deleted") continue;
+			if (!requested.has(responseId)) {
+				accepted.add(responseId);
+				continue;
+			}
+			// The request carries this assistant message: its content must be the physical original, or the raw output is unproven.
+			if (state === "same" && canonicalJson(requested.get(responseId)) === canonicalJson(sources.raw.get(responseId)?.message.content)) accepted.add(responseId);
+		}
+		return accepted;
 	}
 
 	/** Fresh prefix for this request: the same builder the transport uses, with an empty transcript. */
@@ -682,48 +689,10 @@ export class SessionWireState {
 		}
 	}
 
-	/**
-	 * Records the settings of a normal turn request (client_metadata turn blob request_kind 'turn'). Manual baselines have no
-	 * such blob and prewarm, compaction and generate:false requests are skipped. Deduped against the latest entry on the branch.
-	 */
-	#recordTurnSettings(body: Record<string, unknown>): void {
-		const args = this.#last;
-		if (!args || body.generate === false) return;
-		const blob = (body.client_metadata as Record<string, unknown> | undefined)?.["x-codex-turn-metadata"];
-		if (typeof blob !== "string") return;
-		let meta: { request_kind?: unknown; turn_id?: unknown };
-		try {
-			meta = JSON.parse(blob) as { request_kind?: unknown; turn_id?: unknown };
-		} catch {
-			return;
-		}
-		if (meta?.request_kind !== "turn") return;
-		const model = args.model as unknown as { id: string; input?: unknown; contextWindow?: unknown };
-		if (!CODEX_MODEL_SLUGS.includes(model.id)) return;
-		const reasoning = (body.reasoning ?? {}) as { effort?: unknown; summary?: unknown };
-		const flags = toolWireFlags(args.model);
-		const settings: NativeTurnSettings = {
-			model: model.id,
-			compHash: codexModelCapabilities(model.id).compactionHash,
-			contextWindow: model.contextWindow as number,
-			inputModalities: (Array.isArray(model.input) ? model.input : []).filter((m): m is "text" | "image" => m === "text" || m === "image"),
-			supportsStrictMode: flags.supportsStrictMode,
-			supportsOpenAIGrammarTools: flags.supportsOpenAIGrammarTools,
-		};
-		if (KNOWN_EFFORTS.has(reasoning.effort)) settings.reasoningEffort = reasoning.effort as string;
-		if (KNOWN_SUMMARIES.has(reasoning.summary)) settings.reasoningSummary = reasoning.summary as NativeTurnSettings["reasoningSummary"];
-		if (KNOWN_SERVICE_TIERS.has(body.service_tier)) settings.serviceTier = body.service_tier as string;
-		if (typeof meta.turn_id === "string") settings.turnId = meta.turn_id;
-		const latest = this.#scan().own.filter((entry) => entry.data.kind === "turn-settings").at(-1);
-		if (latest && canonicalJson(latest.data.settings) === canonicalJson(settings)) return;
-		this.#history.appendEntry({ kind: "turn-settings", settings });
-	}
-
 	/** Seeds the built request input once, without the prefix (nativeInput prepends the fresh prefix). */
 	#preparedRequest(body: Record<string, unknown>): void {
 		const args = this.#last;
 		if (!args || !this.#trusted) return;
-		this.#recordTurnSettings(body);
 		if (body.generate === false) return;
 		const loaded = this.#history.load();
 		if (loaded.mode === "native" && hasBase(loaded)) return;

@@ -1,7 +1,7 @@
 # RQW-codex-compat
 
 Reads Codex configuration on Pi's public extension APIs. It never writes to `~/.codex`, `/etc/codex` or a project.
-Pi sources are not edited; a part that is not done is listed as blocked below.
+Pi sources are not edited; runtime patches are allowed and no part waits for a public Pi API.
 
 ## Config view
 
@@ -88,8 +88,8 @@ trust level counts as the answer and loads the files.
 
 ## Compatibility matrix
 
-The state is one of three words. Supported: works as in Codex. Ignored: Codex ignores it too, or it has no effect here.
-Blocked: waits for a public Pi API and is not done.
+Supported means it works as in Codex. Ignored means Codex ignores it too, or it has no effect here.
+Not applied and not supported mark the owner's decisions and unsupported features.
 
 | Area | State | Note |
 | --- | --- | --- |
@@ -106,12 +106,12 @@ Blocked: waits for a public Pi API and is not done.
 | Fields: `skills.include_instructions`, `skills.max_context_tokens`, the 2% default and the 8000-character fallback | supported | model catalog only; `$` mentions are not limited |
 | Fields: `AGENTS.md` order, fallback names, markers, byte budget | supported | |
 | Fields: agent role model, effort, instructions, nicknames | supported | |
-| Fields: `model_reasoning_summary`, `model_verbosity`, `personality`, `service_tier`, `features`, `skills` of a role | blocked | named `not applied` |
+| Fields: `model_reasoning_summary`, `model_verbosity`, `personality`, `service_tier`, `features`, `skills` of a role | not applied | the owner cancelled this work on 2026-10-29 |
 | Fields: `sandbox_mode` and other role keys | ignored | Codex roles ignore them |
 | Fields: type of other Codex role keys | ignored | не проверяется (not validated): only the applied fields and the six unapplied overrides are type checked; owner's decision: «По кодексу выбираем 1й вариант», the lightest option, over copying the whole Codex schema (about 3 SP) |
 | Agent roles: built-in `default` and `worker` | supported | user roles replace them |
 | Agent roles: `explorer` | ignored | removed by the owner's earlier decision |
-| Permissions: a child inherits its parent's real sandbox | blocked | Pi has no equal sandbox; removing tools is not one |
+| Permissions: a child inherits its parent's real sandbox | not supported | Pi has no equal sandbox; removing tools is not one |
 | Skills: `/skill:name` commands follow rules and the same list as `$name` | supported | Pi's command list still shows one entry per name; the `input` event picks the skill |
 | Skills: same-name selection by path and `skill://` links | supported | Codex merge order; the catalog and `$` keep every path, `skill://` selects one |
 | Exception: Pi's agent directory outranks `$CODEX_HOME`, and at the same project directory `.pi` roles win over `.codex` roles; nearer project directories win over ancestors | ignored | agreed exception to exact parity, not a Codex rule |

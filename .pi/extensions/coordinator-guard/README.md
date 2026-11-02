@@ -76,32 +76,32 @@ The active `agentModels` table permits the executor pairs under
 independent reviewer's profile-specific pair: `spotty` uses `openai-codex/gpt-6.1-terra` medium, `bossy` uses it with xhigh, and
 the other reviewer profiles use `openai-codex/gpt-6.1-terra` high.
 A reviewer start or restart requires the pair matching its `agent_type`, which a restart may inherit from its
-latest persisted child record; calls without a reviewer profile use `agentModels`. There is no rotation counter or bookkeeping. Existing agents
+latest persisted child record; calls without a reviewer profile use `agentModels`. There is no rotation counter; the only bookkeeping is the slot list below. Existing agents
 keep their models through `send` and `resume`, which the guard leaves untouched. The parser and enforcement are
 data-driven: changing the root block updates both the next turn's prompt and the next tool call without reloading
 guard code.
 
-## Optional temporary override format
-
-The active policy is permanent and has no `temporaryGptOnly` key; see
-[Subagent models](../../../PROCESS.md#subagent-models). The guard needs no policy-specific code.
-Its generic parser still supports an optional `temporaryGptOnly` object with a UTC `until` deadline.
-When present, it permits only the table's `openai-codex/gpt-6.1-sol` pairs before that deadline.
-This optional format is not an active repository rule. Product profiles are unchanged.
-
-- `until` is a real UTC time with seconds and a `Z`. At that exact instant the normal table applies again.
-  The clock is read on every call, so expiry needs no reload or edit of `PROCESS.md`.
-- While active, Main's prompt, the line appended to every allowed task and refusal reasons state the restriction
-  and expiry. Their allowed lists show only GPT pairs. After expiry the temporary text disappears.
-- An absent key means no temporary restriction. A present malformed key or deadline fails closed:
-  every start and restart is blocked, even after the intended expiry.
-
 ## What it does for Main
 
-- `tool_call` on `agent` `start` and `restart` (a missing `action` counts as `start`): `model` and
-  `thinking` are required. A named or inherited reviewer profile uses only its exact pair; every other call uses an exact executor pair.
-  A reviewer-profile call supplies matching explicit model and effort values; restart may omit `agent_type` to inherit it. An allowed call with a `task` gets
-  one generated line appended: ordinary nested `agent` starts need an explicit allowed executor pair.
+- `tool_call` on `agent` `start` and `restart` (a missing `action` counts as `start`): Main supplies an executor
+  category in `model`; the guard draws a model and effort pair randomly from that category. A named or inherited reviewer
+  profile instead uses its exact pair. A reviewer-profile call supplies matching explicit model and effort values; restart
+  may omit `agent_type` to inherit it. An allowed call with a `task` gets one generated line appended.
+- Slots (`slots.ts`, `[D-WORK-SLOTS]`): the optional `slots` object of the rules block gives each model a limit (a model
+  without an entry has none). The guard keeps a live list of Main's direct starts, agent id to model. One slot is one direct
+  start with all its own helpers; helpers are not counted. A category start draws randomly among the pair's models that have
+  a free slot; with none free it is refused with `slots full: <model> n/n`. A reviewer-profile start counts on its fixed model and a
+  `fork_turns: "all"` start on the caller's model (`ctx.model`); both are refused when that model is full.
+  Parallel starts of one turn are counted from `tool_call` on, so they cannot overbook; a failed or blocked start releases
+  its hold. The list is read from `tool_execution_end` of Main's `agent` calls (also nested codemode calls): a successful `start`
+  (`agent#N started`) or `restart` takes the slot, a wait result that delivers an agent's final (`details.results[].id`,
+  success or failure) and a successful `stop` free it. `restart` of a listed agent keeps its slot (its own model counts as
+  free) and takes the newly drawn model, holding the destination meanwhile if that model differs; a failed `stop` drops the agent (it is
+  gone), while a failed `restart` keeps the slot, because it may fail before or after RQW-agent closes the old agent: `stop` the
+  agent to free it. Concurrent sends to one ended agent share one hold. `send` and `resume` to a live agent are never refused; to an agent whose
+  final was delivered they take its slot again and are refused with `slots full` when that model has filled up meanwhile.
+  No polling and no model tokens. The list survives `/reload` (it lives on `globalThis` like the role, because RQW-agent
+  resumes its children) and is cleared by every other session start and by a branch change, when RQW-agent closes its children.
 - Fork exception: an `agent` start or restart with `fork_turns: "all"` needs no model category and gets no drawn pair. The fork
   inherits the caller's model, system prompt and tools so its first request reuses the caller's prompt cache; the guard leaves
   `model` and `thinking` as they are (RQW-agent itself rejects `model`, `thinking`, `agent_type`, `system`, `role` and `include`
@@ -120,6 +120,8 @@ Calls made from a `codemode` script go through the same `tool_call` handler.
 
 ## Limits
 
+- Slots count only what Main's tool events show. An agent that ends but whose final result Main never receives through
+  `wait` keeps its slot until `stop`; an agent restarted by RQW-agent itself after a Pi restart is not counted.
 - Nested starts by subagents are not enforced: children load no extensions. They get only the appended line.
 - A `restart` without `task` gets no appended line; the guard does not rewrite an earlier task.
 - The guard cannot tell simple from complex work; it enforces only the allowed set.

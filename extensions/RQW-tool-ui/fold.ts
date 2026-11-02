@@ -4,13 +4,12 @@
 // chat container, one O(1) guard on that container instance notices a rebuilt or reloaded transcript. The components
 // stay where Pi put them, in the same order and identity. Any other shape keeps today's tool-ui view.
 import {
-	AssistantMessageComponent, BashExecutionComponent, BranchSummaryMessageComponent, CompactionSummaryMessageComponent, InteractiveMode,
+	AssistantMessageComponent, BashExecutionComponent, BranchSummaryMessageComponent, CompactionSummaryMessageComponent,
 	type SessionEntry, type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Spacer, truncateToWidth, TuiAltScreen, visibleWidth } from "@earendil-works/pi-tui";
 import { messageKey, TurnIndex, type TurnSpan } from "./groups.ts";
 
-const ACTIVE = Symbol.for("rqw-tool-ui.folds");
 /** What a hidden component draws: nothing, shared. */
 const NONE: string[] = Object.freeze([]) as unknown as string[];
 
@@ -37,8 +36,12 @@ export interface Fold {
 	open: boolean;
 	/** Open-state key: the final answer outside, or the prefix's first component inside. */
 	final: object;
-	/** Work components in Pi's order; the first owns the header. */
+	/** Work components in Pi's order; the first draws the closed header. */
 	members: object[];
+	/** Member that draws the open header: the one right after the first message, else the last one (`tail`). */
+	at: number;
+	/** No member follows the first message: the open header goes below the rows of the member `at`. */
+	tail: boolean;
 	/** Original user bundles, including their spacers, projected only while closed. */
 	lifted: object[];
 	revision: number;
@@ -46,6 +49,9 @@ export interface Fold {
 	/** Cached rows and mouse transforms share the same width and revision. */
 	cache?: { width: number; theme: Theme; pad: number; open: boolean; revision: number; lines?: string[]; rows: string[]; header: string; headerY: number; ranges: RowRange[] };
 }
+
+/** The member that draws and clicks the header: the first one closed, the one after the first message open. */
+const carrier = (fold: Fold): object => fold.members[fold.open ? fold.at : 0];
 
 /** A component inside a fold, with the own `render` and `handleMouse` it had before. */
 interface Bound {
@@ -93,7 +99,7 @@ export class Folds {
 			const base = own ?? (Object.getPrototypeOf(this) as Renders).render;
 			if (!b || b.fold.disabled) return base.call(this, width);
 			const fold = b.fold;
-			if (fold.members[0] !== this) return fold.open ? base.call(this, width) : NONE;
+			if (carrier(fold) !== this) return fold.open ? base.call(this, width) : NONE;
 			return folds.owner(fold, fold.open ? base.call(this, width) : undefined, width) ?? base.call(this, width);
 		};
 		this.click = function (this: object, event: Mouse): unknown {
@@ -102,7 +108,7 @@ export class Folds {
 			const base = own ?? (Object.getPrototypeOf(this) as Handles).handleMouse;
 			const fold = b?.fold;
 			if (!fold || fold.disabled) return base?.call(this, event);
-			if (fold.members[0] !== this) return fold.open ? base?.call(this, event) : undefined;
+			if (carrier(fold) !== this) return fold.open ? base?.call(this, event) : undefined;
 			const cache = fold.cache;
 			if (!cache) return undefined;
 			if (event.y === cache.headerY) {
@@ -125,7 +131,8 @@ export class Folds {
 		}])) as Record<UpdateName, Update>;
 	}
 
-	/** Closed: cached original user rows, then the header. Open: one inserted header, all original rows in place. */
+	/** Closed: cached original user rows, then the header with `›`. Open: one arrowless header inserted into the rows
+	 * of the member after the first message; all original rows stay in place. */
 	private owner(fold: Fold, lines: string[] | undefined, width: number): string[] | undefined {
 		try {
 			const theme = this.theme?.();
@@ -134,7 +141,7 @@ export class Folds {
 			const c = fold.cache;
 			const same = c && c.width === width && c.theme === theme && c.pad === pad && c.open === fold.open && c.revision === fold.revision;
 			if (same && c.lines === lines) return c.rows;
-			const header = same ? c.header : truncateToWidth(" ".repeat(pad) + theme.fg("dim", `${fold.label} ${fold.open ? "˅" : "›"}`), Math.max(0, width));
+			const header = same ? c.header : truncateToWidth(" ".repeat(pad) + theme.fg("dim", fold.open ? fold.label : `${fold.label} ›`), Math.max(0, width));
 			const rows: string[] = [];
 			const ranges: RowRange[] = [];
 			let headerY: number;
@@ -151,10 +158,11 @@ export class Folds {
 				rows.push(header);
 			} else {
 				const source = lines ?? NONE;
-				headerY = source.length > 0 && visibleWidth(source[0]) === 0 ? 1 : 0;
+				headerY = fold.tail ? source.length : source.length > 0 && visibleWidth(source[0]) === 0 ? 1 : 0;
 				rows.push(...source.slice(0, headerY), header, ...source.slice(headerY));
-				ranges.push({ component: fold.members[0], from: 0, to: headerY, sourceY: 0, height: source.length },
-					{ component: fold.members[0], from: headerY + 1, to: rows.length, sourceY: headerY, height: source.length });
+				const at = fold.members[fold.at];
+				ranges.push({ component: at, from: 0, to: headerY, sourceY: 0, height: source.length },
+					{ component: at, from: headerY + 1, to: rows.length, sourceY: headerY, height: source.length });
 			}
 			fold.cache = { width, theme, pad, open: fold.open, revision: fold.revision, lines, rows, header, headerY, ranges };
 			return rows;
@@ -295,7 +303,7 @@ export class Folds {
 				const members = children.slice(start, end);
 				const lifted = members.filter((m) => this.users.has(m));
 				if (members.every((m) => this.wrappable(m)) && members.some((m) => !this.users.has(m) && !(m instanceof Spacer))) {
-					next.push({ label: span.label, start, open: this.opened.get(anchor) ?? false, final: anchor, members, lifted, revision: 0 });
+					next.push({ label: span.label, start, open: this.opened.get(anchor) ?? false, final: anchor, members, ...this.afterFirstMessage(members), lifted, revision: 0 });
 				}
 			};
 			const prefix = (end: number) => {
@@ -310,7 +318,8 @@ export class Folds {
 			this.currentStart = from;
 			for (let i = from; i < children.length; i++) {
 				const child = children[i];
-				if (child instanceof CompactionSummaryMessageComponent || child instanceof BranchSummaryMessageComponent || child instanceof BashExecutionComponent) {
+				if (child instanceof CompactionSummaryMessageComponent || child instanceof BranchSummaryMessageComponent || child instanceof BashExecutionComponent
+					|| (child as { entry?: { customType?: string } }).entry?.customType === "rqw-auto-wait-v1") {
 					prefix(i);
 					start = -1;
 					spanKey = undefined;
@@ -342,6 +351,20 @@ export class Folds {
 		for (const fold of next) for (const m of fold.members) this.bound.set(m, { ...(this.bound.get(m) ?? this.wrap(m)), fold });
 		this.list.push(...next);
 		this.dirty = chat.children.length;
+	}
+
+	/** The member after the first message: its components share one key; unkeyed tool rows join only an assistant
+	 * message. Without a later member the last one carries the header below its rows. */
+	private afterFirstMessage(members: object[]): { at: number; tail: boolean } {
+		const key = this.sourceKey(members[0]);
+		const joinsTools = members[0] instanceof AssistantMessageComponent;
+		let at = 1;
+		while (at < members.length) {
+			const next = this.sourceKey(members[at]);
+			if (next === undefined ? !joinsTools : next !== key) break;
+			at++;
+		}
+		return at < members.length ? { at, tail: false } : { at: members.length - 1, tail: true };
 	}
 
 	private sourceKey(component: object): string | undefined {
@@ -424,29 +447,4 @@ export class Folds {
 		if (this.chat) this.chat.mouseLayout = undefined;
 		this.host?.ui?.requestRender?.();
 	}
-}
-
-/** Install the folds on Pi's interactive mode; returns the cleanup. Another shape installs nothing. */
-export function installFolds(folds: Folds, prototype: any = InteractiveMode.prototype): () => void {
-	if (typeof prototype?.addMessageToChat !== "function") return () => {};
-	const own = Object.getOwnPropertyDescriptor(prototype, "addMessageToChat");
-	const original = prototype.addMessageToChat;
-	(globalThis as Record<symbol, unknown>)[ACTIVE] = folds;
-	const wrapper = function (this: Host, ...args: unknown[]) {
-		const active = (globalThis as Record<symbol, unknown>)[ACTIVE] === folds;
-		if (active) folds.attach(this);
-		const before = (this.chatContainer as Chat | undefined)?.children?.length ?? 0;
-		const result = original.apply(this, args);
-		if (active) folds.message(this, args[0], before);
-		return result;
-	};
-	prototype.addMessageToChat = wrapper;
-	return () => {
-		folds.detach();
-		if (prototype.addMessageToChat === wrapper) {
-			if (own) Object.defineProperty(prototype, "addMessageToChat", own);
-			else delete prototype.addMessageToChat;
-		}
-		if ((globalThis as Record<symbol, unknown>)[ACTIVE] === folds) delete (globalThis as Record<symbol, unknown>)[ACTIVE];
-	};
 }

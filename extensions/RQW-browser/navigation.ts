@@ -24,29 +24,6 @@ function navigationTimeoutError(timeout: number): Error {
 	return error;
 }
 
-// Page functions: serialized into the page, so they must stay self-contained.
-interface PageNavigationGlobal {
-	next?: { router?: { push?: (target: string) => unknown } };
-	history: { back(): void; forward(): void; pushState(data: unknown, unused: string, url: string): void; readonly state: unknown };
-	location: { readonly href: string };
-	dispatchEvent(event: unknown): boolean;
-	Event: new (type: string) => unknown;
-	PopStateEvent: new (type: string, init: { state: unknown }) => unknown;
-}
-
-async function pushStateInPage(destination: string): Promise<string> {
-	const root = globalThis as unknown as PageNavigationGlobal;
-	const routerPush = root.next?.router?.push;
-	if (typeof routerPush === "function") {
-		await routerPush.call(root.next?.router, destination);
-	} else {
-		root.history.pushState({}, "", destination);
-		root.dispatchEvent(new root.PopStateEvent("popstate", { state: root.history.state }));
-		root.dispatchEvent(new root.Event("navigate"));
-	}
-	return root.location.href;
-}
-
 /**
  * Run `navigate` and wait for the main document to reach `waitUntil`.
  *
@@ -116,11 +93,6 @@ export async function traverseHistory(page: Page, direction: "back" | "forward",
 export async function reloadPage(page: Page, waitUntil: NavigationWaitUntil, timeout: number, signal: AbortSignal): Promise<string> {
 	await navigateMainFrame(page, waitUntil, timeout, signal, options => page.reload(options));
 	return page.url();
-}
-
-/** Client-side navigation through Next.js when available, otherwise the History API. */
-export async function pushState(page: Page, url: string, signal: AbortSignal): Promise<string> {
-	return await untilAborted(page.evaluate(pushStateInPage, url), signal);
 }
 
 /** Wait until the page URL contains `pattern` (a string) or matches it (a RegExp). */

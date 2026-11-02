@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import v8 from "node:v8";
 import vm from "node:vm";
 import { it } from "node:test";
-import { initTheme, InteractiveMode, SessionManager, type SessionEntry, type Theme } from "@earendil-works/pi-coding-agent";
+import { initTheme, InteractiveMode, SessionManager, VERSION, type SessionEntry, type Theme } from "@earendil-works/pi-coding-agent";
 import { Container, stripTerminalSequences, Text } from "@earendil-works/pi-tui";
 import toolUi from "../../../extensions/RQW-tool-ui/index.ts";
 import { classifyChange } from "../../../extensions/RQW-tool-ui/changes.ts";
 import { classify } from "../../../extensions/RQW-tool-ui/classify.ts";
+import { PI_FALLBACK_VERSION } from "../../../extensions/RQW-tool-ui/fallback.ts";
 import { buildGroups } from "../../../extensions/RQW-tool-ui/groups.ts";
 import { renderLive } from "../../../extensions/RQW-tool-ui/live.ts";
 import { collapsedRows, ToolUi } from "../../../extensions/RQW-tool-ui/render.ts";
@@ -22,6 +23,10 @@ const result = (id: string, name = "read", extra: object = {}) => ({
 const entries = (...messages: unknown[]) => messages.map((message, i) => ({
 	type: "message", id: `e${i}`, parentId: i ? `e${i - 1}` : null, timestamp: "t", message,
 })) as SessionEntry[];
+
+it("pins the copied fallback to the installed Pi version", () => {
+	assert.equal(PI_FALLBACK_VERSION, VERSION);
+});
 
 it("classifies calls and nonzero exits", () => {
 	assert.equal(classify("read", { path: "a.ts", offset: 3, limit: 2 }, ok(), { toolCallId: "r" }).target, "a.ts L3-4");
@@ -72,6 +77,26 @@ it("renders new file tools and historical calls in compact and expanded views", 
 	]), result("r1"), result("r2", "rqw_readfile"), result("s1", "rqw_rg"), result("s2", "rqw_glob")));
 	const leader = [...group.values()].find((item) => item.isLeader);
 	assert.equal(collapsedRows(leader, 120, theme, "/w")[0], "Read 1 file · searched 2 times");
+});
+
+it("hides the wait follow-up in live and expanded output without changing the result", () => {
+	const followUp = "Perform any necessary follow-up actions in response to the subagent completion above. If no follow-up work is needed, no further action is required. Don't repeat the same confirmation every time.";
+	const args = { action: "wait", ids: ["agent#1"] };
+	const raw = JSON.stringify({ results: [{ id: "agent#1", text: `Answer\n\n${followUp}` }] });
+	const input = ok(raw);
+	const live = renderLive({ ...classify("agent", args, input), toolName: "agent" }, 300, theme).join("\n");
+	assert.match(live, /Answer/);
+	assert.doesNotMatch(live, /follow-up actions/);
+	const ui = new ToolUi();
+	const renderer = ui.resolve("agent", () => ({ renderResult: (value) => new Text((value.content[0] as { text: string }).text, 0, 0) }));
+	const context = { state: {}, toolCallId: "id", args, outputPad: 0, invalidate() {}, expanded: true, showImages: false } as never;
+	const fullTheme = { ...theme, bold: (text: string) => text } as Theme;
+	const row = renderer.renderCall!(args as never, fullTheme, context);
+	renderer.renderResult!(input as never, { expanded: true, isPartial: false } as never, fullTheme, context);
+	const expanded = row.render(300).join("\n");
+	assert.match(expanded, /Answer/);
+	assert.doesNotMatch(expanded, /follow-up actions/);
+	assert.equal(input.content[0].text, raw);
 });
 
 it("classifies confirmed edit and write counts", () => {

@@ -19,7 +19,7 @@ The theme is distributed separately through `pi.themes`, not as an extension.
 ### Wiring (`index.ts`, `render.ts`)
 
 - `index.ts` registers one tool renderer resolver and the public events the groups need: `session_start`,
-  `session_shutdown`, `session_compact`, `session_tree`, `agent_start`, `agent_settled`, `message_start/update/end`,
+  `session_shutdown`, `session_compact`, `session_tree`, `agent_settled`, `message_start/update/end`,
   `tool_execution_start/update/end` and `agent_end`. Interactive history is prepared before Pi builds its components. Print, JSON and RPC modes keep
   nothing and draw nothing (Pi resolves no tool renderers there).
 - The resolver gives every tool, known or not, `renderShell: "self"` renderers and keeps what comes after it
@@ -51,7 +51,7 @@ The theme is distributed separately through `pi.themes`, not as an extension.
 - Groups come from the whole active branch, `ctx.sessionManager.getBranch()` (RQW-blocks lets Pi draw it all after a compaction, so calls before the compaction keep this view), plus the streaming state (`groups.ts`). The state is
   prepared before `renderSessionEntries`, keyed by the live session and extension runtime. `session_start` does not
   rebuild the groups. On shutdown, event data and session references are released while the old visible rows stay
-  intact until Pi replaces the transcript or stops. No timers of its own.
+  intact until Pi replaces the transcript or stops.
 - Accepted limit: every model step with thinking keeps Pi's own blank row and, while thinking is hidden, its label row;
   this extension cannot remove them.
 
@@ -69,13 +69,12 @@ profiles and skills for the ordinary `agent` runtime.
 ### Data and render functions
 
 - `classify.ts`: `classify(toolName, args, result, context)` turns one call into
-  `{ kind, target, status, countKey, countKeys, outputText, exitCode? }` for `read`, `grep`/`find`, `bash`,
+  `{ kind, target, status, countKeys, outputText, exitCode? }` for `rqw_readfile`/`read`,
+  `rqw_rg`/`rqw_glob` and legacy `grep`/`find`, `bash`,
   `agent` waits (one count key per waited ID) and every other tool. Stored standalone `review` waits retain the same
   classification only for legacy history compatibility.
-  The `read` count key is the lexically normalized path, as Pi 1.4.0 `resolveToCwd` resolves it (no filesystem
-  access): Unicode spaces (NBSP, U+2000-200A, U+202F, U+205F, U+3000) fold to a space, a leading `@` goes, `~`, `~/`
-  (Windows also `~\`) expand with the home folder, `file://` URLs become paths, Windows shell drive forms (`/c/`) read as
-  `C:`; the cwd base gets the same expansions except space folding. The same file under any of these spellings counts once.
+  The `read` count key is the lexically normalized path (no filesystem access): relative to the cwd, `./`, `..` and repeated
+  slashes fold, and on Windows `\` and `/` are the same. The same file under any of these spellings counts once.
 - `changes.ts`: `classifyChange(toolName, args, result, context)` for `edit` and `write`: the same fields plus each
   file's own status and `+added -removed`, counted only from the confirmed result (Pi's diff or patch, RQW multi-file
   `details.files[]`, written content lines), never from the requested text or the disk. RQW `edit` groups paths by filesystem identity, which can merge
@@ -109,15 +108,15 @@ profiles and skills for the ordinary `agent` runtime.
   error output and status in the current card even when nested calls succeeded. Its failure remains in the folded
   summary, without an extra parent tool count or recounting a propagated nested failure. Nested details and expanded
   originals are unchanged.
-- Tests: run `node --test test/extensions/RQW-tool-ui/render.test.ts`.
+- Tests: `test/extensions/RQW-tool-ui/render.test.ts`.
 
 ### Worked-for folds (`fold.ts`)
 
 - Once a run settles (`agent_settled`), each successful final answer (stop reason `stop`, text, no tool calls)
-  closes its own span. Earlier answers, including questions to the owner, never enter a later fold, unless they were
-  not the real final (next section). A later tool or delivered agent notification never cancels their boundary.
+  closes its own span. Earlier answers, including questions to the owner, never enter a later fold except where old
+  history explicitly marked them non-final. A later tool or background work never cancels their boundary.
   Work folds under one dim row, indented by `outputPad`:
-  `worked for 42s ›`. Open, the angle turns to `˅`. The final answer, with its thinking, stays outside and unchanged.
+  `worked for 42s ›`. Open, the row has no arrow at all. The final answer, with its thinking, stays outside and unchanged.
   While the agent works, the live view is today's.
 - User messages no longer split spans. All owner messages, including skill-invocation bundles and messages sent
   mid-work, appear in order above the closed header. Opening returns them to their original positions among the work.
@@ -133,24 +132,18 @@ profiles and skills for the ordinary `agent` runtime.
   rounded first: `42s`, `1m 00s` (59.6 s), `2m 03s`, `1h 05m`; no space before units. Invalid times give `worked`.
 - A left click anywhere on the row opens or closes that fold only. Press, drag and copy stay Pi's text selection.
   Ctrl+O keeps switching tool originals and Enter keeps sending; neither toggles a fold. No hints anywhere.
-- The whole task folds into one row until the real final (`background.ts`, `groups.ts`). The real final is a run
-  that ends with a successful answer while no agent and no background process runs. The busy state comes from the
-  shared `rqw:running-counts:request/offer` channel (version 1) on `pi.events`: busy means `agents > 0` or
-  `backgroundProcesses > 0`. The names are spelled in this extension, nothing is imported. Without RQW-agent and
-  RQW-tools nothing is ever busy and every answer closes its fold as before.
-  - At `agent_settled` (not aborted), when the last entry is a successful answer and something is busy, the extension
-    saves an invisible `rqw-tool-ui-final` entry `{ key, final: false }` (`key` is the answer's message key) and
-    rebuilds the folds. The answer then does not close its span: it stays a member, so the next answer that is a real
-    final closes one fold from the first message of the task on, with the `worked for` time of the whole span.
-  - When the busy state falls to zero in an idle session and the last entry is still that mark (no message and no
-    delivered card after it) for 500 ms, it saves `{ key, final: true }`. The span then closes on the marked answer,
-    timed to that answer. A woken run that starts first makes no `final: true`.
-  - A history is read from these entries, so a resumed session shows the same folds. A mark for an answer that is not
-    the latest successful one, or one that follows later messages, is ignored. Old sessions without marks fold as
-    before. Only TUI sessions write marks; the settle check reads only the end of the branch and only while busy.
+- An open wait remains part of the current span, including its elapsed time. A successful final answer closes the
+  fold even when background work remains. The extension no longer writes `rqw-tool-ui-final` entries. History still
+  reads old `{ key, final }` marks; a mark for another answer or after later messages is ignored.
 - Open shows literally the rows from before the fold: the same components, renderers, colors, padding and blank rows,
-  with the current Ctrl+O and Ctrl+T state. The header is inserted before the first component's content, preserving
-  its leading blank row when present. No original rows or blank rows are added, removed or trimmed.
+  with the current Ctrl+O and Ctrl+T state. The header is inserted under the first message of the span (a user
+  message with its skill parts, or the first card), not above it: into the rows of the first member after that message,
+  after its leading blank row when present. With one message that is the closed place; with several it moves up under
+  the first, so a very tall first message never has to be scrolled past. Closed, it stays under the last. A span with
+  no member after its first message (a lone card, or an assistant message with its tools) draws the header below
+  that message's last row, with no blank row added. Unkeyed tool components join the first message only when it is an
+  assistant message. `fold.at` holds the member that draws the header, found once when the span is bound; the same member draws and handles the click, and the existing row cache is reused. No original rows or
+  blank rows are added, removed or trimmed.
 - Compaction and branch summary lines, `!` commands and every compaction's `firstKeptEntryId` are hard boundaries.
   At a kept-entry cut, the unfinished historical prefix gets its own closed `worked for <time>` fold, ending at
   its last saved entry before the cut. Its clock starts at the first message/card, or the first visible assistant
@@ -175,12 +168,12 @@ profiles and skills for the ordinary `agent` runtime.
   installs or binds nothing and keeps today's view.
 - Tests: `test/extensions/RQW-tool-ui/fold.test.ts`, Pi's real InteractiveMode, Container and TuiAltScreen over a fake
   terminal, including selected-branch rebuilds and unsupported inherited component methods.
-  `test/extensions/RQW-tool-ui/real-final.test.ts` covers the real final: marks in history and live, a fake counts
-  producer and a hand-fired timer. `test/lazy-folds.test.ts`
+  `test/extensions/RQW-tool-ui/real-final.test.ts` covers old marks and a long wait ending with background work. `test/lazy-folds.test.ts`
   covers local suffixes through two kept-entry cuts, lifted owners, repeated identical cards, interval reload and
-  released source-update wrappers. `test/worked-for-skills.test.ts` loads skill-dollar only in a root compatibility
-  fixture: linked multi-skill user cards, skill-only cards, Ctrl+O/Ctrl+T, exact expanded originals, rebuild and inline.
-  Run: `npm run check -- --typecheck --test 'test/extensions/RQW-tool-ui/*.test.ts' test/lazy-folds.test.ts test/worked-for-skills.test.ts`.
+  released source-update wrappers. `test/lazy-prefix-folds.test.ts` covers the lazy prefix. `test/worked-for-skills.test.ts`
+  loads skill-dollar only in a root compatibility fixture: linked multi-skill user cards, skill-only cards, Ctrl+O/Ctrl+T,
+  exact expanded originals, rebuild and inline. Run the extension tests and isolation check with
+  `npm run check -- --test 'test/extensions/RQW-tool-ui/*.test.ts' test/isolation.test.ts`.
 
 ## On and off
 

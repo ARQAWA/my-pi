@@ -18,25 +18,20 @@ it("Ctrl+Enter and Alt+Enter with text give the editor its own submit, busy or i
 	assert.deepEqual(h.sent, []);
 });
 
-it("Codex: an empty Ctrl+Enter silently sends the waiting steering and leaves follow-ups and the draft", async (t) => {
+it("Codex: an empty Ctrl+Enter silently sends waiting steering", async (t) => {
 	const h = harness(t);
 	await h.steer("use the smaller patch");
-	h.followUp("check the result later");
 	assert.deepEqual(h.press(CTRL_ENTER), { consume: true });
 	assert.equal(h.session.aborts, 1);
 	assert.deepEqual(h.session._steeringMessages, []);
 	assert.deepEqual(h.session.agent.steeringQueue.messages, []);
-	assert.deepEqual(h.session._followUpMessages, ["check the result later"]);
-	assert.equal(h.session.agent.followUpQueue.messages.length, 1);
 	await h.flush();
 	assert.deepEqual(h.sent, [steer("use the smaller patch")]);
 	assert.deepEqual(h.notices, []);
 });
 
-it("Codex: an empty Ctrl+Enter with nothing steering, or with only a follow-up, does nothing", async (t) => {
+it("Codex: empty steering keys with nothing queued do nothing", (t) => {
 	const h = harness(t);
-	assert.equal(h.press(CTRL_ENTER), undefined);
-	h.followUp("later");
 	assert.equal(h.press(CTRL_ENTER), undefined);
 	assert.equal(h.press(ALT_ENTER), undefined);
 	assert.equal(h.session.aborts, 0);
@@ -104,13 +99,180 @@ it("not Codex: Escape with steering waiting sends it silently, the draft stays",
 	assert.deepEqual(h.notices, []);
 });
 
-it("Escape stays Pi's with no steering and with only a follow-up", async (t) => {
+it("Escape stays Pi's with nothing queued", async (t) => {
 	const h = harness(t, { provider: "anthropic" });
 	assert.equal(h.press(), undefined);
+	assert.equal(h.session.aborts, 0);
+	h.followUp("idle follow-up");
+	h.state.idle = true;
 	h.tick(600);
-	h.followUp("later");
 	assert.equal(h.press(), undefined);
 	assert.equal(h.session.aborts, 0);
+});
+
+for (const provider of ["openai-codex", "anthropic"]) {
+	it(`${provider}: Escape with a follow-up queued interrupts silently and sends it at once, the draft stays`, async (t) => {
+		const h = harness(t, { provider });
+		h.followUp("check the result");
+		h.state.editor = "my draft";
+		assert.deepEqual(h.press(), { consume: true });
+		assert.equal(h.session.aborts, 1);
+		assert.equal(h.state.ctrlAborts, 0, "Pi's own Escape (restore the queue into the editor) is skipped");
+		assert.deepEqual(h.session._followUpMessages, []);
+		assert.deepEqual(h.session.agent.followUpQueue.messages, []);
+		await h.flush();
+		assert.deepEqual(h.sent, [steer("check the result")]);
+		assert.equal(h.state.editor, "my draft");
+		assert.deepEqual(h.notices, []);
+	});
+}
+
+for (const provider of ["openai-codex", "anthropic"]) {
+	it(`${provider}: Escape with steering and a follow-up both waiting sends both, steering first`, async (t) => {
+		const h = harness(t, { provider });
+		h.followUp("then this");
+		await h.steer("first this");
+		assert.deepEqual(h.press(), { consume: true });
+		await h.flush();
+		assert.deepEqual(h.sent, [steer("first this\n\nthen this")]);
+		assert.equal(h.session.started, 1);
+		assert.deepEqual(h.session._steeringMessages, []);
+		assert.deepEqual(h.session._followUpMessages, []);
+	});
+}
+
+it("steering still on its way when Escape is pressed goes before the follow-up", async (t) => {
+	const h = harness(t, { provider: "anthropic" });
+	h.followUp("then this");
+	let arrive!: (value: unknown) => void;
+	h.session._runInputHandlers = () => new Promise((resolve) => { arrive = resolve; });
+	const late = h.session.prompt("first this", { streamingBehavior: "steer" });
+	assert.deepEqual(h.press(), { consume: true });
+	arrive({ text: "first this", images: undefined });
+	await late;
+	await h.flush();
+	assert.deepEqual(h.sent, [steer("first this\n\nthen this")]);
+});
+
+it("Escape takes only user follow-ups; other queued follow-up messages stay", async (t) => {
+	const h = harness(t);
+	const custom = { role: "custom", content: "agent result", timestamp: 1 };
+	h.session.agent.followUpQueue.messages.push(custom);
+	h.followUp("mine");
+	h.press();
+	await h.flush();
+	assert.deepEqual(h.session.agent.followUpQueue.messages, [custom]);
+	assert.deepEqual(h.sent, [steer("mine")]);
+});
+
+for (const provider of ["openai-codex", "anthropic"]) {
+	for (const key of [CTRL_ENTER, ALT_ENTER]) {
+		it(`${provider}: empty steering key moves follow-ups without aborting`, async (t) => {
+			const h = harness(t, { provider });
+			const image = { type: "image", data: "abc", mimeType: "image/png" };
+			const custom = { role: "custom", content: "agent result", timestamp: 1 };
+			await h.steer("existing");
+			h.followUp("first");
+			h.session.agent.followUpQueue.messages[0].content.push(image);
+			h.session.agent.followUpQueue.messages.push(custom);
+			h.followUp("second");
+			assert.deepEqual(h.press(key), { consume: true });
+			assert.equal(h.session.aborts, 0);
+			assert.deepEqual(h.sent, []);
+			assert.deepEqual(h.session._followUpMessages, []);
+			assert.deepEqual(h.session.agent.followUpQueue.messages, [custom]);
+			assert.deepEqual(h.session._steeringMessages, ["existing", "first", "second"]);
+			assert.deepEqual(h.session.agent.steeringQueue.messages.map((m: any) => m.content), [
+				[{ type: "text", text: "existing" }], [{ type: "text", text: "first" }, image], [{ type: "text", text: "second" }],
+			]);
+		});
+	}
+}
+
+it("background-only: starts the first follow-up and steers the rest", async (t) => {
+	const h = harness(t);
+	h.state.idle = true; h.state.background = 1;
+	h.followUp("first"); h.followUp("second");
+	assert.deepEqual(h.press(ALT_ENTER), { consume: true });
+	await h.flush();
+	assert.deepEqual(h.sent, [steer("first")]);
+	assert.deepEqual(h.session._followUpMessages, []);
+	assert.deepEqual(h.session._steeringMessages, ["second"]);
+	assert.equal(h.session.aborts, 0);
+});
+
+it("idle with a follow-up held by a wait and no running counts: an empty Ctrl+Enter starts it, as the hint promises", async (t) => {
+	const h = harness(t);
+	h.state.idle = true;
+	h.followUp("held");
+	assert.deepEqual(h.press(CTRL_ENTER), { consume: true });
+	await h.flush();
+	assert.deepEqual(h.sent, [steer("held")]);
+	assert.deepEqual(h.session._followUpMessages, []);
+	assert.equal(h.session.aborts, 0);
+});
+
+it("idle with nothing queued: an empty Ctrl+Enter does nothing", (t) => {
+	const h = harness(t);
+	h.state.idle = true;
+	assert.equal(h.press(CTRL_ENTER), undefined);
+	assert.deepEqual(h.sent, []);
+});
+
+it("idle with background work: Enter never probes a follow-up hold", (t) => {
+	const h = harness(t);
+	h.state.idle = true; h.state.background = 1; h.state.editor = "later";
+	let probes = 0;
+	h.events.on("rqw:followup-hold:request", () => { probes++; });
+	for (const key of ["a", "\x1b[A", "\t"]) assert.equal(h.press(key), undefined);
+	assert.equal(probes, 0);
+	assert.equal(h.press("\r"), undefined);
+	assert.equal(probes, 0);
+});
+
+it("manual compaction: follow-ups enter steering and start after compaction", async (t) => {
+	const h = harness(t);
+	h.state.compacting = true; h.state.background = 1; h.session.isStreaming = false;
+	let finish!: () => void;
+	h.session.waitForIdle = () => new Promise<void>(resolve => { finish = resolve; });
+	const image = { type: "image", data: "abc", mimeType: "image/png" };
+	h.followUp("first"); h.session.agent.followUpQueue.messages[0].content.push(image);
+	h.followUp("second");
+	assert.deepEqual(h.press(CTRL_ENTER), { consume: true });
+	assert.deepEqual(h.session._steeringMessages, ["first", "second"]);
+	assert.deepEqual(h.session._followUpMessages, []);
+	assert.deepEqual(h.sent, []);
+	h.state.compacting = false; h.state.idle = true; finish();
+	await h.flush();
+	assert.deepEqual(h.sent, [steer("first", [image])]);
+	assert.deepEqual(h.session._steeringMessages, ["second"]);
+	assert.equal(h.session.aborts, 0);
+});
+
+it("background-only: a failed start restores queued messages and images", async (t) => {
+	const h = harness(t);
+	h.state.idle = true; h.state.background = 1;
+	const image = { type: "image", data: "abc", mimeType: "image/png" };
+	h.followUp("first"); h.session.agent.followUpQueue.messages[0].content.push(image);
+	h.followUp("second");
+	h.session._startRun = async () => { throw new Error("failed"); };
+	assert.deepEqual(h.press(CTRL_ENTER), { consume: true });
+	await h.flush();
+	assert.deepEqual(h.session._followUpMessages, ["first", "second"]);
+	assert.deepEqual(h.session.agent.followUpQueue.messages[0].content, [{ type: "text", text: "first" }, image]);
+	assert.deepEqual(h.session._steeringMessages, []);
+	assert.match(h.notices[0], /not sent/);
+});
+
+it("a second Escape within 500 ms cancels the follow-up force and returns its text to the editor", async (t) => {
+	const h = harness(t, { provider: "anthropic" });
+	h.followUp("keep me");
+	assert.deepEqual(h.press(), { consume: true });
+	assert.deepEqual(h.press(), { consume: true });
+	await h.flush();
+	h.tick(1000);
+	assert.equal(h.state.editor, "keep me");
+	assert.deepEqual(h.sent, []);
 });
 
 it("on Codex Escape stays Pi's even with steering waiting", async (t) => {
@@ -131,13 +293,13 @@ it("images of the steering go with it", async (t) => {
 	assert.deepEqual(h.sent, [steer("look at this\n\nand this", [image])]);
 });
 
-it("only user steering is taken; other queued messages and a same-text follow-up stay", async (t) => {
+it("plain Enter takes only user steering; other queued messages and a same-text follow-up stay", async (t) => {
 	const h = harness(t);
 	const custom = { role: "custom", content: "from an extension", timestamp: 1 };
 	h.session.agent.steeringQueue.messages.push(custom);
 	await h.steer("same text");
 	h.followUp("same text");
-	h.press(CTRL_ENTER);
+	h.press("\r");
 	await h.flush();
 	assert.deepEqual(h.session.agent.steeringQueue.messages, [custom]);
 	assert.deepEqual(h.session._followUpMessages, ["same text"]);
@@ -239,6 +401,38 @@ it("a reload during a force-send restores the text at once and the late input wh
 	assert.equal(h.state.editor, "reserved\n\nlate");
 	assert.deepEqual(h.session._steeringMessages, []);
 	assert.deepEqual(h.sent, []);
+});
+
+it("a reload during an Escape force-send puts late steering before the restored follow-up", async (t) => {
+	const h = harness(t, { provider: "anthropic" });
+	h.followUp("then this");
+	h.state.editor = "my draft";
+	let arrive!: (value: unknown) => void;
+	h.session._runInputHandlers = () => new Promise((resolve) => { arrive = resolve; });
+	const late = h.session.prompt("first this", { streamingBehavior: "steer" });
+	h.press();
+	h.shutdown();
+	assert.equal(h.state.editor, "then this\n\nmy draft");
+	arrive({ text: "first this", images: undefined });
+	await late;
+	await h.flush();
+	assert.equal(h.state.editor, "first this\n\nthen this\n\nmy draft");
+	assert.deepEqual(h.sent, []);
+});
+
+it("late steering after a reload is not inserted into an earlier steer that contains the follow-up text", async (t) => {
+	const h = harness(t, { provider: "anthropic" });
+	await h.steer("please do then this now");
+	h.followUp("then this");
+	let arrive!: (value: unknown) => void;
+	h.session._runInputHandlers = () => new Promise((resolve) => { arrive = resolve; });
+	const late = h.session.prompt("late", { streamingBehavior: "steer" });
+	h.press();
+	h.shutdown();
+	arrive({ text: "late", images: undefined });
+	await late;
+	await h.flush();
+	assert.equal(h.state.editor, "please do then this now\n\nlate\n\nthen this");
 });
 
 it("a late input after the context went stale is left to Pi's queue, not lost", async (t) => {

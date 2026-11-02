@@ -29,6 +29,8 @@ export function fakeNet(): NetLike & { written: Buffer[]; silent: Set<number>; o
 		connect(port) {
 			const connection = ++net.connections;
 			const [client, server] = duplexPair();
+			client.on("close", () => server.destroy());
+			server.on("close", () => client.destroy());
 			const accept = servers.get(port);
 			if (!accept) {
 				queueMicrotask(() => client.destroy(Object.assign(new Error("refused"), { code: "ECONNREFUSED" })));
@@ -56,6 +58,7 @@ export type World = {
 	level: string;
 	models: FakeModel[];
 	entries: any[];
+	branchReads?: () => void;
 	sent: { message: any; options: any }[];
 	/** When true, Pi records a sent message at once, as it does for an idle chat. */
 	autoRecord: boolean;
@@ -83,7 +86,7 @@ export type Tab = {
 	ctx: (mode?: string) => ExtensionContext;
 	fire(name: string, event?: object, mode?: string): Promise<unknown>;
 	/** Runs a registered tool as the model would. */
-	run(name: string, params: object, callId?: string): Promise<any>;
+	run(name: string, params: object, callId?: string, signal?: AbortSignal): Promise<any>;
 };
 
 export function tempDir(t: TestContext): string {
@@ -102,6 +105,15 @@ export function openTab(deps: Partial<Deps> & { dir: string }, id: string, extra
 		sessionFs: nodeSessionFs, sessionsRoot: join(deps.dir, "no-sessions"), ...deps, ...extra,
 	};
 	const handlers = new Map<string, Handler[]>();
+	const listeners = new Map<string, Set<(event: any) => void>>();
+	const events = {
+		on(name: string, listener: (event: any) => void) {
+			if (!listeners.has(name)) listeners.set(name, new Set());
+			listeners.get(name)!.add(listener);
+			return () => listeners.get(name)!.delete(listener);
+		},
+		emit(name: string, event: any) { for (const listener of listeners.get(name) ?? []) listener(event); },
+	};
 	const tools: ToolDefinition[] = [];
 	const model: FakeModel = { provider: "p", id: "owner", api: FAKE_API };
 	const world: World = { idle: true, model, level: "medium", models: [model, { provider: "p", id: "other", api: FAKE_API }], entries: [], sent: [], autoRecord: true, active: ["tool_search"], noAuth: new Set(), crashed: false };
@@ -112,6 +124,7 @@ export function openTab(deps: Partial<Deps> & { dir: string }, id: string, extra
 		return result;
 	};
 	const pi = {
+		events,
 		on: (name: string, handler: Handler) => { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
 		registerTool: (tool: ToolDefinition) => {
 			tools.push(tool);
@@ -147,12 +160,13 @@ export function openTab(deps: Partial<Deps> & { dir: string }, id: string, extra
 		sessionManager: {
 			getSessionId: () => session.id, getSessionName: () => session.name, getCwd: () => "/work",
 			getSessionFile: () => session.file, getSessionDir: () => "/sessions",
-			getEntries: () => world.entries, getBranch: () => world.entries,
+			getEntries: () => world.entries, getBranch: () => { world.branchReads?.(); return world.entries; },
+			getLeafEntry: () => world.entries.at(-1), getEntry: (id: string) => world.entries.find(entry => entry.id === id),
 		},
 		ui: { notify: (message: string) => notices.push(message) },
 	}) as unknown as ExtensionContext;
-	const run = (name: string, params: object, callId = "call-1") =>
-		tools.find(tool => tool.name === name)!.execute(callId, params as never, undefined, undefined, ctx() as never);
+	const run = (name: string, params: object, callId = "call-1", signal?: AbortSignal) =>
+		tools.find(tool => tool.name === name)!.execute(callId, params as never, signal, undefined, ctx() as never);
 	return { pi, handlers, tools, notices, session, world, ctx, fire, run };
 }
 

@@ -28,9 +28,9 @@ export async function world(t: TestContext) {
 	return { base, put, project: join(base, "project"), cwd: join(base, "project", "pkg") };
 }
 
-export function runtime(cwd: string, root: string, thinking = "off", extraModels: string[] = [], activeTools: string[] = []) {
+export function runtime(cwd: string, root: string, thinking = "off", extraModels: string[] = [], activeTools: string[] = [], restored?: SessionManager) {
 	const hooks = new Map<string, ((event: any, ctx: any) => unknown)[]>();
-	const parent = SessionManager.create(root, join(root, "parent"));
+	const parent = restored ?? SessionManager.create(root, join(root, "parent"));
 	// Two models: the parent's `model` and a distinct `other`, so a profile model that is ignored shows.
 	const requests: any[] = [];
 	const core = createFauxCore({ provider: "persist-test", models: [{ id: "model", reasoning: true }, { id: "other", reasoning: true }, ...extraModels.map(id => ({ id, reasoning: true }))] });

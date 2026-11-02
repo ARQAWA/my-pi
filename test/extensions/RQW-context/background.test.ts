@@ -285,6 +285,34 @@ describe("RQW-context background compaction: projected snapshot", () => {
 		});
 	}
 
+	it("projects through the offered safe projection when Pi's own call overflows on a long tail", () => {
+		const stamp = "2026-01-01T00:00:00.000Z";
+		const big: any[] = [
+			{ type: "message", id: "a", parentId: null, timestamp: stamp, message: user(10) },
+			{ type: "compaction", id: "c", parentId: "a", timestamp: stamp, summary: "sum", firstKeptEntryId: "a", tokensBefore: 1 },
+		];
+		for (let i = 0; i < 200_000; i++) {
+			big.push({ type: "custom_message", id: `t${i}`, parentId: i === 0 ? "c" : `t${i - 1}`, timestamp: stamp, customType: "x", content: "c", display: false });
+		}
+		const settings = { enabled: true, reserveTokens: 100, keepRecentTokens: 150 };
+		const small = fixtures["split turn"]!().getBranch();
+		const key = Symbol.for("rqw:safe-projection:v1");
+		const shared = globalThis as Record<symbol, unknown>;
+		const previous = shared[key];
+		try {
+			delete shared[key];
+			assert.throws(() => prepareSnapshot(big, settings, 0), RangeError);
+			const seen: unknown[] = [];
+			shared[key] = (entries: unknown) => { seen.push(entries); return PiRoot.buildSessionProjection(small as never); };
+			const snapshot = prepareSnapshot(big, settings, 0);
+			assert.deepEqual(seen, [big]);
+			assert.ok(snapshot);
+			assert.deepEqual(comparable(snapshot.preparation), comparable(prepareCompaction(small, settings)));
+		} finally {
+			if (previous === undefined) delete shared[key]; else shared[key] = previous;
+		}
+	});
+
 	it("uses only helpers that both the npm root and the compiled bundle export", () => {
 		const names = ["buildSessionProjection", "getLatestCompactionEntry", "estimateTokens", "sessionEntryToContextMessages", "shouldCompact"];
 		for (const name of names) assert.equal(typeof (PiRoot as Record<string, unknown>)[name], "function", name);
@@ -447,12 +475,36 @@ describe("RQW-context background compaction: adoption and fallback", () => {
 		await toBackground(h);
 		const done = h.say(0.22);
 		await threshold;
-		h.manager.appendContextEdit(userIds(h)[0], { content: [{ type: "text", text: "changed" }] } as never);
+		h.manager.appendContextEdit(userIds(h)[0], { content: [{ type: "text", text: "CHANGED_REQUIREMENT" }] } as never);
 		h.summaries[0].resolve("STALE");
 		await h.summary(2);
-		h.summaries[1].resolve("FOREGROUND");
+		// The foreground summary is asked about the edited text, not the one Pi prepared before the wait.
+		assert.ok(!JSON.stringify(h.summaries[0].context).includes("CHANGED_REQUIREMENT"));
+		assert.ok(JSON.stringify(h.summaries[1].context).includes("CHANGED_REQUIREMENT"));
+		// The scripted summarizer reports what it was asked about; the active context then carries that report.
+		h.summaries[1].resolve(JSON.stringify(h.summaries[1].context).includes("CHANGED_REQUIREMENT") ? "SAW CHANGED_REQUIREMENT" : "SAW OLD INPUT");
 		await done;
-		assert.match(h.compactions()[0].summary, /^FOREGROUND/);
+		assert.match(h.compactions()[0].summary, /^SAW CHANGED_REQUIREMENT/);
+		assert.ok(JSON.stringify(h.manager.buildSessionProjection().messages).includes("SAW CHANGED_REQUIREMENT"));
+	});
+
+	it("nothing left to summarize after the wait: no compaction, the stale input is not summarized", async () => {
+		let entered!: () => void;
+		const threshold = new Promise<void>((resolve) => { entered = resolve; });
+		const h = await harness({}, (pi) => pi.on("session_before_compact", () => { entered(); }));
+		h.control.hold = true;
+		await toBackground(h);
+		const done = h.say(0.22);
+		await threshold;
+		const messages = h.manager.getBranch().filter((entry: any) => entry.type === "message" && entry.message.role !== "system");
+		for (const entry of messages.slice(0, -2)) h.manager.appendContextEdit(entry.id, null);
+		// A foreground request, if one is wrongly made, answers at once instead of hanging the test.
+		h.control.hold = false;
+		h.summaries[0].resolve("STALE");
+		await done;
+		assert.equal(h.summaries.length, 1);
+		assert.equal(h.compactions().length, 0);
+		assert.deepEqual(h.status.map((item: any) => item.active), [true, false]);
 	});
 
 	it("aborting compaction ends the wait even when the background request ignores abort", async () => {

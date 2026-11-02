@@ -44,8 +44,8 @@ export function selfShellWaitRenderers(name: string, inner: ToolRenderers): Tool
 			const cards = options.expanded && !options.isPartial && !context.isError
 				? waitCards(name, context.args, result) : undefined;
 			if (!view || !cards) return delegated;
-			const role = context.isPartial ? "toolPendingBg" : context.isError ? "toolErrorBg" : "toolSuccessBg";
-			const box = new Box(context.outputPad, 1, (text) => theme.bg(role, text));
+			// Cards are built only for a settled, successful result, so the box is always the success background.
+			const box = new Box(context.outputPad, 1, (text) => theme.bg("toolSuccessBg", text));
 			box.addChild(new Text(callHeader(name, context.args, theme), 0, 0));
 			box.addChild(cached((width) => cards.flatMap((card) => cardLines(card, true, theme, width))));
 			view.box = box;

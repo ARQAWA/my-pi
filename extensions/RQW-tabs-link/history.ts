@@ -25,8 +25,14 @@ export function projectTurns(entries: readonly SessionEntry[], inProgress: boole
     const edit = edits.get(entry.id);
     let item: HistoryItem = { ...entry };
     if (edit) {
-      if (entry.type === "message") item = { ...entry, message: { ...entry.message, content: edit.content } };
-      else if (entry.type === "custom_message") item = { ...entry, content: edit.content };
+      // details may repeat the replaced content, so an edited entry loses them.
+      if (entry.type === "message") {
+        const { details: _details, ...message } = entry.message as typeof entry.message & { details?: unknown };
+        item = { ...entry, message: { ...message, content: edit.content } };
+      } else if (entry.type === "custom_message") {
+        const { details: _details, ...rest } = entry;
+        item = { ...rest, content: edit.content };
+      }
     }
     const startsTurn = (entry.type === "message" && entry.message.role === "user") ||
       (entry.type === "custom_message" && entry.customType === "rqw-tabs-link");
@@ -86,6 +92,17 @@ function safeContent(value: unknown, limit: number, visible: boolean, state = { 
 
 const DETAILS_TRUNCATED = "...[details truncated]";
 
+// Keep the stored structured value when its JSON fits the remaining item budget. Only an
+// over-limit value becomes cut text with an explicit truncation marker (item.truncated is set by the caller).
+function limitStructured(value: unknown, outputLimit: number, outputs: { remaining: number; original: number }): unknown {
+  const json = JSON.stringify(value) ?? "";
+  const length = [...json].length;
+  if (length > outputs.remaining) return `${safeContent(json, outputLimit, true, outputs)}${outputLimit === 0 ? "" : DETAILS_TRUNCATED}`;
+  outputs.original += length;
+  outputs.remaining -= length;
+  return value;
+}
+
 function displayItem(item: HistoryItem, includeOutputs: boolean, outputLimit: number): HistoryItem {
   const result = structuredClone(item);
   const outputs = { remaining: outputLimit, original: 0 };
@@ -95,16 +112,7 @@ function displayItem(item: HistoryItem, includeOutputs: boolean, outputLimit: nu
     if (message.role === "toolResult") {
       message.content = safeContent(message.content, outputLimit, includeOutputs, outputs);
       if (!includeOutputs) delete message.details;
-      else if (message.details !== undefined) {
-        // Keep the stored structured value when its JSON fits the remaining item budget. Only an
-        // over-limit value becomes cut text with an explicit truncation marker (item.truncated is set below too).
-        const json = JSON.stringify(message.details) ?? "";
-        const length = [...json].length;
-        if (length <= outputs.remaining) {
-          outputs.original += length;
-          outputs.remaining -= length;
-        } else message.details = `${safeContent(json, outputLimit, true, outputs)}${outputLimit === 0 ? "" : DETAILS_TRUNCATED}`;
-      }
+      else if (message.details !== undefined) message.details = limitStructured(message.details, outputLimit, outputs);
     } else if (message.role === "user") message.content = safeContent(message.content, 2000, true, text);
     else if (Array.isArray(message.content)) message.content = message.content.map((part: unknown) => {
       if (!part || typeof part !== "object") return part;
@@ -112,11 +120,31 @@ function displayItem(item: HistoryItem, includeOutputs: boolean, outputLimit: nu
       return type === "thinking" ? safeContent(part, outputLimit, includeOutputs, outputs) : part;
     });
   } else if (result.type === "custom_message") result.content = safeContent(result.content, 2000, true, text);
+  else if (result.type === "custom") {
+    // Other extensions store bulky internal data here; it is output, shown only on request and cut like details.
+    if (!includeOutputs) delete result.data;
+    else if (result.data !== undefined) result.data = limitStructured(result.data, outputLimit, outputs);
+  }
   if ((includeOutputs && outputs.original > outputLimit) || text.original > 2000) {
     result.truncated = true;
     result.originalChars = outputs.original > outputLimit && includeOutputs ? outputs.original : text.original;
   }
   return result;
+}
+
+export function answerAfter(entries: readonly SessionEntry[], index: number): HistoryItem | undefined {
+  const edits = new Map(entries.filter((entry) => entry.type === "context_edit").map((entry) => [entry.targetId, entry.replacement]));
+  for (const entry of entries.slice(index + 1)) {
+    if (entry.type !== "message" || entry.message.role !== "assistant" || entry.message.stopReason !== "stop") continue;
+    const edit = edits.get(entry.id);
+    if (edit === null) continue;
+    if (edit) {
+      const { details: _details, ...message } = entry.message as typeof entry.message & { details?: unknown };
+      return displayItem({ ...entry, message: { ...message, content: edit.content } }, false, 2000);
+    }
+    return displayItem(entry, false, 2000);
+  }
+  return undefined;
 }
 
 export function readChat(target: ReadTarget, options: ReadOptions = {}) {

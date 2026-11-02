@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import { afterEach, it } from "node:test";
 import { AssistantMessageComponent, UserMessageComponent, type SessionEntry } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
-import { Folds, installFolds } from "../../../extensions/RQW-tool-ui/fold.ts";
 import { buildTurns, formatWorked } from "../../../extensions/RQW-tool-ui/groups.ts";
-import { assistant, call, load, makeHost, makeScreen, result, Session, text, liveTheme, user } from "./fold-host.ts";
+import { assistant, call, load, makeHost, makeScreen, messageRenderers, result, Session, text, liveTheme, user } from "./fold-host.ts";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()!(); });
@@ -77,7 +76,7 @@ it("starts closed after a rebuild and stays open on a redraw", () => {
 	const m = mounted((s) => s.turn(0, 0, 42));
 	m.click(1, m.row("worked for 42s ›"));
 	m.host.chatContainer.render(120);
-	assert.ok(m.row("worked for 42s ˅") >= 0 && m.row("update 0") >= 0);
+	assert.ok(m.row("worked for 42s") >= 0 && m.row("update 0") >= 0);
 	m.host.rebuildChatFromMessages();
 	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("update 0") < 0);
 });
@@ -119,7 +118,7 @@ function scene(build: (s: Session) => void) {
 	return { session, loaded, stock, host, screen };
 }
 
-const headerOf = (label: string, open: boolean) => " " + liveTheme().fg("dim", `${label} ${open ? "˅" : "›"}`);
+const headerOf = (label: string, open: boolean) => " " + liveTheme().fg("dim", `${open ? label : `${label} ›`}`);
 
 const withoutHeaders = (rows: string[]) => rows.filter((row) => !/worked for/.test(row));
 
@@ -175,16 +174,6 @@ it("keeps all rows visible if an inherited user update method cannot be wrapped"
 		assert.ok(m.row("worked for") < 0 && m.row("prompt 0") >= 0 && m.row("update 0") >= 0);
 		assert.deepEqual(m.host.chatContainer.render(80), m.stock.chatContainer.render(80));
 	} finally { Object.defineProperty(prototype, "rebuild", descriptor); }
-});
-
-it("leaves a foreign container shape visible and unchanged", () => {
-	const prototype = { addMessageToChat(this: { chatContainer: { rows: string[] } }, message: string) { this.chatContainer.rows.push(message); } };
-	const restore = installFolds(new Folds(), prototype);
-	try {
-		const host = Object.assign(Object.create(prototype), { chatContainer: { rows: ["old work"], render() { return this.rows; } } });
-		host.addMessageToChat("new answer");
-		assert.deepEqual(host.chatContainer.render(), ["old work", "new answer"]);
-	} finally { restore(); }
 });
 
 it("leaves a turn visible and unfolded when one component cannot take the wrapper", () => {
@@ -295,7 +284,7 @@ it("keeps each answer outside an independent fold and times a wake-up from its d
 	assert.ok(m.row("worked for 4s ›") < m.row("second answer"));
 	assert.ok(m.row("initial work") < 0 && m.row("late child result") < 0);
 	m.click(70, m.row("worked for 4s ›"));
-	assert.ok(m.row("late child result") > m.row("worked for 4s ˅"));
+	assert.ok(m.row("late child result") >= 0 && m.row("late child result") < m.row("worked for 4s"));
 	assert.ok(m.row("worked for 5s ›") >= 0);
 	m.click(70, m.row("worked for 5s ›"));
 	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
@@ -321,7 +310,7 @@ it("does not lose earlier answers when a later tool, abort and a new prompt prec
 	add(assistant([text("aborted work")], "aborted", 22_000), 22_000);
 	add(user("new prompt", 23_000), 23_000);
 	m.loaded.handlers.get("agent_settled")!();
-	for (const kept of ["worked for 5s ˅", "question for owner", "worked for 4s ›", "second answer", "new wake-up", "late tool work", "aborted work", "new prompt"]) assert.ok(m.row(kept) >= 0, kept);
+	for (const kept of ["worked for 5s", "question for owner", "worked for 4s ›", "second answer", "new wake-up", "late tool work", "aborted work", "new prompt"]) assert.ok(m.row(kept) >= 0, kept);
 	assert.ok(m.row("second work card") < 0);
 });
 
@@ -342,12 +331,12 @@ it("folds the prefix and local suffix separately in the whole branch and restore
 	assert.ok(m.row("prompt before cut") >= 0 && m.row("prefix stays visible") < 0);
 	assert.ok(m.row("worked for 1s ›") >= 0);
 	m.click(70, m.row("worked for 1s ›"));
-	assert.ok(m.row("prefix stays visible") > m.row("worked for 1s ˅"));
+	assert.ok(m.row("prefix stays visible") > m.row("worked for 1s"));
 	assert.ok(m.row("kept local work") < 0);
 	assert.ok(m.row("worked for 7s ›") >= 0 && m.row("kept local work") < 0);
 	assert.ok(m.row("local answer") > m.row("worked for 7s ›"));
 	m.click(70, m.row("worked for 7s ›"));
-	assert.ok(m.row("kept local work") > m.row("worked for 7s ˅"));
+	assert.ok(m.row("kept local work") >= 0 && m.row("kept local work") < m.row("worked for 7s"));
 	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
 });
 
@@ -371,7 +360,7 @@ for (const boundary of ["compaction", "branch summary", "! command"] as const) i
 	const mark = boundary === "compaction" ? "Compacted" : boundary === "branch summary" ? "Branch" : "echo boundary";
 	assert.ok(m.row(mark) >= 0, mark);
 	m.click(70, m.row("worked for 4s ›"));
-	assert.ok(m.row("post-boundary work") > m.row("worked for 4s ˅"));
+	assert.ok(m.row("post-boundary work") >= 0 && m.row("post-boundary work") < m.row("worked for 4s"));
 	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
 });
 
@@ -478,7 +467,7 @@ it("places the click target after wrapped lifted rows and keeps owner clicks sep
 	m.click(30, m.row("steering"));
 	assert.ok(m.row("worked for 5s ›") >= 0 && m.row("geometry work") < 0);
 	m.click(39, m.row("worked for 5s ›"));
-	assert.ok(m.row("worked for 5s ˅") >= 0 && m.row("geometry work") >= 0);
+	assert.ok(m.row("worked for 5s") >= 0 && m.row("geometry work") >= 0);
 	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(40)), m.stock.chatContainer.render(40));
 });
 
@@ -516,7 +505,7 @@ it("matches a live delivered card to its saved entry despite different timestamp
 	assert.ok(m.row("worked for 4s ›") >= 0 && m.row("delayed card") < 0);
 	assert.ok(m.row("answer immediately after card") > m.row("worked for 4s ›"));
 	m.click(70, m.row("worked for 4s ›"));
-	assert.ok(m.row("delayed card") > m.row("worked for 4s ˅"));
+	assert.ok(m.row("delayed card") >= 0 && m.row("delayed card") < m.row("worked for 4s"));
 	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), before);
 });
 
@@ -538,7 +527,7 @@ it("matches repeated delayed cards by saved order without joining their answer s
 	assert.ok(m.row("worked for 4s ›") >= 0);
 	m.click(70, m.row("worked for 4s ›"));
 	assert.equal(m.screen.frame().filter(row => row.includes("identical delayed card")).length, 2);
-	assert.ok(m.row("answer 4s") < m.row("worked for 7s ˅"));
+	assert.ok(m.row("answer 4s") < m.row("worked for 7s"));
 });
 
 it("rebuilds only the selected branch with closed folds and lifted steering", () => {
@@ -589,10 +578,31 @@ it("a click anywhere on the header row opens and closes that fold only", () => {
 	const y = m.row("worked for 42s ›");
 	assert.ok(y >= 0);
 	m.click(70, y);
-	assert.ok(m.row("worked for 42s ˅") >= 0 && m.row("update 0") > m.row("worked for 42s ˅"));
+	assert.ok(m.row("worked for 42s") >= 0 && m.row("update 0") > m.row("worked for 42s"));
 	assert.ok(m.row("worked for 7s ›") >= 0 && m.row("update 1") < 0);
-	m.click(1, m.row("worked for 42s ˅"));
+	m.click(1, m.row("worked for 42s"));
 	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("update 0") < 0);
+});
+
+it("a click on a card inside an open fold reaches the card and leaves the fold open", () => {
+	let shown = false;
+	messageRenderers.note = () => ({
+		render: () => shown ? ["card header", "card text, click to hide"] : ["card [click to show]"],
+		invalidate() {},
+		handleMouse: (event: { type: string }) => {
+			if (event.type !== "click") return undefined;
+			shown = !shown;
+			return { handled: true, render: true };
+		},
+	});
+	const m = mounted((s) => s.turn(0, 0, 42));
+	m.click(70, m.row("worked for 42s ›"));
+	assert.ok(m.row("card [click to show]") > m.row("worked for 42s"));
+	m.click(5, m.row("card [click to show]"));
+	assert.ok(m.row("card text, click to hide") > m.row("card header") && m.row("card header") > m.row("worked for 42s") && m.row("worked for 42s ›") < 0);
+	// The click on the second row of the opened card closes it.
+	m.click(5, m.row("card text, click to hide"));
+	assert.ok(m.row("card [click to show]") > m.row("worked for 42s") && m.row("worked for 42s ›") < 0);
 });
 
 it("a drag over the header copies its text and toggles nothing; Enter and Ctrl+O toggle nothing", () => {
@@ -617,13 +627,99 @@ it("the header stays clickable after scrolling and resizing, and open work keeps
 	m.screen.terminal.columns = 60;
 	y = m.row("worked for 42s ›");
 	m.click(55, y);
-	assert.ok(m.row("worked for 42s ˅") >= 0);
+	assert.ok(m.row("worked for 42s") >= 0);
 	// A click on the open tool row reaches Pi's tool component (it expands that call), not the fold.
 	const tool = m.row("Read 1 file");
-	assert.ok(tool > m.row("worked for 42s ˅"));
+	assert.ok(tool > m.row("worked for 42s"));
 	m.click(3, tool);
-	assert.ok(m.row("worked for 42s ˅") >= 0);
+	assert.ok(m.row("worked for 42s") >= 0);
 	assert.ok(m.row("body 0") >= 0);
 });
 
 
+
+/** The rows of one open fold without its header and the stock rows of the same session are the same. */
+const sameAsStock = (m: ReturnType<typeof mounted>) => assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
+
+it("open, the header is arrowless and sits under the only owner message, above the work", () => {
+	const m = mounted((s) => s.turn(0, 0, 42));
+	const closed = m.row("worked for 42s ›");
+	assert.ok(closed > m.row("prompt 0") && m.row("update 0") < 0);
+	m.click(1, closed);
+	const y = m.row("worked for 42s");
+	assert.equal(m.screen.frame()[y], " worked for 42s");
+	assert.ok(m.row("prompt 0") < y && y < m.row("update 0") && m.row("update 0") < m.row("answer 0"));
+	assert.ok(!m.screen.frame().some((row) => row.includes("›") || row.includes("˅")));
+	sameAsStock(m);
+});
+
+it("open, the header moves under the first of several owner messages, then returns closed under the last", () => {
+	const m = mounted((s) => {
+		s.add(user("first A\n\nfirst B\n\nfirst C", 0), 0);
+		s.add(assistant([text("mid update")], "toolUse", 1), 1_000);
+		s.add(user("second owner", 2_000), 2_000);
+		s.add(assistant([text("later update")], "toolUse", 3), 3_000);
+		s.add(assistant([text("the answer")], "stop", 4), 5_000);
+	});
+	const order = (...texts: string[]) => texts.map((t) => m.row(t));
+	const increasing = (rows: number[]) => rows.every((row, i) => row >= 0 && (i === 0 || row > rows[i - 1]));
+	assert.ok(increasing(order("first A", "first B", "first C", "second owner", "worked for 5s ›", "the answer")));
+	assert.ok(m.row("mid update") < 0 && m.row("later update") < 0);
+	m.click(70, m.row("worked for 5s ›"));
+	assert.ok(increasing(order("first A", "first B", "first C", "worked for 5s", "mid update", "second owner", "later update", "the answer")));
+	assert.equal(m.screen.frame()[m.row("worked for 5s")], " worked for 5s");
+	sameAsStock(m);
+	// A click on the first message reaches the message, not the fold.
+	m.click(3, m.row("first B"));
+	assert.ok(m.row("worked for 5s") >= 0 && m.row("mid update") >= 0);
+	// The header stays the click target after a resize; the second click restores the closed view.
+	m.screen.terminal.columns = 60;
+	m.click(55, m.row("worked for 5s"));
+	assert.ok(increasing(order("first A", "first C", "second owner", "worked for 5s ›", "the answer")) && m.row("mid update") < 0);
+	assert.equal(m.screen.frame().filter((row) => row.includes("second owner")).length, 1);
+});
+
+it("open, a live tool right after the owner message does not move the header below the tool", async () => {
+	const m = mounted(() => {});
+	const host = m.host as any;
+	host.programStatus = { handleEvent() {} };
+	host.updatePendingMessagesDisplay = () => {};
+	host.checkShutdownRequested = async () => {};
+	const event = async (value: any) => { await host.handleEvent(value); };
+	const prompt = user("live prompt", 0);
+	m.session.add(prompt, 0);
+	await event({ type: "message_start", message: prompt });
+	await event({ type: "tool_execution_start", toolCallId: "direct", toolName: "read", args: { path: "direct.ts" } });
+	await event({ type: "tool_execution_end", toolCallId: "direct", result: { content: [text("direct body")] }, isError: false });
+	const answer = assistant([text("live answer")], "stop", 1_000);
+	await event({ type: "message_start", message: answer });
+	await event({ type: "message_end", message: answer });
+	m.session.add(answer, 5_000);
+	m.loaded.handlers.get("agent_settled")!();
+	assert.ok(m.row("worked for 5s ›") >= 0);
+	m.click(1, m.row("worked for 5s ›"));
+	// The unkeyed tool component belongs to no owner message: the header follows the prompt, not the tool.
+	assert.ok(m.row("live prompt") >= 0 && m.row("live prompt") < m.row("worked for 5s") && m.row("worked for 5s") < m.row("live answer"));
+});
+
+it("open, a fold that is only a card keeps the header below that card", () => {
+	const m = mounted((s) => {
+		s.card("lone card", 0);
+		s.add(assistant([text("lone answer")], "stop", 1), 3_000);
+	});
+	m.click(1, m.row("worked for 3s ›"));
+	assert.ok(m.row("lone card") >= 0 && m.row("lone card") < m.row("worked for 3s") && m.row("worked for 3s") < m.row("lone answer"));
+	sameAsStock(m);
+});
+
+it("open, a fold that starts with a card puts the header after that card", () => {
+	const m = mounted((s) => {
+		s.card("wake card", 0);
+		s.add(assistant([text("wake work")], "toolUse", 1), 1_000);
+		s.add(assistant([text("wake answer")], "stop", 2), 3_000);
+	});
+	assert.ok(m.row("worked for 3s ›") >= 0 && m.row("wake work") < 0);
+	m.click(1, m.row("worked for 3s ›"));
+	assert.ok(m.row("wake card") >= 0 && m.row("wake card") < m.row("worked for 3s") && m.row("worked for 3s") < m.row("wake work"));
+	sameAsStock(m);
+});

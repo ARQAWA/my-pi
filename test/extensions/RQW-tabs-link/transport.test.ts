@@ -70,6 +70,7 @@ it("the channel needs the secret and the generation and rebuilds a large answer 
 	const server = await startServer(net, { secret: "s3", generation: () => generation, instanceId: "me" }, { big: () => ({ big }) });
 	const target = { port: server.port, secret: "s3", generation: "g1" };
 	assert.deepEqual(await request(net, { ...target, secret: "nope" }, "big", undefined, 50), { ok: false, code: "unauthorized" });
+	assert.deepEqual(await request(net, { ...target, secret: "éé" }, "big", undefined, 50), { ok: false, code: "unauthorized" });
 	assert.deepEqual(await request(net, target, "missing", undefined, 50), { ok: false, code: "unknown_op" });
 	assert.deepEqual(await request(net, target, "big", undefined, 50), { ok: true, result: { big } });
 	assert.ok(net.written.length > 3);
@@ -98,7 +99,7 @@ function sessions(t: TestContext) {
 	return { root, file };
 }
 
-it("an unregistered session file is closed with an open hint; only a complete empty search is not_found", async (t) => {
+it("an unregistered session file is closed with an open hint; unknown roots leave absence uncertain", async (t) => {
 	const { root, file } = sessions(t);
 	const dir = tempDir(t);
 	const live = { check: async () => "unknown" as const };
@@ -110,7 +111,8 @@ it("an unregistered session file is closed with an open hint; only a complete em
 	file(join(root, "custom"), "chat-y");
 	const custom = await resolveChat("chat-y", { ...env, extraRoots: [join(root, "custom")] });
 	assert.match((custom as { openHint: string }).openHint, /pi --session chat-y --session-dir/);
-	assert.deepEqual(await resolveChat("chat-none", env), { kind: "not_found" });
+	assert.deepEqual(await resolveChat("chat-y", env), { kind: "unknown" });
+	assert.deepEqual(await resolveChat("chat-none", env), { kind: "unknown" });
 	const broken: SessionFs = { ...nodeSessionFs, list: () => { throw Object.assign(new Error("denied"), { code: "EACCES" }); } };
 	assert.deepEqual(await resolveChat("chat-none", { ...env, fs: broken }), { kind: "unknown" });
 });

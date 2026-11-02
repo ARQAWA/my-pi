@@ -4,8 +4,8 @@ import { generateSessionName, selectNamingModel, type NamingRegistry } from "../
 
 function registry(reply = '["Lisbon trip", "Travel plans"]') {
 	const models = [
-		{ provider: "anthropic", id: "claude-haiku-5-5" },
-		{ provider: "openai-codex", id: "gpt-5.6-luna" },
+		{ provider: "anthropic", id: "claude-haiku-5-5", contextWindow: 1000000 },
+		{ provider: "openai-codex", id: "gpt-5.6-luna", contextWindow: 272000 },
 	];
 	let requests = 0;
 	return {
@@ -19,12 +19,12 @@ function registry(reply = '["Lisbon trip", "Travel plans"]') {
 
 describe("RQW-naming public core", () => {
 	it("returns the best valid name from one request", async () => {
-		const name = await generateSessionName({ context: "Plan a Lisbon trip", provider: "anthropic", registry: registry(), signal: new AbortController().signal });
+		const name = await generateSessionName({ context: [{ role: "user", content: "Plan a Lisbon trip" }], provider: "anthropic", registry: registry(), signal: new AbortController().signal });
 		assert.equal(name, "Lisbon trip");
 	});
 
 	it("returns the name when the model provides exactly one candidate", async () => {
-		const name = await generateSessionName({ context: "Plan a Lisbon trip", provider: "anthropic", registry: registry('["Lisbon trip"]'), signal: new AbortController().signal });
+		const name = await generateSessionName({ context: [{ role: "user", content: "Plan a Lisbon trip" }], provider: "anthropic", registry: registry('["Lisbon trip"]'), signal: new AbortController().signal });
 		assert.equal(name, "Lisbon trip");
 	});
 
@@ -34,7 +34,9 @@ describe("RQW-naming public core", () => {
 	]) {
 		it(`uses the low naming model for ${provider}`, async () => {
 			const selected = await selectNamingModel(registry(), new AbortController().signal, provider);
-			assert.deepEqual(selected, { model: { provider, id }, reasoning: "low" });
+			assert.equal(selected.model.provider, provider);
+			assert.equal(selected.model.id, id);
+			assert.equal(selected.reasoning, "low");
 		});
 	}
 });

@@ -26,6 +26,7 @@ it("shows prediction activity beside background compaction and restores it on en
 		registerCommand(_name: string, value: unknown) { command = value; }, on: (name: string, fn: (event: unknown, ctx: unknown) => unknown) => handlers.set(name, fn),
 	};
 	let id = "one";
+	let statuses = new Map<string, string>();
 	let footer: ((tui: unknown, theme: unknown, data: unknown) => { render(width: number): string[] }) | undefined;
 	const theme = { fg: (_role: string, text: string) => text, colors: { toolErrorBg: "#351c22" }, style: (text: string, _style: unknown) => `\x1b[38;2;53;28;34m${text}\x1b[39m` };
 	const ctx = { mode: "tui", cwd: "/work/fixed-folder", model: undefined, isIdle: () => true, getContextUsage: () => undefined,
@@ -37,10 +38,16 @@ it("shows prediction activity beside background compaction and restores it on en
 	pi.events.on("rqw-predictions:activity-query", (query) => query.offer(current));
 	await handlers.get("session_start")!({}, ctx);
 	let redraws = 0;
-	const makeView = () => footer!({ requestRender: () => redraws++ }, theme, { onBranchChange: () => () => {}, getExtensionStatuses: () => new Map() });
+	const makeView = () => footer!({ requestRender: () => redraws++ }, theme, { onBranchChange: () => () => {}, getExtensionStatuses: () => statuses });
 	let view = makeView();
 	const row = (width = 100) => view.render(width).at(-1)!;
 	assert.match(strip(row()), /fixed-folder  prediction/);
+	// RQW-predictions also writes the stock status key; the footer shows only its own indicator, never that text twice.
+	statuses = new Map([["rqw-predictions", "STOCKPREDICTION"], ["other", "OTHERSTATUS"]]);
+	const withStatuses = view.render(100).map(strip).join("\n");
+	assert.doesNotMatch(withStatuses, /STOCKPREDICTION/);
+	assert.match(withStatuses, /OTHERSTATUS/);
+	statuses = new Map();
 	const first = row();
 	clock = 400; t.mock.timers.tick(400);
 	assert.ok(redraws > 0);

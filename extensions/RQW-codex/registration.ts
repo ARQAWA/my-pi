@@ -9,7 +9,7 @@ import { VERSION, type AgentSession, type ExtensionAPI, type ModelRuntime } from
 
 import { installRuntimeAuth } from "./auth-runtime.ts";
 import { loginDevice, refreshCredential } from "./auth.ts";
-import { installLifecycle, type Lifecycle, type SessionPolicy } from "./lifecycle.ts";
+import { installLifecycle, suppressSummaryRetries, type Lifecycle, type SessionPolicy } from "./lifecycle.ts";
 import { CODEX_API, CODEX_PROVIDER } from "./profile.ts";
 import { CONTEXT_FORK_CHANNEL, type ContextForkRequest } from "./context-fork.ts";
 import { installSessionCompaction } from "./session-compaction.ts";
@@ -406,7 +406,10 @@ export function registerCodex(pi: ExtensionAPI, options: RegisterCodexOptions): 
 		if (!record || signal.aborted) return;
 		record.summaries.set(signal, { entry, owner, background });
 		entry.summarySignal = signal;
+		// No compaction_start brackets a background summary, so its retry guard is held here until its signal ends.
+		const releaseGuard = background ? suppressSummaryRetries(entry.session) : () => {};
 		const release = () => {
+			releaseGuard();
 			record.summaries.delete(signal);
 			if (entry.summarySignal === signal) entry.summarySignal = undefined;
 			signal.removeEventListener("abort", release);

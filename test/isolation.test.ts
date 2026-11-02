@@ -35,6 +35,7 @@ function inside(path: string, dir: string): boolean {
 it("every extension and its tests keep relative imports inside their own trees", () => {
 	const outside: string[] = [];
 	assert.ok(manifest.pi.extensions.includes("./extensions/RQW-browser/index.ts"), "browser must be included in the isolation scan");
+	assert.ok(manifest.pi.extensions.includes("./extensions/RQW-auto-wait/index.ts"), "auto-wait must be included in the isolation scan");
 	for (const entry of manifest.pi.extensions) {
 		const extensionDir = dirname(resolve(ROOT, entry));
 		const testDir = join(ROOT, "test", "extensions", basename(extensionDir));

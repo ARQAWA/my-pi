@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { harness, last, settle, SILENCE_RULE } from "./harness.ts";
+import { CTRL_E, harness, last, settle, SILENCE_RULE, text, USER } from "./harness.ts";
 
 // The extension is loaded as Pi loads it, with its real prompt loader. Only the network, Pi's saved login and the clock are fake.
 const START = 1_700_000_000_000;
@@ -89,6 +89,30 @@ describe("RQW-predictions through the extension entry", () => {
 		assert.equal(h.ctx.getSystemPrompt(), "STOCK PI PROMPT", "Pi's own prompt state is left as it was");
 	});
 
+	it("history on resume enables the hint and Ctrl+E, while a clean branch stays silent", async () => {
+		const h = harness({ entry: true, fork: false, branch: [] });
+		assert.equal(h.screen().join("").includes("ctrl+e to suggest"), false);
+		h.key(CTRL_E);
+		await settle();
+		assert.equal(calls.length, 0);
+		assert.equal(h.provider.length, 0);
+		assert.deepEqual(h.notes, []);
+
+		h.state.branch = [{ type: "message", message: USER }, { type: "message", message: text("Done") }];
+		h.switchTo("resumed");
+		assert.equal(h.screen().join("").includes("ctrl+e to suggest"), true);
+		h.key(CTRL_E);
+		await until(() => h.provider.length === 1);
+		assert.equal(h.provider.length, 1);
+		h.state.branch = [{ type: "message", message: USER }];
+		h.fire("session_tree");
+		assert.equal(h.screen().join("").includes("ctrl+e to suggest"), false);
+		h.state.branch.push({ type: "message", message: text("Done") });
+		h.answer();
+		assert.equal(h.screen().join("").includes("ctrl+e to suggest"), true);
+		h.fire("session_shutdown", { reason: "quit" });
+	});
+
 	it("without a saved login no request is made and a manual run says why", async () => {
 		writeFileSync(join(dir, "auth.json"), "{}");
 		const h = harness({ entry: true });
@@ -98,5 +122,58 @@ describe("RQW-predictions through the extension entry", () => {
 		assert.equal(calls.length, 0);
 		assert.equal(h.forks.length, 0);
 		assert.match(h.notes[0], /login/);
+	});
+
+	// The same extension entry, with the saved login and the endpoint answering as an owner with a bad token would see.
+	const login = (expires: number) => writeFileSync(join(dir, "auth.json"), JSON.stringify({ "openai-codex": { type: "oauth", access: ACCESS, refresh: "r", expires, accountId: "acc-1" } }));
+	const errorStatus = (h: ReturnType<typeof harness>) => h.keyed.filter(([key]) => key === "rqw-predictions-error");
+
+	it("an expired saved login shows the bright red footer error for 5000 ms without any request", async t => {
+		t.mock.timers.reset();
+		t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: START });
+		login(START);
+		const h = harness({ entry: true });
+		h.asked();
+		await until(() => errorStatus(h).length > 0);
+		assert.match(errorStatus(h).at(-1)![1]!, /^\x1b\[1;91mCtrl\+E failed: Codex token expired or rejected/);
+		assert.equal(calls.length, 0);
+		assert.deepEqual(h.notes, []);
+		t.mock.timers.tick(4999);
+		assert.notEqual(errorStatus(h).at(-1)![1], undefined);
+		t.mock.timers.tick(1);
+		assert.equal(errorStatus(h).at(-1)![1], undefined);
+	});
+
+	it("a new Ctrl+E does not cut the error short: it stays its full 5000 ms", async t => {
+		t.mock.timers.reset();
+		t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: START });
+		login(START);
+		const h = harness({ entry: true });
+		h.asked();
+		await until(() => errorStatus(h).length > 0);
+		const shown = errorStatus(h).at(-1)![1];
+		t.mock.timers.tick(3000);
+		h.key(CTRL_E);
+		assert.equal(errorStatus(h).at(-1)![1], shown);
+		t.mock.timers.tick(2000);
+		assert.equal(errorStatus(h).at(-1)![1], undefined);
+	});
+
+	it("a token the endpoint rejects with 401 shows the same error; another HTTP failure stays a plain warning", async t => {
+		t.mock.timers.reset();
+		t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: START });
+		globalThis.fetch = (async () => new Response("no", { status: 401 })) as typeof fetch;
+		const rejected = harness({ entry: true });
+		rejected.asked();
+		await until(() => errorStatus(rejected).length > 0);
+		assert.match(errorStatus(rejected).at(-1)![1]!, /Codex token expired or rejected/);
+		assert.deepEqual(rejected.notes, []);
+
+		globalThis.fetch = (async () => new Response("no", { status: 500 })) as typeof fetch;
+		const server = harness({ entry: true });
+		server.asked();
+		await until(() => server.notes.length > 0);
+		assert.deepEqual(errorStatus(server), []);
+		assert.deepEqual(server.notes, ["Prediction prompt is unavailable."]);
 	});
 });

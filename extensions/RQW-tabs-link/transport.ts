@@ -16,18 +16,23 @@ export type NetLike = {
 };
 
 export const HOST = "127.0.0.1";
-export type Handler = (params: unknown) => unknown;
+export type Handler = (params: unknown, signal: AbortSignal) => unknown;
 export type Auth = { secret: string; generation: () => string; instanceId: string };
 export type Server = { port: number; close(): void };
 
-const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+const same = (a: string, b: string) => {
+	const left = Buffer.from(a);
+	const right = Buffer.from(b);
+	return left.length === right.length && timingSafeEqual(left, right);
+};
 
 /** Serves the handlers on a random local port; a request needs the secret and the current generation. */
 export function startServer(net: NetLike, auth: Auth, handlers: Record<string, Handler>): Promise<Server> {
 	const sockets = new Set<Duplex>();
 	const server = net.createServer(socket => {
 		sockets.add(socket);
-		socket.on("close", () => sockets.delete(socket));
+		const controller = new AbortController();
+		socket.on("close", () => { sockets.delete(socket); controller.abort(); });
 		socket.on("error", () => socket.destroy());
 		const reader = new FrameReader();
 		const reply = (frames: Frame[]) => { for (const frame of frames) socket.write(encode(frame)); };
@@ -44,7 +49,10 @@ export function startServer(net: NetLike, auth: Auth, handlers: Record<string, H
 				if (request.generation !== auth.generation()) { fail(request.id, "stale_generation"); continue; }
 				const handler = Object.hasOwn(handlers, request.op) ? handlers[request.op] : undefined;
 				if (!handler) { fail(request.id, "unknown_op"); continue; }
-				try { reply(chunkResult(request.id, await handler(request.params))); } catch { fail(request.id, "internal"); }
+				try {
+					const result = await handler(request.params, controller.signal);
+					if (!controller.signal.aborted) reply(chunkResult(request.id, result));
+				} catch { if (!controller.signal.aborted) fail(request.id, "internal"); }
 			}
 		});
 	});
@@ -59,17 +67,20 @@ export function startServer(net: NetLike, auth: Auth, handlers: Record<string, H
 }
 
 export type Target = { port: number; secret: string; generation: string };
-export type Outcome = { ok: true; result: unknown } | { ok: false; code: ErrorCode | "refused" | "unreachable" | "timeout" | "protocol" };
+export type Outcome = { ok: true; result: unknown } | { ok: false; code: ErrorCode | "refused" | "unreachable" | "timeout" | "protocol" | "aborted" };
 
 /** One request and its answer; a silent peer ends as `timeout`, which proves nothing about the chat. */
-export function request(net: NetLike, target: Target, op: string, params: unknown, timeoutMs: number): Promise<Outcome> {
+export function request(net: NetLike, target: Target, op: string, params: unknown, timeoutMs: number, signal?: AbortSignal): Promise<Outcome> {
+	if (signal?.aborted) return Promise.resolve({ ok: false, code: "aborted" });
 	return new Promise(resolve => {
 		const id = randomUUID();
 		const assembler = new Assembler();
 		const reader = new FrameReader();
 		const socket = net.connect(target.port, HOST);
-		const finish = (outcome: Outcome) => { clearTimeout(timer); socket.destroy(); resolve(outcome); };
+		const finish = (outcome: Outcome) => { clearTimeout(timer); signal?.removeEventListener("abort", abort); socket.destroy(); resolve(outcome); };
+		const abort = () => finish({ ok: false, code: "aborted" });
 		const timer = setTimeout(() => finish({ ok: false, code: "timeout" }), timeoutMs);
+		signal?.addEventListener("abort", abort, { once: true });
 		socket.on("error", (error: NodeJS.ErrnoException) => finish({ ok: false, code: error.code === "ECONNREFUSED" ? "refused" : "unreachable" }));
 		socket.on("close", () => finish({ ok: false, code: "unreachable" }));
 		socket.on("data", data => {

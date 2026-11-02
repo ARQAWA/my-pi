@@ -32,6 +32,14 @@ it("shows the current activity in the widget after a cached frame", async (t) =>
 	rows.render(80);
 	handlers.get("tool_execution_start")!({ toolCallId: "t", toolName: "bash", args: { command: "npm test" } }, ctx);
 	assert.equal(strip(rows.render(80)[0]).trim(), "Running npm test");
+	for (const [toolName, args, expected] of [
+		["rqw_readfile", { path: "src/app.ts" }, "Reading app.ts"],
+		["rqw_glob", { glob_pattern: "*.ts" }, "Searching files"],
+		["rqw_rg", { pattern: "example" }, "Searching files"],
+	] as const) {
+		handlers.get("tool_execution_start")!({ toolCallId: "t", toolName, args }, ctx);
+		assert.equal(strip(rows.render(80)[0]).trim(), expected);
+	}
 	await handlers.get("session_shutdown")!({}, ctx);
 });
 
@@ -106,7 +114,7 @@ it("runs git after a write and the poll but not after a read, and shows the new 
 	porcelain = " M a.ts\0";
 	const beforeRead = calls.length;
 	drive(() => {
-		for (const toolName of ["read", "grep", "find", "web", "tool_search"]) handlers.get("tool_execution_end")!({ toolCallId: "r", toolName }, ctx);
+		for (const toolName of ["read", "grep", "find", "rqw_readfile", "rqw_glob", "rqw_rg", "web", "tool_search"]) handlers.get("tool_execution_end")!({ toolCallId: "r", toolName }, ctx);
 	});
 	assert.doesNotMatch(shown(), /\*1/);
 

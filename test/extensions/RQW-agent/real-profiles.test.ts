@@ -21,7 +21,7 @@ const DEFAULT_TOOLS = ["read", "bash", "edit", "write", "grep", "find"];
 
 /** sha256 of a UTF-8 text with LF endings (git may check files out with CRLF on Windows); the pinned values below are of origin/release, never of the files under test. */
 const digest = (text: string) => createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
-const REVIEW_SHA = "91f42b8f6e1792287f020544ed5856e4f8caeba41d3ecfcca12c7ecd443c3605";
+const REVIEW_SHA = "d1ff2eead51911be6d62e883a8f0151212255f03bc10cb993c1966b455d33f8f";
 /** sha256 of the owner's personal spotty and bossy developer_instructions; checked only where those files exist. */
 const PERSONAL_SHA = "8ca0dec75595b08693706d1a253f35f0e49ce80115449d89d2c9ccd6aa7c03af";
 
@@ -32,8 +32,8 @@ const PACKAGE: Record<string, Expected> = {
 	bossy: { model: TERRA, effort: "xhigh", prefix: REVIEW_PREFIX, sha256: REVIEW_SHA },
 };
 const REPO_PROFILES: Record<string, Expected> = {
-	"code-reviewer": { model: TERRA, effort: "high", prefix: "You are an independent, read-only code reviewer on the implementation team's side. Find real defects", sha256: "d79b76ab709bab0520a52e2120f8d87d930393cd3d5556a1793bd058384ef30b" },
-	"test-reviewer": { model: TERRA, effort: "high", prefix: "You are an independent, read-only test reviewer. Check whether tests verify the stated requirements", sha256: "6b1773ae06bf4b431322dc20dbc343e5b76c8717268e69a6058d3e750248c7b4" },
+	"code-reviewer": { model: TERRA, effort: "high", prefix: "You are an independent, read-only code reviewer on the implementation team's side. Find real defects", sha256: "ffdfe5ac236c4a3a568b3d850aa676f5ebe097d241ddd22c7211471dbbd23118" },
+	"test-reviewer": { model: TERRA, effort: "high", prefix: "You are an independent, read-only test reviewer. Check whether tests verify the stated requirements", sha256: "8662b79ba8c7c9109d39efb998e809ee2df1e81fb29103e9f1b3143ce2577531" },
 	"requirements-test-reviewer": { model: TERRA, effort: "high", prefix: "You are an independent, read-only reviewer of test code as the deliverable. Check whether its checks", sha256: "b0a7de09a144ac4e6db179f4014fa626a4ee7afe88702b9ebaad6d7c83b20ecb" },
 };
 // Same-name personal overrides outrank the package ones; by shape they mirror the owner's own files.

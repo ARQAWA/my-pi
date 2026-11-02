@@ -62,8 +62,8 @@ test("filters only the selected sources in Pi's real completion provider", async
  const f = fixture({ duplicateLlama: true });
  try {
   const provider = f.host.createBaseAutocompleteProvider(); const names = await suggestions(provider);
-  for (const name of ["tree", "thinking", "scoped-models", "share", "bug", "llama:1", "session-deleted:1"]) assert.ok(!names.includes(name), name);
-  for (const name of ["model", "settings", "export", "import", "copy", "name", "session", "changelog", "hotkeys", "fork", "clone", "trust", "login", "logout", "new", "compact", "resume", "reload", "quit", "mcp", "skill:sample", "llama:2", "session-deleted:2"]) assert.ok(names.includes(name), name);
+  for (const name of ["tree", "thinking", "scoped-models", "share", "bug", "fork", "llama:1", "session-deleted:1"]) assert.ok(!names.includes(name), name);
+  for (const name of ["model", "settings", "export", "import", "copy", "name", "session", "changelog", "hotkeys", "clone", "trust", "login", "logout", "new", "compact", "resume", "reload", "quit", "mcp", "skill:sample", "llama:2", "session-deleted:2"]) assert.ok(names.includes(name), name);
   assert.equal(f.warnings.length, 0);
  } finally { f.shutdown(); }
 });
@@ -83,7 +83,7 @@ test("normal submit and follow-up reject commands in every state", async () => {
  const f = fixture({ duplicateLlama: true });
  try {
   f.host.createBaseAutocompleteProvider();
-  for (const text of ["/model x", "/thinking high", "/tree", "/scoped-models", "/share", "/bug x", "/llama:1 x"]) {
+  for (const text of ["/model x", "/thinking high", "/tree", "/scoped-models", "/share", "/bug x", "/fork", "/llama:1 x"]) {
    for (const state of ["idle", "streaming", "compaction"]) {
     f.host.session.isStreaming = state === "streaming"; f.host.session.isCompacting = state === "compaction";
     f.editor.setText(text); const count = f.warnings.length; await f.editor.onSubmit!(text); assert.equal(f.editor.getText(), ""); assert.equal(f.warnings.length, count + 1);
@@ -133,13 +133,12 @@ test("kept commands reach their normal handlers", async () => {
  const f = fixture();
  try {
   f.host.createBaseAutocompleteProvider(); const called: string[] = [];
-  f.host.showUserMessageSelector = () => called.push("fork");
   f.host.handleCloneCommand = () => called.push("clone");
   f.host.handleDebugCommand = () => called.push("debug");
   f.host.handleArminSaysHi = () => called.push("arminsayshi");
   f.host.handleDementedDelves = () => called.push("dementedelves");
-  for (const name of ["fork", "clone", "debug", "arminsayshi", "dementedelves"]) await f.editor.onSubmit!(`/${name}`);
-  assert.deepEqual(called, ["fork", "clone", "debug", "arminsayshi", "dementedelves"]);
+  for (const name of ["clone", "debug", "arminsayshi", "dementedelves"]) await f.editor.onSubmit!(`/${name}`);
+  assert.deepEqual(called, ["clone", "debug", "arminsayshi", "dementedelves"]);
  } finally { f.shutdown(); }
 });
 
@@ -174,7 +173,7 @@ test("incompatible autocomplete group leaves submissions and suggestions stock",
  } finally { f.shutdown(); }
 });
 
-const disabledActions = ["app.thinking.cycle", "app.model.select", "app.model.cycleForward", "app.model.cycleBackward", "app.thinking.toggle"];
+const disabledActions = ["app.thinking.cycle", "app.model.select", "app.model.cycleForward", "app.model.cycleBackward", "app.thinking.toggle", "app.session.fork"];
 test("real editor blocks disabled actions, including custom and Windows bindings, without blocking other actions", () => {
  const f = fixture();
  try {
@@ -184,13 +183,23 @@ test("real editor blocks disabled actions, including custom and Windows bindings
   const seen: string[] = [];
   for (const id of disabledActions) editor.onAction(id as any, () => seen.push(id));
   for (const input of ["\u001b[Z", "\u000c", "\u0010", "\u001b[112;6u"]) editor.handleInput(input);
-  kb.setUserBindings({ "app.thinking.cycle": "ctrl+g", "app.model.select": "ctrl+l", "app.model.cycleForward": "ctrl+p", "app.model.cycleBackward": "alt+p" });
-  for (const input of ["\u0007", "\u000c", "\u0010", "\u001bp", "\u0014"]) editor.handleInput(input);
+  kb.setUserBindings({ "app.thinking.cycle": "ctrl+g", "app.model.select": "ctrl+l", "app.model.cycleForward": "ctrl+p", "app.model.cycleBackward": "alt+p", "app.session.fork": "ctrl+f" });
+  for (const input of ["\u0007", "\u000c", "\u0010", "\u001bp", "\u0014", "\u0006"]) editor.handleInput(input);
   assert.deepEqual(seen, []);
   let arrows = 0; editor.onExtensionShortcut = data => { if (data === "\u001b[1;2A") { arrows++; return true; } return false; };
   editor.handleInput("\u001b[1;2A"); assert.equal(arrows, 1);
   kb.rebuild(); for (const id of disabledActions) assert.deepEqual(kb.getKeys(id), []);
   f.shutdown(); assert.deepEqual(kb.getKeys("app.thinking.cycle"), ["ctrl+g"]);
+ } finally { f.shutdown(); }
+});
+
+test("the fork selector is disabled even through double Escape", () => {
+ const f = fixture();
+ try {
+  f.host.createBaseAutocompleteProvider();
+  let opened = 0; f.host.session.getUserMessagesForForking = () => { opened++; return []; };
+  f.host.showUserMessageSelector(); assert.equal(opened, 0);
+  f.shutdown(); f.host.showStatus = () => {}; f.host.showUserMessageSelector(); assert.equal(opened, 1);
  } finally { f.shutdown(); }
 });
 

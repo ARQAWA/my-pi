@@ -49,13 +49,6 @@ export class DialogController {
 		await this.#settle(this.#pending, this.#policy === "accept", undefined);
 	}
 
-	/** Explicitly accept or dismiss the pending confirm or prompt. */
-	async handle(options: { accept: boolean; text?: string }): Promise<void> {
-		const dialog = this.#pending;
-		if (!dialog) throw new Error("tab.handleDialog() found no pending confirm or prompt");
-		await this.#settle(dialog, options.accept, options.text);
-	}
-
 	readonly #onDialog = (dialog: Dialog): void => {
 		const policy = this.#policy;
 		if (policy) {

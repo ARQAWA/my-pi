@@ -176,29 +176,6 @@ export function editorBorder(context: BarState["context"], hiddenLineCount: numb
 	return hint(text) + contextRow(context, rest, paint);
 }
 
-/** The text of a border row without its rules: what must survive when the border gives room to the session ID. */
-const borderText = (line: string) => stripVTControlCharacters(line).replace(/─/g, " ").replace(/ +/g, " ").trim();
-
-/**
- * The editor's top border with the session ID at its right end: `── <working…> ──── <session-id> ──`.
- * `stock(width)` is Pi's own top border (the embedded working status and the up-arrow `N more` hint); it is drawn at
- * the reduced width and must keep exactly the same text and end in at least two rule cells, otherwise the ID is
- * dropped and Pi's border at the full width is returned. The ID is never cut and has one plain space on each side.
- */
-export function sessionTopBorder(width: number, sessionId: string | undefined, stock: (width: number) => string,
-	border: (text: string) => string = (text) => text, paint: Paint = plain): string {
-	const full = stock(width);
-	const id = singleLine(sessionId ?? "");
-	if (!id || id.includes(" ")) return full;
-	const rest = width - visibleWidth(id) - 4;
-	if (rest < 2) return full;
-	const left = stock(rest);
-	if (visibleWidth(left) !== rest || !stripVTControlCharacters(left).endsWith("──") || borderText(left) !== borderText(full)) {
-		return full;
-	}
-	return left + border(" ") + paint("label", id) + border(" ──");
-}
-
 /** Bright yellow, a paler yellow, white and back: SGR foreground colours of one shimmer cycle. */
 export const SHIMMER = ["38;5;220", "38;5;226", "38;5;229", "97", "38;5;229", "38;5;226"] as const;
 /** Static bright yellow for the idle lightning. */
@@ -467,7 +444,6 @@ const styled = (hex: string, bold: boolean, text: string) =>
 	`\x1b[${bold ? "1;" : ""}38;2;${rgbOf(hex).join(";")}m${text}\x1b[22;39m`;
 
 /** Keep the old travel distance per phase frame; the elapsed-time frame is now twice as fast. */
-export const SHIMMER_PERIOD_CELLS = 2 * Math.PI / 0.32;
 export const SHIMMER_CELLS_PER_FRAME = 0.22 / 0.32;
 export const SILVER_PLATEAU_CELLS = 3;
 export const GOLD_PLATEAU_CELLS = 3;
@@ -544,15 +520,27 @@ export interface ActivityChrome {
 	text: string;
 	compacting: boolean;
 	retry?: boolean;
+	/** The key hint after the status text, plain; drawn only when it fits whole. */
+	hint?: string;
 	/** The phase in frames, fractional: elapsed time over the frame length, not a tick count. */
 	frame: number;
 }
 
-/** The activity widget's two rows; Pi supplies its single leading spacer, even when this component is empty. */
-export function activityRows(width: number, chrome: ActivityChrome | undefined): string[] {
+/** Spaces between the status text and its key hint. */
+const HINT_GAP = 2;
+
+/**
+ * The activity widget's two rows; Pi supplies its single leading spacer, even when this component is empty.
+ * `paintHint` styles the key hint (dim italic); the caller caches it.
+ */
+export function activityRows(width: number, chrome: ActivityChrome | undefined, paintHint: (hint: string) => string = (hint) => hint): string[] {
 	if (!chrome) return [];
-	const text = fitPlain(singleLine(chrome.text), Math.max(0, width - 1));
-	return [width > 0 ? " " + (chrome.retry ? styled("#ffb347", false, text) : shimmerText(text, 1, chrome.frame, chrome.compacting ? GOLD : SILVER)) : "", ""];
+	if (width <= 0) return ["", ""];
+	const text = fitPlain(singleLine(chrome.text), width - 1);
+	const label = " " + (chrome.retry ? styled("#ffb347", false, text) : shimmerText(text, 1, chrome.frame, chrome.compacting ? GOLD : SILVER));
+	const hint = singleLine(chrome.hint ?? "");
+	const fits = hint !== "" && width - 1 - visibleWidth(text) - HINT_GAP >= visibleWidth(hint);
+	return [fits ? label + " ".repeat(HINT_GAP) + paintHint(hint) : label, ""];
 }
 
 /** A run of the top border: a rule, the hint, the title or the session ID. */

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fauxAssistantMessage, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
 import { retainedChildManager } from "../../../extensions/RQW-agent/persistence.ts";
@@ -24,7 +26,9 @@ test("fork start copies the selected branch and its projection without unfinishe
 	run.live.close();
 	const fork = retainedChildManager(parent, "agent", 1)!;
 	assert.ok(fork);
-	assert.equal(fork.getSessionFile(), undefined);
+	assert.equal(dirname(fork.getSessionFile()!), join(`${parent.getSessionFile()}.children`, "agent-1"));
+	assert.ok(existsSync(fork.getSessionFile()!));
+	assert.equal(fork.getHeader()?.parentSession, parent.getSessionFile());
 	assert.notEqual(fork.getSessionId(), parent.getSessionId());
 	const branch = fork.getBranch();
 	assert.ok(branch.some(entry => entry.id === kept));

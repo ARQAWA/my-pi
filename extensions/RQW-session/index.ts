@@ -6,6 +6,7 @@ import { setImmediate } from "node:timers";
 import { copyToClipboard, getAgentDir, SessionManager, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { cleanupOrphanedChildren } from "./cleanup.ts";
 import { installFastList } from "./list.ts";
+import { installClone } from "./clone.ts";
 
 type Spawn = (command: string, args: string[], options: { encoding: "utf-8" }) => { status: number | null; error?: Error; stderr?: string | null };
 
@@ -163,5 +164,9 @@ export function registerSessionCommands(pi: ExtensionAPI, copy = copyToClipboard
 
 export default function sessionCommands(pi: ExtensionAPI) {
 	registerSessionCommands(pi);
-	pi.on("session_shutdown", installFastList(SessionManager as unknown as Parameters<typeof installFastList>[0]));
+	const restoreList = installFastList(SessionManager as unknown as Parameters<typeof installFastList>[0]);
+	let restoreClone: (() => void) | undefined;
+	try { restoreClone = installClone(pi); }
+	catch { pi.on("session_start", (_event, ctx) => { if (ctx.hasUI) ctx.ui.notify("RQW-session: incompatible Pi selector internals; session cloning is disabled.", "warning"); }); }
+	pi.on("session_shutdown", () => { restoreClone?.(); restoreList(); });
 }

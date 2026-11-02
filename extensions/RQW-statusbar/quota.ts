@@ -8,19 +8,27 @@ import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 // Missing sources never imply a full or empty subscription.
 export const QUOTA_REFRESH_MS = 60 * 1000;
 const QUOTA_CHECK_MS = 3 * 60 * 1000;
-export const QUOTA_COLORS = { CX: "139;197;255", CC: "255;152;170" } as const;
+// Object order is the display order: credits, Codex weekly quota, Claude weekly quota.
+export const QUOTA_COLORS = { CXC: "139;197;255", CX: "139;197;255", CC: "255;152;170" } as const;
 export type Quotas = Partial<Record<keyof typeof QUOTA_COLORS, string>>;
-type Reading = { percent?: number; okAt?: number; checkedAt?: number };
+type Reading = { percent?: number; credits?: string; okAt?: number; checkedAt?: number };
+type Usage = { percent: number; credits?: string };
 
 async function readCache(file: string): Promise<Reading> {
 	try {
 		const data = JSON.parse(await readFile(file, "utf8"));
 		return {
 			percent: typeof data.percent === "number" && Number.isFinite(data.percent) && data.percent >= 0 && data.percent <= 100 ? data.percent : undefined,
+			credits: typeof data.credits === "string" && /^(?:[1-9]\d*|Unlimited)$/.test(data.credits) ? data.credits : undefined,
 			okAt: typeof data.okAt === "number" && Number.isFinite(data.okAt) ? data.okAt : undefined,
 			checkedAt: typeof data.checkedAt === "number" && Number.isFinite(data.checkedAt) ? data.checkedAt : undefined,
 		};
 	} catch { return {}; }
+}
+
+/** The last attempt failed when it is newer than the last good value; a success stamps okAt after checkedAt. */
+function isStale(record: Reading): boolean {
+	return record.okAt !== undefined && record.checkedAt !== undefined && record.okAt < record.checkedAt;
 }
 
 async function lockCache(file: string): Promise<boolean> {
@@ -68,20 +76,37 @@ function remaining(value: unknown): number {
 	}
 	return 100 - value;
 }
-/** Codex's weekly window. */
-function parseUsage(data: unknown): number {
+/** The credits balance as Codex shows it: whole credits, "Unlimited", or nothing when there are none. */
+function parseCredits(value: unknown): string | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return;
+	const credits = value as Record<string, unknown>;
+	if (credits.has_credits !== true) return;
+	if (credits.unlimited === true) return "Unlimited";
+	const balance = typeof credits.balance === "string" ? Number(credits.balance.trim() || NaN) : credits.balance;
+	if (typeof balance !== "number" || !Number.isFinite(balance)) return;
+	const whole = Math.round(balance);
+	return whole > 0 ? String(whole) : undefined;
+}
+
+/** Whole credits with a dot between thousands: 10000 shows as 10.000. */
+function creditsText(credits: string): string {
+	return credits.replace(/\B(?=(\d{3})+$)/g, ".");
+}
+
+/** Codex's weekly window and credits from one response. */
+function parseUsage(data: unknown): Usage {
 	const payload = object(data);
 	const limits = object(payload.rate_limit);
 	for (const name of ["primary_window", "secondary_window"]) {
 		if (limits[name] == null) continue;
 		const window = object(limits[name]);
-		if (window.limit_window_seconds === WEEK_SECONDS) return remaining(window.used_percent);
+		if (window.limit_window_seconds === WEEK_SECONDS) return { percent: remaining(window.used_percent), credits: parseCredits(payload.credits) };
 	}
 	throw new Error("No weekly quota window");
 }
 
 /** One-off stored-token reads only: never resolve auth or rotate expired tokens. */
-async function fetchUsage(signal: AbortSignal, deps: Dependencies): Promise<number> {
+async function fetchUsage(signal: AbortSignal, deps: Dependencies): Promise<Usage> {
 	const credential = deps.readCredential("openai-codex");
 	if (credential?.type !== "oauth" || typeof credential.access !== "string" || !credential.access ||
 		!Number.isFinite(credential.expires) || credential.expires <= Date.now()) throw new Error("Quota auth unavailable");
@@ -143,17 +168,21 @@ export class QuotaConsumer {
 				const provider = id === "CX" ? "openai-codex" : "anthropic";
 				const credential = this.deps.readCredential(provider);
 				if (!credential) {
-					if (current()) { delete this.values[id]; delete this.accounts[id]; this.changed(); }
+					if (current()) { this.forget(id); delete this.accounts[id]; this.changed(); }
 					return;
 				}
 				const key = accountKey(credential);
 				if (!key) throw new Error("Quota account unavailable");
-				if (this.accounts[id] !== key) { delete this.values[id]; this.accounts[id] = key; }
+				if (this.accounts[id] !== key) { this.forget(id); this.accounts[id] = key; }
 				const file = join(tmpdir(), "rqw-quota", `${id}-${key}.json`);
 				const show = (record: Reading) => {
 					if (!current()) return;
-					if (record.percent !== undefined) this.values[id] = `${record.percent}%`;
-					else this.values[id] ??= "???";
+					if (record.percent !== undefined) {
+						const star = isStale(record) ? "*" : "";
+						this.values[id] = `${star}${record.percent}%`;
+						if (id === "CX" && record.credits) this.values.CXC = `${star}${creditsText(record.credits)}`;
+						else if (id === "CX") delete this.values.CXC;
+					} else this.values[id] ??= "???";
 					this.changed();
 				};
 				const fresh = (record: Reading) => record.checkedAt !== undefined && Date.now() - record.checkedAt < QUOTA_CHECK_MS;
@@ -171,10 +200,13 @@ export class QuotaConsumer {
 						if (id === "CC") this.events.emit("rqw-anthropic:quota:v1", {
 							sessionId: this.sessionId, offer(value: Access) { access = value; },
 						});
-						const percent = id === "CC" ? (await access?.refresh(signal))?.windows.seven_day?.remainingPercent
-							: await fetchUsage(signal, this.deps);
+						let percent: number | null | undefined;
+						let credits: string | undefined;
+						if (id === "CC") percent = (await access?.refresh(signal))?.windows.seven_day?.remainingPercent;
+						else ({ percent, credits } = await fetchUsage(signal, this.deps));
 						if (typeof percent === "number" && Number.isFinite(percent) && percent >= 0 && percent <= 100) {
 							record.percent = Math.round(percent);
+							record.credits = credits;
 							record.okAt = Date.now();
 						}
 					} catch {}
@@ -184,6 +216,11 @@ export class QuotaConsumer {
 				} finally { await unlink(`${file}.lock`).catch(() => {}); }
 			} catch { if (current()) { this.values[id] ??= "???"; this.changed(); } }
 		}));
+	}
+	/** CXC comes from the same response as CX, so they go together. */
+	private forget(id: keyof Quotas): void {
+		delete this.values[id];
+		if (id === "CX") delete this.values.CXC;
 	}
 	stop(): void {
 		this.controller?.abort();

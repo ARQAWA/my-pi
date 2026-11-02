@@ -104,7 +104,7 @@ export const AUTH_REFRESH_MESSAGE = "The saved Codex login is missing, expired o
 
 function safeFailure(error: unknown, signal: AbortSignal, timedOut: boolean): TargetResult["error"] {
 	if (signal.aborted) return { code: timedOut ? "timeout" : "aborted", message: timedOut ? "Web research timed out." : "Web research was aborted." };
-	if (error instanceof AuthRecoveryError) return { code: "authentication_failed", message: AUTH_REFRESH_MESSAGE };
+	if (error instanceof AuthRecoveryError || (error instanceof CodexError && error.kind === "unauthorized")) return { code: "authentication_failed", message: AUTH_REFRESH_MESSAGE };
 	if (error instanceof CodexError) return { code: error.kind, message: error.message };
 	const code = error instanceof Error && Object.hasOwn(FAILURES, error.message) ? error.message : "request_failed";
 	return { code, message: FAILURES[code] ?? "Web research request failed. No credentials or upstream error body were included." };

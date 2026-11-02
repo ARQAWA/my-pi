@@ -143,5 +143,5 @@ export function classifyChange(toolName: string, args: unknown, result: CallResu
 	// The whole live-block header: the tool name, the first path and how many more files.
 	const target = first ? `${toolName} ${oneLine(first.path)}${files.length > 1 ? ` +${files.length - 1} more` : ""}` : toolName;
 	const countKeys = files.map((f) => f.countKey);
-	return { kind: "edit", target, status, countKey: countKeys[0] ?? context.toolCallId ?? "", countKeys, outputText: outputOf(result), files };
+	return { kind: "edit", target, status, countKeys, outputText: outputOf(result), files };
 }
