@@ -1152,6 +1152,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reason: the executor finishes, checks and fixes itself in a fork that reuses the caller's cached prefix, so the caller's context stays small and no new review round is needed per fix.
   Carriers: `extensions/RQW-agent/` (`fork_turns`), `extensions/RQW-review/skills/selfcheck/`, `.pi/extensions/coordinator-guard/` with `test/coordinator-guard.test.ts`, `AGENTS.md`; contract: [RQW-agent README](extensions/RQW-agent/README.md#forking-the-callers-branch).
 
+- **Automatic continue after a cut response** `[D-AGENT-LENGTH-CONTINUE]`. A child stood still with «Incomplete response returned, reason: max_output_tokens» (mapped to stopReason `length` by `extensions/RQW-codex/display.mjs`) until the caller sent «continue». Owner answered «1» to «Да, только для субагентов, предел три подряд», then widened it: «И для главного чата тоже сделай».
+  Rule: when a turn ends with stopReason `length` (any provider), in the main chat and in every child, the harness continues it itself with a short hidden `rqw-length-continue` message; the third cut in a row stops the run with the error as before. Any other finished turn and every new run reset the count. A continued cut is not an error; only the last, uncontinued one is reported (`Response was truncated`).
+  Mechanism: Pi's own `turn_end` boundary in `extensions/RQW-agent/length-continue.ts`, registered once in `registerCaller`: it appends the hidden custom message and returns `continue: true`, so the same run goes on. No timer, no polling, no Pi patch. A user message or Escape during the continuation acts as in any normal turn.
+  Carriers: `extensions/RQW-agent/length-continue.ts`, `index.ts` (child result bookkeeping), `test/extensions/RQW-agent/length-continue.test.ts`.
+
 ## Review
 
 - **Repository requirements-based test review** `[D-REVIEW-TEST-REQUIREMENTS]`. Owner: «review тестов и review кода
