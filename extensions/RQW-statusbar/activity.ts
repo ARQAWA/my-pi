@@ -9,10 +9,17 @@ export const COUNTS_VERSION = 1;
 export const COUNTS_REQUEST = "rqw:running-counts:request";
 export const COUNTS_OFFER = "rqw:running-counts:offer";
 
+export interface AgentLine {
+	id: string;
+	title?: string;
+	state: "working" | "waiting" | "afk" | "idle";
+	depth: number;
+}
+
 export interface RunningCounts {
 	agents: number;
-	/** Optional on existing version-1 agent sources. Only the main session's jobs contribute here. */
 	backgroundProcesses?: number;
+	agentList?: AgentLine[];
 }
 
 type CountsListener = (counts: RunningCounts | null) => void;
@@ -23,7 +30,10 @@ interface CountsSource {
 }
 
 const zero = (): RunningCounts => ({ agents: 0 });
-const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents && (a.backgroundProcesses ?? 0) === (b.backgroundProcesses ?? 0);
+const sameList = (a: AgentLine[] = [], b: AgentLine[] = []) => a.length === b.length && a.every((line, i) =>
+	line.id === b[i].id && line.title === b[i].title && line.state === b[i].state && line.depth === b[i].depth);
+const same = (a: RunningCounts, b: RunningCounts) => a.agents === b.agents &&
+	(a.backgroundProcesses ?? 0) === (b.backgroundProcesses ?? 0) && sameList(a.agentList, b.agentList);
 
 /** Sums the live agent counts of this session; a source that ends (`null`) is dropped at once. */
 export class CountsWatch {
@@ -96,8 +106,10 @@ export class CountsWatch {
 			const counts = source.snapshot();
 			next.agents += counts.agents;
 			if (counts.backgroundProcesses) next.backgroundProcesses = (next.backgroundProcesses ?? 0) + counts.backgroundProcesses;
+			if (counts.agentList?.length) (next.agentList ??= []).push(...counts.agentList.map(line => ({ ...line })));
 		}
 		const changed = !same(next, this.total);
+		if (this.total.agentList && sameList(next.agentList, this.total.agentList)) next.agentList = this.total.agentList;
 		this.total = next;
 		if (changed) this.changed();
 	}
@@ -124,13 +136,12 @@ export interface StatusInput {
 /** The status text of the upper border, or undefined when fully idle (no label, no reserved gap). */
 export function statusText(input: StatusInput): { text: string; compacting: boolean } | undefined {
 	if (input.compacting) return { text: "Compacting context", compacting: true };
-	// Main's active thinking/tool text keeps its existing agent suffix, not a background-job action.
-	const parts = countParts(input.running ? { agents: input.counts.agents } : input.counts);
+	const parts = countParts(input.counts);
 	if (input.running) {
 		const head = input.action ?? "Planning next moves";
 		return { text: parts.length > 0 ? `${head} · ${parts.join(", ")}` : head, compacting: false };
 	}
-	if (parts.length > 0) return { text: `Background: ${parts.join(", ")}`, compacting: false };
+	if (parts.length > 0) return { text: `Waiting for ${parts.join(", ")}`, compacting: false };
 	return undefined;
 }
 

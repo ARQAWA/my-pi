@@ -173,3 +173,16 @@ test("the job tool hands its owner a running count, a result source and a hold o
 	assert.equal(owner.hasJobs(), false);
 	auto.close();
 });
+
+test("the job tool hands its owner a subscription to job changes", async (t) => {
+	const { jobs, control } = await handedOff(t);
+	let changes = 0;
+	const unsubscribe = ownerOf(jobs).subscribeActivity(() => { changes++; });
+	control.finish("done");
+	await jobs.settled("job#1");
+	assert.ok(changes > 0);
+	const seen = changes;
+	unsubscribe();
+	jobs.dispose();
+	assert.equal(changes, seen);
+});

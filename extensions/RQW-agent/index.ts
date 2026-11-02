@@ -31,7 +31,7 @@ import { registerTerminalActivity } from "./terminal-progress.ts";
 import { ProfileCatalogue, type ProfileRef } from "./profiles.ts";
 import { Activity } from "./activity.ts";
 import { appendUserMessages, loadPromptFile, type PromptFile } from "./prompt-files.ts";
-import { COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
+import { type AgentLine, type AgentState, COUNTS_REQUEST, COUNTS_VERSION, type CountsRequest, createCountsProducer, type RunningCounts } from "./counts.ts";
 import { fastGpt, inheritedFastGpt } from "./fast-gpt.ts";
 import { Coordinator, type AcceptRecord, type RuntimeHandle, deadlineTimer, targetIds, messageCount, statusDepth, jsonResult } from "./coordinator.ts";
 import { continueNote, repairRequest } from "./history-repair.ts";
@@ -184,7 +184,7 @@ class NotificationBridge {
 	}
 }
 /** Control of a child's background jobs, carried by RQW-tools' offered `job` definition when it offers one. */
-type JobControl = { abortAll(): void; dispose(): void; hasJobs?(): boolean; backgroundCount?(): number; autoSource?(): { source: AutoSource; close(): void } };
+type JobControl = { abortAll(): void; dispose(): void; hasJobs?(): boolean; backgroundCount?(): number; subscribeActivity?(listener: () => void): () => void; autoSource?(): { source: AutoSource; close(): void } };
 type Child = { session: AgentSession; progress: ProgressReports; controller: AbortController; guard: { signal?: AbortSignal }; children?: RuntimeHandle; activity: Activity; jobs?: JobControl; jobsAuto?: { source: AutoSource; close(): void }; release: () => void; captureRun: (callerThreadId?: string) => void; bridge: NotificationBridge; core: { on: boolean; active: boolean } };
 type Agent = Child & {
 	id: number;
@@ -501,14 +501,31 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		coordinator.publish(identity.id, identity.run, text, outcome, delivery, a.title);
 	}
 
-	/** Active assignments and nested callers; completed results count zero. */
+	/** working: Pi runs the child or a queued send is about to; waiting: its assignment stays open for jobs or children. */
+	const lineState = (state: SavedChild["state"], working: boolean, open: boolean): AgentState =>
+		working ? "working" : open ? "waiting" : state === "paused" || state === "interrupted" ? "afk" : "idle";
+
+	/** One line per agent of the tree, in id order with nested agents after their parent. Active ones count; completed results count zero. */
 	function runningCounts(): RunningCounts {
 		let running = 0;
-		for (const a of agents.values()) {
-			if (a.activity.isRunning() || a.run || a.next?.length) running++;
-			running += a.children?.runningCounts().agents ?? 0;
+		let processes = 0;
+		const list: AgentLine[] = [];
+		const ids = [...new Set([...agents.keys(), ...savedSlots.keys()])].sort((x, y) => x - y);
+		for (const id of ids) {
+			const a = agents.get(id);
+			const data = savedSlots.get(id);
+			const title = a ? a.title : data?.title;
+			const state = a ? lineState(a.state, a.activity.isRunning() || !!a.next?.length, !!a.run && !a.run.quiet) : lineState(data!.state, false, false);
+			list.push({ id: labelOf(id), ...(title ? { title } : {}), state, depth: 0 });
+			if (state === "working" || state === "waiting") running++;
+			processes += a?.jobs?.backgroundCount?.() ?? 0;
+			const nested = a?.children?.runningCounts();
+			if (!nested) continue;
+			running += nested.agents;
+			processes += nested.backgroundProcesses ?? 0;
+			for (const line of nested.agentList ?? []) list.push({ ...line, depth: line.depth + 1 });
 		}
-		return { agents: running, reviews: 0 };
+		return { agents: running, reviews: 0, ...(processes ? { backgroundProcesses: processes } : {}), ...(list.length ? { agentList: list } : {}) };
 	}
 
 	function recoveryFailure(id: number, error: unknown, data?: SavedChild) {
@@ -926,6 +943,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		}
 		hydrated = true;
 		initialRecovery = false;
+		onRunning();
 		const answers: Parameters<Coordinator["publishAll"]>[0] = [];
 		for (const a of [...agents.values(), ...savedSlots.values()]) {
 			if (recoveryErrors.has(a.id)) continue;
@@ -1083,6 +1101,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const customTools = offer ? offeredTools(offer.factory, cwd, names, codemode) : [];
 			const jobTool = customTools.find((d) => d.name === "job") as (ToolDefinition & { jobs?: JobControl }) | undefined;
 			jobs = jobTool?.jobs;
+			// The job registry drops its listeners on dispose, with the child.
+			jobs?.subscribeActivity?.(onRunning);
 			jobsAuto = jobs?.autoSource?.();
 			signal.throwIfAborted();
 			creating = createAgentSession({
@@ -1675,6 +1695,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					branchIndex?.saved.set(id, data);
 					savedSlots.delete(id);
 					recoveryErrors.delete(id); recoveryPending.delete(id);
+					onRunning();
 					coordinator.change(`${name}#${id}`);
 					return ok(`${name}#${id} stopped`);
 				}
@@ -1758,6 +1779,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		for (const id of [...savedSlots.keys(), ...recoveryErrors.keys()]) coordinator.change(`${name}#${id}`);
 		agents.clear(); savedSlots.clear(); restoring.clear(); recoveryPending.clear(); recoveryErrors.clear(); hydrated = false; branchIndex = undefined; bases = undefined; main = ctx;
 		unansweredProgress.clear();
+		onRunning();
 	});
 	pi.on("agent_before_settle", (_event, ctx) => {
 		if (!mainAborted && needsProgressTurn(ctx)) return { continue: true };

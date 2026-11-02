@@ -4,12 +4,12 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { SettingsManager } from "@earendil-works/pi-coding-agent";
-import { actionPhrase, CountsWatch, statusText } from "./activity.ts";
+import { actionPhrase, type AgentLine, CountsWatch, statusText } from "./activity.ts";
 import { QuotaConsumer } from "./quota.ts";
 import { type BorderSource, ContextEditor, type NativeActivity } from "./editor.ts";
 import { findRepo, gitBranch, gitCounts, type RepoInfo } from "./git.ts";
 import { installEarly } from "./early.ts";
-import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, contextRow, modelRow, placeLayout, activityRows } from "./render.ts";
+import { type ActivityChrome, type BarState, type GitCounts, type Paint, placeOf, RateMeter, type Role, contextRow, modelRow, placeLayout, activityRows, agentRows } from "./render.ts";
 
 // Tools that never change the working tree or the branch.
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "rqw_readfile", "rqw_glob", "rqw_rg", "web", "tool_search"]);
@@ -225,9 +225,10 @@ export default function statusbar(pi: ExtensionAPI) {
 		tools.clear();
 	}
 
-	/** Pi supplies one leading spacer. The active widget adds the status and one trailing empty line, idle adds nothing. */
+	/** Pi supplies one leading spacer; visible activity ends with one trailing empty line. */
 	const activityWidget = (ctx: ExtensionContext) => () => {
-		let last: { width: number; chrome: ActivityChrome; rows: string[] } | undefined;
+		let last: { width: number; chrome: ActivityChrome | undefined; agents: string[]; rows: string[] } | undefined;
+		let cachedAgents: { width: number; list: AgentLine[] | undefined; theme: Theme; dim: boolean; rows: string[] } | undefined;
 		// The dim italic hint is painted once per text and theme.
 		let painted: { hint: string; theme: Theme; value: string } | undefined;
 		const paintHint = (hint: string): string => {
@@ -238,11 +239,15 @@ export default function statusbar(pi: ExtensionAPI) {
 		return {
 			render(width: number): string[] {
 				const current = chromeNow();
-				if (!current) return [];
-				// Pi's own retry and summary text carries its key already, so only our own status text gets a hint.
-				const chrome: ActivityChrome = { ...current, hint: nativeActivity ? undefined : hintSource?.snapshot() };
-				if (!last || last.width !== width || last.chrome.text !== chrome.text || last.chrome.compacting !== chrome.compacting || last.chrome.retry !== chrome.retry || last.chrome.hint !== chrome.hint || last.chrome.frame !== chrome.frame)
-					last = { width, chrome, rows: activityRows(width, chrome, paintHint) };
+				const list = jobs.get().agentList;
+				const theme = ctx.ui.theme;
+				const dim = !current;
+				if (!cachedAgents || cachedAgents.width !== width || cachedAgents.list !== list || cachedAgents.theme !== theme || cachedAgents.dim !== dim)
+					cachedAgents = { width, list, theme, dim, rows: agentRows(width, list ?? [], dim, (role, text) => theme.fg(role, text)) };
+				// Pi's retry and summary text carries its key already.
+				const chrome = current && { ...current, hint: nativeActivity ? undefined : hintSource?.snapshot() };
+				if (!last || last.width !== width || last.agents !== cachedAgents.rows || last.chrome?.text !== chrome?.text || last.chrome?.compacting !== chrome?.compacting || last.chrome?.retry !== chrome?.retry || last.chrome?.hint !== chrome?.hint || last.chrome?.frame !== chrome?.frame)
+					last = { width, chrome, agents: cachedAgents.rows, rows: activityRows(width, chrome, paintHint, cachedAgents.rows) };
 				return last.rows;
 			},
 			invalidate() {},

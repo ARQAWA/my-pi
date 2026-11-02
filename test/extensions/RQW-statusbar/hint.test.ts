@@ -82,10 +82,60 @@ it("shows the background count and stop hint while the main run is idle", async 
 	} });
 	s.hint.text = "esc esc to stop background";
 	const rows = s.rows();
-	assert.equal(strip(rows.render(100)[0]), " Background: 2 agents, 1 background process  esc esc to stop background");
+	assert.equal(strip(rows.render(100)[0]), " Waiting for 2 agents, 1 background process  esc esc to stop background");
 	counts = { agents: 0, backgroundProcesses: 0 };
 	listener?.(counts);
 	assert.deepEqual(rows.render(100), []);
+});
+
+it("shows all agent rows with theme colours, nesting and an idle-only widget", async (t) => {
+	const s = await setup(t);
+	const colors: Record<string, string> = { muted: "35", dim: "90", text: "37" };
+	s.ctx.ui.theme.fg = (role: string, text: string) => `\x1b[${colors[role]}m${text}\x1b[39m`;
+	let counts = { agents: 2, agentList: [
+		{ id: "agent#1", title: "First", state: "working", depth: 0 },
+		{ id: "agent#2", title: "Nested", state: "waiting", depth: 1 },
+		{ id: "agent#3", state: "idle", depth: 0 },
+		{ id: "agent#4", title: "Away", state: "afk", depth: 0 },
+		{ id: "agent#5", title: "Fifth", state: "idle", depth: 0 },
+		{ id: "agent#6", title: "Last", state: "idle", depth: 0 },
+	] };
+	let notify: (value: unknown) => void = () => {};
+	s.events.emit("rqw:running-counts:offer", { version: 1, source: {
+		version: 1, snapshot: () => counts, subscribe: (listener: typeof notify) => { notify = listener; return () => {}; },
+	} });
+	s.start();
+	const rows = s.rows();
+	const active = rows.render(80);
+	assert.deepEqual(active.map(strip).slice(1), ["   agent#1 First · working", "     agent#2 Nested · waiting", "   agent#3 · idle", "   agent#4 Away · afk", "   agent#5 Fifth · idle", "   agent#6 Last · idle", ""]);
+	assert.match(active[1], /\x1b\[35magent#1\x1b\[39m/);
+	assert.match(active[1], /\x1b\[90mFirst\x1b\[39m/);
+	assert.match(active[1], /\x1b\[37m[^\x1b]*working\x1b\[39m/);
+	assert.match(active[2], /\x1b\[90m[^\x1b]*waiting\x1b\[39m/);
+	assert.match(active[3], /\x1b\[90m[^\x1b]*agent#3[^\x1b]*idle\x1b\[39m/);
+	assert.match(active[4], /\x1b\[90m[^\x1b]*agent#4[^\x1b]*afk\x1b\[39m/);
+	assert.equal(rows.render(80), active);
+	assert.equal(strip(rows.render(25)[1]), "   agent#1 Fir… · working");
+	assert.equal(strip(rows.render(19)[1]), "  agent#1 · working");
+	assert.equal(strip(rows.render(16)[1]), "agent… · working");
+	assert.ok(strip(rows.render(8)[1]).endsWith("working"));
+	// A later shimmer frame reuses the already-painted agent rows.
+	const beforeFrame = rows.render(80);
+	s.clock.now += 100;
+	const afterFrame = rows.render(80);
+	assert.notEqual(afterFrame[0], beforeFrame[0]);
+	assert.equal(afterFrame[1], beforeFrame[1]);
+	s.ctx.ui.theme = { ...s.ctx.ui.theme, fg: (role: string, text: string) => role === "muted" ? `\x1b[36m${text}\x1b[39m` : text };
+	assert.match(rows.render(80)[1], /\x1b\[36magent#1\x1b\[39m/);
+	counts = { agents: 0, agentList: counts.agentList.map(line => ({ ...line, state: "idle" })) };
+	notify(counts);
+	await s.handlers.get("agent_settled")!({}, s.ctx);
+	s.ctx.ui.theme = { ...s.ctx.ui.theme, fg: (role: string, text: string) => role === "dim" ? `\x1b[90m${text}\x1b[39m` : text };
+	const idle = rows.render(80);
+	assert.equal(idle.length, 7);
+	assert.match(strip(idle[0]), /^   agent#1 First · idle$/);
+	assert.match(idle[0], /\x1b\[90m[^\x1b]*agent#1[^\x1b]*idle\x1b\[39m/);
+	assert.equal(idle.at(-1), "");
 });
 
 it("paints the hint once per text and reuses the rows of an unchanged frame", async (t) => {

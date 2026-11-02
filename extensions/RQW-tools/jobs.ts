@@ -137,6 +137,7 @@ export function createJobTool(jobs: Jobs, description: string): any {
 			abortAll: () => jobs.abortAll(), dispose: () => jobs.dispose(),
 			hasJobs: () => jobs.backgroundCount() > 0 || jobs.undelivered() > 0,
 			backgroundCount: () => jobs.backgroundCount(),
+			subscribeActivity: (listener: () => void) => jobs.subscribeActivity(listener),
 			autoSource: () => jobs.autoSource(),
 		},
 	};
