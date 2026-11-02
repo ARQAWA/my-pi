@@ -79,6 +79,26 @@ it("renders new file tools and historical calls in compact and expanded views", 
 	assert.equal(collapsedRows(leader, 120, theme, "/w")[0], "Read 1 file · searched 2 times");
 });
 
+it("hides the wait follow-up in live and expanded output without changing the result", () => {
+	const followUp = "Perform any necessary follow-up actions in response to the subagent completion above. If no follow-up work is needed, no further action is required. Don't repeat the same confirmation every time.";
+	const args = { action: "wait", ids: ["agent#1"] };
+	const raw = JSON.stringify({ results: [{ id: "agent#1", text: `Answer\n\n${followUp}` }] });
+	const input = ok(raw);
+	const live = renderLive({ ...classify("agent", args, input), toolName: "agent" }, 300, theme).join("\n");
+	assert.match(live, /Answer/);
+	assert.doesNotMatch(live, /follow-up actions/);
+	const ui = new ToolUi();
+	const renderer = ui.resolve("agent", () => ({ renderResult: (value) => new Text((value.content[0] as { text: string }).text, 0, 0) }));
+	const context = { state: {}, toolCallId: "id", args, outputPad: 0, invalidate() {}, expanded: true, showImages: false } as never;
+	const fullTheme = { ...theme, bold: (text: string) => text } as Theme;
+	const row = renderer.renderCall!(args as never, fullTheme, context);
+	renderer.renderResult!(input as never, { expanded: true, isPartial: false } as never, fullTheme, context);
+	const expanded = row.render(300).join("\n");
+	assert.match(expanded, /Answer/);
+	assert.doesNotMatch(expanded, /follow-up actions/);
+	assert.equal(input.content[0].text, raw);
+});
+
 it("classifies confirmed edit and write counts", () => {
 	const edit = classifyChange("edit", { path: "a.ts" }, ok("done", { details: { diff: "-1 old\n+1 new\n+2 next" } }));
 	assert.deepEqual(edit.files, [{ path: "a.ts", status: "done", countKey: "a.ts", added: 2, removed: 1 }]);

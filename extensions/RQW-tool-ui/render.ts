@@ -15,6 +15,7 @@ import type { ToolRenderContext } from "./index.ts";
 import { callFallback, type FallbackResult, resultFallback, shellBackground, unknownToolText } from "./fallback.ts";
 import { diffOf, renderLive } from "./live.ts";
 import { renderSummary } from "./summary.ts";
+import { displayWaitText } from "./wait-display.ts";
 
 /** The renderer state slot of this extension, beside whatever the original renderers keep in the same object. */
 const OWN = Symbol("rqw-tool-ui");
@@ -243,6 +244,10 @@ export class ToolUi {
 				return new Row(this, own);
 			},
 			renderResult: (result, options, theme, context) => {
+				if (toolName === "agent" && record(context.args).action === "wait") {
+					result = { ...result, content: result.content.map((block) => block.type === "text"
+						? { ...block, text: displayWaitText(block.text) } : block) };
+				}
 				const own = this.own(context);
 				own.context = context;
 				own.theme = theme;

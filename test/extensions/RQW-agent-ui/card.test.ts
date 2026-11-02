@@ -203,6 +203,19 @@ it("hides the follow-up sentence in collapsed and expanded cards and keeps other
 	assert.ok(plain.includes("First") && plain.includes("Second"));
 });
 
+it("hides follow-up in standalone wait views without changing the result", () => {
+	const followUp = "Perform any necessary follow-up actions in response to the subagent completion above. If no follow-up work is needed, no further action is required. Don't repeat the same confirmation every time.";
+	const text = `Answer\n\n${followUp}`;
+	const result = { content: [{ type: "text", text: JSON.stringify({ results: [{ id: "agent#1", text }] }) }], details: { reason: "result", results: [{ id: "agent#1", text }] } };
+	const render = waitResultRenderer("agent", {});
+	for (const expanded of [false, true]) {
+		const rows = render(result as never, { expanded, isPartial: false } as never, identity as never, { args: { action: "wait" }, isError: false } as never).render(200).join("\n");
+		assert.match(rows, /Answer/);
+		assert.doesNotMatch(rows, /follow-up actions/);
+	}
+	assert.equal(result.details.results[0].text, text);
+});
+
 const painted: CardTheme = { fg: (color, text) => `<${color}>${text}`, bold: (text) => text };
 
 it("reads the findings number from the first line and never counts the answer", () => {

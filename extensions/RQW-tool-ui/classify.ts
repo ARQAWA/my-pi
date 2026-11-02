@@ -1,6 +1,7 @@
 // Pure classification of one tool call for the summary line and the live block. No filesystem access;
 // the inputs are never mutated. Edit and write are classified by changes.ts into the same shape.
 import path from "node:path";
+import { displayWaitText } from "./wait-display.ts";
 import type { ToolRenderContext } from "./index.ts";
 
 export type Kind = "read" | "search" | "run" | "wait" | "other" | "edit";
@@ -146,7 +147,7 @@ export function classify(toolName: string, args: unknown, result: CallResult | u
 	if (WAITERS.has(toolName) && a.action === "wait") {
 		const ids = [...new Set((Array.isArray(a.ids) ? a.ids : []).filter((x): x is string => typeof x === "string" && x.length > 0))];
 		return { kind: "wait", target: ids.map(oneLine).join(" "), status: statusOf(result, context), countKeys: ids,
-			outputText };
+			outputText: toolName === "agent" ? displayWaitText(outputText) : outputText };
 	}
 	const first = Object.values(a).find((value): value is string => typeof value === "string" && oneLine(value).length > 0);
 	const target = first === undefined ? oneLine(toolName) : `${oneLine(toolName)} ${oneLine(first)}`;

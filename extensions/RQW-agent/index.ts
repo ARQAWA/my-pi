@@ -19,6 +19,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "typebox";
 import { SUBAGENT_REMINDER, subagentPrompt, withCurrentReminder } from "./prompt.ts";
+import { renderAgentResult } from "./render.ts";
 import { forkBranch } from "./fork.ts";
 import { forkPayloads, type ForkPayload } from "./fork-payload.ts";
 import { steeringWait } from "./steering-wait.ts";
@@ -1470,6 +1471,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		label: "Agent",
 		description: DESCRIPTION,
 		parameters: toolParameters(offeredFactory()?.catalogue?.names ?? [...TOOLS]),
+		renderResult: renderAgentResult,
 		execute: (toolCallId, raw, callerSignal, _onUpdate, ctx) => {
 			// Capture ctx.signal now: its getter can point at another run when the internal queue drains.
 			const signal = AbortSignal.any([lifetime.signal, generation.signal, callerSignal, ctx.signal].filter((s): s is AbortSignal => !!s));

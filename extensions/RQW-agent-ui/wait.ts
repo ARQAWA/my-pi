@@ -60,14 +60,14 @@ export function stockResult(result: Pick<ToolResult, "content">, expanded: boole
 
 /**
  * The result renderer of one wait-capable tool, layered over `inner` (the renderers of whatever comes after this
- * extension). A finished, collapsed wait shows the cards; everything else, Ctrl+O included, is exactly the inner view,
+ * extension). A finished wait shows cards in both views; everything else is exactly the inner view,
  * or Pi's stock view when there is none.
  */
 export function waitResultRenderer(toolName: string, inner: ToolRenderers): ResultRenderer {
 	return (result, options, theme, context) => {
-		if (!options.expanded && !options.isPartial && !context.isError) {
+		if (!options.isPartial && !context.isError) {
 			const cards = waitCards(toolName, context.args, result);
-			if (cards) return cached((width) => cards.flatMap((card) => cardLines(card, false, theme, width)));
+			if (cards) return cached((width) => cards.flatMap((card) => cardLines(card, options.expanded, theme, width)));
 		}
 		return inner.renderResult ? inner.renderResult(result, options, theme, context) : stockResult(result, options.expanded, theme);
 	};
