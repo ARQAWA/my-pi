@@ -197,6 +197,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   `RQW-theme` is data in `pi.themes`, not an extension. `INSTALL.md` shows the switch; `DECISIONS.md` section Isolation carries the decision.
 - `INSTALL.md`: the install prompt. Given to an already installed Pi, it installs this package into it.
 - `.agents/skills/report/`: repo-local skill and HTML template for dyslexia-friendly reports, plans, research summaries and design documents.
+- `.agents/skills/wish-audit/`: repo-local, dev-only read-only audit of my-pi against the owner's verified cumulative wish list in `my-pi-evidence/designs/wish-audit/WISHES.md`; writes `AUDIT.md` there, met, not met or unclear per wish (`[D-WORK-WISH-AUDIT]`).
 - `.agents/skills/plan/`, `.agents/skills/decompose/`, `.agents/skills/simplify/`: repo-local, dev-only planning skills for design and planning agents (0 to 13 story points, tasks of at most 2, simplify above 10); never shipped (`[D-WORK-PLAN-SKILLS]`).
 - `WORKFLOW-MANIFEST.md`: the owner's personal working principles and aspirations, written in Russian for him.
 - `PROCESS.md`: the short development procedure, including testing and the coordinator guard's JSON block.
