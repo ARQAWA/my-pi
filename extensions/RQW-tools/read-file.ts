@@ -3,7 +3,6 @@ import { access, open, readFile } from "node:fs/promises";
 import { createReadToolDefinition, detectSupportedImageMimeTypeFromFile, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { resolveReadPath } from "./keys.ts";
-import { readDescription } from "./rg.ts";
 
 const MAX_LINES = 2000;
 const MAX_BYTES = 50 * 1024;
@@ -160,13 +159,13 @@ async function readText(path: string, offset: number, limit: number | undefined,
 	return selected.join("\n");
 }
 
-export function createReadFileTool(cwd: string, settings: () => any): ToolDefinition {
+export function createReadFileTool(cwd: string, settings: () => any, description: string): ToolDefinition {
 	const stock: any = createReadToolDefinition(cwd);
 	return {
 		...stock,
 		name: "rqw_readfile",
 		label: "rqw_readfile",
-		description: readDescription("rqw_readfile"),
+		description,
 		parameters: Type.Object({
 			path: Type.String({ description: "The relative or absolute path of the file to read." }),
 			offset: Type.Optional(Type.Integer({ description: "The line number to start reading from. Positive values are 1-indexed from the start of the file. Negative values count backwards from the end (e.g. -1 is the last line). Only provide if the file is too large to read at once." })),

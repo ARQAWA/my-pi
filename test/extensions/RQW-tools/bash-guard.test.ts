@@ -1,9 +1,10 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createTools } from "../../../extensions/RQW-tools/index.ts";
 
 function bash(legacy = false): any {
-	return createTools(process.cwd(), () => ({ shellPath: "/nonexistent/rqw-guard-shell" }), { legacy }).find(tool => tool.name === "bash");
+	return createTools(process.cwd(), () => ({ shellPath: "/nonexistent/rqw-guard-shell" }), { descriptions, legacy }).find(tool => tool.name === "bash");
 }
 
 function message(part: string, legacy = false): string {
