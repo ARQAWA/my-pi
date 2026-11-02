@@ -35,7 +35,7 @@ import { basename, dirname, join } from "node:path";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import type { TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { InMemoryCredentialStore, type Credential } from "@earendil-works/pi-ai";
 import {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
@@ -95,6 +95,8 @@ export interface WorldOptions {
 	thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 	/** Scenario settings, applied after the real first-start profile. */
 	settings?: Record<string, unknown>;
+	/** Additional fake credentials present before extensions start. */
+	credentials?: Record<string, Credential>;
 	/** Routes installed before startup and kept across restart. */
 	routes?: ReturnType<typeof networkRoutes>;
 }
@@ -121,11 +123,12 @@ function loadManifest() {
 const base64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
 
 /** Fake subscription logins that never expire; the codex token carries the account claim Pi reads. */
-async function fakeCredentials() {
+async function fakeCredentials(extra: Record<string, Credential> = {}) {
 	const store = new InMemoryCredentialStore();
 	const codexToken = `${base64url({ alg: "none" })}.${base64url({ exp: 4_000_000_000, "https://api.openai.com/auth": { chatgpt_account_id: "acct" } })}.sig`;
 	await store.modify("anthropic", async () => ({ type: "oauth", access: "fake-access", refresh: "fake-refresh", expires: FAR_FUTURE }) as never);
 	await store.modify("openai-codex", async () => ({ type: "oauth", access: codexToken, refresh: "fake-refresh", expires: FAR_FUTURE, accountId: "acct" }) as never);
+	for (const [provider, credential] of Object.entries(extra)) await store.modify(provider, async () => credential);
 	return store;
 }
 
@@ -198,6 +201,8 @@ interface Handover {
 
 async function build(t: TestContext, options: WorldOptions, from: Handover) {
 	const { extensions, theme } = await loadManifest();
+	const { builtInExtensions } = await import(new URL("./extensions/index.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
+	const builtins = builtInExtensions.filter(({ name }: { name: string }) => name === "codemode" || name === "tool-search");
 	const created = from.created ?? process.hrtime.bigint();
 	const dirs = from.dirs;
 	const guard = guardProcess();
@@ -263,7 +268,7 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 		},
 	};
 
-	const credentials = await fakeCredentials();
+	const credentials = await fakeCredentials(options.credentials);
 	const modelRuntime = await ModelRuntime.create({ credentials, modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
 	const sessionManager = from.resume ? SessionManager.open(from.resume, dirs.sessions, dirs.project) : SessionManager.create(dirs.project, dirs.sessions);
 	const createRuntime = async ({ cwd, agentDir, sessionManager: manager, sessionStartEvent }: { cwd: string; agentDir: string; sessionManager: SessionManager; sessionStartEvent?: unknown }) => {
@@ -273,7 +278,8 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 			resourceLoaderOptions: {
 				eventBus: bus, noExtensions: true, noPromptTemplates: true, noContextFiles: true,
 				additionalThemePaths: [theme],
-				extensionFactories: [...extensions.map(({ name, factory }) => ({ name, factory })), probe] as never,
+				additionalExtensionPaths: ["builtin:codemode", "builtin:tool-search"],
+				extensionFactories: [...builtins, ...extensions.map(({ name, factory }) => ({ name, factory })), probe] as never,
 				extensionsOverride: (result: any) => {
 					for (const extension of result.extensions) {
 						const entry = extensions.find(({ name }) => extension.path === `<inline:${name}>`);
@@ -355,7 +361,7 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 	if (!from.resume) timingOf(t).boot.push(elapsedMs(created));
 
 	return {
-		dirs, host, model: model.api, requests: model.requests, processes, routes: options.routes!, networkAttempts, processAttempts, exitCodes, events,
+		dirs, host, credentials, model: model.api, requests: model.requests, processes, routes: options.routes!, networkAttempts, processAttempts, exitCodes, events,
 		get runtime() { return runtime; },
 		get session() { return runtime.session; },
 		get settings() { return runtime.services.settingsManager; },

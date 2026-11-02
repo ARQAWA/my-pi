@@ -6,7 +6,7 @@ after(() => reportTimings(import.meta.filename));
 
 it("removed commands are absent from slash suggestions", async (t) => {
 	const w = await world(t);
-	const removed = ["model", "thinking", "tree", "scoped-models", "share", "bug", "fork", "llama"];
+	const removed = ["model", "thinking", "tree", "scoped-models", "share", "bug", "fork", "llama", "session-deleted"];
 
 	for (const name of removed) {
 		w.type(`/${name}`);
