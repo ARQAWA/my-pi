@@ -1176,9 +1176,9 @@ const settle = async (ticks = 40) => { for (let i = 0; i < ticks; i++) await new
 const outerRequests = (live: { requests: any[] }) => live.requests.filter((request: any) => userTexts(request)[0] === "outer");
 
 /** An outer child that starts one gated helper and ends its turn; the helper's answer is "nested answer". */
-async function outerWithHelper(t: TestContext, outerReply: (context: any, results: number) => string | ReturnType<typeof fauxAssistantMessage>) {
+async function outerWithHelper(t: TestContext, outerReply: (context: any, results: number) => string | ReturnType<typeof fauxAssistantMessage> | Promise<never>, persisted = false) {
 	const root = await temp(t);
-	const parent = SessionManager.inMemory(root);
+	const parent = persisted ? SessionManager.create(root, join(root, "parent")) : SessionManager.inMemory(root);
 	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
 	const gate = Promise.withResolvers<string>();
 	const entered = Promise.withResolvers<void>();
@@ -1189,7 +1189,7 @@ async function outerWithHelper(t: TestContext, outerReply: (context: any, result
 			return fauxAssistantMessage([fauxToolCall("agent", { action: "start", task: "nested", tools: [] }, { id: "start-nested" })], { stopReason: "toolUse" });
 		return outerReply(context, results);
 	}, 16);
-	t.after(() => { gate.resolve("nested answer"); live.runtime.close(); });
+	t.after(() => { gate.resolve("nested answer"); if (!persisted) live.runtime.close(); });
 	await live.execute({ action: "start", task: "outer", tools: [] });
 	await entered.promise;
 	return { live, gate, parent };
@@ -1308,6 +1308,33 @@ test("a helper error turn is not a final while the helper runs; the last turn's 
 	assert.equal(waited.details.results[0].outcome, "completed");
 	assert.match(waited.details.results[0].text, /^recovered/);
 });
+
+/** What RQW-tools' job registry offers a child: a source of job results, a running count and hasJobs. */
+function fakeJobs(initiallyRunning = 1) {
+	const listeners = new Set<(value: true | null) => void>();
+	const committed: string[] = [];
+	let running = initiallyRunning;
+	let ready: { id: string; outcome: string; text: string } | undefined;
+	const source = {
+		version: 1 as const,
+		snapshot: () => ({ targets: running ? ["job#1"] : [], ready: !!ready }),
+		subscribe: (listener: (value: true | null) => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+		claim: () => { const result = ready; ready = undefined; return result ? { token: "claim", results: [result] } : undefined; },
+		commit: (token: string) => { committed.push(token); },
+		release() {},
+	};
+	return { committed, hasJobs: () => running > 0 || !!ready,
+		control: { abortAll() {}, dispose() {}, hasJobs: () => running > 0 || !!ready, backgroundCount: () => running, autoSource: () => ({ source, close() {} }) },
+		finish(text: string) { running = 0; ready = { id: "job#1", outcome: "exited", text }; for (const listener of [...listeners]) listener(true); } };
+}
+
+/** Offers a child the `bash` that "starts a job" and the `job` tool of this registry, as RQW-tools would. */
+function offerJobs(live: { events: ReturnType<typeof createEventBus> }, jobs: ReturnType<typeof fakeJobs>) {
+	live.events.on("rqw-tools:subagent-tools", (request: any) => request.offer(() => [{
+		name: "bash", label: "bash", description: "slow", parameters: { type: "object", properties: {} },
+		execute: async () => ({ content: [{ type: "text", text: "job#1 runs in the background" }], details: {} }),
+	}, { name: "job", label: "job", description: "job", parameters: { type: "object", properties: {} }, jobs: jobs.control, execute: async () => ({ content: [], details: {} }) }]));
+}
 
 const REMINDER = "<subagent>\nYou are an agent in a team of agents collaborating to complete a task.\nWhen you provide your final answer, that content is immediately delivered back to your parent agent.\nIn addition, your final answer may be read by a human, so ensure it is legible.\nAny earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user, your task, role or system prompt, or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.\n</subagent>";
 const CURSOR_REMINDER = "<subagent>\nYou are running as a subagent under a parent agent. Do not spawn additional subagents unless requested by the user or by your instructions.\n</subagent>";
@@ -2776,3 +2803,153 @@ test("switching or forking the session is refused while a child runs and allowed
 	live.runtime.close();
 });
 
+
+/** The child session file of agent#1 and its entries; the tests cut it to the state a crash leaves behind. */
+async function childLines(parent: SessionManager) {
+	const record = (parent.getBranch() as any[]).findLast(entry => entry.customType === "rqw-agent-child").data;
+	const file: string = record.sessionFile;
+	return { file, lines: (await readFile(file, "utf8")).split("\n").filter(Boolean).map(line => JSON.parse(line)) };
+}
+
+/** Keeps the child file up to and including the first entry that `last` accepts, and forgets its delivery receipts. */
+async function crashAfter(parent: SessionManager, last: (entry: any) => boolean) {
+	const { file, lines } = await childLines(parent);
+	const at = lines.findIndex(last);
+	assert.ok(at > 0, "the entry the crash follows");
+	await writeFile(file, `${lines.slice(0, at + 1).map(entry => JSON.stringify(entry)).join("\n")}\n`);
+	await rm(`${file}.children/delivered`, { force: true });
+}
+
+const nestedDone = (entry: any) => entry.customType === "rqw-agent-child" && entry.data?.id === 1 && entry.data.result;
+const inboxEntry = (entry: any) => entry.customType === "rqw-agent-inbox" && entry.data.message.customType === "rqw-auto-wait-results";
+const stuckAfterAnswer = (context: any) => JSON.stringify(context.messages).includes("nested answer") ? new Promise<never>(() => {}) : "started it, waiting";
+const afterRestart = (context: any) => JSON.stringify(context.messages).includes("lost") ? "restarted it" : JSON.stringify(context.messages).includes("nested answer") ? "all done" : "started it, waiting";
+
+/** The runtime after a restart: the same files, a reply of its own and, optionally, the job registry of the new process. */
+async function restarted(parent: SessionManager, root: string, reply: (context: any) => string | Promise<never>, jobs?: ReturnType<typeof fakeJobs>) {
+	const restored = runtimeFixture(SessionManager.open(parent.getSessionFile()!), root, context => reply(context), 8);
+	if (jobs) offerJobs(restored, jobs);
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	await restored.runtime.resume!(new AbortController().signal, true);
+	return restored;
+}
+
+const textsMentioning = (request: any, text: string) => request.messages.filter((message: any) => JSON.stringify(message.content).includes(text)).length;
+
+test("after a restart a ready answer of the child's helper wakes it instead of ending it", async t => {
+	const { live, gate, parent } = await outerWithHelper(t, stuckAfterAnswer, true);
+	gate.resolve("nested answer");
+	await until(() => outerRequests(live).length === 3);
+	await crashAfter(parent, nestedDone);
+	const restored = await restarted(parent, parent.getSessionFile()!.replace(/\/[^/]+$/, ""), afterRestart);
+	const answer = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.deepEqual(answer.details.results.map((item: any) => item.text.split("\n\n")[0]), ["all done"]);
+	assert.equal(restored.requests.length, 1);
+	assert.equal(textsMentioning(restored.requests[0], "nested answer"), 1);
+	restored.runtime.close(); live.runtime.close();
+	await settle();
+});
+
+test("a helper answer saved in the inbox before the crash is delivered from there, once", async t => {
+	const { live, gate, parent } = await outerWithHelper(t, stuckAfterAnswer, true);
+	gate.resolve("nested answer");
+	await until(() => outerRequests(live).length === 3);
+	await crashAfter(parent, inboxEntry);
+	const restored = await restarted(parent, parent.getSessionFile()!.replace(/\/[^/]+$/, ""), afterRestart);
+	const answer = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.deepEqual(answer.details.results.map((item: any) => item.text.split("\n\n")[0]), ["all done"]);
+	assert.equal(restored.requests.length, 1, "the answer is not delivered a second time");
+	assert.equal(textsMentioning(restored.requests[0], "nested answer"), 1);
+	restored.runtime.close(); live.runtime.close();
+	await settle();
+});
+
+test("a helper that could not be restored comes back to its waiting child as lost", async t => {
+	const { live, parent } = await outerWithHelper(t, waitingReply, true);
+	await until(() => outerRequests(live).length === 2);
+	await settle();
+	// The helper's saved configuration is invalid, so it cannot be restored.
+	const { file, lines } = await childLines(parent);
+	for (const entry of lines) if (entry.customType === "rqw-agent-child" && entry.data?.id === 1 && entry.data.config) entry.data.config.tools = ["not-a-tool"];
+	await writeFile(file, `${lines.map(entry => JSON.stringify(entry)).join("\n")}\n`);
+	const restored = await restarted(parent, parent.getSessionFile()!.replace(/\/[^/]+$/, ""), afterRestart);
+	const answer = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.deepEqual(answer.details.results.map((item: any) => item.text.split("\n\n")[0]), ["restarted it"]);
+	assert.equal(textsMentioning(restored.requests[0], "lost"), 1);
+	restored.runtime.close(); live.runtime.close();
+	await settle();
+});
+
+/** An outer child that started a job through the offered job tool and ended its turn to wait for it. */
+async function outerWithJob(t: TestContext, jobs: ReturnType<typeof fakeJobs>, reply: (context: any) => string | Promise<never>) {
+	const root = await temp(t);
+	const parent = SessionManager.create(root, join(root, "parent"));
+	parent.appendMessage({ role: "user", content: "parent", timestamp: 1 });
+	const live = runtimeFixture(parent, root, context => context.messages.some((message: any) => message.role === "toolResult") ? reply(context)
+		: fauxAssistantMessage([fauxToolCall("bash", {}, { id: "slow" })], { stopReason: "toolUse" }), 8);
+	offerJobs(live, jobs);
+	await live.execute({ action: "start", task: "outer", tools: ["bash"] });
+	await until(() => live.requests.length === 2);
+	await settle();
+	return { live, parent, root };
+}
+
+test("after a restart a child that waited for a job gets the job back as lost, not as a final answer", async t => {
+	const { live, parent, root } = await outerWithJob(t, fakeJobs(), () => "started the job, waiting");
+	const restored = await restarted(parent, root, afterRestart, fakeJobs(0));
+	const answer = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.deepEqual(answer.details.results.map((item: any) => item.text.split("\n\n")[0]), ["restarted it"]);
+	assert.equal(textsMentioning(restored.requests[0], "lost"), 1);
+	restored.runtime.close(); live.runtime.close();
+	await settle();
+});
+
+test("a job result saved in the inbox before the crash comes back as that result, not as lost", async t => {
+	const jobs = fakeJobs();
+	const { live, parent, root } = await outerWithJob(t, jobs, context => JSON.stringify(context.messages).includes("job answer") ? new Promise<never>(() => {}) : "started the job, waiting");
+	jobs.finish("job answer");
+	await until(() => live.requests.length === 3);
+	await crashAfter(parent, inboxEntry);
+	const restored = await restarted(parent, root, context => JSON.stringify(context.messages).includes("lost") ? "wrongly lost" : "got it", fakeJobs(0));
+	const answer = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.deepEqual(answer.details.results.map((item: any) => item.text.split("\n\n")[0]), ["got it"]);
+	assert.equal(textsMentioning(restored.requests[0], "job answer"), 1);
+	restored.runtime.close(); live.runtime.close();
+	await settle();
+});
+
+test("an automatic result in the inbox of another branch does not hide the ready answer of the selected one", async t => {
+	const { live, gate, parent } = await outerWithHelper(t, stuckAfterAnswer, true);
+	gate.resolve("nested answer");
+	await until(() => outerRequests(live).length === 3);
+	await crashAfter(parent, nestedDone);
+	const { file, lines } = await childLines(parent);
+	const done = lines.find(nestedDone);
+	// The same result sits in the inbox of a sibling branch that the session does not select.
+	const sibling = { type: "custom", id: "sibling-inbox", parentId: lines[0].id, timestamp: done.timestamp, customType: "rqw-agent-inbox",
+		data: { version: 1, id: "sibling", message: { customType: "rqw-auto-wait-results", content: "{}", display: false, details: { batch: "sibling", results: [{ id: "agent#1", run: done.data.result.run }] } } } };
+	// Pi selects the last entry of the file as the leaf, so the sibling goes before it.
+	await writeFile(file, `${[...lines.slice(0, -1), sibling, lines.at(-1)].map(entry => JSON.stringify(entry)).join("\n")}\n`);
+	const restored = await restarted(parent, parent.getSessionFile()!.replace(/\/[^/]+$/, ""), afterRestart);
+	const answer = await restored.execute({ action: "wait", ids: ["agent#1"] });
+	assert.deepEqual(answer.details.results.map((item: any) => item.text.split("\n\n")[0]), ["all done"]);
+	assert.equal(textsMentioning(restored.requests[0], "nested answer"), 1);
+	restored.runtime.close(); live.runtime.close();
+	await settle();
+});
+
+test("a job result that an explicit wait returned before the crash is not reported as lost", async t => {
+	const { live, parent, root } = await outerWithJob(t, fakeJobs(), () => "started the job, waiting");
+	const { file, lines } = await childLines(parent);
+	const last = lines.at(-1);
+	const waited = { type: "message", id: "job-wait-result", parentId: last.id, timestamp: last.timestamp,
+		message: { role: "toolResult", toolCallId: "job-wait", toolName: "job", isError: false, timestamp: 1,
+			content: [{ type: "text", text: "job#1 exited" }], details: { results: [{ id: "job#1", state: "exited", result: "job answer" }] } } };
+	await writeFile(file, `${[...lines, waited].map(entry => JSON.stringify(entry)).join("\n")}\n`);
+	const restored = await restarted(parent, root, () => "wrongly lost", fakeJobs(0));
+	await restored.execute({ action: "status", ids: ["agent#1"] });
+	await settle();
+	assert.equal(restored.requests.length, 0, "nothing is lost, so the child is not woken");
+	restored.runtime.close(); live.runtime.close();
+	await settle();
+});
