@@ -473,7 +473,7 @@ it("a cancelled force-send still marks its interrupted reply, without replaying 
 	assert.deepEqual(h.entries, [{ timestamp: 55, unsent: true }]);
 	const request = { messages: [{ role: "assistant", content: [{ type: "text", text: "half" }], stopReason: "aborted", timestamp: 55 }] };
 	assert.deepEqual(h.fire("context_with_system", request), [undefined], "an unsent reply is not replayed");
-	h.manager.getEntries = () => [{ type: "custom", customType: "rqw-send-now", data: { timestamp: 55, unsent: true } }];
+	Object.assign(h.manager, { getEntries: () => [{ type: "custom", customType: "rqw-send-now", data: { timestamp: 55, unsent: true } }] });
 	h.fire("session_start");
 	assert.doesNotMatch(new AssistantMessageComponent(request.messages[0] as any).render(80).join("\n"), /Operation aborted/);
 });
@@ -524,7 +524,7 @@ it("an interrupted reply loses its Operation aborted row, others keep it, and th
 	assert.deepEqual(h.entries, [{ timestamp: 77 }]);
 	const replay = h.fire("context_with_system", { messages: [{ ...aborted(77), stopReason: "aborted" }] })[0] as { messages: { stopReason: string }[] };
 	assert.equal(replay.messages[0].stopReason, "stop", "a sent reply is replayed to the model as finished");
-	h.manager.getEntries = () => [{ type: "custom", customType: "rqw-send-now", data: { timestamp: 99 } }];
+	Object.assign(h.manager, { getEntries: () => [{ type: "custom", customType: "rqw-send-now", data: { timestamp: 99 } }] });
 	h.fire("session_start");
 	assert.doesNotMatch(drawn(aborted(99)), /Operation aborted/);
 	assert.match(drawn(aborted(77)), /Operation aborted/);
