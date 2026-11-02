@@ -186,12 +186,13 @@ describe("setup profile", () => {
 		});
 	}
 
-	it("does not mark setup done when an extension is filtered out", async () => {
+	it("applies setup when an optional extension is filtered out", async () => {
 		writeFileSync(file(), JSON.stringify({ theme: "dark" }));
-		const { notices, start, stop } = await load({ omit: "RQW-tools" });
-		assert.deepEqual(read(), { theme: "dark" });
+		const { manager, notices, start, stop } = await load({ omit: "RQW-review" });
+		assert.deepEqual(read(), { ...EXPECTED, rqwSetupVersion: 1 });
+		assert.equal(manager.getThemeSetting(), "RQW-theme");
 		start();
-		assert.match(notices.join("\n"), /RQW-tools/);
+		assert.doesNotMatch(notices.join("\n"), /setup profile was not applied/);
 		stop();
 	});
 

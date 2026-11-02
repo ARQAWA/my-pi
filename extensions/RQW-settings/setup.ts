@@ -72,7 +72,7 @@ function managerShapeOk(manager: unknown): manager is Manager {
 		&& typeof m.applyOverrides === "function";
 }
 
-/** Whether every extension of this package and the profile's theme are loaded; names what is missing. */
+/** Check this loader owns the settings extension and the profile's theme is loaded. */
 function missingParts(loader: Loader, profile: Profile): string[] | undefined {
 	if (typeof loader?.getExtensions !== "function" || typeof loader.getThemes !== "function") throw new Error("Pi resource loader shape changed");
 	const extensions = loader.getExtensions()?.extensions;
@@ -83,9 +83,7 @@ function missingParts(loader: Loader, profile: Profile): string[] | undefined {
 	}
 	const loaded = new Set(extensions.map(extension => real(extension.path)));
 	if (!loaded.has(real(OWN_ENTRY))) return undefined;
-	const root = resolve(DIR, "..", "..");
-	const manifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { pi?: { extensions?: string[] } };
-	const missing = (manifest.pi?.extensions ?? []).filter(entry => !loaded.has(real(resolve(root, entry))));
+	const missing: string[] = [];
 	const theme = profile.settings.theme;
 	if (typeof theme === "string" && !themes.some(item => item.name === theme)) missing.push(`theme ${theme}`);
 	return missing;
