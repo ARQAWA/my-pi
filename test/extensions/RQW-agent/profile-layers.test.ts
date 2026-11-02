@@ -123,6 +123,29 @@ test("root to cwd layers override and inherit missing metadata", async (t) => {
 	run.live.close();
 });
 
+test("a broken upper role file does not hide the working role below it, and alone it stays an error", async (t) => {
+	const w = await world(t);
+	await w.put("codex/agents/shared.toml", role("shared", "lower text"));
+	await w.put("project/.pi/agents/shared.toml", role("shared", "upper text"));
+	await w.put("project/.pi/agents/alone.toml", "not = [valid");
+	const run = runtime(w.cwd, w.base);
+	await run.emit("session_start");
+	const roles = () => run.description().split("\n").find(line => line.startsWith("shared: "))!;
+	assert.match(roles(), /^shared: upper text;/);
+	// Corrupting the upper file is picked up by the next agent_type start, which falls back to the lower role.
+	await w.put("project/.pi/agents/shared.toml", "not = [valid");
+	await run.execute({ action: "start", task: "t", agent_type: "shared", tools: [] });
+	await run.live.wait(new AbortController().signal);
+	assert.match(run.systemOf("t"), /lower text rules/);
+	assert.match(roles(), /^shared: lower text;/);
+	assert.doesNotMatch(roles(), /unavailable|invalid profile/);
+	// A broken role with nothing below it is still unavailable.
+	const alone = run.description().split("\n").find(line => line.startsWith("alone: "))!;
+	assert.match(alone, /unavailable: Invalid TOML syntax or UTF-8.*invalid profile/);
+	await assert.rejects(run.execute({ action: "start", task: "x", agent_type: "alone", tools: [] }), /Invalid agent_type alone/);
+	run.live.close();
+});
+
 test("Pi's .pi profiles keep their own project root; only .codex layers follow Codex's markers", async (t) => {
 	const w = await world(t);
 	await w.put("project/.pi/agents/root-pi.toml", role("root-pi", "root pi"));
