@@ -22,7 +22,7 @@ import { renderAgentResult } from "./render.ts";
 import { forkBranch } from "./fork.ts";
 import { forkPayloads, type ForkPayload } from "./fork-payload.ts";
 import { AUTO_RESULTS, type AutoSource, backgroundIds, backgroundLive, backgroundReady, takeBackground, untilBackgroundChange } from "./background.ts";
-import { INBOX_ENTRY, LOST_TEXT, lostIds, markedIds, WAITING_ENTRY } from "./waiting.ts";
+import { INBOX_ENTRY, LOST_TEXT, lostIds, markedIds, unsavedIds, WAITING_ENTRY } from "./waiting.ts";
 import { continueOnLength, isContinuedCut } from "./length-continue.ts";
 import { installCutLine } from "./cut-line.ts";
 import { registerHerdrActivity } from "./herdr-state.ts";
@@ -1234,12 +1234,16 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		let lastPushed = 0;
 		// The live ids this child last said it waits for; a restart reads them back (see waiting.ts).
 		let marked = JSON.stringify(markedIds(session.sessionManager.getBranch()));
-		const mark = (sources: AutoSource[]) => {
-			const ids = backgroundIds(sources);
+		const mark = (sources: AutoSource[], keep: string[] = []) => {
+			const ids = [...new Set([...keep, ...backgroundIds(sources)])];
 			if (JSON.stringify(ids) === marked) return;
 			session.sessionManager.appendCustomEntry(WAITING_ENTRY, { version: 1, ids });
 			marked = JSON.stringify(ids);
 		};
+		// A job or helper started in the middle of a turn is marked at once, so a restart or reload there finds it lost instead of forgetting it.
+		// Ids already marked stay until their result is saved in the inbox (the loop below drops the rest).
+		const markStarted = (event: true | null) => { if (event) mark(backgroundSources(a), unsavedIds(session.sessionManager.getBranch())); };
+		const stopMarking = backgroundSources(a).map(source => source.subscribe(markStarted));
 		const run: NonNullable<Agent["run"]> = { done: Promise.resolve(), quiet: false, controller: new AbortController() };
 		a.guard.signal = AbortSignal.any([run.controller.signal, signal]);
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -1375,6 +1379,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			} finally {
 				a.progress.invalidate();
 				unsubscribe();
+				for (const stop of stopMarking) stop();
 				started.resolve();
 				// The abort can end this loop while a child-woken native run still streams (a tool ignoring abort):
 				// Pi would reject a new prompt then, so pending sends wait for it. This run stays current meanwhile.

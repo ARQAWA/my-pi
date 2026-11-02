@@ -6,7 +6,7 @@ export const INBOX_ENTRY = "rqw-agent-inbox";
 /** `{ version: 1, ids }`: the live ids the child waits for, saved when it starts waiting and after every delivery. */
 export const WAITING_ENTRY = "rqw-agent-waiting";
 
-export const LOST_TEXT = "Pi restarted; this work ended without a result.";
+export const LOST_TEXT = "Pi restarted or reloaded; this work ended without a result.";
 
 const resultIds = (details: unknown): string[] => {
 	const results = (details as { results?: unknown } | undefined)?.results;
@@ -23,10 +23,10 @@ const idsOf = (entry: SessionEntry | undefined): string[] => entry?.type === "cu
 export const markedIds = (branch: readonly SessionEntry[]): string[] => idsOf(branch[markerAt(branch)]);
 
 /**
- * The ids of the last waiting marker that are gone: not alive now, and not named in a result saved after the marker
- * (a result in the inbox, in a custom message or in a successful wait result counts; hydration already published the finished ones). Their work ended with the old process.
+ * The ids of the last waiting marker whose result is not saved after the marker
+ * (a result in the inbox, in a custom message or in a successful wait result counts; hydration already published the finished ones).
  */
-export function lostIds(branch: readonly SessionEntry[], alive: (id: string) => boolean): string[] {
+export function unsavedIds(branch: readonly SessionEntry[]): string[] {
 	const at = markerAt(branch);
 	if (at < 0) return [];
 	const saved = new Set<string>();
@@ -38,5 +38,8 @@ export function lostIds(branch: readonly SessionEntry[], alive: (id: string) => 
 		else if (entry.type === "custom" && entry.customType === INBOX_ENTRY)
 			for (const id of resultIds((entry.data as { message?: { details?: unknown } } | undefined)?.message?.details)) saved.add(id);
 	}
-	return idsOf(branch[at]).filter(id => !alive(id) && !saved.has(id));
+	return idsOf(branch[at]).filter(id => !saved.has(id));
 }
+
+/** The unsaved ids that are not alive now: their work ended with the old process. */
+export const lostIds = (branch: readonly SessionEntry[], alive: (id: string) => boolean): string[] => unsavedIds(branch).filter(id => !alive(id));
