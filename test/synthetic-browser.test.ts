@@ -8,6 +8,8 @@ import { after, it, type TestContext } from "node:test";
 import WebSocket from "ws";
 import { call, keys, reportTimings, text, world } from "./synthetic/world.ts";
 
+const stockRequest = http.request;
+
 after(() => {
 	reportTimings(import.meta.filename);
 	assert.equal("mock" in http.request, false, "a test left its websocket route behind");
@@ -105,8 +107,9 @@ function fakeBrowserEndpoint(t: TestContext) {
 	return {
 		commands, endpoints,
 		install() {
-			const mocked = t.mock.method(http, "request", upgrade as never);
-			restore = () => mocked.mock.restore();
+			const request = http.request;
+			http.request = upgrade as never;
+			restore = () => { http.request = request; };
 			syncBuiltinESMExports();
 		},
 	};
@@ -165,4 +168,8 @@ it("a tab that was never opened is refused and close leaves the attached Chrome 
 	assert.match(toolResultText(w, "b3"), /closed/);
 	assert.doesNotMatch(toolResultText(w, "b4"), /docs/);
 	assert.equal(chrome.commands.some((command) => command === "Browser.close" || command === "Target.closeTarget"), false);
+});
+
+it("restores the network function after the browser scenarios", () => {
+	assert.equal(http.request, stockRequest);
 });

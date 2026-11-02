@@ -22,7 +22,7 @@ export async function runCheck(args, run) {
     while (i + 1 < args.length && !args[i + 1].startsWith("--")) paths.push(args[++i]);
   }
   const jobs = [run("lint", ["run", "lint"]), paths.length
-    ? run("test", ["exec", "--", "node", "--test", "--experimental-test-isolation=none", ...paths])
+    ? run("test", ["exec", "--", "node", "--test", "--experimental-test-isolation=none", "--test-reporter=./scripts/test-reporter.mjs", ...paths])
     : run("test", ["test"])];
   if (typecheck) jobs.push(run("typecheck", ["run", "typecheck"]));
   const results = await Promise.allSettled(jobs);

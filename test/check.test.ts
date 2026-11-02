@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { run, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { runCheck } from "../scripts/check.mjs";
+import report from "../scripts/test-reporter.mjs";
 
 test("check starts lint and full tests together and waits for both after failure", async () => {
   const jobs = new Map();
@@ -25,7 +28,7 @@ test("check passes only requested test paths and accepts successful jobs", async
   }), 0);
   assert.deepEqual(jobs, [
     ["lint", ["run", "lint"]],
-    ["test", ["exec", "--", "node", "--test", "--experimental-test-isolation=none", "test/a*.test.ts", "test/b.test.ts", "test/c.test.ts"]],
+    ["test", ["exec", "--", "node", "--test", "--experimental-test-isolation=none", "--test-reporter=./scripts/test-reporter.mjs", "test/a*.test.ts", "test/b.test.ts", "test/c.test.ts"]],
   ]);
 });
 
@@ -48,9 +51,30 @@ test("check rejects unsupported or incomplete options before starting jobs", asy
   }
 });
 
+test("check fails when the test job fails", async () => {
+  assert.equal(await runCheck([], async name => name === "test" ? 1 : 0), 1);
+});
+
 test("check reports a rejected job after its sibling finishes", async () => {
   assert.equal(await runCheck([], async name => {
     if (name === "lint") throw new Error("launch failed");
     return 0;
   }), 1);
+});
+
+test("a failing root after hook makes the test process fail", async () => {
+  const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  assert.match(manifest.scripts.test, /(?:^|\s)--test-reporter=\.\/scripts\/test-reporter\.mjs(?:\s|$)/);
+  const previousExitCode = process.exitCode;
+  try {
+    process.exitCode = 0;
+    const files = [fileURLToPath(new URL("./fixtures/failing-after.mjs", import.meta.url))];
+    const tests = run({ files, isolation: "none" });
+    let output = "";
+    for await (const chunk of report(tests)) output += chunk;
+    assert.match(output, /cleanup failed/);
+    assert.equal(process.exitCode, 1);
+  } finally {
+    process.exitCode = previousExitCode;
+  }
 });

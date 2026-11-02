@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test --experimental-test-isolation=none \"test/extensions/*/*.test.ts\" \"test/*.test.ts\" \"pcli-vscode/test/*.test.mjs\"",
+    "test": "node --test --experimental-test-isolation=none --test-reporter=./scripts/test-reporter.mjs \"test/extensions/*/*.test.ts\" \"test/*.test.ts\" \"pcli-vscode/test/*.test.mjs\"",
     "lint": "oxlint --config .oxlintrc.json extensions test .pi",
     "knip": "knip --config knip.config.mjs --cache --no-progress --reporter compact --max-show-issues 20",
     "check": "node scripts/check.mjs",

@@ -9,6 +9,9 @@ import { writeFileSync } from "node:fs";
 import * as zlib from "node:zlib";
 import { call, reportTimings, text, world } from "./synthetic/world.ts";
 
+const stockRequest = https.request;
+const stockFetch = globalThis.fetch;
+
 after(() => {
 	reportTimings(import.meta.filename);
 	assert.equal("mock" in globalThis.fetch, false, "a test left its fetch route behind");
@@ -144,4 +147,9 @@ it("without a saved Codex login the call fails with the login hint and nothing g
 	assert.match(toolResultText(w, "w1"), /0 ok, 1 failed.*authentication_failed.*\/login openai-codex/s);
 	assert.deepEqual(backend.upgrades, []);
 	assert.deepEqual(backend.rounds, []);
+});
+
+it("restores the network functions after the web scenarios", () => {
+	assert.equal(https.request, stockRequest);
+	assert.equal(globalThis.fetch, stockFetch);
 });
