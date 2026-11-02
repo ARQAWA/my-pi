@@ -17,7 +17,7 @@ async function session() {
 }
 after(async () => { for (const dir of folders) await rm(dir, { recursive: true, force: true }); });
 
-const base = { action: "run", actions: ["press Z"], expected: "Done" };
+const base = { action: "run", actions: ["press Z"], expected: "Done", record: false };
 
 it("opens a local html file as a file address in a new run tab", async () => {
 	const cwd = await session();

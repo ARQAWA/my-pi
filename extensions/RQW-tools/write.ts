@@ -1,3 +1,4 @@
+import path from "node:path";
 import { Type } from "typebox";
 import { lockPathKey, writePathKeys } from "./keys.ts";
 import { abortable, withFileLock } from "./lock.ts";
@@ -39,7 +40,13 @@ export function prepareWriteArguments(input: any): any {
 	return files === input.files ? input : { ...input, files };
 }
 
-const isInside = (outer: string, inner: string) => inner.startsWith(outer.endsWith("/") ? outer : outer + "/");
+function isInside(outer: string, inner: string): boolean {
+	if (path.sep === "\\") {
+		outer = outer.replaceAll("\\", "/");
+		inner = inner.replaceAll("\\", "/");
+	}
+	return inner.startsWith(outer.endsWith("/") ? outer : outer + "/");
+}
 
 export async function executeWrite(stockExecute: any, id: string, params: any, signal: any, onUpdate: any, ctx: any, cwd: string) {
 	const base = ctx?.cwd || cwd;
