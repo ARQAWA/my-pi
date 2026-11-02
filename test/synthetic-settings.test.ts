@@ -1,7 +1,15 @@
+import assert from "node:assert/strict";
 import { after, it } from "node:test";
 import { keys, reportTimings, world } from "./synthetic/world.ts";
 
 after(() => reportTimings(import.meta.filename));
+
+it("starts with codemode and tool_search enabled", async (t) => {
+	const w = await world(t);
+	const tools = w.session.getActiveToolNames();
+	assert.ok(tools.includes("codemode"));
+	assert.ok(tools.includes("tool_search"));
+});
 
 it("shows GPT Fast on Codex", async (t) => {
 	const state = (globalThis as Record<symbol, { on: boolean } | undefined>)[Symbol.for("rqw-settings/fast-gpt")];

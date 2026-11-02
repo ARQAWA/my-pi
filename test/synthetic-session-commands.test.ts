@@ -64,6 +64,27 @@ it("/remove asks first and answering No keeps the session file and the chat", as
 	w.notSee("Delete this session?");
 });
 
+it("/remove with Yes starts a fresh chat and deletes only the session file", async (t) => {
+	const w = await world(t);
+	w.model.script(text("an answer"));
+	await w.submit("a question");
+	const file = w.sessionFile!;
+	const children = `${file}.children`;
+	mkdirSync(children, { recursive: true });
+	w.processes.reply((call) => call.command === "trash" && call.args[0] === file, { code: 1, stderr: "unavailable" });
+
+	w.type("/remove");
+	w.press(keys.enter);
+	await w.until(() => w.screen().join("\n").includes("Delete this session?"), "the question shows");
+	w.press(keys.down);
+	w.press(keys.enter);
+	await w.until(() => w.sessionFile !== file && !existsSync(file), "fresh chat and deleted file");
+	await shows(w, "Session deleted");
+	assert.ok(existsSync(children), "the child tree stays");
+	assert.deepEqual(w.processes.calls.filter((call) => call.command === "trash").map((call) => call.args), [[file]]);
+	assert.deepEqual(w.processAttempts, []);
+});
+
 it("/cleanup removes a child tree whose session file is gone and keeps live trees and the current one", async (t) => {
 	const w = await world(t);
 	w.model.when(isTask("count files"), text("three"));
