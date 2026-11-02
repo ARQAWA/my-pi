@@ -27,6 +27,7 @@ export function withScanned<T extends SkillLike>(given: readonly T[], scanned: r
 export function orderSameName<T extends SkillLike & { sourceInfo?: { scope?: string } }>(skills: readonly T[], roots: readonly SkillRoot[]): T[] {
 	const groups = new Map<string, T[]>();
 	for (const skill of skills) groups.set(skill.name, [...(groups.get(skill.name) ?? []), skill]);
-	const rank = (skill: T) => mergeRank(scopeOf(skill.filePath, roots, skill.sourceInfo?.scope));
+	const scope = scopeOf(roots);
+	const rank = (skill: T) => mergeRank(scope(skill.filePath, skill.sourceInfo?.scope));
 	return [...groups.values()].flatMap(group => group.sort((a, b) => rank(a) - rank(b) || byteOrder(a.filePath, b.filePath)));
 }

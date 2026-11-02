@@ -29,10 +29,7 @@ export interface CodexContext {
 	cwd: string;
 	env: Env;
 	/** The user config: the layer that sets `project_root_markers` and trust. */
-	base: Table;
 	user: Table;
-	markers: string[];
-	root: string;
 	/** Directories from the project root down to cwd, inclusive. */
 	dirs: string[];
 	/** Active-project trust of cwd (cwd entry first, then the main checkout). */
@@ -192,8 +189,7 @@ export function loadContext(cwdInput: string, env: Env): CodexContext {
 	const cwd = resolve(cwdInput);
 	// Administrative and managed Codex config is not supported: only the user config is read.
 	const user = readToml(join(env.codexHome, "config.toml"));
-	const base = user;
-	const markers = rootMarkers(base);
+	const markers = rootMarkers(user);
 	const chain = ancestors(cwd);
 	const rootFor = (strict: boolean) => (markers.length === 0 ? undefined : chain.find(dir => markers.some(marker => markerFound(dir, marker, strict)))) ?? cwd;
 	const upTo = (root: string) => chain.slice(0, chain.indexOf(root) + 1).reverse();
@@ -203,7 +199,7 @@ export function loadContext(cwdInput: string, env: Env): CodexContext {
 	const repoRoot = trustRoot(cwd);
 
 	// Trust comes from the user config, with the layer root of the config loader.
-	const entries = projectEntries(base);
+	const entries = projectEntries(user);
 	const trustOf = (dir: string): Trust =>
 		layerTrust(entries, trustKeys(dir)) ?? layerTrust(entries, trustKeys(layerRoot))
 		?? (repoRoot === undefined ? undefined : layerTrust(entries, trustKeys(repoRoot)));
@@ -217,7 +213,7 @@ export function loadContext(cwdInput: string, env: Env): CodexContext {
 		const trusted = trustOf(dir) === "trusted";
 		layers.push({ dir, folder, trusted, config: trusted ? readToml(join(folder, "config.toml")) : {} });
 	}
-	let effective = base;
+	let effective = user;
 	for (const layer of layers) if (layer.trusted) effective = mergeTables(effective, layer.config);
-	return { cwd, env, base, user, markers, root, dirs, trust: active, layers, effective };
+	return { cwd, env, user, dirs, trust: active, layers, effective };
 }

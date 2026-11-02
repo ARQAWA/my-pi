@@ -59,10 +59,13 @@ export function skillSettings(effective: Table): SkillSettings {
 }
 
 /** Scope of a skill file: the Codex root that holds it, else Pi's own scope. */
-export function scopeOf(filePath: string, roots: readonly SkillRoot[], piScope?: string): Scope {
-	const path = real(filePath);
-	const holder = roots.filter(root => path.startsWith(real(root.path) + sep)).sort((a, b) => b.path.length - a.path.length)[0];
-	return holder?.scope ?? (piScope === "project" ? "repo" : "user");
+export function scopeOf(roots: readonly SkillRoot[]): (filePath: string, piScope?: string) => Scope {
+	const resolved = roots.map(root => ({ ...root, realPath: real(root.path) }));
+	return (filePath, piScope) => {
+		const path = real(filePath);
+		const holder = resolved.filter(root => path.startsWith(root.realPath + sep)).sort((a, b) => b.path.length - a.path.length)[0];
+		return holder?.scope ?? (piScope === "project" ? "repo" : "user");
+	};
 }
 
 const RANK: Record<Scope, number> = { system: 0, admin: 1, repo: 2, user: 3 };
@@ -77,20 +80,28 @@ type Budgeted = SkillLike & { disableModelInvocation?: boolean };
 // Codex's catalog line and its cost: `ceil(bytes / 4)` tokens of the line and its newline (core-skills render.rs).
 const lineOf = (skill: SkillLike, description: string) =>
 	description ? `- ${skill.name}: ${description} (file: ${skill.filePath})` : `- ${skill.name}: (file: ${skill.filePath})`;
-const costIn = (unit: "tokens" | "chars") => (text: string) =>
-	unit === "tokens" ? Math.ceil(Buffer.byteLength(`${text}\n`) / 4) : Array.from(`${text}\n`).length;
+const sizeIn = (unit: "tokens" | "chars") => (text: string) =>
+	unit === "tokens" ? Buffer.byteLength(text) : Array.from(text).length;
+const costOf = (unit: "tokens" | "chars", size: number) => unit === "tokens" ? Math.ceil(size / 4) : size;
 
 /**
  * Fits skills into `limit` tokens (or characters, Codex's fallback when no window is known) with its per-line budget: full lines, else descriptions shrink round-robin,
  * else skills are omitted from the end. Skills Pi does not render (`disableModelInvocation`) cost nothing and stay.
  */
 export function fitBudget<T extends Budgeted>(skills: T[], limit: number, unit: "tokens" | "chars" = "tokens"): T[] {
-	const cost = costIn(unit);
+	const size = sizeIn(unit);
 	const visible = skills.filter(skill => !skill.disableModelInvocation);
 	if (visible.length === 0) return skills;
 	const chars = visible.map(skill => Array.from(truncated(skill.description)));
 	const full = chars.map(list => list.length);
-	const lineCost = (index: number, count: number) => cost(lineOf(visible[index], chars[index].slice(0, count).join("")));
+	// A line is its empty-description size plus, with a description, the prefix and one space; prefix sizes are summed once.
+	const empty = visible.map(skill => size(`${lineOf(skill, "")}\n`));
+	const prefixes = chars.map(list => {
+		const sizes = [0];
+		for (const char of list) sizes.push(sizes[sizes.length - 1] + size(char));
+		return sizes;
+	});
+	const lineCost = (index: number, count: number) => costOf(unit, empty[index] + (count === 0 ? 0 : prefixes[index][count] + 1));
 	const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 	let counts: number[];
 	if (sum(full.map((count, index) => lineCost(index, count))) <= limit) counts = full;
