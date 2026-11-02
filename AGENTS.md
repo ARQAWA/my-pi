@@ -85,7 +85,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   scope and limitation: [RQW-models README](extensions/RQW-models/README.md). `/rqw-models` and stock picker restrictions stay.
   Only listed models can be selected or requested; Pi's stock model lists are empty (`DECISIONS.md` Models, owner quotes/carriers).
   Disable separately in `pi config`. Tests: `npm test`.
-- `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery, nothing else (no
+- `extensions/RQW-anthropic/`: extension 9, Anthropic subscription transport with OAuth recovery, quota, context fork and retry warning (no
   provider hiding: that is extension 14). Toggle, migration and limits:
   `extensions/RQW-anthropic/README.md`. Tests: `test/extensions/RQW-anthropic/`.
 - `extensions/RQW-scroll/`: extension 10, Escape in the fullscreen view returns a scrolled-up transcript to the latest

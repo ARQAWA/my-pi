@@ -1344,10 +1344,10 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Надо за реверс разобраться, как Cloud Code получает эти данные, и сделать такую же штуку в нашем Cloud Code провайдере».
   Reason: acquire subscription quota directly through our existing provider credentials on every workstation,
   without an installed/running Claude Code or its statusLine. The delegated implementation requirement keeps
-  display/color decisions out, forbids auth writes and token-generating requests, and gives the later UI its own
-  five-minute cadence. Carrier: `extensions/RQW-anthropic/quota.ts`, the public `pi.events`
+  display/color decisions out and forbids auth writes and token-generating requests. RQW-statusbar owns the
+  three-minute cadence and shared file cache. Carrier: `extensions/RQW-anthropic/quota.ts`, the public `pi.events`
   `rqw-anthropic:quota:v1` offer boundary.
-  The provider reads only its bound Pi credential store, caches successful percentage/reset windows, and sends
+  The provider reads only its bound Pi credential store, projects the weekly window, and sends
   nothing until a consumer explicitly refreshes. No new dependency, scheduler, option or setting. Primary
   Claude Code 2.1.310 source and a sanitized authorized read-only HTTP 200 establish the protocol; this is an
   undocumented client endpoint, not a public API guarantee.
@@ -1369,8 +1369,8 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Reference (TTL, timing, pricing, Pi's prospective warmer-cost limitation): `extensions/RQW-anthropic/README.md`,
   Prompt cache. Since: `ebf7bc1`.
 - **Isolated extension** `[D-ANTHROPIC-EXT]`. `extensions/RQW-anthropic/`, listed in `package.json`, owns transport and
-  OAuth recovery only; provider visibility is [Providers](#providers). Disable and reload unregisters only its overlay and
-  restores in-memory hooks; no node_modules edits or credential deletion. Coordinator text (owner quote C:3046, an omp
+  OAuth recovery, quota, context fork and retry warning; provider visibility is [Providers](#providers). Disable and reload unregisters only its overlay and
+  restores in-memory hooks; no node_modules edits or credential deletion. Owner quote (C:3046, an omp
   session, not found in the Pi sessions): "они должны быть полностью изолированы, самодостаточны, чтобы мы могли включать и выключать, как feature флаги". Toggle and migration: `extensions/RQW-anthropic/README.md`. Since: `8a1f2ed`.
 - **Login and omp wire** `[D-ANTHROPIC-WIRE]`. The overlay keeps Pi's catalog and parser, delegates Pi's PKCE
   browser/copy-code login, and uses omp's refresh endpoint and headers, CLI billing block, original system role and
@@ -1379,7 +1379,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   checksum (98 captured blocks, none with `cch`). Owner: «Этот варик принимаю на 1сп делай»; evidence:
   `my-pi-evidence/claude-code-reverse/{opus,sonnet,opus-2.1.301}/`, `my-pi-evidence/opencode-claude/REPORT.md`
   section «Улучшения за 1 SP». MIT attribution: `THIRD-PARTY-NOTICES.md`; no installed fork code is copied. Subscription
-  acceptance and billing, account rotation and all omp SDK headers are not claimed. Coordinator text (owner quotes C:3133,
+  acceptance and billing, account rotation and all omp SDK headers are not claimed. Owner quotes (C:3133,
   an omp session, not found in the Pi sessions): "чтобы он был такой же, как в OMP, чтобы у него был self-healing";
   "И чтобы можно было через него авторизоваться". Since: `071df1e`.
 - **Bounded refresh and replay** `[D-ANTHROPIC-REFRESH]`. `auth.ts` refreshes under Pi's runtime credential-store lock,
@@ -1393,10 +1393,11 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   `git:github.com/edxeth/pi-claude-auth` with official `pi remove` in its installed scope, then installs or updates my-pi;
   no confirmation needed. `auth.json` and unrelated packages and settings stay; old explicit `-e` arguments are omitted
   on the next launch. Another competing adapter must be switched off; mixed configurations are not supported
-  (`registration.ts` rejects a competing overlay). Coordinator text (owner quote not found in the Pi sessions): "Просто старый адаптер выкидываешь, который есть уже, и ставишь наш адаптер". Carrier: `INSTALL.md`, `extensions/RQW-anthropic/`.
+  (`registration.ts` rejects a competing overlay). Owner quote (not found in the Pi sessions): "Просто старый адаптер выкидываешь, который есть уже, и ставишь наш адаптер". Carrier: `INSTALL.md`, `extensions/RQW-anthropic/`.
   Since: `9ef1519`.
 - **Proof boundary** `[D-ANTHROPIC-PROOF]`. Tests: `test/extensions/RQW-anthropic/adapter.test.ts`,
-  `test/extensions/RQW-anthropic/quota.test.ts`. They do not prove live subscription acceptance, billing or actual
+  `test/extensions/RQW-anthropic/quota.test.ts`, `test/extensions/RQW-anthropic/retry.test.ts`,
+  `test/extensions/RQW-anthropic/context-fork.test.ts`. They do not prove live subscription acceptance, billing or actual
   Windows execution. The status of old Claude benchmark campaigns is recorded once in
   [Work policy](#work-policy). Independent review follows `PROCESS.md`. Since: `8a1f2ed`.
 - **Header boundary, per-request version** `[D-ANTHROPIC-HEADERS]`. Engineering follow-up to four review findings:
@@ -1678,7 +1679,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
 ## Anthropic package integration
 
 - **Package integration** `[D-ANTHROPIC-PKG]`. Coordinator integration brief (C:3376), not an owner quotation:
-  RQW-anthropic is the ninth of the fourteen `pi.extensions` entries; package fixtures use fake authenticated allowed
+  RQW-anthropic is the ninth of the 30 `pi.extensions` entries; package fixtures use fake authenticated allowed
   providers, not a visibility bypass. Proof boundary:
   `[D-ANTHROPIC-PROOF]`. Since: `071df1e`.
 

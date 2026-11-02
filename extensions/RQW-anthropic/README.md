@@ -89,21 +89,17 @@ The client requires `user:inference` and `user:profile`; normal Pi login request
 credentials may lack them. A rejected grant stays an explicit error, with no fallback or automatic login.
 
 A later consumer emits `pi.events.emit("rqw-anthropic:quota:v1", { sessionId, offer(access) { ... } })`.
-The matching owning session synchronously offers `{ read, refresh }`. There is no offer when this extension
-is disabled, disposed, or belongs to another session. `read()` returns a copy of the last successful snapshot,
-or `undefined`. `refresh(signal?)` makes one quota GET with a five-second deadline and returns
-`{ fetchedAt, windows }`. Window names match the native response; each non-null window has
+The matching owning session synchronously offers `{ refresh }`. There is no offer when this extension
+is disabled, disposed, or belongs to another session. `refresh(signal?)` makes one quota GET with a five-second
+deadline and returns `{ fetchedAt, windows }`. Only `seven_day` is projected. Its non-null window has
 `{ utilization, remainingPercent, resetsAt }`, with nullable percentage/reset data preserved. Remaining
 percent is `max(0, 100 - utilization)`. Reset strings come from the server, without invented boundaries.
-Only the seven native percentage windows are projected; financial and auxiliary limits data is not exposed.
 
-Loading, offering and reading this boundary send no requests. The consumer owns the intended five-minute
-cadence; this provider has no timer. Refresh errors reject with a sanitized `QuotaError`: `kind` is `auth`,
-`http`, `response` or `network`; HTTP errors carry `status` and optional raw `retryAfter`. They do not erase
-or re-date the last successful snapshot. Callers must use `fetchedAt` to distinguish cached data from a fresh
-result. Upstream bodies and credential values are never exposed. Abort cancels this quota read; provider
-disposal aborts pending reads and clears the cache. A late earlier refresh cannot overwrite a newer successful result.
-No statusbar display, colors, scheduler, options or settings are added here.
+Loading and offering this boundary send no requests. RQW-statusbar owns the shared file cache and its
+three-minute cadence; this provider has no timer. Refresh errors reject with a sanitized `QuotaError`: `kind` is
+`auth`, `http`, `response` or `network`; HTTP errors carry `status` and optional raw `retryAfter`.
+Upstream bodies and credential values are never exposed. Abort cancels this quota read; provider disposal
+aborts pending reads. No statusbar display, colors, scheduler, options or settings are added here.
 
 ## One-shot context fork
 
@@ -223,4 +219,5 @@ Recovery hooks preserve native `stream` versus `streamSimple` options and OAuth 
 recovery is guarded; native summary retry is not wrapped. Unrelated SDK runtimes retain stock Pi behavior.
 
 Attribution: `THIRD-PARTY-NOTICES.md`.
-Tests: `test/extensions/RQW-anthropic/adapter.test.ts`, `test/extensions/RQW-anthropic/quota.test.ts`.
+Tests: `test/extensions/RQW-anthropic/adapter.test.ts`, `test/extensions/RQW-anthropic/quota.test.ts`,
+`test/extensions/RQW-anthropic/retry.test.ts`, `test/extensions/RQW-anthropic/context-fork.test.ts`.

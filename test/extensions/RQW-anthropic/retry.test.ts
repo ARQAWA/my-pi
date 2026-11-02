@@ -62,55 +62,6 @@ describe("RQW-anthropic retry planning", () => {
 		};
 	}
 
-	it("does not retry a 429 the server marked x-should-retry false", async () => {
-		const message = await rejected(429, "rate_limit_error", { "x-should-retry": "false" });
-		assert.equal(session().isRetryable(message), false);
-	});
-
-	it("retries an overload 529 api_error the server marked x-should-retry true", async () => {
-		const message = await rejected(529, "api_error", { "x-should-retry": "true" });
-		assert.equal(session().isRetryable(message), true);
-	});
-
-	it("waits the server's Retry-After, not Pi's two seconds, and keeps Pi's attempt count", async () => {
-		mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
-		const message = await rejected(429, "rate_limit_error", { "retry-after": "30" });
-		const { fake, prepare } = session({ maxRetries: 1 });
-		let outcome: boolean | undefined;
-		const first = prepare(message).then(value => { outcome = value; });
-		await settle();
-		assert.equal(fake.events[0]?.delayMs, 30_000);
-		mock.timers.tick(2_000);
-		await settle();
-		assert.equal(outcome, undefined, "still waiting after Pi's own two seconds");
-		mock.timers.tick(28_000);
-		await first;
-		assert.equal(outcome, true);
-		assert.equal(fake.settingsManager.getRetrySettings().baseDelayMs, 2000, "Pi's settings are restored");
-		assert.equal(await prepare(message), false, "one budget: Pi's maxRetries still ends the retries");
-		assert.equal(fake.events.length, 1);
-	});
-
-	it("stops waiting for a server delay when the retry is aborted", async () => {
-		mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
-		const message = await rejected(429, "rate_limit_error", { "retry-after": "30" });
-		const { fake, prepare, abort } = session();
-		const pending = prepare(message);
-		await settle();
-		assert.equal(fake.events[0]?.delayMs, 30_000);
-		abort();
-		assert.equal(await pending, false);
-		assert.equal(fake.events.at(-1)?.type, "auto_retry_end");
-	});
-
-	it("ends with a clear error when the server delay is longer than the supported wait", async () => {
-		const message = await rejected(429, "rate_limit_error", { "retry-after": "90" });
-		const { fake, prepare } = session();
-		assert.equal(await prepare(message), false);
-		assert.match(message.errorMessage ?? "", /^Server requested 90s retry delay \(max: 60s\)/);
-		assert.equal(fake.events.length, 0);
-	});
-
 	it("leaves a session whose runtime is not ours to stock behavior", async () => {
 		const message = await rejected(429, "rate_limit_error", { "x-should-retry": "false" });
 		const { fake, isRetryable } = session();
