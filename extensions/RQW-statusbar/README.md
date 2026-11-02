@@ -21,6 +21,7 @@ Files in the system temporary directory under `rqw-quota/` are separate per prov
 Codex credentials supply `accountId`; Pi's Anthropic credentials have no account ID, so the refresh token
 is the fallback identity. File names use the first 16 hex characters of its SHA-256 hash, never a token. The Codex file is `CX-credits-<hash>.json`:
 older releases still running in other tabs write `CX-<hash>.json` without credits and would otherwise erase CXC.
+Until the new file exists, the old file supplies the last known percent (no credits, never counted as a fresh attempt), so a failed first request shows `CX *77%`, not `???`.
 Files contain only `percent`, `credits` (raw digits or `Unlimited`), `okAt` and `checkedAt`. Tabs reuse each attempt for three minutes;
 an exclusive `.lock` file prevents parallel requests. Locks older than 30 seconds are replaced.
 Writes use a temporary file and rename; file errors retain the last displayed value.

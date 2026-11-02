@@ -17,6 +17,14 @@ export type Quotas = Partial<Record<keyof typeof QUOTA_COLORS, string>>;
 type Reading = { percent?: number; credits?: string; okAt?: number; checkedAt?: number };
 type Usage = { percent: number; credits?: string };
 
+/** A first load after the update has no credits-aware file yet: the old file still supplies the last known percent, never a fresh attempt. */
+async function readRecord(file: string, legacyFile?: string): Promise<Reading> {
+	const record = await readCache(file);
+	if (record.checkedAt !== undefined || !legacyFile) return record;
+	const { percent, okAt } = await readCache(legacyFile);
+	return { ...record, percent, okAt };
+}
+
 async function readCache(file: string): Promise<Reading> {
 	try {
 		const data = JSON.parse(await readFile(file, "utf8"));
@@ -178,6 +186,7 @@ export class QuotaConsumer {
 				if (!key) throw new Error("Quota account unavailable");
 				if (this.accounts[id] !== key) { this.forget(id); this.accounts[id] = key; }
 				const file = join(tmpdir(), "rqw-quota", `${CACHE_NAME[id]}-${key}.json`);
+				const legacyFile = id === "CX" ? join(tmpdir(), "rqw-quota", `${id}-${key}.json`) : undefined;
 				const show = (record: Reading) => {
 					if (!current()) return;
 					this.update(() => {
@@ -190,12 +199,12 @@ export class QuotaConsumer {
 					});
 				};
 				const fresh = (record: Reading) => record.checkedAt !== undefined && Date.now() - record.checkedAt < QUOTA_CHECK_MS;
-				let record = await readCache(file);
+				let record = await readRecord(file, legacyFile);
 				show(record);
 				if (!current() || fresh(record) || !await lockCache(file)) return;
 				try {
 					// Another tab may have finished between our first read and acquiring the lock.
-					record = await readCache(file);
+					record = await readRecord(file, legacyFile);
 					show(record);
 					if (!current() || fresh(record)) return;
 					record.checkedAt = Date.now();

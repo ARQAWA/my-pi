@@ -21,16 +21,18 @@ it("shows the model, context meter and session ID in the frame", async (t) => {
 	assert.deepEqual(w.networkAttempts, []);
 });
 
-it("shows a child's working and idle states on the screen", async (t) => {
+it("shows one dim idle-agents line and no per-agent rows", async (t) => {
 	const w = await world(t);
 	const child = w.model.hold(isTask("check status"));
 	w.model.script(call("agent", { action: "start", task: "check status", title: "Status" }, "a1"), text("started"), text("child finished"));
 	await w.submit("go");
 	await w.until(() => child.arrived, "child started");
-	w.see("agent#1 Status · working");
+	w.notSee("agent#1 Status · ");
+	w.notSee("idle agent");
 	child.reply(text("done"));
-	await w.until(() => w.screen().some(line => line.includes("agent#1 Status · idle")), "child idle");
-	w.see("agent#1 Status · idle");
+	await w.until(() => w.screen().some(line => line.includes("1 idle agent")), "child idle");
+	w.see("1 idle agent");
+	w.notSee("agent#1 Status · ");
 	assert.deepEqual(w.networkAttempts, []);
 });
 

@@ -228,7 +228,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	/** Pi supplies one leading spacer; visible activity ends with one trailing empty line. */
 	const activityWidget = (ctx: ExtensionContext) => () => {
 		let last: { width: number; chrome: ActivityChrome | undefined; agents: string[]; rows: string[] } | undefined;
-		let cachedAgents: { width: number; list: AgentLine[] | undefined; theme: Theme; dim: boolean; rows: string[] } | undefined;
+		let cachedAgents: { width: number; list: AgentLine[] | undefined; theme: Theme; rows: string[] } | undefined;
 		// The dim italic hint is painted once per text and theme.
 		let painted: { hint: string; theme: Theme; value: string } | undefined;
 		const paintHint = (hint: string): string => {
@@ -241,9 +241,8 @@ export default function statusbar(pi: ExtensionAPI) {
 				const current = chromeNow();
 				const list = jobs.get().agentList;
 				const theme = ctx.ui.theme;
-				const dim = !current;
-				if (!cachedAgents || cachedAgents.width !== width || cachedAgents.list !== list || cachedAgents.theme !== theme || cachedAgents.dim !== dim)
-					cachedAgents = { width, list, theme, dim, rows: agentRows(width, list ?? [], dim, (role, text) => theme.fg(role, text)) };
+				if (!cachedAgents || cachedAgents.width !== width || cachedAgents.list !== list || cachedAgents.theme !== theme)
+					cachedAgents = { width, list, theme, rows: agentRows(width, list ?? [], (role, text) => theme.fg(role, text)) };
 				// Pi's retry and summary text carries its key already.
 				const chrome = current && { ...current, hint: nativeActivity ? undefined : hintSource?.snapshot() };
 				if (!last || last.width !== width || last.agents !== cachedAgents.rows || last.chrome?.text !== chrome?.text || last.chrome?.compacting !== chrome?.compacting || last.chrome?.retry !== chrome?.retry || last.chrome?.hint !== chrome?.hint || last.chrome?.frame !== chrome?.frame)
