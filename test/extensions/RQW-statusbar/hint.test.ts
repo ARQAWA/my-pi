@@ -92,7 +92,7 @@ it("shows one dim idle-agents line instead of agent rows, cached until the list 
 	const s = await setup(t);
 	const colors: Record<string, string> = { muted: "35", dim: "90", text: "37" };
 	s.ctx.ui.theme.fg = (role: string, text: string) => `\x1b[${colors[role]}m${text}\x1b[39m`;
-	let counts = { agents: 2, idleAgents: 3 };
+	let counts: { agents: number; idleAgents?: number } = { agents: 2, idleAgents: 3 };
 	let notify: (value: unknown) => void = () => {};
 	s.events.emit("rqw:running-counts:offer", { version: 1, source: {
 		version: 1, snapshot: () => counts, subscribe: (listener: typeof notify) => { notify = listener; return () => {}; },

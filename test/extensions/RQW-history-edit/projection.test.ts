@@ -203,7 +203,9 @@ it("append-only steps project only the appended entries and preserve earlier res
 	assert.equal(before.entries.length, 2);
 	assert.equal(before.messages.length, 1);
 	assert.equal(context.length, 2);
-	assert.equal(after.messages.at(-1)!.content, "two");
+	const lastMessage = after.messages.at(-1);
+	assert.ok(lastMessage?.role === "user");
+	assert.equal(lastMessage.content, "two");
 	assert.equal(nextContext.length, 4);
 	assert.deepEqual(after, stockPi.buildSessionProjection(getEntries(), manager.getLeafId()));
 	assert.ok(walks > 0, "the parent counter catches the original full branch walk");

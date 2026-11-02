@@ -41,7 +41,7 @@ async function runtimeFixture(stubRefresh = true) {
 
 describe("RQW-models public selection", () => {
 	it("renders the statusbar's human names without changing model identity", () => {
-		const models = [
+		const models: Model<string>[] = [
 			{ ...model("claude-opus-5-5"), name: "Claude Opus 5.5" },
 			{ ...model("gpt-6.1-sol", "openai-codex"), name: "GPT-6.1 Sol" },
 			{ ...model("claude-sonnet-5-5"), name: "Claude Sonnet 5.5" },
