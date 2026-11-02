@@ -6,10 +6,10 @@ import { keys, reportTimings, text, world, type World } from "./synthetic/world.
 
 after(() => reportTimings(import.meta.filename));
 
-// Fixed texts of the design: the endpoint Codex serves its prediction prompt from, the activity channel, the maroon time.
+// Fixed texts of the design: the endpoint Codex serves its suggestion prompt from, the activity channel, the maroon time.
 const CONFIG_URL = "https://chatgpt.com/backend-api/wham/predictions/config";
-const ACTIVITY = "rqw-predictions:activity";
-const SERVED_PROMPT = "SERVED PREDICTION PROMPT";
+const ACTIVITY = "rqw-suggestions:activity";
+const SERVED_PROMPT = "SERVED SUGGESTION PROMPT";
 const SUGGESTION = "run the tests again";
 const ABORTED_MS = 2000;
 const FAR_FUTURE = 4_102_444_800_000;
@@ -20,7 +20,7 @@ type Fetched = { url: string; authorization: string | undefined; account: string
 
 /**
  * The fake Codex route. The world blocks every network call and gives no routes, so the test answers the one
- * prediction endpoint on the blocked fetch that the extension holds, with the saved login the extension reads.
+ * suggestion endpoint on the blocked fetch that the extension holds, with the saved login the extension reads.
  */
 function codexRoute(w: World): Fetched[] {
 	const token = `${base64url({ alg: "none" })}.${base64url({ exp: 4_000_000_000, "https://api.openai.com/auth": { chatgpt_account_id: "acct" } })}.sig`;
@@ -42,7 +42,7 @@ const lastUserText = (context: { messages: readonly any[] }): string => {
 	const last = context.messages.findLast((message) => message.role === "user");
 	return typeof last?.content === "string" ? last.content : JSON.stringify(last?.content ?? "");
 };
-const isPrediction = (request: { context: { messages: readonly any[] } }) => lastUserText(request.context).includes(SERVED_PROMPT);
+const isSuggestion = (request: { context: { messages: readonly any[] } }) => lastUserText(request.context).includes(SERVED_PROMPT);
 
 /** A chat with one finished exchange, so Ctrl+E has a history to predict from. */
 async function chatWithAnswer(t: Parameters<typeof world>[0]) {
@@ -58,7 +58,7 @@ const activityStates = (w: World) => w.events.filter((event) => event.channel ==
 
 it("Ctrl+E shows a gray suggestion from the served prompt, Tab turns it into text, nothing is sent", async (t) => {
 	const { w, fetched } = await chatWithAnswer(t);
-	w.model.when(isPrediction, text(JSON.stringify({ suggestion: SUGGESTION })));
+	w.model.when(isSuggestion, text(JSON.stringify({ suggestion: SUGGESTION })));
 	w.notSee(SUGGESTION);
 
 	w.press(keys.ctrlE);
@@ -69,9 +69,9 @@ it("Ctrl+E shows a gray suggestion from the served prompt, Tab turns it into tex
 	assert.equal(fetched[0].url, CONFIG_URL);
 	assert.equal(fetched[0].account, "acct");
 	assert.match(fetched[0].authorization ?? "", /^Bearer .+\..+\..+$/);
-	const prediction = w.requests.filter(isPrediction);
-	assert.equal(prediction.length, 1);
-	assert.match(lastUserText(prediction[0].context), /If there is no obvious next user message, set suggestion to null\./);
+	const suggestion = w.requests.filter(isSuggestion);
+	assert.equal(suggestion.length, 1);
+	assert.match(lastUserText(suggestion[0].context), /If there is no obvious next user message, set suggestion to null\./);
 
 	// Gray, and only drawn: the input buffer stays empty.
 	// The cursor sits on its first letter; the rest is painted in the theme's colour.
@@ -83,7 +83,7 @@ it("Ctrl+E shows a gray suggestion from the served prompt, Tab turns it into tex
 	w.see(SUGGESTION);
 
 	// Nothing reached the chat: no new turn, no user message with the suggestion, no network beyond the route.
-	assert.equal(w.requests.filter((request) => !isPrediction(request) && request.background === undefined).length, 1);
+	assert.equal(w.requests.filter((request) => !isSuggestion(request) && request.background === undefined).length, 1);
 	assert.ok(!w.jsonl().some((entry) => JSON.stringify(entry).includes(SUGGESTION)), "the session file has no trace of the suggestion");
 	assert.deepEqual(w.networkAttempts, []);
 	assert.deepEqual(w.errors, []);
@@ -91,10 +91,10 @@ it("Ctrl+E shows a gray suggestion from the served prompt, Tab turns it into tex
 
 it("Ctrl+E while the request runs cancels it: aborted status, no suggestion, the aborted state ends after 2000 ms", async (t) => {
 	const { w } = await chatWithAnswer(t);
-	const held = w.model.hold(isPrediction);
+	const held = w.model.hold(isSuggestion);
 
 	w.press(keys.ctrlE);
-	await w.until(() => held.arrived, "the prediction request is open");
+	await w.until(() => held.arrived, "the suggestion request is open");
 	assert.deepEqual(activityStates(w), ["brewing"]);
 
 	w.press(keys.ctrlE);

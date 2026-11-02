@@ -109,7 +109,7 @@ export function installKeybindings(warn: (message: string) => void) {
 		const release = compatible(manager) ? wrap(manager) : undefined;
 		if (!release) {
 			refused.add(manager);
-			warn("RQW-predictions could not free Ctrl+E and Ctrl+R from Pi's own actions; the keys stay stock and manual prediction keys are off.");
+			warn("RQW-suggestions could not free Ctrl+E and Ctrl+R from Pi's own actions; the keys stay stock and manual suggestion keys are off.");
 			return false;
 		}
 		owned = { manager, release };

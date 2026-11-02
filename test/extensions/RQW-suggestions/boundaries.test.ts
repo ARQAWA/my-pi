@@ -6,8 +6,8 @@ import { CTRL_E, CTRL_R, harness, settle } from "./harness.ts";
 const newEditor = () => new CustomEditor({ requestRender() {}, terminal: { rows: 40, columns: 80 } } as never,
 	{ borderColor: (value: string) => value, selectList: {} } as never, { matches: () => false } as never);
 
-describe("RQW-predictions boundaries", () => {
-	it("a dialog or another component with the focus gets the keys; no prediction starts and its input is untouched", async () => {
+describe("RQW-suggestions boundaries", () => {
+	it("a dialog or another component with the focus gets the keys; no suggestion starts and its input is untouched", async () => {
 		const h = harness();
 		h.ran();
 		const seen: string[] = [];

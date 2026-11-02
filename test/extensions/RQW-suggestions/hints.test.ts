@@ -53,7 +53,7 @@ it("keeps the hint while a turn runs or a message is queued", () => {
 });
 
 
-it("a ready prediction is shown while a turn runs or a message waits, and nothing covers it", async () => {
+it("a ready suggestion is shown while a turn runs or a message waits, and nothing covers it", async () => {
 	const h = harness({ replies: [suggestion("next step")] });
 	h.asked();
 	await settle();

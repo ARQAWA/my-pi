@@ -1,4 +1,4 @@
-// RQW-predictions: a gray next-message suggestion in the empty main input; Tab accepts it.
+// RQW-suggestions: a gray next-message suggestion in the empty main input; Tab accepts it.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createPromptSource } from "./codex-prompt.ts";
 import { createController, type Deps } from "./controller.ts";
@@ -61,7 +61,7 @@ export function install(pi: ExtensionAPI, deps: Deps, clearSource: () => void = 
 	return controller;
 }
 
-export default function predictions(pi: ExtensionAPI) {
+export default function suggestions(pi: ExtensionAPI) {
 	const source = createPromptSource();
 	install(pi, { source: { get: signal => source.get(signal) }, now: () => performance.now() }, () => source.clear());
 }

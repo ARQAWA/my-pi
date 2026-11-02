@@ -3,17 +3,17 @@ import { afterEach, describe, it } from "node:test";
 import { AgentSession, createEventBus, SessionManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { stripVTControlCharacters } from "node:util";
 import { getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
-import predictions from "../extensions/RQW-predictions/index.ts";
+import suggestions from "../extensions/RQW-suggestions/index.ts";
 import historyEdit from "../extensions/RQW-history-edit/index.ts";
 import { uninstallSafeProjection } from "../extensions/RQW-history-edit/projection.ts";
 import scroll from "../extensions/RQW-scroll/index.ts";
 import sendNow from "../extensions/RQW-send-now/index.ts";
-import { assistant, CTRL_R, harness, OTHER, settle, suggestion, USER } from "./extensions/RQW-predictions/harness.ts";
+import { assistant, CTRL_R, harness, OTHER, settle, suggestion, USER } from "./extensions/RQW-suggestions/harness.ts";
 
 // The history-edit extension patches SessionManager.prototype when it loads; every test puts Pi's methods back.
 afterEach(() => uninstallSafeProjection(SessionManager.prototype as never));
 
-it("Ctrl+R restarts an interrupted turn with predictions loaded, and generates nothing", async t => {
+it("Ctrl+R restarts an interrupted turn with suggestions loaded, and generates nothing", async t => {
 	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
 	const resumed: unknown[] = [];
 	const h = harness({ realKeys: true, branch: [{ type: "message", message: USER }, { type: "message", message: assistant([], "aborted") }], extraInstall(pi) {
@@ -25,11 +25,11 @@ it("Ctrl+R restarts an interrupted turn with predictions loaded, and generates n
 	await settle();
 	assert.equal(resumed.length, 1);
 	assert.equal((resumed[0] as any).message.customType, "rqw-resume");
-	assert.equal(h.forks.length, 0, "Ctrl+R starts no prediction");
+	assert.equal(h.forks.length, 0, "Ctrl+R starts no suggestion");
 	assert.deepEqual(h.reached, [], "the key never reaches the editor");
 });
 
-for (const extraFirst of [true, false]) it(`send-now and predictions share the editor, send-now ${extraFirst ? "first" : "last"}`, async t => {
+for (const extraFirst of [true, false]) it(`send-now and suggestions share the editor, send-now ${extraFirst ? "first" : "last"}`, async t => {
 	t.mock.method(AgentSession.prototype as any, "_bindExtensionCore", function() {});
 	let background = 0;
 	let changed = () => {};
@@ -46,7 +46,7 @@ for (const extraFirst of [true, false]) it(`send-now and predictions share the e
 	h.asked(); await settle();
 	assert.equal(row(), "next step");
 	assert.equal(source.snapshot(), undefined);
-	// The Esc hints go to the activity line; the ready prediction stays in the input all the time.
+	// The Esc hints go to the activity line; the ready suggestion stays in the input all the time.
 	h.state.idle = false;
 	(h.session as any)._emit({ type: "agent_start" });
 	assert.equal(source.snapshot(), "esc to interrupt");
@@ -113,13 +113,13 @@ for (const work of ["turn", "background", "idle"] as const) it(`Escape jumps bef
 	else assert.equal(stops, 1);
 });
 
-describe("scroll and predictions keybindings", () => {
+describe("scroll and suggestions keybindings", () => {
 	const original = getKeybindings();
 	const originalStackLimit = Error.stackTraceLimit;
 	afterEach(() => { setKeybindings(original); Error.stackTraceLimit = originalStackLimit; });
 
-	for (const order of [[scroll, predictions], [predictions, scroll]]) {
-		it(`works in ${order[0] === scroll ? "scroll-first" : "predictions-first"} order across sessions and reload`, () => {
+	for (const order of [[scroll, suggestions], [suggestions, scroll]]) {
+		it(`works in ${order[0] === scroll ? "scroll-first" : "suggestions-first"} order across sessions and reload`, () => {
 			const manager = new KeybindingsManager({
 				...TUI_KEYBINDINGS,
 				"app.session.rename": { defaultKeys: "ctrl+r", description: "Rename" },

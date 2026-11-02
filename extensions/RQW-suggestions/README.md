@@ -1,4 +1,4 @@
-# RQW-predictions
+# RQW-suggestions
 
 A gray next-message suggestion in the empty input of the main interactive chat. Tab turns it into ordinary text.
 Nothing is sent by the extension; every other mode and every child session stays quiet.
@@ -13,14 +13,14 @@ Nothing is sent by the extension; every other mode and every child session stays
   Ctrl+R is freed from Pi's actions and does nothing here; RQW-send-now takes it to restart an interrupted turn.
 - An expired or rejected Codex login (saved token past `expires`, HTTP 401 from the prompt endpoint, or an `openai-codex`
   model answering 401) shows `Ctrl+E failed: Codex token expired or rejected. Run /login openai-codex` in bold bright red
-  in the footer status key `rqw-predictions-error` for 5000 ms, then it disappears; a new Ctrl+E does not cut it short. The
-  token is never refreshed here and the hint stays. RQW-statusbar hides only the key `rqw-predictions`, so this one shows.
+  in the footer status key `rqw-suggestions-error` for 5000 ms, then it disappears; a new Ctrl+E does not cut it short. The
+  token is never refreshed here and the hint stays. RQW-statusbar hides only the key `rqw-suggestions`, so this one shows.
 - The request is a fork of what the main model last saw (the shared `rqw:context-fork:v1` contract, as `/btw`);
   without a transport offer it is one direct `streamSimple` call. The last user message is the prompt Codex serves,
   the JSON reply instruction and the owner's rule «if there is no obvious next user message, set suggestion to null».
   The model and effort are the chat's. Tools never run. A hosted-tool refusal (`decline("unsupported_hosted_tools")`) is final.
 - The prompt comes from `codex-prompt.ts`: Codex's own endpoint, the saved `openai-codex` login read-only, a 300000 ms cache.
-  Predictions therefore need that login also in an Anthropic chat.
+  Suggestions therefore need that login also in an Anthropic chat.
 - The suggestion is kept until the next finished answer. Typing hides it, clearing the input shows the same one again.
   It is drawn in the theme's `dim` colour and wrapped by the editor's own layout (`layoutText`). The input grows to
   show every line, without a scrolling widget. The real buffer stays `""` until Tab.
@@ -40,15 +40,15 @@ Terminals decide what arrives: Windows VS Code binds Ctrl+E to Quick Open, which
 
 ## Footer status
 
-State goes out on `pi.events` channel `rqw-predictions:activity` as `{ sessionId, state, abortedUntil? }` with `state`
+State goes out on `pi.events` channel `rqw-suggestions:activity` as `{ sessionId, state, abortedUntil? }` with `state`
 `brewing`, `aborted` or `idle` (`abortedUntil` is a `performance.now()` value). The stock `ui.setStatus` key
-`rqw-predictions` always shows `prediction` and a maroon `prediction aborted`. RQW-statusbar hides that key and draws its own
+`rqw-suggestions` always shows `suggestion` and a maroon `suggestion aborted`. RQW-statusbar hides that key and draws its own
 indicator from the channel, so the status stays right after `/statusbar off`. A footer that starts later asks on
-`rqw-predictions:activity-query` with `offer(state)` and gets the current state.
+`rqw-suggestions:activity-query` with `offer(state)` and gets the current state.
 
 ## Boundaries
 
 - Own folder only; no import from another extension. Each of RQW-statusbar, RQW-skill-dollar and the transports can be off.
 - The editor is decorated in place (`render`, `handleInput`); an editor shape other than border, one row, border stays stock.
 - Not done: speed measurements on macOS and Windows. The terminal cannot show rows beyond its screen.
-- Tests: `test/extensions/RQW-predictions/`.
+- Tests: `test/extensions/RQW-suggestions/`.

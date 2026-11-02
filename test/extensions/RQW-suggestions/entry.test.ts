@@ -18,10 +18,10 @@ let calls: Call[];
 
 const until = async (done: () => boolean) => { for (let i = 0; i < 20000 && !done(); i++) await settle(); };
 
-describe("RQW-predictions through the extension entry", () => {
+describe("RQW-suggestions through the extension entry", () => {
 	beforeEach(() => {
 		mock.timers.enable({ apis: ["Date"], now: START });
-		dir = mkdtempSync(join(tmpdir(), "rqw-predictions-"));
+		dir = mkdtempSync(join(tmpdir(), "rqw-suggestions-"));
 		writeFileSync(join(dir, "auth.json"), JSON.stringify({ "openai-codex": { type: "oauth", access: ACCESS, refresh: "r", expires: START + 3_600_000, accountId: "acc-1" } }));
 		process.env.PI_CODING_AGENT_DIR = dir;
 		calls = [];
@@ -54,13 +54,13 @@ describe("RQW-predictions through the extension entry", () => {
 		assert.match(instruction, /Return only JSON matching this schema: \{.*"suggestion".*\}\./);
 		assert.ok(instruction.endsWith(SILENCE_RULE));
 
-		mock.timers.tick(299_999);
+		mock.timers.setTime(START + 299_999);
 		h.asked();
 		await until(() => h.forks.length === 2);
 		assert.equal(calls.length, 1);
 		assert.ok(String(last(h.forks[1].context).content).startsWith("SERVED PROMPT 1\n"));
 
-		mock.timers.tick(1);
+		mock.timers.setTime(START + 300_000);
 		h.asked();
 		await until(() => h.forks.length === 3);
 		assert.equal(calls.length, 2);
@@ -127,7 +127,7 @@ describe("RQW-predictions through the extension entry", () => {
 
 	// The same extension entry, with the saved login and the endpoint answering as an owner with a bad token would see.
 	const login = (expires: number) => writeFileSync(join(dir, "auth.json"), JSON.stringify({ "openai-codex": { type: "oauth", access: ACCESS, refresh: "r", expires, accountId: "acc-1" } }));
-	const errorStatus = (h: ReturnType<typeof harness>) => h.keyed.filter(([key]) => key === "rqw-predictions-error");
+	const errorStatus = (h: ReturnType<typeof harness>) => h.keyed.filter(([key]) => key === "rqw-suggestions-error");
 
 	it("an expired saved login shows the bright red footer error for 5000 ms without any request", async () => {
 		mock.timers.reset();
@@ -175,6 +175,6 @@ describe("RQW-predictions through the extension entry", () => {
 		server.asked();
 		await until(() => server.notes.length > 0);
 		assert.deepEqual(errorStatus(server), []);
-		assert.deepEqual(server.notes, ["Prediction prompt is unavailable."]);
+		assert.deepEqual(server.notes, ["Suggestion prompt is unavailable."]);
 	});
 });

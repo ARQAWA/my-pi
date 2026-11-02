@@ -1,14 +1,14 @@
-// Pi's boundary for RQW-predictions tests: the session, the main stream function, the provider, the prompt
+// Pi's boundary for RQW-suggestions tests: the session, the main stream function, the provider, the prompt
 // source, the fork listeners, the event bus and the TUI. The extension's own code runs for real.
 import { AgentSession, CustomEditor, createEventBus, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { Api, AssistantMessage, Context, Message, Model } from "@earendil-works/pi-ai";
 import { type KeybindingsConfig, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, TuiAltScreen } from "@earendil-works/pi-tui";
-import predictions, { install } from "../../../extensions/RQW-predictions/index.ts";
+import suggestions, { install } from "../../../extensions/RQW-suggestions/index.ts";
 
 // Fixed texts from the design, not from the code under test.
 export const CONTEXT_FORK = "rqw:context-fork:v1";
-export const ACTIVITY = "rqw-predictions:activity";
-export const ACTIVITY_QUERY = "rqw-predictions:activity-query";
+export const ACTIVITY = "rqw-suggestions:activity";
+export const ACTIVITY_QUERY = "rqw-suggestions:activity-query";
 export const SILENCE_RULE = "If there is no obvious next user message, set suggestion to null.";
 /** The gray of the suggestion in the fake theme: the `dim` role. */
 export const DIM = "\x1b[38;2;127;126;124m";
@@ -71,7 +71,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 	} as unknown as ExtensionAPI;
 	// `entry` loads the extension the way Pi does, with its real prompt loader; otherwise the loader is replaced.
 	if (extraFirst) extraInstall?.(pi);
-	const controller = entry ? (predictions(pi), undefined as never) : install(pi, {
+	const controller = entry ? (suggestions(pi), undefined as never) : install(pi, {
 		source: { get(signal) { gets.push(signal); return prompts.shift() ?? Promise.resolve({ prompt: "PREDICT PROMPT" }); } },
 		now: () => clock.now,
 	}, () => cleared.push(1));
@@ -92,7 +92,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 	Object.defineProperties(session, { sessionManager: { value: sessionManager }, agent: { value: agent },
 		_eventListeners: { value: [], writable: true }, _steeringMessages: { value: [], writable: true }, _followUpMessages: { value: [], writable: true } });
 	if (extraInstall) (session as any)._bindExtensionCore();
-	// Pi's isIdle getter reads this field; RQW-predictions borrows the session through that getter.
+	// Pi's isIdle getter reads this field; RQW-suggestions borrows the session through that getter.
 	Object.defineProperty(session, "_isAgentRunActive", { get: () => !state.idle });
 
 	const forks: Fork[] = [];
@@ -102,7 +102,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 	const activity: Activity[] = [];
 	events.on(ACTIVITY, data => { activity.push(data as Activity); });
 
-	/** The prediction key's values; `keyed` has every status call with its key. */
+	/** The suggestion key's values; `keyed` has every status call with its key. */
 	const statuses: (string | undefined)[] = [];
 	const keyed: [string, string | undefined][] = [];
 	const notes: string[] = [];
@@ -161,7 +161,7 @@ export function harness({ fork = true, replies = [] as Reply[], prompts = [] as 
 			theme,
 			getEditorText: () => editor.getText(), setEditorText: (value: string) => editor.setText(value),
 			notify: (message: string) => notes.push(message),
-			setStatus: (key: string, value: string | undefined) => { keyed.push([key, value]); if (key === "rqw-predictions") statuses.push(value); },
+			setStatus: (key: string, value: string | undefined) => { keyed.push([key, value]); if (key === "rqw-suggestions") statuses.push(value); },
 			setWidget: (_key: string, factory: unknown) => { if (typeof factory === "function") (factory as (tui: unknown) => unknown)(tui); },
 			onTerminalInput(listener: (data: string) => unknown) { inputListeners.push(listener); return () => { inputListeners.splice(inputListeners.indexOf(listener), 1); }; },
 		},
