@@ -1,3 +1,4 @@
+import { descriptions } from "./descriptions.ts";
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -106,9 +107,9 @@ test("aborting after ripgrep has finished, while the symlink check runs, ends th
 	await dirLink(p.abs("node_modules", "pkg"), p.abs("a-link"));
 	const controller = new AbortController();
 	p.rg.handler = () => ({ stdout: jsonLines(fileEvents("./src/a.ts", [{ n: 1, text: "hit" }])), afterClose: () => controller.abort() });
-	const tool: any = createRgToolDefinition(p.cwd);
+	const tool: any = createRgToolDefinition(p.cwd, descriptions.rqw_rg);
 	await assert.rejects(tool.execute("c", { pattern: "hit" }, controller.signal, undefined, { cwd: p.cwd }), /Operation aborted/);
-	const glob: any = createGlobToolDefinition(p.cwd);
+	const glob: any = createGlobToolDefinition(p.cwd, descriptions.rqw_glob);
 	const again = new AbortController();
 	p.rg.handler = () => ({ stdout: "./src/a.ts\u0000", afterClose: () => again.abort() });
 	await assert.rejects(glob.execute("c", { glob_pattern: "*.ts" }, again.signal, undefined, { cwd: p.cwd }), /Operation aborted/);
