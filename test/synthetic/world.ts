@@ -30,6 +30,7 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
+import net from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { setImmediate as nextTurn } from "node:timers/promises";
@@ -51,6 +52,7 @@ import { resetCapabilitiesCache, stripTerminalSequences, type Terminal } from "@
 import { blockNetwork, fakeProcesses, guardProcess, networkRoutes, patchedMembers, type ProcessCall, trapExit } from "./guard.ts";
 export { networkRoutes } from "./guard.ts";
 import { createModel } from "./model.ts";
+import { fakeNet } from "../extensions/RQW-tabs-link/harness.ts";
 
 export { call, fail, isTask, reply, text, think } from "./model.ts";
 
@@ -191,6 +193,13 @@ export function world(t: TestContext, options: WorldOptions = {}) {
 	return build(t, { ...options, routes: options.routes ?? networkRoutes() }, { dirs: makeDirs(), start: START_TIME, created: undefined, resume: undefined });
 }
 
+/** Two independent chats in one shared fake process, with their local channel in memory. */
+export async function worldPair(t: TestContext, options: WorldOptions = {}) {
+	const first = await build(t, { ...options, routes: options.routes ?? networkRoutes() }, { dirs: makeDirs(), start: START_TIME, created: undefined, resume: undefined }, undefined, true);
+	const second = await first.openPeer();
+	return [first, second] as const;
+}
+
 /** What a restart hands on: the folders, the clock, the session file and the scenario's start. */
 interface Handover {
 	dirs: Dirs;
@@ -199,17 +208,30 @@ interface Handover {
 	resume: string | undefined;
 }
 
-async function build(t: TestContext, options: WorldOptions, from: Handover) {
+interface SharedWorld {
+	guard: ReturnType<typeof guardProcess>;
+	clock: { elapsed: number };
+	networkAttempts: string[];
+	processAttempts: string[];
+	exitCodes: number[];
+	processes: ReturnType<typeof fakeProcesses>;
+	active: number;
+}
+
+async function build(t: TestContext, options: WorldOptions, from: Handover, peer?: SharedWorld, pair = false) {
 	const { extensions, theme } = await loadManifest();
 	const { builtInExtensions } = await import(new URL("./extensions/index.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 	const builtins = builtInExtensions.filter(({ name }: { name: string }) => name === "codemode" || name === "tool-search");
 	const created = from.created ?? process.hrtime.bigint();
 	const dirs = from.dirs;
-	const guard = guardProcess();
+	const guard = peer?.guard ?? guardProcess();
+	let shared = peer;
+	if (peer) peer.active++;
 
 	// A restart passes the folders and the scenario's clock on: the old world neither removes them nor counts itself.
 	const handover = { done: false };
 	const giveBack = () => {
+		if (shared && --shared.active > 0) return;
 		guard.restore();
 		resetCapabilitiesCache();
 		t.mock.restoreAll();
@@ -221,11 +243,14 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 	let registered = false;
 	t.after(() => { if (!registered) giveBack(); });
 
-	const clock = { elapsed: 0 };
-	t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"], now: from.start });
-	t.mock.method(performance, "now", () => clock.elapsed);
+	const clock = peer?.clock ?? { elapsed: 0 };
+	if (!peer) {
+		t.mock.timers.enable({ apis: ["setTimeout", "setInterval", "Date"], now: from.start });
+		t.mock.method(performance, "now", () => clock.elapsed);
+	}
 	process.env.HOME = dirs.home;
 	process.env.USERPROFILE = dirs.home;
+	if (pair || peer) process.env.LOCALAPPDATA = dirs.home;
 	process.env.CODEX_HOME = dirs.codex;
 	process.env.PI_CODING_AGENT_DIR = dirs.agent;
 	process.env.PI_OFFLINE = "1";
@@ -235,13 +260,22 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 	process.env.COLORTERM = "truecolor";
 	resetCapabilitiesCache();
 
-	const networkAttempts: string[] = [];
-	const processAttempts: string[] = [];
-	const exitCodes: number[] = [];
-	blockNetwork(t, networkAttempts, options.routes!);
-	const processes = fakeProcesses(t, processAttempts);
-	trapExit(t, exitCodes);
-	syncBuiltinESMExports();
+	const networkAttempts: string[] = peer?.networkAttempts ?? [];
+	const processAttempts: string[] = peer?.processAttempts ?? [];
+	const exitCodes: number[] = peer?.exitCodes ?? [];
+	let processes = peer?.processes;
+	if (!peer) {
+		blockNetwork(t, networkAttempts, options.routes!);
+		processes = fakeProcesses(t, processAttempts);
+		trapExit(t, exitCodes);
+		if (pair) {
+			const local = fakeNet();
+			t.mock.method(net, "createServer", local.createServer as never);
+			t.mock.method(net, "connect", local.connect as never);
+		}
+		syncBuiltinESMExports();
+	}
+	shared ??= pair ? { guard, clock, networkAttempts, processAttempts, exitCodes, processes: processes!, active: 1 } : undefined;
 
 	const settingsPath = join(dirs.agent, "settings.json");
 	let applyScenarioSettings = !existsSync(settingsPath);
@@ -249,7 +283,7 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 
 	const model = createModel();
 	const modelRuntimeClass = ModelRuntime.prototype as unknown as { streamSimple: unknown };
-	modelRuntimeClass.streamSimple = function (modelArg: never, context: never, requestOptions: never) {
+	if (!peer) modelRuntimeClass.streamSimple = function (modelArg: never, context: never, requestOptions: never) {
 		return model.streamSimple(modelArg, context, requestOptions);
 	};
 
@@ -270,6 +304,7 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 
 	const credentials = await fakeCredentials(options.credentials);
 	const modelRuntime = await ModelRuntime.create({ credentials, modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
+	if (shared) Object.defineProperty(modelRuntime, "streamSimple", { configurable: true, writable: true, value: model.streamSimple });
 	const sessionManager = from.resume ? SessionManager.open(from.resume, dirs.sessions, dirs.project) : SessionManager.create(dirs.project, dirs.sessions);
 	const createRuntime = async ({ cwd, agentDir, sessionManager: manager, sessionStartEvent }: { cwd: string; agentDir: string; sessionManager: SessionManager; sessionStartEvent?: unknown }) => {
 		const settingsManager = SettingsManager.create(cwd, agentDir);
@@ -343,7 +378,7 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 		disposed = true;
 		if (!handover.done) timingOf(t).total.push(elapsedMs(created));
 		model.release();
-		processes.release();
+		if (!shared || shared.active === 1) processes!.release();
 		try {
 			host.stop();
 			await runtime.dispose();
@@ -361,7 +396,11 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 	if (!from.resume) timingOf(t).boot.push(elapsedMs(created));
 
 	return {
-		dirs, host, credentials, model: model.api, requests: model.requests, processes, routes: options.routes!, networkAttempts, processAttempts, exitCodes, events,
+		dirs, host, credentials, model: model.api, requests: model.requests, processes: processes!, routes: options.routes!, networkAttempts, processAttempts, exitCodes, events,
+		openPeer: () => {
+			if (!shared || disposed) throw new Error("openPeer requires an active worldPair");
+			return build(t, options, { dirs, start: Date.now(), created: undefined, resume: undefined }, shared);
+		},
 		get runtime() { return runtime; },
 		get session() { return runtime.session; },
 		get settings() { return runtime.services.settingsManager; },
@@ -401,6 +440,7 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 		},
 		/** Quits this Pi and starts a new one over the same folders and session file, like restarting Pi. */
 		async restart() {
+			if (shared) throw new Error("restart is not supported for a worldPair");
 			const next = { dirs, start: Date.now(), created, resume: runtime.session.sessionManager.getSessionFile() };
 			handover.done = true;
 			await dispose();
