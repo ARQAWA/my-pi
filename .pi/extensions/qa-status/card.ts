@@ -30,16 +30,26 @@ function summary(items: Item[]): string {
 	return [...counts].map(([level, count]) => `${count} ${level}`).join(" · ");
 }
 
-export function qaLines(content: string, expanded: boolean, theme: CardTheme, width: number): string[] {
+type Totals = { red: number; green: number };
+
+/** Whole-snapshot counts stored with the message; cards saved without them are counted from their own lines. */
+function readTotals(details: unknown): Totals | undefined {
+	const { red, green } = (details ?? {}) as Partial<Totals>;
+	return typeof red === "number" && typeof green === "number" ? { red, green } : undefined;
+}
+
+export function qaLines(content: string, expanded: boolean, theme: CardTheme, width: number, totals?: Totals): string[] {
 	if (width <= 0) return [];
 	const { items, notes } = parseQa(content);
 	const indent = width >= 8 ? "  " : "";
 	const head = (text: string) => fit(theme.fg("muted", "qa-status") + (text ? theme.fg("dim", " · ") + theme.fg(items.some((i) => i.level === "red") ? "error" : "muted", text) : ""), width);
 	if (!expanded) {
 		const count = (level: string) => items.filter((item) => item.level === level).length;
+		const red = totals?.red ?? count("red");
+		const green = totals?.green ?? count("green");
 		return [fit(theme.fg("muted", "qa-status") + theme.fg("dim", " · ")
-			+ theme.fg("error", `${count("red")} red`) + theme.fg("dim", " · ")
-			+ theme.fg("success", `${count("green")} green`), width)];
+			+ theme.fg("error", `${red} red`) + theme.fg("dim", " · ")
+			+ theme.fg("success", `${green} green`), width)];
 	}
 	const rows = [head(summary(items))];
 	const paint = (line: string, tone: "error" | "muted" | "warning") => wrap(line, width - indent.length).map((row) => indent + theme.fg(tone, row));
@@ -54,5 +64,5 @@ export function qaLines(content: string, expanded: boolean, theme: CardTheme, wi
 export const createQaCard: MessageRenderer = (message, options, theme) => {
 	if (message.customType !== "qa-status") return undefined;
 	const content = typeof message.content === "string" ? message.content : message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
-	return { render: padded((width) => qaLines(content, options.expanded, theme, width), options.outputPad), invalidate() {} };
+	return { render: padded((width) => qaLines(content, options.expanded, theme, width, readTotals(message.details)), options.outputPad), invalidate() {} };
 };

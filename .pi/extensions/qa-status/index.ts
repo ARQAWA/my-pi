@@ -7,7 +7,7 @@ type Context = { cwd: string; ui: { notify(text: string, level?: "info" | "warni
 type Pi = {
 	on(event: "session_start" | "agent_start", handler: (event: unknown, ctx: Context) => void): unknown;
 	registerCommand(name: string, command: { description: string; handler: (args: string, ctx: Context) => Promise<void> }): void;
-	sendMessage(message: { customType: string; content: string; display: boolean }, options: { deliverAs: "nextTurn"; triggerTurn: false }): void;
+	sendMessage(message: { customType: string; content: string; display: boolean; details?: { red: number; green: number } }, options: { deliverAs: "nextTurn"; triggerTurn: false }): void;
 };
 
 export function createQaStatus({ pi, getSnapshot = snapshot, now = Date.now }: {
@@ -20,6 +20,7 @@ export function createQaStatus({ pi, getSnapshot = snapshot, now = Date.now }: {
 	let unavailableShown = false;
 	const deliver = (state: Snapshot) => {
 		let content: string;
+		let details: { red: number; green: number } | undefined;
 		if (!state.ok) {
 			if (unavailableShown) return;
 			unavailableShown = true;
@@ -29,10 +30,13 @@ export function createQaStatus({ pi, getSnapshot = snapshot, now = Date.now }: {
 			if (!ids.length) return;
 			for (const id of ids) shown.add(id);
 			content = render(state, { onlyIds: ids });
+			// The collapsed card counts the whole snapshot; the content stays limited to the new red items.
+			const count = (level: string) => state.items.filter((i) => i.level === level).length;
+			details = { red: count("red"), green: count("green") };
 		}
 		// Pi 1.4.0 queues nextTurn without steering or creating a follow-up run,
 		// even during streaming. It is consumed with the next starting prompt.
-		pi.sendMessage({ customType: "qa-status", content, display: true }, { deliverAs: "nextTurn", triggerTurn: false });
+		pi.sendMessage({ customType: "qa-status", content, display: true, details }, { deliverAs: "nextTurn", triggerTurn: false });
 	};
 	const refresh = (cwd: string): Promise<Snapshot> => {
 		if (inFlight) return inFlight;
