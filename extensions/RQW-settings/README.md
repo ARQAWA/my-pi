@@ -4,7 +4,7 @@ Harness defaults, tool selection and GPT Fast settings.
 
 - `index.ts` installs the three parts below; `selection.ts` turns on built-in `codemode` and `tool_search` at `session_start` only without an explicit tool selection.
 - `cache-warming.ts` keeps Pi's background cache warming off for every session, whatever the user config says.
-- `fast-gpt.ts` owns `/fast-gpt [on|off]`: while on, main-chat `openai-codex` requests get `service_tier` priority. Default off, kept across `/reload`, not across restarts.
+- `fast-gpt.ts` owns `/fast-gpt [on|off]`: while on, main-chat `openai-codex` requests get `service_tier` priority. Default off, kept across `/reload`, not across restarts. Luna models are always Fast under `[D-CODEX-LUNA-FAST]` in `DECISIONS.md`.
 - `setup.ts` applies the setup profile, described next.
 
 `setup.ts` applies `setup-profile.json` once to the global Pi settings, so every machine starts like the owner's:

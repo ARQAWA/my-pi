@@ -53,7 +53,7 @@ Provenance:
   `extensions/RQW-dyslexia/index.ts` removes the old rule from the system prompt and returns the exact
   `## Communication` rule and override sentence after every user message through the public `context` event.
   It is request-only, invisible and not persisted. The placement is deterministic, preserving the cached prefix,
-  including for queued prompts. RQW-agent children and reviewers do not receive the message or rule.
+  including for queued prompts. Ordinary RQW-agent children and reviewers do not receive the message or rule; a full context fork inherits the prepared request.
   Owner: «Да правило дизлексии должно быть превыше других правил коммуникации».
   Owner: «Я думаю памятку про дизлексию надо сделать на уровне харнеса потому что во всех чатах эта тема проебываается, а это крит и надо выпилить ее из системного промпта а сделать именно памяткой».
   Owner: «по поводу памятки - она должна идти перед моим сообщением в хвосте всей историии или где ей лучше место разместить? что бы агент был всегда aware о ней, какой тут бест практис тчо бы еще кеши не обосрать?».
@@ -828,7 +828,7 @@ Execution rules live in [PROCESS.md](PROCESS.md); an entry here keeps the owner'
   Coordinator text: the historical CodeMode/Tool Search owner quotation is not verified in the permitted Pi USER sources.
   Reason: useful defaults must not override explicit selections.
   Carrier: `extensions/RQW-settings/index.ts`, `extensions/RQW-settings/selection.ts`, `extensions/RQW-tools/index.ts`, `extensions/RQW-tools/selection.ts`. Since: `3720200`.
-- **GPT Fast** `[D-SETTINGS-GPT-FAST]`. `/fast-gpt [on|off]` toggles the main chat's OpenAI priority processing, with no argument toggling it; `FAST_GPT_DEFAULT = false`. Only matching `openai-codex` request bodies receive `service_tier: "priority"` through `before_provider_request`; Anthropic is untouched. State survives reload and new sessions in the process, not restarts, and has no settings key. The hook applies to SSE and WebSocket request bodies; Pi accounts for the response's service tier. The main-chat indicator belongs to [Status bar](#status-bar).
+- **GPT Fast** `[D-SETTINGS-GPT-FAST]`. `/fast-gpt [on|off]` toggles the main chat's OpenAI priority processing, with no argument toggling it; `FAST_GPT_DEFAULT = false`. Only matching `openai-codex` request bodies receive `service_tier: "priority"` through `before_provider_request`; Anthropic is untouched. State survives reload and new sessions in the process, not restarts, and has no settings key. The hook applies to SSE and WebSocket request bodies; Pi accounts for the response's service tier. Luna models remain Fast under `[D-CODEX-LUNA-FAST]`. The main-chat indicator belongs to [Status bar](#status-bar).
   Owner: «Режим Fast должен действовать только на основной чат. И по умолчанию он должен передаваться сабогентам. Но если я запрещу исполнителю сабогенты запускать в режиме Fast, то он должен этому повиноваться. Так это должно работать»
   Owner: «В CloudCode у нас режима Fast нет, потому что у меня нет кредитов, чтобы режим Fast поддерживать в CloudCode. Поэтому наш режим Fast распространяется только на GPT. Можно даже называть его GPT Fast.»
   Source for both exact spans: `2026-10-21T16-27-59-062Z_01a15f4a-7ad5-7377-81be-0baf3b6ffa33.jsonl`, USER entry at line 2170, in the Pi session directory named above.

@@ -8,7 +8,7 @@ const HIDDEN = new Set(["cache-warming-mode", "model-thinking", "double-escape-a
 const WARNING = "RQW-commands: incompatible Pi controls internals; controls cleanup is disabled.";
 type Fn = (...args: any[]) => any;
 type Owner = { token: object; live: () => boolean };
-type Policy = { owner: Owner; keybindings: any; descriptor?: PropertyDescriptor; rebuild: Fn; wrapper: Fn; active: boolean };
+type Policy = { owner: Owner; keybindings: any; descriptor?: PropertyDescriptor; wrapper: Fn; active: boolean };
 type State = { owners: Set<Owner>; hosts: Map<any, Policy>; descriptors: Map<string, PropertyDescriptor>; wrappers: Map<string, Fn> };
 
 function owns(host: any, owner: Owner): boolean {
@@ -42,7 +42,7 @@ function bind(state: State, host: any, owner: Owner) {
  if (!(kb?.keysById instanceof Map) || ["rebuild", "matches", "getKeys", "getResolvedBindings"].some(name => typeof kb[name] !== "function") ||
   (descriptor && (!descriptor.configurable || !descriptor.writable)) || (!descriptor && !Object.isExtensible(kb)) || ACTIONS.some(id => !kb.keysById.has(id))) throw new Error(WARNING);
  const rebuild = kb.rebuild as Fn;
- const policy: Policy = { owner, keybindings: kb, descriptor, rebuild, active: true, wrapper: () => {} };
+ const policy: Policy = { owner, keybindings: kb, descriptor, active: true, wrapper: () => {} };
  policy.wrapper = function(this: any, ...args: unknown[]) {
   const result = rebuild.apply(this, args);
   if (policy.active && owns(host, owner)) for (const id of ACTIONS) kb.keysById.set(id, []);

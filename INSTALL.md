@@ -49,7 +49,7 @@ The first start after install applies the setup profile once: RQW-settings write
 global `~/.pi/agent/settings.json`, before Pi builds its interface. Packages, credentials and all other keys stay as
 they were. Later changes by the owner stay; the profile is not applied again. If an extension or the theme of this
 package is switched off or filtered, or the file is not valid JSON, nothing is written and Pi shows a warning at
-start; fix the cause and restart Pi. Reload alone does not apply a profile that failed before.
+start; fix the cause and reload or restart Pi to retry the profile.
 
 ## History editing
 
@@ -105,7 +105,7 @@ excludes nothing.
 ```
 
 - It takes effect after `/reload` or a restart. To switch the extension on again, delete its line.
-- The streaming placeholder «ответ готовится» switches off alone with `-extensions/RQW-live-tail/index.ts`.
+- The streaming placeholder `writing answer` switches off alone with `-extensions/RQW-live-tail/index.ts`.
 - The `/btw` side chat switches off alone with `-extensions/RQW-btw/index.ts`.
 - The compact UI switches independently with `-extensions/RQW-tool-ui/index.ts`,
   `-extensions/RQW-agent-ui/index.ts` and `-extensions/RQW-naming/index.ts`, one exclusion per extension.
