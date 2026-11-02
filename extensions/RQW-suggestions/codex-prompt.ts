@@ -4,15 +4,15 @@ import { readStoredCredential } from "@earendil-works/pi-coding-agent";
 const PROVIDER = "openai-codex";
 const JWT_AUTH_CLAIM = "https://api.openai.com/auth";
 
-/** Production source of the prediction prompt, the same endpoint the Codex desktop app reads. */
-export const PREDICTION_CONFIG_URL = "https://chatgpt.com/backend-api/wham/predictions/config";
+/** Production source of the suggestion prompt, the same endpoint the Codex desktop app reads. */
+export const SUGGESTION_CONFIG_URL = "https://chatgpt.com/backend-api/wham/predictions/config";
 /** Codex `staleTime: 3e5`: a result stays fresh for exactly five minutes. */
-export const PREDICTION_PROMPT_TTL_MS = 300_000;
+export const SUGGESTION_PROMPT_TTL_MS = 300_000;
 export const EXPIRED_HELP = "The saved openai-codex access token has expired. Use an openai-codex model once or run /login openai-codex, then retry.";
 export const REJECTED_HELP = "The openai-codex access token was rejected (HTTP 401). Use an openai-codex model once or run /login openai-codex, then retry.";
-export const LOGIN_HELP = "Predictions read the saved openai-codex login read-only. Run /login openai-codex in Pi and retry.";
+export const LOGIN_HELP = "Suggestions read the saved openai-codex login read-only. Run /login openai-codex in Pi and retry.";
 
-export interface PredictionPrompt {
+export interface SuggestionPrompt {
 	prompt: string;
 	promptVersion: string;
 }
@@ -25,20 +25,20 @@ export interface PromptSourceOptions {
 
 export interface PromptSource {
 	/** Fresh cached prompt, a shared GET when stale, or null when the source gave nothing usable. Rejects on abort, missing login or account change. */
-	get(signal?: AbortSignal): Promise<PredictionPrompt | null>;
+	get(signal?: AbortSignal): Promise<SuggestionPrompt | null>;
 	/** Drops every cached result and aborts running loads. */
 	clear(): void;
 }
 
 /** No usable saved login, or the account changed under a running load. Messages never carry tokens. */
-export class PredictionAuthError extends Error {
+export class SuggestionAuthError extends Error {
 	constructor(message = LOGIN_HELP) {
 		super(message);
 	}
 }
 
 /** The saved login is expired or the server rejected it: the owner must log in again. */
-export class TokenError extends PredictionAuthError {}
+export class TokenError extends SuggestionAuthError {}
 
 interface Owner {
 	accountId: string;
@@ -47,7 +47,7 @@ interface Owner {
 }
 
 interface Load {
-	promise: Promise<PredictionPrompt | null>;
+	promise: Promise<SuggestionPrompt | null>;
 	controller: AbortController;
 	waiters: number;
 	settled: boolean;
@@ -70,22 +70,22 @@ function authClaim(access: string): Record<string, unknown> | undefined {
 }
 
 function ownerOf(credential: Credential | undefined, now: number): Owner {
-	if (credential?.type !== "oauth" || !nonEmptyString(credential.access)) throw new PredictionAuthError();
-	if (typeof credential.expires !== "number") throw new PredictionAuthError();
+	if (credential?.type !== "oauth" || !nonEmptyString(credential.access)) throw new SuggestionAuthError();
+	if (typeof credential.expires !== "number") throw new SuggestionAuthError();
 	if (credential.expires <= now) throw new TokenError(EXPIRED_HELP);
 	const claim = authClaim(credential.access);
 	const fromToken = nonEmptyString(claim?.chatgpt_account_id) ? claim.chatgpt_account_id : undefined;
 	const stored = nonEmptyString(credential.accountId) ? credential.accountId : undefined;
-	if (fromToken !== undefined && stored !== undefined && fromToken !== stored) throw new PredictionAuthError();
+	if (fromToken !== undefined && stored !== undefined && fromToken !== stored) throw new SuggestionAuthError();
 	const accountId = fromToken ?? stored;
-	if (accountId === undefined) throw new PredictionAuthError();
+	if (accountId === undefined) throw new SuggestionAuthError();
 	const userId = nonEmptyString(claim?.chatgpt_user_id) ? claim.chatgpt_user_id : "";
 	return { accountId, userId, access: credential.access };
 }
 
 const cacheKey = (owner: Owner): string => JSON.stringify(["cumberbatch-config", owner.userId, owner.accountId]);
 
-function parseConfig(body: string): PredictionPrompt | null {
+function parseConfig(body: string): SuggestionPrompt | null {
 	try {
 		const json: unknown = JSON.parse(body);
 		if (!isRecord(json) || !nonEmptyString(json.prompt) || !nonEmptyString(json.prompt_version)) return null;
@@ -114,14 +114,14 @@ export function createPromptSource(options: PromptSourceOptions = {}): PromptSou
 	const doFetch = options.fetch ?? fetch;
 	const now = options.now ?? Date.now;
 	const readCredential = options.readCredential ?? (() => readStoredCredential(PROVIDER));
-	const cache = new Map<string, { value: PredictionPrompt | null; at: number }>();
+	const cache = new Map<string, { value: SuggestionPrompt | null; at: number }>();
 	const loads = new Map<string, Load>();
 	let generation = 0;
 
-	async function download(owner: Owner, signal: AbortSignal): Promise<PredictionPrompt | null> {
+	async function download(owner: Owner, signal: AbortSignal): Promise<SuggestionPrompt | null> {
 		const headers = { Authorization: `Bearer ${owner.access}`, "ChatGPT-Account-ID": owner.accountId, Accept: "application/json" };
 		try {
-			const response = await doFetch(PREDICTION_CONFIG_URL, { method: "GET", headers, signal });
+			const response = await doFetch(SUGGESTION_CONFIG_URL, { method: "GET", headers, signal });
 			if (response.status === 401) throw new TokenError(REJECTED_HELP);
 			return response.ok ? parseConfig(await response.text()) : null;
 		} catch (error) {
@@ -131,12 +131,12 @@ export function createPromptSource(options: PromptSourceOptions = {}): PromptSou
 		}
 	}
 
-	async function load(key: string, owner: Owner, signal: AbortSignal): Promise<PredictionPrompt | null> {
+	async function load(key: string, owner: Owner, signal: AbortSignal): Promise<SuggestionPrompt | null> {
 		const started = generation;
 		const value = await download(owner, signal);
 		signal.throwIfAborted();
-		if (started !== generation) throw new PredictionAuthError("Prediction source was cleared.");
-		if (cacheKey(ownerOf(readCredential(), now())) !== key) throw new PredictionAuthError("Account changed during the prediction prompt load.");
+		if (started !== generation) throw new SuggestionAuthError("Suggestion source was cleared.");
+		if (cacheKey(ownerOf(readCredential(), now())) !== key) throw new SuggestionAuthError("Account changed during the suggestion prompt load.");
 		cache.set(key, { value, at: now() });
 		return value;
 	}
@@ -159,7 +159,7 @@ export function createPromptSource(options: PromptSourceOptions = {}): PromptSou
 			const owner = ownerOf(readCredential(), now());
 			const key = cacheKey(owner);
 			const hit = cache.get(key);
-			if (hit && now() - hit.at < PREDICTION_PROMPT_TTL_MS) return hit.value;
+			if (hit && now() - hit.at < SUGGESTION_PROMPT_TTL_MS) return hit.value;
 			const entry = loads.get(key) ?? start(key, owner);
 			entry.waiters++;
 			try {
@@ -175,7 +175,7 @@ export function createPromptSource(options: PromptSourceOptions = {}): PromptSou
 		clear() {
 			generation++;
 			cache.clear();
-			for (const entry of loads.values()) entry.controller.abort(new PredictionAuthError("Prediction source was cleared."));
+			for (const entry of loads.values()) entry.controller.abort(new SuggestionAuthError("Suggestion source was cleared."));
 			loads.clear();
 		},
 	};

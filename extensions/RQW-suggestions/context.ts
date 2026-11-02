@@ -1,4 +1,4 @@
-// What the prediction request sends: the main chat's full context as the model last saw it, plus one instruction.
+// What the suggestion request sends: the main chat's full context as the model last saw it, plus one instruction.
 // The mark is taken like /btw does: the last main request and what followed it, forked through the shared contract.
 import { normalizeContext, type Api, type AssistantMessage, type Context, type Message, type Model, type ModelsSimpleStreamOptions, type SystemMessage, type ThinkingLevel } from "@earendil-works/pi-ai";
 import { AgentSession, convertToLlm, type ExtensionAPI, type ExtensionContext, type MessageEndEvent } from "@earendil-works/pi-coding-agent";
@@ -9,7 +9,7 @@ const STARTUP_PROJECTION = "rqw-prompt:startup-projection";
 // Transport identity only; unlike sessionId, this never registers a main-request snapshot.
 const SESSION_IDENTITY = Symbol.for("rqw-anthropic/session-identity");
 type SideRequestOptions = ModelsSimpleStreamOptions & { [SESSION_IDENTITY]?: string };
-/** The reply shape of Codex's own prediction call: `{ suggestion: string | null }`. */
+/** The reply shape of Codex's own suggestion call: `{ suggestion: string | null }`. */
 const REPLY_SCHEMA = { type: "object", properties: { suggestion: { type: ["string", "null"] } }, required: ["suggestion"], additionalProperties: false };
 export const SCHEMA_RULE = `Return only JSON matching this schema: ${JSON.stringify(REPLY_SCHEMA)}.`;
 /** The owner's rule, appended after the text Codex serves; it is not part of that text. */
@@ -40,7 +40,7 @@ export type Capture = {
 	shot?: { sessionId: string; messages: Message[]; after: MessageEndEvent["message"][] };
 };
 
-export type PredictionContext = {
+export type SuggestionContext = {
 	/** Starts recording main requests for this session. */
 	bind(ctx: ExtensionContext): void;
 	release(): void;
@@ -98,7 +98,7 @@ export function safeText(value: string): string {
 	return value.replace(/\r\n?/g, "\n").replace(/\t/g, " ").replace(ESCAPES, "").replace(CONTROLS, "").trim();
 }
 
-export function installContext(pi: ExtensionAPI): PredictionContext {
+export function installContext(pi: ExtensionAPI): SuggestionContext {
 	let snapshot: Snapshot | undefined;
 	let release: (() => void) | undefined;
 

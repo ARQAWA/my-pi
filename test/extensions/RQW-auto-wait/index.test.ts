@@ -109,20 +109,18 @@ test("a result closes the card with the success background", async t => {
 	assert.ok(colors.includes("toolSuccessBg"));
 });
 
-test("changed targets replace the card and replay marks an open card interrupted", async t => {
+test("changed targets update the card and replay marks it interrupted", async t => {
 	const f = setup(t);
 	f.emit("agent_settled", { aborted: false }); await Promise.resolve();
-	f.setTargets(["job#4"]); await Promise.resolve();
-	assert.equal(f.branch.length, 3);
-	assert.equal(f.branch[1].data.reason, "targets_changed");
-	const entry = f.branch[2];
 	const theme = { fg: (_role: string, text: string) => text, bg: (_role: string, text: string) => text };
-	const oldCard = f.renderer()(f.branch[0], {}, theme);
-	assert.match(oldCard.render(80).join("\n"), /ожидание изменено/);
-	const card = f.renderer()(entry, {}, theme);
+	const card = f.renderer()(f.branch[0], {}, theme);
+	f.setTargets(["job#4"]); await Promise.resolve();
+	assert.equal(f.branch.length, 2);
+	assert.equal(f.branch[1].data.phase, "update");
 	assert.match(card.render(80).join("\n"), /job#4/);
 	f.emit("session_tree");
 	assert.match(card.render(80).join("\n"), /ожидание прервано/);
+	assert.match(card.render(80).join("\n"), /job#4/);
 	assert.equal(f.sent.length, 0);
 });
 

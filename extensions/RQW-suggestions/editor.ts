@@ -3,7 +3,7 @@
 import { CustomEditor, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, isKeyRelease, isKeyRepeat, matchesKey, renderFakeCursor, visibleWidth, type TUI } from "@earendil-works/pi-tui";
 
-const WIDGET_KEY = "rqw-predictions-editor-access";
+const WIDGET_KEY = "rqw-suggestions-editor-access";
 
 export type EditorActions = {
 	/** Ctrl+E: starts a request, or cancels the running one. */

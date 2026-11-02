@@ -7,7 +7,7 @@ import {
 	OTHER, piKeybindings, settle, SILENCE_RULE, suggestion, text, USER, SYSTEM,
 } from "./harness.ts";
 
-describe("RQW-predictions generation", () => {
+describe("RQW-suggestions generation", () => {
 	it("a finished answer alone starts nothing, however long the chat waits", async () => {
 		const h = harness();
 		h.answer();
@@ -191,7 +191,7 @@ describe("RQW-predictions generation", () => {
 	});
 });
 
-describe("RQW-predictions manual keys", () => {
+describe("RQW-suggestions manual keys", () => {
 	it("Ctrl+E in the main editor makes exactly one request and does not move the cursor", async () => {
 		const h = harness();
 		h.ran();
@@ -227,7 +227,7 @@ describe("RQW-predictions manual keys", () => {
 		h.key(CTRL_E);
 		await settle();
 		assert.equal(h.controller.suggestion(), "one");
-		assert.deepEqual(h.notes, ["Prediction failed: provider exploded"]);
+		assert.deepEqual(h.notes, ["Suggestion failed: provider exploded"]);
 		h.key(CTRL_E);
 		await settle();
 		assert.equal(h.controller.suggestion(), undefined);
@@ -355,15 +355,15 @@ describe("RQW-predictions manual keys", () => {
 	});
 });
 
-describe("RQW-predictions status", () => {
+describe("RQW-suggestions status", () => {
 	it("the stock status line shows brewing and the aborted text, then clears", async (t) => {
 		t.mock.timers.enable({ apis: ["setTimeout"] });
 		const h = harness({ replies: [deferred<ReturnType<typeof text>>().promise] });
 		h.key(CTRL_E);
 		await settle();
-		assert.equal(h.statuses.at(-1), "prediction");
+		assert.equal(h.statuses.at(-1), "suggestion");
 		h.key(CTRL_E);
-		assert.equal(strip(h.statuses.at(-1)!), "prediction aborted");
+		assert.equal(strip(h.statuses.at(-1)!), "suggestion aborted");
 		assert.match(h.statuses.at(-1)!, /^\x1b\[38;2;53;28;34m/);
 		t.mock.timers.tick(ABORTED_MS);
 		assert.equal(h.statuses.at(-1), undefined);
@@ -378,12 +378,12 @@ describe("RQW-predictions status", () => {
 		await settle();
 		h.events.emit(ACTIVITY_QUERY, { offer: (state: unknown) => { offered = state; } });
 		assert.deepEqual(offered, { sessionId: "main", state: "brewing" });
-		assert.equal(h.statuses.at(-1), "prediction");
+		assert.equal(h.statuses.at(-1), "suggestion");
 		assert.deepEqual(h.states(), ["brewing"]);
 	});
 });
 
-describe("RQW-predictions context", () => {
+describe("RQW-suggestions context", () => {
 	it("a chat without a recorded request is predicted from its saved branch and the current prompt", async () => {
 		const h = harness();
 		h.setModel(OTHER);
@@ -439,9 +439,9 @@ describe("RQW-predictions context", () => {
 	});
 });
 
-describe("RQW-predictions token errors", () => {
+describe("RQW-suggestions token errors", () => {
 	const plain = (row: string) => strip(row.replace(/\x1b_[^\x07]*\x07/g, ""));
-	const errorStatus = (h: ReturnType<typeof harness>) => h.keyed.filter(([key]) => key === "rqw-predictions-error");
+	const errorStatus = (h: ReturnType<typeof harness>) => h.keyed.filter(([key]) => key === "rqw-suggestions-error");
 
 	it("a Codex model answering 401 shows it, and the Ctrl+E hint stays", async (t) => {
 		t.mock.timers.enable({ apis: ["setTimeout"] });

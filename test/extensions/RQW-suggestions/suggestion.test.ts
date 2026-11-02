@@ -24,7 +24,7 @@ async function ready(value: string | null = "run the tests", options: Parameters
 	return h;
 }
 
-describe("RQW-predictions gray suggestion", () => {
+describe("RQW-suggestions gray suggestion", () => {
 	it("shows the suggestion gray while the buffer stays empty; Tab turns it into editable text and sends nothing", async () => {
 		const h = await ready();
 		let submitted = 0;

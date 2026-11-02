@@ -37,7 +37,7 @@ export type Role =
 	| "untracked"
 	| "sep"
 	| "info"
-	| "predictionAbort"
+	| "suggestionAbort"
 	| "effort";
 export type Paint = (role: Role, text: string, level?: string) => string;
 export const plain: Paint = (_role, text) => text;
@@ -67,7 +67,7 @@ export interface BarState {
 	fast?: { frame?: number };
 	backgroundFrame?: number;
 	namingFrame?: number;
-	prediction?: { state: "brewing"; frame: number } | { state: "aborted" };
+	suggestion?: { state: "brewing"; frame: number } | { state: "aborted" };
 	/** Texts other extensions set with `ctx.ui.setStatus`, in key order. */
 	statuses: string[];
 }
@@ -231,16 +231,16 @@ export function gitText(git: BarState["git"], paint: Paint = plain): string {
 
 /** Row 3: the working place and background states on the left, git on the right. */
 export function placeRow(state: BarState, width: number, paint: Paint = plain, right = gitText(state.git, paint)): string {
-	const labels = [state.backgroundFrame !== undefined ? "bg compaction" : "", state.prediction ? (state.prediction.state === "brewing" ? "prediction" : "prediction aborted") : "", state.namingFrame !== undefined ? "naming" : ""].filter(Boolean);
+	const labels = [state.backgroundFrame !== undefined ? "bg compaction" : "", state.suggestion ? (state.suggestion.state === "brewing" ? "suggestion" : "suggestion aborted") : "", state.namingFrame !== undefined ? "naming" : ""].filter(Boolean);
 	const reserved = labels.reduce((sum, label) => sum + 2 + visibleWidth(label), 0);
 	const rightWidth = right ? visibleWidth(right) + 1 : 0;
 	const folderText = ` ${ICON[state.place.kind]} ${singleLine(state.place.text)}`;
 	let left = paint("path", fitPlain(folderText, Math.max(0, width - rightWidth - reserved)));
 	if (state.backgroundFrame !== undefined) left += "  " + shimmerText("bg compaction", visibleWidth(left) + 2, state.backgroundFrame, GOLD);
-	if (state.prediction) {
-		const text = state.prediction.state === "brewing"
-			? shimmerText("prediction", visibleWidth(left) + 2, state.prediction.frame, SILVER)
-			: paint("predictionAbort", "prediction aborted");
+	if (state.suggestion) {
+		const text = state.suggestion.state === "brewing"
+			? shimmerText("suggestion", visibleWidth(left) + 2, state.suggestion.frame, SILVER)
+			: paint("suggestionAbort", "suggestion aborted");
 		left += "  " + text;
 	}
 	if (state.namingFrame !== undefined) left += "  " + shimmerText("naming", visibleWidth(left) + 2, state.namingFrame, SILVER);
@@ -251,25 +251,25 @@ export function placeRow(state: BarState, width: number, paint: Paint = plain, r
 export function placeLayout(state: BarState, width: number, paint: Paint = plain): { first: () => string; rest: string[] } {
 	const quotas = state.quotas && quotaText(state.quotas);
 	const git = gitText(state.git, paint);
-	if (!quotas && state.backgroundFrame === undefined && !state.prediction && state.namingFrame === undefined)
+	if (!quotas && state.backgroundFrame === undefined && !state.suggestion && state.namingFrame === undefined)
 		return { first: () => placeRow(state, width, paint, git), rest: [] };
 	const right = [quotas, git].filter(Boolean).join("  ");
 	const statusWidth = (state.backgroundFrame === undefined ? 0 : 2 + visibleWidth("bg compaction")) +
-		(state.prediction ? 2 + visibleWidth(state.prediction.state === "brewing" ? "prediction" : "prediction aborted") : 0) +
+		(state.suggestion ? 2 + visibleWidth(state.suggestion.state === "brewing" ? "suggestion" : "suggestion aborted") : 0) +
 		(state.namingFrame !== undefined ? 2 + visibleWidth("naming") : 0);
 	if (width > 0 && statusWidth > width) {
 		const rows: string[] = [];
 		if (state.backgroundFrame !== undefined) {
 			if (width >= visibleWidth("bg compaction") + 2) {
-				rows.push(placeRow({ ...state, prediction: undefined, namingFrame: undefined }, width, paint, ""));
+				rows.push(placeRow({ ...state, suggestion: undefined, namingFrame: undefined }, width, paint, ""));
 			} else {
 				rows.push(...wrapTextWithAnsi(shimmerText("bg compaction", 0, state.backgroundFrame, GOLD), width));
 			}
 		}
-		if (state.prediction) {
-			const text = state.prediction.state === "brewing"
-				? shimmerText("prediction", 0, state.prediction.frame, SILVER)
-				: paint("predictionAbort", "prediction aborted");
+		if (state.suggestion) {
+			const text = state.suggestion.state === "brewing"
+				? shimmerText("suggestion", 0, state.suggestion.frame, SILVER)
+				: paint("suggestionAbort", "suggestion aborted");
 			rows.push(...wrapTextWithAnsi(text, width));
 		}
 		if (state.namingFrame !== undefined) rows.push(...wrapTextWithAnsi(shimmerText("naming", 0, state.namingFrame, SILVER), width));

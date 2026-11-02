@@ -50,7 +50,7 @@
       "./extensions/RQW-codex-compat/index.ts",
       "./extensions/RQW-tabs-link/index.ts",
       "./extensions/RQW-btw/index.ts",
-      "./extensions/RQW-predictions/index.ts",
+      "./extensions/RQW-suggestions/index.ts",
       "./extensions/RQW-browser/index.ts",
       "./extensions/RQW-cwd/index.ts",
       "./extensions/RQW-links/index.ts"

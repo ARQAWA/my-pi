@@ -32,13 +32,13 @@ it("keeps one branch colour whatever the file counts; only the marks carry state
 
 it("keeps both background statuses before moving git to another row", () => {
 	const state: BarState = { ...sample, place: { kind: "folder", text: "a-very-long-folder-name" },
-		backgroundFrame: 0, prediction: { state: "aborted" }, git: { branch: "main", staged: 0, unstaged: 0, untracked: 0 } };
+		backgroundFrame: 0, suggestion: { state: "aborted" }, git: { branch: "main", staged: 0, unstaged: 0, untracked: 0 } };
 	const roomy = renderBar(state, 55).map(strip);
 	assert.equal(roomy.length, 3);
-	assert.match(roomy[2], /bg compaction  prediction aborted.*main/);
+	assert.match(roomy[2], /bg compaction  suggestion aborted.*main/);
 	const tight = renderBar(state, 39).map(strip);
 	assert.equal(tight.length, 4);
-	assert.match(tight[2], /bg compaction  prediction aborted/);
+	assert.match(tight[2], /bg compaction  suggestion aborted/);
 	assert.match(tight[3], /main/);
 	assert.ok(tight.every((row) => row.length <= 39));
 });

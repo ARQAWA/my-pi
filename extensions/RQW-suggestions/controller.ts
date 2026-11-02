@@ -1,15 +1,15 @@
-// The prediction lifecycle: runs only on the owner's Ctrl+E (start, or cancel while running), storage and the status.
+// The suggestion lifecycle: runs only on the owner's Ctrl+E (start, or cancel while running), storage and the status.
 // Nothing here waits for the model: every run starts after control returns to the terminal.
 import type { ExtensionAPI, ExtensionContext, TurnEndEvent } from "@earendil-works/pi-coding-agent";
 import { TokenError } from "./codex-prompt.ts";
-import { parseSuggestion, type PredictionContext } from "./context.ts";
+import { parseSuggestion, type SuggestionContext } from "./context.ts";
 
-export const ACTIVITY = "rqw-predictions:activity";
-export const ACTIVITY_QUERY = "rqw-predictions:activity-query";
-const STATUS_KEY = "rqw-predictions";
+export const ACTIVITY = "rqw-suggestions:activity";
+export const ACTIVITY_QUERY = "rqw-suggestions:activity-query";
+const STATUS_KEY = "rqw-suggestions";
 const ABORTED_MS = 2000;
 // RQW-statusbar hides STATUS_KEY and draws its own indicator, so the token error has a key of its own.
-const TOKEN_ERROR_KEY = "rqw-predictions-error";
+const TOKEN_ERROR_KEY = "rqw-suggestions-error";
 const TOKEN_ERROR_MS = 5000;
 const TOKEN_ERROR_TEXT = "Ctrl+E failed: Codex token expired or rejected. Run /login openai-codex";
 // Bold, bright red, whatever the theme.
@@ -44,7 +44,7 @@ export type Controller = {
 
 type Run = { abort: AbortController };
 
-export function createController(pi: ExtensionAPI, context: PredictionContext, deps: Deps): Controller {
+export function createController(pi: ExtensionAPI, context: SuggestionContext, deps: Deps): Controller {
 	let ctx: ExtensionContext | undefined;
 	let ready: string | undefined;
 	let seenAnswer: string | undefined;
@@ -63,11 +63,11 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 	/** Stock status line text for the state; RQW-statusbar hides this key and draws its own indicator. */
 	function statusText(state: Activity["state"]): string | undefined {
 		if (state === "idle" || !ctx) return undefined;
-		if (state === "brewing") return "prediction";
+		if (state === "brewing") return "suggestion";
 		const theme = ctx.ui.theme;
 		// The aborted colour is a background role of the theme, painted here as text.
 		const maroon = theme.getBgAnsi("toolErrorBg").replace("\x1b[48;", "\x1b[38;");
-		return `${maroon}prediction aborted\x1b[39m`;
+		return `${maroon}suggestion aborted\x1b[39m`;
 	}
 
 	function publish() {
@@ -124,7 +124,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 			const served = await deps.source.get(run.abort.signal);
 			if (!live(run)) return;
 			if (served === null) {
-				session.ui.notify("Prediction prompt is unavailable.", "warning");
+				session.ui.notify("Suggestion prompt is unavailable.", "warning");
 				return;
 			}
 			const message = await context.infer(session, capture, served.prompt, run.abort.signal);
@@ -134,7 +134,7 @@ export function createController(pi: ExtensionAPI, context: PredictionContext, d
 		} catch (error) {
 			if (!live(run)) return;
 			if (isTokenFailure(error, session)) showTokenError(session);
-			else session.ui.notify(`Prediction failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
+			else session.ui.notify(`Suggestion failed: ${error instanceof Error ? error.message : String(error)}`, "warning");
 		} finally {
 			if (live(run)) {
 				current = undefined;

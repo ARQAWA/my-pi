@@ -5,10 +5,10 @@ import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createOverlay } from "../extensions/RQW-anthropic/transport.ts";
 import { versionState } from "../extensions/RQW-anthropic/wire.ts";
-import { CTRL_E, harness, settle } from "./extensions/RQW-predictions/harness.ts";
+import { CTRL_E, harness, settle } from "./extensions/RQW-suggestions/harness.ts";
 
 // Cross-extension transport contract: Pi, credentials, prompt source and network are fixtures.
-it("a resumed prediction before the first main request keeps the main Claude Code identity", async t => {
+it("a resumed suggestion before the first main request keeps the main Claude Code identity", async t => {
 	const credentials = new InMemoryCredentialStore();
 	await credentials.modify("anthropic", async () => ({
 		type: "oauth", access: "sk-ant-oat01-offline", refresh: "unused", expires: 4_102_444_800_000,
@@ -60,14 +60,14 @@ it("a resumed prediction before the first main request keeps the main Claude Cod
 	const main = await registry.streamSimple(model, context, { sessionId: h.state.sessionId, reasoning: "medium" }).result();
 	assert.equal(main.stopReason, "stop");
 	assert.equal(requests.length, 2);
-	const [prediction, control] = requests;
+	const [suggestion, control] = requests;
 	assert.equal(control.headers.get("x-claude-code-session-id"), h.state.sessionId);
-	assert.equal(prediction.headers.get("x-claude-code-session-id"), control.headers.get("x-claude-code-session-id"));
-	assert.deepEqual(prediction.body.metadata, control.body.metadata);
-	assert.deepEqual(prediction.body.system, control.body.system);
-	assert.deepEqual(prediction.body.tools, control.body.tools);
+	assert.equal(suggestion.headers.get("x-claude-code-session-id"), control.headers.get("x-claude-code-session-id"));
+	assert.deepEqual(suggestion.body.metadata, control.body.metadata);
+	assert.deepEqual(suggestion.body.system, control.body.system);
+	assert.deepEqual(suggestion.body.tools, control.body.tools);
 	for (const header of ["user-agent", "x-app", "anthropic-beta"]) {
-		assert.equal(prediction.headers.get(header), control.headers.get(header), header);
+		assert.equal(suggestion.headers.get(header), control.headers.get(header), header);
 	}
 
 	// A side request for another model must not replace the main request's fork source.

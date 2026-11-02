@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Credential, OAuthCredential } from "@earendil-works/pi-ai";
-import { createPromptSource, PredictionAuthError, PREDICTION_CONFIG_URL, PREDICTION_PROMPT_TTL_MS } from "../../../extensions/RQW-predictions/codex-prompt.ts";
+import { createPromptSource, SuggestionAuthError, SUGGESTION_CONFIG_URL, SUGGESTION_PROMPT_TTL_MS } from "../../../extensions/RQW-suggestions/codex-prompt.ts";
 
 const START = 1_000_000;
 
@@ -38,14 +38,14 @@ function setup(respond: (call: Call, number: number) => Response | Promise<Respo
 	return { source, clock, state, calls };
 }
 
-describe("codex prediction prompt source", () => {
+describe("codex suggestion prompt source", () => {
 	it("reads the production endpoint with the saved login as read-only bearer", async () => {
 		const { source, calls, state } = setup();
 		const result = await source.get();
 		assert.deepEqual(result, { prompt: "prompt v1", promptVersion: "v1" });
 		assert.equal(calls.length, 1);
 		assert.equal(calls[0].method, "GET");
-		assert.equal(calls[0].url, PREDICTION_CONFIG_URL);
+		assert.equal(calls[0].url, SUGGESTION_CONFIG_URL);
 		assert.equal(calls[0].url, "https://chatgpt.com/backend-api/wham/predictions/config");
 		assert.equal(calls[0].headers.Authorization, `Bearer ${(state.credential as { access: string }).access}`);
 		assert.equal(calls[0].headers["ChatGPT-Account-ID"], "acc-1");
@@ -54,7 +54,7 @@ describe("codex prediction prompt source", () => {
 	it("serves the cache at 299999 ms without a GET", async () => {
 		const { source, clock, calls } = setup();
 		await source.get();
-		clock.now += PREDICTION_PROMPT_TTL_MS - 1;
+		clock.now += SUGGESTION_PROMPT_TTL_MS - 1;
 		assert.equal((await source.get())?.promptVersion, "v1");
 		assert.equal(calls.length, 1);
 	});
@@ -62,7 +62,7 @@ describe("codex prediction prompt source", () => {
 	it("refreshes once at 300000 ms and returns the new prompt_version", async () => {
 		const { source, clock, calls } = setup();
 		await source.get();
-		clock.now += PREDICTION_PROMPT_TTL_MS;
+		clock.now += SUGGESTION_PROMPT_TTL_MS;
 		assert.deepEqual(await source.get(), { prompt: "prompt v2", promptVersion: "v2" });
 		assert.equal(calls.length, 2);
 		assert.equal((await source.get())?.promptVersion, "v2");
@@ -83,7 +83,7 @@ describe("codex prediction prompt source", () => {
 	it("caches null for 300000 ms after an HTTP error", async () => {
 		const { source, clock, calls } = setup((_c, n) => (n === 1 ? new Response("no", { status: 500 }) : config("v2")));
 		assert.equal(await source.get(), null);
-		clock.now += PREDICTION_PROMPT_TTL_MS - 1;
+		clock.now += SUGGESTION_PROMPT_TTL_MS - 1;
 		assert.equal(await source.get(), null);
 		assert.equal(calls.length, 1);
 		clock.now += 1;
@@ -115,34 +115,34 @@ describe("codex prediction prompt source", () => {
 	it("never replaces an expired prompt with the old one when the refresh fails", async () => {
 		const { source, clock } = setup((_c, n) => (n === 1 ? config("v1") : new Response("no", { status: 503 })));
 		await source.get();
-		clock.now += PREDICTION_PROMPT_TTL_MS;
+		clock.now += SUGGESTION_PROMPT_TTL_MS;
 		assert.equal(await source.get(), null);
 	});
 
 	it("does not call the endpoint without a saved oauth login", async () => {
 		const { source, state, calls } = setup();
 		state.credential = undefined;
-		await assert.rejects(source.get(), PredictionAuthError);
+		await assert.rejects(source.get(), SuggestionAuthError);
 		state.credential = { type: "api_key", key: "k" } as unknown as Credential;
-		await assert.rejects(source.get(), PredictionAuthError);
+		await assert.rejects(source.get(), SuggestionAuthError);
 		state.credential = login("acc-1", START);
-		await assert.rejects(source.get(), PredictionAuthError);
+		await assert.rejects(source.get(), SuggestionAuthError);
 		assert.equal(calls.length, 0);
 	});
 
 	it("tells an expired access token apart from a missing login, still without a request", async () => {
 		const { source, state, calls } = setup();
 		state.credential = login("acc-1", START);
-		await assert.rejects(source.get(), (error: Error) => error instanceof PredictionAuthError && /expired/.test(error.message) && /\/login openai-codex/.test(error.message));
+		await assert.rejects(source.get(), (error: Error) => error instanceof SuggestionAuthError && /expired/.test(error.message) && /\/login openai-codex/.test(error.message));
 		state.credential = undefined;
-		await assert.rejects(source.get(), (error: Error) => error instanceof PredictionAuthError && !/expired/.test(error.message) && /\/login openai-codex/.test(error.message));
+		await assert.rejects(source.get(), (error: Error) => error instanceof SuggestionAuthError && !/expired/.test(error.message) && /\/login openai-codex/.test(error.message));
 		assert.equal(calls.length, 0);
 	});
 
 	it("rejects a stored account id that disagrees with the token claim", async () => {
 		const { source, state, calls } = setup();
 		state.credential = { ...login("acc-1"), accountId: "acc-2" };
-		await assert.rejects(source.get(), PredictionAuthError);
+		await assert.rejects(source.get(), SuggestionAuthError);
 		assert.equal(calls.length, 0);
 	});
 
@@ -184,7 +184,7 @@ describe("codex prediction prompt source", () => {
 		await new Promise((resolve) => setImmediate(resolve));
 		state.credential = login("acc-2");
 		release(config("v1"));
-		await assert.rejects(read, PredictionAuthError);
+		await assert.rejects(read, SuggestionAuthError);
 		state.credential = login("acc-1");
 		assert.equal((await source.get())?.promptVersion, "v2");
 		assert.equal(calls.length, 2);

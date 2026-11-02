@@ -9,7 +9,7 @@ const END = "\x1b[F";
 /** What the live manager says about every action, as Pi's settings view and menus read it. */
 const resolved = (manager: ReturnType<typeof piKeybindings>) => manager.getResolvedBindings();
 
-describe("RQW-predictions key freeing", () => {
+describe("RQW-suggestions key freeing", () => {
 	it("takes Ctrl+E and Ctrl+R from every action of the live manager and keeps all other keys", () => {
 		const stock = resolved(piKeybindings());
 		const manager = piKeybindings({ "tui.editor.deleteToLineEnd": ["ctrl+k", "ctrl+e"], "app.session.rename": ["ctrl+r", "ctrl+x"] });
@@ -34,7 +34,7 @@ describe("RQW-predictions key freeing", () => {
 		assert.deepEqual(manager.getUserBindings(), { "tui.editor.deleteToLineEnd": ["ctrl+k", "ctrl+e"], "app.session.rename": ["ctrl+r", "ctrl+x"] });
 	});
 
-	it("Ctrl+E makes one prediction and does not move the cursor, End still goes to the line end, Ctrl+G is untouched", async () => {
+	it("Ctrl+E makes one suggestion and does not move the cursor, End still goes to the line end, Ctrl+G is untouched", async () => {
 		const h = harness();
 		h.ran();
 		h.editor.setText("hello");
@@ -96,7 +96,7 @@ describe("RQW-predictions key freeing", () => {
 		assert.equal(h.gets.length, 1);
 	});
 
-	it("an incompatible manager stays stock: one warning, the keys keep their Pi action and no prediction starts", async () => {
+	it("an incompatible manager stays stock: one warning, the keys keep their Pi action and no suggestion starts", async () => {
 		const manager = piKeybindings();
 		Object.defineProperty(manager, "getDefinition", { value: undefined });
 		const h = harness({ keybindings: manager });
