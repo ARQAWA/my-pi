@@ -232,6 +232,8 @@ Provenance:
   Owner, 2026-11-02 (entry `5ee0f652`): «Это должн быть не просто список, а куммулятивный список требований за все время с учетом всех корректировок исправлений и передумок»
   Owner, 2026-11-02 (entry `099bfbf7`): «проверенный хай ревьюером в цикле проверок слепых»
   Owner, 2026-11-02 (entry `814b64c9`, with `$highreview`): «про цикл слепых хай ревью я имел ввиду хай ревьюера»
+  Owner, in chat: «Что бы такой хуйни небыло ебани ему хай ревью в конце аудита»
+  The completed audit report also goes through fresh blind `bossy` reviews until CLEAN. Every round checks every verdict against the current wish quote and target evidence; fix findings and repeat. No finding is rejected without a fresh blind pass.
   Reason: the owner delegated the agreement step to a verified list. Carriers: `.agents/skills/wish-audit/SKILL.md`, `my-pi-evidence/designs/wish-audit/` (`WISHES.md`, `wishes.json`, `build.py`, `AUDIT.md`).
 
 - **Main performs no action itself** `[D-WORK-COORDINATOR-ONLY]`. Decision: `PROCESS.md` rule 7 and the guard prompt line of `.pi/extensions/coordinator-guard/index.ts`. Main never performs an action itself: research, edits, checks, audits, running commands and opening files for the owner all go to a subagent. Main works only with tasks, `BACKLOG.md`, its context and subagents. The block `json coordinator-rules` and its tests are unchanged; the guard test checks the new prompt line. The explicit owner override of `[D-WORK-EXECUTOR-ROLE]` («только если я тебе императивно скажу») stays, because the owner's words here do not cancel it.
