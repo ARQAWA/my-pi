@@ -52,6 +52,9 @@ The theme is distributed separately through `pi.themes`, not as an extension.
   prepared before `renderSessionEntries`, keyed by the live session and extension runtime. `session_start` does not
   rebuild the groups. On shutdown, event data and session references are released while the old visible rows stay
   intact until Pi replaces the transcript or stops.
+- An argument delta of a call already grouped (`toolcall_delta`) does not rebuild the groups: it replaces that member's
+  arguments in place, bumps its group's `revision` and redraws only the group's leader. Classifications are cached per
+  member and arguments object, so a frame while a call streams classifies that call alone.
 - Accepted limit: every model step with thinking keeps Pi's own blank row and, while thinking is hidden, its label row;
   this extension cannot remove them.
 

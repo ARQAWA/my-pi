@@ -24,7 +24,34 @@ export function fitEnd(text: string, width: number): string {
 /** Plain text cut at the start to `width` columns, a leading ellipsis marking the cut: the end stays visible. */
 export function fitStart(text: string, width: number): string {
 	if (width <= 0) return "";
+	// Only the end shows, so a long text (a streaming command) is cut from a bounded suffix. Its first grapheme may be
+	// split, but when the suffix is wider than `width + 2` columns the cut never reaches it: the result is the same.
+	const limit = width * 8 + 64;
+	if (text.length > limit) {
+		const suffix = text.slice(suffixStart(text, text.length - limit));
+		if (visibleWidth(suffix) > width + 2) return cutStart(suffix, width);
+	}
 	if (visibleWidth(text) <= width) return text;
+	return cutStart(text, width);
+}
+
+const isRegional = (text: string, at: number) => {
+	const code = text.codePointAt(at) ?? 0;
+	return code >= 0x1f1e6 && code <= 0x1f1ff;
+};
+
+/** A suffix start at or just after `start` that keeps the text's pairing: never inside a surrogate pair, and regional
+ * indicators (flags) pair from the start of their run as in the whole text. */
+function suffixStart(text: string, start: number): number {
+	const unit = text.charCodeAt(start);
+	if (unit >= 0xdc00 && unit <= 0xdfff) start++;
+	if (!isRegional(text, start)) return start;
+	let before = 0;
+	for (let at = start - 2; at >= 0 && isRegional(text, at); at -= 2) before++;
+	return before % 2 === 1 ? start + 2 : start;
+}
+
+function cutStart(text: string, width: number): string {
 	let used = 1, kept = "";
 	for (const { g, w } of cells(text).reverse()) {
 		if (used + w > width) break;
