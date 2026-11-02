@@ -59,8 +59,13 @@ export class ProgressReports {
 		this.onCount();
 		this.latest = message;
 		this.reasoning = reasoning;
-		if (!this.timer) this.arm();
+		this.start();
 		if (this.steps % PROGRESS_STEPS === 0) this.summarize("steps");
+	}
+
+	/** Accepted work starts the 30 minute limit at once, before any tool-call response; a running limit stays. */
+	start(): void {
+		if (!this.timer) this.arm();
 	}
 
 	private arm(): void {
@@ -121,7 +126,7 @@ export class ProgressReports {
 		this.invalidate();
 		this.steps = 0;
 		this.onCount();
-		// A running child gets a new 30 minute limit; an idle one starts it with its next tool-call response.
+		// A running child gets a new 30 minute limit; an idle one starts it when its next work is accepted.
 		if (watching) this.arm();
 	}
 }
