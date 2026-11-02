@@ -8,14 +8,17 @@ The Pi 1.4.0 runtime patch in `early.ts` decorates the stock editor and footer b
 
 ## Subscription limits
 
-The folder stays on the left; CX in soft light blue and CC in soft pink-red sit on the right, immediately before the git branch. Narrow rows wrap instead of losing provider limits.
+The folder stays on the left; CXC and CX in soft light blue and CC in soft pink-red sit on the right, immediately before the git branch. Narrow rows wrap instead of losing provider limits.
 Each provider shows one remaining percent: CX and CC the weekly window.
+CXC, shown before CX, is the Codex credits balance as Codex shows it: whole credits with a dot between thousands
+(`10.000`), or `Unlimited`. It comes from the same CX request. No credits means no CXC block;
+stale data gets the same `*` star as the percent.
 Providers without stored login credentials are hidden. Unknown values show `???`.
 The active footer checks the shared cache immediately and once a minute, independently of model responses.
 Files in the system temporary directory under `rqw-quota/` are separate per provider and account.
 Codex credentials supply `accountId`; Pi's Anthropic credentials have no account ID, so the refresh token
 is the fallback identity. File names use the first 16 hex characters of its SHA-256 hash, never a token.
-Files contain only `percent`, `okAt` and `checkedAt`. Tabs reuse each attempt for three minutes;
+Files contain only `percent`, `credits` (raw digits or `Unlimited`), `okAt` and `checkedAt`. Tabs reuse each attempt for three minutes;
 an exclusive `.lock` file prevents parallel requests. Locks older than 30 seconds are replaced.
 Writes use a temporary file and rename; file errors retain the last displayed value.
 Failed reads keep the last good percentage with a `*` directly before the number, in the same colour (`CX *77%`);

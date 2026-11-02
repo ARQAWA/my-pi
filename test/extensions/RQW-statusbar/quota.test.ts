@@ -32,7 +32,7 @@ function setup(t: TestContext) {
 	const saved = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = root;
 	const response = { status: 200, percent: 77, ccPercent: undefined as number | undefined,
-		ccStatus: undefined as number | undefined, branch: "main", hold: Promise.resolve() };
+		ccStatus: undefined as number | undefined, credits: undefined as unknown, branch: "main", hold: Promise.resolve() };
 	t.mock.method(childProcess, "execFile", (file: string, args: string[], _options: unknown,
 		done: (error: Error | null, stdout: string) => void) => {
 		assert.equal(file, "git");
@@ -63,7 +63,7 @@ function setup(t: TestContext) {
 		await response.hold;
 		return response.status === 200 ? Response.json({ rate_limit: {
 			secondary_window: { used_percent: 100 - response.percent, limit_window_seconds: 604800 },
-		} }) : new Response(null, { status: response.status });
+		}, credits: response.credits }) : new Response(null, { status: response.status });
 	});
 	const shutdown: (() => unknown)[] = [];
 	const idle = () => !existsSync(cacheDir) || !readdirSync(cacheDir).some(name => name.endsWith(".lock"));
@@ -264,6 +264,57 @@ it("a fresh value removes the star", async (t) => {
 	t.mock.timers.tick(3 * MINUTE);
 	await until(() => shown().includes("CX 64%") && shown().includes("CC 64%") && cache.idle());
 	assert.ok(!shown().includes("*"));
+});
+
+const CREDIT_CASES: [string, unknown, string | undefined][] = [
+	["a small balance", { has_credits: true, unlimited: false, balance: "25" }, "25"],
+	["ten thousand with a dot", { has_credits: true, unlimited: false, balance: "10000" }, "10.000"],
+	["millions with dots", { has_credits: true, unlimited: false, balance: "1234567" }, "1.234.567"],
+	["a fractional balance rounded like Codex", { has_credits: true, unlimited: false, balance: "1234.6" }, "1.235"],
+	["unlimited credits", { has_credits: true, unlimited: true, balance: null }, "Unlimited"],
+	["no credits flag", { has_credits: false, unlimited: false, balance: "25" }, undefined],
+	["a zero balance", { has_credits: true, unlimited: false, balance: "0" }, undefined],
+	["a missing credits object", undefined, undefined],
+];
+for (const [name, credits, shownText] of CREDIT_CASES) {
+	it(`CXC shows ${name} before CX and CC from the same request`, async (t) => {
+		const cache = setup(t);
+		cache.response.credits = credits;
+		const shown = await cache.openTab();
+		await until(() => shown().includes("CX 77%") && shown().includes("CC 77%") && cache.idle());
+		if (shownText === undefined) assert.doesNotMatch(shown(), /CXC/);
+		else assert.ok(shown().includes(`CXC ${shownText}  CX 77%  CC 77%`));
+		assert.equal(cache.reads.CX, 1);
+	});
+}
+
+it("CXC takes the colour of CX and gets the stale star with CX, then loses it on a fresh value", async (t) => {
+	const cache = setup(t);
+	cache.response.credits = { has_credits: true, unlimited: false, balance: "10000" };
+	const shown = await cache.openTab();
+	await until(() => shown().includes("CXC 10.000  CX 77%") && cache.idle());
+	assert.ok(shown.raw(160).join("\n").includes("\x1b[38;2;139;197;255mCXC 10.000\x1b[39m"));
+	assert.equal(JSON.parse(readFileSync(cache.file("CX"), "utf8")).credits, "10000");
+	cache.response.status = 429;
+	t.mock.timers.tick(3 * MINUTE);
+	await until(() => shown().includes("CXC *10.000  CX *77%") && cache.idle());
+	cache.response.status = 200;
+	cache.response.credits = { has_credits: true, unlimited: true };
+	t.mock.timers.tick(3 * MINUTE);
+	await until(() => shown().includes("CXC Unlimited  CX 77%") && cache.idle());
+	cache.response.credits = { has_credits: false };
+	t.mock.timers.tick(3 * MINUTE);
+	await until(() => !shown().includes("CXC") && cache.idle());
+});
+
+it("CXC follows the Codex login and is hidden without it", async (t) => {
+	const cache = setup(t);
+	cache.response.credits = { has_credits: true, unlimited: false, balance: "25" };
+	const shown = await cache.openTab();
+	await until(() => shown().includes("CXC 25  CX 77%") && cache.idle());
+	cache.setAccount("first", ["CC"]);
+	await shown.tick();
+	assert.doesNotMatch(shown(), /CXC|CX /);
 });
 
 it("a stopped request writes neither a value nor an attempt timestamp", async (t) => {

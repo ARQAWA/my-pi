@@ -405,7 +405,7 @@ export default function statusbar(pi: ExtensionAPI) {
 						const statuses = new Map([...footer.getExtensionStatuses()].filter(([name]) => name !== "rqw-predictions"));
 						let statusChanged = statuses.size !== lastStatuses.size;
 						if (!statusChanged) for (const [name, text] of statuses) if (lastStatuses.get(name) !== text) { statusChanged = true; break; }
-						const key = [width, quotas.values.CX, quotas.values.CC, ctx.model, pi.getThinkingLevel(), context, rate.value(), ctx.cwd,
+						const key = [width, quotas.values.CXC, quotas.values.CX, quotas.values.CC, ctx.model, pi.getThinkingLevel(), context, rate.value(), ctx.cwd,
 							repo?.root, repo?.worktree?.project, repo?.worktree?.name, counts?.staged, counts?.unstaged, counts?.untracked, branch, !!fast, backgroundFrame !== undefined, predictionState];
 						if (statusChanged || key.length !== lastKey.length || key.some((value, i) => value !== lastKey[i])) {
 							lastStatuses = new Map(statuses);
