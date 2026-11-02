@@ -1207,6 +1207,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const started = Promise.withResolvers<void>();
 		const accept = () => {
 			if (communication) { a.progress.reset(); communication = false; }
+			if (a.config.fork_turns !== "all") a.progress.start();
 			started.resolve();
 		};
 		const session = a.session;
@@ -1243,6 +1244,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const stopMarking = backgroundSources(a).map(source => source.subscribe(markStarted));
 		const run: NonNullable<Agent["run"]> = { done: Promise.resolve(), quiet: false, controller: new AbortController() };
 		a.guard.signal = AbortSignal.any([run.controller.signal, signal]);
+		// A send queued while this run stops keeps its own 30 minute limit; the snapshot is dropped either way.
+		const endProgress = () => { if (a.next?.length && !a.controller.signal.aborted) a.progress.discard(); else a.progress.invalidate(); };
 		const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
 			if (event.type === "compaction_start") {
 				a.progress.discard();
@@ -1260,7 +1263,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			}
 			if (event.type !== "message_end" || !isAssistant(event.message)) return;
 			const m = event.message;
-			if (m.stopReason !== "toolUse") a.progress.invalidate();
+			if (m.stopReason !== "toolUse") endProgress();
 			else if (a.config.fork_turns !== "all") a.progress.response(m, m.thinkingLevel as Parameters<ProgressReports["response"]>[1]);
 			recordRunMessage(meta, m);
 			lastPushed = 0;
@@ -1374,7 +1377,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					publishRun(a, identity, outputs.map(output => output.text).join("\n\n"), "error", meta);
 				}
 			} finally {
-				a.progress.invalidate();
+				endProgress();
 				unsubscribe();
 				for (const stop of stopMarking) stop();
 				started.resolve();
@@ -1651,6 +1654,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					(a.next ??= []).push(params.task);
 					queueSend(a, params.task, joined); persist(a);
 					a.progress.reset();
+					// The interrupt dropped the old limit; the accepted send has its own while the old run is still stopping.
+					if (a.config.fork_turns !== "all") a.progress.start();
 					return ok(`${name}#${a.id}: ${params.interrupt ? "interrupted, sent" : "sent"}`);
 				}
 				if (a.run) {
@@ -1858,6 +1863,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			coordinator.stopBackground();
 			for (const a of agents.values()) {
 				a.next = undefined;
+				a.progress.invalidate();
 				if (a.run && !a.run.quiet) requestInterrupt(a, a.run);
 				else { a.children?.abortAll(); a.jobs?.abortAll(); }
 			}
