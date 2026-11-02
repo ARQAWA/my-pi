@@ -78,7 +78,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   the input editor's bottom border and the session ID at the right end of its top border. Shows the GPT Fast lightning after the model name (main chat, `openai-codex` model, shimmer while working). On by default; `/statusbar [on|off]` toggles it and restores the stock editor and
   footer when off. Its upper input border shows the gold session title at the left and session ID at the right.
   Activity is a separate line above it, with a one-space left gap and blank lines above and below, absent idle; it carries send-now's dim italic Esc key hint at its right (`[D-KEYS-HINTS]`). It says `Waiting for 2 agents, 1 background process` when Main only waits and shows the processes while Main works too; under it one dim line `12 idle agents` (`1 idle agent`) when that number is above zero, also when everything is idle; there is no per-agent list (`[D-STATUSBAR-WAITS]`).
-  Busy letters shimmer silver; compaction shimmers gold over the title.
+  Busy letters shimmer silver; compaction shimmers gold over the title. Background naming shows `naming` beside the folder in the existing silver shimmer.
   `early.ts` decorates Pi's stock editor and footer before the first paint and across session switches; no paint is held. Incompatible shapes fall back to stock (`[D-STATUSBAR-STARTUP]`).
   Tests: `test/extensions/RQW-statusbar/`.
 - `extensions/RQW-todo/`: independent main-chat todo tool and skill. `$todo` enables the mode for the session; a request to switch it off calls `todo` with `off: true`. An open list supplies request-only working memory and a three-line panel above the editor. `/todo` shows current and closed lists with steps and reasons. Blocked items stay open; one reminder per user message covers pending or active items before a completed turn. State follows the session branch and survives compaction. Registered after RQW-statusbar. Contract: [README](extensions/RQW-todo/README.md), `DECISIONS.md` `[D-TODO-PANEL]`. Tests: `test/extensions/RQW-todo/`, `test/synthetic-todo.test.ts`.
@@ -141,7 +141,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   At most four words and 32 Unicode
   code points, overlong names rejected, never truncated; initial attempt plus up to three retries, then a warning
   preserving the old name. `/rename-gen` regenerates; native
-  `/name` stays unchanged. The `rename_session` tool (one `name`) lets the agent set the native name. RQW-statusbar displays the native name in the top input border, gold and shimmering during compaction.
+  `/name` stays unchanged. During generation, `rqw-naming:activity` publishes `{ sessionId, active }` for the status bar. The `rename_session` tool (one `name`) lets the agent set the native name. RQW-statusbar displays the native name in the top input border, gold and shimmering during compaction.
   Details: [Naming](DECISIONS.md#naming); tests: `test/extensions/RQW-naming/`.
 - `extensions/RQW-agent-ui/`: extension 17, compact result cards for older stored `agent` `wait` results, including reviewer profiles,
   full originals through Ctrl+O; a one-line `agent_progress` notice card with its summary. Cards of older stored `agent`

@@ -6,6 +6,7 @@ function load() {
 	const names: string[] = [];
 	let tool: any;
 	const pi = {
+		events: { on() {}, emit() {} },
 		on() {},
 		registerCommand() {},
 		registerTool: (t: unknown) => { tool = t; },

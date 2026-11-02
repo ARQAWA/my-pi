@@ -93,6 +93,7 @@ export default function statusbar(pi: ExtensionAPI) {
 		warningTimer.unref?.();
 	});
 	const backgroundSessions = new Set<string>();
+	const namingSessions = new Set<string>();
 	let prediction: { sessionId: string; state: "brewing" | "aborted"; abortedUntil?: number } | undefined;
 	let hintSource: HintSource | undefined;
 	let unsubscribeHints: (() => void) | undefined;
@@ -123,7 +124,7 @@ export default function statusbar(pi: ExtensionAPI) {
 	const stopShimmer = () => { if (shimmer) clearInterval(shimmer); shimmer = undefined; };
 	/** The shimmer timer only asks for redraws while the status letters or the working lightning need it and the footer is up;
 	 * re-checked on every tick. The phase comes from the elapsed time at render, so Pi's other redraws show it too. */
-	const wantsShimmer = () => active && ((status !== undefined && !status.retry) || (working && lightning) || backgroundSessions.has(lightCtx?.sessionManager.getSessionId() ?? "") || (prediction?.sessionId === lightCtx?.sessionManager.getSessionId() && prediction?.state === "brewing"));
+	const wantsShimmer = () => active && ((status !== undefined && !status.retry) || (working && lightning) || backgroundSessions.has(lightCtx?.sessionManager.getSessionId() ?? "") || namingSessions.has(lightCtx?.sessionManager.getSessionId() ?? "") || (prediction?.sessionId === lightCtx?.sessionManager.getSessionId() && prediction?.state === "brewing"));
 	const syncShimmer = () => {
 		status = nativeActivity ? { ...nativeActivity, compacting: false } : statusText({ compacting, running, action: [...tools.values()].at(-1), counts: jobs.get() });
 		lightning = lit(lightCtx);
@@ -140,6 +141,15 @@ export default function statusbar(pi: ExtensionAPI) {
 		else backgroundSessions.delete(value.sessionId);
 		if (value.sessionId === lightCtx?.sessionManager.getSessionId()) { syncShimmer(); redraw?.(); }
 	});
+	const receiveNaming = (event: unknown) => {
+		const value = event as { sessionId?: unknown; active?: unknown } | null;
+		if (!value || typeof value.sessionId !== "string" || typeof value.active !== "boolean") return;
+		if (namingSessions.has(value.sessionId) === value.active) return;
+		if (value.active) namingSessions.add(value.sessionId);
+		else namingSessions.delete(value.sessionId);
+		if (value.sessionId === lightCtx?.sessionManager.getSessionId()) { syncShimmer(); redraw?.(); }
+	};
+	const unsubscribeNaming = pi.events.on("rqw-naming:activity", receiveNaming);
 	const receivePrediction = (event: unknown) => {
 		const value = event as { sessionId?: unknown; state?: unknown; abortedUntil?: unknown } | null;
 		if (!value || typeof value.sessionId !== "string" || value.sessionId !== lightCtx?.sessionManager.getSessionId()) return;
@@ -268,7 +278,11 @@ export default function statusbar(pi: ExtensionAPI) {
 			if (ctx.mode !== "tui" || !enabled) return;
 			const initialCwd = ctx.cwd;
 			lightCtx = ctx;
-			if (ctx.sessionManager) pi.events.emit("rqw-predictions:activity-query", { sessionId: ctx.sessionManager.getSessionId(), offer: receivePrediction });
+			if (ctx.sessionManager) {
+				const sessionId = ctx.sessionManager.getSessionId();
+				pi.events.emit("rqw-predictions:activity-query", { sessionId, offer: receivePrediction });
+				pi.events.emit("rqw-naming:activity-query", { sessionId, offer: receiveNaming });
+			}
 			unsubscribeFast = pi.events.on(FAST_GPT_CHANGED, () => { syncShimmer(); redraw?.(); });
 			jobs.start();
 			if (ctx.sessionManager) pi.events.emit(HINT_REQUEST, { sessionId: ctx.sessionManager.getSessionId(), reply: adoptHints });
@@ -357,6 +371,7 @@ export default function statusbar(pi: ExtensionAPI) {
 				let lastFastFrame: number | undefined;
 				let lastBackgroundFrame: number | undefined;
 				let lastPredictionFrame: number | undefined;
+				let lastNamingFrame: number | undefined;
 				let lastSessionId = ctx.sessionManager.getSessionId();
 				const refreshWarning = () => {
 					if (!cachedState || cachedWidth === undefined) return;
@@ -397,9 +412,11 @@ export default function statusbar(pi: ExtensionAPI) {
 						if (lastSessionId !== sessionId) {
 							if (warning?.sessionId !== sessionId) clearWarning();
 							backgroundSessions.delete(lastSessionId);
+							namingSessions.delete(lastSessionId);
 							prediction = undefined;
 							lastSessionId = sessionId;
 							pi.events.emit("rqw-predictions:activity-query", { sessionId, offer: receivePrediction });
+							pi.events.emit("rqw-naming:activity-query", { sessionId, offer: receiveNaming });
 							syncShimmer();
 						}
 						const backgroundFrame = backgroundSessions.has(sessionId)
@@ -407,12 +424,13 @@ export default function statusbar(pi: ExtensionAPI) {
 						if (prediction?.state === "aborted" && prediction.abortedUntil !== undefined && prediction.abortedUntil <= now()) prediction = undefined;
 						const predictionState = prediction?.sessionId === sessionId ? prediction.state : undefined;
 						const predictionFrame = predictionState === "brewing" ? Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS : undefined;
+						const namingFrame = namingSessions.has(sessionId) ? Math.floor((now() - animationStart) / SHIMMER_MS) * SHIMMER_MS / STATUS_FRAME_MS : undefined;
 						// RQW-predictions mirrors its state into the stock status line; the prediction indicator replaces it.
 						const statuses = new Map([...footer.getExtensionStatuses()].filter(([name]) => name !== "rqw-predictions"));
 						let statusChanged = statuses.size !== lastStatuses.size;
 						if (!statusChanged) for (const [name, text] of statuses) if (lastStatuses.get(name) !== text) { statusChanged = true; break; }
 						const key = [width, quotas.values.CXC, quotas.values.CX, quotas.values.CC, ctx.model, pi.getThinkingLevel(), context, rate.value(), ctx.cwd,
-							repo?.root, repo?.worktree?.project, repo?.worktree?.name, counts?.staged, counts?.unstaged, counts?.untracked, branch, !!fast, backgroundFrame !== undefined, predictionState];
+							repo?.root, repo?.worktree?.project, repo?.worktree?.name, counts?.staged, counts?.unstaged, counts?.untracked, branch, !!fast, backgroundFrame !== undefined, predictionState, namingFrame !== undefined];
 						if (statusChanged || key.length !== lastKey.length || key.some((value, i) => value !== lastKey[i])) {
 							lastStatuses = new Map(statuses);
 							cachedWidth = width;
@@ -420,7 +438,7 @@ export default function statusbar(pi: ExtensionAPI) {
 								warning: warning?.text,
 								quotas: { ...quotas.values }, model: ctx.model, thinkingLevel: pi.getThinkingLevel(), ...context,
 								rate: rate.value(), fast, place: placeOf({ cwd: ctx.cwd, home: homedir(), scratchRoots: roots, worktree: repo?.worktree, branch }),
-								git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts }, backgroundFrame,
+								git: repo && { branch, staged: 0, unstaged: 0, untracked: 0, ...counts }, backgroundFrame, namingFrame,
 								prediction: predictionState === "brewing" ? { state: "brewing", frame: predictionFrame! } : predictionState === "aborted" ? { state: "aborted" } : undefined,
 								statuses: [...statuses].sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text),
 							};
@@ -430,20 +448,23 @@ export default function statusbar(pi: ExtensionAPI) {
 							lastFastFrame = fast?.frame;
 							lastBackgroundFrame = backgroundFrame;
 							lastPredictionFrame = predictionFrame;
-						} else if (cachedState && (fast?.frame !== lastFastFrame || backgroundFrame !== lastBackgroundFrame || predictionFrame !== lastPredictionFrame)) {
+							lastNamingFrame = namingFrame;
+						} else if (cachedState && (fast?.frame !== lastFastFrame || backgroundFrame !== lastBackgroundFrame || predictionFrame !== lastPredictionFrame || namingFrame !== lastNamingFrame)) {
 							cachedRows = [...cachedRows];
 							if (fast?.frame !== lastFastFrame) {
 								cachedState.fast = fast;
 								cachedRows[1] = modelRow(cachedState, width, paint);
 								lastFastFrame = fast?.frame;
 							}
-							if (backgroundFrame !== lastBackgroundFrame || predictionFrame !== lastPredictionFrame) {
+							if (backgroundFrame !== lastBackgroundFrame || predictionFrame !== lastPredictionFrame || namingFrame !== lastNamingFrame) {
 								cachedState.backgroundFrame = backgroundFrame;
+								cachedState.namingFrame = namingFrame;
 								if (cachedState.prediction?.state === "brewing") cachedState.prediction.frame = predictionFrame!;
 								cachedPlace = placeLayout(cachedState, width, paint);
 								cachedRows = [...cachedRows.slice(0, 2), cachedPlace.first(), ...cachedPlace.rest];
 								lastBackgroundFrame = backgroundFrame;
 								lastPredictionFrame = predictionFrame;
+								lastNamingFrame = namingFrame;
 							}
 						}
 						return ctx.ui.getEditorComponent() === editorFactory ? cachedRows.slice(1) : cachedRows;
@@ -498,9 +519,11 @@ export default function statusbar(pi: ExtensionAPI) {
 		unsubscribeWarning();
 		early.dispose();
 		unsubscribeBackground();
+		unsubscribeNaming();
 		unsubscribePrediction();
 		unsubscribeHintOffer();
 		backgroundSessions.clear();
+		namingSessions.clear();
 		release();
 		running = false;
 		working = false;

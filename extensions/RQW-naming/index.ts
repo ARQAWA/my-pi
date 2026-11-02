@@ -42,10 +42,22 @@ export default function (pi: ExtensionAPI) {
 	// Name we are writing ourselves; its session_info_changed echo must not cancel our own run.
 	let ownName: string | undefined;
 
-	const cancel = () => {
-		current?.controller.abort();
+	const finish = (run: Run) => {
+		if (current !== run) return;
 		current = undefined;
+		if (run.sessionId !== undefined) pi.events.emit("rqw-naming:activity", { sessionId: run.sessionId, active: false });
 	};
+	const cancel = () => {
+		if (!current) return;
+		const run = current;
+		run.controller.abort();
+		finish(run);
+	};
+	pi.events.on("rqw-naming:activity-query", (event: unknown) => {
+		const query = event as { sessionId?: unknown; offer?: (state: { sessionId: string; active: boolean }) => void } | null;
+		if (current?.sessionId !== undefined && query?.sessionId === current.sessionId)
+			query.offer?.({ sessionId: current.sessionId, active: true });
+	});
 
 	/** Stale runs (aborted, replaced or superseded) must never write or warn. */
 	const isCurrent = (run: Run, ctx: ExtensionContext) => {
@@ -67,7 +79,6 @@ export default function (pi: ExtensionAPI) {
 			if (!isCurrent(run, ctx)) return;
 		}
 		if (name === undefined) return warn(run, ctx);
-		if (current === run) current = undefined;
 		ownName = name;
 		pi.setSessionName(name);
 	}
@@ -77,6 +88,7 @@ export default function (pi: ExtensionAPI) {
 		cancel();
 		const run: Run = { controller: new AbortController(), sessionId: sessionIdOf(ctx) };
 		current = run;
+		if (run.sessionId !== undefined) pi.events.emit("rqw-naming:activity", { sessionId: run.sessionId, active: true });
 		const provider = ctx.model?.provider;
 		void (async () => {
 			let context: NamingMessage[];
@@ -98,9 +110,10 @@ export default function (pi: ExtensionAPI) {
 				const pending = pendingMessage ? namingMessage(pendingMessage, undefined) : undefined;
 				if (pending) context.push(pending);
 			}
-			catch { return warn(run, ctx); }
+			catch { warn(run, ctx); finish(run); return; }
 			try { await generate(ctx, run, context, ctx.modelRegistry, provider); }
 			catch { warn(run, ctx); }
+			finally { finish(run); }
 		})();
 	}
 

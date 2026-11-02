@@ -66,6 +66,7 @@ export interface BarState {
 	/** GPT Fast of the main chat: the lightning right after the model name, before the thinking level. `frame` is the shimmer step while the agent works, undefined when idle. */
 	fast?: { frame?: number };
 	backgroundFrame?: number;
+	namingFrame?: number;
 	prediction?: { state: "brewing"; frame: number } | { state: "aborted" };
 	/** Texts other extensions set with `ctx.ui.setStatus`, in key order. */
 	statuses: string[];
@@ -230,7 +231,7 @@ export function gitText(git: BarState["git"], paint: Paint = plain): string {
 
 /** Row 3: the working place and background states on the left, git on the right. */
 export function placeRow(state: BarState, width: number, paint: Paint = plain, right = gitText(state.git, paint)): string {
-	const labels = [state.backgroundFrame !== undefined ? "bg compaction" : "", state.prediction ? (state.prediction.state === "brewing" ? "prediction" : "prediction aborted") : ""].filter(Boolean);
+	const labels = [state.backgroundFrame !== undefined ? "bg compaction" : "", state.prediction ? (state.prediction.state === "brewing" ? "prediction" : "prediction aborted") : "", state.namingFrame !== undefined ? "naming" : ""].filter(Boolean);
 	const reserved = labels.reduce((sum, label) => sum + 2 + visibleWidth(label), 0);
 	const rightWidth = right ? visibleWidth(right) + 1 : 0;
 	const folderText = ` ${ICON[state.place.kind]} ${singleLine(state.place.text)}`;
@@ -242,6 +243,7 @@ export function placeRow(state: BarState, width: number, paint: Paint = plain, r
 			: paint("predictionAbort", "prediction aborted");
 		left += "  " + text;
 	}
+	if (state.namingFrame !== undefined) left += "  " + shimmerText("naming", visibleWidth(left) + 2, state.namingFrame, SILVER);
 	return leftRight(left, right, width);
 }
 
@@ -249,16 +251,17 @@ export function placeRow(state: BarState, width: number, paint: Paint = plain, r
 export function placeLayout(state: BarState, width: number, paint: Paint = plain): { first: () => string; rest: string[] } {
 	const quotas = state.quotas && quotaText(state.quotas);
 	const git = gitText(state.git, paint);
-	if (!quotas && state.backgroundFrame === undefined && !state.prediction)
+	if (!quotas && state.backgroundFrame === undefined && !state.prediction && state.namingFrame === undefined)
 		return { first: () => placeRow(state, width, paint, git), rest: [] };
 	const right = [quotas, git].filter(Boolean).join("  ");
 	const statusWidth = (state.backgroundFrame === undefined ? 0 : 2 + visibleWidth("bg compaction")) +
-		(state.prediction ? 2 + visibleWidth(state.prediction.state === "brewing" ? "prediction" : "prediction aborted") : 0);
+		(state.prediction ? 2 + visibleWidth(state.prediction.state === "brewing" ? "prediction" : "prediction aborted") : 0) +
+		(state.namingFrame !== undefined ? 2 + visibleWidth("naming") : 0);
 	if (width > 0 && statusWidth > width) {
 		const rows: string[] = [];
 		if (state.backgroundFrame !== undefined) {
 			if (width >= visibleWidth("bg compaction") + 2) {
-				rows.push(placeRow({ ...state, prediction: undefined }, width, paint, ""));
+				rows.push(placeRow({ ...state, prediction: undefined, namingFrame: undefined }, width, paint, ""));
 			} else {
 				rows.push(...wrapTextWithAnsi(shimmerText("bg compaction", 0, state.backgroundFrame, GOLD), width));
 			}
@@ -269,6 +272,7 @@ export function placeLayout(state: BarState, width: number, paint: Paint = plain
 				: paint("predictionAbort", "prediction aborted");
 			rows.push(...wrapTextWithAnsi(text, width));
 		}
+		if (state.namingFrame !== undefined) rows.push(...wrapTextWithAnsi(shimmerText("naming", 0, state.namingFrame, SILVER), width));
 		if (right) rows.push(...wrapTextWithAnsi(right, width).map((row) => leftRight("", row, width)));
 		return { first: () => rows[0] ?? "", rest: rows.slice(1) };
 	}
