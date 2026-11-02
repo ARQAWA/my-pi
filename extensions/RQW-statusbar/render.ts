@@ -47,6 +47,26 @@ export function singleLine(text: string): string {
 	return stripVTControlCharacters(text).replace(/[\r\n\t]/g, " ").replace(/[\x00-\x1f\x7f-\x9f]/g, "").replace(/ +/g, " ").trim();
 }
 
+/** Statuses may carry SGR styling, but no other terminal commands or extra rows. */
+function statusLine(text: string): string {
+	const controls = /(?:\x1b\]|\x9d)[\s\S]*?(?:\x07|\x1b\\|\x9c|$)|(?:\x1b[PX^_]|[\x90\x98\x9e\x9f])[\s\S]*?(?:\x1b\\|\x9c|$)|\x1b\[[0-9;]*m/g;
+	const clean = (part: string) => stripVTControlCharacters(part).replace(/[\r\n\t]/g, " ").replace(/[\x00-\x1f\x7f-\x9f]/g, "");
+	let result = "";
+	let start = 0;
+	let styled = false;
+	for (const match of text.matchAll(controls)) {
+		result += clean(text.slice(start, match.index));
+		if (/^\x1b\[[0-9;]*m$/.test(match[0])) {
+			result += match[0];
+			styled = true;
+		}
+		start = match.index + match[0].length;
+	}
+	result += clean(text.slice(start));
+	result = result.replace(/ +/g, " ").trim();
+	return result + (styled ? "\x1b[0m" : "");
+}
+
 export type PlaceKind = "folder" | "scratch" | "worktree";
 
 export interface BarState {
@@ -203,7 +223,7 @@ export function modelRow(state: BarState, width: number, paint: Paint = plain): 
 		? ` ${paint("model", name)} ${fastMark(state.fast.frame)}${shownLevel}`
 		: ` ${paint("model", name)}${shownLevel}`;
 	const dot = ` ${paint("sep", "·")} `;
-	const statuses = state.statuses.map(singleLine).filter(Boolean);
+	const statuses = state.statuses.map(statusLine).filter(status => stripVTControlCharacters(status).length > 0);
 	if (statuses.length > 0) left += dot + statuses.join(dot);
 	const right = state.compactions === undefined ? [] : [paint("label", `cmp ${state.compactions}`)];
 	if (state.rate !== undefined && Number.isFinite(state.rate) && state.rate > 0) {
@@ -211,6 +231,10 @@ export function modelRow(state: BarState, width: number, paint: Paint = plain): 
 	}
 	const warning = singleLine(state.warning ?? "");
 	const rightText = right.join(dot);
+	const styledStatuses = statuses.filter(status => /\x1b\[[0-9;]*m/.test(status));
+	if (styledStatuses.length && visibleWidth(left) + visibleWidth(rightText) + 1 > width) {
+		return fit(styledStatuses.join(dot), width);
+	}
 	if (warning && visibleWidth(left) + visibleWidth(rightText) + visibleWidth(warning) + 3 <= width) {
 		return leftRight(left, `${paint("warning", warning)}  ${rightText}`, width);
 	}

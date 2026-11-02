@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import { CustomEditor } from "@earendil-works/pi-coding-agent";
+import { CustomEditor, DEFAULT_COMPACTION_SETTINGS, estimateTokens } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
-import { CTRL_E, deferred, DIM, harness, settle, suggestion, text } from "./harness.ts";
+import { assistant, CTRL_E, deferred, DIM, harness, MODEL, settle, suggestion, SYSTEM, text, USER } from "./harness.ts";
 
 const TAB = "\t";
 const SHIFT_TAB = "\x1b[Z";
@@ -25,6 +25,60 @@ async function ready(value: string | null = "run the tests", options: Parameters
 }
 
 describe("RQW-suggestions gray suggestion", () => {
+	it("keeps the unfinished tool tail as text in a fork and after resume", async () => {
+		const calls = assistant([{ type: "toolCall", id: "open", name: "read", arguments: { path: "open.ts" } },
+			{ type: "toolCall", id: "done", name: "read", arguments: { path: "done.ts" } }], "toolUse");
+		const result = { role: "toolResult", toolCallId: "done", toolName: "read", content: [{ type: "text", text: "neighbor result" }], isError: false, timestamp: 4 } as const;
+		const later = { role: "user", content: "later user text", timestamp: 5 } as const;
+		for (const resumed of [false, true]) {
+			const h = harness({ projection: [USER, calls, result, later] });
+			if (!resumed) {
+				h.request({ messages: [SYSTEM, USER] });
+				for (const message of [calls, result, later]) h.fire("message_end", { message });
+			}
+			h.key(CTRL_E);
+			await settle();
+			const messages = (resumed ? h.provider[0] : h.forks[0]).context.messages;
+			assert.equal(messages.some(message => message.role === "assistant" && message.content.some(part => part.type === "toolCall" && part.id === "open")), false);
+			const instruction = String(messages.at(-1)?.content);
+			const tail = instruction.split("tools may still be running:\n")[1].split("\nReturn only JSON")[0];
+			assert.deepEqual(JSON.parse(tail), [
+				{ role: "assistant", content: calls.content },
+				{ role: "toolResult", content: result.content },
+				{ role: "user", content: later.content },
+			]);
+		}
+	});
+
+	it("keeps the latest tail within the model window after a large tool result", async () => {
+		const h = harness();
+		h.setModel({ ...MODEL, contextWindow: 40_000 });
+		h.request({ messages: [SYSTEM, USER] });
+		const calls = assistant([{ type: "toolCall", id: "open", name: "read", arguments: {} },
+			{ type: "toolCall", id: "done", name: "read", arguments: {} }], "toolUse");
+		h.fire("message_end", { message: calls });
+		h.fire("message_end", { message: { role: "toolResult", toolCallId: "done", toolName: "read", content: [{ type: "text", text: "x".repeat(150_000) }], isError: false, timestamp: 4 } });
+		h.fire("message_end", { message: { role: "user", content: "latest request", timestamp: 5 } });
+		h.key(CTRL_E);
+		await settle();
+		const messages = h.forks[0].context.messages;
+		assert.deepEqual(messages.slice(0, 2), [SYSTEM, USER]);
+		const instruction = String(messages.at(-1)?.content);
+		assert.match(instruction, /\[earlier part cut\]/);
+		assert.match(instruction, /latest request/);
+		assert.ok(messages.reduce((sum, message) => sum + estimateTokens(message), 0) <= 40_000 - DEFAULT_COMPACTION_SETTINGS.reserveTokens);
+	});
+
+	it("keeps a near-full completed snapshot unchanged", async () => {
+		const h = harness();
+		h.setModel({ ...MODEL, contextWindow: 40_000 });
+		const large = { role: "user" as const, content: "x".repeat(95_000) + "latest snapshot", timestamp: 2 };
+		h.request({ messages: [SYSTEM, large] });
+		h.key(CTRL_E);
+		await settle();
+		assert.deepEqual(h.forks[0].context.messages.slice(0, -1), [SYSTEM, large]);
+	});
+
 	it("shows the suggestion gray while the buffer stays empty; Tab turns it into editable text and sends nothing", async () => {
 		const h = await ready();
 		let submitted = 0;
