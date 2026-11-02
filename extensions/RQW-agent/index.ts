@@ -564,6 +564,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			// A queued `send` task is about to start: wait must not see an idle child in between.
 			recovers: a.recovers,
 			active: () => !!a.run || !!a.next?.length || recoveryPending.has(a.id),
+			title: () => a.title,
 			alertVersion: () => a.activity.alertVersion(),
 			snapshot: (messages?: number, depth = 0) => ({ ...(a.title ? { title: a.title } : {}), ...(a.config.profile ? { profile: a.config.profile } : {}), ...a.activity.snapshot(messages),
 				...(a.state === "paused" && !a.run ? { state: "paused" } : {}),

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { AgentSession, createEventBus } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import autoWait from "../../../extensions/RQW-auto-wait/index.ts";
 
 function setup(t: any, mode = "tui", nativeSend = false) {
@@ -12,14 +13,14 @@ function setup(t: any, mode = "tui", nativeSend = false) {
 	const manager = { getSessionId: () => "main", getLeafId: () => branch.at(-1)?.id ?? null, getBranch: () => branch };
 	const ctx: any = { mode, sessionManager: manager, isIdle: () => !session._isAgentRunActive, hasPendingMessages: () => false, signal: new AbortController().signal, ui: { notify() {} } };
 	const session: any = Object.assign(Object.create(AgentSession.prototype), { sessionManager: manager, _isAgentRunActive: false });
-	let listener: Function = () => {}, ready = false, reserved = false, delivered = false, targets = ["agent#1"];
-	const source = { version: 1, snapshot: () => ({ targets: ready ? [] : targets, ready }),
+	let listener: Function = () => {}, ready = false, reserved = false, delivered = false, targets = ["agent#1"], titles: Record<string, string> = {};
+	const source = { version: 1, snapshot: () => ({ targets: ready ? [] : targets, titles, ready }),
 		subscribe(fn: Function) { listener = fn; return () => { listener = () => {}; }; },
 		claim() { if (!ready || reserved || delivered) return; reserved = true; return { token: "token", results: [{ id: "agent#1", run: "run", delivery: "delivery", outcome: "completed", text: "answer" }] }; },
 		commit() { reserved = false; delivered = true; }, release() { reserved = false; } };
 	events.on("rqw:auto-wait:request:v1", (request: any) => request.offer(source));
 	let renderer: Function = () => {};
-	const pi: any = { events, on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]),
+	const pi: any = { events, getSettings: () => ({ outputPad: 1 }), on: (name: string, fn: Function) => hooks.set(name, [...hooks.get(name) ?? [], fn]),
 		registerEntryRenderer: (_type: string, fn: Function) => { renderer = fn; },
 		appendEntry: (customType: string, data: any) => { branch.push({ id: `entry-${branch.length}`, type: "custom", customType, data }); },
 		sendMessage: (message: any, options: any) => {
@@ -32,21 +33,80 @@ function setup(t: any, mode = "tui", nativeSend = false) {
 	emit("session_start");
 	t.after(() => emit("session_shutdown"));
 	return { session, manager, sent, prompts, branch, source, events, emit, renderer: () => renderer, finish() { ready = true; listener(true); },
-		setTargets(value: string[]) { targets = value; listener(true); },
+		setTargets(value: string[], names: Record<string, string> = {}) { targets = value; titles = names; listener(true); },
 		save() { const message = sent.at(-1).message; branch.push({ type: "custom_message", id: "saved", customType: message.customType, details: message.details }); },
 		delivered: () => delivered, reserved: () => reserved };
 }
 
-test("a live wait is visible without a request and the same card closes on input", async t => {
+test("a wait card uses the mockup states, padding and cached width", async t => {
 	const f = setup(t);
 	f.emit("agent_settled", { aborted: false }); await Promise.resolve();
 	assert.equal(f.sent.length, 0);
-	const entry = f.branch[0];
-	const card = f.renderer()(entry, {}, { fg: (_role: string, text: string) => text });
-	assert.match(card.render(80).join("\n"), /wait agent#1\n  ожидание/);
+	const colors: string[] = [];
+	const painted: [string, string][] = [];
+	let revision = 1;
+	const theme = { fg: (role: string, text: string) => { colors.push(role); painted.push([role, text]); return text; }, bg: (role: string, text: string) => { colors.push(`${role}:${revision}`); return text; } };
+	const card = f.renderer()(f.branch[0], {}, theme);
+	const running = card.render(80);
+	assert.equal(running.length, 5);
+	assert.equal(running[0], " ".repeat(79));
+	assert.match(running[1], /wait 1 агент · ожидание/);
+	assert.match(running[2], /agent#1/);
+	assert.match(running[3], /Ждём готовый результат/);
+	assert.ok(colors.includes("toolPendingBg:1"));
+	assert.ok(painted.some(([role, text]) => role === "toolTitle" && text === "wait"));
+	assert.ok(painted.some(([role, text]) => role === "dim" && text === "ожидание"));
+	assert.ok(painted.some(([role, text]) => role === "muted" && text === "agent#1"));
+	assert.equal(card.render(80), running);
+	const narrow = card.render(9);
+	assert.ok(narrow.every((line: string) => visibleWidth(line) <= 9));
+	assert.match(narrow[2], /agen/);
+	const beforeTheme = card.render(80);
+	revision = 2;
+	card.invalidate();
+	assert.notEqual(card.render(80), beforeTheme);
+	assert.ok(colors.includes("toolPendingBg:2"));
+	colors.length = 0;
 	f.emit("input");
-	assert.match(card.render(80).join("\n"), /ожидание прервано вводом/);
+	assert.match(card.render(80).join("\n"), /прервано вводом/);
+	assert.ok(colors.includes("warning") && colors.includes("toolPendingBg:2"));
+	assert.ok(painted.some(([role, text]) => role === "warning" && text === "прервано вводом"));
 	assert.equal(f.branch.length, 2);
+});
+
+test("multiple ids share a row when they fit", async t => {
+	const f = setup(t);
+	f.setTargets(["agent#1", "agent#2"]);
+	f.emit("agent_settled", { aborted: false }); await Promise.resolve();
+	const theme = { fg: (_role: string, text: string) => text, bg: (_role: string, text: string) => text };
+	const card = f.renderer()(f.branch[0], {}, theme);
+	assert.match(card.render(80)[2], /agent#1 agent#2/);
+	assert.equal(card.render(80).length, 5);
+});
+
+test("agent titles survive restore and jobs keep only their ids", async t => {
+	const f = setup(t);
+	f.setTargets(["agent#1", "job#4"], { "agent#1": "system-wide auto-wait design", "job#4": "not shown" });
+	f.emit("agent_settled", { aborted: false }); await Promise.resolve();
+	const theme = { fg: (_role: string, text: string) => text, bg: (_role: string, text: string) => text };
+	const card = f.renderer()(f.branch[0], {}, theme);
+	assert.match(card.render(80).join("\n"), /agent#1 system-wide auto-wait design/);
+	assert.doesNotMatch(card.render(80).join("\n"), /not shown/);
+	assert.ok(card.render(20).every((line: string) => visibleWidth(line) <= 20));
+	f.emit("session_tree");
+	assert.match(card.render(80).join("\n"), /agent#1 system-wide auto-wait design/);
+});
+
+test("a result closes the card with the success background", async t => {
+	const f = setup(t);
+	f.emit("agent_settled", { aborted: false }); await Promise.resolve();
+	const colors: string[] = [];
+	const painted: [string, string][] = [];
+	const card = f.renderer()(f.branch[0], {}, { fg: (role: string, text: string) => { painted.push([role, text]); return text; }, bg: (role: string, text: string) => { colors.push(role); return text; } });
+	f.finish(); await Promise.resolve();
+	assert.match(card.render(80)[1], /wait завершено/);
+	assert.ok(painted.some(([role, text]) => role === "success" && text === "завершено"));
+	assert.ok(colors.includes("toolSuccessBg"));
 });
 
 test("changed targets replace the card and replay marks an open card interrupted", async t => {
@@ -56,8 +116,11 @@ test("changed targets replace the card and replay marks an open card interrupted
 	assert.equal(f.branch.length, 3);
 	assert.equal(f.branch[1].data.reason, "targets_changed");
 	const entry = f.branch[2];
-	const card = f.renderer()(entry, {}, { fg: (_role: string, text: string) => text });
-	assert.match(card.render(80).join("\n"), /wait job#4/);
+	const theme = { fg: (_role: string, text: string) => text, bg: (_role: string, text: string) => text };
+	const oldCard = f.renderer()(f.branch[0], {}, theme);
+	assert.match(oldCard.render(80).join("\n"), /ожидание изменено/);
+	const card = f.renderer()(entry, {}, theme);
+	assert.match(card.render(80).join("\n"), /job#4/);
 	f.emit("session_tree");
 	assert.match(card.render(80).join("\n"), /ожидание прервано/);
 	assert.equal(f.sent.length, 0);
@@ -178,6 +241,9 @@ test("stopping background work cancels a scheduled wake", async t => {
 	await Promise.resolve();
 	assert.equal(f.sent.length, 0);
 	assert.equal(f.branch.at(-1).data.reason, "stop");
+	const card = f.renderer()(f.branch[0], {}, { fg: (_role: string, text: string) => text, bg: (_role: string, text: string) => text });
+	assert.match(card.render(80).join("\n"), /ожидание прервано/);
+	assert.doesNotMatch(card.render(80).join("\n"), /продолжается/);
 });
 
 test("branch change cancels the scheduled wake", async t => {

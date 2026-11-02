@@ -30,7 +30,7 @@ export type RuntimeHandle = {
 export type AcceptRecord = { version: 1; call: string; root: string; ok: boolean; results: { run: string; delivery: string }[] };
 
 export const DEFAULT_WAIT_MS = 300000;
-export type Target = { id: string; run: string; recovers?: string; active(): boolean; alertVersion?(): number; snapshot(messages?: number, depth?: number): Record<string, unknown> };
+export type Target = { id: string; run: string; recovers?: string; active(): boolean; title?(): string | undefined; alertVersion?(): number; snapshot(messages?: number, depth?: number): Record<string, unknown> };
 export type WaitOptions = { until?: "first" | "all"; wake_on_alert?: boolean };
 export type Result = { id: string; run: string; delivery: string; text?: string; outcome: string; title?: string;
 	state: "pending" | "held" | "reserved" | "wait"; claimed_by?: string };
@@ -266,8 +266,16 @@ export class Coordinator {
 		};
 		const source = {
 			version: 1 as const,
-			snapshot: () => ({ targets: ended ? [] : [...this.targets.values()].filter(target => target.active()).map(target => target.id),
-				ready: !ended && [...this.uncommitted].some(result => result.state === "pending") }),
+			snapshot: () => {
+				const targets = ended ? [] : [...this.targets.values()].filter(target => target.active());
+				const titles: Record<string, string> = {};
+				for (const target of targets) {
+					const title = target.title?.();
+					if (title) titles[target.id] = title;
+				}
+				return { targets: targets.map(target => target.id), titles,
+					ready: !ended && [...this.uncommitted].some(result => result.state === "pending") };
+			},
 			subscribe: (listener: (value: null | true) => void) => {
 				if (ended) { listener(null); return () => {}; }
 				listeners.add(listener);

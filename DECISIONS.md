@@ -35,6 +35,12 @@ Provenance:
   Reason: keep background waiting visible without repeated model calls or hidden answers.
   Carriers: `extensions/RQW-auto-wait/`, `extensions/RQW-agent/`, `extensions/RQW-tools/`, `extensions/RQW-tool-ui/`, `package.json`, `test/extensions/RQW-auto-wait/`.
 
+- **Automatic wait card** `[D-AUTO-WAIT-CARD]`. The wait card uses the approved mockup: pending background for waiting and user input, success background for a received result, semantic theme roles, one cell of inner horizontal padding and one empty row above and below. Restored or stopped waits are interrupted; changed targets are marked changed. Agent titles follow their IDs; jobs show IDs only. Lines are cut to width and cached. No timer, polling or shimmer is added; wake and delivery are unchanged.
+  Owner, verbatim: «Давай делай как на макете, но с названиями аргентов
+
+По карточкам, короче, мне все нравится, кроме задника. Вот, задник пусть будет, короче, фиолетовый, так же, как у.. Это же туллинг агентов, соответственно. А, подожди, там не только туллинг, там еще могут быть эти. Там еще.. могут быть инструменты до какие-то блять ну ладно пусть такой остается макет похуй цветовая гамма оставляет какая на макете».
+  Source: owner approval in the delegated task, 2026-11-02. Carriers: `extensions/RQW-auto-wait/card.ts`, `extensions/RQW-auto-wait/index.ts`, `extensions/RQW-agent/coordinator.ts`, `test/extensions/RQW-auto-wait/`, `test/extensions/RQW-agent/`.
+
 ## Command cleanup
 
 - **Remove conflicting command entrances** `[D-COMMAND-CLEANUP]`. `RQW-commands` removes Pi's `/model`, `/thinking`, `/tree`, `/scoped-models`, `/share`, `/bug`, `/fork` and built-in llama from interactive suggestions and submission, and hides only RQW-session's `/session-deleted` suggestion. Other implementations and service execution remain. Pi's built-in command precedence stays. The four model and thinking cycle actions, thinking display toggle and fork action are disabled, including custom bindings; the double-Escape fork selector is disabled too; four settings items and hidden providers in the logout menu are hidden without changing settings or credentials. The checked runtime patch falls back to stock on incompatible Pi internals.

@@ -3,7 +3,7 @@ import { AgentSession, VERSION, type ExtensionAPI, type ExtensionContext } from 
 import { waitCard } from "./card.ts";
 
 type Result = { id: string; text: string; outcome: string; run?: string; delivery?: string; title?: string; exit_code?: number; output_path?: string };
-type Source = { version: 1; snapshot(): { targets: string[]; ready: boolean }; subscribe(listener: (value: true | null) => void): () => void;
+type Source = { version: 1; snapshot(): { targets: string[]; titles?: Record<string, string>; ready: boolean }; subscribe(listener: (value: true | null) => void): () => void;
 	claim(): { token: string; results: Result[] } | undefined; commit(token: string): void; release(token: string): void };
 type Claim = { source: Source; token: string; results: Result[] };
 
@@ -62,8 +62,10 @@ export default function autoWait(pi: ExtensionAPI) {
 				if (claim) claims.push({ source, ...claim });
 			}
 			if (!claims.length) {
-				const targets = [...sources.keys()].flatMap(source => source.snapshot().targets);
-				setActive(targets.length > 0); card.show(targets); return;
+				const snapshots = [...sources.keys()].map(source => source.snapshot());
+				const targets = snapshots.flatMap(snapshot => snapshot.targets);
+				const titles = Object.assign({}, ...snapshots.map(snapshot => snapshot.titles));
+				setActive(targets.length > 0); card.show(targets, titles); return;
 			}
 			setActive(true); card.close("result");
 			const id = randomUUID();
