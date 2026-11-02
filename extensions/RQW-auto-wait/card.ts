@@ -3,7 +3,9 @@ import type { EntryRenderer, ExtensionAPI, ExtensionContext } from "@earendil-wo
 import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const TYPE = "rqw-auto-wait-v1";
-type Entry = { version: 1; waitId: string; phase: "open" | "update" | "close"; targets?: string[]; titles?: Record<string, string>; reason?: string };
+type Counts = { agents: number; backgroundProcesses?: number };
+type Snapshot = { targets: string[]; titles: Record<string, string>; counts?: Counts };
+type Entry = { version: 1; waitId: string; phase: "open" | "update" | "close"; targets?: string[]; titles?: Record<string, string>; counts?: Counts; reason?: string };
 
 function status(reason: string) {
 	switch (reason) {
@@ -17,8 +19,8 @@ function status(reason: string) {
 
 export function waitCard(pi: ExtensionAPI) {
 	const phases = new Map<string, string>();
-	const snapshots = new Map<string, { targets: string[]; titles: Record<string, string> }>();
-	let current: { waitId: string; targets: string[]; titles: Record<string, string> } | undefined;
+	const snapshots = new Map<string, Snapshot>();
+	let current: (Snapshot & { waitId: string }) | undefined;
 	let outputPad = 1;
 	/** After /reload a card drawn before it still holds the old `pi`, which throws: the last known padding stays. */
 	function padding() {
@@ -31,9 +33,9 @@ export function waitCard(pi: ExtensionAPI) {
 		let key = "", rows: string[] = [];
 		return { invalidate() { key = ""; }, render(width) {
 			const phase = phases.get(data.waitId) ?? "interrupted";
-			const snapshot = snapshots.get(data.waitId) ?? { targets: data.targets!, titles: data.titles ?? {} };
+			const snapshot = snapshots.get(data.waitId) ?? { targets: data.targets!, titles: data.titles ?? {}, counts: data.counts };
 			const pad = padding();
-			const next = JSON.stringify([width, phase, snapshot.targets, snapshot.titles, pad]);
+			const next = JSON.stringify([width, phase, snapshot.targets, snapshot.titles, snapshot.counts, pad]);
 			if (key === next) return rows;
 			key = next;
 			const outer = width > 2 * pad ? pad : 0;
@@ -41,8 +43,9 @@ export function waitCard(pi: ExtensionAPI) {
 			if (!boxWidth) return rows = [];
 			const inner = Math.max(0, boxWidth - 2);
 			const state = status(phase);
-			const agents = snapshot.targets.filter(id => id.startsWith("agent#")).length;
-			const jobs = snapshot.targets.length - agents;
+			const directAgents = snapshot.targets.filter(id => id.startsWith("agent#")).length;
+			const agents = snapshot.counts?.agents ?? directAgents;
+			const jobs = snapshot.counts?.backgroundProcesses ?? (snapshot.targets.length - directAgents);
 			const label = (count: number, one: string, few: string, many: string) => {
 				const n = count % 100;
 				return `${count} ${n >= 11 && n <= 14 ? many : n % 10 === 1 ? one : n % 10 >= 2 && n % 10 <= 4 ? few : many}`;
@@ -87,25 +90,26 @@ export function waitCard(pi: ExtensionAPI) {
 				if (data.phase === "open") phases.set(data.waitId, "interrupted");
 				else if (data.phase === "close") phases.set(data.waitId, data.reason ?? "interrupted");
 				if ((data.phase === "open" || data.phase === "update") && Array.isArray(data.targets))
-					snapshots.set(data.waitId, { targets: data.targets, titles: data.titles ?? {} });
+					snapshots.set(data.waitId, { targets: data.targets, titles: data.titles ?? {}, counts: data.counts });
 			}
 		},
 		close,
-		show(targets: string[], titles: Record<string, string> = {}) {
+		show(targets: string[], titles: Record<string, string> = {}, counts?: Counts) {
 			const ordered = [...new Set(targets)].sort();
 			const selected = Object.fromEntries(ordered.filter(id => id.startsWith("agent#") && typeof titles[id] === "string").map(id => [id, titles[id]]));
-			if (current && current.targets.join("\0") === ordered.join("\0") && JSON.stringify(current.titles) === JSON.stringify(selected)) return;
+			if (current && current.targets.join("\0") === ordered.join("\0") && JSON.stringify(current.titles) === JSON.stringify(selected) && JSON.stringify(current.counts) === JSON.stringify(counts)) return;
 			if (!ordered.length) { close("targets_changed"); return; }
+			const snapshot = { targets: ordered, titles: selected, counts };
 			if (current) {
-				current.targets = ordered; current.titles = selected;
-				snapshots.set(current.waitId, { targets: ordered, titles: selected });
-				pi.appendEntry(TYPE, { version: 1, waitId: current.waitId, phase: "update", targets: ordered, titles: selected });
+				Object.assign(current, snapshot);
+				snapshots.set(current.waitId, snapshot);
+				pi.appendEntry(TYPE, { version: 1, waitId: current.waitId, phase: "update", ...snapshot });
 				return;
 			}
 			const waitId = randomUUID();
-			current = { waitId, targets: ordered, titles: selected }; phases.set(waitId, "open");
-			snapshots.set(waitId, { targets: ordered, titles: selected });
-			pi.appendEntry(TYPE, { version: 1, waitId, phase: "open", targets: ordered, titles: selected });
+			current = { waitId, ...snapshot }; phases.set(waitId, "open");
+			snapshots.set(waitId, snapshot);
+			pi.appendEntry(TYPE, { version: 1, waitId, phase: "open", ...snapshot });
 		},
 	};
 }

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AgentSession, VERSION, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { waitCard } from "./card.ts";
+import { countsWatch } from "./counts.ts";
 
 type Result = { id: string; text: string; outcome: string; run?: string; delivery?: string; title?: string; exit_code?: number; output_path?: string };
 type Source = { version: 1; snapshot(): { targets: string[]; titles?: Record<string, string>; ready: boolean }; subscribe(listener: (value: true | null) => void): () => void;
@@ -24,6 +25,7 @@ export default function autoWait(pi: ExtensionAPI) {
 	let restore: (() => void) | undefined;
 	const sources = new Map<Source, () => void>();
 	const card = waitCard(pi);
+	const counts = countsWatch(pi.events, () => requestCheck());
 	let active = false;
 	function setActive(value: boolean) {
 		if (active === value) return;
@@ -80,7 +82,7 @@ export default function autoWait(pi: ExtensionAPI) {
 		const snapshots = [...sources.keys()].map(source => source.snapshot());
 		const targets = snapshots.flatMap(snapshot => snapshot.targets);
 		const titles = Object.assign({}, ...snapshots.map(snapshot => snapshot.titles));
-		card.show(targets, titles);
+		card.show(targets, titles, counts.get());
 		return targets.length;
 	}
 	function requestCheck() {
@@ -167,7 +169,7 @@ export default function autoWait(pi: ExtensionAPI) {
 	}
 	pi.on("session_start", (_event, current) => {
 		setActive(false); generation++; scheduled = armed = aborted = compacting = flight = deliverOnIdle = holdSettle = false;
-		release(); releaseHold(); clearSources(); restore?.(); restore = undefined;
+		release(); releaseHold(); clearSources(); counts.stop(); restore?.(); restore = undefined;
 		ctx = current; manager = current.sessionManager; sessionId = manager.getSessionId();
 		card.restore(current);
 		const idle = current.mode === "tui" || current.mode === "rpc";
@@ -178,6 +180,7 @@ export default function autoWait(pi: ExtensionAPI) {
 			ctx = undefined; return;
 		}
 		deliverOnIdle = idle; holdSettle = !idle;
+		counts.start();
 		pi.events.emit("rqw:auto-wait:request:v1", { sessionId, offer: adopt });
 	});
 	/** Print and json: keep the turn open while direct agents or jobs run, then hand their results over in the same run. */
@@ -198,7 +201,7 @@ export default function autoWait(pi: ExtensionAPI) {
 	});
 	pi.on("session_tree", (_event, current) => { setActive(false); generation++; armed = flight = false; release(); releaseHold(); card.restore(current); });
 	// A wake handed to the session but not yet saved would still send its request after the shutdown, in the next session: stop it.
-	pi.on("session_shutdown", () => { if (flight && pending && !reconcile()) ctx?.abort(); setActive(false); generation++; armed = flight = deliverOnIdle = holdSettle = false; release(); releaseHold(); clearSources(); restore?.(); restore = undefined; ctx = undefined; manager = undefined; sessionId = undefined; });
+	pi.on("session_shutdown", () => { if (flight && pending && !reconcile()) ctx?.abort(); setActive(false); generation++; armed = flight = deliverOnIdle = holdSettle = false; release(); releaseHold(); clearSources(); counts.stop(); restore?.(); restore = undefined; ctx = undefined; manager = undefined; sessionId = undefined; });
 	pi.on("input", () => { generation++; armed = false; card.close("input"); setActive(false); return { action: "continue" }; });
 	pi.on("before_agent_start", event => {
 		if (event.messageType === "custom" && event.message.customType === TYPE) return;

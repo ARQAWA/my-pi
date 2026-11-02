@@ -74,6 +74,23 @@ test("a wait card uses the mockup states, padding and cached width", async t => 
 	assert.equal(f.branch.length, 2);
 });
 
+test("unchanged active counts do not append card updates", async t => {
+	const f = setup(t);
+	let counts = { agents: 2, backgroundProcesses: 1, idleAgents: 0 };
+	let listener: (value: typeof counts | null) => void = () => {};
+	const source = { version: 1, snapshot: () => counts, subscribe(fn: typeof listener) { listener = fn; return () => {}; } };
+	f.events.emit("rqw:running-counts:offer", { version: 1, source });
+	f.emit("agent_settled", { aborted: false }); await Promise.resolve();
+	const entries = f.branch.length;
+	listener(counts); await Promise.resolve();
+	counts = { ...counts, idleAgents: 1 };
+	listener(counts); await Promise.resolve();
+	assert.equal(f.branch.length, entries);
+	counts = { ...counts, agents: 1 };
+	listener(counts); await Promise.resolve();
+	assert.equal(f.branch.length, entries + 1);
+});
+
 test("multiple ids share a row when they fit", async t => {
 	const f = setup(t);
 	f.setTargets(["agent#1", "agent#2"]);

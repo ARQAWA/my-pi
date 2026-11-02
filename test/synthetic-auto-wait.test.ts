@@ -101,11 +101,13 @@ it("a delivered child stays idle and is excluded from the active counts", async 
 	await w.until(() => [1, 2].every(id => !retainedChildManager(w.session.sessionManager, "agent", id)), "children close");
 });
 
-it("the status counts the active tree, while the card counts only direct children", async (t) => {
+it("the card and status count the same active tree and its jobs", async (t) => {
 	const w = await world(t);
 	const parent = w.model.hold(isTask("parent task"));
 	const nested = w.model.hold(isTask("nested task"));
+	const process = w.processes.hold(bashCommand("sleep 30"));
 	w.model.when(isTask("parent task"), text("parent waiting"));
+	w.model.when(isTask("nested task"), text("nested waiting"));
 	w.model.script(call("agent", { action: "start", task: "parent task", title: "Parent" }, "c1"), text("started"));
 	await w.submit("go");
 	await w.until(() => parent.arrived, "parent starts");
@@ -113,8 +115,34 @@ it("the status counts the active tree, while the card counts only direct childre
 	parent.reply(call("agent", { action: "start", task: "nested task", title: "Nested" }, "n1"));
 	await w.until(() => nested.arrived, "nested child starts");
 	await w.until(() => w.screen().join("\n").includes("Waiting for 2 agents"), "whole tree counted");
-	w.see("wait 1 агент");
-	w.notSee("agent#1.1 Nested");
+	await w.tick(16);
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 агента")), "card repaints for nested agent");
+	const rows = w.screen();
+	const cardStart = rows.findIndex(line => line.includes("wait 2 агента"));
+	assert.ok(cardStart >= 0);
+	assert.doesNotMatch(rows.slice(cardStart, cardStart + 4).join("\n"), /agent#1\.1/);
+	const waitId = customEntries(w, "rqw-auto-wait-v1").find(entry => entry.data.phase === "open")!.data.waitId;
+	nested.reply(call("bash", { command: "sleep 30" }, "b1"));
+	await w.until(() => process.arrived, "nested job starts");
+	await w.tick(12_000);
+	await w.until(() => w.screen().join("\n").includes("Waiting for 2 agents, 1 background process"), "nested job counted");
+	await w.tick(16);
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 агента, 1 задача")), "card repaints for nested job");
+	const nestedWake = w.model.hold(isTask("nested task"));
+	const parentWake = w.model.hold(isTask("parent task"));
+	process.finish({ stdout: "done\n" });
+	await w.until(() => nestedWake.arrived, "nested child receives job result");
+	await w.until(() => w.screen().join("\n").includes("Waiting for 2 agents") && !w.screen().join("\n").includes("background process"), "nested job ends");
+	await w.tick(16);
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 2 агента · ожидание")), "card removes nested job");
+	nestedWake.reply(text("nested done"));
+	await w.until(() => parentWake.arrived, "parent receives nested result");
+	await w.until(() => w.screen().join("\n").includes("Waiting for 1 agent"), "nested agent ends");
+	await w.tick(16);
+	await w.until(() => w.host.renderer.getScreenLines().some((line: string) => stripTerminalSequences(line).includes("wait 1 агент · ожидание")), "card removes nested agent");
+	const entries = customEntries(w, "rqw-auto-wait-v1");
+	assert.equal(entries.filter(entry => entry.data.phase === "open").length, 1);
+	assert.equal(entries.some(entry => entry.data.waitId === waitId && entry.data.phase === "close"), false);
 	const runner = w.session.extensionRunner;
 	await runner.getToolDefinition("agent")!.execute("stop-parent", { action: "stop", id: "agent#1" } as never,
 		new AbortController().signal, undefined, runner.createToolContext("stop-parent", undefined));
