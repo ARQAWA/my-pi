@@ -7688,3 +7688,58 @@ Status: SUPERSEDED by [D-AGENT-CODEX-TEXT] (DECISIONS.md#agent): the question wa
 Introduced: `fe606648`. Source: `c27f7c49:DECISIONS.md`, lines 784-784. Verbatim replaced text:
 
 > Also pending: «Принимаешь диффы? 1. Да, делаем. 2. Нет, сначала посмотрю страницу.» (Codex 0.165.0 agent texts, ~/Downloads/codex-agent-diffs.html).
+
+## A-0457 · archived 2026-11-02 · PCLI · old version pin
+
+Status: SUPERSEDED by [D-SCOPE-PI-VERSION] (DECISIONS.md#scope): the bundled Pi pin is 1.4.0.
+Introduced: `3b6d6c12`. Source: `d1f2b7e5:DECISIONS.md`, lines 1294-1295. Verbatim replaced text:
+
+> Как есть 1.3 версия, так и есть.
+
+## A-0458 · archived 2026-11-02 · Session commands · path measurement
+
+Status: OBSOLETE by [D-SESSION-TESTS] (DECISIONS.md#session-commands): the measurement is historical.
+Introduced: `cdddfe72`. Source: `d1f2b7e5:DECISIONS.md`, lines 1835-1840. Verbatim replaced text:
+
+> - **Measured session paths** `[D-SESSION-MEASURE]`. Small fixed temp sessions through the real entry points (stock
+>   `SessionSelectorComponent` for list and Remove Session, our registered `/remove` handler, fake `trash`), median of 5
+>   (design 6.2.1, chunk «отложенное»). Input wait, median with the maximum seen: our `/remove` 1.6 ms (2.1) at 40 sessions and
+>   2.3 ms (2.3) at 200; stock Remove Session 7.1 ms (7.7) and 11.0 ms (11.4); stock list 2.5 ms (3.0) and 10.7 ms (13.3);
+>   `SessionManager.open` alone waits 1.2 ms (1.2) at both sizes; the full runtime switch was not measured. Our `/remove` total grows with the other sessions (64 ms at 40, 299 ms at 200). No change to Pi or to
+>   `/remove`. Evidence: `my-pi-evidence/designs/deferred/session-paths-measurement.md`.
+
+## A-0459 · archived 2026-11-02 · Codex compatibility · trust-gate pointer
+
+Status: MERGED by [D-AGENT-PROFILES] (DECISIONS.md#agent): the profile rule already states the trust gate.
+Introduced: `61f850da`. Source: `d1f2b7e5:DECISIONS.md`, lines 2107-2108. Verbatim replaced text:
+
+> ; this replaces the earlier text "without a separate trust gate" of `[D-AGENT-PROFILES]` for `.codex` layers
+
+## A-0460 · archived 2026-11-02 · Send now · follow-up hold pointer
+
+Status: SUPERSEDED by [D-KEYS-STEER] (DECISIONS.md#send-now): the current queue and force rules replace this wording.
+Introduced: `c8e8ceee`. Source: `cdaae4c8:DECISIONS.md`, lines 1839-1840. Verbatim replaced text:
+
+> (`extensions/RQW-agent/README.md`
+>   describes the hold)
+
+## A-0461 · archived 2026-11-02 · Send now · held follow-ups
+
+Status: SUPERSEDED by [D-KEYS-STEER] (DECISIONS.md#send-now): the current queue and force rules replace this wording.
+Introduced: `acc4a0a7`. Source: `cdaae4c8:DECISIONS.md`, lines 1887-1887. Verbatim replaced text:
+
+> Follow-ups held for the real final (`extensions/RQW-agent/followup-hold.ts`) are taken too.
+
+## A-0462 · archived 2026-11-02 · Send now · superseded public API restriction
+
+Status: SUPERSEDED by [D-KEYS-STEER] (DECISIONS.md#send-now): the current queue and force rules replace this wording.
+Introduced: `a9873f64`. Source: `cdaae4c8:DECISIONS.md`, lines 1846-1846. Verbatim replaced text:
+
+> The public-API-only restriction is superseded by `[D-SCOPE-RUNTIME-PATCH]`.
+
+## A-0463 · archived 2026-11-02 · Quality control · retired timer
+
+Status: SUPERSEDED by [D-UI-WORKED-FOR] (DECISIONS.md#compact-tool-display): background work no longer holds the fold open.
+Introduced: `80732f36`. Source: `c8355adc:DECISIONS.md`, line 1984. Verbatim replaced text:
+
+> RQW-tool-ui 500 ms real-final timer (the active record above, «When the idle session remains quiet for 500 ms»);
