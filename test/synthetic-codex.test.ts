@@ -8,7 +8,7 @@ import https from "node:https";
 import { Duplex } from "node:stream";
 import { after, it, type TestContext } from "node:test";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { keys, reportTimings, world, type WorldOptions } from "./synthetic/world.ts";
+import { keys, networkRoutes, reportTimings, world, type WorldOptions } from "./synthetic/world.ts";
 
 after(() => reportTimings(import.meta.filename));
 
@@ -75,7 +75,7 @@ function serverFrame(payload: Buffer, opcode: number): Buffer {
  * chatgpt.com on `https.request`, the one seam `ws` opens its connection through. A frame the test must not answer by
  * hand gets its answer here: the prewarm (generate:false) and the session naming request.
  */
-function codexServer() {
+function codexServer(install = true, autoWarm = true) {
 	const connections: Connection[] = [];
 	let prewarms = 0;
 
@@ -125,10 +125,10 @@ function codexServer() {
 
 	function answerAutomatically(connection: Connection, frame: any) {
 		if (JSON.stringify(frame).includes("You name chat sessions.")) connection.send(...whole("naming", '["Greeting"]'));
-		else if (frame.generate === false) connection.send(created(`warm-${++prewarms}`), completed(`warm-${prewarms}`));
+		else if (frame.generate === false && autoWarm) connection.send(created(`warm-${++prewarms}`), completed(`warm-${prewarms}`));
 	}
 
-	https.request = ((options: any) => {
+	const request = (options: any) => {
 		const request: any = new EventEmitter();
 		request.setHeader = () => {};
 		request.abort = () => {};
@@ -136,10 +136,11 @@ function codexServer() {
 		// The upgrade comes after `ws` has attached its listeners.
 		request.end = () => queueMicrotask(() => accept(request, options));
 		return request;
-	}) as never;
+	};
+	if (install) https.request = request as never;
 
 	return {
-		connections,
+		request, connections,
 		/** The frames of the conversation: everything that is neither the prewarm nor the naming request. */
 		get turns() {
 			return connections.flatMap((connection) => connection.frames.map((frame) => ({ connection, frame })))
@@ -198,7 +199,7 @@ it("a steering message sent during an answer ends it with one response.interrupt
 
 it("the startup prewarm goes once, and the first turn reuses its socket", async (t) => {
 	const w = await wireWorld(t);
-	const server = codexServer();
+	const server = codexServer(true, false);
 	await useCodex(w);
 	await w.until(() => server.prewarms.length === 1, "the startup prewarm");
 	assert.equal(server.connections.length, 1);
@@ -207,6 +208,9 @@ it("the startup prewarm goes once, and the first turn reuses its socket", async 
 
 	w.type("hi");
 	w.press(keys.enter);
+	await w.until(() => w.session.isStreaming, "the first turn starts");
+	assert.equal(server.turns.length, 0, "the turn waits for the prewarm");
+	server.connections[0].send(created("warm-1"), completed("warm-1"));
 	await w.until(() => server.turns.length === 1, "the first request");
 	assert.equal(server.turns[0].connection, server.connections[0], "the prewarmed socket carries the first request");
 	server.turns[0].connection.send(...whole("resp_1", "hello"));
@@ -216,7 +220,30 @@ it("the startup prewarm goes once, and the first turn reuses its socket", async 
 	assert.deepEqual([w.networkAttempts, onlyGit(w)], [[], []]);
 });
 
-// The world blocks the network from the start of a build, so a test cannot route the very first connect of a started session:
+it("routes the initial Codex prewarm before the world starts, also after restart", async (t) => {
+	const server = codexServer(false);
+	const routes = networkRoutes();
+	routes.ws((options) => options.host === "chatgpt.com" && options.path.startsWith("/backend-api/codex/responses"), server.request);
+	const w = await wireWorld(t, { routes });
+	await useCodex(w);
+	await w.until(() => server.prewarms.length === 1, "model change prewarm");
+	assert.equal(server.connections.length, 1);
+	assert.equal(server.prewarms[0].generate, false);
+	assert.deepEqual(w.networkAttempts, []);
+	w.type("hi");
+	w.press(keys.enter);
+	await w.until(() => server.turns.length === 1, "first turn");
+	server.turns[0].connection.send(...whole("first", "hello"));
+	await w.settle();
+
+	const restarted = await restartWire(t, w);
+	assert.equal(restarted.session.model?.provider, "openai-codex");
+	await restarted.until(() => server.prewarms.length === 2, "startup prewarm");
+	assert.equal(server.connections.filter((connection) => connection.frames.some((frame) => frame.generate === false)).length, 2);
+	assert.deepEqual(restarted.networkAttempts, []);
+});
+
+// The world blocks the network from the start of a build when no route is configured:
 // the blocked attempt is the proof that the session's start opened exactly one WebSocket for its prewarm.
 it("a session that starts on Codex opens one WebSocket for the prewarm, and a failed warm leaves the turn to connect itself", async (t) => {
 	const w = await wireWorld(t);

@@ -17,7 +17,9 @@
  *   w.screen();  w.raw();  w.jsonl();    // frame lines, frame with colour codes, session file entries
  *   w.processes.reply(bashCommand("echo hi"), { stdout: "hi\n", code: 0 });   // fake spawn and spawnSync; all other calls are blocked
  *   const p = w.processes.hold(ripgrep);  p.finish({ stdout: "..." });          //   takes; the rest is blocked. calls: w.processes.calls
- *   const w2 = await w.restart();       // quit Pi, start a new one over the same folders and session file
+ *   const routes = networkRoutes(); routes.fetch(match, answer); // also .https and .ws; register before world(t, { routes })
+ *   w.routes.fetch(match, answer);      // add routes while running; unrouted calls are blocked
+ *   const w2 = await w.restart();       // quit Pi, start a new one over the same folders, routes and session file
  *   w.childFiles(1)                     // session files of subagent agent-1; read them with w.jsonl(file)
  *   w.events; w.errors; w.networkAttempts; w.processAttempts   // what happened outside the screen (attempts = blocked calls)
  *   w.session; w.host; w.settings; w.dirs                      // the real Pi objects and temp folders
@@ -46,7 +48,8 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { resetCapabilitiesCache, stripTerminalSequences, type Terminal } from "@earendil-works/pi-tui";
-import { blockNetwork, fakeProcesses, guardProcess, patchedMembers, type ProcessCall, trapExit } from "./guard.ts";
+import { blockNetwork, fakeProcesses, guardProcess, networkRoutes, patchedMembers, type ProcessCall, trapExit } from "./guard.ts";
+export { networkRoutes } from "./guard.ts";
 import { createModel } from "./model.ts";
 
 export { call, fail, isTask, reply, text, think } from "./model.ts";
@@ -92,6 +95,8 @@ export interface WorldOptions {
 	thinking?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 	/** Scenario settings, applied after the real first-start profile. */
 	settings?: Record<string, unknown>;
+	/** Routes installed before startup and kept across restart. */
+	routes?: ReturnType<typeof networkRoutes>;
 }
 
 type NamedFactory = { name: string; path?: string; factory: (pi: ExtensionAPI) => void };
@@ -180,7 +185,7 @@ export function reportTimings(file: string): void {
 
 /** A new world over fresh temporary folders. */
 export function world(t: TestContext, options: WorldOptions = {}) {
-	return build(t, options, { dirs: makeDirs(), start: START_TIME, created: undefined, resume: undefined });
+	return build(t, { ...options, routes: options.routes ?? networkRoutes() }, { dirs: makeDirs(), start: START_TIME, created: undefined, resume: undefined });
 }
 
 /** What a restart hands on: the folders, the clock, the session file and the scenario's start. */
@@ -228,7 +233,7 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 	const networkAttempts: string[] = [];
 	const processAttempts: string[] = [];
 	const exitCodes: number[] = [];
-	blockNetwork(t, networkAttempts);
+	blockNetwork(t, networkAttempts, options.routes!);
 	const processes = fakeProcesses(t, processAttempts);
 	trapExit(t, exitCodes);
 	syncBuiltinESMExports();
@@ -350,7 +355,7 @@ async function build(t: TestContext, options: WorldOptions, from: Handover) {
 	if (!from.resume) timingOf(t).boot.push(elapsedMs(created));
 
 	return {
-		dirs, host, model: model.api, requests: model.requests, processes, networkAttempts, processAttempts, exitCodes, events,
+		dirs, host, model: model.api, requests: model.requests, processes, routes: options.routes!, networkAttempts, processAttempts, exitCodes, events,
 		get runtime() { return runtime; },
 		get session() { return runtime.session; },
 		get settings() { return runtime.services.settingsManager; },
