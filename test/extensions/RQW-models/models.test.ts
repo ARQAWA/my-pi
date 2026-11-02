@@ -167,7 +167,9 @@ describe("RQW-models public selection", () => {
 		assert.equal(result, undefined);
 	});
 
-	for (const cancel of [false, true]) it(`${cancel ? "Esc cancels" : "Enter commits"} a changed model and effort through fake Pi`, async t => {
+	// A held Shift turns the confirming Enter into Shift+Enter (Kitty CSI u, or xterm modifyOtherKeys); the chooser must still commit.
+	const keys = [["Enter", "\r", false], ["Shift+Enter", "\u001b[13;2u", false], ["Shift+Enter (modifyOtherKeys)", "\u001b[27;2;13~", false], ["Esc", "\u001b", true]] as const;
+	for (const [label, key, cancel] of keys) it(`${label} ${cancel ? "cancels" : "commits"} a changed model and effort through fake Pi`, async t => {
 		const opus = model("claude-opus-5-5");
 		const sonnet = model("claude-sonnet-5-5");
 		let current = opus;
@@ -202,10 +204,13 @@ describe("RQW-models public selection", () => {
 				notify() {},
 				custom(factory: any) {
 					let component: any;
-					const result = new Promise((resolve) => { component = factory({ requestRender() {} }, { fg: (_: string, text: string) => text, bold: (text: string) => text }, {}, resolve); });
+					let closed = false;
+					const result = new Promise((resolve) => { component = factory({ requestRender() {} }, { fg: (_: string, text: string) => text, bold: (text: string) => text }, {}, (value: unknown) => { closed = true; resolve(value); }); });
 					assert.ok(component.render(60).includes("› claude-sonnet-5-5 low medium high xhigh max"));
 					component.handleInput("\u001b[C");
-					component.handleInput(cancel ? "\u001b" : "\r");
+					component.handleInput(key);
+					// A chooser that ignored the key would stay open for good; close it so the assertions below fail instead of hanging.
+					if (!closed) component.cancel();
 					return result;
 				},
 			},

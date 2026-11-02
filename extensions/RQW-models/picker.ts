@@ -90,7 +90,8 @@ export class ModelEffortPicker implements Component {
 		if (this.closed) return;
 		const step = STEP_KEYS.find(([key]) => matchesKey(data, key as never))?.[1];
 		if (step) return this.step(step);
-		if (matchesKey(data, "enter")) return this.close(this.current);
+		// Shift is often still down from the last Shift+arrow, and Kitty terminals then send Shift+Enter.
+		if (matchesKey(data, "enter") || matchesKey(data, "shift+enter")) return this.close(this.current);
 		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+c")) this.close(undefined);
 	}
 

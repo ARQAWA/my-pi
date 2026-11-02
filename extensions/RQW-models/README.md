@@ -29,7 +29,7 @@ follow its name after one space: inactive ones dim, the active one bold in its t
 Up/Down move models; Left/Right move effort. Below the width the selected row needs (the efforts plus a 4-column name,
 36 columns for the longest list), the chooser reports `Effort needs N columns` instead of hiding levels.
 The target VDI width is not yet verified.
-OK is confirmed with Enter; Esc closes the chooser.
+OK is confirmed with Enter, or with Shift+Enter when Shift is still held from the last Shift+arrow; Esc closes the chooser.
 Opening, navigation and Esc call no model/thinking setters and send no requests. Nothing needs restoring on Esc:
 the session was never changed. An already-running turn continues on the live session, not the draft.
 Duplicate shortcut presses cannot create stacked dialogs; session replacement, reload and shutdown cancel the draft.

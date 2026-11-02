@@ -39,6 +39,18 @@ test("Enter steers through the editor's own submit while only a wait is open, an
 	assert.deepEqual(h.inputs, ["\r", "follow-up"]);
 });
 
+test("Enter belongs to a focused chooser or dialog while a wait is open", (t) => {
+	const h = harness(t);
+	open(h);
+	h.state.editor = "draft";
+	h.state.focused = false;
+	assert.equal(h.press("\r"), undefined);
+	h.state.editor = "";
+	assert.equal(h.press("\r"), undefined);
+	assert.deepEqual(h.inputs, []);
+	assert.equal(h.session.aborts, 0);
+});
+
 test("the transition to a lone wait moves the follow-ups queued so far into steering, in order", (t) => {
 	const h = harness(t);
 	h.followUp("first");
