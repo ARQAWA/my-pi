@@ -256,7 +256,8 @@ It includes the summary and says the agent continues working. Fixed code text an
 a correction." The parent decides whether to send anything. This notice neither completes a wait nor claims or
 publishes a final result. Nested agents notify only their direct parent through its durable `rqw-agent-inbox` bridge.
 Busy-parent notices use the existing context-only delivery and settlement continuation, outside the clearable
-follow-up queue. Caller abort preserves the notice without automatically waking the aborted caller.
+follow-up queue. While main-chat auto-wait is active, idle progress notices wait for the next user input and never
+start a model turn. Caller abort preserves the notice without automatically waking the aborted caller.
 
 `resources_discover` offers [agent-progress](skills/agent-progress/SKILL.md). The notification also embeds that actual
 short skill text because child parents use `noSkills: true`. Its reminder covers only agreed scope, simple engineering

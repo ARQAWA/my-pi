@@ -94,12 +94,15 @@ export class Coordinator {
 	// Older runs can still have an unfinalized handoff when send starts the next run.
 	private uncommitted = new Set<Result>();
 	private watchers = new Set<Watch>();
+	private autoReservations = new Map<string, Result[]>();
 	private changes = new Map<string, { run: string; change: string }>();
 	private reservations = new Map<string, Reservation>();
 	private notices: { message: Parameters<ExtensionAPI["sendMessage"]>[0]; current(): boolean; delivered(): void; send: ExtensionAPI["sendMessage"] }[] = [];
 	private parents = new Map<string, string>();
 	private completed = new Map<string, boolean>();
 	private settling = false;
+	private autoWaiting = false;
+	private deferredProgress = false;
 	private callerAborted = false;
 	private endSignal?: AbortSignal;
 	private markAborted = () => { this.callerAborted = true; };
@@ -154,12 +157,20 @@ export class Coordinator {
 		this.flushNotifications(!aborted);
 		this.notify();
 	}
+	setAutoWaiting(active: boolean) { this.autoWaiting = active; }
+	flushDeferredProgress() {
+		this.autoWaiting = false;
+		this.deferredProgress = false;
+		if (!this.settling) this.flushNotifications(false);
+	}
 	/** Progress notices use a settlement-safe sender, independent of result ownership. */
 	notification(message: Parameters<ExtensionAPI["sendMessage"]>[0], current: () => boolean, delivered: () => void, send = this.send): void {
 		this.notices.push({ message, current, delivered, send });
 		if (!this.settling) this.flushNotifications(!this.callerAborted);
 	}
 	private flushNotifications(triggerTurn: boolean) {
+		if (this.autoWaiting && this.notices.length) this.deferredProgress = true;
+		if (this.autoWaiting || this.deferredProgress) return 0;
 		const notices = this.notices.splice(0).filter(notice => notice.current());
 		for (const [i, notice] of notices.entries()) {
 			if (!notice.current()) continue;
@@ -233,6 +244,64 @@ export class Coordinator {
 		this.notify();
 	}
 	notify() { for (const watcher of [...this.watchers]) watcher.check(); }
+	/** The automatic consumer shares the same result states as explicit waits. */
+	autoSource(ctx: ExtensionContext) {
+		let ended = false;
+		const listeners = new Set<(value: null | true) => void>();
+		const owned = new Set<string>();
+		const watcher: Watch = { check: () => {
+			for (const listener of [...listeners]) {
+				try { listener(true); } catch { /* A consumer cannot break the broker. */ }
+			}
+		} };
+		this.watchers.add(watcher);
+		const release = (token: string) => {
+			const results = this.autoReservations.get(token);
+			if (!owned.delete(token) || !results) return;
+			this.autoReservations.delete(token);
+			for (const result of results) if (result.state === "reserved" && result.claimed_by === token) {
+				result.state = "pending"; delete result.claimed_by;
+			}
+			this.notify();
+		};
+		const source = {
+			version: 1 as const,
+			snapshot: () => ({ targets: ended ? [] : [...this.targets.values()].filter(target => target.active()).map(target => target.id),
+				ready: !ended && [...this.uncommitted].some(result => result.state === "pending") }),
+			subscribe: (listener: (value: null | true) => void) => {
+				if (ended) { listener(null); return () => {}; }
+				listeners.add(listener);
+				return () => { listeners.delete(listener); };
+			},
+			claim: () => {
+				if (ended) return undefined;
+				const results = [...this.uncommitted].filter(result => result.state === "pending");
+				if (!results.length) return undefined;
+				const token = randomUUID();
+				for (const result of results) { result.state = "reserved"; result.claimed_by = token; }
+				this.autoReservations.set(token, results); owned.add(token);
+				return { token, results: results.map(result => ({ id: result.id, run: result.run, delivery: result.delivery,
+					outcome: result.outcome, text: `${result.text}\n\n${FOLLOW_UP}`, ...(result.title ? { title: result.title } : {}) })) };
+			},
+			commit: (token: string) => {
+				const results = this.autoReservations.get(token);
+				if (!owned.delete(token) || !results) return;
+				this.autoReservations.delete(token);
+				for (const result of results) if (result.state === "reserved" && result.claimed_by === token) {
+					this.saveReceipt(ctx, result.run); result.state = "wait"; result.text = undefined; this.uncommitted.delete(result);
+				}
+				this.notify();
+			},
+			release,
+		};
+		return { source, close: () => {
+			if (ended) return;
+			ended = true; this.watchers.delete(watcher);
+			for (const token of [...owned]) release(token);
+			for (const listener of listeners) { try { listener(null); } catch { /* isolated */ } }
+			listeners.clear();
+		} };
+	}
 	status(ids: string[], messages?: number, depth = 0) {
 		depth = statusDepth(depth);
 		return ids.map(id => {

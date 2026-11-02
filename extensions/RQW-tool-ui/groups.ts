@@ -117,7 +117,7 @@ function timeline(entries: readonly SessionEntry[], live: LiveState, firstKeptEn
 			const m = { role: "custom", customType: e.customType, display: e.display, content: e.content };
 			if (e.display) out.push(m);
 			keep(m);
-		} else if (e.type === "compaction" || e.type === "branch_summary") out.push({ role: "break" });
+		} else if (e.type === "compaction" || e.type === "branch_summary" || (e.type === "custom" && e.customType === "rqw-auto-wait-v1")) out.push({ role: "break" });
 	}
 	for (const m of live.messages ?? []) {
 		const k = messageKey(m);
@@ -208,7 +208,7 @@ export class TurnIndex {
 		const clear = () => { this.start = undefined; this.keys = []; this.last = undefined; };
 		for (const e of entries) {
 			const position = this.position++;
-			if (kept.has(e.id)) {
+			if (kept.has(e.id) || (e.type === "custom" && e.customType === "rqw-auto-wait-v1")) {
 				if (this.keys.length) {
 					const key = `cut@${e.id}`;
 					this.prefixes.set(key, this.span(this.end));

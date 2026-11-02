@@ -301,7 +301,7 @@ export class Folds {
 			let spanKey: string | undefined;
 			const add = (end: number, anchor: object, span: TurnSpan) => {
 				const members = children.slice(start, end);
-				const lifted = members.filter((m) => this.users.has(m));
+				const lifted = members.filter((m) => this.users.has(m) || this.hasAssistantText(m));
 				if (members.every((m) => this.wrappable(m)) && members.some((m) => !this.users.has(m) && !(m instanceof Spacer))) {
 					next.push({ label: span.label, start, open: this.opened.get(anchor) ?? false, final: anchor, members, ...this.afterFirstMessage(members), lifted, revision: 0 });
 				}
@@ -318,7 +318,8 @@ export class Folds {
 			this.currentStart = from;
 			for (let i = from; i < children.length; i++) {
 				const child = children[i];
-				if (child instanceof CompactionSummaryMessageComponent || child instanceof BranchSummaryMessageComponent || child instanceof BashExecutionComponent) {
+				if (child instanceof CompactionSummaryMessageComponent || child instanceof BranchSummaryMessageComponent || child instanceof BashExecutionComponent
+					|| (child as { entry?: { customType?: string } }).entry?.customType === "rqw-auto-wait-v1") {
 					prefix(i);
 					start = -1;
 					spanKey = undefined;
@@ -364,6 +365,12 @@ export class Folds {
 			at++;
 		}
 		return at < members.length ? { at, tail: false } : { at: members.length - 1, tail: true };
+	}
+
+	private hasAssistantText(component: object): boolean {
+		if (!(component instanceof AssistantMessageComponent)) return false;
+		const message = (component as unknown as { lastMessage?: { content?: { type?: string; text?: unknown }[] } }).lastMessage;
+		return Array.isArray(message?.content) && message.content.some(part => part.type === "text" && typeof part.text === "string" && part.text.trim() !== "");
 	}
 
 	private sourceKey(component: object): string | undefined {

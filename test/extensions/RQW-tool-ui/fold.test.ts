@@ -78,7 +78,7 @@ it("starts closed after a rebuild and stays open on a redraw", () => {
 	m.host.chatContainer.render(120);
 	assert.ok(m.row("worked for 42s") >= 0 && m.row("update 0") >= 0);
 	m.host.rebuildChatFromMessages();
-	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("update 0") < 0);
+	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("update 0") >= 0 && m.row("card 0") < 0);
 });
 
 it("binds no fold for a turn without work", () => {
@@ -129,8 +129,8 @@ it("closed, a finished turn shows its user message, one header and the final ans
 	assert.ok(before.some((row) => row.includes("update 0")) && before.some((row) => row.includes("card 0")) && before.some((row) => row.includes("Read 1 file")));
 	const closed = host.chatContainer.render(80);
 	assert.ok(closed.includes(headerOf("worked for 42s", false)) && closed.includes(headerOf("worked for 2m 03s", false)));
-	for (const gone of ["update 0", "card 0", "Read 1 file", "plan 0"]) assert.ok(!closed.some((row) => row.includes(gone)), gone);
-	for (const kept of ["prompt 0", "answer 0", "sum 0", "prompt 1", "answer 1"]) assert.ok(closed.some((row) => row.includes(kept)), kept);
+	for (const gone of ["card 0", "Read 1 file"]) assert.ok(!closed.some((row) => row.includes(gone)), gone);
+	for (const kept of ["prompt 0", "update 0", "answer 0", "sum 0", "prompt 1", "answer 1"]) assert.ok(closed.some((row) => row.includes(kept)), kept);
 	m.click(1, m.row("worked for 42s ›"));
 	const opened = host.chatContainer.render(80);
 	assert.ok(opened.includes(headerOf("worked for 42s", true)) && opened.includes(headerOf("worked for 2m 03s", false)));
@@ -195,7 +195,7 @@ it("leaves a turn visible and unfolded when one component cannot take the wrappe
 	for (const kept of ["update 0", "card 0", "Read 1 file", "answer 0"]) assert.ok(rows.some((row) => row.includes(kept)), kept);
 	assert.ok(!rows.includes(headerOf("worked for 42s", false)) && !rows.includes(headerOf("worked for 42s", true)));
 	// The healthy turn after it still folds.
-	assert.ok(rows.includes(headerOf("worked for 7s", false)) && !rows.some((row) => row.includes("update 1")));
+	assert.ok(rows.includes(headerOf("worked for 7s", false)) && rows.some((row) => row.includes("update 1")) && !rows.some((row) => row.includes("card 1")));
 });
 
 /** The scene inside Pi's fullscreen renderer, started over the fake terminal. */
@@ -227,7 +227,7 @@ it("keeps live work visible until the agent settles", () => {
 	add(assistant([text("live answer")], "stop", 2), 42_000);
 	assert.ok(m.row("live work") >= 0 && m.row("worked for") < 0);
 	m.loaded.handlers.get("agent_settled")!();
-	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("live work") < 0 && m.row("live answer") >= 0);
+	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("live work") >= 0 && m.row("live answer") >= 0);
 });
 
 it("keeps earlier turns and the user outside a live streamed fold", async () => {
@@ -265,7 +265,8 @@ it("keeps earlier turns and the user outside a live streamed fold", async () => 
 	await event({ type: "agent_settled" });
 	m.loaded.handlers.get("agent_settled")!();
 	for (const kept of ["prompt 0", "worked for 42s ›", "answer 0", "prompt 1", "worked for 7s ›", "answer 1", "live prompt", "worked for 10s ›", "live answer"]) assert.ok(m.row(kept) >= 0, kept);
-	for (const hidden of ["live update", "live card", "direct.ts", "live.ts"]) assert.ok(m.row(hidden) < 0, hidden);
+	assert.ok(m.row("live update") >= 0);
+	for (const hidden of ["live card", "direct.ts", "live.ts"]) assert.ok(m.row(hidden) < 0, hidden);
 	m.click(1, m.row("worked for 10s ›"));
 	for (const back of ["direct.ts", "live.ts"]) assert.ok(m.row(back) >= 0, back);
 });
@@ -282,7 +283,7 @@ it("keeps each answer outside an independent fold and times a wake-up from its d
 	assert.ok(m.row("worked for 5s ›") < m.row("first answer"));
 	assert.ok(m.row("first answer") < m.row("worked for 4s ›"));
 	assert.ok(m.row("worked for 4s ›") < m.row("second answer"));
-	assert.ok(m.row("initial work") < 0 && m.row("late child result") < 0);
+	assert.ok(m.row("initial work") >= 0 && m.row("late child result") < 0);
 	m.click(70, m.row("worked for 4s ›"));
 	assert.ok(m.row("late child result") >= 0 && m.row("late child result") < m.row("worked for 4s"));
 	assert.ok(m.row("worked for 5s ›") >= 0);
@@ -328,12 +329,12 @@ it("folds the prefix and local suffix separately in the whole branch and restore
 		host.chatContainer.clear();
 		(host as unknown as { renderSessionEntries(entries: readonly SessionEntry[]): void }).renderSessionEntries(m.session.manager.getBranch());
 	}
-	assert.ok(m.row("prompt before cut") >= 0 && m.row("prefix stays visible") < 0);
+	assert.ok(m.row("prompt before cut") >= 0 && m.row("prefix stays visible") >= 0);
 	assert.ok(m.row("worked for 1s ›") >= 0);
 	m.click(70, m.row("worked for 1s ›"));
 	assert.ok(m.row("prefix stays visible") > m.row("worked for 1s"));
-	assert.ok(m.row("kept local work") < 0);
-	assert.ok(m.row("worked for 7s ›") >= 0 && m.row("kept local work") < 0);
+	assert.ok(m.row("kept local work") >= 0);
+	assert.ok(m.row("worked for 7s ›") >= 0 && m.row("kept.ts") < 0);
 	assert.ok(m.row("local answer") > m.row("worked for 7s ›"));
 	m.click(70, m.row("worked for 7s ›"));
 	assert.ok(m.row("kept local work") >= 0 && m.row("kept local work") < m.row("worked for 7s"));
@@ -371,7 +372,7 @@ it("adds no empty fold between adjacent answers and leaves both as boundaries", 
 		s.add(assistant([text("question")], "stop", 2_000), 5_000);
 		s.add(assistant([text("additional answer")], "stop", 6_000), 7_000);
 	});
-	assert.ok(m.row("worked for 5s ›") >= 0 && m.row("original work") < 0);
+	assert.ok(m.row("worked for 5s ›") >= 0 && m.row("original work") >= 0);
 	assert.ok(m.row("question") > m.row("worked for 5s ›"));
 	assert.ok(m.row("additional answer") > m.row("question"));
 	assert.equal(m.screen.frame().filter(row => row.includes("worked for")).length, 1);
@@ -389,7 +390,7 @@ it("lifts all owner messages in order and restores their positions among the ori
 	assert.ok(m.row("first owner message") < m.row("second owner message"));
 	assert.ok(m.row("second owner message") < m.row("worked for 5s ›"));
 	assert.ok(m.row("worked for 5s ›") < m.row("final answer"));
-	assert.ok(m.row("work before steering") < 0 && m.row("work after steering") < 0);
+	assert.ok(m.row("work before steering") >= 0 && m.row("work after steering") >= 0);
 	for (const owner of ["first owner message", "second owner message"]) {
 		assert.equal(m.screen.frame().filter(row => row.includes(owner)).length, 1, owner);
 	}
@@ -408,8 +409,8 @@ it("folds a multi-user span without inventing a row for an image-only prompt", (
 		s.add(assistant([text("new work")], "toolUse", 3), 3_000);
 		s.add(assistant([text("new answer")], "stop", 4), 5_000);
 	});
-	assert.ok(m.row("earlier prompt") >= 0 && m.row("unfinished work") < 0);
-	assert.ok(m.row("worked for 5s ›") >= 0 && m.row("new work") < 0 && m.row("new answer") >= 0);
+	assert.ok(m.row("earlier prompt") >= 0 && m.row("unfinished work") >= 0);
+	assert.ok(m.row("worked for 5s ›") >= 0 && m.row("new work") >= 0 && m.row("new answer") >= 0);
 	m.click(70, m.row("worked for 5s ›"));
 	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(80)), m.stock.chatContainer.render(80));
 });
@@ -465,7 +466,7 @@ it("places the click target after wrapped lifted rows and keeps owner clicks sep
 	assert.ok(m.row("steering") < m.row("worked for 5s ›"));
 	m.screen.terminal.columns = 40;
 	m.click(30, m.row("steering"));
-	assert.ok(m.row("worked for 5s ›") >= 0 && m.row("geometry work") < 0);
+	assert.ok(m.row("worked for 5s ›") >= 0 && m.row("geometry work") >= 0);
 	m.click(39, m.row("worked for 5s ›"));
 	assert.ok(m.row("worked for 5s") >= 0 && m.row("geometry work") >= 0);
 	assert.deepEqual(withoutHeaders(m.host.chatContainer.render(40)), m.stock.chatContainer.render(40));
@@ -546,7 +547,7 @@ it("rebuilds only the selected branch with closed folds and lifted steering", ()
 	m.host.rebuildChatFromMessages();
 	m.loaded.handlers.get("session_tree")!();
 	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("worked for 5s ›") >= 0);
-	assert.ok(m.row("answer 1") < 0 && m.row("prompt 1") < 0 && m.row("branch work") < 0);
+	assert.ok(m.row("answer 1") < 0 && m.row("prompt 1") < 0 && m.row("branch work") >= 0);
 	assert.ok(m.row("branch owner") >= 0 && m.row("branch owner") < m.row("branch steering"));
 	assert.ok(m.row("branch steering") < m.row("worked for 5s ›"));
 	m.click(70, m.row("worked for 5s ›"));
@@ -568,7 +569,7 @@ it("updates a settled turn from the new session tail without rereading the branc
 		add(assistant([text("next work")], "toolUse", 101), 101_000);
 		add(assistant([text("next answer")], "stop", 102), 110_000);
 		m.loaded.handlers.get("agent_settled")!();
-		assert.ok(m.row("worked for 10s ›") >= 0 && m.row("next work") < 0);
+		assert.ok(m.row("worked for 10s ›") >= 0 && m.row("next work") >= 0);
 		assert.equal(reads, 0);
 	} finally { manager.getBranch = original; }
 });
@@ -579,9 +580,9 @@ it("a click anywhere on the header row opens and closes that fold only", () => {
 	assert.ok(y >= 0);
 	m.click(70, y);
 	assert.ok(m.row("worked for 42s") >= 0 && m.row("update 0") > m.row("worked for 42s"));
-	assert.ok(m.row("worked for 7s ›") >= 0 && m.row("update 1") < 0);
+	assert.ok(m.row("worked for 7s ›") >= 0 && m.row("update 1") >= 0 && m.row("card 1") < 0);
 	m.click(1, m.row("worked for 42s"));
-	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("update 0") < 0);
+	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("update 0") >= 0 && m.row("card 0") < 0);
 });
 
 it("a drag over the header copies its text and toggles nothing; Enter and Ctrl+O toggle nothing", () => {
@@ -593,7 +594,7 @@ it("a drag over the header copies its text and toggles nothing; Enter and Ctrl+O
 	assert.ok(m.screen.copied.some((text) => text.includes("worked for")));
 	m.screen.input("\r");
 	m.host.setToolsExpanded(true);
-	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("update 0") < 0);
+	assert.ok(m.row("worked for 42s ›") >= 0 && m.row("update 0") >= 0 && m.row("card 0") < 0);
 });
 
 it("the header stays clickable after scrolling and resizing, and open work keeps its own clicks", () => {
@@ -612,7 +613,7 @@ it("the header stays clickable after scrolling and resizing, and open work keeps
 	assert.ok(tool > m.row("worked for 42s"));
 	m.click(3, tool);
 	assert.ok(m.row("worked for 42s") >= 0);
-	assert.ok(m.row("body 0") >= 0);
+	assert.ok(m.host.chatContainer.render(60).some(row => /body [0-5]/.test(stripTerminalSequences(row))));
 });
 
 
@@ -623,7 +624,7 @@ const sameAsStock = (m: ReturnType<typeof mounted>) => assert.deepEqual(withoutH
 it("open, the header is arrowless and sits under the only owner message, above the work", () => {
 	const m = mounted((s) => s.turn(0, 0, 42));
 	const closed = m.row("worked for 42s ›");
-	assert.ok(closed > m.row("prompt 0") && m.row("update 0") < 0);
+	assert.ok(closed > m.row("prompt 0") && m.row("update 0") >= 0 && m.row("card 0") < 0);
 	m.click(1, closed);
 	const y = m.row("worked for 42s");
 	assert.equal(m.screen.frame()[y], " worked for 42s");
@@ -643,7 +644,7 @@ it("open, the header moves under the first of several owner messages, then retur
 	const order = (...texts: string[]) => texts.map((t) => m.row(t));
 	const increasing = (rows: number[]) => rows.every((row, i) => row >= 0 && (i === 0 || row > rows[i - 1]));
 	assert.ok(increasing(order("first A", "first B", "first C", "second owner", "worked for 5s ›", "the answer")));
-	assert.ok(m.row("mid update") < 0 && m.row("later update") < 0);
+	assert.ok(m.row("mid update") >= 0 && m.row("later update") >= 0);
 	m.click(70, m.row("worked for 5s ›"));
 	assert.ok(increasing(order("first A", "first B", "first C", "worked for 5s", "mid update", "second owner", "later update", "the answer")));
 	assert.equal(m.screen.frame()[m.row("worked for 5s")], " worked for 5s");
@@ -654,7 +655,7 @@ it("open, the header moves under the first of several owner messages, then retur
 	// The header stays the click target after a resize; the second click restores the closed view.
 	m.screen.terminal.columns = 60;
 	m.click(55, m.row("worked for 5s"));
-	assert.ok(increasing(order("first A", "first C", "second owner", "worked for 5s ›", "the answer")) && m.row("mid update") < 0);
+	assert.ok(increasing(order("first A", "first C", "second owner", "worked for 5s ›", "the answer")) && m.row("mid update") >= 0);
 	assert.equal(m.screen.frame().filter((row) => row.includes("second owner")).length, 1);
 });
 
@@ -697,7 +698,7 @@ it("open, a fold that starts with a card puts the header after that card", () =>
 		s.add(assistant([text("wake work")], "toolUse", 1), 1_000);
 		s.add(assistant([text("wake answer")], "stop", 2), 3_000);
 	});
-	assert.ok(m.row("worked for 3s ›") >= 0 && m.row("wake work") < 0);
+	assert.ok(m.row("worked for 3s ›") >= 0 && m.row("wake work") >= 0 && m.row("wake card") < 0);
 	m.click(1, m.row("worked for 3s ›"));
 	assert.ok(m.row("wake card") >= 0 && m.row("wake card") < m.row("worked for 3s") && m.row("worked for 3s") < m.row("wake work"));
 	sameAsStock(m);

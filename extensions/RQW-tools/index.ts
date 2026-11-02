@@ -118,6 +118,18 @@ export function installRqwTools(pi: ExtensionAPI, options: { backgroundAfterMs?:
 		pi.registerTool(tool);
 	}
 	let stopNotice: (() => void) | undefined;
+	let auto: ReturnType<Jobs["autoSource"]> | undefined;
+	let autoSession: string | undefined;
+	pi.events.on("rqw:auto-wait:request:v1", (request: any) => {
+		if (auto && request?.sessionId === autoSession && typeof request.offer === "function") request.offer(auto.source);
+	});
+	pi.on("session_start", (_event, ctx) => {
+		auto?.close();
+		autoSession = ctx.sessionManager.getSessionId();
+		auto = jobs.autoSource();
+		pi.events.emit("rqw:auto-wait:offer:v1", { sessionId: autoSession, source: auto.source });
+	});
+	pi.on("session_shutdown", () => { auto?.close(); auto = undefined; autoSession = undefined; });
 	pi.on("session_start", (_event, ctx) => {
 		stopNotice?.();
 		const sessionId = ctx.sessionManager.getSessionId?.();

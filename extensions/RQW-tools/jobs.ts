@@ -48,6 +48,7 @@ type Job = {
 	done: Promise<void>;
 	finish: () => void;
 	result?: string;
+	autoDelivery?: "delivered" | string;
 	tail: string;
 	bytes: number;
 	latest: string;
@@ -408,6 +409,55 @@ export function createJobs(options: JobsOptions = {}) {
 
 	return {
 		backgroundCount,
+		autoSource() {
+			let ended = false;
+			const listeners = new Set<(value: true | null) => void>();
+			const owned = new Map<string, Job[]>();
+			const changed = () => { for (const listener of [...listeners]) { try { listener(true); } catch { /* isolated */ } } };
+			activityListeners.add(changed);
+			const release = (token: string) => {
+				const selected = owned.get(token);
+				if (!selected) return;
+				owned.delete(token);
+				for (const job of selected) if (job.autoDelivery === token) job.autoDelivery = undefined;
+				activityChanged();
+			};
+			const source = {
+				version: 1 as const,
+				snapshot: () => ({ targets: ended ? [] : [...jobs.values()].filter(job => job.ended === undefined).map(idOf),
+					ready: !ended && [...jobs.values()].some(job => job.ended !== undefined && !job.autoDelivery) }),
+				subscribe: (listener: (value: true | null) => void) => {
+					if (ended) { listener(null); return () => {}; }
+					listeners.add(listener); return () => { listeners.delete(listener); };
+				},
+				claim: () => {
+					if (ended) return undefined;
+					const selected = [...jobs.values()].filter(job => job.ended !== undefined && !job.autoDelivery);
+					if (!selected.length) return undefined;
+					const token = randomUUID();
+					for (const job of selected) job.autoDelivery = token;
+					owned.set(token, selected);
+					return { token, results: selected.map(job => ({ id: idOf(job), outcome: job.state,
+						...(job.exitCode !== undefined ? { exit_code: job.exitCode } : {}),
+						text: job.result ?? "", ...(job.path ? { output_path: job.path } : {}) })) };
+				},
+				commit: (token: string) => {
+					const selected = owned.get(token);
+					if (!selected) return;
+					owned.delete(token);
+					for (const job of selected) if (job.autoDelivery === token) job.autoDelivery = "delivered";
+					activityChanged();
+				},
+				release,
+			};
+			return { source, close() {
+				if (ended) return;
+				ended = true; activityListeners.delete(changed);
+				for (const token of [...owned.keys()]) release(token);
+				for (const listener of listeners) { try { listener(null); } catch { /* isolated */ } }
+				listeners.clear();
+			} };
+		},
 		subscribeActivity(listener: () => void) {
 			activityListeners.add(listener);
 			return () => { activityListeners.delete(listener); };

@@ -42,7 +42,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   limit. Children get codemode/tool_search as the caller has them, the caller's session settings and the same profile
   catalog. With RQW-tools, codemode uses the child's background-job registry.
   Details: [RQW-agent README](extensions/RQW-agent/README.md#prompt-and-title). The tool offers caller-chosen mechanical wait and diagnostic status;
-  final results arrive through explicit waits, not waiting receipts or `child_wait` wakeups. Native idle input starts immediately even while background work remains; no follow-up hold remains. The `rqw:stop-background:v1` notice cancels waits and interrupts children. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Children retain history until stop for explicit follow-ups.
+  final results arrive through explicit waits or the optional main-chat auto-wait, not waiting receipts or `child_wait` wakeups. Native idle input starts immediately even while background work remains; no follow-up hold remains. The `rqw:stop-background:v1` notice cancels waits and interrupts children. `send` to a running child is steering: it arrives after the child's current tool call, aborting nothing. `send` with `interrupt: true` aborts the child's turn and starts the new task as soon as it has stopped. Children retain history until stop for explicit follow-ups.
   A persisted parent stores child sessions in `<parent.jsonl>.children/`; `resume` explicitly retries an interrupted or failed provider request with no new message, also after a Pi restart; no automatic retry loop is added. `/resume-agents` remains children-only and does not retry failed requests. A direct `wait` stays open as a native tool call; see [persistence](extensions/RQW-agent/README.md#persistence-and-resume) and `DECISIONS.md` Agent.
   Agent start/restart supports `system_file`/`role_file` and `include: ["user_messages"]`; task text stays in `task`.
   The tool supports `until: "all"`, `wake_on_alert`, read-only status `depth` and optional `alert_after_ms`
@@ -60,6 +60,7 @@ Use the task, review, delivery, model and testing rules in [PROCESS.md](PROCESS.
   overrides it (`false` when the user forbids Fast for subagents). An explicit `fast_gpt` on
   `send` or `restart` updates the retained value.
   Tests: `npm test`.
+- `extensions/RQW-auto-wait/`: independent main-chat automatic wait for agent and job results. It shows a local wait card and wakes only for final results; explicit waits remain available. Tests: `test/extensions/RQW-auto-wait/`.
 - `extensions/RQW-review/`: extension 6, a provider of Codex profiles and native Agent Skills, not a separate runtime.
   `profiles/spotty.toml` defaults to `gpt-6.1-terra` medium; `profiles/bossy.toml` defaults to the same model xhigh. Both embed the same
   reviewer role in `developer_instructions`; the common skill explicitly loads the byte-identical `REVIEWER.md` through

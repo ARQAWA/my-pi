@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, it } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { buildTurns, FINAL_ENTRY, messageKey } from "../../../extensions/RQW-tool-ui/groups.ts";
+import { buildTurns, FINAL_ENTRY, messageKey, TurnIndex } from "../../../extensions/RQW-tool-ui/groups.ts";
 import { assistant, load, makeHost, makeScreen, Session, text, user } from "./fold-host.ts";
 
 const cleanups: (() => void)[] = [];
@@ -46,6 +46,18 @@ it("ignores a final mark after later messages", () => {
 	assert.deepEqual(labels(s.manager.getBranch()), []);
 });
 
+it("an automatic wait is a boundary after an old not-final answer", () => {
+	const s = history([{ final: false }], session => {
+		session.manager.appendCustomEntry("rqw-auto-wait-v1", { version: 1, waitId: "one", phase: "open", targets: ["agent#1"] });
+		session.card("later work", 60_000);
+		session.add(assistant([text("later answer")], "stop", 61), 64_000);
+	});
+	const index = new TurnIndex();
+	index.append(s.manager.getBranch());
+	assert.equal(index.prefixes.size, 1);
+	assert.deepEqual([...index.finals.values()].map(span => span.label), ["worked for 4s"]);
+});
+
 it("includes a long wait and old history in one fold despite live background counts", () => {
 	const session = new Session();
 	cleanups.push(() => session.end());
@@ -78,7 +90,7 @@ it("includes a long wait and old history in one fold despite live background cou
 	assert.equal(rows.filter(row => row.includes("worked for")).length, 1);
 	assert.ok(rows.some(row => row.includes("worked for 2m 06s")));
 	assert.ok(rows.some(row => row.includes("answer")));
-	assert.ok(!rows.some(row => row.includes("old answer")));
+	assert.ok(rows.some(row => row.includes("old answer")));
 	assert.deepEqual(loaded.appended, []);
 	for (const listener of listeners) listener({ agents: 0, backgroundProcesses: 0 });
 	assert.ok(screen.frame().some(row => row.includes("worked for 2m 06s")));

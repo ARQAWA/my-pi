@@ -24,6 +24,17 @@ Provenance:
 - Only the quoted lines are copied from the sessions; no full transcript and no credential is copied into this
   repository.
 
+## Auto-wait
+
+- **Automatic wait in the main chat** `[D-AUTO-WAIT]`. After a settled turn, the independently disableable `RQW-auto-wait` shows a context-free wait card for live direct agents and main jobs. Ready results share one hidden custom message and one new turn. There is no polling or model call for waiting. Explicit waits remain available. Assistant text stays outside closed worked-for folds. Idle progress notices wait for user input instead of waking the model.
+  The owner dropped design parts 3 and 4, the submit and focus fences. Whoever acts first wins. A user input accepted before the claim wins; if the auto-wake run is already streaming, input without a delivery mode becomes a normal follow-up. The owner chose fix «1» for that busy race.
+  Owner: «Механика с wait внутри чата, с визуализацией wait как обычный tooling, была в том, чтобы облегчить бэкграунд, очереди и прочее, чтобы они были максимально простыми, понятными, легковесными. Если у нас в фоне где-то что-то работает, то появляется этот waiter автоматически сам. Его не модель поднимает, а он появляется, автоматически самим harness вставляется.»
+  Owner: «там, где мы можем не тратить токены, мы их тратить не должны».
+  Owner: «все должно быть синхронно достаточно. то есть кто первый, тот папа.»
+  Owner: «можно приступать к выполнению».
+  Reason: keep background waiting visible without repeated model calls or hidden answers.
+  Carriers: `extensions/RQW-auto-wait/`, `extensions/RQW-agent/`, `extensions/RQW-tools/`, `extensions/RQW-tool-ui/`, `package.json`, `test/extensions/RQW-auto-wait/`.
+
 ## Command cleanup
 
 - **Remove conflicting command entrances** `[D-COMMAND-CLEANUP]`. `RQW-commands` removes Pi's `/model`, `/thinking`, `/tree`, `/scoped-models`, `/share`, `/bug` and built-in llama from interactive suggestions and submission, and hides only RQW-session's `/session-deleted` suggestion. Other implementations and service execution remain. Pi's built-in command precedence stays. The four model and thinking cycle actions and the thinking display toggle are disabled, including custom bindings; four settings items and hidden providers in the logout menu are hidden without changing settings or credentials. The checked runtime patch falls back to stock on incompatible Pi internals.

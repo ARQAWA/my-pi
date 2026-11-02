@@ -419,6 +419,22 @@ function registerCaller(pi: ExtensionAPI, toolEvents: ExtensionAPI["events"], ba
 		handler: async (_args, ctx) => { const count = await runtime.resume?.(ctx.signal ?? new AbortController().signal) ?? 0; ctx.ui.notify(`Resumed ${count} child session(s)`, "info"); },
 	});
 	if (counts) {
+		let auto: ReturnType<Coordinator["autoSource"]> | undefined;
+		let autoSession: string | undefined;
+		pi.events.on("rqw:auto-wait:state:v1", (state: any) => {
+			if (state?.sessionId === autoSession && typeof state.active === "boolean") coordinator.setAutoWaiting(state.active);
+		});
+		pi.on("input", () => { coordinator.flushDeferredProgress(); return { action: "continue" }; });
+		pi.events.on("rqw:auto-wait:request:v1", (request: any) => {
+			if (auto && request?.sessionId === autoSession && typeof request.offer === "function") request.offer(auto.source);
+		});
+		pi.on("session_start", (_event, ctx) => {
+			auto?.close();
+			autoSession = ctx.sessionManager.getSessionId();
+			auto = coordinator.autoSource(ctx);
+			pi.events.emit("rqw:auto-wait:offer:v1", { sessionId: autoSession, source: auto.source });
+		});
+		pi.on("session_shutdown", () => { auto?.close(); auto = undefined; autoSession = undefined; });
 		pi.events.on(COUNTS_REQUEST, (request) => {
 			const r = request as CountsRequest;
 			if (r?.version === COUNTS_VERSION) counts.reply(r);
@@ -480,7 +496,12 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			const effort = profile.model_reasoning_effort === "none" ? "off" : profile.model_reasoning_effort ?? pi.getThinkingLevel();
 			return `${profile.name}: ${profile.description}; model=${model}; effort=${effort}; source=${profile.path}${profile.not_applied ? `; not applied: ${profile.not_applied.join(", ")}` : ""}${profile.error ? "; invalid profile" : ""}`;
 		});
-		const description = `${DESCRIPTION}\n\nAvailable roles:\n${lines.join("\n") || "No profiles discovered."}`;
+		let automatic = false;
+		if (!_backgroundCaller) toolEvents.emit("rqw:auto-wait:capability:v1", { sessionId: ctx.sessionManager.getSessionId(), offer: () => { automatic = true; } });
+		const base = automatic ? DESCRIPTION
+			.replace("Call wait to receive its final answer.", "Final answers arrive automatically when the main chat is idle; end your turn while work continues.")
+			.replace("If you need a result, call wait directly in a wait-only batch;", "For an explicit wait, call it directly in a wait-only batch;") : DESCRIPTION;
+		const description = `${base}\n\nAvailable roles:\n${lines.join("\n") || "No profiles discovered."}`;
 		const names = offeredFactory()?.catalogue?.names ?? [...TOOLS];
 		definition.description = description;
 		definition.parameters = toolParameters(names);
