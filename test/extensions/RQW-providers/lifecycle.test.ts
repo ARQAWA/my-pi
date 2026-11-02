@@ -82,6 +82,7 @@ function fakeSession(runtime: object, pis: FakePi[]): AgentSession {
 const newRuntime = () => Object.create(ModelRuntime.prototype) as ModelRuntime;
 const providerIds = (runtime: ModelRuntime) => runtime.getProviders().map(provider => provider.id);
 const slot = (target: object, name: string) => Object.getOwnPropertyDescriptor(target, name)!.value as unknown;
+const bind = (session: AgentSession) => Reflect.apply(Reflect.get(session, "_bindExtensionCore"), session, [{}]);
 
 it("owns the runtime before Pi's own bind and releases it on session shutdown", () => {
 	const pi = fakePi();
@@ -90,7 +91,7 @@ it("owns the runtime before Pi's own bind and releases it on session shutdown", 
 	const foreign = newRuntime();
 	const session = fakeSession(owned, [pi]);
 	assert.equal(providerIds(owned).length, models.length);
-	session._bindExtensionCore({} as never);
+	bind(session);
 	assert.deepEqual(stockCalls, ["stock bind"]);
 	assert.deepEqual(seenInBind, allowed);
 	assert.deepEqual(providerIds(owned), allowed);
@@ -106,7 +107,7 @@ it("stops filtering once the extension API is stale and no other owner is live",
 	const pi = fakePi();
 	providers(pi as never);
 	const runtime = newRuntime();
-	fakeSession(runtime, [pi])._bindExtensionCore({} as never);
+	bind(fakeSession(runtime, [pi]));
 	assert.deepEqual(providerIds(runtime), allowed);
 	pi.stale = true;
 	assert.equal(providerIds(runtime).length, models.length);
@@ -119,7 +120,7 @@ it("keeps the policy for a second owner and restores Pi when the session is disp
 	providers(second as never);
 	const runtime = newRuntime();
 	const session = fakeSession(runtime, [first, second]);
-	session._bindExtensionCore({} as never);
+	bind(session);
 	shutdown(first);
 	assert.deepEqual(providerIds(runtime), allowed);
 	session.dispose();
