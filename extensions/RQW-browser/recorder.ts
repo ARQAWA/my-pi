@@ -1,4 +1,4 @@
-import type { Browser, Page } from "puppeteer-core";
+import type { Browser, ElementHandle, Page } from "puppeteer-core";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { untilAborted } from "./abort.ts";
@@ -16,7 +16,7 @@ async function button(page: Page, label: string, signal: AbortSignal): Promise<v
 		return walk(document);
 	}, { timeout: 5000 }, label), signal);
 	try {
-		const element = handle.asElement();
+		const element = handle.asElement() as ElementHandle<Element> | null;
 		if (!element) throw new Error(`Recorder button ${label} not found.`);
 		await untilAborted(element.click(), signal);
 	} finally { await handle.dispose(); }
