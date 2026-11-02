@@ -15,8 +15,10 @@ const PROXY_VARS = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'NODE_
 
 let piExe = '';
 let bundledPackage = '';
+let storagePath = '';
 let updater;
 let count = 0;
+let shellCount = 0;
 const ptys = new Set();
 const pcliTerminals = new Set();
 
@@ -74,6 +76,7 @@ function proxyExports(env) {
 function activate(context) {
   piExe = path.join(context.extensionPath, 'pi', 'pi.exe');
   bundledPackage = path.join(context.extensionPath, 'my-pi');
+  storagePath = context.globalStorageUri.fsPath;
   updater = createUpdater(context, globalThis.fetch, require('net'));
   context.subscriptions.push(
     // Ctrl+Enter keybinding (package.json) applies only while a PCLI tab is active
@@ -81,6 +84,7 @@ function activate(context) {
       vscode.commands.executeCommand('setContext', 'pcli.terminalActive', pcliTerminals.has(active));
     }),
     vscode.commands.registerCommand('pcli.newTab', () => openTab('pi ' + ++count)),
+    vscode.commands.registerCommand('pcli.shellTab', () => openShellTab('pi shell ' + ++shellCount)),
     vscode.commands.registerCommand('pcli.update', async () => {
       try {
         await vscode.window.withProgress({
@@ -96,6 +100,10 @@ function activate(context) {
 
 // Вкладки терминала
 
+function workDir() {
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir();
+}
+
 function makePty(nodePty) {
   const writeEmitter = new vscode.EventEmitter();
   let proc = null;
@@ -105,7 +113,7 @@ function makePty(nodePty) {
     // Pi предпочитает строчные http_proxy/https_proxy: убрать те, что мог задать профиль Git Bash
     const inner = 'unset http_proxy https_proxy all_proxy no_proxy; ' + proxyExports(env) + bashQuote(piExe.replace(/\\/g, '/'));
     const command = "& '" + GIT_BASH + "' --login -i -c " + psQuote(inner);
-    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir();
+    const cwd = workDir();
     let p;
     try {
       p = nodePty.spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-Command', command], {
@@ -165,14 +173,17 @@ function loadNodePty() {
   }
 }
 
+function agentDir() {
+  return process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
+}
+
 // Replace only our package source. Object-form resource filters remain untouched.
 function configurePackage() {
   if (!fs.existsSync(path.join(bundledPackage, 'package.json'))) {
     throw new Error('Not found: ' + bundledPackage);
   }
-  const agentDir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), '.pi', 'agent');
-  const settingsPath = path.join(agentDir, 'settings.json');
-  fs.mkdirSync(agentDir, { recursive: true });
+  const settingsPath = path.join(agentDir(), 'settings.json');
+  fs.mkdirSync(agentDir(), { recursive: true });
   // Pi uses proper-lockfile with realpath:false: the same atomic .lock directory.
   // A busy or stale lock stops this tab; never steal another settings writer's lock.
   const lockPath = settingsPath + '.lock';
@@ -210,11 +221,27 @@ function configurePackage() {
   }
 }
 
-function openTab(name) {
-  if (!fs.existsSync(GIT_BASH)) {
-    vscode.window.showErrorMessage('Not found: ' + GIT_BASH + '. Install Git for Windows.');
-    return;
+// Shown error and false when the file is missing
+function hasFile(file, hint) {
+  if (fs.existsSync(file)) return true;
+  vscode.window.showErrorMessage('Not found: ' + file + hint);
+  return false;
+}
+
+// Select the current bundled my-pi and register it in Pi settings; shown error and false on failure
+function selectPackage() {
+  try {
+    bundledPackage = updater.current();
+    configurePackage();
+    return true;
+  } catch (err) {
+    vscode.window.showErrorMessage(err.message);
+    return false;
   }
+}
+
+function openTab(name) {
+  if (!hasFile(GIT_BASH, '. Install Git for Windows.')) return;
   let nodePty;
   try {
     nodePty = loadNodePty();
@@ -222,20 +249,51 @@ function openTab(name) {
     vscode.window.showErrorMessage(err.message);
     return;
   }
-  if (!fs.existsSync(piExe)) {
-    vscode.window.showErrorMessage('Not found: ' + piExe);
-    return;
+  if (!hasFile(piExe, '') || !selectPackage()) return;
+  const terminal = vscode.window.createTerminal({
+    name,
+    pty: makePty(nodePty),
+    location: { viewColumn: vscode.ViewColumn.Active },
+  });
+  pcliTerminals.add(terminal);
+  terminal.show();
+}
+
+// An ordinary Git Bash tab with the bundled Pi on PATH, so `pi` and `pi config` work when typed by hand.
+// Same environment as New Tab: proxy, no version check, the shared agent dir and the bundled my-pi.
+function openShellTab(name) {
+  if (!hasFile(GIT_BASH, '. Install Git for Windows.') || !hasFile(piExe, '') || !selectPackage()) return;
+  const piDir = bashQuote(path.dirname(piExe));
+  // The environment is set in the rcfile of the final shell, after ~/.bashrc, so no startup script can undo it.
+  // Proxy values (they may hold credentials) travel in the terminal environment as PCLI_*, never in the file,
+  // so the file is the same for every tab.
+  const env = childEnv();
+  // Pi reads the same agent dir that selectPackage() just wrote, whatever the terminal profile sets
+  const terminalEnv = { PI_CODING_AGENT_DIR: agentDir() };
+  for (const proxyName of PROXY_VARS.filter((candidate) => envGet(env, candidate))) {
+    terminalEnv['PCLI_' + proxyName] = envGet(env, proxyName);
   }
+  const rcFile = path.join(storagePath, 'shell-rc.sh');
+  const rc = '[ -f ~/.bashrc ] && . ~/.bashrc\n'
+    + 'unset http_proxy https_proxy all_proxy no_proxy\n'
+    + PROXY_VARS.map((proxyName) => '[ -n "$PCLI_' + proxyName + '" ] && export ' + proxyName + '="$PCLI_' + proxyName + '"\n').join('')
+    + 'export PI_SKIP_VERSION_CHECK=1\n'
+    + 'export PATH="$(cygpath -u ' + piDir + '):$PATH"\n';
   try {
-    bundledPackage = updater.current();
-    configurePackage();
+    fs.mkdirSync(storagePath, { recursive: true });
+    fs.writeFileSync(rcFile, rc);
   } catch (err) {
     vscode.window.showErrorMessage(err.message);
     return;
   }
+  // The login shell runs the profile scripts, then hands over to an interactive shell that reads the rcfile
+  const setup = 'exec bash --rcfile ' + bashQuote(rcFile.replace(/\\/g, '/')) + ' -i';
   const terminal = vscode.window.createTerminal({
     name,
-    pty: makePty(nodePty),
+    shellPath: GIT_BASH,
+    shellArgs: ['--login', '-i', '-c', setup],
+    cwd: workDir(),
+    env: terminalEnv,
     location: { viewColumn: vscode.ViewColumn.Active },
   });
   pcliTerminals.add(terminal);

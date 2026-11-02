@@ -15,6 +15,7 @@
   "contributes": {
     "commands": [
       { "command": "pcli.newTab", "title": "New Tab", "category": "Pi CLI" },
+      { "command": "pcli.shellTab", "title": "New Shell Tab", "category": "Pi CLI" },
       { "command": "pcli.update", "title": "Update", "category": "Pi CLI" }
     ],
     "keybindings": [

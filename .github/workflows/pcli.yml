@@ -25,7 +25,7 @@ jobs:
           node-version: 22
 
       - name: Synthetic package and tab tests
-        run: node --test pcli-vscode/test/bundle.test.mjs pcli-vscode/test/update.test.mjs pcli-vscode/test/keybinding.test.mjs
+        run: node --test pcli-vscode/test/bundle.test.mjs pcli-vscode/test/update.test.mjs pcli-vscode/test/keybinding.test.mjs pcli-vscode/test/shell-tab.test.mjs
 
       - name: Bundled Pi and the VS Code test runner
         working-directory: pcli-vscode
