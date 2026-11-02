@@ -58,7 +58,7 @@ export const DESCRIPTION = [
 	"Any earlier instruction enabling proactive multi-agent delegation no longer applies. Do not spawn sub-agents unless the user, your task, role or system prompt, or applicable AGENTS.md/skill instructions explicitly ask for sub-agents, delegation, or parallel agent work.",
 	"",
 	"send: Send a follow-up task to an existing agent and trigger a turn if it is idle. If the target is already running, deliver the task after its current tool call completes.",
-	"wait: Wait for agents to reach a final status. Completed statuses may include the agent's final message. Returns no results when timed out. The call stays open until a result, an alert, a changed target or the timeout; timeout and abort stop only the wait. Each result arrives once through wait.",
+	"wait: Wait for agents to reach a final status. A wait is a signal and costs no model tokens while it is open. It returns only real final answers (id, title, outcome, text). On user steering, a changed target or the timeout it returns one short line such as \"interrupted; still running: agent#1, agent#2\", with no per-agent detail; use status for detail. Timeout and abort stop only the wait. Each result arrives once through wait.",
 	"interrupt: Interrupt an agent's current turn, if any, and return its previous status. The agent remains available for messages and follow-up tasks. Cancellation can stay pending; inspect it with status.",
 	"status: List the status of the listed direct agents: last trimmed messages, in-flight tool calls and structured alerts. Positive depth adds read-only descendant status; it grants no descendant control.",
 	"stop: Close an agent and any open descendants when they are no longer needed. Completed agents remain open and keep their history until closed. Don't keep agents open for too long if they are not needed anymore.",
@@ -79,7 +79,7 @@ const PARAMETERS = Type.Object({
 	timeout_ms: Type.Optional(Type.Integer({ minimum: 1, description: "Timeout in milliseconds. Defaults to 300000, min 1, no max. Prefer longer waits (minutes) to avoid busy polling." })),
 	messages: Type.Optional(Type.Integer({ minimum: 5, maximum: 10, description: "Status peek length; default 8" })),
 	until: Type.Optional(StringEnum(["first", "all"], { description: "wait: first terminal result (default), or hold results until all selected targets are terminal" })),
-	wake_on_alert: Type.Optional(Type.Boolean({ description: "wait: return on a new structured alert without consuming a result; default true" })),
+	wake_on_alert: Type.Optional(Type.Boolean({ description: "wait: return one short line on a new structured alert without consuming a result; default false, alerts never wake a wait" })),
 	depth: Type.Optional(Type.Integer({ minimum: 0, description: "status: descendant generations to include, read-only; default 0" })),
 	alert_after_ms: Type.Optional(Type.Integer({ minimum: 1, description: "start/restart: long-turn alert threshold in milliseconds, positive safe integer; disabled by default, inherited on restart" })),
 	system: Type.Optional(Type.String({ description: "Whole system prompt, replacing the default (your prompt and role); the subagent reminder is still appended after it; start, restart" })),
@@ -496,7 +496,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		persist(a);
 		displays.set(identity.run, displayOf(a, identity.id, outcome, meta));
 		ownRuns.add(identity.run);
-		coordinator.publish(identity.id, identity.run, text, outcome, delivery);
+		coordinator.publish(identity.id, identity.run, text, outcome, delivery, a.title);
 	}
 
 	/** The display details of a run that ended, from its activity and this session's selected thinking. */
@@ -542,9 +542,8 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			// A queued `send` task is about to start: wait must not see an idle child in between.
 			recovers: a.recovers,
 			active: () => !!a.run || !!a.next?.length || recoveryPending.has(a.id),
-			checkpoint: () => a.activity.checkpoint(),
 			alertVersion: () => a.activity.alertVersion(),
-			snapshot: (messages?: number, checkpoint?: Map<string, number>, depth = 0) => ({ ...(a.title ? { title: a.title } : {}), ...(a.config.profile ? { profile: a.config.profile } : {}), ...a.activity.snapshot(messages, checkpoint),
+			snapshot: (messages?: number, depth = 0) => ({ ...(a.title ? { title: a.title } : {}), ...(a.config.profile ? { profile: a.config.profile } : {}), ...a.activity.snapshot(messages),
 				...(a.state === "paused" && !a.run ? { state: "paused" } : {}),
 				...(recoveryErrors.has(a.id) ? { recovery_error: recoveryErrors.get(a.id)!.error } : {}),
 				...(a.run?.quiet ? { cancellation_requested: true } : {}),
@@ -939,7 +938,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 					...(a.title ? { title: a.title } : {}), ...(a.config.profile ? { profile: a.config.profile } : {}),
 					...(a.config.prompt_file ? { prompt_file: a.config.prompt_file } : {}) });
 				ownRuns.add(result.run);
-				answers.push({ id: `${name}#${a.id}`, run: result.run, text: result.text, outcome: result.outcome, delivery: result.delivery });
+				answers.push({ id: `${name}#${a.id}`, run: result.run, text: result.text, outcome: result.outcome, delivery: result.delivery, title: a.title });
 			}
 		}
 		coordinator.publishAll(answers);
@@ -1531,7 +1530,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 		const task = params.include?.includes("user_messages") && params.task !== undefined
 			? appendUserMessages(params.task, ctx.sessionManager.getBranch()) : params.task;
 		switch (params.action) {
-			case "status": touch(targetIds(params.ids)); return waitResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages), undefined, statusDepth(params.depth)) });
+			case "status": touch(targetIds(params.ids)); return waitResult({ statuses: coordinator.status(targetIds(params.ids), messageCount(params.messages), statusDepth(params.depth)) });
 			case "start": {
 				if (!params.task) throw new Error("task is required");
 				const config = await resolveConfig(params, ctx, signal);
@@ -1773,7 +1772,7 @@ export function registerSessionRuntime(pi: ExtensionAPI, toolEvents = pi.events,
 			if (active.length) await untilAborted(Promise.all(active).then(() => {}), signal);
 		},
 		ids: () => [...agents.values()].filter(a => a.run).map(a => `${name}#${a.id}`),
-		status: depth => coordinator.status([...new Set([...agents.keys(), ...savedSlots.keys(), ...recoveryErrors.keys()])].map(id => `${name}#${id}`), undefined, undefined, statusDepth(depth)).map(compactStatus),
+		status: depth => coordinator.status([...new Set([...agents.keys(), ...savedSlots.keys(), ...recoveryErrors.keys()])].map(id => `${name}#${id}`), undefined, statusDepth(depth)).map(compactStatus),
 		async prepareStatus(depth, signal) {
 			if (!main) return;
 			await hydrate(main, signal);

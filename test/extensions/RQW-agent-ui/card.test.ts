@@ -162,6 +162,7 @@ it("parses delivered wait cards and rejects diagnostics", () => {
 	const details = { reason: "result", results: [{ id: "agent#3", text: "Done", display: { outcome: "finished" } }] };
 	assert.deepEqual(waitCards("agent", { action: "wait" }, { details })?.map((card) => [card.id, card.body]), [["agent#3", "Done"]]);
 	assert.equal(waitCards("agent", { action: "wait" }, { details: { reason: "alert", results: [] } }), undefined);
+	for (const reason of ["steered", "timeout", "receipt"]) assert.equal(waitCards("agent", { action: "wait" }, { details: { reason, results: [], receipts: [] } }), undefined);
 });
 
 it("keeps folded self-shell rows and replaces expanded ones with cards", () => {

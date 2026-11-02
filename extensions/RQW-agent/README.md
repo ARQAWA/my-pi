@@ -388,15 +388,26 @@ any other already-ready results, including terminal errors. `"all"` holds early 
 target has a result, a delivery receipt, or is inactive. It reserves those results for wait delivery only when the
 whole selection is ready. An alert, timeout or caller abort releases held completions back to pending without
 consuming them in the wait. Already-delivered answers remain receipts, not copies.
-`wake_on_alert` defaults to `true`: an alert created on a selected child after this wait registered returns early
-with `reason: "alert"` and statuses, without consuming results. Old alerts do not repeatedly wake later waits.
-Set `wake_on_alert: false` to wait for the selected completion condition or deadline instead.
+`wake_on_alert` defaults to `false`: alerts never wake a wait. With `wake_on_alert: true` an alert created on a
+selected child after this wait registered returns early with `reason: "alert"` and one short line, without consuming
+results. Old alerts do not repeatedly wake later waits.
 
-The tool returns text JSON mirrored in `details` (no outputSchema): `reason`, `timed_out`, `results`, `receipts`,
-`statuses`; `target_changed` also identifies the old run/change. `timeout` returns every selected status without consuming
-a future result. `idle` returns immediately if no selected run/result exists. Unknown/closed IDs are explicit status
-errors. Interrupt/stop/restart wake old waits; they never silently follow replacements. Management registration is
-ordered, but the wait Promise does not hold that queue.
+#### A wait is a signal, not a report
+
+Waiting costs no model tokens, and neither does what a wait returns (`[D-AGENT-WAIT-LEAN]`). The model-visible text is
+one of two shapes and never carries statuses, alerts, tool previews, argument previews or token counts:
+
+- Real final answers: JSON `{"results":[{"id","title"?,"outcome","text"}]}`, each text ending with the completion follow-up.
+- No answer: one short line, `<reason>[: detail]; still running: agent#1, agent#2` or `; nothing running`, with
+  `; unknown or closed: <ids>` appended when a selected id is gone. Reasons: `interrupted` (user steering),
+  `timeout`, `alert` (opt-in), `target_changed: <id> <change>`, `no new answer, already delivered: <ids>`, `idle`,
+  `work_pending`, `direct_wait_required`.
+
+`details` (never sent to the model) mirrors it for cards and bookkeeping: `reason`, `timed_out`, `results` (with `run`,
+`delivery` and `display`), `receipts`, `changed`. There is no `statuses` array. `idle` returns immediately if no
+selected run/result exists. Full detail is only available through an explicit `status`. Interrupt/stop/restart wake
+old waits; they never silently follow replacements. Management registration is ordered, but the wait Promise does not
+hold that queue.
 
 Results have caller-local ID, epoch/run identity and a UUID delivery. A broker reserves a result for one waiter.
 Repeated or competing waits receive receipts (`delivered_via`, `claimed_by`), not second copies.

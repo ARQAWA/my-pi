@@ -227,8 +227,20 @@ function coordinatorFixture(t: TestContext, busy = false, sessionFile?: string) 
 	const target = { id: "agent#1", run: "run", active: () => live, snapshot: () => ({ state: live ? "running" : "idle" }) };
 	coordinator.add(target);
 	return { coordinator, sent, branch, emit,
-		finish: () => { live = false; coordinator.publish(target.id, target.run, "answer", "completed"); } };
+		finish: (title?: string) => { live = false; coordinator.publish(target.id, target.run, "answer", "completed", undefined, title); } };
 }
+
+test("a wait answer carries only id, title, outcome and text, never statuses", async t => {
+	const f = coordinatorFixture(t);
+	const waiting = f.coordinator.wait(["agent#1"], 100, new AbortController().signal, "call");
+	f.finish("Scout");
+	const result = await waiting;
+	const body = JSON.parse(result.content[0].text);
+	assert.deepEqual(Object.keys(body), ["results"]);
+	assert.deepEqual(Object.keys(body.results[0]), ["id", "title", "outcome", "text"]);
+	assert.equal(body.results[0].title, "Scout");
+	assert.equal("statuses" in result.details, false);
+});
 
 test("coordinator wait returns a completed child result", async t => {
 	const f = coordinatorFixture(t);
@@ -262,10 +274,11 @@ test("receipt write failure still commits a wait result", async t => {
 	f.finish();
 	const result = await waiting;
 	assert.equal((result.details.results as any[])[0].text, `answer\n\n${FOLLOW_UP}`);
-	f.branch.push({ type: "message", message: { role: "toolResult", toolCallId: "call", isError: false, content: result.content } });
+	f.branch.push({ type: "message", message: { role: "toolResult", toolCallId: "call", isError: false, content: result.content, details: result.details } });
 	f.emit("turn_end");
 	const repeated = await f.coordinator.wait(["agent#1"], 100, new AbortController().signal, "again");
 	assert.equal(repeated.details.reason, "receipt");
+	assert.equal(repeated.content[0].text, "no new answer, already delivered: agent#1; nothing running");
 	assert.deepEqual(repeated.details.results, []);
 	assert.equal((repeated.details.receipts as any[])[0].delivered_via, "wait");
 });
@@ -573,7 +586,7 @@ test("send wakes a restored child core waiting for its own child", async t => {
 		await live.execute({ action: "send", id: "agent#1", task: "new direction" });
 		const request = await redirected.promise;
 		const waitResult = request.messages.find((message: any) => message.role === "toolResult" && message.toolCallId === "nested-wait");
-		assert.equal(JSON.parse(waitResult.content[0].text).reason, "steered");
+		assert.match(waitResult.content[0].text, /^interrupted; still running: agent#1$/);
 		nested.resolve("nested done");
 		await live.runtime.wait(new AbortController().signal);
 	} finally {
@@ -1197,7 +1210,7 @@ test("registered description and parameters carry adapted Codex guidance", async
 	assert.equal(properties.timeout_ms.description, "Timeout in milliseconds. Defaults to 300000, min 1, no max. Prefer longer waits (minutes) to avoid busy polling.");
 	assert.equal(properties.messages.description, "Status peek length; default 8");
 	assert.equal(properties.until.description, "wait: first terminal result (default), or hold results until all selected targets are terminal");
-	assert.equal(properties.wake_on_alert.description, "wait: return on a new structured alert without consuming a result; default true");
+	assert.equal(properties.wake_on_alert.description, "wait: return one short line on a new structured alert without consuming a result; default false, alerts never wake a wait");
 	assert.equal(properties.depth.description, "status: descendant generations to include, read-only; default 0");
 	assert.equal(properties.alert_after_ms.description, "start/restart: long-turn alert threshold in milliseconds, positive safe integer; disabled by default, inherited on restart");
 	assert.equal(properties.system.description, "Whole system prompt, replacing the default (your prompt and role); the subagent reminder is still appended after it; start, restart");
@@ -1312,8 +1325,7 @@ test("completed children wait without opening siblings and materialize only for 
 	assert.deepEqual(waiting.details.results.map((result: any) => [result.id, result.text]), [["agent#1", `answer\n\n${FOLLOW_UP}`], ["agent#2", `answer\n\n${FOLLOW_UP}`]]);
 	const repeated = await restored.execute({ action: "wait", ids: ["agent#1", "agent#2"], until: "all" });
 	assert.equal(repeated.details.results.length, 0);
-	assert.deepEqual(waiting.details.statuses.map((status: any) => [status.id, status.state, status.error]),
-		[["agent#1", "idle", undefined], ["agent#2", "idle", undefined]]);
+	assert.equal("statuses" in waiting.details, false);
 	await restored.execute({ action: "send", id: "agent#1", task: "follow-up A" });
 	await restored.runtime.wait(new AbortController().signal);
 	const request = restored.requests.at(-1);
@@ -1400,26 +1412,25 @@ test("five finished idle minutes release a session and send wakes the same histo
 	await commitWait(live, parent);
 	now = 299999;
 	t.mock.timers.tick(299999);
-	const awake = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(awake.details.statuses[0].run_id, 1);
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(released, false);
 	// The parent's wait rearms the full grace period.
 	now = 300000;
 	t.mock.timers.tick(1);
-	const rearmed = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(rearmed.details.statuses[0].run_id, 1);
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(released, false);
 	now = 540000;
 	t.mock.timers.tick(240000);
 	const interrupted = await live.execute({ action: "interrupt", id: "agent#1" });
 	assert.equal(interrupted.content[0].text, "agent#1 is idle");
 	now = 600000;
 	t.mock.timers.tick(60000);
-	const afterInterrupt = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(afterInterrupt.details.statuses[0].run_id, 1);
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(released, false);
 	now = 900000;
 	t.mock.timers.tick(300000);
-	const asleep = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(asleep.details.statuses[0].state, "idle");
-	assert.equal(asleep.details.statuses[0].run_id, undefined);
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(released, true);
 	live.ctx.mode = "print";
 	await live.emit("agent_end");
 	await live.execute({ action: "send", id: "agent#1", task: "wake task" });
@@ -1450,7 +1461,7 @@ test("direct wait after codemode survives five-minute hibernation and wake", asy
 			return fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "wake/wait" })], { stopReason: "toolUse" });
 		}
 		if (task === "delegate" && tools.length === 2 && !context.messages.some((message: any) => message.role === "user" && message.content?.[0]?.text === "wake"))
-			return JSON.stringify(tools[1].content).includes("receipt") ? "received" : "missing";
+			return JSON.stringify(tools[1].content).includes("nested answer") ? "received" : "missing";
 		if (task === "delegate" && tools.length === 2 && context.messages.some((message: any) => message.role === "user" && message.content?.[0]?.text === "wake"))
 			return fauxAssistantMessage([fauxToolCall("agent", { action: "wait", ids: ["agent#1"] }, { id: "wake/again" })], { stopReason: "toolUse" });
 		return task === "nested" ? nested.promise : JSON.stringify(context.messages.filter((message: any) => message.role !== "system" && message.role !== "assistant" && JSON.stringify(message.content).includes("nested answer")).length);
@@ -1459,6 +1470,8 @@ test("direct wait after codemode survives five-minute hibernation and wake", asy
 		name: "read", label: "Read", description: "Release fake model", parameters: { type: "object", properties: { path: { type: "string" } } },
 		execute: async () => { nested.resolve(fauxAssistantMessage("nested answer")); return { content: [{ type: "text", text: "released" }], details: {} }; },
 	}]));
+	let released = false;
+	live.events.on("rqw-codex:session-policy", (request: any) => { request.release = () => { released = true; }; });
 	await live.execute({ action: "start", task: "delegate", tools: ["read"] });
 	await live.runtime.wait(new AbortController().signal);
 	await commitWait(live, parent);
@@ -1466,8 +1479,8 @@ test("direct wait after codemode survives five-minute hibernation and wake", asy
 	assert.ok(beforeSleep.details.statuses[0].messages.some((message: any) => message.role === "assistant" && message.text === "received"));
 	now = 300000;
 	t.mock.timers.tick(300000);
-	const result = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(result.details.statuses[0].run_id, undefined);
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(released, true);
 	live.ctx.mode = "print";
 	await live.emit("agent_end");
 	await live.execute({ action: "send", id: "agent#1", task: "wake" });
@@ -1490,6 +1503,8 @@ test("an uncommitted answer blocks sleep until its wait result is saved", async 
 		options = value;
 		return [];
 	}));
+	let released = false;
+	live.events.on("rqw-codex:session-policy", (request: any) => { request.release = () => { released = true; }; });
 	await live.execute({ action: "start", task: "task", tools: [] });
 	await live.runtime.wait(new AbortController().signal);
 	assert.equal("notify" in options, false);
@@ -1497,14 +1512,14 @@ test("an uncommitted answer blocks sleep until its wait result is saved", async 
 	now = 300000;
 	t.mock.timers.tick(300000);
 	const waiting = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(waiting.details.statuses[0].run_id, 1);
+	assert.equal(released, false);
 	assert.match(waiting.details.results[0].text, /answer/);
 	parent.appendMessage({ role: "toolResult", toolCallId: "call", toolName: "agent", content: waiting.content, details: waiting.details, isError: false, timestamp: 1 });
 	await live.emit("turn_end");
 	now = 600000;
 	t.mock.timers.tick(300000);
-	const settled = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(settled.details.statuses[0].run_id, undefined);
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(released, true);
 	live.runtime.close();
 });
 
@@ -1565,7 +1580,8 @@ test("a running child's queued progress notice does not hold a finished sibling 
 		if (tools === 50) { entered.resolve(); return response.promise; }
 		return fauxAssistantMessage([fauxToolCall("read", { path: "fixed" }, { id: `read-${tools}` })], { stopReason: "toolUse" });
 	}, 64);
-	live.events.on("rqw-codex:session-policy", (request: any) => { sessions.push(request.session); });
+	let released = false;
+	live.events.on("rqw-codex:session-policy", (request: any) => { sessions.push(request.session); request.release = () => { released = true; }; });
 	live.events.on("rqw:context-fork:v1", (request: any) => request.offer(async () => fauxAssistantMessage("progress")));
 	live.events.on("rqw-tools:subagent-tools", (request: any) => request.offer(() => [{
 		name: "read", label: "Read", description: "Fake external file", parameters: { type: "object", properties: { path: { type: "string" } } },
@@ -1579,9 +1595,8 @@ test("a running child's queued progress notice does not hold a finished sibling 
 	await entered.promise;
 	now = 300000;
 	t.mock.timers.tick(300000);
-	const sibling = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(sibling.details.statuses[0].run_id, undefined);
-	assert.equal(sibling.details.statuses[0].state, "idle");
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	assert.equal(released, true);
 	await live.execute({ action: "stop", id: "agent#2" });
 	response.resolve(fauxAssistantMessage("done"));
 	await Promise.all(sessions.map(session => session.waitForIdle()));
@@ -1679,14 +1694,16 @@ test("a replaced generation and a parent with running descendants stay safe at o
 	const live = runtimeFixture(parent, root);
 	await live.execute({ action: "start", task: "old task", tools: [] });
 	await live.runtime.wait(new AbortController().signal);
-	const original = await live.execute({ action: "wait", ids: ["agent#1"] });
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	const original = await live.execute({ action: "status", ids: ["agent#1"] });
 	now = 240000;
 	t.mock.timers.tick(240000);
 	await live.execute({ action: "restart", id: "agent#1", task: "new task", tools: [] });
 	await live.runtime.wait(new AbortController().signal);
 	now = 300000;
 	t.mock.timers.tick(60000);
-	const current = await live.execute({ action: "wait", ids: ["agent#1"] });
+	await live.execute({ action: "wait", ids: ["agent#1"] });
+	const current = await live.execute({ action: "status", ids: ["agent#1"] });
 	assert.equal(current.details.statuses[0].run_id, 1);
 	assert.notEqual(current.details.statuses[0].run, original.details.statuses[0].run);
 	const restarted = await live.execute({ action: "status", ids: ["agent#1"] });
@@ -1729,7 +1746,8 @@ test("a replaced generation and a parent with running descendants stay safe at o
 	await memory.runtime.wait(new AbortController().signal);
 	now = 1200000;
 	t.mock.timers.tick(300000);
-	const retained = await memory.execute({ action: "wait", ids: ["agent#1"] });
+	await memory.execute({ action: "wait", ids: ["agent#1"] });
+	const retained = await memory.execute({ action: "status", ids: ["agent#1"] });
 	assert.equal(retained.details.statuses[0].run_id, 1);
 	memory.runtime.close();
 });
@@ -2030,8 +2048,7 @@ test("a child that went to sleep leaves no live session manager behind", async t
 	await commitWait(live, parent);
 	now = 300000;
 	t.mock.timers.tick(300000);
-	const asleep = await live.execute({ action: "wait", ids: ["agent#1"] });
-	assert.equal(asleep.details.statuses[0].run_id, undefined);
+	await live.execute({ action: "wait", ids: ["agent#1"] });
 	await new Promise(resolve => setImmediate(resolve));
 	assert.equal(managers(), before);
 	live.runtime.close();
@@ -2189,7 +2206,10 @@ test("steering releases a wait-all's held answer and leaves both children availa
 	source.messages.push("new direction");
 	source.emit({ type: "queue_update", steering: [...source.messages], followUp: [] });
 	source.session.agent.steeringQueue.messages.push({ role: "user" });
-	assert.equal((await waiting).details.reason, "steered");
+	const steered = await waiting;
+	assert.equal(steered.details.reason, "steered");
+	assert.equal(steered.content[0].text, "interrupted; still running: agent#2");
+	assert.equal("statuses" in steered.details, false);
 	source.messages.length = 0;
 	source.session.agent.steeringQueue.messages.length = 0;
 	const first = await f.live.execute({ action: "wait", ids: ["agent#1"] });
@@ -2223,21 +2243,42 @@ test("a direct wait times out without stopping the child, and a later wait gets 
 	t.mock.timers.tick(1000);
 	const timedOut = await waiting;
 	assert.deepEqual([timedOut.details.reason, timedOut.details.timed_out, timedOut.details.results], ["timeout", true, []]);
+	assert.equal(timedOut.content[0].text, "timeout; still running: agent#1");
+	assert.equal("statuses" in timedOut.details, false);
 	const again = f.live.execute({ action: "wait", ids: ["agent#1"] });
 	f.release("a");
 	assert.deepEqual(resultTexts((await again).details), [["agent#1", "answer of a"]]);
 	f.live.runtime.close();
 });
 
-test("a direct wait returns on an alert of its child", async t => {
+test("an alert of the child does not wake a wait by default", async t => {
 	const f = await gatedChildren(t, ["a"], 100);
-	const waiting = f.live.execute({ action: "wait", ids: ["agent#1"] });
+	const waiting = f.live.execute({ action: "wait", ids: ["agent#1"], timeout_ms: 1000 });
+	let settled = false;
+	void waiting.then(() => { settled = true; });
+	await f.settle();
+	f.clock.now = 100;
+	t.mock.timers.tick(100);
+	await f.settle();
+	assert.equal(settled, false);
+	f.clock.now = 1000;
+	t.mock.timers.tick(1000);
+	assert.equal((await waiting).details.reason, "timeout");
+	f.release("a");
+	f.live.runtime.close();
+});
+
+test("a wait with wake_on_alert returns one short line on an alert of its child", async t => {
+	const f = await gatedChildren(t, ["a"], 100);
+	const waiting = f.live.execute({ action: "wait", ids: ["agent#1"], wake_on_alert: true });
 	await f.settle();
 	f.clock.now = 100;
 	t.mock.timers.tick(100);
 	const result = await waiting;
 	assert.equal(result.details.reason, "alert");
 	assert.deepEqual(result.details.results, []);
+	assert.equal(result.content[0].text, "alert; still running: agent#1");
+	assert.equal("statuses" in result.details, false);
 	f.release("a");
 	f.live.runtime.close();
 });

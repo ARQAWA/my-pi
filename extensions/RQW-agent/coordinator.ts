@@ -30,9 +30,9 @@ export type RuntimeHandle = {
 export type AcceptRecord = { version: 1; call: string; root: string; ok: boolean; results: { run: string; delivery: string }[] };
 
 export const DEFAULT_WAIT_MS = 300000;
-export type Target = { id: string; run: string; recovers?: string; active(): boolean; checkpoint?(): Map<string, number>; alertVersion?(): number; snapshot(messages?: number, checkpoint?: Map<string, number>, depth?: number): Record<string, unknown> };
+export type Target = { id: string; run: string; recovers?: string; active(): boolean; alertVersion?(): number; snapshot(messages?: number, depth?: number): Record<string, unknown> };
 export type WaitOptions = { until?: "first" | "all"; wake_on_alert?: boolean };
-export type Result = { id: string; run: string; delivery: string; text?: string; outcome: string;
+export type Result = { id: string; run: string; delivery: string; text?: string; outcome: string; title?: string;
 	state: "pending" | "held" | "reserved" | "wait"; claimed_by?: string };
 type Watch = { check(): void };
 type Reservation = { call: string; results: Result[] };
@@ -73,6 +73,20 @@ export function deadlineTimer(ms: number, wake: () => void) {
 	return () => { canceled = true; clearTimeout(timer); };
 }
 const json = (details: Record<string, unknown>) => ({ content: [{ type: "text" as const, text: JSON.stringify(details) }], details });
+const WAIT_LABELS: Record<string, string> = { steered: "interrupted", receipt: "no new answer, already delivered" };
+
+/**
+ * What the model reads from a wait that returned no answer: one short line, never per-agent detail.
+ * Full detail stays behind the explicit `status` action.
+ */
+function waitLine(outcome: WaitOutcome, running: string[], closed: string[]): string {
+	let line = WAIT_LABELS[outcome.reason] ?? outcome.reason;
+	if (outcome.changed) line += `: ${(outcome.changed as { id: string; change: string }[]).map(c => `${c.id} ${c.change}`).join(", ")}`;
+	if (outcome.reason === "receipt") line += `: ${outcome.receipts.map(r => r.id).join(", ")}`;
+	line += running.length ? `; still running: ${running.join(", ")}` : "; nothing running";
+	if (closed.length) line += `; unknown or closed: ${closed.join(", ")}`;
+	return line;
+}
 
 export class Coordinator {
 	readonly targets = new Map<string, Target>();
@@ -175,8 +189,9 @@ export class Coordinator {
 			const message = entry?.type === "message" && entry.message.role === "toolResult" ? entry.message : undefined;
 			if (!message && !settled) continue;
 			const success = message && !message.isError && this.completed.get(reservation.call) !== false;
-			// Direct results must still carry the handoff. A successful outer script may intentionally filter it.
-			const body = message ? JSON.stringify(message.content) : "";
+			// Direct results must still carry the handoff in their saved details (the model text holds no delivery id).
+			// A successful outer script may intentionally filter it.
+			const body = message ? JSON.stringify(message.details ?? null) : "";
 			const kept = success && (root !== reservation.call || reservation.results.every(r => body.includes(r.delivery)));
 			this.reservations.delete(owner);
 			for (const result of reservation.results) {
@@ -201,28 +216,28 @@ export class Coordinator {
 		this.notify();
 	}
 	begin(target: Target) { this.add(target); }
-	private register(id: string, run: string, text: string, outcome: string, delivery: string = randomUUID()): Result | undefined {
+	private register(id: string, run: string, text: string, outcome: string, delivery: string = randomUUID(), title?: string): Result | undefined {
 		if (!this.targets.has(id) || this.results.get(id)?.some(result => result.run === run)) return;
-		const result: Result = { id, run, delivery, text, outcome, state: "pending" };
+		const result: Result = { id, run, delivery, text, outcome, state: "pending", ...(title ? { title } : {}) };
 		const results = this.results.get(id) ?? [];
 		results.push(result);
 		this.results.set(id, results);
 		this.uncommitted.add(result);
 		return result;
 	}
-	publish(id: string, run: string, text: string, outcome: string, delivery?: string) {
-		if (this.register(id, run, text, outcome, delivery)) this.notify();
+	publish(id: string, run: string, text: string, outcome: string, delivery?: string, title?: string) {
+		if (this.register(id, run, text, outcome, delivery, title)) this.notify();
 	}
-	publishAll(items: { id: string; run: string; text: string; outcome: string; delivery?: string }[]) {
-		for (const item of items) this.register(item.id, item.run, item.text, item.outcome, item.delivery);
+	publishAll(items: { id: string; run: string; text: string; outcome: string; delivery?: string; title?: string }[]) {
+		for (const item of items) this.register(item.id, item.run, item.text, item.outcome, item.delivery, item.title);
 		this.notify();
 	}
 	notify() { for (const watcher of [...this.watchers]) watcher.check(); }
-	status(ids: string[], messages?: number, checkpoints?: Map<string, Map<string, number> | undefined>, depth = 0) {
+	status(ids: string[], messages?: number, depth = 0) {
 		depth = statusDepth(depth);
 		return ids.map(id => {
 			const target = this.targets.get(id);
-			return target ? { id, run: target.run, ...target.snapshot(messages, checkpoints?.get(id), depth) } : { id, error: "Unknown or closed child ID" };
+			return target ? { id, run: target.run, ...target.snapshot(messages, depth) } : { id, error: "Unknown or closed child ID" };
 		});
 	}
 	ids() { return [...this.targets.keys()]; }
@@ -241,7 +256,6 @@ export class Coordinator {
 		const selected = new Map(ids.map(id => [id, this.targets.get(id)?.run]));
 		const changes = new Map(ids.map(id => [id, this.changes.get(id)]));
 		const alerts = new Map(ids.map(id => [id, this.targets.get(id)?.alertVersion?.() ?? 0]));
-		const checkpoints = new Map(ids.map(id => [id, this.targets.get(id)?.checkpoint?.()]));
 		const held = new Set<Result>();
 		const hold = (pending: Result[]) => {
 			for (const r of pending) { r.state = "held"; r.claimed_by = owner; held.add(r); }
@@ -257,7 +271,7 @@ export class Coordinator {
 				return run && (target?.run !== run || change !== changes.get(id)) ? [{ id, run, change: change?.run === run ? change.change : "replaced" }] : [];
 			});
 			if (changed.length) return { reason: "target_changed", pending: [], receipts: [], changed };
-			if (options.wake_on_alert !== false && ids.some(id => (this.targets.get(id)?.alertVersion?.() ?? 0) > alerts.get(id)!))
+			if (options.wake_on_alert === true && ids.some(id => (this.targets.get(id)?.alertVersion?.() ?? 0) > alerts.get(id)!))
 				return { reason: "alert", pending: [], receipts: [] };
 			const available = ids.flatMap(id => {
 				const results = this.results.get(id) ?? [];
@@ -276,9 +290,21 @@ export class Coordinator {
 			if (receipts.length) return { reason: "receipt", pending: [], receipts };
 			if (!ownedElsewhere && !ids.some(id => this.targets.get(id)?.active())) return { reason: "idle", pending: [], receipts: [] };
 		};
-		const output = ({ reason, pending, receipts, changed }: WaitOutcome) => json({ reason, timed_out: reason === "timeout",
-			results: pending.map(r => ({ id: r.id, run: r.run, delivery: r.delivery, text: `${r.text}\n\n${FOLLOW_UP}`, outcome: r.outcome })), receipts,
-			...(changed ? { changed } : {}), statuses: this.status(ids, undefined, checkpoints) });
+		// The wait is a signal: the model reads only final answers, or one short line. `details` serves cards and
+		// bookkeeping and is never sent to the model.
+		const output = (outcome: WaitOutcome) => {
+			const { reason, pending, receipts, changed } = outcome;
+			const details = { reason, timed_out: reason === "timeout",
+				results: pending.map(r => ({ id: r.id, run: r.run, delivery: r.delivery, text: `${r.text}\n\n${FOLLOW_UP}`, outcome: r.outcome })), receipts,
+				...(changed ? { changed } : {}) };
+			if (!pending.length) {
+				const running = ids.filter(id => this.targets.get(id)?.active());
+				const closed = ids.filter(id => !this.targets.has(id));
+				return { content: [{ type: "text" as const, text: waitLine(outcome, running, closed) }], details };
+			}
+			const answers = pending.map(r => ({ id: r.id, ...(r.title ? { title: r.title } : {}), outcome: r.outcome, text: `${r.text}\n\n${FOLLOW_UP}` }));
+			return { content: [{ type: "text" as const, text: JSON.stringify({ results: answers }) }], details };
+		};
 		return { held, release, check, output };
 	}
 	wait(ids: string[], timeout: number, signal: AbortSignal, call: string, options: WaitOptions = {}, steering?: { signal: AbortSignal; reason?: "work_pending" | "direct_wait_required" }) {

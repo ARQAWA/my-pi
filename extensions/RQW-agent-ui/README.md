@@ -29,8 +29,9 @@ only: stored messages, tool results, their details and what the model sees are n
   `display` details (the RQW-agent metadata), its `id` and its `text`. Results without metadata still get a card
   (id from the item, unknown parts omitted). `until: "all"` returns the same `reason: "result"` shape with multiple
   items, so each delivered answer gets a card. The call row, the tool shell and every other call (`start`, `status`,
-  `send`, timeouts and receipts without results, errors, partial updates) are left to the next renderer. `reason:
-  "alert"` and `target_changed` are diagnostics and stay stock, including `statuses[].alerts` and `long_turn` alerts.
+  `send`, timeouts and receipts without results, errors, partial updates) are left to the next renderer. A wait that returns no
+  answer (`interrupted`, `timeout`, `alert`, `target_changed`, receipt) is one short text line and stays stock; wait
+  details carry no `statuses` (`[D-AGENT-WAIT-LEAN]`).
 - **`child_wait` notification** (`child-wait.ts`): when a `wait` ends through a notification, RQW-agent delivers the
   result as a custom message `child_wait` whose `details` are the wait result and whose content is the same object as
   JSON text. `index.ts` registers `createChildWaitCard` for it. With `reason: "result"` and at least one

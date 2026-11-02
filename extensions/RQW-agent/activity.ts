@@ -286,11 +286,10 @@ export class Activity {
 	}
 
 	// `messages` omitted: no peek. Callers validate 5-10 before passing it.
-	// `checkpoint` (from checkpoint()): each argument stream also reports the bytes received since that point.
-	snapshot(messages?: number, checkpoint?: Map<string, number>): object {
+	snapshot(messages?: number): object {
 		const at = now();
 		const state = this.state();
-		const tools = this.toolItems(at, checkpoint);
+		const tools = this.toolItems(at);
 		const out: Json = {
 			state,
 			activity: this.phase(state),
@@ -345,18 +344,6 @@ export class Activity {
 			out.messages_omitted = peek.omitted;
 		}
 		return out;
-	}
-
-	// Argument bytes of each current tool stream, keyed by its lifetime-unique stream key.
-	checkpoint(): Map<string, number> {
-		const out = new Map<string, number>();
-		for (const s of this.streams.values()) out.set(s.key, s.bytes.size());
-		return out;
-	}
-
-	// Bytes already present at the checkpoint for this stream; zero for a stream that started later.
-	private baseline(s: Stream, checkpoint: Map<string, number>): number {
-		return checkpoint.get(s.key) ?? 0;
 	}
 
 	close(): void {
@@ -649,7 +636,7 @@ export class Activity {
 		return this.thinking ? "thinking" : "model";
 	}
 
-	private toolItems(at: number, checkpoint?: Map<string, number>): { visible: Json[]; total: number } {
+	private toolItems(at: number): { visible: Json[]; total: number } {
 		const items: Json[] = [];
 		for (const e of this.execs.values())
 			items.push({
@@ -666,7 +653,7 @@ export class Activity {
 			});
 		for (const s of this.streams.values()) {
 			if (s.id && this.execs.has(s.id)) continue;
-			const item: Json = {
+			items.push({
 				kind: "argument_stream",
 				tool_call_id: s.id,
 				parent_tool_call_id: null,
@@ -681,9 +668,7 @@ export class Activity {
 				ended: s.ended,
 				parsed_arguments_bytes: s.parsedBytes,
 				arguments_error: s.argumentsError,
-			};
-			if (checkpoint) item.argument_growth_since_wait_bytes = s.bytes.size() - this.baseline(s, checkpoint);
-			items.push(item);
+			});
 		}
 		items.sort((a, b) => (b.age_ms as number) - (a.age_ms as number));
 		return { visible: items.slice(0, VISIBLE_TOOLS), total: items.length };
