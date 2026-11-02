@@ -67,6 +67,8 @@ export interface Group {
 	members: Member[];
 	/** Failed codemode parents retained for outcome display, never counted as additional tool calls. */
 	parentErrors?: Member[];
+	/** Bumped when a streamed argument delta changes a member in place, so cached rows of the group are drawn again. */
+	revision?: number;
 }
 
 /** Per top-level tool call ID. */
